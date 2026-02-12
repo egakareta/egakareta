@@ -30,6 +30,8 @@ pub(crate) struct LevelMetadata {
     pub(crate) music: MusicMetadata,
     #[serde(default)]
     pub(crate) spawn: SpawnMetadata,
+    #[serde(default)]
+    pub(crate) taps: Vec<u32>,
     pub(crate) objects: Vec<LevelObject>,
 }
 

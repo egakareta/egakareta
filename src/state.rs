@@ -40,6 +40,51 @@ enum CanvasOrWindow {
     Window(Window),
 }
 
+fn toggle_spawn_direction(direction: SpawnDirection) -> SpawnDirection {
+    match direction {
+        SpawnDirection::Forward => SpawnDirection::Right,
+        SpawnDirection::Right => SpawnDirection::Forward,
+    }
+}
+
+fn advance_timeline_position(
+    mut position: [f32; 3],
+    direction: SpawnDirection,
+    steps: u32,
+) -> [f32; 3] {
+    let delta = steps as f32;
+    match direction {
+        SpawnDirection::Forward => position[1] += delta,
+        SpawnDirection::Right => position[0] += delta,
+    }
+    position
+}
+
+fn derive_timeline_position(
+    spawn: [f32; 3],
+    direction: SpawnDirection,
+    tap_steps: &[u32],
+    step: u32,
+) -> ([f32; 3], SpawnDirection) {
+    let mut current_step = 0;
+    let mut position = spawn;
+    let mut direction = direction;
+
+    for &tap in tap_steps {
+        if tap > step {
+            break;
+        }
+        let segment = tap.saturating_sub(current_step);
+        position = advance_timeline_position(position, direction, segment);
+        direction = toggle_spawn_direction(direction);
+        current_step = tap;
+    }
+
+    let remaining = step.saturating_sub(current_step);
+    position = advance_timeline_position(position, direction, remaining);
+    (position, direction)
+}
+
 pub struct State {
     canvas_or_window: CanvasOrWindow,
     surface: wgpu::Surface<'static>,
@@ -77,6 +122,9 @@ pub struct State {
     editor_camera_rotation: f32,
     editor_camera_pitch: f32,
     editor_zoom: f32,
+    editor_timeline_step: u32,
+    editor_timeline_length: u32,
+    editor_tap_steps: Vec<u32>,
     editor_right_dragging: bool,
     editor_pan_up_held: bool,
     editor_pan_down_held: bool,
@@ -402,6 +450,9 @@ impl State {
             editor_camera_rotation: -45.0f32.to_radians(),
             editor_camera_pitch: 45.0f32.to_radians(),
             editor_zoom: 1.0,
+            editor_timeline_step: 0,
+            editor_timeline_length: 64,
+            editor_tap_steps: Vec::new(),
             editor_right_dragging: false,
             editor_pan_up_held: false,
             editor_pan_down_held: false,
@@ -693,6 +744,57 @@ impl State {
         self.editor_selected_kind
     }
 
+    pub fn editor_timeline_step(&self) -> u32 {
+        self.editor_timeline_step
+    }
+
+    pub fn editor_timeline_length(&self) -> u32 {
+        self.editor_timeline_length
+    }
+
+    pub fn editor_tap_steps(&self) -> &[u32] {
+        &self.editor_tap_steps
+    }
+
+    pub fn set_editor_timeline_step(&mut self, step: u32) {
+        let max_step = self.editor_timeline_length.saturating_sub(1);
+        self.editor_timeline_step = step.min(max_step);
+        self.refresh_editor_timeline_position();
+    }
+
+    pub fn set_editor_timeline_length(&mut self, length: u32) {
+        let length = length.max(1);
+        let max_step = length - 1;
+        self.editor_timeline_length = length;
+        self.editor_timeline_step = self.editor_timeline_step.min(max_step);
+        self.editor_tap_steps.retain(|step| *step <= max_step);
+        self.refresh_editor_timeline_position();
+    }
+
+    pub fn editor_add_tap(&mut self) {
+        let step = self.editor_timeline_step;
+        if !self.editor_tap_steps.contains(&step) {
+            self.editor_tap_steps.push(step);
+            self.editor_tap_steps.sort_unstable();
+        }
+        self.refresh_editor_timeline_position();
+    }
+
+    pub fn editor_remove_tap(&mut self) {
+        let step = self.editor_timeline_step;
+        self.editor_tap_steps.retain(|tap| *tap != step);
+        self.refresh_editor_timeline_position();
+    }
+
+    pub fn editor_clear_taps(&mut self) {
+        self.editor_tap_steps.clear();
+        self.refresh_editor_timeline_position();
+    }
+
+    pub(crate) fn editor_timeline_preview(&self) -> ([f32; 3], SpawnDirection) {
+        self.editor_timeline_position(self.editor_timeline_step)
+    }
+
     fn editor_camera_axes_xy(&self) -> (Vec2, Vec2) {
         let right = Vec2::new(
             self.editor_camera_rotation.cos(),
@@ -966,7 +1068,8 @@ impl State {
         self.playtesting_editor = true;
         self.game = GameState::new();
         self.game.objects = self.editor_objects.clone();
-        self.apply_spawn_to_game(self.editor_spawn.position, self.editor_spawn.direction);
+        let (position, direction) = self.editor_timeline_position(self.editor_timeline_step);
+        self.apply_spawn_to_game(position, direction);
         self.phase = AppPhase::Playing;
         self.editor_right_dragging = false;
         self.clear_editor_pan_keys();
@@ -982,6 +1085,7 @@ impl State {
         self.editor_spawn.position = [cursor[0] as f32, cursor[1] as f32, cursor[2] as f32];
 
         self.sync_editor_objects();
+        self.refresh_editor_timeline_position();
         self.rebuild_spawn_marker_vertices();
     }
 
@@ -994,6 +1098,7 @@ impl State {
             SpawnDirection::Forward => SpawnDirection::Right,
             SpawnDirection::Right => SpawnDirection::Forward,
         };
+        self.refresh_editor_timeline_position();
         self.rebuild_spawn_marker_vertices();
     }
 
@@ -1091,13 +1196,19 @@ impl State {
         self.game = GameState::new();
         self.trail_vertex_count = 0;
 
+        self.editor_timeline_step = 0;
+
         if let Some(metadata) = self.load_level_metadata(&level_name) {
             self.editor_objects = metadata.objects;
             self.editor_spawn = metadata.spawn;
+            self.editor_tap_steps = metadata.taps;
         } else {
             self.editor_objects = Vec::new();
             self.editor_spawn = SpawnMetadata::default();
+            self.editor_tap_steps = Vec::new();
         }
+
+        self.editor_tap_steps.sort_unstable();
 
         if let Some(first) = self.editor_objects.first() {
             self.editor.cursor = [
@@ -1115,7 +1226,7 @@ impl State {
         ];
 
         self.sync_editor_objects();
-        self.rebuild_editor_cursor_vertices();
+        self.refresh_editor_timeline_position();
         self.rebuild_spawn_marker_vertices();
     }
 
@@ -1178,6 +1289,38 @@ impl State {
         self.game.vertical_velocity = 0.0;
         self.game.is_grounded = true;
         self.game.trail_segments = vec![vec![centered_position]];
+    }
+
+    fn editor_timeline_position(&self, step: u32) -> ([f32; 3], SpawnDirection) {
+        derive_timeline_position(
+            self.editor_spawn.position,
+            self.editor_spawn.direction,
+            &self.editor_tap_steps,
+            step,
+        )
+    }
+
+    fn refresh_editor_timeline_position(&mut self) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        let (position, _) = self.editor_timeline_position(self.editor_timeline_step);
+        let bounds = self.editor.bounds;
+        self.editor.cursor = [
+            position[0].round() as i32,
+            position[1].round() as i32,
+            position[2].round() as i32,
+        ];
+        self.editor.cursor[0] = self.editor.cursor[0].clamp(-bounds, bounds);
+        self.editor.cursor[1] = self.editor.cursor[1].clamp(-bounds, bounds);
+        self.editor.cursor[2] = self.editor.cursor[2].max(0);
+
+        let max_pan = bounds as f32;
+        self.editor_camera_pan[0] = (position[0] + 0.5).clamp(-max_pan, max_pan);
+        self.editor_camera_pan[1] = (position[1] + 0.5).clamp(-max_pan, max_pan);
+
+        self.rebuild_editor_cursor_vertices();
     }
 
     fn rebuild_editor_cursor_vertices(&mut self) {
@@ -1575,5 +1718,40 @@ impl State {
         let texture = device.create_texture(&desc);
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         (texture, view)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{derive_timeline_position, SpawnDirection};
+
+    #[test]
+    fn derives_position_without_taps() {
+        let (position, direction) = derive_timeline_position(
+            [0.0, 0.0, 0.0],
+            SpawnDirection::Forward,
+            &[],
+            3,
+        );
+        assert_eq!(position, [0.0, 3.0, 0.0]);
+        assert!(matches!(direction, SpawnDirection::Forward));
+    }
+
+    #[test]
+    fn derives_position_with_taps() {
+        let taps = [2, 4];
+        let (position, direction) =
+            derive_timeline_position([0.0, 0.0, 0.0], SpawnDirection::Forward, &taps, 5);
+        assert_eq!(position, [2.0, 3.0, 0.0]);
+        assert!(matches!(direction, SpawnDirection::Forward));
+    }
+
+    #[test]
+    fn tap_at_zero_changes_direction() {
+        let taps = [0];
+        let (position, direction) =
+            derive_timeline_position([0.0, 0.0, 0.0], SpawnDirection::Forward, &taps, 0);
+        assert_eq!(position, [0.0, 0.0, 0.0]);
+        assert!(matches!(direction, SpawnDirection::Right));
     }
 }

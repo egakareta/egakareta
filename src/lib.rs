@@ -9,7 +9,7 @@ pub use state::State;
 pub use types::BlockKind;
 
 #[cfg(target_arch = "wasm32")]
-use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
+use egui_wgpu::ScreenDescriptor;
 #[cfg(target_arch = "wasm32")]
 use std::{cell::RefCell, rc::Rc};
 #[cfg(target_arch = "wasm32")]
