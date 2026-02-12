@@ -59,6 +59,7 @@ struct GameState {
     position: [f32; 2],
     direction: Direction,
     speed: f32,
+    trail: Vec<[f32; 2]>,
 }
 
 impl GameState {
@@ -67,10 +68,12 @@ impl GameState {
             position: [0.0, 0.0],
             direction: Direction::Forward,
             speed: 0.6,
+            trail: vec![[0.0, 0.0]],
         }
     }
 
     fn turn_right(&mut self) {
+        self.trail.push(self.position);
         self.direction = match self.direction {
             Direction::Forward => Direction::Right,
             Direction::Right => Direction::Forward,
@@ -92,7 +95,8 @@ impl GameState {
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct LineUniform {
     offset: [f32; 2],
-    _pad: [f32; 2],
+    rotation: f32,
+    _pad: f32,
 }
 
 #[repr(C)]
@@ -123,11 +127,14 @@ pub struct State {
     floor_vertex_count: u32,
     grid_vertex_buffer: wgpu::Buffer,
     grid_vertex_count: u32,
-    line_vertex_buffer: wgpu::Buffer,
-    line_vertex_count: u32,
+    trail_vertex_buffer: wgpu::Buffer,
+    trail_vertex_count: u32,
+    depth_texture: wgpu::Texture,
+    depth_view: wgpu::TextureView,
     render_pipeline: wgpu::RenderPipeline,
     line_uniform_buffer: wgpu::Buffer,
     line_bind_group: wgpu::BindGroup,
+    zero_line_bind_group: wgpu::BindGroup,
     camera_uniform_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     game: GameState,
@@ -135,6 +142,8 @@ pub struct State {
     last_frame: Instant,
     accumulator: f32,
 }
+
+const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 impl State {
     #[cfg(target_arch = "wasm32")]
@@ -214,11 +223,14 @@ impl State {
 
         surface.configure(&device, &config);
 
+        let (depth_texture, depth_view) = Self::create_depth_texture(&device, &config);
+
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
         let line_uniform = LineUniform {
             offset: [0.0, 0.0],
-            _pad: [0.0, 0.0],
+            rotation: 0.0,
+            _pad: 0.0,
         };
 
         let line_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -274,6 +286,25 @@ impl State {
             }],
         });
 
+        let zero_line_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Zero Line Uniform Buffer"),
+            contents: bytemuck::bytes_of(&LineUniform {
+                offset: [0.0, 0.0],
+                rotation: 0.0,
+                _pad: 0.0,
+            }),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+
+        let zero_line_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Zero Line Bind Group"),
+            layout: &line_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: zero_line_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
         let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Camera Bind Group"),
             layout: &camera_bind_group_layout,
@@ -309,93 +340,107 @@ impl State {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,
         });
 
-        let floor_vertices: [Vertex; 6] = [
-            Vertex {
-                position: [-12.0, -12.0, 0.0],
-                color: [0.08, 0.08, 0.1],
-            },
-            Vertex {
-                position: [12.0, -12.0, 0.0],
-                color: [0.1, 0.1, 0.12],
-            },
-            Vertex {
-                position: [12.0, 12.0, 0.0],
-                color: [0.12, 0.12, 0.14],
-            },
-            Vertex {
-                position: [-12.0, -12.0, 0.0],
-                color: [0.08, 0.08, 0.1],
-            },
-            Vertex {
-                position: [12.0, 12.0, 0.0],
-                color: [0.12, 0.12, 0.14],
-            },
-            Vertex {
-                position: [-12.0, 12.0, 0.0],
-                color: [0.1, 0.1, 0.12],
-            },
-        ];
+        // Generate 3D tiles for the floor
+        let mut floor_vertices: Vec<Vertex> = Vec::new();
+        let tile_color_top = [0.08, 0.08, 0.1];
+        let tile_color_side = [0.05, 0.05, 0.07];
+        let extent = 12;
+        let tile_height = 0.1;
+        let tile_margin = 0.05;
 
-        let line_vertices: [Vertex; 6] = [
-            Vertex {
-                position: [-0.05, -0.15, 0.05],
-                color: [0.85, 0.2, 0.35],
-            },
-            Vertex {
-                position: [0.05, -0.15, 0.05],
-                color: [0.9, 0.25, 0.4],
-            },
-            Vertex {
-                position: [0.05, 0.15, 0.05],
-                color: [0.95, 0.3, 0.45],
-            },
-            Vertex {
-                position: [-0.05, -0.15, 0.05],
-                color: [0.85, 0.2, 0.35],
-            },
-            Vertex {
-                position: [0.05, 0.15, 0.05],
-                color: [0.95, 0.3, 0.45],
-            },
-            Vertex {
-                position: [-0.05, 0.15, 0.05],
-                color: [0.9, 0.25, 0.4],
-            },
-        ];
+        for x in -extent..extent {
+            for y in -extent..extent {
+                let x_min = x as f32 + tile_margin;
+                let x_max = (x + 1) as f32 - tile_margin;
+                let y_min = y as f32 + tile_margin;
+                let y_max = (y + 1) as f32 - tile_margin;
+                let z_min = -tile_height;
+                let z_max = 0.0;
+
+                // Top face
+                floor_vertices.push(Vertex { position: [x_min, y_min, z_max], color: tile_color_top });
+                floor_vertices.push(Vertex { position: [x_max, y_min, z_max], color: tile_color_top });
+                floor_vertices.push(Vertex { position: [x_max, y_max, z_max], color: tile_color_top });
+                floor_vertices.push(Vertex { position: [x_min, y_min, z_max], color: tile_color_top });
+                floor_vertices.push(Vertex { position: [x_max, y_max, z_max], color: tile_color_top });
+                floor_vertices.push(Vertex { position: [x_min, y_max, z_max], color: tile_color_top });
+
+                // Side faces (simplified: only Y+, Y-, X+, X-)
+                // Y+
+                floor_vertices.push(Vertex { position: [x_min, y_max, z_min], color: tile_color_side });
+                floor_vertices.push(Vertex { position: [x_max, y_max, z_min], color: tile_color_side });
+                floor_vertices.push(Vertex { position: [x_max, y_max, z_max], color: tile_color_side });
+                floor_vertices.push(Vertex { position: [x_min, y_max, z_min], color: tile_color_side });
+                floor_vertices.push(Vertex { position: [x_max, y_max, z_max], color: tile_color_side });
+                floor_vertices.push(Vertex { position: [x_min, y_max, z_max], color: tile_color_side });
+                // Y-
+                floor_vertices.push(Vertex { position: [x_min, y_min, z_min], color: tile_color_side });
+                floor_vertices.push(Vertex { position: [x_max, y_min, z_max], color: tile_color_side });
+                floor_vertices.push(Vertex { position: [x_max, y_min, z_min], color: tile_color_side });
+                floor_vertices.push(Vertex { position: [x_min, y_min, z_min], color: tile_color_side });
+                floor_vertices.push(Vertex { position: [x_min, y_min, z_max], color: tile_color_side });
+                floor_vertices.push(Vertex { position: [x_max, y_min, z_max], color: tile_color_side });
+                // X+
+                floor_vertices.push(Vertex { position: [x_max, y_min, z_min], color: tile_color_side });
+                floor_vertices.push(Vertex { position: [x_max, y_max, z_min], color: tile_color_side });
+                floor_vertices.push(Vertex { position: [x_max, y_max, z_max], color: tile_color_side });
+                floor_vertices.push(Vertex { position: [x_max, y_min, z_min], color: tile_color_side });
+                floor_vertices.push(Vertex { position: [x_max, y_max, z_max], color: tile_color_side });
+                floor_vertices.push(Vertex { position: [x_max, y_min, z_max], color: tile_color_side });
+                // X-
+                floor_vertices.push(Vertex { position: [x_min, y_min, z_min], color: tile_color_side });
+                floor_vertices.push(Vertex { position: [x_min, y_max, z_max], color: tile_color_side });
+                floor_vertices.push(Vertex { position: [x_min, y_max, z_min], color: tile_color_side });
+                floor_vertices.push(Vertex { position: [x_min, y_min, z_min], color: tile_color_side });
+                floor_vertices.push(Vertex { position: [x_min, y_min, z_max], color: tile_color_side });
+                floor_vertices.push(Vertex { position: [x_min, y_max, z_max], color: tile_color_side });
+            }
+        }
 
         // Grid lines across a 24x24 area to visualize lanes
         let mut grid_vertices: Vec<Vertex> = Vec::new();
         let extent = 12.0;
         let step = 1.0;
         let grid_color = [0.2, 0.22, 0.26];
+        let line_width = 0.02;
+        let grid_z = 0.01;
+
         let mut x = -extent;
         while x <= extent {
-            grid_vertices.push(Vertex {
-                position: [x, -extent, 0.02],
-                color: grid_color,
-            });
-            grid_vertices.push(Vertex {
-                position: [x, extent, 0.02],
-                color: grid_color,
-            });
+            // Vertical lines as quads
+            let x_min = x - line_width;
+            let x_max = x + line_width;
+            grid_vertices.push(Vertex { position: [x_min, -extent, grid_z], color: grid_color });
+            grid_vertices.push(Vertex { position: [x_max, -extent, grid_z], color: grid_color });
+            grid_vertices.push(Vertex { position: [x_max, extent, grid_z], color: grid_color });
+            grid_vertices.push(Vertex { position: [x_min, -extent, grid_z], color: grid_color });
+            grid_vertices.push(Vertex { position: [x_max, extent, grid_z], color: grid_color });
+            grid_vertices.push(Vertex { position: [x_min, extent, grid_z], color: grid_color });
             x += step;
         }
         let mut y = -extent;
         while y <= extent {
-            grid_vertices.push(Vertex {
-                position: [-extent, y, 0.02],
-                color: grid_color,
-            });
-            grid_vertices.push(Vertex {
-                position: [extent, y, 0.02],
-                color: grid_color,
-            });
+            // Horizontal lines as quads
+            let y_min = y - line_width;
+            let y_max = y + line_width;
+            grid_vertices.push(Vertex { position: [-extent, y_min, grid_z], color: grid_color });
+            grid_vertices.push(Vertex { position: [extent, y_min, grid_z], color: grid_color });
+            grid_vertices.push(Vertex { position: [extent, y_max, grid_z], color: grid_color });
+            grid_vertices.push(Vertex { position: [-extent, y_min, grid_z], color: grid_color });
+            grid_vertices.push(Vertex { position: [extent, y_max, grid_z], color: grid_color });
+            grid_vertices.push(Vertex { position: [-extent, y_max, grid_z], color: grid_color });
             y += step;
         }
 
@@ -405,16 +450,17 @@ impl State {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-        let line_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Line Vertex Buffer"),
-            contents: bytemuck::cast_slice(&line_vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
         let grid_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Grid Vertex Buffer"),
             contents: bytemuck::cast_slice(&grid_vertices),
             usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let trail_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Trail Vertex Buffer"),
+            size: (std::mem::size_of::<Vertex>() * 36 * 500) as u64, // 500 segments
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
 
         Self {
@@ -426,11 +472,12 @@ impl State {
             size,
             floor_vertex_buffer,
             floor_vertex_count: floor_vertices.len() as u32,
-            line_vertex_buffer,
-            line_vertex_count: line_vertices.len() as u32,
+            depth_texture,
+            depth_view,
             render_pipeline,
             line_uniform_buffer,
             line_bind_group,
+            zero_line_bind_group,
             camera_uniform_buffer,
             camera_bind_group,
             game: GameState::new(),
@@ -439,6 +486,8 @@ impl State {
             accumulator: 0.0,
             grid_vertex_buffer,
             grid_vertex_count: grid_vertices.len() as u32,
+            trail_vertex_buffer,
+            trail_vertex_count: 0,
         }
     }
 
@@ -458,6 +507,9 @@ impl State {
         self.config.width = new_size.width;
         self.config.height = new_size.height;
         self.surface.configure(&self.device, &self.config);
+        let (depth_texture, depth_view) = Self::create_depth_texture(&self.device, &self.config);
+        self.depth_texture = depth_texture;
+        self.depth_view = depth_view;
     }
 
     pub fn update(&mut self) {
@@ -473,18 +525,111 @@ impl State {
             self.accumulator -= FIXED_DT;
         }
 
+        // Build trail vertices
+        let mut trail_vertices = Vec::new();
+        let width = 0.08;
+        let z_min = 0.03;
+        let z_max = 0.08;
+        let c_top = [0.8, 0.25, 0.35];
+        let c_side = [0.7, 0.2, 0.3];
+
+        let mut points = self.game.trail.clone();
+        points.push(self.game.position);
+
+        for i in 0..points.len() - 1 {
+            let p1 = points[i];
+            let p2 = points[i + 1];
+
+            let dx = p2[0] - p1[0];
+            let dy = p2[1] - p1[1];
+
+            let (x_min, x_max, y_min, y_max) = if dx.abs() > dy.abs() {
+                // Horizontal
+                (
+                    p1[0].min(p2[0]) - width / 2.0,
+                    p1[0].max(p2[0]) + width / 2.0,
+                    p1[1] - width / 2.0,
+                    p1[1] + width / 2.0,
+                )
+            } else {
+                // Vertical
+                (
+                    p1[0] - width / 2.0,
+                    p1[0] + width / 2.0,
+                    p1[1].min(p2[1]) - width / 2.0,
+                    p1[1].max(p2[1]) + width / 2.0,
+                )
+            };
+
+            // Top
+            trail_vertices.push(Vertex { position: [x_min, y_min, z_max], color: c_top });
+            trail_vertices.push(Vertex { position: [x_max, y_min, z_max], color: c_top });
+            trail_vertices.push(Vertex { position: [x_max, y_max, z_max], color: c_top });
+            trail_vertices.push(Vertex { position: [x_min, y_min, z_max], color: c_top });
+            trail_vertices.push(Vertex { position: [x_max, y_max, z_max], color: c_top });
+            trail_vertices.push(Vertex { position: [x_min, y_max, z_max], color: c_top });
+            // Bottom (optional, but good for completeness if camera can go low)
+            trail_vertices.push(Vertex { position: [x_min, y_min, z_min], color: c_side });
+            trail_vertices.push(Vertex { position: [x_max, y_max, z_min], color: c_side });
+            trail_vertices.push(Vertex { position: [x_max, y_min, z_min], color: c_side });
+            trail_vertices.push(Vertex { position: [x_min, y_min, z_min], color: c_side });
+            trail_vertices.push(Vertex { position: [x_min, y_max, z_min], color: c_side });
+            trail_vertices.push(Vertex { position: [x_max, y_max, z_min], color: c_side });
+            // Front (Y+)
+            trail_vertices.push(Vertex { position: [x_min, y_max, z_min], color: c_side });
+            trail_vertices.push(Vertex { position: [x_max, y_max, z_min], color: c_side });
+            trail_vertices.push(Vertex { position: [x_max, y_max, z_max], color: c_side });
+            trail_vertices.push(Vertex { position: [x_min, y_max, z_min], color: c_side });
+            trail_vertices.push(Vertex { position: [x_max, y_max, z_max], color: c_side });
+            trail_vertices.push(Vertex { position: [x_min, y_max, z_max], color: c_side });
+            // Back (Y-)
+            trail_vertices.push(Vertex { position: [x_min, y_min, z_min], color: c_side });
+            trail_vertices.push(Vertex { position: [x_max, y_min, z_max], color: c_side });
+            trail_vertices.push(Vertex { position: [x_max, y_min, z_min], color: c_side });
+            trail_vertices.push(Vertex { position: [x_min, y_min, z_min], color: c_side });
+            trail_vertices.push(Vertex { position: [x_min, y_min, z_max], color: c_side });
+            trail_vertices.push(Vertex { position: [x_max, y_min, z_max], color: c_side });
+            // Right (X+)
+            trail_vertices.push(Vertex { position: [x_max, y_min, z_min], color: c_side });
+            trail_vertices.push(Vertex { position: [x_max, y_max, z_min], color: c_side });
+            trail_vertices.push(Vertex { position: [x_max, y_max, z_max], color: c_side });
+            trail_vertices.push(Vertex { position: [x_max, y_min, z_min], color: c_side });
+            trail_vertices.push(Vertex { position: [x_max, y_max, z_max], color: c_side });
+            trail_vertices.push(Vertex { position: [x_max, y_min, z_max], color: c_side });
+            // Left (X-)
+            trail_vertices.push(Vertex { position: [x_min, y_min, z_min], color: c_side });
+            trail_vertices.push(Vertex { position: [x_min, y_max, z_max], color: c_side });
+            trail_vertices.push(Vertex { position: [x_min, y_max, z_min], color: c_side });
+            trail_vertices.push(Vertex { position: [x_min, y_min, z_min], color: c_side });
+            trail_vertices.push(Vertex { position: [x_min, y_min, z_max], color: c_side });
+            trail_vertices.push(Vertex { position: [x_min, y_max, z_max], color: c_side });
+        }
+
+        self.trail_vertex_count = trail_vertices.len() as u32;
+        if !trail_vertices.is_empty() {
+            let max_vertices = (self.trail_vertex_buffer.size() / std::mem::size_of::<Vertex>() as u64) as usize;
+            let vertices_to_write = &trail_vertices[..trail_vertices.len().min(max_vertices)];
+            self.queue.write_buffer(&self.trail_vertex_buffer, 0, bytemuck::cast_slice(vertices_to_write));
+        }
+
         // Snap slightly toward grid to avoid drift
         self.line_uniform.offset = [
             (self.game.position[0] * 100.0).round() / 100.0,
             (self.game.position[1] * 100.0).round() / 100.0,
         ];
+        self.line_uniform.rotation = match self.game.direction {
+            Direction::Forward => 0.0,
+            Direction::Right => -std::f32::consts::FRAC_PI_2,
+        };
 
         self.queue
             .write_buffer(&self.line_uniform_buffer, 0, bytemuck::bytes_of(&self.line_uniform));
 
         let aspect = self.config.width as f32 / self.config.height as f32;
-        let eye = Vec3::new(4.0, -10.0, 10.0);
-        let target = Vec3::new(0.0, 2.5, 0.0);
+        let pos_3d = Vec3::new(self.game.position[0], self.game.position[1], 0.0);
+        let target = pos_3d;
+        let offset = Mat4::from_rotation_z(-45.0f32.to_radians()).transform_vector3(Vec3::new(0.0, -2.0, 2.0));
+        let eye = pos_3d + offset;
         let up = Vec3::new(0.0, 0.0, 1.0);
         let view = Mat4::look_at_rh(eye, target, up);
         let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 100.0);
@@ -530,14 +675,21 @@ impl State {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.line_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
 
             render_pass.set_vertex_buffer(0, self.floor_vertex_buffer.slice(..));
             render_pass.draw(0..self.floor_vertex_count, 0..1);
@@ -545,8 +697,12 @@ impl State {
             render_pass.set_vertex_buffer(0, self.grid_vertex_buffer.slice(..));
             render_pass.draw(0..self.grid_vertex_count, 0..1);
 
-            render_pass.set_vertex_buffer(0, self.line_vertex_buffer.slice(..));
-            render_pass.draw(0..self.line_vertex_count, 0..1);
+            if self.trail_vertex_count > 0 {
+                render_pass.set_vertex_buffer(0, self.trail_vertex_buffer.slice(..));
+                render_pass.draw(0..self.trail_vertex_count, 0..1);
+            }
+
+            render_pass.set_bind_group(1, &self.line_bind_group, &[]);
         }
 
         self.queue.submit(iter::once(encoder.finish()));
@@ -571,8 +727,9 @@ impl State {
             self.size = PhysicalSize::new(new_size.width, new_size.height);
             self.config.width = new_size.width;
             self.config.height = new_size.height;
-            self.surface.configure(&self.device, &self.config);
-        }
+            self.surface.configure(&self.device, &self.config);            let (depth_texture, depth_view) = Self::create_depth_texture(&self.device, &self.config);
+            self.depth_texture = depth_texture;
+            self.depth_view = depth_view;        }
     }
 
     pub fn recreate_surface(&mut self) {
@@ -584,7 +741,31 @@ impl State {
             self.config.width = size.width;
             self.config.height = size.height;
             self.surface.configure(&self.device, &self.config);
+            let (depth_texture, depth_view) = Self::create_depth_texture(&self.device, &self.config);
+            self.depth_texture = depth_texture;
+            self.depth_view = depth_view;
         }
+    }
+
+    fn create_depth_texture(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> (wgpu::Texture, wgpu::TextureView) {
+        let size = wgpu::Extent3d {
+            width: config.width.max(1),
+            height: config.height.max(1),
+            depth_or_array_layers: 1,
+        };
+        let desc = wgpu::TextureDescriptor {
+            label: Some("Depth Texture"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        };
+        let texture = device.create_texture(&desc);
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        (texture, view)
     }
 }
 
@@ -632,7 +813,16 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
     let closure = Closure::wrap(Box::new(move |_: web_sys::MouseEvent| {
         state_clone.borrow_mut().game.turn_right();
     }) as Box<dyn FnMut(_)>);
-    canvas.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref()).unwrap();
+    canvas.add_event_listener_with_callback("mousedown", closure.as_ref().unchecked_ref()).unwrap();
+    closure.forget();
+
+    let state_clone = state_rc.clone();
+    let closure = Closure::wrap(Box::new(move |event: web_sys::KeyboardEvent| {
+        if event.key() == "ArrowUp" && !event.repeat() {
+            state_clone.borrow_mut().game.turn_right();
+        }
+    }) as Box<dyn FnMut(_)>);
+    window.add_event_listener_with_callback("keydown", closure.as_ref().unchecked_ref()).unwrap();
     closure.forget();
 
     // start render loop

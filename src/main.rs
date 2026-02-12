@@ -32,6 +32,17 @@ fn main() {
                     WindowEvent::MouseInput { button: winit::event::MouseButton::Left, state: winit::event::ElementState::Pressed, .. } => {
                         state.turn_right();
                     }
+                    WindowEvent::KeyboardInput {
+                        event: winit::event::KeyEvent {
+                            logical_key: winit::keyboard::Key::Named(winit::keyboard::NamedKey::ArrowUp),
+                            state: winit::event::ElementState::Pressed,
+                            repeat: false,
+                            ..
+                        },
+                        ..
+                    } => {
+                        state.turn_right();
+                    }
                     WindowEvent::RedrawRequested => {
                         state.update();
                         match state.render() {

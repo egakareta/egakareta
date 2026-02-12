@@ -28,6 +28,7 @@ web-sys = { version = "0.3", features = [
     "EventTarget",
     "Event",
     "MouseEvent",
+    "KeyboardEvent",
 ] }
 js-sys = "0.3"
 winit = "0.29"

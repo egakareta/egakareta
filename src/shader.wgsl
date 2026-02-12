@@ -4,7 +4,8 @@ struct CameraData {
 
 struct LineData {
     offset: vec2<f32>,
-    _pad: vec2<f32>,
+    rotation: f32,
+    _pad: f32,
 };
 
 @group(0) @binding(0)
@@ -26,8 +27,17 @@ struct VertexOutput {
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var out: VertexOutput;
+    
+    let c = cos(u_line.rotation);
+    let s = sin(u_line.rotation);
+    let rotated_pos = vec3<f32>(
+        input.position.x * c - input.position.y * s,
+        input.position.x * s + input.position.y * c,
+        input.position.z
+    );
+    
     let offset = vec3<f32>(u_line.offset, 0.0);
-    out.position = u_camera.view_proj * vec4<f32>(input.position + offset, 1.0);
+    out.position = u_camera.view_proj * vec4<f32>(rotated_pos + offset, 1.0);
     out.color = input.color;
     return out;
 }
