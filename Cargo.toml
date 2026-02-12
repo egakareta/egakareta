@@ -35,6 +35,8 @@ web-sys = { version = "0.3", features = [
     "Touch",
     "Performance",
     "HtmlAudioElement",
+    "DomTokenList",
+    "HtmlElement",
 ] }
 js-sys = "0.3"
 winit = "0.29"

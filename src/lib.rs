@@ -42,6 +42,24 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
     let state_rc = Rc::new(RefCell::new(state));
     let pinch_last_distance = Rc::new(RefCell::new(None::<f64>));
 
+    // Block selection UI listeners
+    for (id, kind) in [
+        ("block-standard", crate::types::BlockKind::Standard),
+        ("block-grass", crate::types::BlockKind::Grass),
+        ("block-dirt", crate::types::BlockKind::Dirt),
+    ] {
+        let state_clone = state_rc.clone();
+        if let Some(el) = document.get_element_by_id(id) {
+            let closure = Closure::wrap(Box::new(move |event: web_sys::Event| {
+                state_clone.borrow_mut().set_editor_block_kind(kind);
+                event.stop_propagation();
+            }) as Box<dyn FnMut(_)>);
+            el.add_event_listener_with_callback("mousedown", closure.as_ref().unchecked_ref())
+                .unwrap();
+            closure.forget();
+        }
+    }
+
     {
         let state_clone = state_rc.clone();
         let closure = Closure::wrap(Box::new(move |_: web_sys::Event| {
@@ -280,6 +298,21 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
             "-" | "_" => {
                 if just_pressed {
                     state.adjust_editor_zoom(-1.0);
+                }
+            }
+            "1" => {
+                if state.is_editor() && just_pressed {
+                    state.set_editor_block_kind(crate::types::BlockKind::Standard);
+                }
+            }
+            "2" => {
+                if state.is_editor() && just_pressed {
+                    state.set_editor_block_kind(crate::types::BlockKind::Grass);
+                }
+            }
+            "3" => {
+                if state.is_editor() && just_pressed {
+                    state.set_editor_block_kind(crate::types::BlockKind::Dirt);
                 }
             }
             _ => {}

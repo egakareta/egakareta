@@ -144,6 +144,7 @@ pub(crate) struct MenuState {
 pub(crate) struct EditorState {
     pub(crate) cursor: [i32; 3],
     pub(crate) bounds: i32,
+    pub(crate) selected_block_kind: BlockKind,
 }
 
 impl EditorState {
@@ -151,6 +152,7 @@ impl EditorState {
         Self {
             cursor: [0, 0, 0],
             bounds: 55,
+            selected_block_kind: BlockKind::Standard,
         }
     }
 }

@@ -11,6 +11,8 @@ use web_time::Instant;
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use wgpu::{util::DeviceExt, SurfaceError, TextureViewDescriptor};
 #[cfg(target_arch = "wasm32")]
+use wasm_bindgen::JsCast;
+#[cfg(target_arch = "wasm32")]
 use web_sys::{console, HtmlCanvasElement};
 #[cfg(not(target_arch = "wasm32"))]
 use winit::window::Window;
@@ -440,6 +442,8 @@ impl State {
                 if self.game.game_over {
                     if self.playtesting_editor {
                         self.phase = AppPhase::Editor;
+                        #[cfg(target_arch = "wasm32")]
+                        self.update_ui();
                         self.game.game_over = false;
                         self.game.trail_segments = vec![vec![self.game.position]];
                     } else {
@@ -454,6 +458,8 @@ impl State {
             }
             AppPhase::GameOver => {
                 self.phase = AppPhase::Menu;
+                #[cfg(target_arch = "wasm32")]
+                self.update_ui();
             }
         }
     }
@@ -483,6 +489,8 @@ impl State {
             AppPhase::Menu => self.start_editor(self.menu.selected_level),
             AppPhase::Editor => {
                 self.phase = AppPhase::Menu;
+                #[cfg(target_arch = "wasm32")]
+                self.update_ui();
                 self.playtesting_editor = false;
                 self.editor_right_dragging = false;
                 self.clear_editor_pan_keys();
@@ -787,6 +795,8 @@ impl State {
         self.game.objects = self.editor_objects.clone();
         self.apply_spawn_to_game(self.editor_spawn.position, self.editor_spawn.direction);
         self.phase = AppPhase::Playing;
+        #[cfg(target_arch = "wasm32")]
+        self.update_ui();
         self.editor_right_dragging = false;
         self.clear_editor_pan_keys();
         self.rebuild_block_vertices();
@@ -822,6 +832,8 @@ impl State {
         self.editor_right_dragging = false;
         self.clear_editor_pan_keys();
         self.phase = AppPhase::Menu;
+        #[cfg(target_arch = "wasm32")]
+        self.update_ui();
 
         self.game = GameState::new();
         self.game.objects = create_menu_scene();
@@ -834,6 +846,8 @@ impl State {
 
         self.game = GameState::new();
         self.phase = AppPhase::Playing;
+        #[cfg(target_arch = "wasm32")]
+        self.update_ui();
         self.playtesting_editor = false;
         self.clear_editor_pan_keys();
 
@@ -901,6 +915,8 @@ impl State {
         self.stop_audio();
 
         self.phase = AppPhase::Editor;
+        #[cfg(target_arch = "wasm32")]
+        self.update_ui();
         self.playtesting_editor = false;
         self.editor_right_dragging = false;
         self.clear_editor_pan_keys();
@@ -973,10 +989,50 @@ impl State {
         self.editor_objects.push(LevelObject {
             position: [cursor[0] as f32, cursor[1] as f32, cursor[2] as f32],
             size: [1.0, 1.0, 1.0],
-            kind: BlockKind::Standard,
+            kind: self.editor.selected_block_kind,
         });
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
+    }
+
+    pub fn set_editor_block_kind(&mut self, kind: BlockKind) {
+        self.editor.selected_block_kind = kind;
+        #[cfg(target_arch = "wasm32")]
+        self.update_ui();
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn update_ui(&self) {
+        let window = web_sys::window().unwrap();
+        let document = window.document().unwrap();
+
+        if let Some(editor_ui) = document.get_element_by_id("editor-ui") {
+            let display = if self.phase == AppPhase::Editor {
+                "flex"
+            } else {
+                "none"
+            };
+            let el = editor_ui.dyn_into::<web_sys::HtmlElement>().unwrap();
+            let _ = el.style().set_property("display", display);
+        }
+
+        if self.phase == AppPhase::Editor {
+            let kinds = [
+                ("block-standard", BlockKind::Standard),
+                ("block-grass", BlockKind::Grass),
+                ("block-dirt", BlockKind::Dirt),
+            ];
+            for (id, kind) in kinds {
+                if let Some(el) = document.get_element_by_id(id) {
+                    let class_list = el.class_list();
+                    if self.editor.selected_block_kind == kind {
+                        let _ = class_list.add_1("selected");
+                    } else {
+                        let _ = class_list.remove_1("selected");
+                    }
+                }
+            }
+        }
     }
 
     fn sync_editor_objects(&mut self) {
