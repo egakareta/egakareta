@@ -2,15 +2,14 @@ use crate::types::{BlockKind, LevelObject, Vertex};
 
 fn append_prism(
     vertices: &mut Vec<Vertex>,
-    x_min: f32,
-    x_max: f32,
-    y_min: f32,
-    y_max: f32,
-    z_min: f32,
-    z_max: f32,
+    min: [f32; 3],
+    max: [f32; 3],
     color_top: [f32; 3],
     color_side: [f32; 3],
 ) {
+    let [x_min, y_min, z_min] = min;
+    let [x_max, y_max, z_max] = max;
+
     vertices.push(Vertex {
         position: [x_min, y_min, z_max],
         color: color_top,
@@ -539,12 +538,8 @@ pub(crate) fn build_trail_vertices(points: &[[f32; 3]], game_over: bool) -> Vec<
 
             append_prism(
                 &mut trail_vertices,
-                x_min,
-                x_max,
-                y_min,
-                y_max,
-                z_base,
-                z_top,
+                [x_min, y_min, z_base],
+                [x_max, y_max, z_top],
                 c_top,
                 c_side,
             );
@@ -849,12 +844,8 @@ pub(crate) fn build_spawn_marker_vertices(position: [f32; 3], faces_right: bool)
 
     append_prism(
         &mut vertices,
-        x + 0.1,
-        x + 0.9,
-        y + 0.1,
-        y + 0.9,
-        z,
-        z + 0.5,
+        [x + 0.1, y + 0.1, z],
+        [x + 0.9, y + 0.9, z + 0.5],
         [0.25, 0.95, 0.35],
         [0.1, 0.45, 0.15],
     );
@@ -862,24 +853,16 @@ pub(crate) fn build_spawn_marker_vertices(position: [f32; 3], faces_right: bool)
     if faces_right {
         append_prism(
             &mut vertices,
-            x + 0.9,
-            x + 1.3,
-            y + 0.35,
-            y + 0.65,
-            z,
-            z + 0.7,
+            [x + 0.9, y + 0.35, z],
+            [x + 1.3, y + 0.65, z + 0.7],
             [0.2, 0.9, 0.3],
             [0.1, 0.45, 0.15],
         );
     } else {
         append_prism(
             &mut vertices,
-            x + 0.35,
-            x + 0.65,
-            y + 0.9,
-            y + 1.3,
-            z,
-            z + 0.7,
+            [x + 0.35, y + 0.9, z],
+            [x + 0.65, y + 1.3, z + 0.7],
             [0.2, 0.9, 0.3],
             [0.1, 0.45, 0.15],
         );

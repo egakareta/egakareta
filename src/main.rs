@@ -3,14 +3,14 @@ use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 #[cfg(not(target_arch = "wasm32"))]
 use egui_winit::State as EguiWinitState;
 #[cfg(not(target_arch = "wasm32"))]
-use line_dash_lib::{show_editor_ui, BlockKind, State};
+use line_dash_lib::{show_editor_ui, State};
 #[cfg(not(target_arch = "wasm32"))]
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalPosition,
     event::{MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    keyboard::{Key, NamedKey},
+    keyboard::Key,
     window::{Window, WindowId},
 };
 
@@ -56,8 +56,7 @@ impl ApplicationHandler for App {
                 None,
                 None,
             );
-            let egui_renderer =
-                EguiRenderer::new(state.device(), state.surface_format(), None, 1, false);
+            let egui_renderer = state.create_egui_renderer();
 
             self.state = Some(state);
             self.egui_state = Some(egui_state);
@@ -88,37 +87,28 @@ impl ApplicationHandler for App {
                 state.resize(physical_size);
             }
             WindowEvent::MouseInput {
-                button: winit::event::MouseButton::Left,
-                state: winit::event::ElementState::Pressed,
+                button,
+                state: element_state,
                 ..
             } => {
                 if !egui_consumed {
-                    state.turn_right();
+                    let pressed = element_state == winit::event::ElementState::Pressed;
+                    let button_idx = match button {
+                        winit::event::MouseButton::Left => 0,
+                        winit::event::MouseButton::Right => 2,
+                        winit::event::MouseButton::Middle => 1,
+                        winit::event::MouseButton::Back => 3,
+                        winit::event::MouseButton::Forward => 4,
+                        winit::event::MouseButton::Other(idx) => idx as u32,
+                    };
+                    state.handle_mouse_button(button_idx, pressed);
                 }
-            }
-            WindowEvent::MouseInput {
-                button: winit::event::MouseButton::Right,
-                state: winit::event::ElementState::Pressed,
-                ..
-            } => {
-                if !egui_consumed {
-                    state.set_editor_right_dragging(true);
-                }
-            }
-            WindowEvent::MouseInput {
-                button: winit::event::MouseButton::Right,
-                state: winit::event::ElementState::Released,
-                ..
-            } => {
-                state.set_editor_right_dragging(false);
             }
             WindowEvent::CursorMoved { position, .. } => {
                 if !egui_consumed {
                     if let Some(last) = self.last_cursor_pos {
-                        state.drag_editor_camera_by_pixels(
-                            position.x - last.x,
-                            position.y - last.y,
-                        );
+                        state
+                            .drag_editor_camera_by_pixels(position.x - last.x, position.y - last.y);
                     }
                     state.update_editor_cursor_from_screen(position.x, position.y);
                 }
@@ -141,122 +131,12 @@ impl ApplicationHandler for App {
                 let pressed = event.state == winit::event::ElementState::Pressed;
                 let just_pressed = pressed && !event.repeat;
 
-                match &event.logical_key {
-                    Key::Named(NamedKey::ArrowUp) => {
-                        if state.is_editor() {
-                            state.set_editor_pan_up_held(pressed);
-                        } else if just_pressed {
-                            state.turn_right();
-                        }
-                    }
-                    Key::Named(NamedKey::ArrowDown) => {
-                        if state.is_editor() {
-                            state.set_editor_pan_down_held(pressed);
-                        }
-                    }
-                    Key::Named(NamedKey::ArrowRight) => {
-                        if state.is_editor() {
-                            state.set_editor_pan_right_held(pressed);
-                        } else if just_pressed {
-                            state.next_level();
-                        }
-                    }
-                    Key::Named(NamedKey::ArrowLeft) => {
-                        if state.is_editor() {
-                            state.set_editor_pan_left_held(pressed);
-                        } else if just_pressed {
-                            state.prev_level();
-                        }
-                    }
-                    Key::Named(NamedKey::Space) => {
-                        if just_pressed {
-                            state.turn_right();
-                        }
-                    }
-                    Key::Named(NamedKey::Enter) => {
-                        if just_pressed {
-                            state.editor_playtest();
-                        }
-                    }
-                    Key::Named(NamedKey::Backspace) | Key::Named(NamedKey::Delete) => {
-                        if just_pressed {
-                            state.editor_remove_block();
-                        }
-                    }
-                    Key::Named(NamedKey::Escape) => {
-                        if just_pressed {
-                            state.back_to_menu();
-                        }
-                    }
-                    Key::Named(NamedKey::Shift) => {
-                        state.set_editor_shift_held(pressed);
-                    }
-                    Key::Character(c) if c.eq_ignore_ascii_case("w") => {
-                        if state.is_editor() {
-                            state.set_editor_pan_up_held(pressed);
-                        }
-                    }
-                    Key::Character(c) if c.eq_ignore_ascii_case("s") => {
-                        if state.is_editor() {
-                            state.set_editor_pan_down_held(pressed);
-                        }
-                    }
-                    Key::Character(c) if c.eq_ignore_ascii_case("d") => {
-                        if state.is_editor() {
-                            state.set_editor_pan_right_held(pressed);
-                        } else if just_pressed {
-                            state.next_level();
-                        }
-                    }
-                    Key::Character(c) if c.eq_ignore_ascii_case("a") => {
-                        if state.is_editor() {
-                            state.set_editor_pan_left_held(pressed);
-                        } else if just_pressed {
-                            state.prev_level();
-                        }
-                    }
-                    Key::Character(c) if c.eq_ignore_ascii_case("e") => {
-                        if just_pressed {
-                            state.toggle_editor();
-                        }
-                    }
-                    Key::Character(c) if c.eq_ignore_ascii_case("p") => {
-                        if just_pressed {
-                            state.editor_set_spawn_here();
-                        }
-                    }
-                    Key::Character(c) if c.eq_ignore_ascii_case("r") => {
-                        if just_pressed {
-                            state.editor_rotate_spawn_direction();
-                        }
-                    }
-                    Key::Character(c) if c == "+" || c == "=" => {
-                        if just_pressed {
-                            state.adjust_editor_zoom(1.0);
-                        }
-                    }
-                    Key::Character(c) if c == "-" || c == "_" => {
-                        if just_pressed {
-                            state.adjust_editor_zoom(-1.0);
-                        }
-                    }
-                    Key::Character(c) if c == "1" => {
-                        if state.is_editor() && just_pressed {
-                            state.set_editor_block_kind(BlockKind::Standard);
-                        }
-                    }
-                    Key::Character(c) if c == "2" => {
-                        if state.is_editor() && just_pressed {
-                            state.set_editor_block_kind(BlockKind::Grass);
-                        }
-                    }
-                    Key::Character(c) if c == "3" => {
-                        if state.is_editor() && just_pressed {
-                            state.set_editor_block_kind(BlockKind::Dirt);
-                        }
-                    }
-                    _ => {}
-                }
+                let key_str = match &event.logical_key {
+                    Key::Named(nk) => format!("{:?}", nk),
+                    Key::Character(c) => c.to_string(),
+                    _ => String::new(),
+                };
+                state.handle_keyboard_input(&key_str, pressed, just_pressed);
             }
             WindowEvent::RedrawRequested => {
                 let raw_input = egui_state.take_egui_input(state.window());
@@ -280,34 +160,7 @@ impl ApplicationHandler for App {
                 }
 
                 state.update();
-                match state.render_with_overlay(|device, queue, view, encoder| {
-                    egui_renderer.update_buffers(
-                        device,
-                        queue,
-                        encoder,
-                        &paint_jobs,
-                        &screen_descriptor,
-                    );
-
-                    let mut pass = encoder
-                        .begin_render_pass(&wgpu::RenderPassDescriptor {
-                            label: Some("egui_render_pass"),
-                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Load,
-                                    store: wgpu::StoreOp::Store,
-                                },
-                            })],
-                            depth_stencil_attachment: None,
-                            timestamp_writes: None,
-                            occlusion_query_set: None,
-                        })
-                        .forget_lifetime();
-
-                    let _ = egui_renderer.render(&mut pass, &paint_jobs, &screen_descriptor);
-                }) {
+                match state.render_egui(egui_renderer, &paint_jobs, &screen_descriptor) {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost) => state.recreate_surface(),
                     Err(wgpu::SurfaceError::OutOfMemory) => event_loop.exit(),

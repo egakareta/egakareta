@@ -9,9 +9,9 @@ pub use state::State;
 pub use types::BlockKind;
 
 #[cfg(target_arch = "wasm32")]
-use std::{cell::RefCell, rc::Rc};
-#[cfg(target_arch = "wasm32")]
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
+#[cfg(target_arch = "wasm32")]
+use std::{cell::RefCell, rc::Rc};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::closure::Closure;
 #[cfg(target_arch = "wasm32")]
@@ -45,7 +45,8 @@ impl WebUiInput {
     }
 
     fn push_pointer_move(&mut self, x: f32, y: f32) {
-        self.events.push(egui::Event::PointerMoved(egui::Pos2::new(x, y)));
+        self.events
+            .push(egui::Event::PointerMoved(egui::Pos2::new(x, y)));
     }
 
     fn push_pointer_button(&mut self, x: f32, y: f32, button: egui::PointerButton, pressed: bool) {
@@ -106,16 +107,7 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
     initial_ui_input.set_screen(width, height, window.device_pixel_ratio() as f32);
     let ui_input_rc = Rc::new(RefCell::new(initial_ui_input));
     let ui_wants_pointer = Rc::new(RefCell::new(false));
-    let ui_renderer = {
-        let state_ref = state_rc.borrow();
-        EguiRenderer::new(
-            state_ref.device(),
-            state_ref.surface_format(),
-            None,
-            1,
-            false,
-        )
-    };
+    let ui_renderer = state_rc.borrow().create_egui_renderer();
     let ui_renderer_rc = Rc::new(RefCell::new(ui_renderer));
 
     {
@@ -128,9 +120,11 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
             state_clone
                 .borrow_mut()
                 .resize(PhysicalSize::new(width, height));
-            ui_input_clone
-                .borrow_mut()
-                .set_screen(width, height, window.device_pixel_ratio() as f32);
+            ui_input_clone.borrow_mut().set_screen(
+                width,
+                height,
+                window.device_pixel_ratio() as f32,
+            );
         }) as Box<dyn FnMut(_)>);
         window
             .add_event_listener_with_callback("resize", closure.as_ref().unchecked_ref())
@@ -148,19 +142,19 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
         ui_input.push_pointer_move(x, y);
 
         let mut state = state_clone.borrow_mut();
-        match event.button() {
-            0 => {
-                ui_input.push_pointer_button(x, y, egui::PointerButton::Primary, true);
-                if !*ui_wants_pointer_clone.borrow() {
-                    state.turn_right();
-                }
-            }
-            2 => {
-                ui_input.push_pointer_button(x, y, egui::PointerButton::Secondary, true);
-                state.set_editor_right_dragging(true);
-                event.prevent_default();
-            }
+        let button = event.button();
+        match button {
+            0 => ui_input.push_pointer_button(x, y, egui::PointerButton::Primary, true),
+            2 => ui_input.push_pointer_button(x, y, egui::PointerButton::Secondary, true),
             _ => {}
+        }
+
+        if !*ui_wants_pointer_clone.borrow() {
+            state.handle_mouse_button(button as u32, true);
+        }
+
+        if button == 2 {
+            event.prevent_default();
         }
     }) as Box<dyn FnMut(_)>);
     canvas
@@ -175,13 +169,16 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
         let y = event.offset_y() as f32;
         let mut ui_input = ui_input_clone.borrow_mut();
         ui_input.push_pointer_move(x, y);
-        if event.button() == 2 {
+        let button = event.button();
+        if button == 2 {
             ui_input.push_pointer_button(x, y, egui::PointerButton::Secondary, false);
-            state_clone.borrow_mut().set_editor_right_dragging(false);
             event.prevent_default();
-        } else if event.button() == 0 {
+        } else if button == 0 {
             ui_input.push_pointer_button(x, y, egui::PointerButton::Primary, false);
         }
+        state_clone
+            .borrow_mut()
+            .handle_mouse_button(button as u32, false);
     }) as Box<dyn FnMut(_)>);
     canvas
         .add_event_listener_with_callback("mouseup", closure.as_ref().unchecked_ref())
@@ -301,113 +298,13 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
     let state_clone = state_rc.clone();
     let ui_input_clone = ui_input_rc.clone();
     let closure = Closure::wrap(Box::new(move |event: web_sys::KeyboardEvent| {
-        if event.key() == "Shift" {
+        let key = event.key();
+        if key == "Shift" {
             ui_input_clone.borrow_mut().modifiers.shift = true;
         }
 
         let mut state = state_clone.borrow_mut();
-        let just_pressed = !event.repeat();
-        match event.key().as_str() {
-            "ArrowUp" => {
-                if state.is_editor() {
-                    state.set_editor_pan_up_held(true);
-                } else if just_pressed {
-                    state.turn_right();
-                }
-            }
-            "ArrowDown" => {
-                if state.is_editor() {
-                    state.set_editor_pan_down_held(true);
-                }
-            }
-            " " => {
-                if just_pressed {
-                    state.turn_right();
-                }
-            }
-            "ArrowRight" => {
-                if state.is_editor() {
-                    state.set_editor_pan_right_held(true);
-                } else if just_pressed {
-                    state.next_level();
-                }
-            }
-            "ArrowLeft" => {
-                if state.is_editor() {
-                    state.set_editor_pan_left_held(true);
-                } else if just_pressed {
-                    state.prev_level();
-                }
-            }
-            "Enter" => {
-                if just_pressed {
-                    state.editor_playtest();
-                }
-            }
-            "Backspace" | "Delete" => {
-                if just_pressed {
-                    state.editor_remove_block();
-                }
-            }
-            "Escape" => {
-                if just_pressed {
-                    state.back_to_menu();
-                }
-            }
-            "Shift" => {
-                state.set_editor_shift_held(true);
-            }
-            "w" | "W" => {
-                if state.is_editor() {
-                    state.set_editor_pan_up_held(true);
-                }
-            }
-            "s" | "S" => {
-                if state.is_editor() {
-                    state.set_editor_pan_down_held(true);
-                }
-            }
-            "d" | "D" => {
-                if state.is_editor() {
-                    state.set_editor_pan_right_held(true);
-                } else if just_pressed {
-                    state.next_level();
-                }
-            }
-            "a" | "A" => {
-                if state.is_editor() {
-                    state.set_editor_pan_left_held(true);
-                } else if just_pressed {
-                    state.prev_level();
-                }
-            }
-            "e" | "E" => {
-                if just_pressed {
-                    state.toggle_editor();
-                }
-            }
-            "p" | "P" => {
-                if just_pressed {
-                    state.editor_set_spawn_here();
-                }
-            }
-            "r" | "R" => {
-                if just_pressed {
-                    state.editor_rotate_spawn_direction();
-                }
-            }
-            "+" | "=" => {
-                if just_pressed {
-                    state.adjust_editor_zoom(1.0);
-                }
-            }
-            "-" | "_" => {
-                if just_pressed {
-                    state.adjust_editor_zoom(-1.0);
-                }
-            }
-            _ => {}
-        }
+        state.handle_keyboard_input(&key, true, !event.repeat());
     }) as Box<dyn FnMut(_)>);
     window
         .add_event_listener_with_callback("keydown", closure.as_ref().unchecked_ref())
@@ -417,19 +314,13 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
     let state_clone = state_rc.clone();
     let ui_input_clone = ui_input_rc.clone();
     let closure = Closure::wrap(Box::new(move |event: web_sys::KeyboardEvent| {
-        if event.key() == "Shift" {
+        let key = event.key();
+        if key == "Shift" {
             ui_input_clone.borrow_mut().modifiers.shift = false;
         }
 
         let mut state = state_clone.borrow_mut();
-        match event.key().as_str() {
-            "ArrowUp" | "w" | "W" => state.set_editor_pan_up_held(false),
-            "ArrowDown" | "s" | "S" => state.set_editor_pan_down_held(false),
-            "ArrowLeft" | "a" | "A" => state.set_editor_pan_left_held(false),
-            "ArrowRight" | "d" | "D" => state.set_editor_pan_right_held(false),
-            "Shift" => state.set_editor_shift_held(false),
-            _ => {}
-        }
+        state.handle_keyboard_input(&key, false, false);
     }) as Box<dyn FnMut(_)>);
     window
         .add_event_listener_with_callback("keyup", closure.as_ref().unchecked_ref())
@@ -467,29 +358,11 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
         }
 
         state.update();
-        match state.render_with_overlay(|device, queue, view, encoder| {
-            let mut renderer = ui_renderer_clone.borrow_mut();
-            renderer.update_buffers(device, queue, encoder, &paint_jobs, &screen_descriptor);
-
-            let mut pass = encoder
-                .begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("egui_render_pass_wasm"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                })
-                .forget_lifetime();
-
-            let _ = renderer.render(&mut pass, &paint_jobs, &screen_descriptor);
-        }) {
+        match state.render_egui(
+            &mut ui_renderer_clone.borrow_mut(),
+            &paint_jobs,
+            &screen_descriptor,
+        ) {
             Ok(_) => {}
             Err(SurfaceError::Lost) | Err(SurfaceError::Outdated) => {
                 state.handle_surface_lost();

@@ -50,17 +50,12 @@ impl Default for SpawnMetadata {
     }
 }
 
-#[derive(Deserialize, Clone, Copy)]
+#[derive(Deserialize, Clone, Copy, Default)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum SpawnDirection {
+    #[default]
     Forward,
     Right,
-}
-
-impl Default for SpawnDirection {
-    fn default() -> Self {
-        Self::Forward
-    }
 }
 
 impl From<SpawnDirection> for Direction {
@@ -72,18 +67,13 @@ impl From<SpawnDirection> for Direction {
     }
 }
 
-#[derive(Deserialize, Clone, Copy, PartialEq)]
+#[derive(Deserialize, Clone, Copy, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum BlockKind {
+    #[default]
     Standard,
     Grass,
     Dirt,
-}
-
-impl Default for BlockKind {
-    fn default() -> Self {
-        Self::Standard
-    }
 }
 
 #[derive(Deserialize, Clone)]

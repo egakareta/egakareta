@@ -15,6 +15,8 @@ use wgpu::{util::DeviceExt, SurfaceError, TextureViewDescriptor};
 #[cfg(not(target_arch = "wasm32"))]
 use winit::window::Window;
 
+use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
+
 use crate::game::{create_menu_scene, GameState};
 use crate::mesh::{
     build_block_vertices, build_editor_cursor_vertices, build_floor_vertices, build_grid_vertices,
@@ -497,6 +499,162 @@ impl State {
 
     pub fn set_editor_right_dragging(&mut self, dragging: bool) {
         self.editor_right_dragging = dragging && self.phase == AppPhase::Editor;
+    }
+
+    pub fn handle_keyboard_input(&mut self, key: &str, pressed: bool, just_pressed: bool) {
+        if key == "Shift" {
+            self.set_editor_shift_held(pressed);
+            return;
+        }
+
+        if !pressed {
+            match key {
+                "ArrowUp" | "w" | "W" => self.set_editor_pan_up_held(false),
+                "ArrowDown" | "s" | "S" => self.set_editor_pan_down_held(false),
+                "ArrowLeft" | "a" | "A" => self.set_editor_pan_left_held(false),
+                "ArrowRight" | "d" | "D" => self.set_editor_pan_right_held(false),
+                _ => {}
+            }
+            return;
+        }
+
+        match key {
+            "ArrowUp" | "w" | "W" => {
+                if self.is_editor() {
+                    self.set_editor_pan_up_held(true);
+                } else if just_pressed {
+                    self.turn_right();
+                }
+            }
+            "ArrowDown" | "s" | "S" => {
+                if self.is_editor() {
+                    self.set_editor_pan_down_held(true);
+                }
+            }
+            " " | "Space" => {
+                if just_pressed {
+                    self.turn_right();
+                }
+            }
+            "ArrowRight" | "d" | "D" => {
+                if self.is_editor() {
+                    self.set_editor_pan_right_held(true);
+                } else if just_pressed {
+                    self.next_level();
+                }
+            }
+            "ArrowLeft" | "a" | "A" => {
+                if self.is_editor() {
+                    self.set_editor_pan_left_held(true);
+                } else if just_pressed {
+                    self.prev_level();
+                }
+            }
+            "Enter" => {
+                if just_pressed {
+                    self.editor_playtest();
+                }
+            }
+            "Backspace" | "Delete" => {
+                if just_pressed {
+                    self.editor_remove_block();
+                }
+            }
+            "Escape" => {
+                if just_pressed {
+                    self.back_to_menu();
+                }
+            }
+            "e" | "E" => {
+                if just_pressed {
+                    self.toggle_editor();
+                }
+            }
+            "p" | "P" => {
+                if just_pressed {
+                    self.editor_set_spawn_here();
+                }
+            }
+            "r" | "R" => {
+                if just_pressed {
+                    self.editor_rotate_spawn_direction();
+                }
+            }
+            "+" | "=" => {
+                if just_pressed {
+                    self.adjust_editor_zoom(1.0);
+                }
+            }
+            "-" | "_" => {
+                if just_pressed {
+                    self.adjust_editor_zoom(-1.0);
+                }
+            }
+            "1" => {
+                if self.is_editor() && just_pressed {
+                    self.set_editor_block_kind(BlockKind::Standard);
+                }
+            }
+            "2" => {
+                if self.is_editor() && just_pressed {
+                    self.set_editor_block_kind(BlockKind::Grass);
+                }
+            }
+            "3" => {
+                if self.is_editor() && just_pressed {
+                    self.set_editor_block_kind(BlockKind::Dirt);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub fn handle_mouse_button(&mut self, button: u32, pressed: bool) {
+        match button {
+            0 => {
+                if pressed {
+                    self.turn_right();
+                }
+            }
+            2 => {
+                self.set_editor_right_dragging(pressed);
+            }
+            _ => {}
+        }
+    }
+
+    pub fn render_egui(
+        &mut self,
+        renderer: &mut EguiRenderer,
+        paint_jobs: &[egui::ClippedPrimitive],
+        screen_descriptor: &ScreenDescriptor,
+    ) -> Result<(), SurfaceError> {
+        self.render_with_overlay(|device, queue, view, encoder| {
+            renderer.update_buffers(device, queue, encoder, paint_jobs, screen_descriptor);
+
+            let mut pass = encoder
+                .begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("egui_render_pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                })
+                .forget_lifetime();
+
+            renderer.render(&mut pass, paint_jobs, screen_descriptor);
+        })
+    }
+
+    pub fn create_egui_renderer(&self) -> EguiRenderer {
+        EguiRenderer::new(&self.device, self.config.format, None, 1, false)
     }
 
     fn clear_editor_pan_keys(&mut self) {
