@@ -1,0 +1,18 @@
+{
+  "name": "Golden Haze",
+  "description": "",
+  "creator": "internal",
+  "difficulty": 2,
+  "music": {
+    "source": "audio.mp3",
+    "start": 0,
+    "author": "Detious",
+    "unicodeAuthor": "Detious",
+    "title": "Golden Haze",
+    "unicodeTitle": "Golden Haze"
+  },
+  "objects": [
+    { "position": [0.0, 10.0], "size": [1.0, 1.0] },
+    { "position": [5.0, 5.0], "size": [1.0, 1.0] }
+  ]
+}

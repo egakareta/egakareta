@@ -1,0 +1,19 @@
+{
+  "name": "Flowerfield",
+  "description": "",
+  "creator": "internal",
+  "difficulty": 1,
+  "music": {
+    "source": "audio.mp3",
+    "start": 0,
+    "author": "tieff",
+    "unicodeAuthor": "tieff",
+    "title": "Flowerfield",
+    "unicodeTitle": "Flowerfield"
+  },
+  "objects": [
+    { "position": [2.0, 5.0], "size": [2.0, 2.0] },
+    { "position": [-4.0, 8.0], "size": [3.0, 1.0] },
+    { "position": [0.0, 15.0], "size": [5.0, 1.0] }
+  ]
+}

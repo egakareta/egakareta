@@ -34,14 +34,20 @@ fn main() {
                     }
                     WindowEvent::KeyboardInput {
                         event: winit::event::KeyEvent {
-                            logical_key: winit::keyboard::Key::Named(winit::keyboard::NamedKey::ArrowUp),
+                            logical_key,
                             state: winit::event::ElementState::Pressed,
                             repeat: false,
                             ..
                         },
                         ..
                     } => {
-                        state.turn_right();
+                        use winit::keyboard::{Key, NamedKey};
+                        match logical_key {
+                            Key::Named(NamedKey::ArrowUp) | Key::Named(NamedKey::Space) => state.turn_right(),
+                            Key::Named(NamedKey::ArrowRight) => state.next_level(),
+                            Key::Named(NamedKey::ArrowLeft) => state.prev_level(),
+                            _ => {}
+                        }
                     }
                     WindowEvent::RedrawRequested => {
                         state.update();
