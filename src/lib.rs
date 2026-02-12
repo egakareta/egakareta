@@ -1,4 +1,8 @@
-use std::{iter, time::Instant};
+use std::iter;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 #[cfg(target_arch = "wasm32")]
 use std::{rc::Rc, cell::RefCell};
 
@@ -8,8 +12,6 @@ use glam::{Mat4, Vec3};
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use web_sys::{console, HtmlCanvasElement};
-#[cfg(target_arch = "wasm32")]
-use wgpu::rwh::{RawDisplayHandle, RawWindowHandle, WebDisplayHandle, WebWindowHandle};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsCast;
 #[cfg(target_arch = "wasm32")]
@@ -136,19 +138,16 @@ pub struct State {
 
 impl State {
     #[cfg(target_arch = "wasm32")]
-    async fn new(canvas: HtmlCanvasElement) -> Self<'static> {
+    async fn new(canvas: HtmlCanvasElement) -> Self {
         let size = PhysicalSize::new(canvas.width(), canvas.height());
 
-        let instance = wgpu::Instance::default();
-        let raw_display_handle = RawDisplayHandle::Web(WebDisplayHandle::new());
-        let raw_window_handle = RawWindowHandle::Web(WebWindowHandle::new(0));
-
-        let surface = unsafe {
-            instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
-                raw_display_handle,
-                raw_window_handle,
-            })
-        }.expect("Failed to create surface");
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::GL,
+            ..Default::default()
+        });
+        let surface = instance
+            .create_surface(wgpu::SurfaceTarget::Canvas(canvas.clone()))
+            .expect("Failed to create surface");
 
         Self::new_common(instance, CanvasOrWindow::Canvas(canvas), surface, size).await
     }
@@ -186,7 +185,8 @@ impl State {
                 &wgpu::DeviceDescriptor {
                     label: Some("Device"),
                     required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
+                    required_limits: adapter.limits(),
+                    memory_hints: wgpu::MemoryHints::default(),
                 },
                 None,
             )
@@ -296,6 +296,7 @@ impl State {
                 module: &shader,
                 entry_point: "vs_main",
                 buffers: &[Vertex::desc()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -305,11 +306,13 @@ impl State {
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
+            cache: None,
         });
 
         let floor_vertices: [Vertex; 6] = [
@@ -562,6 +565,7 @@ impl State {
         self.game.turn_right();
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
             self.size = PhysicalSize::new(new_size.width, new_size.height);
@@ -586,14 +590,44 @@ impl State {
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
-pub fn run_game(canvas_id: &str) {
-    let document = web_sys::window().unwrap().document().unwrap();
-    let canvas = document.get_element_by_id(canvas_id).unwrap().dyn_into::<web_sys::HtmlCanvasElement>().unwrap();
+pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
+    console_error_panic_hook::set_once();
+    let window = web_sys::window().unwrap();
+    let document = window.document().unwrap();
+    let canvas = document
+        .get_element_by_id(&canvas_id)
+        .unwrap()
+        .dyn_into::<web_sys::HtmlCanvasElement>()
+        .unwrap();
 
-    let state = pollster::block_on(State::new(canvas.clone()));
+    // Set initial size to window size
+    let width = window.inner_width().unwrap().as_f64().unwrap() as u32;
+    let height = window.inner_height().unwrap().as_f64().unwrap() as u32;
+    canvas.set_width(width);
+    canvas.set_height(height);
+
+    let state = State::new(canvas.clone()).await;
 
     // add event listener
     let state_rc = Rc::new(RefCell::new(state));
+
+    // Handle window resize
+    {
+        let state_clone = state_rc.clone();
+        let closure = Closure::wrap(Box::new(move |_: web_sys::Event| {
+            let window = web_sys::window().unwrap();
+            let width = window.inner_width().unwrap().as_f64().unwrap() as u32;
+            let height = window.inner_height().unwrap().as_f64().unwrap() as u32;
+            state_clone
+                .borrow_mut()
+                .resize(PhysicalSize::new(width, height));
+        }) as Box<dyn FnMut(_)>);
+        window
+            .add_event_listener_with_callback("resize", closure.as_ref().unchecked_ref())
+            .unwrap();
+        closure.forget();
+    }
+
     let state_clone = state_rc.clone();
     let closure = Closure::wrap(Box::new(move |_: web_sys::MouseEvent| {
         state_clone.borrow_mut().game.turn_right();
@@ -626,4 +660,5 @@ pub fn run_game(canvas_id: &str) {
         window.request_animation_frame(f.borrow().as_ref().unwrap().as_ref().unchecked_ref()).unwrap();
     }) as Box<dyn FnMut()>));
     web_sys::window().unwrap().request_animation_frame(g.borrow().as_ref().unwrap().as_ref().unchecked_ref()).unwrap();
+    Ok(())
 }

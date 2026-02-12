@@ -1,0 +1,12 @@
+{
+  "scripts": {
+    "build": "wasm-pack build --target web",
+    "watch": "nodemon --watch src -e rs,wgsl --exec \"npm run build\"",
+    "serve": "npx serve .",
+    "dev": "concurrently \"npm run watch\" \"npm run serve\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "nodemon": "^3.1.11"
+  }
+}
