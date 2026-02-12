@@ -1,6 +1,15 @@
 use crate::types::SpawnDirection;
 use crate::{BlockKind, State};
 
+const MIN_TIMELINE_LENGTH: u32 = 1;
+const MAX_TIMELINE_LENGTH: u32 = 512;
+
+fn timeline_step_metrics(length: u32) -> (u32, f32) {
+    let max_step = length.saturating_sub(1);
+    let divisor = max_step.max(1) as f32;
+    (max_step, divisor)
+}
+
 pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
     if !state.is_editor() {
         return;
@@ -10,6 +19,8 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
         .resizable(false)
         .show(ctx, |ui| {
             ui.vertical(|ui| {
+                let (max_step, divisor) = timeline_step_metrics(state.editor_timeline_length());
+
                 ui.horizontal(|ui| {
                     ui.label("Block:");
 
@@ -30,7 +41,6 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                 ui.horizontal(|ui| {
                     ui.label("Timeline:");
 
-                    let max_step = state.editor_timeline_length().saturating_sub(1);
                     let mut step = state.editor_timeline_step();
                     let slider = egui::Slider::new(&mut step, 0..=max_step)
                         .text("Step")
@@ -40,8 +50,12 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                     }
 
                     let mut length = state.editor_timeline_length();
+                    ui.label("Length:");
                     if ui
-                        .add(egui::DragValue::new(&mut length).range(1..=512))
+                        .add(
+                            egui::DragValue::new(&mut length)
+                                .range(MIN_TIMELINE_LENGTH..=MAX_TIMELINE_LENGTH),
+                        )
                         .changed()
                     {
                         state.set_editor_timeline_length(length);
@@ -88,10 +102,9 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                     stroke,
                 );
 
-                let max_step = state.editor_timeline_length().saturating_sub(1);
-                let denom = max_step.max(1) as f32;
+                let max_step_f32 = max_step as f32;
                 for tap in state.editor_tap_steps() {
-                    let t = (*tap as f32 / denom).clamp(0.0, 1.0);
+                    let t = (*tap as f32 / divisor).clamp(0.0, 1.0);
                     let x = rect.left() + rect.width() * t;
                     painter.circle_filled(
                         egui::pos2(x, center_y),
@@ -100,7 +113,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                     );
                 }
 
-                let current_t = state.editor_timeline_step() as f32 / denom;
+                let current_t = state.editor_timeline_step() as f32 / divisor;
                 let current_x = rect.left() + rect.width() * current_t.clamp(0.0, 1.0);
                 painter.line_segment(
                     [
@@ -113,7 +126,11 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                 if response.clicked() {
                     if let Some(pos) = response.interact_pointer_pos() {
                         let t = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
-                        let step = (t * denom).round() as u32;
+                        let step = if max_step == 0 {
+                            0
+                        } else {
+                            (t * max_step_f32).round() as u32
+                        };
                         state.set_editor_timeline_step(step);
                     }
                 }

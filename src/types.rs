@@ -32,6 +32,8 @@ pub(crate) struct LevelMetadata {
     pub(crate) spawn: SpawnMetadata,
     #[serde(default)]
     pub(crate) taps: Vec<u32>,
+    #[serde(default)]
+    pub(crate) timeline_step: u32,
     pub(crate) objects: Vec<LevelObject>,
 }
 

@@ -764,10 +764,10 @@ impl State {
 
     pub fn set_editor_timeline_length(&mut self, length: u32) {
         let length = length.max(1);
-        let max_step = length - 1;
+        let max_step = length.saturating_sub(1);
         self.editor_timeline_length = length;
         self.editor_timeline_step = self.editor_timeline_step.min(max_step);
-        self.editor_tap_steps.retain(|step| *step <= max_step);
+        self.editor_tap_steps.retain(|step| *step < length);
         self.refresh_editor_timeline_position();
     }
 
@@ -1094,10 +1094,7 @@ impl State {
             return;
         }
 
-        self.editor_spawn.direction = match self.editor_spawn.direction {
-            SpawnDirection::Forward => SpawnDirection::Right,
-            SpawnDirection::Right => SpawnDirection::Forward,
-        };
+        self.editor_spawn.direction = toggle_spawn_direction(self.editor_spawn.direction);
         self.refresh_editor_timeline_position();
         self.rebuild_spawn_marker_vertices();
     }
@@ -1196,19 +1193,20 @@ impl State {
         self.game = GameState::new();
         self.trail_vertex_count = 0;
 
-        self.editor_timeline_step = 0;
+        self.editor_tap_steps.clear();
 
         if let Some(metadata) = self.load_level_metadata(&level_name) {
             self.editor_objects = metadata.objects;
             self.editor_spawn = metadata.spawn;
-            self.editor_tap_steps = metadata.taps;
+            self.editor_tap_steps.extend(metadata.taps);
+            // Ensure taps are ordered before deriving timeline positions.
+            self.editor_tap_steps.sort_unstable();
+            self.editor_timeline_step = metadata.timeline_step;
         } else {
             self.editor_objects = Vec::new();
             self.editor_spawn = SpawnMetadata::default();
-            self.editor_tap_steps = Vec::new();
+            self.editor_timeline_step = 0;
         }
-
-        self.editor_tap_steps.sort_unstable();
 
         if let Some(first) = self.editor_objects.first() {
             self.editor.cursor = [
@@ -1226,7 +1224,8 @@ impl State {
         ];
 
         self.sync_editor_objects();
-        self.refresh_editor_timeline_position();
+        // Refresh cursor/camera to match the current timeline step.
+        self.set_editor_timeline_step(self.editor_timeline_step);
         self.rebuild_spawn_marker_vertices();
     }
 
@@ -1305,7 +1304,7 @@ impl State {
             return;
         }
 
-        let (position, _) = self.editor_timeline_position(self.editor_timeline_step);
+        let (position, ..) = self.editor_timeline_position(self.editor_timeline_step);
         let bounds = self.editor.bounds;
         self.editor.cursor = [
             position[0].round() as i32,
@@ -1753,5 +1752,23 @@ mod tests {
             derive_timeline_position([0.0, 0.0, 0.0], SpawnDirection::Forward, &taps, 0);
         assert_eq!(position, [0.0, 0.0, 0.0]);
         assert!(matches!(direction, SpawnDirection::Right));
+    }
+
+    #[test]
+    fn ignores_taps_after_step() {
+        let taps = [5];
+        let (position, direction) =
+            derive_timeline_position([1.0, 1.0, 0.0], SpawnDirection::Forward, &taps, 2);
+        assert_eq!(position, [1.0, 3.0, 0.0]);
+        assert!(matches!(direction, SpawnDirection::Forward));
+    }
+
+    #[test]
+    fn supports_offset_spawn_with_tap() {
+        let taps = [2];
+        let (position, direction) =
+            derive_timeline_position([2.0, 2.0, 0.0], SpawnDirection::Right, &taps, 3);
+        assert_eq!(position, [4.0, 3.0, 0.0]);
+        assert!(matches!(direction, SpawnDirection::Forward));
     }
 }
