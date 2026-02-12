@@ -826,6 +826,7 @@ impl State {
         self.game = GameState::new();
         self.game.objects = create_menu_scene();
         self.rebuild_block_vertices();
+        self.trail_vertex_count = 0;
     }
 
     fn start_level(&mut self, index: usize) {
