@@ -1,10 +1,13 @@
+#[cfg(not(target_arch = "wasm32"))]
 use line_dash_lib::State;
+#[cfg(not(target_arch = "wasm32"))]
 use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     env_logger::init();
     let event_loop = EventLoop::new().unwrap();
@@ -68,3 +71,6 @@ fn main() {
         }
     }).unwrap();
 }
+
+#[cfg(target_arch = "wasm32")]
+fn main() {}
