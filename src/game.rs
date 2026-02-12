@@ -1,4 +1,4 @@
-use crate::types::{Direction, LevelObject};
+use crate::types::{BlockKind, Direction, LevelObject};
 
 pub(crate) struct GameState {
     pub(crate) position: [f32; 3],
@@ -177,6 +177,31 @@ impl GameState {
     }
 }
 
+pub(crate) fn create_menu_scene() -> Vec<LevelObject> {
+    let mut objects = Vec::new();
+
+    // Create a base platform
+    for x in -5..6 {
+        for y in -5..6 {
+            let height = if (x * x + y * y) < 8 {
+                0.0
+            } else if (x + y) % 2 == 0 {
+                -1.0
+            } else {
+                -2.0
+            };
+            
+            objects.push(LevelObject {
+                position: [x as f32 * 2.0, y as f32 * 2.0, height],
+                size: [2.0, 2.0, 2.0],
+                kind: BlockKind::Grass,
+            });
+        }
+    }
+
+    objects
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,6 +213,7 @@ mod tests {
         game.objects.push(LevelObject {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
+            kind: BlockKind::Standard,
         });
 
         // Player at 0.5, 0.5 (center of block), check ground at 0.5, 0.5
@@ -203,11 +229,13 @@ mod tests {
         game.objects.push(LevelObject {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
+            kind: BlockKind::Standard,
         });
         // Overhang block at height 3
         game.objects.push(LevelObject {
             position: [0.0, 0.0, 3.0],
             size: [1.0, 1.0, 1.0],
+            kind: BlockKind::Standard,
         });
 
         // Player is walking on the ground block (z=1). 
@@ -223,6 +251,7 @@ mod tests {
         game.objects.push(LevelObject {
             position: [2.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
+            kind: BlockKind::Standard,
         });
 
         // Player at 0,0,0 - no collision

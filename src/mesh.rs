@@ -1,4 +1,4 @@
-use crate::types::{LevelObject, Vertex};
+use crate::types::{BlockKind, LevelObject, Vertex};
 
 fn append_prism(
     vertices: &mut Vec<Vertex>,
@@ -359,10 +359,14 @@ pub(crate) fn build_grid_vertices() -> Vec<Vertex> {
 
 pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
     let mut vertices = Vec::new();
-    let color_top = [0.4, 0.4, 0.45];
-    let color_side = [0.2, 0.2, 0.25];
 
     for obj in objects {
+        let (color_top, color_side) = match obj.kind {
+            BlockKind::Standard => ([0.4, 0.4, 0.45], [0.2, 0.2, 0.25]),
+            BlockKind::Grass => ([0.1, 0.6, 0.1], [0.35, 0.25, 0.15]),
+            BlockKind::Dirt => ([0.4, 0.3, 0.2], [0.35, 0.25, 0.15]),
+        };
+
         let x_min = obj.position[0];
         let x_max = obj.position[0] + obj.size[0];
         let y_min = obj.position[1];

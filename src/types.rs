@@ -72,12 +72,28 @@ impl From<SpawnDirection> for Direction {
     }
 }
 
+#[derive(Deserialize, Clone, Copy, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum BlockKind {
+    Standard,
+    Grass,
+    Dirt,
+}
+
+impl Default for BlockKind {
+    fn default() -> Self {
+        Self::Standard
+    }
+}
+
 #[derive(Deserialize, Clone)]
 pub(crate) struct LevelObject {
     #[serde(default, deserialize_with = "deserialize_vec3_from_array")]
     pub(crate) position: [f32; 3],
     #[serde(default = "default_size", deserialize_with = "deserialize_size_vec3")]
     pub(crate) size: [f32; 3],
+    #[serde(default)]
+    pub(crate) kind: BlockKind,
 }
 
 fn default_size() -> [f32; 3] {

@@ -15,13 +15,13 @@ use web_sys::{console, HtmlCanvasElement};
 #[cfg(not(target_arch = "wasm32"))]
 use winit::window::Window;
 
-use crate::game::GameState;
+use crate::game::{create_menu_scene, GameState};
 use crate::mesh::{
     build_block_vertices, build_editor_cursor_vertices, build_floor_vertices, build_grid_vertices,
     build_spawn_marker_vertices, build_trail_vertices,
 };
 use crate::types::{
-    AppPhase, CameraUniform, Direction, EditorState, LevelMetadata, LevelObject, LineUniform,
+    AppPhase, BlockKind, CameraUniform, Direction, EditorState, LevelMetadata, LevelObject, LineUniform,
     MenuState, PhysicalSize, SpawnDirection, SpawnMetadata, Vertex,
 };
 
@@ -339,6 +339,17 @@ impl State {
             levels: vec!["Flowerfield".to_string(), "Golden Haze".to_string()],
         };
 
+        let mut game = GameState::new();
+        game.objects = create_menu_scene();
+
+        let block_vertices = build_block_vertices(&game.objects);
+        let block_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Block Vertex Buffer"),
+            contents: bytemuck::cast_slice(&block_vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let block_vertex_count = block_vertices.len() as u32;
+
         let now = Instant::now();
 
         Self {
@@ -357,7 +368,7 @@ impl State {
             zero_line_bind_group,
             camera_uniform_buffer,
             camera_bind_group,
-            game: GameState::new(),
+            game,
             phase: AppPhase::Menu,
             menu,
             line_uniform,
@@ -376,8 +387,8 @@ impl State {
             grid_vertex_count: grid_vertices.len() as u32,
             trail_vertex_buffer,
             trail_vertex_count: 0,
-            block_vertex_buffer: None,
-            block_vertex_count: 0,
+            block_vertex_buffer: Some(block_vertex_buffer),
+            block_vertex_count,
             editor_cursor_vertex_buffer: None,
             editor_cursor_vertex_count: 0,
             spawn_marker_vertex_buffer: None,
@@ -427,13 +438,13 @@ impl State {
             }
             AppPhase::Playing => {
                 if self.game.game_over {
-                    self.phase = if self.playtesting_editor {
-                        AppPhase::Editor
+                    if self.playtesting_editor {
+                        self.phase = AppPhase::Editor;
+                        self.game.game_over = false;
+                        self.game.trail_segments = vec![vec![self.game.position]];
                     } else {
-                        AppPhase::Menu
-                    };
-                    self.game.game_over = false;
-                    self.game.trail_segments = vec![vec![self.game.position]];
+                        self.back_to_menu();
+                    }
                 } else {
                     self.game.turn_right();
                 }
@@ -811,6 +822,10 @@ impl State {
         self.editor_right_dragging = false;
         self.clear_editor_pan_keys();
         self.phase = AppPhase::Menu;
+
+        self.game = GameState::new();
+        self.game.objects = create_menu_scene();
+        self.rebuild_block_vertices();
     }
 
     fn start_level(&mut self, index: usize) {
@@ -957,6 +972,7 @@ impl State {
         self.editor_objects.push(LevelObject {
             position: [cursor[0] as f32, cursor[1] as f32, cursor[2] as f32],
             size: [1.0, 1.0, 1.0],
+            kind: BlockKind::Standard,
         });
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
@@ -1132,14 +1148,13 @@ impl State {
     }
 
     fn update_menu_camera(&mut self) {
-        let time = (Instant::now() - self.app_start).as_secs_f32();
-
         let aspect = self.config.width as f32 / self.config.height as f32;
-        let radius = 100.0;
+        let radius = 25.0;
+        let angle = -25.0f32.to_radians();
         let eye = Vec3::new(
-            radius * (time * 0.2).cos(),
-            radius * (time * 0.2).sin(),
-            50.0,
+            radius * angle.cos(),
+            radius * angle.sin(),
+            15.0,
         );
         let target = Vec3::new(0.0, 0.0, 0.0);
         let up = Vec3::new(0.0, 0.0, 1.0);
@@ -1237,15 +1252,18 @@ impl State {
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
             render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
 
-            render_pass.set_vertex_buffer(0, self.floor_vertex_buffer.slice(..));
-            render_pass.draw(0..self.floor_vertex_count, 0..1);
+            if self.phase != AppPhase::Menu {
+                render_pass.set_vertex_buffer(0, self.floor_vertex_buffer.slice(..));
+                render_pass.draw(0..self.floor_vertex_count, 0..1);
 
-            render_pass.set_vertex_buffer(0, self.grid_vertex_buffer.slice(..));
-            render_pass.draw(0..self.grid_vertex_count, 0..1);
+                render_pass.set_vertex_buffer(0, self.grid_vertex_buffer.slice(..));
+                render_pass.draw(0..self.grid_vertex_count, 0..1);
+            }
 
             if self.phase == AppPhase::Playing
                 || self.phase == AppPhase::GameOver
                 || self.phase == AppPhase::Editor
+                || self.phase == AppPhase::Menu
             {
                 if let Some(buf) = &self.block_vertex_buffer {
                     render_pass.set_vertex_buffer(0, buf.slice(..));
