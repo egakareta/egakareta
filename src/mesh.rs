@@ -1,5 +1,142 @@
 use crate::types::{LevelObject, Vertex};
 
+fn append_prism(
+    vertices: &mut Vec<Vertex>,
+    x_min: f32,
+    x_max: f32,
+    y_min: f32,
+    y_max: f32,
+    z_min: f32,
+    z_max: f32,
+    color_top: [f32; 3],
+    color_side: [f32; 3],
+) {
+    vertices.push(Vertex {
+        position: [x_min, y_min, z_max],
+        color: color_top,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_min, z_max],
+        color: color_top,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_max, z_max],
+        color: color_top,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_min, z_max],
+        color: color_top,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_max, z_max],
+        color: color_top,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_max, z_max],
+        color: color_top,
+    });
+
+    vertices.push(Vertex {
+        position: [x_min, y_max, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_max, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_max, z_max],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_max, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_max, z_max],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_max, z_max],
+        color: color_side,
+    });
+
+    vertices.push(Vertex {
+        position: [x_max, y_min, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_max, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_max, z_max],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_min, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_max, z_max],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_min, z_max],
+        color: color_side,
+    });
+
+    vertices.push(Vertex {
+        position: [x_min, y_min, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_max, z_max],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_max, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_min, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_min, z_max],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_max, z_max],
+        color: color_side,
+    });
+
+    vertices.push(Vertex {
+        position: [x_min, y_min, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_min, z_max],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_min, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_min, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_min, z_max],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_min, z_max],
+        color: color_side,
+    });
+}
+
 pub(crate) fn build_floor_vertices() -> Vec<Vertex> {
     let mut floor_vertices: Vec<Vertex> = Vec::new();
     let tile_color_top = [0.08, 0.08, 0.1];
@@ -532,4 +669,190 @@ pub(crate) fn build_trail_vertices(points: &[[f32; 2]], game_over: bool) -> Vec<
     }
 
     trail_vertices
+}
+
+pub(crate) fn build_editor_cursor_vertices(cursor: [i32; 2]) -> Vec<Vertex> {
+    let mut vertices = Vec::new();
+    let color_top = [0.2, 0.85, 0.95];
+    let color_side = [0.1, 0.45, 0.55];
+    let z_min = 0.0;
+    let z_max = 1.05;
+
+    let x_min = cursor[0] as f32;
+    let x_max = x_min + 1.0;
+    let y_min = cursor[1] as f32;
+    let y_max = y_min + 1.0;
+
+    vertices.push(Vertex {
+        position: [x_min, y_min, z_max],
+        color: color_top,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_min, z_max],
+        color: color_top,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_max, z_max],
+        color: color_top,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_min, z_max],
+        color: color_top,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_max, z_max],
+        color: color_top,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_max, z_max],
+        color: color_top,
+    });
+
+    vertices.push(Vertex {
+        position: [x_min, y_max, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_max, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_max, z_max],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_max, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_max, z_max],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_max, z_max],
+        color: color_side,
+    });
+
+    vertices.push(Vertex {
+        position: [x_max, y_min, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_max, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_max, z_max],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_min, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_max, z_max],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_min, z_max],
+        color: color_side,
+    });
+
+    vertices.push(Vertex {
+        position: [x_min, y_min, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_max, z_max],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_max, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_min, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_min, z_max],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_max, z_max],
+        color: color_side,
+    });
+
+    vertices.push(Vertex {
+        position: [x_min, y_min, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_min, z_max],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_min, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_min, z_min],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_min, z_max],
+        color: color_side,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_min, z_max],
+        color: color_side,
+    });
+
+    vertices
+}
+
+pub(crate) fn build_spawn_marker_vertices(position: [f32; 2], faces_right: bool) -> Vec<Vertex> {
+    let mut vertices = Vec::new();
+    let x = position[0];
+    let y = position[1];
+
+    append_prism(
+        &mut vertices,
+        x + 0.1,
+        x + 0.9,
+        y + 0.1,
+        y + 0.9,
+        0.0,
+        0.5,
+        [0.25, 0.95, 0.35],
+        [0.1, 0.45, 0.15],
+    );
+
+    if faces_right {
+        append_prism(
+            &mut vertices,
+            x + 0.9,
+            x + 1.3,
+            y + 0.35,
+            y + 0.65,
+            0.0,
+            0.7,
+            [0.2, 0.9, 0.3],
+            [0.1, 0.45, 0.15],
+        );
+    } else {
+        append_prism(
+            &mut vertices,
+            x + 0.35,
+            x + 0.65,
+            y + 0.9,
+            y + 1.3,
+            0.0,
+            0.7,
+            [0.2, 0.9, 0.3],
+            [0.1, 0.45, 0.15],
+        );
+    }
+
+    vertices
 }

@@ -8,7 +8,7 @@ use std::time::Instant;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Vec2, Vec3, Vec4};
 use wgpu::{util::DeviceExt, SurfaceError, TextureViewDescriptor};
 #[cfg(target_arch = "wasm32")]
 use web_sys::{console, HtmlCanvasElement};
@@ -16,9 +16,13 @@ use web_sys::{console, HtmlCanvasElement};
 use winit::window::Window;
 
 use crate::game::GameState;
-use crate::mesh::{build_block_vertices, build_floor_vertices, build_grid_vertices, build_trail_vertices};
+use crate::mesh::{
+    build_block_vertices, build_editor_cursor_vertices, build_floor_vertices, build_grid_vertices,
+    build_spawn_marker_vertices, build_trail_vertices,
+};
 use crate::types::{
-    AppPhase, CameraUniform, Direction, LevelMetadata, LineUniform, MenuState, PhysicalSize, Vertex,
+    AppPhase, CameraUniform, Direction, EditorState, LevelMetadata, LevelObject, LineUniform,
+    MenuState, PhysicalSize, SpawnDirection, SpawnMetadata, Vertex,
 };
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -49,6 +53,10 @@ pub struct State {
     trail_vertex_count: u32,
     block_vertex_buffer: Option<wgpu::Buffer>,
     block_vertex_count: u32,
+    editor_cursor_vertex_buffer: Option<wgpu::Buffer>,
+    editor_cursor_vertex_count: u32,
+    spawn_marker_vertex_buffer: Option<wgpu::Buffer>,
+    spawn_marker_vertex_count: u32,
     depth_texture: wgpu::Texture,
     depth_view: wgpu::TextureView,
     render_pipeline: wgpu::RenderPipeline,
@@ -59,6 +67,18 @@ pub struct State {
     game: GameState,
     phase: AppPhase,
     menu: MenuState,
+    editor: EditorState,
+    editor_objects: Vec<LevelObject>,
+    editor_spawn: SpawnMetadata,
+    editor_camera_pan: [f32; 2],
+    editor_camera_rotation: f32,
+    editor_zoom: f32,
+    editor_right_dragging: bool,
+    editor_pan_up_held: bool,
+    editor_pan_down_held: bool,
+    editor_pan_left_held: bool,
+    editor_pan_right_held: bool,
+    playtesting_editor: bool,
     line_uniform: LineUniform,
     app_start: Instant,
     last_frame: Instant,
@@ -356,6 +376,22 @@ impl State {
             trail_vertex_count: 0,
             block_vertex_buffer: None,
             block_vertex_count: 0,
+            editor_cursor_vertex_buffer: None,
+            editor_cursor_vertex_count: 0,
+            spawn_marker_vertex_buffer: None,
+            spawn_marker_vertex_count: 0,
+            editor: EditorState::new(),
+            editor_objects: Vec::new(),
+            editor_spawn: SpawnMetadata::default(),
+            editor_camera_pan: [0.0, 0.0],
+            editor_camera_rotation: -45.0f32.to_radians(),
+            editor_zoom: 1.0,
+            editor_right_dragging: false,
+            editor_pan_up_held: false,
+            editor_pan_down_held: false,
+            editor_pan_left_held: false,
+            editor_pan_right_held: false,
+            playtesting_editor: false,
         }
     }
 
@@ -387,10 +423,19 @@ impl State {
             }
             AppPhase::Playing => {
                 if self.game.game_over {
-                    self.phase = AppPhase::Menu;
+                    self.phase = if self.playtesting_editor {
+                        AppPhase::Editor
+                    } else {
+                        AppPhase::Menu
+                    };
+                    self.game.game_over = false;
+                    self.game.trail = vec![self.game.position];
                 } else {
                     self.game.turn_right();
                 }
+            }
+            AppPhase::Editor => {
+                self.place_editor_block();
             }
             AppPhase::GameOver => {
                 self.phase = AppPhase::Menu;
@@ -401,6 +446,8 @@ impl State {
     pub fn next_level(&mut self) {
         if self.phase == AppPhase::Menu {
             self.menu.selected_level = (self.menu.selected_level + 1) % self.menu.levels.len();
+        } else if self.phase == AppPhase::Editor {
+            self.move_editor_cursor(1, 0);
         }
     }
 
@@ -411,33 +458,284 @@ impl State {
             } else {
                 self.menu.selected_level -= 1;
             }
+        } else if self.phase == AppPhase::Editor {
+            self.move_editor_cursor(-1, 0);
         }
     }
 
+    pub fn toggle_editor(&mut self) {
+        match self.phase {
+            AppPhase::Menu => self.start_editor(self.menu.selected_level),
+            AppPhase::Editor => {
+                self.phase = AppPhase::Menu;
+                self.playtesting_editor = false;
+                self.editor_right_dragging = false;
+                self.clear_editor_pan_keys();
+            }
+            _ => {}
+        }
+    }
+
+    pub fn is_editor(&self) -> bool {
+        self.phase == AppPhase::Editor
+    }
+
+    pub fn set_editor_right_dragging(&mut self, dragging: bool) {
+        self.editor_right_dragging = dragging && self.phase == AppPhase::Editor;
+    }
+
+    fn clear_editor_pan_keys(&mut self) {
+        self.editor_pan_up_held = false;
+        self.editor_pan_down_held = false;
+        self.editor_pan_left_held = false;
+        self.editor_pan_right_held = false;
+    }
+
+    pub fn set_editor_pan_up_held(&mut self, held: bool) {
+        self.editor_pan_up_held = held && self.phase == AppPhase::Editor;
+    }
+
+    pub fn set_editor_pan_down_held(&mut self, held: bool) {
+        self.editor_pan_down_held = held && self.phase == AppPhase::Editor;
+    }
+
+    pub fn set_editor_pan_left_held(&mut self, held: bool) {
+        self.editor_pan_left_held = held && self.phase == AppPhase::Editor;
+    }
+
+    pub fn set_editor_pan_right_held(&mut self, held: bool) {
+        self.editor_pan_right_held = held && self.phase == AppPhase::Editor;
+    }
+
+    fn editor_camera_axes_xy(&self) -> (Vec2, Vec2) {
+        let right = Vec2::new(self.editor_camera_rotation.cos(), self.editor_camera_rotation.sin());
+        let up = Vec2::new(-self.editor_camera_rotation.sin(), self.editor_camera_rotation.cos());
+        (right, up)
+    }
+
+    fn editor_camera_offset(&self) -> Vec3 {
+        let zoom = self.editor_zoom.clamp(0.35, 4.0);
+        let distance = 24.0 / zoom;
+        Mat4::from_rotation_z(self.editor_camera_rotation)
+            .transform_vector3(Vec3::new(0.0, -distance, distance))
+    }
+
+    pub fn adjust_editor_zoom(&mut self, delta: f32) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        const ZOOM_SENSITIVITY: f32 = 0.12;
+        let factor = (1.0 + delta * ZOOM_SENSITIVITY).max(0.1);
+        self.editor_zoom = (self.editor_zoom * factor).clamp(0.35, 4.0);
+    }
+
+    pub fn pan_editor_camera_by_input(&mut self, screen_x: f32, screen_y: f32) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        let (camera_right_xy, camera_up_xy) = self.editor_camera_axes_xy();
+        let world_delta = camera_right_xy * screen_x + camera_up_xy * screen_y;
+
+        let max_pan = self.editor.bounds as f32;
+        self.editor_camera_pan[0] = (self.editor_camera_pan[0] + world_delta.x).clamp(-max_pan, max_pan);
+        self.editor_camera_pan[1] = (self.editor_camera_pan[1] + world_delta.y).clamp(-max_pan, max_pan);
+    }
+
+    fn update_editor_pan_from_keys(&mut self, frame_dt: f32) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        let mut input = Vec2::ZERO;
+        if self.editor_pan_left_held {
+            input.x -= 1.0;
+        }
+        if self.editor_pan_right_held {
+            input.x += 1.0;
+        }
+        if self.editor_pan_up_held {
+            input.y += 1.0;
+        }
+        if self.editor_pan_down_held {
+            input.y -= 1.0;
+        }
+
+        if input.length_squared() <= f32::EPSILON {
+            return;
+        }
+
+        let input = input.normalize();
+        const PAN_SPEED_UNITS_PER_SEC: f32 = 40.0;
+        self.pan_editor_camera_by_input(
+            input.x * PAN_SPEED_UNITS_PER_SEC * frame_dt,
+            input.y * PAN_SPEED_UNITS_PER_SEC * frame_dt,
+        );
+    }
+
+    pub fn update_editor_cursor_from_screen(&mut self, x: f64, y: f64) {
+        if self.phase != AppPhase::Editor || self.editor_right_dragging {
+            return;
+        }
+
+        if self.config.width == 0 || self.config.height == 0 {
+            return;
+        }
+
+        let aspect = self.config.width as f32 / self.config.height as f32;
+        let target = Vec3::new(self.editor_camera_pan[0], self.editor_camera_pan[1], 0.0);
+        let offset = self.editor_camera_offset();
+        let eye = target + offset;
+        let up = Vec3::new(0.0, 0.0, 1.0);
+        let view = Mat4::look_at_rh(eye, target, up);
+        let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 1000.0);
+        let inv_view_proj = (proj * view).inverse();
+
+        let ndc_x = (2.0 * x as f32 / self.config.width as f32) - 1.0;
+        let ndc_y = 1.0 - (2.0 * y as f32 / self.config.height as f32);
+
+        let near_clip = Vec4::new(ndc_x, ndc_y, -1.0, 1.0);
+        let far_clip = Vec4::new(ndc_x, ndc_y, 1.0, 1.0);
+        let mut near_world = inv_view_proj * near_clip;
+        let mut far_world = inv_view_proj * far_clip;
+        if near_world.w.abs() <= f32::EPSILON || far_world.w.abs() <= f32::EPSILON {
+            return;
+        }
+
+        near_world /= near_world.w;
+        far_world /= far_world.w;
+
+        let ray_origin = near_world.truncate();
+        let ray_dir = (far_world.truncate() - ray_origin).normalize();
+        if ray_dir.z.abs() <= f32::EPSILON {
+            return;
+        }
+
+        let t = -ray_origin.z / ray_dir.z;
+        if t < 0.0 {
+            return;
+        }
+
+        let hit = ray_origin + ray_dir * t;
+        let bounds = self.editor.bounds;
+        let next_cursor = [
+            (hit.x.floor() as i32).clamp(-bounds, bounds),
+            (hit.y.floor() as i32).clamp(-bounds, bounds),
+        ];
+
+        if next_cursor != self.editor.cursor {
+            self.editor.cursor = next_cursor;
+            self.rebuild_editor_cursor_vertices();
+        }
+    }
+
+    pub fn drag_editor_camera_by_pixels(&mut self, dx: f64, dy: f64) {
+        if self.phase != AppPhase::Editor || !self.editor_right_dragging {
+            return;
+        }
+
+        let _ = dy;
+        const ROTATE_SPEED: f32 = 0.008;
+        self.editor_camera_rotation -= dx as f32 * ROTATE_SPEED;
+    }
+
+    pub fn move_editor_up(&mut self) {
+        if self.phase == AppPhase::Editor {
+            self.move_editor_cursor(0, 1);
+        }
+    }
+
+    pub fn move_editor_down(&mut self) {
+        if self.phase == AppPhase::Editor {
+            self.move_editor_cursor(0, -1);
+        }
+    }
+
+    pub fn editor_remove_block(&mut self) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        let cursor = self.editor.cursor;
+        self.editor_objects.retain(|obj| {
+            let ox = obj.position[0].round() as i32;
+            let oy = obj.position[1].round() as i32;
+            !(ox == cursor[0] && oy == cursor[1])
+        });
+
+        self.sync_editor_objects();
+    }
+
+    pub fn editor_playtest(&mut self) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        self.stop_audio();
+        self.playtesting_editor = true;
+        self.game = GameState::new();
+        self.game.objects = self.editor_objects.clone();
+        self.apply_spawn_to_game(self.editor_spawn.position, self.editor_spawn.direction);
+        self.phase = AppPhase::Playing;
+        self.editor_right_dragging = false;
+        self.clear_editor_pan_keys();
+        self.rebuild_block_vertices();
+    }
+
+    pub fn editor_set_spawn_here(&mut self) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        let cursor = self.editor.cursor;
+        self.editor_spawn.position = [cursor[0] as f32, cursor[1] as f32];
+
+        // Remove any block that might be at the new spawn position
+        self.editor_objects.retain(|obj| {
+            let ox = obj.position[0].round() as i32;
+            let oy = obj.position[1].round() as i32;
+            !(ox == cursor[0] && oy == cursor[1])
+        });
+
+        self.sync_editor_objects();
+        self.rebuild_spawn_marker_vertices();
+    }
+
+    pub fn editor_rotate_spawn_direction(&mut self) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        self.editor_spawn.direction = match self.editor_spawn.direction {
+            SpawnDirection::Forward => SpawnDirection::Right,
+            SpawnDirection::Right => SpawnDirection::Forward,
+        };
+        self.rebuild_spawn_marker_vertices();
+    }
+
+    pub fn back_to_menu(&mut self) {
+        self.stop_audio();
+        self.playtesting_editor = false;
+        self.editor_right_dragging = false;
+        self.clear_editor_pan_keys();
+        self.phase = AppPhase::Menu;
+    }
+
     fn start_level(&mut self, index: usize) {
-        let level_name = &self.menu.levels[index];
+        let level_name = self.menu.levels[index].clone();
 
         self.game = GameState::new();
         self.phase = AppPhase::Playing;
+        self.playtesting_editor = false;
+        self.clear_editor_pan_keys();
 
-        #[cfg(target_arch = "wasm32")]
-        if let Some(audio) = self.current_audio.take() {
-            let _ = audio.pause();
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        if let Some(sink) = self.current_audio_sink.take() {
-            sink.stop();
-        }
+        self.stop_audio();
 
-        let metadata_str = match level_name.as_str() {
-            "Flowerfield" => include_str!("../assets/levels/Flowerfield/metadata.json"),
-            "Golden Haze" => include_str!("../assets/levels/Golden Haze/metadata.json"),
-            _ => "{\"name\": \"Unknown\", \"music\": {\"source\": \"\"}, \"objects\": []}",
-        };
-
-        if let Ok(metadata) = serde_json::from_str::<LevelMetadata>(metadata_str) {
+        if let Some(metadata) = self.load_level_metadata(&level_name) {
             log::debug!("Starting level: {}", metadata.name);
             self.game.objects = metadata.objects;
+            self.apply_spawn_to_game(metadata.spawn.position, metadata.spawn.direction);
 
             #[cfg(target_arch = "wasm32")]
             {
@@ -487,6 +785,156 @@ impl State {
         }
 
         self.rebuild_block_vertices();
+        self.rebuild_editor_cursor_vertices();
+        self.rebuild_spawn_marker_vertices();
+    }
+
+    fn start_editor(&mut self, index: usize) {
+        let level_name = self.menu.levels[index].clone();
+        self.stop_audio();
+
+        self.phase = AppPhase::Editor;
+        self.playtesting_editor = false;
+        self.editor_right_dragging = false;
+        self.clear_editor_pan_keys();
+        self.editor_camera_rotation = -45.0f32.to_radians();
+        self.editor_zoom = 1.0;
+        self.game = GameState::new();
+        self.trail_vertex_count = 0;
+
+        if let Some(metadata) = self.load_level_metadata(&level_name) {
+            self.editor_objects = metadata.objects;
+            self.editor_spawn = metadata.spawn;
+
+            // Ensure no blocks on start position
+            let spawn_pos = self.editor_spawn.position;
+            self.editor_objects.retain(|obj| {
+                let ox = obj.position[0].round() as i32;
+                let oy = obj.position[1].round() as i32;
+                !(ox == spawn_pos[0] as i32 && oy == spawn_pos[1] as i32)
+            });
+        } else {
+            self.editor_objects = Vec::new();
+            self.editor_spawn = SpawnMetadata::default();
+        }
+
+        if let Some(first) = self.editor_objects.first() {
+            self.editor.cursor = [
+                first.position[0].round() as i32,
+                first.position[1].round() as i32,
+            ];
+        } else {
+            self.editor.cursor = [0, 0];
+        }
+
+        self.editor_camera_pan = [self.editor.cursor[0] as f32 + 0.5, self.editor.cursor[1] as f32 + 0.5];
+
+        self.sync_editor_objects();
+        self.rebuild_editor_cursor_vertices();
+        self.rebuild_spawn_marker_vertices();
+    }
+
+    fn level_metadata_str(level_name: &str) -> &'static str {
+        match level_name {
+            "Flowerfield" => include_str!("../assets/levels/Flowerfield/metadata.json"),
+            "Golden Haze" => include_str!("../assets/levels/Golden Haze/metadata.json"),
+            _ => "{\"name\": \"Unknown\", \"music\": {\"source\": \"\"}, \"objects\": []}",
+        }
+    }
+
+    fn load_level_metadata(&self, level_name: &str) -> Option<LevelMetadata> {
+        serde_json::from_str::<LevelMetadata>(Self::level_metadata_str(level_name)).ok()
+    }
+
+    fn stop_audio(&mut self) {
+        #[cfg(target_arch = "wasm32")]
+        if let Some(audio) = self.current_audio.take() {
+            let _ = audio.pause();
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(sink) = self.current_audio_sink.take() {
+            sink.stop();
+        }
+    }
+
+    fn move_editor_cursor(&mut self, dx: i32, dy: i32) {
+        let bounds = self.editor.bounds;
+        self.editor.cursor[0] = (self.editor.cursor[0] + dx).clamp(-bounds, bounds);
+        self.editor.cursor[1] = (self.editor.cursor[1] + dy).clamp(-bounds, bounds);
+        self.rebuild_editor_cursor_vertices();
+    }
+
+    fn place_editor_block(&mut self) {
+        let cursor = self.editor.cursor;
+
+        // Don't place a block on the start position
+        if cursor[0] == self.editor_spawn.position[0] as i32
+            && cursor[1] == self.editor_spawn.position[1] as i32
+        {
+            return;
+        }
+
+        let exists = self.editor_objects.iter().any(|obj| {
+            let ox = obj.position[0].round() as i32;
+            let oy = obj.position[1].round() as i32;
+            ox == cursor[0] && oy == cursor[1]
+        });
+
+        if !exists {
+            self.editor_objects.push(LevelObject {
+                position: [cursor[0] as f32, cursor[1] as f32],
+                size: [1.0, 1.0],
+            });
+            self.sync_editor_objects();
+        }
+    }
+
+    fn sync_editor_objects(&mut self) {
+        self.game.objects = self.editor_objects.clone();
+        self.rebuild_block_vertices();
+    }
+
+    fn apply_spawn_to_game(&mut self, position: [f32; 2], direction: SpawnDirection) {
+        let centered_position = [position[0].floor() + 0.5, position[1].floor() + 0.5];
+        self.game.position = centered_position;
+        self.game.direction = direction.into();
+        self.game.trail = vec![centered_position];
+    }
+
+    fn rebuild_editor_cursor_vertices(&mut self) {
+        let vertices = build_editor_cursor_vertices(self.editor.cursor);
+        self.editor_cursor_vertex_count = vertices.len() as u32;
+        if !vertices.is_empty() {
+            self.editor_cursor_vertex_buffer = Some(self.device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Editor Cursor Vertex Buffer"),
+                    contents: bytemuck::cast_slice(&vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                },
+            ));
+        } else {
+            self.editor_cursor_vertex_buffer = None;
+        }
+    }
+
+    fn rebuild_spawn_marker_vertices(&mut self) {
+        let vertices = build_spawn_marker_vertices(
+            self.editor_spawn.position,
+            matches!(self.editor_spawn.direction, SpawnDirection::Right),
+        );
+        self.spawn_marker_vertex_count = vertices.len() as u32;
+        if !vertices.is_empty() {
+            self.spawn_marker_vertex_buffer = Some(self.device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Spawn Marker Vertex Buffer"),
+                    contents: bytemuck::cast_slice(&vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                },
+            ));
+        } else {
+            self.spawn_marker_vertex_buffer = None;
+        }
     }
 
     fn rebuild_block_vertices(&mut self) {
@@ -520,20 +968,21 @@ impl State {
             return;
         }
 
+        if self.phase == AppPhase::Editor {
+            self.accumulator = 0.0;
+            self.trail_vertex_count = 0;
+            self.update_editor_pan_from_keys(frame_dt);
+            self.update_editor_camera();
+            return;
+        }
+
         while self.accumulator >= FIXED_DT {
             self.game.update(FIXED_DT);
             self.accumulator -= FIXED_DT;
         }
 
         if self.game.game_over {
-            #[cfg(target_arch = "wasm32")]
-            if let Some(audio) = self.current_audio.take() {
-                let _ = audio.pause();
-            }
-            #[cfg(not(target_arch = "wasm32"))]
-            if let Some(sink) = self.current_audio_sink.take() {
-                sink.stop();
-            }
+            self.stop_audio();
         }
 
         let mut points = self.game.trail.clone();
@@ -614,6 +1063,26 @@ impl State {
         );
     }
 
+    fn update_editor_camera(&mut self) {
+        let aspect = self.config.width as f32 / self.config.height as f32;
+        let target = Vec3::new(self.editor_camera_pan[0], self.editor_camera_pan[1], 0.0);
+        let offset = self.editor_camera_offset();
+        let eye = target + offset;
+        let up = Vec3::new(0.0, 0.0, 1.0);
+        let view = Mat4::look_at_rh(eye, target, up);
+        let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 1000.0);
+        let view_proj = proj * view;
+        let camera_uniform = CameraUniform {
+            view_proj: view_proj.to_cols_array_2d(),
+        };
+
+        self.queue.write_buffer(
+            &self.camera_uniform_buffer,
+            0,
+            bytemuck::bytes_of(&camera_uniform),
+        );
+    }
+
     pub fn render(&mut self) -> Result<(), SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output
@@ -632,6 +1101,12 @@ impl State {
                     r: 0.15,
                     g: 0.05,
                     b: 0.05,
+                    a: 1.0,
+                },
+                AppPhase::Editor => wgpu::Color {
+                    r: 0.04,
+                    g: 0.07,
+                    b: 0.09,
                     a: 1.0,
                 },
                 _ => wgpu::Color {
@@ -674,7 +1149,10 @@ impl State {
             render_pass.set_vertex_buffer(0, self.grid_vertex_buffer.slice(..));
             render_pass.draw(0..self.grid_vertex_count, 0..1);
 
-            if self.phase == AppPhase::Playing || self.phase == AppPhase::GameOver {
+            if self.phase == AppPhase::Playing
+                || self.phase == AppPhase::GameOver
+                || self.phase == AppPhase::Editor
+            {
                 if let Some(buf) = &self.block_vertex_buffer {
                     render_pass.set_vertex_buffer(0, buf.slice(..));
                     render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
@@ -685,6 +1163,20 @@ impl State {
                     render_pass.set_vertex_buffer(0, self.trail_vertex_buffer.slice(..));
                     render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
                     render_pass.draw(0..self.trail_vertex_count, 0..1);
+                }
+
+                if self.phase == AppPhase::Editor {
+                    if let Some(buf) = &self.spawn_marker_vertex_buffer {
+                        render_pass.set_vertex_buffer(0, buf.slice(..));
+                        render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
+                        render_pass.draw(0..self.spawn_marker_vertex_count, 0..1);
+                    }
+
+                    if let Some(buf) = &self.editor_cursor_vertex_buffer {
+                        render_pass.set_vertex_buffer(0, buf.slice(..));
+                        render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
+                        render_pass.draw(0..self.editor_cursor_vertex_count, 0..1);
+                    }
                 }
             }
         }

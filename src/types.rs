@@ -28,7 +28,48 @@ pub(crate) struct MusicMetadata {
 pub(crate) struct LevelMetadata {
     pub(crate) name: String,
     pub(crate) music: MusicMetadata,
+    #[serde(default)]
+    pub(crate) spawn: SpawnMetadata,
     pub(crate) objects: Vec<LevelObject>,
+}
+
+#[derive(Deserialize, Clone)]
+pub(crate) struct SpawnMetadata {
+    #[serde(default)]
+    pub(crate) position: [f32; 2],
+    #[serde(default)]
+    pub(crate) direction: SpawnDirection,
+}
+
+impl Default for SpawnMetadata {
+    fn default() -> Self {
+        Self {
+            position: [0.0, 0.0],
+            direction: SpawnDirection::Forward,
+        }
+    }
+}
+
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum SpawnDirection {
+    Forward,
+    Right,
+}
+
+impl Default for SpawnDirection {
+    fn default() -> Self {
+        Self::Forward
+    }
+}
+
+impl From<SpawnDirection> for Direction {
+    fn from(value: SpawnDirection) -> Self {
+        match value {
+            SpawnDirection::Forward => Direction::Forward,
+            SpawnDirection::Right => Direction::Right,
+        }
+    }
 }
 
 #[derive(Deserialize, Clone)]
@@ -47,12 +88,27 @@ fn default_size() -> [f32; 2] {
 pub(crate) enum AppPhase {
     Menu,
     Playing,
+    Editor,
     GameOver,
 }
 
 pub(crate) struct MenuState {
     pub(crate) selected_level: usize,
     pub(crate) levels: Vec<String>,
+}
+
+pub(crate) struct EditorState {
+    pub(crate) cursor: [i32; 2],
+    pub(crate) bounds: i32,
+}
+
+impl EditorState {
+    pub(crate) fn new() -> Self {
+        Self {
+            cursor: [0, 0],
+            bounds: 55,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]

@@ -40,6 +40,7 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
 
     let state = State::new(canvas.clone()).await;
     let state_rc = Rc::new(RefCell::new(state));
+    let pinch_last_distance = Rc::new(RefCell::new(None::<f64>));
 
     {
         let state_clone = state_rc.clone();
@@ -58,8 +59,16 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
     }
 
     let state_clone = state_rc.clone();
-    let closure = Closure::wrap(Box::new(move |_: web_sys::MouseEvent| {
-        state_clone.borrow_mut().turn_right();
+    let closure = Closure::wrap(Box::new(move |event: web_sys::MouseEvent| {
+        let mut state = state_clone.borrow_mut();
+        match event.button() {
+            0 => state.turn_right(),
+            2 => {
+                state.set_editor_right_dragging(true);
+                event.prevent_default();
+            }
+            _ => {}
+        }
     }) as Box<dyn FnMut(_)>);
     canvas
         .add_event_listener_with_callback("mousedown", closure.as_ref().unchecked_ref())
@@ -67,19 +76,230 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
     closure.forget();
 
     let state_clone = state_rc.clone();
-    let closure = Closure::wrap(Box::new(move |event: web_sys::KeyboardEvent| {
-        if event.repeat() {
-            return;
+    let closure = Closure::wrap(Box::new(move |event: web_sys::MouseEvent| {
+        if event.button() == 2 {
+            state_clone.borrow_mut().set_editor_right_dragging(false);
+            event.prevent_default();
         }
+    }) as Box<dyn FnMut(_)>);
+    canvas
+        .add_event_listener_with_callback("mouseup", closure.as_ref().unchecked_ref())
+        .unwrap();
+    closure.forget();
+
+    let state_clone = state_rc.clone();
+    let closure = Closure::wrap(Box::new(move |event: web_sys::MouseEvent| {
+        let mut state = state_clone.borrow_mut();
+        if (event.buttons() & 2) != 0 {
+            state.drag_editor_camera_by_pixels(event.movement_x() as f64, event.movement_y() as f64);
+            event.prevent_default();
+        } else {
+            state.update_editor_cursor_from_screen(event.offset_x() as f64, event.offset_y() as f64);
+        }
+    }) as Box<dyn FnMut(_)>);
+    canvas
+        .add_event_listener_with_callback("mousemove", closure.as_ref().unchecked_ref())
+        .unwrap();
+    closure.forget();
+
+    let closure = Closure::wrap(Box::new(move |event: web_sys::MouseEvent| {
+        event.prevent_default();
+    }) as Box<dyn FnMut(_)>);
+    canvas
+        .add_event_listener_with_callback("contextmenu", closure.as_ref().unchecked_ref())
+        .unwrap();
+    closure.forget();
+
+    let state_clone = state_rc.clone();
+    let closure = Closure::wrap(Box::new(move |event: web_sys::WheelEvent| {
+        let scale = match event.delta_mode() {
+            1 => 0.2,
+            2 => 1.0,
+            _ => 0.01,
+        };
+        state_clone
+            .borrow_mut()
+            .adjust_editor_zoom((-event.delta_y() * scale) as f32);
+        event.prevent_default();
+    }) as Box<dyn FnMut(_)>);
+    canvas
+        .add_event_listener_with_callback("wheel", closure.as_ref().unchecked_ref())
+        .unwrap();
+    closure.forget();
+
+    let pinch_last_distance_clone = pinch_last_distance.clone();
+    let closure = Closure::wrap(Box::new(move |event: web_sys::TouchEvent| {
+        if event.touches().length() == 2 {
+            let t0 = event.touches().item(0).unwrap();
+            let t1 = event.touches().item(1).unwrap();
+            let dx = (t1.client_x() - t0.client_x()) as f64;
+            let dy = (t1.client_y() - t0.client_y()) as f64;
+            *pinch_last_distance_clone.borrow_mut() = Some((dx * dx + dy * dy).sqrt());
+            event.prevent_default();
+        }
+    }) as Box<dyn FnMut(_)>);
+    canvas
+        .add_event_listener_with_callback("touchstart", closure.as_ref().unchecked_ref())
+        .unwrap();
+    closure.forget();
+
+    let state_clone = state_rc.clone();
+    let pinch_last_distance_clone = pinch_last_distance.clone();
+    let closure = Closure::wrap(Box::new(move |event: web_sys::TouchEvent| {
+        if event.touches().length() == 2 {
+            let t0 = event.touches().item(0).unwrap();
+            let t1 = event.touches().item(1).unwrap();
+            let dx = (t1.client_x() - t0.client_x()) as f64;
+            let dy = (t1.client_y() - t0.client_y()) as f64;
+            let distance = (dx * dx + dy * dy).sqrt();
+
+            if let Some(previous) = *pinch_last_distance_clone.borrow() {
+                let pinch_delta = ((distance - previous) * 0.04) as f32;
+                state_clone.borrow_mut().adjust_editor_zoom(pinch_delta);
+            }
+
+            *pinch_last_distance_clone.borrow_mut() = Some(distance);
+            event.prevent_default();
+        }
+    }) as Box<dyn FnMut(_)>);
+    canvas
+        .add_event_listener_with_callback("touchmove", closure.as_ref().unchecked_ref())
+        .unwrap();
+    closure.forget();
+
+    let pinch_last_distance_clone = pinch_last_distance.clone();
+    let closure = Closure::wrap(Box::new(move |_event: web_sys::TouchEvent| {
+        *pinch_last_distance_clone.borrow_mut() = None;
+    }) as Box<dyn FnMut(_)>);
+    canvas
+        .add_event_listener_with_callback("touchend", closure.as_ref().unchecked_ref())
+        .unwrap();
+    canvas
+        .add_event_listener_with_callback("touchcancel", closure.as_ref().unchecked_ref())
+        .unwrap();
+    closure.forget();
+
+    let state_clone = state_rc.clone();
+    let closure = Closure::wrap(Box::new(move |event: web_sys::KeyboardEvent| {
+        let mut state = state_clone.borrow_mut();
+        let just_pressed = !event.repeat();
         match event.key().as_str() {
-            "ArrowUp" | " " => state_clone.borrow_mut().turn_right(),
-            "ArrowRight" => state_clone.borrow_mut().next_level(),
-            "ArrowLeft" => state_clone.borrow_mut().prev_level(),
+            "ArrowUp" => {
+                if state.is_editor() {
+                    state.set_editor_pan_up_held(true);
+                } else if just_pressed {
+                    state.turn_right();
+                }
+            }
+            "ArrowDown" => {
+                if state.is_editor() {
+                    state.set_editor_pan_down_held(true);
+                }
+            }
+            " " => {
+                if just_pressed {
+                    state.turn_right();
+                }
+            }
+            "ArrowRight" => {
+                if state.is_editor() {
+                    state.set_editor_pan_right_held(true);
+                } else if just_pressed {
+                    state.next_level();
+                }
+            }
+            "ArrowLeft" => {
+                if state.is_editor() {
+                    state.set_editor_pan_left_held(true);
+                } else if just_pressed {
+                    state.prev_level();
+                }
+            }
+            "Enter" => {
+                if just_pressed {
+                    state.editor_playtest();
+                }
+            }
+            "Backspace" | "Delete" => {
+                if just_pressed {
+                    state.editor_remove_block();
+                }
+            }
+            "Escape" => {
+                if just_pressed {
+                    state.back_to_menu();
+                }
+            }
+            "w" | "W" => {
+                if state.is_editor() {
+                    state.set_editor_pan_up_held(true);
+                }
+            }
+            "s" | "S" => {
+                if state.is_editor() {
+                    state.set_editor_pan_down_held(true);
+                }
+            }
+            "d" | "D" => {
+                if state.is_editor() {
+                    state.set_editor_pan_right_held(true);
+                } else if just_pressed {
+                    state.next_level();
+                }
+            }
+            "a" | "A" => {
+                if state.is_editor() {
+                    state.set_editor_pan_left_held(true);
+                } else if just_pressed {
+                    state.prev_level();
+                }
+            }
+            "e" | "E" => {
+                if just_pressed {
+                    state.toggle_editor();
+                }
+            }
+            "p" | "P" => {
+                if just_pressed {
+                    state.editor_set_spawn_here();
+                }
+            }
+            "r" | "R" => {
+                if just_pressed {
+                    state.editor_rotate_spawn_direction();
+                }
+            }
+            "+" | "=" => {
+                if just_pressed {
+                    state.adjust_editor_zoom(1.0);
+                }
+            }
+            "-" | "_" => {
+                if just_pressed {
+                    state.adjust_editor_zoom(-1.0);
+                }
+            }
             _ => {}
         }
     }) as Box<dyn FnMut(_)>);
     window
         .add_event_listener_with_callback("keydown", closure.as_ref().unchecked_ref())
+        .unwrap();
+    closure.forget();
+
+    let state_clone = state_rc.clone();
+    let closure = Closure::wrap(Box::new(move |event: web_sys::KeyboardEvent| {
+        let mut state = state_clone.borrow_mut();
+        match event.key().as_str() {
+            "ArrowUp" | "w" | "W" => state.set_editor_pan_up_held(false),
+            "ArrowDown" | "s" | "S" => state.set_editor_pan_down_held(false),
+            "ArrowLeft" | "a" | "A" => state.set_editor_pan_left_held(false),
+            "ArrowRight" | "d" | "D" => state.set_editor_pan_right_held(false),
+            _ => {}
+        }
+    }) as Box<dyn FnMut(_)>);
+    window
+        .add_event_listener_with_callback("keyup", closure.as_ref().unchecked_ref())
         .unwrap();
     closure.forget();
 
