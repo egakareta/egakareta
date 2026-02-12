@@ -176,3 +176,59 @@ impl GameState {
         top_surface
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::LevelObject;
+
+    #[test]
+    fn test_ground_detection_normal() {
+        let mut game = GameState::new();
+        game.objects.push(LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+        });
+
+        // Player at 0.5, 0.5 (center of block), check ground at 0.5, 0.5
+        // Max Z should be > 1.0 to detect the block top
+        let height = game.top_surface_height_at(0.5, 0.5, 2.0);
+        assert_eq!(height, Some(1.0));
+    }
+
+    #[test]
+    fn test_ground_detection_under_overhang() {
+        let mut game = GameState::new();
+        // Ground block
+        game.objects.push(LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+        });
+        // Overhang block at height 3
+        game.objects.push(LevelObject {
+            position: [0.0, 0.0, 3.0],
+            size: [1.0, 1.0, 1.0],
+        });
+
+        // Player is walking on the ground block (z=1). 
+        // We check ground height with max_z slightly above player head (e.g. 1.0 + SNAP)
+        // It should ignore the block at z=3.
+        let height = game.top_surface_height_at(0.5, 0.5, 1.5);
+        assert_eq!(height, Some(1.0));
+    }
+
+    #[test]
+    fn test_collision_with_block() {
+        let mut game = GameState::new();
+        game.objects.push(LevelObject {
+            position: [2.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+        });
+
+        // Player at 0,0,0 - no collision
+        assert!(!game.collides_with_block_body(0.0, 0.0, 0.0));
+
+        // Player inside block - collision
+        assert!(game.collides_with_block_body(2.5, 0.5, 0.5));
+    }
+}

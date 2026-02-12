@@ -950,20 +950,6 @@ impl State {
         self.rebuild_editor_cursor_vertices();
     }
 
-    fn cell_top_height(&self, cell_x: i32, cell_y: i32) -> f32 {
-        let sample_x = cell_x as f32 + 0.5;
-        let sample_y = cell_y as f32 + 0.5;
-        self.editor_objects
-            .iter()
-            .filter(|obj| {
-                sample_x >= obj.position[0]
-                    && sample_x <= obj.position[0] + obj.size[0]
-                    && sample_y >= obj.position[1]
-                    && sample_y <= obj.position[1] + obj.size[1]
-            })
-            .map(|obj| obj.position[2] + obj.size[2])
-            .fold(0.0, f32::max)
-    }
 
     fn place_editor_block(&mut self) {
         let cursor = self.editor.cursor;
