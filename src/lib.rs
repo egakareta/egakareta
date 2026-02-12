@@ -230,6 +230,9 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
                     state.back_to_menu();
                 }
             }
+            "Shift" => {
+                state.set_editor_shift_held(true);
+            }
             "w" | "W" => {
                 if state.is_editor() {
                     state.set_editor_pan_up_held(true);
@@ -295,6 +298,7 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
             "ArrowDown" | "s" | "S" => state.set_editor_pan_down_held(false),
             "ArrowLeft" | "a" | "A" => state.set_editor_pan_left_held(false),
             "ArrowRight" | "d" | "D" => state.set_editor_pan_right_held(false),
+            "Shift" => state.set_editor_shift_held(false),
             _ => {}
         }
     }) as Box<dyn FnMut(_)>);

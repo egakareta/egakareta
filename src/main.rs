@@ -111,6 +111,9 @@ fn main() {
                                     state.back_to_menu();
                                 }
                             }
+                            Key::Named(NamedKey::Shift) => {
+                                state.set_editor_shift_held(pressed);
+                            }
                             Key::Character(c) if c.eq_ignore_ascii_case("w") => {
                                 if state.is_editor() {
                                     state.set_editor_pan_up_held(pressed);

@@ -72,12 +72,14 @@ pub struct State {
     editor_spawn: SpawnMetadata,
     editor_camera_pan: [f32; 2],
     editor_camera_rotation: f32,
+    editor_camera_pitch: f32,
     editor_zoom: f32,
     editor_right_dragging: bool,
     editor_pan_up_held: bool,
     editor_pan_down_held: bool,
     editor_pan_left_held: bool,
     editor_pan_right_held: bool,
+    editor_shift_held: bool,
     playtesting_editor: bool,
     line_uniform: LineUniform,
     app_start: Instant,
@@ -385,12 +387,14 @@ impl State {
             editor_spawn: SpawnMetadata::default(),
             editor_camera_pan: [0.0, 0.0],
             editor_camera_rotation: -45.0f32.to_radians(),
+            editor_camera_pitch: 45.0f32.to_radians(),
             editor_zoom: 1.0,
             editor_right_dragging: false,
             editor_pan_up_held: false,
             editor_pan_down_held: false,
             editor_pan_left_held: false,
             editor_pan_right_held: false,
+            editor_shift_held: false,
             playtesting_editor: false,
         }
     }
@@ -489,6 +493,7 @@ impl State {
         self.editor_pan_down_held = false;
         self.editor_pan_left_held = false;
         self.editor_pan_right_held = false;
+        self.editor_shift_held = false;
     }
 
     pub fn set_editor_pan_up_held(&mut self, held: bool) {
@@ -507,6 +512,10 @@ impl State {
         self.editor_pan_right_held = held && self.phase == AppPhase::Editor;
     }
 
+    pub fn set_editor_shift_held(&mut self, held: bool) {
+        self.editor_shift_held = held && self.phase == AppPhase::Editor;
+    }
+
     fn editor_camera_axes_xy(&self) -> (Vec2, Vec2) {
         let right = Vec2::new(self.editor_camera_rotation.cos(), self.editor_camera_rotation.sin());
         let up = Vec2::new(-self.editor_camera_rotation.sin(), self.editor_camera_rotation.cos());
@@ -516,8 +525,11 @@ impl State {
     fn editor_camera_offset(&self) -> Vec3 {
         let zoom = self.editor_zoom.clamp(0.35, 4.0);
         let distance = 24.0 / zoom;
+        let pitch = self.editor_camera_pitch.clamp(10.0f32.to_radians(), 85.0f32.to_radians());
+        let horizontal_distance = distance * pitch.cos();
+        let vertical_distance = distance * pitch.sin();
         Mat4::from_rotation_z(self.editor_camera_rotation)
-            .transform_vector3(Vec3::new(0.0, -distance, distance))
+            .transform_vector3(Vec3::new(0.0, -horizontal_distance, vertical_distance))
     }
 
     pub fn adjust_editor_zoom(&mut self, delta: f32) {
@@ -567,11 +579,24 @@ impl State {
         }
 
         let input = input.normalize();
+        let pitch = self
+            .editor_camera_pitch
+            .clamp(10.0f32.to_radians(), 85.0f32.to_radians());
+        let horizontal_factor = pitch.cos();
+        let vertical_factor = pitch.sin();
+
+        let mut speed_multiplier = 1.0;
+        if self.editor_shift_held {
+            speed_multiplier = 0.3;
+        }
+
         const PAN_SPEED_UNITS_PER_SEC: f32 = 40.0;
         self.pan_editor_camera_by_input(
-            input.x * PAN_SPEED_UNITS_PER_SEC * frame_dt,
-            input.y * PAN_SPEED_UNITS_PER_SEC * frame_dt,
+            input.x * PAN_SPEED_UNITS_PER_SEC * frame_dt * speed_multiplier,
+            input.y * horizontal_factor * PAN_SPEED_UNITS_PER_SEC * frame_dt * speed_multiplier,
         );
+
+        self.adjust_editor_zoom(input.y * vertical_factor * PAN_SPEED_UNITS_PER_SEC * frame_dt * speed_multiplier);
     }
 
     pub fn update_editor_cursor_from_screen(&mut self, x: f64, y: f64) {
@@ -635,9 +660,11 @@ impl State {
             return;
         }
 
-        let _ = dy;
         const ROTATE_SPEED: f32 = 0.008;
+        const PITCH_SPEED: f32 = 0.006;
         self.editor_camera_rotation -= dx as f32 * ROTATE_SPEED;
+        self.editor_camera_pitch =
+            (self.editor_camera_pitch + dy as f32 * PITCH_SPEED).clamp(10.0f32.to_radians(), 85.0f32.to_radians());
     }
 
     pub fn move_editor_up(&mut self) {
@@ -798,6 +825,7 @@ impl State {
         self.editor_right_dragging = false;
         self.clear_editor_pan_keys();
         self.editor_camera_rotation = -45.0f32.to_radians();
+        self.editor_camera_pitch = 45.0f32.to_radians();
         self.editor_zoom = 1.0;
         self.game = GameState::new();
         self.trail_vertex_count = 0;
