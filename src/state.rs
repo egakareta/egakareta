@@ -433,7 +433,7 @@ impl State {
                         AppPhase::Menu
                     };
                     self.game.game_over = false;
-                    self.game.trail = vec![self.game.position];
+                    self.game.trail_segments = vec![vec![self.game.position]];
                 } else {
                     self.game.turn_right();
                 }
@@ -633,20 +633,75 @@ impl State {
 
         let ray_origin = near_world.truncate();
         let ray_dir = (far_world.truncate() - ray_origin).normalize();
-        if ray_dir.z.abs() <= f32::EPSILON {
+
+        let mut min_t = f32::INFINITY;
+        let mut best_hit_normal = Vec3::Z;
+        let mut hit_found = false;
+
+        if ray_dir.z.abs() > f32::EPSILON {
+            let t = -ray_origin.z / ray_dir.z;
+            if t >= 0.0 {
+                min_t = t;
+                hit_found = true;
+            }
+        }
+
+        for obj in &self.editor_objects {
+            let min = Vec3::from_array(obj.position);
+            let max = min + Vec3::from_array(obj.size);
+
+            let inv_dir = 1.0 / ray_dir;
+            let t1 = (min.x - ray_origin.x) * inv_dir.x;
+            let t2 = (max.x - ray_origin.x) * inv_dir.x;
+            let t3 = (min.y - ray_origin.y) * inv_dir.y;
+            let t4 = (max.y - ray_origin.y) * inv_dir.y;
+            let t5 = (min.z - ray_origin.z) * inv_dir.z;
+            let t6 = (max.z - ray_origin.z) * inv_dir.z;
+
+            let tmin = t1.min(t2).max(t3.min(t4)).max(t5.min(t6));
+            let tmax = t1.max(t2).min(t3.max(t4)).min(t5.max(t6));
+
+            if tmax >= 0.0 && tmin <= tmax {
+                let t = if tmin < 0.0 { tmax } else { tmin };
+                if t < min_t {
+                    min_t = t;
+                    hit_found = true;
+
+                    let eps = 1e-5;
+                    if (t - t1.min(t2)).abs() < eps {
+                        best_hit_normal = if ray_dir.x > 0.0 {
+                            Vec3::NEG_X
+                        } else {
+                            Vec3::X
+                        };
+                    } else if (t - t3.min(t4)).abs() < eps {
+                        best_hit_normal = if ray_dir.y > 0.0 {
+                            Vec3::NEG_Y
+                        } else {
+                            Vec3::Y
+                        };
+                    } else {
+                        best_hit_normal = if ray_dir.z > 0.0 {
+                            Vec3::NEG_Z
+                        } else {
+                            Vec3::Z
+                        };
+                    }
+                }
+            }
+        }
+
+        if !hit_found {
             return;
         }
 
-        let t = -ray_origin.z / ray_dir.z;
-        if t < 0.0 {
-            return;
-        }
-
-        let hit = ray_origin + ray_dir * t;
+        let hit = ray_origin + ray_dir * min_t;
+        let target = hit + best_hit_normal * 0.01;
         let bounds = self.editor.bounds;
         let next_cursor = [
-            (hit.x.floor() as i32).clamp(-bounds, bounds),
-            (hit.y.floor() as i32).clamp(-bounds, bounds),
+            (target.x.floor() as i32).clamp(-bounds, bounds),
+            (target.y.floor() as i32).clamp(-bounds, bounds),
+            (target.z.floor() as i32).max(0),
         ];
 
         if next_cursor != self.editor.cursor {
@@ -685,13 +740,29 @@ impl State {
         }
 
         let cursor = self.editor.cursor;
-        self.editor_objects.retain(|obj| {
-            let ox = obj.position[0].round() as i32;
-            let oy = obj.position[1].round() as i32;
-            !(ox == cursor[0] && oy == cursor[1])
-        });
+        let mut top_index: Option<usize> = None;
+        let mut top_height = f32::NEG_INFINITY;
+
+        for (index, obj) in self.editor_objects.iter().enumerate() {
+            let occupies_x = cursor[0] as f32 + 0.5 >= obj.position[0]
+                && cursor[0] as f32 + 0.5 <= obj.position[0] + obj.size[0];
+            let occupies_y = cursor[1] as f32 + 0.5 >= obj.position[1]
+                && cursor[1] as f32 + 0.5 <= obj.position[1] + obj.size[1];
+            if occupies_x && occupies_y {
+                let top = obj.position[2] + obj.size[2];
+                if top > top_height {
+                    top_height = top;
+                    top_index = Some(index);
+                }
+            }
+        }
+
+        if let Some(index) = top_index {
+            self.editor_objects.remove(index);
+        }
 
         self.sync_editor_objects();
+        self.rebuild_editor_cursor_vertices();
     }
 
     pub fn editor_playtest(&mut self) {
@@ -716,14 +787,7 @@ impl State {
         }
 
         let cursor = self.editor.cursor;
-        self.editor_spawn.position = [cursor[0] as f32, cursor[1] as f32];
-
-        // Remove any block that might be at the new spawn position
-        self.editor_objects.retain(|obj| {
-            let ox = obj.position[0].round() as i32;
-            let oy = obj.position[1].round() as i32;
-            !(ox == cursor[0] && oy == cursor[1])
-        });
+        self.editor_spawn.position = [cursor[0] as f32, cursor[1] as f32, cursor[2] as f32];
 
         self.sync_editor_objects();
         self.rebuild_spawn_marker_vertices();
@@ -833,14 +897,6 @@ impl State {
         if let Some(metadata) = self.load_level_metadata(&level_name) {
             self.editor_objects = metadata.objects;
             self.editor_spawn = metadata.spawn;
-
-            // Ensure no blocks on start position
-            let spawn_pos = self.editor_spawn.position;
-            self.editor_objects.retain(|obj| {
-                let ox = obj.position[0].round() as i32;
-                let oy = obj.position[1].round() as i32;
-                !(ox == spawn_pos[0] as i32 && oy == spawn_pos[1] as i32)
-            });
         } else {
             self.editor_objects = Vec::new();
             self.editor_spawn = SpawnMetadata::default();
@@ -850,9 +906,10 @@ impl State {
             self.editor.cursor = [
                 first.position[0].round() as i32,
                 first.position[1].round() as i32,
+                first.position[2].round() as i32,
             ];
         } else {
-            self.editor.cursor = [0, 0];
+            self.editor.cursor = [0, 0, 0];
         }
 
         self.editor_camera_pan = [self.editor.cursor[0] as f32 + 0.5, self.editor.cursor[1] as f32 + 0.5];
@@ -893,29 +950,30 @@ impl State {
         self.rebuild_editor_cursor_vertices();
     }
 
+    fn cell_top_height(&self, cell_x: i32, cell_y: i32) -> f32 {
+        let sample_x = cell_x as f32 + 0.5;
+        let sample_y = cell_y as f32 + 0.5;
+        self.editor_objects
+            .iter()
+            .filter(|obj| {
+                sample_x >= obj.position[0]
+                    && sample_x <= obj.position[0] + obj.size[0]
+                    && sample_y >= obj.position[1]
+                    && sample_y <= obj.position[1] + obj.size[1]
+            })
+            .map(|obj| obj.position[2] + obj.size[2])
+            .fold(0.0, f32::max)
+    }
+
     fn place_editor_block(&mut self) {
         let cursor = self.editor.cursor;
 
-        // Don't place a block on the start position
-        if cursor[0] == self.editor_spawn.position[0] as i32
-            && cursor[1] == self.editor_spawn.position[1] as i32
-        {
-            return;
-        }
-
-        let exists = self.editor_objects.iter().any(|obj| {
-            let ox = obj.position[0].round() as i32;
-            let oy = obj.position[1].round() as i32;
-            ox == cursor[0] && oy == cursor[1]
+        self.editor_objects.push(LevelObject {
+            position: [cursor[0] as f32, cursor[1] as f32, cursor[2] as f32],
+            size: [1.0, 1.0, 1.0],
         });
-
-        if !exists {
-            self.editor_objects.push(LevelObject {
-                position: [cursor[0] as f32, cursor[1] as f32],
-                size: [1.0, 1.0],
-            });
-            self.sync_editor_objects();
-        }
+        self.sync_editor_objects();
+        self.rebuild_editor_cursor_vertices();
     }
 
     fn sync_editor_objects(&mut self) {
@@ -923,11 +981,13 @@ impl State {
         self.rebuild_block_vertices();
     }
 
-    fn apply_spawn_to_game(&mut self, position: [f32; 2], direction: SpawnDirection) {
-        let centered_position = [position[0].floor() + 0.5, position[1].floor() + 0.5];
+    fn apply_spawn_to_game(&mut self, position: [f32; 3], direction: SpawnDirection) {
+        let centered_position = [position[0].floor() + 0.5, position[1].floor() + 0.5, position[2]];
         self.game.position = centered_position;
         self.game.direction = direction.into();
-        self.game.trail = vec![centered_position];
+        self.game.vertical_velocity = 0.0;
+        self.game.is_grounded = true;
+        self.game.trail_segments = vec![vec![centered_position]];
     }
 
     fn rebuild_editor_cursor_vertices(&mut self) {
@@ -1013,9 +1073,29 @@ impl State {
             self.stop_audio();
         }
 
-        let mut points = self.game.trail.clone();
-        points.push(self.game.position);
-        let trail_vertices = build_trail_vertices(&points, self.game.game_over);
+        let mut trail_vertices = Vec::new();
+        for (segment_index, segment) in self.game.trail_segments.iter().enumerate() {
+            let mut points = segment.clone();
+            if segment_index + 1 == self.game.trail_segments.len() && self.game.is_grounded {
+                points.push(self.game.position);
+            }
+            trail_vertices.extend(build_trail_vertices(&points, self.game.game_over));
+        }
+
+        if !self.game.is_grounded {
+            let head_length = 0.22;
+            let dir = match self.game.direction {
+                Direction::Forward => [0.0, 1.0],
+                Direction::Right => [1.0, 0.0],
+            };
+            let head_start = [
+                self.game.position[0] - dir[0] * head_length,
+                self.game.position[1] - dir[1] * head_length,
+                self.game.position[2],
+            ];
+            let head_points = [head_start, self.game.position];
+            trail_vertices.extend(build_trail_vertices(&head_points, self.game.game_over));
+        }
 
         self.trail_vertex_count = trail_vertices.len() as u32;
         if !trail_vertices.is_empty() {
@@ -1045,7 +1125,7 @@ impl State {
         );
 
         let aspect = self.config.width as f32 / self.config.height as f32;
-        let pos_3d = Vec3::new(self.game.position[0], self.game.position[1], 0.0);
+        let pos_3d = Vec3::new(self.game.position[0], self.game.position[1], self.game.position[2]);
         let target = pos_3d;
         let offset = Mat4::from_rotation_z(-45.0f32.to_radians())
             .transform_vector3(Vec3::new(0.0, -20.0, 20.0));

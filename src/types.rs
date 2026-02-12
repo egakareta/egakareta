@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -35,8 +35,8 @@ pub(crate) struct LevelMetadata {
 
 #[derive(Deserialize, Clone)]
 pub(crate) struct SpawnMetadata {
-    #[serde(default)]
-    pub(crate) position: [f32; 2],
+    #[serde(default, deserialize_with = "deserialize_vec3_from_array")]
+    pub(crate) position: [f32; 3],
     #[serde(default)]
     pub(crate) direction: SpawnDirection,
 }
@@ -44,7 +44,7 @@ pub(crate) struct SpawnMetadata {
 impl Default for SpawnMetadata {
     fn default() -> Self {
         Self {
-            position: [0.0, 0.0],
+            position: [0.0, 0.0, 0.0],
             direction: SpawnDirection::Forward,
         }
     }
@@ -74,14 +74,42 @@ impl From<SpawnDirection> for Direction {
 
 #[derive(Deserialize, Clone)]
 pub(crate) struct LevelObject {
-    #[serde(default)]
-    pub(crate) position: [f32; 2],
-    #[serde(default = "default_size")]
-    pub(crate) size: [f32; 2],
+    #[serde(default, deserialize_with = "deserialize_vec3_from_array")]
+    pub(crate) position: [f32; 3],
+    #[serde(default = "default_size", deserialize_with = "deserialize_size_vec3")]
+    pub(crate) size: [f32; 3],
 }
 
-fn default_size() -> [f32; 2] {
-    [1.0, 1.0]
+fn default_size() -> [f32; 3] {
+    [1.0, 1.0, 1.0]
+}
+
+fn deserialize_vec3_from_array<'de, D>(deserializer: D) -> Result<[f32; 3], D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let values: Vec<f32> = Vec::deserialize(deserializer)?;
+    match values.as_slice() {
+        [x, y] => Ok([*x, *y, 0.0]),
+        [x, y, z] => Ok([*x, *y, *z]),
+        _ => Err(serde::de::Error::custom(
+            "expected an array with 2 or 3 numeric values",
+        )),
+    }
+}
+
+fn deserialize_size_vec3<'de, D>(deserializer: D) -> Result<[f32; 3], D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let values: Vec<f32> = Vec::deserialize(deserializer)?;
+    match values.as_slice() {
+        [x, y] => Ok([*x, *y, 1.0]),
+        [x, y, z] => Ok([*x, *y, *z]),
+        _ => Err(serde::de::Error::custom(
+            "expected an array with 2 or 3 numeric values",
+        )),
+    }
 }
 
 #[derive(PartialEq)]
@@ -98,14 +126,14 @@ pub(crate) struct MenuState {
 }
 
 pub(crate) struct EditorState {
-    pub(crate) cursor: [i32; 2],
+    pub(crate) cursor: [i32; 3],
     pub(crate) bounds: i32,
 }
 
 impl EditorState {
     pub(crate) fn new() -> Self {
         Self {
-            cursor: [0, 0],
+            cursor: [0, 0, 0],
             bounds: 55,
         }
     }

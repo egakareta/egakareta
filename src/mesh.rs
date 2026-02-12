@@ -361,14 +361,14 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
     let mut vertices = Vec::new();
     let color_top = [0.4, 0.4, 0.45];
     let color_side = [0.2, 0.2, 0.25];
-    let z_min = 0.0;
-    let z_max = 1.0;
 
     for obj in objects {
         let x_min = obj.position[0];
         let x_max = obj.position[0] + obj.size[0];
         let y_min = obj.position[1];
         let y_max = obj.position[1] + obj.size[1];
+        let z_min = obj.position[2];
+        let z_max = obj.position[2] + obj.size[2];
 
         vertices.push(Vertex {
             position: [x_min, y_min, z_max],
@@ -499,11 +499,9 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
     vertices
 }
 
-pub(crate) fn build_trail_vertices(points: &[[f32; 2]], game_over: bool) -> Vec<Vertex> {
+pub(crate) fn build_trail_vertices(points: &[[f32; 3]], game_over: bool) -> Vec<Vertex> {
     let mut trail_vertices = Vec::new();
     let width = 0.8;
-    let z_min = 0.3;
-    let z_max = 0.8;
     let c_top = if game_over {
         [1.0, 0.2, 0.2]
     } else {
@@ -525,6 +523,29 @@ pub(crate) fn build_trail_vertices(points: &[[f32; 2]], game_over: bool) -> Vec<
 
         let dx = p2[0] - p1[0];
         let dy = p2[1] - p1[1];
+        let dz = p2[2] - p1[2];
+
+        if dx.abs() <= f32::EPSILON && dy.abs() <= f32::EPSILON {
+            let x_min = p1[0] - width / 2.0;
+            let x_max = p1[0] + width / 2.0;
+            let y_min = p1[1] - width / 2.0;
+            let y_max = p1[1] + width / 2.0;
+            let z_base = p1[2].min(p2[2]);
+            let z_top = p1[2].max(p2[2]) + width;
+
+            append_prism(
+                &mut trail_vertices,
+                x_min,
+                x_max,
+                y_min,
+                y_max,
+                z_base,
+                z_top,
+                c_top,
+                c_side,
+            );
+            continue;
+        }
 
         let (x_min, x_max, y_min, y_max) = if dx.abs() > dy.abs() {
             (
@@ -541,6 +562,11 @@ pub(crate) fn build_trail_vertices(points: &[[f32; 2]], game_over: bool) -> Vec<
                 p1[1].max(p2[1]) + width / 2.0,
             )
         };
+
+        let z_offset = p1[2].min(p2[2]);
+        let z_extra = dz.abs() * 0.5;
+        let z_min = z_offset;
+        let z_max = z_offset + width + z_extra;
 
         trail_vertices.push(Vertex {
             position: [x_min, y_min, z_max],
@@ -671,12 +697,12 @@ pub(crate) fn build_trail_vertices(points: &[[f32; 2]], game_over: bool) -> Vec<
     trail_vertices
 }
 
-pub(crate) fn build_editor_cursor_vertices(cursor: [i32; 2]) -> Vec<Vertex> {
+pub(crate) fn build_editor_cursor_vertices(cursor: [i32; 3]) -> Vec<Vertex> {
     let mut vertices = Vec::new();
     let color_top = [0.2, 0.85, 0.95];
     let color_side = [0.1, 0.45, 0.55];
-    let z_min = 0.0;
-    let z_max = 1.05;
+    let z_min = cursor[2] as f32;
+    let z_max = cursor[2] as f32 + 1.05;
 
     let x_min = cursor[0] as f32;
     let x_max = x_min + 1.0;
@@ -811,10 +837,11 @@ pub(crate) fn build_editor_cursor_vertices(cursor: [i32; 2]) -> Vec<Vertex> {
     vertices
 }
 
-pub(crate) fn build_spawn_marker_vertices(position: [f32; 2], faces_right: bool) -> Vec<Vertex> {
+pub(crate) fn build_spawn_marker_vertices(position: [f32; 3], faces_right: bool) -> Vec<Vertex> {
     let mut vertices = Vec::new();
     let x = position[0];
     let y = position[1];
+    let z = position[2];
 
     append_prism(
         &mut vertices,
@@ -822,8 +849,8 @@ pub(crate) fn build_spawn_marker_vertices(position: [f32; 2], faces_right: bool)
         x + 0.9,
         y + 0.1,
         y + 0.9,
-        0.0,
-        0.5,
+        z,
+        z + 0.5,
         [0.25, 0.95, 0.35],
         [0.1, 0.45, 0.15],
     );
@@ -835,8 +862,8 @@ pub(crate) fn build_spawn_marker_vertices(position: [f32; 2], faces_right: bool)
             x + 1.3,
             y + 0.35,
             y + 0.65,
-            0.0,
-            0.7,
+            z,
+            z + 0.7,
             [0.2, 0.9, 0.3],
             [0.1, 0.45, 0.15],
         );
@@ -847,8 +874,8 @@ pub(crate) fn build_spawn_marker_vertices(position: [f32; 2], faces_right: bool)
             x + 0.65,
             y + 0.9,
             y + 1.3,
-            0.0,
-            0.7,
+            z,
+            z + 0.7,
             [0.2, 0.9, 0.3],
             [0.1, 0.45, 0.15],
         );
