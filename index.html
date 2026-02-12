@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Line Dash</title>
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        canvas {
+            display: block;
+            user-select: none;
+            -webkit-user-drag: none;
+            -khtml-user-drag: none;
+            -moz-user-drag: none;
+            -o-user-drag: none;
+        }
+
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 18px;
+            text-align: center;
+            z-index: 1000;
+        }
+
+        #error {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+            z-index: 1000;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="loading">Loading...</div>
+    <div id="error"></div>
+    <canvas id="gameCanvas"></canvas>
+
+    <script type="module">
+        const loading = document.getElementById('loading');
+        const errorDiv = document.getElementById('error');
+
+        try {
+            // Import the WebAssembly module
+            const { default: init, run_game } = await import('./pkg/line_dash.js');
+
+            // Initialize WebAssembly
+            await init();
+
+            // Run the game
+            run_game("gameCanvas");
+
+            // Hide loading and start the game
+            loading.style.display = 'none';
+
+        } catch (error) {
+            console.error('Failed to load:', error);
+            loading.style.display = 'none';
+            errorDiv.style.display = 'block';
+            errorDiv.textContent = `Error: ${error.message}`;
+        }
+    </script>
+</body>
+
+</html>
