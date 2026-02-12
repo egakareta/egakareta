@@ -83,7 +83,6 @@ pub struct State {
     editor_shift_held: bool,
     playtesting_editor: bool,
     line_uniform: LineUniform,
-    app_start: Instant,
     last_frame: Instant,
     accumulator: f32,
     #[cfg(target_arch = "wasm32")]
@@ -373,7 +372,6 @@ impl State {
             phase: AppPhase::Menu,
             menu,
             line_uniform,
-            app_start: now,
             last_frame: now,
             accumulator: 0.0,
             #[cfg(target_arch = "wasm32")]
