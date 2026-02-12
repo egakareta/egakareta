@@ -24,9 +24,13 @@
             "label": "npm: dev",
             "detail": "run development server",
             "presentation": {
-                "reveal": "silent",
+                "reveal": "always",
                 "panel": "shared",
                 "close": false
+            },
+            "dependsOn": "npm: install",
+            "runOptions": {
+                "runOn": "folderOpen"
             }
         }
     ]
