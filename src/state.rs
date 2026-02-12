@@ -9,11 +9,9 @@ use std::time::Instant;
 use web_time::Instant;
 
 use glam::{Mat4, Vec2, Vec3, Vec4};
-use wgpu::{util::DeviceExt, SurfaceError, TextureViewDescriptor};
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::JsCast;
 #[cfg(target_arch = "wasm32")]
 use web_sys::{console, HtmlCanvasElement};
+use wgpu::{util::DeviceExt, SurfaceError, TextureViewDescriptor};
 #[cfg(not(target_arch = "wasm32"))]
 use winit::window::Window;
 
@@ -23,8 +21,8 @@ use crate::mesh::{
     build_spawn_marker_vertices, build_trail_vertices,
 };
 use crate::types::{
-    AppPhase, BlockKind, CameraUniform, Direction, EditorState, LevelMetadata, LevelObject, LineUniform,
-    MenuState, PhysicalSize, SpawnDirection, SpawnMetadata, Vertex,
+    AppPhase, BlockKind, CameraUniform, Direction, EditorState, LevelMetadata, LevelObject,
+    LineUniform, MenuState, PhysicalSize, SpawnDirection, SpawnMetadata, Vertex,
 };
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -70,6 +68,7 @@ pub struct State {
     phase: AppPhase,
     menu: MenuState,
     editor: EditorState,
+    editor_selected_kind: BlockKind,
     editor_objects: Vec<LevelObject>,
     editor_spawn: SpawnMetadata,
     editor_camera_pan: [f32; 2],
@@ -396,6 +395,7 @@ impl State {
             spawn_marker_vertex_buffer: None,
             spawn_marker_vertex_count: 0,
             editor: EditorState::new(),
+            editor_selected_kind: BlockKind::Standard,
             editor_objects: Vec::new(),
             editor_spawn: SpawnMetadata::default(),
             editor_camera_pan: [0.0, 0.0],
@@ -442,8 +442,6 @@ impl State {
                 if self.game.game_over {
                     if self.playtesting_editor {
                         self.phase = AppPhase::Editor;
-                        #[cfg(target_arch = "wasm32")]
-                        self.update_ui();
                         self.game.game_over = false;
                         self.game.trail_segments = vec![vec![self.game.position]];
                     } else {
@@ -458,8 +456,6 @@ impl State {
             }
             AppPhase::GameOver => {
                 self.phase = AppPhase::Menu;
-                #[cfg(target_arch = "wasm32")]
-                self.update_ui();
             }
         }
     }
@@ -489,8 +485,6 @@ impl State {
             AppPhase::Menu => self.start_editor(self.menu.selected_level),
             AppPhase::Editor => {
                 self.phase = AppPhase::Menu;
-                #[cfg(target_arch = "wasm32")]
-                self.update_ui();
                 self.playtesting_editor = false;
                 self.editor_right_dragging = false;
                 self.clear_editor_pan_keys();
@@ -535,20 +529,39 @@ impl State {
         self.editor_shift_held = held && self.phase == AppPhase::Editor;
     }
 
+    pub fn set_editor_block_kind(&mut self, kind: BlockKind) {
+        self.editor_selected_kind = kind;
+    }
+
+    pub fn editor_selected_block_kind(&self) -> BlockKind {
+        self.editor_selected_kind
+    }
+
     fn editor_camera_axes_xy(&self) -> (Vec2, Vec2) {
-        let right = Vec2::new(self.editor_camera_rotation.cos(), self.editor_camera_rotation.sin());
-        let up = Vec2::new(-self.editor_camera_rotation.sin(), self.editor_camera_rotation.cos());
+        let right = Vec2::new(
+            self.editor_camera_rotation.cos(),
+            self.editor_camera_rotation.sin(),
+        );
+        let up = Vec2::new(
+            -self.editor_camera_rotation.sin(),
+            self.editor_camera_rotation.cos(),
+        );
         (right, up)
     }
 
     fn editor_camera_offset(&self) -> Vec3 {
         let zoom = self.editor_zoom.clamp(0.35, 4.0);
         let distance = 24.0 / zoom;
-        let pitch = self.editor_camera_pitch.clamp(10.0f32.to_radians(), 85.0f32.to_radians());
+        let pitch = self
+            .editor_camera_pitch
+            .clamp(10.0f32.to_radians(), 85.0f32.to_radians());
         let horizontal_distance = distance * pitch.cos();
         let vertical_distance = distance * pitch.sin();
-        Mat4::from_rotation_z(self.editor_camera_rotation)
-            .transform_vector3(Vec3::new(0.0, -horizontal_distance, vertical_distance))
+        Mat4::from_rotation_z(self.editor_camera_rotation).transform_vector3(Vec3::new(
+            0.0,
+            -horizontal_distance,
+            vertical_distance,
+        ))
     }
 
     pub fn adjust_editor_zoom(&mut self, delta: f32) {
@@ -570,8 +583,10 @@ impl State {
         let world_delta = camera_right_xy * screen_x + camera_up_xy * screen_y;
 
         let max_pan = self.editor.bounds as f32;
-        self.editor_camera_pan[0] = (self.editor_camera_pan[0] + world_delta.x).clamp(-max_pan, max_pan);
-        self.editor_camera_pan[1] = (self.editor_camera_pan[1] + world_delta.y).clamp(-max_pan, max_pan);
+        self.editor_camera_pan[0] =
+            (self.editor_camera_pan[0] + world_delta.x).clamp(-max_pan, max_pan);
+        self.editor_camera_pan[1] =
+            (self.editor_camera_pan[1] + world_delta.y).clamp(-max_pan, max_pan);
     }
 
     fn update_editor_pan_from_keys(&mut self, frame_dt: f32) {
@@ -615,7 +630,9 @@ impl State {
             input.y * horizontal_factor * PAN_SPEED_UNITS_PER_SEC * frame_dt * speed_multiplier,
         );
 
-        self.adjust_editor_zoom(input.y * vertical_factor * PAN_SPEED_UNITS_PER_SEC * frame_dt * speed_multiplier);
+        self.adjust_editor_zoom(
+            input.y * vertical_factor * PAN_SPEED_UNITS_PER_SEC * frame_dt * speed_multiplier,
+        );
     }
 
     pub fn update_editor_cursor_from_screen(&mut self, x: f64, y: f64) {
@@ -737,8 +754,8 @@ impl State {
         const ROTATE_SPEED: f32 = 0.008;
         const PITCH_SPEED: f32 = 0.006;
         self.editor_camera_rotation -= dx as f32 * ROTATE_SPEED;
-        self.editor_camera_pitch =
-            (self.editor_camera_pitch + dy as f32 * PITCH_SPEED).clamp(10.0f32.to_radians(), 85.0f32.to_radians());
+        self.editor_camera_pitch = (self.editor_camera_pitch + dy as f32 * PITCH_SPEED)
+            .clamp(10.0f32.to_radians(), 85.0f32.to_radians());
     }
 
     pub fn move_editor_up(&mut self) {
@@ -795,8 +812,6 @@ impl State {
         self.game.objects = self.editor_objects.clone();
         self.apply_spawn_to_game(self.editor_spawn.position, self.editor_spawn.direction);
         self.phase = AppPhase::Playing;
-        #[cfg(target_arch = "wasm32")]
-        self.update_ui();
         self.editor_right_dragging = false;
         self.clear_editor_pan_keys();
         self.rebuild_block_vertices();
@@ -832,8 +847,6 @@ impl State {
         self.editor_right_dragging = false;
         self.clear_editor_pan_keys();
         self.phase = AppPhase::Menu;
-        #[cfg(target_arch = "wasm32")]
-        self.update_ui();
 
         self.game = GameState::new();
         self.game.objects = create_menu_scene();
@@ -846,8 +859,6 @@ impl State {
 
         self.game = GameState::new();
         self.phase = AppPhase::Playing;
-        #[cfg(target_arch = "wasm32")]
-        self.update_ui();
         self.playtesting_editor = false;
         self.clear_editor_pan_keys();
 
@@ -915,8 +926,6 @@ impl State {
         self.stop_audio();
 
         self.phase = AppPhase::Editor;
-        #[cfg(target_arch = "wasm32")]
-        self.update_ui();
         self.playtesting_editor = false;
         self.editor_right_dragging = false;
         self.clear_editor_pan_keys();
@@ -944,7 +953,10 @@ impl State {
             self.editor.cursor = [0, 0, 0];
         }
 
-        self.editor_camera_pan = [self.editor.cursor[0] as f32 + 0.5, self.editor.cursor[1] as f32 + 0.5];
+        self.editor_camera_pan = [
+            self.editor.cursor[0] as f32 + 0.5,
+            self.editor.cursor[1] as f32 + 0.5,
+        ];
 
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
@@ -982,57 +994,16 @@ impl State {
         self.rebuild_editor_cursor_vertices();
     }
 
-
     fn place_editor_block(&mut self) {
         let cursor = self.editor.cursor;
 
         self.editor_objects.push(LevelObject {
             position: [cursor[0] as f32, cursor[1] as f32, cursor[2] as f32],
             size: [1.0, 1.0, 1.0],
-            kind: self.editor.selected_block_kind,
+            kind: self.editor_selected_kind,
         });
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
-    }
-
-    pub fn set_editor_block_kind(&mut self, kind: BlockKind) {
-        self.editor.selected_block_kind = kind;
-        #[cfg(target_arch = "wasm32")]
-        self.update_ui();
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    fn update_ui(&self) {
-        let window = web_sys::window().unwrap();
-        let document = window.document().unwrap();
-
-        if let Some(editor_ui) = document.get_element_by_id("editor-ui") {
-            let display = if self.phase == AppPhase::Editor {
-                "flex"
-            } else {
-                "none"
-            };
-            let el = editor_ui.dyn_into::<web_sys::HtmlElement>().unwrap();
-            let _ = el.style().set_property("display", display);
-        }
-
-        if self.phase == AppPhase::Editor {
-            let kinds = [
-                ("block-standard", BlockKind::Standard),
-                ("block-grass", BlockKind::Grass),
-                ("block-dirt", BlockKind::Dirt),
-            ];
-            for (id, kind) in kinds {
-                if let Some(el) = document.get_element_by_id(id) {
-                    let class_list = el.class_list();
-                    if self.editor.selected_block_kind == kind {
-                        let _ = class_list.add_1("selected");
-                    } else {
-                        let _ = class_list.remove_1("selected");
-                    }
-                }
-            }
-        }
     }
 
     fn sync_editor_objects(&mut self) {
@@ -1041,7 +1012,11 @@ impl State {
     }
 
     fn apply_spawn_to_game(&mut self, position: [f32; 3], direction: SpawnDirection) {
-        let centered_position = [position[0].floor() + 0.5, position[1].floor() + 0.5, position[2]];
+        let centered_position = [
+            position[0].floor() + 0.5,
+            position[1].floor() + 0.5,
+            position[2],
+        ];
         self.game.position = centered_position;
         self.game.direction = direction.into();
         self.game.vertical_velocity = 0.0;
@@ -1184,7 +1159,11 @@ impl State {
         );
 
         let aspect = self.config.width as f32 / self.config.height as f32;
-        let pos_3d = Vec3::new(self.game.position[0], self.game.position[1], self.game.position[2]);
+        let pos_3d = Vec3::new(
+            self.game.position[0],
+            self.game.position[1],
+            self.game.position[2],
+        );
         let target = pos_3d;
         let offset = Mat4::from_rotation_z(-45.0f32.to_radians())
             .transform_vector3(Vec3::new(0.0, -20.0, 20.0));
@@ -1208,11 +1187,7 @@ impl State {
         let aspect = self.config.width as f32 / self.config.height as f32;
         let radius = 25.0;
         let angle = -25.0f32.to_radians();
-        let eye = Vec3::new(
-            radius * angle.cos(),
-            radius * angle.sin(),
-            15.0,
-        );
+        let eye = Vec3::new(radius * angle.cos(), radius * angle.sin(), 15.0);
         let target = Vec3::new(0.0, 0.0, 0.0);
         let up = Vec3::new(0.0, 0.0, 1.0);
         let view = Mat4::look_at_rh(eye, target, up);
@@ -1250,6 +1225,13 @@ impl State {
     }
 
     pub fn render(&mut self) -> Result<(), SurfaceError> {
+        self.render_with_overlay(|_, _, _, _| {})
+    }
+
+    pub fn render_with_overlay<F>(&mut self, overlay: F) -> Result<(), SurfaceError>
+    where
+        F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
+    {
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -1350,9 +1332,31 @@ impl State {
             }
         }
 
+        overlay(&self.device, &self.queue, &view, &mut encoder);
+
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
         Ok(())
+    }
+
+    pub fn surface_format(&self) -> wgpu::TextureFormat {
+        self.config.format
+    }
+
+    pub fn device(&self) -> &wgpu::Device {
+        &self.device
+    }
+
+    pub fn queue(&self) -> &wgpu::Queue {
+        &self.queue
+    }
+
+    pub fn surface_width(&self) -> u32 {
+        self.config.width
+    }
+
+    pub fn surface_height(&self) -> u32 {
+        self.config.height
     }
 
     pub fn handle_surface_lost(&mut self) {

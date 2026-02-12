@@ -74,7 +74,7 @@ impl From<SpawnDirection> for Direction {
 
 #[derive(Deserialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum BlockKind {
+pub enum BlockKind {
     Standard,
     Grass,
     Dirt,
@@ -144,7 +144,6 @@ pub(crate) struct MenuState {
 pub(crate) struct EditorState {
     pub(crate) cursor: [i32; 3],
     pub(crate) bounds: i32,
-    pub(crate) selected_block_kind: BlockKind,
 }
 
 impl EditorState {
@@ -152,7 +151,6 @@ impl EditorState {
         Self {
             cursor: [0, 0, 0],
             bounds: 55,
-            selected_block_kind: BlockKind::Standard,
         }
     }
 }

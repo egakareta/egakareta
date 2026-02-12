@@ -136,7 +136,111 @@ fn append_prism(
         color: color_side,
     });
 }
+fn append_quad(
+    vertices: &mut Vec<Vertex>,
+    x_min: f32,
+    x_max: f32,
+    y_min: f32,
+    y_max: f32,
+    z: f32,
+    color: [f32; 3],
+) {
+    vertices.push(Vertex {
+        position: [x_min, y_min, z],
+        color,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_min, z],
+        color,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_max, z],
+        color,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_min, z],
+        color,
+    });
+    vertices.push(Vertex {
+        position: [x_max, y_max, z],
+        color,
+    });
+    vertices.push(Vertex {
+        position: [x_min, y_max, z],
+        color,
+    });
+}
 
+pub(crate) fn build_ui_vertices(selected_kind: BlockKind) -> Vec<Vertex> {
+    let mut vertices = Vec::new();
+
+    let kinds = [BlockKind::Standard, BlockKind::Grass, BlockKind::Dirt];
+    let colors = [
+        [0.4, 0.4, 0.45], // Standard
+        [0.1, 0.6, 0.1],  // Grass
+        [0.4, 0.3, 0.2],  // Dirt
+    ];
+
+    let size = 0.12;
+    let spacing = 0.18;
+    let start_x = -((kinds.len() as f32 - 1.0) * spacing) / 2.0;
+    let y_pos = -0.85;
+
+    for (i, kind) in kinds.iter().enumerate() {
+        let x = start_x + (i as f32) * spacing;
+        let color = colors[i];
+
+        let x_min = x - size / 2.0;
+        let x_max = x + size / 2.0;
+        let y_min = y_pos - size / 2.0;
+        let y_max = y_pos + size / 2.0;
+
+        append_quad(&mut vertices, x_min, x_max, y_min, y_max, 0.0, color);
+
+        if *kind == selected_kind {
+            let margin = 0.015;
+            let h_color = [0.0, 0.95, 1.0];
+            append_quad(
+                &mut vertices,
+                x_min - margin,
+                x_max + margin,
+                y_max,
+                y_max + margin,
+                0.0,
+                h_color,
+            );
+            append_quad(
+                &mut vertices,
+                x_min - margin,
+                x_max + margin,
+                y_min - margin,
+                y_min,
+                0.0,
+                h_color,
+            );
+            append_quad(
+                &mut vertices,
+                x_min - margin,
+                x_min,
+                y_min - margin,
+                y_max + margin,
+                0.0,
+                h_color,
+            );
+            append_quad(
+                &mut vertices,
+                x_max,
+                x_max + margin,
+                y_min - margin,
+                y_max + margin,
+                0.0,
+                h_color,
+            );
+        }
+    }
+
+    vertices
+}
 pub(crate) fn build_floor_vertices() -> Vec<Vertex> {
     let mut floor_vertices: Vec<Vertex> = Vec::new();
     let tile_color_top = [0.08, 0.08, 0.1];

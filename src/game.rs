@@ -71,14 +71,15 @@ impl GameState {
         );
 
         if let Some(top) = support_height {
-            let close_enough = self.position[2] <= top + SNAP_DISTANCE
-                && self.position[2] >= top - SNAP_DISTANCE;
+            let close_enough =
+                self.position[2] <= top + SNAP_DISTANCE && self.position[2] >= top - SNAP_DISTANCE;
             if self.vertical_velocity <= 0.0 && close_enough {
                 self.position[2] = top;
                 self.vertical_velocity = 0.0;
                 is_grounded = true;
             } else {
-                self.vertical_velocity = (self.vertical_velocity - GRAVITY * dt).max(-MAX_FALL_SPEED);
+                self.vertical_velocity =
+                    (self.vertical_velocity - GRAVITY * dt).max(-MAX_FALL_SPEED);
                 self.position[2] += self.vertical_velocity * dt;
             }
         } else {
@@ -190,7 +191,7 @@ pub(crate) fn create_menu_scene() -> Vec<LevelObject> {
             } else {
                 -2.0
             };
-            
+
             objects.push(LevelObject {
                 position: [x as f32 * 2.0, y as f32 * 2.0, height],
                 size: [2.0, 2.0, 2.0],
@@ -238,7 +239,7 @@ mod tests {
             kind: BlockKind::Standard,
         });
 
-        // Player is walking on the ground block (z=1). 
+        // Player is walking on the ground block (z=1).
         // We check ground height with max_z slightly above player head (e.g. 1.0 + SNAP)
         // It should ignore the block at z=3.
         let height = game.top_surface_height_at(0.5, 0.5, 1.5);

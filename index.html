@@ -53,22 +53,6 @@
             z-index: 1000;
         }
 
-        #editor-ui {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: none;
-            flex-direction: row;
-            gap: 10px;
-            background: rgba(0, 0, 0, 0.6);
-            padding: 10px;
-            border-radius: 10px;
-            backdrop-filter: blur(5px);
-            z-index: 100;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
         .block-option {
             width: 50px;
             height: 50px;
@@ -107,17 +91,6 @@
 <body>
     <div id="loading">Loading...</div>
     <div id="error"></div>
-    <div id="editor-ui">
-        <div class="block-option selected" id="block-standard" data-kind="standard" style="background-color: #666673;">
-            <span class="block-label">Std (1)</span>
-        </div>
-        <div class="block-option" id="block-grass" data-kind="grass" style="background-color: #1a991a;">
-            <span class="block-label">Grass (2)</span>
-        </div>
-        <div class="block-option" id="block-dirt" data-kind="dirt" style="background-color: #664d33;">
-            <span class="block-label">Dirt (3)</span>
-        </div>
-    </div>
     <canvas id="gameCanvas"></canvas>
 
     <script type="module">

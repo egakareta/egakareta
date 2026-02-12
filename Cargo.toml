@@ -39,13 +39,16 @@ web-sys = { version = "0.3", features = [
     "HtmlElement",
 ] }
 js-sys = "0.3"
-winit = "0.29"
 web-time = "1.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+egui = "0.29"
+egui-wgpu = "0.29"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rodio = { version = "0.20", features = ["symphonia-all"] }
+winit = "0.30"
+egui-winit = "0.29"
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false
