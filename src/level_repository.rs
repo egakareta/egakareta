@@ -1,16 +1,21 @@
 use std::io::{Read, Write as _};
 
+use include_dir::{include_dir, Dir};
+
 use crate::types::LevelMetadata;
 
+static LEVELS_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/levels");
+
 pub(crate) fn builtin_level_names() -> Vec<String> {
-    ["Flowerfield", "Golden Haze"]
-        .iter()
-        .map(|name| (*name).to_string())
-        .collect()
+    let mut names: Vec<String> = builtin_level_metadata_iter()
+        .map(|metadata| metadata.name)
+        .collect();
+    names.sort_unstable();
+    names
 }
 
 pub(crate) fn load_builtin_level_metadata(level_name: &str) -> Option<LevelMetadata> {
-    builtin_level_metadata_str(level_name).and_then(|json| parse_level_metadata_json(json).ok())
+    builtin_level_metadata_iter().find(|metadata| metadata.name == level_name)
 }
 
 pub(crate) fn parse_level_metadata_json(json: &str) -> Result<LevelMetadata, String> {
@@ -62,10 +67,51 @@ pub(crate) fn read_metadata_from_ldz(data: &[u8]) -> Result<LevelMetadata, Strin
     parse_level_metadata_json(&metadata_json)
 }
 
-fn builtin_level_metadata_str(level_name: &str) -> Option<&'static str> {
-    match level_name {
-        "Flowerfield" => Some(include_str!("../assets/levels/Flowerfield/metadata.json")),
-        "Golden Haze" => Some(include_str!("../assets/levels/Golden Haze/metadata.json")),
-        _ => None,
+fn builtin_level_metadata_iter() -> impl Iterator<Item = LevelMetadata> {
+    let mut levels = Vec::new();
+    collect_builtin_levels(&LEVELS_DIR, &mut levels);
+    levels.into_iter()
+}
+
+fn collect_builtin_levels(dir: &Dir<'_>, levels: &mut Vec<LevelMetadata>) {
+    for file in dir.files() {
+        let is_metadata = file
+            .path()
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| name.eq_ignore_ascii_case("metadata.json"))
+            .unwrap_or(false);
+
+        if !is_metadata {
+            continue;
+        }
+
+        if let Some(json) = file.contents_utf8() {
+            if let Ok(metadata) = parse_level_metadata_json(json) {
+                levels.push(metadata);
+            }
+        }
+    }
+
+    for child in dir.dirs() {
+        collect_builtin_levels(child, levels);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{builtin_level_names, load_builtin_level_metadata};
+
+    #[test]
+    fn discovers_builtin_levels_from_assets_directory() {
+        let names = builtin_level_names();
+        assert!(names.contains(&"Flowerfield".to_string()));
+        assert!(names.contains(&"Golden Haze".to_string()));
+    }
+
+    #[test]
+    fn loads_known_level_metadata() {
+        let metadata = load_builtin_level_metadata("Flowerfield");
+        assert!(metadata.is_some());
     }
 }
