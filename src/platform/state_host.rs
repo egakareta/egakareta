@@ -1,0 +1,92 @@
+use crate::types::PhysicalSize;
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) type WasmCanvas = web_sys::HtmlCanvasElement;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) type NativeWindow = winit::window::Window;
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) type PlatformInstant = web_time::Instant;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) type PlatformInstant = std::time::Instant;
+
+pub(crate) enum SurfaceHost {
+    #[cfg(target_arch = "wasm32")]
+    Canvas(WasmCanvas),
+    #[cfg(not(target_arch = "wasm32"))]
+    Window(NativeWindow),
+}
+
+impl SurfaceHost {
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn create_for_wasm(
+        canvas: WasmCanvas,
+    ) -> (
+        SurfaceHost,
+        wgpu::Instance,
+        wgpu::Surface<'static>,
+        PhysicalSize<u32>,
+    ) {
+        let size = PhysicalSize::new(canvas.width(), canvas.height());
+
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::GL,
+            ..Default::default()
+        });
+        let surface = instance
+            .create_surface(wgpu::SurfaceTarget::Canvas(canvas.clone()))
+            .expect("Failed to create surface");
+
+        (SurfaceHost::Canvas(canvas), instance, surface, size)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn create_for_native(
+        window: NativeWindow,
+    ) -> (
+        SurfaceHost,
+        wgpu::Instance,
+        wgpu::Surface<'static>,
+        PhysicalSize<u32>,
+    ) {
+        let size = PhysicalSize::new(window.inner_size().width, window.inner_size().height);
+
+        let instance = wgpu::Instance::default();
+        let surface = instance
+            .create_surface(&window)
+            .expect("Failed to create surface");
+        let surface =
+            unsafe { std::mem::transmute::<wgpu::Surface<'_>, wgpu::Surface<'static>>(surface) };
+
+        (SurfaceHost::Window(window), instance, surface, size)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn resize_canvas(&self, new_size: PhysicalSize<u32>) {
+        match self {
+            SurfaceHost::Canvas(canvas) => {
+                canvas.set_width(new_size.width);
+                canvas.set_height(new_size.height);
+            }
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn window(&self) -> &NativeWindow {
+        match self {
+            SurfaceHost::Window(window) => window,
+        }
+    }
+}
+
+pub(crate) fn log_backend(adapter_info: &wgpu::AdapterInfo) {
+    #[cfg(target_arch = "wasm32")]
+    web_sys::console::log_1(
+        &format!("Using graphics API backend: {:?}", adapter_info.backend).into(),
+    );
+
+    #[cfg(not(target_arch = "wasm32"))]
+    log::info!("Using graphics API backend: {:?}", adapter_info.backend);
+}

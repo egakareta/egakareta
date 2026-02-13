@@ -9,6 +9,24 @@ pub(crate) struct EditorPlaytestTransition {
     pub(crate) camera_pitch: f32,
 }
 
+pub(crate) struct PlayingLevelTransition {
+    pub(crate) level_name: String,
+    pub(crate) objects: Vec<LevelObject>,
+    pub(crate) spawn_position: [f32; 3],
+    pub(crate) spawn_direction: SpawnDirection,
+}
+
+pub(crate) fn build_playing_transition_from_metadata(
+    metadata: LevelMetadata,
+) -> PlayingLevelTransition {
+    PlayingLevelTransition {
+        level_name: metadata.name,
+        objects: metadata.objects,
+        spawn_position: metadata.spawn.position,
+        spawn_direction: metadata.spawn.direction,
+    }
+}
+
 pub(crate) fn build_editor_playtest_transition(
     editor_objects: &[LevelObject],
     editor_level_name: Option<&str>,
@@ -230,9 +248,9 @@ fn top_surface_height_at(objects: &[LevelObject], x: f32, y: f32, max_z: f32) ->
 #[cfg(test)]
 mod tests {
     use super::{
-        add_tap_step, build_editor_playtest_transition, clear_tap_steps, create_block_at_cursor,
-        editor_session_init_from_metadata, move_cursor_xy, playtest_return_objects,
-        remove_tap_step, remove_topmost_block_at_cursor,
+        add_tap_step, build_editor_playtest_transition, build_playing_transition_from_metadata,
+        clear_tap_steps, create_block_at_cursor, editor_session_init_from_metadata, move_cursor_xy,
+        playtest_return_objects, remove_tap_step, remove_topmost_block_at_cursor,
     };
     use crate::types::{BlockKind, LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata};
 
@@ -364,5 +382,38 @@ mod tests {
 
         assert!(playtest_return_objects(true, &objects).is_some());
         assert!(playtest_return_objects(false, &objects).is_none());
+    }
+
+    #[test]
+    fn builds_playing_transition_from_metadata() {
+        let metadata = LevelMetadata {
+            format_version: 1,
+            name: "Starter".to_string(),
+            music: MusicMetadata {
+                source: "audio.mp3".to_string(),
+                extra: serde_json::Map::new(),
+            },
+            spawn: SpawnMetadata {
+                position: [3.0, 4.0, 1.0],
+                direction: crate::types::SpawnDirection::Right,
+            },
+            taps: vec![],
+            timeline_step: 0,
+            objects: vec![LevelObject {
+                position: [1.0, 2.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                kind: BlockKind::Standard,
+            }],
+            extra: serde_json::Map::new(),
+        };
+
+        let transition = build_playing_transition_from_metadata(metadata);
+        assert_eq!(transition.level_name, "Starter");
+        assert_eq!(transition.spawn_position, [3.0, 4.0, 1.0]);
+        assert!(matches!(
+            transition.spawn_direction,
+            crate::types::SpawnDirection::Right
+        ));
+        assert_eq!(transition.objects.len(), 1);
     }
 }

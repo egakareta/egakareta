@@ -1,27 +1,15 @@
-#[cfg(not(target_arch = "wasm32"))]
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
-#[cfg(not(target_arch = "wasm32"))]
-use std::io::Cursor;
 use std::iter;
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::Instant;
-#[cfg(target_arch = "wasm32")]
-use web_time::Instant;
 
 use glam::{Mat4, Vec2, Vec3, Vec4};
-#[cfg(target_arch = "wasm32")]
-use web_sys::{console, HtmlCanvasElement};
 use wgpu::{util::DeviceExt, SurfaceError, TextureViewDescriptor};
-#[cfg(not(target_arch = "wasm32"))]
-use winit::window::Window;
 
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 
 use crate::editor_domain::{
-    add_tap_step, build_editor_playtest_transition, clear_tap_steps, create_block_at_cursor,
-    derive_timeline_position, editor_session_init_from_metadata, move_cursor_xy,
-    playtest_return_objects, remove_tap_step, remove_topmost_block_at_cursor,
-    toggle_spawn_direction,
+    add_tap_step, build_editor_playtest_transition, build_playing_transition_from_metadata,
+    clear_tap_steps, create_block_at_cursor, derive_timeline_position,
+    editor_session_init_from_metadata, move_cursor_xy, playtest_return_objects, remove_tap_step,
+    remove_topmost_block_at_cursor, toggle_spawn_direction,
 };
 use crate::game::{create_menu_scene, GameState};
 use crate::level_repository::{
@@ -32,6 +20,12 @@ use crate::mesh::{
     build_block_vertices, build_editor_cursor_vertices, build_floor_vertices, build_grid_vertices,
     build_spawn_marker_vertices, build_trail_vertices,
 };
+use crate::platform::audio::PlatformAudio;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::platform::state_host::NativeWindow;
+#[cfg(target_arch = "wasm32")]
+use crate::platform::state_host::WasmCanvas;
+use crate::platform::state_host::{log_backend, PlatformInstant, SurfaceHost};
 use crate::types::{
     AppPhase, BlockKind, CameraUniform, Direction, EditorState, LevelMetadata, LevelObject,
     LineUniform, MenuState, PhysicalSize, SpawnDirection, SpawnMetadata, Vertex,
@@ -44,19 +38,8 @@ use base64::Engine as _;
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
-#[cfg(target_arch = "wasm32")]
-#[derive(Clone)]
-enum CanvasOrWindow {
-    Canvas(HtmlCanvasElement),
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-enum CanvasOrWindow {
-    Window(Window),
-}
-
 pub struct State {
-    canvas_or_window: CanvasOrWindow,
+    surface_host: SurfaceHost,
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -109,51 +92,27 @@ pub struct State {
     editor_import_text: String,
     playtesting_editor: bool,
     line_uniform: LineUniform,
-    last_frame: Instant,
+    last_frame: PlatformInstant,
     accumulator: f32,
-    #[cfg(target_arch = "wasm32")]
-    current_audio: Option<web_sys::HtmlAudioElement>,
-    #[cfg(not(target_arch = "wasm32"))]
-    _audio_output_stream: Option<OutputStream>,
-    #[cfg(not(target_arch = "wasm32"))]
-    audio_output_handle: Option<OutputStreamHandle>,
-    #[cfg(not(target_arch = "wasm32"))]
-    current_audio_sink: Option<Sink>,
+    audio: PlatformAudio,
 }
 
 impl State {
     #[cfg(target_arch = "wasm32")]
-    pub(crate) async fn new(canvas: HtmlCanvasElement) -> Self {
-        let size = PhysicalSize::new(canvas.width(), canvas.height());
-
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::GL,
-            ..Default::default()
-        });
-        let surface = instance
-            .create_surface(wgpu::SurfaceTarget::Canvas(canvas.clone()))
-            .expect("Failed to create surface");
-
-        Self::new_common(instance, CanvasOrWindow::Canvas(canvas), surface, size).await
+    pub(crate) async fn new(canvas: WasmCanvas) -> Self {
+        let (surface_host, instance, surface, size) = SurfaceHost::create_for_wasm(canvas);
+        Self::new_common(instance, surface_host, surface, size).await
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn new_native(window: Window) -> State {
-        let size = PhysicalSize::new(window.inner_size().width, window.inner_size().height);
-
-        let instance = wgpu::Instance::default();
-        let surface = instance
-            .create_surface(&window)
-            .expect("Failed to create surface");
-        let surface =
-            unsafe { std::mem::transmute::<wgpu::Surface<'_>, wgpu::Surface<'static>>(surface) };
-
-        Self::new_common(instance, CanvasOrWindow::Window(window), surface, size).await
+    pub async fn new_native(window: NativeWindow) -> State {
+        let (surface_host, instance, surface, size) = SurfaceHost::create_for_native(window);
+        Self::new_common(instance, surface_host, surface, size).await
     }
 
     async fn new_common(
         instance: wgpu::Instance,
-        canvas_or_window: CanvasOrWindow,
+        surface_host: SurfaceHost,
         surface: wgpu::Surface<'static>,
         size: PhysicalSize<u32>,
     ) -> State {
@@ -167,10 +126,7 @@ impl State {
             .expect("Failed to find an appropriate adapter");
 
         let adapter_info = adapter.get_info();
-        #[cfg(target_arch = "wasm32")]
-        console::log_1(&format!("Using graphics API backend: {:?}", adapter_info.backend).into());
-        #[cfg(not(target_arch = "wasm32"))]
-        log::info!("Using graphics API backend: {:?}", adapter_info.backend);
+        log_backend(&adapter_info);
 
         let (device, queue) = adapter
             .request_device(
@@ -351,15 +307,6 @@ impl State {
             mapped_at_creation: false,
         });
 
-        #[cfg(not(target_arch = "wasm32"))]
-        let (audio_output_stream, audio_output_handle) = match OutputStream::try_default() {
-            Ok((stream, handle)) => (Some(stream), Some(handle)),
-            Err(err) => {
-                log::warn!("Failed to initialize native audio output: {}", err);
-                (None, None)
-            }
-        };
-
         let menu = MenuState {
             selected_level: 0,
             levels: builtin_level_names(),
@@ -376,10 +323,10 @@ impl State {
         });
         let block_vertex_count = block_vertices.len() as u32;
 
-        let now = Instant::now();
+        let now = PlatformInstant::now();
 
         Self {
-            canvas_or_window,
+            surface_host,
             surface,
             device,
             queue,
@@ -400,14 +347,7 @@ impl State {
             line_uniform,
             last_frame: now,
             accumulator: 0.0,
-            #[cfg(target_arch = "wasm32")]
-            current_audio: None,
-            #[cfg(not(target_arch = "wasm32"))]
-            _audio_output_stream: audio_output_stream,
-            #[cfg(not(target_arch = "wasm32"))]
-            audio_output_handle,
-            #[cfg(not(target_arch = "wasm32"))]
-            current_audio_sink: None,
+            audio: PlatformAudio::new(),
             grid_vertex_buffer,
             grid_vertex_count: grid_vertices.len() as u32,
             trail_vertex_buffer,
@@ -451,12 +391,7 @@ impl State {
             return;
         }
 
-        match &self.canvas_or_window {
-            CanvasOrWindow::Canvas(canvas) => {
-                canvas.set_width(new_size.width);
-                canvas.set_height(new_size.height);
-            }
-        }
+        self.surface_host.resize_canvas(new_size);
         self.size = new_size;
         self.config.width = new_size.width;
         self.config.height = new_size.height;
@@ -702,6 +637,41 @@ impl State {
         self.editor_pan_left_held = false;
         self.editor_pan_right_held = false;
         self.editor_shift_held = false;
+    }
+
+    fn reset_playing_camera_defaults(&mut self) {
+        self.playing_camera_rotation = -45.0f32.to_radians();
+        self.playing_camera_pitch = 45.0f32.to_radians();
+    }
+
+    fn enter_playing_phase(&mut self, level_name: Option<String>, playtesting_editor: bool) {
+        self.phase = AppPhase::Playing;
+        self.playtesting_editor = playtesting_editor;
+        self.playing_level_name = level_name;
+        self.reset_playing_camera_defaults();
+        self.clear_editor_pan_keys();
+    }
+
+    fn enter_editor_phase(&mut self, level_name: String) {
+        self.phase = AppPhase::Editor;
+        self.editor_level_name = Some(level_name);
+        self.playtesting_editor = false;
+        self.editor_right_dragging = false;
+        self.clear_editor_pan_keys();
+        self.editor_camera_rotation = -45.0f32.to_radians();
+        self.editor_camera_pitch = 45.0f32.to_radians();
+        self.editor_zoom = 1.0;
+        self.game = GameState::new();
+        self.trail_vertex_count = 0;
+    }
+
+    fn enter_menu_phase(&mut self) {
+        self.playtesting_editor = false;
+        self.editor_level_name = None;
+        self.playing_level_name = None;
+        self.editor_right_dragging = false;
+        self.clear_editor_pan_keys();
+        self.phase = AppPhase::Menu;
     }
 
     pub fn set_editor_pan_up_held(&mut self, held: bool) {
@@ -1066,16 +1036,13 @@ impl State {
             self.editor_timeline_step,
         );
 
-        self.playing_level_name = transition.playing_level_name;
-        self.playtesting_editor = true;
+        self.enter_playing_phase(transition.playing_level_name, true);
         self.game = GameState::new();
         self.game.objects = transition.objects;
         self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction);
-        self.phase = AppPhase::Playing;
         self.playing_camera_rotation = transition.camera_rotation;
         self.playing_camera_pitch = transition.camera_pitch;
         self.editor_right_dragging = false;
-        self.clear_editor_pan_keys();
         self.rebuild_block_vertices();
     }
 
@@ -1115,12 +1082,7 @@ impl State {
             return;
         }
 
-        self.playtesting_editor = false;
-        self.editor_level_name = None;
-        self.playing_level_name = None;
-        self.editor_right_dragging = false;
-        self.clear_editor_pan_keys();
-        self.phase = AppPhase::Menu;
+        self.enter_menu_phase();
 
         self.game = GameState::new();
         self.game.objects = create_menu_scene();
@@ -1132,19 +1094,15 @@ impl State {
         let level_name = self.menu.levels[index].clone();
 
         self.game = GameState::new();
-        self.phase = AppPhase::Playing;
-        self.playtesting_editor = false;
-        self.playing_level_name = Some(level_name.clone());
-        self.playing_camera_rotation = -45.0f32.to_radians();
-        self.playing_camera_pitch = 45.0f32.to_radians();
-        self.clear_editor_pan_keys();
+        self.enter_playing_phase(Some(level_name.clone()), false);
 
         self.stop_audio();
 
         if let Some(metadata) = self.load_level_metadata(&level_name) {
-            log::debug!("Starting level: {}", metadata.name);
-            self.game.objects = metadata.objects;
-            self.apply_spawn_to_game(metadata.spawn.position, metadata.spawn.direction);
+            let transition = build_playing_transition_from_metadata(metadata);
+            log::debug!("Starting level: {}", transition.level_name);
+            self.game.objects = transition.objects;
+            self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction);
         }
 
         self.rebuild_block_vertices();
@@ -1168,14 +1126,14 @@ impl State {
             self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction);
         } else if let Some(level_name) = self.playing_level_name.clone() {
             if let Some(metadata) = self.load_level_metadata(&level_name) {
-                self.game.objects = metadata.objects;
-                self.apply_spawn_to_game(metadata.spawn.position, metadata.spawn.direction);
+                let transition = build_playing_transition_from_metadata(metadata);
+                self.game.objects = transition.objects;
+                self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction);
             }
         }
 
         self.game.started = false;
-        self.playing_camera_rotation = -45.0f32.to_radians();
-        self.playing_camera_pitch = 45.0f32.to_radians();
+        self.reset_playing_camera_defaults();
         self.rebuild_block_vertices();
     }
 
@@ -1183,16 +1141,7 @@ impl State {
         let level_name = self.menu.levels[index].clone();
         self.stop_audio();
 
-        self.phase = AppPhase::Editor;
-        self.editor_level_name = Some(level_name.clone());
-        self.playtesting_editor = false;
-        self.editor_right_dragging = false;
-        self.clear_editor_pan_keys();
-        self.editor_camera_rotation = -45.0f32.to_radians();
-        self.editor_camera_pitch = 45.0f32.to_radians();
-        self.editor_zoom = 1.0;
-        self.game = GameState::new();
-        self.trail_vertex_count = 0;
+        self.enter_editor_phase(level_name.clone());
 
         let init = editor_session_init_from_metadata(self.load_level_metadata(&level_name));
         self.editor_objects = init.objects;
@@ -1213,58 +1162,11 @@ impl State {
     }
 
     fn stop_audio(&mut self) {
-        #[cfg(target_arch = "wasm32")]
-        if let Some(audio) = self.current_audio.take() {
-            let _ = audio.pause();
-        }
-
-        #[cfg(not(target_arch = "wasm32"))]
-        if let Some(sink) = self.current_audio_sink.take() {
-            sink.stop();
-        }
+        self.audio.stop();
     }
 
     fn start_audio(&mut self, level_name: &str, metadata: &LevelMetadata) {
-        #[cfg(target_arch = "wasm32")]
-        {
-            let audio_url = format!("assets/levels/{}/{}", level_name, metadata.music.source);
-            if let Ok(audio) = web_sys::HtmlAudioElement::new_with_src(&audio_url) {
-                let _ = audio.play();
-                self.current_audio = Some(audio);
-            }
-        }
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            if let Some(handle) = &self.audio_output_handle {
-                let audio_path = format!("assets/levels/{}/{}", level_name, metadata.music.source);
-
-                match std::fs::read(&audio_path) {
-                    Ok(audio_bytes) => match Decoder::new(Cursor::new(audio_bytes)) {
-                        Ok(source) => match Sink::try_new(handle) {
-                            Ok(sink) => {
-                                sink.append(source);
-                                sink.play();
-                                self.current_audio_sink = Some(sink);
-                            }
-                            Err(err) => {
-                                log::warn!(
-                                    "Failed to create audio sink for '{}': {}",
-                                    audio_path,
-                                    err
-                                );
-                            }
-                        },
-                        Err(err) => {
-                            log::warn!("Failed to decode level music '{}': {}", audio_path, err);
-                        }
-                    },
-                    Err(err) => {
-                        log::warn!("Failed to read level music '{}': {}", audio_path, err);
-                    }
-                }
-            }
-        }
+        self.audio.start(level_name, &metadata.music.source);
     }
 
     pub fn export_level_ldz(&self) -> Result<Vec<u8>, String> {
@@ -1577,7 +1479,7 @@ impl State {
     pub fn update(&mut self) {
         const FIXED_DT: f32 = 1.0 / 120.0;
 
-        let now = Instant::now();
+        let now = PlatformInstant::now();
         let frame_dt = (now - self.last_frame).as_secs_f32();
         self.last_frame = now;
         self.accumulator = (self.accumulator + frame_dt).min(0.25);
@@ -1862,10 +1764,8 @@ impl State {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn window(&self) -> &Window {
-        match &self.canvas_or_window {
-            CanvasOrWindow::Window(w) => w,
-        }
+    pub fn window(&self) -> &NativeWindow {
+        self.surface_host.window()
     }
 
     #[cfg(not(target_arch = "wasm32"))]
