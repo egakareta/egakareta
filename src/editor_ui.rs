@@ -60,8 +60,12 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
         egui::Window::new("Import Level").show(ctx, |ui| {
             ui.label("Paste level JSON below:");
             let mut text = state.editor_import_text().to_string();
-            ui.add(egui::TextEdit::multiline(&mut text).desired_width(f32::INFINITY));
-            state.set_editor_import_text(text);
+            if ui
+                .add(egui::TextEdit::multiline(&mut text).desired_width(f32::INFINITY))
+                .changed()
+            {
+                state.set_editor_import_text(text);
+            }
 
             ui.horizontal(|ui| {
                 if ui.button("Import").clicked() {

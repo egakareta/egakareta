@@ -107,6 +107,7 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
     initial_ui_input.set_screen(width, height, window.device_pixel_ratio() as f32);
     let ui_input_rc = Rc::new(RefCell::new(initial_ui_input));
     let ui_wants_pointer = Rc::new(RefCell::new(false));
+    let ui_wants_keyboard = Rc::new(RefCell::new(false));
     let ui_renderer = state_rc.borrow().create_egui_renderer();
     let ui_renderer_rc = Rc::new(RefCell::new(ui_renderer));
 
@@ -297,14 +298,47 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
 
     let state_clone = state_rc.clone();
     let ui_input_clone = ui_input_rc.clone();
+    let ui_wants_keyboard_clone = ui_wants_keyboard.clone();
     let closure = Closure::wrap(Box::new(move |event: web_sys::KeyboardEvent| {
         let key = event.key();
+        let mut ui_input = ui_input_clone.borrow_mut();
         if key == "Shift" {
-            ui_input_clone.borrow_mut().modifiers.shift = true;
+            ui_input.modifiers.shift = true;
         }
 
-        let mut state = state_clone.borrow_mut();
-        state.handle_keyboard_input(&key, true, !event.repeat());
+        // Send text to egui
+        if key.chars().count() == 1 {
+            ui_input.events.push(egui::Event::Text(key.clone()));
+        }
+
+        // Basic egui key support
+        let egui_key = match key.as_str() {
+            "ArrowUp" => Some(egui::Key::ArrowUp),
+            "ArrowDown" => Some(egui::Key::ArrowDown),
+            "ArrowLeft" => Some(egui::Key::ArrowLeft),
+            "ArrowRight" => Some(egui::Key::ArrowRight),
+            "Enter" => Some(egui::Key::Enter),
+            "Backspace" => Some(egui::Key::Backspace),
+            "Delete" => Some(egui::Key::Delete),
+            "Tab" => Some(egui::Key::Tab),
+            _ => None,
+        };
+
+        if let Some(k) = egui_key {
+            let modifiers = ui_input.modifiers;
+            ui_input.events.push(egui::Event::Key {
+                key: k,
+                physical_key: None,
+                pressed: true,
+                repeat: event.repeat(),
+                modifiers,
+            });
+        }
+
+        if !*ui_wants_keyboard_clone.borrow() {
+            let mut state = state_clone.borrow_mut();
+            state.handle_keyboard_input(&key, true, !event.repeat());
+        }
     }) as Box<dyn FnMut(_)>);
     window
         .add_event_listener_with_callback("keydown", closure.as_ref().unchecked_ref())
@@ -313,14 +347,41 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
 
     let state_clone = state_rc.clone();
     let ui_input_clone = ui_input_rc.clone();
+    let ui_wants_keyboard_clone = ui_wants_keyboard.clone();
     let closure = Closure::wrap(Box::new(move |event: web_sys::KeyboardEvent| {
         let key = event.key();
+        let mut ui_input = ui_input_clone.borrow_mut();
         if key == "Shift" {
-            ui_input_clone.borrow_mut().modifiers.shift = false;
+            ui_input.modifiers.shift = false;
         }
 
-        let mut state = state_clone.borrow_mut();
-        state.handle_keyboard_input(&key, false, false);
+        let egui_key = match key.as_str() {
+            "ArrowUp" => Some(egui::Key::ArrowUp),
+            "ArrowDown" => Some(egui::Key::ArrowDown),
+            "ArrowLeft" => Some(egui::Key::ArrowLeft),
+            "ArrowRight" => Some(egui::Key::ArrowRight),
+            "Enter" => Some(egui::Key::Enter),
+            "Backspace" => Some(egui::Key::Backspace),
+            "Delete" => Some(egui::Key::Delete),
+            "Tab" => Some(egui::Key::Tab),
+            _ => None,
+        };
+
+        if let Some(k) = egui_key {
+            let modifiers = ui_input.modifiers;
+            ui_input.events.push(egui::Event::Key {
+                key: k,
+                physical_key: None,
+                pressed: false,
+                repeat: false,
+                modifiers,
+            });
+        }
+
+        if !*ui_wants_keyboard_clone.borrow() {
+            let mut state = state_clone.borrow_mut();
+            state.handle_keyboard_input(&key, false, false);
+        }
     }) as Box<dyn FnMut(_)>);
     window
         .add_event_listener_with_callback("keyup", closure.as_ref().unchecked_ref())
@@ -334,6 +395,7 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
     let ui_input_clone = ui_input_rc.clone();
     let ui_renderer_clone = ui_renderer_rc.clone();
     let ui_wants_pointer_clone = ui_wants_pointer.clone();
+    let ui_wants_keyboard_clone = ui_wants_keyboard.clone();
     *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
         let mut state = state_clone.borrow_mut();
 
@@ -343,6 +405,7 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
         });
 
         *ui_wants_pointer_clone.borrow_mut() = ui_ctx_clone.wants_pointer_input();
+        *ui_wants_keyboard_clone.borrow_mut() = ui_ctx_clone.wants_keyboard_input();
 
         let paint_jobs = ui_ctx_clone.tessellate(full_output.shapes, full_output.pixels_per_point);
         let screen_descriptor = ScreenDescriptor {

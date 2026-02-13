@@ -124,7 +124,7 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                if egui_consumed {
+                if egui_consumed || self.egui_ctx.wants_keyboard_input() {
                     return;
                 }
 
