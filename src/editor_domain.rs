@@ -456,4 +456,30 @@ mod tests {
         ));
         assert_eq!(transition.objects.len(), 1);
     }
+
+    #[test]
+    fn rotated_surface_height_detects_inside_point() {
+        let objects = vec![LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [2.0, 1.0, 3.0],
+            rotation_degrees: 90.0,
+            kind: BlockKind::Standard,
+        }];
+
+        let top = super::top_surface_height_at(&objects, 1.0, 0.5, 10.0);
+        assert_eq!(top, 3.0);
+    }
+
+    #[test]
+    fn rotated_surface_height_falls_back_to_ground_when_outside() {
+        let objects = vec![LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [2.0, 1.0, 2.0],
+            rotation_degrees: 90.0,
+            kind: BlockKind::Standard,
+        }];
+
+        let top = super::top_surface_height_at(&objects, 2.2, 0.5, 10.0);
+        assert_eq!(top, 0.0);
+    }
 }

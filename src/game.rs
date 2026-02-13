@@ -276,6 +276,10 @@ mod tests {
     use super::*;
     use crate::types::LevelObject;
 
+    fn approx_eq(a: f32, b: f32, eps: f32) {
+        assert!((a - b).abs() <= eps, "expected {a} ~= {b}");
+    }
+
     #[test]
     fn test_ground_detection_normal() {
         let mut game = GameState::new();
@@ -335,5 +339,67 @@ mod tests {
         let initial_direction = game.direction;
         game.turn_right();
         assert_ne!(game.direction, initial_direction);
+    }
+
+    #[test]
+    fn rotated_object_contains_expected_points() {
+        let obj = LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [2.0, 1.0, 1.0],
+            rotation_degrees: 90.0,
+            kind: BlockKind::Standard,
+        };
+
+        assert!(object_xy_contains(&obj, 1.0, 0.5));
+        assert!(!object_xy_contains(&obj, 2.1, 0.5));
+    }
+
+    #[test]
+    fn rotated_overlap_uses_oriented_bounds() {
+        let obj = LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [2.0, 1.0, 1.0],
+            rotation_degrees: 45.0,
+            kind: BlockKind::Standard,
+        };
+
+        assert!(aabb_overlaps_object_xy(0.9, 1.1, 0.3, 0.5, &obj));
+        assert!(!aabb_overlaps_object_xy(3.0, 3.4, 3.0, 3.4, &obj));
+    }
+
+    #[test]
+    fn rotated_ground_detection_works() {
+        let mut game = GameState::new();
+        game.objects.push(LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [2.0, 1.0, 2.0],
+            rotation_degrees: 90.0,
+            kind: BlockKind::Standard,
+        });
+
+        let inside = game.top_surface_height_at(1.0, 0.5, 3.0);
+        let outside = game.top_surface_height_at(2.2, 0.5, 3.0);
+        assert_eq!(inside, Some(2.0));
+        assert_eq!(outside, Some(0.0));
+    }
+
+    #[test]
+    fn speed_portal_overlap_removes_portal_and_boosts_speed() {
+        let mut game = GameState::new();
+        game.started = true;
+        game.position = [0.5, 0.2, 0.0];
+        game.speed = 1.0;
+        game.objects.push(LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: 30.0,
+            kind: BlockKind::SpeedPortal,
+        });
+
+        game.update(0.0);
+
+        approx_eq(game.speed, 1.5, 1e-6);
+        assert!(game.objects.is_empty());
+        assert!(!game.game_over);
     }
 }

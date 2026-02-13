@@ -213,3 +213,38 @@ pub(crate) struct ColorSpaceUniform {
     pub(crate) apply_gamma_correction: f32,
     pub(crate) _pad: [f32; 3],
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{BlockKind, LevelMetadata, LevelObject, SpawnDirection};
+
+    #[test]
+    fn level_object_rotation_defaults_when_missing() {
+        let json = r#"{
+            "position":[1.0,2.0,3.0],
+            "size":[4.0,5.0,6.0],
+            "kind":"standard"
+        }"#;
+
+        let object: LevelObject = serde_json::from_str(json).expect("valid level object");
+        assert_eq!(object.rotation_degrees, 0.0);
+        assert!(matches!(object.kind, BlockKind::Standard));
+    }
+
+    #[test]
+    fn level_metadata_parses_objects_without_rotation_field() {
+        let json = r#"{
+            "name":"Compat",
+            "music":{"source":"music.mp3"},
+            "spawn":{"position":[0.0,0.0,0.0],"direction":"forward"},
+            "objects":[
+                {"position":[0.0,0.0,0.0],"size":[1.0,1.0,1.0],"kind":"grass"}
+            ]
+        }"#;
+
+        let metadata: LevelMetadata = serde_json::from_str(json).expect("valid metadata");
+        assert_eq!(metadata.objects.len(), 1);
+        assert_eq!(metadata.objects[0].rotation_degrees, 0.0);
+        assert!(matches!(metadata.spawn.direction, SpawnDirection::Forward));
+    }
+}
