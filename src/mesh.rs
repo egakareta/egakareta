@@ -954,15 +954,15 @@ pub(crate) fn build_editor_gizmo_vertices(position: [f32; 3], size: [f32; 3]) ->
         &mut vertices,
         [x_arm_start, center[1] - shaft, center[2] - shaft],
         [x_arm_end, center[1] + shaft, center[2] + shaft],
-        [1.0, 0.25, 0.25, 1.0],
-        [0.85, 0.15, 0.15, 1.0],
+        [1.0, 0.25, 0.25, 0.72],
+        [0.85, 0.15, 0.15, 0.62],
     );
     append_prism(
         &mut vertices,
         [x_arm_end - tip, center[1] - cap, center[2] - cap],
         [x_arm_end + tip, center[1] + cap, center[2] + cap],
-        [1.0, 0.38, 0.38, 1.0],
-        [0.85, 0.2, 0.2, 1.0],
+        [1.0, 0.38, 0.38, 0.74],
+        [0.85, 0.2, 0.2, 0.64],
     );
 
     // Y move arm + tip
@@ -972,15 +972,15 @@ pub(crate) fn build_editor_gizmo_vertices(position: [f32; 3], size: [f32; 3]) ->
         &mut vertices,
         [center[0] - shaft, y_arm_start, center[2] - shaft],
         [center[0] + shaft, y_arm_end, center[2] + shaft],
-        [0.35, 1.0, 0.35, 1.0],
-        [0.2, 0.85, 0.2, 1.0],
+        [0.35, 1.0, 0.35, 0.72],
+        [0.2, 0.85, 0.2, 0.62],
     );
     append_prism(
         &mut vertices,
         [center[0] - cap, y_arm_end - tip, center[2] - cap],
         [center[0] + cap, y_arm_end + tip, center[2] + cap],
-        [0.45, 1.0, 0.45, 1.0],
-        [0.25, 0.85, 0.25, 1.0],
+        [0.45, 1.0, 0.45, 0.74],
+        [0.25, 0.85, 0.25, 0.64],
     );
 
     // Z move arm + tip
@@ -990,15 +990,15 @@ pub(crate) fn build_editor_gizmo_vertices(position: [f32; 3], size: [f32; 3]) ->
         &mut vertices,
         [center[0] - shaft, center[1] - shaft, z_arm_start],
         [center[0] + shaft, center[1] + shaft, z_arm_end],
-        [0.45, 0.65, 1.0, 1.0],
-        [0.3, 0.5, 0.9, 1.0],
+        [0.45, 0.65, 1.0, 0.72],
+        [0.3, 0.5, 0.9, 0.62],
     );
     append_prism(
         &mut vertices,
         [center[0] - cap, center[1] - cap, z_arm_end - tip],
         [center[0] + cap, center[1] + cap, z_arm_end + tip],
-        [0.55, 0.72, 1.0, 1.0],
-        [0.35, 0.55, 0.9, 1.0],
+        [0.55, 0.72, 1.0, 0.74],
+        [0.35, 0.55, 0.9, 0.64],
     );
 
     // Resize handles on positive corners of each axis
@@ -1015,8 +1015,8 @@ pub(crate) fn build_editor_gizmo_vertices(position: [f32; 3], size: [f32; 3]) ->
             center[1] + resize,
             center[2] + resize,
         ],
-        [1.0, 0.55, 0.55, 1.0],
-        [0.95, 0.42, 0.42, 1.0],
+        [1.0, 0.55, 0.55, 0.78],
+        [0.95, 0.42, 0.42, 0.68],
     );
     append_prism(
         &mut vertices,
@@ -1030,8 +1030,8 @@ pub(crate) fn build_editor_gizmo_vertices(position: [f32; 3], size: [f32; 3]) ->
             position[1] + size[1] + resize * 2.0,
             center[2] + resize,
         ],
-        [0.6, 1.0, 0.6, 1.0],
-        [0.45, 0.95, 0.45, 1.0],
+        [0.6, 1.0, 0.6, 0.78],
+        [0.45, 0.95, 0.45, 0.68],
     );
     append_prism(
         &mut vertices,
@@ -1045,8 +1045,8 @@ pub(crate) fn build_editor_gizmo_vertices(position: [f32; 3], size: [f32; 3]) ->
             center[1] + resize,
             position[2] + size[2] + resize * 2.0,
         ],
-        [0.65, 0.8, 1.0, 1.0],
-        [0.5, 0.65, 0.95, 1.0],
+        [0.65, 0.8, 1.0, 0.78],
+        [0.5, 0.65, 0.95, 0.68],
     );
 
     vertices

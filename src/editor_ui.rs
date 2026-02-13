@@ -167,6 +167,19 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                     if ui.checkbox(&mut snap, "Snap to Grid").changed() {
                         state.set_editor_snap_to_grid(snap);
                     }
+
+                    ui.label("Step:");
+                    let mut snap_step = state.editor_snap_step();
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut snap_step)
+                                .speed(0.05)
+                                .range(0.05..=100.0),
+                        )
+                        .changed()
+                    {
+                        state.set_editor_snap_step(snap_step);
+                    }
                 });
 
                 match state.editor_mode() {
