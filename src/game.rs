@@ -163,7 +163,7 @@ impl GameState {
             let o_min_y = obj.position[1];
             let o_max_y = obj.position[1] + obj.size[1];
 
-            if x >= o_min_x && x <= o_max_x && y >= o_min_y && y <= o_max_y {
+            if x >= o_min_x && x < o_max_x && y >= o_min_y && y < o_max_y {
                 let top = obj.position[2] + obj.size[2];
                 if top <= max_z {
                     top_surface = match top_surface {
