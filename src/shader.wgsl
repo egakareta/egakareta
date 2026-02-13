@@ -8,11 +8,18 @@ struct LineData {
     _pad: f32,
 };
 
+struct ColorSpaceData {
+    flags: vec4<f32>,
+};
+
 @group(0) @binding(0)
 var<uniform> u_camera: CameraData;
 
 @group(1) @binding(0)
 var<uniform> u_line: LineData;
+
+@group(2) @binding(0)
+var<uniform> u_color_space: ColorSpaceData;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -44,5 +51,18 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4<f32>(input.color, 1.0);
+    var color = input.color;
+
+    if (u_color_space.flags.x > 0.5) {
+        color = linear_to_srgb(color);
+    }
+
+    return vec4<f32>(color, 1.0);
+}
+
+fn linear_to_srgb(value: vec3<f32>) -> vec3<f32> {
+    let threshold = vec3<f32>(0.0031308);
+    let lo = 12.92 * value;
+    let hi = 1.055 * pow(value, vec3<f32>(1.0 / 2.4)) - vec3<f32>(0.055);
+    return select(lo, hi, value > threshold);
 }

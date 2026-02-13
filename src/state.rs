@@ -28,8 +28,9 @@ use crate::platform::state_host::NativeWindow;
 use crate::platform::state_host::WasmCanvas;
 use crate::platform::state_host::{log_backend, PlatformInstant, SurfaceHost};
 use crate::types::{
-    AppPhase, BlockKind, CameraUniform, Direction, EditorState, LevelMetadata, LevelObject,
-    LineUniform, MenuState, MusicMetadata, PhysicalSize, SpawnDirection, SpawnMetadata, Vertex,
+    AppPhase, BlockKind, CameraUniform, ColorSpaceUniform, Direction, EditorState, LevelMetadata,
+    LevelObject, LineUniform, MenuState, MusicMetadata, PhysicalSize, SpawnDirection,
+    SpawnMetadata, Vertex,
 };
 
 use base64::Engine as _;
@@ -62,6 +63,8 @@ pub struct State {
     zero_line_bind_group: wgpu::BindGroup,
     camera_uniform_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    color_space_bind_group: wgpu::BindGroup,
+    apply_gamma_correction: bool,
     game: GameState,
     phase: AppPhase,
     menu: MenuState,
@@ -195,6 +198,25 @@ impl State {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
+        let should_apply_gamma_correction =
+            !surface_format.is_srgb() && adapter_info.backend == wgpu::Backend::BrowserWebGpu;
+
+        let color_space_uniform = ColorSpaceUniform {
+            apply_gamma_correction: if should_apply_gamma_correction {
+                1.0
+            } else {
+                0.0
+            },
+            _pad: [0.0; 3],
+        };
+
+        let color_space_uniform_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Color Space Uniform Buffer"),
+                contents: bytemuck::bytes_of(&color_space_uniform),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+
         let line_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("Line Bind Group Layout"),
@@ -216,6 +238,21 @@ impl State {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let color_space_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Color Space Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -254,9 +291,22 @@ impl State {
             }],
         });
 
+        let color_space_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Color Space Bind Group"),
+            layout: &color_space_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: color_space_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Pipeline Layout"),
-            bind_group_layouts: &[&camera_bind_group_layout, &line_bind_group_layout],
+            bind_group_layouts: &[
+                &camera_bind_group_layout,
+                &line_bind_group_layout,
+                &color_space_bind_group_layout,
+            ],
             push_constant_ranges: &[],
         });
 
@@ -350,6 +400,8 @@ impl State {
             zero_line_bind_group,
             camera_uniform_buffer,
             camera_bind_group,
+            color_space_bind_group,
+            apply_gamma_correction: should_apply_gamma_correction,
             game,
             phase: AppPhase::Menu,
             menu,
@@ -1697,6 +1749,17 @@ impl State {
                 },
             };
 
+            let clear_color = if self.apply_gamma_correction {
+                wgpu::Color {
+                    r: linear_to_srgb(clear_color.r as f32) as f64,
+                    g: linear_to_srgb(clear_color.g as f32) as f64,
+                    b: linear_to_srgb(clear_color.b as f32) as f64,
+                    a: clear_color.a,
+                }
+            } else {
+                clear_color
+            };
+
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1722,6 +1785,7 @@ impl State {
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
             render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
+            render_pass.set_bind_group(2, &self.color_space_bind_group, &[]);
 
             if self.phase != AppPhase::Menu {
                 render_pass.set_vertex_buffer(0, self.floor_vertex_buffer.slice(..));
@@ -1838,6 +1902,14 @@ impl State {
         let texture = device.create_texture(&desc);
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         (texture, view)
+    }
+}
+
+fn linear_to_srgb(value: f32) -> f32 {
+    if value <= 0.0031308 {
+        12.92 * value
+    } else {
+        1.055 * value.powf(1.0 / 2.4) - 0.055
     }
 }
 

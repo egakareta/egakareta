@@ -229,3 +229,10 @@ pub(crate) struct LineUniform {
 pub(crate) struct CameraUniform {
     pub(crate) view_proj: [[f32; 4]; 4],
 }
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct ColorSpaceUniform {
+    pub(crate) apply_gamma_correction: f32,
+    pub(crate) _pad: [f32; 3],
+}
