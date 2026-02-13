@@ -21,7 +21,7 @@ use crate::mesh::{
     build_spawn_marker_vertices, build_trail_vertices,
 };
 use crate::platform::audio::PlatformAudio;
-use crate::platform::io::{log_platform_error, save_level_export};
+use crate::platform::io::{log_platform_error, read_editor_music_bytes, save_level_export};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::platform::state_host::NativeWindow;
 #[cfg(target_arch = "wasm32")]
@@ -383,20 +383,13 @@ impl State {
         }
     }
 
-    #[cfg(target_arch = "wasm32")]
-    pub(crate) fn resize(&mut self, new_size: PhysicalSize<u32>) {
+    pub(crate) fn resize_surface(&mut self, new_size: PhysicalSize<u32>) {
         if new_size.width == 0 || new_size.height == 0 {
             return;
         }
 
-        self.surface_host.resize_canvas(new_size);
-        self.size = new_size;
-        self.config.width = new_size.width;
-        self.config.height = new_size.height;
-        self.surface.configure(&self.device, &self.config);
-        let (depth_texture, depth_view) = Self::create_depth_texture(&self.device, &self.config);
-        self.depth_texture = depth_texture;
-        self.depth_view = depth_view;
+        self.surface_host.prepare_resize(new_size);
+        self.apply_resize(new_size);
     }
 
     pub fn turn_right(&mut self) {
@@ -1169,23 +1162,13 @@ impl State {
 
     pub fn export_level_ldz(&self) -> Result<Vec<u8>, String> {
         let metadata = self.current_editor_metadata();
+        let audio_bytes =
+            read_editor_music_bytes(self.editor_level_name.as_deref(), &metadata.music.source);
+        let audio_file = audio_bytes
+            .as_ref()
+            .map(|bytes| (metadata.music.source.as_str(), bytes.as_slice()));
 
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let music_source = metadata.music.source.clone();
-            let audio_file = self.editor_level_name.as_ref().and_then(|level_name| {
-                let audio_path = format!("assets/levels/{}/{}", level_name, music_source);
-                std::fs::read(&audio_path)
-                    .ok()
-                    .map(|audio_bytes| (metadata.music.source.as_str(), audio_bytes))
-            });
-
-            if let Some((filename, bytes)) = audio_file.as_ref() {
-                return build_ldz_archive(&metadata, Some((filename, bytes.as_slice())));
-            }
-        }
-
-        build_ldz_archive(&metadata, None)
+        build_ldz_archive(&metadata, audio_file)
     }
 
     pub fn import_level_ldz(&mut self, data: &[u8]) -> Result<(), String> {
@@ -1732,20 +1715,9 @@ impl State {
         self.surface_host.window()
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        if new_size.width > 0 && new_size.height > 0 {
-            self.apply_resize(PhysicalSize::new(new_size.width, new_size.height));
-        }
-    }
-
     pub fn recreate_surface(&mut self) {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let window = self.window();
-            let size = PhysicalSize::new(window.inner_size().width, window.inner_size().height);
-            self.apply_resize(size);
-        }
+        let size = self.surface_host.current_size();
+        self.resize_surface(size);
     }
 
     fn apply_resize(&mut self, new_size: PhysicalSize<u32>) {

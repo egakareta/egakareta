@@ -1,4 +1,5 @@
 pub(crate) mod audio;
+pub(crate) mod input_mapping;
 pub(crate) mod io;
 pub(crate) mod state_host;
 

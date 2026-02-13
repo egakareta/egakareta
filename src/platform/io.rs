@@ -47,3 +47,22 @@ pub(crate) fn log_platform_error(message: &str) {
     #[cfg(not(target_arch = "wasm32"))]
     log::error!("{}", message);
 }
+
+pub(crate) fn read_editor_music_bytes(
+    level_name: Option<&str>,
+    music_source: &str,
+) -> Option<Vec<u8>> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (level_name, music_source);
+        None
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        level_name.and_then(|name| {
+            let audio_path = format!("assets/levels/{}/{}", name, music_source);
+            std::fs::read(audio_path).ok()
+        })
+    }
+}

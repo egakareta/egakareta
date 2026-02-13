@@ -6,7 +6,7 @@ use wasm_bindgen::JsCast;
 use web_sys::console;
 use wgpu::SurfaceError;
 
-use crate::input_mapping::egui_key_from_key_str;
+use crate::platform::input_mapping::egui_key_from_key_str;
 use crate::types::PhysicalSize;
 use crate::{show_editor_ui, State};
 
@@ -101,7 +101,7 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
             let height = window.inner_height().unwrap().as_f64().unwrap() as u32;
             state_clone
                 .borrow_mut()
-                .resize(PhysicalSize::new(width, height));
+                .resize_surface(PhysicalSize::new(width, height));
             ui_input_clone.borrow_mut().set_screen(
                 width,
                 height,

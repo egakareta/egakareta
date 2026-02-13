@@ -63,12 +63,38 @@ impl SurfaceHost {
         (SurfaceHost::Window(window), instance, surface, size)
     }
 
-    #[cfg(target_arch = "wasm32")]
-    pub(crate) fn resize_canvas(&self, new_size: PhysicalSize<u32>) {
-        match self {
-            SurfaceHost::Canvas(canvas) => {
-                canvas.set_width(new_size.width);
-                canvas.set_height(new_size.height);
+    pub(crate) fn prepare_resize(&self, new_size: PhysicalSize<u32>) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            match self {
+                SurfaceHost::Canvas(canvas) => {
+                    canvas.set_width(new_size.width);
+                    canvas.set_height(new_size.height);
+                }
+            }
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = new_size;
+        }
+    }
+
+    pub(crate) fn current_size(&self) -> PhysicalSize<u32> {
+        #[cfg(target_arch = "wasm32")]
+        {
+            match self {
+                SurfaceHost::Canvas(canvas) => PhysicalSize::new(canvas.width(), canvas.height()),
+            }
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            match self {
+                SurfaceHost::Window(window) => {
+                    let size = window.inner_size();
+                    PhysicalSize::new(size.width, size.height)
+                }
             }
         }
     }

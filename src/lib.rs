@@ -1,7 +1,6 @@
 mod editor_domain;
 mod editor_ui;
 mod game;
-mod input_mapping;
 mod level_repository;
 mod mesh;
 mod platform;
@@ -10,7 +9,9 @@ mod types;
 
 pub use editor_ui::show_editor_ui;
 #[cfg(not(target_arch = "wasm32"))]
-pub use input_mapping::{key_str_from_winit, mouse_button_index_from_winit, zoom_delta_from_winit};
+pub use platform::input_mapping::{
+    key_str_from_winit, mouse_button_index_from_winit, zoom_delta_from_winit,
+};
 #[cfg(not(target_arch = "wasm32"))]
 pub use platform::native_runtime::run_native_app;
 #[cfg(target_arch = "wasm32")]

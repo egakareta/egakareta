@@ -8,9 +8,10 @@ use winit::{
     window::{Window, WindowId},
 };
 
-use crate::input_mapping::{
+use crate::platform::input_mapping::{
     key_str_from_winit, mouse_button_index_from_winit, zoom_delta_from_winit,
 };
+use crate::types::PhysicalSize;
 use crate::{show_editor_ui, State};
 
 struct App {
@@ -80,7 +81,7 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(physical_size) => {
-                state.resize(physical_size);
+                state.resize_surface(PhysicalSize::new(physical_size.width, physical_size.height));
             }
             WindowEvent::MouseInput {
                 button,
