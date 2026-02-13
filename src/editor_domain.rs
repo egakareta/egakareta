@@ -1,5 +1,50 @@
 use crate::types::{BlockKind, LevelMetadata, LevelObject, SpawnDirection, SpawnMetadata};
 
+pub(crate) struct EditorPlaytestTransition {
+    pub(crate) objects: Vec<LevelObject>,
+    pub(crate) spawn_position: [f32; 3],
+    pub(crate) spawn_direction: SpawnDirection,
+    pub(crate) playing_level_name: Option<String>,
+    pub(crate) camera_rotation: f32,
+    pub(crate) camera_pitch: f32,
+}
+
+pub(crate) fn build_editor_playtest_transition(
+    editor_objects: &[LevelObject],
+    editor_level_name: Option<&str>,
+    editor_spawn: SpawnMetadata,
+    tap_steps: &[u32],
+    timeline_step: u32,
+) -> EditorPlaytestTransition {
+    let (spawn_position, spawn_direction) = derive_timeline_position(
+        editor_spawn.position,
+        editor_spawn.direction,
+        tap_steps,
+        timeline_step,
+        editor_objects,
+    );
+
+    EditorPlaytestTransition {
+        objects: editor_objects.to_vec(),
+        spawn_position,
+        spawn_direction,
+        playing_level_name: editor_level_name.map(|name| name.to_string()),
+        camera_rotation: -45.0f32.to_radians(),
+        camera_pitch: 45.0f32.to_radians(),
+    }
+}
+
+pub(crate) fn playtest_return_objects(
+    playtesting_editor: bool,
+    editor_objects: &[LevelObject],
+) -> Option<Vec<LevelObject>> {
+    if playtesting_editor {
+        Some(editor_objects.to_vec())
+    } else {
+        None
+    }
+}
+
 pub(crate) struct EditorSessionInit {
     pub(crate) objects: Vec<LevelObject>,
     pub(crate) spawn: SpawnMetadata,
@@ -185,8 +230,9 @@ fn top_surface_height_at(objects: &[LevelObject], x: f32, y: f32, max_z: f32) ->
 #[cfg(test)]
 mod tests {
     use super::{
-        add_tap_step, clear_tap_steps, create_block_at_cursor, editor_session_init_from_metadata,
-        move_cursor_xy, remove_tap_step, remove_topmost_block_at_cursor,
+        add_tap_step, build_editor_playtest_transition, clear_tap_steps, create_block_at_cursor,
+        editor_session_init_from_metadata, move_cursor_xy, playtest_return_objects,
+        remove_tap_step, remove_topmost_block_at_cursor,
     };
     use crate::types::{BlockKind, LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata};
 
@@ -281,5 +327,42 @@ mod tests {
         assert_eq!(init.timeline_step, 0);
         assert!(init.tap_steps.is_empty());
         assert!(init.objects.is_empty());
+    }
+
+    #[test]
+    fn builds_editor_playtest_transition() {
+        let objects = vec![LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            kind: BlockKind::Standard,
+        }];
+
+        let transition = build_editor_playtest_transition(
+            &objects,
+            Some("Demo"),
+            SpawnMetadata::default(),
+            &[],
+            1,
+        );
+
+        assert_eq!(transition.objects.len(), 1);
+        assert_eq!(transition.spawn_position, [0.0, 1.0, 0.0]);
+        assert!(matches!(
+            transition.spawn_direction,
+            crate::types::SpawnDirection::Forward
+        ));
+        assert_eq!(transition.playing_level_name.as_deref(), Some("Demo"));
+    }
+
+    #[test]
+    fn returns_objects_only_when_playtesting() {
+        let objects = vec![LevelObject {
+            position: [1.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            kind: BlockKind::Standard,
+        }];
+
+        assert!(playtest_return_objects(true, &objects).is_some());
+        assert!(playtest_return_objects(false, &objects).is_none());
     }
 }

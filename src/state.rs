@@ -18,9 +18,10 @@ use winit::window::Window;
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 
 use crate::editor_domain::{
-    add_tap_step, clear_tap_steps, create_block_at_cursor, derive_timeline_position,
-    editor_session_init_from_metadata, move_cursor_xy, remove_tap_step,
-    remove_topmost_block_at_cursor, toggle_spawn_direction,
+    add_tap_step, build_editor_playtest_transition, clear_tap_steps, create_block_at_cursor,
+    derive_timeline_position, editor_session_init_from_metadata, move_cursor_xy,
+    playtest_return_objects, remove_tap_step, remove_topmost_block_at_cursor,
+    toggle_spawn_direction,
 };
 use crate::game::{create_menu_scene, GameState};
 use crate::level_repository::{
@@ -1057,16 +1058,22 @@ impl State {
 
         self.stop_audio();
 
-        self.playing_level_name = self.editor_level_name.clone();
+        let transition = build_editor_playtest_transition(
+            &self.editor_objects,
+            self.editor_level_name.as_deref(),
+            self.editor_spawn.clone(),
+            &self.editor_tap_steps,
+            self.editor_timeline_step,
+        );
 
+        self.playing_level_name = transition.playing_level_name;
         self.playtesting_editor = true;
         self.game = GameState::new();
-        self.game.objects = self.editor_objects.clone();
-        let (position, direction) = self.editor_timeline_position(self.editor_timeline_step);
-        self.apply_spawn_to_game(position, direction);
+        self.game.objects = transition.objects;
+        self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction);
         self.phase = AppPhase::Playing;
-        self.playing_camera_rotation = -45.0f32.to_radians();
-        self.playing_camera_pitch = 45.0f32.to_radians();
+        self.playing_camera_rotation = transition.camera_rotation;
+        self.playing_camera_pitch = transition.camera_pitch;
         self.editor_right_dragging = false;
         self.clear_editor_pan_keys();
         self.rebuild_block_vertices();
@@ -1097,11 +1104,13 @@ impl State {
 
     pub fn back_to_menu(&mut self) {
         self.stop_audio();
-        if self.playtesting_editor {
+        if let Some(objects) =
+            playtest_return_objects(self.playtesting_editor, &self.editor_objects)
+        {
             self.playtesting_editor = false;
             self.phase = AppPhase::Editor;
             self.game = GameState::new();
-            self.game.objects = self.editor_objects.clone();
+            self.game.objects = objects;
             self.rebuild_block_vertices();
             return;
         }
@@ -1148,9 +1157,15 @@ impl State {
         self.game = GameState::new();
 
         if self.playtesting_editor {
-            self.game.objects = self.editor_objects.clone();
-            let (position, direction) = self.editor_timeline_position(self.editor_timeline_step);
-            self.apply_spawn_to_game(position, direction);
+            let transition = build_editor_playtest_transition(
+                &self.editor_objects,
+                self.editor_level_name.as_deref(),
+                self.editor_spawn.clone(),
+                &self.editor_tap_steps,
+                self.editor_timeline_step,
+            );
+            self.game.objects = transition.objects;
+            self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction);
         } else if let Some(level_name) = self.playing_level_name.clone() {
             if let Some(metadata) = self.load_level_metadata(&level_name) {
                 self.game.objects = metadata.objects;
