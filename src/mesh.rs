@@ -960,7 +960,12 @@ pub(crate) fn build_editor_cursor_vertices(cursor: [i32; 3]) -> Vec<Vertex> {
     vertices
 }
 
-pub(crate) fn build_editor_gizmo_vertices(position: [f32; 3], size: [f32; 3]) -> Vec<Vertex> {
+pub(crate) fn build_editor_gizmo_vertices(
+    position: [f32; 3],
+    size: [f32; 3],
+    axis_lengths: [f32; 3],
+    axis_width: f32,
+) -> Vec<Vertex> {
     let mut vertices = Vec::new();
 
     let center = [
@@ -969,14 +974,17 @@ pub(crate) fn build_editor_gizmo_vertices(position: [f32; 3], size: [f32; 3]) ->
         position[2] + size[2] * 0.5,
     ];
 
-    let arm_length = size[0].max(size[1]).max(size[2]).max(1.0) * 0.9;
-    let shaft = 0.06;
-    let tip = 0.18;
-    let cap = 0.22;
+    let shaft = axis_width.max(0.0005) * 0.5;
+    let tip = shaft * 3.0;
+    let cap = shaft * 3.5;
+    let arm_start_offset = shaft * 2.0;
+    let x_length = axis_lengths[0].max(arm_start_offset + tip * 2.0);
+    let y_length = axis_lengths[1].max(arm_start_offset + tip * 2.0);
+    let z_length = axis_lengths[2].max(arm_start_offset + tip * 2.0);
 
     // X move arm + tip
-    let x_arm_start = center[0] + 0.08;
-    let x_arm_end = center[0] + arm_length;
+    let x_arm_start = center[0] + arm_start_offset;
+    let x_arm_end = center[0] + x_length;
     append_prism(
         &mut vertices,
         [x_arm_start, center[1] - shaft, center[2] - shaft],
@@ -986,15 +994,15 @@ pub(crate) fn build_editor_gizmo_vertices(position: [f32; 3], size: [f32; 3]) ->
     );
     append_prism(
         &mut vertices,
-        [x_arm_end - tip, center[1] - cap, center[2] - cap],
-        [x_arm_end + tip, center[1] + cap, center[2] + cap],
+        [x_arm_end - tip * 2.0, center[1] - cap, center[2] - cap],
+        [x_arm_end, center[1] + cap, center[2] + cap],
         [1.0, 0.38, 0.38, 0.74],
         [0.85, 0.2, 0.2, 0.64],
     );
 
     // Y move arm + tip
-    let y_arm_start = center[1] + 0.08;
-    let y_arm_end = center[1] + arm_length;
+    let y_arm_start = center[1] + arm_start_offset;
+    let y_arm_end = center[1] + y_length;
     append_prism(
         &mut vertices,
         [center[0] - shaft, y_arm_start, center[2] - shaft],
@@ -1004,15 +1012,15 @@ pub(crate) fn build_editor_gizmo_vertices(position: [f32; 3], size: [f32; 3]) ->
     );
     append_prism(
         &mut vertices,
-        [center[0] - cap, y_arm_end - tip, center[2] - cap],
-        [center[0] + cap, y_arm_end + tip, center[2] + cap],
+        [center[0] - cap, y_arm_end - tip * 2.0, center[2] - cap],
+        [center[0] + cap, y_arm_end, center[2] + cap],
         [0.45, 1.0, 0.45, 0.74],
         [0.25, 0.85, 0.25, 0.64],
     );
 
     // Z move arm + tip
-    let z_arm_start = center[2] + 0.08;
-    let z_arm_end = center[2] + arm_length;
+    let z_arm_start = center[2] + arm_start_offset;
+    let z_arm_end = center[2] + z_length;
     append_prism(
         &mut vertices,
         [center[0] - shaft, center[1] - shaft, z_arm_start],
@@ -1022,8 +1030,8 @@ pub(crate) fn build_editor_gizmo_vertices(position: [f32; 3], size: [f32; 3]) ->
     );
     append_prism(
         &mut vertices,
-        [center[0] - cap, center[1] - cap, z_arm_end - tip],
-        [center[0] + cap, center[1] + cap, z_arm_end + tip],
+        [center[0] - cap, center[1] - cap, z_arm_end - tip * 2.0],
+        [center[0] + cap, center[1] + cap, z_arm_end],
         [0.55, 0.72, 1.0, 0.74],
         [0.35, 0.55, 0.9, 0.64],
     );

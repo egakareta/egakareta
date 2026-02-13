@@ -1576,24 +1576,24 @@ impl State {
             obj.position[1] + obj.size[1] * 0.5,
             obj.position[2] + obj.size[2] * 0.5,
         );
-        let arm_length = obj.size[0].max(obj.size[1]).max(obj.size[2]).max(1.0) * 0.9;
+        let axis_lengths = self.editor_gizmo_axis_lengths_world(center, 50.0);
         let pointer = Vec2::new(x as f32, y as f32);
 
         let candidates = [
             (
                 GizmoDragKind::Move,
                 GizmoAxis::X,
-                center + Vec3::new(arm_length, 0.0, 0.0),
+                center + Vec3::new(axis_lengths[0], 0.0, 0.0),
             ),
             (
                 GizmoDragKind::Move,
                 GizmoAxis::Y,
-                center + Vec3::new(0.0, arm_length, 0.0),
+                center + Vec3::new(0.0, axis_lengths[1], 0.0),
             ),
             (
                 GizmoDragKind::Move,
                 GizmoAxis::Z,
-                center + Vec3::new(0.0, 0.0, arm_length),
+                center + Vec3::new(0.0, 0.0, axis_lengths[2]),
             ),
             (
                 GizmoDragKind::Resize,
@@ -1626,6 +1626,46 @@ impl State {
         }
 
         best.map(|(kind, axis, _)| (kind, axis))
+    }
+
+    fn pixels_to_world_along_axis(&self, center: Vec3, axis: Vec3, pixels: f32) -> Option<f32> {
+        let origin_screen = self.world_to_screen(center)?;
+        let axis_screen = self.world_to_screen(center + axis)?;
+        let pixels_per_world = axis_screen.distance(origin_screen);
+        if pixels_per_world <= f32::EPSILON {
+            return None;
+        }
+        Some(pixels / pixels_per_world)
+    }
+
+    fn editor_gizmo_axis_lengths_world(&self, center: Vec3, target_pixels: f32) -> [f32; 3] {
+        let x = self
+            .pixels_to_world_along_axis(center, Vec3::X, target_pixels)
+            .unwrap_or(1.0);
+        let y = self
+            .pixels_to_world_along_axis(center, Vec3::Y, target_pixels)
+            .unwrap_or(1.0);
+        let z = self
+            .pixels_to_world_along_axis(center, Vec3::Z, target_pixels)
+            .unwrap_or(1.0);
+        [x, y, z]
+    }
+
+    fn editor_gizmo_axis_width_world(&self, center: Vec3, target_pixels: f32) -> f32 {
+        let x = self.pixels_to_world_along_axis(center, Vec3::X, target_pixels);
+        let y = self.pixels_to_world_along_axis(center, Vec3::Y, target_pixels);
+        let z = self.pixels_to_world_along_axis(center, Vec3::Z, target_pixels);
+        let mut sum = 0.0;
+        let mut count = 0.0;
+        for value in [x, y, z].into_iter().flatten() {
+            sum += value;
+            count += 1.0;
+        }
+        if count > 0.0 {
+            sum / count
+        } else {
+            0.06
+        }
     }
 
     fn rotate_vec2(v: Vec2, radians: f32) -> Vec2 {
@@ -2510,7 +2550,15 @@ impl State {
         };
 
         let obj = &self.editor_objects[index];
-        let vertices = build_editor_gizmo_vertices(obj.position, obj.size);
+        let center = Vec3::new(
+            obj.position[0] + obj.size[0] * 0.5,
+            obj.position[1] + obj.size[1] * 0.5,
+            obj.position[2] + obj.size[2] * 0.5,
+        );
+        let axis_lengths = self.editor_gizmo_axis_lengths_world(center, 50.0);
+        let axis_width = self.editor_gizmo_axis_width_world(center, 3.0);
+        let vertices =
+            build_editor_gizmo_vertices(obj.position, obj.size, axis_lengths, axis_width);
         self.editor_gizmo_vertex_count = vertices.len() as u32;
         if !vertices.is_empty() {
             self.editor_gizmo_vertex_buffer = Some(self.device.create_buffer_init(
@@ -2618,6 +2666,7 @@ impl State {
                 let pointer = self.editor_pointer_screen.unwrap();
                 self.drag_editor_selection_from_screen(pointer[0], pointer[1]);
             }
+            self.rebuild_editor_gizmo_vertices();
             self.update_editor_camera();
             return;
         }
