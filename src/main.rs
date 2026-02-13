@@ -3,14 +3,15 @@ use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 #[cfg(not(target_arch = "wasm32"))]
 use egui_winit::State as EguiWinitState;
 #[cfg(not(target_arch = "wasm32"))]
-use line_dash_lib::{show_editor_ui, State};
+use line_dash_lib::{
+    key_str_from_winit, mouse_button_index_from_winit, show_editor_ui, zoom_delta_from_winit, State,
+};
 #[cfg(not(target_arch = "wasm32"))]
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalPosition,
-    event::{MouseScrollDelta, WindowEvent},
+    event::WindowEvent,
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    keyboard::Key,
     window::{Window, WindowId},
 };
 
@@ -93,14 +94,7 @@ impl ApplicationHandler for App {
             } => {
                 if !egui_consumed {
                     let pressed = element_state == winit::event::ElementState::Pressed;
-                    let button_idx = match button {
-                        winit::event::MouseButton::Left => 0,
-                        winit::event::MouseButton::Right => 2,
-                        winit::event::MouseButton::Middle => 1,
-                        winit::event::MouseButton::Back => 3,
-                        winit::event::MouseButton::Forward => 4,
-                        winit::event::MouseButton::Other(idx) => idx as u32,
-                    };
+                    let button_idx = mouse_button_index_from_winit(button);
                     state.handle_mouse_button(button_idx, pressed);
                 }
             }
@@ -116,10 +110,7 @@ impl ApplicationHandler for App {
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 if !egui_consumed {
-                    let zoom_delta = match delta {
-                        MouseScrollDelta::LineDelta(_, y) => y,
-                        MouseScrollDelta::PixelDelta(p) => p.y as f32 * 0.02,
-                    };
+                    let zoom_delta = zoom_delta_from_winit(delta);
                     state.adjust_editor_zoom(zoom_delta);
                 }
             }
@@ -131,11 +122,7 @@ impl ApplicationHandler for App {
                 let pressed = event.state == winit::event::ElementState::Pressed;
                 let just_pressed = pressed && !event.repeat;
 
-                let key_str = match &event.logical_key {
-                    Key::Named(nk) => format!("{:?}", nk),
-                    Key::Character(c) => c.to_string(),
-                    _ => String::new(),
-                };
+                let key_str = key_str_from_winit(&event.logical_key);
                 state.handle_keyboard_input(&key_str, pressed, just_pressed);
             }
             WindowEvent::RedrawRequested => {

@@ -1,11 +1,14 @@
 mod editor_ui;
 mod game;
+mod input_mapping;
 mod level_repository;
 mod mesh;
 mod state;
 mod types;
 
 pub use editor_ui::show_editor_ui;
+#[cfg(not(target_arch = "wasm32"))]
+pub use input_mapping::{key_str_from_winit, mouse_button_index_from_winit, zoom_delta_from_winit};
 pub use state::State;
 pub use types::BlockKind;
 
@@ -24,6 +27,8 @@ use web_sys::console;
 #[cfg(target_arch = "wasm32")]
 use wgpu::SurfaceError;
 
+#[cfg(target_arch = "wasm32")]
+use crate::input_mapping::egui_key_from_key_str;
 #[cfg(target_arch = "wasm32")]
 use crate::types::PhysicalSize;
 
@@ -312,18 +317,7 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
             ui_input.events.push(egui::Event::Text(key.clone()));
         }
 
-        // Basic egui key support
-        let egui_key = match key.as_str() {
-            "ArrowUp" => Some(egui::Key::ArrowUp),
-            "ArrowDown" => Some(egui::Key::ArrowDown),
-            "ArrowLeft" => Some(egui::Key::ArrowLeft),
-            "ArrowRight" => Some(egui::Key::ArrowRight),
-            "Enter" => Some(egui::Key::Enter),
-            "Backspace" => Some(egui::Key::Backspace),
-            "Delete" => Some(egui::Key::Delete),
-            "Tab" => Some(egui::Key::Tab),
-            _ => None,
-        };
+        let egui_key = egui_key_from_key_str(&key);
 
         if let Some(k) = egui_key {
             let modifiers = ui_input.modifiers;
@@ -356,17 +350,7 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
             ui_input.modifiers.shift = false;
         }
 
-        let egui_key = match key.as_str() {
-            "ArrowUp" => Some(egui::Key::ArrowUp),
-            "ArrowDown" => Some(egui::Key::ArrowDown),
-            "ArrowLeft" => Some(egui::Key::ArrowLeft),
-            "ArrowRight" => Some(egui::Key::ArrowRight),
-            "Enter" => Some(egui::Key::Enter),
-            "Backspace" => Some(egui::Key::Backspace),
-            "Delete" => Some(egui::Key::Delete),
-            "Tab" => Some(egui::Key::Tab),
-            _ => None,
-        };
+        let egui_key = egui_key_from_key_str(&key);
 
         if let Some(k) = egui_key {
             let modifiers = ui_input.modifiers;
