@@ -46,11 +46,11 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
 
             ui.separator();
 
-            if ui.button("Export JSON").clicked() {
+            if ui.button("Export .ldz").clicked() {
                 state.trigger_level_export();
             }
 
-            if ui.button("Import JSON").clicked() {
+            if ui.button("Import .ldz/JSON").clicked() {
                 state.set_editor_show_import(true);
             }
         });
@@ -58,10 +58,14 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
 
     if state.editor_show_import() {
         egui::Window::new("Import Level").show(ctx, |ui| {
-            ui.label("Paste level JSON below:");
+            ui.label("Paste level JSON or Base64 LDZ below:");
             let mut text = state.editor_import_text().to_string();
             if ui
-                .add(egui::TextEdit::multiline(&mut text).desired_width(f32::INFINITY))
+                .add(
+                    egui::TextEdit::multiline(&mut text)
+                        .desired_width(f32::INFINITY)
+                        .font(egui::TextStyle::Monospace),
+                )
                 .changed()
             {
                 state.set_editor_import_text(text);

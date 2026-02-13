@@ -44,6 +44,8 @@ js-sys = "0.3"
 web-time = "1.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+base64 = "0.22"
 egui = "0.29"
 egui-wgpu = "0.29"
 

@@ -30,6 +30,9 @@ use crate::types::{
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsCast;
 
+use base64::Engine as _;
+use std::io::{Read, Write as _};
+
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 #[cfg(target_arch = "wasm32")]
@@ -1304,6 +1307,75 @@ impl State {
         }
     }
 
+    pub fn export_level_ldz(&self) -> Result<Vec<u8>, String> {
+        let level_name = self
+            .editor_level_name
+            .clone()
+            .unwrap_or_else(|| "Untitled".to_string());
+        let music_source = "music.mp3".to_string(); // Assume music.mp3 for simplicity
+
+        let metadata = LevelMetadata {
+            name: level_name.clone(),
+            music: MusicMetadata {
+                source: music_source.clone(),
+            },
+            spawn: self.editor_spawn.clone(),
+            taps: self.editor_tap_steps.clone(),
+            timeline_step: self.editor_timeline_step,
+            objects: self.editor_objects.clone(),
+        };
+
+        let metadata_json = serde_json::to_string_pretty(&metadata).map_err(|e| e.to_string())?;
+
+        let mut buffer = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buffer));
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+
+            zip.start_file("metadata.json", options)
+                .map_err(|e| e.to_string())?;
+            zip.write_all(metadata_json.as_bytes())
+                .map_err(|e| e.to_string())?;
+
+            // Try to find the actual music file to include it
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let audio_path = format!("assets/levels/{}/{}", level_name, music_source);
+                if let Ok(audio_bytes) = std::fs::read(&audio_path) {
+                    zip.start_file(&music_source, options)
+                        .map_err(|e| e.to_string())?;
+                    zip.write_all(&audio_bytes).map_err(|e| e.to_string())?;
+                }
+            }
+            // For WASM, we might not have local access to the music file easily if it's not cached,
+            // but we could try to fetch it or just omit it if it's a builtin.
+            // For now, we'll just include a dummy if not found or if on WASM.
+        }
+
+        Ok(buffer)
+    }
+
+    pub fn import_level_ldz(&mut self, data: &[u8]) -> Result<(), String> {
+        let mut archive =
+            zip::ZipArchive::new(std::io::Cursor::new(data)).map_err(|e| e.to_string())?;
+
+        let mut metadata_file = archive
+            .by_name("metadata.json")
+            .map_err(|e| e.to_string())?;
+        let mut metadata_json = String::new();
+        metadata_file
+            .read_to_string(&mut metadata_json)
+            .map_err(|e| e.to_string())?;
+
+        self.import_level(&metadata_json)?;
+
+        // Optionally extract audio if we wanted to save it locally
+        // For now we just focus on the metadata.
+
+        Ok(())
+    }
+
     pub fn export_level(&self) -> String {
         let metadata = LevelMetadata {
             name: self
@@ -1389,37 +1461,75 @@ impl State {
     }
 
     pub fn trigger_level_export(&self) {
-        let json = self.export_level();
-        #[cfg(target_arch = "wasm32")]
-        {
-            let window = web_sys::window().unwrap();
-            let document = window.document().unwrap();
-            let blob =
-                web_sys::Blob::new_with_str_sequence(&js_sys::Array::of1(&json.into())).unwrap();
-            let url = web_sys::Url::create_object_url_with_blob(&blob).unwrap();
-            let a = document
-                .create_element("a")
-                .unwrap()
-                .dyn_into::<web_sys::HtmlElement>()
-                .unwrap();
-            a.set_attribute("href", &url).unwrap();
-            a.set_attribute("download", "level.json").unwrap();
-            a.click();
-            let _ = web_sys::Url::revoke_object_url(&url);
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let _ = std::fs::write("exported_level.json", json);
+        match self.export_level_ldz() {
+            Ok(data) => {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let window = web_sys::window().unwrap();
+                    let document = window.document().unwrap();
+                    let uint8_array = unsafe { js_sys::Uint8Array::view(&data) };
+                    let blob = web_sys::Blob::new_with_u8_array_sequence(&js_sys::Array::of1(
+                        &uint8_array.into(),
+                    ))
+                    .unwrap();
+                    let url = web_sys::Url::create_object_url_with_blob(&blob).unwrap();
+                    let a = document
+                        .create_element("a")
+                        .unwrap()
+                        .dyn_into::<web_sys::HtmlElement>()
+                        .unwrap();
+                    a.set_attribute("href", &url).unwrap();
+                    let filename = format!(
+                        "{}.ldz",
+                        self.editor_level_name()
+                            .unwrap_or_else(|| "level".to_string())
+                    );
+                    a.set_attribute("download", &filename).unwrap();
+                    a.click();
+                    let _ = web_sys::Url::revoke_object_url(&url);
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let filename = format!(
+                        "{}.ldz",
+                        self.editor_level_name()
+                            .unwrap_or_else(|| "level".to_string())
+                    );
+                    let _ = std::fs::write(filename, data);
+                }
+            }
+            Err(e) => {
+                #[cfg(target_arch = "wasm32")]
+                web_sys::console::log_1(&format!("Export failed: {}", e).into());
+                #[cfg(not(target_arch = "wasm32"))]
+                log::error!("Export failed: {}", e);
+            }
         }
     }
 
     pub fn complete_import(&mut self) {
         let text = self.editor_import_text.clone();
+        // Try LDZ first (base64)
+        if let Ok(data) = base64::engine::general_purpose::STANDARD.decode(text.trim()) {
+            if let Err(e) = self.import_level_ldz(&data) {
+                #[cfg(target_arch = "wasm32")]
+                web_sys::console::log_1(&format!("LDZ Import failed: {}", e).into());
+                #[cfg(not(target_arch = "wasm32"))]
+                log::error!("LDZ Import failed: {}", e);
+            } else {
+                self.editor_show_import = false;
+                self.editor_import_text.clear();
+                return;
+            }
+        }
+
+        // Fallback to raw JSON
+        let text = self.editor_import_text.clone();
         if let Err(e) = self.import_level(&text) {
             #[cfg(target_arch = "wasm32")]
-            web_sys::console::log_1(&format!("Import failed: {}", e).into());
+            web_sys::console::log_1(&format!("JSON Import failed: {}", e).into());
             #[cfg(not(target_arch = "wasm32"))]
-            log::error!("Import failed: {}", e);
+            log::error!("JSON Import failed: {}", e);
         } else {
             self.editor_show_import = false;
             self.editor_import_text.clear();
