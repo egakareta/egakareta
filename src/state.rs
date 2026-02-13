@@ -47,13 +47,9 @@ fn toggle_spawn_direction(direction: SpawnDirection) -> SpawnDirection {
     }
 }
 
-fn top_surface_height_at(
-    objects: &[LevelObject],
-    x: f32,
-    y: f32,
-    max_z: f32,
-) -> Option<f32> {
-    let mut top_surface: Option<f32> = Some(0.0);
+fn top_surface_height_at(objects: &[LevelObject], x: f32, y: f32, max_z: f32) -> f32 {
+    const GROUND_PLANE_HEIGHT: f32 = 0.0;
+    let mut top_surface: Option<f32> = None;
     for obj in objects {
         let o_min_x = obj.position[0];
         let o_max_x = obj.position[0] + obj.size[0];
@@ -63,15 +59,16 @@ fn top_surface_height_at(
         if x >= o_min_x && x <= o_max_x && y >= o_min_y && y <= o_max_y {
             let top = obj.position[2] + obj.size[2];
             if top <= max_z {
-                top_surface = match top_surface {
-                    Some(existing) if existing > top => Some(existing),
-                    _ => Some(top),
-                };
+                top_surface = Some(match top_surface {
+                    Some(existing) => existing.max(top),
+                    None => top,
+                });
             }
         }
     }
 
-    top_surface
+    // Default to ground plane at z=0.0 when no surface is found.
+    top_surface.unwrap_or(GROUND_PLANE_HEIGHT)
 }
 
 fn derive_timeline_position(
@@ -90,8 +87,10 @@ fn derive_timeline_position(
         tap_index += 1;
     }
 
+    // Maximum upward distance to snap to a supporting surface.
     const SNAP_DISTANCE: f32 = 0.3;
     let mut current_step = 0;
+    // Step-by-step evaluation keeps fall behavior accurate for editor previews.
     for _ in 0..step {
         match direction {
             SpawnDirection::Forward => position[1] += 1.0,
@@ -99,14 +98,13 @@ fn derive_timeline_position(
         }
         current_step += 1;
 
-        if let Some(top) = top_surface_height_at(
+        let top = top_surface_height_at(
             objects,
             position[0],
             position[1],
             position[2] + SNAP_DISTANCE,
-        ) {
-            position[2] = top;
-        }
+        );
+        position[2] = top;
 
         while tap_index < tap_steps.len() && tap_steps[tap_index] == current_step {
             direction = toggle_spawn_direction(direction);
