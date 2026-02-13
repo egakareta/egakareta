@@ -1,5 +1,11 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
+pub(crate) const CURRENT_LEVEL_FORMAT_VERSION: u32 = 1;
+
+fn default_level_format_version() -> u32 {
+    CURRENT_LEVEL_FORMAT_VERSION
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub(crate) struct Vertex {
@@ -22,10 +28,14 @@ impl Vertex {
 #[derive(Deserialize, Serialize, Clone)]
 pub(crate) struct MusicMetadata {
     pub(crate) source: String,
+    #[serde(flatten)]
+    pub(crate) extra: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
 pub(crate) struct LevelMetadata {
+    #[serde(default = "default_level_format_version")]
+    pub(crate) format_version: u32,
     pub(crate) name: String,
     pub(crate) music: MusicMetadata,
     #[serde(default)]
@@ -35,6 +45,33 @@ pub(crate) struct LevelMetadata {
     #[serde(default)]
     pub(crate) timeline_step: u32,
     pub(crate) objects: Vec<LevelObject>,
+    #[serde(flatten)]
+    pub(crate) extra: serde_json::Map<String, serde_json::Value>,
+}
+
+impl LevelMetadata {
+    pub(crate) fn from_editor_state(
+        name: String,
+        music_source: String,
+        spawn: SpawnMetadata,
+        taps: Vec<u32>,
+        timeline_step: u32,
+        objects: Vec<LevelObject>,
+    ) -> Self {
+        Self {
+            format_version: CURRENT_LEVEL_FORMAT_VERSION,
+            name,
+            music: MusicMetadata {
+                source: music_source,
+                extra: serde_json::Map::new(),
+            },
+            spawn,
+            taps,
+            timeline_step,
+            objects,
+            extra: serde_json::Map::new(),
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize, Clone)]

@@ -1,5 +1,6 @@
 mod editor_ui;
 mod game;
+mod level_repository;
 mod mesh;
 mod state;
 mod types;

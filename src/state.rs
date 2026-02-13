@@ -18,20 +18,23 @@ use winit::window::Window;
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 
 use crate::game::{create_menu_scene, GameState};
+use crate::level_repository::{
+    build_ldz_archive, builtin_level_names, load_builtin_level_metadata, parse_level_metadata_json,
+    read_metadata_from_ldz, serialize_level_metadata_pretty,
+};
 use crate::mesh::{
     build_block_vertices, build_editor_cursor_vertices, build_floor_vertices, build_grid_vertices,
     build_spawn_marker_vertices, build_trail_vertices,
 };
 use crate::types::{
     AppPhase, BlockKind, CameraUniform, Direction, EditorState, LevelMetadata, LevelObject,
-    LineUniform, MenuState, MusicMetadata, PhysicalSize, SpawnDirection, SpawnMetadata, Vertex,
+    LineUniform, MenuState, PhysicalSize, SpawnDirection, SpawnMetadata, Vertex,
 };
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsCast;
 
 use base64::Engine as _;
-use std::io::{Read, Write as _};
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
@@ -428,7 +431,7 @@ impl State {
 
         let menu = MenuState {
             selected_level: 0,
-            levels: vec!["Flowerfield".to_string(), "Golden Haze".to_string()],
+            levels: builtin_level_names(),
         };
 
         let mut game = GameState::new();
@@ -1307,16 +1310,8 @@ impl State {
         self.rebuild_spawn_marker_vertices();
     }
 
-    fn level_metadata_str(level_name: &str) -> &'static str {
-        match level_name {
-            "Flowerfield" => include_str!("../assets/levels/Flowerfield/metadata.json"),
-            "Golden Haze" => include_str!("../assets/levels/Golden Haze/metadata.json"),
-            _ => "{\"name\": \"Unknown\", \"music\": {\"source\": \"\"}, \"objects\": []}",
-        }
-    }
-
     fn load_level_metadata(&self, level_name: &str) -> Option<LevelMetadata> {
-        serde_json::from_str::<LevelMetadata>(Self::level_metadata_str(level_name)).ok()
+        load_builtin_level_metadata(level_name)
     }
 
     fn stop_audio(&mut self) {
@@ -1375,94 +1370,57 @@ impl State {
     }
 
     pub fn export_level_ldz(&self) -> Result<Vec<u8>, String> {
-        let level_name = self
-            .editor_level_name
-            .clone()
-            .unwrap_or_else(|| "Untitled".to_string());
-        let music_source = "music.mp3".to_string(); // Assume music.mp3 for simplicity
+        let metadata = self.current_editor_metadata();
 
-        let metadata = LevelMetadata {
-            name: level_name.clone(),
-            music: MusicMetadata {
-                source: music_source.clone(),
-            },
-            spawn: self.editor_spawn.clone(),
-            taps: self.editor_tap_steps.clone(),
-            timeline_step: self.editor_timeline_step,
-            objects: self.editor_objects.clone(),
-        };
-
-        let metadata_json = serde_json::to_string_pretty(&metadata).map_err(|e| e.to_string())?;
-
-        let mut buffer = Vec::new();
+        #[cfg(not(target_arch = "wasm32"))]
         {
-            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buffer));
-            let options = zip::write::SimpleFileOptions::default()
-                .compression_method(zip::CompressionMethod::Deflated);
-
-            zip.start_file("metadata.json", options)
-                .map_err(|e| e.to_string())?;
-            zip.write_all(metadata_json.as_bytes())
-                .map_err(|e| e.to_string())?;
-
-            // Try to find the actual music file to include it
-            #[cfg(not(target_arch = "wasm32"))]
-            {
+            let music_source = metadata.music.source.clone();
+            let audio_file = self.editor_level_name.as_ref().and_then(|level_name| {
                 let audio_path = format!("assets/levels/{}/{}", level_name, music_source);
-                if let Ok(audio_bytes) = std::fs::read(&audio_path) {
-                    zip.start_file(&music_source, options)
-                        .map_err(|e| e.to_string())?;
-                    zip.write_all(&audio_bytes).map_err(|e| e.to_string())?;
-                }
+                std::fs::read(&audio_path)
+                    .ok()
+                    .map(|audio_bytes| (metadata.music.source.as_str(), audio_bytes))
+            });
+
+            if let Some((filename, bytes)) = audio_file.as_ref() {
+                return build_ldz_archive(&metadata, Some((filename, bytes.as_slice())));
             }
-            // For WASM, we might not have local access to the music file easily if it's not cached,
-            // but we could try to fetch it or just omit it if it's a builtin.
-            // For now, we'll just include a dummy if not found or if on WASM.
         }
 
-        Ok(buffer)
+        build_ldz_archive(&metadata, None)
     }
 
     pub fn import_level_ldz(&mut self, data: &[u8]) -> Result<(), String> {
-        let mut archive =
-            zip::ZipArchive::new(std::io::Cursor::new(data)).map_err(|e| e.to_string())?;
-
-        let mut metadata_file = archive
-            .by_name("metadata.json")
-            .map_err(|e| e.to_string())?;
-        let mut metadata_json = String::new();
-        metadata_file
-            .read_to_string(&mut metadata_json)
-            .map_err(|e| e.to_string())?;
-
-        self.import_level(&metadata_json)?;
-
-        // Optionally extract audio if we wanted to save it locally
-        // For now we just focus on the metadata.
-
+        let metadata = read_metadata_from_ldz(data)?;
+        self.apply_imported_level_metadata(metadata);
         Ok(())
     }
 
     pub fn export_level(&self) -> String {
-        let metadata = LevelMetadata {
-            name: self
-                .editor_level_name
-                .clone()
-                .unwrap_or_else(|| "Untitled".to_string()),
-            music: MusicMetadata {
-                source: "music.mp3".to_string(),
-            },
-            spawn: self.editor_spawn.clone(),
-            taps: self.editor_tap_steps.clone(),
-            timeline_step: self.editor_timeline_step,
-            objects: self.editor_objects.clone(),
-        };
-        serde_json::to_string_pretty(&metadata).unwrap_or_default()
+        serialize_level_metadata_pretty(&self.current_editor_metadata()).unwrap_or_default()
     }
 
     pub fn import_level(&mut self, json: &str) -> Result<(), String> {
-        let metadata: LevelMetadata = serde_json::from_str(json).map_err(|e| e.to_string())?;
+        let metadata = parse_level_metadata_json(json)?;
+        self.apply_imported_level_metadata(metadata);
 
+        Ok(())
+    }
+
+    fn current_editor_metadata(&self) -> LevelMetadata {
+        LevelMetadata::from_editor_state(
+            self.editor_level_name
+                .clone()
+                .unwrap_or_else(|| "Untitled".to_string()),
+            "music.mp3".to_string(),
+            self.editor_spawn.clone(),
+            self.editor_tap_steps.clone(),
+            self.editor_timeline_step,
+            self.editor_objects.clone(),
+        )
+    }
+
+    fn apply_imported_level_metadata(&mut self, metadata: LevelMetadata) {
         self.editor_objects = metadata.objects;
         self.editor_spawn = metadata.spawn;
         self.editor_tap_steps = metadata.taps;
@@ -1488,8 +1446,6 @@ impl State {
         self.sync_editor_objects();
         self.set_editor_timeline_step(self.editor_timeline_step);
         self.rebuild_spawn_marker_vertices();
-
-        Ok(())
     }
 
     pub fn load_builtin_level_into_editor(&mut self, name: &str) {
