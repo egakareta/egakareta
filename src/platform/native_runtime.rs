@@ -20,6 +20,7 @@ struct App {
     egui_renderer: Option<EguiRenderer>,
     egui_ctx: egui::Context,
     last_cursor_pos: Option<PhysicalPosition<f64>>,
+    left_mouse_down: bool,
 }
 
 impl App {
@@ -30,6 +31,7 @@ impl App {
             egui_renderer: None,
             egui_ctx: egui::Context::default(),
             last_cursor_pos: None,
+            left_mouse_down: false,
         }
     }
 }
@@ -101,28 +103,37 @@ impl ApplicationHandler for App {
                     let pressed = element_state == winit::event::ElementState::Pressed;
                     let button_idx = mouse_button_index_from_winit(button);
 
-                    if button_idx == 0 && pressed {
-                        if let Some(position) = self.last_cursor_pos {
-                            state.update_editor_cursor_from_screen(position.x, position.y);
-                        }
+                    if button_idx == 0 {
+                        self.left_mouse_down = pressed;
                     }
 
-                    state.handle_mouse_button(button_idx, pressed);
-
                     if button_idx == 0 && pressed {
                         if let Some(position) = self.last_cursor_pos {
-                            state.update_editor_cursor_from_screen(position.x, position.y);
+                            state.handle_primary_click(position.x, position.y);
+                        } else {
+                            state.handle_mouse_button(button_idx, pressed);
                         }
+                    } else {
+                        state.handle_mouse_button(button_idx, pressed);
                     }
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
                 if !egui_consumed {
+                    let mut gizmo_dragged = false;
+                    if self.left_mouse_down {
+                        gizmo_dragged =
+                            state.drag_editor_selection_from_screen(position.x, position.y);
+                    }
+
                     if let Some(last) = self.last_cursor_pos {
                         state
                             .drag_editor_camera_by_pixels(position.x - last.x, position.y - last.y);
                     }
-                    state.update_editor_cursor_from_screen(position.x, position.y);
+
+                    if !gizmo_dragged {
+                        state.update_editor_cursor_from_screen(position.x, position.y);
+                    }
                 }
                 self.last_cursor_pos = Some(position);
             }

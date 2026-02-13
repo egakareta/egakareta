@@ -17,7 +17,8 @@ use crate::level_repository::{
     read_metadata_from_ldz, serialize_level_metadata_pretty,
 };
 use crate::mesh::{
-    build_block_vertices, build_editor_cursor_vertices, build_floor_vertices, build_grid_vertices,
+    build_block_vertices, build_editor_cursor_vertices, build_editor_gizmo_vertices,
+    build_editor_selection_outline_vertices, build_floor_vertices, build_grid_vertices,
     build_spawn_marker_vertices, build_trail_vertices,
 };
 use crate::platform::audio::PlatformAudio;
@@ -28,9 +29,9 @@ use crate::platform::state_host::NativeWindow;
 use crate::platform::state_host::WasmCanvas;
 use crate::platform::state_host::{log_backend, PlatformInstant, SurfaceHost};
 use crate::types::{
-    AppPhase, BlockKind, CameraUniform, ColorSpaceUniform, Direction, EditorState, LevelMetadata,
-    LevelObject, LineUniform, MenuState, MusicMetadata, PhysicalSize, SpawnDirection,
-    SpawnMetadata, Vertex,
+    AppPhase, BlockKind, CameraUniform, ColorSpaceUniform, Direction, EditorMode, EditorState,
+    LevelMetadata, LevelObject, LineUniform, MenuState, MusicMetadata, PhysicalSize,
+    SpawnDirection, SpawnMetadata, Vertex,
 };
 
 use base64::Engine as _;
@@ -54,6 +55,10 @@ pub struct State {
     block_vertex_count: u32,
     editor_cursor_vertex_buffer: Option<wgpu::Buffer>,
     editor_cursor_vertex_count: u32,
+    editor_selection_outline_vertex_buffer: Option<wgpu::Buffer>,
+    editor_selection_outline_vertex_count: u32,
+    editor_gizmo_vertex_buffer: Option<wgpu::Buffer>,
+    editor_gizmo_vertex_count: u32,
     spawn_marker_vertex_buffer: Option<wgpu::Buffer>,
     spawn_marker_vertex_count: u32,
     depth_texture: wgpu::Texture,
@@ -87,6 +92,11 @@ pub struct State {
     editor_pan_left_held: bool,
     editor_pan_right_held: bool,
     editor_shift_held: bool,
+    editor_mode: EditorMode,
+    editor_snap_to_grid: bool,
+    editor_selected_block_index: Option<usize>,
+    editor_gizmo_drag: Option<EditorGizmoDrag>,
+    editor_block_drag: Option<EditorBlockDrag>,
     editor_level_name: Option<String>,
     editor_music_metadata: MusicMetadata,
     editor_show_metadata: bool,
@@ -106,6 +116,39 @@ pub struct State {
 }
 
 type AudioImportData = (String, Vec<u8>);
+
+struct EditorPickResult {
+    cursor: [i32; 3],
+    hit_block_index: Option<usize>,
+}
+
+#[derive(Clone, Copy)]
+enum GizmoAxis {
+    X,
+    Y,
+    Z,
+}
+
+#[derive(Clone, Copy)]
+enum GizmoDragKind {
+    Move,
+    Resize,
+}
+
+#[derive(Clone, Copy)]
+struct EditorGizmoDrag {
+    axis: GizmoAxis,
+    kind: GizmoDragKind,
+    start_mouse: [f64; 2],
+    start_position: [f32; 3],
+    start_size: [f32; 3],
+}
+
+#[derive(Clone, Copy)]
+struct EditorBlockDrag {
+    start_mouse: [f64; 2],
+    start_position: [f32; 3],
+}
 
 impl State {
     #[cfg(target_arch = "wasm32")]
@@ -418,6 +461,10 @@ impl State {
             block_vertex_count,
             editor_cursor_vertex_buffer: None,
             editor_cursor_vertex_count: 0,
+            editor_selection_outline_vertex_buffer: None,
+            editor_selection_outline_vertex_count: 0,
+            editor_gizmo_vertex_buffer: None,
+            editor_gizmo_vertex_count: 0,
             spawn_marker_vertex_buffer: None,
             spawn_marker_vertex_count: 0,
             editor: EditorState::new(),
@@ -439,6 +486,11 @@ impl State {
             editor_pan_left_held: false,
             editor_pan_right_held: false,
             editor_shift_held: false,
+            editor_mode: EditorMode::Place,
+            editor_snap_to_grid: true,
+            editor_selected_block_index: None,
+            editor_gizmo_drag: None,
+            editor_block_drag: None,
             editor_level_name: None,
             editor_music_metadata: MusicMetadata {
                 source: "music.mp3".to_string(),
@@ -657,7 +709,10 @@ impl State {
     pub fn handle_mouse_button(&mut self, button: u32, pressed: bool) {
         match button {
             0 => {
-                if pressed {
+                if !pressed {
+                    self.editor_gizmo_drag = None;
+                    self.editor_block_drag = None;
+                } else {
                     self.turn_right();
                 }
             }
@@ -666,6 +721,133 @@ impl State {
             }
             _ => {}
         }
+    }
+
+    pub fn handle_primary_click(&mut self, x: f64, y: f64) {
+        if self.phase == AppPhase::Editor {
+            match self.editor_mode {
+                EditorMode::Place => {
+                    self.update_editor_cursor_from_screen(x, y);
+                    self.place_editor_block();
+                }
+                EditorMode::Select => {
+                    if self.begin_editor_gizmo_drag(x, y) {
+                        return;
+                    }
+                    if self.begin_editor_selected_block_drag(x, y) {
+                        return;
+                    }
+                    self.select_editor_block_from_screen(x, y);
+                }
+            }
+            return;
+        }
+
+        self.turn_right();
+    }
+
+    pub fn drag_editor_gizmo_from_screen(&mut self, x: f64, y: f64) -> bool {
+        if self.phase != AppPhase::Editor || self.editor_right_dragging {
+            return false;
+        }
+
+        let Some(drag) = self.editor_gizmo_drag else {
+            return false;
+        };
+        let mouse_delta = Vec2::new(
+            (x - drag.start_mouse[0]) as f32,
+            (y - drag.start_mouse[1]) as f32,
+        );
+
+        if mouse_delta.length_squared() <= f32::EPSILON {
+            return true;
+        }
+
+        let center = Vec3::new(
+            drag.start_position[0] + drag.start_size[0] * 0.5,
+            drag.start_position[1] + drag.start_size[1] * 0.5,
+            drag.start_position[2] + drag.start_size[2] * 0.5,
+        );
+        let axis_dir = match drag.axis {
+            GizmoAxis::X => Vec3::X,
+            GizmoAxis::Y => Vec3::Y,
+            GizmoAxis::Z => Vec3::Z,
+        };
+
+        let Some(origin_screen) = self.world_to_screen(center) else {
+            self.editor_gizmo_drag = Some(drag);
+            return true;
+        };
+        let Some(axis_screen) = self.world_to_screen(center + axis_dir) else {
+            self.editor_gizmo_drag = Some(drag);
+            return true;
+        };
+
+        let axis_screen_delta = axis_screen - origin_screen;
+        if axis_screen_delta.length_squared() <= f32::EPSILON {
+            return true;
+        }
+
+        let axis_screen_dir = axis_screen_delta.normalize();
+        let projected_pixels = mouse_delta.dot(axis_screen_dir);
+        let world_delta = projected_pixels * (0.012 / self.editor_zoom.max(0.25));
+
+        match drag.kind {
+            GizmoDragKind::Move => {
+                let mut position = drag.start_position;
+                match drag.axis {
+                    GizmoAxis::X => position[0] += world_delta,
+                    GizmoAxis::Y => position[1] += world_delta,
+                    GizmoAxis::Z => position[2] += world_delta,
+                }
+                self.set_editor_selected_block_position(position);
+            }
+            GizmoDragKind::Resize => {
+                let mut size = drag.start_size;
+                match drag.axis {
+                    GizmoAxis::X => size[0] += world_delta,
+                    GizmoAxis::Y => size[1] += world_delta,
+                    GizmoAxis::Z => size[2] += world_delta,
+                }
+                self.set_editor_selected_block_size(size);
+            }
+        }
+        true
+    }
+
+    pub fn drag_editor_selection_from_screen(&mut self, x: f64, y: f64) -> bool {
+        if self.drag_editor_gizmo_from_screen(x, y) {
+            return true;
+        }
+
+        if self.phase != AppPhase::Editor
+            || self.editor_right_dragging
+            || self.editor_mode != EditorMode::Select
+        {
+            return false;
+        }
+
+        let Some(drag) = self.editor_block_drag else {
+            return false;
+        };
+        let mouse_delta = Vec2::new(
+            (x - drag.start_mouse[0]) as f32,
+            (y - drag.start_mouse[1]) as f32,
+        );
+
+        if mouse_delta.length_squared() <= f32::EPSILON {
+            return true;
+        }
+
+        let (camera_right_xy, camera_up_xy) = self.editor_camera_axes_xy();
+        let world_delta_xy = camera_right_xy * mouse_delta.x + camera_up_xy * -mouse_delta.y;
+        let world_scale = 0.012 / self.editor_zoom.max(0.25);
+
+        let mut position = drag.start_position;
+        position[0] += world_delta_xy.x * world_scale;
+        position[1] += world_delta_xy.y * world_scale;
+        self.set_editor_selected_block_position(position);
+        true
     }
 
     pub fn render_egui(
@@ -728,6 +910,10 @@ impl State {
         self.editor_level_name = Some(level_name);
         self.playtesting_editor = false;
         self.editor_right_dragging = false;
+        self.editor_mode = EditorMode::Place;
+        self.editor_selected_block_index = None;
+        self.editor_gizmo_drag = None;
+        self.editor_block_drag = None;
         self.clear_editor_pan_keys();
         self.editor_camera_rotation = -45.0f32.to_radians();
         self.editor_camera_pitch = 45.0f32.to_radians();
@@ -739,6 +925,9 @@ impl State {
     fn enter_menu_phase(&mut self) {
         self.playtesting_editor = false;
         self.editor_level_name = None;
+        self.editor_selected_block_index = None;
+        self.editor_gizmo_drag = None;
+        self.editor_block_drag = None;
         self.playing_level_name = None;
         self.editor_right_dragging = false;
         self.clear_editor_pan_keys();
@@ -767,6 +956,114 @@ impl State {
 
     pub fn set_editor_block_kind(&mut self, kind: BlockKind) {
         self.editor_selected_kind = kind;
+    }
+
+    pub(crate) fn set_editor_mode(&mut self, mode: EditorMode) {
+        self.editor_mode = mode;
+        self.editor_gizmo_drag = None;
+        self.editor_block_drag = None;
+        if mode == EditorMode::Place {
+            self.editor_selected_block_index = None;
+        }
+        self.rebuild_editor_gizmo_vertices();
+        self.rebuild_editor_selection_outline_vertices();
+    }
+
+    pub(crate) fn editor_mode(&self) -> EditorMode {
+        self.editor_mode
+    }
+
+    pub(crate) fn editor_snap_to_grid(&self) -> bool {
+        self.editor_snap_to_grid
+    }
+
+    pub(crate) fn set_editor_snap_to_grid(&mut self, snap: bool) {
+        self.editor_snap_to_grid = snap;
+        if self.editor_selected_block_index.is_some() {
+            if let Some(obj) = self.editor_selected_block() {
+                self.set_editor_selected_block_position(obj.position);
+                self.set_editor_selected_block_size(obj.size);
+            }
+        }
+    }
+
+    pub(crate) fn editor_selected_block(&self) -> Option<LevelObject> {
+        self.editor_selected_block_index
+            .and_then(|index| self.editor_objects.get(index).cloned())
+    }
+
+    pub(crate) fn set_editor_selected_block_position(&mut self, position: [f32; 3]) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        if let Some(index) = self
+            .editor_selected_block_index
+            .filter(|index| *index < self.editor_objects.len())
+        {
+            let bounds = self.editor.bounds;
+            let next_position = if self.editor_snap_to_grid {
+                [
+                    position[0].round(),
+                    position[1].round(),
+                    position[2].max(0.0).round(),
+                ]
+            } else {
+                [position[0], position[1], position[2].max(0.0)]
+            };
+            self.editor_objects[index].position = next_position;
+            self.editor.cursor = [
+                (next_position[0].floor() as i32).clamp(-bounds, bounds),
+                (next_position[1].floor() as i32).clamp(-bounds, bounds),
+                (next_position[2].floor() as i32).max(0),
+            ];
+            self.sync_editor_objects();
+            self.rebuild_editor_cursor_vertices();
+            self.rebuild_editor_gizmo_vertices();
+            self.rebuild_editor_selection_outline_vertices();
+        }
+    }
+
+    pub(crate) fn set_editor_selected_block_size(&mut self, size: [f32; 3]) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        if let Some(index) = self
+            .editor_selected_block_index
+            .filter(|index| *index < self.editor_objects.len())
+        {
+            let snapped_size = if self.editor_snap_to_grid {
+                [size[0].round(), size[1].round(), size[2].round()]
+            } else {
+                size
+            };
+            let min_size = if self.editor_snap_to_grid { 1.0 } else { 0.25 };
+            self.editor_objects[index].size = [
+                snapped_size[0].max(min_size),
+                snapped_size[1].max(min_size),
+                snapped_size[2].max(min_size),
+            ];
+            self.sync_editor_objects();
+            self.rebuild_editor_gizmo_vertices();
+            self.rebuild_editor_selection_outline_vertices();
+        }
+    }
+
+    pub(crate) fn set_editor_selected_block_kind(&mut self, kind: BlockKind) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        if let Some(index) = self
+            .editor_selected_block_index
+            .filter(|index| *index < self.editor_objects.len())
+        {
+            self.editor_objects[index].kind = kind;
+            self.sync_editor_objects();
+            self.rebuild_editor_gizmo_vertices();
+            self.rebuild_editor_selection_outline_vertices();
+        }
     }
 
     pub fn editor_selected_block_kind(&self) -> BlockKind {
@@ -944,8 +1241,178 @@ impl State {
             return;
         }
 
-        if self.config.width == 0 || self.config.height == 0 {
+        let Some(pick) = self.editor_pick_from_screen(x, y) else {
             return;
+        };
+
+        if pick.cursor != self.editor.cursor {
+            self.editor.cursor = pick.cursor;
+            self.rebuild_editor_cursor_vertices();
+        }
+    }
+
+    fn begin_editor_gizmo_drag(&mut self, x: f64, y: f64) -> bool {
+        if self.phase != AppPhase::Editor || self.editor_mode != EditorMode::Select {
+            return false;
+        }
+
+        let Some(index) = self
+            .editor_selected_block_index
+            .filter(|index| *index < self.editor_objects.len())
+        else {
+            return false;
+        };
+
+        let Some((kind, axis)) = self.pick_editor_gizmo_handle(x, y) else {
+            return false;
+        };
+
+        let obj = self.editor_objects[index].clone();
+
+        self.editor_gizmo_drag = Some(EditorGizmoDrag {
+            axis,
+            kind,
+            start_mouse: [x, y],
+            start_position: obj.position,
+            start_size: obj.size,
+        });
+        true
+    }
+
+    fn begin_editor_selected_block_drag(&mut self, x: f64, y: f64) -> bool {
+        if self.phase != AppPhase::Editor || self.editor_mode != EditorMode::Select {
+            return false;
+        }
+
+        let Some(selected_index) = self
+            .editor_selected_block_index
+            .filter(|index| *index < self.editor_objects.len())
+        else {
+            return false;
+        };
+
+        let obj = self.editor_objects[selected_index].clone();
+
+        let Some(pick) = self.editor_pick_from_screen(x, y) else {
+            return false;
+        };
+
+        if pick.hit_block_index == Some(selected_index) {
+            self.editor_block_drag = Some(EditorBlockDrag {
+                start_mouse: [x, y],
+                start_position: obj.position,
+            });
+            return true;
+        }
+
+        false
+    }
+
+    fn editor_view_proj(&self) -> Option<Mat4> {
+        if self.config.width == 0 || self.config.height == 0 {
+            return None;
+        }
+
+        let aspect = self.config.width as f32 / self.config.height as f32;
+        let target = Vec3::new(self.editor_camera_pan[0], self.editor_camera_pan[1], 0.0);
+        let eye = target + self.editor_camera_offset();
+        let up = Vec3::new(0.0, 0.0, 1.0);
+        let view = Mat4::look_at_rh(eye, target, up);
+        let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 1000.0);
+        Some(proj * view)
+    }
+
+    fn world_to_screen(&self, world: Vec3) -> Option<Vec2> {
+        let view_proj = self.editor_view_proj()?;
+        let clip = view_proj * world.extend(1.0);
+        if clip.w.abs() <= f32::EPSILON {
+            return None;
+        }
+
+        let ndc = clip.truncate() / clip.w;
+        if ndc.z < -1.0 || ndc.z > 1.0 {
+            return None;
+        }
+
+        let screen_x = (ndc.x + 1.0) * 0.5 * self.config.width as f32;
+        let screen_y = (1.0 - ndc.y) * 0.5 * self.config.height as f32;
+        Some(Vec2::new(screen_x, screen_y))
+    }
+
+    fn pick_editor_gizmo_handle(&self, x: f64, y: f64) -> Option<(GizmoDragKind, GizmoAxis)> {
+        if self.phase != AppPhase::Editor || self.editor_mode != EditorMode::Select {
+            return None;
+        }
+
+        let index = self
+            .editor_selected_block_index
+            .filter(|index| *index < self.editor_objects.len())?;
+        let obj = &self.editor_objects[index];
+
+        let center = Vec3::new(
+            obj.position[0] + obj.size[0] * 0.5,
+            obj.position[1] + obj.size[1] * 0.5,
+            obj.position[2] + obj.size[2] * 0.5,
+        );
+        let arm_length = obj.size[0].max(obj.size[1]).max(obj.size[2]).max(1.0) * 0.9;
+        let pointer = Vec2::new(x as f32, y as f32);
+
+        let candidates = [
+            (
+                GizmoDragKind::Move,
+                GizmoAxis::X,
+                center + Vec3::new(arm_length, 0.0, 0.0),
+            ),
+            (
+                GizmoDragKind::Move,
+                GizmoAxis::Y,
+                center + Vec3::new(0.0, arm_length, 0.0),
+            ),
+            (
+                GizmoDragKind::Move,
+                GizmoAxis::Z,
+                center + Vec3::new(0.0, 0.0, arm_length),
+            ),
+            (
+                GizmoDragKind::Resize,
+                GizmoAxis::X,
+                Vec3::new(obj.position[0] + obj.size[0] + 0.36, center.y, center.z),
+            ),
+            (
+                GizmoDragKind::Resize,
+                GizmoAxis::Y,
+                Vec3::new(center.x, obj.position[1] + obj.size[1] + 0.36, center.z),
+            ),
+            (
+                GizmoDragKind::Resize,
+                GizmoAxis::Z,
+                Vec3::new(center.x, center.y, obj.position[2] + obj.size[2] + 0.36),
+            ),
+        ];
+
+        let mut best: Option<(GizmoDragKind, GizmoAxis, f32)> = None;
+        for (kind, axis, world) in candidates {
+            if let Some(screen) = self.world_to_screen(world) {
+                let dist = screen.distance(pointer);
+                if dist <= 22.0 {
+                    match best {
+                        Some((.., best_dist)) if dist >= best_dist => {}
+                        _ => best = Some((kind, axis, dist)),
+                    }
+                }
+            }
+        }
+
+        best.map(|(kind, axis, _)| (kind, axis))
+    }
+
+    fn editor_pick_from_screen(&self, x: f64, y: f64) -> Option<EditorPickResult> {
+        if self.phase != AppPhase::Editor || self.editor_right_dragging {
+            return None;
+        }
+
+        if self.config.width == 0 || self.config.height == 0 {
+            return None;
         }
 
         let aspect = self.config.width as f32 / self.config.height as f32;
@@ -965,7 +1432,7 @@ impl State {
         let mut near_world = inv_view_proj * near_clip;
         let mut far_world = inv_view_proj * far_clip;
         if near_world.w.abs() <= f32::EPSILON || far_world.w.abs() <= f32::EPSILON {
-            return;
+            return None;
         }
 
         near_world /= near_world.w;
@@ -977,6 +1444,7 @@ impl State {
         let mut min_t = f32::INFINITY;
         let mut best_hit_normal = Vec3::Z;
         let mut hit_found = false;
+        let mut hit_block_index: Option<usize> = None;
 
         if ray_dir.z.abs() > f32::EPSILON {
             let t = -ray_origin.z / ray_dir.z;
@@ -986,7 +1454,7 @@ impl State {
             }
         }
 
-        for obj in &self.editor_objects {
+        for (index, obj) in self.editor_objects.iter().enumerate() {
             let min = Vec3::from_array(obj.position);
             let max = min + Vec3::from_array(obj.size);
 
@@ -1006,6 +1474,7 @@ impl State {
                 if t < min_t {
                     min_t = t;
                     hit_found = true;
+                    hit_block_index = Some(index);
 
                     let eps = 1e-5;
                     if (t - t1.min(t2)).abs() < eps {
@@ -1032,7 +1501,7 @@ impl State {
         }
 
         if !hit_found {
-            return;
+            return None;
         }
 
         let hit = ray_origin + ray_dir * min_t;
@@ -1044,10 +1513,46 @@ impl State {
             (target.z.floor() as i32).max(0),
         ];
 
-        if next_cursor != self.editor.cursor {
-            self.editor.cursor = next_cursor;
+        Some(EditorPickResult {
+            cursor: next_cursor,
+            hit_block_index,
+        })
+    }
+
+    fn select_editor_block_from_screen(&mut self, x: f64, y: f64) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        let Some(pick) = self.editor_pick_from_screen(x, y) else {
+            self.editor_selected_block_index = None;
+            self.editor_gizmo_drag = None;
+            self.editor_block_drag = None;
+            self.rebuild_editor_gizmo_vertices();
+            self.rebuild_editor_selection_outline_vertices();
+            return;
+        };
+
+        self.editor_selected_block_index = pick.hit_block_index;
+        self.editor_gizmo_drag = None;
+        self.editor_block_drag = None;
+
+        if let Some(index) = pick.hit_block_index {
+            if let Some(obj) = self.editor_objects.get(index) {
+                self.editor.cursor = [
+                    obj.position[0].floor() as i32,
+                    obj.position[1].floor() as i32,
+                    obj.position[2].floor() as i32,
+                ];
+                self.rebuild_editor_cursor_vertices();
+            }
+        } else if pick.cursor != self.editor.cursor {
+            self.editor.cursor = pick.cursor;
             self.rebuild_editor_cursor_vertices();
         }
+
+        self.rebuild_editor_gizmo_vertices();
+        self.rebuild_editor_selection_outline_vertices();
     }
 
     pub fn drag_editor_camera_by_pixels(&mut self, dx: f64, dy: f64) {
@@ -1083,6 +1588,16 @@ impl State {
 
     pub fn editor_remove_block(&mut self) {
         if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        if let Some(index) = self.editor_selected_block_index {
+            if index < self.editor_objects.len() {
+                self.editor_objects.remove(index);
+            }
+            self.editor_selected_block_index = None;
+            self.sync_editor_objects();
+            self.rebuild_editor_cursor_vertices();
             return;
         }
 
@@ -1324,6 +1839,7 @@ impl State {
 
     fn apply_imported_level_metadata(&mut self, metadata: LevelMetadata) {
         self.editor_objects = metadata.objects;
+        self.editor_selected_block_index = None;
         self.editor_spawn = metadata.spawn;
         self.editor_tap_steps = metadata.taps;
         self.editor_tap_steps.sort_unstable();
@@ -1454,13 +1970,21 @@ impl State {
             self.editor.cursor,
             self.editor_selected_kind,
         ));
+        self.editor_selected_block_index = None;
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
     }
 
     fn sync_editor_objects(&mut self) {
+        if let Some(index) = self.editor_selected_block_index {
+            if index >= self.editor_objects.len() {
+                self.editor_selected_block_index = None;
+            }
+        }
         self.game.objects = self.editor_objects.clone();
         self.rebuild_block_vertices();
+        self.rebuild_editor_gizmo_vertices();
+        self.rebuild_editor_selection_outline_vertices();
     }
 
     fn apply_spawn_to_game(&mut self, position: [f32; 3], direction: SpawnDirection) {
@@ -1522,6 +2046,70 @@ impl State {
             ));
         } else {
             self.editor_cursor_vertex_buffer = None;
+        }
+    }
+
+    fn rebuild_editor_gizmo_vertices(&mut self) {
+        if self.phase != AppPhase::Editor || self.editor_mode != EditorMode::Select {
+            self.editor_gizmo_vertex_count = 0;
+            self.editor_gizmo_vertex_buffer = None;
+            return;
+        }
+
+        let Some(index) = self
+            .editor_selected_block_index
+            .filter(|index| *index < self.editor_objects.len())
+        else {
+            self.editor_gizmo_vertex_count = 0;
+            self.editor_gizmo_vertex_buffer = None;
+            return;
+        };
+
+        let obj = &self.editor_objects[index];
+        let vertices = build_editor_gizmo_vertices(obj.position, obj.size);
+        self.editor_gizmo_vertex_count = vertices.len() as u32;
+        if !vertices.is_empty() {
+            self.editor_gizmo_vertex_buffer = Some(self.device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Editor Gizmo Vertex Buffer"),
+                    contents: bytemuck::cast_slice(&vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                },
+            ));
+        } else {
+            self.editor_gizmo_vertex_buffer = None;
+        }
+    }
+
+    fn rebuild_editor_selection_outline_vertices(&mut self) {
+        if self.phase != AppPhase::Editor || self.editor_mode != EditorMode::Select {
+            self.editor_selection_outline_vertex_count = 0;
+            self.editor_selection_outline_vertex_buffer = None;
+            return;
+        }
+
+        let Some(index) = self
+            .editor_selected_block_index
+            .filter(|index| *index < self.editor_objects.len())
+        else {
+            self.editor_selection_outline_vertex_count = 0;
+            self.editor_selection_outline_vertex_buffer = None;
+            return;
+        };
+
+        let obj = &self.editor_objects[index];
+        let vertices = build_editor_selection_outline_vertices(obj.position, obj.size);
+        self.editor_selection_outline_vertex_count = vertices.len() as u32;
+        if !vertices.is_empty() {
+            self.editor_selection_outline_vertex_buffer = Some(self.device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Editor Selection Outline Vertex Buffer"),
+                    contents: bytemuck::cast_slice(&vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                },
+            ));
+        } else {
+            self.editor_selection_outline_vertex_buffer = None;
         }
     }
 
@@ -1818,6 +2406,18 @@ impl State {
                         render_pass.set_vertex_buffer(0, buf.slice(..));
                         render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
                         render_pass.draw(0..self.spawn_marker_vertex_count, 0..1);
+                    }
+
+                    if let Some(buf) = &self.editor_selection_outline_vertex_buffer {
+                        render_pass.set_vertex_buffer(0, buf.slice(..));
+                        render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
+                        render_pass.draw(0..self.editor_selection_outline_vertex_count, 0..1);
+                    }
+
+                    if let Some(buf) = &self.editor_gizmo_vertex_buffer {
+                        render_pass.set_vertex_buffer(0, buf.slice(..));
+                        render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
+                        render_pass.draw(0..self.editor_gizmo_vertex_count, 0..1);
                     }
 
                     if let Some(buf) = &self.editor_cursor_vertex_buffer {

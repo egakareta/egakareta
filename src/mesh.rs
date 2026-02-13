@@ -933,6 +933,178 @@ pub(crate) fn build_editor_cursor_vertices(cursor: [i32; 3]) -> Vec<Vertex> {
     vertices
 }
 
+pub(crate) fn build_editor_gizmo_vertices(position: [f32; 3], size: [f32; 3]) -> Vec<Vertex> {
+    let mut vertices = Vec::new();
+
+    let center = [
+        position[0] + size[0] * 0.5,
+        position[1] + size[1] * 0.5,
+        position[2] + size[2] * 0.5,
+    ];
+
+    let arm_length = size[0].max(size[1]).max(size[2]).max(1.0) * 0.9;
+    let shaft = 0.06;
+    let tip = 0.18;
+    let cap = 0.22;
+
+    // X move arm + tip
+    let x_arm_start = center[0] + 0.08;
+    let x_arm_end = center[0] + arm_length;
+    append_prism(
+        &mut vertices,
+        [x_arm_start, center[1] - shaft, center[2] - shaft],
+        [x_arm_end, center[1] + shaft, center[2] + shaft],
+        [1.0, 0.25, 0.25, 1.0],
+        [0.85, 0.15, 0.15, 1.0],
+    );
+    append_prism(
+        &mut vertices,
+        [x_arm_end - tip, center[1] - cap, center[2] - cap],
+        [x_arm_end + tip, center[1] + cap, center[2] + cap],
+        [1.0, 0.38, 0.38, 1.0],
+        [0.85, 0.2, 0.2, 1.0],
+    );
+
+    // Y move arm + tip
+    let y_arm_start = center[1] + 0.08;
+    let y_arm_end = center[1] + arm_length;
+    append_prism(
+        &mut vertices,
+        [center[0] - shaft, y_arm_start, center[2] - shaft],
+        [center[0] + shaft, y_arm_end, center[2] + shaft],
+        [0.35, 1.0, 0.35, 1.0],
+        [0.2, 0.85, 0.2, 1.0],
+    );
+    append_prism(
+        &mut vertices,
+        [center[0] - cap, y_arm_end - tip, center[2] - cap],
+        [center[0] + cap, y_arm_end + tip, center[2] + cap],
+        [0.45, 1.0, 0.45, 1.0],
+        [0.25, 0.85, 0.25, 1.0],
+    );
+
+    // Z move arm + tip
+    let z_arm_start = center[2] + 0.08;
+    let z_arm_end = center[2] + arm_length;
+    append_prism(
+        &mut vertices,
+        [center[0] - shaft, center[1] - shaft, z_arm_start],
+        [center[0] + shaft, center[1] + shaft, z_arm_end],
+        [0.45, 0.65, 1.0, 1.0],
+        [0.3, 0.5, 0.9, 1.0],
+    );
+    append_prism(
+        &mut vertices,
+        [center[0] - cap, center[1] - cap, z_arm_end - tip],
+        [center[0] + cap, center[1] + cap, z_arm_end + tip],
+        [0.55, 0.72, 1.0, 1.0],
+        [0.35, 0.55, 0.9, 1.0],
+    );
+
+    // Resize handles on positive corners of each axis
+    let resize = 0.18;
+    append_prism(
+        &mut vertices,
+        [
+            position[0] + size[0],
+            center[1] - resize,
+            center[2] - resize,
+        ],
+        [
+            position[0] + size[0] + resize * 2.0,
+            center[1] + resize,
+            center[2] + resize,
+        ],
+        [1.0, 0.55, 0.55, 1.0],
+        [0.95, 0.42, 0.42, 1.0],
+    );
+    append_prism(
+        &mut vertices,
+        [
+            center[0] - resize,
+            position[1] + size[1],
+            center[2] - resize,
+        ],
+        [
+            center[0] + resize,
+            position[1] + size[1] + resize * 2.0,
+            center[2] + resize,
+        ],
+        [0.6, 1.0, 0.6, 1.0],
+        [0.45, 0.95, 0.45, 1.0],
+    );
+    append_prism(
+        &mut vertices,
+        [
+            center[0] - resize,
+            center[1] - resize,
+            position[2] + size[2],
+        ],
+        [
+            center[0] + resize,
+            center[1] + resize,
+            position[2] + size[2] + resize * 2.0,
+        ],
+        [0.65, 0.8, 1.0, 1.0],
+        [0.5, 0.65, 0.95, 1.0],
+    );
+
+    vertices
+}
+
+pub(crate) fn build_editor_selection_outline_vertices(
+    position: [f32; 3],
+    size: [f32; 3],
+) -> Vec<Vertex> {
+    let mut vertices = Vec::new();
+
+    let x0 = position[0] - 0.015;
+    let x1 = position[0] + size[0] + 0.015;
+    let y0 = position[1] - 0.015;
+    let y1 = position[1] + size[1] + 0.015;
+    let z0 = position[2] - 0.015;
+    let z1 = position[2] + size[2] + 0.015;
+
+    let thickness = 0.045;
+    let color_top = [0.45, 0.9, 1.0, 1.0];
+    let color_side = [0.25, 0.75, 0.9, 1.0];
+
+    // Edges along X
+    for (y, z) in [(y0, z0), (y1, z0), (y0, z1), (y1, z1)] {
+        append_prism(
+            &mut vertices,
+            [x0, y - thickness, z - thickness],
+            [x1, y + thickness, z + thickness],
+            color_top,
+            color_side,
+        );
+    }
+
+    // Edges along Y
+    for (x, z) in [(x0, z0), (x1, z0), (x0, z1), (x1, z1)] {
+        append_prism(
+            &mut vertices,
+            [x - thickness, y0, z - thickness],
+            [x + thickness, y1, z + thickness],
+            color_top,
+            color_side,
+        );
+    }
+
+    // Edges along Z
+    for (x, y) in [(x0, y0), (x1, y0), (x0, y1), (x1, y1)] {
+        append_prism(
+            &mut vertices,
+            [x - thickness, y - thickness, z0],
+            [x + thickness, y + thickness, z1],
+            color_top,
+            color_side,
+        );
+    }
+
+    vertices
+}
+
 pub(crate) fn build_spawn_marker_vertices(position: [f32; 3], faces_right: bool) -> Vec<Vertex> {
     let mut vertices = Vec::new();
     let x = position[0];

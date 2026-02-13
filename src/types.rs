@@ -153,6 +153,13 @@ pub(crate) struct EditorState {
     pub(crate) bounds: i32,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum EditorMode {
+    Select,
+    #[default]
+    Place,
+}
+
 impl EditorState {
     pub(crate) fn new() -> Self {
         Self {

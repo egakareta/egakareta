@@ -1,4 +1,4 @@
-use crate::types::SpawnDirection;
+use crate::types::{EditorMode, SpawnDirection};
 use crate::{BlockKind, State};
 
 const MIN_TIMELINE_LENGTH: u32 = 1;
@@ -147,21 +147,111 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                 let (max_step, divisor) = timeline_step_metrics(state.editor_timeline_length());
 
                 ui.horizontal(|ui| {
-                    ui.label("Block:");
+                    ui.label("Mode:");
+                    let mode = state.editor_mode();
+                    if ui
+                        .selectable_label(mode == EditorMode::Select, "Select")
+                        .clicked()
+                    {
+                        state.set_editor_mode(EditorMode::Select);
+                    }
+                    if ui
+                        .selectable_label(mode == EditorMode::Place, "Place")
+                        .clicked()
+                    {
+                        state.set_editor_mode(EditorMode::Place);
+                    }
 
-                    let current = state.editor_selected_block_kind();
-                    for (name, kind) in [
-                        ("Standard", BlockKind::Standard),
-                        ("Grass", BlockKind::Grass),
-                        ("Dirt", BlockKind::Dirt),
-                        ("Void", BlockKind::Void),
-                        ("Speed Portal", BlockKind::SpeedPortal),
-                    ] {
-                        if ui.selectable_label(current == kind, name).clicked() {
-                            state.set_editor_block_kind(kind);
-                        }
+                    ui.separator();
+                    let mut snap = state.editor_snap_to_grid();
+                    if ui.checkbox(&mut snap, "Snap to Grid").changed() {
+                        state.set_editor_snap_to_grid(snap);
                     }
                 });
+
+                match state.editor_mode() {
+                    EditorMode::Place => {
+                        ui.horizontal(|ui| {
+                            ui.label("Block:");
+
+                            let current = state.editor_selected_block_kind();
+                            for (name, kind) in [
+                                ("Standard", BlockKind::Standard),
+                                ("Grass", BlockKind::Grass),
+                                ("Dirt", BlockKind::Dirt),
+                                ("Void", BlockKind::Void),
+                                ("Speed Portal", BlockKind::SpeedPortal),
+                            ] {
+                                if ui.selectable_label(current == kind, name).clicked() {
+                                    state.set_editor_block_kind(kind);
+                                }
+                            }
+                        });
+                    }
+                    EditorMode::Select => {
+                        if let Some(mut selected) = state.editor_selected_block() {
+                            ui.horizontal(|ui| {
+                                ui.label("Move:");
+                                let mut changed = false;
+                                changed |= ui
+                                    .add(
+                                        egui::DragValue::new(&mut selected.position[0])
+                                            .prefix("X "),
+                                    )
+                                    .changed();
+                                changed |= ui
+                                    .add(
+                                        egui::DragValue::new(&mut selected.position[1])
+                                            .prefix("Y "),
+                                    )
+                                    .changed();
+                                changed |= ui
+                                    .add(
+                                        egui::DragValue::new(&mut selected.position[2])
+                                            .prefix("Z "),
+                                    )
+                                    .changed();
+                                if changed {
+                                    state.set_editor_selected_block_position(selected.position);
+                                }
+                            });
+
+                            ui.horizontal(|ui| {
+                                ui.label("Resize:");
+                                let mut changed = false;
+                                changed |= ui
+                                    .add(egui::DragValue::new(&mut selected.size[0]).prefix("W "))
+                                    .changed();
+                                changed |= ui
+                                    .add(egui::DragValue::new(&mut selected.size[1]).prefix("D "))
+                                    .changed();
+                                changed |= ui
+                                    .add(egui::DragValue::new(&mut selected.size[2]).prefix("H "))
+                                    .changed();
+                                if changed {
+                                    state.set_editor_selected_block_size(selected.size);
+                                }
+                            });
+
+                            ui.horizontal(|ui| {
+                                ui.label("Color:");
+                                for (name, kind) in [
+                                    ("Standard", BlockKind::Standard),
+                                    ("Grass", BlockKind::Grass),
+                                    ("Dirt", BlockKind::Dirt),
+                                    ("Void", BlockKind::Void),
+                                    ("Speed Portal", BlockKind::SpeedPortal),
+                                ] {
+                                    if ui.selectable_label(selected.kind == kind, name).clicked() {
+                                        state.set_editor_selected_block_kind(kind);
+                                    }
+                                }
+                            });
+                        } else {
+                            ui.label("Select mode: click a block to edit it.");
+                        }
+                    }
+                }
 
                 ui.separator();
 

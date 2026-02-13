@@ -133,17 +133,9 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
 
         if !*ui_wants_pointer_clone.borrow() {
             if button == 0 {
-                state.update_editor_cursor_from_screen(
-                    event.offset_x() as f64,
-                    event.offset_y() as f64,
-                );
-            }
-            state.handle_mouse_button(button as u32, true);
-            if button == 0 {
-                state.update_editor_cursor_from_screen(
-                    event.offset_x() as f64,
-                    event.offset_y() as f64,
-                );
+                state.handle_primary_click(event.offset_x() as f64, event.offset_y() as f64);
+            } else {
+                state.handle_mouse_button(button as u32, true);
             }
         }
 
@@ -196,6 +188,17 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
             state
                 .drag_editor_camera_by_pixels(event.movement_x() as f64, event.movement_y() as f64);
             event.prevent_default();
+        } else if (event.buttons() & 1) != 0 {
+            let handled = state.drag_editor_selection_from_screen(
+                event.offset_x() as f64,
+                event.offset_y() as f64,
+            );
+            if !handled {
+                state.update_editor_cursor_from_screen(
+                    event.offset_x() as f64,
+                    event.offset_y() as f64,
+                );
+            }
         } else {
             state
                 .update_editor_cursor_from_screen(event.offset_x() as f64, event.offset_y() as f64);
