@@ -200,7 +200,7 @@ impl<T> PhysicalSize<T> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Direction {
     Forward,
     Right,

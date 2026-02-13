@@ -28,12 +28,10 @@ impl GameState {
     }
 
     pub(crate) fn turn_right(&mut self) {
-        if self.game_over || !self.started {
+        if self.game_over || !self.started || !self.is_grounded {
             return;
         }
-        if self.is_grounded {
-            self.push_to_active_trail(self.position);
-        }
+        self.push_to_active_trail(self.position);
         self.direction = match self.direction {
             Direction::Forward => Direction::Right,
             Direction::Right => Direction::Forward,
@@ -264,5 +262,25 @@ mod tests {
         // It should ignore the block at z=3.
         let height = game.top_surface_height_at(0.5, 0.5, 1.5);
         assert_eq!(height, Some(1.0));
+    }
+
+    #[test]
+    fn test_cant_turn_while_falling() {
+        let mut game = GameState::new();
+        game.started = true;
+        game.is_grounded = false;
+        let initial_direction = game.direction;
+        game.turn_right();
+        assert_eq!(game.direction, initial_direction);
+    }
+
+    #[test]
+    fn test_can_turn_while_grounded() {
+        let mut game = GameState::new();
+        game.started = true;
+        game.is_grounded = true;
+        let initial_direction = game.direction;
+        game.turn_right();
+        assert_ne!(game.direction, initial_direction);
     }
 }
