@@ -157,6 +157,8 @@ pub struct State {
     editor_camera_pan: [f32; 2],
     editor_camera_rotation: f32,
     editor_camera_pitch: f32,
+    playing_camera_rotation: f32,
+    playing_camera_pitch: f32,
     editor_zoom: f32,
     editor_timeline_step: u32,
     editor_timeline_length: u32,
@@ -168,6 +170,7 @@ pub struct State {
     editor_pan_right_held: bool,
     editor_shift_held: bool,
     editor_level_name: Option<String>,
+    playing_level_name: Option<String>,
     editor_show_import: bool,
     editor_import_text: String,
     playtesting_editor: bool,
@@ -488,6 +491,8 @@ impl State {
             editor_camera_pan: [0.0, 0.0],
             editor_camera_rotation: -45.0f32.to_radians(),
             editor_camera_pitch: 45.0f32.to_radians(),
+            playing_camera_rotation: -45.0f32.to_radians(),
+            playing_camera_pitch: 45.0f32.to_radians(),
             editor_zoom: 1.0,
             editor_timeline_step: 0,
             editor_timeline_length: 64,
@@ -499,6 +504,7 @@ impl State {
             editor_pan_right_held: false,
             editor_shift_held: false,
             editor_level_name: None,
+            playing_level_name: None,
             editor_show_import: false,
             editor_import_text: String::new(),
             playtesting_editor: false,
@@ -532,14 +538,15 @@ impl State {
                 self.start_level(self.menu.selected_level);
             }
             AppPhase::Playing => {
-                if self.game.game_over {
-                    if self.playtesting_editor {
-                        self.phase = AppPhase::Editor;
-                        self.game.game_over = false;
-                        self.game.trail_segments = vec![vec![self.game.position]];
-                    } else {
-                        self.back_to_menu();
+                if !self.game.started {
+                    self.game.started = true;
+                    if let Some(level_name) = self.playing_level_name.clone() {
+                        if let Some(metadata) = self.load_level_metadata(&level_name) {
+                            self.start_audio(&level_name, &metadata);
+                        }
                     }
+                } else if self.game.game_over {
+                    self.restart_level();
                 } else {
                     self.game.turn_right();
                 }
@@ -591,7 +598,7 @@ impl State {
     }
 
     pub fn set_editor_right_dragging(&mut self, dragging: bool) {
-        self.editor_right_dragging = dragging && self.phase == AppPhase::Editor;
+        self.editor_right_dragging = dragging;
     }
 
     pub fn handle_keyboard_input(&mut self, key: &str, pressed: bool, just_pressed: bool) {
@@ -869,6 +876,28 @@ impl State {
         ))
     }
 
+    fn playing_camera_offset(&self) -> Vec3 {
+        let distance = 28.28;
+        let rotation = if self.game.game_over || !self.game.started {
+            self.playing_camera_rotation
+        } else {
+            -45.0f32.to_radians()
+        };
+        let pitch = if self.game.game_over || !self.game.started {
+            self.playing_camera_pitch
+        } else {
+            45.0f32.to_radians()
+        };
+
+        let horizontal_distance = distance * pitch.cos();
+        let vertical_distance = distance * pitch.sin();
+        Mat4::from_rotation_z(rotation).transform_vector3(Vec3::new(
+            0.0,
+            -horizontal_distance,
+            vertical_distance,
+        ))
+    }
+
     pub fn adjust_editor_zoom(&mut self, delta: f32) {
         if self.phase != AppPhase::Editor {
             return;
@@ -1052,15 +1081,22 @@ impl State {
     }
 
     pub fn drag_editor_camera_by_pixels(&mut self, dx: f64, dy: f64) {
-        if self.phase != AppPhase::Editor || !self.editor_right_dragging {
+        if !self.editor_right_dragging {
             return;
         }
 
         const ROTATE_SPEED: f32 = 0.008;
         const PITCH_SPEED: f32 = 0.006;
-        self.editor_camera_rotation -= dx as f32 * ROTATE_SPEED;
-        self.editor_camera_pitch = (self.editor_camera_pitch + dy as f32 * PITCH_SPEED)
-            .clamp(10.0f32.to_radians(), 85.0f32.to_radians());
+
+        if self.phase == AppPhase::Editor {
+            self.editor_camera_rotation -= dx as f32 * ROTATE_SPEED;
+            self.editor_camera_pitch = (self.editor_camera_pitch + dy as f32 * PITCH_SPEED)
+                .clamp(10.0f32.to_radians(), 85.0f32.to_radians());
+        } else if self.phase == AppPhase::Playing && (self.game.game_over || !self.game.started) {
+            self.playing_camera_rotation -= dx as f32 * ROTATE_SPEED;
+            self.playing_camera_pitch = (self.playing_camera_pitch + dy as f32 * PITCH_SPEED)
+                .clamp(10.0f32.to_radians(), 85.0f32.to_radians());
+        }
     }
 
     pub fn move_editor_up(&mut self) {
@@ -1113,11 +1149,7 @@ impl State {
 
         self.stop_audio();
 
-        if let Some(level_name) = self.editor_level_name.clone() {
-            if let Some(metadata) = self.load_level_metadata(&level_name) {
-                self.start_audio(&level_name, &metadata);
-            }
-        }
+        self.playing_level_name = self.editor_level_name.clone();
 
         self.playtesting_editor = true;
         self.game = GameState::new();
@@ -1125,6 +1157,8 @@ impl State {
         let (position, direction) = self.editor_timeline_position(self.editor_timeline_step);
         self.apply_spawn_to_game(position, direction);
         self.phase = AppPhase::Playing;
+        self.playing_camera_rotation = -45.0f32.to_radians();
+        self.playing_camera_pitch = 45.0f32.to_radians();
         self.editor_right_dragging = false;
         self.clear_editor_pan_keys();
         self.rebuild_block_vertices();
@@ -1155,8 +1189,18 @@ impl State {
 
     pub fn back_to_menu(&mut self) {
         self.stop_audio();
+        if self.playtesting_editor {
+            self.playtesting_editor = false;
+            self.phase = AppPhase::Editor;
+            self.game = GameState::new();
+            self.game.objects = self.editor_objects.clone();
+            self.rebuild_block_vertices();
+            return;
+        }
+
         self.playtesting_editor = false;
         self.editor_level_name = None;
+        self.playing_level_name = None;
         self.editor_right_dragging = false;
         self.clear_editor_pan_keys();
         self.phase = AppPhase::Menu;
@@ -1173,13 +1217,15 @@ impl State {
         self.game = GameState::new();
         self.phase = AppPhase::Playing;
         self.playtesting_editor = false;
+        self.playing_level_name = Some(level_name.clone());
+        self.playing_camera_rotation = -45.0f32.to_radians();
+        self.playing_camera_pitch = 45.0f32.to_radians();
         self.clear_editor_pan_keys();
 
         self.stop_audio();
 
         if let Some(metadata) = self.load_level_metadata(&level_name) {
             log::debug!("Starting level: {}", metadata.name);
-            self.start_audio(&level_name, &metadata);
             self.game.objects = metadata.objects;
             self.apply_spawn_to_game(metadata.spawn.position, metadata.spawn.direction);
         }
@@ -1187,6 +1233,27 @@ impl State {
         self.rebuild_block_vertices();
         self.rebuild_editor_cursor_vertices();
         self.rebuild_spawn_marker_vertices();
+    }
+
+    fn restart_level(&mut self) {
+        self.stop_audio();
+        self.game = GameState::new();
+
+        if self.playtesting_editor {
+            self.game.objects = self.editor_objects.clone();
+            let (position, direction) = self.editor_timeline_position(self.editor_timeline_step);
+            self.apply_spawn_to_game(position, direction);
+        } else if let Some(level_name) = self.playing_level_name.clone() {
+            if let Some(metadata) = self.load_level_metadata(&level_name) {
+                self.game.objects = metadata.objects;
+                self.apply_spawn_to_game(metadata.spawn.position, metadata.spawn.direction);
+            }
+        }
+
+        self.game.started = false;
+        self.playing_camera_rotation = -45.0f32.to_radians();
+        self.playing_camera_pitch = 45.0f32.to_radians();
+        self.rebuild_block_vertices();
     }
 
     fn start_editor(&mut self, index: usize) {
@@ -1747,8 +1814,7 @@ impl State {
             self.game.position[2],
         );
         let target = pos_3d;
-        let offset = Mat4::from_rotation_z(-45.0f32.to_radians())
-            .transform_vector3(Vec3::new(0.0, -20.0, 20.0));
+        let offset = self.playing_camera_offset();
         let eye = pos_3d + offset;
         let up = Vec3::new(0.0, 0.0, 1.0);
         let view = Mat4::look_at_rh(eye, target, up);

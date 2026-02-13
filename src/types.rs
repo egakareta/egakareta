@@ -79,6 +79,7 @@ pub enum BlockKind {
     Grass,
     Dirt,
     Void,
+    SpeedPortal,
 }
 
 #[derive(Deserialize, Serialize, Clone)]

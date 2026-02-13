@@ -9,6 +9,7 @@ pub(crate) struct GameState {
     pub(crate) vertical_velocity: f32,
     pub(crate) is_grounded: bool,
     pub(crate) game_over: bool,
+    pub(crate) started: bool,
 }
 
 impl GameState {
@@ -22,11 +23,12 @@ impl GameState {
             vertical_velocity: 0.0,
             is_grounded: true,
             game_over: false,
+            started: false,
         }
     }
 
     pub(crate) fn turn_right(&mut self) {
-        if self.game_over {
+        if self.game_over || !self.started {
             return;
         }
         if self.is_grounded {
@@ -39,7 +41,7 @@ impl GameState {
     }
 
     pub(crate) fn update(&mut self, dt: f32) {
-        if self.game_over {
+        if self.game_over || !self.started {
             return;
         }
 
@@ -56,9 +58,58 @@ impl GameState {
         self.position[0] += delta[0] * self.speed * dt;
         self.position[1] += delta[1] * self.speed * dt;
 
-        if self.collides_with_block_body(self.position[0], self.position[1], self.position[2]) {
+        // Collision detection
+        let mut hit_death = false;
+        let mut hit_portals = Vec::new();
+
+        const SNAKE_WIDTH: f32 = 0.8;
+        const SNAKE_HEIGHT: f32 = 0.8;
+        const TOLERANCE: f32 = SNAKE_WIDTH * 0.05;
+
+        let x = self.position[0];
+        let y = self.position[1];
+        let z = self.position[2];
+
+        let s_min_x = x - SNAKE_WIDTH / 2.0 + TOLERANCE;
+        let s_max_x = x + SNAKE_WIDTH / 2.0 - TOLERANCE;
+        let s_min_y = y - SNAKE_WIDTH / 2.0 + TOLERANCE;
+        let s_max_y = y + SNAKE_WIDTH / 2.0 - TOLERANCE;
+        let s_min_z = z + TOLERANCE;
+        let s_max_z = z + SNAKE_HEIGHT - TOLERANCE;
+
+        for (i, obj) in self.objects.iter().enumerate() {
+            let o_min_x = obj.position[0];
+            let o_max_x = obj.position[0] + obj.size[0];
+            let o_min_y = obj.position[1];
+            let o_max_y = obj.position[1] + obj.size[1];
+            let o_min_z = obj.position[2];
+            let o_max_z = obj.position[2] + obj.size[2];
+
+            if s_max_x > o_min_x
+                && s_min_x < o_max_x
+                && s_max_y > o_min_y
+                && s_min_y < o_max_y
+                && s_max_z > o_min_z
+                && s_min_z < o_max_z
+            {
+                if obj.kind == BlockKind::SpeedPortal {
+                    hit_portals.push(i);
+                } else {
+                    hit_death = true;
+                }
+            }
+        }
+
+        if hit_death {
             self.game_over = true;
             return;
+        }
+
+        if !hit_portals.is_empty() {
+            for i in hit_portals.into_iter().rev() {
+                self.objects.remove(i);
+                self.speed *= 1.5;
+            }
         }
 
         let was_grounded = self.is_grounded;
@@ -121,43 +172,12 @@ impl GameState {
         }
     }
 
-    fn collides_with_block_body(&self, x: f32, y: f32, z: f32) -> bool {
-        const SNAKE_WIDTH: f32 = 0.8;
-        const SNAKE_HEIGHT: f32 = 0.8;
-        const TOLERANCE: f32 = SNAKE_WIDTH * 0.05;
-
-        let s_min_x = x - SNAKE_WIDTH / 2.0 + TOLERANCE;
-        let s_max_x = x + SNAKE_WIDTH / 2.0 - TOLERANCE;
-        let s_min_y = y - SNAKE_WIDTH / 2.0 + TOLERANCE;
-        let s_max_y = y + SNAKE_WIDTH / 2.0 - TOLERANCE;
-        let s_min_z = z + TOLERANCE;
-        let s_max_z = z + SNAKE_HEIGHT - TOLERANCE;
-
-        for obj in &self.objects {
-            let o_min_x = obj.position[0];
-            let o_max_x = obj.position[0] + obj.size[0];
-            let o_min_y = obj.position[1];
-            let o_max_y = obj.position[1] + obj.size[1];
-            let o_min_z = obj.position[2];
-            let o_max_z = obj.position[2] + obj.size[2];
-
-            if s_max_x > o_min_x
-                && s_min_x < o_max_x
-                && s_max_y > o_min_y
-                && s_min_y < o_max_y
-                && s_max_z > o_min_z
-                && s_min_z < o_max_z
-            {
-                return true;
-            }
-        }
-
-        false
-    }
-
     pub(crate) fn top_surface_height_at(&self, x: f32, y: f32, max_z: f32) -> Option<f32> {
         let mut top_surface: Option<f32> = Some(0.0);
         for obj in &self.objects {
+            if obj.kind == BlockKind::SpeedPortal {
+                continue;
+            }
             let o_min_x = obj.position[0];
             let o_max_x = obj.position[0] + obj.size[0];
             let o_min_y = obj.position[1];
@@ -244,21 +264,5 @@ mod tests {
         // It should ignore the block at z=3.
         let height = game.top_surface_height_at(0.5, 0.5, 1.5);
         assert_eq!(height, Some(1.0));
-    }
-
-    #[test]
-    fn test_collision_with_block() {
-        let mut game = GameState::new();
-        game.objects.push(LevelObject {
-            position: [2.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            kind: BlockKind::Standard,
-        });
-
-        // Player at 0,0,0 - no collision
-        assert!(!game.collides_with_block_body(0.0, 0.0, 0.0));
-
-        // Player inside block - collision
-        assert!(game.collides_with_block_body(2.5, 0.5, 0.5));
     }
 }

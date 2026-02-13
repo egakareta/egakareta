@@ -470,6 +470,114 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
                 color_outline,
                 color_outline,
             );
+        } else if obj.kind == BlockKind::SpeedPortal {
+            let cx = (x_min + x_max) / 2.0;
+            let cy = (y_min + y_max) / 2.0;
+            let cz = (z_min + z_max) / 2.0;
+            let arrow_color = [1.0, 1.0, 0.0];
+            let arrow_len = 0.6;
+            let arrow_width = 0.4;
+            let thickness = 0.1;
+
+            for offset_y in [-0.3, 0.3] {
+                let center_y = cy + offset_y;
+                let y_tip = center_y + arrow_len / 2.0;
+                let y_base = center_y - arrow_len / 2.0;
+                let v0 = [cx, y_tip];
+                let v1 = [cx - arrow_width / 2.0, y_base];
+                let v2 = [cx, y_base + arrow_len * 0.3]; // Indent
+                let v3 = [cx + arrow_width / 2.0, y_base];
+
+                let z_top = cz + thickness / 2.0;
+                let z_bot = cz - thickness / 2.0;
+
+                // Top face
+                vertices.push(Vertex {
+                    position: [v0[0], v0[1], z_top],
+                    color: arrow_color,
+                });
+                vertices.push(Vertex {
+                    position: [v1[0], v1[1], z_top],
+                    color: arrow_color,
+                });
+                vertices.push(Vertex {
+                    position: [v2[0], v2[1], z_top],
+                    color: arrow_color,
+                });
+
+                vertices.push(Vertex {
+                    position: [v0[0], v0[1], z_top],
+                    color: arrow_color,
+                });
+                vertices.push(Vertex {
+                    position: [v2[0], v2[1], z_top],
+                    color: arrow_color,
+                });
+                vertices.push(Vertex {
+                    position: [v3[0], v3[1], z_top],
+                    color: arrow_color,
+                });
+
+                // Bottom face
+                vertices.push(Vertex {
+                    position: [v0[0], v0[1], z_bot],
+                    color: arrow_color,
+                });
+                vertices.push(Vertex {
+                    position: [v2[0], v2[1], z_bot],
+                    color: arrow_color,
+                });
+                vertices.push(Vertex {
+                    position: [v1[0], v1[1], z_bot],
+                    color: arrow_color,
+                });
+
+                vertices.push(Vertex {
+                    position: [v0[0], v0[1], z_bot],
+                    color: arrow_color,
+                });
+                vertices.push(Vertex {
+                    position: [v3[0], v3[1], z_bot],
+                    color: arrow_color,
+                });
+                vertices.push(Vertex {
+                    position: [v2[0], v2[1], z_bot],
+                    color: arrow_color,
+                });
+
+                // Sides
+                let perimeter = [v0, v1, v2, v3];
+                for i in 0..4 {
+                    let p1 = perimeter[i];
+                    let p2 = perimeter[(i + 1) % 4];
+
+                    vertices.push(Vertex {
+                        position: [p1[0], p1[1], z_top],
+                        color: arrow_color,
+                    });
+                    vertices.push(Vertex {
+                        position: [p2[0], p2[1], z_top],
+                        color: arrow_color,
+                    });
+                    vertices.push(Vertex {
+                        position: [p2[0], p2[1], z_bot],
+                        color: arrow_color,
+                    });
+
+                    vertices.push(Vertex {
+                        position: [p1[0], p1[1], z_top],
+                        color: arrow_color,
+                    });
+                    vertices.push(Vertex {
+                        position: [p2[0], p2[1], z_bot],
+                        color: arrow_color,
+                    });
+                    vertices.push(Vertex {
+                        position: [p1[0], p1[1], z_bot],
+                        color: arrow_color,
+                    });
+                }
+            }
         } else {
             let (color_top, color_side) = match obj.kind {
                 BlockKind::Standard => ([0.4, 0.4, 0.45], [0.2, 0.2, 0.25]),

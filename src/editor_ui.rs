@@ -97,6 +97,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                         ("Grass", BlockKind::Grass),
                         ("Dirt", BlockKind::Dirt),
                         ("Void", BlockKind::Void),
+                        ("Speed Portal", BlockKind::SpeedPortal),
                     ] {
                         if ui.selectable_label(current == kind, name).clicked() {
                             state.set_editor_block_kind(kind);
