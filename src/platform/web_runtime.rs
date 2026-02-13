@@ -8,7 +8,7 @@ use wgpu::SurfaceError;
 
 use crate::platform::input_mapping::egui_key_from_key_str;
 use crate::types::PhysicalSize;
-use crate::{show_editor_ui, State};
+use crate::{load_menu_wordmark_texture, show_editor_ui, show_menu_wordmark_ui, State};
 
 #[derive(Default)]
 struct WebUiInput {
@@ -91,6 +91,7 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
     let ui_wants_keyboard = Rc::new(RefCell::new(false));
     let ui_renderer = state_rc.borrow().create_egui_renderer();
     let ui_renderer_rc = Rc::new(RefCell::new(ui_renderer));
+    let menu_wordmark = Rc::new(load_menu_wordmark_texture(&ui_ctx));
 
     {
         let state_clone = state_rc.clone();
@@ -368,6 +369,7 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
     let ui_ctx_clone = ui_ctx.clone();
     let ui_input_clone = ui_input_rc.clone();
     let ui_renderer_clone = ui_renderer_rc.clone();
+    let menu_wordmark_clone = menu_wordmark.clone();
     let ui_wants_pointer_clone = ui_wants_pointer.clone();
     let ui_wants_keyboard_clone = ui_wants_keyboard.clone();
     *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
@@ -376,6 +378,9 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
         let raw_input = ui_input_clone.borrow_mut().take();
         let full_output = ui_ctx_clone.run(raw_input, |ctx| {
             show_editor_ui(ctx, &mut state);
+            if let Some(wordmark) = menu_wordmark_clone.as_ref() {
+                show_menu_wordmark_ui(ctx, &state, wordmark);
+            }
         });
 
         *ui_wants_pointer_clone.borrow_mut() = ui_ctx_clone.wants_pointer_input();

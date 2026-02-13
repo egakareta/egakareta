@@ -12,13 +12,14 @@ use crate::platform::input_mapping::{
     key_str_from_winit, mouse_button_index_from_winit, zoom_delta_from_winit,
 };
 use crate::types::PhysicalSize;
-use crate::{show_editor_ui, State};
+use crate::{load_menu_wordmark_texture, show_editor_ui, show_menu_wordmark_ui, State};
 
 struct App {
     state: Option<State>,
     egui_state: Option<EguiWinitState>,
     egui_renderer: Option<EguiRenderer>,
     egui_ctx: egui::Context,
+    menu_wordmark: Option<egui::TextureHandle>,
     last_cursor_pos: Option<PhysicalPosition<f64>>,
     left_mouse_down: bool,
 }
@@ -30,6 +31,7 @@ impl App {
             egui_state: None,
             egui_renderer: None,
             egui_ctx: egui::Context::default(),
+            menu_wordmark: None,
             last_cursor_pos: None,
             left_mouse_down: false,
         }
@@ -65,10 +67,12 @@ impl ApplicationHandler for App {
                 None,
             );
             let egui_renderer = state.create_egui_renderer();
+            let menu_wordmark = load_menu_wordmark_texture(&self.egui_ctx);
 
             self.state = Some(state);
             self.egui_state = Some(egui_state);
             self.egui_renderer = Some(egui_renderer);
+            self.menu_wordmark = menu_wordmark;
         }
     }
 
@@ -156,8 +160,12 @@ impl ApplicationHandler for App {
             }
             WindowEvent::RedrawRequested => {
                 let raw_input = egui_state.take_egui_input(state.window());
+                let menu_wordmark = self.menu_wordmark.as_ref();
                 let full_output = self.egui_ctx.run(raw_input, |ctx| {
                     show_editor_ui(ctx, state);
+                    if let Some(wordmark) = menu_wordmark {
+                        show_menu_wordmark_ui(ctx, state, wordmark);
+                    }
                 });
 
                 egui_state.handle_platform_output(state.window(), full_output.platform_output);

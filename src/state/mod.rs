@@ -727,6 +727,10 @@ impl State {
         self.phase == AppPhase::Editor
     }
 
+    pub fn is_menu(&self) -> bool {
+        self.phase == AppPhase::Menu
+    }
+
     pub fn set_editor_right_dragging(&mut self, dragging: bool) {
         self.editor_right_dragging = dragging;
     }

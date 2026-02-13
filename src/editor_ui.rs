@@ -3,6 +3,39 @@ use crate::{BlockKind, State};
 
 const MIN_TIMELINE_LENGTH: u32 = 1;
 const MAX_TIMELINE_LENGTH: u32 = 512;
+const MENU_WORDMARK_PNG: &[u8] = include_bytes!("../assets/wordmark.png");
+
+pub fn load_menu_wordmark_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    let decoded = image::load_from_memory(MENU_WORDMARK_PNG).ok()?;
+    let rgba = decoded.to_rgba8();
+    let size = [rgba.width() as usize, rgba.height() as usize];
+    let color_image = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
+
+    Some(ctx.load_texture("menu_wordmark", color_image, egui::TextureOptions::LINEAR))
+}
+
+pub fn show_menu_wordmark_ui(ctx: &egui::Context, state: &State, wordmark: &egui::TextureHandle) {
+    if !state.is_menu() {
+        return;
+    }
+
+    let texture_size = wordmark.size_vec2();
+    if texture_size.x <= 0.0 || texture_size.y <= 0.0 {
+        return;
+    }
+
+    let max_width = (ctx.screen_rect().width() * 0.68).max(240.0);
+    let scale = (max_width / texture_size.x).min(1.0);
+    let display_size = texture_size * scale;
+
+    egui::Area::new("menu_wordmark_area".into())
+        .order(egui::Order::Foreground)
+        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 28.0))
+        .interactable(false)
+        .show(ctx, |ui| {
+            ui.add(egui::Image::new((wordmark.id(), display_size)));
+        });
+}
 
 fn timeline_step_metrics(length: u32) -> (u32, f32) {
     let max_step = length.saturating_sub(1);
