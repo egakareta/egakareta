@@ -29,7 +29,7 @@ use crate::platform::state_host::WasmCanvas;
 use crate::platform::state_host::{log_backend, PlatformInstant, SurfaceHost};
 use crate::types::{
     AppPhase, BlockKind, CameraUniform, Direction, EditorState, LevelMetadata, LevelObject,
-    LineUniform, MenuState, PhysicalSize, SpawnDirection, SpawnMetadata, Vertex,
+    LineUniform, MenuState, MusicMetadata, PhysicalSize, SpawnDirection, SpawnMetadata, Vertex,
 };
 
 use base64::Engine as _;
@@ -85,6 +85,8 @@ pub struct State {
     editor_pan_right_held: bool,
     editor_shift_held: bool,
     editor_level_name: Option<String>,
+    editor_music_metadata: MusicMetadata,
+    editor_show_metadata: bool,
     playing_level_name: Option<String>,
     editor_show_import: bool,
     editor_import_text: String,
@@ -93,7 +95,14 @@ pub struct State {
     last_frame: PlatformInstant,
     accumulator: f32,
     audio: PlatformAudio,
+    local_audio_cache: std::collections::HashMap<String, Vec<u8>>,
+    audio_import_channel: (
+        std::sync::mpsc::Sender<AudioImportData>,
+        std::sync::mpsc::Receiver<AudioImportData>,
+    ),
 }
+
+type AudioImportData = (String, Vec<u8>);
 
 impl State {
     #[cfg(target_arch = "wasm32")]
@@ -313,6 +322,8 @@ impl State {
         let mut game = GameState::new();
         game.objects = create_menu_scene();
 
+        let local_audio_cache = crate::platform::io::load_all_local_audio().await;
+
         let block_vertices = build_block_vertices(&game.objects);
         let block_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Block Vertex Buffer"),
@@ -376,10 +387,19 @@ impl State {
             editor_pan_right_held: false,
             editor_shift_held: false,
             editor_level_name: None,
+            editor_music_metadata: MusicMetadata {
+                source: "music.mp3".to_string(),
+                title: None,
+                author: None,
+                extra: serde_json::Map::new(),
+            },
+            editor_show_metadata: false,
             playing_level_name: None,
             editor_show_import: false,
             editor_import_text: String::new(),
             playtesting_editor: false,
+            local_audio_cache,
+            audio_import_channel: std::sync::mpsc::channel(),
         }
     }
 
@@ -400,7 +420,14 @@ impl State {
             AppPhase::Playing => {
                 if !self.game.started {
                     self.game.started = true;
-                    if let Some(level_name) = self.playing_level_name.clone() {
+                    if self.playtesting_editor {
+                        let metadata = self.current_editor_metadata();
+                        let level_name = self
+                            .editor_level_name
+                            .clone()
+                            .unwrap_or_else(|| "Untitled".to_string());
+                        self.start_audio(&level_name, &metadata);
+                    } else if let Some(level_name) = self.playing_level_name.clone() {
                         if let Some(metadata) = self.load_level_metadata(&level_name) {
                             self.start_audio(&level_name, &metadata);
                         }
@@ -1137,6 +1164,7 @@ impl State {
         let init = editor_session_init_from_metadata(self.load_level_metadata(&level_name));
         self.editor_objects = init.objects;
         self.editor_spawn = init.spawn;
+        self.editor_music_metadata = init.music;
         self.editor_tap_steps = init.tap_steps;
         self.editor_timeline_step = init.timeline_step;
         self.editor.cursor = init.cursor;
@@ -1157,13 +1185,53 @@ impl State {
     }
 
     fn start_audio(&mut self, level_name: &str, metadata: &LevelMetadata) {
-        self.audio.start(level_name, &metadata.music.source);
+        if let Some(bytes) = self.local_audio_cache.get(&metadata.music.source) {
+            self.audio.start_with_bytes(&metadata.music.source, bytes);
+        } else {
+            self.audio.start(level_name, &metadata.music.source);
+        }
+    }
+
+    pub fn trigger_audio_import(&self) {
+        let sender = self.audio_import_channel.0.clone();
+        #[cfg(target_arch = "wasm32")]
+        {
+            wasm_bindgen_futures::spawn_local(async move {
+                if let Some((filename, bytes)) = crate::platform::io::pick_audio_file().await {
+                    let _ = crate::platform::io::save_audio_to_storage(&filename, &bytes).await;
+                    let _ = sender.send((filename, bytes));
+                }
+            });
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            std::thread::spawn(move || {
+                pollster::block_on(async {
+                    if let Some((filename, bytes)) = crate::platform::io::pick_audio_file().await {
+                        let _ = crate::platform::io::save_audio_to_storage(&filename, &bytes).await;
+                        let _ = sender.send((filename, bytes));
+                    }
+                });
+            });
+        }
+    }
+
+    pub fn update_audio_imports(&mut self) {
+        while let Ok((filename, bytes)) = self.audio_import_channel.1.try_recv() {
+            self.editor_music_metadata.source = filename.clone();
+            self.local_audio_cache.insert(filename, bytes);
+        }
     }
 
     pub fn export_level_ldz(&self) -> Result<Vec<u8>, String> {
         let metadata = self.current_editor_metadata();
-        let audio_bytes =
-            read_editor_music_bytes(self.editor_level_name.as_deref(), &metadata.music.source);
+        let audio_bytes = self
+            .local_audio_cache
+            .get(&metadata.music.source)
+            .cloned()
+            .or_else(|| {
+                read_editor_music_bytes(self.editor_level_name.as_deref(), &metadata.music.source)
+            });
         let audio_file = audio_bytes
             .as_ref()
             .map(|bytes| (metadata.music.source.as_str(), bytes.as_slice()));
@@ -1193,7 +1261,7 @@ impl State {
             self.editor_level_name
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string()),
-            "music.mp3".to_string(),
+            self.editor_music_metadata.clone(),
             self.editor_spawn.clone(),
             self.editor_tap_steps.clone(),
             self.editor_timeline_step,
@@ -1208,6 +1276,7 @@ impl State {
         self.editor_tap_steps.sort_unstable();
         self.editor_timeline_step = metadata.timeline_step;
         self.editor_level_name = Some(metadata.name);
+        self.editor_music_metadata = metadata.music;
 
         if let Some(first) = self.editor_objects.first() {
             self.editor.cursor = [
@@ -1244,6 +1313,14 @@ impl State {
         self.editor_level_name = Some(name);
     }
 
+    pub(crate) fn editor_music_metadata(&self) -> &MusicMetadata {
+        &self.editor_music_metadata
+    }
+
+    pub(crate) fn set_editor_music_metadata(&mut self, metadata: MusicMetadata) {
+        self.editor_music_metadata = metadata;
+    }
+
     pub fn editor_show_import(&self) -> bool {
         self.editor_show_import
     }
@@ -1258,6 +1335,14 @@ impl State {
 
     pub fn set_editor_import_text(&mut self, text: String) {
         self.editor_import_text = text;
+    }
+
+    pub(crate) fn editor_show_metadata(&self) -> bool {
+        self.editor_show_metadata
+    }
+
+    pub(crate) fn set_editor_show_metadata(&mut self, show: bool) {
+        self.editor_show_metadata = show;
     }
 
     pub fn available_levels(&self) -> &[String] {
@@ -1424,6 +1509,7 @@ impl State {
     }
 
     pub fn update(&mut self) {
+        self.update_audio_imports();
         const FIXED_DT: f32 = 1.0 / 120.0;
 
         let now = PlatformInstant::now();

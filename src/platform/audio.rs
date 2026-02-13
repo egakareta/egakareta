@@ -48,6 +48,46 @@ impl PlatformAudio {
         }
     }
 
+    pub(crate) fn start_with_bytes(&mut self, _music_source: &str, bytes: &[u8]) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            let uint8_array = unsafe { js_sys::Uint8Array::view(bytes) };
+            let blob =
+                web_sys::Blob::new_with_u8_array_sequence(&js_sys::Array::of1(&uint8_array.into()))
+                    .unwrap();
+            let url = web_sys::Url::create_object_url_with_blob(&blob).unwrap();
+            if let Ok(audio) = web_sys::HtmlAudioElement::new_with_src(&url) {
+                let _ = audio.play();
+                self.current_audio = Some(audio);
+            }
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if let Some(handle) = &self.output_handle {
+                match rodio::Decoder::new(std::io::Cursor::new(bytes.to_vec())) {
+                    Ok(source) => match rodio::Sink::try_new(handle) {
+                        Ok(sink) => {
+                            sink.append(source);
+                            sink.play();
+                            self.current_sink = Some(sink);
+                        }
+                        Err(err) => {
+                            log::warn!("Failed to create audio sink for imported audio: {}", err);
+                        }
+                    },
+                    Err(err) => {
+                        log::warn!(
+                            "Failed to decode imported level music '{}': {}",
+                            _music_source,
+                            err
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     pub(crate) fn start(&mut self, level_name: &str, music_source: &str) {
         #[cfg(target_arch = "wasm32")]
         {

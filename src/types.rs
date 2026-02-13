@@ -28,8 +28,21 @@ impl Vertex {
 #[derive(Deserialize, Serialize, Clone)]
 pub(crate) struct MusicMetadata {
     pub(crate) source: String,
+    pub(crate) title: Option<String>,
+    pub(crate) author: Option<String>,
     #[serde(flatten)]
     pub(crate) extra: serde_json::Map<String, serde_json::Value>,
+}
+
+impl Default for MusicMetadata {
+    fn default() -> Self {
+        Self {
+            source: "music.mp3".to_string(),
+            title: None,
+            author: None,
+            extra: serde_json::Map::new(),
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -52,7 +65,7 @@ pub(crate) struct LevelMetadata {
 impl LevelMetadata {
     pub(crate) fn from_editor_state(
         name: String,
-        music_source: String,
+        music: MusicMetadata,
         spawn: SpawnMetadata,
         taps: Vec<u32>,
         timeline_step: u32,
@@ -61,10 +74,7 @@ impl LevelMetadata {
         Self {
             format_version: CURRENT_LEVEL_FORMAT_VERSION,
             name,
-            music: MusicMetadata {
-                source: music_source,
-                extra: serde_json::Map::new(),
-            },
+            music,
             spawn,
             taps,
             timeline_step,

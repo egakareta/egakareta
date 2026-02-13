@@ -1,4 +1,6 @@
-use crate::types::{BlockKind, LevelMetadata, LevelObject, SpawnDirection, SpawnMetadata};
+use crate::types::{
+    BlockKind, LevelMetadata, LevelObject, MusicMetadata, SpawnDirection, SpawnMetadata,
+};
 
 pub(crate) struct EditorPlaytestTransition {
     pub(crate) objects: Vec<LevelObject>,
@@ -66,6 +68,7 @@ pub(crate) fn playtest_return_objects(
 pub(crate) struct EditorSessionInit {
     pub(crate) objects: Vec<LevelObject>,
     pub(crate) spawn: SpawnMetadata,
+    pub(crate) music: MusicMetadata,
     pub(crate) tap_steps: Vec<u32>,
     pub(crate) timeline_step: u32,
     pub(crate) cursor: [i32; 3],
@@ -75,15 +78,22 @@ pub(crate) struct EditorSessionInit {
 pub(crate) fn editor_session_init_from_metadata(
     metadata: Option<LevelMetadata>,
 ) -> EditorSessionInit {
-    let (objects, spawn, mut tap_steps, timeline_step) = if let Some(metadata) = metadata {
+    let (objects, spawn, music, mut tap_steps, timeline_step) = if let Some(metadata) = metadata {
         (
             metadata.objects,
             metadata.spawn,
+            metadata.music,
             metadata.taps,
             metadata.timeline_step,
         )
     } else {
-        (Vec::new(), SpawnMetadata::default(), Vec::new(), 0)
+        (
+            Vec::new(),
+            SpawnMetadata::default(),
+            MusicMetadata::default(),
+            Vec::new(),
+            0,
+        )
     };
 
     tap_steps.sort_unstable();
@@ -93,6 +103,7 @@ pub(crate) fn editor_session_init_from_metadata(
     EditorSessionInit {
         objects,
         spawn,
+        music,
         tap_steps,
         timeline_step,
         cursor,
@@ -314,6 +325,8 @@ mod tests {
             name: "Test".to_string(),
             music: MusicMetadata {
                 source: "audio.mp3".to_string(),
+                title: None,
+                author: None,
                 extra: serde_json::Map::new(),
             },
             spawn: SpawnMetadata {
@@ -391,6 +404,8 @@ mod tests {
             name: "Starter".to_string(),
             music: MusicMetadata {
                 source: "audio.mp3".to_string(),
+                title: None,
+                author: None,
                 extra: serde_json::Map::new(),
             },
             spawn: SpawnMetadata {

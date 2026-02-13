@@ -53,8 +53,66 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
             if ui.button("Import .ldz/JSON").clicked() {
                 state.set_editor_show_import(true);
             }
+
+            if ui.button("Metadata").clicked() {
+                state.set_editor_show_metadata(true);
+            }
         });
     });
+
+    if state.editor_show_metadata() {
+        egui::Window::new("Level Metadata").show(ctx, |ui| {
+            ui.label("Level Name:");
+            let mut name = state
+                .editor_level_name()
+                .unwrap_or_else(|| "Untitled".to_string());
+            if ui.text_edit_singleline(&mut name).changed() {
+                state.set_editor_level_name(name);
+            }
+
+            ui.separator();
+            ui.heading("Music");
+
+            let mut music = state.editor_music_metadata().clone();
+            let mut changed = false;
+
+            ui.horizontal(|ui| {
+                ui.label("Source:");
+                if ui.text_edit_singleline(&mut music.source).changed() {
+                    changed = true;
+                }
+                if ui.button("Import External Audio").clicked() {
+                    state.trigger_audio_import();
+                }
+            });
+
+            ui.horizontal(|ui| {
+                ui.label("Title:");
+                let mut title = music.title.clone().unwrap_or_default();
+                if ui.text_edit_singleline(&mut title).changed() {
+                    music.title = Some(title);
+                    changed = true;
+                }
+            });
+
+            ui.horizontal(|ui| {
+                ui.label("Author:");
+                let mut author = music.author.clone().unwrap_or_default();
+                if ui.text_edit_singleline(&mut author).changed() {
+                    music.author = Some(author);
+                    changed = true;
+                }
+            });
+
+            if changed {
+                state.set_editor_music_metadata(music);
+            }
+
+            if ui.button("Close").clicked() {
+                state.set_editor_show_metadata(false);
+            }
+        });
+    }
 
     if state.editor_show_import() {
         egui::Window::new("Import Level").show(ctx, |ui| {
