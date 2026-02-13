@@ -161,6 +161,7 @@ pub struct State {
     editor_pan_left_held: bool,
     editor_pan_right_held: bool,
     editor_shift_held: bool,
+    editor_level_name: Option<String>,
     playtesting_editor: bool,
     line_uniform: LineUniform,
     last_frame: Instant,
@@ -489,6 +490,7 @@ impl State {
             editor_pan_left_held: false,
             editor_pan_right_held: false,
             editor_shift_held: false,
+            editor_level_name: None,
             playtesting_editor: false,
         }
     }
@@ -564,11 +566,11 @@ impl State {
     pub fn toggle_editor(&mut self) {
         match self.phase {
             AppPhase::Menu => self.start_editor(self.menu.selected_level),
-            AppPhase::Editor => {
-                self.phase = AppPhase::Menu;
-                self.playtesting_editor = false;
-                self.editor_right_dragging = false;
-                self.clear_editor_pan_keys();
+            AppPhase::Editor => self.back_to_menu(),
+            AppPhase::Playing if self.playtesting_editor => {
+                self.phase = AppPhase::Editor;
+                self.stop_audio();
+                self.sync_editor_objects();
             }
             _ => {}
         }
@@ -1100,6 +1102,13 @@ impl State {
         }
 
         self.stop_audio();
+
+        if let Some(level_name) = self.editor_level_name.clone() {
+            if let Some(metadata) = self.load_level_metadata(&level_name) {
+                self.start_audio(&level_name, &metadata);
+            }
+        }
+
         self.playtesting_editor = true;
         self.game = GameState::new();
         self.game.objects = self.editor_objects.clone();
@@ -1137,6 +1146,7 @@ impl State {
     pub fn back_to_menu(&mut self) {
         self.stop_audio();
         self.playtesting_editor = false;
+        self.editor_level_name = None;
         self.editor_right_dragging = false;
         self.clear_editor_pan_keys();
         self.phase = AppPhase::Menu;
@@ -1159,54 +1169,9 @@ impl State {
 
         if let Some(metadata) = self.load_level_metadata(&level_name) {
             log::debug!("Starting level: {}", metadata.name);
+            self.start_audio(&level_name, &metadata);
             self.game.objects = metadata.objects;
             self.apply_spawn_to_game(metadata.spawn.position, metadata.spawn.direction);
-
-            #[cfg(target_arch = "wasm32")]
-            {
-                let audio_url = format!("assets/levels/{}/{}", level_name, metadata.music.source);
-                if let Ok(audio) = web_sys::HtmlAudioElement::new_with_src(&audio_url) {
-                    let _ = audio.play();
-                    self.current_audio = Some(audio);
-                }
-            }
-
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                if let Some(handle) = &self.audio_output_handle {
-                    let audio_path =
-                        format!("assets/levels/{}/{}", level_name, metadata.music.source);
-
-                    match std::fs::read(&audio_path) {
-                        Ok(audio_bytes) => match Decoder::new(Cursor::new(audio_bytes)) {
-                            Ok(source) => match Sink::try_new(handle) {
-                                Ok(sink) => {
-                                    sink.append(source);
-                                    sink.play();
-                                    self.current_audio_sink = Some(sink);
-                                }
-                                Err(err) => {
-                                    log::warn!(
-                                        "Failed to create audio sink for '{}': {}",
-                                        audio_path,
-                                        err
-                                    );
-                                }
-                            },
-                            Err(err) => {
-                                log::warn!(
-                                    "Failed to decode level music '{}': {}",
-                                    audio_path,
-                                    err
-                                );
-                            }
-                        },
-                        Err(err) => {
-                            log::warn!("Failed to read level music '{}': {}", audio_path, err);
-                        }
-                    }
-                }
-            }
         }
 
         self.rebuild_block_vertices();
@@ -1219,6 +1184,7 @@ impl State {
         self.stop_audio();
 
         self.phase = AppPhase::Editor;
+        self.editor_level_name = Some(level_name.clone());
         self.playtesting_editor = false;
         self.editor_right_dragging = false;
         self.clear_editor_pan_keys();
@@ -1285,6 +1251,49 @@ impl State {
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(sink) = self.current_audio_sink.take() {
             sink.stop();
+        }
+    }
+
+    fn start_audio(&mut self, level_name: &str, metadata: &LevelMetadata) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            let audio_url = format!("assets/levels/{}/{}", level_name, metadata.music.source);
+            if let Ok(audio) = web_sys::HtmlAudioElement::new_with_src(&audio_url) {
+                let _ = audio.play();
+                self.current_audio = Some(audio);
+            }
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if let Some(handle) = &self.audio_output_handle {
+                let audio_path = format!("assets/levels/{}/{}", level_name, metadata.music.source);
+
+                match std::fs::read(&audio_path) {
+                    Ok(audio_bytes) => match Decoder::new(Cursor::new(audio_bytes)) {
+                        Ok(source) => match Sink::try_new(handle) {
+                            Ok(sink) => {
+                                sink.append(source);
+                                sink.play();
+                                self.current_audio_sink = Some(sink);
+                            }
+                            Err(err) => {
+                                log::warn!(
+                                    "Failed to create audio sink for '{}': {}",
+                                    audio_path,
+                                    err
+                                );
+                            }
+                        },
+                        Err(err) => {
+                            log::warn!("Failed to decode level music '{}': {}", audio_path, err);
+                        }
+                    },
+                    Err(err) => {
+                        log::warn!("Failed to read level music '{}': {}", audio_path, err);
+                    }
+                }
+            }
         }
     }
 
