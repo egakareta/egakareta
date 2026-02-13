@@ -1,4 +1,4 @@
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -19,12 +19,12 @@ impl Vertex {
     }
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Serialize, Clone)]
 pub(crate) struct MusicMetadata {
     pub(crate) source: String,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Serialize, Clone)]
 pub(crate) struct LevelMetadata {
     pub(crate) name: String,
     pub(crate) music: MusicMetadata,
@@ -37,7 +37,7 @@ pub(crate) struct LevelMetadata {
     pub(crate) objects: Vec<LevelObject>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Serialize, Clone)]
 pub(crate) struct SpawnMetadata {
     #[serde(default, deserialize_with = "deserialize_vec3_from_array")]
     pub(crate) position: [f32; 3],
@@ -54,7 +54,7 @@ impl Default for SpawnMetadata {
     }
 }
 
-#[derive(Deserialize, Clone, Copy, Default)]
+#[derive(Deserialize, Serialize, Clone, Copy, Default)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum SpawnDirection {
     #[default]
@@ -71,7 +71,7 @@ impl From<SpawnDirection> for Direction {
     }
 }
 
-#[derive(Deserialize, Clone, Copy, PartialEq, Default)]
+#[derive(Deserialize, Serialize, Clone, Copy, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum BlockKind {
     #[default]
@@ -81,7 +81,7 @@ pub enum BlockKind {
     Void,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Serialize, Clone)]
 pub(crate) struct LevelObject {
     #[serde(default, deserialize_with = "deserialize_vec3_from_array")]
     pub(crate) position: [f32; 3],

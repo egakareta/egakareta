@@ -15,6 +15,65 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
         return;
     }
 
+    egui::TopBottomPanel::top("editor_top_bar").show(ctx, |ui| {
+        ui.horizontal(|ui| {
+            ui.label("Level:");
+
+            let levels = state.available_levels().to_vec();
+            let selected = state
+                .editor_level_name()
+                .unwrap_or_else(|| "Untitled".to_string());
+
+            egui::ComboBox::from_id_salt("level_select")
+                .selected_text(&selected)
+                .show_ui(ui, |ui| {
+                    for level in levels {
+                        if ui.selectable_label(selected == level, &level).clicked() {
+                            state.load_builtin_level_into_editor(&level);
+                        }
+                    }
+                });
+
+            ui.separator();
+
+            ui.label("Name:");
+            let mut name = state
+                .editor_level_name()
+                .unwrap_or_else(|| "Untitled".to_string());
+            if ui.text_edit_singleline(&mut name).changed() {
+                state.set_editor_level_name(name);
+            }
+
+            ui.separator();
+
+            if ui.button("Export JSON").clicked() {
+                state.trigger_level_export();
+            }
+
+            if ui.button("Import JSON").clicked() {
+                state.set_editor_show_import(true);
+            }
+        });
+    });
+
+    if state.editor_show_import() {
+        egui::Window::new("Import Level").show(ctx, |ui| {
+            ui.label("Paste level JSON below:");
+            let mut text = state.editor_import_text().to_string();
+            ui.add(egui::TextEdit::multiline(&mut text).desired_width(f32::INFINITY));
+            state.set_editor_import_text(text);
+
+            ui.horizontal(|ui| {
+                if ui.button("Import").clicked() {
+                    state.complete_import();
+                }
+                if ui.button("Cancel").clicked() {
+                    state.set_editor_show_import(false);
+                }
+            });
+        });
+    }
+
     egui::TopBottomPanel::bottom("block_selection_bar")
         .resizable(false)
         .show(ctx, |ui| {

@@ -24,8 +24,11 @@ use crate::mesh::{
 };
 use crate::types::{
     AppPhase, BlockKind, CameraUniform, Direction, EditorState, LevelMetadata, LevelObject,
-    LineUniform, MenuState, PhysicalSize, SpawnDirection, SpawnMetadata, Vertex,
+    LineUniform, MenuState, MusicMetadata, PhysicalSize, SpawnDirection, SpawnMetadata, Vertex,
 };
+
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::JsCast;
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
@@ -162,6 +165,8 @@ pub struct State {
     editor_pan_right_held: bool,
     editor_shift_held: bool,
     editor_level_name: Option<String>,
+    editor_show_import: bool,
+    editor_import_text: String,
     playtesting_editor: bool,
     line_uniform: LineUniform,
     last_frame: Instant,
@@ -491,6 +496,8 @@ impl State {
             editor_pan_right_held: false,
             editor_shift_held: false,
             editor_level_name: None,
+            editor_show_import: false,
+            editor_import_text: String::new(),
             playtesting_editor: false,
         }
     }
@@ -1294,6 +1301,128 @@ impl State {
                     }
                 }
             }
+        }
+    }
+
+    pub fn export_level(&self) -> String {
+        let metadata = LevelMetadata {
+            name: self
+                .editor_level_name
+                .clone()
+                .unwrap_or_else(|| "Untitled".to_string()),
+            music: MusicMetadata {
+                source: "music.mp3".to_string(),
+            },
+            spawn: self.editor_spawn.clone(),
+            taps: self.editor_tap_steps.clone(),
+            timeline_step: self.editor_timeline_step,
+            objects: self.editor_objects.clone(),
+        };
+        serde_json::to_string_pretty(&metadata).unwrap_or_default()
+    }
+
+    pub fn import_level(&mut self, json: &str) -> Result<(), String> {
+        let metadata: LevelMetadata = serde_json::from_str(json).map_err(|e| e.to_string())?;
+
+        self.editor_objects = metadata.objects;
+        self.editor_spawn = metadata.spawn;
+        self.editor_tap_steps = metadata.taps;
+        self.editor_tap_steps.sort_unstable();
+        self.editor_timeline_step = metadata.timeline_step;
+        self.editor_level_name = Some(metadata.name);
+
+        if let Some(first) = self.editor_objects.first() {
+            self.editor.cursor = [
+                first.position[0].round() as i32,
+                first.position[1].round() as i32,
+                first.position[2].round() as i32,
+            ];
+        } else {
+            self.editor.cursor = [0, 0, 0];
+        }
+
+        self.editor_camera_pan = [
+            self.editor.cursor[0] as f32 + 0.5,
+            self.editor.cursor[1] as f32 + 0.5,
+        ];
+
+        self.sync_editor_objects();
+        self.set_editor_timeline_step(self.editor_timeline_step);
+        self.rebuild_spawn_marker_vertices();
+
+        Ok(())
+    }
+
+    pub fn load_builtin_level_into_editor(&mut self, name: &str) {
+        if let Some(metadata) = self.load_level_metadata(name) {
+            let _ = self.import_level(&serde_json::to_string(&metadata).unwrap());
+            self.editor_level_name = Some(name.to_string());
+        }
+    }
+
+    pub fn editor_level_name(&self) -> Option<String> {
+        self.editor_level_name.clone()
+    }
+
+    pub fn set_editor_level_name(&mut self, name: String) {
+        self.editor_level_name = Some(name);
+    }
+
+    pub fn editor_show_import(&self) -> bool {
+        self.editor_show_import
+    }
+
+    pub fn set_editor_show_import(&mut self, show: bool) {
+        self.editor_show_import = show;
+    }
+
+    pub fn editor_import_text(&self) -> &str {
+        &self.editor_import_text
+    }
+
+    pub fn set_editor_import_text(&mut self, text: String) {
+        self.editor_import_text = text;
+    }
+
+    pub fn available_levels(&self) -> &[String] {
+        &self.menu.levels
+    }
+
+    pub fn trigger_level_export(&self) {
+        let json = self.export_level();
+        #[cfg(target_arch = "wasm32")]
+        {
+            let window = web_sys::window().unwrap();
+            let document = window.document().unwrap();
+            let blob =
+                web_sys::Blob::new_with_str_sequence(&js_sys::Array::of1(&json.into())).unwrap();
+            let url = web_sys::Url::create_object_url_with_blob(&blob).unwrap();
+            let a = document
+                .create_element("a")
+                .unwrap()
+                .dyn_into::<web_sys::HtmlElement>()
+                .unwrap();
+            a.set_attribute("href", &url).unwrap();
+            a.set_attribute("download", "level.json").unwrap();
+            a.click();
+            let _ = web_sys::Url::revoke_object_url(&url);
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = std::fs::write("exported_level.json", json);
+        }
+    }
+
+    pub fn complete_import(&mut self) {
+        let text = self.editor_import_text.clone();
+        if let Err(e) = self.import_level(&text) {
+            #[cfg(target_arch = "wasm32")]
+            web_sys::console::log_1(&format!("Import failed: {}", e).into());
+            #[cfg(not(target_arch = "wasm32"))]
+            log::error!("Import failed: {}", e);
+        } else {
+            self.editor_show_import = false;
+            self.editor_import_text.clear();
         }
     }
 

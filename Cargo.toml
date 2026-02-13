@@ -37,6 +37,8 @@ web-sys = { version = "0.3", features = [
     "HtmlAudioElement",
     "DomTokenList",
     "HtmlElement",
+    "Blob",
+    "Url",
 ] }
 js-sys = "0.3"
 web-time = "1.1"
