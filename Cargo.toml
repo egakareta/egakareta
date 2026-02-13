@@ -65,6 +65,7 @@ rfd = "0.15"
 rodio = { version = "0.20", features = ["symphonia-all"] }
 winit = "0.30"
 egui-winit = "0.29"
+image = "0.25"
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false

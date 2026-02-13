@@ -5,7 +5,7 @@ use winit::{
     dpi::PhysicalPosition,
     event::WindowEvent,
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    window::{Window, WindowId},
+    window::{Icon, Window, WindowId},
 };
 
 use crate::platform::input_mapping::{
@@ -37,9 +37,18 @@ impl App {
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.state.is_none() {
+            let icon = {
+                let bytes = include_bytes!("../../assets/favicon.png");
+                let image = image::load_from_memory(bytes).expect("Failed to load icon");
+                let rgba = image.to_rgba8();
+                let (width, height) = rgba.dimensions();
+                Icon::from_rgba(rgba.into_raw(), width, height).ok()
+            };
+
             let window_attributes = Window::default_attributes()
                 .with_title("Line Dash")
-                .with_inner_size(winit::dpi::LogicalSize::new(800.0, 600.0));
+                .with_inner_size(winit::dpi::LogicalSize::new(800.0, 600.0))
+                .with_window_icon(icon);
             let window = event_loop
                 .create_window(window_attributes)
                 .expect("Failed to create window");
