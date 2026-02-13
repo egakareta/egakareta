@@ -4,8 +4,8 @@ fn append_prism(
     vertices: &mut Vec<Vertex>,
     min: [f32; 3],
     max: [f32; 3],
-    color_top: [f32; 3],
-    color_side: [f32; 3],
+    color_top: [f32; 4],
+    color_side: [f32; 4],
 ) {
     let [x_min, y_min, z_min] = min;
     let [x_max, y_max, z_max] = max;
@@ -138,8 +138,8 @@ fn append_prism(
 
 pub(crate) fn build_floor_vertices() -> Vec<Vertex> {
     let mut floor_vertices: Vec<Vertex> = Vec::new();
-    let tile_color_top = [0.08, 0.08, 0.1];
-    let tile_color_side = [0.05, 0.05, 0.07];
+    let tile_color_top = [0.08, 0.08, 0.1, 1.0];
+    let tile_color_side = [0.05, 0.05, 0.07, 1.0];
     let extent = 60;
     let tile_height = 0.1;
     let tile_margin = 0.05;
@@ -287,7 +287,7 @@ pub(crate) fn build_grid_vertices() -> Vec<Vertex> {
     let mut grid_vertices: Vec<Vertex> = Vec::new();
     let extent = 60.0;
     let step = 1.0;
-    let grid_color = [0.2, 0.22, 0.26];
+    let grid_color = [0.2, 0.22, 0.26, 1.0];
     let line_width = 0.02;
     let grid_z = 0.01;
 
@@ -368,8 +368,8 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
         let z_max = obj.position[2] + obj.size[2];
 
         if obj.kind == BlockKind::Void {
-            let color_fill = [0.0, 0.0, 0.0];
-            let color_outline = [0.8, 0.8, 0.9];
+            let color_fill = [0.0, 0.0, 0.0, 1.0];
+            let color_outline = [0.8, 0.8, 0.9, 1.0];
             let t = 0.05;
 
             // Fill
@@ -474,7 +474,7 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
             let cx = (x_min + x_max) / 2.0;
             let cy = (y_min + y_max) / 2.0;
             let cz = (z_min + z_max) / 2.0;
-            let arrow_color = [1.0, 1.0, 0.0];
+            let arrow_color = [1.0, 1.0, 0.0, 1.0];
             let arrow_len = 0.6;
             let arrow_width = 0.4;
             let thickness = 0.1;
@@ -580,10 +580,10 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
             }
         } else {
             let (color_top, color_side) = match obj.kind {
-                BlockKind::Standard => ([0.4, 0.4, 0.45], [0.2, 0.2, 0.25]),
-                BlockKind::Grass => ([0.1, 0.6, 0.1], [0.35, 0.25, 0.15]),
-                BlockKind::Dirt => ([0.4, 0.3, 0.2], [0.35, 0.25, 0.15]),
-                _ => ([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+                BlockKind::Standard => ([0.4, 0.4, 0.45, 1.0], [0.2, 0.2, 0.25, 1.0]),
+                BlockKind::Grass => ([0.1, 0.6, 0.1, 1.0], [0.35, 0.25, 0.15, 1.0]),
+                BlockKind::Dirt => ([0.4, 0.3, 0.2, 1.0], [0.35, 0.25, 0.15, 1.0]),
+                _ => ([0.5, 0.5, 0.5, 1.0], [0.5, 0.5, 0.5, 1.0]),
             };
 
             append_prism(
@@ -603,14 +603,14 @@ pub(crate) fn build_trail_vertices(points: &[[f32; 3]], game_over: bool) -> Vec<
     let mut trail_vertices = Vec::new();
     let width = 0.8;
     let c_top = if game_over {
-        [1.0, 0.2, 0.2]
+        [1.0, 0.2, 0.2, 1.0]
     } else {
-        [0.8, 0.25, 0.35]
+        [0.8, 0.25, 0.35, 1.0]
     };
     let c_side = if game_over {
-        [0.8, 0.1, 0.1]
+        [0.8, 0.1, 0.1, 1.0]
     } else {
-        [0.7, 0.2, 0.3]
+        [0.7, 0.2, 0.3, 1.0]
     };
 
     if points.len() < 2 {
@@ -795,8 +795,8 @@ pub(crate) fn build_trail_vertices(points: &[[f32; 3]], game_over: bool) -> Vec<
 
 pub(crate) fn build_editor_cursor_vertices(cursor: [i32; 3]) -> Vec<Vertex> {
     let mut vertices = Vec::new();
-    let color_top = [0.2, 0.85, 0.95];
-    let color_side = [0.1, 0.45, 0.55];
+    let color_top = [0.2, 0.85, 0.95, 0.4];
+    let color_side = [0.1, 0.45, 0.55, 0.4];
     let z_min = cursor[2] as f32;
     let z_max = cursor[2] as f32 + 1.05;
 
@@ -943,8 +943,8 @@ pub(crate) fn build_spawn_marker_vertices(position: [f32; 3], faces_right: bool)
         &mut vertices,
         [x + 0.1, y + 0.1, z],
         [x + 0.9, y + 0.9, z + 0.5],
-        [0.25, 0.95, 0.35],
-        [0.1, 0.45, 0.15],
+        [0.25, 0.95, 0.35, 1.0],
+        [0.1, 0.45, 0.15, 1.0],
     );
 
     if faces_right {
@@ -952,16 +952,16 @@ pub(crate) fn build_spawn_marker_vertices(position: [f32; 3], faces_right: bool)
             &mut vertices,
             [x + 0.9, y + 0.35, z],
             [x + 1.3, y + 0.65, z + 0.7],
-            [0.2, 0.9, 0.3],
-            [0.1, 0.45, 0.15],
+            [0.2, 0.9, 0.3, 1.0],
+            [0.1, 0.45, 0.15, 1.0],
         );
     } else {
         append_prism(
             &mut vertices,
             [x + 0.35, y + 0.9, z],
             [x + 0.65, y + 1.3, z + 0.7],
-            [0.2, 0.9, 0.3],
-            [0.1, 0.45, 0.15],
+            [0.2, 0.9, 0.3, 1.0],
+            [0.1, 0.45, 0.15, 1.0],
         );
     }
 

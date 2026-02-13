@@ -107,7 +107,10 @@ fn collect_builtin_levels(dir: &Dir<'_>, levels: &mut Vec<LevelMetadata>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{builtin_level_names, load_builtin_level_metadata};
+    use super::{
+        builtin_level_names, load_builtin_level_metadata, parse_level_metadata_json,
+        serialize_level_metadata_pretty,
+    };
 
     #[test]
     fn discovers_builtin_levels_from_assets_directory() {
@@ -120,5 +123,23 @@ mod tests {
     fn loads_known_level_metadata() {
         let metadata = load_builtin_level_metadata("Flowerfield");
         assert!(metadata.is_some());
+    }
+
+    #[test]
+    fn rejects_objects_without_kind() {
+        let mut metadata = load_builtin_level_metadata("Flowerfield").expect("missing level");
+        metadata.objects[0].kind = crate::types::BlockKind::Standard;
+
+        let mut json_value = serde_json::from_str::<serde_json::Value>(
+            &serialize_level_metadata_pretty(&metadata).unwrap(),
+        )
+        .unwrap();
+        json_value["objects"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("kind");
+
+        let result = parse_level_metadata_json(&json_value.to_string());
+        assert!(result.is_err());
     }
 }

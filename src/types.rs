@@ -1,4 +1,4 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 
 pub(crate) const CURRENT_LEVEL_FORMAT_VERSION: u32 = 1;
 
@@ -10,13 +10,13 @@ fn default_level_format_version() -> u32 {
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub(crate) struct Vertex {
     pub(crate) position: [f32; 3],
-    pub(crate) color: [f32; 3],
+    pub(crate) color: [f32; 4],
 }
 
 impl Vertex {
     pub(crate) fn desc() -> wgpu::VertexBufferLayout<'static> {
         const ATTRS: [wgpu::VertexAttribute; 2] =
-            wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+            wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4];
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as u64,
             step_mode: wgpu::VertexStepMode::Vertex,
@@ -86,7 +86,6 @@ impl LevelMetadata {
 
 #[derive(Deserialize, Serialize, Clone)]
 pub(crate) struct SpawnMetadata {
-    #[serde(default, deserialize_with = "deserialize_vec3_from_array")]
     pub(crate) position: [f32; 3],
     #[serde(default)]
     pub(crate) direction: SpawnDirection,
@@ -131,44 +130,9 @@ pub enum BlockKind {
 
 #[derive(Deserialize, Serialize, Clone)]
 pub(crate) struct LevelObject {
-    #[serde(default, deserialize_with = "deserialize_vec3_from_array")]
     pub(crate) position: [f32; 3],
-    #[serde(default = "default_size", deserialize_with = "deserialize_size_vec3")]
     pub(crate) size: [f32; 3],
-    #[serde(default)]
     pub(crate) kind: BlockKind,
-}
-
-fn default_size() -> [f32; 3] {
-    [1.0, 1.0, 1.0]
-}
-
-fn deserialize_vec3_from_array<'de, D>(deserializer: D) -> Result<[f32; 3], D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let values: Vec<f32> = Vec::deserialize(deserializer)?;
-    match values.as_slice() {
-        [x, y] => Ok([*x, *y, 0.0]),
-        [x, y, z] => Ok([*x, *y, *z]),
-        _ => Err(serde::de::Error::custom(
-            "expected an array with 2 or 3 numeric values",
-        )),
-    }
-}
-
-fn deserialize_size_vec3<'de, D>(deserializer: D) -> Result<[f32; 3], D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let values: Vec<f32> = Vec::deserialize(deserializer)?;
-    match values.as_slice() {
-        [x, y] => Ok([*x, *y, 1.0]),
-        [x, y, z] => Ok([*x, *y, *z]),
-        _ => Err(serde::de::Error::custom(
-            "expected an array with 2 or 3 numeric values",
-        )),
-    }
 }
 
 #[derive(PartialEq)]
