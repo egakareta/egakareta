@@ -202,6 +202,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                         });
                     }
                     EditorMode::Select => {
+                        ui.label("Tip: Shift+Click to select multiple blocks.");
                         if let Some(mut selected) = state.editor_selected_block() {
                             ui.horizontal(|ui| {
                                 ui.label("Move:");

@@ -100,6 +100,7 @@ pub struct State {
     editor_snap_to_grid: bool,
     editor_snap_step: f32,
     editor_selected_block_index: Option<usize>,
+    editor_selected_block_indices: Vec<usize>,
     editor_hovered_block_index: Option<usize>,
     editor_gizmo_drag: Option<EditorGizmoDrag>,
     editor_block_drag: Option<EditorBlockDrag>,
@@ -145,28 +146,36 @@ enum GizmoDragKind {
     Resize,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct EditorGizmoDrag {
     axis: GizmoAxis,
     kind: GizmoDragKind,
     start_mouse: [f64; 2],
     start_center_screen: [f32; 2],
-    start_position: [f32; 3],
-    start_size: [f32; 3],
+    start_center_world: [f32; 3],
+    start_blocks: Vec<EditorDragBlockStart>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct EditorBlockDrag {
     start_mouse: [f64; 2],
     start_center_screen: [f32; 2],
-    start_position: [f32; 3],
-    start_size: [f32; 3],
+    start_center_world: [f32; 3],
+    start_blocks: Vec<EditorDragBlockStart>,
+}
+
+#[derive(Clone, Copy)]
+struct EditorDragBlockStart {
+    index: usize,
+    position: [f32; 3],
+    size: [f32; 3],
 }
 
 #[derive(Clone)]
 struct EditorHistorySnapshot {
     objects: Vec<LevelObject>,
     selected_block_index: Option<usize>,
+    selected_block_indices: Vec<usize>,
     cursor: [i32; 3],
     selected_kind: BlockKind,
     spawn: SpawnMetadata,
@@ -552,6 +561,7 @@ impl State {
             editor_snap_to_grid: true,
             editor_snap_step: 1.0,
             editor_selected_block_index: None,
+            editor_selected_block_indices: Vec::new(),
             editor_hovered_block_index: None,
             editor_gizmo_drag: None,
             editor_block_drag: None,
@@ -847,7 +857,7 @@ impl State {
 
         self.editor_pointer_screen = Some([x, y]);
 
-        let Some(drag) = self.editor_gizmo_drag else {
+        let Some(drag) = self.editor_gizmo_drag.clone() else {
             return false;
         };
         let mouse_delta = Vec2::new(
@@ -860,9 +870,9 @@ impl State {
         }
 
         let center = Vec3::new(
-            drag.start_position[0] + drag.start_size[0] * 0.5,
-            drag.start_position[1] + drag.start_size[1] * 0.5,
-            drag.start_position[2] + drag.start_size[2] * 0.5,
+            drag.start_center_world[0],
+            drag.start_center_world[1],
+            drag.start_center_world[2],
         );
         let axis_dir = match drag.axis {
             GizmoAxis::X => Vec3::X,
@@ -898,22 +908,66 @@ impl State {
 
         match drag.kind {
             GizmoDragKind::Move => {
-                let mut position = drag.start_position;
-                match drag.axis {
-                    GizmoAxis::X => position[0] += world_delta,
-                    GizmoAxis::Y => position[1] += world_delta,
-                    GizmoAxis::Z => position[2] += world_delta,
+                let snap_enabled = self.editor_snap_to_grid;
+                let snap_step = self.editor_snap_step.max(0.05);
+                let mut first_cursor: Option<[f32; 3]> = None;
+                for block in &drag.start_blocks {
+                    if let Some(obj) = self.editor_objects.get_mut(block.index) {
+                        let mut next = block.position;
+                        match drag.axis {
+                            GizmoAxis::X => next[0] += world_delta,
+                            GizmoAxis::Y => next[1] += world_delta,
+                            GizmoAxis::Z => next[2] += world_delta,
+                        }
+                        if snap_enabled {
+                            next[0] = (next[0] / snap_step).round() * snap_step;
+                            next[1] = (next[1] / snap_step).round() * snap_step;
+                            next[2] = (next[2].max(0.0) / snap_step).round() * snap_step;
+                        } else {
+                            next[2] = next[2].max(0.0);
+                        }
+                        obj.position = next;
+                        if first_cursor.is_none() {
+                            first_cursor = Some(next);
+                        }
+                    }
                 }
-                self.set_editor_selected_block_position(position);
+                if let Some(next_position) = first_cursor {
+                    let bounds = self.editor.bounds;
+                    self.editor.cursor = [
+                        (next_position[0].floor() as i32).clamp(-bounds, bounds),
+                        (next_position[1].floor() as i32).clamp(-bounds, bounds),
+                        (next_position[2].floor() as i32).max(0),
+                    ];
+                }
+                self.sync_editor_objects();
+                self.rebuild_editor_cursor_vertices();
             }
             GizmoDragKind::Resize => {
-                let mut size = drag.start_size;
-                match drag.axis {
-                    GizmoAxis::X => size[0] += world_delta,
-                    GizmoAxis::Y => size[1] += world_delta,
-                    GizmoAxis::Z => size[2] += world_delta,
+                let snap_enabled = self.editor_snap_to_grid;
+                let snap_step = self.editor_snap_step.max(0.05);
+                let min_size = if snap_enabled { snap_step } else { 0.25 };
+                for block in &drag.start_blocks {
+                    if let Some(obj) = self.editor_objects.get_mut(block.index) {
+                        let mut next = block.size;
+                        match drag.axis {
+                            GizmoAxis::X => next[0] += world_delta,
+                            GizmoAxis::Y => next[1] += world_delta,
+                            GizmoAxis::Z => next[2] += world_delta,
+                        }
+                        if snap_enabled {
+                            next[0] = (next[0] / snap_step).round() * snap_step;
+                            next[1] = (next[1] / snap_step).round() * snap_step;
+                            next[2] = (next[2] / snap_step).round() * snap_step;
+                        }
+                        obj.size = [
+                            next[0].max(min_size),
+                            next[1].max(min_size),
+                            next[2].max(min_size),
+                        ];
+                    }
                 }
-                self.set_editor_selected_block_size(size);
+                self.sync_editor_objects();
             }
         }
         true
@@ -933,7 +987,7 @@ impl State {
 
         self.editor_pointer_screen = Some([x, y]);
 
-        let Some(drag) = self.editor_block_drag else {
+        let Some(drag) = self.editor_block_drag.clone() else {
             return false;
         };
         let mouse_delta = Vec2::new(
@@ -947,9 +1001,9 @@ impl State {
 
         let (camera_right_xy, camera_up_xy) = self.editor_camera_axes_xy();
         let center = Vec3::new(
-            drag.start_position[0] + drag.start_size[0] * 0.5,
-            drag.start_position[1] + drag.start_size[1] * 0.5,
-            drag.start_position[2] + drag.start_size[2] * 0.5,
+            drag.start_center_world[0],
+            drag.start_center_world[1],
+            drag.start_center_world[2],
         );
 
         let Some(origin_screen) = self.world_to_screen(center) else {
@@ -984,10 +1038,39 @@ impl State {
         let right_units = (delta_x * up_screen_delta.y - delta_y * up_screen_delta.x) / det;
         let up_units = (delta_y * right_screen_delta.x - delta_x * right_screen_delta.y) / det;
 
-        let mut position = drag.start_position;
-        position[0] += right_world.x * right_units + up_world.x * up_units;
-        position[1] += right_world.y * right_units + up_world.y * up_units;
-        self.set_editor_selected_block_position(position);
+        let move_x = right_world.x * right_units + up_world.x * up_units;
+        let move_y = right_world.y * right_units + up_world.y * up_units;
+        let snap_enabled = self.editor_snap_to_grid;
+        let snap_step = self.editor_snap_step.max(0.05);
+        let mut first_cursor: Option<[f32; 3]> = None;
+        for block in &drag.start_blocks {
+            if let Some(obj) = self.editor_objects.get_mut(block.index) {
+                let mut next = block.position;
+                next[0] += move_x;
+                next[1] += move_y;
+                if snap_enabled {
+                    next[0] = (next[0] / snap_step).round() * snap_step;
+                    next[1] = (next[1] / snap_step).round() * snap_step;
+                    next[2] = (next[2].max(0.0) / snap_step).round() * snap_step;
+                } else {
+                    next[2] = next[2].max(0.0);
+                }
+                obj.position = next;
+                if first_cursor.is_none() {
+                    first_cursor = Some(next);
+                }
+            }
+        }
+        if let Some(next_position) = first_cursor {
+            let bounds = self.editor.bounds;
+            self.editor.cursor = [
+                (next_position[0].floor() as i32).clamp(-bounds, bounds),
+                (next_position[1].floor() as i32).clamp(-bounds, bounds),
+                (next_position[2].floor() as i32).max(0),
+            ];
+        }
+        self.sync_editor_objects();
+        self.rebuild_editor_cursor_vertices();
         true
     }
 
@@ -1034,6 +1117,64 @@ impl State {
         self.editor_ctrl_held = false;
     }
 
+    fn selected_block_indices_normalized(&self) -> Vec<usize> {
+        let mut indices: Vec<usize> = self
+            .editor_selected_block_indices
+            .iter()
+            .copied()
+            .filter(|index| *index < self.editor_objects.len())
+            .collect();
+
+        if indices.is_empty() {
+            if let Some(index) = self
+                .editor_selected_block_index
+                .filter(|index| *index < self.editor_objects.len())
+            {
+                indices.push(index);
+            }
+        }
+
+        indices.sort_unstable();
+        indices.dedup();
+        indices
+    }
+
+    fn sync_primary_selection_from_indices(&mut self) {
+        let indices = self.selected_block_indices_normalized();
+        self.editor_selected_block_index = indices.first().copied();
+        self.editor_selected_block_indices = indices;
+    }
+
+    fn selection_contains(&self, index: usize) -> bool {
+        self.editor_selected_block_indices.contains(&index)
+            || self.editor_selected_block_index == Some(index)
+    }
+
+    fn selected_group_bounds(&self) -> Option<([f32; 3], [f32; 3])> {
+        let indices = self.selected_block_indices_normalized();
+        let first = *indices.first()?;
+        let first_obj = self.editor_objects.get(first)?;
+        let mut min = first_obj.position;
+        let mut max = [
+            first_obj.position[0] + first_obj.size[0],
+            first_obj.position[1] + first_obj.size[1],
+            first_obj.position[2] + first_obj.size[2],
+        ];
+
+        for index in indices.into_iter().skip(1) {
+            if let Some(obj) = self.editor_objects.get(index) {
+                min[0] = min[0].min(obj.position[0]);
+                min[1] = min[1].min(obj.position[1]);
+                min[2] = min[2].min(obj.position[2]);
+                max[0] = max[0].max(obj.position[0] + obj.size[0]);
+                max[1] = max[1].max(obj.position[1] + obj.size[1]);
+                max[2] = max[2].max(obj.position[2] + obj.size[2]);
+            }
+        }
+
+        Some((min, [max[0] - min[0], max[1] - min[1], max[2] - min[2]]))
+    }
+
     fn reset_playing_camera_defaults(&mut self) {
         self.playing_camera_rotation = -45.0f32.to_radians();
         self.playing_camera_pitch = 45.0f32.to_radians();
@@ -1054,6 +1195,7 @@ impl State {
         self.editor_right_dragging = false;
         self.editor_mode = EditorMode::Place;
         self.editor_selected_block_index = None;
+        self.editor_selected_block_indices.clear();
         self.editor_hovered_block_index = None;
         self.editor_gizmo_drag = None;
         self.editor_block_drag = None;
@@ -1071,6 +1213,7 @@ impl State {
         self.playtesting_editor = false;
         self.editor_level_name = None;
         self.editor_selected_block_index = None;
+        self.editor_selected_block_indices.clear();
         self.editor_hovered_block_index = None;
         self.editor_gizmo_drag = None;
         self.editor_block_drag = None;
@@ -1114,6 +1257,7 @@ impl State {
         self.editor_block_drag = None;
         if mode == EditorMode::Place {
             self.editor_selected_block_index = None;
+            self.editor_selected_block_indices.clear();
             self.editor_hovered_block_index = None;
         }
         self.rebuild_editor_gizmo_vertices();
@@ -1154,7 +1298,9 @@ impl State {
     }
 
     pub(crate) fn editor_selected_block(&self) -> Option<LevelObject> {
-        self.editor_selected_block_index
+        self.selected_block_indices_normalized()
+            .first()
+            .copied()
             .and_then(|index| self.editor_objects.get(index).cloned())
     }
 
@@ -1166,6 +1312,8 @@ impl State {
         if self.editor_gizmo_drag.is_none() && self.editor_block_drag.is_none() {
             self.record_editor_history_state();
         }
+
+        self.sync_primary_selection_from_indices();
 
         if let Some(index) = self
             .editor_selected_block_index
@@ -1204,6 +1352,8 @@ impl State {
             self.record_editor_history_state();
         }
 
+        self.sync_primary_selection_from_indices();
+
         if let Some(index) = self
             .editor_selected_block_index
             .filter(|index| *index < self.editor_objects.len())
@@ -1241,6 +1391,8 @@ impl State {
 
         self.record_editor_history_state();
 
+        self.sync_primary_selection_from_indices();
+
         if let Some(index) = self
             .editor_selected_block_index
             .filter(|index| *index < self.editor_objects.len())
@@ -1258,6 +1410,8 @@ impl State {
         }
 
         self.record_editor_history_state();
+
+        self.sync_primary_selection_from_indices();
 
         if let Some(index) = self
             .editor_selected_block_index
@@ -1479,34 +1633,45 @@ impl State {
             return false;
         }
 
-        let Some(index) = self
-            .editor_selected_block_index
-            .filter(|index| *index < self.editor_objects.len())
-        else {
+        let indices = self.selected_block_indices_normalized();
+        if indices.is_empty() {
             return false;
-        };
+        }
 
         let Some((kind, axis)) = self.pick_editor_gizmo_handle(x, y) else {
             return false;
         };
 
-        let obj = self.editor_objects[index].clone();
+        let Some((bounds_position, bounds_size)) = self.selected_group_bounds() else {
+            return false;
+        };
         let center = Vec3::new(
-            obj.position[0] + obj.size[0] * 0.5,
-            obj.position[1] + obj.size[1] * 0.5,
-            obj.position[2] + obj.size[2] * 0.5,
+            bounds_position[0] + bounds_size[0] * 0.5,
+            bounds_position[1] + bounds_size[1] * 0.5,
+            bounds_position[2] + bounds_size[2] * 0.5,
         );
         let Some(center_screen) = self.world_to_screen(center) else {
             return false;
         };
+
+        let mut start_blocks = Vec::with_capacity(indices.len());
+        for index in indices {
+            if let Some(obj) = self.editor_objects.get(index) {
+                start_blocks.push(EditorDragBlockStart {
+                    index,
+                    position: obj.position,
+                    size: obj.size,
+                });
+            }
+        }
 
         self.editor_gizmo_drag = Some(EditorGizmoDrag {
             axis,
             kind,
             start_mouse: [x, y],
             start_center_screen: [center_screen.x, center_screen.y],
-            start_position: obj.position,
-            start_size: obj.size,
+            start_center_world: [center.x, center.y, center.z],
+            start_blocks,
         });
         self.record_editor_history_state();
         true
@@ -1517,33 +1682,47 @@ impl State {
             return false;
         }
 
-        let Some(selected_index) = self
-            .editor_selected_block_index
-            .filter(|index| *index < self.editor_objects.len())
-        else {
+        let selected_indices = self.selected_block_indices_normalized();
+        if selected_indices.is_empty() {
             return false;
-        };
-
-        let obj = self.editor_objects[selected_index].clone();
+        }
 
         let Some(pick) = self.editor_pick_from_screen(x, y) else {
             return false;
         };
 
-        if pick.hit_block_index == Some(selected_index) {
+        if pick
+            .hit_block_index
+            .is_some_and(|i| self.selection_contains(i))
+        {
+            let Some((bounds_position, bounds_size)) = self.selected_group_bounds() else {
+                return false;
+            };
             let center = Vec3::new(
-                obj.position[0] + obj.size[0] * 0.5,
-                obj.position[1] + obj.size[1] * 0.5,
-                obj.position[2] + obj.size[2] * 0.5,
+                bounds_position[0] + bounds_size[0] * 0.5,
+                bounds_position[1] + bounds_size[1] * 0.5,
+                bounds_position[2] + bounds_size[2] * 0.5,
             );
             let Some(center_screen) = self.world_to_screen(center) else {
                 return false;
             };
+
+            let mut start_blocks = Vec::with_capacity(selected_indices.len());
+            for index in selected_indices {
+                if let Some(obj) = self.editor_objects.get(index) {
+                    start_blocks.push(EditorDragBlockStart {
+                        index,
+                        position: obj.position,
+                        size: obj.size,
+                    });
+                }
+            }
+
             self.editor_block_drag = Some(EditorBlockDrag {
                 start_mouse: [x, y],
                 start_center_screen: [center_screen.x, center_screen.y],
-                start_position: obj.position,
-                start_size: obj.size,
+                start_center_world: [center.x, center.y, center.z],
+                start_blocks,
             });
             self.record_editor_history_state();
             return true;
@@ -1588,15 +1767,12 @@ impl State {
             return None;
         }
 
-        let index = self
-            .editor_selected_block_index
-            .filter(|index| *index < self.editor_objects.len())?;
-        let obj = &self.editor_objects[index];
+        let (bounds_position, bounds_size) = self.selected_group_bounds()?;
 
         let center = Vec3::new(
-            obj.position[0] + obj.size[0] * 0.5,
-            obj.position[1] + obj.size[1] * 0.5,
-            obj.position[2] + obj.size[2] * 0.5,
+            bounds_position[0] + bounds_size[0] * 0.5,
+            bounds_position[1] + bounds_size[1] * 0.5,
+            bounds_position[2] + bounds_size[2] * 0.5,
         );
         let axis_lengths = self.editor_gizmo_axis_lengths_world(center, 50.0);
         let pointer = Vec2::new(x as f32, y as f32);
@@ -1620,17 +1796,29 @@ impl State {
             (
                 GizmoDragKind::Resize,
                 GizmoAxis::X,
-                Vec3::new(obj.position[0] + obj.size[0] + 0.36, center.y, center.z),
+                Vec3::new(
+                    bounds_position[0] + bounds_size[0] + 0.36,
+                    center.y,
+                    center.z,
+                ),
             ),
             (
                 GizmoDragKind::Resize,
                 GizmoAxis::Y,
-                Vec3::new(center.x, obj.position[1] + obj.size[1] + 0.36, center.z),
+                Vec3::new(
+                    center.x,
+                    bounds_position[1] + bounds_size[1] + 0.36,
+                    center.z,
+                ),
             ),
             (
                 GizmoDragKind::Resize,
                 GizmoAxis::Z,
-                Vec3::new(center.x, center.y, obj.position[2] + obj.size[2] + 0.36),
+                Vec3::new(
+                    center.x,
+                    center.y,
+                    bounds_position[2] + bounds_size[2] + 0.36,
+                ),
             ),
         ];
 
@@ -1873,9 +2061,14 @@ impl State {
             return;
         }
 
+        let additive = self.editor_shift_held;
+
         let Some(pick) = self.editor_pick_from_screen(x, y) else {
-            self.editor_selected_block_index = None;
-            self.editor_hovered_block_index = None;
+            if !additive {
+                self.editor_selected_block_indices.clear();
+                self.editor_selected_block_index = None;
+                self.editor_hovered_block_index = None;
+            }
             self.editor_gizmo_drag = None;
             self.editor_block_drag = None;
             self.rebuild_editor_gizmo_vertices();
@@ -1884,12 +2077,32 @@ impl State {
             return;
         };
 
-        self.editor_selected_block_index = pick.hit_block_index;
-        self.editor_hovered_block_index = pick.hit_block_index;
+        if let Some(hit_index) = pick.hit_block_index {
+            if additive {
+                if let Some(existing) = self
+                    .editor_selected_block_indices
+                    .iter()
+                    .position(|idx| *idx == hit_index)
+                {
+                    self.editor_selected_block_indices.remove(existing);
+                } else {
+                    self.editor_selected_block_indices.push(hit_index);
+                }
+            } else {
+                self.editor_selected_block_indices.clear();
+                self.editor_selected_block_indices.push(hit_index);
+            }
+            self.editor_hovered_block_index = Some(hit_index);
+        } else if !additive {
+            self.editor_selected_block_indices.clear();
+            self.editor_hovered_block_index = None;
+        }
+
+        self.sync_primary_selection_from_indices();
         self.editor_gizmo_drag = None;
         self.editor_block_drag = None;
 
-        if let Some(index) = pick.hit_block_index {
+        if let Some(index) = self.editor_selected_block_index {
             if let Some(obj) = self.editor_objects.get(index) {
                 self.editor.cursor = [
                     obj.position[0].floor() as i32,
@@ -1946,11 +2159,16 @@ impl State {
 
         self.record_editor_history_state();
 
-        if let Some(index) = self.editor_selected_block_index {
-            if index < self.editor_objects.len() {
-                self.editor_objects.remove(index);
+        let selected_indices = self.selected_block_indices_normalized();
+        if !selected_indices.is_empty() {
+            for index in selected_indices.into_iter().rev() {
+                if index < self.editor_objects.len() {
+                    self.editor_objects.remove(index);
+                }
             }
             self.editor_selected_block_index = None;
+            self.editor_selected_block_indices.clear();
+            self.editor_hovered_block_index = None;
             self.sync_editor_objects();
             self.rebuild_editor_cursor_vertices();
             return;
@@ -2199,6 +2417,8 @@ impl State {
     fn apply_imported_level_metadata(&mut self, metadata: LevelMetadata) {
         self.editor_objects = metadata.objects;
         self.editor_selected_block_index = None;
+        self.editor_selected_block_indices.clear();
+        self.editor_hovered_block_index = None;
         self.editor_spawn = metadata.spawn;
         self.editor_tap_steps = metadata.taps;
         self.editor_tap_steps.sort_unstable();
@@ -2331,6 +2551,7 @@ impl State {
         EditorHistorySnapshot {
             objects: self.editor_objects.clone(),
             selected_block_index: self.editor_selected_block_index,
+            selected_block_indices: self.editor_selected_block_indices.clone(),
             cursor: self.editor.cursor,
             selected_kind: self.editor_selected_kind,
             spawn: self.editor_spawn.clone(),
@@ -2359,6 +2580,12 @@ impl State {
         self.editor_selected_block_index = snapshot
             .selected_block_index
             .filter(|index| *index < self.editor_objects.len());
+        self.editor_selected_block_indices = snapshot
+            .selected_block_indices
+            .into_iter()
+            .filter(|index| *index < self.editor_objects.len())
+            .collect();
+        self.sync_primary_selection_from_indices();
         self.editor_hovered_block_index = self.editor_selected_block_index;
         self.editor.cursor = snapshot.cursor;
         self.editor_selected_kind = snapshot.selected_kind;
@@ -2449,6 +2676,7 @@ impl State {
         self.editor_selected_kind = block.kind;
         self.editor_objects.push(block);
         self.editor_selected_block_index = Some(self.editor_objects.len() - 1);
+        self.editor_selected_block_indices = self.editor_selected_block_index.into_iter().collect();
         self.editor_hovered_block_index = self.editor_selected_block_index;
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
@@ -2464,17 +2692,22 @@ impl State {
             self.editor_selected_kind,
         ));
         self.editor_selected_block_index = None;
+        self.editor_selected_block_indices.clear();
         self.editor_hovered_block_index = None;
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
     }
 
     fn sync_editor_objects(&mut self) {
+        self.sync_primary_selection_from_indices();
         if let Some(index) = self.editor_selected_block_index {
             if index >= self.editor_objects.len() {
                 self.editor_selected_block_index = None;
             }
         }
+        self.editor_selected_block_indices
+            .retain(|index| *index < self.editor_objects.len());
+        self.sync_primary_selection_from_indices();
         if let Some(index) = self.editor_hovered_block_index {
             if index >= self.editor_objects.len() {
                 self.editor_hovered_block_index = None;
@@ -2586,7 +2819,7 @@ impl State {
             return;
         };
 
-        if self.editor_selected_block_index == Some(index) {
+        if self.selection_contains(index) {
             self.editor_hover_outline_vertex_count = 0;
             self.editor_hover_outline_vertex_buffer = None;
             return;
@@ -2615,25 +2848,21 @@ impl State {
             return;
         }
 
-        let Some(index) = self
-            .editor_selected_block_index
-            .filter(|index| *index < self.editor_objects.len())
-        else {
+        let Some((bounds_position, bounds_size)) = self.selected_group_bounds() else {
             self.editor_gizmo_vertex_count = 0;
             self.editor_gizmo_vertex_buffer = None;
             return;
         };
 
-        let obj = &self.editor_objects[index];
         let center = Vec3::new(
-            obj.position[0] + obj.size[0] * 0.5,
-            obj.position[1] + obj.size[1] * 0.5,
-            obj.position[2] + obj.size[2] * 0.5,
+            bounds_position[0] + bounds_size[0] * 0.5,
+            bounds_position[1] + bounds_size[1] * 0.5,
+            bounds_position[2] + bounds_size[2] * 0.5,
         );
         let axis_lengths = self.editor_gizmo_axis_lengths_world(center, 50.0);
         let axis_width = self.editor_gizmo_axis_width_world(center, 3.0);
         let vertices =
-            build_editor_gizmo_vertices(obj.position, obj.size, axis_lengths, axis_width);
+            build_editor_gizmo_vertices(bounds_position, bounds_size, axis_lengths, axis_width);
         self.editor_gizmo_vertex_count = vertices.len() as u32;
         if !vertices.is_empty() {
             self.editor_gizmo_vertex_buffer = Some(self.device.create_buffer_init(
@@ -2655,17 +2884,22 @@ impl State {
             return;
         }
 
-        let Some(index) = self
-            .editor_selected_block_index
-            .filter(|index| *index < self.editor_objects.len())
-        else {
+        let selected_indices = self.selected_block_indices_normalized();
+        if selected_indices.is_empty() {
             self.editor_selection_outline_vertex_count = 0;
             self.editor_selection_outline_vertex_buffer = None;
             return;
-        };
+        }
 
-        let obj = &self.editor_objects[index];
-        let vertices = build_editor_selection_outline_vertices(obj.position, obj.size);
+        let mut vertices = Vec::new();
+        for index in selected_indices {
+            if let Some(obj) = self.editor_objects.get(index) {
+                vertices.extend(build_editor_selection_outline_vertices(
+                    obj.position,
+                    obj.size,
+                ));
+            }
+        }
         self.editor_selection_outline_vertex_count = vertices.len() as u32;
         if !vertices.is_empty() {
             self.editor_selection_outline_vertex_buffer = Some(self.device.create_buffer_init(
