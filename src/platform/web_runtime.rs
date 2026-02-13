@@ -132,7 +132,19 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
         }
 
         if !*ui_wants_pointer_clone.borrow() {
+            if button == 0 {
+                state.update_editor_cursor_from_screen(
+                    event.offset_x() as f64,
+                    event.offset_y() as f64,
+                );
+            }
             state.handle_mouse_button(button as u32, true);
+            if button == 0 {
+                state.update_editor_cursor_from_screen(
+                    event.offset_x() as f64,
+                    event.offset_y() as f64,
+                );
+            }
         }
 
         if button == 2 {

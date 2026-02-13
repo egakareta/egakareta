@@ -100,7 +100,20 @@ impl ApplicationHandler for App {
                 if !egui_consumed {
                     let pressed = element_state == winit::event::ElementState::Pressed;
                     let button_idx = mouse_button_index_from_winit(button);
+
+                    if button_idx == 0 && pressed {
+                        if let Some(position) = self.last_cursor_pos {
+                            state.update_editor_cursor_from_screen(position.x, position.y);
+                        }
+                    }
+
                     state.handle_mouse_button(button_idx, pressed);
+
+                    if button_idx == 0 && pressed {
+                        if let Some(position) = self.last_cursor_pos {
+                            state.update_editor_cursor_from_screen(position.x, position.y);
+                        }
+                    }
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
