@@ -18,8 +18,8 @@ use crate::level_repository::{
 };
 use crate::mesh::{
     build_block_vertices, build_editor_cursor_vertices, build_editor_gizmo_vertices,
-    build_editor_selection_outline_vertices, build_floor_vertices, build_grid_vertices,
-    build_spawn_marker_vertices, build_trail_vertices,
+    build_editor_hover_outline_vertices, build_editor_selection_outline_vertices,
+    build_floor_vertices, build_grid_vertices, build_spawn_marker_vertices, build_trail_vertices,
 };
 use crate::platform::audio::PlatformAudio;
 use crate::platform::io::{log_platform_error, read_editor_music_bytes, save_level_export};
@@ -55,6 +55,8 @@ pub struct State {
     block_vertex_count: u32,
     editor_cursor_vertex_buffer: Option<wgpu::Buffer>,
     editor_cursor_vertex_count: u32,
+    editor_hover_outline_vertex_buffer: Option<wgpu::Buffer>,
+    editor_hover_outline_vertex_count: u32,
     editor_selection_outline_vertex_buffer: Option<wgpu::Buffer>,
     editor_selection_outline_vertex_count: u32,
     editor_gizmo_vertex_buffer: Option<wgpu::Buffer>,
@@ -98,6 +100,7 @@ pub struct State {
     editor_snap_to_grid: bool,
     editor_snap_step: f32,
     editor_selected_block_index: Option<usize>,
+    editor_hovered_block_index: Option<usize>,
     editor_gizmo_drag: Option<EditorGizmoDrag>,
     editor_block_drag: Option<EditorBlockDrag>,
     editor_pointer_screen: Option<[f64; 2]>,
@@ -517,6 +520,8 @@ impl State {
             block_vertex_count,
             editor_cursor_vertex_buffer: None,
             editor_cursor_vertex_count: 0,
+            editor_hover_outline_vertex_buffer: None,
+            editor_hover_outline_vertex_count: 0,
             editor_selection_outline_vertex_buffer: None,
             editor_selection_outline_vertex_count: 0,
             editor_gizmo_vertex_buffer: None,
@@ -547,6 +552,7 @@ impl State {
             editor_snap_to_grid: true,
             editor_snap_step: 1.0,
             editor_selected_block_index: None,
+            editor_hovered_block_index: None,
             editor_gizmo_drag: None,
             editor_block_drag: None,
             editor_pointer_screen: None,
@@ -1048,6 +1054,7 @@ impl State {
         self.editor_right_dragging = false;
         self.editor_mode = EditorMode::Place;
         self.editor_selected_block_index = None;
+        self.editor_hovered_block_index = None;
         self.editor_gizmo_drag = None;
         self.editor_block_drag = None;
         self.editor_history_undo.clear();
@@ -1064,6 +1071,7 @@ impl State {
         self.playtesting_editor = false;
         self.editor_level_name = None;
         self.editor_selected_block_index = None;
+        self.editor_hovered_block_index = None;
         self.editor_gizmo_drag = None;
         self.editor_block_drag = None;
         self.playing_level_name = None;
@@ -1106,8 +1114,10 @@ impl State {
         self.editor_block_drag = None;
         if mode == EditorMode::Place {
             self.editor_selected_block_index = None;
+            self.editor_hovered_block_index = None;
         }
         self.rebuild_editor_gizmo_vertices();
+        self.rebuild_editor_hover_outline_vertices();
         self.rebuild_editor_selection_outline_vertices();
     }
 
@@ -1443,8 +1453,20 @@ impl State {
         self.editor_pointer_screen = Some([x, y]);
 
         let Some(pick) = self.editor_pick_from_screen(x, y) else {
+            if self.editor_mode == EditorMode::Select && self.editor_hovered_block_index.is_some() {
+                self.editor_hovered_block_index = None;
+                self.rebuild_editor_hover_outline_vertices();
+            }
             return;
         };
+
+        if self.editor_mode == EditorMode::Select {
+            if self.editor_hovered_block_index != pick.hit_block_index {
+                self.editor_hovered_block_index = pick.hit_block_index;
+                self.rebuild_editor_hover_outline_vertices();
+            }
+            return;
+        }
 
         if pick.cursor != self.editor.cursor {
             self.editor.cursor = pick.cursor;
@@ -1853,14 +1875,17 @@ impl State {
 
         let Some(pick) = self.editor_pick_from_screen(x, y) else {
             self.editor_selected_block_index = None;
+            self.editor_hovered_block_index = None;
             self.editor_gizmo_drag = None;
             self.editor_block_drag = None;
             self.rebuild_editor_gizmo_vertices();
+            self.rebuild_editor_hover_outline_vertices();
             self.rebuild_editor_selection_outline_vertices();
             return;
         };
 
         self.editor_selected_block_index = pick.hit_block_index;
+        self.editor_hovered_block_index = pick.hit_block_index;
         self.editor_gizmo_drag = None;
         self.editor_block_drag = None;
 
@@ -1879,6 +1904,7 @@ impl State {
         }
 
         self.rebuild_editor_gizmo_vertices();
+        self.rebuild_editor_hover_outline_vertices();
         self.rebuild_editor_selection_outline_vertices();
     }
 
@@ -2333,6 +2359,7 @@ impl State {
         self.editor_selected_block_index = snapshot
             .selected_block_index
             .filter(|index| *index < self.editor_objects.len());
+        self.editor_hovered_block_index = self.editor_selected_block_index;
         self.editor.cursor = snapshot.cursor;
         self.editor_selected_kind = snapshot.selected_kind;
         self.editor_spawn = snapshot.spawn;
@@ -2352,6 +2379,7 @@ impl State {
         self.rebuild_editor_cursor_vertices();
         self.rebuild_spawn_marker_vertices();
         self.rebuild_editor_gizmo_vertices();
+        self.rebuild_editor_hover_outline_vertices();
         self.rebuild_editor_selection_outline_vertices();
     }
 
@@ -2421,9 +2449,11 @@ impl State {
         self.editor_selected_kind = block.kind;
         self.editor_objects.push(block);
         self.editor_selected_block_index = Some(self.editor_objects.len() - 1);
+        self.editor_hovered_block_index = self.editor_selected_block_index;
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
         self.rebuild_editor_gizmo_vertices();
+        self.rebuild_editor_hover_outline_vertices();
         self.rebuild_editor_selection_outline_vertices();
     }
 
@@ -2434,6 +2464,7 @@ impl State {
             self.editor_selected_kind,
         ));
         self.editor_selected_block_index = None;
+        self.editor_hovered_block_index = None;
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
     }
@@ -2444,9 +2475,15 @@ impl State {
                 self.editor_selected_block_index = None;
             }
         }
+        if let Some(index) = self.editor_hovered_block_index {
+            if index >= self.editor_objects.len() {
+                self.editor_hovered_block_index = None;
+            }
+        }
         self.game.objects = self.editor_objects.clone();
         self.rebuild_block_vertices();
         self.rebuild_editor_gizmo_vertices();
+        self.rebuild_editor_hover_outline_vertices();
         self.rebuild_editor_selection_outline_vertices();
     }
 
@@ -2530,6 +2567,44 @@ impl State {
             ));
         } else {
             self.editor_cursor_vertex_buffer = None;
+        }
+    }
+
+    fn rebuild_editor_hover_outline_vertices(&mut self) {
+        if self.phase != AppPhase::Editor || self.editor_mode != EditorMode::Select {
+            self.editor_hover_outline_vertex_count = 0;
+            self.editor_hover_outline_vertex_buffer = None;
+            return;
+        }
+
+        let Some(index) = self
+            .editor_hovered_block_index
+            .filter(|index| *index < self.editor_objects.len())
+        else {
+            self.editor_hover_outline_vertex_count = 0;
+            self.editor_hover_outline_vertex_buffer = None;
+            return;
+        };
+
+        if self.editor_selected_block_index == Some(index) {
+            self.editor_hover_outline_vertex_count = 0;
+            self.editor_hover_outline_vertex_buffer = None;
+            return;
+        }
+
+        let obj = &self.editor_objects[index];
+        let vertices = build_editor_hover_outline_vertices(obj.position, obj.size);
+        self.editor_hover_outline_vertex_count = vertices.len() as u32;
+        if !vertices.is_empty() {
+            self.editor_hover_outline_vertex_buffer = Some(self.device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Editor Hover Outline Vertex Buffer"),
+                    contents: bytemuck::cast_slice(&vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                },
+            ));
+        } else {
+            self.editor_hover_outline_vertex_buffer = None;
         }
     }
 
@@ -2913,6 +2988,12 @@ impl State {
                         render_pass.draw(0..self.editor_selection_outline_vertex_count, 0..1);
                     }
 
+                    if let Some(buf) = &self.editor_hover_outline_vertex_buffer {
+                        render_pass.set_vertex_buffer(0, buf.slice(..));
+                        render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
+                        render_pass.draw(0..self.editor_hover_outline_vertex_count, 0..1);
+                    }
+
                     if let Some(buf) = &self.editor_gizmo_vertex_buffer {
                         render_pass.set_pipeline(&self.gizmo_overlay_pipeline);
                         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
@@ -2928,10 +3009,12 @@ impl State {
                         render_pass.set_bind_group(2, &self.color_space_bind_group, &[]);
                     }
 
-                    if let Some(buf) = &self.editor_cursor_vertex_buffer {
-                        render_pass.set_vertex_buffer(0, buf.slice(..));
-                        render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
-                        render_pass.draw(0..self.editor_cursor_vertex_count, 0..1);
+                    if self.editor_mode == EditorMode::Place {
+                        if let Some(buf) = &self.editor_cursor_vertex_buffer {
+                            render_pass.set_vertex_buffer(0, buf.slice(..));
+                            render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
+                            render_pass.draw(0..self.editor_cursor_vertex_count, 0..1);
+                        }
                     }
                 }
             }
