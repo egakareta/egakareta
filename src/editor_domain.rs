@@ -136,6 +136,7 @@ pub(crate) fn create_block_at_cursor(cursor: [i32; 3], kind: BlockKind) -> Level
     LevelObject {
         position: [cursor[0] as f32, cursor[1] as f32, cursor[2] as f32],
         size: [1.0, 1.0, 1.0],
+        rotation_degrees: 0.0,
         kind,
     }
 }
@@ -237,12 +238,7 @@ fn top_surface_height_at(objects: &[LevelObject], x: f32, y: f32, max_z: f32) ->
     const GROUND_PLANE_HEIGHT: f32 = 0.0;
     let mut top_surface: Option<f32> = None;
     for obj in objects {
-        let o_min_x = obj.position[0];
-        let o_max_x = obj.position[0] + obj.size[0];
-        let o_min_y = obj.position[1];
-        let o_max_y = obj.position[1] + obj.size[1];
-
-        if x >= o_min_x && x < o_max_x && y >= o_min_y && y < o_max_y {
+        if object_xy_contains(obj, x, y) {
             let top = obj.position[2] + obj.size[2];
             if top <= max_z {
                 top_surface = Some(match top_surface {
@@ -254,6 +250,29 @@ fn top_surface_height_at(objects: &[LevelObject], x: f32, y: f32, max_z: f32) ->
     }
 
     top_surface.unwrap_or(GROUND_PLANE_HEIGHT)
+}
+
+fn object_xy_contains(obj: &LevelObject, x: f32, y: f32) -> bool {
+    let center = [
+        obj.position[0] + obj.size[0] * 0.5,
+        obj.position[1] + obj.size[1] * 0.5,
+    ];
+    let local = rotate_point_around_center_2d([x, y], center, -obj.rotation_degrees.to_radians());
+    local[0] >= obj.position[0]
+        && local[0] < obj.position[0] + obj.size[0]
+        && local[1] >= obj.position[1]
+        && local[1] < obj.position[1] + obj.size[1]
+}
+
+fn rotate_point_around_center_2d(point: [f32; 2], center: [f32; 2], radians: f32) -> [f32; 2] {
+    let sin = radians.sin();
+    let cos = radians.cos();
+    let dx = point[0] - center[0];
+    let dy = point[1] - center[1];
+    [
+        center[0] + (dx * cos - dy * sin),
+        center[1] + (dx * sin + dy * cos),
+    ]
 }
 
 #[cfg(test)]
@@ -303,11 +322,13 @@ mod tests {
             LevelObject {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
+                rotation_degrees: 0.0,
                 kind: BlockKind::Standard,
             },
             LevelObject {
                 position: [0.0, 0.0, 1.0],
                 size: [1.0, 1.0, 2.0],
+                rotation_degrees: 0.0,
                 kind: BlockKind::Grass,
             },
         ];
@@ -338,6 +359,7 @@ mod tests {
             objects: vec![LevelObject {
                 position: [4.0, 6.0, 0.0],
                 size: [1.0, 1.0, 1.0],
+                rotation_degrees: 0.0,
                 kind: BlockKind::Standard,
             }],
             extra: serde_json::Map::new(),
@@ -365,6 +387,7 @@ mod tests {
         let objects = vec![LevelObject {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
+            rotation_degrees: 0.0,
             kind: BlockKind::Standard,
         }];
 
@@ -390,6 +413,7 @@ mod tests {
         let objects = vec![LevelObject {
             position: [1.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
+            rotation_degrees: 0.0,
             kind: BlockKind::Standard,
         }];
 
@@ -417,6 +441,7 @@ mod tests {
             objects: vec![LevelObject {
                 position: [1.0, 2.0, 0.0],
                 size: [1.0, 1.0, 1.0],
+                rotation_degrees: 0.0,
                 kind: BlockKind::Standard,
             }],
             extra: serde_json::Map::new(),

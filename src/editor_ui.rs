@@ -247,6 +247,22 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                             });
 
                             ui.horizontal(|ui| {
+                                ui.label("Angle:");
+                                if ui
+                                    .add(
+                                        egui::DragValue::new(&mut selected.rotation_degrees)
+                                            .speed(0.5)
+                                            .suffix("°"),
+                                    )
+                                    .changed()
+                                {
+                                    state.set_editor_selected_block_rotation(
+                                        selected.rotation_degrees,
+                                    );
+                                }
+                            });
+
+                            ui.horizontal(|ui| {
                                 ui.label("Color:");
                                 for (name, kind) in [
                                     ("Standard", BlockKind::Standard),

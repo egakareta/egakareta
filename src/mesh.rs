@@ -1,5 +1,21 @@
 use crate::types::{BlockKind, LevelObject, Vertex};
 
+fn rotate_vertices_around_z(vertices: &mut [Vertex], center: [f32; 3], degrees: f32) {
+    if degrees.abs() <= f32::EPSILON {
+        return;
+    }
+
+    let radians = degrees.to_radians();
+    let (sin_theta, cos_theta) = radians.sin_cos();
+
+    for vertex in vertices.iter_mut() {
+        let dx = vertex.position[0] - center[0];
+        let dy = vertex.position[1] - center[1];
+        vertex.position[0] = center[0] + dx * cos_theta - dy * sin_theta;
+        vertex.position[1] = center[1] + dx * sin_theta + dy * cos_theta;
+    }
+}
+
 fn append_prism(
     vertices: &mut Vec<Vertex>,
     min: [f32; 3],
@@ -357,9 +373,12 @@ pub(crate) fn build_grid_vertices() -> Vec<Vertex> {
 }
 
 pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
-    let mut vertices = Vec::new();
+    let mut all_vertices = Vec::new();
 
     for obj in objects {
+        let mut object_vertices = Vec::new();
+        let vertices = &mut object_vertices;
+
         let x_min = obj.position[0];
         let x_max = obj.position[0] + obj.size[0];
         let y_min = obj.position[1];
@@ -374,7 +393,7 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
 
             // Fill
             append_prism(
-                &mut vertices,
+                vertices,
                 [x_min + t, y_min + t, z_min + t],
                 [x_max - t, y_max - t, z_max - t],
                 color_fill,
@@ -383,28 +402,28 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
 
             // Bottom edges
             append_prism(
-                &mut vertices,
+                vertices,
                 [x_min, y_min, z_min],
                 [x_max, y_min + t, z_min + t],
                 color_outline,
                 color_outline,
             );
             append_prism(
-                &mut vertices,
+                vertices,
                 [x_min, y_max - t, z_min],
                 [x_max, y_max, z_min + t],
                 color_outline,
                 color_outline,
             );
             append_prism(
-                &mut vertices,
+                vertices,
                 [x_min, y_min + t, z_min],
                 [x_min + t, y_max - t, z_min + t],
                 color_outline,
                 color_outline,
             );
             append_prism(
-                &mut vertices,
+                vertices,
                 [x_max - t, y_min + t, z_min],
                 [x_max, y_max - t, z_min + t],
                 color_outline,
@@ -413,28 +432,28 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
 
             // Top edges
             append_prism(
-                &mut vertices,
+                vertices,
                 [x_min, y_min, z_max - t],
                 [x_max, y_min + t, z_max],
                 color_outline,
                 color_outline,
             );
             append_prism(
-                &mut vertices,
+                vertices,
                 [x_min, y_max - t, z_max - t],
                 [x_max, y_max, z_max],
                 color_outline,
                 color_outline,
             );
             append_prism(
-                &mut vertices,
+                vertices,
                 [x_min, y_min + t, z_max - t],
                 [x_min + t, y_max - t, z_max],
                 color_outline,
                 color_outline,
             );
             append_prism(
-                &mut vertices,
+                vertices,
                 [x_max - t, y_min + t, z_max - t],
                 [x_max, y_max - t, z_max],
                 color_outline,
@@ -443,28 +462,28 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
 
             // Vertical edges
             append_prism(
-                &mut vertices,
+                vertices,
                 [x_min, y_min, z_min + t],
                 [x_min + t, y_min + t, z_max - t],
                 color_outline,
                 color_outline,
             );
             append_prism(
-                &mut vertices,
+                vertices,
                 [x_max - t, y_min, z_min + t],
                 [x_max, y_min + t, z_max - t],
                 color_outline,
                 color_outline,
             );
             append_prism(
-                &mut vertices,
+                vertices,
                 [x_min, y_max - t, z_min + t],
                 [x_min + t, y_max, z_max - t],
                 color_outline,
                 color_outline,
             );
             append_prism(
-                &mut vertices,
+                vertices,
                 [x_max - t, y_max - t, z_min + t],
                 [x_max, y_max, z_max - t],
                 color_outline,
@@ -587,16 +606,24 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
             };
 
             append_prism(
-                &mut vertices,
+                vertices,
                 [x_min, y_min, z_min],
                 [x_max, y_max, z_max],
                 color_top,
                 color_side,
             );
         }
+
+        let center = [
+            obj.position[0] + obj.size[0] * 0.5,
+            obj.position[1] + obj.size[1] * 0.5,
+            obj.position[2] + obj.size[2] * 0.5,
+        ];
+        rotate_vertices_around_z(&mut object_vertices, center, obj.rotation_degrees);
+        all_vertices.extend(object_vertices);
     }
 
-    vertices
+    all_vertices
 }
 
 pub(crate) fn build_trail_vertices(points: &[[f32; 3]], game_over: bool) -> Vec<Vertex> {

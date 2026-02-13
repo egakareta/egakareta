@@ -6,6 +6,10 @@ fn default_level_format_version() -> u32 {
     CURRENT_LEVEL_FORMAT_VERSION
 }
 
+fn default_block_rotation_degrees() -> f32 {
+    0.0
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub(crate) struct Vertex {
@@ -132,6 +136,8 @@ pub enum BlockKind {
 pub(crate) struct LevelObject {
     pub(crate) position: [f32; 3],
     pub(crate) size: [f32; 3],
+    #[serde(default = "default_block_rotation_degrees")]
+    pub(crate) rotation_degrees: f32,
     pub(crate) kind: BlockKind,
 }
 

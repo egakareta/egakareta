@@ -1,5 +1,66 @@
 use crate::types::{BlockKind, Direction, LevelObject};
 
+fn rotate_point_around_center_2d(point: [f32; 2], center: [f32; 2], radians: f32) -> [f32; 2] {
+    let sin = radians.sin();
+    let cos = radians.cos();
+    let dx = point[0] - center[0];
+    let dy = point[1] - center[1];
+    [
+        center[0] + (dx * cos - dy * sin),
+        center[1] + (dx * sin + dy * cos),
+    ]
+}
+
+fn object_xy_contains(obj: &LevelObject, x: f32, y: f32) -> bool {
+    let center = [
+        obj.position[0] + obj.size[0] * 0.5,
+        obj.position[1] + obj.size[1] * 0.5,
+    ];
+    let local = rotate_point_around_center_2d([x, y], center, -obj.rotation_degrees.to_radians());
+    local[0] >= obj.position[0]
+        && local[0] < obj.position[0] + obj.size[0]
+        && local[1] >= obj.position[1]
+        && local[1] < obj.position[1] + obj.size[1]
+}
+
+fn aabb_overlaps_object_xy(
+    min_x: f32,
+    max_x: f32,
+    min_y: f32,
+    max_y: f32,
+    obj: &LevelObject,
+) -> bool {
+    let aabb_center_x = (min_x + max_x) * 0.5;
+    let aabb_center_y = (min_y + max_y) * 0.5;
+    let aabb_half_x = (max_x - min_x) * 0.5;
+    let aabb_half_y = (max_y - min_y) * 0.5;
+
+    let rect_center_x = obj.position[0] + obj.size[0] * 0.5;
+    let rect_center_y = obj.position[1] + obj.size[1] * 0.5;
+    let rect_half_x = obj.size[0] * 0.5;
+    let rect_half_y = obj.size[1] * 0.5;
+
+    let theta = obj.rotation_degrees.to_radians();
+    let axis_u = [theta.cos(), theta.sin()];
+    let axis_v = [-theta.sin(), theta.cos()];
+
+    let axes = [[1.0, 0.0], [0.0, 1.0], axis_u, axis_v];
+    for axis in axes {
+        let aabb_proj_center = aabb_center_x * axis[0] + aabb_center_y * axis[1];
+        let aabb_proj_radius = aabb_half_x * axis[0].abs() + aabb_half_y * axis[1].abs();
+
+        let rect_proj_center = rect_center_x * axis[0] + rect_center_y * axis[1];
+        let rect_proj_radius = rect_half_x * (axis_u[0] * axis[0] + axis_u[1] * axis[1]).abs()
+            + rect_half_y * (axis_v[0] * axis[0] + axis_v[1] * axis[1]).abs();
+
+        if (aabb_proj_center - rect_proj_center).abs() > aabb_proj_radius + rect_proj_radius {
+            return false;
+        }
+    }
+
+    true
+}
+
 pub(crate) struct GameState {
     pub(crate) position: [f32; 3],
     pub(crate) direction: Direction,
@@ -76,17 +137,10 @@ impl GameState {
         let s_max_z = z + SNAKE_HEIGHT - TOLERANCE;
 
         for (i, obj) in self.objects.iter().enumerate() {
-            let o_min_x = obj.position[0];
-            let o_max_x = obj.position[0] + obj.size[0];
-            let o_min_y = obj.position[1];
-            let o_max_y = obj.position[1] + obj.size[1];
             let o_min_z = obj.position[2];
             let o_max_z = obj.position[2] + obj.size[2];
 
-            if s_max_x > o_min_x
-                && s_min_x < o_max_x
-                && s_max_y > o_min_y
-                && s_min_y < o_max_y
+            if aabb_overlaps_object_xy(s_min_x, s_max_x, s_min_y, s_max_y, obj)
                 && s_max_z > o_min_z
                 && s_min_z < o_max_z
             {
@@ -176,12 +230,7 @@ impl GameState {
             if obj.kind == BlockKind::SpeedPortal {
                 continue;
             }
-            let o_min_x = obj.position[0];
-            let o_max_x = obj.position[0] + obj.size[0];
-            let o_min_y = obj.position[1];
-            let o_max_y = obj.position[1] + obj.size[1];
-
-            if x >= o_min_x && x < o_max_x && y >= o_min_y && y < o_max_y {
+            if object_xy_contains(obj, x, y) {
                 let top = obj.position[2] + obj.size[2];
                 if top <= max_z {
                     top_surface = match top_surface {
@@ -213,6 +262,7 @@ pub(crate) fn create_menu_scene() -> Vec<LevelObject> {
             objects.push(LevelObject {
                 position: [x as f32 * 2.0, y as f32 * 2.0, height],
                 size: [2.0, 2.0, 2.0],
+                rotation_degrees: 0.0,
                 kind: BlockKind::Grass,
             });
         }
@@ -232,6 +282,7 @@ mod tests {
         game.objects.push(LevelObject {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
+            rotation_degrees: 0.0,
             kind: BlockKind::Standard,
         });
 
@@ -248,12 +299,14 @@ mod tests {
         game.objects.push(LevelObject {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
+            rotation_degrees: 0.0,
             kind: BlockKind::Standard,
         });
         // Overhang block at height 3
         game.objects.push(LevelObject {
             position: [0.0, 0.0, 3.0],
             size: [1.0, 1.0, 1.0],
+            rotation_degrees: 0.0,
             kind: BlockKind::Standard,
         });
 

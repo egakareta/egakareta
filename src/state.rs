@@ -1242,6 +1242,24 @@ impl State {
         }
     }
 
+    pub(crate) fn set_editor_selected_block_rotation(&mut self, rotation_degrees: f32) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        self.record_editor_history_state();
+
+        if let Some(index) = self
+            .editor_selected_block_index
+            .filter(|index| *index < self.editor_objects.len())
+        {
+            self.editor_objects[index].rotation_degrees = rotation_degrees;
+            self.sync_editor_objects();
+            self.rebuild_editor_gizmo_vertices();
+            self.rebuild_editor_selection_outline_vertices();
+        }
+    }
+
     pub fn editor_selected_block_kind(&self) -> BlockKind {
         self.editor_selected_kind
     }
@@ -1610,6 +1628,106 @@ impl State {
         best.map(|(kind, axis, _)| (kind, axis))
     }
 
+    fn rotate_vec2(v: Vec2, radians: f32) -> Vec2 {
+        let sin = radians.sin();
+        let cos = radians.cos();
+        Vec2::new(v.x * cos - v.y * sin, v.x * sin + v.y * cos)
+    }
+
+    fn ray_intersect_rotated_block(
+        ray_origin: Vec3,
+        ray_dir: Vec3,
+        obj: &LevelObject,
+    ) -> Option<(f32, Vec3)> {
+        let center = Vec3::new(
+            obj.position[0] + obj.size[0] * 0.5,
+            obj.position[1] + obj.size[1] * 0.5,
+            obj.position[2] + obj.size[2] * 0.5,
+        );
+        let half = Vec3::new(obj.size[0] * 0.5, obj.size[1] * 0.5, obj.size[2] * 0.5);
+        let inv_angle = -obj.rotation_degrees.to_radians();
+
+        let local_origin_xy = Self::rotate_vec2(
+            Vec2::new(ray_origin.x - center.x, ray_origin.y - center.y),
+            inv_angle,
+        );
+        let local_dir_xy = Self::rotate_vec2(Vec2::new(ray_dir.x, ray_dir.y), inv_angle);
+        let local_origin = Vec3::new(
+            local_origin_xy.x,
+            local_origin_xy.y,
+            ray_origin.z - center.z,
+        );
+        let local_dir = Vec3::new(local_dir_xy.x, local_dir_xy.y, ray_dir.z);
+
+        let min = -half;
+        let max = half;
+        let mut t_min = f32::NEG_INFINITY;
+        let mut t_max = f32::INFINITY;
+        let mut normal_enter = Vec3::ZERO;
+        let mut normal_exit = Vec3::ZERO;
+
+        for axis in 0..3 {
+            let origin_component = local_origin[axis];
+            let dir_component = local_dir[axis];
+            let min_component = min[axis];
+            let max_component = max[axis];
+
+            if dir_component.abs() <= f32::EPSILON {
+                if origin_component < min_component || origin_component > max_component {
+                    return None;
+                }
+                continue;
+            }
+
+            let mut t1 = (min_component - origin_component) / dir_component;
+            let mut t2 = (max_component - origin_component) / dir_component;
+
+            let axis_dir = match axis {
+                0 => Vec3::X,
+                1 => Vec3::Y,
+                _ => Vec3::Z,
+            };
+
+            let mut n1 = -axis_dir;
+            let mut n2 = axis_dir;
+
+            if t1 > t2 {
+                std::mem::swap(&mut t1, &mut t2);
+                std::mem::swap(&mut n1, &mut n2);
+            }
+
+            if t1 > t_min {
+                t_min = t1;
+                normal_enter = n1;
+            }
+            if t2 < t_max {
+                t_max = t2;
+                normal_exit = n2;
+            }
+
+            if t_min > t_max {
+                return None;
+            }
+        }
+
+        if t_max < 0.0 {
+            return None;
+        }
+
+        let (t_hit, normal_local) = if t_min >= 0.0 {
+            (t_min, normal_enter)
+        } else {
+            (t_max, normal_exit)
+        };
+
+        let normal_world_xy = Self::rotate_vec2(
+            Vec2::new(normal_local.x, normal_local.y),
+            obj.rotation_degrees.to_radians(),
+        );
+        let normal_world = Vec3::new(normal_world_xy.x, normal_world_xy.y, normal_local.z);
+        Some((t_hit, normal_world.normalize_or_zero()))
+    }
+
     fn editor_pick_from_screen(&self, x: f64, y: f64) -> Option<EditorPickResult> {
         if self.phase != AppPhase::Editor || self.editor_right_dragging {
             return None;
@@ -1659,47 +1777,12 @@ impl State {
         }
 
         for (index, obj) in self.editor_objects.iter().enumerate() {
-            let min = Vec3::from_array(obj.position);
-            let max = min + Vec3::from_array(obj.size);
-
-            let inv_dir = 1.0 / ray_dir;
-            let t1 = (min.x - ray_origin.x) * inv_dir.x;
-            let t2 = (max.x - ray_origin.x) * inv_dir.x;
-            let t3 = (min.y - ray_origin.y) * inv_dir.y;
-            let t4 = (max.y - ray_origin.y) * inv_dir.y;
-            let t5 = (min.z - ray_origin.z) * inv_dir.z;
-            let t6 = (max.z - ray_origin.z) * inv_dir.z;
-
-            let tmin = t1.min(t2).max(t3.min(t4)).max(t5.min(t6));
-            let tmax = t1.max(t2).min(t3.max(t4)).min(t5.max(t6));
-
-            if tmax >= 0.0 && tmin <= tmax {
-                let t = if tmin < 0.0 { tmax } else { tmin };
+            if let Some((t, normal)) = Self::ray_intersect_rotated_block(ray_origin, ray_dir, obj) {
                 if t < min_t {
                     min_t = t;
                     hit_found = true;
                     hit_block_index = Some(index);
-
-                    let eps = 1e-5;
-                    if (t - t1.min(t2)).abs() < eps {
-                        best_hit_normal = if ray_dir.x > 0.0 {
-                            Vec3::NEG_X
-                        } else {
-                            Vec3::X
-                        };
-                    } else if (t - t3.min(t4)).abs() < eps {
-                        best_hit_normal = if ray_dir.y > 0.0 {
-                            Vec3::NEG_Y
-                        } else {
-                            Vec3::Y
-                        };
-                    } else {
-                        best_hit_normal = if ray_dir.z > 0.0 {
-                            Vec3::NEG_Z
-                        } else {
-                            Vec3::Z
-                        };
-                    }
+                    best_hit_normal = normal;
                 }
             }
         }
@@ -2944,6 +3027,7 @@ mod tests {
         let objects = [LevelObject {
             position: [0.0, 0.0, 2.0],
             size: [1.0, 1.0, 1.0],
+            rotation_degrees: 0.0,
             kind: crate::types::BlockKind::Standard,
         }];
         let (position, direction) =
