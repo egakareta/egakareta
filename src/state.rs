@@ -47,17 +47,31 @@ fn toggle_spawn_direction(direction: SpawnDirection) -> SpawnDirection {
     }
 }
 
-fn advance_timeline_position(
-    mut position: [f32; 3],
-    direction: SpawnDirection,
-    steps: u32,
-) -> [f32; 3] {
-    let delta = steps as f32;
-    match direction {
-        SpawnDirection::Forward => position[1] += delta,
-        SpawnDirection::Right => position[0] += delta,
+fn top_surface_height_at(
+    objects: &[LevelObject],
+    x: f32,
+    y: f32,
+    max_z: f32,
+) -> Option<f32> {
+    let mut top_surface: Option<f32> = Some(0.0);
+    for obj in objects {
+        let o_min_x = obj.position[0];
+        let o_max_x = obj.position[0] + obj.size[0];
+        let o_min_y = obj.position[1];
+        let o_max_y = obj.position[1] + obj.size[1];
+
+        if x >= o_min_x && x <= o_max_x && y >= o_min_y && y <= o_max_y {
+            let top = obj.position[2] + obj.size[2];
+            if top <= max_z {
+                top_surface = match top_surface {
+                    Some(existing) if existing > top => Some(existing),
+                    _ => Some(top),
+                };
+            }
+        }
     }
-    position
+
+    top_surface
 }
 
 fn derive_timeline_position(
@@ -65,23 +79,41 @@ fn derive_timeline_position(
     direction: SpawnDirection,
     tap_steps: &[u32],
     step: u32,
+    objects: &[LevelObject],
 ) -> ([f32; 3], SpawnDirection) {
-    let mut current_step = 0;
     let mut position = spawn;
     let mut direction = direction;
+    let mut tap_index = 0;
 
-    for &tap in tap_steps {
-        if tap > step {
-            break;
-        }
-        let segment = tap.saturating_sub(current_step);
-        position = advance_timeline_position(position, direction, segment);
+    while tap_index < tap_steps.len() && tap_steps[tap_index] == 0 {
         direction = toggle_spawn_direction(direction);
-        current_step = tap;
+        tap_index += 1;
     }
 
-    let remaining = step.saturating_sub(current_step);
-    position = advance_timeline_position(position, direction, remaining);
+    const SNAP_DISTANCE: f32 = 0.3;
+    let mut current_step = 0;
+    for _ in 0..step {
+        match direction {
+            SpawnDirection::Forward => position[1] += 1.0,
+            SpawnDirection::Right => position[0] += 1.0,
+        }
+        current_step += 1;
+
+        if let Some(top) = top_surface_height_at(
+            objects,
+            position[0],
+            position[1],
+            position[2] + SNAP_DISTANCE,
+        ) {
+            position[2] = top;
+        }
+
+        while tap_index < tap_steps.len() && tap_steps[tap_index] == current_step {
+            direction = toggle_spawn_direction(direction);
+            tap_index += 1;
+        }
+    }
+
     (position, direction)
 }
 
@@ -1296,6 +1328,7 @@ impl State {
             self.editor_spawn.direction,
             &self.editor_tap_steps,
             step,
+            &self.editor_objects,
         )
     }
 
@@ -1722,7 +1755,7 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    use super::{derive_timeline_position, SpawnDirection};
+    use super::{derive_timeline_position, LevelObject, SpawnDirection};
 
     #[test]
     fn derives_position_without_taps() {
@@ -1731,6 +1764,7 @@ mod tests {
             SpawnDirection::Forward,
             &[],
             3,
+            &[],
         );
         assert_eq!(position, [0.0, 3.0, 0.0]);
         assert!(matches!(direction, SpawnDirection::Forward));
@@ -1739,8 +1773,13 @@ mod tests {
     #[test]
     fn derives_position_with_taps() {
         let taps = [2, 4];
-        let (position, direction) =
-            derive_timeline_position([0.0, 0.0, 0.0], SpawnDirection::Forward, &taps, 5);
+        let (position, direction) = derive_timeline_position(
+            [0.0, 0.0, 0.0],
+            SpawnDirection::Forward,
+            &taps,
+            5,
+            &[],
+        );
         assert_eq!(position, [2.0, 3.0, 0.0]);
         assert!(matches!(direction, SpawnDirection::Forward));
     }
@@ -1748,8 +1787,13 @@ mod tests {
     #[test]
     fn tap_at_zero_changes_direction() {
         let taps = [0];
-        let (position, direction) =
-            derive_timeline_position([0.0, 0.0, 0.0], SpawnDirection::Forward, &taps, 0);
+        let (position, direction) = derive_timeline_position(
+            [0.0, 0.0, 0.0],
+            SpawnDirection::Forward,
+            &taps,
+            0,
+            &[],
+        );
         assert_eq!(position, [0.0, 0.0, 0.0]);
         assert!(matches!(direction, SpawnDirection::Right));
     }
@@ -1757,8 +1801,13 @@ mod tests {
     #[test]
     fn ignores_taps_after_step() {
         let taps = [5];
-        let (position, direction) =
-            derive_timeline_position([1.0, 1.0, 0.0], SpawnDirection::Forward, &taps, 2);
+        let (position, direction) = derive_timeline_position(
+            [1.0, 1.0, 0.0],
+            SpawnDirection::Forward,
+            &taps,
+            2,
+            &[],
+        );
         assert_eq!(position, [1.0, 3.0, 0.0]);
         assert!(matches!(direction, SpawnDirection::Forward));
     }
@@ -1766,9 +1815,32 @@ mod tests {
     #[test]
     fn supports_offset_spawn_with_tap() {
         let taps = [2];
-        let (position, direction) =
-            derive_timeline_position([2.0, 2.0, 0.0], SpawnDirection::Right, &taps, 3);
+        let (position, direction) = derive_timeline_position(
+            [2.0, 2.0, 0.0],
+            SpawnDirection::Right,
+            &taps,
+            3,
+            &[],
+        );
         assert_eq!(position, [4.0, 3.0, 0.0]);
+        assert!(matches!(direction, SpawnDirection::Forward));
+    }
+
+    #[test]
+    fn falls_from_elevated_platform() {
+        let objects = [LevelObject {
+            position: [0.0, 0.0, 2.0],
+            size: [1.0, 1.0, 1.0],
+            kind: crate::types::BlockKind::Standard,
+        }];
+        let (position, direction) = derive_timeline_position(
+            [0.0, 0.0, 3.0],
+            SpawnDirection::Forward,
+            &[],
+            1,
+            &objects,
+        );
+        assert_eq!(position, [0.0, 1.0, 0.0]);
         assert!(matches!(direction, SpawnDirection::Forward));
     }
 }
