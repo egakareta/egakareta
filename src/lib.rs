@@ -1,3 +1,4 @@
+mod editor_domain;
 mod editor_ui;
 mod game;
 mod input_mapping;
