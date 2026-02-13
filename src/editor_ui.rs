@@ -29,6 +29,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                         ("Standard", BlockKind::Standard),
                         ("Grass", BlockKind::Grass),
                         ("Dirt", BlockKind::Dirt),
+                        ("Void", BlockKind::Void),
                     ] {
                         if ui.selectable_label(current == kind, name).clicked() {
                             state.set_editor_block_kind(kind);

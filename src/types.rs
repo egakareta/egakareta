@@ -78,6 +78,7 @@ pub enum BlockKind {
     Standard,
     Grass,
     Dirt,
+    Void,
 }
 
 #[derive(Deserialize, Clone)]

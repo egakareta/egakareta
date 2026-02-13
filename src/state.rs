@@ -56,7 +56,7 @@ fn top_surface_height_at(objects: &[LevelObject], x: f32, y: f32, max_z: f32) ->
         let o_min_y = obj.position[1];
         let o_max_y = obj.position[1] + obj.size[1];
 
-        if x >= o_min_x && x <= o_max_x && y >= o_min_y && y <= o_max_y {
+        if x >= o_min_x && x < o_max_x && y >= o_min_y && y < o_max_y {
             let top = obj.position[2] + obj.size[2];
             if top <= max_z {
                 top_surface = Some(match top_surface {
@@ -684,6 +684,11 @@ impl State {
             "3" => {
                 if self.is_editor() && just_pressed {
                     self.set_editor_block_kind(BlockKind::Dirt);
+                }
+            }
+            "4" => {
+                if self.is_editor() && just_pressed {
+                    self.set_editor_block_kind(BlockKind::Void);
                 }
             }
             _ => {}
@@ -1757,13 +1762,8 @@ mod tests {
 
     #[test]
     fn derives_position_without_taps() {
-        let (position, direction) = derive_timeline_position(
-            [0.0, 0.0, 0.0],
-            SpawnDirection::Forward,
-            &[],
-            3,
-            &[],
-        );
+        let (position, direction) =
+            derive_timeline_position([0.0, 0.0, 0.0], SpawnDirection::Forward, &[], 3, &[]);
         assert_eq!(position, [0.0, 3.0, 0.0]);
         assert!(matches!(direction, SpawnDirection::Forward));
     }
@@ -1771,13 +1771,8 @@ mod tests {
     #[test]
     fn derives_position_with_taps() {
         let taps = [2, 4];
-        let (position, direction) = derive_timeline_position(
-            [0.0, 0.0, 0.0],
-            SpawnDirection::Forward,
-            &taps,
-            5,
-            &[],
-        );
+        let (position, direction) =
+            derive_timeline_position([0.0, 0.0, 0.0], SpawnDirection::Forward, &taps, 5, &[]);
         assert_eq!(position, [2.0, 3.0, 0.0]);
         assert!(matches!(direction, SpawnDirection::Forward));
     }
@@ -1785,13 +1780,8 @@ mod tests {
     #[test]
     fn tap_at_zero_changes_direction() {
         let taps = [0];
-        let (position, direction) = derive_timeline_position(
-            [0.0, 0.0, 0.0],
-            SpawnDirection::Forward,
-            &taps,
-            0,
-            &[],
-        );
+        let (position, direction) =
+            derive_timeline_position([0.0, 0.0, 0.0], SpawnDirection::Forward, &taps, 0, &[]);
         assert_eq!(position, [0.0, 0.0, 0.0]);
         assert!(matches!(direction, SpawnDirection::Right));
     }
@@ -1799,13 +1789,8 @@ mod tests {
     #[test]
     fn ignores_taps_after_step() {
         let taps = [5];
-        let (position, direction) = derive_timeline_position(
-            [1.0, 1.0, 0.0],
-            SpawnDirection::Forward,
-            &taps,
-            2,
-            &[],
-        );
+        let (position, direction) =
+            derive_timeline_position([1.0, 1.0, 0.0], SpawnDirection::Forward, &taps, 2, &[]);
         assert_eq!(position, [1.0, 3.0, 0.0]);
         assert!(matches!(direction, SpawnDirection::Forward));
     }
@@ -1813,13 +1798,8 @@ mod tests {
     #[test]
     fn supports_offset_spawn_with_tap() {
         let taps = [2];
-        let (position, direction) = derive_timeline_position(
-            [2.0, 2.0, 0.0],
-            SpawnDirection::Right,
-            &taps,
-            3,
-            &[],
-        );
+        let (position, direction) =
+            derive_timeline_position([2.0, 2.0, 0.0], SpawnDirection::Right, &taps, 3, &[]);
         assert_eq!(position, [4.0, 3.0, 0.0]);
         assert!(matches!(direction, SpawnDirection::Forward));
     }
@@ -1831,13 +1811,8 @@ mod tests {
             size: [1.0, 1.0, 1.0],
             kind: crate::types::BlockKind::Standard,
         }];
-        let (position, direction) = derive_timeline_position(
-            [0.0, 0.0, 3.0],
-            SpawnDirection::Forward,
-            &[],
-            1,
-            &objects,
-        );
+        let (position, direction) =
+            derive_timeline_position([0.0, 0.0, 3.0], SpawnDirection::Forward, &[], 1, &objects);
         assert_eq!(position, [0.0, 1.0, 0.0]);
         assert!(matches!(direction, SpawnDirection::Forward));
     }

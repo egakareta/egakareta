@@ -360,12 +360,6 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
     let mut vertices = Vec::new();
 
     for obj in objects {
-        let (color_top, color_side) = match obj.kind {
-            BlockKind::Standard => ([0.4, 0.4, 0.45], [0.2, 0.2, 0.25]),
-            BlockKind::Grass => ([0.1, 0.6, 0.1], [0.35, 0.25, 0.15]),
-            BlockKind::Dirt => ([0.4, 0.3, 0.2], [0.35, 0.25, 0.15]),
-        };
-
         let x_min = obj.position[0];
         let x_max = obj.position[0] + obj.size[0];
         let y_min = obj.position[1];
@@ -373,130 +367,125 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
         let z_min = obj.position[2];
         let z_max = obj.position[2] + obj.size[2];
 
-        vertices.push(Vertex {
-            position: [x_min, y_min, z_max],
-            color: color_top,
-        });
-        vertices.push(Vertex {
-            position: [x_max, y_min, z_max],
-            color: color_top,
-        });
-        vertices.push(Vertex {
-            position: [x_max, y_max, z_max],
-            color: color_top,
-        });
-        vertices.push(Vertex {
-            position: [x_min, y_min, z_max],
-            color: color_top,
-        });
-        vertices.push(Vertex {
-            position: [x_max, y_max, z_max],
-            color: color_top,
-        });
-        vertices.push(Vertex {
-            position: [x_min, y_max, z_max],
-            color: color_top,
-        });
+        if obj.kind == BlockKind::Void {
+            let color_fill = [0.0, 0.0, 0.0];
+            let color_outline = [0.8, 0.8, 0.9];
+            let t = 0.05;
 
-        vertices.push(Vertex {
-            position: [x_min, y_max, z_min],
-            color: color_side,
-        });
-        vertices.push(Vertex {
-            position: [x_max, y_max, z_min],
-            color: color_side,
-        });
-        vertices.push(Vertex {
-            position: [x_max, y_max, z_max],
-            color: color_side,
-        });
-        vertices.push(Vertex {
-            position: [x_min, y_max, z_min],
-            color: color_side,
-        });
-        vertices.push(Vertex {
-            position: [x_max, y_max, z_max],
-            color: color_side,
-        });
-        vertices.push(Vertex {
-            position: [x_min, y_max, z_max],
-            color: color_side,
-        });
+            // Fill
+            append_prism(
+                &mut vertices,
+                [x_min + t, y_min + t, z_min + t],
+                [x_max - t, y_max - t, z_max - t],
+                color_fill,
+                color_fill,
+            );
 
-        vertices.push(Vertex {
-            position: [x_max, y_min, z_min],
-            color: color_side,
-        });
-        vertices.push(Vertex {
-            position: [x_max, y_max, z_min],
-            color: color_side,
-        });
-        vertices.push(Vertex {
-            position: [x_max, y_max, z_max],
-            color: color_side,
-        });
-        vertices.push(Vertex {
-            position: [x_max, y_min, z_min],
-            color: color_side,
-        });
-        vertices.push(Vertex {
-            position: [x_max, y_max, z_max],
-            color: color_side,
-        });
-        vertices.push(Vertex {
-            position: [x_max, y_min, z_max],
-            color: color_side,
-        });
+            // Bottom edges
+            append_prism(
+                &mut vertices,
+                [x_min, y_min, z_min],
+                [x_max, y_min + t, z_min + t],
+                color_outline,
+                color_outline,
+            );
+            append_prism(
+                &mut vertices,
+                [x_min, y_max - t, z_min],
+                [x_max, y_max, z_min + t],
+                color_outline,
+                color_outline,
+            );
+            append_prism(
+                &mut vertices,
+                [x_min, y_min + t, z_min],
+                [x_min + t, y_max - t, z_min + t],
+                color_outline,
+                color_outline,
+            );
+            append_prism(
+                &mut vertices,
+                [x_max - t, y_min + t, z_min],
+                [x_max, y_max - t, z_min + t],
+                color_outline,
+                color_outline,
+            );
 
-        vertices.push(Vertex {
-            position: [x_min, y_min, z_min],
-            color: color_side,
-        });
-        vertices.push(Vertex {
-            position: [x_min, y_max, z_max],
-            color: color_side,
-        });
-        vertices.push(Vertex {
-            position: [x_min, y_max, z_min],
-            color: color_side,
-        });
-        vertices.push(Vertex {
-            position: [x_min, y_min, z_min],
-            color: color_side,
-        });
-        vertices.push(Vertex {
-            position: [x_min, y_min, z_max],
-            color: color_side,
-        });
-        vertices.push(Vertex {
-            position: [x_min, y_max, z_max],
-            color: color_side,
-        });
+            // Top edges
+            append_prism(
+                &mut vertices,
+                [x_min, y_min, z_max - t],
+                [x_max, y_min + t, z_max],
+                color_outline,
+                color_outline,
+            );
+            append_prism(
+                &mut vertices,
+                [x_min, y_max - t, z_max - t],
+                [x_max, y_max, z_max],
+                color_outline,
+                color_outline,
+            );
+            append_prism(
+                &mut vertices,
+                [x_min, y_min + t, z_max - t],
+                [x_min + t, y_max - t, z_max],
+                color_outline,
+                color_outline,
+            );
+            append_prism(
+                &mut vertices,
+                [x_max - t, y_min + t, z_max - t],
+                [x_max, y_max - t, z_max],
+                color_outline,
+                color_outline,
+            );
 
-        vertices.push(Vertex {
-            position: [x_min, y_min, z_min],
-            color: color_side,
-        });
-        vertices.push(Vertex {
-            position: [x_max, y_min, z_max],
-            color: color_side,
-        });
-        vertices.push(Vertex {
-            position: [x_max, y_min, z_min],
-            color: color_side,
-        });
-        vertices.push(Vertex {
-            position: [x_min, y_min, z_min],
-            color: color_side,
-        });
-        vertices.push(Vertex {
-            position: [x_min, y_min, z_max],
-            color: color_side,
-        });
-        vertices.push(Vertex {
-            position: [x_max, y_min, z_max],
-            color: color_side,
-        });
+            // Vertical edges
+            append_prism(
+                &mut vertices,
+                [x_min, y_min, z_min + t],
+                [x_min + t, y_min + t, z_max - t],
+                color_outline,
+                color_outline,
+            );
+            append_prism(
+                &mut vertices,
+                [x_max - t, y_min, z_min + t],
+                [x_max, y_min + t, z_max - t],
+                color_outline,
+                color_outline,
+            );
+            append_prism(
+                &mut vertices,
+                [x_min, y_max - t, z_min + t],
+                [x_min + t, y_max, z_max - t],
+                color_outline,
+                color_outline,
+            );
+            append_prism(
+                &mut vertices,
+                [x_max - t, y_max - t, z_min + t],
+                [x_max, y_max, z_max - t],
+                color_outline,
+                color_outline,
+            );
+        } else {
+            let (color_top, color_side) = match obj.kind {
+                BlockKind::Standard => ([0.4, 0.4, 0.45], [0.2, 0.2, 0.25]),
+                BlockKind::Grass => ([0.1, 0.6, 0.1], [0.35, 0.25, 0.15]),
+                BlockKind::Dirt => ([0.4, 0.3, 0.2], [0.35, 0.25, 0.15]),
+                _ => ([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+            };
+
+            append_prism(
+                &mut vertices,
+                [x_min, y_min, z_min],
+                [x_max, y_max, z_max],
+                color_top,
+                color_side,
+            );
+        }
     }
 
     vertices
