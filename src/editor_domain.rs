@@ -1,4 +1,57 @@
-use crate::types::{BlockKind, LevelObject, SpawnDirection};
+use crate::types::{BlockKind, LevelMetadata, LevelObject, SpawnDirection, SpawnMetadata};
+
+pub(crate) struct EditorSessionInit {
+    pub(crate) objects: Vec<LevelObject>,
+    pub(crate) spawn: SpawnMetadata,
+    pub(crate) tap_steps: Vec<u32>,
+    pub(crate) timeline_step: u32,
+    pub(crate) cursor: [i32; 3],
+    pub(crate) camera_pan: [f32; 2],
+}
+
+pub(crate) fn editor_session_init_from_metadata(
+    metadata: Option<LevelMetadata>,
+) -> EditorSessionInit {
+    let (objects, spawn, mut tap_steps, timeline_step) = if let Some(metadata) = metadata {
+        (
+            metadata.objects,
+            metadata.spawn,
+            metadata.taps,
+            metadata.timeline_step,
+        )
+    } else {
+        (Vec::new(), SpawnMetadata::default(), Vec::new(), 0)
+    };
+
+    tap_steps.sort_unstable();
+    let cursor = cursor_from_objects(&objects);
+    let camera_pan = camera_pan_from_cursor(cursor);
+
+    EditorSessionInit {
+        objects,
+        spawn,
+        tap_steps,
+        timeline_step,
+        cursor,
+        camera_pan,
+    }
+}
+
+fn cursor_from_objects(objects: &[LevelObject]) -> [i32; 3] {
+    if let Some(first) = objects.first() {
+        [
+            first.position[0].round() as i32,
+            first.position[1].round() as i32,
+            first.position[2].round() as i32,
+        ]
+    } else {
+        [0, 0, 0]
+    }
+}
+
+fn camera_pan_from_cursor(cursor: [i32; 3]) -> [f32; 2] {
+    [cursor[0] as f32 + 0.5, cursor[1] as f32 + 0.5]
+}
 
 pub(crate) fn move_cursor_xy(cursor: &mut [i32; 3], dx: i32, dy: i32, bounds: i32) {
     cursor[0] = (cursor[0] + dx).clamp(-bounds, bounds);
@@ -132,10 +185,10 @@ fn top_surface_height_at(objects: &[LevelObject], x: f32, y: f32, max_z: f32) ->
 #[cfg(test)]
 mod tests {
     use super::{
-        add_tap_step, clear_tap_steps, create_block_at_cursor, move_cursor_xy, remove_tap_step,
-        remove_topmost_block_at_cursor,
+        add_tap_step, clear_tap_steps, create_block_at_cursor, editor_session_init_from_metadata,
+        move_cursor_xy, remove_tap_step, remove_topmost_block_at_cursor,
     };
-    use crate::types::{BlockKind, LevelObject};
+    use crate::types::{BlockKind, LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata};
 
     #[test]
     fn keeps_tap_steps_unique_and_sorted() {
@@ -188,5 +241,45 @@ mod tests {
         assert!(removed);
         assert_eq!(objects.len(), 1);
         assert_eq!(objects[0].position, [0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn initializes_editor_session_from_metadata() {
+        let metadata = LevelMetadata {
+            format_version: 1,
+            name: "Test".to_string(),
+            music: MusicMetadata {
+                source: "audio.mp3".to_string(),
+                extra: serde_json::Map::new(),
+            },
+            spawn: SpawnMetadata {
+                position: [2.0, 3.0, 1.0],
+                direction: crate::types::SpawnDirection::Right,
+            },
+            taps: vec![8, 2],
+            timeline_step: 5,
+            objects: vec![LevelObject {
+                position: [4.0, 6.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                kind: BlockKind::Standard,
+            }],
+            extra: serde_json::Map::new(),
+        };
+
+        let init = editor_session_init_from_metadata(Some(metadata));
+        assert_eq!(init.cursor, [4, 6, 0]);
+        assert_eq!(init.camera_pan, [4.5, 6.5]);
+        assert_eq!(init.tap_steps, vec![2, 8]);
+        assert_eq!(init.timeline_step, 5);
+    }
+
+    #[test]
+    fn initializes_editor_session_defaults_without_metadata() {
+        let init = editor_session_init_from_metadata(None);
+        assert_eq!(init.cursor, [0, 0, 0]);
+        assert_eq!(init.camera_pan, [0.5, 0.5]);
+        assert_eq!(init.timeline_step, 0);
+        assert!(init.tap_steps.is_empty());
+        assert!(init.objects.is_empty());
     }
 }

@@ -19,7 +19,8 @@ use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 
 use crate::editor_domain::{
     add_tap_step, clear_tap_steps, create_block_at_cursor, derive_timeline_position,
-    move_cursor_xy, remove_tap_step, remove_topmost_block_at_cursor, toggle_spawn_direction,
+    editor_session_init_from_metadata, move_cursor_xy, remove_tap_step,
+    remove_topmost_block_at_cursor, toggle_spawn_direction,
 };
 use crate::game::{create_menu_scene, GameState};
 use crate::level_repository::{
@@ -1178,35 +1179,13 @@ impl State {
         self.game = GameState::new();
         self.trail_vertex_count = 0;
 
-        self.editor_tap_steps.clear();
-
-        if let Some(metadata) = self.load_level_metadata(&level_name) {
-            self.editor_objects = metadata.objects;
-            self.editor_spawn = metadata.spawn;
-            self.editor_tap_steps.extend(metadata.taps);
-            // Ensure taps are ordered before deriving timeline positions.
-            self.editor_tap_steps.sort_unstable();
-            self.editor_timeline_step = metadata.timeline_step;
-        } else {
-            self.editor_objects = Vec::new();
-            self.editor_spawn = SpawnMetadata::default();
-            self.editor_timeline_step = 0;
-        }
-
-        if let Some(first) = self.editor_objects.first() {
-            self.editor.cursor = [
-                first.position[0].round() as i32,
-                first.position[1].round() as i32,
-                first.position[2].round() as i32,
-            ];
-        } else {
-            self.editor.cursor = [0, 0, 0];
-        }
-
-        self.editor_camera_pan = [
-            self.editor.cursor[0] as f32 + 0.5,
-            self.editor.cursor[1] as f32 + 0.5,
-        ];
+        let init = editor_session_init_from_metadata(self.load_level_metadata(&level_name));
+        self.editor_objects = init.objects;
+        self.editor_spawn = init.spawn;
+        self.editor_tap_steps = init.tap_steps;
+        self.editor_timeline_step = init.timeline_step;
+        self.editor.cursor = init.cursor;
+        self.editor_camera_pan = init.camera_pan;
 
         self.sync_editor_objects();
         // Refresh cursor/camera to match the current timeline step.
