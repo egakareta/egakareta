@@ -21,6 +21,7 @@ use crate::mesh::{
     build_spawn_marker_vertices, build_trail_vertices,
 };
 use crate::platform::audio::PlatformAudio;
+use crate::platform::io::{log_platform_error, save_level_export};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::platform::state_host::NativeWindow;
 #[cfg(target_arch = "wasm32")]
@@ -30,9 +31,6 @@ use crate::types::{
     AppPhase, BlockKind, CameraUniform, Direction, EditorState, LevelMetadata, LevelObject,
     LineUniform, MenuState, PhysicalSize, SpawnDirection, SpawnMetadata, Vertex,
 };
-
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::JsCast;
 
 use base64::Engine as _;
 
@@ -1286,46 +1284,18 @@ impl State {
     pub fn trigger_level_export(&self) {
         match self.export_level_ldz() {
             Ok(data) => {
-                #[cfg(target_arch = "wasm32")]
-                {
-                    let window = web_sys::window().unwrap();
-                    let document = window.document().unwrap();
-                    let uint8_array = unsafe { js_sys::Uint8Array::view(&data) };
-                    let blob = web_sys::Blob::new_with_u8_array_sequence(&js_sys::Array::of1(
-                        &uint8_array.into(),
-                    ))
-                    .unwrap();
-                    let url = web_sys::Url::create_object_url_with_blob(&blob).unwrap();
-                    let a = document
-                        .create_element("a")
-                        .unwrap()
-                        .dyn_into::<web_sys::HtmlElement>()
-                        .unwrap();
-                    a.set_attribute("href", &url).unwrap();
-                    let filename = format!(
-                        "{}.ldz",
-                        self.editor_level_name()
-                            .unwrap_or_else(|| "level".to_string())
-                    );
-                    a.set_attribute("download", &filename).unwrap();
-                    a.click();
-                    let _ = web_sys::Url::revoke_object_url(&url);
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    let filename = format!(
-                        "{}.ldz",
-                        self.editor_level_name()
-                            .unwrap_or_else(|| "level".to_string())
-                    );
-                    let _ = std::fs::write(filename, data);
+                let filename = format!(
+                    "{}.ldz",
+                    self.editor_level_name()
+                        .unwrap_or_else(|| "level".to_string())
+                );
+
+                if let Err(error) = save_level_export(&filename, &data) {
+                    log_platform_error(&format!("Export failed: {}", error));
                 }
             }
             Err(e) => {
-                #[cfg(target_arch = "wasm32")]
-                web_sys::console::log_1(&format!("Export failed: {}", e).into());
-                #[cfg(not(target_arch = "wasm32"))]
-                log::error!("Export failed: {}", e);
+                log_platform_error(&format!("Export failed: {}", e));
             }
         }
     }
@@ -1335,10 +1305,7 @@ impl State {
         // Try LDZ first (base64)
         if let Ok(data) = base64::engine::general_purpose::STANDARD.decode(text.trim()) {
             if let Err(e) = self.import_level_ldz(&data) {
-                #[cfg(target_arch = "wasm32")]
-                web_sys::console::log_1(&format!("LDZ Import failed: {}", e).into());
-                #[cfg(not(target_arch = "wasm32"))]
-                log::error!("LDZ Import failed: {}", e);
+                log_platform_error(&format!("LDZ Import failed: {}", e));
             } else {
                 self.editor_show_import = false;
                 self.editor_import_text.clear();
@@ -1349,10 +1316,7 @@ impl State {
         // Fallback to raw JSON
         let text = self.editor_import_text.clone();
         if let Err(e) = self.import_level(&text) {
-            #[cfg(target_arch = "wasm32")]
-            web_sys::console::log_1(&format!("JSON Import failed: {}", e).into());
-            #[cfg(not(target_arch = "wasm32"))]
-            log::error!("JSON Import failed: {}", e);
+            log_platform_error(&format!("JSON Import failed: {}", e));
         } else {
             self.editor_show_import = false;
             self.editor_import_text.clear();

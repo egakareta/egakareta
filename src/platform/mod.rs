@@ -1,4 +1,5 @@
 pub(crate) mod audio;
+pub(crate) mod io;
 pub(crate) mod state_host;
 
 #[cfg(not(target_arch = "wasm32"))]
