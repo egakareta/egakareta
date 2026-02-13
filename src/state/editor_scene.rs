@@ -1,0 +1,268 @@
+use super::*;
+
+impl State {
+    pub(super) fn place_editor_block(&mut self) {
+        self.record_editor_history_state();
+        self.editor_objects.push(create_block_at_cursor(
+            self.editor.cursor,
+            self.editor_selected_kind,
+        ));
+        self.editor_selected_block_index = None;
+        self.editor_selected_block_indices.clear();
+        self.editor_hovered_block_index = None;
+        self.sync_editor_objects();
+        self.rebuild_editor_cursor_vertices();
+    }
+
+    pub(super) fn sync_editor_objects(&mut self) {
+        self.sync_primary_selection_from_indices();
+        if let Some(index) = self.editor_selected_block_index {
+            if index >= self.editor_objects.len() {
+                self.editor_selected_block_index = None;
+            }
+        }
+        self.editor_selected_block_indices
+            .retain(|index| *index < self.editor_objects.len());
+        self.sync_primary_selection_from_indices();
+        if let Some(index) = self.editor_hovered_block_index {
+            if index >= self.editor_objects.len() {
+                self.editor_hovered_block_index = None;
+            }
+        }
+        self.game.objects = self.editor_objects.clone();
+        self.rebuild_block_vertices();
+        self.rebuild_editor_gizmo_vertices();
+        self.rebuild_editor_hover_outline_vertices();
+        self.rebuild_editor_selection_outline_vertices();
+    }
+
+    pub(super) fn topmost_block_index_at_cursor(&self, cursor: [i32; 3]) -> Option<usize> {
+        let mut top_index: Option<usize> = None;
+        let mut top_height = f32::NEG_INFINITY;
+
+        for (index, obj) in self.editor_objects.iter().enumerate() {
+            let occupies_x = cursor[0] as f32 + 0.5 >= obj.position[0]
+                && cursor[0] as f32 + 0.5 <= obj.position[0] + obj.size[0];
+            let occupies_y = cursor[1] as f32 + 0.5 >= obj.position[1]
+                && cursor[1] as f32 + 0.5 <= obj.position[1] + obj.size[1];
+            if occupies_x && occupies_y {
+                let top = obj.position[2] + obj.size[2];
+                if top > top_height {
+                    top_height = top;
+                    top_index = Some(index);
+                }
+            }
+        }
+
+        top_index
+    }
+
+    pub(super) fn apply_spawn_to_game(&mut self, position: [f32; 3], direction: SpawnDirection) {
+        let centered_position = [
+            position[0].floor() + 0.5,
+            position[1].floor() + 0.5,
+            position[2],
+        ];
+        self.game.position = centered_position;
+        self.game.direction = direction.into();
+        self.game.vertical_velocity = 0.0;
+        self.game.is_grounded = true;
+        self.game.trail_segments = vec![vec![centered_position]];
+    }
+
+    pub(super) fn editor_timeline_position(&self, step: u32) -> ([f32; 3], SpawnDirection) {
+        derive_timeline_position(
+            self.editor_spawn.position,
+            self.editor_spawn.direction,
+            &self.editor_tap_steps,
+            step,
+            &self.editor_objects,
+        )
+    }
+
+    pub(super) fn refresh_editor_timeline_position(&mut self) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        let (position, ..) = self.editor_timeline_position(self.editor_timeline_step);
+        let bounds = self.editor.bounds;
+        self.editor.cursor = [
+            position[0].round() as i32,
+            position[1].round() as i32,
+            position[2].round() as i32,
+        ];
+        self.editor.cursor[0] = self.editor.cursor[0].clamp(-bounds, bounds);
+        self.editor.cursor[1] = self.editor.cursor[1].clamp(-bounds, bounds);
+        self.editor.cursor[2] = self.editor.cursor[2].max(0);
+
+        let max_pan = bounds as f32;
+        self.editor_camera_pan[0] = (position[0] + 0.5).clamp(-max_pan, max_pan);
+        self.editor_camera_pan[1] = (position[1] + 0.5).clamp(-max_pan, max_pan);
+
+        self.rebuild_editor_cursor_vertices();
+    }
+
+    pub(super) fn rebuild_editor_cursor_vertices(&mut self) {
+        let vertices = build_editor_cursor_vertices(self.editor.cursor);
+        self.editor_cursor_vertex_count = vertices.len() as u32;
+        if !vertices.is_empty() {
+            self.editor_cursor_vertex_buffer = Some(self.device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Editor Cursor Vertex Buffer"),
+                    contents: bytemuck::cast_slice(&vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                },
+            ));
+        } else {
+            self.editor_cursor_vertex_buffer = None;
+        }
+    }
+
+    pub(super) fn rebuild_editor_hover_outline_vertices(&mut self) {
+        if self.phase != AppPhase::Editor || self.editor_mode != EditorMode::Select {
+            self.editor_hover_outline_vertex_count = 0;
+            self.editor_hover_outline_vertex_buffer = None;
+            return;
+        }
+
+        let Some(index) = self
+            .editor_hovered_block_index
+            .filter(|index| *index < self.editor_objects.len())
+        else {
+            self.editor_hover_outline_vertex_count = 0;
+            self.editor_hover_outline_vertex_buffer = None;
+            return;
+        };
+
+        if self.selection_contains(index) {
+            self.editor_hover_outline_vertex_count = 0;
+            self.editor_hover_outline_vertex_buffer = None;
+            return;
+        }
+
+        let obj = &self.editor_objects[index];
+        let vertices = build_editor_hover_outline_vertices(obj.position, obj.size);
+        self.editor_hover_outline_vertex_count = vertices.len() as u32;
+        if !vertices.is_empty() {
+            self.editor_hover_outline_vertex_buffer = Some(self.device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Editor Hover Outline Vertex Buffer"),
+                    contents: bytemuck::cast_slice(&vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                },
+            ));
+        } else {
+            self.editor_hover_outline_vertex_buffer = None;
+        }
+    }
+
+    pub(super) fn rebuild_editor_gizmo_vertices(&mut self) {
+        if self.phase != AppPhase::Editor || self.editor_mode != EditorMode::Select {
+            self.editor_gizmo_vertex_count = 0;
+            self.editor_gizmo_vertex_buffer = None;
+            return;
+        }
+
+        let Some((bounds_position, bounds_size)) = self.selected_group_bounds() else {
+            self.editor_gizmo_vertex_count = 0;
+            self.editor_gizmo_vertex_buffer = None;
+            return;
+        };
+
+        let center = Vec3::new(
+            bounds_position[0] + bounds_size[0] * 0.5,
+            bounds_position[1] + bounds_size[1] * 0.5,
+            bounds_position[2] + bounds_size[2] * 0.5,
+        );
+        let axis_lengths = self.editor_gizmo_axis_lengths_world(center, 50.0);
+        let axis_width = self.editor_gizmo_axis_width_world(center, 3.0);
+        let vertices =
+            build_editor_gizmo_vertices(bounds_position, bounds_size, axis_lengths, axis_width);
+        self.editor_gizmo_vertex_count = vertices.len() as u32;
+        if !vertices.is_empty() {
+            self.editor_gizmo_vertex_buffer = Some(self.device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Editor Gizmo Vertex Buffer"),
+                    contents: bytemuck::cast_slice(&vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                },
+            ));
+        } else {
+            self.editor_gizmo_vertex_buffer = None;
+        }
+    }
+
+    pub(super) fn rebuild_editor_selection_outline_vertices(&mut self) {
+        if self.phase != AppPhase::Editor || self.editor_mode != EditorMode::Select {
+            self.editor_selection_outline_vertex_count = 0;
+            self.editor_selection_outline_vertex_buffer = None;
+            return;
+        }
+
+        let selected_indices = self.selected_block_indices_normalized();
+        if selected_indices.is_empty() {
+            self.editor_selection_outline_vertex_count = 0;
+            self.editor_selection_outline_vertex_buffer = None;
+            return;
+        }
+
+        let mut vertices = Vec::new();
+        for index in selected_indices {
+            if let Some(obj) = self.editor_objects.get(index) {
+                vertices.extend(build_editor_selection_outline_vertices(
+                    obj.position,
+                    obj.size,
+                ));
+            }
+        }
+        self.editor_selection_outline_vertex_count = vertices.len() as u32;
+        if !vertices.is_empty() {
+            self.editor_selection_outline_vertex_buffer = Some(self.device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Editor Selection Outline Vertex Buffer"),
+                    contents: bytemuck::cast_slice(&vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                },
+            ));
+        } else {
+            self.editor_selection_outline_vertex_buffer = None;
+        }
+    }
+
+    pub(super) fn rebuild_spawn_marker_vertices(&mut self) {
+        let vertices = build_spawn_marker_vertices(
+            self.editor_spawn.position,
+            matches!(self.editor_spawn.direction, SpawnDirection::Right),
+        );
+        self.spawn_marker_vertex_count = vertices.len() as u32;
+        if !vertices.is_empty() {
+            self.spawn_marker_vertex_buffer = Some(self.device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Spawn Marker Vertex Buffer"),
+                    contents: bytemuck::cast_slice(&vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                },
+            ));
+        } else {
+            self.spawn_marker_vertex_buffer = None;
+        }
+    }
+
+    pub(super) fn rebuild_block_vertices(&mut self) {
+        let vertices = build_block_vertices(&self.game.objects);
+
+        self.block_vertex_count = vertices.len() as u32;
+        if !vertices.is_empty() {
+            self.block_vertex_buffer = Some(self.device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Block Vertex Buffer"),
+                    contents: bytemuck::cast_slice(&vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                },
+            ));
+        } else {
+            self.block_vertex_buffer = None;
+        }
+    }
+}
