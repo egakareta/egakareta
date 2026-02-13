@@ -18,7 +18,7 @@ impl State {
 
         if self.phase == AppPhase::Editor {
             self.accumulator = 0.0;
-            self.trail_vertex_count = 0;
+            self.trail_mesh.clear();
             self.update_editor_pan_from_keys(frame_dt);
             if (self.editor_gizmo_drag.is_some() || self.editor_block_drag.is_some())
                 && self.editor_pointer_screen.is_some()
@@ -64,17 +64,8 @@ impl State {
             trail_vertices.extend(build_trail_vertices(&head_points, self.game.game_over));
         }
 
-        self.trail_vertex_count = trail_vertices.len() as u32;
-        if !trail_vertices.is_empty() {
-            let max_vertices =
-                (self.trail_vertex_buffer.size() / std::mem::size_of::<Vertex>() as u64) as usize;
-            let vertices_to_write = &trail_vertices[..trail_vertices.len().min(max_vertices)];
-            self.queue.write_buffer(
-                &self.trail_vertex_buffer,
-                0,
-                bytemuck::cast_slice(vertices_to_write),
-            );
-        }
+        self.trail_mesh
+            .write_streaming_vertices(&self.queue, &trail_vertices);
 
         self.line_uniform.offset = [
             (self.game.position[0] * 100.0).round() / 100.0,

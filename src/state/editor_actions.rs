@@ -99,7 +99,7 @@ impl State {
         self.game = GameState::new();
         self.game.objects = create_menu_scene();
         self.rebuild_block_vertices();
-        self.trail_vertex_count = 0;
+        self.trail_mesh.clear();
     }
 
     pub(super) fn move_editor_cursor(&mut self, dx: i32, dy: i32) {

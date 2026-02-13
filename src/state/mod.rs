@@ -6,6 +6,7 @@ mod editor_state;
 mod history;
 mod lifecycle;
 mod render;
+mod state_helpers;
 mod update;
 
 use glam::{Mat4, Vec2, Vec3};
@@ -38,6 +39,101 @@ use crate::types::{
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
+enum MeshSlot {
+    Empty,
+    VertexData {
+        buffer: wgpu::Buffer,
+        count: u32,
+    },
+    Streaming {
+        buffer: wgpu::Buffer,
+        count: u32,
+        capacity_vertices: u32,
+    },
+}
+
+impl MeshSlot {
+    fn from_vertices(device: &wgpu::Device, label: &'static str, vertices: &[Vertex]) -> Self {
+        if vertices.is_empty() {
+            return Self::Empty;
+        }
+
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(label),
+            contents: bytemuck::cast_slice(vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        Self::VertexData {
+            buffer,
+            count: vertices.len() as u32,
+        }
+    }
+
+    fn streaming(device: &wgpu::Device, label: &'static str, capacity_vertices: u32) -> Self {
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: (std::mem::size_of::<Vertex>() * capacity_vertices as usize) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        Self::Streaming {
+            buffer,
+            count: 0,
+            capacity_vertices,
+        }
+    }
+
+    fn replace_with_vertices(
+        &mut self,
+        device: &wgpu::Device,
+        label: &'static str,
+        vertices: &[Vertex],
+    ) {
+        *self = Self::from_vertices(device, label, vertices);
+    }
+
+    fn write_streaming_vertices(&mut self, queue: &wgpu::Queue, vertices: &[Vertex]) {
+        match self {
+            Self::Streaming {
+                buffer,
+                count,
+                capacity_vertices,
+            } => {
+                let write_count = vertices.len().min(*capacity_vertices as usize);
+                *count = write_count as u32;
+                if write_count > 0 {
+                    queue.write_buffer(buffer, 0, bytemuck::cast_slice(&vertices[..write_count]));
+                }
+            }
+            _ => {
+                *self = Self::Empty;
+            }
+        }
+    }
+
+    fn clear(&mut self) {
+        match self {
+            Self::Empty => {}
+            Self::VertexData { .. } => *self = Self::Empty,
+            Self::Streaming { count, .. } => *count = 0,
+        }
+    }
+
+    fn draw_data(&self) -> Option<(&wgpu::Buffer, u32)> {
+        match self {
+            Self::Empty => None,
+            Self::VertexData { buffer, count } | Self::Streaming { buffer, count, .. }
+                if *count > 0 =>
+            {
+                Some((buffer, *count))
+            }
+            _ => None,
+        }
+    }
+}
+
 pub struct State {
     surface_host: SurfaceHost,
     surface: wgpu::Surface<'static>,
@@ -45,24 +141,15 @@ pub struct State {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: PhysicalSize<u32>,
-    floor_vertex_buffer: wgpu::Buffer,
-    floor_vertex_count: u32,
-    grid_vertex_buffer: wgpu::Buffer,
-    grid_vertex_count: u32,
-    trail_vertex_buffer: wgpu::Buffer,
-    trail_vertex_count: u32,
-    block_vertex_buffer: Option<wgpu::Buffer>,
-    block_vertex_count: u32,
-    editor_cursor_vertex_buffer: Option<wgpu::Buffer>,
-    editor_cursor_vertex_count: u32,
-    editor_hover_outline_vertex_buffer: Option<wgpu::Buffer>,
-    editor_hover_outline_vertex_count: u32,
-    editor_selection_outline_vertex_buffer: Option<wgpu::Buffer>,
-    editor_selection_outline_vertex_count: u32,
-    editor_gizmo_vertex_buffer: Option<wgpu::Buffer>,
-    editor_gizmo_vertex_count: u32,
-    spawn_marker_vertex_buffer: Option<wgpu::Buffer>,
-    spawn_marker_vertex_count: u32,
+    floor_mesh: MeshSlot,
+    grid_mesh: MeshSlot,
+    trail_mesh: MeshSlot,
+    block_mesh: MeshSlot,
+    editor_cursor_mesh: MeshSlot,
+    editor_hover_outline_mesh: MeshSlot,
+    editor_selection_outline_mesh: MeshSlot,
+    editor_gizmo_mesh: MeshSlot,
+    spawn_marker_mesh: MeshSlot,
     depth_texture: wgpu::Texture,
     depth_view: wgpu::TextureView,
     render_pipeline: wgpu::RenderPipeline,
@@ -456,24 +543,11 @@ impl State {
         let floor_vertices = build_floor_vertices();
         let grid_vertices = build_grid_vertices();
 
-        let floor_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Floor Vertex Buffer"),
-            contents: bytemuck::cast_slice(&floor_vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
+        let floor_mesh = MeshSlot::from_vertices(&device, "Floor Vertex Buffer", &floor_vertices);
 
-        let grid_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Grid Vertex Buffer"),
-            contents: bytemuck::cast_slice(&grid_vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
+        let grid_mesh = MeshSlot::from_vertices(&device, "Grid Vertex Buffer", &grid_vertices);
 
-        let trail_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Trail Vertex Buffer"),
-            size: (std::mem::size_of::<Vertex>() * 36 * 500) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let trail_mesh = MeshSlot::streaming(&device, "Trail Vertex Buffer", 36 * 500);
 
         let menu = MenuState {
             selected_level: 0,
@@ -486,12 +560,7 @@ impl State {
         let local_audio_cache = crate::platform::io::load_all_local_audio().await;
 
         let block_vertices = build_block_vertices(&game.objects);
-        let block_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Block Vertex Buffer"),
-            contents: bytemuck::cast_slice(&block_vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-        let block_vertex_count = block_vertices.len() as u32;
+        let block_mesh = MeshSlot::from_vertices(&device, "Block Vertex Buffer", &block_vertices);
 
         let now = PlatformInstant::now();
 
@@ -502,8 +571,7 @@ impl State {
             queue,
             config,
             size,
-            floor_vertex_buffer,
-            floor_vertex_count: floor_vertices.len() as u32,
+            floor_mesh,
             depth_texture,
             depth_view,
             render_pipeline,
@@ -521,22 +589,14 @@ impl State {
             last_frame: now,
             accumulator: 0.0,
             audio: PlatformAudio::new(),
-            grid_vertex_buffer,
-            grid_vertex_count: grid_vertices.len() as u32,
-            trail_vertex_buffer,
-            trail_vertex_count: 0,
-            block_vertex_buffer: Some(block_vertex_buffer),
-            block_vertex_count,
-            editor_cursor_vertex_buffer: None,
-            editor_cursor_vertex_count: 0,
-            editor_hover_outline_vertex_buffer: None,
-            editor_hover_outline_vertex_count: 0,
-            editor_selection_outline_vertex_buffer: None,
-            editor_selection_outline_vertex_count: 0,
-            editor_gizmo_vertex_buffer: None,
-            editor_gizmo_vertex_count: 0,
-            spawn_marker_vertex_buffer: None,
-            spawn_marker_vertex_count: 0,
+            grid_mesh,
+            trail_mesh,
+            block_mesh,
+            editor_cursor_mesh: MeshSlot::Empty,
+            editor_hover_outline_mesh: MeshSlot::Empty,
+            editor_selection_outline_mesh: MeshSlot::Empty,
+            editor_gizmo_mesh: MeshSlot::Empty,
+            spawn_marker_mesh: MeshSlot::Empty,
             editor: EditorState::new(),
             editor_selected_kind: BlockKind::Standard,
             editor_objects: Vec::new(),
@@ -848,121 +908,6 @@ impl State {
         }
 
         self.turn_right();
-    }
-
-    fn clear_editor_pan_keys(&mut self) {
-        self.editor_pan_up_held = false;
-        self.editor_pan_down_held = false;
-        self.editor_pan_left_held = false;
-        self.editor_pan_right_held = false;
-        self.editor_shift_held = false;
-        self.editor_ctrl_held = false;
-    }
-
-    fn selected_block_indices_normalized(&self) -> Vec<usize> {
-        let mut indices: Vec<usize> = self
-            .editor_selected_block_indices
-            .iter()
-            .copied()
-            .filter(|index| *index < self.editor_objects.len())
-            .collect();
-
-        if indices.is_empty() {
-            if let Some(index) = self
-                .editor_selected_block_index
-                .filter(|index| *index < self.editor_objects.len())
-            {
-                indices.push(index);
-            }
-        }
-
-        indices.sort_unstable();
-        indices.dedup();
-        indices
-    }
-
-    fn sync_primary_selection_from_indices(&mut self) {
-        let indices = self.selected_block_indices_normalized();
-        self.editor_selected_block_index = indices.first().copied();
-        self.editor_selected_block_indices = indices;
-    }
-
-    fn selection_contains(&self, index: usize) -> bool {
-        self.editor_selected_block_indices.contains(&index)
-            || self.editor_selected_block_index == Some(index)
-    }
-
-    fn selected_group_bounds(&self) -> Option<([f32; 3], [f32; 3])> {
-        let indices = self.selected_block_indices_normalized();
-        let first = *indices.first()?;
-        let first_obj = self.editor_objects.get(first)?;
-        let mut min = first_obj.position;
-        let mut max = [
-            first_obj.position[0] + first_obj.size[0],
-            first_obj.position[1] + first_obj.size[1],
-            first_obj.position[2] + first_obj.size[2],
-        ];
-
-        for index in indices.into_iter().skip(1) {
-            if let Some(obj) = self.editor_objects.get(index) {
-                min[0] = min[0].min(obj.position[0]);
-                min[1] = min[1].min(obj.position[1]);
-                min[2] = min[2].min(obj.position[2]);
-                max[0] = max[0].max(obj.position[0] + obj.size[0]);
-                max[1] = max[1].max(obj.position[1] + obj.size[1]);
-                max[2] = max[2].max(obj.position[2] + obj.size[2]);
-            }
-        }
-
-        Some((min, [max[0] - min[0], max[1] - min[1], max[2] - min[2]]))
-    }
-
-    fn reset_playing_camera_defaults(&mut self) {
-        self.playing_camera_rotation = -45.0f32.to_radians();
-        self.playing_camera_pitch = 45.0f32.to_radians();
-    }
-
-    fn enter_playing_phase(&mut self, level_name: Option<String>, playtesting_editor: bool) {
-        self.phase = AppPhase::Playing;
-        self.playtesting_editor = playtesting_editor;
-        self.playing_level_name = level_name;
-        self.reset_playing_camera_defaults();
-        self.clear_editor_pan_keys();
-    }
-
-    fn enter_editor_phase(&mut self, level_name: String) {
-        self.phase = AppPhase::Editor;
-        self.editor_level_name = Some(level_name);
-        self.playtesting_editor = false;
-        self.editor_right_dragging = false;
-        self.editor_mode = EditorMode::Place;
-        self.editor_selected_block_index = None;
-        self.editor_selected_block_indices.clear();
-        self.editor_hovered_block_index = None;
-        self.editor_gizmo_drag = None;
-        self.editor_block_drag = None;
-        self.editor_history_undo.clear();
-        self.editor_history_redo.clear();
-        self.clear_editor_pan_keys();
-        self.editor_camera_rotation = -45.0f32.to_radians();
-        self.editor_camera_pitch = 45.0f32.to_radians();
-        self.editor_zoom = 1.0;
-        self.game = GameState::new();
-        self.trail_vertex_count = 0;
-    }
-
-    fn enter_menu_phase(&mut self) {
-        self.playtesting_editor = false;
-        self.editor_level_name = None;
-        self.editor_selected_block_index = None;
-        self.editor_selected_block_indices.clear();
-        self.editor_hovered_block_index = None;
-        self.editor_gizmo_drag = None;
-        self.editor_block_drag = None;
-        self.playing_level_name = None;
-        self.editor_right_dragging = false;
-        self.clear_editor_pan_keys();
-        self.phase = AppPhase::Menu;
     }
 }
 
