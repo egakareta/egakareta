@@ -17,7 +17,10 @@ use winit::window::Window;
 
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 
-use crate::editor_domain::{derive_timeline_position, toggle_spawn_direction};
+use crate::editor_domain::{
+    add_tap_step, clear_tap_steps, create_block_at_cursor, derive_timeline_position,
+    move_cursor_xy, remove_tap_step, remove_topmost_block_at_cursor, toggle_spawn_direction,
+};
 use crate::game::{create_menu_scene, GameState};
 use crate::level_repository::{
     build_ldz_archive, builtin_level_names, load_builtin_level_metadata, parse_level_metadata_json,
@@ -755,22 +758,17 @@ impl State {
     }
 
     pub fn editor_add_tap(&mut self) {
-        let step = self.editor_timeline_step;
-        if !self.editor_tap_steps.contains(&step) {
-            self.editor_tap_steps.push(step);
-            self.editor_tap_steps.sort_unstable();
-        }
+        add_tap_step(&mut self.editor_tap_steps, self.editor_timeline_step);
         self.refresh_editor_timeline_position();
     }
 
     pub fn editor_remove_tap(&mut self) {
-        let step = self.editor_timeline_step;
-        self.editor_tap_steps.retain(|tap| *tap != step);
+        remove_tap_step(&mut self.editor_tap_steps, self.editor_timeline_step);
         self.refresh_editor_timeline_position();
     }
 
     pub fn editor_clear_taps(&mut self) {
-        self.editor_tap_steps.clear();
+        clear_tap_steps(&mut self.editor_tap_steps);
         self.refresh_editor_timeline_position();
     }
 
@@ -1045,27 +1043,7 @@ impl State {
             return;
         }
 
-        let cursor = self.editor.cursor;
-        let mut top_index: Option<usize> = None;
-        let mut top_height = f32::NEG_INFINITY;
-
-        for (index, obj) in self.editor_objects.iter().enumerate() {
-            let occupies_x = cursor[0] as f32 + 0.5 >= obj.position[0]
-                && cursor[0] as f32 + 0.5 <= obj.position[0] + obj.size[0];
-            let occupies_y = cursor[1] as f32 + 0.5 >= obj.position[1]
-                && cursor[1] as f32 + 0.5 <= obj.position[1] + obj.size[1];
-            if occupies_x && occupies_y {
-                let top = obj.position[2] + obj.size[2];
-                if top > top_height {
-                    top_height = top;
-                    top_index = Some(index);
-                }
-            }
-        }
-
-        if let Some(index) = top_index {
-            self.editor_objects.remove(index);
-        }
+        remove_topmost_block_at_cursor(&mut self.editor_objects, self.editor.cursor);
 
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
@@ -1486,20 +1464,15 @@ impl State {
     }
 
     fn move_editor_cursor(&mut self, dx: i32, dy: i32) {
-        let bounds = self.editor.bounds;
-        self.editor.cursor[0] = (self.editor.cursor[0] + dx).clamp(-bounds, bounds);
-        self.editor.cursor[1] = (self.editor.cursor[1] + dy).clamp(-bounds, bounds);
+        move_cursor_xy(&mut self.editor.cursor, dx, dy, self.editor.bounds);
         self.rebuild_editor_cursor_vertices();
     }
 
     fn place_editor_block(&mut self) {
-        let cursor = self.editor.cursor;
-
-        self.editor_objects.push(LevelObject {
-            position: [cursor[0] as f32, cursor[1] as f32, cursor[2] as f32],
-            size: [1.0, 1.0, 1.0],
-            kind: self.editor_selected_kind,
-        });
+        self.editor_objects.push(create_block_at_cursor(
+            self.editor.cursor,
+            self.editor_selected_kind,
+        ));
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
     }
