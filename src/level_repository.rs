@@ -1,21 +1,34 @@
 use std::io::{Read, Write as _};
+use std::sync::OnceLock;
 
 use include_dir::{include_dir, Dir};
 
 use crate::types::LevelMetadata;
 
 static LEVELS_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/levels");
+static BUILTIN_LEVELS: OnceLock<Vec<LevelMetadata>> = OnceLock::new();
+
+fn builtin_levels() -> &'static [LevelMetadata] {
+    BUILTIN_LEVELS.get_or_init(|| {
+        let mut levels = Vec::new();
+        collect_builtin_levels(&LEVELS_DIR, &mut levels);
+        levels.sort_unstable_by(|left, right| left.name.cmp(&right.name));
+        levels
+    })
+}
 
 pub(crate) fn builtin_level_names() -> Vec<String> {
-    let mut names: Vec<String> = builtin_level_metadata_iter()
-        .map(|metadata| metadata.name)
-        .collect();
-    names.sort_unstable();
-    names
+    builtin_levels()
+        .iter()
+        .map(|metadata| metadata.name.clone())
+        .collect()
 }
 
 pub(crate) fn load_builtin_level_metadata(level_name: &str) -> Option<LevelMetadata> {
-    builtin_level_metadata_iter().find(|metadata| metadata.name == level_name)
+    builtin_levels()
+        .iter()
+        .find(|metadata| metadata.name == level_name)
+        .cloned()
 }
 
 pub(crate) fn parse_level_metadata_json(json: &str) -> Result<LevelMetadata, String> {
@@ -65,12 +78,6 @@ pub(crate) fn read_metadata_from_ldz(data: &[u8]) -> Result<LevelMetadata, Strin
         .map_err(|error| error.to_string())?;
 
     parse_level_metadata_json(&metadata_json)
-}
-
-fn builtin_level_metadata_iter() -> impl Iterator<Item = LevelMetadata> {
-    let mut levels = Vec::new();
-    collect_builtin_levels(&LEVELS_DIR, &mut levels);
-    levels.into_iter()
 }
 
 fn collect_builtin_levels(dir: &Dir<'_>, levels: &mut Vec<LevelMetadata>) {
