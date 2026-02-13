@@ -2,8 +2,10 @@
 name = "line-dash"
 version = "0.1.0"
 edition = "2021"
-authors = []
-description = "Line Dash game engine prototype"
+authors = ["evilbocchi"]
+description = "Feel the beat, follow the line."
+repository = "https://github.com/evilbocchi/line-dash"
+license = "MIT"
 
 [lib]
 name = "line_dash_lib"
