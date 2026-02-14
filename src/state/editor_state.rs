@@ -296,6 +296,9 @@ impl State {
     }
 
     pub(crate) fn editor_timeline_preview(&self) -> ([f32; 3], SpawnDirection) {
-        self.editor_timeline_position(self.editor_timeline_time_seconds)
+        (
+            self.editor_timeline_preview_position,
+            self.editor_timeline_preview_direction,
+        )
     }
 }

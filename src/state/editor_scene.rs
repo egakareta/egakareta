@@ -88,6 +88,9 @@ impl State {
         position: [f32; 3],
         direction: SpawnDirection,
     ) {
+        self.editor_timeline_preview_position = position;
+        self.editor_timeline_preview_direction = direction;
+
         let bounds = self.editor.bounds;
         self.editor.cursor = [
             position[0].round() as i32,
@@ -301,6 +304,9 @@ impl State {
         position: [f32; 3],
         direction: SpawnDirection,
     ) {
+        self.editor_timeline_preview_position = position;
+        self.editor_timeline_preview_direction = direction;
+
         let is_tapping = self
             .editor_tap_times
             .iter()
