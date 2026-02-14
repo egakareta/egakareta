@@ -2,6 +2,7 @@
     "recommendations": [
         "rust-lang.rust-analyzer",
         "vadimcn.vscode-lldb",
-        "wgsl-analyzer.wgsl-analyzer"
+        "wgsl-analyzer.wgsl-analyzer",
+        "slevesque.vscode-3dviewer"
     ]
 }
