@@ -250,6 +250,7 @@ impl State {
 
         self.editor_timeline_playback_runtime = None;
         self.stop_audio();
+        self.refresh_editor_timeline_position();
     }
 
     pub fn editor_remove_block(&mut self) {
