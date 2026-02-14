@@ -3,6 +3,8 @@ name: Rust
 on:
   push:
     branches: ["main"]
+    tags:
+      - "v*"
   pull_request:
     branches: ["main"]
 
@@ -11,7 +13,11 @@ env:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: Test and Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
 
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +26,8 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Install dependencies
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libasound2-dev libudev-dev pkg-config
@@ -32,12 +39,40 @@ jobs:
         run: bun run test --verbose
 
       - name: Check formatting
+        if: runner.os == 'Linux'
         run: bun format -- --check
 
       - name: Lint with clippy
         run: bun lint
 
+      - name: Build Release
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
+        run: cargo build --release --verbose
+
+      - name: Prepare Artifact Name
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            cp target/release/line-dash.exe line-dash-windows.exe
+            echo "ASSET=line-dash-windows.exe" >> $GITHUB_ENV
+          elif [ "$RUNNER_OS" == "Linux" ]; then
+            cp target/release/line-dash line-dash-linux
+            echo "ASSET=line-dash-linux" >> $GITHUB_ENV
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+            cp target/release/line-dash line-dash-macos
+            echo "ASSET=line-dash-macos" >> $GITHUB_ENV
+          fi
+
+      - name: Upload Artifact
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: line-dash-${{ matrix.os }}
+          path: ${{ env.ASSET }}
+
   wasm-check:
+    name: Check WASM Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -55,3 +90,28 @@ jobs:
 
       - name: Check WASM build
         run: cargo check --target wasm32-unknown-unknown
+
+  release:
+    name: Create Release
+    needs: [test, wasm-check]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: line-dash-*
+          merge-multiple: true
+          path: artifacts
+
+      - name: List Artifacts
+        run: ls -R artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+
