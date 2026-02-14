@@ -392,6 +392,8 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                         "Player: ({:.1}, {:.1}, {:.1}) | {}",
                         position[0], position[1], position[2], direction_label
                     ));
+                    ui.separator();
+                    ui.label(format!("FPS: {:.0}", state.editor_fps()));
                 });
 
                 let available_width = ui.available_width();

@@ -8,6 +8,12 @@ impl State {
         let now = PlatformInstant::now();
         let frame_dt = (now - self.last_frame).as_secs_f32();
         self.last_frame = now;
+        let instant_fps = 1.0 / frame_dt.max(1e-4);
+        if self.editor_fps_smoothed <= 0.0 {
+            self.editor_fps_smoothed = instant_fps;
+        } else {
+            self.editor_fps_smoothed = self.editor_fps_smoothed * 0.9 + instant_fps * 0.1;
+        }
         self.accumulator = (self.accumulator + frame_dt).min(0.25);
 
         if self.phase == AppPhase::Menu {
@@ -74,7 +80,39 @@ impl State {
                     self.drag_editor_selection_from_screen(pointer[0], pointer[1]);
                 }
             }
-            self.rebuild_editor_gizmo_vertices();
+
+            let camera_changed = (self.editor_camera_pan[0] - self.editor_gizmo_last_pan[0]).abs()
+                > 1e-4
+                || (self.editor_camera_pan[1] - self.editor_gizmo_last_pan[1]).abs() > 1e-4
+                || (self.editor_camera_rotation - self.editor_gizmo_last_rotation).abs() > 1e-4
+                || (self.editor_camera_pitch - self.editor_gizmo_last_pitch).abs() > 1e-4
+                || (self.editor_zoom - self.editor_gizmo_last_zoom).abs() > 1e-4;
+
+            let has_selection = self.editor_selected_block_index.is_some()
+                || !self.editor_selected_block_indices.is_empty();
+            let is_dragging = self.editor_gizmo_drag.is_some() || self.editor_block_drag.is_some();
+
+            if has_selection && self.editor_mode == EditorMode::Select {
+                if is_dragging {
+                    self.rebuild_editor_gizmo_vertices();
+                    self.editor_gizmo_rebuild_accumulator = 0.0;
+                } else if camera_changed {
+                    self.editor_gizmo_rebuild_accumulator += frame_dt;
+                    if self.editor_gizmo_rebuild_accumulator >= (1.0 / 24.0) {
+                        self.rebuild_editor_gizmo_vertices();
+                        self.editor_gizmo_rebuild_accumulator = 0.0;
+                    }
+                } else {
+                    self.editor_gizmo_rebuild_accumulator = 0.0;
+                }
+            } else {
+                self.editor_gizmo_rebuild_accumulator = 0.0;
+            }
+
+            self.editor_gizmo_last_pan = self.editor_camera_pan;
+            self.editor_gizmo_last_rotation = self.editor_camera_rotation;
+            self.editor_gizmo_last_pitch = self.editor_camera_pitch;
+            self.editor_gizmo_last_zoom = self.editor_zoom;
             self.update_editor_camera();
             return;
         }
