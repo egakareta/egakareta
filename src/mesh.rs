@@ -11,9 +11,18 @@ static OBJ_MESHES: OnceLock<HashMap<String, ObjMesh>> = OnceLock::new();
 #[derive(Clone)]
 struct ObjMesh {
     positions: Vec<[f32; 3]>,
-    faces: Vec<[usize; 3]>,
+    texcoords: Vec<[f32; 2]>,
+    normals: Vec<[f32; 3]>,
+    faces: Vec<[ObjFaceVertex; 3]>,
     min: [f32; 3],
     max: [f32; 3],
+}
+
+#[derive(Clone, Copy)]
+struct ObjFaceVertex {
+    position_index: usize,
+    texcoord_index: Option<usize>,
+    normal_index: Option<usize>,
 }
 
 fn rotate_vertices_around_z(vertices: &mut [Vertex], center: [f32; 3], degrees: f32) {
@@ -775,6 +784,8 @@ fn collect_obj_meshes(dir: &Dir<'_>, meshes: &mut HashMap<String, ObjMesh>) {
 
 fn parse_obj_mesh(contents: &str) -> Option<ObjMesh> {
     let mut positions = Vec::new();
+    let mut texcoords = Vec::new();
+    let mut normals = Vec::new();
     let mut faces = Vec::new();
 
     for line in contents.lines() {
@@ -788,22 +799,99 @@ fn parse_obj_mesh(contents: &str) -> Option<ObjMesh> {
             continue;
         }
 
+        if let Some(rest) = trimmed.strip_prefix("vt ") {
+            let mut parts = rest.split_whitespace();
+            let Some(u_text) = parts.next() else {
+                continue;
+            };
+            let Some(v_text) = parts.next() else {
+                continue;
+            };
+            let Ok(u) = u_text.parse::<f32>() else {
+                continue;
+            };
+            let Ok(v) = v_text.parse::<f32>() else {
+                continue;
+            };
+            texcoords.push([u, v]);
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("vn ") {
+            let mut parts = rest.split_whitespace();
+            let Some(x_text) = parts.next() else {
+                continue;
+            };
+            let Some(y_text) = parts.next() else {
+                continue;
+            };
+            let Some(z_text) = parts.next() else {
+                continue;
+            };
+            let Ok(x) = x_text.parse::<f32>() else {
+                continue;
+            };
+            let Ok(y) = y_text.parse::<f32>() else {
+                continue;
+            };
+            let Ok(z) = z_text.parse::<f32>() else {
+                continue;
+            };
+            normals.push([x, y, z]);
+            continue;
+        }
+
         if let Some(rest) = trimmed.strip_prefix("f ") {
-            let mut indices = Vec::new();
+            let mut corners = Vec::new();
             for token in rest.split_whitespace() {
-                let index_text = token.split('/').next().unwrap_or_default();
-                let Ok(raw_index) = index_text.parse::<isize>() else {
+                let mut segments = token.split('/');
+                let Some(position_text) = segments.next() else {
                     continue;
                 };
-                if raw_index <= 0 {
+                if position_text.is_empty() {
                     continue;
                 }
-                indices.push((raw_index as usize) - 1);
+
+                let Ok(raw_position_index) = position_text.parse::<isize>() else {
+                    continue;
+                };
+                let Some(position_index) = resolve_obj_index(raw_position_index, positions.len())
+                else {
+                    continue;
+                };
+
+                let texcoord_index = segments
+                    .next()
+                    .and_then(|value| {
+                        if value.is_empty() {
+                            None
+                        } else {
+                            value.parse::<isize>().ok()
+                        }
+                    })
+                    .and_then(|raw_index| resolve_obj_index(raw_index, texcoords.len()));
+
+                let normal_index = segments
+                    .next()
+                    .and_then(|value| {
+                        if value.is_empty() {
+                            None
+                        } else {
+                            value.parse::<isize>().ok()
+                        }
+                    })
+                    .and_then(|raw_index| resolve_obj_index(raw_index, normals.len()));
+
+                corners.push(ObjFaceVertex {
+                    position_index,
+                    texcoord_index,
+                    normal_index,
+                });
             }
 
-            if indices.len() >= 3 {
-                for i in 1..indices.len() - 1 {
-                    faces.push([indices[0], indices[i], indices[i + 1]]);
+            if corners.len() >= 3 {
+                for i in 1..corners.len() - 1 {
+                    faces.push([corners[0], corners[i], corners[i + 1]]);
                 }
             }
         }
@@ -824,10 +912,26 @@ fn parse_obj_mesh(contents: &str) -> Option<ObjMesh> {
 
     Some(ObjMesh {
         positions,
+        texcoords,
+        normals,
         faces,
         min,
         max,
     })
+}
+
+fn resolve_obj_index(raw_index: isize, len: usize) -> Option<usize> {
+    if len == 0 || raw_index == 0 {
+        return None;
+    }
+
+    if raw_index > 0 {
+        let index = (raw_index as usize).checked_sub(1)?;
+        (index < len).then_some(index)
+    } else {
+        let idx = len as isize + raw_index;
+        (idx >= 0).then_some(idx as usize)
+    }
 }
 
 fn append_obj_mesh(vertices: &mut Vec<Vertex>, obj: &LevelObject, mesh: &ObjMesh, color: [f32; 4]) {
@@ -838,8 +942,8 @@ fn append_obj_mesh(vertices: &mut Vec<Vertex>, obj: &LevelObject, mesh: &ObjMesh
     ];
 
     for face in &mesh.faces {
-        for index in face {
-            let Some(raw) = mesh.positions.get(*index) else {
+        for corner in face {
+            let Some(raw) = mesh.positions.get(corner.position_index) else {
                 continue;
             };
 
@@ -849,13 +953,41 @@ fn append_obj_mesh(vertices: &mut Vec<Vertex>, obj: &LevelObject, mesh: &ObjMesh
                 (raw[2] - mesh.min[2]) / span[2],
             ];
 
+            let _uv = corner
+                .texcoord_index
+                .and_then(|index| mesh.texcoords.get(index))
+                .copied();
+
+            let normal_tint = corner
+                .normal_index
+                .and_then(|index| mesh.normals.get(index))
+                .map(|normal| {
+                    let length =
+                        (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2])
+                            .sqrt();
+                    if length <= f32::EPSILON {
+                        1.0
+                    } else {
+                        let nx = normal[0] / length;
+                        let ny = normal[1] / length;
+                        let nz = normal[2] / length;
+                        (nx * 0.25 + ny * 0.35 + nz * 0.4).abs().clamp(0.35, 1.0)
+                    }
+                })
+                .unwrap_or(1.0);
+
             vertices.push(Vertex {
                 position: [
                     obj.position[0] + normalized[0] * obj.size[0],
                     obj.position[1] + normalized[1] * obj.size[1],
                     obj.position[2] + normalized[2] * obj.size[2],
                 ],
-                color,
+                color: [
+                    color[0] * normal_tint,
+                    color[1] * normal_tint,
+                    color[2] * normal_tint,
+                    color[3],
+                ],
             });
         }
     }
@@ -1382,6 +1514,7 @@ pub(crate) fn build_spawn_marker_vertices(position: [f32; 3], faces_right: bool)
 mod tests {
     use super::{
         build_block_vertices, build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
+        parse_obj_mesh,
     };
     use crate::types::LevelObject;
 
@@ -1436,5 +1569,27 @@ mod tests {
         let vertices = build_editor_hover_outline_vertices([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
         assert!(!vertices.is_empty());
         assert!(vertices.iter().any(|v| v.color[3] < 1.0));
+    }
+
+    #[test]
+    fn obj_parser_supports_uvs_and_normals() {
+        let obj = r#"
+v 0 0 0
+v 1 0 0
+v 0 1 0
+vt 0 0
+vt 1 0
+vt 0 1
+vn 0 0 1
+f 1/1/1 2/2/1 3/3/1
+"#;
+
+        let mesh = parse_obj_mesh(obj).expect("valid mesh");
+        assert_eq!(mesh.positions.len(), 3);
+        assert_eq!(mesh.texcoords.len(), 3);
+        assert_eq!(mesh.normals.len(), 1);
+        assert_eq!(mesh.faces.len(), 1);
+        assert_eq!(mesh.faces[0][0].texcoord_index, Some(0));
+        assert_eq!(mesh.faces[0][0].normal_index, Some(0));
     }
 }

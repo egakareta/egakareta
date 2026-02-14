@@ -97,16 +97,27 @@ impl State {
             return;
         }
 
-        if let Some(index) = self
-            .editor_selected_block_index
-            .filter(|index| *index < self.editor_objects.len())
-        {
-            self.editor_clipboard_block = Some(self.editor_objects[index].clone());
+        let selected_indices = self.selected_block_indices_normalized();
+        if !selected_indices.is_empty() {
+            let anchor_index = self
+                .editor_selected_block_index
+                .filter(|index| selected_indices.contains(index))
+                .unwrap_or(selected_indices[0]);
+            let anchor = self.editor_objects[anchor_index].position;
+            let objects = selected_indices
+                .into_iter()
+                .map(|index| self.editor_objects[index].clone())
+                .collect();
+            self.editor_clipboard = Some(EditorClipboard { objects, anchor });
             return;
         }
 
         if let Some(index) = self.topmost_block_index_at_cursor(self.editor.cursor) {
-            self.editor_clipboard_block = Some(self.editor_objects[index].clone());
+            let block = self.editor_objects[index].clone();
+            self.editor_clipboard = Some(EditorClipboard {
+                anchor: block.position,
+                objects: vec![block],
+            });
         }
     }
 
@@ -115,22 +126,84 @@ impl State {
             return;
         }
 
-        let Some(mut block) = self.editor_clipboard_block.clone() else {
+        let Some(clipboard) = self.editor_clipboard.clone() else {
             return;
         };
 
+        if clipboard.objects.is_empty() {
+            return;
+        }
+
         self.record_editor_history_state();
 
-        block.position = [
+        let paste_anchor = [
             self.editor.cursor[0] as f32,
             self.editor.cursor[1] as f32,
             self.editor.cursor[2] as f32,
         ];
 
-        self.editor_selected_block_id = block.block_id.clone();
-        self.editor_objects.push(block);
-        self.editor_selected_block_index = Some(self.editor_objects.len() - 1);
-        self.editor_selected_block_indices = self.editor_selected_block_index.into_iter().collect();
+        let base_len = self.editor_objects.len();
+        let mut new_indices = Vec::with_capacity(clipboard.objects.len());
+
+        for mut block in clipboard.objects {
+            block.position = [
+                paste_anchor[0] + (block.position[0] - clipboard.anchor[0]),
+                paste_anchor[1] + (block.position[1] - clipboard.anchor[1]),
+                paste_anchor[2] + (block.position[2] - clipboard.anchor[2]),
+            ];
+            self.editor_selected_block_id = block.block_id.clone();
+            self.editor_objects.push(block);
+            new_indices.push(base_len + new_indices.len());
+        }
+
+        self.editor_selected_block_index = new_indices.first().copied();
+        self.editor_selected_block_indices = new_indices;
+        self.sync_primary_selection_from_indices();
+        self.editor_hovered_block_index = self.editor_selected_block_index;
+        self.sync_editor_objects();
+        self.rebuild_editor_cursor_vertices();
+        self.rebuild_editor_gizmo_vertices();
+        self.rebuild_editor_hover_outline_vertices();
+        self.rebuild_editor_selection_outline_vertices();
+    }
+
+    pub(super) fn editor_duplicate_selected_block_in_place(&mut self) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        let selected_indices = self.selected_block_indices_normalized();
+        if selected_indices.is_empty() {
+            return;
+        }
+
+        let anchor_index = self
+            .editor_selected_block_index
+            .filter(|index| selected_indices.contains(index))
+            .unwrap_or(selected_indices[0]);
+        let anchor = self.editor_objects[anchor_index].position;
+        let duplicates: Vec<LevelObject> = selected_indices
+            .iter()
+            .map(|index| self.editor_objects[*index].clone())
+            .collect();
+
+        self.editor_clipboard = Some(EditorClipboard {
+            objects: duplicates.clone(),
+            anchor,
+        });
+        self.record_editor_history_state();
+
+        let base_len = self.editor_objects.len();
+        let mut new_indices = Vec::with_capacity(duplicates.len());
+        for duplicated in duplicates {
+            self.editor_selected_block_id = duplicated.block_id.clone();
+            self.editor_objects.push(duplicated);
+            new_indices.push(base_len + new_indices.len());
+        }
+
+        self.editor_selected_block_index = new_indices.first().copied();
+        self.editor_selected_block_indices = new_indices;
+        self.sync_primary_selection_from_indices();
         self.editor_hovered_block_index = self.editor_selected_block_index;
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();

@@ -194,7 +194,7 @@ pub struct State {
     editor_gizmo_drag: Option<EditorGizmoDrag>,
     editor_block_drag: Option<EditorBlockDrag>,
     editor_pointer_screen: Option<[f64; 2]>,
-    editor_clipboard_block: Option<LevelObject>,
+    editor_clipboard: Option<EditorClipboard>,
     editor_history_undo: Vec<EditorHistorySnapshot>,
     editor_history_redo: Vec<EditorHistorySnapshot>,
     editor_level_name: Option<String>,
@@ -271,6 +271,12 @@ struct EditorHistorySnapshot {
     timeline_step: u32,
     timeline_length: u32,
     tap_steps: Vec<u32>,
+}
+
+#[derive(Clone)]
+struct EditorClipboard {
+    objects: Vec<LevelObject>,
+    anchor: [f32; 3],
 }
 
 impl State {
@@ -629,7 +635,7 @@ impl State {
             editor_gizmo_drag: None,
             editor_block_drag: None,
             editor_pointer_screen: None,
-            editor_clipboard_block: None,
+            editor_clipboard: None,
             editor_history_undo: Vec::new(),
             editor_history_redo: Vec::new(),
             editor_level_name: None,
