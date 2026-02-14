@@ -25,6 +25,10 @@ impl State {
         self.editor_ctrl_held = held && self.phase == AppPhase::Editor;
     }
 
+    pub fn set_editor_alt_held(&mut self, held: bool) {
+        self.editor_alt_held = held && self.phase == AppPhase::Editor;
+    }
+
     pub fn set_editor_block_id(&mut self, block_id: String) {
         self.editor_selected_block_id = crate::block_repository::normalize_block_id(&block_id);
     }

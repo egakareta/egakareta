@@ -5,6 +5,7 @@ use crate::level_repository::{
     build_ldz_archive, load_builtin_level_metadata, parse_level_metadata_json,
     read_metadata_from_ldz, serialize_level_metadata_pretty,
 };
+use crate::mesh::build_block_obj;
 use crate::platform::io::{log_platform_error, read_editor_music_bytes, save_level_export};
 
 impl State {
@@ -270,6 +271,42 @@ impl State {
             Err(e) => {
                 log_platform_error(&format!("Export failed: {}", e));
             }
+        }
+    }
+
+    pub fn trigger_selected_block_obj_export(&self) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        let Some(block) = self.editor_selected_block() else {
+            log_platform_error("OBJ export failed: no selected block");
+            return;
+        };
+
+        let sanitized_id = block
+            .block_id
+            .chars()
+            .map(|character| {
+                if character.is_ascii_alphanumeric() || character == '-' || character == '_' {
+                    character
+                } else {
+                    '_'
+                }
+            })
+            .collect::<String>();
+
+        let object_name = if sanitized_id.is_empty() {
+            "block".to_string()
+        } else {
+            sanitized_id
+        };
+
+        let filename = format!("{}_selected.obj", object_name);
+        let obj = build_block_obj(&block, &object_name);
+
+        if let Err(error) = save_level_export(&filename, obj.as_bytes()) {
+            log_platform_error(&format!("OBJ export failed: {}", error));
         }
     }
 

@@ -2,8 +2,12 @@
   "id": "core/speedportal",
   "display_name": "Speed Portal",
   "aliases": ["speedportal", "speed_portal"],
+  "assets": {
+    "mesh": "speedportal.obj"
+  },
   "render": {
-    "profile": "speed_portal"
+    "profile": "speed_portal",
+    "color_top": [1.0, 1.0, 0.0, 1.0]
   },
   "behavior": {
     "collision": "portal",

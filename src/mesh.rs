@@ -1,5 +1,20 @@
 use crate::block_repository::{resolve_block_definition, BlockRenderProfile};
 use crate::types::{LevelObject, Vertex};
+use include_dir::{include_dir, Dir};
+use std::collections::HashMap;
+use std::fmt::Write as _;
+use std::sync::OnceLock;
+
+static BLOCK_ASSETS_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/blocks");
+static OBJ_MESHES: OnceLock<HashMap<String, ObjMesh>> = OnceLock::new();
+
+#[derive(Clone)]
+struct ObjMesh {
+    positions: Vec<[f32; 3]>,
+    faces: Vec<[usize; 3]>,
+    min: [f32; 3],
+    max: [f32; 3],
+}
 
 fn rotate_vertices_around_z(vertices: &mut [Vertex], center: [f32; 3], degrees: f32) {
     if degrees.abs() <= f32::EPSILON {
@@ -558,7 +573,13 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
 
         let block = resolve_block_definition(&obj.block_id);
 
-        if matches!(block.render.profile, BlockRenderProfile::VoidFrame) {
+        if let Some(mesh_path) = block.assets.mesh.as_deref() {
+            if let Some(mesh) = resolve_obj_mesh(mesh_path) {
+                append_obj_mesh(vertices, obj, mesh, block.render.color_top);
+            }
+        }
+
+        if vertices.is_empty() && matches!(block.render.profile, BlockRenderProfile::VoidFrame) {
             let color_fill = block.render.color_fill;
             let color_outline = block.render.color_outline;
             let t = 0.05;
@@ -661,115 +682,7 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
                 color_outline,
                 color_outline,
             );
-        } else if matches!(block.render.profile, BlockRenderProfile::SpeedPortal) {
-            let cx = (x_min + x_max) / 2.0;
-            let cy = (y_min + y_max) / 2.0;
-            let cz = (z_min + z_max) / 2.0;
-            let arrow_color = block.render.color_top;
-            let arrow_len = 0.6;
-            let arrow_width = 0.4;
-            let thickness = 0.1;
-
-            for offset_y in [-0.3, 0.3] {
-                let center_y = cy + offset_y;
-                let y_tip = center_y + arrow_len / 2.0;
-                let y_base = center_y - arrow_len / 2.0;
-                let v0 = [cx, y_tip];
-                let v1 = [cx - arrow_width / 2.0, y_base];
-                let v2 = [cx, y_base + arrow_len * 0.3]; // Indent
-                let v3 = [cx + arrow_width / 2.0, y_base];
-
-                let z_top = cz + thickness / 2.0;
-                let z_bot = cz - thickness / 2.0;
-
-                // Top face
-                vertices.push(Vertex {
-                    position: [v0[0], v0[1], z_top],
-                    color: arrow_color,
-                });
-                vertices.push(Vertex {
-                    position: [v1[0], v1[1], z_top],
-                    color: arrow_color,
-                });
-                vertices.push(Vertex {
-                    position: [v2[0], v2[1], z_top],
-                    color: arrow_color,
-                });
-
-                vertices.push(Vertex {
-                    position: [v0[0], v0[1], z_top],
-                    color: arrow_color,
-                });
-                vertices.push(Vertex {
-                    position: [v2[0], v2[1], z_top],
-                    color: arrow_color,
-                });
-                vertices.push(Vertex {
-                    position: [v3[0], v3[1], z_top],
-                    color: arrow_color,
-                });
-
-                // Bottom face
-                vertices.push(Vertex {
-                    position: [v0[0], v0[1], z_bot],
-                    color: arrow_color,
-                });
-                vertices.push(Vertex {
-                    position: [v2[0], v2[1], z_bot],
-                    color: arrow_color,
-                });
-                vertices.push(Vertex {
-                    position: [v1[0], v1[1], z_bot],
-                    color: arrow_color,
-                });
-
-                vertices.push(Vertex {
-                    position: [v0[0], v0[1], z_bot],
-                    color: arrow_color,
-                });
-                vertices.push(Vertex {
-                    position: [v3[0], v3[1], z_bot],
-                    color: arrow_color,
-                });
-                vertices.push(Vertex {
-                    position: [v2[0], v2[1], z_bot],
-                    color: arrow_color,
-                });
-
-                // Sides
-                let perimeter = [v0, v1, v2, v3];
-                for i in 0..4 {
-                    let p1 = perimeter[i];
-                    let p2 = perimeter[(i + 1) % 4];
-
-                    vertices.push(Vertex {
-                        position: [p1[0], p1[1], z_top],
-                        color: arrow_color,
-                    });
-                    vertices.push(Vertex {
-                        position: [p2[0], p2[1], z_top],
-                        color: arrow_color,
-                    });
-                    vertices.push(Vertex {
-                        position: [p2[0], p2[1], z_bot],
-                        color: arrow_color,
-                    });
-
-                    vertices.push(Vertex {
-                        position: [p1[0], p1[1], z_top],
-                        color: arrow_color,
-                    });
-                    vertices.push(Vertex {
-                        position: [p2[0], p2[1], z_bot],
-                        color: arrow_color,
-                    });
-                    vertices.push(Vertex {
-                        position: [p1[0], p1[1], z_bot],
-                        color: arrow_color,
-                    });
-                }
-            }
-        } else {
+        } else if vertices.is_empty() {
             let color_top = block.render.color_top;
             let color_side = block.render.color_side;
 
@@ -804,6 +717,179 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
     }
 
     all_vertices
+}
+
+fn resolve_obj_mesh(mesh_path: &str) -> Option<&'static ObjMesh> {
+    let key = mesh_path.trim().replace('\\', "/").to_ascii_lowercase();
+    let meshes = obj_meshes();
+    meshes
+        .get(&key)
+        .or_else(|| meshes.get(&format!("assets/blocks/{key}")))
+}
+
+fn obj_meshes() -> &'static HashMap<String, ObjMesh> {
+    OBJ_MESHES.get_or_init(|| {
+        let mut meshes = HashMap::new();
+        collect_obj_meshes(&BLOCK_ASSETS_DIR, &mut meshes);
+        meshes
+    })
+}
+
+fn collect_obj_meshes(dir: &Dir<'_>, meshes: &mut HashMap<String, ObjMesh>) {
+    for file in dir.files() {
+        let is_obj = file
+            .path()
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(|extension| extension.eq_ignore_ascii_case("obj"))
+            .unwrap_or(false);
+
+        if !is_obj {
+            continue;
+        }
+
+        let Some(contents) = file.contents_utf8() else {
+            continue;
+        };
+
+        let Some(mesh) = parse_obj_mesh(contents) else {
+            continue;
+        };
+
+        let full_path = file
+            .path()
+            .to_string_lossy()
+            .replace('\\', "/")
+            .to_ascii_lowercase();
+        meshes.insert(full_path, mesh.clone());
+
+        if let Some(name) = file.path().file_name().and_then(|name| name.to_str()) {
+            meshes.insert(name.to_ascii_lowercase(), mesh);
+        }
+    }
+
+    for child in dir.dirs() {
+        collect_obj_meshes(child, meshes);
+    }
+}
+
+fn parse_obj_mesh(contents: &str) -> Option<ObjMesh> {
+    let mut positions = Vec::new();
+    let mut faces = Vec::new();
+
+    for line in contents.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("v ") {
+            let mut parts = rest.split_whitespace();
+            let x = parts.next()?.parse::<f32>().ok()?;
+            let y = parts.next()?.parse::<f32>().ok()?;
+            let z = parts.next()?.parse::<f32>().ok()?;
+            positions.push([x, y, z]);
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("f ") {
+            let mut indices = Vec::new();
+            for token in rest.split_whitespace() {
+                let index_text = token.split('/').next().unwrap_or_default();
+                let Ok(raw_index) = index_text.parse::<isize>() else {
+                    continue;
+                };
+                if raw_index <= 0 {
+                    continue;
+                }
+                indices.push((raw_index as usize) - 1);
+            }
+
+            if indices.len() >= 3 {
+                for i in 1..indices.len() - 1 {
+                    faces.push([indices[0], indices[i], indices[i + 1]]);
+                }
+            }
+        }
+    }
+
+    if positions.is_empty() || faces.is_empty() {
+        return None;
+    }
+
+    let mut min = [f32::INFINITY; 3];
+    let mut max = [f32::NEG_INFINITY; 3];
+    for position in &positions {
+        for axis in 0..3 {
+            min[axis] = min[axis].min(position[axis]);
+            max[axis] = max[axis].max(position[axis]);
+        }
+    }
+
+    Some(ObjMesh {
+        positions,
+        faces,
+        min,
+        max,
+    })
+}
+
+fn append_obj_mesh(vertices: &mut Vec<Vertex>, obj: &LevelObject, mesh: &ObjMesh, color: [f32; 4]) {
+    let span = [
+        (mesh.max[0] - mesh.min[0]).max(f32::EPSILON),
+        (mesh.max[1] - mesh.min[1]).max(f32::EPSILON),
+        (mesh.max[2] - mesh.min[2]).max(f32::EPSILON),
+    ];
+
+    for face in &mesh.faces {
+        for index in face {
+            let Some(raw) = mesh.positions.get(*index) else {
+                continue;
+            };
+
+            let normalized = [
+                (raw[0] - mesh.min[0]) / span[0],
+                (raw[1] - mesh.min[1]) / span[1],
+                (raw[2] - mesh.min[2]) / span[2],
+            ];
+
+            vertices.push(Vertex {
+                position: [
+                    obj.position[0] + normalized[0] * obj.size[0],
+                    obj.position[1] + normalized[1] * obj.size[1],
+                    obj.position[2] + normalized[2] * obj.size[2],
+                ],
+                color,
+            });
+        }
+    }
+}
+
+pub(crate) fn build_block_obj(level_object: &LevelObject, object_name: &str) -> String {
+    let vertices = build_block_vertices(std::slice::from_ref(level_object));
+    build_obj_from_vertices(&vertices, object_name)
+}
+
+fn build_obj_from_vertices(vertices: &[Vertex], object_name: &str) -> String {
+    let mut output = String::new();
+    let _ = writeln!(&mut output, "# line-dash block export");
+    let _ = writeln!(&mut output, "o {}", object_name);
+
+    for vertex in vertices {
+        let _ = writeln!(
+            &mut output,
+            "v {:.6} {:.6} {:.6}",
+            vertex.position[0], vertex.position[1], vertex.position[2]
+        );
+    }
+
+    for i in (0..vertices.len()).step_by(3) {
+        if i + 2 >= vertices.len() {
+            break;
+        }
+        let a = i + 1;
+        let b = i + 2;
+        let c = i + 3;
+        let _ = writeln!(&mut output, "f {} {} {}", a, b, c);
+    }
+
+    output
 }
 
 pub(crate) fn build_trail_vertices(points: &[[f32; 3]], game_over: bool) -> Vec<Vertex> {

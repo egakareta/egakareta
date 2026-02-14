@@ -184,6 +184,7 @@ pub struct State {
     editor_pan_right_held: bool,
     editor_shift_held: bool,
     editor_ctrl_held: bool,
+    editor_alt_held: bool,
     editor_mode: EditorMode,
     editor_snap_to_grid: bool,
     editor_snap_step: f32,
@@ -618,6 +619,7 @@ impl State {
             editor_pan_right_held: false,
             editor_shift_held: false,
             editor_ctrl_held: false,
+            editor_alt_held: false,
             editor_mode: EditorMode::Place,
             editor_snap_to_grid: true,
             editor_snap_step: 1.0,
@@ -747,6 +749,11 @@ impl State {
             return;
         }
 
+        if key == "Alt" || key == "AltLeft" || key == "AltRight" {
+            self.set_editor_alt_held(pressed);
+            return;
+        }
+
         if !pressed {
             match key {
                 "ArrowUp" | "w" | "W" => self.set_editor_pan_up_held(false),
@@ -857,6 +864,16 @@ impl State {
             "4" => {
                 if self.is_editor() && just_pressed {
                     self.set_editor_block_id("core/void".to_string());
+                }
+            }
+            "o" | "O" => {
+                if self.is_editor()
+                    && self.editor_ctrl_held
+                    && self.editor_shift_held
+                    && self.editor_alt_held
+                    && just_pressed
+                {
+                    self.trigger_selected_block_obj_export();
                 }
             }
             "c" | "C" => {
