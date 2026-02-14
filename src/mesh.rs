@@ -8,6 +8,15 @@ use std::sync::OnceLock;
 static BLOCK_ASSETS_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/blocks");
 static OBJ_MESHES: OnceLock<HashMap<String, ObjMesh>> = OnceLock::new();
 
+fn pseudo_random_noise(x: f32, y: f32, z: f32) -> f32 {
+    let seed = ((x as i32).wrapping_mul(73856093)
+        ^ (y as i32).wrapping_mul(19349663)
+        ^ (z as i32).wrapping_mul(83492791)) as u32;
+    let mut h = seed;
+    h = (h ^ (h >> 13)).wrapping_mul(0x5bd1e995);
+    (h ^ (h >> 15)) as f32 / 4294967295.0
+}
+
 #[derive(Clone)]
 struct ObjMesh {
     positions: Vec<[f32; 3]>,
@@ -582,9 +591,21 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
 
         let block = resolve_block_definition(&obj.block_id);
 
+        let mut color_top = block.render.color_top;
+        let mut color_side = block.render.color_side;
+
+        if block.render.noise.abs() > f32::EPSILON {
+            let noise = pseudo_random_noise(obj.position[0], obj.position[1], obj.position[2]);
+            let factor = (noise * 2.0 - 1.0) * block.render.noise;
+            for i in 0..3 {
+                color_top[i] = (color_top[i] + factor).clamp(0.0, 1.0);
+                color_side[i] = (color_side[i] + factor).clamp(0.0, 1.0);
+            }
+        }
+
         if let Some(mesh_path) = block.assets.mesh.as_deref() {
             if let Some(mesh) = resolve_obj_mesh(mesh_path) {
-                append_obj_mesh(vertices, obj, mesh, block.render.color_top);
+                append_obj_mesh(vertices, obj, mesh, color_top);
             }
         }
 
@@ -692,9 +713,6 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
                 color_outline,
             );
         } else if vertices.is_empty() {
-            let color_top = block.render.color_top;
-            let color_side = block.render.color_side;
-
             if obj.roundness > f32::EPSILON {
                 append_rounded_prism(
                     vertices,

@@ -42,11 +42,16 @@ jobs:
       - name: Run tests
         run: bun run test --verbose
 
-      - name: Check formatting
+      - name: Check cargo formatting
         if: runner.os == 'Linux'
-        run: bun format -- --check
+        run: bun format:cargo -- --check
+
+      - name: Check prettier formatting
+        if: runner.os == 'Linux'
+        run: bun format:prettier -- --check
 
       - name: Lint with clippy
+        if: runner.os == 'Linux'
         run: bun lint
 
       - name: Build Release
@@ -127,7 +132,7 @@ jobs:
         if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './dist'
+          path: "./dist"
 
   deploy-pages:
     name: Deploy to GitHub Pages

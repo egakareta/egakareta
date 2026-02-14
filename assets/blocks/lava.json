@@ -1,14 +1,14 @@
 {
-  "id": "core/lava",
-  "display_name": "Lava",
-  "render": {
-    "profile": "solid",
-    "color_top": [0.85, 0.2, 0.08, 1.0],
-    "color_side": [0.55, 0.12, 0.05, 1.0]
-  },
-  "behavior": {
-    "collision": "hazard",
-    "support_surface": false
-  },
-  "placeable": true
+    "id": "core/lava",
+    "display_name": "Lava",
+    "render": {
+        "profile": "solid",
+        "color_top": [0.85, 0.2, 0.08, 1.0],
+        "color_side": [0.55, 0.12, 0.05, 1.0]
+    },
+    "behavior": {
+        "collision": "hazard",
+        "support_surface": false
+    },
+    "placeable": true
 }

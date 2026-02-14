@@ -1,18 +1,18 @@
 {
-  "id": "core/speedportal",
-  "display_name": "Speed Portal",
-  "assets": {
-    "mesh": "speedportal.obj"
-  },
-  "render": {
-    "profile": "speed_portal",
-    "color_top": [1.0, 1.0, 0.0, 1.0]
-  },
-  "behavior": {
-    "collision": "portal",
-    "speed_multiplier": 1.5,
-    "support_surface": false,
-    "consumed_on_overlap": true
-  },
-  "placeable": true
+    "id": "core/speedportal",
+    "display_name": "Speed Portal",
+    "assets": {
+        "mesh": "speedportal.obj"
+    },
+    "render": {
+        "profile": "speed_portal",
+        "color_top": [1.0, 1.0, 0.0, 1.0]
+    },
+    "behavior": {
+        "collision": "portal",
+        "speed_multiplier": 1.5,
+        "support_surface": false,
+        "consumed_on_overlap": true
+    },
+    "placeable": true
 }

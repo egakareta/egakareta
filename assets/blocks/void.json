@@ -1,14 +1,14 @@
 {
-  "id": "core/void",
-  "display_name": "Void",
-  "render": {
-    "profile": "void_frame",
-    "color_fill": [0.0, 0.0, 0.0, 1.0],
-    "color_outline": [0.8, 0.8, 0.9, 1.0]
-  },
-  "behavior": {
-    "collision": "pass_through",
-    "support_surface": false
-  },
-  "placeable": true
+    "id": "core/void",
+    "display_name": "Void",
+    "render": {
+        "profile": "void_frame",
+        "color_fill": [0.0, 0.0, 0.0, 1.0],
+        "color_outline": [0.8, 0.8, 0.9, 1.0]
+    },
+    "behavior": {
+        "collision": "pass_through",
+        "support_surface": false
+    },
+    "placeable": true
 }

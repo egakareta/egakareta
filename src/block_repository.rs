@@ -53,6 +53,10 @@ fn default_placeable() -> bool {
     true
 }
 
+fn default_noise() -> f32 {
+    0.0
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct BlockDefinition {
     pub(crate) id: String,
@@ -112,6 +116,8 @@ pub(crate) struct BlockRender {
     pub(crate) color_fill: [f32; 4],
     #[serde(default = "default_color_outline")]
     pub(crate) color_outline: [f32; 4],
+    #[serde(default = "default_noise")]
+    pub(crate) noise: f32,
 }
 
 impl Default for BlockRender {
@@ -122,6 +128,7 @@ impl Default for BlockRender {
             color_side: default_color_side(),
             color_fill: default_color_fill(),
             color_outline: default_color_outline(),
+            noise: default_noise(),
         }
     }
 }

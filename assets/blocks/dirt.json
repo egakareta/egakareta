@@ -1,14 +1,14 @@
 {
-  "id": "core/dirt",
-  "display_name": "Dirt",
-  "render": {
-    "profile": "solid",
-    "color_top": [0.4, 0.3, 0.2, 1.0],
-    "color_side": [0.35, 0.25, 0.15, 1.0]
-  },
-  "behavior": {
-    "collision": "solid",
-    "support_surface": true
-  },
-  "placeable": true
+    "id": "core/dirt",
+    "display_name": "Dirt",
+    "render": {
+        "profile": "solid",
+        "color_top": [0.4, 0.3, 0.2, 1.0],
+        "color_side": [0.35, 0.25, 0.15, 1.0]
+    },
+    "behavior": {
+        "collision": "solid",
+        "support_surface": true
+    },
+    "placeable": true
 }
