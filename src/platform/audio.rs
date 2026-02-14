@@ -284,3 +284,58 @@ pub(crate) fn decode_audio_to_waveform(
 
     Some((peaks, sample_rate))
 }
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn decode_audio_to_waveform_async(
+    bytes: &[u8],
+    window_size: usize,
+) -> Option<(Vec<f32>, u32)> {
+    use wasm_bindgen::JsCast as _;
+
+    let context = web_sys::AudioContext::new().ok()?;
+    let uint8_array = js_sys::Uint8Array::from(bytes);
+    let array_buffer = uint8_array.buffer();
+
+    let decode_promise = context.decode_audio_data(&array_buffer).ok()?;
+    let decoded = wasm_bindgen_futures::JsFuture::from(decode_promise)
+        .await
+        .ok()?;
+    let audio_buffer: web_sys::AudioBuffer = decoded.dyn_into().ok()?;
+
+    let sample_rate = audio_buffer.sample_rate() as u32;
+    let channels = audio_buffer.number_of_channels().max(1) as usize;
+    let frame_len = audio_buffer.length() as usize;
+
+    let mut channel_data = Vec::with_capacity(channels);
+    for channel_index in 0..channels {
+        let channel = audio_buffer.get_channel_data(channel_index as u32).ok()?;
+        channel_data.push(channel);
+    }
+
+    let mut peaks: Vec<f32> = Vec::new();
+    let mut window_peak: f32 = 0.0;
+    let mut window_count: usize = 0;
+    let channel_scale = channels as f32;
+
+    for frame_index in 0..frame_len {
+        for channel in &channel_data {
+            let normalized = channel[frame_index].abs() / channel_scale;
+            window_peak = window_peak.max(normalized);
+            window_count += 1;
+
+            if window_count >= window_size {
+                peaks.push(window_peak);
+                window_peak = 0.0;
+                window_count = 0;
+            }
+        }
+    }
+
+    if window_count > 0 {
+        peaks.push(window_peak);
+    }
+
+    let _ = context.close();
+
+    Some((peaks, sample_rate))
+}

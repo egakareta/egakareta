@@ -59,6 +59,7 @@ impl State {
     pub fn update(&mut self) {
         self.editor_perf.begin_frame();
         self.update_audio_imports();
+        self.update_waveform_loading();
         const FIXED_DT: f32 = 1.0 / 120.0;
 
         let now = PlatformInstant::now();

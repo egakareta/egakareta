@@ -243,9 +243,14 @@ pub struct State {
         std::sync::mpsc::Sender<AudioImportData>,
         std::sync::mpsc::Receiver<AudioImportData>,
     ),
+    waveform_load_channel: (
+        std::sync::mpsc::Sender<WaveformLoadData>,
+        std::sync::mpsc::Receiver<WaveformLoadData>,
+    ),
 }
 
 type AudioImportData = (String, Vec<u8>);
+type WaveformLoadData = (String, Option<(Vec<f32>, u32)>);
 
 #[derive(Clone, Copy, Default)]
 struct EditorDirtyFlags {
@@ -879,6 +884,7 @@ impl State {
             playtesting_editor: false,
             local_audio_cache,
             audio_import_channel: std::sync::mpsc::channel(),
+            waveform_load_channel: std::sync::mpsc::channel(),
         }
     }
 
