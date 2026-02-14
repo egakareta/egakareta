@@ -464,6 +464,7 @@ mod tests {
             MusicMetadata::default(),
             SpawnMetadata::default(),
             Vec::new(),
+            Vec::new(),
             0.0,
             16.0,
             vec![LevelObject {
