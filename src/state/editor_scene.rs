@@ -60,54 +60,34 @@ impl State {
     }
 
     pub(super) fn apply_spawn_to_game(&mut self, position: [f32; 3], direction: SpawnDirection) {
-        let centered_position = [
-            position[0].floor() + 0.5,
-            position[1].floor() + 0.5,
-            position[2],
-        ];
-        self.game.position = centered_position;
-        self.game.direction = direction.into();
-        self.game.vertical_velocity = 0.0;
-        self.game.is_grounded = true;
-        self.game.trail_segments = vec![vec![centered_position]];
+        self.game.apply_spawn(position, direction);
     }
 
-    pub(super) fn editor_timeline_position(&self, step: u32) -> ([f32; 3], SpawnDirection) {
+    pub(super) fn editor_timeline_position(&self, time_seconds: f32) -> ([f32; 3], SpawnDirection) {
         derive_timeline_position(
             self.editor_spawn.position,
             self.editor_spawn.direction,
-            &self.editor_tap_steps,
-            step,
+            &self.editor_tap_times,
+            time_seconds,
             &self.editor_objects,
         )
     }
 
-    pub(super) fn editor_timeline_elapsed_seconds(&self, step: u32) -> f32 {
+    pub(super) fn editor_timeline_elapsed_seconds(&self, time_seconds: f32) -> f32 {
         derive_timeline_elapsed_seconds(
             self.editor_spawn.position,
             self.editor_spawn.direction,
-            &self.editor_tap_steps,
-            step,
+            &self.editor_tap_times,
+            time_seconds,
             &self.editor_objects,
         )
     }
 
-    pub(super) fn editor_timeline_step_seconds(&self, step: u32) -> f32 {
-        derive_timeline_step_seconds(
-            self.editor_spawn.position,
-            self.editor_spawn.direction,
-            &self.editor_tap_steps,
-            step,
-            &self.editor_objects,
-        )
-    }
-
-    pub(super) fn refresh_editor_timeline_position(&mut self) {
-        if self.phase != AppPhase::Editor {
-            return;
-        }
-
-        let (position, ..) = self.editor_timeline_position(self.editor_timeline_step);
+    pub(super) fn apply_editor_timeline_preview_state(
+        &mut self,
+        position: [f32; 3],
+        direction: SpawnDirection,
+    ) {
         let bounds = self.editor.bounds;
         self.editor.cursor = [
             position[0].round() as i32,
@@ -123,7 +103,17 @@ impl State {
         self.editor_camera_pan[1] = (position[1] + 0.5).clamp(-max_pan, max_pan);
 
         self.rebuild_editor_cursor_vertices();
-        self.rebuild_editor_preview_player_vertices();
+        self.rebuild_editor_preview_player_vertices_for_state(position, direction);
+    }
+
+    pub(super) fn refresh_editor_timeline_position(&mut self) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        let (position, direction) =
+            self.editor_timeline_position(self.editor_timeline_time_seconds);
+        self.apply_editor_timeline_preview_state(position, direction);
     }
 
     pub(super) fn rebuild_editor_cursor_vertices(&mut self) {
@@ -269,17 +259,17 @@ impl State {
         }
 
         let mut positions = Vec::new();
-        for &step in &self.editor_tap_steps {
+        for &time_seconds in &self.editor_tap_times {
             let (pos, _) = derive_timeline_position(
                 self.editor_spawn.position,
                 self.editor_spawn.direction,
-                &self.editor_tap_steps,
-                step,
+                &self.editor_tap_times,
+                time_seconds,
                 &self.editor_objects,
             );
             positions.push([
-                pos[0].round() as i32,
-                pos[1].round() as i32,
+                (pos[0] - 0.5).round() as i32,
+                (pos[1] - 0.5).round() as i32,
                 pos[2].round() as i32,
             ]);
         }
@@ -301,9 +291,22 @@ impl State {
             return;
         }
 
-        let (position, direction) = self.editor_timeline_position(self.editor_timeline_step);
-        let is_tapping = self.editor_tap_steps.contains(&self.editor_timeline_step);
-        let vertices = build_editor_preview_player_vertices(position, direction, is_tapping);
+        let (position, direction) =
+            self.editor_timeline_position(self.editor_timeline_time_seconds);
+        self.rebuild_editor_preview_player_vertices_for_state(position, direction);
+    }
+
+    fn rebuild_editor_preview_player_vertices_for_state(
+        &mut self,
+        position: [f32; 3],
+        direction: SpawnDirection,
+    ) {
+        let is_tapping = self
+            .editor_tap_times
+            .iter()
+            .any(|tap| (tap - self.editor_timeline_time_seconds).abs() <= 0.01);
+        let preview_origin = [position[0] - 0.5, position[1] - 0.5, position[2]];
+        let vertices = build_editor_preview_player_vertices(preview_origin, direction, is_tapping);
         self.editor_preview_player_mesh.replace_with_vertices(
             &self.device,
             "Editor Preview Player Vertex Buffer",

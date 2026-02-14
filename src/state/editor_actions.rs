@@ -6,27 +6,35 @@ impl State {
             return;
         }
 
-        self.editor_timeline_playback_accumulator = 0.0;
         self.stop_audio();
+        self.editor_timeline_playback_runtime = Some(TimelineSimulationRuntime::new(
+            self.editor_spawn.position,
+            self.editor_spawn.direction,
+            &self.editor_objects,
+            &self.editor_tap_times,
+        ));
+        if let Some(runtime) = self.editor_timeline_playback_runtime.as_mut() {
+            runtime.advance_to(self.editor_timeline_time_seconds);
+        }
 
         let metadata = self.current_editor_metadata();
         let level_name = self
             .editor_level_name
             .clone()
             .unwrap_or_else(|| "Untitled".to_string());
-        let start_seconds = self.editor_timeline_elapsed_seconds(self.editor_timeline_step);
+        let start_seconds = self.editor_timeline_elapsed_seconds(self.editor_timeline_time_seconds);
         self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
     }
 
-    pub(super) fn editor_shift_timeline_step(&mut self, delta: i32) {
+    pub(super) fn editor_shift_timeline_time(&mut self, delta_seconds: f32) {
         if self.phase != AppPhase::Editor {
             return;
         }
 
-        let max_step = self.editor_timeline_length.saturating_sub(1) as i32;
-        let next_step = (self.editor_timeline_step as i32 + delta).clamp(0, max_step) as u32;
-        if next_step != self.editor_timeline_step {
-            self.set_editor_timeline_step(next_step);
+        let next_time = (self.editor_timeline_time_seconds + delta_seconds)
+            .clamp(0.0, self.editor_timeline_duration_seconds);
+        if (next_time - self.editor_timeline_time_seconds).abs() > f32::EPSILON {
+            self.set_editor_timeline_time_seconds(next_time);
         }
     }
 
@@ -122,19 +130,30 @@ impl State {
         }
 
         self.editor_timeline_playing = !self.editor_timeline_playing;
-        self.editor_timeline_playback_accumulator = 0.0;
 
         if self.editor_timeline_playing {
+            self.editor_timeline_playback_runtime = Some(TimelineSimulationRuntime::new(
+                self.editor_spawn.position,
+                self.editor_spawn.direction,
+                &self.editor_objects,
+                &self.editor_tap_times,
+            ));
+            if let Some(runtime) = self.editor_timeline_playback_runtime.as_mut() {
+                runtime.advance_to(self.editor_timeline_time_seconds);
+            }
+
             let metadata = self.current_editor_metadata();
             let level_name = self
                 .editor_level_name
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string());
-            let start_seconds = self.editor_timeline_elapsed_seconds(self.editor_timeline_step);
+            let start_seconds =
+                self.editor_timeline_elapsed_seconds(self.editor_timeline_time_seconds);
             self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
             return;
         }
 
+        self.editor_timeline_playback_runtime = None;
         self.stop_audio();
     }
 
@@ -172,15 +191,15 @@ impl State {
         }
 
         self.editor_timeline_playing = false;
-        self.editor_timeline_playback_accumulator = 0.0;
+        self.editor_timeline_playback_runtime = None;
         self.stop_audio();
 
         let transition = build_editor_playtest_transition(
             &self.editor_objects,
             self.editor_level_name.as_deref(),
             self.editor_spawn.clone(),
-            &self.editor_tap_steps,
-            self.editor_timeline_step,
+            &self.editor_tap_times,
+            self.editor_timeline_time_seconds,
         );
 
         self.enter_playing_phase(transition.playing_level_name, true);
@@ -222,7 +241,7 @@ impl State {
 
     pub fn back_to_menu(&mut self) {
         self.editor_timeline_playing = false;
-        self.editor_timeline_playback_accumulator = 0.0;
+        self.editor_timeline_playback_runtime = None;
         self.stop_audio();
         if let Some(objects) =
             playtest_return_objects(self.playtesting_editor, &self.editor_objects)
@@ -230,7 +249,7 @@ impl State {
             self.playtesting_editor = false;
             self.phase = AppPhase::Editor;
             self.editor_timeline_playing = false;
-            self.editor_timeline_playback_accumulator = 0.0;
+            self.editor_timeline_playback_runtime = None;
             self.game = GameState::new();
             self.game.objects = objects;
             self.rebuild_block_vertices();

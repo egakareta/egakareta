@@ -231,33 +231,34 @@ impl State {
         &self.editor_selected_block_id
     }
 
-    pub fn editor_timeline_step(&self) -> u32 {
-        self.editor_timeline_step
+    pub fn editor_timeline_time_seconds(&self) -> f32 {
+        self.editor_timeline_time_seconds
     }
 
-    pub fn editor_timeline_length(&self) -> u32 {
-        self.editor_timeline_length
+    pub fn editor_timeline_duration_seconds(&self) -> f32 {
+        self.editor_timeline_duration_seconds
     }
 
-    pub fn editor_tap_steps(&self) -> &[u32] {
-        &self.editor_tap_steps
+    pub fn editor_tap_times(&self) -> &[f32] {
+        &self.editor_tap_times
     }
 
-    pub fn set_editor_timeline_step(&mut self, step: u32) {
+    pub fn set_editor_timeline_time_seconds(&mut self, time_seconds: f32) {
         self.record_editor_history_state();
-        let max_step = self.editor_timeline_length.saturating_sub(1);
-        self.editor_timeline_step = step.min(max_step);
+        self.editor_timeline_time_seconds =
+            time_seconds.clamp(0.0, self.editor_timeline_duration_seconds.max(0.0));
         self.refresh_editor_timeline_position();
         self.resync_editor_timeline_playback_audio();
     }
 
-    pub fn set_editor_timeline_length(&mut self, length: u32) {
+    pub fn set_editor_timeline_duration_seconds(&mut self, duration_seconds: f32) {
         self.record_editor_history_state();
-        let length = length.max(1);
-        let max_step = length.saturating_sub(1);
-        self.editor_timeline_length = length;
-        self.editor_timeline_step = self.editor_timeline_step.min(max_step);
-        self.editor_tap_steps.retain(|step| *step < length);
+        self.editor_timeline_duration_seconds = duration_seconds.max(0.1);
+        self.editor_timeline_time_seconds = self
+            .editor_timeline_time_seconds
+            .min(self.editor_timeline_duration_seconds);
+        self.editor_tap_times
+            .retain(|time_seconds| *time_seconds <= self.editor_timeline_duration_seconds);
         self.refresh_editor_timeline_position();
         self.resync_editor_timeline_playback_audio();
         self.rebuild_tap_indicator_vertices();
@@ -265,26 +266,32 @@ impl State {
 
     pub fn editor_add_tap(&mut self) {
         self.record_editor_history_state();
-        add_tap_step(&mut self.editor_tap_steps, self.editor_timeline_step);
+        add_tap_time(
+            &mut self.editor_tap_times,
+            self.editor_timeline_time_seconds,
+        );
         self.refresh_editor_timeline_position();
         self.rebuild_tap_indicator_vertices();
     }
 
     pub fn editor_remove_tap(&mut self) {
         self.record_editor_history_state();
-        remove_tap_step(&mut self.editor_tap_steps, self.editor_timeline_step);
+        remove_tap_time(
+            &mut self.editor_tap_times,
+            self.editor_timeline_time_seconds,
+        );
         self.refresh_editor_timeline_position();
         self.rebuild_tap_indicator_vertices();
     }
 
     pub fn editor_clear_taps(&mut self) {
         self.record_editor_history_state();
-        clear_tap_steps(&mut self.editor_tap_steps);
+        clear_tap_times(&mut self.editor_tap_times);
         self.refresh_editor_timeline_position();
         self.rebuild_tap_indicator_vertices();
     }
 
     pub(crate) fn editor_timeline_preview(&self) -> ([f32; 3], SpawnDirection) {
-        self.editor_timeline_position(self.editor_timeline_step)
+        self.editor_timeline_position(self.editor_timeline_time_seconds)
     }
 }

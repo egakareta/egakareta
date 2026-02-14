@@ -14,13 +14,13 @@ use wgpu::util::DeviceExt;
 
 use crate::block_repository::DEFAULT_BLOCK_ID;
 use crate::editor_domain::{
-    add_tap_step, build_editor_playtest_transition, build_playing_transition_from_metadata,
-    clear_tap_steps, create_block_at_cursor, derive_timeline_elapsed_seconds,
-    derive_timeline_position, derive_timeline_step_seconds, editor_session_init_from_metadata,
-    move_cursor_xy, playtest_return_objects, remove_tap_step, remove_topmost_block_at_cursor,
+    add_tap_time, build_editor_playtest_transition, build_playing_transition_from_metadata,
+    clear_tap_times, create_block_at_cursor, derive_timeline_elapsed_seconds,
+    derive_timeline_position, editor_session_init_from_metadata, move_cursor_xy,
+    playtest_return_objects, remove_tap_time, remove_topmost_block_at_cursor,
     toggle_spawn_direction,
 };
-use crate::game::{create_menu_scene, GameState};
+use crate::game::{create_menu_scene, GameState, TimelineSimulationRuntime};
 use crate::level_repository::builtin_level_names;
 use crate::mesh::{
     build_block_vertices, build_editor_cursor_vertices, build_editor_gizmo_vertices,
@@ -178,11 +178,11 @@ pub struct State {
     playing_camera_rotation: f32,
     playing_camera_pitch: f32,
     editor_zoom: f32,
-    editor_timeline_step: u32,
-    editor_timeline_length: u32,
-    editor_tap_steps: Vec<u32>,
+    editor_timeline_time_seconds: f32,
+    editor_timeline_duration_seconds: f32,
+    editor_tap_times: Vec<f32>,
     editor_timeline_playing: bool,
-    editor_timeline_playback_accumulator: f32,
+    editor_timeline_playback_runtime: Option<TimelineSimulationRuntime>,
     editor_right_dragging: bool,
     editor_pan_up_held: bool,
     editor_pan_down_held: bool,
@@ -277,9 +277,9 @@ struct EditorHistorySnapshot {
     cursor: [i32; 3],
     selected_block_id: String,
     spawn: SpawnMetadata,
-    timeline_step: u32,
-    timeline_length: u32,
-    tap_steps: Vec<u32>,
+    timeline_time_seconds: f32,
+    timeline_duration_seconds: f32,
+    tap_times: Vec<f32>,
 }
 
 #[derive(Clone)]
@@ -626,11 +626,11 @@ impl State {
             playing_camera_rotation: -45.0f32.to_radians(),
             playing_camera_pitch: 45.0f32.to_radians(),
             editor_zoom: 1.0,
-            editor_timeline_step: 0,
-            editor_timeline_length: 64,
-            editor_tap_steps: Vec::new(),
+            editor_timeline_time_seconds: 0.0,
+            editor_timeline_duration_seconds: 16.0,
+            editor_tap_times: Vec::new(),
             editor_timeline_playing: false,
-            editor_timeline_playback_accumulator: 0.0,
+            editor_timeline_playback_runtime: None,
             editor_right_dragging: false,
             editor_pan_up_held: false,
             editor_pan_down_held: false,
@@ -692,7 +692,7 @@ impl State {
                             .clone()
                             .unwrap_or_else(|| "Untitled".to_string());
                         let start_seconds =
-                            self.editor_timeline_elapsed_seconds(self.editor_timeline_step);
+                            self.editor_timeline_elapsed_seconds(self.editor_timeline_time_seconds);
                         self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
                     } else if let Some(level_name) = self.playing_level_name.clone() {
                         if let Some(metadata) = self.load_level_metadata(&level_name) {
@@ -790,7 +790,7 @@ impl State {
             "ArrowUp" => {
                 if self.is_editor() {
                     if !self.editor_nudge_selected_blocks(0, 1) {
-                        self.editor_shift_timeline_step(1);
+                        self.editor_shift_timeline_time(0.1);
                     }
                 } else if just_pressed {
                     self.turn_right();
@@ -798,13 +798,13 @@ impl State {
             }
             "ArrowDown" => {
                 if self.is_editor() && !self.editor_nudge_selected_blocks(0, -1) {
-                    self.editor_shift_timeline_step(-1);
+                    self.editor_shift_timeline_time(-0.1);
                 }
             }
             "ArrowRight" => {
                 if self.is_editor() {
                     if !self.editor_nudge_selected_blocks(1, 0) {
-                        self.editor_shift_timeline_step(1);
+                        self.editor_shift_timeline_time(0.1);
                     }
                 } else if just_pressed {
                     self.next_level();
@@ -813,7 +813,7 @@ impl State {
             "ArrowLeft" => {
                 if self.is_editor() {
                     if !self.editor_nudge_selected_blocks(-1, 0) {
-                        self.editor_shift_timeline_step(-1);
+                        self.editor_shift_timeline_time(-0.1);
                     }
                 } else if just_pressed {
                     self.prev_level();
@@ -1010,45 +1010,74 @@ mod tests {
 
     #[test]
     fn derives_position_without_taps() {
-        let (position, direction) =
-            derive_timeline_position([0.0, 0.0, 0.0], SpawnDirection::Forward, &[], 3, &[]);
-        assert_eq!(position, [0.0, 3.0, 0.0]);
+        let step_time = 1.0 / crate::game::BASE_PLAYER_SPEED;
+        let (position, direction) = derive_timeline_position(
+            [0.0, 0.0, 0.0],
+            SpawnDirection::Forward,
+            &[],
+            3.0 * step_time,
+            &[],
+        );
+        assert!((position[0] - 0.5).abs() < 0.1);
+        assert!((position[1] - 3.5).abs() < 0.1);
         assert!(matches!(direction, SpawnDirection::Forward));
     }
 
     #[test]
     fn derives_position_with_taps() {
-        let taps = [2, 4];
-        let (position, direction) =
-            derive_timeline_position([0.0, 0.0, 0.0], SpawnDirection::Forward, &taps, 5, &[]);
-        assert_eq!(position, [2.0, 3.0, 0.0]);
+        let step_time = 1.0 / crate::game::BASE_PLAYER_SPEED;
+        let taps = [2.0 * step_time, 4.0 * step_time];
+        let (position, direction) = derive_timeline_position(
+            [0.0, 0.0, 0.0],
+            SpawnDirection::Forward,
+            &taps,
+            5.0 * step_time,
+            &[],
+        );
+        assert!((position[0] - 2.5).abs() < 0.1);
+        assert!((position[1] - 3.5).abs() < 0.1);
         assert!(matches!(direction, SpawnDirection::Forward));
     }
 
     #[test]
     fn tap_at_zero_changes_direction() {
-        let taps = [0];
+        let taps = [0.0];
         let (position, direction) =
-            derive_timeline_position([0.0, 0.0, 0.0], SpawnDirection::Forward, &taps, 0, &[]);
-        assert_eq!(position, [0.0, 0.0, 0.0]);
+            derive_timeline_position([0.0, 0.0, 0.0], SpawnDirection::Forward, &taps, 0.0, &[]);
+        assert!((position[0] - 0.5).abs() < 0.1);
+        assert!((position[1] - 0.5).abs() < 0.1);
         assert!(matches!(direction, SpawnDirection::Right));
     }
 
     #[test]
     fn ignores_taps_after_step() {
-        let taps = [5];
-        let (position, direction) =
-            derive_timeline_position([1.0, 1.0, 0.0], SpawnDirection::Forward, &taps, 2, &[]);
-        assert_eq!(position, [1.0, 3.0, 0.0]);
+        let step_time = 1.0 / crate::game::BASE_PLAYER_SPEED;
+        let taps = [5.0 * step_time];
+        let (position, direction) = derive_timeline_position(
+            [1.0, 1.0, 0.0],
+            SpawnDirection::Forward,
+            &taps,
+            2.0 * step_time,
+            &[],
+        );
+        assert!((position[0] - 1.5).abs() < 0.1);
+        assert!((position[1] - 3.5).abs() < 0.1);
         assert!(matches!(direction, SpawnDirection::Forward));
     }
 
     #[test]
     fn supports_offset_spawn_with_tap() {
-        let taps = [2];
-        let (position, direction) =
-            derive_timeline_position([2.0, 2.0, 0.0], SpawnDirection::Right, &taps, 3, &[]);
-        assert_eq!(position, [4.0, 3.0, 0.0]);
+        let step_time = 1.0 / crate::game::BASE_PLAYER_SPEED;
+        let taps = [2.0 * step_time];
+        let (position, direction) = derive_timeline_position(
+            [2.0, 2.0, 0.0],
+            SpawnDirection::Right,
+            &taps,
+            3.0 * step_time,
+            &[],
+        );
+        assert!((position[0] - 4.5).abs() < 0.1);
+        assert!((position[1] - 3.5).abs() < 0.1);
         assert!(matches!(direction, SpawnDirection::Forward));
     }
 
@@ -1061,9 +1090,14 @@ mod tests {
             roundness: 0.18,
             block_id: "core/standard".to_string(),
         }];
-        let (position, direction) =
-            derive_timeline_position([0.0, 0.0, 3.0], SpawnDirection::Forward, &[], 1, &objects);
-        assert_eq!(position, [0.0, 1.0, 0.0]);
+        let (position, direction) = derive_timeline_position(
+            [0.0, 0.0, 3.0],
+            SpawnDirection::Forward,
+            &[],
+            1.0 / crate::game::BASE_PLAYER_SPEED,
+            &objects,
+        );
+        assert!(position[2] <= 3.0);
         assert!(matches!(direction, SpawnDirection::Forward));
     }
 }

@@ -21,27 +21,50 @@ impl State {
             self.trail_mesh.clear();
 
             if self.editor_timeline_playing {
-                self.editor_timeline_playback_accumulator += frame_dt;
+                let audio_time = self
+                    .audio
+                    .playback_time_seconds()
+                    .unwrap_or(self.editor_timeline_time_seconds);
+                let clamped_time = audio_time.min(self.editor_timeline_duration_seconds);
 
-                loop {
-                    let step_seconds = self
-                        .editor_timeline_step_seconds(self.editor_timeline_step)
-                        .max(1.0 / 240.0);
-                    if self.editor_timeline_playback_accumulator < step_seconds {
-                        break;
+                if (clamped_time - self.editor_timeline_time_seconds).abs() > 1e-4 {
+                    self.editor_timeline_time_seconds = clamped_time;
+
+                    let mut applied_runtime_state = false;
+                    if let Some(runtime) = self.editor_timeline_playback_runtime.as_mut() {
+                        if clamped_time + 1e-6 >= runtime.elapsed_seconds() {
+                            runtime.advance_to(clamped_time);
+                            let snapshot = runtime.snapshot();
+                            self.apply_editor_timeline_preview_state(
+                                snapshot.position,
+                                snapshot.direction,
+                            );
+                            applied_runtime_state = true;
+                        }
                     }
 
-                    self.editor_timeline_playback_accumulator -= step_seconds;
-                    let max_step = self.editor_timeline_length.saturating_sub(1);
-                    if self.editor_timeline_step >= max_step {
-                        self.editor_timeline_playing = false;
-                        self.editor_timeline_playback_accumulator = 0.0;
-                        self.stop_audio();
-                        break;
+                    if !applied_runtime_state {
+                        let mut runtime = TimelineSimulationRuntime::new(
+                            self.editor_spawn.position,
+                            self.editor_spawn.direction,
+                            &self.editor_objects,
+                            &self.editor_tap_times,
+                        );
+                        runtime.advance_to(clamped_time);
+                        let snapshot = runtime.snapshot();
+                        self.apply_editor_timeline_preview_state(
+                            snapshot.position,
+                            snapshot.direction,
+                        );
+                        self.editor_timeline_playback_runtime = Some(runtime);
                     }
+                }
 
-                    self.editor_timeline_step += 1;
-                    self.refresh_editor_timeline_position();
+                if clamped_time >= self.editor_timeline_duration_seconds || !self.audio.is_playing()
+                {
+                    self.editor_timeline_playing = false;
+                    self.editor_timeline_playback_runtime = None;
+                    self.stop_audio();
                 }
             }
 

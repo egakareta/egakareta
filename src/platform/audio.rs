@@ -7,6 +7,10 @@ pub(crate) struct PlatformAudio {
     output_handle: Option<rodio::OutputStreamHandle>,
     #[cfg(not(target_arch = "wasm32"))]
     current_sink: Option<rodio::Sink>,
+    #[cfg(not(target_arch = "wasm32"))]
+    playback_started_at: Option<std::time::Instant>,
+    #[cfg(not(target_arch = "wasm32"))]
+    playback_start_offset_seconds: f32,
 }
 
 impl PlatformAudio {
@@ -32,6 +36,8 @@ impl PlatformAudio {
                 _output_stream: output_stream,
                 output_handle,
                 current_sink: None,
+                playback_started_at: None,
+                playback_start_offset_seconds: 0.0,
             }
         }
     }
@@ -43,8 +49,12 @@ impl PlatformAudio {
         }
 
         #[cfg(not(target_arch = "wasm32"))]
-        if let Some(sink) = self.current_sink.take() {
-            sink.stop();
+        {
+            if let Some(sink) = self.current_sink.take() {
+                sink.stop();
+            }
+            self.playback_started_at = None;
+            self.playback_start_offset_seconds = 0.0;
         }
     }
 
@@ -55,6 +65,8 @@ impl PlatformAudio {
         start_seconds: f32,
     ) {
         let start_seconds = start_seconds.max(0.0);
+        self.stop();
+
         #[cfg(target_arch = "wasm32")]
         {
             let uint8_array = unsafe { js_sys::Uint8Array::view(bytes) };
@@ -86,6 +98,8 @@ impl PlatformAudio {
                             );
                             sink.play();
                             self.current_sink = Some(sink);
+                            self.playback_started_at = Some(std::time::Instant::now());
+                            self.playback_start_offset_seconds = start_seconds;
                         }
                         Err(err) => {
                             log::warn!("Failed to create audio sink for imported audio: {}", err);
@@ -105,6 +119,8 @@ impl PlatformAudio {
 
     pub(crate) fn start_at(&mut self, level_name: &str, music_source: &str, start_seconds: f32) {
         let start_seconds = start_seconds.max(0.0);
+        self.stop();
+
         #[cfg(target_arch = "wasm32")]
         {
             let audio_url = format!("assets/levels/{}/{}", level_name, music_source);
@@ -134,6 +150,8 @@ impl PlatformAudio {
                                     ));
                                     sink.play();
                                     self.current_sink = Some(sink);
+                                    self.playback_started_at = Some(std::time::Instant::now());
+                                    self.playback_start_offset_seconds = start_seconds;
                                 }
                                 Err(err) => {
                                     log::warn!(
@@ -157,6 +175,45 @@ impl PlatformAudio {
                     }
                 }
             }
+        }
+    }
+
+    pub(crate) fn playback_time_seconds(&self) -> Option<f32> {
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.current_audio
+                .as_ref()
+                .map(|audio| audio.current_time() as f32)
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let sink = self.current_sink.as_ref()?;
+            if sink.empty() {
+                return None;
+            }
+
+            let started_at = self.playback_started_at?;
+            Some(self.playback_start_offset_seconds + started_at.elapsed().as_secs_f32())
+        }
+    }
+
+    pub(crate) fn is_playing(&self) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        {
+            if let Some(audio) = &self.current_audio {
+                !audio.paused() && !audio.ended()
+            } else {
+                false
+            }
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.current_sink
+                .as_ref()
+                .map(|sink| !sink.empty())
+                .unwrap_or(false)
         }
     }
 }

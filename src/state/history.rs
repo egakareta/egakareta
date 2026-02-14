@@ -9,9 +9,9 @@ impl State {
             cursor: self.editor.cursor,
             selected_block_id: self.editor_selected_block_id.clone(),
             spawn: self.editor_spawn.clone(),
-            timeline_step: self.editor_timeline_step,
-            timeline_length: self.editor_timeline_length,
-            tap_steps: self.editor_tap_steps.clone(),
+            timeline_time_seconds: self.editor_timeline_time_seconds,
+            timeline_duration_seconds: self.editor_timeline_duration_seconds,
+            tap_times: self.editor_tap_times.clone(),
         }
     }
 
@@ -44,14 +44,17 @@ impl State {
         self.editor.cursor = snapshot.cursor;
         self.editor_selected_block_id = snapshot.selected_block_id;
         self.editor_spawn = snapshot.spawn;
-        self.editor_timeline_step = snapshot.timeline_step;
-        self.editor_timeline_length = snapshot.timeline_length.max(1);
-        self.editor_tap_steps = snapshot.tap_steps;
-        self.editor_tap_steps
-            .retain(|step| *step < self.editor_timeline_length);
-        self.editor_timeline_step = self
-            .editor_timeline_step
-            .min(self.editor_timeline_length.saturating_sub(1));
+        self.editor_timeline_time_seconds = snapshot.timeline_time_seconds.max(0.0);
+        self.editor_timeline_duration_seconds = snapshot.timeline_duration_seconds.max(0.1);
+        self.editor_tap_times = snapshot.tap_times;
+        self.editor_tap_times
+            .retain(|tap| tap.is_finite() && *tap >= 0.0);
+        self.editor_tap_times.sort_by(f32::total_cmp);
+        self.editor_tap_times
+            .retain(|tap| *tap <= self.editor_timeline_duration_seconds);
+        self.editor_timeline_time_seconds = self
+            .editor_timeline_time_seconds
+            .min(self.editor_timeline_duration_seconds);
 
         self.editor_gizmo_drag = None;
         self.editor_block_drag = None;

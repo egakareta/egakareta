@@ -29,12 +29,20 @@ fn is_default_spawn_position(value: &[f32; 3]) -> bool {
     value.iter().all(|component| component.abs() <= 1e-6)
 }
 
-fn default_timeline_step() -> u32 {
-    0
+fn default_timeline_time_seconds() -> f32 {
+    0.0
 }
 
-fn is_default_timeline_step(value: &u32) -> bool {
-    *value == 0
+fn is_default_timeline_time_seconds(value: &f32) -> bool {
+    value.abs() <= 1e-6
+}
+
+fn default_timeline_duration_seconds() -> f32 {
+    16.0
+}
+
+fn is_default_timeline_duration_seconds(value: &f32) -> bool {
+    (value - default_timeline_duration_seconds()).abs() <= 1e-6
 }
 
 fn default_block_rotation_degrees() -> f32 {
@@ -152,12 +160,21 @@ pub(crate) struct LevelMetadata {
     #[serde(default, skip_serializing_if = "is_default_spawn_metadata")]
     pub(crate) spawn: SpawnMetadata,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) taps: Vec<u32>,
+    pub(crate) tap_times: Vec<f32>,
     #[serde(
-        default = "default_timeline_step",
-        skip_serializing_if = "is_default_timeline_step"
+        default = "default_timeline_time_seconds",
+        skip_serializing_if = "is_default_timeline_time_seconds"
     )]
-    pub(crate) timeline_step: u32,
+    pub(crate) timeline_time_seconds: f32,
+    #[serde(
+        default = "default_timeline_duration_seconds",
+        skip_serializing_if = "is_default_timeline_duration_seconds"
+    )]
+    pub(crate) timeline_duration_seconds: f32,
+    #[serde(default, rename = "taps", skip_serializing)]
+    pub(crate) legacy_taps: Vec<u32>,
+    #[serde(default, rename = "timeline_step", skip_serializing)]
+    pub(crate) legacy_timeline_step: u32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) objects: Vec<LevelObject>,
     #[serde(flatten)]
@@ -169,8 +186,9 @@ impl LevelMetadata {
         name: String,
         music: MusicMetadata,
         spawn: SpawnMetadata,
-        taps: Vec<u32>,
-        timeline_step: u32,
+        tap_times: Vec<f32>,
+        timeline_time_seconds: f32,
+        timeline_duration_seconds: f32,
         objects: Vec<LevelObject>,
     ) -> Self {
         Self {
@@ -178,8 +196,11 @@ impl LevelMetadata {
             name,
             music,
             spawn,
-            taps,
-            timeline_step,
+            tap_times,
+            timeline_time_seconds,
+            timeline_duration_seconds,
+            legacy_taps: Vec::new(),
+            legacy_timeline_step: 0,
             objects,
             extra: serde_json::Map::new(),
         }
@@ -405,7 +426,8 @@ mod tests {
             MusicMetadata::default(),
             SpawnMetadata::default(),
             Vec::new(),
-            0,
+            0.0,
+            16.0,
             vec![LevelObject {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
@@ -420,6 +442,9 @@ mod tests {
         assert!(value.get("format_version").is_none());
         assert!(value.get("music").is_none());
         assert!(value.get("spawn").is_none());
+        assert!(value.get("tap_times").is_none());
+        assert!(value.get("timeline_time_seconds").is_none());
+        assert!(value.get("timeline_duration_seconds").is_none());
         assert!(value.get("taps").is_none());
         assert!(value.get("timeline_step").is_none());
         assert_eq!(value["objects"].as_array().map(|v| v.len()), Some(1));

@@ -1,5 +1,4 @@
-use crate::block_repository::{resolve_block_definition, BlockCollision};
-use crate::game::BASE_PLAYER_SPEED;
+use crate::game::{simulate_timeline_state, BASE_PLAYER_SPEED};
 use crate::types::{LevelMetadata, LevelObject, MusicMetadata, SpawnDirection, SpawnMetadata};
 
 pub(crate) struct EditorPlaytestTransition {
@@ -33,14 +32,14 @@ pub(crate) fn build_editor_playtest_transition(
     editor_objects: &[LevelObject],
     editor_level_name: Option<&str>,
     editor_spawn: SpawnMetadata,
-    tap_steps: &[u32],
-    timeline_step: u32,
+    tap_times: &[f32],
+    timeline_time_seconds: f32,
 ) -> EditorPlaytestTransition {
     let (spawn_position, spawn_direction) = derive_timeline_position(
         editor_spawn.position,
         editor_spawn.direction,
-        tap_steps,
-        timeline_step,
+        tap_times,
+        timeline_time_seconds,
         editor_objects,
     );
 
@@ -69,8 +68,9 @@ pub(crate) struct EditorSessionInit {
     pub(crate) objects: Vec<LevelObject>,
     pub(crate) spawn: SpawnMetadata,
     pub(crate) music: MusicMetadata,
-    pub(crate) tap_steps: Vec<u32>,
-    pub(crate) timeline_step: u32,
+    pub(crate) tap_times: Vec<f32>,
+    pub(crate) timeline_time_seconds: f32,
+    pub(crate) timeline_duration_seconds: f32,
     pub(crate) cursor: [i32; 3],
     pub(crate) camera_pan: [f32; 2],
 }
@@ -78,13 +78,25 @@ pub(crate) struct EditorSessionInit {
 pub(crate) fn editor_session_init_from_metadata(
     metadata: Option<LevelMetadata>,
 ) -> EditorSessionInit {
-    let (objects, spawn, music, mut tap_steps, timeline_step) = if let Some(metadata) = metadata {
+    let (
+        objects,
+        spawn,
+        music,
+        mut tap_times,
+        mut timeline_time_seconds,
+        timeline_duration_seconds,
+        legacy_taps,
+        legacy_timeline_step,
+    ) = if let Some(metadata) = metadata {
         (
             metadata.objects,
             metadata.spawn,
             metadata.music,
-            metadata.taps,
-            metadata.timeline_step,
+            metadata.tap_times,
+            metadata.timeline_time_seconds,
+            metadata.timeline_duration_seconds,
+            metadata.legacy_taps,
+            metadata.legacy_timeline_step,
         )
     } else {
         (
@@ -92,11 +104,31 @@ pub(crate) fn editor_session_init_from_metadata(
             SpawnMetadata::default(),
             MusicMetadata::default(),
             Vec::new(),
+            0.0,
+            16.0,
+            Vec::new(),
             0,
         )
     };
 
-    tap_steps.sort_unstable();
+    if tap_times.is_empty() && !legacy_taps.is_empty() {
+        let seconds_per_step = 1.0 / BASE_PLAYER_SPEED.max(0.1);
+        tap_times = legacy_taps
+            .iter()
+            .copied()
+            .map(|step| step as f32 * seconds_per_step)
+            .collect();
+    }
+
+    if timeline_time_seconds <= 0.0 && legacy_timeline_step > 0 {
+        let seconds_per_step = 1.0 / BASE_PLAYER_SPEED.max(0.1);
+        timeline_time_seconds = legacy_timeline_step as f32 * seconds_per_step;
+    }
+
+    timeline_time_seconds = timeline_time_seconds.clamp(0.0, timeline_duration_seconds.max(0.1));
+
+    tap_times.retain(|tap| tap.is_finite() && *tap >= 0.0);
+    tap_times.sort_by(f32::total_cmp);
     let cursor = cursor_from_objects(&objects);
     let camera_pan = camera_pan_from_cursor(cursor);
 
@@ -104,8 +136,9 @@ pub(crate) fn editor_session_init_from_metadata(
         objects,
         spawn,
         music,
-        tap_steps,
-        timeline_step,
+        tap_times,
+        timeline_time_seconds,
+        timeline_duration_seconds: timeline_duration_seconds.max(0.1),
         cursor,
         camera_pan,
     }
@@ -171,19 +204,25 @@ pub(crate) fn remove_topmost_block_at_cursor(
     }
 }
 
-pub(crate) fn add_tap_step(tap_steps: &mut Vec<u32>, step: u32) {
-    if !tap_steps.contains(&step) {
-        tap_steps.push(step);
-        tap_steps.sort_unstable();
+pub(crate) fn add_tap_time(tap_times: &mut Vec<f32>, time_seconds: f32) {
+    const TAP_EPSILON_SECONDS: f32 = 0.01;
+    let clamped_time = time_seconds.max(0.0);
+    if !tap_times
+        .iter()
+        .any(|existing| (existing - clamped_time).abs() <= TAP_EPSILON_SECONDS)
+    {
+        tap_times.push(clamped_time);
+        tap_times.sort_by(f32::total_cmp);
     }
 }
 
-pub(crate) fn remove_tap_step(tap_steps: &mut Vec<u32>, step: u32) {
-    tap_steps.retain(|tap| *tap != step);
+pub(crate) fn remove_tap_time(tap_times: &mut Vec<f32>, time_seconds: f32) {
+    const TAP_EPSILON_SECONDS: f32 = 0.01;
+    tap_times.retain(|tap| (tap - time_seconds).abs() > TAP_EPSILON_SECONDS);
 }
 
-pub(crate) fn clear_tap_steps(tap_steps: &mut Vec<u32>) {
-    tap_steps.clear();
+pub(crate) fn clear_tap_times(tap_times: &mut Vec<f32>) {
+    tap_times.clear();
 }
 
 pub(crate) fn toggle_spawn_direction(direction: SpawnDirection) -> SpawnDirection {
@@ -196,256 +235,71 @@ pub(crate) fn toggle_spawn_direction(direction: SpawnDirection) -> SpawnDirectio
 pub(crate) fn derive_timeline_position(
     spawn: [f32; 3],
     direction: SpawnDirection,
-    tap_steps: &[u32],
-    step: u32,
+    tap_times: &[f32],
+    timeline_time_seconds: f32,
     objects: &[LevelObject],
 ) -> ([f32; 3], SpawnDirection) {
-    let state = derive_timeline_state(spawn, direction, tap_steps, step, objects);
+    let state = derive_timeline_state(spawn, direction, tap_times, timeline_time_seconds, objects);
     (state.position, state.direction)
 }
 
 pub(crate) fn derive_timeline_elapsed_seconds(
     spawn: [f32; 3],
     direction: SpawnDirection,
-    tap_steps: &[u32],
-    step: u32,
+    tap_times: &[f32],
+    timeline_time_seconds: f32,
     objects: &[LevelObject],
 ) -> f32 {
-    derive_timeline_state(spawn, direction, tap_steps, step, objects).elapsed_seconds
-}
-
-pub(crate) fn derive_timeline_step_seconds(
-    spawn: [f32; 3],
-    direction: SpawnDirection,
-    tap_steps: &[u32],
-    step: u32,
-    objects: &[LevelObject],
-) -> f32 {
-    let state = derive_timeline_state(spawn, direction, tap_steps, step, objects);
-    1.0 / state.speed.max(0.1)
+    derive_timeline_state(spawn, direction, tap_times, timeline_time_seconds, objects)
+        .elapsed_seconds
 }
 
 pub(crate) struct TimelineState {
     pub(crate) position: [f32; 3],
     pub(crate) direction: SpawnDirection,
-    pub(crate) speed: f32,
     pub(crate) elapsed_seconds: f32,
 }
 
 pub(crate) fn derive_timeline_state(
     spawn: [f32; 3],
     direction: SpawnDirection,
-    tap_steps: &[u32],
-    step: u32,
+    tap_times: &[f32],
+    timeline_time_seconds: f32,
     objects: &[LevelObject],
 ) -> TimelineState {
-    let mut position = spawn;
-    let mut direction = direction;
-    let mut speed = BASE_PLAYER_SPEED.max(0.1);
-    let mut elapsed_seconds = 0.0;
-    let mut tap_index = 0;
-    let mut simulation_objects = objects.to_vec();
-
-    while tap_index < tap_steps.len() && tap_steps[tap_index] == 0 {
-        direction = toggle_spawn_direction(direction);
-        tap_index += 1;
-    }
-
-    const SNAP_DISTANCE: f32 = 0.3;
-    let mut current_step = 0;
-    for _ in 0..step {
-        elapsed_seconds += 1.0 / speed.max(0.1);
-
-        match direction {
-            SpawnDirection::Forward => position[1] += 1.0,
-            SpawnDirection::Right => position[0] += 1.0,
-        }
-        current_step += 1;
-
-        let top = top_surface_height_at(
-            &simulation_objects,
-            position[0],
-            position[1],
-            position[2] + SNAP_DISTANCE,
-        );
-        position[2] = top;
-
-        apply_speed_portals_at_position(&mut simulation_objects, position, &mut speed);
-
-        while tap_index < tap_steps.len() && tap_steps[tap_index] == current_step {
-            direction = toggle_spawn_direction(direction);
-            tap_index += 1;
-        }
-    }
+    let simulated =
+        simulate_timeline_state(spawn, direction, objects, tap_times, timeline_time_seconds);
 
     TimelineState {
-        position,
-        direction,
-        speed,
-        elapsed_seconds,
+        position: simulated.position,
+        direction: simulated.direction,
+        elapsed_seconds: simulated.elapsed_seconds,
     }
-}
-
-fn apply_speed_portals_at_position(
-    objects: &mut Vec<LevelObject>,
-    position: [f32; 3],
-    speed: &mut f32,
-) {
-    let mut consumed_indices = Vec::new();
-
-    for (index, obj) in objects.iter().enumerate() {
-        let behavior = &resolve_block_definition(&obj.block_id).behavior;
-        if behavior.collision != BlockCollision::Portal {
-            continue;
-        }
-
-        if !player_overlaps_object(position, obj) {
-            continue;
-        }
-
-        *speed *= behavior.speed_multiplier.max(0.1);
-        if behavior.consumed_on_overlap {
-            consumed_indices.push(index);
-        }
-    }
-
-    for index in consumed_indices.into_iter().rev() {
-        objects.remove(index);
-    }
-}
-
-fn player_overlaps_object(position: [f32; 3], obj: &LevelObject) -> bool {
-    const PLAYER_WIDTH: f32 = 0.8;
-    const PLAYER_HEIGHT: f32 = 0.8;
-    const TOLERANCE: f32 = PLAYER_WIDTH * 0.05;
-
-    let x = position[0];
-    let y = position[1];
-    let z = position[2];
-
-    let p_min_x = x - PLAYER_WIDTH / 2.0 + TOLERANCE;
-    let p_max_x = x + PLAYER_WIDTH / 2.0 - TOLERANCE;
-    let p_min_y = y - PLAYER_WIDTH / 2.0 + TOLERANCE;
-    let p_max_y = y + PLAYER_WIDTH / 2.0 - TOLERANCE;
-    let p_min_z = z + TOLERANCE;
-    let p_max_z = z + PLAYER_HEIGHT - TOLERANCE;
-
-    let o_min_z = obj.position[2];
-    let o_max_z = obj.position[2] + obj.size[2];
-
-    aabb_overlaps_object_xy(p_min_x, p_max_x, p_min_y, p_max_y, obj)
-        && p_max_z > o_min_z
-        && p_min_z < o_max_z
-}
-
-fn aabb_overlaps_object_xy(
-    min_x: f32,
-    max_x: f32,
-    min_y: f32,
-    max_y: f32,
-    obj: &LevelObject,
-) -> bool {
-    let aabb_center_x = (min_x + max_x) * 0.5;
-    let aabb_center_y = (min_y + max_y) * 0.5;
-    let aabb_half_x = (max_x - min_x) * 0.5;
-    let aabb_half_y = (max_y - min_y) * 0.5;
-
-    let rect_center_x = obj.position[0] + obj.size[0] * 0.5;
-    let rect_center_y = obj.position[1] + obj.size[1] * 0.5;
-    let rect_half_x = obj.size[0] * 0.5;
-    let rect_half_y = obj.size[1] * 0.5;
-
-    let theta = obj.rotation_degrees.to_radians();
-    let axis_u = [theta.cos(), theta.sin()];
-    let axis_v = [-theta.sin(), theta.cos()];
-
-    let axes = [[1.0, 0.0], [0.0, 1.0], axis_u, axis_v];
-    for axis in axes {
-        let aabb_proj_center = aabb_center_x * axis[0] + aabb_center_y * axis[1];
-        let aabb_proj_radius = aabb_half_x * axis[0].abs() + aabb_half_y * axis[1].abs();
-
-        let rect_proj_center = rect_center_x * axis[0] + rect_center_y * axis[1];
-        let rect_proj_radius = rect_half_x * (axis_u[0] * axis[0] + axis_u[1] * axis[1]).abs()
-            + rect_half_y * (axis_v[0] * axis[0] + axis_v[1] * axis[1]).abs();
-
-        if (aabb_proj_center - rect_proj_center).abs() > aabb_proj_radius + rect_proj_radius {
-            return false;
-        }
-    }
-
-    true
-}
-
-fn top_surface_height_at(objects: &[LevelObject], x: f32, y: f32, max_z: f32) -> f32 {
-    const GROUND_PLANE_HEIGHT: f32 = 0.0;
-    let mut top_surface: Option<f32> = None;
-    for obj in objects {
-        if !resolve_block_definition(&obj.block_id)
-            .behavior
-            .support_surface
-        {
-            continue;
-        }
-        if object_xy_contains(obj, x, y) {
-            let top = obj.position[2] + obj.size[2];
-            if top <= max_z {
-                top_surface = Some(match top_surface {
-                    Some(existing) => existing.max(top),
-                    None => top,
-                });
-            }
-        }
-    }
-
-    top_surface.unwrap_or(GROUND_PLANE_HEIGHT)
-}
-
-fn object_xy_contains(obj: &LevelObject, x: f32, y: f32) -> bool {
-    let center = [
-        obj.position[0] + obj.size[0] * 0.5,
-        obj.position[1] + obj.size[1] * 0.5,
-    ];
-    let local = rotate_point_around_center_2d([x, y], center, -obj.rotation_degrees.to_radians());
-    local[0] >= obj.position[0]
-        && local[0] < obj.position[0] + obj.size[0]
-        && local[1] >= obj.position[1]
-        && local[1] < obj.position[1] + obj.size[1]
-}
-
-fn rotate_point_around_center_2d(point: [f32; 2], center: [f32; 2], radians: f32) -> [f32; 2] {
-    let sin = radians.sin();
-    let cos = radians.cos();
-    let dx = point[0] - center[0];
-    let dy = point[1] - center[1];
-    [
-        center[0] + (dx * cos - dy * sin),
-        center[1] + (dx * sin + dy * cos),
-    ]
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        add_tap_step, build_editor_playtest_transition, build_playing_transition_from_metadata,
-        clear_tap_steps, create_block_at_cursor, editor_session_init_from_metadata, move_cursor_xy,
-        playtest_return_objects, remove_tap_step, remove_topmost_block_at_cursor,
+        add_tap_time, build_editor_playtest_transition, build_playing_transition_from_metadata,
+        clear_tap_times, create_block_at_cursor, editor_session_init_from_metadata, move_cursor_xy,
+        playtest_return_objects, remove_tap_time, remove_topmost_block_at_cursor,
     };
     use crate::types::{LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata};
 
     #[test]
-    fn keeps_tap_steps_unique_and_sorted() {
-        let mut taps = vec![4, 1];
-        add_tap_step(&mut taps, 3);
-        add_tap_step(&mut taps, 1);
-        assert_eq!(taps, vec![1, 3, 4]);
+    fn keeps_tap_times_unique_and_sorted() {
+        let mut taps = vec![0.4, 0.1];
+        add_tap_time(&mut taps, 0.3);
+        add_tap_time(&mut taps, 0.1);
+        assert_eq!(taps, vec![0.1, 0.3, 0.4]);
     }
 
     #[test]
-    fn can_remove_and_clear_tap_steps() {
-        let mut taps = vec![1, 2, 3];
-        remove_tap_step(&mut taps, 2);
-        assert_eq!(taps, vec![1, 3]);
-        clear_tap_steps(&mut taps);
+    fn can_remove_and_clear_tap_times() {
+        let mut taps = vec![0.1, 0.2, 0.3];
+        remove_tap_time(&mut taps, 0.2);
+        assert_eq!(taps, vec![0.1, 0.3]);
+        clear_tap_times(&mut taps);
         assert!(taps.is_empty());
     }
 
@@ -504,8 +358,11 @@ mod tests {
                 position: [2.0, 3.0, 1.0],
                 direction: crate::types::SpawnDirection::Right,
             },
-            taps: vec![8, 2],
-            timeline_step: 5,
+            tap_times: vec![0.8, 0.2],
+            timeline_time_seconds: 0.5,
+            timeline_duration_seconds: 16.0,
+            legacy_taps: Vec::new(),
+            legacy_timeline_step: 0,
             objects: vec![LevelObject {
                 position: [4.0, 6.0, 0.0],
                 size: [1.0, 1.0, 1.0],
@@ -519,8 +376,8 @@ mod tests {
         let init = editor_session_init_from_metadata(Some(metadata));
         assert_eq!(init.cursor, [4, 6, 0]);
         assert_eq!(init.camera_pan, [4.5, 6.5]);
-        assert_eq!(init.tap_steps, vec![2, 8]);
-        assert_eq!(init.timeline_step, 5);
+        assert_eq!(init.tap_times, vec![0.2, 0.8]);
+        assert!((init.timeline_time_seconds - 0.5).abs() <= 1e-6);
     }
 
     #[test]
@@ -528,31 +385,25 @@ mod tests {
         let init = editor_session_init_from_metadata(None);
         assert_eq!(init.cursor, [0, 0, 0]);
         assert_eq!(init.camera_pan, [0.5, 0.5]);
-        assert_eq!(init.timeline_step, 0);
-        assert!(init.tap_steps.is_empty());
+        assert_eq!(init.timeline_time_seconds, 0.0);
+        assert!(init.tap_times.is_empty());
         assert!(init.objects.is_empty());
     }
 
     #[test]
     fn builds_editor_playtest_transition() {
-        let objects = vec![LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: 0.0,
-            roundness: 0.18,
-            block_id: "core/standard".to_string(),
-        }];
+        let objects = Vec::new();
 
         let transition = build_editor_playtest_transition(
             &objects,
             Some("Demo"),
             SpawnMetadata::default(),
             &[],
-            1,
+            1.0 / crate::game::BASE_PLAYER_SPEED,
         );
 
-        assert_eq!(transition.objects.len(), 1);
-        assert_eq!(transition.spawn_position, [0.0, 1.0, 0.0]);
+        assert!(transition.objects.is_empty());
+        assert!((transition.spawn_position[1] - 1.5).abs() < 0.1);
         assert!(matches!(
             transition.spawn_direction,
             crate::types::SpawnDirection::Forward
@@ -589,8 +440,11 @@ mod tests {
                 position: [3.0, 4.0, 1.0],
                 direction: crate::types::SpawnDirection::Right,
             },
-            taps: vec![],
-            timeline_step: 0,
+            tap_times: vec![],
+            timeline_time_seconds: 0.0,
+            timeline_duration_seconds: 16.0,
+            legacy_taps: Vec::new(),
+            legacy_timeline_step: 0,
             objects: vec![LevelObject {
                 position: [1.0, 2.0, 0.0],
                 size: [1.0, 1.0, 1.0],
@@ -609,33 +463,5 @@ mod tests {
             crate::types::SpawnDirection::Right
         ));
         assert_eq!(transition.objects.len(), 1);
-    }
-
-    #[test]
-    fn rotated_surface_height_detects_inside_point() {
-        let objects = vec![LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [2.0, 1.0, 3.0],
-            rotation_degrees: 90.0,
-            roundness: 0.18,
-            block_id: "core/standard".to_string(),
-        }];
-
-        let top = super::top_surface_height_at(&objects, 1.0, 0.5, 10.0);
-        assert_eq!(top, 3.0);
-    }
-
-    #[test]
-    fn rotated_surface_height_falls_back_to_ground_when_outside() {
-        let objects = vec![LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [2.0, 1.0, 2.0],
-            rotation_degrees: 90.0,
-            roundness: 0.18,
-            block_id: "core/standard".to_string(),
-        }];
-
-        let top = super::top_surface_height_at(&objects, 2.2, 0.5, 10.0);
-        assert_eq!(top, 0.0);
     }
 }

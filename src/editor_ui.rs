@@ -2,8 +2,8 @@ use crate::block_repository::all_placeable_blocks;
 use crate::types::{EditorMode, SpawnDirection};
 use crate::State;
 
-const MIN_TIMELINE_LENGTH: u32 = 1;
-const MAX_TIMELINE_LENGTH: u32 = 512;
+const MIN_TIMELINE_DURATION_SECONDS: f32 = 0.1;
+const MAX_TIMELINE_DURATION_SECONDS: f32 = 600.0;
 const MENU_WORDMARK_PNG: &[u8] = include_bytes!("../assets/wordmark.png");
 
 pub fn load_menu_wordmark_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
@@ -38,10 +38,8 @@ pub fn show_menu_wordmark_ui(ctx: &egui::Context, state: &State, wordmark: &egui
         });
 }
 
-fn timeline_step_metrics(length: u32) -> (u32, f32) {
-    let max_step = length.saturating_sub(1);
-    let divisor = max_step.max(1) as f32;
-    (max_step, divisor)
+fn timeline_metrics(duration_seconds: f32) -> f32 {
+    duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS)
 }
 
 pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
@@ -178,7 +176,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
         .resizable(false)
         .show(ctx, |ui| {
             ui.vertical(|ui| {
-                let (max_step, divisor) = timeline_step_metrics(state.editor_timeline_length());
+                let duration_seconds = timeline_metrics(state.editor_timeline_duration_seconds());
 
                 ui.horizontal(|ui| {
                     ui.label("Mode:");
@@ -352,24 +350,25 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                 ui.horizontal(|ui| {
                     ui.label("Timeline:");
 
-                    let mut step = state.editor_timeline_step();
-                    let slider = egui::Slider::new(&mut step, 0..=max_step)
-                        .text("Step")
+                    let mut time_seconds = state.editor_timeline_time_seconds();
+                    let slider = egui::Slider::new(&mut time_seconds, 0.0..=duration_seconds)
+                        .text("Time")
                         .show_value(true);
                     if ui.add(slider).changed() {
-                        state.set_editor_timeline_step(step);
+                        state.set_editor_timeline_time_seconds(time_seconds);
                     }
 
-                    let mut length = state.editor_timeline_length();
-                    ui.label("Length:");
+                    let mut duration = state.editor_timeline_duration_seconds();
+                    ui.label("Duration (s):");
                     if ui
                         .add(
-                            egui::DragValue::new(&mut length)
-                                .range(MIN_TIMELINE_LENGTH..=MAX_TIMELINE_LENGTH),
+                            egui::DragValue::new(&mut duration).speed(0.1).range(
+                                MIN_TIMELINE_DURATION_SECONDS..=MAX_TIMELINE_DURATION_SECONDS,
+                            ),
                         )
                         .changed()
                     {
-                        state.set_editor_timeline_length(length);
+                        state.set_editor_timeline_duration_seconds(duration);
                     }
 
                     if ui.button("Add tap").clicked() {
@@ -413,9 +412,8 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                     stroke,
                 );
 
-                let max_step_f32 = max_step as f32;
-                for tap in state.editor_tap_steps() {
-                    let t = (*tap as f32 / divisor).clamp(0.0, 1.0);
+                for tap_time in state.editor_tap_times() {
+                    let t = (*tap_time / duration_seconds).clamp(0.0, 1.0);
                     let x = rect.left() + rect.width() * t;
                     painter.circle_filled(
                         egui::pos2(x, center_y),
@@ -424,7 +422,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                     );
                 }
 
-                let current_t = state.editor_timeline_step() as f32 / divisor;
+                let current_t = state.editor_timeline_time_seconds() / duration_seconds;
                 let current_x = rect.left() + rect.width() * current_t.clamp(0.0, 1.0);
                 painter.line_segment(
                     [
@@ -437,12 +435,8 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                 if response.clicked() {
                     if let Some(pos) = response.interact_pointer_pos() {
                         let t = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
-                        let step = if max_step == 0 {
-                            0
-                        } else {
-                            (t * max_step_f32).round() as u32
-                        };
-                        state.set_editor_timeline_step(step);
+                        let time_seconds = t * duration_seconds;
+                        state.set_editor_timeline_time_seconds(time_seconds);
                     }
                 }
             });

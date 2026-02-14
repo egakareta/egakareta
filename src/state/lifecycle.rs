@@ -38,8 +38,8 @@ impl State {
                 &self.editor_objects,
                 self.editor_level_name.as_deref(),
                 self.editor_spawn.clone(),
-                &self.editor_tap_steps,
-                self.editor_timeline_step,
+                &self.editor_tap_times,
+                self.editor_timeline_time_seconds,
             );
             self.game.objects = transition.objects;
             self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction);
@@ -66,13 +66,14 @@ impl State {
         self.editor_objects = init.objects;
         self.editor_spawn = init.spawn;
         self.editor_music_metadata = init.music;
-        self.editor_tap_steps = init.tap_steps;
-        self.editor_timeline_step = init.timeline_step;
+        self.editor_tap_times = init.tap_times;
+        self.editor_timeline_time_seconds = init.timeline_time_seconds;
+        self.editor_timeline_duration_seconds = init.timeline_duration_seconds;
         self.editor.cursor = init.cursor;
         self.editor_camera_pan = init.camera_pan;
 
         self.sync_editor_objects();
-        self.set_editor_timeline_step(self.editor_timeline_step);
+        self.set_editor_timeline_time_seconds(self.editor_timeline_time_seconds);
         self.rebuild_spawn_marker_vertices();
     }
 
@@ -174,22 +175,40 @@ impl State {
                 .unwrap_or_else(|| "Untitled".to_string()),
             self.editor_music_metadata.clone(),
             self.editor_spawn.clone(),
-            self.editor_tap_steps.clone(),
-            self.editor_timeline_step,
+            self.editor_tap_times.clone(),
+            self.editor_timeline_time_seconds,
+            self.editor_timeline_duration_seconds,
             self.editor_objects.clone(),
         )
     }
 
     fn apply_imported_level_metadata(&mut self, metadata: LevelMetadata) {
+        let level_name = metadata.name.clone();
         self.editor_objects = metadata.objects;
         self.editor_selected_block_index = None;
         self.editor_selected_block_indices.clear();
         self.editor_hovered_block_index = None;
         self.editor_spawn = metadata.spawn;
-        self.editor_tap_steps = metadata.taps;
-        self.editor_tap_steps.sort_unstable();
-        self.editor_timeline_step = metadata.timeline_step;
-        self.editor_level_name = Some(metadata.name);
+        self.editor_tap_times = metadata.tap_times;
+        if self.editor_tap_times.is_empty() && !metadata.legacy_taps.is_empty() {
+            let seconds_per_step = 1.0 / crate::game::BASE_PLAYER_SPEED.max(0.1);
+            self.editor_tap_times = metadata
+                .legacy_taps
+                .iter()
+                .map(|step| *step as f32 * seconds_per_step)
+                .collect();
+        }
+        self.editor_tap_times
+            .retain(|tap| tap.is_finite() && *tap >= 0.0);
+        self.editor_tap_times.sort_by(f32::total_cmp);
+        self.editor_timeline_time_seconds = metadata.timeline_time_seconds;
+        if self.editor_timeline_time_seconds <= 0.0 && metadata.legacy_timeline_step > 0 {
+            let seconds_per_step = 1.0 / crate::game::BASE_PLAYER_SPEED.max(0.1);
+            self.editor_timeline_time_seconds =
+                metadata.legacy_timeline_step as f32 * seconds_per_step;
+        }
+        self.editor_timeline_duration_seconds = metadata.timeline_duration_seconds.max(0.1);
+        self.editor_level_name = Some(level_name);
         self.editor_music_metadata = metadata.music;
 
         if let Some(first) = self.editor_objects.first() {
@@ -211,7 +230,7 @@ impl State {
         self.editor_history_redo.clear();
 
         self.sync_editor_objects();
-        self.set_editor_timeline_step(self.editor_timeline_step);
+        self.set_editor_timeline_time_seconds(self.editor_timeline_time_seconds);
         self.rebuild_spawn_marker_vertices();
     }
 
