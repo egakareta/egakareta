@@ -1,5 +1,7 @@
 use crate::game::{simulate_timeline_state, TimelineSimulationRuntime, BASE_PLAYER_SPEED};
-use crate::types::{LevelMetadata, LevelObject, MusicMetadata, SpawnDirection, SpawnMetadata};
+use crate::types::{
+    LevelMetadata, LevelObject, MusicMetadata, SpawnDirection, SpawnMetadata, TimingPoint,
+};
 
 pub(crate) struct EditorPlaytestTransition {
     pub(crate) objects: Vec<LevelObject>,
@@ -69,6 +71,7 @@ pub(crate) struct EditorSessionInit {
     pub(crate) spawn: SpawnMetadata,
     pub(crate) music: MusicMetadata,
     pub(crate) tap_times: Vec<f32>,
+    pub(crate) timing_points: Vec<TimingPoint>,
     pub(crate) timeline_time_seconds: f32,
     pub(crate) timeline_duration_seconds: f32,
     pub(crate) cursor: [f32; 3],
@@ -83,6 +86,7 @@ pub(crate) fn editor_session_init_from_metadata(
         spawn,
         music,
         mut tap_times,
+        timing_points,
         mut timeline_time_seconds,
         timeline_duration_seconds,
         legacy_taps,
@@ -93,6 +97,7 @@ pub(crate) fn editor_session_init_from_metadata(
             metadata.spawn,
             metadata.music,
             metadata.tap_times,
+            metadata.timing_points,
             metadata.timeline_time_seconds,
             metadata.timeline_duration_seconds,
             metadata.legacy_taps,
@@ -103,6 +108,7 @@ pub(crate) fn editor_session_init_from_metadata(
             Vec::new(),
             SpawnMetadata::default(),
             MusicMetadata::default(),
+            Vec::new(),
             Vec::new(),
             0.0,
             16.0,
@@ -137,6 +143,7 @@ pub(crate) fn editor_session_init_from_metadata(
         spawn,
         music,
         tap_times,
+        timing_points,
         timeline_time_seconds,
         timeline_duration_seconds: timeline_duration_seconds.max(0.1),
         cursor,

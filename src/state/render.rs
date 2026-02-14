@@ -119,7 +119,7 @@ impl State {
             render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
             render_pass.set_bind_group(2, &self.color_space_bind_group, &[]);
 
-            if self.phase != AppPhase::Menu {
+            if self.phase != AppPhase::Menu && self.editor_mode != EditorMode::Timing {
                 if let Some((buffer, count)) = self.floor_mesh.draw_data() {
                     render_pass.set_vertex_buffer(0, buffer.slice(..));
                     render_pass.draw(0..count, 0..1);
@@ -136,19 +136,24 @@ impl State {
                 || self.phase == AppPhase::Editor
                 || self.phase == AppPhase::Menu
             {
-                if let Some((buffer, count)) = self.block_mesh.draw_data() {
-                    render_pass.set_vertex_buffer(0, buffer.slice(..));
-                    render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
-                    render_pass.draw(0..count, 0..1);
+                let skip_world =
+                    self.phase == AppPhase::Editor && self.editor_mode == EditorMode::Timing;
+
+                if !skip_world {
+                    if let Some((buffer, count)) = self.block_mesh.draw_data() {
+                        render_pass.set_vertex_buffer(0, buffer.slice(..));
+                        render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
+                        render_pass.draw(0..count, 0..1);
+                    }
+
+                    if let Some((buffer, count)) = self.trail_mesh.draw_data() {
+                        render_pass.set_vertex_buffer(0, buffer.slice(..));
+                        render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
+                        render_pass.draw(0..count, 0..1);
+                    }
                 }
 
-                if let Some((buffer, count)) = self.trail_mesh.draw_data() {
-                    render_pass.set_vertex_buffer(0, buffer.slice(..));
-                    render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
-                    render_pass.draw(0..count, 0..1);
-                }
-
-                if self.phase == AppPhase::Editor {
+                if self.phase == AppPhase::Editor && !skip_world {
                     if let Some((buffer, count)) = self.spawn_marker_mesh.draw_data() {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
                         render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);

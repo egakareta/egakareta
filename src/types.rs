@@ -148,6 +148,38 @@ fn is_default_music_metadata(value: &MusicMetadata) -> bool {
 }
 
 #[derive(Deserialize, Serialize, Clone)]
+pub(crate) struct TimingPoint {
+    pub(crate) time_seconds: f32,
+    pub(crate) bpm: f32,
+    #[serde(
+        default = "default_time_signature_numerator",
+        skip_serializing_if = "is_default_time_signature_numerator"
+    )]
+    pub(crate) time_signature_numerator: u32,
+    #[serde(
+        default = "default_time_signature_denominator",
+        skip_serializing_if = "is_default_time_signature_denominator"
+    )]
+    pub(crate) time_signature_denominator: u32,
+}
+
+fn default_time_signature_numerator() -> u32 {
+    4
+}
+
+fn default_time_signature_denominator() -> u32 {
+    4
+}
+
+fn is_default_time_signature_numerator(value: &u32) -> bool {
+    *value == 4
+}
+
+fn is_default_time_signature_denominator(value: &u32) -> bool {
+    *value == 4
+}
+
+#[derive(Deserialize, Serialize, Clone)]
 pub(crate) struct LevelMetadata {
     #[serde(
         default = "default_level_format_version",
@@ -161,6 +193,8 @@ pub(crate) struct LevelMetadata {
     pub(crate) spawn: SpawnMetadata,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) tap_times: Vec<f32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) timing_points: Vec<TimingPoint>,
     #[serde(
         default = "default_timeline_time_seconds",
         skip_serializing_if = "is_default_timeline_time_seconds"
@@ -182,11 +216,13 @@ pub(crate) struct LevelMetadata {
 }
 
 impl LevelMetadata {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_editor_state(
         name: String,
         music: MusicMetadata,
         spawn: SpawnMetadata,
         tap_times: Vec<f32>,
+        timing_points: Vec<TimingPoint>,
         timeline_time_seconds: f32,
         timeline_duration_seconds: f32,
         objects: Vec<LevelObject>,
@@ -197,6 +233,7 @@ impl LevelMetadata {
             music,
             spawn,
             tap_times,
+            timing_points,
             timeline_time_seconds,
             timeline_duration_seconds,
             legacy_taps: Vec::new(),
@@ -312,6 +349,7 @@ pub(crate) enum EditorMode {
     Select,
     #[default]
     Place,
+    Timing,
 }
 
 impl EditorState {

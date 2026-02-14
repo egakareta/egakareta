@@ -38,7 +38,7 @@ use crate::platform::state_host::{log_backend, PlatformInstant, SurfaceHost};
 use crate::types::{
     AppPhase, CameraUniform, ColorSpaceUniform, Direction, EditorMode, EditorState, LevelMetadata,
     LevelObject, LineUniform, MenuState, MusicMetadata, PhysicalSize, SpawnDirection,
-    SpawnMetadata, Vertex,
+    SpawnMetadata, TimingPoint, Vertex,
 };
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -207,6 +207,15 @@ pub struct State {
     editor_ctrl_held: bool,
     editor_alt_held: bool,
     editor_mode: EditorMode,
+    editor_timing_points: Vec<TimingPoint>,
+    editor_playback_speed: f32,
+    editor_waveform_samples: Vec<f32>,
+    editor_waveform_sample_rate: u32,
+    editor_timing_selected_index: Option<usize>,
+    editor_waveform_zoom: f32,
+    editor_waveform_scroll: f32,
+    editor_bpm_tap_times: Vec<f64>,
+    editor_bpm_tap_result: Option<f32>,
     editor_snap_to_grid: bool,
     editor_snap_step: f32,
     editor_selected_block_index: Option<usize>,
@@ -455,6 +464,7 @@ struct EditorHistorySnapshot {
     timeline_duration_seconds: f32,
     tap_times: Vec<f32>,
     tap_indicator_positions: Vec<[f32; 3]>,
+    timing_points: Vec<TimingPoint>,
 }
 
 #[derive(Clone)]
@@ -835,6 +845,15 @@ impl State {
             editor_ctrl_held: false,
             editor_alt_held: false,
             editor_mode: EditorMode::Place,
+            editor_timing_points: Vec::new(),
+            editor_playback_speed: 1.0,
+            editor_waveform_samples: Vec::new(),
+            editor_waveform_sample_rate: 0,
+            editor_timing_selected_index: None,
+            editor_waveform_zoom: 1.0,
+            editor_waveform_scroll: 0.0,
+            editor_bpm_tap_times: Vec::new(),
+            editor_bpm_tap_result: None,
             editor_snap_to_grid: true,
             editor_snap_step: 1.0,
             editor_selected_block_index: None,
@@ -1105,8 +1124,12 @@ impl State {
                 }
             }
             "t" | "T" => {
-                if just_pressed && self.is_editor() && self.editor_mode == EditorMode::Place {
-                    self.editor_add_tap_at_pointer_position();
+                if just_pressed && self.is_editor() {
+                    if self.editor_mode == EditorMode::Place {
+                        self.editor_add_tap_at_pointer_position();
+                    } else if self.editor_mode != EditorMode::Timing {
+                        self.set_editor_mode(EditorMode::Timing);
+                    }
                 }
             }
             "+" | "=" => {
@@ -1220,6 +1243,9 @@ impl State {
                         return;
                     }
                     self.select_editor_block_from_screen(x, y);
+                }
+                EditorMode::Timing => {
+                    // Timing mode: clicks handled by egui waveform panel
                 }
             }
             return;

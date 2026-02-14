@@ -11,6 +11,8 @@ pub(crate) struct PlatformAudio {
     playback_started_at: Option<std::time::Instant>,
     #[cfg(not(target_arch = "wasm32"))]
     playback_start_offset_seconds: f32,
+    #[cfg(not(target_arch = "wasm32"))]
+    playback_speed: f32,
 }
 
 impl PlatformAudio {
@@ -38,6 +40,7 @@ impl PlatformAudio {
                 current_sink: None,
                 playback_started_at: None,
                 playback_start_offset_seconds: 0.0,
+                playback_speed: 1.0,
             }
         }
     }
@@ -55,6 +58,7 @@ impl PlatformAudio {
             }
             self.playback_started_at = None;
             self.playback_start_offset_seconds = 0.0;
+            self.playback_speed = 1.0;
         }
     }
 
@@ -100,6 +104,7 @@ impl PlatformAudio {
                             self.current_sink = Some(sink);
                             self.playback_started_at = Some(std::time::Instant::now());
                             self.playback_start_offset_seconds = start_seconds;
+                            self.playback_speed = 1.0;
                         }
                         Err(err) => {
                             log::warn!("Failed to create audio sink for imported audio: {}", err);
@@ -152,6 +157,7 @@ impl PlatformAudio {
                                     self.current_sink = Some(sink);
                                     self.playback_started_at = Some(std::time::Instant::now());
                                     self.playback_start_offset_seconds = start_seconds;
+                                    self.playback_speed = 1.0;
                                 }
                                 Err(err) => {
                                     log::warn!(
@@ -194,7 +200,10 @@ impl PlatformAudio {
             }
 
             let started_at = self.playback_started_at?;
-            Some(self.playback_start_offset_seconds + started_at.elapsed().as_secs_f32())
+            Some(
+                self.playback_start_offset_seconds
+                    + started_at.elapsed().as_secs_f32() * self.playback_speed,
+            )
         }
     }
 
@@ -216,4 +225,62 @@ impl PlatformAudio {
                 .unwrap_or(false)
         }
     }
+
+    pub(crate) fn set_speed(&mut self, speed: f32) {
+        let speed = speed.clamp(0.25, 2.0);
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            if let Some(audio) = &self.current_audio {
+                audio.set_playback_rate(speed as f64);
+            }
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if let Some(started_at) = self.playback_started_at {
+                let elapsed_real = started_at.elapsed().as_secs_f32();
+                self.playback_start_offset_seconds += elapsed_real * self.playback_speed;
+                self.playback_started_at = Some(std::time::Instant::now());
+            }
+            self.playback_speed = speed;
+            if let Some(sink) = &self.current_sink {
+                sink.set_speed(speed);
+            }
+        }
+    }
+}
+
+/// Decode audio bytes to a downsampled waveform suitable for display.
+/// Returns (peak_samples, sample_rate) where peak_samples contains one peak per window.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn decode_audio_to_waveform(
+    bytes: &[u8],
+    window_size: usize,
+) -> Option<(Vec<f32>, u32)> {
+    use rodio::Source as _;
+
+    let decoder = rodio::Decoder::new(std::io::Cursor::new(bytes.to_vec())).ok()?;
+    let sample_rate = decoder.sample_rate();
+    let channels = decoder.channels() as f32;
+
+    let mut peaks: Vec<f32> = Vec::new();
+    let mut window_peak: f32 = 0.0;
+    let mut window_count: usize = 0;
+
+    for sample in decoder {
+        let normalized = sample as f32 / i16::MAX as f32 / channels;
+        window_peak = window_peak.max(normalized.abs());
+        window_count += 1;
+        if window_count >= window_size {
+            peaks.push(window_peak);
+            window_peak = 0.0;
+            window_count = 0;
+        }
+    }
+    if window_count > 0 {
+        peaks.push(window_peak);
+    }
+
+    Some((peaks, sample_rate))
 }
