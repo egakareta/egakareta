@@ -85,14 +85,14 @@ impl State {
                     }
                 }
                 if let Some(next_position) = first_cursor {
-                    let bounds = self.editor.bounds;
+                    let bounds = self.editor.bounds as f32;
                     self.editor.cursor = [
-                        (next_position[0].floor() as i32).clamp(-bounds, bounds),
-                        (next_position[1].floor() as i32).clamp(-bounds, bounds),
-                        (next_position[2].floor() as i32).max(0),
+                        next_position[0].clamp(-bounds, bounds),
+                        next_position[1].clamp(-bounds, bounds),
+                        next_position[2].max(0.0),
                     ];
                 }
-                self.sync_editor_objects();
+                self.sync_editor_objects_for_drag();
                 self.rebuild_editor_cursor_vertices();
             }
             GizmoDragKind::Resize => {
@@ -168,7 +168,7 @@ impl State {
                         }
                     }
                 }
-                self.sync_editor_objects();
+                self.sync_editor_objects_for_drag();
             }
         }
         true
@@ -263,14 +263,14 @@ impl State {
             }
         }
         if let Some(next_position) = first_cursor {
-            let bounds = self.editor.bounds;
+            let bounds = self.editor.bounds as f32;
             self.editor.cursor = [
-                (next_position[0].floor() as i32).clamp(-bounds, bounds),
-                (next_position[1].floor() as i32).clamp(-bounds, bounds),
-                (next_position[2].floor() as i32).max(0),
+                next_position[0].clamp(-bounds, bounds),
+                next_position[1].clamp(-bounds, bounds),
+                next_position[2].max(0.0),
             ];
         }
-        self.sync_editor_objects();
+        self.sync_editor_objects_for_drag();
         self.rebuild_editor_cursor_vertices();
         true
     }
@@ -753,11 +753,25 @@ impl State {
 
         let hit = ray_origin + ray_dir * min_t;
         let target = hit + best_hit_normal * 0.01;
-        let bounds = self.editor.bounds;
+
+        let snap_enabled = self.editor_snap_to_grid;
+        let snap_step = self.editor_snap_step.max(0.05);
+
+        let next_cursor = if snap_enabled {
+            [
+                (target.x / snap_step).floor() * snap_step,
+                (target.y / snap_step).floor() * snap_step,
+                (target.z / snap_step).floor() * snap_step,
+            ]
+        } else {
+            [target.x.floor(), target.y.floor(), target.z.floor()]
+        };
+
+        let bounds = self.editor.bounds as f32;
         let next_cursor = [
-            (target.x.floor() as i32).clamp(-bounds, bounds),
-            (target.y.floor() as i32).clamp(-bounds, bounds),
-            (target.z.floor() as i32).max(0),
+            next_cursor[0].clamp(-bounds, bounds),
+            next_cursor[1].clamp(-bounds, bounds),
+            next_cursor[2].max(0.0),
         ];
 
         Some(EditorPickResult {
@@ -819,11 +833,7 @@ impl State {
 
         if let Some(index) = self.editor_selected_block_index {
             if let Some(obj) = self.editor_objects.get(index) {
-                self.editor.cursor = [
-                    obj.position[0].floor() as i32,
-                    obj.position[1].floor() as i32,
-                    obj.position[2].floor() as i32,
-                ];
+                self.editor.cursor = [obj.position[0], obj.position[1], obj.position[2]];
                 self.rebuild_editor_cursor_vertices();
             }
         } else if pick.cursor != self.editor.cursor {

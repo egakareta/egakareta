@@ -87,6 +87,7 @@ pub(crate) struct TimelineSimulationRuntime {
     tap_times: Vec<f32>,
     tap_index: usize,
     elapsed_seconds: f32,
+    simulation_dt: f32,
 }
 
 const TIMELINE_SIMULATION_DT: f32 = 1.0 / 240.0;
@@ -306,6 +307,22 @@ impl TimelineSimulationRuntime {
         objects: &[LevelObject],
         tap_times: &[f32],
     ) -> Self {
+        Self::new_with_dt(
+            spawn_position,
+            spawn_direction,
+            objects,
+            tap_times,
+            TIMELINE_SIMULATION_DT,
+        )
+    }
+
+    pub(crate) fn new_with_dt(
+        spawn_position: [f32; 3],
+        spawn_direction: SpawnDirection,
+        objects: &[LevelObject],
+        tap_times: &[f32],
+        simulation_dt: f32,
+    ) -> Self {
         let mut game = GameState::new();
         game.objects = objects.to_vec();
         game.apply_spawn(spawn_position, spawn_direction);
@@ -323,6 +340,7 @@ impl TimelineSimulationRuntime {
             tap_times: sorted_taps,
             tap_index: 0,
             elapsed_seconds: 0.0,
+            simulation_dt: simulation_dt.clamp(1.0 / 240.0, 1.0 / 30.0),
         };
 
         runtime.apply_pending_taps(TIMELINE_TAP_EPSILON_SECONDS);
@@ -344,10 +362,10 @@ impl TimelineSimulationRuntime {
             return;
         }
 
-        while self.elapsed_seconds + TIMELINE_SIMULATION_DT <= target_time {
-            let step_target = self.elapsed_seconds + TIMELINE_SIMULATION_DT;
+        while self.elapsed_seconds + self.simulation_dt <= target_time {
+            let step_target = self.elapsed_seconds + self.simulation_dt;
             self.apply_pending_taps(step_target);
-            self.game.update(TIMELINE_SIMULATION_DT);
+            self.game.update(self.simulation_dt);
             self.elapsed_seconds = step_target;
             if self.game.game_over {
                 return;

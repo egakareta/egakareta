@@ -443,4 +443,19 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                 }
             });
         });
+
+    if state.editor_perf_overlay_enabled() {
+        egui::Area::new("editor_perf_overlay".into())
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::LEFT_TOP, egui::vec2(12.0, 12.0))
+            .show(ctx, |ui| {
+                egui::Frame::window(ui.style())
+                    .fill(egui::Color32::from_black_alpha(210))
+                    .show(ui, |ui| {
+                        for line in state.editor_perf_overlay_lines() {
+                            ui.monospace(line);
+                        }
+                    });
+            });
+    }
 }

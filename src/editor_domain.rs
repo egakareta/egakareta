@@ -1,4 +1,4 @@
-use crate::game::{simulate_timeline_state, BASE_PLAYER_SPEED};
+use crate::game::{simulate_timeline_state, TimelineSimulationRuntime, BASE_PLAYER_SPEED};
 use crate::types::{LevelMetadata, LevelObject, MusicMetadata, SpawnDirection, SpawnMetadata};
 
 pub(crate) struct EditorPlaytestTransition {
@@ -71,7 +71,7 @@ pub(crate) struct EditorSessionInit {
     pub(crate) tap_times: Vec<f32>,
     pub(crate) timeline_time_seconds: f32,
     pub(crate) timeline_duration_seconds: f32,
-    pub(crate) cursor: [i32; 3],
+    pub(crate) cursor: [f32; 3],
     pub(crate) camera_pan: [f32; 2],
 }
 
@@ -144,30 +144,31 @@ pub(crate) fn editor_session_init_from_metadata(
     }
 }
 
-fn cursor_from_objects(objects: &[LevelObject]) -> [i32; 3] {
+fn cursor_from_objects(objects: &[LevelObject]) -> [f32; 3] {
     if let Some(first) = objects.first() {
         [
-            first.position[0].round() as i32,
-            first.position[1].round() as i32,
-            first.position[2].round() as i32,
+            first.position[0].round(),
+            first.position[1].round(),
+            first.position[2].round(),
         ]
     } else {
-        [0, 0, 0]
+        [0.0, 0.0, 0.0]
     }
 }
 
-fn camera_pan_from_cursor(cursor: [i32; 3]) -> [f32; 2] {
-    [cursor[0] as f32 + 0.5, cursor[1] as f32 + 0.5]
+fn camera_pan_from_cursor(cursor: [f32; 3]) -> [f32; 2] {
+    [cursor[0] + 0.5, cursor[1] + 0.5]
 }
 
-pub(crate) fn move_cursor_xy(cursor: &mut [i32; 3], dx: i32, dy: i32, bounds: i32) {
-    cursor[0] = (cursor[0] + dx).clamp(-bounds, bounds);
-    cursor[1] = (cursor[1] + dy).clamp(-bounds, bounds);
+#[allow(dead_code)]
+pub(crate) fn move_cursor_xy(cursor: &mut [f32; 3], dx: i32, dy: i32, bounds: i32) {
+    cursor[0] = (cursor[0] + dx as f32).clamp(-bounds as f32, bounds as f32);
+    cursor[1] = (cursor[1] + dy as f32).clamp(-bounds as f32, bounds as f32);
 }
 
-pub(crate) fn create_block_at_cursor(cursor: [i32; 3], block_id: &str) -> LevelObject {
+pub(crate) fn create_block_at_cursor(cursor: [f32; 3], block_id: &str) -> LevelObject {
     LevelObject {
-        position: [cursor[0] as f32, cursor[1] as f32, cursor[2] as f32],
+        position: cursor,
         size: [1.0, 1.0, 1.0],
         rotation_degrees: 0.0,
         roundness: 0.18,
@@ -177,16 +178,16 @@ pub(crate) fn create_block_at_cursor(cursor: [i32; 3], block_id: &str) -> LevelO
 
 pub(crate) fn remove_topmost_block_at_cursor(
     objects: &mut Vec<LevelObject>,
-    cursor: [i32; 3],
+    cursor: [f32; 3],
 ) -> bool {
     let mut top_index: Option<usize> = None;
     let mut top_height = f32::NEG_INFINITY;
 
     for (index, obj) in objects.iter().enumerate() {
-        let occupies_x = cursor[0] as f32 + 0.5 >= obj.position[0]
-            && cursor[0] as f32 + 0.5 <= obj.position[0] + obj.size[0];
-        let occupies_y = cursor[1] as f32 + 0.5 >= obj.position[1]
-            && cursor[1] as f32 + 0.5 <= obj.position[1] + obj.size[1];
+        let occupies_x =
+            cursor[0] + 0.5 >= obj.position[0] && cursor[0] + 0.5 <= obj.position[0] + obj.size[0];
+        let occupies_y =
+            cursor[1] + 0.5 >= obj.position[1] && cursor[1] + 0.5 <= obj.position[1] + obj.size[1];
         if occupies_x && occupies_y {
             let top = obj.position[2] + obj.size[2];
             if top > top_height {
@@ -204,6 +205,7 @@ pub(crate) fn remove_topmost_block_at_cursor(
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn add_tap_time(tap_times: &mut Vec<f32>, time_seconds: f32) {
     const TAP_EPSILON_SECONDS: f32 = 0.01;
     let clamped_time = time_seconds.max(0.0);
@@ -216,13 +218,80 @@ pub(crate) fn add_tap_time(tap_times: &mut Vec<f32>, time_seconds: f32) {
     }
 }
 
+pub(crate) fn add_tap_with_indicator(
+    tap_times: &mut Vec<f32>,
+    tap_indicator_positions: &mut Vec<[f32; 3]>,
+    time_seconds: f32,
+    indicator_position: [f32; 3],
+) {
+    const TAP_EPSILON_SECONDS: f32 = 0.01;
+    let clamped_time = time_seconds.max(0.0);
+    if tap_times
+        .iter()
+        .any(|existing| (existing - clamped_time).abs() <= TAP_EPSILON_SECONDS)
+    {
+        return;
+    }
+
+    let insert_index = tap_times.partition_point(|existing| *existing < clamped_time);
+    tap_times.insert(insert_index, clamped_time);
+    tap_indicator_positions.insert(insert_index, indicator_position);
+}
+
+#[allow(dead_code)]
 pub(crate) fn remove_tap_time(tap_times: &mut Vec<f32>, time_seconds: f32) {
     const TAP_EPSILON_SECONDS: f32 = 0.01;
     tap_times.retain(|tap| (tap - time_seconds).abs() > TAP_EPSILON_SECONDS);
 }
 
+pub(crate) fn remove_tap_with_indicator(
+    tap_times: &mut Vec<f32>,
+    tap_indicator_positions: &mut Vec<[f32; 3]>,
+    time_seconds: f32,
+) {
+    const TAP_EPSILON_SECONDS: f32 = 0.01;
+    if let Some(index) = tap_times
+        .iter()
+        .position(|tap| (*tap - time_seconds).abs() <= TAP_EPSILON_SECONDS)
+    {
+        tap_times.remove(index);
+        if index < tap_indicator_positions.len() {
+            tap_indicator_positions.remove(index);
+        }
+    }
+}
+
+#[allow(dead_code)]
 pub(crate) fn clear_tap_times(tap_times: &mut Vec<f32>) {
     tap_times.clear();
+}
+
+pub(crate) fn clear_taps_with_indicators(
+    tap_times: &mut Vec<f32>,
+    tap_indicator_positions: &mut Vec<[f32; 3]>,
+) {
+    tap_times.clear();
+    tap_indicator_positions.clear();
+}
+
+pub(crate) fn retain_taps_up_to_duration_with_indicators(
+    tap_times: &mut Vec<f32>,
+    tap_indicator_positions: &mut Vec<[f32; 3]>,
+    duration_seconds: f32,
+) {
+    let mut retained_times = Vec::with_capacity(tap_times.len());
+    let mut retained_positions = Vec::with_capacity(tap_indicator_positions.len());
+    for (index, tap) in tap_times.iter().copied().enumerate() {
+        if tap <= duration_seconds {
+            retained_times.push(tap);
+            if let Some(position) = tap_indicator_positions.get(index).copied() {
+                retained_positions.push(position);
+            }
+        }
+    }
+
+    *tap_times = retained_times;
+    *tap_indicator_positions = retained_positions;
 }
 
 pub(crate) fn toggle_spawn_direction(direction: SpawnDirection) -> SpawnDirection {
@@ -254,6 +323,217 @@ pub(crate) fn derive_timeline_elapsed_seconds(
         .elapsed_seconds
 }
 
+pub(crate) fn derive_tap_indicator_positions(
+    spawn: [f32; 3],
+    direction: SpawnDirection,
+    tap_times: &[f32],
+    objects: &[LevelObject],
+) -> Vec<[f32; 3]> {
+    let mut sorted_taps: Vec<f32> = tap_times
+        .iter()
+        .copied()
+        .filter(|tap| tap.is_finite() && *tap >= 0.0)
+        .collect();
+    sorted_taps.sort_by(f32::total_cmp);
+
+    let mut runtime = TimelineSimulationRuntime::new(spawn, direction, objects, &sorted_taps);
+    let mut positions = Vec::with_capacity(sorted_taps.len());
+    for tap_time in sorted_taps {
+        runtime.advance_to(tap_time);
+        let snapshot = runtime.snapshot();
+        positions.push([
+            (snapshot.position[0] - 0.5).round(),
+            (snapshot.position[1] - 0.5).round(),
+            snapshot.position[2].round(),
+        ]);
+    }
+
+    positions.sort_unstable_by(|a, b| {
+        a[0].total_cmp(&b[0])
+            .then(a[1].total_cmp(&b[1]))
+            .then(a[2].total_cmp(&b[2]))
+    });
+    positions.dedup_by(|a, b| {
+        (a[0] - b[0]).abs() < 0.001 && (a[1] - b[1]).abs() < 0.001 && (a[2] - b[2]).abs() < 0.001
+    });
+    positions
+}
+
+#[allow(dead_code)]
+pub(crate) fn derive_timeline_time_for_world_target(
+    spawn: [f32; 3],
+    direction: SpawnDirection,
+    tap_times: &[f32],
+    duration_seconds: f32,
+    objects: &[LevelObject],
+    target: [f32; 3],
+) -> f32 {
+    let duration = duration_seconds.max(0.0);
+    if duration <= 0.0 {
+        return 0.0;
+    }
+
+    let last_tap_time = tap_times
+        .iter()
+        .copied()
+        .filter(|tap| tap.is_finite() && *tap >= 0.0)
+        .fold(0.0_f32, f32::max)
+        .min(duration);
+
+    fn distance_sq(position: [f32; 3], target: [f32; 3]) -> f32 {
+        let dx = position[0] - target[0];
+        let dy = position[1] - target[1];
+        let dz = position[2] - target[2];
+        dx * dx + dy * dy + dz * dz
+    }
+
+    let sample_best_time = |start_time: f32, end_time: f32, samples: usize| -> (f32, f32) {
+        let mut runtime = TimelineSimulationRuntime::new(spawn, direction, objects, tap_times);
+        runtime.advance_to(start_time);
+
+        let mut best_time = start_time;
+        let mut best_distance_sq = f32::INFINITY;
+        let step = if samples == 0 {
+            0.0
+        } else {
+            (end_time - start_time) / samples as f32
+        };
+
+        for index in 0..=samples {
+            let t = (start_time + step * index as f32).clamp(start_time, end_time);
+            runtime.advance_to(t);
+            let snapshot = runtime.snapshot();
+            let current_distance_sq = distance_sq(snapshot.position, target);
+            if current_distance_sq < best_distance_sq {
+                best_distance_sq = current_distance_sq;
+                best_time = t;
+                if best_distance_sq <= 1e-6 {
+                    break;
+                }
+            }
+        }
+
+        (best_time, best_distance_sq)
+    };
+
+    let solve_in_range = |range_start: f32, range_end: f32| -> (f32, f32) {
+        let coarse_samples =
+            (((range_end - range_start).max(0.0) * 30.0).clamp(120.0, 900.0)) as usize;
+        let (mut refined_time, mut best_distance_sq) =
+            sample_best_time(range_start, range_end, coarse_samples);
+
+        for (window_seconds, refinement_samples) in [(1.2_f32, 180_usize), (0.25_f32, 120_usize)] {
+            if best_distance_sq <= 1e-6 {
+                break;
+            }
+
+            let window = window_seconds.min(duration.max(0.01));
+            let start_time = (refined_time - window).max(range_start);
+            let end_time = (refined_time + window).min(range_end);
+
+            let (local_best_time, local_best_distance_sq) =
+                sample_best_time(start_time, end_time, refinement_samples);
+            refined_time = local_best_time;
+            best_distance_sq = local_best_distance_sq;
+        }
+
+        (refined_time.clamp(range_start, range_end), best_distance_sq)
+    };
+
+    let (local_time, local_distance_sq) = solve_in_range(last_tap_time, duration);
+    const ACCEPT_LOCAL_DISTANCE_SQ: f32 = 1.5 * 1.5;
+    if local_distance_sq <= ACCEPT_LOCAL_DISTANCE_SQ || last_tap_time <= 1e-6 {
+        return local_time;
+    }
+
+    let (full_time, _) = solve_in_range(0.0, duration);
+    full_time
+}
+
+#[allow(dead_code)]
+pub(crate) fn derive_timeline_time_for_world_target_near_time(
+    spawn: [f32; 3],
+    direction: SpawnDirection,
+    tap_times: &[f32],
+    duration_seconds: f32,
+    objects: &[LevelObject],
+    target: [f32; 3],
+    search: TimelineNearSearch,
+) -> f32 {
+    let duration = duration_seconds.max(0.0);
+    if duration <= 0.0 {
+        return 0.0;
+    }
+
+    let range_start = (search.seed_time - search.window_seconds.max(0.01)).clamp(0.0, duration);
+    let range_end = (search.seed_time + search.window_seconds.max(0.01)).clamp(0.0, duration);
+    if range_end <= range_start {
+        return range_start;
+    }
+
+    fn distance_sq(position: [f32; 3], target: [f32; 3]) -> f32 {
+        let dx = position[0] - target[0];
+        let dy = position[1] - target[1];
+        let dz = position[2] - target[2];
+        dx * dx + dy * dy + dz * dz
+    }
+
+    let sample_best_time = |start_time: f32, end_time: f32, samples: usize| -> (f32, f32) {
+        let mut runtime = TimelineSimulationRuntime::new(spawn, direction, objects, tap_times);
+        runtime.advance_to(start_time);
+
+        let mut best_time = start_time;
+        let mut best_distance_sq = f32::INFINITY;
+        let step = if samples == 0 {
+            0.0
+        } else {
+            (end_time - start_time) / samples as f32
+        };
+
+        for index in 0..=samples {
+            let t = (start_time + step * index as f32).clamp(start_time, end_time);
+            runtime.advance_to(t);
+            let snapshot = runtime.snapshot();
+            let current_distance_sq = distance_sq(snapshot.position, target);
+            if current_distance_sq < best_distance_sq {
+                best_distance_sq = current_distance_sq;
+                best_time = t;
+                if best_distance_sq <= 1e-6 {
+                    break;
+                }
+            }
+        }
+
+        (best_time, best_distance_sq)
+    };
+
+    let coarse_samples = (((range_end - range_start) * 90.0).clamp(90.0, 360.0)) as usize;
+    let (mut refined_time, mut best_distance_sq) =
+        sample_best_time(range_start, range_end, coarse_samples);
+
+    for (window_seconds, refinement_samples) in [(0.35_f32, 120_usize), (0.12_f32, 80_usize)] {
+        if best_distance_sq <= 1e-6 {
+            break;
+        }
+
+        let start_time = (refined_time - window_seconds).max(range_start);
+        let end_time = (refined_time + window_seconds).min(range_end);
+        let (local_best_time, local_best_distance_sq) =
+            sample_best_time(start_time, end_time, refinement_samples);
+        refined_time = local_best_time;
+        best_distance_sq = local_best_distance_sq;
+    }
+
+    refined_time.clamp(range_start, range_end)
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy)]
+pub(crate) struct TimelineNearSearch {
+    pub(crate) seed_time: f32,
+    pub(crate) window_seconds: f32,
+}
+
 pub(crate) struct TimelineState {
     pub(crate) position: [f32; 3],
     pub(crate) direction: SpawnDirection,
@@ -280,9 +560,13 @@ pub(crate) fn derive_timeline_state(
 #[cfg(test)]
 mod tests {
     use super::{
-        add_tap_time, build_editor_playtest_transition, build_playing_transition_from_metadata,
-        clear_tap_times, create_block_at_cursor, editor_session_init_from_metadata, move_cursor_xy,
-        playtest_return_objects, remove_tap_time, remove_topmost_block_at_cursor,
+        add_tap_time, add_tap_with_indicator, build_editor_playtest_transition,
+        build_playing_transition_from_metadata, clear_tap_times, clear_taps_with_indicators,
+        create_block_at_cursor, derive_tap_indicator_positions, derive_timeline_position,
+        derive_timeline_time_for_world_target, derive_timeline_time_for_world_target_near_time,
+        editor_session_init_from_metadata, move_cursor_xy, playtest_return_objects,
+        remove_tap_time, remove_tap_with_indicator, remove_topmost_block_at_cursor,
+        retain_taps_up_to_duration_with_indicators, TimelineNearSearch,
     };
     use crate::types::{LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata};
 
@@ -304,15 +588,43 @@ mod tests {
     }
 
     #[test]
+    fn keeps_tap_indicators_in_sync_with_tap_time_edits() {
+        let mut taps = Vec::new();
+        let mut indicators = Vec::new();
+
+        add_tap_with_indicator(&mut taps, &mut indicators, 0.3, [3.0, 0.0, 0.0]);
+        add_tap_with_indicator(&mut taps, &mut indicators, 0.1, [1.0, 0.0, 0.0]);
+        add_tap_with_indicator(&mut taps, &mut indicators, 0.2, [2.0, 0.0, 0.0]);
+
+        assert_eq!(taps, vec![0.1, 0.2, 0.3]);
+        assert_eq!(
+            indicators,
+            vec![[1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.0, 0.0, 0.0]]
+        );
+
+        remove_tap_with_indicator(&mut taps, &mut indicators, 0.2);
+        assert_eq!(taps, vec![0.1, 0.3]);
+        assert_eq!(indicators, vec![[1.0, 0.0, 0.0], [3.0, 0.0, 0.0]]);
+
+        retain_taps_up_to_duration_with_indicators(&mut taps, &mut indicators, 0.15);
+        assert_eq!(taps, vec![0.1]);
+        assert_eq!(indicators, vec![[1.0, 0.0, 0.0]]);
+
+        clear_taps_with_indicators(&mut taps, &mut indicators);
+        assert!(taps.is_empty());
+        assert!(indicators.is_empty());
+    }
+
+    #[test]
     fn moves_cursor_within_bounds() {
-        let mut cursor = [0, 0, 0];
+        let mut cursor = [0.0, 0.0, 0.0];
         move_cursor_xy(&mut cursor, 8, -10, 3);
-        assert_eq!(cursor, [3, -3, 0]);
+        assert_eq!(cursor, [3.0, -3.0, 0.0]);
     }
 
     #[test]
     fn creates_block_at_cursor() {
-        let block = create_block_at_cursor([1, 2, 3], "core/grass");
+        let block = create_block_at_cursor([1.0, 2.0, 3.0], "core/grass");
         assert_eq!(block.position, [1.0, 2.0, 3.0]);
         assert_eq!(block.size, [1.0, 1.0, 1.0]);
         assert_eq!(block.block_id, "core/grass");
@@ -337,7 +649,7 @@ mod tests {
             },
         ];
 
-        let removed = remove_topmost_block_at_cursor(&mut objects, [0, 0, 0]);
+        let removed = remove_topmost_block_at_cursor(&mut objects, [0.0, 0.0, 0.0]);
         assert!(removed);
         assert_eq!(objects.len(), 1);
         assert_eq!(objects[0].position, [0.0, 0.0, 0.0]);
@@ -374,7 +686,7 @@ mod tests {
         };
 
         let init = editor_session_init_from_metadata(Some(metadata));
-        assert_eq!(init.cursor, [4, 6, 0]);
+        assert_eq!(init.cursor, [4.0, 6.0, 0.0]);
         assert_eq!(init.camera_pan, [4.5, 6.5]);
         assert_eq!(init.tap_times, vec![0.2, 0.8]);
         assert!((init.timeline_time_seconds - 0.5).abs() <= 1e-6);
@@ -383,7 +695,7 @@ mod tests {
     #[test]
     fn initializes_editor_session_defaults_without_metadata() {
         let init = editor_session_init_from_metadata(None);
-        assert_eq!(init.cursor, [0, 0, 0]);
+        assert_eq!(init.cursor, [0.0, 0.0, 0.0]);
         assert_eq!(init.camera_pan, [0.5, 0.5]);
         assert_eq!(init.timeline_time_seconds, 0.0);
         assert!(init.tap_times.is_empty());
@@ -463,5 +775,237 @@ mod tests {
             crate::types::SpawnDirection::Right
         ));
         assert_eq!(transition.objects.len(), 1);
+    }
+
+    #[test]
+    fn derives_timeline_time_for_forward_target_cell() {
+        let target = [0.5, 4.5, 0.0];
+        let time = derive_timeline_time_for_world_target(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[],
+            8.0,
+            &[],
+            target,
+        );
+
+        assert!((time - 0.5).abs() < 0.08, "unexpected time: {time}");
+    }
+
+    #[test]
+    fn derives_timeline_time_for_turned_target_cell() {
+        let target = [2.5, 0.5, 0.0];
+        let time = derive_timeline_time_for_world_target(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[0.0],
+            4.0,
+            &[],
+            target,
+        );
+
+        assert!((time - 0.25).abs() < 0.08, "unexpected time: {time}");
+    }
+
+    #[test]
+    fn derives_timeline_time_clamps_zero_duration() {
+        let time = derive_timeline_time_for_world_target(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[],
+            0.0,
+            &[],
+            [100.0, 100.0, 0.0],
+        );
+
+        assert_eq!(time, 0.0);
+    }
+
+    #[test]
+    fn derives_timeline_time_prefers_last_tap_segment_when_target_is_near_it() {
+        let taps = [0.4, 0.8, 1.2];
+        let target = [10.0, 0.5, 0.0];
+        let time = derive_timeline_time_for_world_target(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &taps,
+            4.0,
+            &[],
+            target,
+        );
+
+        assert!(
+            time >= 1.2,
+            "expected time in/after last-tap segment, got {time}"
+        );
+    }
+
+    #[test]
+    fn derives_timeline_time_falls_back_to_earlier_segment_when_needed() {
+        let taps = [1.0, 2.0, 3.0];
+        let target = [0.5, 1.5, 0.0];
+        let time = derive_timeline_time_for_world_target(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &taps,
+            6.0,
+            &[],
+            target,
+        );
+
+        assert!(time < 1.0, "expected fallback to early segment, got {time}");
+    }
+
+    #[test]
+    fn derives_timeline_time_near_seed_matches_expected_local_target() {
+        let target = [0.5, 4.5, 0.0];
+        let time = derive_timeline_time_for_world_target_near_time(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[],
+            8.0,
+            &[],
+            target,
+            TimelineNearSearch {
+                seed_time: 0.55,
+                window_seconds: 1.0,
+            },
+        );
+
+        assert!(
+            (time - 0.5).abs() < 0.08,
+            "unexpected near-search time: {time}"
+        );
+    }
+
+    #[test]
+    fn derives_tap_indicator_positions_with_single_simulation_path() {
+        let taps = [0.4, 0.1, 0.4, 0.7];
+        let positions = derive_tap_indicator_positions(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &taps,
+            &[],
+        );
+
+        assert!(!positions.is_empty());
+        let mut unique_check = positions.clone();
+        unique_check.sort_by(|a, b| {
+            a[0].total_cmp(&b[0])
+                .then(a[1].total_cmp(&b[1]))
+                .then(a[2].total_cmp(&b[2]))
+        });
+        unique_check.dedup_by(|a, b| {
+            (a[0] - b[0]).abs() < 0.001
+                && (a[1] - b[1]).abs() < 0.001
+                && (a[2] - b[2]).abs() < 0.001
+        });
+        assert_eq!(positions.len(), unique_check.len());
+    }
+
+    #[test]
+    fn tap_indicator_positions_match_exact_timeline_per_tap() {
+        let taps = [0.0, 0.125, 0.25, 0.375, 0.5, 0.625];
+        let spawn = [0.0, 0.0, 0.0];
+        let direction = crate::types::SpawnDirection::Forward;
+
+        let derived = derive_tap_indicator_positions(spawn, direction, &taps, &[]);
+
+        let mut expected = Vec::new();
+        for tap in taps {
+            let (position, _) = derive_timeline_position(spawn, direction, &taps, tap, &[]);
+            expected.push([
+                (position[0] - 0.5).round(),
+                (position[1] - 0.5).round(),
+                position[2].round(),
+            ]);
+        }
+        expected.sort_by(|a, b| {
+            a[0].total_cmp(&b[0])
+                .then(a[1].total_cmp(&b[1]))
+                .then(a[2].total_cmp(&b[2]))
+        });
+        expected.dedup_by(|a, b| {
+            (a[0] - b[0]).abs() < 0.001
+                && (a[1] - b[1]).abs() < 0.001
+                && (a[2] - b[2]).abs() < 0.001
+        });
+
+        assert_eq!(derived, expected);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    #[ignore = "benchmark"]
+    fn benchmark_toggle_tap_cell_average_budget() {
+        let mut taps = Vec::new();
+        let mut indicators = Vec::new();
+
+        let iterations = 4000usize;
+        let started_at = std::time::Instant::now();
+        for i in 0..iterations {
+            let tap_time = i as f32 * 0.01;
+            let cell = [i as f32, 0.0, 0.0];
+            add_tap_with_indicator(&mut taps, &mut indicators, tap_time, cell);
+            remove_tap_with_indicator(&mut taps, &mut indicators, tap_time);
+        }
+        let elapsed_ms = started_at.elapsed().as_secs_f64() * 1000.0;
+        let average_ms = elapsed_ms / iterations as f64;
+
+        assert!(
+            average_ms < 0.10,
+            "tap toggle average too slow: {average_ms:.4}ms/op (total {elapsed_ms:.2}ms)"
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    #[ignore = "benchmark"]
+    fn benchmark_tap_indicator_rebuild_dense_taps_budget() {
+        let tap_count = 600usize;
+        let taps: Vec<f32> = (0..tap_count).map(|i| i as f32 * 0.03).collect();
+
+        let started_at = std::time::Instant::now();
+        let positions = derive_tap_indicator_positions(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &taps,
+            &[],
+        );
+        let elapsed_ms = started_at.elapsed().as_secs_f64() * 1000.0;
+
+        assert!(!positions.is_empty());
+        assert!(
+            elapsed_ms < 180.0,
+            "tap indicator rebuild too slow: {elapsed_ms:.2}ms for {tap_count} taps"
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    #[ignore = "benchmark"]
+    fn benchmark_near_time_solver_dense_taps_budget() {
+        let taps: Vec<f32> = (0..240).map(|i| i as f32 * 0.05).collect();
+
+        let started_at = std::time::Instant::now();
+        let solved_time = derive_timeline_time_for_world_target_near_time(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &taps,
+            30.0,
+            &[],
+            [4.5, 10.5, 0.0],
+            TimelineNearSearch {
+                seed_time: 10.0,
+                window_seconds: 1.25,
+            },
+        );
+        let elapsed_ms = started_at.elapsed().as_secs_f64() * 1000.0;
+
+        assert!(solved_time.is_finite());
+        assert!(
+            elapsed_ms < 120.0,
+            "near-time solver too slow: {elapsed_ms:.2}ms (result {solved_time:.3}s)"
+        );
     }
 }

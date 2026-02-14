@@ -12,6 +12,7 @@ impl State {
             timeline_time_seconds: self.editor_timeline_time_seconds,
             timeline_duration_seconds: self.editor_timeline_duration_seconds,
             tap_times: self.editor_tap_times.clone(),
+            tap_indicator_positions: self.editor_tap_indicator_positions.clone(),
         }
     }
 
@@ -47,11 +48,20 @@ impl State {
         self.editor_timeline_time_seconds = snapshot.timeline_time_seconds.max(0.0);
         self.editor_timeline_duration_seconds = snapshot.timeline_duration_seconds.max(0.1);
         self.editor_tap_times = snapshot.tap_times;
+        self.editor_tap_indicator_positions = snapshot.tap_indicator_positions;
         self.editor_tap_times
             .retain(|tap| tap.is_finite() && *tap >= 0.0);
         self.editor_tap_times.sort_by(f32::total_cmp);
         self.editor_tap_times
             .retain(|tap| *tap <= self.editor_timeline_duration_seconds);
+        if self.editor_tap_indicator_positions.len() != self.editor_tap_times.len() {
+            self.editor_tap_indicator_positions = derive_tap_indicator_positions(
+                self.editor_spawn.position,
+                self.editor_spawn.direction,
+                &self.editor_tap_times,
+                &self.editor_objects,
+            );
+        }
         self.editor_timeline_time_seconds = self
             .editor_timeline_time_seconds
             .min(self.editor_timeline_duration_seconds);
@@ -136,11 +146,7 @@ impl State {
 
         self.record_editor_history_state();
 
-        let paste_anchor = [
-            self.editor.cursor[0] as f32,
-            self.editor.cursor[1] as f32,
-            self.editor.cursor[2] as f32,
-        ];
+        let paste_anchor = self.editor.cursor;
 
         let base_len = self.editor_objects.len();
         let mut new_indices = Vec::with_capacity(clipboard.objects.len());

@@ -303,7 +303,7 @@ pub(crate) struct MenuState {
 }
 
 pub(crate) struct EditorState {
-    pub(crate) cursor: [i32; 3],
+    pub(crate) cursor: [f32; 3],
     pub(crate) bounds: i32,
 }
 
@@ -317,7 +317,7 @@ pub(crate) enum EditorMode {
 impl EditorState {
     pub(crate) fn new() -> Self {
         Self {
-            cursor: [0, 0, 0],
+            cursor: [0.0, 0.0, 0.0],
             bounds: 55,
         }
     }

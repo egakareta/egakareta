@@ -1,13 +1,70 @@
 use super::*;
 
 impl State {
+    pub(crate) fn toggle_editor_perf_overlay(&mut self) {
+        self.editor_perf.enabled = !self.editor_perf.enabled;
+    }
+
+    pub(crate) fn editor_perf_overlay_enabled(&self) -> bool {
+        self.editor_perf.enabled
+    }
+
+    pub(crate) fn editor_perf_overlay_lines(&self) -> Vec<String> {
+        if !self.editor_perf.enabled {
+            return Vec::new();
+        }
+
+        let mut lines = Vec::new();
+        lines.push("Perf Overlay (Ctrl+Shift+Alt+F12)".to_string());
+        lines.push(format!(
+            "Spikes(>16.7ms): {} | Last Spike: {}",
+            self.editor_perf.frame_spike_count,
+            self.editor_perf
+                .last_spike_stage
+                .map(|stage| stage.name())
+                .unwrap_or("none")
+        ));
+
+        for stage in [
+            PerfStage::FrameTotal,
+            PerfStage::TimelinePlayback,
+            PerfStage::DragSelection,
+            PerfStage::GizmoRebuild,
+            PerfStage::DirtyProcess,
+            PerfStage::TimelineSampleRebuild,
+            PerfStage::TapIndicatorMeshRebuild,
+            PerfStage::BlockMeshRebuild,
+            PerfStage::TTapToggleTotal,
+            PerfStage::TTapSolve,
+        ] {
+            let stat = self.editor_perf.stats[stage.as_index()];
+            lines.push(format!(
+                "{:<18} last {:>6.2}ms | avg {:>6.2}ms | max {:>6.2}ms | n {}",
+                stage.name(),
+                stat.last_ms,
+                stat.ema_ms,
+                stat.max_ms,
+                stat.calls
+            ));
+        }
+
+        lines
+    }
+
+    pub(super) fn perf_record(&mut self, stage: PerfStage, started_at: PlatformInstant) {
+        let elapsed_ms = started_at.elapsed().as_secs_f32() * 1000.0;
+        self.editor_perf.observe(stage, elapsed_ms);
+    }
+
     pub fn update(&mut self) {
+        self.editor_perf.begin_frame();
         self.update_audio_imports();
         const FIXED_DT: f32 = 1.0 / 120.0;
 
         let now = PlatformInstant::now();
         let frame_dt = (now - self.last_frame).as_secs_f32();
         self.last_frame = now;
+        let frame_dt_ms = frame_dt * 1000.0;
         let instant_fps = 1.0 / frame_dt.max(1e-4);
         if self.editor_fps_smoothed <= 0.0 {
             self.editor_fps_smoothed = instant_fps;
@@ -19,6 +76,14 @@ impl State {
         if self.phase == AppPhase::Menu {
             self.accumulator = 0.0;
             self.update_menu_camera();
+            self.editor_perf.observe(PerfStage::FrameTotal, frame_dt_ms);
+            if frame_dt_ms > 16.7 {
+                self.editor_perf.frame_spike_count += 1;
+                self.editor_perf.last_spike_stage = self
+                    .editor_perf
+                    .dominant_stage_this_frame()
+                    .or(Some(PerfStage::FrameTotal));
+            }
             return;
         }
 
@@ -27,6 +92,7 @@ impl State {
             self.trail_mesh.clear();
 
             if self.editor_timeline_playing {
+                let timeline_playback_started_at = PlatformInstant::now();
                 let audio_time = self
                     .audio
                     .playback_time_seconds()
@@ -72,12 +138,15 @@ impl State {
                     self.editor_timeline_playback_runtime = None;
                     self.stop_audio();
                 }
+                self.perf_record(PerfStage::TimelinePlayback, timeline_playback_started_at);
             }
 
             self.update_editor_pan_from_keys(frame_dt);
             if self.editor_gizmo_drag.is_some() || self.editor_block_drag.is_some() {
                 if let Some(pointer) = self.editor_pointer_screen {
+                    let drag_started_at = PlatformInstant::now();
                     self.drag_editor_selection_from_screen(pointer[0], pointer[1]);
+                    self.perf_record(PerfStage::DragSelection, drag_started_at);
                 }
             }
 
@@ -94,12 +163,16 @@ impl State {
 
             if has_selection && self.editor_mode == EditorMode::Select {
                 if is_dragging {
+                    let gizmo_started_at = PlatformInstant::now();
                     self.rebuild_editor_gizmo_vertices();
+                    self.perf_record(PerfStage::GizmoRebuild, gizmo_started_at);
                     self.editor_gizmo_rebuild_accumulator = 0.0;
                 } else if camera_changed {
                     self.editor_gizmo_rebuild_accumulator += frame_dt;
                     if self.editor_gizmo_rebuild_accumulator >= (1.0 / 24.0) {
+                        let gizmo_started_at = PlatformInstant::now();
                         self.rebuild_editor_gizmo_vertices();
+                        self.perf_record(PerfStage::GizmoRebuild, gizmo_started_at);
                         self.editor_gizmo_rebuild_accumulator = 0.0;
                     }
                 } else {
@@ -113,7 +186,19 @@ impl State {
             self.editor_gizmo_last_rotation = self.editor_camera_rotation;
             self.editor_gizmo_last_pitch = self.editor_camera_pitch;
             self.editor_gizmo_last_zoom = self.editor_zoom;
+            let dirty_started_at = PlatformInstant::now();
+            self.process_editor_dirty();
+            self.perf_record(PerfStage::DirtyProcess, dirty_started_at);
             self.update_editor_camera();
+
+            self.editor_perf.observe(PerfStage::FrameTotal, frame_dt_ms);
+            if frame_dt_ms > 16.7 {
+                self.editor_perf.frame_spike_count += 1;
+                self.editor_perf.last_spike_stage = self
+                    .editor_perf
+                    .dominant_stage_this_frame()
+                    .or(Some(PerfStage::FrameTotal));
+            }
             return;
         }
 
@@ -213,6 +298,17 @@ impl State {
             0,
             bytemuck::bytes_of(&camera_uniform),
         );
+
+        if self.phase == AppPhase::Playing {
+            self.editor_perf.observe(PerfStage::FrameTotal, frame_dt_ms);
+            if frame_dt_ms > 16.7 {
+                self.editor_perf.frame_spike_count += 1;
+                self.editor_perf.last_spike_stage = self
+                    .editor_perf
+                    .dominant_stage_this_frame()
+                    .or(Some(PerfStage::FrameTotal));
+            }
+        }
     }
 
     fn update_menu_camera(&mut self) {

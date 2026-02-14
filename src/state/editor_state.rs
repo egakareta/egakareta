@@ -114,9 +114,9 @@ impl State {
             };
             self.editor_objects[index].position = next_position;
             self.editor.cursor = [
-                (next_position[0].floor() as i32).clamp(-bounds, bounds),
-                (next_position[1].floor() as i32).clamp(-bounds, bounds),
-                (next_position[2].floor() as i32).max(0),
+                next_position[0].clamp(-bounds as f32, bounds as f32),
+                next_position[1].clamp(-bounds as f32, bounds as f32),
+                next_position[2].max(0.0),
             ];
             self.sync_editor_objects();
             self.rebuild_editor_cursor_vertices();
@@ -248,9 +248,12 @@ impl State {
     }
 
     pub fn set_editor_timeline_time_seconds(&mut self, time_seconds: f32) {
-        self.record_editor_history_state();
-        self.editor_timeline_time_seconds =
-            time_seconds.clamp(0.0, self.editor_timeline_duration_seconds.max(0.0));
+        let clamped_time = time_seconds.clamp(0.0, self.editor_timeline_duration_seconds.max(0.0));
+        if (clamped_time - self.editor_timeline_time_seconds).abs() <= f32::EPSILON {
+            return;
+        }
+
+        self.editor_timeline_time_seconds = clamped_time;
         self.refresh_editor_timeline_position();
         self.resync_editor_timeline_playback_audio();
     }
@@ -261,38 +264,67 @@ impl State {
         self.editor_timeline_time_seconds = self
             .editor_timeline_time_seconds
             .min(self.editor_timeline_duration_seconds);
-        self.editor_tap_times
-            .retain(|time_seconds| *time_seconds <= self.editor_timeline_duration_seconds);
+        retain_taps_up_to_duration_with_indicators(
+            &mut self.editor_tap_times,
+            &mut self.editor_tap_indicator_positions,
+            self.editor_timeline_duration_seconds,
+        );
+        self.invalidate_editor_timeline_samples();
         self.refresh_editor_timeline_position();
         self.resync_editor_timeline_playback_audio();
-        self.rebuild_tap_indicator_vertices();
+        self.mark_editor_dirty(EditorDirtyFlags {
+            rebuild_tap_indicators: true,
+            ..EditorDirtyFlags::default()
+        });
     }
 
     pub fn editor_add_tap(&mut self) {
         self.record_editor_history_state();
-        add_tap_time(
+        let tap_time = self.editor_timeline_time_seconds;
+        let indicator_cell =
+            self.tap_indicator_position_from_world(self.editor_timeline_preview_position);
+        add_tap_with_indicator(
             &mut self.editor_tap_times,
-            self.editor_timeline_time_seconds,
+            &mut self.editor_tap_indicator_positions,
+            tap_time,
+            indicator_cell,
         );
+        self.invalidate_editor_timeline_samples_from(tap_time);
         self.refresh_editor_timeline_position();
-        self.rebuild_tap_indicator_vertices();
+        self.mark_editor_dirty(EditorDirtyFlags {
+            rebuild_tap_indicators: true,
+            ..EditorDirtyFlags::default()
+        });
     }
 
     pub fn editor_remove_tap(&mut self) {
         self.record_editor_history_state();
-        remove_tap_time(
+        let tap_time = self.editor_timeline_time_seconds;
+        remove_tap_with_indicator(
             &mut self.editor_tap_times,
-            self.editor_timeline_time_seconds,
+            &mut self.editor_tap_indicator_positions,
+            tap_time,
         );
+        self.invalidate_editor_timeline_samples_from(tap_time);
         self.refresh_editor_timeline_position();
-        self.rebuild_tap_indicator_vertices();
+        self.mark_editor_dirty(EditorDirtyFlags {
+            rebuild_tap_indicators: true,
+            ..EditorDirtyFlags::default()
+        });
     }
 
     pub fn editor_clear_taps(&mut self) {
         self.record_editor_history_state();
-        clear_tap_times(&mut self.editor_tap_times);
+        clear_taps_with_indicators(
+            &mut self.editor_tap_times,
+            &mut self.editor_tap_indicator_positions,
+        );
+        self.invalidate_editor_timeline_samples();
         self.refresh_editor_timeline_position();
-        self.rebuild_tap_indicator_vertices();
+        self.mark_editor_dirty(EditorDirtyFlags {
+            rebuild_tap_indicators: true,
+            ..EditorDirtyFlags::default()
+        });
     }
 
     pub(crate) fn editor_timeline_preview(&self) -> ([f32; 3], SpawnDirection) {

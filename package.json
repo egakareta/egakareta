@@ -1,5 +1,6 @@
 {
     "scripts": {
+        "benchmark": "cargo test benchmark_ -- --ignored",
         "build": "wasm-pack build --target web",
         "format:cargo": "cargo fmt",
         "format:prettier": "prettier --write .",

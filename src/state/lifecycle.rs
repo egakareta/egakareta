@@ -67,6 +67,12 @@ impl State {
         self.editor_spawn = init.spawn;
         self.editor_music_metadata = init.music;
         self.editor_tap_times = init.tap_times;
+        self.editor_tap_indicator_positions = derive_tap_indicator_positions(
+            self.editor_spawn.position,
+            self.editor_spawn.direction,
+            &self.editor_tap_times,
+            &self.editor_objects,
+        );
         self.editor_timeline_time_seconds = init.timeline_time_seconds;
         self.editor_timeline_duration_seconds = init.timeline_duration_seconds;
         self.editor.cursor = init.cursor;
@@ -201,6 +207,12 @@ impl State {
         self.editor_tap_times
             .retain(|tap| tap.is_finite() && *tap >= 0.0);
         self.editor_tap_times.sort_by(f32::total_cmp);
+        self.editor_tap_indicator_positions = derive_tap_indicator_positions(
+            self.editor_spawn.position,
+            self.editor_spawn.direction,
+            &self.editor_tap_times,
+            &self.editor_objects,
+        );
         self.editor_timeline_time_seconds = metadata.timeline_time_seconds;
         if self.editor_timeline_time_seconds <= 0.0 && metadata.legacy_timeline_step > 0 {
             let seconds_per_step = 1.0 / crate::game::BASE_PLAYER_SPEED.max(0.1);
@@ -213,18 +225,15 @@ impl State {
 
         if let Some(first) = self.editor_objects.first() {
             self.editor.cursor = [
-                first.position[0].round() as i32,
-                first.position[1].round() as i32,
-                first.position[2].round() as i32,
+                first.position[0].round(),
+                first.position[1].round(),
+                first.position[2].round(),
             ];
         } else {
-            self.editor.cursor = [0, 0, 0];
+            self.editor.cursor = [0.0, 0.0, 0.0];
         }
 
-        self.editor_camera_pan = [
-            self.editor.cursor[0] as f32 + 0.5,
-            self.editor.cursor[1] as f32 + 0.5,
-        ];
+        self.editor_camera_pan = [self.editor.cursor[0] + 0.5, self.editor.cursor[1] + 0.5];
 
         self.editor_history_undo.clear();
         self.editor_history_redo.clear();

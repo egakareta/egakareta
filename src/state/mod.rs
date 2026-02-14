@@ -14,10 +14,11 @@ use wgpu::util::DeviceExt;
 
 use crate::block_repository::DEFAULT_BLOCK_ID;
 use crate::editor_domain::{
-    add_tap_time, build_editor_playtest_transition, build_playing_transition_from_metadata,
-    clear_tap_times, create_block_at_cursor, derive_timeline_elapsed_seconds,
-    derive_timeline_position, editor_session_init_from_metadata, move_cursor_xy,
-    playtest_return_objects, remove_tap_time, remove_topmost_block_at_cursor,
+    add_tap_with_indicator, build_editor_playtest_transition,
+    build_playing_transition_from_metadata, clear_taps_with_indicators, create_block_at_cursor,
+    derive_tap_indicator_positions, derive_timeline_elapsed_seconds, derive_timeline_position,
+    editor_session_init_from_metadata, playtest_return_objects, remove_tap_with_indicator,
+    remove_topmost_block_at_cursor, retain_taps_up_to_duration_with_indicators,
     toggle_spawn_direction,
 };
 use crate::game::{create_menu_scene, GameState, TimelineSimulationRuntime};
@@ -183,8 +184,14 @@ pub struct State {
     editor_timeline_preview_position: [f32; 3],
     editor_timeline_preview_direction: SpawnDirection,
     editor_tap_times: Vec<f32>,
+    editor_tap_indicator_positions: Vec<[f32; 3]>,
+    editor_timeline_samples: Vec<EditorTimelineSample>,
+    editor_timeline_samples_dirty: bool,
+    editor_timeline_samples_rebuild_from_seconds: Option<f32>,
     editor_timeline_playing: bool,
     editor_timeline_playback_runtime: Option<TimelineSimulationRuntime>,
+    editor_dirty: EditorDirtyFlags,
+    editor_perf: EditorPerfProfiler,
     editor_fps_smoothed: f32,
     editor_gizmo_rebuild_accumulator: f32,
     editor_gizmo_last_pan: [f32; 2],
@@ -231,8 +238,167 @@ pub struct State {
 
 type AudioImportData = (String, Vec<u8>);
 
+#[derive(Clone, Copy, Default)]
+struct EditorDirtyFlags {
+    sync_game_objects: bool,
+    rebuild_block_mesh: bool,
+    rebuild_selection_overlays: bool,
+    rebuild_tap_indicators: bool,
+    rebuild_preview_player: bool,
+}
+
+impl EditorDirtyFlags {
+    fn from_object_sync() -> Self {
+        Self {
+            sync_game_objects: true,
+            rebuild_block_mesh: true,
+            rebuild_selection_overlays: true,
+            rebuild_tap_indicators: true,
+            rebuild_preview_player: true,
+        }
+    }
+
+    fn merge(&mut self, other: Self) {
+        self.sync_game_objects |= other.sync_game_objects;
+        self.rebuild_block_mesh |= other.rebuild_block_mesh;
+        self.rebuild_selection_overlays |= other.rebuild_selection_overlays;
+        self.rebuild_tap_indicators |= other.rebuild_tap_indicators;
+        self.rebuild_preview_player |= other.rebuild_preview_player;
+    }
+
+    fn any(self) -> bool {
+        self.sync_game_objects
+            || self.rebuild_block_mesh
+            || self.rebuild_selection_overlays
+            || self.rebuild_tap_indicators
+            || self.rebuild_preview_player
+    }
+}
+
+#[derive(Clone, Copy)]
+enum PerfStage {
+    FrameTotal = 0,
+    TimelinePlayback,
+    DragSelection,
+    GizmoRebuild,
+    DirtyProcess,
+    TimelineSampleRebuild,
+    TapIndicatorMeshRebuild,
+    BlockMeshRebuild,
+    TTapToggleTotal,
+    TTapSolve,
+}
+
+const PERF_STAGE_COUNT: usize = 10;
+
+impl PerfStage {
+    const fn as_index(self) -> usize {
+        self as usize
+    }
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::FrameTotal => "FrameTotal",
+            Self::TimelinePlayback => "TimelinePlayback",
+            Self::DragSelection => "DragSelection",
+            Self::GizmoRebuild => "GizmoRebuild",
+            Self::DirtyProcess => "DirtyProcess",
+            Self::TimelineSampleRebuild => "TimelineSamples",
+            Self::TapIndicatorMeshRebuild => "TapIndicatorMesh",
+            Self::BlockMeshRebuild => "BlockMeshRebuild",
+            Self::TTapToggleTotal => "TKeyToggle",
+            Self::TTapSolve => "TKeySolve",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct PerfStat {
+    last_ms: f32,
+    ema_ms: f32,
+    max_ms: f32,
+    calls: u64,
+}
+
+impl PerfStat {
+    const fn zero() -> Self {
+        Self {
+            last_ms: 0.0,
+            ema_ms: 0.0,
+            max_ms: 0.0,
+            calls: 0,
+        }
+    }
+
+    fn observe(&mut self, ms: f32) {
+        self.last_ms = ms;
+        if self.calls == 0 {
+            self.ema_ms = ms;
+        } else {
+            self.ema_ms = self.ema_ms * 0.9 + ms * 0.1;
+        }
+        self.max_ms = self.max_ms.max(ms);
+        self.calls += 1;
+    }
+}
+
+struct EditorPerfProfiler {
+    enabled: bool,
+    stats: [PerfStat; PERF_STAGE_COUNT],
+    frame_stage_ms: [f32; PERF_STAGE_COUNT],
+    frame_spike_count: u64,
+    last_spike_stage: Option<PerfStage>,
+}
+
+impl EditorPerfProfiler {
+    fn new() -> Self {
+        Self {
+            enabled: false,
+            stats: [PerfStat::zero(); PERF_STAGE_COUNT],
+            frame_stage_ms: [0.0; PERF_STAGE_COUNT],
+            frame_spike_count: 0,
+            last_spike_stage: None,
+        }
+    }
+
+    fn observe(&mut self, stage: PerfStage, ms: f32) {
+        self.stats[stage.as_index()].observe(ms);
+        self.frame_stage_ms[stage.as_index()] += ms;
+    }
+
+    fn begin_frame(&mut self) {
+        self.frame_stage_ms = [0.0; PERF_STAGE_COUNT];
+    }
+
+    fn dominant_stage_this_frame(&self) -> Option<PerfStage> {
+        let stages = [
+            PerfStage::TimelinePlayback,
+            PerfStage::DragSelection,
+            PerfStage::GizmoRebuild,
+            PerfStage::DirtyProcess,
+            PerfStage::TimelineSampleRebuild,
+            PerfStage::TapIndicatorMeshRebuild,
+            PerfStage::BlockMeshRebuild,
+            PerfStage::TTapToggleTotal,
+            PerfStage::TTapSolve,
+        ];
+
+        let mut dominant: Option<(PerfStage, f32)> = None;
+        for stage in stages {
+            let value = self.frame_stage_ms[stage.as_index()];
+            dominant = match dominant {
+                None => Some((stage, value)),
+                Some((_, best)) if value > best => Some((stage, value)),
+                current => current,
+            };
+        }
+
+        dominant.map(|(stage, _)| stage)
+    }
+}
+
 struct EditorPickResult {
-    cursor: [i32; 3],
+    cursor: [f32; 3],
     hit_block_index: Option<usize>,
 }
 
@@ -282,18 +448,25 @@ struct EditorHistorySnapshot {
     objects: Vec<LevelObject>,
     selected_block_index: Option<usize>,
     selected_block_indices: Vec<usize>,
-    cursor: [i32; 3],
+    cursor: [f32; 3],
     selected_block_id: String,
     spawn: SpawnMetadata,
     timeline_time_seconds: f32,
     timeline_duration_seconds: f32,
     tap_times: Vec<f32>,
+    tap_indicator_positions: Vec<[f32; 3]>,
 }
 
 #[derive(Clone)]
 struct EditorClipboard {
     objects: Vec<LevelObject>,
     anchor: [f32; 3],
+}
+
+#[derive(Clone, Copy)]
+struct EditorTimelineSample {
+    time_seconds: f32,
+    position: [f32; 3],
 }
 
 impl State {
@@ -639,8 +812,14 @@ impl State {
             editor_timeline_preview_position: [0.0, 0.0, 0.0],
             editor_timeline_preview_direction: SpawnDirection::Forward,
             editor_tap_times: Vec::new(),
+            editor_tap_indicator_positions: Vec::new(),
+            editor_timeline_samples: Vec::new(),
+            editor_timeline_samples_dirty: true,
+            editor_timeline_samples_rebuild_from_seconds: None,
             editor_timeline_playing: false,
             editor_timeline_playback_runtime: None,
+            editor_dirty: EditorDirtyFlags::default(),
+            editor_perf: EditorPerfProfiler::new(),
             editor_fps_smoothed: 0.0,
             editor_gizmo_rebuild_accumulator: 0.0,
             editor_gizmo_last_pan: [0.0, 0.0],
@@ -886,7 +1065,19 @@ impl State {
             }
             "Escape" => {
                 if just_pressed {
-                    self.back_to_menu();
+                    if self.is_editor() {
+                        if self.editor_timeline_playing {
+                            self.editor_timeline_playing = false;
+                            self.editor_timeline_playback_runtime = None;
+                            self.stop_audio();
+                        } else if self.editor_timeline_time_seconds > 0.001 {
+                            self.set_editor_timeline_time_seconds(0.0);
+                        } else {
+                            self.back_to_menu();
+                        }
+                    } else {
+                        self.back_to_menu();
+                    }
                 }
             }
             "q" | "Q" => {
@@ -911,6 +1102,11 @@ impl State {
             "r" | "R" => {
                 if just_pressed {
                     self.editor_rotate_spawn_direction();
+                }
+            }
+            "t" | "T" => {
+                if just_pressed && self.is_editor() && self.editor_mode == EditorMode::Place {
+                    self.editor_add_tap_at_pointer_position();
                 }
             }
             "+" | "=" => {
@@ -953,6 +1149,15 @@ impl State {
                     self.trigger_selected_block_obj_export();
                 }
             }
+            "F12" => {
+                if self.editor_ctrl_held
+                    && self.editor_shift_held
+                    && self.editor_alt_held
+                    && just_pressed
+                {
+                    self.toggle_editor_perf_overlay();
+                }
+            }
             "c" | "C" => {
                 if self.is_editor() && self.editor_ctrl_held && just_pressed {
                     self.editor_copy_block();
@@ -981,8 +1186,13 @@ impl State {
         match button {
             0 => {
                 if !pressed {
+                    let had_drag =
+                        self.editor_gizmo_drag.is_some() || self.editor_block_drag.is_some();
                     self.editor_gizmo_drag = None;
                     self.editor_block_drag = None;
+                    if had_drag {
+                        self.sync_editor_objects();
+                    }
                 } else {
                     self.turn_right();
                 }

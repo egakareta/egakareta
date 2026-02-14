@@ -1123,16 +1123,16 @@ pub(crate) fn build_trail_vertices(points: &[[f32; 3]], game_over: bool) -> Vec<
     trail_vertices
 }
 
-pub(crate) fn build_editor_cursor_vertices(cursor: [i32; 3]) -> Vec<Vertex> {
+pub(crate) fn build_editor_cursor_vertices(cursor: [f32; 3]) -> Vec<Vertex> {
     let mut vertices = Vec::new();
     let color_top = [0.2, 0.85, 0.95, 0.4];
     let color_side = [0.1, 0.45, 0.55, 0.4];
-    let z_min = cursor[2] as f32;
-    let z_max = cursor[2] as f32 + 1.05;
+    let z_min = cursor[2];
+    let z_max = cursor[2] + 1.05;
 
-    let x_min = cursor[0] as f32;
+    let x_min = cursor[0];
     let x_max = x_min + 1.0;
-    let y_min = cursor[1] as f32;
+    let y_min = cursor[1];
     let y_max = y_min + 1.0;
 
     vertices.push(Vertex {
@@ -1866,7 +1866,7 @@ pub(crate) fn build_spawn_marker_vertices(position: [f32; 3], faces_right: bool)
     vertices
 }
 
-pub(crate) fn build_tap_indicator_vertices(positions: &[[i32; 3]]) -> Vec<Vertex> {
+pub(crate) fn build_tap_indicator_vertices(positions: &[[f32; 3]]) -> Vec<Vertex> {
     let mut vertices = Vec::new();
     let color = [0.0, 0.0, 0.0, 1.0]; // Black
     let thickness = 0.05;
@@ -1874,11 +1874,11 @@ pub(crate) fn build_tap_indicator_vertices(positions: &[[i32; 3]]) -> Vec<Vertex
     // Gaps will be (1.0 - 3*0.2) / 2 = 0.2
 
     for &pos in positions {
-        let x_min = pos[0] as f32;
+        let x_min = pos[0];
         let x_max = x_min + 1.0;
-        let y_min = pos[1] as f32;
+        let y_min = pos[1];
         let y_max = y_min + 1.0;
-        let z = pos[2] as f32 + 0.1; // 0.1 above ground
+        let z = pos[2] + 0.1; // 0.1 above ground
 
         let starts = [0.0, 0.4, 0.8];
 
