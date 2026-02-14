@@ -59,8 +59,6 @@ pub(crate) struct BlockDefinition {
     #[serde(default = "default_display_name")]
     pub(crate) display_name: String,
     #[serde(default)]
-    pub(crate) aliases: Vec<String>,
-    #[serde(default)]
     pub(crate) assets: BlockAssets,
     #[serde(default)]
     pub(crate) render: BlockRender,
@@ -80,12 +78,6 @@ impl BlockDefinition {
         if self.display_name.is_empty() {
             self.display_name = self.id.clone();
         }
-        self.aliases = self
-            .aliases
-            .into_iter()
-            .map(|alias| alias.trim().to_ascii_lowercase())
-            .filter(|alias| !alias.is_empty() && alias != &self.id)
-            .collect();
         Some(self)
     }
 }
@@ -169,7 +161,6 @@ impl Default for BlockBehavior {
 pub(crate) struct BlockCatalog {
     definitions: Vec<BlockDefinition>,
     by_id: HashMap<String, usize>,
-    aliases: HashMap<String, String>,
     fallback_id: String,
 }
 
@@ -191,18 +182,9 @@ impl BlockCatalog {
             definitions.push(fallback);
         }
 
-        let mut aliases = HashMap::new();
-        for definition in &definitions {
-            aliases.insert(definition.id.clone(), definition.id.clone());
-            for alias in &definition.aliases {
-                aliases.insert(alias.clone(), definition.id.clone());
-            }
-        }
-
         Self {
             definitions,
             by_id,
-            aliases,
             fallback_id: DEFAULT_BLOCK_ID.to_string(),
         }
     }
@@ -211,7 +193,6 @@ impl BlockCatalog {
         BlockDefinition {
             id: DEFAULT_BLOCK_ID.to_string(),
             display_name: "Standard".to_string(),
-            aliases: vec!["standard".to_string()],
             assets: BlockAssets::default(),
             render: BlockRender::default(),
             behavior: BlockBehavior::default(),
@@ -224,9 +205,9 @@ impl BlockCatalog {
         if normalized.is_empty() {
             return self.fallback_id.as_str();
         }
-        self.aliases
+        self.by_id
             .get(&normalized)
-            .map(String::as_str)
+            .map(|&index| self.definitions[index].id.as_str())
             .unwrap_or(self.fallback_id.as_str())
     }
 

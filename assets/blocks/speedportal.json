@@ -1,7 +1,6 @@
 {
   "id": "core/speedportal",
   "display_name": "Speed Portal",
-  "aliases": ["speedportal", "speed_portal"],
   "assets": {
     "mesh": "speedportal.obj"
   },

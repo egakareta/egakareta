@@ -1,7 +1,6 @@
 {
   "id": "core/grass",
   "display_name": "Grass",
-  "aliases": ["grass"],
   "render": {
     "profile": "solid",
     "color_top": [0.1, 0.6, 0.1, 1.0],

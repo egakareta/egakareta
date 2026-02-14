@@ -1,7 +1,6 @@
 {
   "id": "core/void",
   "display_name": "Void",
-  "aliases": ["void"],
   "render": {
     "profile": "void_frame",
     "color_fill": [0.0, 0.0, 0.0, 1.0],

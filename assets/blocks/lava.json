@@ -1,7 +1,6 @@
 {
   "id": "core/lava",
   "display_name": "Lava",
-  "aliases": ["lava"],
   "render": {
     "profile": "solid",
     "color_top": [0.85, 0.2, 0.08, 1.0],
