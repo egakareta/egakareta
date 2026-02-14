@@ -1,5 +1,6 @@
+use crate::block_repository::all_placeable_blocks;
 use crate::types::{EditorMode, SpawnDirection};
-use crate::{BlockKind, State};
+use crate::State;
 
 const MIN_TIMELINE_LENGTH: u32 = 1;
 const MAX_TIMELINE_LENGTH: u32 = 512;
@@ -220,16 +221,16 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                         ui.horizontal(|ui| {
                             ui.label("Block:");
 
-                            let current = state.editor_selected_block_kind();
-                            for (name, kind) in [
-                                ("Standard", BlockKind::Standard),
-                                ("Grass", BlockKind::Grass),
-                                ("Dirt", BlockKind::Dirt),
-                                ("Void", BlockKind::Void),
-                                ("Speed Portal", BlockKind::SpeedPortal),
-                            ] {
-                                if ui.selectable_label(current == kind, name).clicked() {
-                                    state.set_editor_block_kind(kind);
+                            let current = state.editor_selected_block_id().to_string();
+                            for block in all_placeable_blocks() {
+                                if !block.placeable {
+                                    continue;
+                                }
+                                if ui
+                                    .selectable_label(current == block.id, &block.display_name)
+                                    .clicked()
+                                {
+                                    state.set_editor_block_id(block.id.clone());
                                 }
                             }
                         });
@@ -325,15 +326,18 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
 
                             ui.horizontal(|ui| {
                                 ui.label("Color:");
-                                for (name, kind) in [
-                                    ("Standard", BlockKind::Standard),
-                                    ("Grass", BlockKind::Grass),
-                                    ("Dirt", BlockKind::Dirt),
-                                    ("Void", BlockKind::Void),
-                                    ("Speed Portal", BlockKind::SpeedPortal),
-                                ] {
-                                    if ui.selectable_label(selected.kind == kind, name).clicked() {
-                                        state.set_editor_selected_block_kind(kind);
+                                for block in all_placeable_blocks() {
+                                    if !block.placeable {
+                                        continue;
+                                    }
+                                    if ui
+                                        .selectable_label(
+                                            selected.block_id == block.id,
+                                            &block.display_name,
+                                        )
+                                        .clicked()
+                                    {
+                                        state.set_editor_selected_block_id(block.id.clone());
                                     }
                                 }
                             });

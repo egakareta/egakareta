@@ -1,0 +1,15 @@
+{
+  "id": "core/speedportal",
+  "display_name": "Speed Portal",
+  "aliases": ["speedportal", "speed_portal"],
+  "render": {
+    "profile": "speed_portal"
+  },
+  "behavior": {
+    "collision": "portal",
+    "speed_multiplier": 1.5,
+    "support_surface": false,
+    "consumed_on_overlap": true
+  },
+  "placeable": true
+}

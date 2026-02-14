@@ -1,6 +1,5 @@
-use crate::types::{
-    BlockKind, LevelMetadata, LevelObject, MusicMetadata, SpawnDirection, SpawnMetadata,
-};
+use crate::block_repository::resolve_block_definition;
+use crate::types::{LevelMetadata, LevelObject, MusicMetadata, SpawnDirection, SpawnMetadata};
 
 pub(crate) struct EditorPlaytestTransition {
     pub(crate) objects: Vec<LevelObject>,
@@ -132,13 +131,13 @@ pub(crate) fn move_cursor_xy(cursor: &mut [i32; 3], dx: i32, dy: i32, bounds: i3
     cursor[1] = (cursor[1] + dy).clamp(-bounds, bounds);
 }
 
-pub(crate) fn create_block_at_cursor(cursor: [i32; 3], kind: BlockKind) -> LevelObject {
+pub(crate) fn create_block_at_cursor(cursor: [i32; 3], block_id: &str) -> LevelObject {
     LevelObject {
         position: [cursor[0] as f32, cursor[1] as f32, cursor[2] as f32],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: 0.0,
         roundness: 0.18,
-        kind,
+        block_id: block_id.to_string(),
     }
 }
 
@@ -239,6 +238,12 @@ fn top_surface_height_at(objects: &[LevelObject], x: f32, y: f32, max_z: f32) ->
     const GROUND_PLANE_HEIGHT: f32 = 0.0;
     let mut top_surface: Option<f32> = None;
     for obj in objects {
+        if !resolve_block_definition(&obj.block_id)
+            .behavior
+            .support_surface
+        {
+            continue;
+        }
         if object_xy_contains(obj, x, y) {
             let top = obj.position[2] + obj.size[2];
             if top <= max_z {
@@ -283,7 +288,7 @@ mod tests {
         clear_tap_steps, create_block_at_cursor, editor_session_init_from_metadata, move_cursor_xy,
         playtest_return_objects, remove_tap_step, remove_topmost_block_at_cursor,
     };
-    use crate::types::{BlockKind, LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata};
+    use crate::types::{LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata};
 
     #[test]
     fn keeps_tap_steps_unique_and_sorted() {
@@ -311,10 +316,10 @@ mod tests {
 
     #[test]
     fn creates_block_at_cursor() {
-        let block = create_block_at_cursor([1, 2, 3], BlockKind::Grass);
+        let block = create_block_at_cursor([1, 2, 3], "core/grass");
         assert_eq!(block.position, [1.0, 2.0, 3.0]);
         assert_eq!(block.size, [1.0, 1.0, 1.0]);
-        assert!(matches!(block.kind, BlockKind::Grass));
+        assert_eq!(block.block_id, "core/grass");
     }
 
     #[test]
@@ -325,14 +330,14 @@ mod tests {
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: 0.0,
                 roundness: 0.18,
-                kind: BlockKind::Standard,
+                block_id: "core/standard".to_string(),
             },
             LevelObject {
                 position: [0.0, 0.0, 1.0],
                 size: [1.0, 1.0, 2.0],
                 rotation_degrees: 0.0,
                 roundness: 0.18,
-                kind: BlockKind::Grass,
+                block_id: "core/grass".to_string(),
             },
         ];
 
@@ -364,7 +369,7 @@ mod tests {
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: 0.0,
                 roundness: 0.18,
-                kind: BlockKind::Standard,
+                block_id: "core/standard".to_string(),
             }],
             extra: serde_json::Map::new(),
         };
@@ -393,7 +398,7 @@ mod tests {
             size: [1.0, 1.0, 1.0],
             rotation_degrees: 0.0,
             roundness: 0.18,
-            kind: BlockKind::Standard,
+            block_id: "core/standard".to_string(),
         }];
 
         let transition = build_editor_playtest_transition(
@@ -420,7 +425,7 @@ mod tests {
             size: [1.0, 1.0, 1.0],
             rotation_degrees: 0.0,
             roundness: 0.18,
-            kind: BlockKind::Standard,
+            block_id: "core/standard".to_string(),
         }];
 
         assert!(playtest_return_objects(true, &objects).is_some());
@@ -449,7 +454,7 @@ mod tests {
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: 0.0,
                 roundness: 0.18,
-                kind: BlockKind::Standard,
+                block_id: "core/standard".to_string(),
             }],
             extra: serde_json::Map::new(),
         };
@@ -471,7 +476,7 @@ mod tests {
             size: [2.0, 1.0, 3.0],
             rotation_degrees: 90.0,
             roundness: 0.18,
-            kind: BlockKind::Standard,
+            block_id: "core/standard".to_string(),
         }];
 
         let top = super::top_surface_height_at(&objects, 1.0, 0.5, 10.0);
@@ -485,7 +490,7 @@ mod tests {
             size: [2.0, 1.0, 2.0],
             rotation_degrees: 90.0,
             roundness: 0.18,
-            kind: BlockKind::Standard,
+            block_id: "core/standard".to_string(),
         }];
 
         let top = super::top_surface_height_at(&objects, 2.2, 0.5, 10.0);

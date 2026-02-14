@@ -1,4 +1,7 @@
+use serde::Deserializer;
 use serde::{Deserialize, Serialize};
+
+use crate::block_repository::{normalize_block_id, DEFAULT_BLOCK_ID};
 
 pub(crate) const CURRENT_LEVEL_FORMAT_VERSION: u32 = 1;
 
@@ -66,6 +69,22 @@ fn is_default_level_object_size(value: &[f32; 3]) -> bool {
     value
         .iter()
         .all(|component| (*component - 1.0).abs() <= 1e-6)
+}
+
+fn default_level_object_block_id() -> String {
+    DEFAULT_BLOCK_ID.to_string()
+}
+
+fn is_default_level_object_block_id(value: &String) -> bool {
+    value == DEFAULT_BLOCK_ID
+}
+
+fn deserialize_level_object_block_id<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = String::deserialize(deserializer)?;
+    Ok(normalize_block_id(&raw))
 }
 
 #[repr(C)]
@@ -212,21 +231,6 @@ fn is_default_spawn_metadata(value: &SpawnMetadata) -> bool {
     is_default_spawn_position(&value.position) && is_default_spawn_direction(&value.direction)
 }
 
-#[derive(Deserialize, Serialize, Clone, Copy, PartialEq, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum BlockKind {
-    #[default]
-    Standard,
-    Grass,
-    Dirt,
-    Void,
-    SpeedPortal,
-}
-
-fn is_default_block_kind(value: &BlockKind) -> bool {
-    *value == BlockKind::Standard
-}
-
 #[derive(Deserialize, Serialize, Clone)]
 pub(crate) struct LevelObject {
     #[serde(
@@ -249,8 +253,19 @@ pub(crate) struct LevelObject {
         skip_serializing_if = "is_default_block_roundness"
     )]
     pub(crate) roundness: f32,
-    #[serde(default, skip_serializing_if = "is_default_block_kind")]
-    pub(crate) kind: BlockKind,
+    #[serde(
+        default = "default_level_object_block_id",
+        alias = "kind",
+        deserialize_with = "deserialize_level_object_block_id",
+        skip_serializing_if = "is_default_level_object_block_id"
+    )]
+    pub(crate) block_id: String,
+}
+
+impl LevelObject {
+    pub(crate) fn normalize_block_id(&mut self) {
+        self.block_id = normalize_block_id(&self.block_id);
+    }
 }
 
 #[derive(PartialEq)]
@@ -328,9 +343,7 @@ pub(crate) struct ColorSpaceUniform {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        BlockKind, LevelMetadata, LevelObject, MusicMetadata, SpawnDirection, SpawnMetadata,
-    };
+    use super::{LevelMetadata, LevelObject, MusicMetadata, SpawnDirection, SpawnMetadata};
     use serde_json::json;
 
     #[test]
@@ -344,7 +357,7 @@ mod tests {
         let object: LevelObject = serde_json::from_str(json).expect("valid level object");
         assert_eq!(object.rotation_degrees, 0.0);
         assert_eq!(object.roundness, 0.18);
-        assert!(matches!(object.kind, BlockKind::Standard));
+        assert_eq!(object.block_id, "core/standard");
     }
 
     #[test]
@@ -372,14 +385,14 @@ mod tests {
             size: [4.0, 5.0, 6.0],
             rotation_degrees: 0.0,
             roundness: 0.18,
-            kind: BlockKind::Grass,
+            block_id: "core/grass".to_string(),
         };
 
         let value = serde_json::to_value(&object).expect("serialize object");
         let expected = json!({
             "position": [1.0, 2.0, 3.0],
             "size": [4.0, 5.0, 6.0],
-            "kind": "grass"
+            "block_id": "core/grass"
         });
 
         assert_eq!(value, expected);
@@ -398,7 +411,7 @@ mod tests {
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: 0.0,
                 roundness: 0.18,
-                kind: BlockKind::Standard,
+                block_id: "core/standard".to_string(),
             }],
         );
 
@@ -415,6 +428,6 @@ mod tests {
         assert!(object.get("size").is_none());
         assert!(object.get("rotation_degrees").is_none());
         assert!(object.get("roundness").is_none());
-        assert!(object.get("kind").is_none());
+        assert!(object.get("block_id").is_none());
     }
 }

@@ -25,8 +25,8 @@ impl State {
         self.editor_ctrl_held = held && self.phase == AppPhase::Editor;
     }
 
-    pub fn set_editor_block_kind(&mut self, kind: BlockKind) {
-        self.editor_selected_kind = kind;
+    pub fn set_editor_block_id(&mut self, block_id: String) {
+        self.editor_selected_block_id = crate::block_repository::normalize_block_id(&block_id);
     }
 
     pub(crate) fn set_editor_mode(&mut self, mode: EditorMode) {
@@ -162,7 +162,7 @@ impl State {
         }
     }
 
-    pub(crate) fn set_editor_selected_block_kind(&mut self, kind: BlockKind) {
+    pub(crate) fn set_editor_selected_block_id(&mut self, block_id: String) {
         if self.phase != AppPhase::Editor {
             return;
         }
@@ -175,7 +175,8 @@ impl State {
             .editor_selected_block_index
             .filter(|index| *index < self.editor_objects.len())
         {
-            self.editor_objects[index].kind = kind;
+            self.editor_objects[index].block_id =
+                crate::block_repository::normalize_block_id(&block_id);
             self.sync_editor_objects();
             self.rebuild_editor_gizmo_vertices();
             self.rebuild_editor_selection_outline_vertices();
@@ -222,8 +223,8 @@ impl State {
         }
     }
 
-    pub fn editor_selected_block_kind(&self) -> BlockKind {
-        self.editor_selected_kind
+    pub fn editor_selected_block_id(&self) -> &str {
+        &self.editor_selected_block_id
     }
 
     pub fn editor_timeline_step(&self) -> u32 {

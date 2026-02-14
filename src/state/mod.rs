@@ -12,6 +12,7 @@ mod update;
 use glam::{Mat4, Vec2, Vec3};
 use wgpu::util::DeviceExt;
 
+use crate::block_repository::DEFAULT_BLOCK_ID;
 use crate::editor_domain::{
     add_tap_step, build_editor_playtest_transition, build_playing_transition_from_metadata,
     clear_tap_steps, create_block_at_cursor, derive_timeline_position,
@@ -32,9 +33,9 @@ use crate::platform::state_host::NativeWindow;
 use crate::platform::state_host::WasmCanvas;
 use crate::platform::state_host::{log_backend, PlatformInstant, SurfaceHost};
 use crate::types::{
-    AppPhase, BlockKind, CameraUniform, ColorSpaceUniform, Direction, EditorMode, EditorState,
-    LevelMetadata, LevelObject, LineUniform, MenuState, MusicMetadata, PhysicalSize,
-    SpawnDirection, SpawnMetadata, Vertex,
+    AppPhase, CameraUniform, ColorSpaceUniform, Direction, EditorMode, EditorState, LevelMetadata,
+    LevelObject, LineUniform, MenuState, MusicMetadata, PhysicalSize, SpawnDirection,
+    SpawnMetadata, Vertex,
 };
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -164,7 +165,7 @@ pub struct State {
     phase: AppPhase,
     menu: MenuState,
     editor: EditorState,
-    editor_selected_kind: BlockKind,
+    editor_selected_block_id: String,
     editor_objects: Vec<LevelObject>,
     editor_spawn: SpawnMetadata,
     editor_camera_pan: [f32; 2],
@@ -264,7 +265,7 @@ struct EditorHistorySnapshot {
     selected_block_index: Option<usize>,
     selected_block_indices: Vec<usize>,
     cursor: [i32; 3],
-    selected_kind: BlockKind,
+    selected_block_id: String,
     spawn: SpawnMetadata,
     timeline_step: u32,
     timeline_length: u32,
@@ -598,7 +599,7 @@ impl State {
             editor_gizmo_mesh: MeshSlot::Empty,
             spawn_marker_mesh: MeshSlot::Empty,
             editor: EditorState::new(),
-            editor_selected_kind: BlockKind::Standard,
+            editor_selected_block_id: DEFAULT_BLOCK_ID.to_string(),
             editor_objects: Vec::new(),
             editor_spawn: SpawnMetadata::default(),
             editor_camera_pan: [0.0, 0.0],
@@ -840,22 +841,22 @@ impl State {
             }
             "1" => {
                 if self.is_editor() && just_pressed {
-                    self.set_editor_block_kind(BlockKind::Standard);
+                    self.set_editor_block_id("core/standard".to_string());
                 }
             }
             "2" => {
                 if self.is_editor() && just_pressed {
-                    self.set_editor_block_kind(BlockKind::Grass);
+                    self.set_editor_block_id("core/grass".to_string());
                 }
             }
             "3" => {
                 if self.is_editor() && just_pressed {
-                    self.set_editor_block_kind(BlockKind::Dirt);
+                    self.set_editor_block_id("core/dirt".to_string());
                 }
             }
             "4" => {
                 if self.is_editor() && just_pressed {
-                    self.set_editor_block_kind(BlockKind::Void);
+                    self.set_editor_block_id("core/void".to_string());
                 }
             }
             "c" | "C" => {
@@ -980,7 +981,7 @@ mod tests {
             size: [1.0, 1.0, 1.0],
             rotation_degrees: 0.0,
             roundness: 0.18,
-            kind: crate::types::BlockKind::Standard,
+            block_id: "core/standard".to_string(),
         }];
         let (position, direction) =
             derive_timeline_position([0.0, 0.0, 3.0], SpawnDirection::Forward, &[], 1, &objects);

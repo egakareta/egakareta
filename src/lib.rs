@@ -1,3 +1,4 @@
+mod block_repository;
 mod editor_domain;
 mod editor_ui;
 mod game;
@@ -17,4 +18,3 @@ pub use platform::native_runtime::run_native_app;
 #[cfg(target_arch = "wasm32")]
 pub use platform::web_runtime::run_game;
 pub use state::State;
-pub use types::BlockKind;

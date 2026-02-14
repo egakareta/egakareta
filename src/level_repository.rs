@@ -32,7 +32,12 @@ pub(crate) fn load_builtin_level_metadata(level_name: &str) -> Option<LevelMetad
 }
 
 pub(crate) fn parse_level_metadata_json(json: &str) -> Result<LevelMetadata, String> {
-    serde_json::from_str(json).map_err(|error| error.to_string())
+    let mut metadata: LevelMetadata =
+        serde_json::from_str(json).map_err(|error| error.to_string())?;
+    for object in &mut metadata.objects {
+        object.normalize_block_id();
+    }
+    Ok(metadata)
 }
 
 pub(crate) fn serialize_level_metadata_pretty(metadata: &LevelMetadata) -> Result<String, String> {
@@ -128,7 +133,7 @@ mod tests {
     #[test]
     fn parses_objects_without_kind_using_default() {
         let mut metadata = load_builtin_level_metadata("Flowerfield").expect("missing level");
-        metadata.objects[0].kind = crate::types::BlockKind::Standard;
+        metadata.objects[0].block_id = "core/standard".to_string();
 
         let mut json_value = serde_json::from_str::<serde_json::Value>(
             &serialize_level_metadata_pretty(&metadata).unwrap(),
@@ -137,12 +142,9 @@ mod tests {
         json_value["objects"][0]
             .as_object_mut()
             .unwrap()
-            .remove("kind");
+            .remove("block_id");
 
         let result = parse_level_metadata_json(&json_value.to_string()).expect("valid metadata");
-        assert!(matches!(
-            result.objects[0].kind,
-            crate::types::BlockKind::Standard
-        ));
+        assert_eq!(result.objects[0].block_id, "core/standard");
     }
 }

@@ -1,4 +1,5 @@
-use crate::types::{BlockKind, LevelObject, Vertex};
+use crate::block_repository::{resolve_block_definition, BlockRenderProfile};
+use crate::types::{LevelObject, Vertex};
 
 fn rotate_vertices_around_z(vertices: &mut [Vertex], center: [f32; 3], degrees: f32) {
     if degrees.abs() <= f32::EPSILON {
@@ -555,9 +556,11 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
         let z_min = obj.position[2];
         let z_max = obj.position[2] + obj.size[2];
 
-        if obj.kind == BlockKind::Void {
-            let color_fill = [0.0, 0.0, 0.0, 1.0];
-            let color_outline = [0.8, 0.8, 0.9, 1.0];
+        let block = resolve_block_definition(&obj.block_id);
+
+        if matches!(block.render.profile, BlockRenderProfile::VoidFrame) {
+            let color_fill = block.render.color_fill;
+            let color_outline = block.render.color_outline;
             let t = 0.05;
 
             // Fill
@@ -658,11 +661,11 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
                 color_outline,
                 color_outline,
             );
-        } else if obj.kind == BlockKind::SpeedPortal {
+        } else if matches!(block.render.profile, BlockRenderProfile::SpeedPortal) {
             let cx = (x_min + x_max) / 2.0;
             let cy = (y_min + y_max) / 2.0;
             let cz = (z_min + z_max) / 2.0;
-            let arrow_color = [1.0, 1.0, 0.0, 1.0];
+            let arrow_color = block.render.color_top;
             let arrow_len = 0.6;
             let arrow_width = 0.4;
             let thickness = 0.1;
@@ -767,12 +770,8 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
                 }
             }
         } else {
-            let (color_top, color_side) = match obj.kind {
-                BlockKind::Standard => ([0.4, 0.4, 0.45, 1.0], [0.2, 0.2, 0.25, 1.0]),
-                BlockKind::Grass => ([0.1, 0.6, 0.1, 1.0], [0.35, 0.25, 0.15, 1.0]),
-                BlockKind::Dirt => ([0.4, 0.3, 0.2, 1.0], [0.35, 0.25, 0.15, 1.0]),
-                _ => ([0.5, 0.5, 0.5, 1.0], [0.5, 0.5, 0.5, 1.0]),
-            };
+            let color_top = block.render.color_top;
+            let color_side = block.render.color_side;
 
             if obj.roundness > f32::EPSILON {
                 append_rounded_prism(
@@ -1298,7 +1297,7 @@ mod tests {
     use super::{
         build_block_vertices, build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
     };
-    use crate::types::{BlockKind, LevelObject};
+    use crate::types::LevelObject;
 
     fn bounds_xy(vertices: &[[f32; 3]]) -> (f32, f32, f32, f32) {
         let mut min_x = f32::INFINITY;
@@ -1321,7 +1320,7 @@ mod tests {
             size: [2.0, 1.0, 1.0],
             rotation_degrees: 90.0,
             roundness: 0.18,
-            kind: BlockKind::Standard,
+            block_id: "core/standard".to_string(),
         };
         let vertices = build_block_vertices(&[obj]);
         let positions: Vec<[f32; 3]> = vertices.iter().map(|v| v.position).collect();

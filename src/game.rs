@@ -1,4 +1,5 @@
-use crate::types::{BlockKind, Direction, LevelObject};
+use crate::block_repository::{resolve_block_definition, BlockCollision};
+use crate::types::{Direction, LevelObject};
 
 fn rotate_point_around_center_2d(point: [f32; 2], center: [f32; 2], radians: f32) -> [f32; 2] {
     let sin = radians.sin();
@@ -139,15 +140,23 @@ impl GameState {
         for (i, obj) in self.objects.iter().enumerate() {
             let o_min_z = obj.position[2];
             let o_max_z = obj.position[2] + obj.size[2];
+            let behavior = &resolve_block_definition(&obj.block_id).behavior;
 
             if aabb_overlaps_object_xy(s_min_x, s_max_x, s_min_y, s_max_y, obj)
                 && s_max_z > o_min_z
                 && s_min_z < o_max_z
             {
-                if obj.kind == BlockKind::SpeedPortal {
-                    hit_portals.push(i);
-                } else {
-                    hit_death = true;
+                match behavior.collision {
+                    BlockCollision::Portal => {
+                        hit_portals.push(i);
+                    }
+                    BlockCollision::Hazard => {
+                        hit_death = true;
+                    }
+                    BlockCollision::Solid => {
+                        hit_death = true;
+                    }
+                    BlockCollision::PassThrough => {}
                 }
             }
         }
@@ -159,8 +168,13 @@ impl GameState {
 
         if !hit_portals.is_empty() {
             for i in hit_portals.into_iter().rev() {
-                self.objects.remove(i);
-                self.speed *= 1.5;
+                if let Some(portal) = self.objects.get(i) {
+                    let behavior = &resolve_block_definition(&portal.block_id).behavior;
+                    self.speed *= behavior.speed_multiplier.max(0.1);
+                    if behavior.consumed_on_overlap {
+                        self.objects.remove(i);
+                    }
+                }
             }
         }
 
@@ -227,7 +241,10 @@ impl GameState {
     pub(crate) fn top_surface_height_at(&self, x: f32, y: f32, max_z: f32) -> Option<f32> {
         let mut top_surface: Option<f32> = Some(0.0);
         for obj in &self.objects {
-            if obj.kind == BlockKind::SpeedPortal {
+            if !resolve_block_definition(&obj.block_id)
+                .behavior
+                .support_surface
+            {
                 continue;
             }
             if object_xy_contains(obj, x, y) {
@@ -264,7 +281,7 @@ pub(crate) fn create_menu_scene() -> Vec<LevelObject> {
                 size: [2.0, 2.0, 2.0],
                 rotation_degrees: 0.0,
                 roundness: 0.18,
-                kind: BlockKind::Grass,
+                block_id: "core/grass".to_string(),
             });
         }
     }
@@ -289,7 +306,7 @@ mod tests {
             size: [1.0, 1.0, 1.0],
             rotation_degrees: 0.0,
             roundness: 0.18,
-            kind: BlockKind::Standard,
+            block_id: "core/standard".to_string(),
         });
 
         // Player at 0.5, 0.5 (center of block), check ground at 0.5, 0.5
@@ -307,7 +324,7 @@ mod tests {
             size: [1.0, 1.0, 1.0],
             rotation_degrees: 0.0,
             roundness: 0.18,
-            kind: BlockKind::Standard,
+            block_id: "core/standard".to_string(),
         });
         // Overhang block at height 3
         game.objects.push(LevelObject {
@@ -315,7 +332,7 @@ mod tests {
             size: [1.0, 1.0, 1.0],
             rotation_degrees: 0.0,
             roundness: 0.18,
-            kind: BlockKind::Standard,
+            block_id: "core/standard".to_string(),
         });
 
         // Player is walking on the ground block (z=1).
@@ -352,7 +369,7 @@ mod tests {
             size: [2.0, 1.0, 1.0],
             rotation_degrees: 90.0,
             roundness: 0.18,
-            kind: BlockKind::Standard,
+            block_id: "core/standard".to_string(),
         };
 
         assert!(object_xy_contains(&obj, 1.0, 0.5));
@@ -366,7 +383,7 @@ mod tests {
             size: [2.0, 1.0, 1.0],
             rotation_degrees: 45.0,
             roundness: 0.18,
-            kind: BlockKind::Standard,
+            block_id: "core/standard".to_string(),
         };
 
         assert!(aabb_overlaps_object_xy(0.9, 1.1, 0.3, 0.5, &obj));
@@ -381,7 +398,7 @@ mod tests {
             size: [2.0, 1.0, 2.0],
             rotation_degrees: 90.0,
             roundness: 0.18,
-            kind: BlockKind::Standard,
+            block_id: "core/standard".to_string(),
         });
 
         let inside = game.top_surface_height_at(1.0, 0.5, 3.0);
@@ -401,7 +418,7 @@ mod tests {
             size: [1.0, 1.0, 1.0],
             rotation_degrees: 30.0,
             roundness: 0.18,
-            kind: BlockKind::SpeedPortal,
+            block_id: "core/speedportal".to_string(),
         });
 
         game.update(0.0);

@@ -5,7 +5,7 @@ impl State {
         self.record_editor_history_state();
         self.editor_objects.push(create_block_at_cursor(
             self.editor.cursor,
-            self.editor_selected_kind,
+            &self.editor_selected_block_id,
         ));
         self.editor_selected_block_index = None;
         self.editor_selected_block_indices.clear();

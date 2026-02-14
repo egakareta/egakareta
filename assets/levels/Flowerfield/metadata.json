@@ -21,27 +21,27 @@
         {
             "position": [-60.0, -60.0, 0.0],
             "size": [23.0, 28.0, 7.0],
-            "kind": "grass"
+            "block_id": "core/grass"
         },
         {
             "position": [-51.0, -58.0, 7.0],
             "size": [9.0, 8.0, 2.0],
-            "kind": "grass"
+            "block_id": "core/grass"
         },
         {
             "position": [-45.0, -51.0, 7.0],
             "size": [7.0, 8.0, 2.0],
-            "kind": "grass"
+            "block_id": "core/grass"
         },
         {
             "position": [-52.0, -54.0, 6.0],
             "size": [9.0, 8.0, 2.0],
-            "kind": "grass"
+            "block_id": "core/grass"
         },
         {
             "position": [-59.0, -41.0, 7.0],
             "size": [7.0, 8.0, 2.0],
-            "kind": "grass"
+            "block_id": "core/grass"
         }
     ]
 }
