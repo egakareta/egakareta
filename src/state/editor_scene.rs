@@ -158,8 +158,27 @@ impl State {
         );
         let axis_lengths = self.editor_gizmo_axis_lengths_world(center, 50.0);
         let axis_width = self.editor_gizmo_axis_width_world(center, 3.0);
-        let vertices =
-            build_editor_gizmo_vertices(bounds_position, bounds_size, axis_lengths, axis_width);
+
+        let active_part = if let Some(drag) = &self.editor_gizmo_drag {
+            match (drag.axis, drag.kind) {
+                (GizmoAxis::X, GizmoDragKind::Move) => Some(GizmoPart::MoveX),
+                (GizmoAxis::Y, GizmoDragKind::Move) => Some(GizmoPart::MoveY),
+                (GizmoAxis::Z, GizmoDragKind::Move) => Some(GizmoPart::MoveZ),
+                (GizmoAxis::X, GizmoDragKind::Resize) => Some(GizmoPart::ResizeX),
+                (GizmoAxis::Y, GizmoDragKind::Resize) => Some(GizmoPart::ResizeY),
+                (GizmoAxis::Z, GizmoDragKind::Resize) => Some(GizmoPart::ResizeZ),
+            }
+        } else {
+            None
+        };
+
+        let vertices = build_editor_gizmo_vertices(
+            bounds_position,
+            bounds_size,
+            axis_lengths,
+            axis_width,
+            active_part,
+        );
         self.editor_gizmo_mesh.replace_with_vertices(
             &self.device,
             "Editor Gizmo Vertex Buffer",

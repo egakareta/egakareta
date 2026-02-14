@@ -1263,11 +1263,245 @@ pub(crate) fn build_editor_cursor_vertices(cursor: [i32; 3]) -> Vec<Vertex> {
     vertices
 }
 
+fn apply_lighting(base_color: [f32; 4], normal: [f32; 3]) -> [f32; 4] {
+    let light_dir = [0.57735, 0.57735, 0.57735];
+    let ambient = 0.6;
+    let diffuse = 0.4;
+
+    let dot = normal[0] * light_dir[0] + normal[1] * light_dir[1] + normal[2] * light_dir[2];
+    let intensity = ambient + diffuse * dot.max(0.0);
+
+    [
+        (base_color[0] * intensity).min(1.0),
+        (base_color[1] * intensity).min(1.0),
+        (base_color[2] * intensity).min(1.0),
+        base_color[3],
+    ]
+}
+
+fn append_cone(
+    vertices: &mut Vec<Vertex>,
+    base_center: [f32; 3],
+    tip: [f32; 3],
+    radius: f32,
+    color: [f32; 4],
+) {
+    let segments = 16;
+    let axis_vec = [
+        tip[0] - base_center[0],
+        tip[1] - base_center[1],
+        tip[2] - base_center[2],
+    ];
+
+    let height =
+        (axis_vec[0] * axis_vec[0] + axis_vec[1] * axis_vec[1] + axis_vec[2] * axis_vec[2]).sqrt();
+    let axis_norm = if height > 1e-6 {
+        [
+            axis_vec[0] / height,
+            axis_vec[1] / height,
+            axis_vec[2] / height,
+        ]
+    } else {
+        [0.0, 0.0, 1.0]
+    };
+
+    let arbitrary = if axis_norm[0].abs() < 0.9 {
+        [1.0, 0.0, 0.0]
+    } else {
+        [0.0, 1.0, 0.0]
+    };
+
+    let mut u = [
+        axis_norm[1] * arbitrary[2] - axis_norm[2] * arbitrary[1],
+        axis_norm[2] * arbitrary[0] - axis_norm[0] * arbitrary[2],
+        axis_norm[0] * arbitrary[1] - axis_norm[1] * arbitrary[0],
+    ];
+    let u_len = (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt();
+    u = [u[0] / u_len, u[1] / u_len, u[2] / u_len];
+
+    let v = [
+        axis_norm[1] * u[2] - axis_norm[2] * u[1],
+        axis_norm[2] * u[0] - axis_norm[0] * u[2],
+        axis_norm[0] * u[1] - axis_norm[1] * u[0],
+    ];
+
+    let mut base_points = Vec::with_capacity(segments);
+    let mut normals = Vec::with_capacity(segments);
+
+    for i in 0..segments {
+        let angle = (i as f32) * std::f32::consts::TAU / (segments as f32);
+        let (sin, cos) = angle.sin_cos();
+
+        // Radial vector
+        let rx = cos * u[0] + sin * v[0];
+        let ry = cos * u[1] + sin * v[1];
+        let rz = cos * u[2] + sin * v[2];
+
+        let x = base_center[0] + radius * rx;
+        let y = base_center[1] + radius * ry;
+        let z = base_center[2] + radius * rz;
+        base_points.push([x, y, z]);
+
+        let nx = height * rx + radius * axis_norm[0];
+        let ny = height * ry + radius * axis_norm[1];
+        let nz = height * rz + radius * axis_norm[2];
+        let nlen = (nx * nx + ny * ny + nz * nz).sqrt();
+        normals.push([nx / nlen, ny / nlen, nz / nlen]);
+    }
+
+    // Sides
+    for i in 0..segments {
+        let next = (i + 1) % segments;
+
+        let c_base_i = apply_lighting(color, normals[i]);
+        let c_base_next = apply_lighting(color, normals[next]);
+
+        let n_tip = [
+            (normals[i][0] + normals[next][0]) * 0.5,
+            (normals[i][1] + normals[next][1]) * 0.5,
+            (normals[i][2] + normals[next][2]) * 0.5,
+        ];
+        let n_tip_len = (n_tip[0] * n_tip[0] + n_tip[1] * n_tip[1] + n_tip[2] * n_tip[2]).sqrt();
+        let n_tip = [
+            n_tip[0] / n_tip_len,
+            n_tip[1] / n_tip_len,
+            n_tip[2] / n_tip_len,
+        ];
+        let c_tip = apply_lighting(color, n_tip);
+
+        vertices.push(Vertex {
+            position: base_points[i],
+            color: c_base_i,
+        });
+        vertices.push(Vertex {
+            position: base_points[next],
+            color: c_base_next,
+        });
+        vertices.push(Vertex {
+            position: tip,
+            color: c_tip,
+        });
+    }
+
+    // Base cap
+    let base_normal = [-axis_norm[0], -axis_norm[1], -axis_norm[2]];
+    let c_base = apply_lighting(color, base_normal);
+
+    for i in 0..segments {
+        let next = (i + 1) % segments;
+        vertices.push(Vertex {
+            position: base_center,
+            color: c_base,
+        });
+        vertices.push(Vertex {
+            position: base_points[next],
+            color: c_base,
+        });
+        vertices.push(Vertex {
+            position: base_points[i],
+            color: c_base,
+        });
+    }
+}
+
+fn append_sphere(vertices: &mut Vec<Vertex>, center: [f32; 3], radius: f32, color: [f32; 4]) {
+    let lat_segments = 12;
+    let lon_segments = 12;
+
+    for i in 0..lat_segments {
+        let lat0 = std::f32::consts::PI * (-0.5 + (i as f32) / (lat_segments as f32));
+        let z0 = lat0.sin();
+        let zr0 = lat0.cos();
+
+        let lat1 = std::f32::consts::PI * (-0.5 + ((i + 1) as f32) / (lat_segments as f32));
+        let z1 = lat1.sin();
+        let zr1 = lat1.cos();
+
+        for j in 0..lon_segments {
+            let lon0 = 2.0 * std::f32::consts::PI * (j as f32) / (lon_segments as f32);
+            let x0 = lon0.cos();
+            let y0 = lon0.sin();
+
+            let lon1 = 2.0 * std::f32::consts::PI * ((j + 1) as f32) / (lon_segments as f32);
+            let x1 = lon1.cos();
+            let y1 = lon1.sin();
+
+            let p00 = [
+                center[0] + radius * x0 * zr0,
+                center[1] + radius * y0 * zr0,
+                center[2] + radius * z0,
+            ];
+            let p10 = [
+                center[0] + radius * x1 * zr0,
+                center[1] + radius * y1 * zr0,
+                center[2] + radius * z0,
+            ];
+            let p01 = [
+                center[0] + radius * x0 * zr1,
+                center[1] + radius * y0 * zr1,
+                center[2] + radius * z1,
+            ];
+            let p11 = [
+                center[0] + radius * x1 * zr1,
+                center[1] + radius * y1 * zr1,
+                center[2] + radius * z1,
+            ];
+
+            let n00 = [x0 * zr0, y0 * zr0, z0];
+            let n10 = [x1 * zr0, y1 * zr0, z0];
+            let n01 = [x0 * zr1, y0 * zr1, z1];
+            let n11 = [x1 * zr1, y1 * zr1, z1];
+
+            let c00 = apply_lighting(color, n00);
+            let c10 = apply_lighting(color, n10);
+            let c01 = apply_lighting(color, n01);
+            let c11 = apply_lighting(color, n11);
+
+            vertices.push(Vertex {
+                position: p00,
+                color: c00,
+            });
+            vertices.push(Vertex {
+                position: p10,
+                color: c10,
+            });
+            vertices.push(Vertex {
+                position: p01,
+                color: c01,
+            });
+
+            vertices.push(Vertex {
+                position: p10,
+                color: c10,
+            });
+            vertices.push(Vertex {
+                position: p11,
+                color: c11,
+            });
+            vertices.push(Vertex {
+                position: p01,
+                color: c01,
+            });
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(crate) enum GizmoPart {
+    MoveX,
+    MoveY,
+    MoveZ,
+    ResizeX,
+    ResizeY,
+    ResizeZ,
+}
+
 pub(crate) fn build_editor_gizmo_vertices(
     position: [f32; 3],
     size: [f32; 3],
     axis_lengths: [f32; 3],
     axis_width: f32,
+    active_part: Option<GizmoPart>,
 ) -> Vec<Vertex> {
     let mut vertices = Vec::new();
 
@@ -1278,113 +1512,107 @@ pub(crate) fn build_editor_gizmo_vertices(
     ];
 
     let shaft = axis_width.max(0.0005) * 0.5;
-    let tip = shaft * 3.0;
-    let cap = shaft * 3.5;
+    let tip_length = shaft * 6.0;
+    let cone_radius = shaft * 2.5;
     let arm_start_offset = shaft * 2.0;
-    let x_length = axis_lengths[0].max(arm_start_offset + tip * 2.0);
-    let y_length = axis_lengths[1].max(arm_start_offset + tip * 2.0);
-    let z_length = axis_lengths[2].max(arm_start_offset + tip * 2.0);
+    let x_length = axis_lengths[0].max(arm_start_offset + tip_length);
+    let y_length = axis_lengths[1].max(arm_start_offset + tip_length);
+    let z_length = axis_lengths[2].max(arm_start_offset + tip_length);
+
+    let color_x_base = [1.0, 0.05, 0.05, 0.6];
+    let color_x_dark = [0.85, 0.0, 0.0, 0.4];
+    let color_y_base = [0.05, 1.0, 0.05, 0.6];
+    let color_y_dark = [0.0, 0.85, 0.0, 0.4];
+    let color_z_base = [0.05, 0.05, 1.0, 0.6];
+    let color_z_dark = [0.0, 0.0, 0.85, 0.4];
+
+    let darken = |color: [f32; 4], active: bool| -> [f32; 4] {
+        if active {
+            [color[0] * 0.6, color[1] * 0.6, color[2] * 0.6, color[3]]
+        } else {
+            color
+        }
+    };
 
     // X move arm + tip
+    let x_active = active_part == Some(GizmoPart::MoveX);
     let x_arm_start = center[0] + arm_start_offset;
     let x_arm_end = center[0] + x_length;
     append_prism(
         &mut vertices,
         [x_arm_start, center[1] - shaft, center[2] - shaft],
-        [x_arm_end, center[1] + shaft, center[2] + shaft],
-        [1.0, 0.25, 0.25, 0.72],
-        [0.85, 0.15, 0.15, 0.62],
+        [x_arm_end - tip_length, center[1] + shaft, center[2] + shaft],
+        darken(color_x_base, x_active),
+        darken(color_x_dark, x_active),
     );
-    append_prism(
+    append_cone(
         &mut vertices,
-        [x_arm_end - tip * 2.0, center[1] - cap, center[2] - cap],
-        [x_arm_end, center[1] + cap, center[2] + cap],
-        [1.0, 0.38, 0.38, 0.74],
-        [0.85, 0.2, 0.2, 0.64],
+        [x_arm_end - tip_length, center[1], center[2]],
+        [x_arm_end, center[1], center[2]],
+        cone_radius,
+        darken(color_x_base, x_active),
     );
 
     // Y move arm + tip
+    let y_active = active_part == Some(GizmoPart::MoveY);
     let y_arm_start = center[1] + arm_start_offset;
     let y_arm_end = center[1] + y_length;
     append_prism(
         &mut vertices,
         [center[0] - shaft, y_arm_start, center[2] - shaft],
-        [center[0] + shaft, y_arm_end, center[2] + shaft],
-        [0.35, 1.0, 0.35, 0.72],
-        [0.2, 0.85, 0.2, 0.62],
+        [center[0] + shaft, y_arm_end - tip_length, center[2] + shaft],
+        darken(color_y_base, y_active),
+        darken(color_y_dark, y_active),
     );
-    append_prism(
+    append_cone(
         &mut vertices,
-        [center[0] - cap, y_arm_end - tip * 2.0, center[2] - cap],
-        [center[0] + cap, y_arm_end, center[2] + cap],
-        [0.45, 1.0, 0.45, 0.74],
-        [0.25, 0.85, 0.25, 0.64],
+        [center[0], y_arm_end - tip_length, center[2]],
+        [center[0], y_arm_end, center[2]],
+        cone_radius,
+        darken(color_y_base, y_active),
     );
 
     // Z move arm + tip
+    let z_active = active_part == Some(GizmoPart::MoveZ);
     let z_arm_start = center[2] + arm_start_offset;
     let z_arm_end = center[2] + z_length;
     append_prism(
         &mut vertices,
         [center[0] - shaft, center[1] - shaft, z_arm_start],
-        [center[0] + shaft, center[1] + shaft, z_arm_end],
-        [0.45, 0.65, 1.0, 0.72],
-        [0.3, 0.5, 0.9, 0.62],
+        [center[0] + shaft, center[1] + shaft, z_arm_end - tip_length],
+        darken(color_z_base, z_active),
+        darken(color_z_dark, z_active),
     );
-    append_prism(
+    append_cone(
         &mut vertices,
-        [center[0] - cap, center[1] - cap, z_arm_end - tip * 2.0],
-        [center[0] + cap, center[1] + cap, z_arm_end],
-        [0.55, 0.72, 1.0, 0.74],
-        [0.35, 0.55, 0.9, 0.64],
+        [center[0], center[1], z_arm_end - tip_length],
+        [center[0], center[1], z_arm_end],
+        cone_radius,
+        darken(color_z_base, z_active),
     );
 
     // Resize handles on positive corners of each axis
-    let resize = 0.18;
-    append_prism(
+    let resize_radius = 0.25;
+
+    append_sphere(
         &mut vertices,
-        [
-            position[0] + size[0],
-            center[1] - resize,
-            center[2] - resize,
-        ],
-        [
-            position[0] + size[0] + resize * 2.0,
-            center[1] + resize,
-            center[2] + resize,
-        ],
-        [1.0, 0.55, 0.55, 0.78],
-        [0.95, 0.42, 0.42, 0.68],
+        [position[0] + size[0] + resize_radius, center[1], center[2]],
+        resize_radius,
+        darken(color_x_base, active_part == Some(GizmoPart::ResizeX)),
     );
-    append_prism(
+
+    append_sphere(
         &mut vertices,
-        [
-            center[0] - resize,
-            position[1] + size[1],
-            center[2] - resize,
-        ],
-        [
-            center[0] + resize,
-            position[1] + size[1] + resize * 2.0,
-            center[2] + resize,
-        ],
-        [0.6, 1.0, 0.6, 0.78],
-        [0.45, 0.95, 0.45, 0.68],
+        [center[0], position[1] + size[1] + resize_radius, center[2]],
+        resize_radius,
+        darken(color_y_base, active_part == Some(GizmoPart::ResizeY)),
     );
-    append_prism(
+
+    append_sphere(
         &mut vertices,
-        [
-            center[0] - resize,
-            center[1] - resize,
-            position[2] + size[2],
-        ],
-        [
-            center[0] + resize,
-            center[1] + resize,
-            position[2] + size[2] + resize * 2.0,
-        ],
-        [0.65, 0.8, 1.0, 0.78],
-        [0.5, 0.65, 0.95, 0.68],
+        [center[0], center[1], position[2] + size[2] + resize_radius],
+        resize_radius,
+        darken(color_z_base, active_part == Some(GizmoPart::ResizeZ)),
     );
 
     vertices
@@ -1571,8 +1799,13 @@ mod tests {
 
     #[test]
     fn gizmo_vertices_generate_with_screen_scaled_inputs() {
-        let vertices =
-            build_editor_gizmo_vertices([0.0, 0.0, 0.0], [2.0, 2.0, 2.0], [3.0, 4.0, 5.0], 0.1);
+        let vertices = build_editor_gizmo_vertices(
+            [0.0, 0.0, 0.0],
+            [2.0, 2.0, 2.0],
+            [3.0, 4.0, 5.0],
+            0.1,
+            None,
+        );
         assert!(!vertices.is_empty());
 
         let max_x = vertices

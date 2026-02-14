@@ -25,6 +25,7 @@ use crate::mesh::{
     build_block_vertices, build_editor_cursor_vertices, build_editor_gizmo_vertices,
     build_editor_hover_outline_vertices, build_editor_selection_outline_vertices,
     build_floor_vertices, build_grid_vertices, build_spawn_marker_vertices, build_trail_vertices,
+    GizmoPart,
 };
 use crate::platform::audio::PlatformAudio;
 #[cfg(not(target_arch = "wasm32"))]
