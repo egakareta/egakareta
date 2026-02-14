@@ -1,4 +1,5 @@
-use crate::block_repository::resolve_block_definition;
+use crate::block_repository::{resolve_block_definition, BlockCollision};
+use crate::game::BASE_PLAYER_SPEED;
 use crate::types::{LevelMetadata, LevelObject, MusicMetadata, SpawnDirection, SpawnMetadata};
 
 pub(crate) struct EditorPlaytestTransition {
@@ -199,9 +200,51 @@ pub(crate) fn derive_timeline_position(
     step: u32,
     objects: &[LevelObject],
 ) -> ([f32; 3], SpawnDirection) {
+    let state = derive_timeline_state(spawn, direction, tap_steps, step, objects);
+    (state.position, state.direction)
+}
+
+pub(crate) fn derive_timeline_elapsed_seconds(
+    spawn: [f32; 3],
+    direction: SpawnDirection,
+    tap_steps: &[u32],
+    step: u32,
+    objects: &[LevelObject],
+) -> f32 {
+    derive_timeline_state(spawn, direction, tap_steps, step, objects).elapsed_seconds
+}
+
+pub(crate) fn derive_timeline_step_seconds(
+    spawn: [f32; 3],
+    direction: SpawnDirection,
+    tap_steps: &[u32],
+    step: u32,
+    objects: &[LevelObject],
+) -> f32 {
+    let state = derive_timeline_state(spawn, direction, tap_steps, step, objects);
+    1.0 / state.speed.max(0.1)
+}
+
+pub(crate) struct TimelineState {
+    pub(crate) position: [f32; 3],
+    pub(crate) direction: SpawnDirection,
+    pub(crate) speed: f32,
+    pub(crate) elapsed_seconds: f32,
+}
+
+pub(crate) fn derive_timeline_state(
+    spawn: [f32; 3],
+    direction: SpawnDirection,
+    tap_steps: &[u32],
+    step: u32,
+    objects: &[LevelObject],
+) -> TimelineState {
     let mut position = spawn;
     let mut direction = direction;
+    let mut speed = BASE_PLAYER_SPEED.max(0.1);
+    let mut elapsed_seconds = 0.0;
     let mut tap_index = 0;
+    let mut simulation_objects = objects.to_vec();
 
     while tap_index < tap_steps.len() && tap_steps[tap_index] == 0 {
         direction = toggle_spawn_direction(direction);
@@ -211,6 +254,8 @@ pub(crate) fn derive_timeline_position(
     const SNAP_DISTANCE: f32 = 0.3;
     let mut current_step = 0;
     for _ in 0..step {
+        elapsed_seconds += 1.0 / speed.max(0.1);
+
         match direction {
             SpawnDirection::Forward => position[1] += 1.0,
             SpawnDirection::Right => position[0] += 1.0,
@@ -218,12 +263,14 @@ pub(crate) fn derive_timeline_position(
         current_step += 1;
 
         let top = top_surface_height_at(
-            objects,
+            &simulation_objects,
             position[0],
             position[1],
             position[2] + SNAP_DISTANCE,
         );
         position[2] = top;
+
+        apply_speed_portals_at_position(&mut simulation_objects, position, &mut speed);
 
         while tap_index < tap_steps.len() && tap_steps[tap_index] == current_step {
             direction = toggle_spawn_direction(direction);
@@ -231,7 +278,102 @@ pub(crate) fn derive_timeline_position(
         }
     }
 
-    (position, direction)
+    TimelineState {
+        position,
+        direction,
+        speed,
+        elapsed_seconds,
+    }
+}
+
+fn apply_speed_portals_at_position(
+    objects: &mut Vec<LevelObject>,
+    position: [f32; 3],
+    speed: &mut f32,
+) {
+    let mut consumed_indices = Vec::new();
+
+    for (index, obj) in objects.iter().enumerate() {
+        let behavior = &resolve_block_definition(&obj.block_id).behavior;
+        if behavior.collision != BlockCollision::Portal {
+            continue;
+        }
+
+        if !player_overlaps_object(position, obj) {
+            continue;
+        }
+
+        *speed *= behavior.speed_multiplier.max(0.1);
+        if behavior.consumed_on_overlap {
+            consumed_indices.push(index);
+        }
+    }
+
+    for index in consumed_indices.into_iter().rev() {
+        objects.remove(index);
+    }
+}
+
+fn player_overlaps_object(position: [f32; 3], obj: &LevelObject) -> bool {
+    const PLAYER_WIDTH: f32 = 0.8;
+    const PLAYER_HEIGHT: f32 = 0.8;
+    const TOLERANCE: f32 = PLAYER_WIDTH * 0.05;
+
+    let x = position[0];
+    let y = position[1];
+    let z = position[2];
+
+    let p_min_x = x - PLAYER_WIDTH / 2.0 + TOLERANCE;
+    let p_max_x = x + PLAYER_WIDTH / 2.0 - TOLERANCE;
+    let p_min_y = y - PLAYER_WIDTH / 2.0 + TOLERANCE;
+    let p_max_y = y + PLAYER_WIDTH / 2.0 - TOLERANCE;
+    let p_min_z = z + TOLERANCE;
+    let p_max_z = z + PLAYER_HEIGHT - TOLERANCE;
+
+    let o_min_z = obj.position[2];
+    let o_max_z = obj.position[2] + obj.size[2];
+
+    aabb_overlaps_object_xy(p_min_x, p_max_x, p_min_y, p_max_y, obj)
+        && p_max_z > o_min_z
+        && p_min_z < o_max_z
+}
+
+fn aabb_overlaps_object_xy(
+    min_x: f32,
+    max_x: f32,
+    min_y: f32,
+    max_y: f32,
+    obj: &LevelObject,
+) -> bool {
+    let aabb_center_x = (min_x + max_x) * 0.5;
+    let aabb_center_y = (min_y + max_y) * 0.5;
+    let aabb_half_x = (max_x - min_x) * 0.5;
+    let aabb_half_y = (max_y - min_y) * 0.5;
+
+    let rect_center_x = obj.position[0] + obj.size[0] * 0.5;
+    let rect_center_y = obj.position[1] + obj.size[1] * 0.5;
+    let rect_half_x = obj.size[0] * 0.5;
+    let rect_half_y = obj.size[1] * 0.5;
+
+    let theta = obj.rotation_degrees.to_radians();
+    let axis_u = [theta.cos(), theta.sin()];
+    let axis_v = [-theta.sin(), theta.cos()];
+
+    let axes = [[1.0, 0.0], [0.0, 1.0], axis_u, axis_v];
+    for axis in axes {
+        let aabb_proj_center = aabb_center_x * axis[0] + aabb_center_y * axis[1];
+        let aabb_proj_radius = aabb_half_x * axis[0].abs() + aabb_half_y * axis[1].abs();
+
+        let rect_proj_center = rect_center_x * axis[0] + rect_center_y * axis[1];
+        let rect_proj_radius = rect_half_x * (axis_u[0] * axis[0] + axis_u[1] * axis[1]).abs()
+            + rect_half_y * (axis_v[0] * axis[0] + axis_v[1] * axis[1]).abs();
+
+        if (aabb_proj_center - rect_proj_center).abs() > aabb_proj_radius + rect_proj_radius {
+            return false;
+        }
+    }
+
+    true
 }
 
 fn top_surface_height_at(objects: &[LevelObject], x: f32, y: f32, max_z: f32) -> f32 {

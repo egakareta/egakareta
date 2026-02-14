@@ -15,9 +15,10 @@ use wgpu::util::DeviceExt;
 use crate::block_repository::DEFAULT_BLOCK_ID;
 use crate::editor_domain::{
     add_tap_step, build_editor_playtest_transition, build_playing_transition_from_metadata,
-    clear_tap_steps, create_block_at_cursor, derive_timeline_position,
-    editor_session_init_from_metadata, move_cursor_xy, playtest_return_objects, remove_tap_step,
-    remove_topmost_block_at_cursor, toggle_spawn_direction,
+    clear_tap_steps, create_block_at_cursor, derive_timeline_elapsed_seconds,
+    derive_timeline_position, derive_timeline_step_seconds, editor_session_init_from_metadata,
+    move_cursor_xy, playtest_return_objects, remove_tap_step, remove_topmost_block_at_cursor,
+    toggle_spawn_direction,
 };
 use crate::game::{create_menu_scene, GameState};
 use crate::level_repository::builtin_level_names;
@@ -40,7 +41,6 @@ use crate::types::{
 };
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
-pub(super) const EDITOR_TIMELINE_STEP_SECONDS: f32 = 0.18;
 
 enum MeshSlot {
     Empty,
@@ -691,7 +691,9 @@ impl State {
                             .editor_level_name
                             .clone()
                             .unwrap_or_else(|| "Untitled".to_string());
-                        self.start_audio(&level_name, &metadata);
+                        let start_seconds =
+                            self.editor_timeline_elapsed_seconds(self.editor_timeline_step);
+                        self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
                     } else if let Some(level_name) = self.playing_level_name.clone() {
                         if let Some(metadata) = self.load_level_metadata(&level_name) {
                             self.start_audio(&level_name, &metadata);
@@ -775,24 +777,56 @@ impl State {
 
         if !pressed {
             match key {
-                "ArrowUp" | "w" | "W" => self.set_editor_pan_up_held(false),
-                "ArrowDown" | "s" | "S" => self.set_editor_pan_down_held(false),
-                "ArrowLeft" | "a" | "A" => self.set_editor_pan_left_held(false),
-                "ArrowRight" | "d" | "D" => self.set_editor_pan_right_held(false),
+                "w" | "W" => self.set_editor_pan_up_held(false),
+                "s" | "S" => self.set_editor_pan_down_held(false),
+                "a" | "A" => self.set_editor_pan_left_held(false),
+                "d" | "D" => self.set_editor_pan_right_held(false),
                 _ => {}
             }
             return;
         }
 
         match key {
-            "ArrowUp" | "w" | "W" => {
+            "ArrowUp" => {
+                if self.is_editor() {
+                    if !self.editor_nudge_selected_blocks(0, 1) {
+                        self.editor_shift_timeline_step(1);
+                    }
+                } else if just_pressed {
+                    self.turn_right();
+                }
+            }
+            "ArrowDown" => {
+                if self.is_editor() && !self.editor_nudge_selected_blocks(0, -1) {
+                    self.editor_shift_timeline_step(-1);
+                }
+            }
+            "ArrowRight" => {
+                if self.is_editor() {
+                    if !self.editor_nudge_selected_blocks(1, 0) {
+                        self.editor_shift_timeline_step(1);
+                    }
+                } else if just_pressed {
+                    self.next_level();
+                }
+            }
+            "ArrowLeft" => {
+                if self.is_editor() {
+                    if !self.editor_nudge_selected_blocks(-1, 0) {
+                        self.editor_shift_timeline_step(-1);
+                    }
+                } else if just_pressed {
+                    self.prev_level();
+                }
+            }
+            "w" | "W" => {
                 if self.is_editor() {
                     self.set_editor_pan_up_held(true);
                 } else if just_pressed {
                     self.turn_right();
                 }
             }
-            "ArrowDown" | "s" | "S" => {
+            "s" | "S" => {
                 if self.is_editor() {
                     self.set_editor_pan_down_held(true);
                 }
@@ -806,7 +840,7 @@ impl State {
                     }
                 }
             }
-            "ArrowRight" | "d" | "D" => {
+            "d" | "D" => {
                 if self.is_editor() {
                     if self.editor_ctrl_held && just_pressed {
                         self.editor_duplicate_selected_block_in_place();
@@ -817,7 +851,7 @@ impl State {
                     self.next_level();
                 }
             }
-            "ArrowLeft" | "a" | "A" => {
+            "a" | "A" => {
                 if self.is_editor() {
                     self.set_editor_pan_left_held(true);
                 } else if just_pressed {

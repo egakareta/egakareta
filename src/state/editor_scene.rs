@@ -82,6 +82,26 @@ impl State {
         )
     }
 
+    pub(super) fn editor_timeline_elapsed_seconds(&self, step: u32) -> f32 {
+        derive_timeline_elapsed_seconds(
+            self.editor_spawn.position,
+            self.editor_spawn.direction,
+            &self.editor_tap_steps,
+            step,
+            &self.editor_objects,
+        )
+    }
+
+    pub(super) fn editor_timeline_step_seconds(&self, step: u32) -> f32 {
+        derive_timeline_step_seconds(
+            self.editor_spawn.position,
+            self.editor_spawn.direction,
+            &self.editor_tap_steps,
+            step,
+            &self.editor_objects,
+        )
+    }
+
     pub(super) fn refresh_editor_timeline_position(&mut self) {
         if self.phase != AppPhase::Editor {
             return;

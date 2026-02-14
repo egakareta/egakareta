@@ -1,6 +1,8 @@
 use crate::block_repository::{resolve_block_definition, BlockCollision};
 use crate::types::{Direction, LevelObject};
 
+pub(crate) const BASE_PLAYER_SPEED: f32 = 8.0;
+
 fn rotate_point_around_center_2d(point: [f32; 2], center: [f32; 2], radians: f32) -> [f32; 2] {
     let sin = radians.sin();
     let cos = radians.cos();
@@ -79,7 +81,7 @@ impl GameState {
         Self {
             position: [0.0, 0.0, 0.0],
             direction: Direction::Forward,
-            speed: 8.0,
+            speed: BASE_PLAYER_SPEED,
             trail_segments: vec![vec![[0.0, 0.0, 0.0]]],
             objects: Vec::new(),
             vertical_velocity: 0.0,

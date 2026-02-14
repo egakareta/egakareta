@@ -248,6 +248,7 @@ impl State {
         let max_step = self.editor_timeline_length.saturating_sub(1);
         self.editor_timeline_step = step.min(max_step);
         self.refresh_editor_timeline_position();
+        self.resync_editor_timeline_playback_audio();
     }
 
     pub fn set_editor_timeline_length(&mut self, length: u32) {
@@ -258,6 +259,7 @@ impl State {
         self.editor_timeline_step = self.editor_timeline_step.min(max_step);
         self.editor_tap_steps.retain(|step| *step < length);
         self.refresh_editor_timeline_position();
+        self.resync_editor_timeline_playback_audio();
         self.rebuild_tap_indicator_vertices();
     }
 

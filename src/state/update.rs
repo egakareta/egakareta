@@ -23,8 +23,15 @@ impl State {
             if self.editor_timeline_playing {
                 self.editor_timeline_playback_accumulator += frame_dt;
 
-                while self.editor_timeline_playback_accumulator >= EDITOR_TIMELINE_STEP_SECONDS {
-                    self.editor_timeline_playback_accumulator -= EDITOR_TIMELINE_STEP_SECONDS;
+                loop {
+                    let step_seconds = self
+                        .editor_timeline_step_seconds(self.editor_timeline_step)
+                        .max(1.0 / 240.0);
+                    if self.editor_timeline_playback_accumulator < step_seconds {
+                        break;
+                    }
+
+                    self.editor_timeline_playback_accumulator -= step_seconds;
                     let max_step = self.editor_timeline_length.saturating_sub(1);
                     if self.editor_timeline_step >= max_step {
                         self.editor_timeline_playing = false;
