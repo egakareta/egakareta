@@ -785,7 +785,11 @@ impl State {
             }
             "ArrowRight" | "d" | "D" => {
                 if self.is_editor() {
-                    self.set_editor_pan_right_held(true);
+                    if self.editor_ctrl_held && just_pressed {
+                        self.editor_duplicate_selected_block_in_place();
+                    } else {
+                        self.set_editor_pan_right_held(true);
+                    }
                 } else if just_pressed {
                     self.next_level();
                 }
