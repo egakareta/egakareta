@@ -1866,6 +1866,69 @@ pub(crate) fn build_spawn_marker_vertices(position: [f32; 3], faces_right: bool)
     vertices
 }
 
+pub(crate) fn build_tap_indicator_vertices(positions: &[[i32; 3]]) -> Vec<Vertex> {
+    let mut vertices = Vec::new();
+    let color = [0.0, 0.0, 0.0, 1.0]; // Black
+    let thickness = 0.05;
+    let dash_len = 0.2;
+    // Gaps will be (1.0 - 3*0.2) / 2 = 0.2
+
+    for &pos in positions {
+        let x_min = pos[0] as f32;
+        let x_max = x_min + 1.0;
+        let y_min = pos[1] as f32;
+        let y_max = y_min + 1.0;
+        let z = pos[2] as f32 + 0.1; // 0.1 above ground
+
+        let starts = [0.0, 0.4, 0.8];
+
+        for &start in &starts {
+            let end = start + dash_len;
+
+            // Bottom edge
+            append_quad(
+                &mut vertices,
+                [x_min + start, y_min, z],
+                [x_min + end, y_min, z],
+                [x_min + end, y_min + thickness, z],
+                [x_min + start, y_min + thickness, z],
+                color,
+            );
+
+            // Top edge
+            append_quad(
+                &mut vertices,
+                [x_min + start, y_max - thickness, z],
+                [x_min + end, y_max - thickness, z],
+                [x_min + end, y_max, z],
+                [x_min + start, y_max, z],
+                color,
+            );
+
+            // Left edge
+            append_quad(
+                &mut vertices,
+                [x_min, y_min + start, z],
+                [x_min + thickness, y_min + start, z],
+                [x_min + thickness, y_min + end, z],
+                [x_min, y_min + end, z],
+                color,
+            );
+
+            // Right edge
+            append_quad(
+                &mut vertices,
+                [x_max - thickness, y_min + start, z],
+                [x_max, y_min + start, z],
+                [x_max, y_min + end, z],
+                [x_max - thickness, y_min + end, z],
+                color,
+            );
+        }
+    }
+    vertices
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

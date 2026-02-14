@@ -12,35 +12,340 @@
         "unicodeTitle": "Flowerfield"
     },
     "spawn": {
-        "position": [-55.0, -55.0, 7.0],
+        "position": [-53.0, -53.0, 7.0],
         "direction": "forward"
     },
-    "taps": [],
+    "taps": [12],
     "timeline_step": 0,
     "objects": [
         {
+            "position": [-60.0, -51.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-60.0, -45.0, 7.0],
+            "size": [6.0, 6.0, 1.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-60.0, -54.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-60.0, -57.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
             "position": [-60.0, -60.0, 0.0],
-            "size": [23.0, 28.0, 7.0],
+            "size": [3.0, 3.0, 7.0],
             "block_id": "core/grass"
         },
         {
-            "position": [-51.0, -58.0, 7.0],
-            "size": [9.0, 8.0, 2.0],
+            "position": [-60.0, -39.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
             "block_id": "core/grass"
         },
         {
-            "position": [-45.0, -51.0, 7.0],
-            "size": [7.0, 8.0, 2.0],
+            "position": [-60.0, -42.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
             "block_id": "core/grass"
         },
         {
-            "position": [-52.0, -54.0, 6.0],
-            "size": [9.0, 8.0, 2.0],
+            "position": [-60.0, -45.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
             "block_id": "core/grass"
         },
         {
-            "position": [-59.0, -41.0, 7.0],
-            "size": [7.0, 8.0, 2.0],
+            "position": [-60.0, -48.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-57.0, -51.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-57.0, -54.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-57.0, -57.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-57.0, -60.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-57.0, -39.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-57.0, -42.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-57.0, -45.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-57.0, -48.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-54.0, -51.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-54.0, -54.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-54.0, -57.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-54.0, -60.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-54.0, -39.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-54.0, -42.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-54.0, -45.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-54.0, -48.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-51.0, -51.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-51.0, -54.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-51.0, -57.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-51.0, -60.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-51.0, -39.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-51.0, -42.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-51.0, -45.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-51.0, -48.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-48.0, -51.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-48.0, -54.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-48.0, -57.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-48.0, -60.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-48.0, -39.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-48.0, -42.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-48.0, -45.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-48.0, -48.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-45.0, -51.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-45.0, -54.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-45.0, -57.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-45.0, -60.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-45.0, -39.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-45.0, -42.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-45.0, -45.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-45.0, -48.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-51.0, -48.0, 7.0],
+            "size": [6.0, 6.0, 1.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-42.0, -51.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-42.0, -54.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-42.0, -57.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-42.0, -60.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-42.0, -39.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-42.0, -42.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-42.0, -45.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-42.0, -48.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-39.0, -51.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-39.0, -54.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-39.0, -57.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-39.0, -60.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-39.0, -39.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-39.0, -42.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-39.0, -45.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-39.0, -48.0, 0.0],
+            "size": [3.0, 3.0, 7.0],
             "block_id": "core/grass"
         }
     ]

@@ -59,9 +59,6 @@ impl State {
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
         self.rebuild_spawn_marker_vertices();
-        self.rebuild_editor_gizmo_vertices();
-        self.rebuild_editor_hover_outline_vertices();
-        self.rebuild_editor_selection_outline_vertices();
     }
 
     pub(super) fn editor_undo(&mut self) {
@@ -162,9 +159,6 @@ impl State {
         self.editor_hovered_block_index = self.editor_selected_block_index;
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
-        self.rebuild_editor_gizmo_vertices();
-        self.rebuild_editor_hover_outline_vertices();
-        self.rebuild_editor_selection_outline_vertices();
     }
 
     pub(super) fn editor_duplicate_selected_block_in_place(&mut self) {
@@ -207,8 +201,5 @@ impl State {
         self.editor_hovered_block_index = self.editor_selected_block_index;
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
-        self.rebuild_editor_gizmo_vertices();
-        self.rebuild_editor_hover_outline_vertices();
-        self.rebuild_editor_selection_outline_vertices();
     }
 }

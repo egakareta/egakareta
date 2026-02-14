@@ -34,6 +34,7 @@ impl State {
         self.rebuild_editor_gizmo_vertices();
         self.rebuild_editor_hover_outline_vertices();
         self.rebuild_editor_selection_outline_vertices();
+        self.rebuild_tap_indicator_vertices();
     }
 
     pub(super) fn topmost_block_index_at_cursor(&self, cursor: [i32; 3]) -> Option<usize> {
@@ -237,5 +238,38 @@ impl State {
 
         self.block_mesh
             .replace_with_vertices(&self.device, "Block Vertex Buffer", &vertices);
+    }
+
+    pub(super) fn rebuild_tap_indicator_vertices(&mut self) {
+        if self.phase != AppPhase::Editor {
+            self.tap_indicator_mesh.clear();
+            return;
+        }
+
+        let mut positions = Vec::new();
+        for &step in &self.editor_tap_steps {
+            let (pos, _) = derive_timeline_position(
+                self.editor_spawn.position,
+                self.editor_spawn.direction,
+                &self.editor_tap_steps,
+                step,
+                &self.editor_objects,
+            );
+            positions.push([
+                pos[0].round() as i32,
+                pos[1].round() as i32,
+                pos[2].round() as i32,
+            ]);
+        }
+
+        positions.sort_unstable();
+        positions.dedup();
+
+        let vertices = build_tap_indicator_vertices(&positions);
+        self.tap_indicator_mesh.replace_with_vertices(
+            &self.device,
+            "Tap Indicator Vertex Buffer",
+            &vertices,
+        );
     }
 }

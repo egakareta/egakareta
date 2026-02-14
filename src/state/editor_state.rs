@@ -258,24 +258,28 @@ impl State {
         self.editor_timeline_step = self.editor_timeline_step.min(max_step);
         self.editor_tap_steps.retain(|step| *step < length);
         self.refresh_editor_timeline_position();
+        self.rebuild_tap_indicator_vertices();
     }
 
     pub fn editor_add_tap(&mut self) {
         self.record_editor_history_state();
         add_tap_step(&mut self.editor_tap_steps, self.editor_timeline_step);
         self.refresh_editor_timeline_position();
+        self.rebuild_tap_indicator_vertices();
     }
 
     pub fn editor_remove_tap(&mut self) {
         self.record_editor_history_state();
         remove_tap_step(&mut self.editor_tap_steps, self.editor_timeline_step);
         self.refresh_editor_timeline_position();
+        self.rebuild_tap_indicator_vertices();
     }
 
     pub fn editor_clear_taps(&mut self) {
         self.record_editor_history_state();
         clear_tap_steps(&mut self.editor_tap_steps);
         self.refresh_editor_timeline_position();
+        self.rebuild_tap_indicator_vertices();
     }
 
     pub(crate) fn editor_timeline_preview(&self) -> ([f32; 3], SpawnDirection) {

@@ -24,8 +24,8 @@ use crate::level_repository::builtin_level_names;
 use crate::mesh::{
     build_block_vertices, build_editor_cursor_vertices, build_editor_gizmo_vertices,
     build_editor_hover_outline_vertices, build_editor_selection_outline_vertices,
-    build_floor_vertices, build_grid_vertices, build_spawn_marker_vertices, build_trail_vertices,
-    GizmoPart,
+    build_floor_vertices, build_grid_vertices, build_spawn_marker_vertices,
+    build_tap_indicator_vertices, build_trail_vertices, GizmoPart,
 };
 use crate::platform::audio::PlatformAudio;
 #[cfg(not(target_arch = "wasm32"))]
@@ -151,6 +151,7 @@ pub struct State {
     editor_hover_outline_mesh: MeshSlot,
     editor_selection_outline_mesh: MeshSlot,
     editor_gizmo_mesh: MeshSlot,
+    tap_indicator_mesh: MeshSlot,
     spawn_marker_mesh: MeshSlot,
     depth_texture: wgpu::Texture,
     depth_view: wgpu::TextureView,
@@ -608,6 +609,7 @@ impl State {
             editor_hover_outline_mesh: MeshSlot::Empty,
             editor_selection_outline_mesh: MeshSlot::Empty,
             editor_gizmo_mesh: MeshSlot::Empty,
+            tap_indicator_mesh: MeshSlot::Empty,
             spawn_marker_mesh: MeshSlot::Empty,
             editor: EditorState::new(),
             editor_selected_block_id: DEFAULT_BLOCK_ID.to_string(),
