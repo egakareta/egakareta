@@ -27,9 +27,9 @@ impl State {
             drag.start_center_world[2],
         );
         let axis_dir = match drag.axis {
-            GizmoAxis::X => Vec3::X,
-            GizmoAxis::Y => Vec3::Y,
-            GizmoAxis::Z => Vec3::Z,
+            GizmoAxis::X | GizmoAxis::XNeg => Vec3::X,
+            GizmoAxis::Y | GizmoAxis::YNeg => Vec3::Y,
+            GizmoAxis::Z | GizmoAxis::ZNeg => Vec3::Z,
         };
 
         let Some(origin_screen) = self.world_to_screen(center) else {
@@ -67,9 +67,9 @@ impl State {
                     if let Some(obj) = self.editor_objects.get_mut(block.index) {
                         let mut next = block.position;
                         match drag.axis {
-                            GizmoAxis::X => next[0] += world_delta,
-                            GizmoAxis::Y => next[1] += world_delta,
-                            GizmoAxis::Z => next[2] += world_delta,
+                            GizmoAxis::X | GizmoAxis::XNeg => next[0] += world_delta,
+                            GizmoAxis::Y | GizmoAxis::YNeg => next[1] += world_delta,
+                            GizmoAxis::Z | GizmoAxis::ZNeg => next[2] += world_delta,
                         }
                         if snap_enabled {
                             next[0] = (next[0] / snap_step).round() * snap_step;
@@ -101,22 +101,71 @@ impl State {
                 let min_size = if snap_enabled { snap_step } else { 0.25 };
                 for block in &drag.start_blocks {
                     if let Some(obj) = self.editor_objects.get_mut(block.index) {
-                        let mut next = block.size;
                         match drag.axis {
-                            GizmoAxis::X => next[0] += world_delta,
-                            GizmoAxis::Y => next[1] += world_delta,
-                            GizmoAxis::Z => next[2] += world_delta,
+                            GizmoAxis::X => {
+                                let mut s = block.size[0] + world_delta;
+                                if snap_enabled {
+                                    s = (s / snap_step).round() * snap_step;
+                                }
+                                obj.size[0] = s.max(min_size);
+                            }
+                            GizmoAxis::Y => {
+                                let mut s = block.size[1] + world_delta;
+                                if snap_enabled {
+                                    s = (s / snap_step).round() * snap_step;
+                                }
+                                obj.size[1] = s.max(min_size);
+                            }
+                            GizmoAxis::Z => {
+                                let mut s = block.size[2] + world_delta;
+                                if snap_enabled {
+                                    s = (s / snap_step).round() * snap_step;
+                                }
+                                obj.size[2] = s.max(min_size);
+                            }
+                            GizmoAxis::XNeg => {
+                                let mut s = block.size[0] - world_delta;
+                                let mut p = block.position[0] + world_delta;
+                                let right_edge = block.position[0] + block.size[0];
+                                if snap_enabled {
+                                    p = (p / snap_step).round() * snap_step;
+                                    s = (right_edge - p).max(min_size);
+                                    p = right_edge - s;
+                                } else {
+                                    s = s.max(min_size);
+                                    p = right_edge - s;
+                                }
+                                obj.position[0] = p;
+                                obj.size[0] = s;
+                            }
+                            GizmoAxis::YNeg => {
+                                let mut s = block.size[1] - world_delta;
+                                let mut p = block.position[1] + world_delta;
+                                let top_edge = block.position[1] + block.size[1];
+                                if snap_enabled {
+                                    p = (p / snap_step).round() * snap_step;
+                                    s = (top_edge - p).max(min_size);
+                                    p = top_edge - s;
+                                } else {
+                                    s = s.max(min_size);
+                                    p = top_edge - s;
+                                }
+                                obj.position[1] = p;
+                                obj.size[1] = s;
+                            }
+                            GizmoAxis::ZNeg => {
+                                let mut p = block.position[2] + world_delta;
+                                let upper_edge = block.position[2] + block.size[2];
+                                if snap_enabled {
+                                    p = (p / snap_step).round() * snap_step;
+                                }
+                                p = p.max(0.0);
+                                let s = (upper_edge - p).max(min_size);
+                                p = upper_edge - s;
+                                obj.position[2] = p;
+                                obj.size[2] = s;
+                            }
                         }
-                        if snap_enabled {
-                            next[0] = (next[0] / snap_step).round() * snap_step;
-                            next[1] = (next[1] / snap_step).round() * snap_step;
-                            next[2] = (next[2] / snap_step).round() * snap_step;
-                        }
-                        obj.size = [
-                            next[0].max(min_size),
-                            next[1].max(min_size),
-                            next[2].max(min_size),
-                        ];
                     }
                 }
                 self.sync_editor_objects();
@@ -421,6 +470,21 @@ impl State {
                 center + Vec3::new(0.0, 0.0, axis_lengths[2]),
             ),
             (
+                GizmoDragKind::Move,
+                GizmoAxis::XNeg,
+                center + Vec3::new(-axis_lengths[0], 0.0, 0.0),
+            ),
+            (
+                GizmoDragKind::Move,
+                GizmoAxis::YNeg,
+                center + Vec3::new(0.0, -axis_lengths[1], 0.0),
+            ),
+            (
+                GizmoDragKind::Move,
+                GizmoAxis::ZNeg,
+                center + Vec3::new(0.0, 0.0, -axis_lengths[2]),
+            ),
+            (
                 GizmoDragKind::Resize,
                 GizmoAxis::X,
                 Vec3::new(
@@ -446,6 +510,21 @@ impl State {
                     center.y,
                     bounds_position[2] + bounds_size[2] + 0.36,
                 ),
+            ),
+            (
+                GizmoDragKind::Resize,
+                GizmoAxis::XNeg,
+                Vec3::new(bounds_position[0] - 0.36, center.y, center.z),
+            ),
+            (
+                GizmoDragKind::Resize,
+                GizmoAxis::YNeg,
+                Vec3::new(center.x, bounds_position[1] - 0.36, center.z),
+            ),
+            (
+                GizmoDragKind::Resize,
+                GizmoAxis::ZNeg,
+                Vec3::new(center.x, center.y, bounds_position[2] - 0.36),
             ),
         ];
 

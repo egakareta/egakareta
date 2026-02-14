@@ -228,6 +228,9 @@ enum GizmoAxis {
     X,
     Y,
     Z,
+    XNeg,
+    YNeg,
+    ZNeg,
 }
 
 #[derive(Clone, Copy)]

@@ -164,9 +164,15 @@ impl State {
                 (GizmoAxis::X, GizmoDragKind::Move) => Some(GizmoPart::MoveX),
                 (GizmoAxis::Y, GizmoDragKind::Move) => Some(GizmoPart::MoveY),
                 (GizmoAxis::Z, GizmoDragKind::Move) => Some(GizmoPart::MoveZ),
+                (GizmoAxis::XNeg, GizmoDragKind::Move) => Some(GizmoPart::MoveXNeg),
+                (GizmoAxis::YNeg, GizmoDragKind::Move) => Some(GizmoPart::MoveYNeg),
+                (GizmoAxis::ZNeg, GizmoDragKind::Move) => Some(GizmoPart::MoveZNeg),
                 (GizmoAxis::X, GizmoDragKind::Resize) => Some(GizmoPart::ResizeX),
                 (GizmoAxis::Y, GizmoDragKind::Resize) => Some(GizmoPart::ResizeY),
                 (GizmoAxis::Z, GizmoDragKind::Resize) => Some(GizmoPart::ResizeZ),
+                (GizmoAxis::XNeg, GizmoDragKind::Resize) => Some(GizmoPart::ResizeXNeg),
+                (GizmoAxis::YNeg, GizmoDragKind::Resize) => Some(GizmoPart::ResizeYNeg),
+                (GizmoAxis::ZNeg, GizmoDragKind::Resize) => Some(GizmoPart::ResizeZNeg),
             }
         } else {
             None
