@@ -140,22 +140,36 @@ impl State {
         while let Ok((filename, bytes)) = self.audio_import_channel.1.try_recv() {
             self.editor_music_metadata.source = filename.clone();
             self.local_audio_cache.insert(filename, bytes);
+            self.waveform_cache
+                .remove(&self.editor_music_metadata.source);
+            self.waveform_loading_source = None;
             self.load_waveform_for_current_audio();
         }
     }
 
     pub(super) fn update_waveform_loading(&mut self) {
         while let Ok((source, decoded)) = self.waveform_load_channel.1.try_recv() {
-            if source != self.editor_music_metadata.source {
-                continue;
-            }
-
             if let Some((samples, sample_rate)) = decoded {
+                self.waveform_cache
+                    .insert(source.clone(), (samples.clone(), sample_rate));
+
+                if source != self.editor_music_metadata.source {
+                    continue;
+                }
+
                 self.editor_waveform_samples = samples;
                 self.editor_waveform_sample_rate = sample_rate;
             } else {
+                if source != self.editor_music_metadata.source {
+                    continue;
+                }
+
                 self.editor_waveform_samples.clear();
                 self.editor_waveform_sample_rate = 0;
+            }
+
+            if self.waveform_loading_source.as_deref() == Some(source.as_str()) {
+                self.waveform_loading_source = None;
             }
         }
     }

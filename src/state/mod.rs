@@ -247,6 +247,8 @@ pub struct State {
         std::sync::mpsc::Sender<WaveformLoadData>,
         std::sync::mpsc::Receiver<WaveformLoadData>,
     ),
+    waveform_cache: std::collections::HashMap<String, (Vec<f32>, u32)>,
+    waveform_loading_source: Option<String>,
 }
 
 type AudioImportData = (String, Vec<u8>);
@@ -885,6 +887,8 @@ impl State {
             local_audio_cache,
             audio_import_channel: std::sync::mpsc::channel(),
             waveform_load_channel: std::sync::mpsc::channel(),
+            waveform_cache: std::collections::HashMap::new(),
+            waveform_loading_source: None,
         }
     }
 

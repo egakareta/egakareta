@@ -255,29 +255,96 @@ impl PlatformAudio {
 /// Returns (peak_samples, sample_rate) where peak_samples contains one peak per window.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn decode_audio_to_waveform(
-    bytes: &[u8],
+    bytes: Vec<u8>,
     window_size: usize,
 ) -> Option<(Vec<f32>, u32)> {
-    use rodio::Source as _;
+    use symphonia::core::audio::SampleBuffer;
+    use symphonia::core::codecs::DecoderOptions;
+    use symphonia::core::errors::Error as SymphoniaError;
+    use symphonia::core::formats::FormatOptions;
+    use symphonia::core::io::MediaSourceStream;
+    use symphonia::core::meta::MetadataOptions;
+    use symphonia::core::probe::Hint;
 
-    let decoder = rodio::Decoder::new(std::io::Cursor::new(bytes.to_vec())).ok()?;
-    let sample_rate = decoder.sample_rate();
-    let channels = decoder.channels() as f32;
+    let source = std::io::Cursor::new(bytes);
+    let mss = MediaSourceStream::new(Box::new(source), Default::default());
+    let hint = Hint::new();
+    let probed = symphonia::default::get_probe()
+        .format(
+            &hint,
+            mss,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
+        .ok()?;
+
+    let mut format = probed.format;
+    let track = format.default_track()?;
+    let sample_rate = track.codec_params.sample_rate?;
+    let channel_count = track
+        .codec_params
+        .channels
+        .map(|channels| channels.count())
+        .unwrap_or(1)
+        .max(1);
+
+    let mut decoder = symphonia::default::get_codecs()
+        .make(&track.codec_params, &DecoderOptions::default())
+        .ok()?;
 
     let mut peaks: Vec<f32> = Vec::new();
     let mut window_peak: f32 = 0.0;
     let mut window_count: usize = 0;
+    let mut sample_buffer: Option<SampleBuffer<f32>> = None;
+    let channel_scale = 1.0 / channel_count as f32;
+    let track_id = track.id;
 
-    for sample in decoder {
-        let normalized = sample as f32 / i16::MAX as f32 / channels;
-        window_peak = window_peak.max(normalized.abs());
-        window_count += 1;
-        if window_count >= window_size {
-            peaks.push(window_peak);
-            window_peak = 0.0;
-            window_count = 0;
+    loop {
+        let packet = match format.next_packet() {
+            Ok(packet) => packet,
+            Err(SymphoniaError::IoError(_)) => break,
+            Err(SymphoniaError::ResetRequired) => return None,
+            Err(_) => break,
+        };
+
+        if packet.track_id() != track_id {
+            continue;
+        }
+
+        let decoded = match decoder.decode(&packet) {
+            Ok(decoded) => decoded,
+            Err(SymphoniaError::DecodeError(_)) => continue,
+            Err(SymphoniaError::IoError(_)) => break,
+            Err(_) => return None,
+        };
+
+        if sample_buffer
+            .as_ref()
+            .map(|buf| buf.capacity() < decoded.capacity())
+            .unwrap_or(true)
+        {
+            sample_buffer = Some(SampleBuffer::<f32>::new(
+                decoded.capacity() as u64,
+                *decoded.spec(),
+            ));
+        }
+
+        if let Some(buf) = sample_buffer.as_mut() {
+            buf.copy_interleaved_ref(decoded);
+            for sample in buf.samples() {
+                let normalized = sample.abs() * channel_scale;
+                window_peak = window_peak.max(normalized);
+                window_count += 1;
+
+                if window_count >= window_size {
+                    peaks.push(window_peak);
+                    window_peak = 0.0;
+                    window_count = 0;
+                }
+            }
         }
     }
+
     if window_count > 0 {
         peaks.push(window_peak);
     }

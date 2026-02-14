@@ -494,49 +494,29 @@ impl State {
     }
 
     pub(crate) fn load_waveform_for_current_audio(&mut self) {
+        const WAVEFORM_WINDOW: usize = 256;
+
+        let music_source = self.editor_music_metadata.source.clone();
+
+        if let Some((samples, sample_rate)) = self.waveform_cache.get(&music_source) {
+            self.editor_waveform_samples = samples.clone();
+            self.editor_waveform_sample_rate = *sample_rate;
+            self.waveform_loading_source = None;
+            return;
+        }
+
+        if self.waveform_loading_source.as_deref() == Some(music_source.as_str()) {
+            return;
+        }
+
+        self.waveform_loading_source = Some(music_source.clone());
+        self.editor_waveform_samples.clear();
+        self.editor_waveform_sample_rate = 0;
+
         #[cfg(not(target_arch = "wasm32"))]
         {
             use crate::platform::audio::decode_audio_to_waveform;
-
-            let bytes = self
-                .local_audio_cache
-                .get(&self.editor_music_metadata.source)
-                .cloned()
-                .or_else(|| {
-                    let level_name = self.editor_level_name.as_deref().unwrap_or("Untitled");
-                    let audio_path = format!(
-                        "assets/levels/{}/{}",
-                        level_name, self.editor_music_metadata.source
-                    );
-                    std::fs::read(&audio_path).ok()
-                });
-
-            if let Some(bytes) = bytes {
-                const WAVEFORM_WINDOW: usize = 256;
-                if let Some((samples, sample_rate)) =
-                    decode_audio_to_waveform(&bytes, WAVEFORM_WINDOW)
-                {
-                    self.editor_waveform_samples = samples;
-                    self.editor_waveform_sample_rate = sample_rate;
-                } else {
-                    self.editor_waveform_samples.clear();
-                    self.editor_waveform_sample_rate = 0;
-                }
-            } else {
-                self.editor_waveform_samples.clear();
-                self.editor_waveform_sample_rate = 0;
-            }
-        }
-
-        #[cfg(target_arch = "wasm32")]
-        {
-            use wasm_bindgen::JsCast as _;
-            use wasm_bindgen_futures::{spawn_local, JsFuture};
-
-            const WAVEFORM_WINDOW: usize = 256;
-
-            let music_source = self.editor_music_metadata.source.clone();
-            let source_for_fetch = music_source.clone();
+            let source_for_thread = music_source.clone();
             let level_name = self
                 .editor_level_name
                 .clone()
@@ -544,8 +524,34 @@ impl State {
             let cached_bytes = self.local_audio_cache.get(&music_source).cloned();
             let sender = self.waveform_load_channel.0.clone();
 
-            self.editor_waveform_samples.clear();
-            self.editor_waveform_sample_rate = 0;
+            std::thread::spawn(move || {
+                let bytes = cached_bytes.or_else(|| {
+                    let audio_path = format!("assets/levels/{}/{}", level_name, source_for_thread);
+                    std::fs::read(&audio_path).ok()
+                });
+
+                let decoded = if let Some(bytes) = bytes {
+                    decode_audio_to_waveform(bytes, WAVEFORM_WINDOW)
+                } else {
+                    None
+                };
+
+                let _ = sender.send((source_for_thread, decoded));
+            });
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            use wasm_bindgen::JsCast as _;
+            use wasm_bindgen_futures::{spawn_local, JsFuture};
+
+            let source_for_fetch = music_source.clone();
+            let level_name = self
+                .editor_level_name
+                .clone()
+                .unwrap_or_else(|| "Untitled".to_string());
+            let cached_bytes = self.local_audio_cache.get(&music_source).cloned();
+            let sender = self.waveform_load_channel.0.clone();
 
             spawn_local(async move {
                 let bytes = if let Some(bytes) = cached_bytes {
