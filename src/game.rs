@@ -557,4 +557,61 @@ mod tests {
         assert!(game.objects.is_empty());
         assert!(!game.game_over);
     }
+
+    #[test]
+    fn timeline_negative_time_clamps_to_zero() {
+        let snapshot =
+            simulate_timeline_state([0.0, 0.0, 0.0], SpawnDirection::Forward, &[], &[], -2.0);
+
+        approx_eq(snapshot.position[0], 0.5, 1e-6);
+        approx_eq(snapshot.position[1], 0.5, 1e-6);
+        approx_eq(snapshot.position[2], 0.0, 1e-6);
+        assert!(matches!(snapshot.direction, SpawnDirection::Forward));
+        approx_eq(snapshot.elapsed_seconds, 0.0, 1e-6);
+    }
+
+    #[test]
+    fn timeline_tap_at_zero_turns_before_movement() {
+        let dt = 1.0 / BASE_PLAYER_SPEED;
+        let snapshot =
+            simulate_timeline_state([0.0, 0.0, 0.0], SpawnDirection::Forward, &[], &[0.0], dt);
+
+        assert!(matches!(snapshot.direction, SpawnDirection::Right));
+        approx_eq(snapshot.position[0], 1.5, 0.05);
+        approx_eq(snapshot.position[1], 0.5, 0.05);
+        approx_eq(snapshot.elapsed_seconds, dt, 1e-6);
+    }
+
+    #[test]
+    fn timeline_incremental_runtime_matches_direct_simulation() {
+        let mut runtime = TimelineSimulationRuntime::new(
+            [0.0, 0.0, 0.0],
+            SpawnDirection::Forward,
+            &[],
+            &[0.375, 0.125, 0.25],
+        );
+
+        for target in [0.05_f32, 0.2, 0.31, 0.6] {
+            runtime.advance_to(target);
+        }
+
+        let incremental = runtime.snapshot();
+        let direct = simulate_timeline_state(
+            [0.0, 0.0, 0.0],
+            SpawnDirection::Forward,
+            &[],
+            &[0.375, 0.125, 0.25],
+            0.6,
+        );
+
+        approx_eq(incremental.position[0], direct.position[0], 0.02);
+        approx_eq(incremental.position[1], direct.position[1], 0.02);
+        approx_eq(incremental.position[2], direct.position[2], 0.02);
+        assert!(matches!(
+            (incremental.direction, direct.direction),
+            (SpawnDirection::Forward, SpawnDirection::Forward)
+                | (SpawnDirection::Right, SpawnDirection::Right)
+        ));
+        approx_eq(incremental.elapsed_seconds, direct.elapsed_seconds, 1e-6);
+    }
 }
