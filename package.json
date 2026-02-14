@@ -3,15 +3,17 @@
         "build": "wasm-pack build --target web",
         "format:cargo": "cargo fmt",
         "format:prettier": "prettier --write .",
-        "format": "npm run format:cargo && npm run format:prettier",
+        "format": "bun run format:cargo && bun run format:prettier",
         "lint": "cargo clippy -- -D warnings",
         "test": "cargo test",
-        "watch": "nodemon --watch src -e rs,wgsl --exec \"npm run build\"",
-        "serve": "npx serve .",
-        "dev": "concurrently \"npm run watch\" \"npm run serve\""
+        "watch": "nodemon --watch src -e rs,wgsl --exec \"bun run build\"",
+        "serve": "bunx serve .",
+        "dev": "concurrently \"bun run watch\" \"bun run serve\"",
+        "prepare": "lefthook install"
     },
     "devDependencies": {
         "concurrently": "^9.2.1",
+        "lefthook": "^2.1.1",
         "nodemon": "^3.1.11",
         "prettier": "^3.8.1"
     }
