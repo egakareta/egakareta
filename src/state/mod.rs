@@ -559,7 +559,7 @@ impl State {
 
         let grid_mesh = MeshSlot::from_vertices(&device, "Grid Vertex Buffer", &grid_vertices);
 
-        let trail_mesh = MeshSlot::streaming(&device, "Trail Vertex Buffer", 36 * 500);
+        let trail_mesh = MeshSlot::streaming(&device, "Trail Vertex Buffer", 36 * 20000);
 
         let menu = MenuState {
             selected_level: 0,

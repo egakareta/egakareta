@@ -40,12 +40,35 @@ impl State {
         }
 
         let mut trail_vertices = Vec::new();
+        let player_pos = self.game.position;
+        // Cull segments that are too far from the player to save on vertices.
+        const CULL_DISTANCE_SQ: f32 = 120.0 * 120.0;
+
         for (segment_index, segment) in self.game.trail_segments.iter().enumerate() {
-            let mut points = segment.clone();
-            if segment_index + 1 == self.game.trail_segments.len() && self.game.is_grounded {
-                points.push(self.game.position);
+            if segment.is_empty() {
+                continue;
             }
-            trail_vertices.extend(build_trail_vertices(&points, self.game.game_over));
+
+            let is_last_segment = segment_index + 1 == self.game.trail_segments.len();
+
+            // For older segments, check if they are still potentially visible.
+            if !is_last_segment {
+                let last_point = segment.last().unwrap();
+                let dx = last_point[0] - player_pos[0];
+                let dy = last_point[1] - player_pos[1];
+                let dz = last_point[2] - player_pos[2];
+                if dx * dx + dy * dy + dz * dz > CULL_DISTANCE_SQ {
+                    continue;
+                }
+            }
+
+            if is_last_segment && self.game.is_grounded {
+                let mut points = segment.clone();
+                points.push(self.game.position);
+                trail_vertices.extend(build_trail_vertices(&points, self.game.game_over));
+            } else {
+                trail_vertices.extend(build_trail_vertices(segment, self.game.game_over));
+            }
         }
 
         if !self.game.is_grounded {
