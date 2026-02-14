@@ -237,63 +237,90 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                     EditorMode::Select => {
                         ui.label("Tip: Shift+Click to select multiple blocks.");
                         if let Some(mut selected) = state.editor_selected_block() {
-                            ui.horizontal(|ui| {
-                                ui.label("Move:");
-                                let mut changed = false;
-                                changed |= ui
-                                    .add(
-                                        egui::DragValue::new(&mut selected.position[0])
-                                            .prefix("X "),
-                                    )
-                                    .changed();
-                                changed |= ui
-                                    .add(
-                                        egui::DragValue::new(&mut selected.position[1])
-                                            .prefix("Y "),
-                                    )
-                                    .changed();
-                                changed |= ui
-                                    .add(
-                                        egui::DragValue::new(&mut selected.position[2])
-                                            .prefix("Z "),
-                                    )
-                                    .changed();
-                                if changed {
-                                    state.set_editor_selected_block_position(selected.position);
-                                }
-                            });
+                            ui.horizontal_wrapped(|ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label("Move:");
+                                    let mut changed = false;
+                                    changed |= ui
+                                        .add(
+                                            egui::DragValue::new(&mut selected.position[0])
+                                                .prefix("X "),
+                                        )
+                                        .changed();
+                                    changed |= ui
+                                        .add(
+                                            egui::DragValue::new(&mut selected.position[1])
+                                                .prefix("Y "),
+                                        )
+                                        .changed();
+                                    changed |= ui
+                                        .add(
+                                            egui::DragValue::new(&mut selected.position[2])
+                                                .prefix("Z "),
+                                        )
+                                        .changed();
+                                    if changed {
+                                        state.set_editor_selected_block_position(selected.position);
+                                    }
+                                });
 
-                            ui.horizontal(|ui| {
-                                ui.label("Resize:");
-                                let mut changed = false;
-                                changed |= ui
-                                    .add(egui::DragValue::new(&mut selected.size[0]).prefix("W "))
-                                    .changed();
-                                changed |= ui
-                                    .add(egui::DragValue::new(&mut selected.size[1]).prefix("D "))
-                                    .changed();
-                                changed |= ui
-                                    .add(egui::DragValue::new(&mut selected.size[2]).prefix("H "))
-                                    .changed();
-                                if changed {
-                                    state.set_editor_selected_block_size(selected.size);
-                                }
-                            });
+                                ui.horizontal(|ui| {
+                                    ui.label("Resize:");
+                                    let mut changed = false;
+                                    changed |= ui
+                                        .add(
+                                            egui::DragValue::new(&mut selected.size[0])
+                                                .prefix("W "),
+                                        )
+                                        .changed();
+                                    changed |= ui
+                                        .add(
+                                            egui::DragValue::new(&mut selected.size[1])
+                                                .prefix("D "),
+                                        )
+                                        .changed();
+                                    changed |= ui
+                                        .add(
+                                            egui::DragValue::new(&mut selected.size[2])
+                                                .prefix("H "),
+                                        )
+                                        .changed();
+                                    if changed {
+                                        state.set_editor_selected_block_size(selected.size);
+                                    }
+                                });
 
-                            ui.horizontal(|ui| {
-                                ui.label("Angle:");
-                                if ui
-                                    .add(
-                                        egui::DragValue::new(&mut selected.rotation_degrees)
-                                            .speed(0.5)
-                                            .suffix("°"),
-                                    )
-                                    .changed()
-                                {
-                                    state.set_editor_selected_block_rotation(
-                                        selected.rotation_degrees,
-                                    );
-                                }
+                                ui.horizontal(|ui| {
+                                    ui.label("Angle:");
+                                    if ui
+                                        .add(
+                                            egui::DragValue::new(&mut selected.rotation_degrees)
+                                                .speed(0.5)
+                                                .suffix("°"),
+                                        )
+                                        .changed()
+                                    {
+                                        state.set_editor_selected_block_rotation(
+                                            selected.rotation_degrees,
+                                        );
+                                    }
+                                });
+
+                                ui.horizontal(|ui| {
+                                    ui.label("Round:");
+                                    if ui
+                                        .add(
+                                            egui::DragValue::new(&mut selected.roundness)
+                                                .speed(0.01)
+                                                .range(0.0..=10.0),
+                                        )
+                                        .changed()
+                                    {
+                                        state.set_editor_selected_block_roundness(
+                                            selected.roundness,
+                                        );
+                                    }
+                                });
                             });
 
                             ui.horizontal(|ui| {

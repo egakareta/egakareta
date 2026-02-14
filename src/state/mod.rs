@@ -970,6 +970,7 @@ mod tests {
             position: [0.0, 0.0, 2.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: 0.0,
+            roundness: 0.18,
             kind: crate::types::BlockKind::Standard,
         }];
         let (position, direction) =

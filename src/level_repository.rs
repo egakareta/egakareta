@@ -126,7 +126,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_objects_without_kind() {
+    fn parses_objects_without_kind_using_default() {
         let mut metadata = load_builtin_level_metadata("Flowerfield").expect("missing level");
         metadata.objects[0].kind = crate::types::BlockKind::Standard;
 
@@ -139,7 +139,10 @@ mod tests {
             .unwrap()
             .remove("kind");
 
-        let result = parse_level_metadata_json(&json_value.to_string());
-        assert!(result.is_err());
+        let result = parse_level_metadata_json(&json_value.to_string()).expect("valid metadata");
+        assert!(matches!(
+            result.objects[0].kind,
+            crate::types::BlockKind::Standard
+        ));
     }
 }

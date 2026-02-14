@@ -202,6 +202,26 @@ impl State {
         }
     }
 
+    pub(crate) fn set_editor_selected_block_roundness(&mut self, roundness: f32) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        self.record_editor_history_state();
+
+        self.sync_primary_selection_from_indices();
+
+        if let Some(index) = self
+            .editor_selected_block_index
+            .filter(|index| *index < self.editor_objects.len())
+        {
+            self.editor_objects[index].roundness = roundness.max(0.0);
+            self.sync_editor_objects();
+            self.rebuild_editor_gizmo_vertices();
+            self.rebuild_editor_selection_outline_vertices();
+        }
+    }
+
     pub fn editor_selected_block_kind(&self) -> BlockKind {
         self.editor_selected_kind
     }

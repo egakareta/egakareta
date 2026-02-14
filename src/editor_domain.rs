@@ -137,6 +137,7 @@ pub(crate) fn create_block_at_cursor(cursor: [i32; 3], kind: BlockKind) -> Level
         position: [cursor[0] as f32, cursor[1] as f32, cursor[2] as f32],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: 0.0,
+        roundness: 0.18,
         kind,
     }
 }
@@ -323,12 +324,14 @@ mod tests {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: 0.0,
+                roundness: 0.18,
                 kind: BlockKind::Standard,
             },
             LevelObject {
                 position: [0.0, 0.0, 1.0],
                 size: [1.0, 1.0, 2.0],
                 rotation_degrees: 0.0,
+                roundness: 0.18,
                 kind: BlockKind::Grass,
             },
         ];
@@ -360,6 +363,7 @@ mod tests {
                 position: [4.0, 6.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: 0.0,
+                roundness: 0.18,
                 kind: BlockKind::Standard,
             }],
             extra: serde_json::Map::new(),
@@ -388,6 +392,7 @@ mod tests {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: 0.0,
+            roundness: 0.18,
             kind: BlockKind::Standard,
         }];
 
@@ -414,6 +419,7 @@ mod tests {
             position: [1.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: 0.0,
+            roundness: 0.18,
             kind: BlockKind::Standard,
         }];
 
@@ -442,6 +448,7 @@ mod tests {
                 position: [1.0, 2.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: 0.0,
+                roundness: 0.18,
                 kind: BlockKind::Standard,
             }],
             extra: serde_json::Map::new(),
@@ -463,6 +470,7 @@ mod tests {
             position: [0.0, 0.0, 0.0],
             size: [2.0, 1.0, 3.0],
             rotation_degrees: 90.0,
+            roundness: 0.18,
             kind: BlockKind::Standard,
         }];
 
@@ -476,6 +484,7 @@ mod tests {
             position: [0.0, 0.0, 0.0],
             size: [2.0, 1.0, 2.0],
             rotation_degrees: 90.0,
+            roundness: 0.18,
             kind: BlockKind::Standard,
         }];
 

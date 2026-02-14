@@ -263,6 +263,7 @@ pub(crate) fn create_menu_scene() -> Vec<LevelObject> {
                 position: [x as f32 * 2.0, y as f32 * 2.0, height],
                 size: [2.0, 2.0, 2.0],
                 rotation_degrees: 0.0,
+                roundness: 0.18,
                 kind: BlockKind::Grass,
             });
         }
@@ -287,6 +288,7 @@ mod tests {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: 0.0,
+            roundness: 0.18,
             kind: BlockKind::Standard,
         });
 
@@ -304,6 +306,7 @@ mod tests {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: 0.0,
+            roundness: 0.18,
             kind: BlockKind::Standard,
         });
         // Overhang block at height 3
@@ -311,6 +314,7 @@ mod tests {
             position: [0.0, 0.0, 3.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: 0.0,
+            roundness: 0.18,
             kind: BlockKind::Standard,
         });
 
@@ -347,6 +351,7 @@ mod tests {
             position: [0.0, 0.0, 0.0],
             size: [2.0, 1.0, 1.0],
             rotation_degrees: 90.0,
+            roundness: 0.18,
             kind: BlockKind::Standard,
         };
 
@@ -360,6 +365,7 @@ mod tests {
             position: [0.0, 0.0, 0.0],
             size: [2.0, 1.0, 1.0],
             rotation_degrees: 45.0,
+            roundness: 0.18,
             kind: BlockKind::Standard,
         };
 
@@ -374,6 +380,7 @@ mod tests {
             position: [0.0, 0.0, 0.0],
             size: [2.0, 1.0, 2.0],
             rotation_degrees: 90.0,
+            roundness: 0.18,
             kind: BlockKind::Standard,
         });
 
@@ -393,6 +400,7 @@ mod tests {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: 30.0,
+            roundness: 0.18,
             kind: BlockKind::SpeedPortal,
         });
 
