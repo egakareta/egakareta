@@ -85,10 +85,21 @@ impl State {
     }
 
     pub(super) fn start_audio(&mut self, level_name: &str, metadata: &LevelMetadata) {
+        self.start_audio_at_seconds(level_name, metadata, 0.0);
+    }
+
+    pub(super) fn start_audio_at_seconds(
+        &mut self,
+        level_name: &str,
+        metadata: &LevelMetadata,
+        start_seconds: f32,
+    ) {
         if let Some(bytes) = self.local_audio_cache.get(&metadata.music.source) {
-            self.audio.start_with_bytes(&metadata.music.source, bytes);
+            self.audio
+                .start_with_bytes_at(&metadata.music.source, bytes, start_seconds);
         } else {
-            self.audio.start(level_name, &metadata.music.source);
+            self.audio
+                .start_at(level_name, &metadata.music.source, start_seconds);
         }
     }
 

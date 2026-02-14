@@ -23,9 +23,9 @@ use crate::game::{create_menu_scene, GameState};
 use crate::level_repository::builtin_level_names;
 use crate::mesh::{
     build_block_vertices, build_editor_cursor_vertices, build_editor_gizmo_vertices,
-    build_editor_hover_outline_vertices, build_editor_selection_outline_vertices,
-    build_floor_vertices, build_grid_vertices, build_spawn_marker_vertices,
-    build_tap_indicator_vertices, build_trail_vertices, GizmoPart,
+    build_editor_hover_outline_vertices, build_editor_preview_player_vertices,
+    build_editor_selection_outline_vertices, build_floor_vertices, build_grid_vertices,
+    build_spawn_marker_vertices, build_tap_indicator_vertices, build_trail_vertices, GizmoPart,
 };
 use crate::platform::audio::PlatformAudio;
 #[cfg(not(target_arch = "wasm32"))]
@@ -40,6 +40,7 @@ use crate::types::{
 };
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+pub(super) const EDITOR_TIMELINE_STEP_SECONDS: f32 = 0.18;
 
 enum MeshSlot {
     Empty,
@@ -153,6 +154,7 @@ pub struct State {
     editor_gizmo_mesh: MeshSlot,
     tap_indicator_mesh: MeshSlot,
     spawn_marker_mesh: MeshSlot,
+    editor_preview_player_mesh: MeshSlot,
     depth_texture: wgpu::Texture,
     depth_view: wgpu::TextureView,
     render_pipeline: wgpu::RenderPipeline,
@@ -179,6 +181,8 @@ pub struct State {
     editor_timeline_step: u32,
     editor_timeline_length: u32,
     editor_tap_steps: Vec<u32>,
+    editor_timeline_playing: bool,
+    editor_timeline_playback_accumulator: f32,
     editor_right_dragging: bool,
     editor_pan_up_held: bool,
     editor_pan_down_held: bool,
@@ -611,6 +615,7 @@ impl State {
             editor_gizmo_mesh: MeshSlot::Empty,
             tap_indicator_mesh: MeshSlot::Empty,
             spawn_marker_mesh: MeshSlot::Empty,
+            editor_preview_player_mesh: MeshSlot::Empty,
             editor: EditorState::new(),
             editor_selected_block_id: DEFAULT_BLOCK_ID.to_string(),
             editor_objects: Vec::new(),
@@ -624,6 +629,8 @@ impl State {
             editor_timeline_step: 0,
             editor_timeline_length: 64,
             editor_tap_steps: Vec::new(),
+            editor_timeline_playing: false,
+            editor_timeline_playback_accumulator: 0.0,
             editor_right_dragging: false,
             editor_pan_up_held: false,
             editor_pan_down_held: false,
@@ -792,7 +799,11 @@ impl State {
             }
             " " | "Space" => {
                 if just_pressed {
-                    self.turn_right();
+                    if self.is_editor() {
+                        self.toggle_editor_timeline_playback();
+                    } else {
+                        self.turn_right();
+                    }
                 }
             }
             "ArrowRight" | "d" | "D" => {

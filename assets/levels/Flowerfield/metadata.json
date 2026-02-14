@@ -15,8 +15,8 @@
         "position": [-53.0, -53.0, 7.0],
         "direction": "forward"
     },
-    "taps": [12],
-    "timeline_step": 0,
+    "taps": [12, 21],
+    "timeline_step": 11,
     "objects": [
         {
             "position": [-60.0, -51.0, 0.0],
@@ -346,6 +346,11 @@
         {
             "position": [-39.0, -48.0, 0.0],
             "size": [3.0, 3.0, 7.0],
+            "block_id": "core/grass"
+        },
+        {
+            "position": [-45.0, -48.0, 7.0],
+            "size": [6.0, 6.0, 1.0],
             "block_id": "core/grass"
         }
     ]

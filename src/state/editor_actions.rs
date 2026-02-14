@@ -1,6 +1,28 @@
 use super::*;
 
 impl State {
+    pub(super) fn toggle_editor_timeline_playback(&mut self) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        self.editor_timeline_playing = !self.editor_timeline_playing;
+        self.editor_timeline_playback_accumulator = 0.0;
+
+        if self.editor_timeline_playing {
+            let metadata = self.current_editor_metadata();
+            let level_name = self
+                .editor_level_name
+                .clone()
+                .unwrap_or_else(|| "Untitled".to_string());
+            let start_seconds = self.editor_timeline_step as f32 * EDITOR_TIMELINE_STEP_SECONDS;
+            self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
+            return;
+        }
+
+        self.stop_audio();
+    }
+
     pub fn editor_remove_block(&mut self) {
         if self.phase != AppPhase::Editor {
             return;
@@ -34,6 +56,8 @@ impl State {
             return;
         }
 
+        self.editor_timeline_playing = false;
+        self.editor_timeline_playback_accumulator = 0.0;
         self.stop_audio();
 
         let transition = build_editor_playtest_transition(
@@ -82,12 +106,16 @@ impl State {
     }
 
     pub fn back_to_menu(&mut self) {
+        self.editor_timeline_playing = false;
+        self.editor_timeline_playback_accumulator = 0.0;
         self.stop_audio();
         if let Some(objects) =
             playtest_return_objects(self.playtesting_editor, &self.editor_objects)
         {
             self.playtesting_editor = false;
             self.phase = AppPhase::Editor;
+            self.editor_timeline_playing = false;
+            self.editor_timeline_playback_accumulator = 0.0;
             self.game = GameState::new();
             self.game.objects = objects;
             self.rebuild_block_vertices();

@@ -35,6 +35,7 @@ impl State {
         self.rebuild_editor_hover_outline_vertices();
         self.rebuild_editor_selection_outline_vertices();
         self.rebuild_tap_indicator_vertices();
+        self.rebuild_editor_preview_player_vertices();
     }
 
     pub(super) fn topmost_block_index_at_cursor(&self, cursor: [i32; 3]) -> Option<usize> {
@@ -102,6 +103,7 @@ impl State {
         self.editor_camera_pan[1] = (position[1] + 0.5).clamp(-max_pan, max_pan);
 
         self.rebuild_editor_cursor_vertices();
+        self.rebuild_editor_preview_player_vertices();
     }
 
     pub(super) fn rebuild_editor_cursor_vertices(&mut self) {
@@ -269,6 +271,22 @@ impl State {
         self.tap_indicator_mesh.replace_with_vertices(
             &self.device,
             "Tap Indicator Vertex Buffer",
+            &vertices,
+        );
+    }
+
+    pub(super) fn rebuild_editor_preview_player_vertices(&mut self) {
+        if self.phase != AppPhase::Editor {
+            self.editor_preview_player_mesh.clear();
+            return;
+        }
+
+        let (position, direction) = self.editor_timeline_position(self.editor_timeline_step);
+        let is_tapping = self.editor_tap_steps.contains(&self.editor_timeline_step);
+        let vertices = build_editor_preview_player_vertices(position, direction, is_tapping);
+        self.editor_preview_player_mesh.replace_with_vertices(
+            &self.device,
+            "Editor Preview Player Vertex Buffer",
             &vertices,
         );
     }

@@ -19,6 +19,25 @@ impl State {
         if self.phase == AppPhase::Editor {
             self.accumulator = 0.0;
             self.trail_mesh.clear();
+
+            if self.editor_timeline_playing {
+                self.editor_timeline_playback_accumulator += frame_dt;
+
+                while self.editor_timeline_playback_accumulator >= EDITOR_TIMELINE_STEP_SECONDS {
+                    self.editor_timeline_playback_accumulator -= EDITOR_TIMELINE_STEP_SECONDS;
+                    let max_step = self.editor_timeline_length.saturating_sub(1);
+                    if self.editor_timeline_step >= max_step {
+                        self.editor_timeline_playing = false;
+                        self.editor_timeline_playback_accumulator = 0.0;
+                        self.stop_audio();
+                        break;
+                    }
+
+                    self.editor_timeline_step += 1;
+                    self.refresh_editor_timeline_position();
+                }
+            }
+
             self.update_editor_pan_from_keys(frame_dt);
             if self.editor_gizmo_drag.is_some() || self.editor_block_drag.is_some() {
                 if let Some(pointer) = self.editor_pointer_screen {

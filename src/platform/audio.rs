@@ -48,7 +48,13 @@ impl PlatformAudio {
         }
     }
 
-    pub(crate) fn start_with_bytes(&mut self, _music_source: &str, bytes: &[u8]) {
+    pub(crate) fn start_with_bytes_at(
+        &mut self,
+        _music_source: &str,
+        bytes: &[u8],
+        start_seconds: f32,
+    ) {
+        let start_seconds = start_seconds.max(0.0);
         #[cfg(target_arch = "wasm32")]
         {
             let uint8_array = unsafe { js_sys::Uint8Array::view(bytes) };
@@ -57,6 +63,9 @@ impl PlatformAudio {
                     .unwrap();
             let url = web_sys::Url::create_object_url_with_blob(&blob).unwrap();
             if let Ok(audio) = web_sys::HtmlAudioElement::new_with_src(&url) {
+                if start_seconds > 0.0 {
+                    let _ = audio.set_current_time(start_seconds as f64);
+                }
                 let _ = audio.play();
                 self.current_audio = Some(audio);
             }
@@ -64,11 +73,17 @@ impl PlatformAudio {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
+            use rodio::Source as _;
+
             if let Some(handle) = &self.output_handle {
                 match rodio::Decoder::new(std::io::Cursor::new(bytes.to_vec())) {
                     Ok(source) => match rodio::Sink::try_new(handle) {
                         Ok(sink) => {
-                            sink.append(source);
+                            sink.append(
+                                source.skip_duration(std::time::Duration::from_secs_f32(
+                                    start_seconds,
+                                )),
+                            );
                             sink.play();
                             self.current_sink = Some(sink);
                         }
@@ -88,11 +103,15 @@ impl PlatformAudio {
         }
     }
 
-    pub(crate) fn start(&mut self, level_name: &str, music_source: &str) {
+    pub(crate) fn start_at(&mut self, level_name: &str, music_source: &str, start_seconds: f32) {
+        let start_seconds = start_seconds.max(0.0);
         #[cfg(target_arch = "wasm32")]
         {
             let audio_url = format!("assets/levels/{}/{}", level_name, music_source);
             if let Ok(audio) = web_sys::HtmlAudioElement::new_with_src(&audio_url) {
+                if start_seconds > 0.0 {
+                    let _ = audio.set_current_time(start_seconds as f64);
+                }
                 let _ = audio.play();
                 self.current_audio = Some(audio);
             }
@@ -100,6 +119,8 @@ impl PlatformAudio {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
+            use rodio::Source as _;
+
             if let Some(handle) = &self.output_handle {
                 let audio_path = format!("assets/levels/{}/{}", level_name, music_source);
 
@@ -108,7 +129,9 @@ impl PlatformAudio {
                         match rodio::Decoder::new(std::io::Cursor::new(audio_bytes)) {
                             Ok(source) => match rodio::Sink::try_new(handle) {
                                 Ok(sink) => {
-                                    sink.append(source);
+                                    sink.append(source.skip_duration(
+                                        std::time::Duration::from_secs_f32(start_seconds),
+                                    ));
                                     sink.play();
                                     self.current_sink = Some(sink);
                                 }
