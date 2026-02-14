@@ -20,11 +20,10 @@ impl State {
             self.accumulator = 0.0;
             self.trail_mesh.clear();
             self.update_editor_pan_from_keys(frame_dt);
-            if (self.editor_gizmo_drag.is_some() || self.editor_block_drag.is_some())
-                && self.editor_pointer_screen.is_some()
-            {
-                let pointer = self.editor_pointer_screen.unwrap();
-                self.drag_editor_selection_from_screen(pointer[0], pointer[1]);
+            if self.editor_gizmo_drag.is_some() || self.editor_block_drag.is_some() {
+                if let Some(pointer) = self.editor_pointer_screen {
+                    self.drag_editor_selection_from_screen(pointer[0], pointer[1]);
+                }
             }
             self.rebuild_editor_gizmo_vertices();
             self.update_editor_camera();
