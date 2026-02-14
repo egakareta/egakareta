@@ -716,6 +716,10 @@ impl State {
                     .position(|idx| *idx == hit_index)
                 {
                     self.editor_selected_block_indices.remove(existing);
+                    if self.editor_selected_block_indices.is_empty() {
+                        self.editor_selected_block_index = None;
+                        self.editor_hovered_block_index = None;
+                    }
                 } else {
                     self.editor_selected_block_indices.push(hit_index);
                 }
@@ -726,6 +730,7 @@ impl State {
             self.editor_hovered_block_index = Some(hit_index);
         } else if !additive {
             self.editor_selected_block_indices.clear();
+            self.editor_selected_block_index = None;
             self.editor_hovered_block_index = None;
         }
 

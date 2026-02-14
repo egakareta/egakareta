@@ -804,9 +804,18 @@ impl State {
                     self.back_to_menu();
                 }
             }
+            "q" | "Q" => {
+                if self.is_editor() && just_pressed {
+                    self.set_editor_mode(EditorMode::Select);
+                }
+            }
             "e" | "E" => {
                 if just_pressed {
-                    self.toggle_editor();
+                    if self.is_editor() {
+                        self.set_editor_mode(EditorMode::Place);
+                    } else {
+                        self.toggle_editor();
+                    }
                 }
             }
             "p" | "P" => {
