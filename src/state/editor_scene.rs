@@ -1,13 +1,7 @@
 use glam::Vec3;
 
-use super::{
-    EditorDirtyFlags, EditorSubsystem, EditorTimelineSample, GizmoAxis, GizmoDragKind, PerfStage,
-    State,
-};
-use crate::editor_domain::{
-    create_block_at_cursor, derive_timeline_elapsed_seconds, derive_timeline_position,
-};
-use crate::game::TimelineSimulationRuntime;
+use super::{EditorDirtyFlags, EditorSubsystem, GizmoAxis, GizmoDragKind, PerfStage, State};
+use crate::editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds};
 use crate::mesh::{
     build_block_vertices, build_block_vertices_from_refs, build_editor_cursor_vertices,
     build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
@@ -59,7 +53,6 @@ impl EditorSubsystem {
                 self.ui.hovered_block_index = None;
             }
         }
-        self.invalidate_samples();
         self.mark_dirty(EditorDirtyFlags {
             sync_game_objects: true,
             rebuild_block_mesh: true,
@@ -106,126 +99,6 @@ impl EditorSubsystem {
         self.sync_objects();
     }
 
-    pub(crate) fn ensure_timeline_samples(&mut self) {
-        if !self.timeline.cache.dirty {
-            return;
-        }
-        let perf_started_at = PlatformInstant::now();
-
-        let duration = self.timeline.clock.duration_seconds.max(0.0);
-        if duration <= 0.0 {
-            self.timeline.cache.samples.clear();
-            self.timeline.cache.samples.push(EditorTimelineSample {
-                time_seconds: 0.0,
-                position: self.spawn.position,
-            });
-            self.timeline.cache.dirty = false;
-            self.timeline.cache.rebuild_from_seconds = None;
-            return;
-        }
-
-        let sample_count = ((duration * 12.0).clamp(96.0, 512.0)) as usize;
-        let time_step = (duration / sample_count as f32).max(1e-4);
-        let simulation_dt = (time_step * 0.5).clamp(1.0 / 120.0, 1.0 / 15.0);
-
-        let expected_len = sample_count + 1;
-        let last_time_matches_duration = self
-            .timeline
-            .cache
-            .samples
-            .last()
-            .is_some_and(|sample| (sample.time_seconds - duration).abs() <= 1e-3);
-
-        let can_incremental_rebuild = self.timeline.cache.rebuild_from_seconds.is_some()
-            && self.timeline.cache.samples.len() == expected_len
-            && last_time_matches_duration;
-
-        if !can_incremental_rebuild {
-            self.timeline.cache.samples.clear();
-        }
-
-        let mut runtime = TimelineSimulationRuntime::new_with_dt(
-            self.spawn.position,
-            self.spawn.direction,
-            &self.objects,
-            &self.timeline.taps.tap_times,
-            simulation_dt,
-        );
-
-        let rebuild_from_index = if can_incremental_rebuild {
-            let rebuild_from_time = self
-                .timeline
-                .cache
-                .rebuild_from_seconds
-                .unwrap_or(0.0)
-                .clamp(0.0, duration);
-
-            self.timeline
-                .cache
-                .samples
-                .iter()
-                .position(|sample| sample.time_seconds >= rebuild_from_time)
-                .unwrap_or(sample_count)
-        } else {
-            0
-        };
-
-        if rebuild_from_index > 0 {
-            let rebuild_start_time = self.timeline.cache.samples[rebuild_from_index].time_seconds;
-            runtime.advance_to(rebuild_start_time);
-            self.timeline.cache.samples.truncate(rebuild_from_index);
-        }
-
-        for index in rebuild_from_index..=sample_count {
-            let t = (index as f32 * time_step).min(duration);
-            runtime.advance_to(t);
-            let snapshot = runtime.snapshot();
-            if index < self.timeline.cache.samples.len() {
-                self.timeline.cache.samples[index] = EditorTimelineSample {
-                    time_seconds: t,
-                    position: snapshot.position,
-                };
-            } else {
-                self.timeline.cache.samples.push(EditorTimelineSample {
-                    time_seconds: t,
-                    position: snapshot.position,
-                });
-            }
-        }
-
-        self.timeline.cache.dirty = false;
-        self.timeline.cache.rebuild_from_seconds = None;
-        self.perf_record(PerfStage::TimelineSampleRebuild, perf_started_at);
-    }
-
-    pub(crate) fn nearest_timeline_sample_time_for_target(&self, target: [f32; 3]) -> Option<f32> {
-        self.timeline
-            .cache
-            .samples
-            .iter()
-            .min_by(|a, b| {
-                let distance_sq = |sample: &EditorTimelineSample| {
-                    let dx = sample.position[0] - target[0];
-                    let dy = sample.position[1] - target[1];
-                    let dz = sample.position[2] - target[2];
-                    dx * dx + dy * dy + dz * dz
-                };
-
-                f32::total_cmp(&distance_sq(a), &distance_sq(b))
-            })
-            .map(|sample| sample.time_seconds)
-    }
-
-    pub(crate) fn timeline_position(&self, time_seconds: f32) -> ([f32; 3], SpawnDirection) {
-        derive_timeline_position(
-            self.spawn.position,
-            self.spawn.direction,
-            &self.timeline.taps.tap_times,
-            time_seconds,
-            &self.objects,
-        )
-    }
-
     pub(crate) fn timeline_elapsed_seconds(&self, time_seconds: f32) -> f32 {
         derive_timeline_elapsed_seconds(
             self.spawn.position,
@@ -259,17 +132,6 @@ impl EditorSubsystem {
 }
 
 impl State {
-    fn preview_simulation_dt(&self) -> f32 {
-        let object_count = self.editor.objects.len();
-        if object_count >= 300 {
-            1.0 / 30.0
-        } else if object_count >= 150 {
-            1.0 / 45.0
-        } else {
-            1.0 / 60.0
-        }
-    }
-
     pub(super) fn mark_editor_dirty(&mut self, dirty: EditorDirtyFlags) {
         self.editor.mark_dirty(dirty);
     }
@@ -394,10 +256,6 @@ impl State {
         self.gameplay.state.apply_spawn(position, direction);
     }
 
-    pub(super) fn editor_timeline_position(&self, time_seconds: f32) -> ([f32; 3], SpawnDirection) {
-        self.editor.timeline_position(time_seconds)
-    }
-
     pub(super) fn editor_timeline_elapsed_seconds(&self, time_seconds: f32) -> f32 {
         self.editor.timeline_elapsed_seconds(time_seconds)
     }
@@ -429,56 +287,6 @@ impl State {
         self.editor.camera.editor_pan[1] = (position[1] + 0.5).clamp(-max_pan, max_pan);
 
         self.rebuild_editor_preview_player_vertices_for_state(position, direction);
-    }
-
-    pub(super) fn refresh_editor_timeline_position(&mut self) {
-        if self.phase != AppPhase::Editor {
-            return;
-        }
-
-        let (position, direction) =
-            self.resolve_editor_timeline_position(self.editor.timeline.clock.time_seconds);
-        self.apply_editor_timeline_preview_state(position, direction);
-    }
-
-    fn resolve_editor_timeline_position(
-        &mut self,
-        time_seconds: f32,
-    ) -> ([f32; 3], SpawnDirection) {
-        let target_time = time_seconds
-            .max(0.0)
-            .min(self.editor.timeline.clock.duration_seconds.max(0.0));
-
-        let needs_reset = self.editor.timeline.scrub_runtime.is_none()
-            || self.editor.timeline.scrub_runtime_revision
-                != self.editor.timeline.simulation_revision
-            || self
-                .editor
-                .timeline
-                .scrub_runtime
-                .as_ref()
-                .is_some_and(|runtime| target_time + 1e-6 < runtime.elapsed_seconds());
-
-        if needs_reset {
-            self.editor.timeline.scrub_runtime = Some(TimelineSimulationRuntime::new_with_dt(
-                self.editor.spawn.position,
-                self.editor.spawn.direction,
-                &self.editor.objects,
-                &self.editor.timeline.taps.tap_times,
-                self.preview_simulation_dt(),
-            ));
-            self.editor.timeline.scrub_runtime_revision = self.editor.timeline.simulation_revision;
-        }
-
-        let runtime = self
-            .editor
-            .timeline
-            .scrub_runtime
-            .as_mut()
-            .expect("timeline scrub runtime should be initialized");
-        runtime.advance_to(target_time);
-        let snapshot = runtime.snapshot();
-        (snapshot.position, snapshot.direction)
     }
 
     pub(super) fn rebuild_editor_cursor_vertices(&mut self) {
@@ -777,10 +585,8 @@ impl State {
             return;
         }
 
-        let solve_started_at = PlatformInstant::now();
-        let (position, direction) =
-            self.resolve_editor_timeline_position(self.editor.timeline.clock.time_seconds);
-        self.perf_record(PerfStage::PreviewSolveTimeline, solve_started_at);
+        let position = self.editor.timeline.preview.position;
+        let direction = self.editor.timeline.preview.direction;
         self.rebuild_editor_preview_player_vertices_for_state(position, direction);
     }
 

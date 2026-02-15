@@ -158,7 +158,6 @@ impl State {
                     self.editor.timeline.playback.playing = false;
                     self.editor.timeline.playback.runtime = None;
                     self.stop_audio();
-                    self.refresh_editor_timeline_position();
                 }
                 self.perf_record(PerfStage::TimelinePlayback, timeline_playback_started_at);
             }

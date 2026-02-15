@@ -1,18 +1,6 @@
 use crate::game::TimelineSimulationRuntime;
 use crate::types::SpawnDirection;
 
-#[derive(Clone, Copy)]
-pub(crate) struct EditorTimelineSample {
-    pub(crate) time_seconds: f32,
-    pub(crate) position: [f32; 3],
-}
-
-pub(crate) struct EditorTimelineSampleCache {
-    pub(crate) samples: Vec<EditorTimelineSample>,
-    pub(crate) dirty: bool,
-    pub(crate) rebuild_from_seconds: Option<f32>,
-}
-
 pub(crate) struct EditorTimelinePlaybackState {
     pub(crate) playing: bool,
     pub(crate) runtime: Option<TimelineSimulationRuntime>,
@@ -37,7 +25,6 @@ pub(crate) struct EditorTimelineState {
     pub(crate) clock: EditorTimelineClockState,
     pub(crate) preview: EditorTimelinePreviewState,
     pub(crate) taps: EditorTimelineTapState,
-    pub(crate) cache: EditorTimelineSampleCache,
     pub(crate) playback: EditorTimelinePlaybackState,
     pub(crate) simulation_revision: u64,
     pub(crate) scrub_runtime_revision: u64,
@@ -58,11 +45,6 @@ impl EditorTimelineState {
             taps: EditorTimelineTapState {
                 tap_times: Vec::new(),
                 tap_indicator_positions: Vec::new(),
-            },
-            cache: EditorTimelineSampleCache {
-                samples: Vec::new(),
-                dirty: true,
-                rebuild_from_seconds: None,
             },
             playback: EditorTimelinePlaybackState {
                 playing: false,

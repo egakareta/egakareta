@@ -25,7 +25,7 @@ pub(crate) use editor_interaction::{
     EditorBlockDrag, EditorClipboard, EditorDragBlockStart, EditorGizmoDrag, EditorHistorySnapshot,
     EditorInteractionChange, EditorInteractionState, EditorPickResult, GizmoAxis, GizmoDragKind,
 };
-pub(crate) use editor_timeline::{EditorTimelineSample, EditorTimelineState};
+pub(crate) use editor_timeline::EditorTimelineState;
 pub(crate) use editor_timing::EditorTimingState;
 pub(crate) use history::EditorHistoryState;
 pub(crate) use perf::{EditorPerfState, PerfOverlayEntry, PerfStage};

@@ -278,22 +278,12 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn invalidate_samples(&mut self) {
-        self.timeline.cache.dirty = true;
-        self.timeline.cache.rebuild_from_seconds = None;
         self.timeline.simulation_revision = self.timeline.simulation_revision.wrapping_add(1);
         self.timeline.scrub_runtime = None;
         self.timeline.scrub_runtime_revision = 0;
     }
 
-    pub(crate) fn invalidate_samples_from(&mut self, from_seconds: f32) {
-        self.timeline.cache.dirty = true;
-        let clamped = from_seconds.max(0.0);
-        self.timeline.cache.rebuild_from_seconds = Some(
-            self.timeline
-                .cache
-                .rebuild_from_seconds
-                .map_or(clamped, |existing| existing.min(clamped)),
-        );
+    pub(crate) fn invalidate_samples_from(&mut self, _from_seconds: f32) {
         self.timeline.simulation_revision = self.timeline.simulation_revision.wrapping_add(1);
         self.timeline.scrub_runtime = None;
         self.timeline.scrub_runtime_revision = 0;
@@ -633,7 +623,6 @@ impl State {
 
     pub fn set_editor_timeline_time_seconds(&mut self, time_seconds: f32) {
         if self.editor.set_timeline_time_seconds(time_seconds) {
-            self.refresh_editor_timeline_position();
             self.resync_editor_timeline_playback_audio();
         }
     }
@@ -642,7 +631,6 @@ impl State {
         self.record_editor_history_state();
         self.editor.set_timeline_duration_seconds(duration_seconds);
         self.editor.invalidate_samples();
-        self.refresh_editor_timeline_position();
         self.resync_editor_timeline_playback_audio();
         self.mark_editor_dirty(EditorDirtyFlags {
             rebuild_tap_indicators: true,
@@ -657,7 +645,6 @@ impl State {
             .tap_indicator_position_from_world(self.editor.timeline.preview.position);
         let tap_time = self.editor.add_tap(indicator_position);
         self.editor.invalidate_samples_from(tap_time);
-        self.refresh_editor_timeline_position();
         self.mark_editor_dirty(EditorDirtyFlags {
             rebuild_tap_indicators: true,
             ..EditorDirtyFlags::default()
@@ -668,7 +655,6 @@ impl State {
         self.record_editor_history_state();
         let tap_time = self.editor.remove_tap();
         self.editor.invalidate_samples_from(tap_time);
-        self.refresh_editor_timeline_position();
         self.mark_editor_dirty(EditorDirtyFlags {
             rebuild_tap_indicators: true,
             ..EditorDirtyFlags::default()
@@ -679,7 +665,6 @@ impl State {
         self.record_editor_history_state();
         self.editor.clear_taps();
         self.editor.invalidate_samples();
-        self.refresh_editor_timeline_position();
         self.mark_editor_dirty(EditorDirtyFlags {
             rebuild_tap_indicators: true,
             ..EditorDirtyFlags::default()

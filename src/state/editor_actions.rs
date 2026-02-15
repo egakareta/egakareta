@@ -11,11 +11,6 @@ use crate::types::{AppPhase, EditorMode};
 
 impl EditorSubsystem {
     pub(crate) fn toggle_tap_at_cursor(&mut self) -> (Option<f32>, bool) {
-        let target = [
-            self.ui.cursor[0] + 0.5,
-            self.ui.cursor[1] + 0.5,
-            self.ui.cursor[2],
-        ];
         let indicator_cell = self.ui.cursor;
 
         if let Some(remove_index) = self
@@ -72,10 +67,10 @@ impl EditorSubsystem {
             return (Some(removed_time), false);
         }
 
-        self.ensure_timeline_samples();
         let derived_time = self
-            .nearest_timeline_sample_time_for_target(target)
-            .unwrap_or(self.timeline.clock.time_seconds)
+            .timeline
+            .clock
+            .time_seconds
             .clamp(0.0, self.timeline.clock.duration_seconds.max(0.0));
 
         add_tap_with_indicator(
@@ -198,9 +193,6 @@ impl State {
         }
 
         if time.is_some() {
-            let (position, direction) =
-                self.editor_timeline_position(self.editor.timeline.clock.time_seconds);
-            self.rebuild_editor_preview_player_vertices_for_state(position, direction);
             self.mark_editor_dirty(EditorDirtyFlags {
                 rebuild_tap_indicators: true,
                 ..EditorDirtyFlags::default()
@@ -243,7 +235,6 @@ impl State {
 
     pub(super) fn editor_shift_timeline_time(&mut self, delta_seconds: f32) {
         if self.phase == AppPhase::Editor && self.editor.shift_timeline_time(delta_seconds) {
-            self.refresh_editor_timeline_position();
             self.resync_editor_timeline_playback_audio();
         }
     }
@@ -344,7 +335,6 @@ impl State {
 
         self.editor.timeline.playback.runtime = None;
         self.stop_audio();
-        self.refresh_editor_timeline_position();
     }
 
     pub fn editor_remove_block(&mut self) {
@@ -389,7 +379,6 @@ impl State {
             self.record_editor_history_state();
             self.editor.set_spawn_here();
             self.sync_editor_objects();
-            self.refresh_editor_timeline_position();
             self.rebuild_spawn_marker_vertices();
         }
     }
@@ -398,7 +387,6 @@ impl State {
         if self.phase == AppPhase::Editor {
             self.record_editor_history_state();
             self.editor.rotate_spawn_direction();
-            self.refresh_editor_timeline_position();
             self.rebuild_spawn_marker_vertices();
         }
     }
