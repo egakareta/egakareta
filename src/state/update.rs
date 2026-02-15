@@ -8,15 +8,15 @@ use crate::types::{AppPhase, CameraUniform, Direction, EditorMode};
 
 impl State {
     pub(crate) fn toggle_editor_perf_overlay(&mut self) {
-        self.editor_perf.profiler.enabled = !self.editor_perf.profiler.enabled;
+        self.editor.perf.profiler.enabled = !self.editor.perf.profiler.enabled;
     }
 
     pub(crate) fn editor_perf_overlay_enabled(&self) -> bool {
-        self.editor_perf.profiler.enabled
+        self.editor.perf.profiler.enabled
     }
 
     pub(crate) fn editor_perf_overlay_lines(&self) -> Vec<String> {
-        if !self.editor_perf.profiler.enabled {
+        if !self.editor.perf.profiler.enabled {
             return Vec::new();
         }
 
@@ -24,8 +24,9 @@ impl State {
         lines.push("Perf Overlay (Ctrl+Shift+Alt+F12)".to_string());
         lines.push(format!(
             "Spikes(>16.7ms): {} | Last Spike: {}",
-            self.editor_perf.profiler.frame_spike_count,
-            self.editor_perf
+            self.editor.perf.profiler.frame_spike_count,
+            self.editor
+                .perf
                 .profiler
                 .last_spike_stage
                 .map(|stage| stage.name())
@@ -44,7 +45,7 @@ impl State {
             PerfStage::TTapToggleTotal,
             PerfStage::TTapSolve,
         ] {
-            let stat = self.editor_perf.profiler.stats[stage.as_index()];
+            let stat = self.editor.perf.profiler.stats[stage.as_index()];
             lines.push(format!(
                 "{:<18} last {:>6.2}ms | avg {:>6.2}ms | max {:>6.2}ms | n {}",
                 stage.name(),
@@ -60,11 +61,11 @@ impl State {
 
     pub(super) fn perf_record(&mut self, stage: PerfStage, started_at: PlatformInstant) {
         let elapsed_ms = started_at.elapsed().as_secs_f32() * 1000.0;
-        self.editor_perf.profiler.observe(stage, elapsed_ms);
+        self.editor.perf.profiler.observe(stage, elapsed_ms);
     }
 
     pub fn update(&mut self) {
-        self.editor_perf.profiler.begin_frame();
+        self.editor.perf.profiler.begin_frame();
         self.update_audio_imports();
         self.update_waveform_loading();
         const FIXED_DT: f32 = 1.0 / 120.0;
@@ -74,10 +75,10 @@ impl State {
         self.frame_runtime.editor.last_frame = now;
         let frame_dt_ms = frame_dt * 1000.0;
         let instant_fps = 1.0 / frame_dt.max(1e-4);
-        if self.editor_perf.fps_smoothed <= 0.0 {
-            self.editor_perf.fps_smoothed = instant_fps;
+        if self.editor.perf.fps_smoothed <= 0.0 {
+            self.editor.perf.fps_smoothed = instant_fps;
         } else {
-            self.editor_perf.fps_smoothed = self.editor_perf.fps_smoothed * 0.9 + instant_fps * 0.1;
+            self.editor.perf.fps_smoothed = self.editor.perf.fps_smoothed * 0.9 + instant_fps * 0.1;
         }
         self.frame_runtime.editor.accumulator =
             (self.frame_runtime.editor.accumulator + frame_dt).min(0.25);
@@ -85,13 +86,15 @@ impl State {
         if self.phase == AppPhase::Menu {
             self.frame_runtime.editor.accumulator = 0.0;
             self.update_menu_camera();
-            self.editor_perf
+            self.editor
+                .perf
                 .profiler
                 .observe(PerfStage::FrameTotal, frame_dt_ms);
             if frame_dt_ms > 16.7 {
-                self.editor_perf.profiler.frame_spike_count += 1;
-                self.editor_perf.profiler.last_spike_stage = self
-                    .editor_perf
+                self.editor.perf.profiler.frame_spike_count += 1;
+                self.editor.perf.profiler.last_spike_stage = self
+                    .editor
+                    .perf
                     .profiler
                     .dominant_stage_this_frame()
                     .or(Some(PerfStage::FrameTotal));
@@ -103,20 +106,20 @@ impl State {
             self.frame_runtime.editor.accumulator = 0.0;
             self.meshes.trail.clear();
 
-            if self.editor_timeline.playback.playing {
+            if self.editor.timeline.playback.playing {
                 let timeline_playback_started_at = PlatformInstant::now();
                 let audio_time = self
                     .audio_state
                     .runtime
                     .playback_time_seconds()
-                    .unwrap_or(self.editor_timeline.clock.time_seconds);
-                let clamped_time = audio_time.min(self.editor_timeline.clock.duration_seconds);
+                    .unwrap_or(self.editor.timeline.clock.time_seconds);
+                let clamped_time = audio_time.min(self.editor.timeline.clock.duration_seconds);
 
-                if (clamped_time - self.editor_timeline.clock.time_seconds).abs() > 1e-4 {
-                    self.editor_timeline.clock.time_seconds = clamped_time;
+                if (clamped_time - self.editor.timeline.clock.time_seconds).abs() > 1e-4 {
+                    self.editor.timeline.clock.time_seconds = clamped_time;
 
                     let mut applied_runtime_state = false;
-                    if let Some(runtime) = self.editor_timeline.playback.runtime.as_mut() {
+                    if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
                         if clamped_time + 1e-6 >= runtime.elapsed_seconds() {
                             runtime.advance_to(clamped_time);
                             let snapshot = runtime.snapshot();
@@ -130,10 +133,10 @@ impl State {
 
                     if !applied_runtime_state {
                         let mut runtime = TimelineSimulationRuntime::new(
-                            self.editor_spawn.position,
-                            self.editor_spawn.direction,
-                            &self.editor_objects,
-                            &self.editor_timeline.taps.tap_times,
+                            self.editor.spawn.position,
+                            self.editor.spawn.direction,
+                            &self.editor.objects,
+                            &self.editor.timeline.taps.tap_times,
                         );
                         runtime.advance_to(clamped_time);
                         let snapshot = runtime.snapshot();
@@ -141,15 +144,15 @@ impl State {
                             snapshot.position,
                             snapshot.direction,
                         );
-                        self.editor_timeline.playback.runtime = Some(runtime);
+                        self.editor.timeline.playback.runtime = Some(runtime);
                     }
                 }
 
-                if clamped_time >= self.editor_timeline.clock.duration_seconds
+                if clamped_time >= self.editor.timeline.clock.duration_seconds
                     || !self.audio_state.runtime.is_playing()
                 {
-                    self.editor_timeline.playback.playing = false;
-                    self.editor_timeline.playback.runtime = None;
+                    self.editor.timeline.playback.playing = false;
+                    self.editor.timeline.playback.runtime = None;
                     self.stop_audio();
                     self.refresh_editor_timeline_position();
                 }
@@ -157,72 +160,74 @@ impl State {
             }
 
             self.update_editor_pan_from_keys(frame_dt);
-            if self.editor_runtime.interaction.gizmo_drag.is_some()
-                || self.editor_runtime.interaction.block_drag.is_some()
+            if self.editor.runtime.interaction.gizmo_drag.is_some()
+                || self.editor.runtime.interaction.block_drag.is_some()
             {
-                if let Some(pointer) = self.editor.pointer_screen {
+                if let Some(pointer) = self.editor.ui.pointer_screen {
                     let drag_started_at = PlatformInstant::now();
                     self.drag_editor_selection_from_screen(pointer[0], pointer[1]);
                     self.perf_record(PerfStage::DragSelection, drag_started_at);
                 }
             }
 
-            let camera_changed = (self.editor_camera.editor_pan[0]
-                - self.editor_runtime.gizmo.last_pan[0])
+            let camera_changed = (self.editor.camera.editor_pan[0]
+                - self.editor.runtime.gizmo.last_pan[0])
                 .abs()
                 > 1e-4
-                || (self.editor_camera.editor_pan[1] - self.editor_runtime.gizmo.last_pan[1]).abs()
+                || (self.editor.camera.editor_pan[1] - self.editor.runtime.gizmo.last_pan[1]).abs()
                     > 1e-4
-                || (self.editor_camera.editor_rotation - self.editor_runtime.gizmo.last_rotation)
+                || (self.editor.camera.editor_rotation - self.editor.runtime.gizmo.last_rotation)
                     .abs()
                     > 1e-4
-                || (self.editor_camera.editor_pitch - self.editor_runtime.gizmo.last_pitch).abs()
+                || (self.editor.camera.editor_pitch - self.editor.runtime.gizmo.last_pitch).abs()
                     > 1e-4
-                || (self.editor_camera.editor_zoom - self.editor_runtime.gizmo.last_zoom).abs()
+                || (self.editor.camera.editor_zoom - self.editor.runtime.gizmo.last_zoom).abs()
                     > 1e-4;
 
-            let has_selection = self.editor.selected_block_index.is_some()
-                || !self.editor.selected_block_indices.is_empty();
-            let is_dragging = self.editor_runtime.interaction.gizmo_drag.is_some()
-                || self.editor_runtime.interaction.block_drag.is_some();
+            let has_selection = self.editor.ui.selected_block_index.is_some()
+                || !self.editor.ui.selected_block_indices.is_empty();
+            let is_dragging = self.editor.runtime.interaction.gizmo_drag.is_some()
+                || self.editor.runtime.interaction.block_drag.is_some();
 
-            if has_selection && self.editor.mode == EditorMode::Select {
+            if has_selection && self.editor.ui.mode == EditorMode::Select {
                 if is_dragging {
                     let gizmo_started_at = PlatformInstant::now();
                     self.rebuild_editor_gizmo_vertices();
                     self.perf_record(PerfStage::GizmoRebuild, gizmo_started_at);
-                    self.editor_runtime.gizmo.rebuild_accumulator = 0.0;
+                    self.editor.runtime.gizmo.rebuild_accumulator = 0.0;
                 } else if camera_changed {
-                    self.editor_runtime.gizmo.rebuild_accumulator += frame_dt;
-                    if self.editor_runtime.gizmo.rebuild_accumulator >= (1.0 / 24.0) {
+                    self.editor.runtime.gizmo.rebuild_accumulator += frame_dt;
+                    if self.editor.runtime.gizmo.rebuild_accumulator >= (1.0 / 24.0) {
                         let gizmo_started_at = PlatformInstant::now();
                         self.rebuild_editor_gizmo_vertices();
                         self.perf_record(PerfStage::GizmoRebuild, gizmo_started_at);
-                        self.editor_runtime.gizmo.rebuild_accumulator = 0.0;
+                        self.editor.runtime.gizmo.rebuild_accumulator = 0.0;
                     }
                 } else {
-                    self.editor_runtime.gizmo.rebuild_accumulator = 0.0;
+                    self.editor.runtime.gizmo.rebuild_accumulator = 0.0;
                 }
             } else {
-                self.editor_runtime.gizmo.rebuild_accumulator = 0.0;
+                self.editor.runtime.gizmo.rebuild_accumulator = 0.0;
             }
 
-            self.editor_runtime.gizmo.last_pan = self.editor_camera.editor_pan;
-            self.editor_runtime.gizmo.last_rotation = self.editor_camera.editor_rotation;
-            self.editor_runtime.gizmo.last_pitch = self.editor_camera.editor_pitch;
-            self.editor_runtime.gizmo.last_zoom = self.editor_camera.editor_zoom;
+            self.editor.runtime.gizmo.last_pan = self.editor.camera.editor_pan;
+            self.editor.runtime.gizmo.last_rotation = self.editor.camera.editor_rotation;
+            self.editor.runtime.gizmo.last_pitch = self.editor.camera.editor_pitch;
+            self.editor.runtime.gizmo.last_zoom = self.editor.camera.editor_zoom;
             let dirty_started_at = PlatformInstant::now();
             self.process_editor_dirty();
             self.perf_record(PerfStage::DirtyProcess, dirty_started_at);
             self.update_editor_camera();
 
-            self.editor_perf
+            self.editor
+                .perf
                 .profiler
                 .observe(PerfStage::FrameTotal, frame_dt_ms);
             if frame_dt_ms > 16.7 {
-                self.editor_perf.profiler.frame_spike_count += 1;
-                self.editor_perf.profiler.last_spike_stage = self
-                    .editor_perf
+                self.editor.perf.profiler.frame_spike_count += 1;
+                self.editor.perf.profiler.last_spike_stage = self
+                    .editor
+                    .perf
                     .profiler
                     .dominant_stage_this_frame()
                     .or(Some(PerfStage::FrameTotal));
@@ -329,13 +334,15 @@ impl State {
         );
 
         if self.phase == AppPhase::Playing {
-            self.editor_perf
+            self.editor
+                .perf
                 .profiler
                 .observe(PerfStage::FrameTotal, frame_dt_ms);
             if frame_dt_ms > 16.7 {
-                self.editor_perf.profiler.frame_spike_count += 1;
-                self.editor_perf.profiler.last_spike_stage = self
-                    .editor_perf
+                self.editor.perf.profiler.frame_spike_count += 1;
+                self.editor.perf.profiler.last_spike_stage = self
+                    .editor
+                    .perf
                     .profiler
                     .dominant_stage_this_frame()
                     .or(Some(PerfStage::FrameTotal));
@@ -367,8 +374,8 @@ impl State {
     fn update_editor_camera(&mut self) {
         let aspect = self.gpu.config.width as f32 / self.gpu.config.height as f32;
         let target = Vec3::new(
-            self.editor_camera.editor_pan[0],
-            self.editor_camera.editor_pan[1],
+            self.editor.camera.editor_pan[0],
+            self.editor.camera.editor_pan[1],
             0.0,
         );
         let offset = self.editor_camera_offset();

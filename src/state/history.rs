@@ -5,17 +5,17 @@ use crate::types::{AppPhase, LevelObject};
 impl State {
     fn editor_history_snapshot(&self) -> EditorHistorySnapshot {
         EditorHistorySnapshot {
-            objects: self.editor_objects.clone(),
-            selected_block_index: self.editor.selected_block_index,
-            selected_block_indices: self.editor.selected_block_indices.clone(),
-            cursor: self.editor.cursor,
-            selected_block_id: self.editor_config.selected_block_id.clone(),
-            spawn: self.editor_spawn.clone(),
-            timeline_time_seconds: self.editor_timeline.clock.time_seconds,
-            timeline_duration_seconds: self.editor_timeline.clock.duration_seconds,
-            tap_times: self.editor_timeline.taps.tap_times.clone(),
-            tap_indicator_positions: self.editor_timeline.taps.tap_indicator_positions.clone(),
-            timing_points: self.editor_timing.timing_points.clone(),
+            objects: self.editor.objects.clone(),
+            selected_block_index: self.editor.ui.selected_block_index,
+            selected_block_indices: self.editor.ui.selected_block_indices.clone(),
+            cursor: self.editor.ui.cursor,
+            selected_block_id: self.editor.config.selected_block_id.clone(),
+            spawn: self.editor.spawn.clone(),
+            timeline_time_seconds: self.editor.timeline.clock.time_seconds,
+            timeline_duration_seconds: self.editor.timeline.clock.duration_seconds,
+            tap_times: self.editor.timeline.taps.tap_times.clone(),
+            tap_indicator_positions: self.editor.timeline.taps.tap_indicator_positions.clone(),
+            timing_points: self.editor.timing.timing_points.clone(),
         }
     }
 
@@ -25,63 +25,67 @@ impl State {
         }
 
         const MAX_HISTORY: usize = 256;
-        if self.editor_runtime.history.undo.len() >= MAX_HISTORY {
-            self.editor_runtime.history.undo.remove(0);
+        if self.editor.runtime.history.undo.len() >= MAX_HISTORY {
+            self.editor.runtime.history.undo.remove(0);
         }
-        self.editor_runtime
+        self.editor
+            .runtime
             .history
             .undo
             .push(self.editor_history_snapshot());
-        self.editor_runtime.history.redo.clear();
+        self.editor.runtime.history.redo.clear();
     }
 
     fn apply_editor_history_snapshot(&mut self, snapshot: EditorHistorySnapshot) {
-        self.editor_objects = snapshot.objects;
-        self.editor.selected_block_index = snapshot
+        self.editor.objects = snapshot.objects;
+        self.editor.ui.selected_block_index = snapshot
             .selected_block_index
-            .filter(|index| *index < self.editor_objects.len());
-        self.editor.selected_block_indices = snapshot
+            .filter(|index| *index < self.editor.objects.len());
+        self.editor.ui.selected_block_indices = snapshot
             .selected_block_indices
             .into_iter()
-            .filter(|index| *index < self.editor_objects.len())
+            .filter(|index| *index < self.editor.objects.len())
             .collect();
         self.sync_primary_selection_from_indices();
-        self.editor.hovered_block_index = self.editor.selected_block_index;
-        self.editor.cursor = snapshot.cursor;
-        self.editor_config.selected_block_id = snapshot.selected_block_id;
-        self.editor_spawn = snapshot.spawn;
-        self.editor_timeline.clock.time_seconds = snapshot.timeline_time_seconds.max(0.0);
-        self.editor_timeline.clock.duration_seconds = snapshot.timeline_duration_seconds.max(0.1);
-        self.editor_timeline.taps.tap_times = snapshot.tap_times;
-        self.editor_timeline.taps.tap_indicator_positions = snapshot.tap_indicator_positions;
-        self.editor_timing.timing_points = snapshot.timing_points;
-        self.editor_timeline
+        self.editor.ui.hovered_block_index = self.editor.ui.selected_block_index;
+        self.editor.ui.cursor = snapshot.cursor;
+        self.editor.config.selected_block_id = snapshot.selected_block_id;
+        self.editor.spawn = snapshot.spawn;
+        self.editor.timeline.clock.time_seconds = snapshot.timeline_time_seconds.max(0.0);
+        self.editor.timeline.clock.duration_seconds = snapshot.timeline_duration_seconds.max(0.1);
+        self.editor.timeline.taps.tap_times = snapshot.tap_times;
+        self.editor.timeline.taps.tap_indicator_positions = snapshot.tap_indicator_positions;
+        self.editor.timing.timing_points = snapshot.timing_points;
+        self.editor
+            .timeline
             .taps
             .tap_times
             .retain(|tap| tap.is_finite() && *tap >= 0.0);
-        self.editor_timeline.taps.tap_times.sort_by(f32::total_cmp);
-        self.editor_timeline
+        self.editor.timeline.taps.tap_times.sort_by(f32::total_cmp);
+        self.editor
+            .timeline
             .taps
             .tap_times
-            .retain(|tap| *tap <= self.editor_timeline.clock.duration_seconds);
-        if self.editor_timeline.taps.tap_indicator_positions.len()
-            != self.editor_timeline.taps.tap_times.len()
+            .retain(|tap| *tap <= self.editor.timeline.clock.duration_seconds);
+        if self.editor.timeline.taps.tap_indicator_positions.len()
+            != self.editor.timeline.taps.tap_times.len()
         {
-            self.editor_timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
-                self.editor_spawn.position,
-                self.editor_spawn.direction,
-                &self.editor_timeline.taps.tap_times,
-                &self.editor_objects,
+            self.editor.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
+                self.editor.spawn.position,
+                self.editor.spawn.direction,
+                &self.editor.timeline.taps.tap_times,
+                &self.editor.objects,
             );
         }
-        self.editor_timeline.clock.time_seconds = self
-            .editor_timeline
+        self.editor.timeline.clock.time_seconds = self
+            .editor
+            .timeline
             .clock
             .time_seconds
-            .min(self.editor_timeline.clock.duration_seconds);
+            .min(self.editor.timeline.clock.duration_seconds);
 
-        self.editor_runtime.interaction.gizmo_drag = None;
-        self.editor_runtime.interaction.block_drag = None;
+        self.editor.runtime.interaction.gizmo_drag = None;
+        self.editor.runtime.interaction.block_drag = None;
 
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
@@ -93,11 +97,12 @@ impl State {
             return;
         }
 
-        let Some(snapshot) = self.editor_runtime.history.undo.pop() else {
+        let Some(snapshot) = self.editor.runtime.history.undo.pop() else {
             return;
         };
 
-        self.editor_runtime
+        self.editor
+            .runtime
             .history
             .redo
             .push(self.editor_history_snapshot());
@@ -109,11 +114,12 @@ impl State {
             return;
         }
 
-        let Some(snapshot) = self.editor_runtime.history.redo.pop() else {
+        let Some(snapshot) = self.editor.runtime.history.redo.pop() else {
             return;
         };
 
-        self.editor_runtime
+        self.editor
+            .runtime
             .history
             .undo
             .push(self.editor_history_snapshot());
@@ -129,21 +135,22 @@ impl State {
         if !selected_indices.is_empty() {
             let anchor_index = self
                 .editor
+                .ui
                 .selected_block_index
                 .filter(|index| selected_indices.contains(index))
                 .unwrap_or(selected_indices[0]);
-            let anchor = self.editor_objects[anchor_index].position;
+            let anchor = self.editor.objects[anchor_index].position;
             let objects = selected_indices
                 .into_iter()
-                .map(|index| self.editor_objects[index].clone())
+                .map(|index| self.editor.objects[index].clone())
                 .collect();
-            self.editor_runtime.interaction.clipboard = Some(EditorClipboard { objects, anchor });
+            self.editor.runtime.interaction.clipboard = Some(EditorClipboard { objects, anchor });
             return;
         }
 
-        if let Some(index) = self.topmost_block_index_at_cursor(self.editor.cursor) {
-            let block = self.editor_objects[index].clone();
-            self.editor_runtime.interaction.clipboard = Some(EditorClipboard {
+        if let Some(index) = self.topmost_block_index_at_cursor(self.editor.ui.cursor) {
+            let block = self.editor.objects[index].clone();
+            self.editor.runtime.interaction.clipboard = Some(EditorClipboard {
                 anchor: block.position,
                 objects: vec![block],
             });
@@ -155,7 +162,7 @@ impl State {
             return;
         }
 
-        let Some(clipboard) = self.editor_runtime.interaction.clipboard.clone() else {
+        let Some(clipboard) = self.editor.runtime.interaction.clipboard.clone() else {
             return;
         };
 
@@ -165,9 +172,9 @@ impl State {
 
         self.record_editor_history_state();
 
-        let paste_anchor = self.editor.cursor;
+        let paste_anchor = self.editor.ui.cursor;
 
-        let base_len = self.editor_objects.len();
+        let base_len = self.editor.objects.len();
         let mut new_indices = Vec::with_capacity(clipboard.objects.len());
 
         for mut block in clipboard.objects {
@@ -176,15 +183,15 @@ impl State {
                 paste_anchor[1] + (block.position[1] - clipboard.anchor[1]),
                 paste_anchor[2] + (block.position[2] - clipboard.anchor[2]),
             ];
-            self.editor_config.selected_block_id = block.block_id.clone();
-            self.editor_objects.push(block);
+            self.editor.config.selected_block_id = block.block_id.clone();
+            self.editor.objects.push(block);
             new_indices.push(base_len + new_indices.len());
         }
 
-        self.editor.selected_block_index = new_indices.first().copied();
-        self.editor.selected_block_indices = new_indices;
+        self.editor.ui.selected_block_index = new_indices.first().copied();
+        self.editor.ui.selected_block_indices = new_indices;
         self.sync_primary_selection_from_indices();
-        self.editor.hovered_block_index = self.editor.selected_block_index;
+        self.editor.ui.hovered_block_index = self.editor.ui.selected_block_index;
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
     }
@@ -201,33 +208,34 @@ impl State {
 
         let anchor_index = self
             .editor
+            .ui
             .selected_block_index
             .filter(|index| selected_indices.contains(index))
             .unwrap_or(selected_indices[0]);
-        let anchor = self.editor_objects[anchor_index].position;
+        let anchor = self.editor.objects[anchor_index].position;
         let duplicates: Vec<LevelObject> = selected_indices
             .iter()
-            .map(|index| self.editor_objects[*index].clone())
+            .map(|index| self.editor.objects[*index].clone())
             .collect();
 
-        self.editor_runtime.interaction.clipboard = Some(EditorClipboard {
+        self.editor.runtime.interaction.clipboard = Some(EditorClipboard {
             objects: duplicates.clone(),
             anchor,
         });
         self.record_editor_history_state();
 
-        let base_len = self.editor_objects.len();
+        let base_len = self.editor.objects.len();
         let mut new_indices = Vec::with_capacity(duplicates.len());
         for duplicated in duplicates {
-            self.editor_config.selected_block_id = duplicated.block_id.clone();
-            self.editor_objects.push(duplicated);
+            self.editor.config.selected_block_id = duplicated.block_id.clone();
+            self.editor.objects.push(duplicated);
             new_indices.push(base_len + new_indices.len());
         }
 
-        self.editor.selected_block_index = new_indices.first().copied();
-        self.editor.selected_block_indices = new_indices;
+        self.editor.ui.selected_block_index = new_indices.first().copied();
+        self.editor.ui.selected_block_indices = new_indices;
         self.sync_primary_selection_from_indices();
-        self.editor.hovered_block_index = self.editor.selected_block_index;
+        self.editor.ui.hovered_block_index = self.editor.ui.selected_block_index;
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
     }

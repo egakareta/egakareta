@@ -69,11 +69,11 @@ impl State {
             return;
         }
 
-        if self.editor_timeline.playback.playing {
-            self.editor_timeline.playback.playing = false;
-            self.editor_timeline.playback.runtime = None;
+        if self.editor.timeline.playback.playing {
+            self.editor.timeline.playback.playing = false;
+            self.editor.timeline.playback.runtime = None;
             self.stop_audio();
-        } else if self.editor_timeline.clock.time_seconds > 0.001 {
+        } else if self.editor.timeline.clock.time_seconds > 0.001 {
             self.set_editor_timeline_time_seconds(0.0);
         } else {
             self.back_to_menu();
@@ -125,7 +125,7 @@ impl State {
                 self.set_editor_pan_left_held(true);
                 return;
             }
-            "d" | "D" if self.is_editor() && !self.editor.ctrl_held => {
+            "d" | "D" if self.is_editor() && !self.editor.ui.ctrl_held => {
                 self.set_editor_pan_right_held(true);
                 return;
             }
@@ -217,7 +217,7 @@ impl State {
             }
             "d" | "D" => {
                 // In editor with Ctrl: duplicate (pan handled above).
-                if self.is_editor() && self.editor.ctrl_held && just_pressed {
+                if self.is_editor() && self.editor.ui.ctrl_held && just_pressed {
                     Some(AppCommand::EditorDuplicateBlock)
                 } else if !self.is_editor() && just_pressed {
                     Some(AppCommand::NextLevel)
@@ -288,9 +288,9 @@ impl State {
             }
             "t" | "T" => {
                 if just_pressed && self.is_editor() {
-                    if self.editor.mode == EditorMode::Place {
+                    if self.editor.ui.mode == EditorMode::Place {
                         Some(AppCommand::EditorToggleTapAtPointer)
-                    } else if self.editor.mode != EditorMode::Timing {
+                    } else if self.editor.ui.mode != EditorMode::Timing {
                         Some(AppCommand::EditorModeTiming)
                     } else {
                         None
@@ -343,9 +343,9 @@ impl State {
             }
             "o" | "O" => {
                 if self.is_editor()
-                    && self.editor.ctrl_held
-                    && self.editor.shift_held
-                    && self.editor.alt_held
+                    && self.editor.ui.ctrl_held
+                    && self.editor.ui.shift_held
+                    && self.editor.ui.alt_held
                     && just_pressed
                 {
                     Some(AppCommand::EditorExportBlockObj)
@@ -354,9 +354,9 @@ impl State {
                 }
             }
             "F12" => {
-                if self.editor.ctrl_held
-                    && self.editor.shift_held
-                    && self.editor.alt_held
+                if self.editor.ui.ctrl_held
+                    && self.editor.ui.shift_held
+                    && self.editor.ui.alt_held
                     && just_pressed
                 {
                     Some(AppCommand::EditorTogglePerfOverlay)
@@ -365,28 +365,28 @@ impl State {
                 }
             }
             "c" | "C" => {
-                if self.is_editor() && self.editor.ctrl_held && just_pressed {
+                if self.is_editor() && self.editor.ui.ctrl_held && just_pressed {
                     Some(AppCommand::EditorCopyBlock)
                 } else {
                     None
                 }
             }
             "v" | "V" => {
-                if self.is_editor() && self.editor.ctrl_held && just_pressed {
+                if self.is_editor() && self.editor.ui.ctrl_held && just_pressed {
                     Some(AppCommand::EditorPasteBlock)
                 } else {
                     None
                 }
             }
             "z" | "Z" => {
-                if self.is_editor() && self.editor.ctrl_held && just_pressed {
+                if self.is_editor() && self.editor.ui.ctrl_held && just_pressed {
                     Some(AppCommand::EditorUndo)
                 } else {
                     None
                 }
             }
             "y" | "Y" => {
-                if self.is_editor() && self.editor.ctrl_held && just_pressed {
+                if self.is_editor() && self.editor.ui.ctrl_held && just_pressed {
                     Some(AppCommand::EditorRedo)
                 } else {
                     None
@@ -432,6 +432,7 @@ impl State {
 
     /// Whether any blocks are currently selected in the editor.
     fn has_block_selection(&self) -> bool {
-        self.editor.selected_block_index.is_some() || !self.editor.selected_block_indices.is_empty()
+        self.editor.ui.selected_block_index.is_some()
+            || !self.editor.ui.selected_block_indices.is_empty()
     }
 }

@@ -3,10 +3,10 @@ use std::iter;
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 use wgpu::{SurfaceError, TextureViewDescriptor};
 
-use super::{State, DEPTH_FORMAT};
+use super::State;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::platform::state_host::NativeWindow;
-use crate::types::{AppPhase, EditorMode, PhysicalSize};
+use crate::types::{AppPhase, EditorMode};
 
 impl State {
     pub fn render_egui(
@@ -129,7 +129,7 @@ impl State {
             render_pass.set_bind_group(1, &self.gpu.zero_line_bind_group, &[]);
             render_pass.set_bind_group(2, &self.gpu.color_space_bind_group, &[]);
 
-            if self.phase != AppPhase::Menu && self.editor.mode != EditorMode::Timing {
+            if self.phase != AppPhase::Menu && self.editor.ui.mode != EditorMode::Timing {
                 if let Some((buffer, count)) = self.meshes.floor.draw_data() {
                     render_pass.set_vertex_buffer(0, buffer.slice(..));
                     render_pass.draw(0..count, 0..1);
@@ -147,7 +147,7 @@ impl State {
                 || self.phase == AppPhase::Menu
             {
                 let skip_world =
-                    self.phase == AppPhase::Editor && self.editor.mode == EditorMode::Timing;
+                    self.phase == AppPhase::Editor && self.editor.ui.mode == EditorMode::Timing;
 
                 if !skip_world {
                     if let Some((buffer, count)) = self.meshes.blocks.draw_data() {
@@ -210,7 +210,7 @@ impl State {
                         render_pass.set_bind_group(2, &self.gpu.color_space_bind_group, &[]);
                     }
 
-                    if self.editor.mode == EditorMode::Place {
+                    if self.editor.ui.mode == EditorMode::Place {
                         if let Some((buffer, count)) = self.meshes.editor_cursor.draw_data() {
                             render_pass.set_vertex_buffer(0, buffer.slice(..));
                             render_pass.set_bind_group(1, &self.gpu.zero_line_bind_group, &[]);
@@ -229,75 +229,38 @@ impl State {
     }
 
     pub fn surface_format(&self) -> wgpu::TextureFormat {
-        self.gpu.config.format
+        self.gpu.surface_format()
     }
 
     pub fn device(&self) -> &wgpu::Device {
-        &self.gpu.device
+        self.gpu.device()
     }
 
     pub fn queue(&self) -> &wgpu::Queue {
-        &self.gpu.queue
+        self.gpu.queue()
     }
 
     pub fn surface_width(&self) -> u32 {
-        self.gpu.config.width
+        self.gpu.surface_width()
     }
 
     pub fn surface_height(&self) -> u32 {
-        self.gpu.config.height
+        self.gpu.surface_height()
     }
 
     pub fn handle_surface_lost(&mut self) {
         let size = self.gpu.size;
-        self.apply_resize(size);
+        self.gpu.apply_resize(size);
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn window(&self) -> &NativeWindow {
-        self.gpu.surface_host.window()
+        self.gpu.window()
     }
 
     pub fn recreate_surface(&mut self) {
-        let size = self.gpu.surface_host.current_size();
+        let size = self.gpu.current_size();
         self.resize_surface(size);
-    }
-
-    pub(super) fn apply_resize(&mut self, new_size: PhysicalSize<u32>) {
-        self.gpu.size = new_size;
-        self.gpu.config.width = new_size.width;
-        self.gpu.config.height = new_size.height;
-        self.gpu
-            .surface
-            .configure(&self.gpu.device, &self.gpu.config);
-        let (depth_texture, depth_view) =
-            Self::create_depth_texture(&self.gpu.device, &self.gpu.config);
-        self.gpu.depth_texture = depth_texture;
-        self.gpu.depth_view = depth_view;
-    }
-
-    pub(super) fn create_depth_texture(
-        device: &wgpu::Device,
-        config: &wgpu::SurfaceConfiguration,
-    ) -> (wgpu::Texture, wgpu::TextureView) {
-        let size = wgpu::Extent3d {
-            width: config.width.max(1),
-            height: config.height.max(1),
-            depth_or_array_layers: 1,
-        };
-        let desc = wgpu::TextureDescriptor {
-            label: Some("Depth Texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        };
-        let texture = device.create_texture(&desc);
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        (texture, view)
     }
 }
 

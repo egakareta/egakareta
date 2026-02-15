@@ -160,23 +160,94 @@ pub(crate) struct GpuContext {
     apply_gamma_correction: bool,
 }
 
+impl GpuContext {
+    pub(crate) fn device(&self) -> &wgpu::Device {
+        &self.device
+    }
+
+    pub(crate) fn queue(&self) -> &wgpu::Queue {
+        &self.queue
+    }
+
+    pub(crate) fn surface_format(&self) -> wgpu::TextureFormat {
+        self.config.format
+    }
+
+    pub(crate) fn surface_width(&self) -> u32 {
+        self.config.width
+    }
+
+    pub(crate) fn surface_height(&self) -> u32 {
+        self.config.height
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn window(&self) -> &NativeWindow {
+        self.surface_host.window()
+    }
+
+    pub(crate) fn current_size(&self) -> PhysicalSize<u32> {
+        self.surface_host.current_size()
+    }
+
+    pub(crate) fn apply_resize(&mut self, new_size: PhysicalSize<u32>) {
+        self.size = new_size;
+        self.config.width = new_size.width;
+        self.config.height = new_size.height;
+        self.surface.configure(&self.device, &self.config);
+        let (depth_texture, depth_view) = Self::create_depth_texture(&self.device, &self.config);
+        self.depth_texture = depth_texture;
+        self.depth_view = depth_view;
+    }
+
+    fn create_depth_texture(
+        device: &wgpu::Device,
+        config: &wgpu::SurfaceConfiguration,
+    ) -> (wgpu::Texture, wgpu::TextureView) {
+        let size = wgpu::Extent3d {
+            width: config.width.max(1),
+            height: config.height.max(1),
+            depth_or_array_layers: 1,
+        };
+        let desc = wgpu::TextureDescriptor {
+            label: Some("Depth Texture"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        };
+        let texture = device.create_texture(&desc);
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        (texture, view)
+    }
+}
+
+/// Bundles all editor-related state into a single subsystem.
+/// Separates editor concern from the top-level application state.
+pub(crate) struct EditorSubsystem {
+    pub(crate) ui: EditorState,
+    pub(crate) config: EditorConfigState,
+    pub(crate) objects: Vec<LevelObject>,
+    pub(crate) spawn: SpawnMetadata,
+    pub(crate) camera: EditorCameraState,
+    pub(crate) timeline: EditorTimelineState,
+    pub(crate) runtime: EditorRuntimeState,
+    pub(crate) perf: EditorPerfState,
+    pub(crate) timing: EditorTimingState,
+    pub(crate) session: EditorSessionState,
+}
+
 pub struct State {
     gpu: GpuContext,
     meshes: SceneMeshes,
     game: GameState,
     phase: AppPhase,
     menu: MenuState,
-    editor: EditorState,
-    editor_config: EditorConfigState,
-    editor_objects: Vec<LevelObject>,
-    editor_spawn: SpawnMetadata,
-    editor_camera: EditorCameraState,
-    editor_timeline: EditorTimelineState,
-    editor_runtime: EditorRuntimeState,
+    editor: EditorSubsystem,
     frame_runtime: FrameRuntimeState,
-    editor_perf: EditorPerfState,
-    editor_timing: EditorTimingState,
-    editor_session: EditorSessionState,
     audio_state: AudioState,
 }
 
@@ -373,7 +444,7 @@ struct EditorTimelineTapState {
     tap_indicator_positions: Vec<[f32; 3]>,
 }
 
-struct EditorTimelineState {
+pub(crate) struct EditorTimelineState {
     clock: EditorTimelineClockState,
     preview: EditorTimelinePreviewState,
     taps: EditorTimelineTapState,
@@ -389,7 +460,7 @@ struct EditorGizmoState {
     last_zoom: f32,
 }
 
-struct EditorTimingState {
+pub(crate) struct EditorTimingState {
     timing_points: Vec<TimingPoint>,
     playback_speed: f32,
     waveform_samples: Vec<f32>,
@@ -401,7 +472,7 @@ struct EditorTimingState {
     bpm_tap_result: Option<f32>,
 }
 
-struct EditorSessionState {
+pub(crate) struct EditorSessionState {
     editor_level_name: Option<String>,
     editor_music_metadata: MusicMetadata,
     editor_show_metadata: bool,
@@ -411,18 +482,18 @@ struct EditorSessionState {
     playtesting_editor: bool,
 }
 
-struct EditorConfigState {
+pub(crate) struct EditorConfigState {
     selected_block_id: String,
     snap_to_grid: bool,
     snap_step: f32,
 }
 
-struct EditorPerfState {
+pub(crate) struct EditorPerfState {
     profiler: EditorPerfProfiler,
     fps_smoothed: f32,
 }
 
-struct EditorRuntimeState {
+pub(crate) struct EditorRuntimeState {
     dirty: EditorDirtyFlags,
     gizmo: EditorGizmoState,
     interaction: EditorInteractionState,
@@ -462,7 +533,7 @@ struct AudioState {
     editor: EditorAudioState,
 }
 
-struct EditorCameraState {
+pub(crate) struct EditorCameraState {
     editor_pan: [f32; 2],
     editor_rotation: f32,
     editor_pitch: f32,
@@ -614,7 +685,7 @@ impl State {
 
         surface.configure(&device, &config);
 
-        let (depth_texture, depth_view) = Self::create_depth_texture(&device, &config);
+        let (depth_texture, depth_view) = GpuContext::create_depth_texture(&device, &config);
 
         let shader: wgpu::ShaderModule =
             device.create_shader_module(wgpu::include_wgsl!("../shader.wgsl"));
@@ -894,92 +965,94 @@ impl State {
                     waveform_loading_source: None,
                 },
             },
-            editor: EditorState::new(),
-            editor_config: EditorConfigState {
-                selected_block_id: DEFAULT_BLOCK_ID.to_string(),
-                snap_to_grid: true,
-                snap_step: 1.0,
-            },
-            editor_objects: Vec::new(),
-            editor_spawn: SpawnMetadata::default(),
-            editor_camera: EditorCameraState {
-                editor_pan: [0.0, 0.0],
-                editor_rotation: -45.0f32.to_radians(),
-                editor_pitch: 45.0f32.to_radians(),
-                editor_zoom: 1.0,
-                playing_rotation: -45.0f32.to_radians(),
-                playing_pitch: 45.0f32.to_radians(),
-            },
-            editor_timeline: EditorTimelineState {
-                clock: EditorTimelineClockState {
-                    time_seconds: 0.0,
-                    duration_seconds: 16.0,
+            editor: EditorSubsystem {
+                ui: EditorState::new(),
+                config: EditorConfigState {
+                    selected_block_id: DEFAULT_BLOCK_ID.to_string(),
+                    snap_to_grid: true,
+                    snap_step: 1.0,
                 },
-                preview: EditorTimelinePreviewState {
-                    position: [0.0, 0.0, 0.0],
-                    direction: SpawnDirection::Forward,
+                objects: Vec::new(),
+                spawn: SpawnMetadata::default(),
+                camera: EditorCameraState {
+                    editor_pan: [0.0, 0.0],
+                    editor_rotation: -45.0f32.to_radians(),
+                    editor_pitch: 45.0f32.to_radians(),
+                    editor_zoom: 1.0,
+                    playing_rotation: -45.0f32.to_radians(),
+                    playing_pitch: 45.0f32.to_radians(),
                 },
-                taps: EditorTimelineTapState {
-                    tap_times: Vec::new(),
-                    tap_indicator_positions: Vec::new(),
+                timeline: EditorTimelineState {
+                    clock: EditorTimelineClockState {
+                        time_seconds: 0.0,
+                        duration_seconds: 16.0,
+                    },
+                    preview: EditorTimelinePreviewState {
+                        position: [0.0, 0.0, 0.0],
+                        direction: SpawnDirection::Forward,
+                    },
+                    taps: EditorTimelineTapState {
+                        tap_times: Vec::new(),
+                        tap_indicator_positions: Vec::new(),
+                    },
+                    cache: EditorTimelineSampleCache {
+                        samples: Vec::new(),
+                        dirty: true,
+                        rebuild_from_seconds: None,
+                    },
+                    playback: EditorTimelinePlaybackState {
+                        playing: false,
+                        runtime: None,
+                    },
                 },
-                cache: EditorTimelineSampleCache {
-                    samples: Vec::new(),
-                    dirty: true,
-                    rebuild_from_seconds: None,
+                runtime: EditorRuntimeState {
+                    dirty: EditorDirtyFlags::default(),
+                    gizmo: EditorGizmoState {
+                        rebuild_accumulator: 0.0,
+                        last_pan: [0.0, 0.0],
+                        last_rotation: -45.0f32.to_radians(),
+                        last_pitch: 45.0f32.to_radians(),
+                        last_zoom: 1.0,
+                    },
+                    interaction: EditorInteractionState {
+                        gizmo_drag: None,
+                        block_drag: None,
+                        clipboard: None,
+                    },
+                    history: EditorHistoryState {
+                        undo: Vec::new(),
+                        redo: Vec::new(),
+                    },
                 },
-                playback: EditorTimelinePlaybackState {
-                    playing: false,
-                    runtime: None,
+                perf: EditorPerfState {
+                    profiler: EditorPerfProfiler::new(),
+                    fps_smoothed: 0.0,
                 },
-            },
-            editor_runtime: EditorRuntimeState {
-                dirty: EditorDirtyFlags::default(),
-                gizmo: EditorGizmoState {
-                    rebuild_accumulator: 0.0,
-                    last_pan: [0.0, 0.0],
-                    last_rotation: -45.0f32.to_radians(),
-                    last_pitch: 45.0f32.to_radians(),
-                    last_zoom: 1.0,
+                timing: EditorTimingState {
+                    timing_points: Vec::new(),
+                    playback_speed: 1.0,
+                    waveform_samples: Vec::new(),
+                    waveform_sample_rate: 0,
+                    timing_selected_index: None,
+                    waveform_zoom: 1.0,
+                    waveform_scroll: 0.0,
+                    bpm_tap_times: Vec::new(),
+                    bpm_tap_result: None,
                 },
-                interaction: EditorInteractionState {
-                    gizmo_drag: None,
-                    block_drag: None,
-                    clipboard: None,
+                session: EditorSessionState {
+                    editor_level_name: None,
+                    editor_music_metadata: MusicMetadata {
+                        source: "music.mp3".to_string(),
+                        title: None,
+                        author: None,
+                        extra: serde_json::Map::new(),
+                    },
+                    editor_show_metadata: false,
+                    editor_show_import: false,
+                    editor_import_text: String::new(),
+                    playing_level_name: None,
+                    playtesting_editor: false,
                 },
-                history: EditorHistoryState {
-                    undo: Vec::new(),
-                    redo: Vec::new(),
-                },
-            },
-            editor_perf: EditorPerfState {
-                profiler: EditorPerfProfiler::new(),
-                fps_smoothed: 0.0,
-            },
-            editor_timing: EditorTimingState {
-                timing_points: Vec::new(),
-                playback_speed: 1.0,
-                waveform_samples: Vec::new(),
-                waveform_sample_rate: 0,
-                timing_selected_index: None,
-                waveform_zoom: 1.0,
-                waveform_scroll: 0.0,
-                bpm_tap_times: Vec::new(),
-                bpm_tap_result: None,
-            },
-            editor_session: EditorSessionState {
-                editor_level_name: None,
-                editor_music_metadata: MusicMetadata {
-                    source: "music.mp3".to_string(),
-                    title: None,
-                    author: None,
-                    extra: serde_json::Map::new(),
-                },
-                editor_show_metadata: false,
-                editor_show_import: false,
-                editor_import_text: String::new(),
-                playing_level_name: None,
-                playtesting_editor: false,
             },
         }
     }
@@ -990,7 +1063,7 @@ impl State {
         }
 
         self.gpu.surface_host.prepare_resize(new_size);
-        self.apply_resize(new_size);
+        self.gpu.apply_resize(new_size);
     }
 
     pub fn turn_right(&mut self) {
@@ -1001,18 +1074,19 @@ impl State {
             AppPhase::Playing => {
                 if !self.game.started {
                     self.game.started = true;
-                    if self.editor_session.playtesting_editor {
+                    if self.editor.session.playtesting_editor {
                         let metadata = self.current_editor_metadata();
                         let level_name = self
-                            .editor_session
+                            .editor
+                            .session
                             .editor_level_name
                             .clone()
                             .unwrap_or_else(|| "Untitled".to_string());
                         let start_seconds = self.editor_timeline_elapsed_seconds(
-                            self.editor_timeline.clock.time_seconds,
+                            self.editor.timeline.clock.time_seconds,
                         );
                         self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
-                    } else if let Some(level_name) = self.editor_session.playing_level_name.clone()
+                    } else if let Some(level_name) = self.editor.session.playing_level_name.clone()
                     {
                         if let Some(metadata) = self.load_level_metadata(&level_name) {
                             self.start_audio(&level_name, &metadata);
@@ -1057,7 +1131,7 @@ impl State {
         match self.phase {
             AppPhase::Menu => self.start_editor(self.menu.selected_level),
             AppPhase::Editor => self.back_to_menu(),
-            AppPhase::Playing if self.editor_session.playtesting_editor => {
+            AppPhase::Playing if self.editor.session.playtesting_editor => {
                 self.phase = AppPhase::Editor;
                 self.stop_audio();
                 self.sync_editor_objects();
@@ -1075,7 +1149,7 @@ impl State {
     }
 
     pub fn set_editor_right_dragging(&mut self, dragging: bool) {
-        self.editor.right_dragging = dragging;
+        self.editor.ui.right_dragging = dragging;
     }
 
     pub fn handle_keyboard_input(&mut self, key: &str, pressed: bool, just_pressed: bool) {
@@ -1086,10 +1160,10 @@ impl State {
         match button {
             0 => {
                 if !pressed {
-                    let had_drag = self.editor_runtime.interaction.gizmo_drag.is_some()
-                        || self.editor_runtime.interaction.block_drag.is_some();
-                    self.editor_runtime.interaction.gizmo_drag = None;
-                    self.editor_runtime.interaction.block_drag = None;
+                    let had_drag = self.editor.runtime.interaction.gizmo_drag.is_some()
+                        || self.editor.runtime.interaction.block_drag.is_some();
+                    self.editor.runtime.interaction.gizmo_drag = None;
+                    self.editor.runtime.interaction.block_drag = None;
                     if had_drag {
                         self.sync_editor_objects();
                     }
@@ -1105,9 +1179,9 @@ impl State {
     }
 
     pub fn handle_primary_click(&mut self, x: f64, y: f64) {
-        self.editor.pointer_screen = Some([x, y]);
+        self.editor.ui.pointer_screen = Some([x, y]);
         if self.phase == AppPhase::Editor {
-            match self.editor.mode {
+            match self.editor.ui.mode {
                 EditorMode::Place => {
                     self.update_editor_cursor_from_screen(x, y);
                     self.place_editor_block();
@@ -1134,8 +1208,45 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    use super::{LevelObject, SpawnDirection};
+    use super::{EditorDirtyFlags, LevelObject, SpawnDirection};
     use crate::editor_domain::derive_timeline_position;
+
+    // ── EditorDirtyFlags contract tests ─────────────────────────────
+    #[test]
+    fn dirty_flags_default_is_clean() {
+        let flags = EditorDirtyFlags::default();
+        assert!(!flags.any());
+    }
+
+    #[test]
+    fn dirty_flags_from_object_sync_sets_all() {
+        let flags = EditorDirtyFlags::from_object_sync();
+        assert!(flags.sync_game_objects);
+        assert!(flags.rebuild_block_mesh);
+        assert!(flags.rebuild_selection_overlays);
+        assert!(flags.rebuild_tap_indicators);
+        assert!(flags.rebuild_preview_player);
+        assert!(flags.any());
+    }
+
+    #[test]
+    fn dirty_flags_merge_is_union() {
+        let mut a = EditorDirtyFlags {
+            rebuild_block_mesh: true,
+            ..EditorDirtyFlags::default()
+        };
+        let b = EditorDirtyFlags {
+            rebuild_tap_indicators: true,
+            ..EditorDirtyFlags::default()
+        };
+        a.merge(b);
+        assert!(a.rebuild_block_mesh);
+        assert!(a.rebuild_tap_indicators);
+        assert!(!a.sync_game_objects);
+        assert!(a.any());
+    }
+
+    // ── Timeline position tests (pre-existing) ─────────────────────
 
     #[test]
     fn derives_position_without_taps() {

@@ -7,51 +7,51 @@ use crate::types::{AppPhase, EditorMode, LevelObject, SpawnDirection, TimingPoin
 
 impl State {
     pub fn set_editor_pan_up_held(&mut self, held: bool) {
-        self.editor.pan_up_held = held && self.phase == AppPhase::Editor;
+        self.editor.ui.pan_up_held = held && self.phase == AppPhase::Editor;
     }
 
     pub fn set_editor_pan_down_held(&mut self, held: bool) {
-        self.editor.pan_down_held = held && self.phase == AppPhase::Editor;
+        self.editor.ui.pan_down_held = held && self.phase == AppPhase::Editor;
     }
 
     pub fn set_editor_pan_left_held(&mut self, held: bool) {
-        self.editor.pan_left_held = held && self.phase == AppPhase::Editor;
+        self.editor.ui.pan_left_held = held && self.phase == AppPhase::Editor;
     }
 
     pub fn set_editor_pan_right_held(&mut self, held: bool) {
-        self.editor.pan_right_held = held && self.phase == AppPhase::Editor;
+        self.editor.ui.pan_right_held = held && self.phase == AppPhase::Editor;
     }
 
     pub fn set_editor_shift_held(&mut self, held: bool) {
-        self.editor.shift_held = held && self.phase == AppPhase::Editor;
+        self.editor.ui.shift_held = held && self.phase == AppPhase::Editor;
     }
 
     pub fn set_editor_ctrl_held(&mut self, held: bool) {
-        self.editor.ctrl_held = held && self.phase == AppPhase::Editor;
+        self.editor.ui.ctrl_held = held && self.phase == AppPhase::Editor;
     }
 
     pub fn set_editor_alt_held(&mut self, held: bool) {
-        self.editor.alt_held = held && self.phase == AppPhase::Editor;
+        self.editor.ui.alt_held = held && self.phase == AppPhase::Editor;
     }
 
     pub fn set_editor_block_id(&mut self, block_id: String) {
-        self.editor_config.selected_block_id =
+        self.editor.config.selected_block_id =
             crate::block_repository::normalize_block_id(&block_id);
     }
 
     pub(crate) fn set_editor_mode(&mut self, mode: EditorMode) {
-        self.editor.mode = mode;
-        self.editor_runtime.interaction.gizmo_drag = None;
-        self.editor_runtime.interaction.block_drag = None;
+        self.editor.ui.mode = mode;
+        self.editor.runtime.interaction.gizmo_drag = None;
+        self.editor.runtime.interaction.block_drag = None;
         if mode == EditorMode::Place {
-            self.editor.selected_block_index = None;
-            self.editor.selected_block_indices.clear();
-            self.editor.hovered_block_index = None;
+            self.editor.ui.selected_block_index = None;
+            self.editor.ui.selected_block_indices.clear();
+            self.editor.ui.hovered_block_index = None;
         }
         if mode == EditorMode::Timing {
-            self.editor.selected_block_index = None;
-            self.editor.selected_block_indices.clear();
-            self.editor.hovered_block_index = None;
+            self.editor.ui.selected_block_index = None;
+            self.editor.ui.selected_block_indices.clear();
+            self.editor.ui.hovered_block_index = None;
         }
         self.rebuild_editor_gizmo_vertices();
         self.rebuild_editor_hover_outline_vertices();
@@ -59,20 +59,20 @@ impl State {
     }
 
     pub(crate) fn editor_mode(&self) -> EditorMode {
-        self.editor.mode
+        self.editor.ui.mode
     }
 
     pub(crate) fn editor_snap_to_grid(&self) -> bool {
-        self.editor_config.snap_to_grid
+        self.editor.config.snap_to_grid
     }
 
     pub(crate) fn editor_snap_step(&self) -> f32 {
-        self.editor_config.snap_step
+        self.editor.config.snap_step
     }
 
     pub(crate) fn set_editor_snap_to_grid(&mut self, snap: bool) {
-        self.editor_config.snap_to_grid = snap;
-        if self.editor.selected_block_index.is_some() {
+        self.editor.config.snap_to_grid = snap;
+        if self.editor.ui.selected_block_index.is_some() {
             if let Some(obj) = self.editor_selected_block() {
                 self.set_editor_selected_block_position(obj.position);
                 self.set_editor_selected_block_size(obj.size);
@@ -81,8 +81,8 @@ impl State {
     }
 
     pub(crate) fn set_editor_snap_step(&mut self, step: f32) {
-        self.editor_config.snap_step = step.max(0.05);
-        if self.editor_config.snap_to_grid && self.editor.selected_block_index.is_some() {
+        self.editor.config.snap_step = step.max(0.05);
+        if self.editor.config.snap_to_grid && self.editor.ui.selected_block_index.is_some() {
             if let Some(obj) = self.editor_selected_block() {
                 self.set_editor_selected_block_position(obj.position);
                 self.set_editor_selected_block_size(obj.size);
@@ -94,7 +94,7 @@ impl State {
         self.selected_block_indices_normalized()
             .first()
             .copied()
-            .and_then(|index| self.editor_objects.get(index).cloned())
+            .and_then(|index| self.editor.objects.get(index).cloned())
     }
 
     pub(crate) fn set_editor_selected_block_position(&mut self, position: [f32; 3]) {
@@ -102,8 +102,8 @@ impl State {
             return;
         }
 
-        if self.editor_runtime.interaction.gizmo_drag.is_none()
-            && self.editor_runtime.interaction.block_drag.is_none()
+        if self.editor.runtime.interaction.gizmo_drag.is_none()
+            && self.editor.runtime.interaction.block_drag.is_none()
         {
             self.record_editor_history_state();
         }
@@ -112,12 +112,13 @@ impl State {
 
         if let Some(index) = self
             .editor
+            .ui
             .selected_block_index
-            .filter(|index| *index < self.editor_objects.len())
+            .filter(|index| *index < self.editor.objects.len())
         {
-            let bounds = self.editor.bounds;
-            let snap_step = self.editor_config.snap_step.max(0.05);
-            let next_position = if self.editor_config.snap_to_grid {
+            let bounds = self.editor.ui.bounds;
+            let snap_step = self.editor.config.snap_step.max(0.05);
+            let next_position = if self.editor.config.snap_to_grid {
                 [
                     (position[0] / snap_step).round() * snap_step,
                     (position[1] / snap_step).round() * snap_step,
@@ -126,8 +127,8 @@ impl State {
             } else {
                 [position[0], position[1], position[2].max(0.0)]
             };
-            self.editor_objects[index].position = next_position;
-            self.editor.cursor = [
+            self.editor.objects[index].position = next_position;
+            self.editor.ui.cursor = [
                 next_position[0].clamp(-bounds as f32, bounds as f32),
                 next_position[1].clamp(-bounds as f32, bounds as f32),
                 next_position[2].max(0.0),
@@ -144,8 +145,8 @@ impl State {
             return;
         }
 
-        if self.editor_runtime.interaction.gizmo_drag.is_none()
-            && self.editor_runtime.interaction.block_drag.is_none()
+        if self.editor.runtime.interaction.gizmo_drag.is_none()
+            && self.editor.runtime.interaction.block_drag.is_none()
         {
             self.record_editor_history_state();
         }
@@ -154,11 +155,12 @@ impl State {
 
         if let Some(index) = self
             .editor
+            .ui
             .selected_block_index
-            .filter(|index| *index < self.editor_objects.len())
+            .filter(|index| *index < self.editor.objects.len())
         {
-            let snap_step = self.editor_config.snap_step.max(0.05);
-            let snapped_size = if self.editor_config.snap_to_grid {
+            let snap_step = self.editor.config.snap_step.max(0.05);
+            let snapped_size = if self.editor.config.snap_to_grid {
                 [
                     (size[0] / snap_step).round() * snap_step,
                     (size[1] / snap_step).round() * snap_step,
@@ -167,12 +169,12 @@ impl State {
             } else {
                 size
             };
-            let min_size = if self.editor_config.snap_to_grid {
+            let min_size = if self.editor.config.snap_to_grid {
                 snap_step
             } else {
                 0.25
             };
-            self.editor_objects[index].size = [
+            self.editor.objects[index].size = [
                 snapped_size[0].max(min_size),
                 snapped_size[1].max(min_size),
                 snapped_size[2].max(min_size),
@@ -194,10 +196,11 @@ impl State {
 
         if let Some(index) = self
             .editor
+            .ui
             .selected_block_index
-            .filter(|index| *index < self.editor_objects.len())
+            .filter(|index| *index < self.editor.objects.len())
         {
-            self.editor_objects[index].block_id =
+            self.editor.objects[index].block_id =
                 crate::block_repository::normalize_block_id(&block_id);
             self.sync_editor_objects();
             self.rebuild_editor_gizmo_vertices();
@@ -216,10 +219,11 @@ impl State {
 
         if let Some(index) = self
             .editor
+            .ui
             .selected_block_index
-            .filter(|index| *index < self.editor_objects.len())
+            .filter(|index| *index < self.editor.objects.len())
         {
-            self.editor_objects[index].rotation_degrees = rotation_degrees;
+            self.editor.objects[index].rotation_degrees = rotation_degrees;
             self.sync_editor_objects();
             self.rebuild_editor_gizmo_vertices();
             self.rebuild_editor_selection_outline_vertices();
@@ -237,10 +241,11 @@ impl State {
 
         if let Some(index) = self
             .editor
+            .ui
             .selected_block_index
-            .filter(|index| *index < self.editor_objects.len())
+            .filter(|index| *index < self.editor.objects.len())
         {
-            self.editor_objects[index].roundness = roundness.max(0.0);
+            self.editor.objects[index].roundness = roundness.max(0.0);
             self.sync_editor_objects();
             self.rebuild_editor_gizmo_vertices();
             self.rebuild_editor_selection_outline_vertices();
@@ -248,49 +253,50 @@ impl State {
     }
 
     pub fn editor_selected_block_id(&self) -> &str {
-        &self.editor_config.selected_block_id
+        &self.editor.config.selected_block_id
     }
 
     pub fn editor_timeline_time_seconds(&self) -> f32 {
-        self.editor_timeline.clock.time_seconds
+        self.editor.timeline.clock.time_seconds
     }
 
     pub fn editor_timeline_duration_seconds(&self) -> f32 {
-        self.editor_timeline.clock.duration_seconds
+        self.editor.timeline.clock.duration_seconds
     }
 
     pub fn editor_tap_times(&self) -> &[f32] {
-        &self.editor_timeline.taps.tap_times
+        &self.editor.timeline.taps.tap_times
     }
 
     pub fn editor_fps(&self) -> f32 {
-        self.editor_perf.fps_smoothed
+        self.editor.perf.fps_smoothed
     }
 
     pub fn set_editor_timeline_time_seconds(&mut self, time_seconds: f32) {
         let clamped_time =
-            time_seconds.clamp(0.0, self.editor_timeline.clock.duration_seconds.max(0.0));
-        if (clamped_time - self.editor_timeline.clock.time_seconds).abs() <= f32::EPSILON {
+            time_seconds.clamp(0.0, self.editor.timeline.clock.duration_seconds.max(0.0));
+        if (clamped_time - self.editor.timeline.clock.time_seconds).abs() <= f32::EPSILON {
             return;
         }
 
-        self.editor_timeline.clock.time_seconds = clamped_time;
+        self.editor.timeline.clock.time_seconds = clamped_time;
         self.refresh_editor_timeline_position();
         self.resync_editor_timeline_playback_audio();
     }
 
     pub fn set_editor_timeline_duration_seconds(&mut self, duration_seconds: f32) {
         self.record_editor_history_state();
-        self.editor_timeline.clock.duration_seconds = duration_seconds.max(0.1);
-        self.editor_timeline.clock.time_seconds = self
-            .editor_timeline
+        self.editor.timeline.clock.duration_seconds = duration_seconds.max(0.1);
+        self.editor.timeline.clock.time_seconds = self
+            .editor
+            .timeline
             .clock
             .time_seconds
-            .min(self.editor_timeline.clock.duration_seconds);
+            .min(self.editor.timeline.clock.duration_seconds);
         retain_taps_up_to_duration_with_indicators(
-            &mut self.editor_timeline.taps.tap_times,
-            &mut self.editor_timeline.taps.tap_indicator_positions,
-            self.editor_timeline.clock.duration_seconds,
+            &mut self.editor.timeline.taps.tap_times,
+            &mut self.editor.timeline.taps.tap_indicator_positions,
+            self.editor.timeline.clock.duration_seconds,
         );
         self.invalidate_editor_timeline_samples();
         self.refresh_editor_timeline_position();
@@ -303,12 +309,12 @@ impl State {
 
     pub fn editor_add_tap(&mut self) {
         self.record_editor_history_state();
-        let tap_time = self.editor_timeline.clock.time_seconds;
+        let tap_time = self.editor.timeline.clock.time_seconds;
         let indicator_cell =
-            self.tap_indicator_position_from_world(self.editor_timeline.preview.position);
+            self.tap_indicator_position_from_world(self.editor.timeline.preview.position);
         add_tap_with_indicator(
-            &mut self.editor_timeline.taps.tap_times,
-            &mut self.editor_timeline.taps.tap_indicator_positions,
+            &mut self.editor.timeline.taps.tap_times,
+            &mut self.editor.timeline.taps.tap_indicator_positions,
             tap_time,
             indicator_cell,
         );
@@ -322,10 +328,10 @@ impl State {
 
     pub fn editor_remove_tap(&mut self) {
         self.record_editor_history_state();
-        let tap_time = self.editor_timeline.clock.time_seconds;
+        let tap_time = self.editor.timeline.clock.time_seconds;
         remove_tap_with_indicator(
-            &mut self.editor_timeline.taps.tap_times,
-            &mut self.editor_timeline.taps.tap_indicator_positions,
+            &mut self.editor.timeline.taps.tap_times,
+            &mut self.editor.timeline.taps.tap_indicator_positions,
             tap_time,
         );
         self.invalidate_editor_timeline_samples_from(tap_time);
@@ -339,8 +345,8 @@ impl State {
     pub fn editor_clear_taps(&mut self) {
         self.record_editor_history_state();
         clear_taps_with_indicators(
-            &mut self.editor_timeline.taps.tap_times,
-            &mut self.editor_timeline.taps.tap_indicator_positions,
+            &mut self.editor.timeline.taps.tap_times,
+            &mut self.editor.timeline.taps.tap_indicator_positions,
         );
         self.invalidate_editor_timeline_samples();
         self.refresh_editor_timeline_position();
@@ -352,60 +358,60 @@ impl State {
 
     pub(crate) fn editor_timeline_preview(&self) -> ([f32; 3], SpawnDirection) {
         (
-            self.editor_timeline.preview.position,
-            self.editor_timeline.preview.direction,
+            self.editor.timeline.preview.position,
+            self.editor.timeline.preview.direction,
         )
     }
 
     pub(crate) fn editor_timing_points(&self) -> &[TimingPoint] {
-        &self.editor_timing.timing_points
+        &self.editor.timing.timing_points
     }
 
     pub(crate) fn editor_playback_speed(&self) -> f32 {
-        self.editor_timing.playback_speed
+        self.editor.timing.playback_speed
     }
 
     pub(crate) fn set_editor_playback_speed(&mut self, speed: f32) {
-        self.editor_timing.playback_speed = speed.clamp(0.25, 2.0);
+        self.editor.timing.playback_speed = speed.clamp(0.25, 2.0);
         self.audio_state
             .runtime
-            .set_speed(self.editor_timing.playback_speed);
+            .set_speed(self.editor.timing.playback_speed);
     }
 
     pub(crate) fn editor_timing_selected_index(&self) -> Option<usize> {
-        self.editor_timing.timing_selected_index
+        self.editor.timing.timing_selected_index
     }
 
     pub(crate) fn set_editor_timing_selected_index(&mut self, index: Option<usize>) {
-        self.editor_timing.timing_selected_index = index;
+        self.editor.timing.timing_selected_index = index;
     }
 
     pub(crate) fn editor_waveform_zoom(&self) -> f32 {
-        self.editor_timing.waveform_zoom
+        self.editor.timing.waveform_zoom
     }
 
     pub(crate) fn set_editor_waveform_zoom(&mut self, zoom: f32) {
-        self.editor_timing.waveform_zoom = zoom.clamp(0.1, 100.0);
+        self.editor.timing.waveform_zoom = zoom.clamp(0.1, 100.0);
     }
 
     pub(crate) fn editor_waveform_scroll(&self) -> f32 {
-        self.editor_timing.waveform_scroll
+        self.editor.timing.waveform_scroll
     }
 
     pub(crate) fn set_editor_waveform_scroll(&mut self, scroll: f32) {
-        self.editor_timing.waveform_scroll = scroll.max(0.0);
+        self.editor.timing.waveform_scroll = scroll.max(0.0);
     }
 
     pub(crate) fn editor_waveform_samples(&self) -> &[f32] {
-        &self.editor_timing.waveform_samples
+        &self.editor.timing.waveform_samples
     }
 
     pub(crate) fn editor_waveform_sample_rate(&self) -> u32 {
-        self.editor_timing.waveform_sample_rate
+        self.editor.timing.waveform_sample_rate
     }
 
     pub(crate) fn editor_bpm_tap_result(&self) -> Option<f32> {
-        self.editor_timing.bpm_tap_result
+        self.editor.timing.bpm_tap_result
     }
 
     pub(crate) fn editor_add_timing_point(&mut self, time_seconds: f32, bpm: f32) {
@@ -416,45 +422,48 @@ impl State {
             time_signature_numerator: 4,
             time_signature_denominator: 4,
         };
-        self.editor_timing.timing_points.push(tp);
-        self.editor_timing
+        self.editor.timing.timing_points.push(tp);
+        self.editor
+            .timing
             .timing_points
             .sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
-        self.editor_timing.timing_selected_index = self
-            .editor_timing
+        self.editor.timing.timing_selected_index = self
+            .editor
+            .timing
             .timing_points
             .iter()
             .position(|tp| (tp.time_seconds - time_seconds).abs() < 1e-4);
     }
 
     pub(crate) fn editor_remove_timing_point(&mut self, index: usize) {
-        if index < self.editor_timing.timing_points.len() {
+        if index < self.editor.timing.timing_points.len() {
             self.record_editor_history_state();
-            self.editor_timing.timing_points.remove(index);
-            self.editor_timing.timing_selected_index = None;
+            self.editor.timing.timing_points.remove(index);
+            self.editor.timing.timing_selected_index = None;
         }
     }
 
     pub(crate) fn editor_update_timing_point_time(&mut self, index: usize, time: f32) {
-        if index < self.editor_timing.timing_points.len() {
+        if index < self.editor.timing.timing_points.len() {
             self.record_editor_history_state();
-            let tp = &mut self.editor_timing.timing_points[index];
+            let tp = &mut self.editor.timing.timing_points[index];
             tp.time_seconds = time.max(0.0);
             let bpm = tp.bpm;
-            self.editor_timing
+            self.editor
+                .timing
                 .timing_points
                 .sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
-            self.editor_timing.timing_selected_index =
-                self.editor_timing.timing_points.iter().position(|tp| {
+            self.editor.timing.timing_selected_index =
+                self.editor.timing.timing_points.iter().position(|tp| {
                     (tp.time_seconds - time).abs() < 1e-4 && (tp.bpm - bpm).abs() < 1e-4
                 });
         }
     }
 
     pub(crate) fn editor_update_timing_point_bpm(&mut self, index: usize, bpm: f32) {
-        if index < self.editor_timing.timing_points.len() {
+        if index < self.editor.timing.timing_points.len() {
             self.record_editor_history_state();
-            self.editor_timing.timing_points[index].bpm = bpm.max(1.0);
+            self.editor.timing.timing_points[index].bpm = bpm.max(1.0);
         }
     }
 
@@ -464,11 +473,11 @@ impl State {
         numerator: u32,
         denominator: u32,
     ) {
-        if index < self.editor_timing.timing_points.len() {
+        if index < self.editor.timing.timing_points.len() {
             self.record_editor_history_state();
-            self.editor_timing.timing_points[index].time_signature_numerator =
+            self.editor.timing.timing_points[index].time_signature_numerator =
                 numerator.clamp(1, 32);
-            self.editor_timing.timing_points[index].time_signature_denominator =
+            self.editor.timing.timing_points[index].time_signature_denominator =
                 denominator.clamp(1, 32);
         }
     }
@@ -488,49 +497,50 @@ impl State {
                 js_sys::Date::now() / 1000.0
             }
         };
-        self.editor_timing.bpm_tap_times.push(now_secs);
+        self.editor.timing.bpm_tap_times.push(now_secs);
 
         // Keep only recent taps (last 3 seconds gap max)
-        if self.editor_timing.bpm_tap_times.len() > 1 {
-            let last = *self.editor_timing.bpm_tap_times.last().unwrap();
+        if self.editor.timing.bpm_tap_times.len() > 1 {
+            let last = *self.editor.timing.bpm_tap_times.last().unwrap();
             let second_last =
-                self.editor_timing.bpm_tap_times[self.editor_timing.bpm_tap_times.len() - 2];
+                self.editor.timing.bpm_tap_times[self.editor.timing.bpm_tap_times.len() - 2];
             if last - second_last > 3.0 {
-                self.editor_timing.bpm_tap_times = vec![now_secs];
-                self.editor_timing.bpm_tap_result = None;
+                self.editor.timing.bpm_tap_times = vec![now_secs];
+                self.editor.timing.bpm_tap_result = None;
                 return;
             }
         }
 
-        if self.editor_timing.bpm_tap_times.len() >= 2 {
+        if self.editor.timing.bpm_tap_times.len() >= 2 {
             let intervals: Vec<f64> = self
-                .editor_timing
+                .editor
+                .timing
                 .bpm_tap_times
                 .windows(2)
                 .map(|w| w[1] - w[0])
                 .collect();
             let avg_interval = intervals.iter().sum::<f64>() / intervals.len() as f64;
             if avg_interval > 0.0 {
-                self.editor_timing.bpm_tap_result = Some((60.0 / avg_interval) as f32);
+                self.editor.timing.bpm_tap_result = Some((60.0 / avg_interval) as f32);
             }
         }
     }
 
     pub(crate) fn editor_bpm_tap_reset(&mut self) {
-        self.editor_timing.bpm_tap_times.clear();
-        self.editor_timing.bpm_tap_result = None;
+        self.editor.timing.bpm_tap_times.clear();
+        self.editor.timing.bpm_tap_result = None;
     }
 
     pub(crate) fn load_waveform_for_current_audio(&mut self) {
         const WAVEFORM_WINDOW: usize = 256;
 
-        let music_source = self.editor_session.editor_music_metadata.source.clone();
+        let music_source = self.editor.session.editor_music_metadata.source.clone();
 
         if let Some((samples, sample_rate)) =
             self.audio_state.editor.waveform_cache.get(&music_source)
         {
-            self.editor_timing.waveform_samples = samples.clone();
-            self.editor_timing.waveform_sample_rate = *sample_rate;
+            self.editor.timing.waveform_samples = samples.clone();
+            self.editor.timing.waveform_sample_rate = *sample_rate;
             self.audio_state.editor.waveform_loading_source = None;
             return;
         }
@@ -541,15 +551,16 @@ impl State {
         }
 
         self.audio_state.editor.waveform_loading_source = Some(music_source.clone());
-        self.editor_timing.waveform_samples.clear();
-        self.editor_timing.waveform_sample_rate = 0;
+        self.editor.timing.waveform_samples.clear();
+        self.editor.timing.waveform_sample_rate = 0;
 
         #[cfg(not(target_arch = "wasm32"))]
         {
             use crate::platform::audio::decode_audio_to_waveform;
             let source_for_thread = music_source.clone();
             let level_name = self
-                .editor_session
+                .editor
+                .session
                 .editor_level_name
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string());
@@ -584,7 +595,8 @@ impl State {
 
             let source_for_fetch = music_source.clone();
             let level_name = self
-                .editor_session
+                .editor
+                .session
                 .editor_level_name
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string());

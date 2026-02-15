@@ -12,24 +12,25 @@ use crate::types::{AppPhase, EditorMode};
 impl State {
     pub(super) fn editor_add_tap_at_pointer_position(&mut self) {
         let total_started_at = PlatformInstant::now();
-        if self.phase != AppPhase::Editor || self.editor.mode != EditorMode::Place {
+        if self.phase != AppPhase::Editor || self.editor.ui.mode != EditorMode::Place {
             return;
         }
 
-        if let Some(pointer) = self.editor.pointer_screen {
+        if let Some(pointer) = self.editor.ui.pointer_screen {
             self.update_editor_cursor_from_screen(pointer[0], pointer[1]);
         }
 
         let target = [
-            self.editor.cursor[0] + 0.5,
-            self.editor.cursor[1] + 0.5,
-            self.editor.cursor[2],
+            self.editor.ui.cursor[0] + 0.5,
+            self.editor.ui.cursor[1] + 0.5,
+            self.editor.ui.cursor[2],
         ];
 
-        let indicator_cell = self.editor.cursor;
+        let indicator_cell = self.editor.ui.cursor;
 
         if let Some(remove_index) = self
-            .editor_timeline
+            .editor
+            .timeline
             .taps
             .tap_indicator_positions
             .iter()
@@ -41,39 +42,43 @@ impl State {
             })
             .min_by(|(left_index, _), (right_index, _)| {
                 let left_time = self
-                    .editor_timeline
+                    .editor
+                    .timeline
                     .taps
                     .tap_times
                     .get(*left_index)
                     .copied()
-                    .unwrap_or(self.editor_timeline.clock.time_seconds);
+                    .unwrap_or(self.editor.timeline.clock.time_seconds);
                 let right_time = self
-                    .editor_timeline
+                    .editor
+                    .timeline
                     .taps
                     .tap_times
                     .get(*right_index)
                     .copied()
-                    .unwrap_or(self.editor_timeline.clock.time_seconds);
-                let left_distance = (left_time - self.editor_timeline.clock.time_seconds).abs();
-                let right_distance = (right_time - self.editor_timeline.clock.time_seconds).abs();
+                    .unwrap_or(self.editor.timeline.clock.time_seconds);
+                let left_distance = (left_time - self.editor.timeline.clock.time_seconds).abs();
+                let right_distance = (right_time - self.editor.timeline.clock.time_seconds).abs();
                 f32::total_cmp(&left_distance, &right_distance)
             })
             .map(|(index, _)| index)
         {
             self.record_editor_history_state();
             let removed_time = self
-                .editor_timeline
+                .editor
+                .timeline
                 .taps
                 .tap_times
                 .get(remove_index)
                 .copied()
-                .unwrap_or(self.editor_timeline.clock.time_seconds);
+                .unwrap_or(self.editor.timeline.clock.time_seconds);
 
-            if remove_index < self.editor_timeline.taps.tap_times.len() {
-                self.editor_timeline.taps.tap_times.remove(remove_index);
+            if remove_index < self.editor.timeline.taps.tap_times.len() {
+                self.editor.timeline.taps.tap_times.remove(remove_index);
             }
-            if remove_index < self.editor_timeline.taps.tap_indicator_positions.len() {
-                self.editor_timeline
+            if remove_index < self.editor.timeline.taps.tap_indicator_positions.len() {
+                self.editor
+                    .timeline
                     .taps
                     .tap_indicator_positions
                     .remove(remove_index);
@@ -81,7 +86,7 @@ impl State {
 
             self.invalidate_editor_timeline_samples_from(removed_time);
             let (position, direction) =
-                self.editor_timeline_position(self.editor_timeline.clock.time_seconds);
+                self.editor_timeline_position(self.editor.timeline.clock.time_seconds);
             self.rebuild_editor_preview_player_vertices_for_state(position, direction);
             self.mark_editor_dirty(EditorDirtyFlags {
                 rebuild_tap_indicators: true,
@@ -95,19 +100,19 @@ impl State {
         let solve_started_at = PlatformInstant::now();
         let derived_time = self
             .nearest_editor_timeline_sample_time_for_target(target)
-            .unwrap_or(self.editor_timeline.clock.time_seconds)
-            .clamp(0.0, self.editor_timeline.clock.duration_seconds.max(0.0));
+            .unwrap_or(self.editor.timeline.clock.time_seconds)
+            .clamp(0.0, self.editor.timeline.clock.duration_seconds.max(0.0));
         self.perf_record(PerfStage::TTapSolve, solve_started_at);
         self.record_editor_history_state();
         add_tap_with_indicator(
-            &mut self.editor_timeline.taps.tap_times,
-            &mut self.editor_timeline.taps.tap_indicator_positions,
+            &mut self.editor.timeline.taps.tap_times,
+            &mut self.editor.timeline.taps.tap_indicator_positions,
             derived_time,
             indicator_cell,
         );
         self.invalidate_editor_timeline_samples_from(derived_time);
         let (position, direction) =
-            self.editor_timeline_position(self.editor_timeline.clock.time_seconds);
+            self.editor_timeline_position(self.editor.timeline.clock.time_seconds);
         self.rebuild_editor_preview_player_vertices_for_state(position, direction);
         self.mark_editor_dirty(EditorDirtyFlags {
             rebuild_tap_indicators: true,
@@ -117,29 +122,30 @@ impl State {
     }
 
     pub(super) fn resync_editor_timeline_playback_audio(&mut self) {
-        if self.phase != AppPhase::Editor || !self.editor_timeline.playback.playing {
+        if self.phase != AppPhase::Editor || !self.editor.timeline.playback.playing {
             return;
         }
 
         self.stop_audio();
-        self.editor_timeline.playback.runtime = Some(TimelineSimulationRuntime::new(
-            self.editor_spawn.position,
-            self.editor_spawn.direction,
-            &self.editor_objects,
-            &self.editor_timeline.taps.tap_times,
+        self.editor.timeline.playback.runtime = Some(TimelineSimulationRuntime::new(
+            self.editor.spawn.position,
+            self.editor.spawn.direction,
+            &self.editor.objects,
+            &self.editor.timeline.taps.tap_times,
         ));
-        if let Some(runtime) = self.editor_timeline.playback.runtime.as_mut() {
-            runtime.advance_to(self.editor_timeline.clock.time_seconds);
+        if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
+            runtime.advance_to(self.editor.timeline.clock.time_seconds);
         }
 
         let metadata = self.current_editor_metadata();
         let level_name = self
-            .editor_session
+            .editor
+            .session
             .editor_level_name
             .clone()
             .unwrap_or_else(|| "Untitled".to_string());
         let start_seconds =
-            self.editor_timeline_elapsed_seconds(self.editor_timeline.clock.time_seconds);
+            self.editor_timeline_elapsed_seconds(self.editor.timeline.clock.time_seconds);
         self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
     }
 
@@ -148,9 +154,9 @@ impl State {
             return;
         }
 
-        let next_time = (self.editor_timeline.clock.time_seconds + delta_seconds)
-            .clamp(0.0, self.editor_timeline.clock.duration_seconds);
-        if (next_time - self.editor_timeline.clock.time_seconds).abs() > f32::EPSILON {
+        let next_time = (self.editor.timeline.clock.time_seconds + delta_seconds)
+            .clamp(0.0, self.editor.timeline.clock.duration_seconds);
+        if (next_time - self.editor.timeline.clock.time_seconds).abs() > f32::EPSILON {
             self.set_editor_timeline_time_seconds(next_time);
         }
     }
@@ -171,8 +177,8 @@ impl State {
 
         self.record_editor_history_state();
 
-        let nudge_step = if self.editor_config.snap_to_grid {
-            self.editor_config.snap_step.max(0.05)
+        let nudge_step = if self.editor.config.snap_to_grid {
+            self.editor.config.snap_step.max(0.05)
         } else {
             1.0
         };
@@ -215,7 +221,7 @@ impl State {
         };
 
         for index in &selected_indices {
-            if let Some(obj) = self.editor_objects.get_mut(*index) {
+            if let Some(obj) = self.editor.objects.get_mut(*index) {
                 obj.position[0] += world_dx as f32 * nudge_step;
                 obj.position[1] += world_dy as f32 * nudge_step;
             }
@@ -223,13 +229,14 @@ impl State {
 
         if let Some(index) = self
             .editor
+            .ui
             .selected_block_index
             .filter(|index| selected_indices.contains(index))
             .or_else(|| selected_indices.first().copied())
         {
-            if let Some(obj) = self.editor_objects.get(index) {
-                let bounds = self.editor.bounds;
-                self.editor.cursor = [
+            if let Some(obj) = self.editor.objects.get(index) {
+                let bounds = self.editor.ui.bounds;
+                self.editor.ui.cursor = [
                     obj.position[0].clamp(-bounds as f32, bounds as f32),
                     obj.position[1].clamp(-bounds as f32, bounds as f32),
                     obj.position[2].max(0.0),
@@ -247,32 +254,33 @@ impl State {
             return;
         }
 
-        self.editor_timeline.playback.playing = !self.editor_timeline.playback.playing;
+        self.editor.timeline.playback.playing = !self.editor.timeline.playback.playing;
 
-        if self.editor_timeline.playback.playing {
-            self.editor_timeline.playback.runtime = Some(TimelineSimulationRuntime::new(
-                self.editor_spawn.position,
-                self.editor_spawn.direction,
-                &self.editor_objects,
-                &self.editor_timeline.taps.tap_times,
+        if self.editor.timeline.playback.playing {
+            self.editor.timeline.playback.runtime = Some(TimelineSimulationRuntime::new(
+                self.editor.spawn.position,
+                self.editor.spawn.direction,
+                &self.editor.objects,
+                &self.editor.timeline.taps.tap_times,
             ));
-            if let Some(runtime) = self.editor_timeline.playback.runtime.as_mut() {
-                runtime.advance_to(self.editor_timeline.clock.time_seconds);
+            if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
+                runtime.advance_to(self.editor.timeline.clock.time_seconds);
             }
 
             let metadata = self.current_editor_metadata();
             let level_name = self
-                .editor_session
+                .editor
+                .session
                 .editor_level_name
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string());
             let start_seconds =
-                self.editor_timeline_elapsed_seconds(self.editor_timeline.clock.time_seconds);
+                self.editor_timeline_elapsed_seconds(self.editor.timeline.clock.time_seconds);
             self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
             return;
         }
 
-        self.editor_timeline.playback.runtime = None;
+        self.editor.timeline.playback.runtime = None;
         self.stop_audio();
         self.refresh_editor_timeline_position();
     }
@@ -287,19 +295,19 @@ impl State {
         let selected_indices = self.selected_block_indices_normalized();
         if !selected_indices.is_empty() {
             for index in selected_indices.into_iter().rev() {
-                if index < self.editor_objects.len() {
-                    self.editor_objects.remove(index);
+                if index < self.editor.objects.len() {
+                    self.editor.objects.remove(index);
                 }
             }
-            self.editor.selected_block_index = None;
-            self.editor.selected_block_indices.clear();
-            self.editor.hovered_block_index = None;
+            self.editor.ui.selected_block_index = None;
+            self.editor.ui.selected_block_indices.clear();
+            self.editor.ui.hovered_block_index = None;
             self.sync_editor_objects();
             self.rebuild_editor_cursor_vertices();
             return;
         }
 
-        remove_topmost_block_at_cursor(&mut self.editor_objects, self.editor.cursor);
+        remove_topmost_block_at_cursor(&mut self.editor.objects, self.editor.ui.cursor);
 
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
@@ -310,25 +318,25 @@ impl State {
             return;
         }
 
-        self.editor_timeline.playback.playing = false;
-        self.editor_timeline.playback.runtime = None;
+        self.editor.timeline.playback.playing = false;
+        self.editor.timeline.playback.runtime = None;
         self.stop_audio();
 
         let transition = build_editor_playtest_transition(
-            &self.editor_objects,
-            self.editor_session.editor_level_name.as_deref(),
-            self.editor_spawn.clone(),
-            &self.editor_timeline.taps.tap_times,
-            self.editor_timeline.clock.time_seconds,
+            &self.editor.objects,
+            self.editor.session.editor_level_name.as_deref(),
+            self.editor.spawn.clone(),
+            &self.editor.timeline.taps.tap_times,
+            self.editor.timeline.clock.time_seconds,
         );
 
         self.enter_playing_phase(transition.playing_level_name, true);
         self.game = GameState::new();
         self.game.objects = transition.objects;
         self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction);
-        self.editor_camera.playing_rotation = transition.camera_rotation;
-        self.editor_camera.playing_pitch = transition.camera_pitch;
-        self.editor.right_dragging = false;
+        self.editor.camera.playing_rotation = transition.camera_rotation;
+        self.editor.camera.playing_pitch = transition.camera_pitch;
+        self.editor.ui.right_dragging = false;
         self.rebuild_block_vertices();
     }
 
@@ -339,8 +347,8 @@ impl State {
 
         self.record_editor_history_state();
 
-        let cursor = self.editor.cursor;
-        self.editor_spawn.position = cursor;
+        let cursor = self.editor.ui.cursor;
+        self.editor.spawn.position = cursor;
         self.invalidate_editor_timeline_samples();
 
         self.sync_editor_objects();
@@ -355,23 +363,23 @@ impl State {
 
         self.record_editor_history_state();
 
-        self.editor_spawn.direction = toggle_spawn_direction(self.editor_spawn.direction);
+        self.editor.spawn.direction = toggle_spawn_direction(self.editor.spawn.direction);
         self.invalidate_editor_timeline_samples();
         self.refresh_editor_timeline_position();
         self.rebuild_spawn_marker_vertices();
     }
 
     pub fn back_to_menu(&mut self) {
-        self.editor_timeline.playback.playing = false;
-        self.editor_timeline.playback.runtime = None;
+        self.editor.timeline.playback.playing = false;
+        self.editor.timeline.playback.runtime = None;
         self.stop_audio();
         if let Some(objects) =
-            playtest_return_objects(self.editor_session.playtesting_editor, &self.editor_objects)
+            playtest_return_objects(self.editor.session.playtesting_editor, &self.editor.objects)
         {
-            self.editor_session.playtesting_editor = false;
+            self.editor.session.playtesting_editor = false;
             self.phase = AppPhase::Editor;
-            self.editor_timeline.playback.playing = false;
-            self.editor_timeline.playback.runtime = None;
+            self.editor.timeline.playback.playing = false;
+            self.editor.timeline.playback.runtime = None;
             self.game = GameState::new();
             self.game.objects = objects;
             self.rebuild_block_vertices();
@@ -387,15 +395,15 @@ impl State {
     }
 
     pub(super) fn move_editor_cursor(&mut self, dx: i32, dy: i32) {
-        let step = if self.editor_config.snap_to_grid {
-            self.editor_config.snap_step.max(0.05)
+        let step = if self.editor.config.snap_to_grid {
+            self.editor.config.snap_step.max(0.05)
         } else {
             1.0
         };
-        self.editor.cursor[0] = (self.editor.cursor[0] + dx as f32 * step)
-            .clamp(-self.editor.bounds as f32, self.editor.bounds as f32);
-        self.editor.cursor[1] = (self.editor.cursor[1] + dy as f32 * step)
-            .clamp(-self.editor.bounds as f32, self.editor.bounds as f32);
+        self.editor.ui.cursor[0] = (self.editor.ui.cursor[0] + dx as f32 * step)
+            .clamp(-self.editor.ui.bounds as f32, self.editor.ui.bounds as f32);
+        self.editor.ui.cursor[1] = (self.editor.ui.cursor[1] + dy as f32 * step)
+            .clamp(-self.editor.ui.bounds as f32, self.editor.ui.bounds as f32);
         self.rebuild_editor_cursor_vertices();
     }
 }

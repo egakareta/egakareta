@@ -6,26 +6,27 @@ use crate::types::AppPhase;
 impl State {
     pub(super) fn editor_camera_axes_xy(&self) -> (Vec2, Vec2) {
         let right = Vec2::new(
-            self.editor_camera.editor_rotation.cos(),
-            self.editor_camera.editor_rotation.sin(),
+            self.editor.camera.editor_rotation.cos(),
+            self.editor.camera.editor_rotation.sin(),
         );
         let up = Vec2::new(
-            -self.editor_camera.editor_rotation.sin(),
-            self.editor_camera.editor_rotation.cos(),
+            -self.editor.camera.editor_rotation.sin(),
+            self.editor.camera.editor_rotation.cos(),
         );
         (right, up)
     }
 
     pub(super) fn editor_camera_offset(&self) -> Vec3 {
-        let zoom = self.editor_camera.editor_zoom.clamp(0.35, 4.0);
+        let zoom = self.editor.camera.editor_zoom.clamp(0.35, 4.0);
         let distance = 24.0 / zoom;
         let pitch = self
-            .editor_camera
+            .editor
+            .camera
             .editor_pitch
             .clamp(10.0f32.to_radians(), 85.0f32.to_radians());
         let horizontal_distance = distance * pitch.cos();
         let vertical_distance = distance * pitch.sin();
-        Mat4::from_rotation_z(self.editor_camera.editor_rotation).transform_vector3(Vec3::new(
+        Mat4::from_rotation_z(self.editor.camera.editor_rotation).transform_vector3(Vec3::new(
             0.0,
             -horizontal_distance,
             vertical_distance,
@@ -35,12 +36,12 @@ impl State {
     pub(super) fn playing_camera_offset(&self) -> Vec3 {
         let distance = 28.28;
         let rotation = if self.game.game_over || !self.game.started {
-            self.editor_camera.playing_rotation
+            self.editor.camera.playing_rotation
         } else {
             -45.0f32.to_radians()
         };
         let pitch = if self.game.game_over || !self.game.started {
-            self.editor_camera.playing_pitch
+            self.editor.camera.playing_pitch
         } else {
             45.0f32.to_radians()
         };
@@ -61,7 +62,7 @@ impl State {
 
         const ZOOM_SENSITIVITY: f32 = 0.12;
         let factor = (1.0 + delta * ZOOM_SENSITIVITY).max(0.1);
-        self.editor_camera.editor_zoom = (self.editor_camera.editor_zoom * factor).clamp(0.35, 4.0);
+        self.editor.camera.editor_zoom = (self.editor.camera.editor_zoom * factor).clamp(0.35, 4.0);
     }
 
     pub fn pan_editor_camera_by_input(&mut self, screen_x: f32, screen_y: f32) {
@@ -72,11 +73,11 @@ impl State {
         let (camera_right_xy, camera_up_xy) = self.editor_camera_axes_xy();
         let world_delta = camera_right_xy * screen_x + camera_up_xy * screen_y;
 
-        let max_pan = self.editor.bounds as f32;
-        self.editor_camera.editor_pan[0] =
-            (self.editor_camera.editor_pan[0] + world_delta.x).clamp(-max_pan, max_pan);
-        self.editor_camera.editor_pan[1] =
-            (self.editor_camera.editor_pan[1] + world_delta.y).clamp(-max_pan, max_pan);
+        let max_pan = self.editor.ui.bounds as f32;
+        self.editor.camera.editor_pan[0] =
+            (self.editor.camera.editor_pan[0] + world_delta.x).clamp(-max_pan, max_pan);
+        self.editor.camera.editor_pan[1] =
+            (self.editor.camera.editor_pan[1] + world_delta.y).clamp(-max_pan, max_pan);
     }
 
     pub(super) fn update_editor_pan_from_keys(&mut self, frame_dt: f32) {
@@ -85,16 +86,16 @@ impl State {
         }
 
         let mut input = Vec2::ZERO;
-        if self.editor.pan_left_held {
+        if self.editor.ui.pan_left_held {
             input.x -= 1.0;
         }
-        if self.editor.pan_right_held {
+        if self.editor.ui.pan_right_held {
             input.x += 1.0;
         }
-        if self.editor.pan_up_held {
+        if self.editor.ui.pan_up_held {
             input.y += 1.0;
         }
-        if self.editor.pan_down_held {
+        if self.editor.ui.pan_down_held {
             input.y -= 1.0;
         }
 
@@ -104,14 +105,15 @@ impl State {
 
         let input = input.normalize();
         let pitch = self
-            .editor_camera
+            .editor
+            .camera
             .editor_pitch
             .clamp(10.0f32.to_radians(), 85.0f32.to_radians());
         let horizontal_factor = pitch.cos();
         let vertical_factor = pitch.sin();
 
         let mut speed_multiplier = 1.0;
-        if self.editor.shift_held {
+        if self.editor.ui.shift_held {
             speed_multiplier = 0.3;
         }
 
