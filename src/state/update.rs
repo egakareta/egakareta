@@ -121,7 +121,7 @@ impl State {
                             self.editor_spawn.position,
                             self.editor_spawn.direction,
                             &self.editor_objects,
-                            &self.editor_tap_times,
+                            &self.editor_timeline_taps.tap_times,
                         );
                         runtime.advance_to(clamped_time);
                         let snapshot = runtime.snapshot();

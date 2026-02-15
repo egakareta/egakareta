@@ -72,7 +72,7 @@ impl State {
             self.editor_spawn.position,
             self.editor_spawn.direction,
             &self.editor_objects,
-            &self.editor_tap_times,
+            &self.editor_timeline_taps.tap_times,
             simulation_dt,
         );
 
@@ -267,7 +267,7 @@ impl State {
         derive_timeline_position(
             self.editor_spawn.position,
             self.editor_spawn.direction,
-            &self.editor_tap_times,
+            &self.editor_timeline_taps.tap_times,
             time_seconds,
             &self.editor_objects,
         )
@@ -277,7 +277,7 @@ impl State {
         derive_timeline_elapsed_seconds(
             self.editor_spawn.position,
             self.editor_spawn.direction,
-            &self.editor_tap_times,
+            &self.editor_timeline_taps.tap_times,
             time_seconds,
             &self.editor_objects,
         )
@@ -472,7 +472,7 @@ impl State {
             return;
         }
 
-        let mut positions = self.editor_tap_indicator_positions.clone();
+        let mut positions = self.editor_timeline_taps.tap_indicator_positions.clone();
         positions.sort_unstable_by(|a, b| {
             a[0].total_cmp(&b[0])
                 .then(a[1].total_cmp(&b[1]))
@@ -509,7 +509,8 @@ impl State {
         self.editor_timeline_preview.direction = direction;
 
         let is_tapping = self
-            .editor_tap_times
+            .editor_timeline_taps
+            .tap_times
             .iter()
             .any(|tap| (tap - self.editor_timeline_clock.time_seconds).abs() <= 0.01);
         let preview_origin = [position[0] - 0.5, position[1] - 0.5, position[2]];

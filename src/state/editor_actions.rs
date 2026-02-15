@@ -20,7 +20,8 @@ impl State {
         let indicator_cell = self.editor.cursor;
 
         if let Some(remove_index) = self
-            .editor_tap_indicator_positions
+            .editor_timeline_taps
+            .tap_indicator_positions
             .iter()
             .enumerate()
             .filter(|(_, position)| {
@@ -30,12 +31,14 @@ impl State {
             })
             .min_by(|(left_index, _), (right_index, _)| {
                 let left_time = self
-                    .editor_tap_times
+                    .editor_timeline_taps
+                    .tap_times
                     .get(*left_index)
                     .copied()
                     .unwrap_or(self.editor_timeline_clock.time_seconds);
                 let right_time = self
-                    .editor_tap_times
+                    .editor_timeline_taps
+                    .tap_times
                     .get(*right_index)
                     .copied()
                     .unwrap_or(self.editor_timeline_clock.time_seconds);
@@ -47,16 +50,19 @@ impl State {
         {
             self.record_editor_history_state();
             let removed_time = self
-                .editor_tap_times
+                .editor_timeline_taps
+                .tap_times
                 .get(remove_index)
                 .copied()
                 .unwrap_or(self.editor_timeline_clock.time_seconds);
 
-            if remove_index < self.editor_tap_times.len() {
-                self.editor_tap_times.remove(remove_index);
+            if remove_index < self.editor_timeline_taps.tap_times.len() {
+                self.editor_timeline_taps.tap_times.remove(remove_index);
             }
-            if remove_index < self.editor_tap_indicator_positions.len() {
-                self.editor_tap_indicator_positions.remove(remove_index);
+            if remove_index < self.editor_timeline_taps.tap_indicator_positions.len() {
+                self.editor_timeline_taps
+                    .tap_indicator_positions
+                    .remove(remove_index);
             }
 
             self.invalidate_editor_timeline_samples_from(removed_time);
@@ -80,8 +86,8 @@ impl State {
         self.perf_record(PerfStage::TTapSolve, solve_started_at);
         self.record_editor_history_state();
         add_tap_with_indicator(
-            &mut self.editor_tap_times,
-            &mut self.editor_tap_indicator_positions,
+            &mut self.editor_timeline_taps.tap_times,
+            &mut self.editor_timeline_taps.tap_indicator_positions,
             derived_time,
             indicator_cell,
         );
@@ -106,7 +112,7 @@ impl State {
             self.editor_spawn.position,
             self.editor_spawn.direction,
             &self.editor_objects,
-            &self.editor_tap_times,
+            &self.editor_timeline_taps.tap_times,
         ));
         if let Some(runtime) = self.editor_timeline_playback.runtime.as_mut() {
             runtime.advance_to(self.editor_timeline_clock.time_seconds);
@@ -233,7 +239,7 @@ impl State {
                 self.editor_spawn.position,
                 self.editor_spawn.direction,
                 &self.editor_objects,
-                &self.editor_tap_times,
+                &self.editor_timeline_taps.tap_times,
             ));
             if let Some(runtime) = self.editor_timeline_playback.runtime.as_mut() {
                 runtime.advance_to(self.editor_timeline_clock.time_seconds);
@@ -296,7 +302,7 @@ impl State {
             &self.editor_objects,
             self.editor_level_name.as_deref(),
             self.editor_spawn.clone(),
-            &self.editor_tap_times,
+            &self.editor_timeline_taps.tap_times,
             self.editor_timeline_clock.time_seconds,
         );
 

@@ -254,7 +254,7 @@ impl State {
     }
 
     pub fn editor_tap_times(&self) -> &[f32] {
-        &self.editor_tap_times
+        &self.editor_timeline_taps.tap_times
     }
 
     pub fn editor_fps(&self) -> f32 {
@@ -281,8 +281,8 @@ impl State {
             .time_seconds
             .min(self.editor_timeline_clock.duration_seconds);
         retain_taps_up_to_duration_with_indicators(
-            &mut self.editor_tap_times,
-            &mut self.editor_tap_indicator_positions,
+            &mut self.editor_timeline_taps.tap_times,
+            &mut self.editor_timeline_taps.tap_indicator_positions,
             self.editor_timeline_clock.duration_seconds,
         );
         self.invalidate_editor_timeline_samples();
@@ -300,8 +300,8 @@ impl State {
         let indicator_cell =
             self.tap_indicator_position_from_world(self.editor_timeline_preview.position);
         add_tap_with_indicator(
-            &mut self.editor_tap_times,
-            &mut self.editor_tap_indicator_positions,
+            &mut self.editor_timeline_taps.tap_times,
+            &mut self.editor_timeline_taps.tap_indicator_positions,
             tap_time,
             indicator_cell,
         );
@@ -317,8 +317,8 @@ impl State {
         self.record_editor_history_state();
         let tap_time = self.editor_timeline_clock.time_seconds;
         remove_tap_with_indicator(
-            &mut self.editor_tap_times,
-            &mut self.editor_tap_indicator_positions,
+            &mut self.editor_timeline_taps.tap_times,
+            &mut self.editor_timeline_taps.tap_indicator_positions,
             tap_time,
         );
         self.invalidate_editor_timeline_samples_from(tap_time);
@@ -332,8 +332,8 @@ impl State {
     pub fn editor_clear_taps(&mut self) {
         self.record_editor_history_state();
         clear_taps_with_indicators(
-            &mut self.editor_tap_times,
-            &mut self.editor_tap_indicator_positions,
+            &mut self.editor_timeline_taps.tap_times,
+            &mut self.editor_timeline_taps.tap_indicator_positions,
         );
         self.invalidate_editor_timeline_samples();
         self.refresh_editor_timeline_position();

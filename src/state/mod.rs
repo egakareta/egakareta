@@ -192,8 +192,7 @@ pub struct State {
     editor_zoom: f32,
     editor_timeline_clock: EditorTimelineClockState,
     editor_timeline_preview: EditorTimelinePreviewState,
-    editor_tap_times: Vec<f32>,
-    editor_tap_indicator_positions: Vec<[f32; 3]>,
+    editor_timeline_taps: EditorTimelineTapState,
     editor_timeline_cache: EditorTimelineSampleCache,
     editor_timeline_playback: EditorTimelinePlaybackState,
     editor_dirty: EditorDirtyFlags,
@@ -427,6 +426,11 @@ struct EditorTimelinePreviewState {
 struct EditorTimelineClockState {
     time_seconds: f32,
     duration_seconds: f32,
+}
+
+struct EditorTimelineTapState {
+    tap_times: Vec<f32>,
+    tap_indicator_positions: Vec<[f32; 3]>,
 }
 
 #[derive(Clone, Copy)]
@@ -858,8 +862,10 @@ impl State {
                 position: [0.0, 0.0, 0.0],
                 direction: SpawnDirection::Forward,
             },
-            editor_tap_times: Vec::new(),
-            editor_tap_indicator_positions: Vec::new(),
+            editor_timeline_taps: EditorTimelineTapState {
+                tap_times: Vec::new(),
+                tap_indicator_positions: Vec::new(),
+            },
             editor_timeline_cache: EditorTimelineSampleCache {
                 samples: Vec::new(),
                 dirty: true,
