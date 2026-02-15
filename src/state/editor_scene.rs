@@ -97,9 +97,9 @@ impl EditorSubsystem {
             return;
         }
 
-        let sample_count = ((duration * 24.0).clamp(120.0, 1024.0)) as usize;
+        let sample_count = ((duration * 12.0).clamp(96.0, 512.0)) as usize;
         let time_step = (duration / sample_count as f32).max(1e-4);
-        let simulation_dt = time_step.clamp(1.0 / 120.0, 1.0 / 45.0);
+        let simulation_dt = (time_step * 0.5).clamp(1.0 / 120.0, 1.0 / 15.0);
 
         let expected_len = sample_count + 1;
         let last_time_matches_duration = self
@@ -236,16 +236,56 @@ impl State {
         self.editor.mark_dirty(dirty);
     }
 
-    pub(super) fn process_editor_dirty(&mut self) {
-        let dirty = self.editor.runtime.dirty;
+    pub(super) fn process_editor_dirty(&mut self, frame_dt: f32) {
+        let pending = self.editor.runtime.dirty;
+        if !pending.any() {
+            self.editor.runtime.drag_heavy_rebuild_accumulator = 0.0;
+            return;
+        }
+
+        let is_dragging = self.editor.runtime.interaction.gizmo_drag.is_some()
+            || self.editor.runtime.interaction.block_drag.is_some();
+
+        const DRAG_HEAVY_REBUILD_INTERVAL_SECONDS: f32 = 1.0 / 60.0;
+
+        if is_dragging {
+            self.editor.runtime.drag_heavy_rebuild_accumulator += frame_dt.max(0.0);
+        } else {
+            self.editor.runtime.drag_heavy_rebuild_accumulator =
+                DRAG_HEAVY_REBUILD_INTERVAL_SECONDS;
+        }
+
+        let allow_heavy_during_drag = !is_dragging
+            || self.editor.runtime.drag_heavy_rebuild_accumulator
+                >= DRAG_HEAVY_REBUILD_INTERVAL_SECONDS;
+
+        let mut dirty = pending;
+        if is_dragging && !allow_heavy_during_drag {
+            dirty.sync_game_objects = false;
+            dirty.rebuild_block_mesh = false;
+        }
+
         if !dirty.any() {
             return;
         }
 
-        self.editor.runtime.dirty = EditorDirtyFlags::default();
-
         if dirty.sync_game_objects {
-            self.gameplay.state.objects = self.editor.objects.clone();
+            self.editor.runtime.dirty.sync_game_objects = false;
+        }
+        if dirty.rebuild_block_mesh {
+            self.editor.runtime.dirty.rebuild_block_mesh = false;
+        }
+        if dirty.rebuild_selection_overlays {
+            self.editor.runtime.dirty.rebuild_selection_overlays = false;
+        }
+        if dirty.rebuild_tap_indicators {
+            self.editor.runtime.dirty.rebuild_tap_indicators = false;
+        }
+        if dirty.rebuild_preview_player {
+            self.editor.runtime.dirty.rebuild_preview_player = false;
+        }
+        if dirty.rebuild_cursor {
+            self.editor.runtime.dirty.rebuild_cursor = false;
         }
 
         if dirty.rebuild_block_mesh {
@@ -268,6 +308,10 @@ impl State {
 
         if dirty.rebuild_cursor {
             self.rebuild_editor_cursor_vertices();
+        }
+
+        if dirty.sync_game_objects || dirty.rebuild_block_mesh {
+            self.editor.runtime.drag_heavy_rebuild_accumulator = 0.0;
         }
     }
 
@@ -327,8 +371,48 @@ impl State {
         }
 
         let (position, direction) =
-            self.editor_timeline_position(self.editor.timeline.clock.time_seconds);
+            self.resolve_editor_timeline_position(self.editor.timeline.clock.time_seconds);
         self.apply_editor_timeline_preview_state(position, direction);
+    }
+
+    fn resolve_editor_timeline_position(
+        &mut self,
+        time_seconds: f32,
+    ) -> ([f32; 3], SpawnDirection) {
+        let target_time = time_seconds
+            .max(0.0)
+            .min(self.editor.timeline.clock.duration_seconds.max(0.0));
+
+        let needs_reset = self.editor.timeline.scrub_runtime.is_none()
+            || self.editor.timeline.scrub_runtime_revision
+                != self.editor.timeline.simulation_revision
+            || self
+                .editor
+                .timeline
+                .scrub_runtime
+                .as_ref()
+                .is_some_and(|runtime| target_time + 1e-6 < runtime.elapsed_seconds());
+
+        if needs_reset {
+            self.editor.timeline.scrub_runtime = Some(TimelineSimulationRuntime::new_with_dt(
+                self.editor.spawn.position,
+                self.editor.spawn.direction,
+                &self.editor.objects,
+                &self.editor.timeline.taps.tap_times,
+                1.0 / 120.0,
+            ));
+            self.editor.timeline.scrub_runtime_revision = self.editor.timeline.simulation_revision;
+        }
+
+        let runtime = self
+            .editor
+            .timeline
+            .scrub_runtime
+            .as_mut()
+            .expect("timeline scrub runtime should be initialized");
+        runtime.advance_to(target_time);
+        let snapshot = runtime.snapshot();
+        (snapshot.position, snapshot.direction)
     }
 
     pub(super) fn rebuild_editor_cursor_vertices(&mut self) {
@@ -470,7 +554,12 @@ impl State {
 
     pub(super) fn rebuild_block_vertices(&mut self) {
         let perf_started_at = PlatformInstant::now();
-        let vertices = build_block_vertices(&self.gameplay.state.objects);
+        let objects = if self.phase == AppPhase::Editor {
+            &self.editor.objects
+        } else {
+            &self.gameplay.state.objects
+        };
+        let vertices = build_block_vertices(objects);
 
         self.render.meshes.blocks.replace_with_vertices(
             &self.render.gpu.device,

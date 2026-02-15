@@ -470,6 +470,7 @@ impl State {
                         last_pitch: 0.0,
                         last_zoom: 1.0,
                     },
+                    drag_heavy_rebuild_accumulator: 0.0,
                     interaction: EditorInteractionState::new(),
                     history: EditorHistoryState {
                         undo: Vec::new(),

@@ -215,7 +215,7 @@ impl State {
             self.editor.runtime.gizmo.last_pitch = self.editor.camera.editor_pitch;
             self.editor.runtime.gizmo.last_zoom = self.editor.camera.editor_zoom;
             let dirty_started_at = PlatformInstant::now();
-            self.process_editor_dirty();
+            self.process_editor_dirty(frame_dt);
             self.perf_record(PerfStage::DirtyProcess, dirty_started_at);
             self.update_editor_camera();
 

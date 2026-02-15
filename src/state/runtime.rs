@@ -55,6 +55,7 @@ pub(crate) struct EditorGizmoState {
 pub(crate) struct EditorRuntimeState {
     pub(crate) dirty: EditorDirtyFlags,
     pub(crate) gizmo: EditorGizmoState,
+    pub(crate) drag_heavy_rebuild_accumulator: f32,
     pub(crate) interaction: EditorInteractionState,
     pub(crate) history: EditorHistoryState,
 }

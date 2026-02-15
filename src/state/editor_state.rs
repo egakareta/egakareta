@@ -280,6 +280,9 @@ impl EditorSubsystem {
     pub(crate) fn invalidate_samples(&mut self) {
         self.timeline.cache.dirty = true;
         self.timeline.cache.rebuild_from_seconds = None;
+        self.timeline.simulation_revision = self.timeline.simulation_revision.wrapping_add(1);
+        self.timeline.scrub_runtime = None;
+        self.timeline.scrub_runtime_revision = 0;
     }
 
     pub(crate) fn invalidate_samples_from(&mut self, from_seconds: f32) {
@@ -291,6 +294,9 @@ impl EditorSubsystem {
                 .rebuild_from_seconds
                 .map_or(clamped, |existing| existing.min(clamped)),
         );
+        self.timeline.simulation_revision = self.timeline.simulation_revision.wrapping_add(1);
+        self.timeline.scrub_runtime = None;
+        self.timeline.scrub_runtime_revision = 0;
     }
 
     pub(crate) fn timeline_preview(&self) -> ([f32; 3], SpawnDirection) {

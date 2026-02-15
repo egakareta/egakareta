@@ -39,6 +39,9 @@ pub(crate) struct EditorTimelineState {
     pub(crate) taps: EditorTimelineTapState,
     pub(crate) cache: EditorTimelineSampleCache,
     pub(crate) playback: EditorTimelinePlaybackState,
+    pub(crate) simulation_revision: u64,
+    pub(crate) scrub_runtime_revision: u64,
+    pub(crate) scrub_runtime: Option<TimelineSimulationRuntime>,
 }
 
 impl EditorTimelineState {
@@ -65,6 +68,9 @@ impl EditorTimelineState {
                 playing: false,
                 runtime: None,
             },
+            simulation_revision: 1,
+            scrub_runtime_revision: 0,
+            scrub_runtime: None,
         }
     }
 }
