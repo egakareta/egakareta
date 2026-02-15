@@ -83,6 +83,20 @@ jobs:
           name: line-dash-${{ matrix.os }}
           path: ${{ env.ASSET }}
 
+      - name: Install cargo-tarpaulin
+        if: runner.os == 'Linux'
+        run: cargo install cargo-tarpaulin
+
+      - name: Generate coverage report
+        if: runner.os == 'Linux'
+        run: cargo tarpaulin --out Xml
+
+      - name: Upload coverage to Codecov
+        if: runner.os == 'Linux'
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./cobertura.xml
+
   build-wasm:
     name: Build WASM
     runs-on: ubuntu-latest
