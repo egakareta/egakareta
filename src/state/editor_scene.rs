@@ -2,8 +2,8 @@ use super::*;
 
 impl State {
     pub(super) fn tap_indicator_position_from_world(&self, position: [f32; 3]) -> [f32; 3] {
-        let step = if self.editor_snap_to_grid {
-            self.editor_snap_step.max(0.05)
+        let step = if self.editor_config.snap_to_grid {
+            self.editor_config.snap_step.max(0.05)
         } else {
             1.0
         };
@@ -192,7 +192,7 @@ impl State {
         self.record_editor_history_state();
         self.editor_objects.push(create_block_at_cursor(
             self.editor.cursor,
-            &self.editor_selected_block_id,
+            &self.editor_config.selected_block_id,
         ));
         self.editor.selected_block_index = None;
         self.editor.selected_block_indices.clear();

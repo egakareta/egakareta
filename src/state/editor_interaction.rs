@@ -60,8 +60,8 @@ impl State {
 
         match drag.kind {
             GizmoDragKind::Move => {
-                let snap_enabled = self.editor_snap_to_grid;
-                let snap_step = self.editor_snap_step.max(0.05);
+                let snap_enabled = self.editor_config.snap_to_grid;
+                let snap_step = self.editor_config.snap_step.max(0.05);
                 let mut first_cursor: Option<[f32; 3]> = None;
                 for block in &drag.start_blocks {
                     if let Some(obj) = self.editor_objects.get_mut(block.index) {
@@ -96,8 +96,8 @@ impl State {
                 self.rebuild_editor_cursor_vertices();
             }
             GizmoDragKind::Resize => {
-                let snap_enabled = self.editor_snap_to_grid;
-                let snap_step = self.editor_snap_step.max(0.05);
+                let snap_enabled = self.editor_config.snap_to_grid;
+                let snap_step = self.editor_config.snap_step.max(0.05);
                 let min_size = if snap_enabled { snap_step } else { 0.25 };
                 for block in &drag.start_blocks {
                     if let Some(obj) = self.editor_objects.get_mut(block.index) {
@@ -241,8 +241,8 @@ impl State {
 
         let move_x = right_world.x * right_units + up_world.x * up_units;
         let move_y = right_world.y * right_units + up_world.y * up_units;
-        let snap_enabled = self.editor_snap_to_grid;
-        let snap_step = self.editor_snap_step.max(0.05);
+        let snap_enabled = self.editor_config.snap_to_grid;
+        let snap_step = self.editor_config.snap_step.max(0.05);
         let mut first_cursor: Option<[f32; 3]> = None;
         for block in &drag.start_blocks {
             if let Some(obj) = self.editor_objects.get_mut(block.index) {
@@ -762,8 +762,8 @@ impl State {
         let hit = ray_origin + ray_dir * min_t;
         let target = hit + best_hit_normal * 0.01;
 
-        let snap_enabled = self.editor_snap_to_grid;
-        let snap_step = self.editor_snap_step.max(0.05);
+        let snap_enabled = self.editor_config.snap_to_grid;
+        let snap_step = self.editor_config.snap_step.max(0.05);
 
         let next_cursor = if snap_enabled {
             [

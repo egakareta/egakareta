@@ -162,8 +162,8 @@ impl State {
 
         self.record_editor_history_state();
 
-        let nudge_step = if self.editor_snap_to_grid {
-            self.editor_snap_step.max(0.05)
+        let nudge_step = if self.editor_config.snap_to_grid {
+            self.editor_config.snap_step.max(0.05)
         } else {
             1.0
         };
@@ -378,8 +378,8 @@ impl State {
     }
 
     pub(super) fn move_editor_cursor(&mut self, dx: i32, dy: i32) {
-        let step = if self.editor_snap_to_grid {
-            self.editor_snap_step.max(0.05)
+        let step = if self.editor_config.snap_to_grid {
+            self.editor_config.snap_step.max(0.05)
         } else {
             1.0
         };

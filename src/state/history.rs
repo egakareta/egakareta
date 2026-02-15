@@ -7,7 +7,7 @@ impl State {
             selected_block_index: self.editor.selected_block_index,
             selected_block_indices: self.editor.selected_block_indices.clone(),
             cursor: self.editor.cursor,
-            selected_block_id: self.editor_selected_block_id.clone(),
+            selected_block_id: self.editor_config.selected_block_id.clone(),
             spawn: self.editor_spawn.clone(),
             timeline_time_seconds: self.editor_timeline.clock.time_seconds,
             timeline_duration_seconds: self.editor_timeline.clock.duration_seconds,
@@ -45,7 +45,7 @@ impl State {
         self.sync_primary_selection_from_indices();
         self.editor.hovered_block_index = self.editor.selected_block_index;
         self.editor.cursor = snapshot.cursor;
-        self.editor_selected_block_id = snapshot.selected_block_id;
+        self.editor_config.selected_block_id = snapshot.selected_block_id;
         self.editor_spawn = snapshot.spawn;
         self.editor_timeline.clock.time_seconds = snapshot.timeline_time_seconds.max(0.0);
         self.editor_timeline.clock.duration_seconds = snapshot.timeline_duration_seconds.max(0.1);
@@ -171,7 +171,7 @@ impl State {
                 paste_anchor[1] + (block.position[1] - clipboard.anchor[1]),
                 paste_anchor[2] + (block.position[2] - clipboard.anchor[2]),
             ];
-            self.editor_selected_block_id = block.block_id.clone();
+            self.editor_config.selected_block_id = block.block_id.clone();
             self.editor_objects.push(block);
             new_indices.push(base_len + new_indices.len());
         }
@@ -214,7 +214,7 @@ impl State {
         let base_len = self.editor_objects.len();
         let mut new_indices = Vec::with_capacity(duplicates.len());
         for duplicated in duplicates {
-            self.editor_selected_block_id = duplicated.block_id.clone();
+            self.editor_config.selected_block_id = duplicated.block_id.clone();
             self.editor_objects.push(duplicated);
             new_indices.push(base_len + new_indices.len());
         }

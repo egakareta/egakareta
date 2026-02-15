@@ -181,7 +181,7 @@ pub struct State {
     phase: AppPhase,
     menu: MenuState,
     editor: EditorState,
-    editor_selected_block_id: String,
+    editor_config: EditorConfigState,
     editor_objects: Vec<LevelObject>,
     editor_spawn: SpawnMetadata,
     editor_camera: EditorCameraState,
@@ -191,8 +191,6 @@ pub struct State {
     editor_fps_smoothed: f32,
     editor_gizmo: EditorGizmoState,
     editor_timing: EditorTimingState,
-    editor_snap_to_grid: bool,
-    editor_snap_step: f32,
     editor_interaction: EditorInteractionState,
     editor_history: EditorHistoryState,
     editor_session: EditorSessionState,
@@ -442,6 +440,12 @@ struct EditorSessionState {
     editor_import_text: String,
     playing_level_name: Option<String>,
     playtesting_editor: bool,
+}
+
+struct EditorConfigState {
+    selected_block_id: String,
+    snap_to_grid: bool,
+    snap_step: f32,
 }
 
 struct EditorCameraState {
@@ -865,7 +869,11 @@ impl State {
             accumulator: 0.0,
             audio: PlatformAudio::new(),
             editor: EditorState::new(),
-            editor_selected_block_id: DEFAULT_BLOCK_ID.to_string(),
+            editor_config: EditorConfigState {
+                selected_block_id: DEFAULT_BLOCK_ID.to_string(),
+                snap_to_grid: true,
+                snap_step: 1.0,
+            },
             editor_objects: Vec::new(),
             editor_spawn: SpawnMetadata::default(),
             editor_camera: EditorCameraState {
@@ -920,8 +928,6 @@ impl State {
                 bpm_tap_times: Vec::new(),
                 bpm_tap_result: None,
             },
-            editor_snap_to_grid: true,
-            editor_snap_step: 1.0,
             editor_interaction: EditorInteractionState {
                 gizmo_drag: None,
                 block_drag: None,

@@ -30,7 +30,8 @@ impl State {
     }
 
     pub fn set_editor_block_id(&mut self, block_id: String) {
-        self.editor_selected_block_id = crate::block_repository::normalize_block_id(&block_id);
+        self.editor_config.selected_block_id =
+            crate::block_repository::normalize_block_id(&block_id);
     }
 
     pub(crate) fn set_editor_mode(&mut self, mode: EditorMode) {
@@ -57,15 +58,15 @@ impl State {
     }
 
     pub(crate) fn editor_snap_to_grid(&self) -> bool {
-        self.editor_snap_to_grid
+        self.editor_config.snap_to_grid
     }
 
     pub(crate) fn editor_snap_step(&self) -> f32 {
-        self.editor_snap_step
+        self.editor_config.snap_step
     }
 
     pub(crate) fn set_editor_snap_to_grid(&mut self, snap: bool) {
-        self.editor_snap_to_grid = snap;
+        self.editor_config.snap_to_grid = snap;
         if self.editor.selected_block_index.is_some() {
             if let Some(obj) = self.editor_selected_block() {
                 self.set_editor_selected_block_position(obj.position);
@@ -75,8 +76,8 @@ impl State {
     }
 
     pub(crate) fn set_editor_snap_step(&mut self, step: f32) {
-        self.editor_snap_step = step.max(0.05);
-        if self.editor_snap_to_grid && self.editor.selected_block_index.is_some() {
+        self.editor_config.snap_step = step.max(0.05);
+        if self.editor_config.snap_to_grid && self.editor.selected_block_index.is_some() {
             if let Some(obj) = self.editor_selected_block() {
                 self.set_editor_selected_block_position(obj.position);
                 self.set_editor_selected_block_size(obj.size);
@@ -110,8 +111,8 @@ impl State {
             .filter(|index| *index < self.editor_objects.len())
         {
             let bounds = self.editor.bounds;
-            let snap_step = self.editor_snap_step.max(0.05);
-            let next_position = if self.editor_snap_to_grid {
+            let snap_step = self.editor_config.snap_step.max(0.05);
+            let next_position = if self.editor_config.snap_to_grid {
                 [
                     (position[0] / snap_step).round() * snap_step,
                     (position[1] / snap_step).round() * snap_step,
@@ -151,8 +152,8 @@ impl State {
             .selected_block_index
             .filter(|index| *index < self.editor_objects.len())
         {
-            let snap_step = self.editor_snap_step.max(0.05);
-            let snapped_size = if self.editor_snap_to_grid {
+            let snap_step = self.editor_config.snap_step.max(0.05);
+            let snapped_size = if self.editor_config.snap_to_grid {
                 [
                     (size[0] / snap_step).round() * snap_step,
                     (size[1] / snap_step).round() * snap_step,
@@ -161,7 +162,7 @@ impl State {
             } else {
                 size
             };
-            let min_size = if self.editor_snap_to_grid {
+            let min_size = if self.editor_config.snap_to_grid {
                 snap_step
             } else {
                 0.25
@@ -242,7 +243,7 @@ impl State {
     }
 
     pub fn editor_selected_block_id(&self) -> &str {
-        &self.editor_selected_block_id
+        &self.editor_config.selected_block_id
     }
 
     pub fn editor_timeline_time_seconds(&self) -> f32 {
