@@ -262,27 +262,32 @@ pub(crate) struct EditorSubsystem {
     pub(crate) timing: EditorTimingState,
 }
 
+pub(crate) struct MenuSubsystem {
+    pub(crate) state: MenuState,
+}
+
 pub struct State {
     render: RenderSubsystem,
     gameplay: GameplaySubsystem,
     editor: EditorSubsystem,
     audio: AudioSubsystem,
     session: SessionSubsystem,
+    menu: MenuSubsystem,
     phase: AppPhase,
-    menu: MenuState,
     frame_runtime: FrameRuntimeState,
 }
 
 type AudioImportData = (String, Vec<u8>);
 type WaveformLoadData = (String, Option<(Vec<f32>, u32)>);
 
-#[derive(Clone, Copy, Default)]
-struct EditorDirtyFlags {
+#[derive(Clone, Copy, Default, Debug)]
+pub(crate) struct EditorDirtyFlags {
     sync_game_objects: bool,
     rebuild_block_mesh: bool,
     rebuild_selection_overlays: bool,
     rebuild_tap_indicators: bool,
     rebuild_preview_player: bool,
+    rebuild_cursor: bool,
 }
 
 impl EditorDirtyFlags {
@@ -293,6 +298,7 @@ impl EditorDirtyFlags {
             rebuild_selection_overlays: true,
             rebuild_tap_indicators: true,
             rebuild_preview_player: true,
+            rebuild_cursor: true,
         }
     }
 
@@ -302,6 +308,7 @@ impl EditorDirtyFlags {
         self.rebuild_selection_overlays |= other.rebuild_selection_overlays;
         self.rebuild_tap_indicators |= other.rebuild_tap_indicators;
         self.rebuild_preview_player |= other.rebuild_preview_player;
+        self.rebuild_cursor |= other.rebuild_cursor;
     }
 
     fn any(self) -> bool {
@@ -310,11 +317,12 @@ impl EditorDirtyFlags {
             || self.rebuild_selection_overlays
             || self.rebuild_tap_indicators
             || self.rebuild_preview_player
+            || self.rebuild_cursor
     }
 }
 
 #[derive(Clone, Copy)]
-enum PerfStage {
+pub(crate) enum PerfStage {
     FrameTotal = 0,
     TimelinePlayback,
     DragSelection,
@@ -995,7 +1003,7 @@ impl State {
             },
             gameplay: GameplaySubsystem { state: game },
             phase: AppPhase::Menu,
-            menu,
+            menu: MenuSubsystem { state: menu },
             frame_runtime: FrameRuntimeState {
                 editor: EditorFrameState {
                     last_frame: now,
@@ -1121,7 +1129,7 @@ impl State {
     pub fn turn_right(&mut self) {
         match self.phase {
             AppPhase::Menu => {
-                self.start_level(self.menu.selected_level);
+                self.start_level(self.menu.state.selected_level);
             }
             AppPhase::Playing => {
                 if !self.gameplay.state.started {
@@ -1159,7 +1167,8 @@ impl State {
 
     pub fn next_level(&mut self) {
         if self.phase == AppPhase::Menu {
-            self.menu.selected_level = (self.menu.selected_level + 1) % self.menu.levels.len();
+            self.menu.state.selected_level =
+                (self.menu.state.selected_level + 1) % self.menu.state.levels.len();
         } else if self.phase == AppPhase::Editor {
             self.move_editor_cursor(1, 0);
         }
@@ -1167,10 +1176,10 @@ impl State {
 
     pub fn prev_level(&mut self) {
         if self.phase == AppPhase::Menu {
-            if self.menu.selected_level == 0 {
-                self.menu.selected_level = self.menu.levels.len() - 1;
+            if self.menu.state.selected_level == 0 {
+                self.menu.state.selected_level = self.menu.state.levels.len() - 1;
             } else {
-                self.menu.selected_level -= 1;
+                self.menu.state.selected_level -= 1;
             }
         } else if self.phase == AppPhase::Editor {
             self.move_editor_cursor(-1, 0);
@@ -1179,7 +1188,7 @@ impl State {
 
     pub fn toggle_editor(&mut self) {
         match self.phase {
-            AppPhase::Menu => self.start_editor(self.menu.selected_level),
+            AppPhase::Menu => self.start_editor(self.menu.state.selected_level),
             AppPhase::Editor => self.back_to_menu(),
             AppPhase::Playing if self.session.playtesting_editor => {
                 self.phase = AppPhase::Editor;

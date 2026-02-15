@@ -16,7 +16,7 @@ use crate::types::{AppPhase, LevelMetadata, MusicMetadata};
 
 impl State {
     pub(super) fn start_level(&mut self, index: usize) {
-        let level_name = self.menu.levels[index].clone();
+        let level_name = self.menu.state.levels[index].clone();
 
         self.gameplay.state = GameState::new();
         self.enter_playing_phase(Some(level_name.clone()), false);
@@ -63,7 +63,7 @@ impl State {
     }
 
     pub(super) fn start_editor(&mut self, index: usize) {
-        let level_name = self.menu.levels[index].clone();
+        let level_name = self.menu.state.levels[index].clone();
         self.stop_audio();
 
         self.enter_editor_phase(level_name.clone());
@@ -343,7 +343,7 @@ impl State {
     }
 
     pub fn available_levels(&self) -> &[String] {
-        &self.menu.levels
+        &self.menu.state.levels
     }
 
     pub fn trigger_level_export(&self) {

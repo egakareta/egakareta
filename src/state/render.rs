@@ -4,8 +4,6 @@ use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 use wgpu::{SurfaceError, TextureViewDescriptor};
 
 use super::State;
-#[cfg(not(target_arch = "wasm32"))]
-use crate::platform::state_host::NativeWindow;
 use crate::types::{AppPhase, EditorMode};
 
 impl State {

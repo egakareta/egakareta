@@ -114,7 +114,7 @@ impl Vertex {
     }
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub(crate) struct MusicMetadata {
     #[serde(
         default = "default_music_source",
@@ -147,7 +147,7 @@ fn is_default_music_metadata(value: &MusicMetadata) -> bool {
         && value.extra.is_empty()
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub(crate) struct TimingPoint {
     pub(crate) time_seconds: f32,
     pub(crate) bpm: f32,
@@ -244,7 +244,7 @@ impl LevelMetadata {
     }
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub(crate) struct SpawnMetadata {
     #[serde(
         default = "default_spawn_position",
@@ -264,7 +264,7 @@ impl Default for SpawnMetadata {
     }
 }
 
-#[derive(Deserialize, Serialize, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Clone, Copy, Default, PartialEq, Eq, Debug)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum SpawnDirection {
     #[default]
@@ -289,7 +289,7 @@ fn is_default_spawn_metadata(value: &SpawnMetadata) -> bool {
     is_default_spawn_position(&value.position) && is_default_spawn_direction(&value.direction)
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub(crate) struct LevelObject {
     #[serde(
         default = "default_level_object_position",
@@ -326,7 +326,7 @@ impl LevelObject {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub(crate) enum AppPhase {
     Menu,
     Playing,

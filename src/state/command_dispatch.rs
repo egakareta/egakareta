@@ -6,7 +6,7 @@ impl State {
     /// Central dispatcher: every `AppCommand` is routed here.
     /// This is the **only** place that maps intent → mutation,
     /// making it easy to log, replay, or test commands in isolation.
-    pub fn execute_command(&mut self, cmd: AppCommand) {
+    pub(crate) fn dispatch(&mut self, cmd: AppCommand) {
         match cmd {
             // ── Navigation / Phase ──────────────────────────────────
             AppCommand::TurnRight => self.turn_right(),
@@ -19,9 +19,16 @@ impl State {
             AppCommand::RestartLevel => self.restart_level(),
 
             // ── Editor – mode switching ─────────────────────────────
-            AppCommand::EditorModeSelect => self.set_editor_mode(EditorMode::Select),
-            AppCommand::EditorModePlace => self.set_editor_mode(EditorMode::Place),
-            AppCommand::EditorModeTiming => self.set_editor_mode(EditorMode::Timing),
+            AppCommand::EditorSetMode(mode) => {
+                let old_mode = self.editor_mode();
+                self.set_editor_mode(mode);
+                if mode == EditorMode::Timing && old_mode != EditorMode::Timing {
+                    self.load_waveform_for_current_audio();
+                }
+            }
+            AppCommand::EditorSetBlockId(id) => self.set_editor_block_id(id),
+            AppCommand::EditorSetSnapToGrid(snap) => self.set_editor_snap_to_grid(snap),
+            AppCommand::EditorSetSnapStep(step) => self.set_editor_snap_step(step),
 
             // ── Editor – block ops ──────────────────────────────────
             AppCommand::EditorPlaceBlock => self.place_editor_block(),
@@ -29,7 +36,14 @@ impl State {
             AppCommand::EditorDuplicateBlock => self.editor_duplicate_selected_block_in_place(),
             AppCommand::EditorCopyBlock => self.editor_copy_block(),
             AppCommand::EditorPasteBlock => self.editor_paste_block(),
-            AppCommand::EditorSetBlockId(id) => self.set_editor_block_id(id),
+            AppCommand::EditorUpdateSelectedBlock(obj) => {
+                self.set_editor_selected_block_position(obj.position);
+                self.set_editor_selected_block_size(obj.size);
+                self.set_editor_selected_block_id(obj.block_id);
+                self.set_editor_selected_block_rotation(obj.rotation_degrees);
+                self.set_editor_selected_block_roundness(obj.roundness);
+            }
+            AppCommand::EditorUpdateBlock(index, obj) => self.update_editor_block_at(index, obj),
 
             // ── Editor – selection / transform ──────────────────────
             AppCommand::EditorNudgeSelected { dx, dy } => {
@@ -39,8 +53,38 @@ impl State {
             // ── Editor – timeline / playback ────────────────────────
             AppCommand::EditorToggleTimelinePlayback => self.toggle_editor_timeline_playback(),
             AppCommand::EditorShiftTimeline(delta) => self.editor_shift_timeline_time(delta),
+            AppCommand::EditorSetTimelineTime(time) => self.set_editor_timeline_time_seconds(time),
+            AppCommand::EditorSetTimelineDuration(duration) => {
+                self.set_editor_timeline_duration_seconds(duration)
+            }
             AppCommand::EditorToggleTapAtPointer => self.editor_add_tap_at_pointer_position(),
+            AppCommand::EditorAddTap => self.editor_add_tap(),
+            AppCommand::EditorRemoveTap => self.editor_remove_tap(),
+            AppCommand::EditorClearTaps => self.editor_clear_taps(),
+            AppCommand::EditorSetPlaybackSpeed(speed) => self.set_editor_playback_speed(speed),
+            AppCommand::EditorSetWaveformZoom(zoom) => self.set_editor_waveform_zoom(zoom),
+            AppCommand::EditorSetWaveformScroll(scroll) => self.set_editor_waveform_scroll(scroll),
             AppCommand::EditorPlaytest => self.editor_playtest(),
+
+            // ── Editor – timing points ──────────────────────────────
+            AppCommand::EditorAddTimingPoint { time_seconds, bpm } => {
+                self.editor_add_timing_point(time_seconds, bpm)
+            }
+            AppCommand::EditorRemoveTimingPoint(idx) => self.editor_remove_timing_point(idx),
+            AppCommand::EditorSetTimingPointTime(idx, time) => {
+                self.editor_update_timing_point_time(idx, time)
+            }
+            AppCommand::EditorSetTimingPointBpm(idx, bpm) => {
+                self.editor_update_timing_point_bpm(idx, bpm)
+            }
+            AppCommand::EditorSetTimingPointTimeSignature(idx, num, den) => {
+                self.editor_update_timing_point_time_signature(idx, num, den)
+            }
+            AppCommand::EditorSetTimingSelected(selected) => {
+                self.set_editor_timing_selected_index(selected)
+            }
+            AppCommand::EditorBpmTap => self.editor_bpm_tap(),
+            AppCommand::EditorBpmTapReset => self.editor_bpm_tap_reset(),
 
             // ── Editor – spawn ──────────────────────────────────────
             AppCommand::EditorSetSpawnHere => self.editor_set_spawn_here(),
@@ -56,6 +100,17 @@ impl State {
             // ── Editor – misc ───────────────────────────────────────
             AppCommand::EditorTogglePerfOverlay => self.toggle_editor_perf_overlay(),
             AppCommand::EditorExportBlockObj => self.trigger_selected_block_obj_export(),
+
+            // ── Editor – UI / Session ───────────────────────────────
+            AppCommand::EditorLoadLevel(name) => self.load_builtin_level_into_editor(&name),
+            AppCommand::EditorRenameLevel(name) => self.set_editor_level_name(name),
+            AppCommand::EditorExportLevel => self.trigger_level_export(),
+            AppCommand::EditorSetShowMetadata(show) => self.set_editor_show_metadata(show),
+            AppCommand::EditorSetShowImport(show) => self.set_editor_show_import(show),
+            AppCommand::EditorSetImportText(text) => self.set_editor_import_text(text),
+            AppCommand::EditorCompleteImport => self.complete_import(),
+            AppCommand::EditorUpdateMusic(metadata) => self.set_editor_music_metadata(metadata),
+            AppCommand::EditorTriggerAudioImport => self.trigger_audio_import(),
 
             // ── Editor – escape context ─────────────────────────────
             AppCommand::EditorEscape => self.handle_editor_escape(),
@@ -134,7 +189,7 @@ impl State {
 
         // Map key-press to command(s).
         if let Some(cmd) = self.map_key_to_command(key, just_pressed) {
-            self.execute_command(cmd);
+            self.dispatch(cmd);
         }
     }
 
@@ -256,7 +311,7 @@ impl State {
             }
             "q" | "Q" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::EditorModeSelect)
+                    Some(AppCommand::EditorSetMode(EditorMode::Select))
                 } else {
                     None
                 }
@@ -264,7 +319,7 @@ impl State {
             "e" | "E" => {
                 if just_pressed {
                     if self.is_editor() {
-                        Some(AppCommand::EditorModePlace)
+                        Some(AppCommand::EditorSetMode(EditorMode::Place))
                     } else {
                         Some(AppCommand::ToggleEditor)
                     }
@@ -291,7 +346,7 @@ impl State {
                     if self.editor.ui.mode == EditorMode::Place {
                         Some(AppCommand::EditorToggleTapAtPointer)
                     } else if self.editor.ui.mode != EditorMode::Timing {
-                        Some(AppCommand::EditorModeTiming)
+                        Some(AppCommand::EditorSetMode(EditorMode::Timing))
                     } else {
                         None
                     }
@@ -420,7 +475,7 @@ impl State {
                 self.drag_editor_camera_by_pixels(dx, dy);
             }
             InputEvent::Zoom(delta) => {
-                self.execute_command(AppCommand::EditorAdjustZoom(delta));
+                self.dispatch(AppCommand::EditorAdjustZoom(delta));
             }
             InputEvent::Resize { width, height } => {
                 self.resize_surface(crate::types::PhysicalSize::new(width, height));
@@ -452,11 +507,11 @@ mod tests {
             assert_eq!(state.phase, AppPhase::Menu);
 
             // ToggleEditor from Menu should go to Editor
-            state.execute_command(AppCommand::ToggleEditor);
+            state.dispatch(AppCommand::ToggleEditor);
             assert_eq!(state.phase, AppPhase::Editor);
 
             // BackToMenu from Editor should go to Menu
-            state.execute_command(AppCommand::BackToMenu);
+            state.dispatch(AppCommand::BackToMenu);
             assert_eq!(state.phase, AppPhase::Menu);
         });
     }
@@ -465,15 +520,15 @@ mod tests {
     fn test_command_routing_editor_modes() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
-            state.execute_command(AppCommand::ToggleEditor);
+            state.dispatch(AppCommand::ToggleEditor);
 
-            state.execute_command(AppCommand::EditorModeSelect);
+            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Select);
 
-            state.execute_command(AppCommand::EditorModeTiming);
+            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Timing));
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Timing);
 
-            state.execute_command(AppCommand::EditorModePlace);
+            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Place));
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Place);
         });
     }
@@ -482,13 +537,13 @@ mod tests {
     fn test_command_routing_editor_ops() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
-            state.execute_command(AppCommand::ToggleEditor);
+            state.dispatch(AppCommand::ToggleEditor);
 
             let initial_zoom = state.editor.camera.editor_zoom;
-            state.execute_command(AppCommand::EditorAdjustZoom(0.5));
+            state.dispatch(AppCommand::EditorAdjustZoom(0.5));
             assert!(state.editor.camera.editor_zoom > initial_zoom);
 
-            state.execute_command(AppCommand::EditorSetBlockId("core/lava".to_string()));
+            state.dispatch(AppCommand::EditorSetBlockId("core/lava".to_string()));
             assert_eq!(state.editor.config.selected_block_id, "core/lava");
         });
     }

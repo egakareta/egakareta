@@ -60,8 +60,7 @@ impl State {
     }
 
     pub(super) fn perf_record(&mut self, stage: PerfStage, started_at: PlatformInstant) {
-        let elapsed_ms = started_at.elapsed().as_secs_f32() * 1000.0;
-        self.editor.perf.profiler.observe(stage, elapsed_ms);
+        self.editor.perf_record(stage, started_at);
     }
 
     pub fn update(&mut self) {

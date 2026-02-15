@@ -1,4 +1,5 @@
 use crate::block_repository::all_placeable_blocks;
+use crate::commands::AppCommand;
 use crate::types::{EditorMode, SpawnDirection};
 use crate::State;
 
@@ -53,15 +54,18 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
             let mode = state.editor_mode();
             let is_compose = mode == EditorMode::Select || mode == EditorMode::Place;
             if ui.selectable_label(is_compose, "Compose").clicked() && !is_compose {
-                state.set_editor_mode(EditorMode::Place);
+                state.dispatch(crate::commands::AppCommand::EditorSetMode(
+                    EditorMode::Place,
+                ));
             }
             if ui
                 .selectable_label(mode == EditorMode::Timing, "Timing")
                 .clicked()
                 && mode != EditorMode::Timing
             {
-                state.set_editor_mode(EditorMode::Timing);
-                state.load_waveform_for_current_audio();
+                state.dispatch(crate::commands::AppCommand::EditorSetMode(
+                    EditorMode::Timing,
+                ));
             }
 
             ui.separator();
@@ -78,7 +82,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                 .show_ui(ui, |ui| {
                     for level in levels {
                         if ui.selectable_label(selected == level, &level).clicked() {
-                            state.load_builtin_level_into_editor(&level);
+                            state.dispatch(crate::commands::AppCommand::EditorLoadLevel(level));
                         }
                     }
                 });
@@ -90,21 +94,21 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                 .editor_level_name()
                 .unwrap_or_else(|| "Untitled".to_string());
             if ui.text_edit_singleline(&mut name).changed() {
-                state.set_editor_level_name(name);
+                state.dispatch(crate::commands::AppCommand::EditorRenameLevel(name));
             }
 
             ui.separator();
 
             if ui.button("Export .ldz").clicked() {
-                state.trigger_level_export();
+                state.dispatch(crate::commands::AppCommand::EditorExportLevel);
             }
 
             if ui.button("Import .ldz/JSON").clicked() {
-                state.set_editor_show_import(true);
+                state.dispatch(crate::commands::AppCommand::EditorSetShowImport(true));
             }
 
             if ui.button("Metadata").clicked() {
-                state.set_editor_show_metadata(true);
+                state.dispatch(crate::commands::AppCommand::EditorSetShowMetadata(true));
             }
         });
     });
@@ -116,7 +120,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                 .editor_level_name()
                 .unwrap_or_else(|| "Untitled".to_string());
             if ui.text_edit_singleline(&mut name).changed() {
-                state.set_editor_level_name(name);
+                state.dispatch(crate::commands::AppCommand::EditorRenameLevel(name));
             }
 
             ui.separator();
@@ -131,7 +135,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                     changed = true;
                 }
                 if ui.button("Import External Audio").clicked() {
-                    state.trigger_audio_import();
+                    state.dispatch(crate::commands::AppCommand::EditorTriggerAudioImport);
                 }
             });
 
@@ -154,11 +158,11 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
             });
 
             if changed {
-                state.set_editor_music_metadata(music);
+                state.dispatch(crate::commands::AppCommand::EditorUpdateMusic(music));
             }
 
             if ui.button("Close").clicked() {
-                state.set_editor_show_metadata(false);
+                state.dispatch(crate::commands::AppCommand::EditorSetShowMetadata(false));
             }
         });
     }
@@ -175,15 +179,15 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                 )
                 .changed()
             {
-                state.set_editor_import_text(text);
+                state.dispatch(crate::commands::AppCommand::EditorSetImportText(text));
             }
 
             ui.horizontal(|ui| {
                 if ui.button("Import").clicked() {
-                    state.complete_import();
+                    state.dispatch(crate::commands::AppCommand::EditorCompleteImport);
                 }
                 if ui.button("Cancel").clicked() {
-                    state.set_editor_show_import(false);
+                    state.dispatch(crate::commands::AppCommand::EditorSetShowImport(false));
                 }
             });
         });
@@ -241,19 +245,19 @@ fn show_compose_mode_bottom_panel(ui: &mut egui::Ui, state: &mut State, duration
             .selectable_label(mode == EditorMode::Select, "Select")
             .clicked()
         {
-            state.set_editor_mode(EditorMode::Select);
+            state.dispatch(AppCommand::EditorSetMode(EditorMode::Select));
         }
         if ui
             .selectable_label(mode == EditorMode::Place, "Place")
             .clicked()
         {
-            state.set_editor_mode(EditorMode::Place);
+            state.dispatch(AppCommand::EditorSetMode(EditorMode::Place));
         }
 
         ui.separator();
         let mut snap = state.editor_snap_to_grid();
         if ui.checkbox(&mut snap, "Snap to Grid").changed() {
-            state.set_editor_snap_to_grid(snap);
+            state.dispatch(AppCommand::EditorSetSnapToGrid(snap));
         }
 
         ui.label("Step:");
@@ -266,7 +270,7 @@ fn show_compose_mode_bottom_panel(ui: &mut egui::Ui, state: &mut State, duration
             )
             .changed()
         {
-            state.set_editor_snap_step(snap_step);
+            state.dispatch(AppCommand::EditorSetSnapStep(snap_step));
         }
     });
 
@@ -284,7 +288,7 @@ fn show_compose_mode_bottom_panel(ui: &mut egui::Ui, state: &mut State, duration
                         .selectable_label(current == block.id, &block.display_name)
                         .clicked()
                     {
-                        state.set_editor_block_id(block.id.clone());
+                        state.dispatch(AppCommand::EditorSetBlockId(block.id.clone()));
                     }
                 }
             });
@@ -306,7 +310,9 @@ fn show_compose_mode_bottom_panel(ui: &mut egui::Ui, state: &mut State, duration
                             .add(egui::DragValue::new(&mut selected.position[2]).prefix("Z "))
                             .changed();
                         if changed {
-                            state.set_editor_selected_block_position(selected.position);
+                            state.dispatch(crate::commands::AppCommand::EditorUpdateSelectedBlock(
+                                selected.clone(),
+                            ));
                         }
                     });
 
@@ -323,7 +329,9 @@ fn show_compose_mode_bottom_panel(ui: &mut egui::Ui, state: &mut State, duration
                             .add(egui::DragValue::new(&mut selected.size[2]).prefix("H "))
                             .changed();
                         if changed {
-                            state.set_editor_selected_block_size(selected.size);
+                            state.dispatch(crate::commands::AppCommand::EditorUpdateSelectedBlock(
+                                selected.clone(),
+                            ));
                         }
                     });
 
@@ -337,7 +345,9 @@ fn show_compose_mode_bottom_panel(ui: &mut egui::Ui, state: &mut State, duration
                             )
                             .changed()
                         {
-                            state.set_editor_selected_block_rotation(selected.rotation_degrees);
+                            state.dispatch(crate::commands::AppCommand::EditorUpdateSelectedBlock(
+                                selected.clone(),
+                            ));
                         }
                     });
 
@@ -351,7 +361,9 @@ fn show_compose_mode_bottom_panel(ui: &mut egui::Ui, state: &mut State, duration
                             )
                             .changed()
                         {
-                            state.set_editor_selected_block_roundness(selected.roundness);
+                            state.dispatch(crate::commands::AppCommand::EditorUpdateSelectedBlock(
+                                selected.clone(),
+                            ));
                         }
                     });
                 });
@@ -366,7 +378,11 @@ fn show_compose_mode_bottom_panel(ui: &mut egui::Ui, state: &mut State, duration
                             .selectable_label(selected.block_id == block.id, &block.display_name)
                             .clicked()
                         {
-                            state.set_editor_selected_block_id(block.id.clone());
+                            let mut next = selected.clone();
+                            next.block_id = block.id.clone();
+                            state.dispatch(crate::commands::AppCommand::EditorUpdateSelectedBlock(
+                                next,
+                            ));
                         }
                     }
                 });
@@ -387,7 +403,9 @@ fn show_compose_mode_bottom_panel(ui: &mut egui::Ui, state: &mut State, duration
             .text("Time")
             .show_value(true);
         if ui.add(slider).changed() {
-            state.set_editor_timeline_time_seconds(time_seconds);
+            state.dispatch(crate::commands::AppCommand::EditorSetTimelineTime(
+                time_seconds,
+            ));
         }
 
         let mut duration = state.editor_timeline_duration_seconds();
@@ -400,17 +418,19 @@ fn show_compose_mode_bottom_panel(ui: &mut egui::Ui, state: &mut State, duration
             )
             .changed()
         {
-            state.set_editor_timeline_duration_seconds(duration);
+            state.dispatch(crate::commands::AppCommand::EditorSetTimelineDuration(
+                duration,
+            ));
         }
 
         if ui.button("Add tap").clicked() {
-            state.editor_add_tap();
+            state.dispatch(crate::commands::AppCommand::EditorAddTap);
         }
         if ui.button("Remove tap").clicked() {
-            state.editor_remove_tap();
+            state.dispatch(crate::commands::AppCommand::EditorRemoveTap);
         }
         if ui.button("Clear taps").clicked() {
-            state.editor_clear_taps();
+            state.dispatch(crate::commands::AppCommand::EditorClearTaps);
         }
     });
 
@@ -444,7 +464,7 @@ fn show_timing_mode_bottom_panel(ui: &mut egui::Ui, state: &mut State, duration_
                         .selectable_label((speed - s).abs() < 0.01, format!("{:.2}x", s))
                         .clicked()
                     {
-                        state.set_editor_playback_speed(s);
+                        state.dispatch(AppCommand::EditorSetPlaybackSpeed(s));
                     }
                 }
             });
@@ -458,7 +478,7 @@ fn show_timing_mode_bottom_panel(ui: &mut egui::Ui, state: &mut State, duration_
             .text("Time")
             .show_value(true);
         if ui.add(slider).changed() {
-            state.set_editor_timeline_time_seconds(time_seconds);
+            state.dispatch(AppCommand::EditorSetTimelineTime(time_seconds));
         }
 
         let mut duration = state.editor_timeline_duration_seconds();
@@ -471,7 +491,7 @@ fn show_timing_mode_bottom_panel(ui: &mut egui::Ui, state: &mut State, duration_
             )
             .changed()
         {
-            state.set_editor_timeline_duration_seconds(duration);
+            state.dispatch(AppCommand::EditorSetTimelineDuration(duration));
         }
     });
 
@@ -484,15 +504,23 @@ fn show_timing_mode_bottom_panel(ui: &mut egui::Ui, state: &mut State, duration_
             ui.horizontal(|ui| {
                 if ui.button("Add at playhead").clicked() {
                     let time = state.editor_timeline_time_seconds();
-                    state.editor_add_timing_point(time, 120.0);
+                    state.dispatch(crate::commands::AppCommand::EditorAddTimingPoint {
+                        time_seconds: time,
+                        bpm: 120.0,
+                    });
                 }
                 if let Some(selected_idx) = state.editor_timing_selected_index() {
                     if ui.button("Remove").clicked() {
-                        state.editor_remove_timing_point(selected_idx);
+                        state.dispatch(crate::commands::AppCommand::EditorRemoveTimingPoint(
+                            selected_idx,
+                        ));
                     }
                     if ui.button("Use current time").clicked() {
                         let time = state.editor_timeline_time_seconds();
-                        state.editor_update_timing_point_time(selected_idx, time);
+                        state.dispatch(crate::commands::AppCommand::EditorSetTimingPointTime(
+                            selected_idx,
+                            time,
+                        ));
                     }
                 }
             });
@@ -515,7 +543,7 @@ fn show_timing_mode_bottom_panel(ui: &mut egui::Ui, state: &mut State, duration_
                             .selectable_label(selected_idx == Some(i), label)
                             .clicked()
                         {
-                            state.set_editor_timing_selected_index(Some(i));
+                            state.dispatch(AppCommand::EditorSetTimingSelected(Some(i)));
                         }
                     }
                     if timing_points.is_empty() {
@@ -544,7 +572,7 @@ fn show_timing_mode_bottom_panel(ui: &mut egui::Ui, state: &mut State, duration_
                             )
                             .changed()
                         {
-                            state.editor_update_timing_point_time(idx, time);
+                            state.dispatch(AppCommand::EditorSetTimingPointTime(idx, time));
                         }
                     });
 
@@ -555,7 +583,7 @@ fn show_timing_mode_bottom_panel(ui: &mut egui::Ui, state: &mut State, duration_
                             .add(egui::DragValue::new(&mut bpm).speed(0.1).range(1.0..=999.0))
                             .changed()
                         {
-                            state.editor_update_timing_point_bpm(idx, bpm);
+                            state.dispatch(AppCommand::EditorSetTimingPointBpm(idx, bpm));
                         }
                     });
 
@@ -571,11 +599,11 @@ fn show_timing_mode_bottom_panel(ui: &mut egui::Ui, state: &mut State, duration_
                             .add(egui::DragValue::new(&mut den).range(1..=32))
                             .changed();
                         if n_changed || d_changed {
-                            state.editor_update_timing_point_time_signature(
+                            state.dispatch(AppCommand::EditorSetTimingPointTimeSignature(
                                 idx,
                                 num.max(1) as u32,
                                 den.max(1) as u32,
-                            );
+                            ));
                         }
                     });
                 }
@@ -590,18 +618,18 @@ fn show_timing_mode_bottom_panel(ui: &mut egui::Ui, state: &mut State, duration_
         ui.vertical(|ui| {
             ui.label("Tap for BPM:");
             if ui.button("Tap (click repeatedly)").clicked() {
-                state.editor_bpm_tap();
+                state.dispatch(AppCommand::EditorBpmTap);
             }
             if let Some(bpm) = state.editor_bpm_tap_result() {
                 ui.label(format!("Detected: {:.1} BPM", bpm));
                 if let Some(idx) = state.editor_timing_selected_index() {
                     if ui.button("Apply to selected").clicked() {
-                        state.editor_update_timing_point_bpm(idx, bpm);
+                        state.dispatch(AppCommand::EditorSetTimingPointBpm(idx, bpm));
                     }
                 }
             }
             if ui.button("Reset taps").clicked() {
-                state.editor_bpm_tap_reset();
+                state.dispatch(AppCommand::EditorBpmTapReset);
             }
         });
     });
@@ -695,7 +723,7 @@ fn show_timeline_bar(ui: &mut egui::Ui, state: &mut State, duration_seconds: f32
         if let Some(pos) = response.interact_pointer_pos() {
             let t = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
             let time_seconds = t * duration_seconds;
-            state.set_editor_timeline_time_seconds(time_seconds);
+            state.dispatch(AppCommand::EditorSetTimelineTime(time_seconds));
         }
     }
 }
@@ -851,7 +879,7 @@ fn show_waveform_panel(ui: &mut egui::Ui, state: &mut State) {
         if let Some(pos) = response.interact_pointer_pos() {
             let t = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
             let time_seconds = view_start + t * (view_end - view_start);
-            state.set_editor_timeline_time_seconds(time_seconds);
+            state.dispatch(AppCommand::EditorSetTimelineTime(time_seconds));
         }
     }
 
@@ -860,7 +888,7 @@ fn show_waveform_panel(ui: &mut egui::Ui, state: &mut State) {
     if scroll_delta.y.abs() > 0.0 {
         let zoom_factor = 1.0 + scroll_delta.y * 0.002;
         let new_zoom = (zoom * zoom_factor).clamp(0.1, 100.0);
-        state.set_editor_waveform_zoom(new_zoom);
+        state.dispatch(AppCommand::EditorSetWaveformZoom(new_zoom));
     }
     if response.dragged_by(egui::PointerButton::Middle)
         || response.dragged_by(egui::PointerButton::Secondary)
@@ -868,6 +896,6 @@ fn show_waveform_panel(ui: &mut egui::Ui, state: &mut State) {
         let drag_delta = response.drag_delta();
         let time_per_pixel = (view_end - view_start) / rect.width();
         let new_scroll = (scroll - drag_delta.x * time_per_pixel).max(0.0);
-        state.set_editor_waveform_scroll(new_scroll);
+        state.dispatch(AppCommand::EditorSetWaveformScroll(new_scroll));
     }
 }

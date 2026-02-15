@@ -1,13 +1,21 @@
 use glam::{Mat4, Vec2, Vec3, Vec4};
 
-use super::{EditorDirtyFlags, EditorPickResult, EditorSubsystem, GizmoAxis, GizmoDragKind, State};
+use super::{
+    EditorDirtyFlags, EditorPickResult, EditorSubsystem, GizmoAxis, GizmoDragKind, PerfStage, State,
+};
 use crate::editor_domain::{
     add_tap_with_indicator, clear_taps_with_indicators, remove_tap_with_indicator,
     retain_taps_up_to_duration_with_indicators,
 };
+use crate::platform::state_host::PlatformInstant;
 use crate::types::{AppPhase, EditorMode, LevelObject, SpawnDirection, TimingPoint};
 
 impl EditorSubsystem {
+    pub(crate) fn perf_record(&mut self, stage: PerfStage, started_at: PlatformInstant) {
+        let elapsed_ms = started_at.elapsed().as_secs_f32() * 1000.0;
+        self.perf.profiler.observe(stage, elapsed_ms);
+    }
+
     pub(crate) fn camera_axes_xy(&self) -> (Vec2, Vec2) {
         let right = Vec2::new(
             self.camera.editor_rotation.cos(),

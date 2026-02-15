@@ -6,7 +6,7 @@
 /// native and WASM targets a single code-path, and makes future
 /// replay / macro / test harness support trivial.
 #[derive(Debug, Clone, PartialEq)]
-pub enum AppCommand {
+pub(crate) enum AppCommand {
     // ── Navigation / Phase ──────────────────────────────────────────
     /// Primary action: in menu → start level, in game → turn, in editor → place block
     TurnRight,
@@ -24,12 +24,14 @@ pub enum AppCommand {
     RestartLevel,
 
     // ── Editor – mode switching ─────────────────────────────────────
-    /// Switch to Select mode.
-    EditorModeSelect,
-    /// Switch to Place mode.
-    EditorModePlace,
-    /// Switch to Timing mode.
-    EditorModeTiming,
+    /// Switch the editor mode.
+    EditorSetMode(crate::types::EditorMode),
+    /// Set the current block ID for placement.
+    EditorSetBlockId(String),
+    /// Set whether to snap to grid.
+    EditorSetSnapToGrid(bool),
+    /// Set the grid snap step.
+    EditorSetSnapStep(f32),
 
     // ── Editor – block ops ──────────────────────────────────────────
     /// Place or remove a block at the current cursor position.
@@ -42,8 +44,10 @@ pub enum AppCommand {
     EditorCopyBlock,
     /// Paste clipboard blocks.
     EditorPasteBlock,
-    /// Switch the active block palette slot.
-    EditorSetBlockId(String),
+    /// Update the properties of the currently selected block.
+    EditorUpdateSelectedBlock(crate::types::LevelObject),
+    /// Update a block at a specific index.
+    EditorUpdateBlock(usize, crate::types::LevelObject),
 
     // ── Editor – selection / transform ──────────────────────────────
     /// Nudge selected blocks by the given screen-relative offset.
@@ -54,10 +58,46 @@ pub enum AppCommand {
     EditorToggleTimelinePlayback,
     /// Shift the timeline cursor by `delta_seconds`.
     EditorShiftTimeline(f32),
+    /// Set the timeline cursor to an absolute time in seconds.
+    EditorSetTimelineTime(f32),
+    /// Set the total duration of the timeline (seconds).
+    EditorSetTimelineDuration(f32),
     /// Add or remove a tap at the current pointer position.
     EditorToggleTapAtPointer,
+    /// Add a tap at the current timeline position.
+    EditorAddTap,
+    /// Remove a tap at the current timeline position.
+    EditorRemoveTap,
+    /// Remove all taps from the level.
+    EditorClearTaps,
+    /// Update the playback speed multiplier.
+    EditorSetPlaybackSpeed(f32),
+    /// Set waveform view zoom.
+    EditorSetWaveformZoom(f32),
+    /// Set waveform view scroll offset.
+    EditorSetWaveformScroll(f32),
     /// Start playtesting from the current editor state.
     EditorPlaytest,
+
+    // ── Editor – timing points ──────────────────────────────────────
+    /// Add a new timing point.
+    EditorAddTimingPoint { time_seconds: f32, bpm: f32 },
+    /// Remove an existing timing point by index.
+    EditorRemoveTimingPoint(usize),
+    /// Update an existing timing point's timestamp.
+    EditorSetTimingPointTime(usize, f32),
+    /// Update an existing timing point's BPM.
+    EditorSetTimingPointBpm(usize, f32),
+    /// Update an existing timing point's time signature.
+    EditorSetTimingPointTimeSignature(usize, u32, u32),
+    /// Select or deselect a timing point in the UI.
+    EditorSetTimingSelected(Option<usize>),
+
+    // ── Editor – BPM tapping ────────────────────────────────────────
+    /// Record a BPM heart-beat tap.
+    EditorBpmTap,
+    /// Reset the BPM tapping state.
+    EditorBpmTapReset,
 
     // ── Editor – spawn ──────────────────────────────────────────────
     /// Set spawn position to current cursor.
@@ -81,7 +121,27 @@ pub enum AppCommand {
     /// Export the selected block as OBJ.
     EditorExportBlockObj,
 
-    // ── Editor – camera / input state ───────────────────────────────
+    // ── Editor – UI / Session ───────────────────────────────────────
+    /// Load a level from a builtin resource name.
+    EditorLoadLevel(String),
+    /// Rename the current level.
+    EditorRenameLevel(String),
+    /// Start the level export process.
+    EditorExportLevel,
+    /// Open or close the metadata editing window.
+    EditorSetShowMetadata(bool),
+    /// Open or close the import/export raw data window.
+    EditorSetShowImport(bool),
+    /// Update the text in the raw import field.
+    EditorSetImportText(String),
+    /// Parse and apply the raw import text.
+    EditorCompleteImport,
+    /// Update music information for the level.
+    EditorUpdateMusic(crate::types::MusicMetadata),
+    /// Trigger the platform audio import dialog.
+    EditorTriggerAudioImport,
+
+    // ── Editor – escape context ─────────────────────────────
     /// Escape key context-sensitive (stop playback → reset timeline → back to menu).
     EditorEscape,
 }

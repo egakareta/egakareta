@@ -1,6 +1,9 @@
 use glam::Vec3;
 
-use super::{EditorDirtyFlags, EditorTimelineSample, GizmoAxis, GizmoDragKind, PerfStage, State};
+use super::{
+    EditorDirtyFlags, EditorSubsystem, EditorTimelineSample, GizmoAxis, GizmoDragKind, PerfStage,
+    State,
+};
 use crate::editor_domain::{
     create_block_at_cursor, derive_timeline_elapsed_seconds, derive_timeline_position,
 };
@@ -14,26 +17,83 @@ use crate::mesh::{
 use crate::platform::state_host::PlatformInstant;
 use crate::types::{AppPhase, EditorMode, SpawnDirection};
 
-impl State {
-    pub(super) fn ensure_editor_timeline_samples(&mut self) {
-        if !self.editor.timeline.cache.dirty {
+impl EditorSubsystem {
+    pub(crate) fn mark_dirty(&mut self, dirty: EditorDirtyFlags) {
+        self.runtime.dirty.merge(dirty);
+    }
+
+    pub(crate) fn sync_objects(&mut self) {
+        self.sync_primary_selection_from_indices();
+        if let Some(index) = self.ui.selected_block_index {
+            if index >= self.objects.len() {
+                self.ui.selected_block_index = None;
+            }
+        }
+        self.ui
+            .selected_block_indices
+            .retain(|index| *index < self.objects.len());
+        self.sync_primary_selection_from_indices();
+        if let Some(index) = self.ui.hovered_block_index {
+            if index >= self.objects.len() {
+                self.ui.hovered_block_index = None;
+            }
+        }
+        self.invalidate_samples();
+        self.mark_dirty(EditorDirtyFlags::from_object_sync());
+    }
+
+    pub(crate) fn sync_objects_for_drag(&mut self) {
+        self.sync_primary_selection_from_indices();
+        if let Some(index) = self.ui.selected_block_index {
+            if index >= self.objects.len() {
+                self.ui.selected_block_index = None;
+            }
+        }
+        self.ui
+            .selected_block_indices
+            .retain(|index| *index < self.objects.len());
+        self.sync_primary_selection_from_indices();
+        if let Some(index) = self.ui.hovered_block_index {
+            if index >= self.objects.len() {
+                self.ui.hovered_block_index = None;
+            }
+        }
+        self.invalidate_samples();
+        self.mark_dirty(EditorDirtyFlags {
+            sync_game_objects: true,
+            rebuild_block_mesh: true,
+            rebuild_selection_overlays: true,
+            ..EditorDirtyFlags::default()
+        });
+    }
+
+    pub(crate) fn add_block_at_cursor(&mut self) {
+        self.record_history_state();
+        self.objects.push(create_block_at_cursor(
+            self.ui.cursor,
+            &self.config.selected_block_id,
+        ));
+        self.ui.selected_block_index = None;
+        self.ui.selected_block_indices.clear();
+        self.ui.hovered_block_index = None;
+        self.sync_objects();
+    }
+
+    pub(crate) fn ensure_timeline_samples(&mut self) {
+        if !self.timeline.cache.dirty {
             return;
         }
         let perf_started_at = PlatformInstant::now();
 
-        let duration = self.editor.timeline.clock.duration_seconds.max(0.0);
+        let duration = self.timeline.clock.duration_seconds.max(0.0);
         if duration <= 0.0 {
-            self.editor.timeline.cache.samples.clear();
-            self.editor
-                .timeline
-                .cache
-                .samples
-                .push(EditorTimelineSample {
-                    time_seconds: 0.0,
-                    position: self.editor.spawn.position,
-                });
-            self.editor.timeline.cache.dirty = false;
-            self.editor.timeline.cache.rebuild_from_seconds = None;
+            self.timeline.cache.samples.clear();
+            self.timeline.cache.samples.push(EditorTimelineSample {
+                time_seconds: 0.0,
+                position: self.spawn.position,
+            });
+            self.timeline.cache.dirty = false;
+            self.timeline.cache.rebuild_from_seconds = None;
             return;
         }
 
@@ -43,40 +103,37 @@ impl State {
 
         let expected_len = sample_count + 1;
         let last_time_matches_duration = self
-            .editor
             .timeline
             .cache
             .samples
             .last()
             .is_some_and(|sample| (sample.time_seconds - duration).abs() <= 1e-3);
 
-        let can_incremental_rebuild = self.editor.timeline.cache.rebuild_from_seconds.is_some()
-            && self.editor.timeline.cache.samples.len() == expected_len
+        let can_incremental_rebuild = self.timeline.cache.rebuild_from_seconds.is_some()
+            && self.timeline.cache.samples.len() == expected_len
             && last_time_matches_duration;
 
         if !can_incremental_rebuild {
-            self.editor.timeline.cache.samples.clear();
+            self.timeline.cache.samples.clear();
         }
 
         let mut runtime = TimelineSimulationRuntime::new_with_dt(
-            self.editor.spawn.position,
-            self.editor.spawn.direction,
-            &self.editor.objects,
-            &self.editor.timeline.taps.tap_times,
+            self.spawn.position,
+            self.spawn.direction,
+            &self.objects,
+            &self.timeline.taps.tap_times,
             simulation_dt,
         );
 
         let rebuild_from_index = if can_incremental_rebuild {
             let rebuild_from_time = self
-                .editor
                 .timeline
                 .cache
                 .rebuild_from_seconds
                 .unwrap_or(0.0)
                 .clamp(0.0, duration);
 
-            self.editor
-                .timeline
+            self.timeline
                 .cache
                 .samples
                 .iter()
@@ -87,48 +144,35 @@ impl State {
         };
 
         if rebuild_from_index > 0 {
-            let rebuild_start_time =
-                self.editor.timeline.cache.samples[rebuild_from_index].time_seconds;
+            let rebuild_start_time = self.timeline.cache.samples[rebuild_from_index].time_seconds;
             runtime.advance_to(rebuild_start_time);
-            self.editor
-                .timeline
-                .cache
-                .samples
-                .truncate(rebuild_from_index);
+            self.timeline.cache.samples.truncate(rebuild_from_index);
         }
 
         for index in rebuild_from_index..=sample_count {
             let t = (index as f32 * time_step).min(duration);
             runtime.advance_to(t);
             let snapshot = runtime.snapshot();
-            if index < self.editor.timeline.cache.samples.len() {
-                self.editor.timeline.cache.samples[index] = EditorTimelineSample {
+            if index < self.timeline.cache.samples.len() {
+                self.timeline.cache.samples[index] = EditorTimelineSample {
                     time_seconds: t,
                     position: snapshot.position,
                 };
             } else {
-                self.editor
-                    .timeline
-                    .cache
-                    .samples
-                    .push(EditorTimelineSample {
-                        time_seconds: t,
-                        position: snapshot.position,
-                    });
+                self.timeline.cache.samples.push(EditorTimelineSample {
+                    time_seconds: t,
+                    position: snapshot.position,
+                });
             }
         }
 
-        self.editor.timeline.cache.dirty = false;
-        self.editor.timeline.cache.rebuild_from_seconds = None;
+        self.timeline.cache.dirty = false;
+        self.timeline.cache.rebuild_from_seconds = None;
         self.perf_record(PerfStage::TimelineSampleRebuild, perf_started_at);
     }
 
-    pub(super) fn nearest_editor_timeline_sample_time_for_target(
-        &self,
-        target: [f32; 3],
-    ) -> Option<f32> {
-        self.editor
-            .timeline
+    pub(crate) fn nearest_timeline_sample_time_for_target(&self, target: [f32; 3]) -> Option<f32> {
+        self.timeline
             .cache
             .samples
             .iter()
@@ -145,8 +189,51 @@ impl State {
             .map(|sample| sample.time_seconds)
     }
 
+    pub(crate) fn timeline_position(&self, time_seconds: f32) -> ([f32; 3], SpawnDirection) {
+        derive_timeline_position(
+            self.spawn.position,
+            self.spawn.direction,
+            &self.timeline.taps.tap_times,
+            time_seconds,
+            &self.objects,
+        )
+    }
+
+    pub(crate) fn timeline_elapsed_seconds(&self, time_seconds: f32) -> f32 {
+        derive_timeline_elapsed_seconds(
+            self.spawn.position,
+            self.spawn.direction,
+            &self.timeline.taps.tap_times,
+            time_seconds,
+            &self.objects,
+        )
+    }
+
+    pub(crate) fn topmost_block_index_at_cursor(&self, cursor: [f32; 3]) -> Option<usize> {
+        let mut top_index: Option<usize> = None;
+        let mut top_height = f32::NEG_INFINITY;
+
+        for (index, obj) in self.objects.iter().enumerate() {
+            let occupies_x = cursor[0] + 0.5 >= obj.position[0]
+                && cursor[0] + 0.5 <= obj.position[0] + obj.size[0];
+            let occupies_y = cursor[1] + 0.5 >= obj.position[1]
+                && cursor[1] + 0.5 <= obj.position[1] + obj.size[1];
+            if occupies_x && occupies_y {
+                let top = obj.position[2] + obj.size[2];
+                if top > top_height {
+                    top_height = top;
+                    top_index = Some(index);
+                }
+            }
+        }
+
+        top_index
+    }
+}
+
+impl State {
     pub(super) fn mark_editor_dirty(&mut self, dirty: EditorDirtyFlags) {
-        self.editor.runtime.dirty.merge(dirty);
+        self.editor.mark_dirty(dirty);
     }
 
     pub(super) fn process_editor_dirty(&mut self) {
@@ -178,87 +265,19 @@ impl State {
         if dirty.rebuild_preview_player {
             self.rebuild_editor_preview_player_vertices();
         }
+
+        if dirty.rebuild_cursor {
+            self.rebuild_editor_cursor_vertices();
+        }
     }
 
     pub(super) fn place_editor_block(&mut self) {
-        self.record_editor_history_state();
-        self.editor.objects.push(create_block_at_cursor(
-            self.editor.ui.cursor,
-            &self.editor.config.selected_block_id,
-        ));
-        self.editor.ui.selected_block_index = None;
-        self.editor.ui.selected_block_indices.clear();
-        self.editor.ui.hovered_block_index = None;
-        self.sync_editor_objects();
+        self.editor.add_block_at_cursor();
         self.rebuild_editor_cursor_vertices();
     }
 
     pub(super) fn sync_editor_objects(&mut self) {
-        self.sync_primary_selection_from_indices();
-        if let Some(index) = self.editor.ui.selected_block_index {
-            if index >= self.editor.objects.len() {
-                self.editor.ui.selected_block_index = None;
-            }
-        }
-        self.editor
-            .ui
-            .selected_block_indices
-            .retain(|index| *index < self.editor.objects.len());
-        self.sync_primary_selection_from_indices();
-        if let Some(index) = self.editor.ui.hovered_block_index {
-            if index >= self.editor.objects.len() {
-                self.editor.ui.hovered_block_index = None;
-            }
-        }
-        self.editor.invalidate_samples();
-        self.mark_editor_dirty(EditorDirtyFlags::from_object_sync());
-    }
-
-    pub(super) fn sync_editor_objects_for_drag(&mut self) {
-        self.sync_primary_selection_from_indices();
-        if let Some(index) = self.editor.ui.selected_block_index {
-            if index >= self.editor.objects.len() {
-                self.editor.ui.selected_block_index = None;
-            }
-        }
-        self.editor
-            .ui
-            .selected_block_indices
-            .retain(|index| *index < self.editor.objects.len());
-        self.sync_primary_selection_from_indices();
-        if let Some(index) = self.editor.ui.hovered_block_index {
-            if index >= self.editor.objects.len() {
-                self.editor.ui.hovered_block_index = None;
-            }
-        }
-        self.editor.invalidate_samples();
-        self.mark_editor_dirty(EditorDirtyFlags {
-            sync_game_objects: true,
-            rebuild_block_mesh: true,
-            rebuild_selection_overlays: true,
-            ..EditorDirtyFlags::default()
-        });
-    }
-
-    pub(super) fn topmost_block_index_at_cursor(&self, cursor: [f32; 3]) -> Option<usize> {
-        let mut top_index: Option<usize> = None;
-        let mut top_height = f32::NEG_INFINITY;
-
-        for (index, obj) in self.editor.objects.iter().enumerate() {
-            let occupies_x = cursor[0] + 0.5 >= obj.position[0]
-                && cursor[0] + 0.5 <= obj.position[0] + obj.size[0];
-            let occupies_y = cursor[1] + 0.5 >= obj.position[1]
-                && cursor[1] + 0.5 <= obj.position[1] + obj.size[1];
-            if occupies_x && occupies_y {
-                let top = obj.position[2] + obj.size[2];
-                if top > top_height {
-                    top_height = top;
-                    top_index = Some(index);
-                }
-            }
-        }
-
-        top_index
+        self.editor.sync_objects();
     }
 
     pub(super) fn apply_spawn_to_game(&mut self, position: [f32; 3], direction: SpawnDirection) {
@@ -266,23 +285,11 @@ impl State {
     }
 
     pub(super) fn editor_timeline_position(&self, time_seconds: f32) -> ([f32; 3], SpawnDirection) {
-        derive_timeline_position(
-            self.editor.spawn.position,
-            self.editor.spawn.direction,
-            &self.editor.timeline.taps.tap_times,
-            time_seconds,
-            &self.editor.objects,
-        )
+        self.editor.timeline_position(time_seconds)
     }
 
     pub(super) fn editor_timeline_elapsed_seconds(&self, time_seconds: f32) -> f32 {
-        derive_timeline_elapsed_seconds(
-            self.editor.spawn.position,
-            self.editor.spawn.direction,
-            &self.editor.timeline.taps.tap_times,
-            time_seconds,
-            &self.editor.objects,
-        )
+        self.editor.timeline_elapsed_seconds(time_seconds)
     }
 
     pub(super) fn apply_editor_timeline_preview_state(
