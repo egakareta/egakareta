@@ -15,6 +15,12 @@
         "position": [-53.0, -53.0, 7.0]
     },
     "tap_times": [1.5, 2.625, 3.375, 3.7083335, 4.4583335, 5.25],
+    "timing_points": [
+        {
+            "time_seconds": 1.2941177,
+            "bpm": 104.0
+        }
+    ],
     "timeline_time_seconds": 4.911519,
     "objects": [
         {
