@@ -22,6 +22,6 @@ pub fn parse_level_import(json: &str) -> Result<LevelMetadata, String> {
     parse_level_metadata_json(json)
 }
 
-pub fn parse_level_ldz_import(data: &[u8]) -> Result<LevelMetadata, String> {
+pub fn parse_level_ldz_import(data: &[u8]) -> Result<(LevelMetadata, Option<Vec<u8>>), String> {
     read_metadata_from_ldz(data)
 }

@@ -7,7 +7,7 @@ use crate::platform::services::trigger_audio_import;
 use crate::types::LevelMetadata;
 
 pub(crate) type AudioImportData = (String, Vec<u8>);
-pub(crate) type WaveformLoadData = (String, Option<(Vec<f32>, u32)>);
+pub(crate) type WaveformLoadData = (String, Option<(Vec<f32>, u32)>, Option<Vec<u8>>);
 
 pub(crate) struct EditorAudioState {
     pub(crate) local_audio_cache: HashMap<String, Vec<u8>>,
@@ -100,7 +100,8 @@ impl State {
     }
 
     pub(crate) fn update_waveform_loading(&mut self) {
-        while let Ok((source, decoded)) = self.audio.state.editor.waveform_load_channel.1.try_recv()
+        while let Ok((source, decoded, bytes)) =
+            self.audio.state.editor.waveform_load_channel.1.try_recv()
         {
             if let Some((samples, sample_rate)) = decoded {
                 self.audio
@@ -122,6 +123,14 @@ impl State {
 
                 self.editor.timing.waveform_samples.clear();
                 self.editor.timing.waveform_sample_rate = 0;
+            }
+
+            if let Some(bytes) = bytes {
+                self.audio
+                    .state
+                    .editor
+                    .local_audio_cache
+                    .insert(source.clone(), bytes);
             }
 
             if self.audio.state.editor.waveform_loading_source.as_deref() == Some(source.as_str()) {

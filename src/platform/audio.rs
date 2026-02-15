@@ -255,7 +255,7 @@ impl PlatformAudio {
 /// Returns (peak_samples, sample_rate) where peak_samples contains one peak per window.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn decode_audio_to_waveform(
-    bytes: Vec<u8>,
+    bytes: &[u8],
     window_size: usize,
 ) -> Option<(Vec<f32>, u32)> {
     use symphonia::core::audio::SampleBuffer;
@@ -266,7 +266,7 @@ pub(crate) fn decode_audio_to_waveform(
     use symphonia::core::meta::MetadataOptions;
     use symphonia::core::probe::Hint;
 
-    let source = std::io::Cursor::new(bytes);
+    let source = std::io::Cursor::new(bytes.to_vec());
     let mss = MediaSourceStream::new(Box::new(source), Default::default());
     let hint = Hint::new();
     let probed = symphonia::default::get_probe()

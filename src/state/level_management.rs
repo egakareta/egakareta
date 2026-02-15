@@ -115,7 +115,14 @@ impl State {
     }
 
     pub fn import_level_ldz(&mut self, data: &[u8]) -> Result<(), String> {
-        let metadata = parse_level_ldz_import(data)?;
+        let (metadata, audio_bytes) = parse_level_ldz_import(data)?;
+        if let Some(bytes) = audio_bytes {
+            self.audio
+                .state
+                .editor
+                .local_audio_cache
+                .insert(metadata.music.source.clone(), bytes);
+        }
         self.apply_imported_level_metadata(metadata);
         Ok(())
     }

@@ -3,7 +3,7 @@ use std::sync::mpsc::Sender;
 const WAVEFORM_WINDOW: usize = 256;
 
 pub type WaveformData = (Vec<f32>, u32);
-pub type WaveformResult = (String, Option<WaveformData>);
+pub type WaveformResult = (String, Option<WaveformData>, Option<Vec<u8>>);
 
 pub fn start_waveform_loading(
     music_source: String,
@@ -22,13 +22,13 @@ pub fn start_waveform_loading(
                 std::fs::read(&audio_path).ok()
             });
 
-            let decoded = if let Some(bytes) = bytes {
+            let decoded = if let Some(ref bytes) = bytes {
                 decode_audio_to_waveform(bytes, WAVEFORM_WINDOW)
             } else {
                 None
             };
 
-            let _ = sender.send((source_for_thread, decoded));
+            let _ = sender.send((source_for_thread, decoded, bytes));
         });
     }
 
@@ -63,14 +63,14 @@ pub fn start_waveform_loading(
                 fetched
             };
 
-            let decoded = if let Some(bytes) = bytes {
+            let decoded = if let Some(ref bytes) = bytes {
                 crate::platform::audio::decode_audio_to_waveform_async(&bytes, WAVEFORM_WINDOW)
                     .await
             } else {
                 None
             };
 
-            let _ = sender.send((source_for_send, decoded));
+            let _ = sender.send((source_for_send, decoded, bytes));
         });
     }
 }

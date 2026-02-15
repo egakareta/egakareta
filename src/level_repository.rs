@@ -70,7 +70,9 @@ pub(crate) fn build_ldz_archive(
     Ok(buffer)
 }
 
-pub(crate) fn read_metadata_from_ldz(data: &[u8]) -> Result<LevelMetadata, String> {
+pub(crate) fn read_metadata_from_ldz(
+    data: &[u8],
+) -> Result<(LevelMetadata, Option<Vec<u8>>), String> {
     let mut archive =
         zip::ZipArchive::new(std::io::Cursor::new(data)).map_err(|error| error.to_string())?;
 
@@ -81,8 +83,22 @@ pub(crate) fn read_metadata_from_ldz(data: &[u8]) -> Result<LevelMetadata, Strin
     metadata_file
         .read_to_string(&mut metadata_json)
         .map_err(|error| error.to_string())?;
+    drop(metadata_file); // Drop to allow another borrow
 
-    parse_level_metadata_json(&metadata_json)
+    let metadata = parse_level_metadata_json(&metadata_json)?;
+
+    // Try to read the audio file if it exists
+    let audio_bytes = if let Ok(mut audio_file) = archive.by_name(&metadata.music.source) {
+        let mut bytes = Vec::new();
+        audio_file
+            .read_to_end(&mut bytes)
+            .map_err(|error| error.to_string())?;
+        Some(bytes)
+    } else {
+        None
+    };
+
+    Ok((metadata, audio_bytes))
 }
 
 fn collect_builtin_levels(dir: &Dir<'_>, levels: &mut Vec<LevelMetadata>) {
