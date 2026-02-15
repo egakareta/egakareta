@@ -425,7 +425,7 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::State;
     use crate::types::AppPhase;
 
     #[test]

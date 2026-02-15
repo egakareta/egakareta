@@ -439,8 +439,11 @@ pub(crate) fn create_menu_scene() -> Vec<LevelObject> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::types::LevelObject;
+    use super::{
+        aabb_overlaps_object_xy, object_xy_contains, simulate_timeline_state, GameState,
+        TimelineSimulationRuntime, BASE_PLAYER_SPEED,
+    };
+    use crate::types::{LevelObject, SpawnDirection};
 
     fn approx_eq(a: f32, b: f32, eps: f32) {
         assert!((a - b).abs() <= eps, "expected {a} ~= {b}");
