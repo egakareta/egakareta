@@ -187,11 +187,10 @@ pub struct State {
     editor_camera: EditorCameraState,
     editor_timeline: EditorTimelineState,
     editor_runtime: EditorRuntimeState,
-    editor_frame: EditorFrameState,
+    frame_runtime: FrameRuntimeState,
     editor_perf: EditorPerfState,
     editor_timing: EditorTimingState,
     editor_session: EditorSessionState,
-    player_render: PlayerRenderState,
     audio_state: AudioState,
 }
 
@@ -451,6 +450,11 @@ struct EditorFrameState {
 
 struct PlayerRenderState {
     line_uniform: LineUniform,
+}
+
+struct FrameRuntimeState {
+    editor: EditorFrameState,
+    player_render: PlayerRenderState,
 }
 
 struct EditorAudioState {
@@ -887,10 +891,12 @@ impl State {
             game,
             phase: AppPhase::Menu,
             menu,
-            player_render: PlayerRenderState { line_uniform },
-            editor_frame: EditorFrameState {
-                last_frame: now,
-                accumulator: 0.0,
+            frame_runtime: FrameRuntimeState {
+                editor: EditorFrameState {
+                    last_frame: now,
+                    accumulator: 0.0,
+                },
+                player_render: PlayerRenderState { line_uniform },
             },
             audio_state: AudioState {
                 runtime: PlatformAudio::new(),

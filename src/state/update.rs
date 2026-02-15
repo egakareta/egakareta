@@ -64,8 +64,8 @@ impl State {
         const FIXED_DT: f32 = 1.0 / 120.0;
 
         let now = PlatformInstant::now();
-        let frame_dt = (now - self.editor_frame.last_frame).as_secs_f32();
-        self.editor_frame.last_frame = now;
+        let frame_dt = (now - self.frame_runtime.editor.last_frame).as_secs_f32();
+        self.frame_runtime.editor.last_frame = now;
         let frame_dt_ms = frame_dt * 1000.0;
         let instant_fps = 1.0 / frame_dt.max(1e-4);
         if self.editor_perf.fps_smoothed <= 0.0 {
@@ -73,10 +73,11 @@ impl State {
         } else {
             self.editor_perf.fps_smoothed = self.editor_perf.fps_smoothed * 0.9 + instant_fps * 0.1;
         }
-        self.editor_frame.accumulator = (self.editor_frame.accumulator + frame_dt).min(0.25);
+        self.frame_runtime.editor.accumulator =
+            (self.frame_runtime.editor.accumulator + frame_dt).min(0.25);
 
         if self.phase == AppPhase::Menu {
-            self.editor_frame.accumulator = 0.0;
+            self.frame_runtime.editor.accumulator = 0.0;
             self.update_menu_camera();
             self.editor_perf
                 .profiler
@@ -93,7 +94,7 @@ impl State {
         }
 
         if self.phase == AppPhase::Editor {
-            self.editor_frame.accumulator = 0.0;
+            self.frame_runtime.editor.accumulator = 0.0;
             self.meshes.trail.clear();
 
             if self.editor_timeline.playback.playing {
@@ -223,9 +224,9 @@ impl State {
             return;
         }
 
-        while self.editor_frame.accumulator >= FIXED_DT {
+        while self.frame_runtime.editor.accumulator >= FIXED_DT {
             self.game.update(FIXED_DT);
-            self.editor_frame.accumulator -= FIXED_DT;
+            self.frame_runtime.editor.accumulator -= FIXED_DT;
         }
 
         if self.game.game_over {
@@ -283,11 +284,11 @@ impl State {
             .trail
             .write_streaming_vertices(&self.gpu.queue, &trail_vertices);
 
-        self.player_render.line_uniform.offset = [
+        self.frame_runtime.player_render.line_uniform.offset = [
             (self.game.position[0] * 100.0).round() / 100.0,
             (self.game.position[1] * 100.0).round() / 100.0,
         ];
-        self.player_render.line_uniform.rotation = match self.game.direction {
+        self.frame_runtime.player_render.line_uniform.rotation = match self.game.direction {
             Direction::Forward => 0.0,
             Direction::Right => -std::f32::consts::FRAC_PI_2,
         };
@@ -295,7 +296,7 @@ impl State {
         self.gpu.queue.write_buffer(
             &self.gpu.line_uniform_buffer,
             0,
-            bytemuck::bytes_of(&self.player_render.line_uniform),
+            bytemuck::bytes_of(&self.frame_runtime.player_render.line_uniform),
         );
 
         let aspect = self.gpu.config.width as f32 / self.gpu.config.height as f32;
