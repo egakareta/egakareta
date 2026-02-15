@@ -23,6 +23,39 @@ pub(crate) struct PlatformAudio {
     playback_speed: f32,
 }
 
+fn accumulate_waveform_frame_peak(
+    peaks: &mut Vec<f32>,
+    window_peak: &mut f32,
+    window_count: &mut usize,
+    frame_peak: f32,
+    window_size: usize,
+) {
+    *window_peak = (*window_peak).max(frame_peak.abs());
+    *window_count += 1;
+
+    if *window_count >= window_size {
+        peaks.push(*window_peak);
+        *window_peak = 0.0;
+        *window_count = 0;
+    }
+}
+
+fn accumulate_interleaved_samples(
+    samples: &[f32],
+    channel_count: usize,
+    peaks: &mut Vec<f32>,
+    window_peak: &mut f32,
+    window_count: &mut usize,
+    window_size: usize,
+) {
+    for frame in samples.chunks(channel_count.max(1)) {
+        let frame_peak = frame
+            .iter()
+            .fold(0.0f32, |peak, sample| peak.max(sample.abs()));
+        accumulate_waveform_frame_peak(peaks, window_peak, window_count, frame_peak, window_size);
+    }
+}
+
 impl PlatformAudio {
     pub(crate) fn new() -> Self {
         #[cfg(target_arch = "wasm32")]
@@ -434,19 +467,14 @@ pub(crate) fn decode_audio_to_waveform(
 
         if let Some(buf) = sample_buffer.as_mut() {
             buf.copy_interleaved_ref(decoded);
-            for frame in buf.samples().chunks(channel_count) {
-                let frame_peak = frame
-                    .iter()
-                    .fold(0.0f32, |peak, sample| peak.max(sample.abs()));
-                window_peak = window_peak.max(frame_peak);
-                window_count += 1;
-
-                if window_count >= window_size {
-                    peaks.push(window_peak);
-                    window_peak = 0.0;
-                    window_count = 0;
-                }
-            }
+            accumulate_interleaved_samples(
+                buf.samples(),
+                channel_count,
+                &mut peaks,
+                &mut window_peak,
+                &mut window_count,
+                window_size,
+            );
         }
     }
 
@@ -492,14 +520,13 @@ pub(crate) async fn decode_audio_to_waveform_async(
         for channel in &channel_data {
             frame_peak = frame_peak.max(channel[frame_index].abs());
         }
-        window_peak = window_peak.max(frame_peak);
-        window_count += 1;
-
-        if window_count >= window_size {
-            peaks.push(window_peak);
-            window_peak = 0.0;
-            window_count = 0;
-        }
+        accumulate_waveform_frame_peak(
+            &mut peaks,
+            &mut window_peak,
+            &mut window_count,
+            frame_peak,
+            window_size,
+        );
     }
 
     if window_count > 0 {
@@ -509,4 +536,56 @@ pub(crate) async fn decode_audio_to_waveform_async(
     let _ = context.close();
 
     Some((peaks, sample_rate))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{accumulate_interleaved_samples, accumulate_waveform_frame_peak};
+
+    #[test]
+    fn interleaved_stereo_accumulates_per_frame_not_per_channel() {
+        let interleaved = vec![
+            0.2, 0.7, // frame 0 -> 0.7
+            0.4, 0.1, // frame 1 -> 0.4
+            0.8, 0.3, // frame 2 -> 0.8
+            0.1, 0.9, // frame 3 -> 0.9
+        ];
+
+        let mut peaks = Vec::new();
+        let mut window_peak = 0.0;
+        let mut window_count = 0usize;
+
+        accumulate_interleaved_samples(
+            &interleaved,
+            2,
+            &mut peaks,
+            &mut window_peak,
+            &mut window_count,
+            2,
+        );
+
+        assert_eq!(peaks, vec![0.7, 0.9]);
+        assert_eq!(window_count, 0);
+        assert_eq!(window_peak, 0.0);
+    }
+
+    #[test]
+    fn carries_partial_window_across_chunks() {
+        let mut peaks = Vec::new();
+        let mut window_peak = 0.0;
+        let mut window_count = 0usize;
+
+        accumulate_waveform_frame_peak(&mut peaks, &mut window_peak, &mut window_count, 0.3, 3);
+        accumulate_waveform_frame_peak(&mut peaks, &mut window_peak, &mut window_count, 0.8, 3);
+
+        assert!(peaks.is_empty());
+        assert_eq!(window_count, 2);
+        assert_eq!(window_peak, 0.8);
+
+        accumulate_waveform_frame_peak(&mut peaks, &mut window_peak, &mut window_count, 0.5, 3);
+
+        assert_eq!(peaks, vec![0.8]);
+        assert_eq!(window_count, 0);
+        assert_eq!(window_peak, 0.0);
+    }
 }
