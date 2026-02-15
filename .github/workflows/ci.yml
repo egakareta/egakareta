@@ -39,11 +39,22 @@ jobs:
       - name: Install dependencies (Bun)
         run: bun install
 
+      - name: Set diagnostic env for Windows tests
+        if: runner.os == 'Windows'
+        run: |
+          echo "RUST_BACKTRACE=1" >> $GITHUB_ENV
+          echo "RUST_LOG=wgpu=debug,rodio=debug" >> $GITHUB_ENV
+
       - name: Build
         run: cargo build --verbose
 
       - name: Run tests
-        run: bun run test --verbose
+        run: |
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            bun run test -- --nocapture --test-threads=1
+          else
+            bun run test --verbose
+          fi
 
       - name: Check cargo formatting
         if: runner.os == 'Linux'
