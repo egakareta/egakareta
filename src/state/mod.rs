@@ -196,11 +196,8 @@ pub struct State {
     editor_timeline_preview_direction: SpawnDirection,
     editor_tap_times: Vec<f32>,
     editor_tap_indicator_positions: Vec<[f32; 3]>,
-    editor_timeline_samples: Vec<EditorTimelineSample>,
-    editor_timeline_samples_dirty: bool,
-    editor_timeline_samples_rebuild_from_seconds: Option<f32>,
-    editor_timeline_playing: bool,
-    editor_timeline_playback_runtime: Option<TimelineSimulationRuntime>,
+    editor_timeline_cache: EditorTimelineSampleCache,
+    editor_timeline_playback: EditorTimelinePlaybackState,
     editor_dirty: EditorDirtyFlags,
     editor_perf: EditorPerfProfiler,
     editor_fps_smoothed: f32,
@@ -411,6 +408,17 @@ impl EditorPerfProfiler {
 struct EditorPickResult {
     cursor: [f32; 3],
     hit_block_index: Option<usize>,
+}
+
+struct EditorTimelineSampleCache {
+    samples: Vec<EditorTimelineSample>,
+    dirty: bool,
+    rebuild_from_seconds: Option<f32>,
+}
+
+struct EditorTimelinePlaybackState {
+    playing: bool,
+    runtime: Option<TimelineSimulationRuntime>,
 }
 
 #[derive(Clone, Copy)]
@@ -840,11 +848,15 @@ impl State {
             editor_timeline_preview_direction: SpawnDirection::Forward,
             editor_tap_times: Vec::new(),
             editor_tap_indicator_positions: Vec::new(),
-            editor_timeline_samples: Vec::new(),
-            editor_timeline_samples_dirty: true,
-            editor_timeline_samples_rebuild_from_seconds: None,
-            editor_timeline_playing: false,
-            editor_timeline_playback_runtime: None,
+            editor_timeline_cache: EditorTimelineSampleCache {
+                samples: Vec::new(),
+                dirty: true,
+                rebuild_from_seconds: None,
+            },
+            editor_timeline_playback: EditorTimelinePlaybackState {
+                playing: false,
+                runtime: None,
+            },
             editor_dirty: EditorDirtyFlags::default(),
             editor_perf: EditorPerfProfiler::new(),
             editor_fps_smoothed: 0.0,

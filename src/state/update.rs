@@ -92,7 +92,7 @@ impl State {
             self.accumulator = 0.0;
             self.meshes.trail.clear();
 
-            if self.editor_timeline_playing {
+            if self.editor_timeline_playback.playing {
                 let timeline_playback_started_at = PlatformInstant::now();
                 let audio_time = self
                     .audio
@@ -104,7 +104,7 @@ impl State {
                     self.editor_timeline_time_seconds = clamped_time;
 
                     let mut applied_runtime_state = false;
-                    if let Some(runtime) = self.editor_timeline_playback_runtime.as_mut() {
+                    if let Some(runtime) = self.editor_timeline_playback.runtime.as_mut() {
                         if clamped_time + 1e-6 >= runtime.elapsed_seconds() {
                             runtime.advance_to(clamped_time);
                             let snapshot = runtime.snapshot();
@@ -129,14 +129,14 @@ impl State {
                             snapshot.position,
                             snapshot.direction,
                         );
-                        self.editor_timeline_playback_runtime = Some(runtime);
+                        self.editor_timeline_playback.runtime = Some(runtime);
                     }
                 }
 
                 if clamped_time >= self.editor_timeline_duration_seconds || !self.audio.is_playing()
                 {
-                    self.editor_timeline_playing = false;
-                    self.editor_timeline_playback_runtime = None;
+                    self.editor_timeline_playback.playing = false;
+                    self.editor_timeline_playback.runtime = None;
                     self.stop_audio();
                     self.refresh_editor_timeline_position();
                 }

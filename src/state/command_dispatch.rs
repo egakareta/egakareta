@@ -68,9 +68,9 @@ impl State {
             return;
         }
 
-        if self.editor_timeline_playing {
-            self.editor_timeline_playing = false;
-            self.editor_timeline_playback_runtime = None;
+        if self.editor_timeline_playback.playing {
+            self.editor_timeline_playback.playing = false;
+            self.editor_timeline_playback.runtime = None;
             self.stop_audio();
         } else if self.editor_timeline_time_seconds > 0.001 {
             self.set_editor_timeline_time_seconds(0.0);

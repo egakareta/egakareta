@@ -97,18 +97,18 @@ impl State {
     }
 
     pub(super) fn resync_editor_timeline_playback_audio(&mut self) {
-        if self.phase != AppPhase::Editor || !self.editor_timeline_playing {
+        if self.phase != AppPhase::Editor || !self.editor_timeline_playback.playing {
             return;
         }
 
         self.stop_audio();
-        self.editor_timeline_playback_runtime = Some(TimelineSimulationRuntime::new(
+        self.editor_timeline_playback.runtime = Some(TimelineSimulationRuntime::new(
             self.editor_spawn.position,
             self.editor_spawn.direction,
             &self.editor_objects,
             &self.editor_tap_times,
         ));
-        if let Some(runtime) = self.editor_timeline_playback_runtime.as_mut() {
+        if let Some(runtime) = self.editor_timeline_playback.runtime.as_mut() {
             runtime.advance_to(self.editor_timeline_time_seconds);
         }
 
@@ -225,16 +225,16 @@ impl State {
             return;
         }
 
-        self.editor_timeline_playing = !self.editor_timeline_playing;
+        self.editor_timeline_playback.playing = !self.editor_timeline_playback.playing;
 
-        if self.editor_timeline_playing {
-            self.editor_timeline_playback_runtime = Some(TimelineSimulationRuntime::new(
+        if self.editor_timeline_playback.playing {
+            self.editor_timeline_playback.runtime = Some(TimelineSimulationRuntime::new(
                 self.editor_spawn.position,
                 self.editor_spawn.direction,
                 &self.editor_objects,
                 &self.editor_tap_times,
             ));
-            if let Some(runtime) = self.editor_timeline_playback_runtime.as_mut() {
+            if let Some(runtime) = self.editor_timeline_playback.runtime.as_mut() {
                 runtime.advance_to(self.editor_timeline_time_seconds);
             }
 
@@ -249,7 +249,7 @@ impl State {
             return;
         }
 
-        self.editor_timeline_playback_runtime = None;
+        self.editor_timeline_playback.runtime = None;
         self.stop_audio();
         self.refresh_editor_timeline_position();
     }
@@ -287,8 +287,8 @@ impl State {
             return;
         }
 
-        self.editor_timeline_playing = false;
-        self.editor_timeline_playback_runtime = None;
+        self.editor_timeline_playback.playing = false;
+        self.editor_timeline_playback.runtime = None;
         self.stop_audio();
 
         let transition = build_editor_playtest_transition(
@@ -339,16 +339,16 @@ impl State {
     }
 
     pub fn back_to_menu(&mut self) {
-        self.editor_timeline_playing = false;
-        self.editor_timeline_playback_runtime = None;
+        self.editor_timeline_playback.playing = false;
+        self.editor_timeline_playback.runtime = None;
         self.stop_audio();
         if let Some(objects) =
             playtest_return_objects(self.playtesting_editor, &self.editor_objects)
         {
             self.playtesting_editor = false;
             self.phase = AppPhase::Editor;
-            self.editor_timeline_playing = false;
-            self.editor_timeline_playback_runtime = None;
+            self.editor_timeline_playback.playing = false;
+            self.editor_timeline_playback.runtime = None;
             self.game = GameState::new();
             self.game.objects = objects;
             self.rebuild_block_vertices();
