@@ -15,36 +15,6 @@ use crate::platform::state_host::PlatformInstant;
 use crate::types::{AppPhase, EditorMode, SpawnDirection};
 
 impl State {
-    pub(super) fn tap_indicator_position_from_world(&self, position: [f32; 3]) -> [f32; 3] {
-        let step = if self.editor.config.snap_to_grid {
-            self.editor.config.snap_step.max(0.05)
-        } else {
-            1.0
-        };
-        [
-            ((position[0] - 0.5) / step).round() * step,
-            ((position[1] - 0.5) / step).round() * step,
-            (position[2] / step).round() * step,
-        ]
-    }
-
-    pub(super) fn invalidate_editor_timeline_samples(&mut self) {
-        self.editor.timeline.cache.dirty = true;
-        self.editor.timeline.cache.rebuild_from_seconds = None;
-    }
-
-    pub(super) fn invalidate_editor_timeline_samples_from(&mut self, from_seconds: f32) {
-        self.editor.timeline.cache.dirty = true;
-        let clamped = from_seconds.max(0.0);
-        self.editor.timeline.cache.rebuild_from_seconds = Some(
-            self.editor
-                .timeline
-                .cache
-                .rebuild_from_seconds
-                .map_or(clamped, |existing| existing.min(clamped)),
-        );
-    }
-
     pub(super) fn ensure_editor_timeline_samples(&mut self) {
         if !self.editor.timeline.cache.dirty {
             return;
@@ -240,7 +210,7 @@ impl State {
                 self.editor.ui.hovered_block_index = None;
             }
         }
-        self.invalidate_editor_timeline_samples();
+        self.editor.invalidate_samples();
         self.mark_editor_dirty(EditorDirtyFlags::from_object_sync());
     }
 
@@ -261,7 +231,7 @@ impl State {
                 self.editor.ui.hovered_block_index = None;
             }
         }
-        self.invalidate_editor_timeline_samples();
+        self.editor.invalidate_samples();
         self.mark_editor_dirty(EditorDirtyFlags {
             sync_game_objects: true,
             rebuild_block_mesh: true,

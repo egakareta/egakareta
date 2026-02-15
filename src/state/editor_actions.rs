@@ -84,7 +84,7 @@ impl State {
                     .remove(remove_index);
             }
 
-            self.invalidate_editor_timeline_samples_from(removed_time);
+            self.editor.invalidate_samples_from(removed_time);
             let (position, direction) =
                 self.editor_timeline_position(self.editor.timeline.clock.time_seconds);
             self.rebuild_editor_preview_player_vertices_for_state(position, direction);
@@ -110,7 +110,7 @@ impl State {
             derived_time,
             indicator_cell,
         );
-        self.invalidate_editor_timeline_samples_from(derived_time);
+        self.editor.invalidate_samples_from(derived_time);
         let (position, direction) =
             self.editor_timeline_position(self.editor.timeline.clock.time_seconds);
         self.rebuild_editor_preview_player_vertices_for_state(position, direction);
@@ -347,7 +347,7 @@ impl State {
 
         let cursor = self.editor.ui.cursor;
         self.editor.spawn.position = cursor;
-        self.invalidate_editor_timeline_samples();
+        self.editor.invalidate_samples();
 
         self.sync_editor_objects();
         self.refresh_editor_timeline_position();
@@ -362,7 +362,7 @@ impl State {
         self.record_editor_history_state();
 
         self.editor.spawn.direction = toggle_spawn_direction(self.editor.spawn.direction);
-        self.invalidate_editor_timeline_samples();
+        self.editor.invalidate_samples();
         self.refresh_editor_timeline_position();
         self.rebuild_spawn_marker_vertices();
     }

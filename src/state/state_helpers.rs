@@ -1,33 +1,31 @@
-use super::State;
+use super::{EditorSubsystem, State};
 use crate::game::GameState;
 use crate::types::{AppPhase, EditorMode};
 
-impl State {
-    pub(super) fn clear_editor_pan_keys(&mut self) {
-        self.editor.ui.pan_up_held = false;
-        self.editor.ui.pan_down_held = false;
-        self.editor.ui.pan_left_held = false;
-        self.editor.ui.pan_right_held = false;
-        self.editor.ui.shift_held = false;
-        self.editor.ui.ctrl_held = false;
+impl EditorSubsystem {
+    pub(crate) fn clear_pan_keys(&mut self) {
+        self.ui.pan_up_held = false;
+        self.ui.pan_down_held = false;
+        self.ui.pan_left_held = false;
+        self.ui.pan_right_held = false;
+        self.ui.shift_held = false;
+        self.ui.ctrl_held = false;
     }
 
-    pub(super) fn selected_block_indices_normalized(&self) -> Vec<usize> {
+    pub(crate) fn selected_indices_normalized(&self) -> Vec<usize> {
         let mut indices: Vec<usize> = self
-            .editor
             .ui
             .selected_block_indices
             .iter()
             .copied()
-            .filter(|index| *index < self.editor.objects.len())
+            .filter(|index| *index < self.objects.len())
             .collect();
 
         if indices.is_empty() {
             if let Some(index) = self
-                .editor
                 .ui
                 .selected_block_index
-                .filter(|index| *index < self.editor.objects.len())
+                .filter(|index| *index < self.objects.len())
             {
                 indices.push(index);
             }
@@ -38,21 +36,21 @@ impl State {
         indices
     }
 
-    pub(super) fn sync_primary_selection_from_indices(&mut self) {
-        let indices = self.selected_block_indices_normalized();
-        self.editor.ui.selected_block_index = indices.first().copied();
-        self.editor.ui.selected_block_indices = indices;
+    pub(crate) fn sync_primary_selection_from_indices(&mut self) {
+        let indices = self.selected_indices_normalized();
+        self.ui.selected_block_index = indices.first().copied();
+        self.ui.selected_block_indices = indices;
     }
 
-    pub(super) fn selection_contains(&self, index: usize) -> bool {
-        self.editor.ui.selected_block_indices.contains(&index)
-            || self.editor.ui.selected_block_index == Some(index)
+    pub(crate) fn selection_contains(&self, index: usize) -> bool {
+        self.ui.selected_block_indices.contains(&index)
+            || self.ui.selected_block_index == Some(index)
     }
 
-    pub(super) fn selected_group_bounds(&self) -> Option<([f32; 3], [f32; 3])> {
-        let indices = self.selected_block_indices_normalized();
+    pub(crate) fn selected_group_bounds(&self) -> Option<([f32; 3], [f32; 3])> {
+        let indices = self.selected_indices_normalized();
         let first = *indices.first()?;
-        let first_obj = self.editor.objects.get(first)?;
+        let first_obj = self.objects.get(first)?;
         let mut min = first_obj.position;
         let mut max = [
             first_obj.position[0] + first_obj.size[0],
@@ -61,7 +59,7 @@ impl State {
         ];
 
         for index in indices.into_iter().skip(1) {
-            if let Some(obj) = self.editor.objects.get(index) {
+            if let Some(obj) = self.objects.get(index) {
                 min[0] = min[0].min(obj.position[0]);
                 min[1] = min[1].min(obj.position[1]);
                 min[2] = min[2].min(obj.position[2]);
@@ -72,6 +70,28 @@ impl State {
         }
 
         Some((min, [max[0] - min[0], max[1] - min[1], max[2] - min[2]]))
+    }
+}
+
+impl State {
+    pub(super) fn clear_editor_pan_keys(&mut self) {
+        self.editor.clear_pan_keys();
+    }
+
+    pub(super) fn selected_block_indices_normalized(&self) -> Vec<usize> {
+        self.editor.selected_indices_normalized()
+    }
+
+    pub(super) fn sync_primary_selection_from_indices(&mut self) {
+        self.editor.sync_primary_selection_from_indices();
+    }
+
+    pub(super) fn selection_contains(&self, index: usize) -> bool {
+        self.editor.selection_contains(index)
+    }
+
+    pub(super) fn selected_group_bounds(&self) -> Option<([f32; 3], [f32; 3])> {
+        self.editor.selected_group_bounds()
     }
 
     pub(super) fn reset_playing_camera_defaults(&mut self) {

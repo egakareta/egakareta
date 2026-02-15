@@ -5,32 +5,11 @@ use crate::types::AppPhase;
 
 impl State {
     pub(super) fn editor_camera_axes_xy(&self) -> (Vec2, Vec2) {
-        let right = Vec2::new(
-            self.editor.camera.editor_rotation.cos(),
-            self.editor.camera.editor_rotation.sin(),
-        );
-        let up = Vec2::new(
-            -self.editor.camera.editor_rotation.sin(),
-            self.editor.camera.editor_rotation.cos(),
-        );
-        (right, up)
+        self.editor.camera_axes_xy()
     }
 
     pub(super) fn editor_camera_offset(&self) -> Vec3 {
-        let zoom = self.editor.camera.editor_zoom.clamp(0.35, 4.0);
-        let distance = 24.0 / zoom;
-        let pitch = self
-            .editor
-            .camera
-            .editor_pitch
-            .clamp(10.0f32.to_radians(), 85.0f32.to_radians());
-        let horizontal_distance = distance * pitch.cos();
-        let vertical_distance = distance * pitch.sin();
-        Mat4::from_rotation_z(self.editor.camera.editor_rotation).transform_vector3(Vec3::new(
-            0.0,
-            -horizontal_distance,
-            vertical_distance,
-        ))
+        self.editor.camera_offset()
     }
 
     pub(super) fn playing_camera_offset(&self) -> Vec3 {

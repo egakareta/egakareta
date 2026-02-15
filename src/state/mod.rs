@@ -435,9 +435,17 @@ impl EditorPerfProfiler {
     }
 }
 
-struct EditorPickResult {
-    cursor: [f32; 3],
-    hit_block_index: Option<usize>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EditorInteractionChange {
+    None,
+    Hover,
+    Cursor,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct EditorPickResult {
+    pub(crate) cursor: [f32; 3],
+    pub(crate) hit_block_index: Option<usize>,
 }
 
 struct EditorTimelineSampleCache {
@@ -554,8 +562,8 @@ pub(crate) struct EditorCameraState {
     playing_pitch: f32,
 }
 
-#[derive(Clone, Copy)]
-enum GizmoAxis {
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum GizmoAxis {
     X,
     Y,
     Z,
@@ -564,39 +572,39 @@ enum GizmoAxis {
     ZNeg,
 }
 
-#[derive(Clone, Copy)]
-enum GizmoDragKind {
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum GizmoDragKind {
     Move,
     Resize,
 }
 
 #[derive(Clone)]
-struct EditorGizmoDrag {
-    axis: GizmoAxis,
-    kind: GizmoDragKind,
-    start_mouse: [f64; 2],
-    start_center_screen: [f32; 2],
-    start_center_world: [f32; 3],
-    start_blocks: Vec<EditorDragBlockStart>,
+pub(crate) struct EditorGizmoDrag {
+    pub(crate) axis: GizmoAxis,
+    pub(crate) kind: GizmoDragKind,
+    pub(crate) start_mouse: [f64; 2],
+    pub(crate) start_center_screen: [f32; 2],
+    pub(crate) start_center_world: [f32; 3],
+    pub(crate) start_blocks: Vec<EditorDragBlockStart>,
 }
 
 #[derive(Clone)]
-struct EditorBlockDrag {
-    start_mouse: [f64; 2],
-    start_center_screen: [f32; 2],
-    start_center_world: [f32; 3],
-    start_blocks: Vec<EditorDragBlockStart>,
+pub(crate) struct EditorBlockDrag {
+    pub(crate) start_mouse: [f64; 2],
+    pub(crate) start_center_screen: [f32; 2],
+    pub(crate) start_center_world: [f32; 3],
+    pub(crate) start_blocks: Vec<EditorDragBlockStart>,
 }
 
 #[derive(Clone, Copy)]
-struct EditorDragBlockStart {
-    index: usize,
-    position: [f32; 3],
-    size: [f32; 3],
+pub(crate) struct EditorDragBlockStart {
+    pub(crate) index: usize,
+    pub(crate) position: [f32; 3],
+    pub(crate) size: [f32; 3],
 }
 
 #[derive(Clone)]
-struct EditorHistorySnapshot {
+pub(crate) struct EditorHistorySnapshot {
     objects: Vec<LevelObject>,
     selected_block_index: Option<usize>,
     selected_block_indices: Vec<usize>,
