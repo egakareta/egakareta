@@ -111,37 +111,44 @@ impl State {
                     .playback_time_seconds()
                     .unwrap_or(self.editor.timeline.clock.time_seconds);
                 let clamped_time = audio_time.min(self.editor.timeline.clock.duration_seconds);
+                let simulate_preview = self.editor.ui.mode != EditorMode::Timing;
+
+                if !simulate_preview {
+                    self.editor.timeline.playback.runtime = None;
+                }
 
                 if (clamped_time - self.editor.timeline.clock.time_seconds).abs() > 1e-4 {
                     self.editor.timeline.clock.time_seconds = clamped_time;
 
-                    let mut applied_runtime_state = false;
-                    if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
-                        if clamped_time + 1e-6 >= runtime.elapsed_seconds() {
+                    if simulate_preview {
+                        let mut applied_runtime_state = false;
+                        if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
+                            if clamped_time + 1e-6 >= runtime.elapsed_seconds() {
+                                runtime.advance_to(clamped_time);
+                                let snapshot = runtime.snapshot();
+                                self.apply_editor_timeline_preview_state(
+                                    snapshot.position,
+                                    snapshot.direction,
+                                );
+                                applied_runtime_state = true;
+                            }
+                        }
+
+                        if !applied_runtime_state {
+                            let mut runtime = TimelineSimulationRuntime::new(
+                                self.editor.spawn.position,
+                                self.editor.spawn.direction,
+                                &self.editor.objects,
+                                &self.editor.timeline.taps.tap_times,
+                            );
                             runtime.advance_to(clamped_time);
                             let snapshot = runtime.snapshot();
                             self.apply_editor_timeline_preview_state(
                                 snapshot.position,
                                 snapshot.direction,
                             );
-                            applied_runtime_state = true;
+                            self.editor.timeline.playback.runtime = Some(runtime);
                         }
-                    }
-
-                    if !applied_runtime_state {
-                        let mut runtime = TimelineSimulationRuntime::new(
-                            self.editor.spawn.position,
-                            self.editor.spawn.direction,
-                            &self.editor.objects,
-                            &self.editor.timeline.taps.tap_times,
-                        );
-                        runtime.advance_to(clamped_time);
-                        let snapshot = runtime.snapshot();
-                        self.apply_editor_timeline_preview_state(
-                            snapshot.position,
-                            snapshot.direction,
-                        );
-                        self.editor.timeline.playback.runtime = Some(runtime);
                     }
                 }
 

@@ -216,14 +216,18 @@ impl State {
         }
 
         self.stop_audio();
-        self.editor.timeline.playback.runtime = Some(TimelineSimulationRuntime::new(
-            self.editor.spawn.position,
-            self.editor.spawn.direction,
-            &self.editor.objects,
-            &self.editor.timeline.taps.tap_times,
-        ));
-        if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
-            runtime.advance_to(self.editor.timeline.clock.time_seconds);
+        if self.editor.ui.mode == EditorMode::Timing {
+            self.editor.timeline.playback.runtime = None;
+        } else {
+            self.editor.timeline.playback.runtime = Some(TimelineSimulationRuntime::new(
+                self.editor.spawn.position,
+                self.editor.spawn.direction,
+                &self.editor.objects,
+                &self.editor.timeline.taps.tap_times,
+            ));
+            if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
+                runtime.advance_to(self.editor.timeline.clock.time_seconds);
+            }
         }
 
         let metadata = self.current_editor_metadata();
@@ -312,14 +316,18 @@ impl State {
         self.editor.timeline.playback.playing = !self.editor.timeline.playback.playing;
 
         if self.editor.timeline.playback.playing {
-            self.editor.timeline.playback.runtime = Some(TimelineSimulationRuntime::new(
-                self.editor.spawn.position,
-                self.editor.spawn.direction,
-                &self.editor.objects,
-                &self.editor.timeline.taps.tap_times,
-            ));
-            if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
-                runtime.advance_to(self.editor.timeline.clock.time_seconds);
+            if self.editor.ui.mode == EditorMode::Timing {
+                self.editor.timeline.playback.runtime = None;
+            } else {
+                self.editor.timeline.playback.runtime = Some(TimelineSimulationRuntime::new(
+                    self.editor.spawn.position,
+                    self.editor.spawn.direction,
+                    &self.editor.objects,
+                    &self.editor.timeline.taps.tap_times,
+                ));
+                if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
+                    runtime.advance_to(self.editor.timeline.clock.time_seconds);
+                }
             }
 
             let metadata = self.current_editor_metadata();
