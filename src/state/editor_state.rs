@@ -280,12 +280,16 @@ impl EditorSubsystem {
 
     pub(crate) fn invalidate_samples(&mut self) {
         self.timeline.simulation_revision = self.timeline.simulation_revision.wrapping_add(1);
+        self.timeline.snapshot_cache_revision = 0;
+        self.timeline.snapshot_cache.clear();
         self.timeline.scrub_runtime = None;
         self.timeline.scrub_runtime_revision = 0;
     }
 
     pub(crate) fn invalidate_samples_from(&mut self, _from_seconds: f32) {
         self.timeline.simulation_revision = self.timeline.simulation_revision.wrapping_add(1);
+        self.timeline.snapshot_cache_revision = 0;
+        self.timeline.snapshot_cache.clear();
         self.timeline.scrub_runtime = None;
         self.timeline.scrub_runtime_revision = 0;
     }
@@ -637,40 +641,78 @@ impl State {
             return;
         }
 
-        let target_time = self.editor.timeline.clock.time_seconds;
-        let simulation_revision = self.editor.timeline.simulation_revision;
-
         let solve_started_at = PlatformInstant::now();
-        let mut snapshot = None;
+        self.rebuild_editor_timeline_snapshot_cache_if_needed();
 
-        if self.editor.timeline.scrub_runtime_revision == simulation_revision {
-            if let Some(runtime) = self.editor.timeline.scrub_runtime.as_mut() {
-                if target_time + 1e-6 >= runtime.elapsed_seconds() {
-                    runtime.advance_to(target_time);
-                    snapshot = Some(runtime.snapshot());
-                }
-            }
+        let duration_seconds = self.editor.timeline.clock.duration_seconds;
+        let step_seconds = self
+            .editor
+            .timeline
+            .snapshot_cache_step_seconds
+            .max(1.0 / 480.0);
+        let cache_len = self.editor.timeline.snapshot_cache.len();
+        if cache_len == 0 {
+            self.perf_record(PerfStage::PreviewSolveTimeline, solve_started_at);
+            return;
         }
+
+        let target_time = self
+            .editor
+            .timeline
+            .clock
+            .time_seconds
+            .clamp(0.0, duration_seconds);
+        let max_index = cache_len.saturating_sub(1);
+        let target_index = ((target_time / step_seconds).round() as usize).min(max_index);
+        let cached = &self.editor.timeline.snapshot_cache[target_index];
+        let position = cached.position;
+        let direction = cached.direction;
+
+        self.apply_editor_timeline_preview_state(position, direction);
         self.perf_record(PerfStage::PreviewSolveTimeline, solve_started_at);
+    }
 
-        if snapshot.is_none() {
-            let rebuild_started_at = PlatformInstant::now();
-            let mut runtime = TimelineSimulationRuntime::new(
-                self.editor.spawn.position,
-                self.editor.spawn.direction,
-                &self.editor.objects,
-                &self.editor.timeline.taps.tap_times,
-            );
-            runtime.advance_to(target_time);
-            snapshot = Some(runtime.snapshot());
-            self.editor.timeline.scrub_runtime = Some(runtime);
-            self.editor.timeline.scrub_runtime_revision = simulation_revision;
-            self.perf_record(PerfStage::TimelineSampleRebuild, rebuild_started_at);
+    fn rebuild_editor_timeline_snapshot_cache_if_needed(&mut self) {
+        if self.editor.timeline.snapshot_cache_revision == self.editor.timeline.simulation_revision
+            && !self.editor.timeline.snapshot_cache.is_empty()
+        {
+            return;
         }
 
-        if let Some(snapshot) = snapshot {
-            self.apply_editor_timeline_preview_state(snapshot.position, snapshot.direction);
+        let rebuild_started_at = PlatformInstant::now();
+        let duration_seconds = self.editor.timeline.clock.duration_seconds.max(0.0);
+        let step_seconds = self
+            .editor
+            .timeline
+            .snapshot_cache_step_seconds
+            .max(1.0 / 480.0);
+
+        let sample_count = ((duration_seconds / step_seconds).ceil() as usize).saturating_add(1);
+
+        let mut runtime = TimelineSimulationRuntime::new(
+            self.editor.spawn.position,
+            self.editor.spawn.direction,
+            &self.editor.objects,
+            &self.editor.timeline.taps.tap_times,
+        );
+
+        let mut snapshots = Vec::with_capacity(sample_count.max(1));
+        for index in 0..sample_count.max(1) {
+            let sample_time = (index as f32 * step_seconds).min(duration_seconds);
+            runtime.advance_to(sample_time);
+            let snapshot = runtime.snapshot();
+            snapshots.push(crate::state::editor_timeline::EditorTimelineSnapshot {
+                position: snapshot.position,
+                direction: snapshot.direction,
+            });
         }
+
+        self.editor.timeline.snapshot_cache = snapshots;
+        self.editor.timeline.snapshot_cache_revision = self.editor.timeline.simulation_revision;
+        self.editor.timeline.scrub_runtime = None;
+        self.editor.timeline.scrub_runtime_revision = 0;
+
+        self.perf_record(PerfStage::TimelineSampleRebuild, rebuild_started_at);
     }
 
     pub fn set_editor_timeline_duration_seconds(&mut self, duration_seconds: f32) {
