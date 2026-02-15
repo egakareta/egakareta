@@ -11,7 +11,7 @@ pub fn start_waveform_loading(
     cached_bytes: Option<Vec<u8>>,
     sender: Sender<WaveformResult>,
 ) {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), not(test)))]
     {
         use crate::platform::audio::decode_audio_to_waveform;
         let source_for_thread = music_source.clone();
@@ -30,6 +30,24 @@ pub fn start_waveform_loading(
 
             let _ = sender.send((source_for_thread, decoded));
         });
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), test))]
+    {
+        use crate::platform::audio::decode_audio_to_waveform;
+
+        let bytes = cached_bytes.or_else(|| {
+            let audio_path = format!("assets/levels/{}/{}", level_name, music_source);
+            std::fs::read(&audio_path).ok()
+        });
+
+        let decoded = if let Some(bytes) = bytes {
+            decode_audio_to_waveform(bytes, WAVEFORM_WINDOW)
+        } else {
+            None
+        };
+
+        let _ = sender.send((music_source, decoded));
     }
 
     #[cfg(target_arch = "wasm32")]

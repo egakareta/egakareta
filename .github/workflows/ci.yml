@@ -49,19 +49,13 @@ jobs:
         if: runner.os != 'macOS' || startsWith(github.ref, 'refs/tags/')
         run: bun install
 
-      - name: Set diagnostic env for Windows tests
-        if: runner.os == 'Windows'
-        run: |
-          echo "RUST_BACKTRACE=1" >> $GITHUB_ENV
-          echo "RUST_LOG=wgpu=debug,rodio=debug" >> $GITHUB_ENV
-
       - name: Build
         if: runner.os != 'macOS' || startsWith(github.ref, 'refs/tags/')
         run: cargo build --verbose
 
       - name: Run tests
         if: runner.os != 'macOS' || startsWith(github.ref, 'refs/tags/')
-        run: bun run test -- -- --nocapture --test-threads=1
+        run: bun run test --verbose
 
       - name: Check cargo formatting
         if: runner.os == 'Linux'
