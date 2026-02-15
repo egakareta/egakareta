@@ -6,3 +6,4 @@
 /dist
 !/dist/.nojekyll
 /.wrangler
+lcov.info

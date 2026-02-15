@@ -40,11 +40,22 @@ jobs:
       - name: Install dependencies (Bun)
         run: bun install
 
-      - name: Build
-        run: cargo build --verbose
+      - name: Install llvm-tools-preview
+        run: rustup component add llvm-tools-preview
 
-      - name: Run tests
-        run: bun run test --verbose
+      - name: Install cargo-llvm-cov
+        uses: baptiste0928/cargo-install@v3
+        with:
+          crate: cargo-llvm-cov
+
+      - name: Install cargo-nextest
+        uses: baptiste0928/cargo-install@v3
+        with:
+          crate: cargo-nextest
+          locked: true
+
+      - name: Run tests with coverage
+        run: cargo llvm-cov --lcov --output-path lcov.info
 
       - name: Check cargo formatting
         run: bun format:cargo -- --check
@@ -84,16 +95,10 @@ jobs:
             line-dash-windows.exe
             line-dash-macos
 
-      - name: Install cargo-tarpaulin
-        run: cargo install cargo-tarpaulin
-
-      - name: Generate coverage report
-        run: cargo tarpaulin --out Xml
-
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
-          file: ./cobertura.xml
+          file: ./lcov.info
 
   build-wasm:
     name: Build WASM
