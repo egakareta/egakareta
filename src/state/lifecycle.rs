@@ -481,6 +481,7 @@ impl State {
                 },
                 perf: EditorPerfState::new(),
                 timing: EditorTimingState::new(),
+                selected_mask_cache: None,
             },
         })
     }

@@ -263,6 +263,7 @@ impl EditorSubsystem {
         }
 
         self.sync_primary_selection_from_indices();
+        self.selected_mask_cache = None;
         self.runtime.interaction.gizmo_drag = None;
         self.runtime.interaction.block_drag = None;
 

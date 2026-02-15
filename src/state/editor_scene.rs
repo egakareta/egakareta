@@ -39,6 +39,7 @@ impl EditorSubsystem {
             }
         }
         self.invalidate_samples();
+        self.selected_mask_cache = None;
         self.mark_dirty(EditorDirtyFlags::from_object_sync());
     }
 
@@ -63,6 +64,32 @@ impl EditorSubsystem {
             sync_game_objects: true,
             rebuild_block_mesh: true,
             rebuild_selection_overlays: true,
+            ..EditorDirtyFlags::default()
+        });
+    }
+
+    pub(crate) fn sync_objects_after_drag_release(&mut self) {
+        self.sync_primary_selection_from_indices();
+        if let Some(index) = self.ui.selected_block_index {
+            if index >= self.objects.len() {
+                self.ui.selected_block_index = None;
+            }
+        }
+        self.ui
+            .selected_block_indices
+            .retain(|index| *index < self.objects.len());
+        self.sync_primary_selection_from_indices();
+        if let Some(index) = self.ui.hovered_block_index {
+            if index >= self.objects.len() {
+                self.ui.hovered_block_index = None;
+            }
+        }
+        self.invalidate_samples();
+        self.mark_dirty(EditorDirtyFlags {
+            sync_game_objects: true,
+            rebuild_selection_overlays: true,
+            rebuild_preview_player: true,
+            rebuild_cursor: true,
             ..EditorDirtyFlags::default()
         });
     }
@@ -326,6 +353,10 @@ impl State {
 
     pub(super) fn sync_editor_objects(&mut self) {
         self.editor.sync_objects();
+    }
+
+    pub(super) fn sync_editor_objects_after_drag_release(&mut self) {
+        self.editor.sync_objects_after_drag_release();
     }
 
     pub(super) fn apply_spawn_to_game(&mut self, position: [f32; 3], direction: SpawnDirection) {
@@ -609,10 +640,35 @@ impl State {
     }
 
     fn rebuild_editor_selected_block_vertices(&mut self) {
-        let selected_indices = self.selected_block_indices_normalized();
+        let selected_mask = if let Some(ref cache) = self.editor.selected_mask_cache {
+            if cache.len() == self.editor.objects.len() {
+                cache.clone()
+            } else {
+                let selected_indices = self.selected_block_indices_normalized();
+                let mut mask = vec![false; self.editor.objects.len()];
+                for index in selected_indices {
+                    if index < mask.len() {
+                        mask[index] = true;
+                    }
+                }
+                self.editor.selected_mask_cache = Some(mask.clone());
+                mask
+            }
+        } else {
+            let selected_indices = self.selected_block_indices_normalized();
+            let mut mask = vec![false; self.editor.objects.len()];
+            for index in selected_indices {
+                if index < mask.len() {
+                    mask[index] = true;
+                }
+            }
+            self.editor.selected_mask_cache = Some(mask.clone());
+            mask
+        };
+
         let mut selected_objects = Vec::new();
-        for index in selected_indices {
-            if let Some(object) = self.editor.objects.get(index) {
+        for (index, object) in self.editor.objects.iter().enumerate() {
+            if selected_mask[index] {
                 selected_objects.push(object.clone());
             }
         }

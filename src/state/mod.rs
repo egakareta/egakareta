@@ -67,6 +67,7 @@ pub(crate) struct EditorSubsystem {
     pub(crate) runtime: EditorRuntimeState,
     pub(crate) perf: EditorPerfState,
     pub(crate) timing: EditorTimingState,
+    pub(crate) selected_mask_cache: Option<Vec<bool>>,
 }
 
 pub(crate) struct MenuSubsystem {
@@ -201,7 +202,7 @@ impl State {
                     let had_drag = self.editor.has_gizmo_drag() || self.editor.has_block_drag();
                     self.editor.clear_interaction_drags();
                     if had_drag {
-                        self.sync_editor_objects();
+                        self.sync_editor_objects_after_drag_release();
                     }
                 } else {
                     self.turn_right();
