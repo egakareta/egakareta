@@ -296,7 +296,6 @@ pub(crate) fn decode_audio_to_waveform(
     let mut window_peak: f32 = 0.0;
     let mut window_count: usize = 0;
     let mut sample_buffer: Option<SampleBuffer<f32>> = None;
-    let channel_scale = 1.0 / channel_count as f32;
     let track_id = track.id;
 
     loop {
@@ -331,9 +330,11 @@ pub(crate) fn decode_audio_to_waveform(
 
         if let Some(buf) = sample_buffer.as_mut() {
             buf.copy_interleaved_ref(decoded);
-            for sample in buf.samples() {
-                let normalized = sample.abs() * channel_scale;
-                window_peak = window_peak.max(normalized);
+            for frame in buf.samples().chunks(channel_count) {
+                let frame_peak = frame
+                    .iter()
+                    .fold(0.0f32, |peak, sample| peak.max(sample.abs()));
+                window_peak = window_peak.max(frame_peak);
                 window_count += 1;
 
                 if window_count >= window_size {
@@ -382,19 +383,18 @@ pub(crate) async fn decode_audio_to_waveform_async(
     let mut peaks: Vec<f32> = Vec::new();
     let mut window_peak: f32 = 0.0;
     let mut window_count: usize = 0;
-    let channel_scale = channels as f32;
-
     for frame_index in 0..frame_len {
+        let mut frame_peak = 0.0f32;
         for channel in &channel_data {
-            let normalized = channel[frame_index].abs() / channel_scale;
-            window_peak = window_peak.max(normalized);
-            window_count += 1;
+            frame_peak = frame_peak.max(channel[frame_index].abs());
+        }
+        window_peak = window_peak.max(frame_peak);
+        window_count += 1;
 
-            if window_count >= window_size {
-                peaks.push(window_peak);
-                window_peak = 0.0;
-                window_count = 0;
-            }
+        if window_count >= window_size {
+            peaks.push(window_peak);
+            window_peak = 0.0;
+            window_count = 0;
         }
     }
 
