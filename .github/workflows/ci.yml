@@ -61,7 +61,7 @@ jobs:
 
       - name: Run tests
         if: runner.os != 'macOS' || startsWith(github.ref, 'refs/tags/')
-        run: bun run test -- --nocapture --test-threads=1
+        run: bun run test -- -- --nocapture --test-threads=1
 
       - name: Check cargo formatting
         if: runner.os == 'Linux'
