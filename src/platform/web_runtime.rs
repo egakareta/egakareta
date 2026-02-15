@@ -1,14 +1,12 @@
-use egui_wgpu::ScreenDescriptor;
 use std::{cell::RefCell, rc::Rc};
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::console;
-use wgpu::SurfaceError;
 
 use crate::commands::InputEvent;
 use crate::platform::input_mapping::egui_key_from_key_str;
-use crate::{load_menu_wordmark_texture, show_editor_ui, show_menu_wordmark_ui, State};
+use crate::platform::pipeline::FramePipeline;
+use crate::{load_menu_wordmark_texture, State};
 
 #[derive(Default)]
 struct WebUiInput {
@@ -83,15 +81,17 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
     let state = State::new(canvas.clone()).await;
     let state_rc = Rc::new(RefCell::new(state));
     let pinch_last_distance = Rc::new(RefCell::new(None::<f64>));
-    let ui_ctx = egui::Context::default();
     let mut initial_ui_input = WebUiInput::default();
     initial_ui_input.set_screen(width, height, window.device_pixel_ratio() as f32);
     let ui_input_rc = Rc::new(RefCell::new(initial_ui_input));
     let ui_wants_pointer = Rc::new(RefCell::new(false));
     let ui_wants_keyboard = Rc::new(RefCell::new(false));
+
+    let ui_ctx = egui::Context::default();
     let ui_renderer = state_rc.borrow().create_egui_renderer();
-    let ui_renderer_rc = Rc::new(RefCell::new(ui_renderer));
-    let menu_wordmark = Rc::new(load_menu_wordmark_texture(&ui_ctx));
+    let menu_wordmark = load_menu_wordmark_texture(&ui_ctx);
+    let pipeline = FramePipeline::new(ui_ctx, ui_renderer, menu_wordmark);
+    let pipeline_rc = Rc::new(RefCell::new(pipeline));
 
     {
         let state_clone = state_rc.clone();
@@ -378,62 +378,19 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
     let f: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
     let g = f.clone();
     let state_clone = state_rc.clone();
-    let ui_ctx_clone = ui_ctx.clone();
     let ui_input_clone = ui_input_rc.clone();
-    let ui_renderer_clone = ui_renderer_rc.clone();
-    let menu_wordmark_clone = menu_wordmark.clone();
+    let pipeline_clone = pipeline_rc.clone();
     let ui_wants_pointer_clone = ui_wants_pointer.clone();
     let ui_wants_keyboard_clone = ui_wants_keyboard.clone();
     *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
         let mut state = state_clone.borrow_mut();
+        let mut pipeline = pipeline_clone.borrow_mut();
 
         let raw_input = ui_input_clone.borrow_mut().take();
-        let full_output = ui_ctx_clone.run(raw_input, |ctx| {
-            show_editor_ui(ctx, &mut state);
-            if let Some(wordmark) = menu_wordmark_clone.as_ref() {
-                show_menu_wordmark_ui(ctx, &state, wordmark);
-            }
-        });
+        let _full_output = pipeline.run_frame(&mut state, raw_input);
 
-        *ui_wants_pointer_clone.borrow_mut() = ui_ctx_clone.wants_pointer_input();
-        *ui_wants_keyboard_clone.borrow_mut() = ui_ctx_clone.wants_keyboard_input();
-
-        let paint_jobs = ui_ctx_clone.tessellate(full_output.shapes, full_output.pixels_per_point);
-        let screen_descriptor = ScreenDescriptor {
-            size_in_pixels: [state.surface_width(), state.surface_height()],
-            pixels_per_point: full_output.pixels_per_point,
-        };
-
-        {
-            let mut renderer = ui_renderer_clone.borrow_mut();
-            for (id, image_delta) in &full_output.textures_delta.set {
-                renderer.update_texture(state.device(), state.queue(), *id, image_delta);
-            }
-        }
-
-        state.update();
-        match state.render_egui(
-            &mut ui_renderer_clone.borrow_mut(),
-            &paint_jobs,
-            &screen_descriptor,
-        ) {
-            Ok(_) => {}
-            Err(SurfaceError::Lost) | Err(SurfaceError::Outdated) => {
-                state.handle_surface_lost();
-            }
-            Err(SurfaceError::OutOfMemory) => {
-                console::error_1(&"Out of memory".into());
-                return;
-            }
-            Err(err) => console::error_1(&format!("Render error: {:?}", err).into()),
-        }
-
-        {
-            let mut renderer = ui_renderer_clone.borrow_mut();
-            for id in &full_output.textures_delta.free {
-                renderer.free_texture(id);
-            }
-        }
+        *ui_wants_pointer_clone.borrow_mut() = pipeline.ctx().wants_pointer_input();
+        *ui_wants_keyboard_clone.borrow_mut() = pipeline.ctx().wants_keyboard_input();
 
         let window = web_sys::window().unwrap();
         window

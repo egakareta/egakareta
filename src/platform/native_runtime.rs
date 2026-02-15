@@ -1,4 +1,3 @@
-use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 use egui_winit::State as EguiWinitState;
 use winit::{
     application::ApplicationHandler,
@@ -12,14 +11,13 @@ use crate::commands::InputEvent;
 use crate::platform::input_mapping::{
     key_str_from_winit, mouse_button_index_from_winit, zoom_delta_from_winit,
 };
-use crate::{load_menu_wordmark_texture, show_editor_ui, show_menu_wordmark_ui, State};
+use crate::platform::pipeline::FramePipeline;
+use crate::{load_menu_wordmark_texture, State};
 
 struct App {
     state: Option<State>,
     egui_state: Option<EguiWinitState>,
-    egui_renderer: Option<EguiRenderer>,
-    egui_ctx: egui::Context,
-    menu_wordmark: Option<egui::TextureHandle>,
+    pipeline: Option<FramePipeline>,
     last_cursor_pos: Option<PhysicalPosition<f64>>,
 }
 
@@ -28,9 +26,7 @@ impl App {
         Self {
             state: None,
             egui_state: None,
-            egui_renderer: None,
-            egui_ctx: egui::Context::default(),
-            menu_wordmark: None,
+            pipeline: None,
             last_cursor_pos: None,
         }
     }
@@ -56,8 +52,9 @@ impl ApplicationHandler for App {
                 .expect("Failed to create window");
 
             let state = pollster::block_on(State::new_native(window));
+            let egui_ctx = egui::Context::default();
             let egui_state = EguiWinitState::new(
-                self.egui_ctx.clone(),
+                egui_ctx.clone(),
                 egui::ViewportId::ROOT,
                 state.window(),
                 Some(state.window().scale_factor() as f32),
@@ -65,12 +62,11 @@ impl ApplicationHandler for App {
                 None,
             );
             let egui_renderer = state.create_egui_renderer();
-            let menu_wordmark = load_menu_wordmark_texture(&self.egui_ctx);
+            let menu_wordmark = load_menu_wordmark_texture(&egui_ctx);
 
             self.state = Some(state);
             self.egui_state = Some(egui_state);
-            self.egui_renderer = Some(egui_renderer);
-            self.menu_wordmark = menu_wordmark;
+            self.pipeline = Some(FramePipeline::new(egui_ctx, egui_renderer, menu_wordmark));
         }
     }
 
@@ -80,12 +76,12 @@ impl ApplicationHandler for App {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
-        let (state, egui_state, egui_renderer) = match (
+        let (state, egui_state, pipeline) = match (
             self.state.as_mut(),
             self.egui_state.as_mut(),
-            self.egui_renderer.as_mut(),
+            self.pipeline.as_mut(),
         ) {
-            (Some(s), Some(es), Some(er)) => (s, es, er),
+            (Some(s), Some(es), Some(p)) => (s, es, p),
             _ => return,
         };
 
@@ -136,7 +132,7 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                if egui_consumed || self.egui_ctx.wants_keyboard_input() {
+                if egui_consumed || pipeline.ctx().wants_keyboard_input() {
                     return;
                 }
 
@@ -152,40 +148,9 @@ impl ApplicationHandler for App {
             }
             WindowEvent::RedrawRequested => {
                 let raw_input = egui_state.take_egui_input(state.window());
-                let menu_wordmark = self.menu_wordmark.as_ref();
-                let full_output = self.egui_ctx.run(raw_input, |ctx| {
-                    show_editor_ui(ctx, state);
-                    if let Some(wordmark) = menu_wordmark {
-                        show_menu_wordmark_ui(ctx, state, wordmark);
-                    }
-                });
+                let full_output = pipeline.run_frame(state, raw_input);
 
                 egui_state.handle_platform_output(state.window(), full_output.platform_output);
-
-                let paint_jobs = self
-                    .egui_ctx
-                    .tessellate(full_output.shapes, full_output.pixels_per_point);
-                let window_size = state.window().inner_size();
-                let screen_descriptor = ScreenDescriptor {
-                    size_in_pixels: [window_size.width, window_size.height],
-                    pixels_per_point: full_output.pixels_per_point,
-                };
-
-                for (id, image_delta) in &full_output.textures_delta.set {
-                    egui_renderer.update_texture(state.device(), state.queue(), *id, image_delta);
-                }
-
-                state.update();
-                match state.render_egui(egui_renderer, &paint_jobs, &screen_descriptor) {
-                    Ok(_) => {}
-                    Err(wgpu::SurfaceError::Lost) => state.recreate_surface(),
-                    Err(wgpu::SurfaceError::OutOfMemory) => event_loop.exit(),
-                    Err(err) => eprintln!("{:?}", err),
-                }
-
-                for id in &full_output.textures_delta.free {
-                    egui_renderer.free_texture(id);
-                }
             }
             _ => {}
         }
