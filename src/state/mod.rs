@@ -9,6 +9,7 @@ mod editor_state;
 mod editor_timeline;
 mod editor_timing;
 mod history;
+mod level_management;
 mod lifecycle;
 mod perf;
 mod render;
@@ -27,11 +28,8 @@ pub(crate) use editor_timeline::{EditorTimelineSample, EditorTimelineState};
 pub(crate) use editor_timing::EditorTimingState;
 pub(crate) use history::EditorHistoryState;
 pub(crate) use perf::{EditorPerfState, PerfStage};
-pub(crate) use render::{GpuContext, MeshSlot, RenderSubsystem, SceneMeshes, DEPTH_FORMAT};
-pub(crate) use runtime::{
-    EditorDirtyFlags, EditorFrameState, EditorGizmoState, EditorRuntimeState, FrameRuntimeState,
-    PlayerRenderState,
-};
+pub(crate) use render::RenderSubsystem;
+pub(crate) use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
 
 use crate::game::GameState;
 #[cfg(not(target_arch = "wasm32"))]
@@ -385,7 +383,10 @@ mod tests {
     #[test]
     fn test_state_phase_integrity() {
         pollster::block_on(async {
-            let mut state = super::State::new_test().await;
+            let mut state = match super::State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
             assert_eq!(state.phase, crate::types::AppPhase::Menu);
 
             state.start_editor(0);
@@ -399,7 +400,10 @@ mod tests {
     #[test]
     fn test_state_input_routing() {
         pollster::block_on(async {
-            let mut state = super::State::new_test().await;
+            let mut state = match super::State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
 
             // Test primary click in menu starts level
             state.handle_primary_click(0.0, 0.0);

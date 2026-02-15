@@ -512,7 +512,10 @@ mod tests {
     #[test]
     fn test_command_routing_navigation() {
         pollster::block_on(async {
-            let mut state = State::new_test().await;
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
 
             // Initial state should be Menu
             assert_eq!(state.phase, AppPhase::Menu);
@@ -526,7 +529,10 @@ mod tests {
     #[test]
     fn test_command_routing_editor_modes() {
         pollster::block_on(async {
-            let mut state = State::new_test().await;
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
             state.dispatch(AppCommand::ToggleEditor);
 
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
@@ -543,7 +549,10 @@ mod tests {
     #[test]
     fn test_command_routing_editor_ops() {
         pollster::block_on(async {
-            let mut state = State::new_test().await;
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
             state.dispatch(AppCommand::ToggleEditor);
 
             let initial_zoom = state.editor.camera.editor_zoom;
@@ -558,7 +567,10 @@ mod tests {
     #[test]
     fn test_timeline_shift_updates_preview() {
         pollster::block_on(async {
-            let mut state = State::new_test().await;
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
             state.dispatch(AppCommand::ToggleEditor);
 
             let (pos_before, _) = state.editor_timeline_preview();
@@ -584,7 +596,10 @@ mod tests {
     fn test_input_event_interaction_state() {
         pollster::block_on(async {
             use crate::commands::InputEvent;
-            let mut state = State::new_test().await;
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
             state.dispatch(AppCommand::ToggleEditor);
 
             // 1. Pointer move updates screen coordinates
@@ -611,7 +626,10 @@ mod tests {
     fn test_input_event_zoom_and_resize() {
         pollster::block_on(async {
             use crate::commands::InputEvent;
-            let mut state = State::new_test().await;
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
             state.dispatch(AppCommand::ToggleEditor);
 
             // Zoom

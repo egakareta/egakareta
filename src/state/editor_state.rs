@@ -755,47 +755,4 @@ impl State {
     pub(crate) fn editor_bpm_tap_reset(&mut self) {
         self.editor.bpm_tap_reset();
     }
-
-    pub(crate) fn load_waveform_for_current_audio(&mut self) {
-        let music_source = self.session.editor_music_metadata.source.clone();
-
-        if let Some((samples, sample_rate)) =
-            self.audio.state.editor.waveform_cache.get(&music_source)
-        {
-            self.editor.timing.waveform_samples = samples.clone();
-            self.editor.timing.waveform_sample_rate = *sample_rate;
-            self.audio.state.editor.waveform_loading_source = None;
-            return;
-        }
-
-        if self.audio.state.editor.waveform_loading_source.as_deref() == Some(music_source.as_str())
-        {
-            return;
-        }
-
-        self.audio.state.editor.waveform_loading_source = Some(music_source.clone());
-        self.editor.timing.waveform_samples.clear();
-        self.editor.timing.waveform_sample_rate = 0;
-
-        let level_name = self
-            .session
-            .editor_level_name
-            .clone()
-            .unwrap_or_else(|| "Untitled".to_string());
-        let cached_bytes = self
-            .audio
-            .state
-            .editor
-            .local_audio_cache
-            .get(&music_source)
-            .cloned();
-        let sender = self.audio.state.editor.waveform_load_channel.0.clone();
-
-        crate::audio_service::start_waveform_loading(
-            music_source,
-            level_name,
-            cached_bytes,
-            sender,
-        );
-    }
 }
