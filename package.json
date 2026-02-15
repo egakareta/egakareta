@@ -12,7 +12,7 @@
         "dev": "concurrently \"bun run watch\" \"bun run serve\"",
         "prod": "bun run build && bun dist.js",
         "prepare": "lefthook install",
-        "install:rust": "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+        "install:rust": "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
     },
     "devDependencies": {
         "concurrently": "^9.2.1",
