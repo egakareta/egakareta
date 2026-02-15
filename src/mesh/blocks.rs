@@ -6,13 +6,30 @@ use crate::mesh::transforms::rotate_vertices_around_z;
 use crate::types::{LevelObject, Vertex};
 
 pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
-    build_block_vertices_with_phase(objects, 0.0)
+    build_block_vertices_from_refs(objects.iter())
+}
+
+pub(crate) fn build_block_vertices_from_refs<'a, I>(objects: I) -> Vec<Vertex>
+where
+    I: IntoIterator<Item = &'a LevelObject>,
+{
+    build_block_vertices_with_phase_from_refs(objects, 0.0)
 }
 
 pub(crate) fn build_block_vertices_with_phase(
     objects: &[LevelObject],
     pulse_phase_seconds: f32,
 ) -> Vec<Vertex> {
+    build_block_vertices_with_phase_from_refs(objects.iter(), pulse_phase_seconds)
+}
+
+pub(crate) fn build_block_vertices_with_phase_from_refs<'a, I>(
+    objects: I,
+    pulse_phase_seconds: f32,
+) -> Vec<Vertex>
+where
+    I: IntoIterator<Item = &'a LevelObject>,
+{
     let mut all_vertices = Vec::new();
 
     for obj in objects {

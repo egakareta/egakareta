@@ -9,10 +9,10 @@ use crate::editor_domain::{
 };
 use crate::game::TimelineSimulationRuntime;
 use crate::mesh::{
-    build_block_vertices, build_editor_cursor_vertices, build_editor_gizmo_vertices,
-    build_editor_hover_outline_vertices, build_editor_preview_player_vertices,
-    build_editor_selection_outline_vertices, build_spawn_marker_vertices,
-    build_tap_indicator_vertices, GizmoPart,
+    build_block_vertices, build_block_vertices_from_refs, build_editor_cursor_vertices,
+    build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
+    build_editor_preview_player_vertices, build_editor_selection_outline_vertices,
+    build_spawn_marker_vertices, build_tap_indicator_vertices, GizmoPart,
 };
 use crate::platform::state_host::PlatformInstant;
 use crate::types::{AppPhase, EditorMode, SpawnDirection};
@@ -633,22 +633,29 @@ impl State {
             }
         }
 
-        let mut static_objects = Vec::new();
-        let mut selected_objects = Vec::new();
-        for (index, object) in self.editor.objects.iter().enumerate() {
-            if selected_mask[index] {
-                selected_objects.push(object.clone());
-            } else {
-                static_objects.push(object.clone());
-            }
-        }
-
         let static_mesh_started_at = PlatformInstant::now();
-        let static_vertices = build_block_vertices(&static_objects);
-        self.perf_record(PerfStage::BlockMeshSplitStatic, static_mesh_started_at);
+        let static_vertices = {
+            let mut static_objects = Vec::new();
+            for (index, object) in self.editor.objects.iter().enumerate() {
+                if !selected_mask[index] {
+                    static_objects.push(object);
+                }
+            }
+            build_block_vertices_from_refs(static_objects)
+        };
 
         let selected_mesh_started_at = PlatformInstant::now();
-        let selected_vertices = build_block_vertices(&selected_objects);
+        let selected_vertices = {
+            let mut selected_objects = Vec::new();
+            for (index, object) in self.editor.objects.iter().enumerate() {
+                if selected_mask[index] {
+                    selected_objects.push(object);
+                }
+            }
+            build_block_vertices_from_refs(selected_objects)
+        };
+
+        self.perf_record(PerfStage::BlockMeshSplitStatic, static_mesh_started_at);
         self.perf_record(PerfStage::BlockMeshSplitSelected, selected_mesh_started_at);
 
         self.render.meshes.blocks_static.replace_with_vertices(
@@ -666,21 +673,12 @@ impl State {
 
     fn rebuild_editor_selected_block_vertices(&mut self) {
         let selected_only_started_at = PlatformInstant::now();
-        let selected_mask = if let Some(ref cache) = self.editor.selected_mask_cache {
-            if cache.len() == self.editor.objects.len() {
-                cache.clone()
-            } else {
-                let selected_indices = self.selected_block_indices_normalized();
-                let mut mask = vec![false; self.editor.objects.len()];
-                for index in selected_indices {
-                    if index < mask.len() {
-                        mask[index] = true;
-                    }
-                }
-                self.editor.selected_mask_cache = Some(mask.clone());
-                mask
-            }
-        } else {
+        if self
+            .editor
+            .selected_mask_cache
+            .as_ref()
+            .is_none_or(|cache| cache.len() != self.editor.objects.len())
+        {
             let selected_indices = self.selected_block_indices_normalized();
             let mut mask = vec![false; self.editor.objects.len()];
             for index in selected_indices {
@@ -688,18 +686,25 @@ impl State {
                     mask[index] = true;
                 }
             }
-            self.editor.selected_mask_cache = Some(mask.clone());
-            mask
-        };
-
-        let mut selected_objects = Vec::new();
-        for (index, object) in self.editor.objects.iter().enumerate() {
-            if selected_mask[index] {
-                selected_objects.push(object.clone());
-            }
+            self.editor.selected_mask_cache = Some(mask);
         }
 
-        let selected_vertices = build_block_vertices(&selected_objects);
+        let Some(selected_mask) = self.editor.selected_mask_cache.as_ref() else {
+            self.render.meshes.blocks_selected.clear();
+            self.perf_record(PerfStage::BlockMeshSelectedOnly, selected_only_started_at);
+            return;
+        };
+
+        let selected_vertices = {
+            let mut selected_objects = Vec::new();
+            for (index, object) in self.editor.objects.iter().enumerate() {
+                if selected_mask[index] {
+                    selected_objects.push(object);
+                }
+            }
+
+            build_block_vertices_from_refs(selected_objects)
+        };
         self.render.meshes.blocks_selected.replace_with_vertices(
             &self.render.gpu.device,
             "Block Selected Vertex Buffer",
