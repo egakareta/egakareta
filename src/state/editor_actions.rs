@@ -2,8 +2,9 @@ use glam::Vec2;
 
 use super::{EditorDirtyFlags, EditorSubsystem, PerfStage, State};
 use crate::editor_domain::{
-    add_tap_with_indicator, build_editor_playtest_transition, playtest_return_objects,
-    remove_topmost_block_at_cursor, toggle_spawn_direction,
+    add_tap_with_indicator, build_editor_playtest_transition,
+    derive_timeline_time_for_world_target_near_time, playtest_return_objects,
+    remove_topmost_block_at_cursor, toggle_spawn_direction, TimelineNearSearch,
 };
 use crate::game::{create_menu_scene, GameState, TimelineSimulationRuntime};
 use crate::platform::state_host::PlatformInstant;
@@ -67,11 +68,30 @@ impl EditorSubsystem {
             return (Some(removed_time), false);
         }
 
-        let derived_time = self
+        let duration_seconds = self.timeline.clock.duration_seconds.max(0.0);
+        let seed_time = self
             .timeline
             .clock
             .time_seconds
-            .clamp(0.0, self.timeline.clock.duration_seconds.max(0.0));
+            .clamp(0.0, duration_seconds);
+        let target_world = [
+            indicator_cell[0] + 0.5,
+            indicator_cell[1] + 0.5,
+            indicator_cell[2],
+        ];
+        let derived_time = derive_timeline_time_for_world_target_near_time(
+            self.spawn.position,
+            self.spawn.direction,
+            &self.timeline.taps.tap_times,
+            duration_seconds,
+            &self.objects,
+            target_world,
+            TimelineNearSearch {
+                seed_time,
+                window_seconds: 1.5,
+            },
+        )
+        .clamp(0.0, duration_seconds);
 
         add_tap_with_indicator(
             &mut self.timeline.taps.tap_times,
