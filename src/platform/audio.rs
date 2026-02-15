@@ -40,6 +40,7 @@ fn accumulate_waveform_frame_peak(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn accumulate_interleaved_samples(
     samples: &[f32],
     channel_count: usize,
