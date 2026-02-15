@@ -234,8 +234,11 @@ impl State {
     }
 
     pub(super) fn editor_shift_timeline_time(&mut self, delta_seconds: f32) {
-        if self.phase == AppPhase::Editor && self.editor.shift_timeline_time(delta_seconds) {
-            self.resync_editor_timeline_playback_audio();
+        if self.phase == AppPhase::Editor {
+            if self.editor.shift_timeline_time(delta_seconds) {
+                let next_time = self.editor.timeline.clock.time_seconds;
+                self.set_editor_timeline_time_seconds(next_time);
+            }
         }
     }
 

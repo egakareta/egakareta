@@ -3,6 +3,7 @@ use crate::editor_domain::{
     add_tap_with_indicator, clear_taps_with_indicators, remove_tap_with_indicator,
     retain_taps_up_to_duration_with_indicators,
 };
+use crate::game::TimelineSimulationRuntime;
 use crate::platform::state_host::PlatformInstant;
 use crate::types::{AppPhase, EditorMode, LevelObject, SpawnDirection, TimingPoint};
 
@@ -622,8 +623,53 @@ impl State {
     }
 
     pub fn set_editor_timeline_time_seconds(&mut self, time_seconds: f32) {
-        if self.editor.set_timeline_time_seconds(time_seconds) {
+        let changed = self.editor.set_timeline_time_seconds(time_seconds);
+        if self.phase == AppPhase::Editor {
+            self.apply_editor_timeline_preview_from_cache();
+        }
+        if changed {
             self.resync_editor_timeline_playback_audio();
+        }
+    }
+
+    fn apply_editor_timeline_preview_from_cache(&mut self) {
+        if self.phase != AppPhase::Editor || self.editor.timeline.playback.playing {
+            return;
+        }
+
+        let target_time = self.editor.timeline.clock.time_seconds;
+        let simulation_revision = self.editor.timeline.simulation_revision;
+
+        let solve_started_at = PlatformInstant::now();
+        let mut snapshot = None;
+
+        if self.editor.timeline.scrub_runtime_revision == simulation_revision {
+            if let Some(runtime) = self.editor.timeline.scrub_runtime.as_mut() {
+                if target_time + 1e-6 >= runtime.elapsed_seconds() {
+                    runtime.advance_to(target_time);
+                    snapshot = Some(runtime.snapshot());
+                }
+            }
+        }
+        self.perf_record(PerfStage::PreviewSolveTimeline, solve_started_at);
+
+        if snapshot.is_none() {
+            let rebuild_started_at = PlatformInstant::now();
+            let mut runtime = TimelineSimulationRuntime::new(
+                self.editor.spawn.position,
+                self.editor.spawn.direction,
+                &self.editor.objects,
+                &self.editor.timeline.taps.tap_times,
+            );
+            runtime.advance_to(target_time);
+            snapshot = Some(runtime.snapshot());
+            self.editor.timeline.scrub_runtime = Some(runtime);
+            self.editor.timeline.scrub_runtime_revision = simulation_revision;
+            self.perf_record(PerfStage::TimelineSampleRebuild, rebuild_started_at);
+        }
+
+        if let Some(snapshot) = snapshot {
+            self.apply_editor_timeline_preview_state(snapshot.position, snapshot.direction);
         }
     }
 
