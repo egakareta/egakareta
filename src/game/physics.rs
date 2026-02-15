@@ -18,6 +18,13 @@ pub(crate) fn rotate_point_around_center_2d(
 }
 
 pub(crate) fn object_xy_contains(obj: &LevelObject, x: f32, y: f32) -> bool {
+    // Fast path for axis-aligned objects (most common case)
+    if obj.rotation_degrees.abs() < 0.001 {
+        return x >= obj.position[0]
+            && x < obj.position[0] + obj.size[0]
+            && y >= obj.position[1]
+            && y < obj.position[1] + obj.size[1];
+    }
     let center = [
         obj.position[0] + obj.size[0] * 0.5,
         obj.position[1] + obj.size[1] * 0.5,
@@ -36,6 +43,16 @@ pub(crate) fn aabb_overlaps_object_xy(
     max_y: f32,
     obj: &LevelObject,
 ) -> bool {
+    // Fast path for axis-aligned objects — simple AABB vs AABB
+    if obj.rotation_degrees.abs() < 0.001 {
+        let obj_max_x = obj.position[0] + obj.size[0];
+        let obj_max_y = obj.position[1] + obj.size[1];
+        return max_x > obj.position[0]
+            && min_x < obj_max_x
+            && max_y > obj.position[1]
+            && min_y < obj_max_y;
+    }
+
     let aabb_center_x = (min_x + max_x) * 0.5;
     let aabb_center_y = (min_y + max_y) * 0.5;
     let aabb_half_x = (max_x - min_x) * 0.5;

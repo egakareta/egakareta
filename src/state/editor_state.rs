@@ -286,12 +286,36 @@ impl EditorSubsystem {
         self.timeline.scrub_runtime_revision = 0;
     }
 
-    pub(crate) fn invalidate_samples_from(&mut self, _from_seconds: f32) {
+    pub(crate) fn invalidate_samples_from(&mut self, from_seconds: f32) {
         self.timeline.simulation_revision = self.timeline.simulation_revision.wrapping_add(1);
-        self.timeline.snapshot_cache_revision = 0;
-        self.timeline.snapshot_cache.clear();
-        self.timeline.scrub_runtime = None;
-        self.timeline.scrub_runtime_revision = 0;
+
+        // Partial invalidation: keep cached snapshots before the change point
+        let step_seconds = self.timeline.snapshot_cache_step_seconds.max(1.0 / 480.0);
+        if !self.timeline.snapshot_cache.is_empty() && from_seconds > step_seconds {
+            let keep_count = (from_seconds / step_seconds).floor() as usize;
+            let keep_count = keep_count.min(self.timeline.snapshot_cache.len());
+            if keep_count > 0 {
+                self.timeline.snapshot_cache.truncate(keep_count);
+                // Mark as partial so rebuild can continue from the retained prefix
+                self.timeline.snapshot_cache_revision = 0;
+            } else {
+                self.timeline.snapshot_cache.clear();
+                self.timeline.snapshot_cache_revision = 0;
+            }
+        } else {
+            self.timeline.snapshot_cache.clear();
+            self.timeline.snapshot_cache_revision = 0;
+        }
+
+        // Invalidate scrub runtime if it's past the change point
+        if let Some(runtime) = &self.timeline.scrub_runtime {
+            if runtime.elapsed_seconds() >= from_seconds {
+                self.timeline.scrub_runtime = None;
+                self.timeline.scrub_runtime_revision = 0;
+            }
+        } else {
+            self.timeline.scrub_runtime_revision = 0;
+        }
     }
 
     pub(crate) fn timeline_preview(&self) -> ([f32; 3], SpawnDirection) {
@@ -701,7 +725,18 @@ impl State {
             .snapshot_cache_step_seconds
             .max(1.0 / 480.0);
 
-        let sample_count = ((duration_seconds / step_seconds).ceil() as usize).saturating_add(1);
+        let total_sample_count =
+            ((duration_seconds / step_seconds).ceil() as usize).saturating_add(1);
+
+        // Partial rebuild: reuse retained prefix from invalidate_samples_from
+        let existing_count = self.editor.timeline.snapshot_cache.len();
+        let resume_index =
+            if existing_count > 0 && self.editor.timeline.snapshot_cache_revision == 0 {
+                existing_count
+            } else {
+                self.editor.timeline.snapshot_cache.clear();
+                0
+            };
 
         let mut runtime = TimelineSimulationRuntime::new(
             self.editor.spawn.position,
@@ -710,18 +745,28 @@ impl State {
             &self.editor.timeline.taps.tap_times,
         );
 
-        let mut snapshots = Vec::with_capacity(sample_count.max(1));
-        for index in 0..sample_count.max(1) {
+        // Fast-forward runtime to the resume point
+        if resume_index > 0 {
+            let resume_time = ((resume_index - 1) as f32 * step_seconds).min(duration_seconds);
+            runtime.advance_to(resume_time);
+        }
+
+        self.editor
+            .timeline
+            .snapshot_cache
+            .reserve(total_sample_count.saturating_sub(existing_count));
+        for index in resume_index..total_sample_count.max(1) {
             let sample_time = (index as f32 * step_seconds).min(duration_seconds);
             runtime.advance_to(sample_time);
             let snapshot = runtime.snapshot();
-            snapshots.push(crate::state::editor_timeline::EditorTimelineSnapshot {
-                position: snapshot.position,
-                direction: snapshot.direction,
-            });
+            self.editor.timeline.snapshot_cache.push(
+                crate::state::editor_timeline::EditorTimelineSnapshot {
+                    position: snapshot.position,
+                    direction: snapshot.direction,
+                },
+            );
         }
 
-        self.editor.timeline.snapshot_cache = snapshots;
         self.editor.timeline.snapshot_cache_revision = self.editor.timeline.simulation_revision;
         self.editor.timeline.scrub_runtime = None;
         self.editor.timeline.scrub_runtime_revision = 0;

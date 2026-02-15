@@ -562,15 +562,28 @@ impl State {
             return;
         }
 
-        let mut positions = self.editor.timeline.taps.tap_indicator_positions.clone();
-        positions.sort_unstable_by(|a, b| {
-            a[0].total_cmp(&b[0])
-                .then(a[1].total_cmp(&b[1]))
-                .then(a[2].total_cmp(&b[2]))
-        });
-        positions.dedup();
+        // Build unique sorted positions without a full clone when possible
+        let positions = &self.editor.timeline.taps.tap_indicator_positions;
+        let unique_positions: Vec<[f32; 3]> = if positions.len() <= 1 {
+            positions.clone()
+        } else {
+            let mut sorted = positions.clone();
+            sorted.sort_unstable_by(|a, b| {
+                a[0].total_cmp(&b[0])
+                    .then(a[1].total_cmp(&b[1]))
+                    .then(a[2].total_cmp(&b[2]))
+            });
+            sorted.dedup();
+            sorted
+        };
 
-        let vertices = build_tap_indicator_vertices(&positions);
+        if unique_positions.is_empty() {
+            self.render.meshes.tap_indicators.clear();
+            self.perf_record(PerfStage::TapIndicatorMeshRebuild, perf_started_at);
+            return;
+        }
+
+        let vertices = build_tap_indicator_vertices(&unique_positions);
         self.render.meshes.tap_indicators.replace_with_vertices(
             &self.render.gpu.device,
             "Tap Indicator Vertex Buffer",
@@ -599,13 +612,14 @@ impl State {
         self.editor.timeline.preview.position = position;
         self.editor.timeline.preview.direction = direction;
 
-        let is_tapping = self
-            .editor
-            .timeline
-            .taps
-            .tap_times
-            .iter()
-            .any(|tap| (tap - self.editor.timeline.clock.time_seconds).abs() <= 0.01);
+        let tap_times = &self.editor.timeline.taps.tap_times;
+        let current_time = self.editor.timeline.clock.time_seconds;
+        let is_tapping = if tap_times.is_empty() {
+            false
+        } else {
+            let idx = tap_times.partition_point(|t| *t < current_time - 0.01);
+            idx < tap_times.len() && (tap_times[idx] - current_time).abs() <= 0.01
+        };
         let preview_origin = [position[0] - 0.5, position[1] - 0.5, position[2]];
         let vertices = build_editor_preview_player_vertices(preview_origin, direction, is_tapping);
         self.render

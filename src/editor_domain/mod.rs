@@ -328,6 +328,49 @@ mod tests {
     }
 
     #[test]
+    fn near_solver_stays_within_requested_window() {
+        let seed = 2.2;
+        let window = 0.35;
+        let target = [0.5, 8.5, 0.0];
+        let time = derive_timeline_time_for_world_target_near_time(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[],
+            8.0,
+            &[],
+            target,
+            TimelineNearSearch {
+                seed_time: seed,
+                window_seconds: window,
+            },
+        );
+
+        assert!(time >= seed - window && time <= seed + window);
+    }
+
+    #[test]
+    fn near_solver_tracks_turned_segment_target() {
+        let target = [2.5, 0.5, 0.0];
+        let time = derive_timeline_time_for_world_target_near_time(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[0.0],
+            4.0,
+            &[],
+            target,
+            TimelineNearSearch {
+                seed_time: 0.35,
+                window_seconds: 0.7,
+            },
+        );
+
+        assert!(
+            (time - 0.25).abs() < 0.12,
+            "unexpected near-search time: {time}"
+        );
+    }
+
+    #[test]
     fn derives_tap_indicator_positions_with_single_simulation_path() {
         let taps = [0.4, 0.1, 0.4, 0.7];
         let positions = derive_tap_indicator_positions(

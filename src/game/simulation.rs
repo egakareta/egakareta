@@ -43,6 +43,7 @@ impl TimelineSimulationRuntime {
     ) -> Self {
         let mut game = GameState::new();
         game.objects = objects.to_vec();
+        game.rebuild_behavior_cache();
         game.apply_spawn(spawn_position, spawn_direction);
         game.started = true;
 

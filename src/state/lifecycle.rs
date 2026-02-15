@@ -374,6 +374,7 @@ impl State {
 
         let mut game = GameState::new();
         game.objects = create_menu_scene();
+        game.rebuild_behavior_cache();
 
         let local_audio_cache = crate::platform::io::load_all_local_audio().await;
 

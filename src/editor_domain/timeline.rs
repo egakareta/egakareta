@@ -88,42 +88,53 @@ pub(crate) fn derive_timeline_time_for_world_target(
         dx * dx + dy * dy + dz * dz
     }
 
-    let sample_best_time = |start_time: f32, end_time: f32, samples: usize| -> (f32, f32) {
-        let mut runtime = TimelineSimulationRuntime::new(spawn, direction, objects, tap_times);
-        runtime.advance_to(start_time);
+    const SOLVE_COARSE_DT: f32 = 1.0 / 90.0;
+    const SOLVE_FINE_DT: f32 = 1.0 / 150.0;
 
-        let mut best_time = start_time;
-        let mut best_distance_sq = f32::INFINITY;
-        let step = if samples == 0 {
-            0.0
-        } else {
-            (end_time - start_time) / samples as f32
-        };
+    let sample_best_time =
+        |start_time: f32, end_time: f32, samples: usize, sim_dt: f32| -> (f32, f32) {
+            let mut runtime = TimelineSimulationRuntime::new_with_dt(
+                spawn, direction, objects, tap_times, sim_dt,
+            );
+            runtime.advance_to(start_time);
 
-        for index in 0..=samples {
-            let t = (start_time + step * index as f32).clamp(start_time, end_time);
-            runtime.advance_to(t);
-            let snapshot = runtime.snapshot();
-            let current_distance_sq = distance_sq(snapshot.position, target);
-            if current_distance_sq < best_distance_sq {
-                best_distance_sq = current_distance_sq;
-                best_time = t;
-                if best_distance_sq <= 1e-6 {
-                    break;
+            let mut best_time = start_time;
+            let mut best_distance_sq = f32::INFINITY;
+            let step = if samples == 0 {
+                0.0
+            } else {
+                (end_time - start_time) / samples as f32
+            };
+
+            for index in 0..=samples {
+                let t = (start_time + step * index as f32).clamp(start_time, end_time);
+                runtime.advance_to(t);
+                let snapshot = runtime.snapshot();
+                let current_distance_sq = distance_sq(snapshot.position, target);
+                if current_distance_sq < best_distance_sq {
+                    best_distance_sq = current_distance_sq;
+                    best_time = t;
+                    if best_distance_sq <= 1e-6 {
+                        break;
+                    }
                 }
             }
-        }
 
-        (best_time, best_distance_sq)
-    };
+            (best_time, best_distance_sq)
+        };
 
     let solve_in_range = |range_start: f32, range_end: f32| -> (f32, f32) {
-        let coarse_samples =
-            (((range_end - range_start).max(0.0) * 30.0).clamp(120.0, 900.0)) as usize;
+        let range_width = (range_end - range_start).max(0.0);
+        let coarse_samples = ((range_width * 28.0).clamp(48.0, 240.0)) as usize;
         let (mut refined_time, mut best_distance_sq) =
-            sample_best_time(range_start, range_end, coarse_samples);
+            sample_best_time(range_start, range_end, coarse_samples, SOLVE_COARSE_DT);
 
-        for (window_seconds, refinement_samples) in [(1.2_f32, 180_usize), (0.25_f32, 120_usize)] {
+        const CLOSE_ENOUGH_SQ: f32 = 0.20 * 0.20;
+        if best_distance_sq <= CLOSE_ENOUGH_SQ {
+            return (refined_time.clamp(range_start, range_end), best_distance_sq);
+        }
+
+        for (window_seconds, refinement_samples) in [(0.6_f32, 80_usize), (0.15_f32, 48_usize)] {
             if best_distance_sq <= 1e-6 {
                 break;
             }
@@ -133,7 +144,7 @@ pub(crate) fn derive_timeline_time_for_world_target(
             let end_time = (refined_time + window).min(range_end);
 
             let (local_best_time, local_best_distance_sq) =
-                sample_best_time(start_time, end_time, refinement_samples);
+                sample_best_time(start_time, end_time, refinement_samples, SOLVE_FINE_DT);
             refined_time = local_best_time;
             best_distance_sq = local_best_distance_sq;
         }
@@ -179,50 +190,63 @@ pub(crate) fn derive_timeline_time_for_world_target_near_time(
         dx * dx + dy * dy + dz * dz
     }
 
-    let sample_best_time = |start_time: f32, end_time: f32, samples: usize| -> (f32, f32) {
-        let mut runtime = TimelineSimulationRuntime::new(spawn, direction, objects, tap_times);
-        runtime.advance_to(start_time);
+    const COARSE_SIMULATION_DT: f32 = 1.0 / 90.0;
+    const FINE_SIMULATION_DT: f32 = 1.0 / 150.0;
 
-        let mut best_time = start_time;
-        let mut best_distance_sq = f32::INFINITY;
-        let step = if samples == 0 {
-            0.0
-        } else {
-            (end_time - start_time) / samples as f32
-        };
+    let sample_best_time =
+        |start_time: f32, end_time: f32, samples: usize, simulation_dt: f32| -> (f32, f32) {
+            let mut runtime = TimelineSimulationRuntime::new_with_dt(
+                spawn,
+                direction,
+                objects,
+                tap_times,
+                simulation_dt,
+            );
+            runtime.advance_to(start_time);
 
-        for index in 0..=samples {
-            let t = (start_time + step * index as f32).clamp(start_time, end_time);
-            runtime.advance_to(t);
-            let snapshot = runtime.snapshot();
-            let current_distance_sq = distance_sq(snapshot.position, target);
-            if current_distance_sq < best_distance_sq {
-                best_distance_sq = current_distance_sq;
-                best_time = t;
-                if best_distance_sq <= 1e-6 {
-                    break;
+            let mut best_time = start_time;
+            let mut best_distance_sq = f32::INFINITY;
+            let step = if samples == 0 {
+                0.0
+            } else {
+                (end_time - start_time) / samples as f32
+            };
+
+            for index in 0..=samples {
+                let t = (start_time + step * index as f32).clamp(start_time, end_time);
+                runtime.advance_to(t);
+                let snapshot = runtime.snapshot();
+                let current_distance_sq = distance_sq(snapshot.position, target);
+                if current_distance_sq < best_distance_sq {
+                    best_distance_sq = current_distance_sq;
+                    best_time = t;
+                    if best_distance_sq <= 1e-6 {
+                        break;
+                    }
                 }
             }
-        }
 
-        (best_time, best_distance_sq)
-    };
+            (best_time, best_distance_sq)
+        };
 
-    let coarse_samples = (((range_end - range_start) * 90.0).clamp(90.0, 360.0)) as usize;
-    let (mut refined_time, mut best_distance_sq) =
-        sample_best_time(range_start, range_end, coarse_samples);
+    let range_width = (range_end - range_start).max(0.0);
+    let coarse_samples = ((range_width * 28.0).clamp(24.0, 96.0)) as usize;
+    let (mut refined_time, best_distance_sq) =
+        sample_best_time(range_start, range_end, coarse_samples, COARSE_SIMULATION_DT);
 
-    for (window_seconds, refinement_samples) in [(0.35_f32, 120_usize), (0.12_f32, 80_usize)] {
-        if best_distance_sq <= 1e-6 {
-            break;
-        }
+    const CLOSE_ENOUGH_DISTANCE_SQ: f32 = 0.20 * 0.20;
+    if best_distance_sq <= CLOSE_ENOUGH_DISTANCE_SQ {
+        return refined_time.clamp(range_start, range_end);
+    }
 
-        let start_time = (refined_time - window_seconds).max(range_start);
-        let end_time = (refined_time + window_seconds).min(range_end);
-        let (local_best_time, local_best_distance_sq) =
-            sample_best_time(start_time, end_time, refinement_samples);
+    let refinement_window = (range_width * 0.16).clamp(0.08, 0.28);
+    let refinement_samples = ((range_width * 36.0).clamp(28.0, 84.0)) as usize;
+    if best_distance_sq > 1e-6 {
+        let start_time = (refined_time - refinement_window).max(range_start);
+        let end_time = (refined_time + refinement_window).min(range_end);
+        let (local_best_time, _local_best_distance_sq) =
+            sample_best_time(start_time, end_time, refinement_samples, FINE_SIMULATION_DT);
         refined_time = local_best_time;
-        best_distance_sq = local_best_distance_sq;
     }
 
     refined_time.clamp(range_start, range_end)

@@ -2,12 +2,35 @@ use super::physics::{aabb_overlaps_object_xy, object_xy_contains, BASE_PLAYER_SP
 use crate::block_repository::{resolve_block_definition, BlockCollision, BlockRenderProfile};
 use crate::types::{Direction, LevelObject, SpawnDirection};
 
+/// Pre-resolved block behavior cached alongside each object to avoid
+/// repeated HashMap lookups during per-frame collision/support scans.
+#[derive(Clone, Copy)]
+pub(crate) struct CachedBlockBehavior {
+    pub(crate) collision: BlockCollision,
+    pub(crate) speed_multiplier: f32,
+    pub(crate) support_surface: bool,
+    pub(crate) consumed_on_overlap: bool,
+}
+
+impl CachedBlockBehavior {
+    pub(crate) fn from_block_id(block_id: &str) -> Self {
+        let def = resolve_block_definition(block_id);
+        Self {
+            collision: def.behavior.collision,
+            speed_multiplier: def.behavior.speed_multiplier,
+            support_surface: def.behavior.support_surface,
+            consumed_on_overlap: def.behavior.consumed_on_overlap,
+        }
+    }
+}
+
 pub(crate) struct GameState {
     pub(crate) position: [f32; 3],
     pub(crate) direction: Direction,
     pub(crate) speed: f32,
     pub(crate) trail_segments: Vec<Vec<[f32; 3]>>,
     pub(crate) objects: Vec<LevelObject>,
+    cached_behaviors: Vec<CachedBlockBehavior>,
     pub(crate) vertical_velocity: f32,
     pub(crate) is_grounded: bool,
     pub(crate) game_over: bool,
@@ -36,6 +59,7 @@ impl GameState {
             speed: BASE_PLAYER_SPEED,
             trail_segments: vec![vec![[0.0, 0.0, 0.0]]],
             objects: Vec::new(),
+            cached_behaviors: Vec::new(),
             vertical_velocity: 0.0,
             is_grounded: true,
             game_over: false,
@@ -47,6 +71,15 @@ impl GameState {
             finish_sink_velocity: 0.0,
             animation_phase_seconds: 0.0,
         }
+    }
+
+    /// Rebuild the cached block behavior array from current objects.
+    pub(crate) fn rebuild_behavior_cache(&mut self) {
+        self.cached_behaviors = self
+            .objects
+            .iter()
+            .map(|obj| CachedBlockBehavior::from_block_id(&obj.block_id))
+            .collect();
     }
 
     pub(crate) fn apply_spawn(&mut self, position: [f32; 3], direction: SpawnDirection) {
@@ -138,7 +171,11 @@ impl GameState {
         for (i, obj) in self.objects.iter().enumerate() {
             let o_min_z = obj.position[2];
             let o_max_z = obj.position[2] + obj.size[2];
-            let behavior = &resolve_block_definition(&obj.block_id).behavior;
+            let behavior = self
+                .cached_behaviors
+                .get(i)
+                .copied()
+                .unwrap_or_else(|| CachedBlockBehavior::from_block_id(&obj.block_id));
 
             if aabb_overlaps_object_xy(s_min_x, s_max_x, s_min_y, s_max_y, obj)
                 && s_max_z > o_min_z
@@ -175,7 +212,13 @@ impl GameState {
 
         if !hit_portals.is_empty() {
             for i in hit_portals.into_iter().rev() {
-                if let Some(portal) = self.objects.get(i) {
+                if let Some(behavior) = self.cached_behaviors.get(i).copied() {
+                    self.speed *= behavior.speed_multiplier.max(0.1);
+                    if behavior.consumed_on_overlap {
+                        self.objects.remove(i);
+                        self.cached_behaviors.remove(i);
+                    }
+                } else if let Some(portal) = self.objects.get(i) {
                     let behavior = &resolve_block_definition(&portal.block_id).behavior;
                     self.speed *= behavior.speed_multiplier.max(0.1);
                     if behavior.consumed_on_overlap {
@@ -302,11 +345,17 @@ impl GameState {
 
     pub(crate) fn top_surface_height_at(&self, x: f32, y: f32, max_z: f32) -> Option<f32> {
         let mut top_surface: Option<f32> = Some(0.0);
-        for obj in &self.objects {
-            if !resolve_block_definition(&obj.block_id)
-                .behavior
-                .support_surface
-            {
+        for (i, obj) in self.objects.iter().enumerate() {
+            let is_support = self
+                .cached_behaviors
+                .get(i)
+                .map(|b| b.support_surface)
+                .unwrap_or_else(|| {
+                    resolve_block_definition(&obj.block_id)
+                        .behavior
+                        .support_surface
+                });
+            if !is_support {
                 continue;
             }
             if object_xy_contains(obj, x, y) {

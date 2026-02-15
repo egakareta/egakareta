@@ -27,6 +27,7 @@ impl State {
             let transition = build_playing_transition_from_metadata(metadata);
             log::debug!("Starting level: {}", transition.level_name);
             self.gameplay.state.objects = transition.objects;
+            self.gameplay.state.rebuild_behavior_cache();
             self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction);
         }
 
@@ -50,12 +51,14 @@ impl State {
             self.session.playtest_audio_start_seconds =
                 Some(transition.playtest_audio_start_seconds);
             self.gameplay.state.objects = transition.objects;
+            self.gameplay.state.rebuild_behavior_cache();
             self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction);
         } else if let Some(level_name) = self.session.playing_level_name.clone() {
             self.session.playtest_audio_start_seconds = None;
             if let Some(metadata) = self.load_level_metadata(&level_name) {
                 let transition = build_playing_transition_from_metadata(metadata);
                 self.gameplay.state.objects = transition.objects;
+                self.gameplay.state.rebuild_behavior_cache();
                 self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction);
             }
         }

@@ -79,19 +79,27 @@ impl EditorSubsystem {
             indicator_cell[1] + 0.5,
             indicator_cell[2],
         ];
-        let derived_time = derive_timeline_time_for_world_target_near_time(
-            self.spawn.position,
-            self.spawn.direction,
-            &self.timeline.taps.tap_times,
-            duration_seconds,
-            &self.objects,
-            target_world,
-            TimelineNearSearch {
-                seed_time,
-                window_seconds: 1.5,
-            },
-        )
-        .clamp(0.0, duration_seconds);
+        let preview_cell = self.tap_indicator_position_from_world(self.timeline.preview.position);
+        let derived_time = if (preview_cell[0] - indicator_cell[0]).abs() <= 0.001
+            && (preview_cell[1] - indicator_cell[1]).abs() <= 0.001
+            && (preview_cell[2] - indicator_cell[2]).abs() <= 0.001
+        {
+            seed_time
+        } else {
+            derive_timeline_time_for_world_target_near_time(
+                self.spawn.position,
+                self.spawn.direction,
+                &self.timeline.taps.tap_times,
+                duration_seconds,
+                &self.objects,
+                target_world,
+                TimelineNearSearch {
+                    seed_time,
+                    window_seconds: 1.5,
+                },
+            )
+            .clamp(0.0, duration_seconds)
+        };
 
         add_tap_with_indicator(
             &mut self.timeline.taps.tap_times,
@@ -391,6 +399,7 @@ impl State {
         self.session.playtest_audio_start_seconds = Some(transition.playtest_audio_start_seconds);
         self.gameplay.state = GameState::new();
         self.gameplay.state.objects = transition.objects;
+        self.gameplay.state.rebuild_behavior_cache();
         self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction);
         self.editor.camera.playing_rotation = transition.camera_rotation;
         self.editor.camera.playing_pitch = transition.camera_pitch;
@@ -428,6 +437,7 @@ impl State {
             self.editor.timeline.playback.runtime = None;
             self.gameplay.state = GameState::new();
             self.gameplay.state.objects = objects;
+            self.gameplay.state.rebuild_behavior_cache();
             self.rebuild_block_vertices();
             return;
         }
@@ -436,6 +446,7 @@ impl State {
 
         self.gameplay.state = GameState::new();
         self.gameplay.state.objects = create_menu_scene();
+        self.gameplay.state.rebuild_behavior_cache();
         self.rebuild_block_vertices();
         self.render.meshes.trail.clear();
     }
