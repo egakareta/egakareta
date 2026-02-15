@@ -5,3 +5,4 @@
 /pkg
 /dist
 !/dist/.nojekyll
+/.wrangler
