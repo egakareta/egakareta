@@ -749,6 +749,119 @@ mod tests {
     }
 
     #[test]
+    fn test_native_web_primary_click_event_sequences_are_equivalent() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut native_style = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+            native_style.dispatch(AppCommand::ToggleEditor);
+
+            let mut web_style = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+            web_style.dispatch(AppCommand::ToggleEditor);
+
+            // Native path: pointer move then left mouse button press.
+            native_style.process_input_event(InputEvent::PointerMoved { x: 120.0, y: 240.0 });
+            native_style.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: true,
+            });
+            native_style.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: false,
+            });
+
+            // Web path: explicit primary click event followed by release.
+            web_style.process_input_event(InputEvent::PrimaryClick { x: 120.0, y: 240.0 });
+            web_style.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: false,
+            });
+
+            assert_eq!(
+                native_style.editor.objects.len(),
+                web_style.editor.objects.len()
+            );
+            assert_eq!(
+                native_style.editor.ui.pointer_screen,
+                web_style.editor.ui.pointer_screen
+            );
+            assert_eq!(
+                native_style.editor.ui.left_mouse_down,
+                web_style.editor.ui.left_mouse_down
+            );
+            assert_eq!(native_style.editor.ui.cursor, web_style.editor.ui.cursor);
+        });
+    }
+
+    #[test]
+    fn test_native_web_right_drag_sequences_are_equivalent() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut native_style = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+            native_style.dispatch(AppCommand::ToggleEditor);
+
+            let mut web_style = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+            web_style.dispatch(AppCommand::ToggleEditor);
+
+            // Native-like order around right-drag camera movement.
+            native_style.process_input_event(InputEvent::MouseButton {
+                button: 2,
+                pressed: true,
+            });
+            native_style.process_input_event(InputEvent::PointerMoved { x: 300.0, y: 180.0 });
+            native_style.process_input_event(InputEvent::CameraDrag {
+                dx: 24.0,
+                dy: -12.0,
+            });
+            native_style.process_input_event(InputEvent::MouseButton {
+                button: 2,
+                pressed: false,
+            });
+
+            // Web-like order emits pointer move together with drag deltas.
+            web_style.process_input_event(InputEvent::PointerMoved { x: 300.0, y: 180.0 });
+            web_style.process_input_event(InputEvent::MouseButton {
+                button: 2,
+                pressed: true,
+            });
+            web_style.process_input_event(InputEvent::CameraDrag {
+                dx: 24.0,
+                dy: -12.0,
+            });
+            web_style.process_input_event(InputEvent::MouseButton {
+                button: 2,
+                pressed: false,
+            });
+
+            assert_eq!(
+                native_style.editor.ui.right_dragging,
+                web_style.editor.ui.right_dragging
+            );
+            assert_eq!(
+                native_style.editor.ui.pointer_screen,
+                web_style.editor.ui.pointer_screen
+            );
+            assert_eq!(
+                native_style.editor.camera.editor_pan,
+                web_style.editor.camera.editor_pan
+            );
+        });
+    }
+
+    #[test]
     fn test_command_chain_undo_redo() {
         pollster::block_on(async {
             let mut state = match State::new_test().await {

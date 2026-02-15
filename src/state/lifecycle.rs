@@ -485,6 +485,10 @@ impl State {
 
 #[cfg(test)]
 mod tests {
+    use crate::commands::AppCommand;
+    use crate::game::TimelineSimulationRuntime;
+    use crate::types::SpawnDirection;
+
     use super::State;
     use crate::types::AppPhase;
 
@@ -526,19 +530,36 @@ mod tests {
                 None => return,
             };
 
-            // Mock that audio is playing (not actually possible without a real backend but we can check the call)
-            // For now we just check if it resets the phase correctly
-            state.start_level(0);
-            assert_eq!(state.phase, AppPhase::Playing);
+            state.start_editor(0);
+            state.editor.timeline.playback.playing = true;
+            state.editor.timeline.playback.runtime = Some(TimelineSimulationRuntime::new(
+                [0.0, 0.0, 0.0],
+                SpawnDirection::Forward,
+                &[],
+                &[],
+            ));
 
-            state.stop_audio(); // Should not crash
+            let level_name = state.menu.state.levels[0].clone();
+            state.dispatch(AppCommand::EditorLoadLevel(level_name));
+
+            assert!(
+                !state.editor.timeline.playback.playing,
+                "Loading a level in editor must stop timeline playback"
+            );
+            assert!(
+                state.editor.timeline.playback.runtime.is_none(),
+                "Loading a level in editor must clear playback runtime"
+            );
+            assert!(
+                !state.audio.state.runtime.is_playing(),
+                "Loading a level in editor must stop runtime audio"
+            );
         });
     }
 
     #[test]
     fn test_phase_transition_clipboard_clearing() {
         pollster::block_on(async {
-            use crate::commands::AppCommand;
             let mut state = match State::new_test().await {
                 Some(s) => s,
                 None => return,
@@ -563,9 +584,8 @@ mod tests {
     }
 
     #[test]
-    fn test_editor_start_resets_history() {
+    fn test_editor_load_level_resets_history_and_clipboard() {
         pollster::block_on(async {
-            use crate::commands::AppCommand;
             let mut state = match State::new_test().await {
                 Some(s) => s,
                 None => return,
@@ -573,11 +593,27 @@ mod tests {
 
             state.dispatch(AppCommand::ToggleEditor);
             state.dispatch(AppCommand::TurnRight); // Place block -> adds to undo history
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+            state.dispatch(AppCommand::EditorCopyBlock);
             assert!(!state.editor.runtime.history.undo.is_empty());
+            assert!(state.editor.runtime.interaction.clipboard.is_some());
 
-            // Restarting editor (e.g. loading another level) should clear history
-            state.start_editor(0);
-            assert!(state.editor.runtime.history.undo.is_empty());
+            let level_name = state.menu.state.levels[0].clone();
+            state.dispatch(AppCommand::EditorLoadLevel(level_name));
+
+            assert!(
+                state.editor.runtime.history.undo.is_empty(),
+                "Loading a level in editor must clear undo history"
+            );
+            assert!(
+                state.editor.runtime.history.redo.is_empty(),
+                "Loading a level in editor must clear redo history"
+            );
+            assert!(
+                state.editor.runtime.interaction.clipboard.is_none(),
+                "Loading a level in editor must clear clipboard"
+            );
         });
     }
 }

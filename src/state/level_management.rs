@@ -186,6 +186,10 @@ impl State {
 
     pub fn load_builtin_level_into_editor(&mut self, name: &str) {
         if let Some(metadata) = self.load_level_metadata(name) {
+            self.stop_audio();
+            self.editor.timeline.playback.playing = false;
+            self.editor.timeline.playback.runtime = None;
+            self.editor.runtime.interaction.clipboard = None;
             let _ = self.import_level(&serde_json::to_string(&metadata).unwrap());
             self.session.editor_level_name = Some(name.to_string());
         }
