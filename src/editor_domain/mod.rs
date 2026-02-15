@@ -51,10 +51,6 @@ mod tests {
         assert_eq!(taps, vec![0.1, 0.3]);
         assert_eq!(indicators, vec![[1.0, 0.0, 0.0], [3.0, 0.0, 0.0]]);
 
-        retain_taps_up_to_duration_with_indicators(&mut taps, &mut indicators, 0.15);
-        assert_eq!(taps, vec![0.1]);
-        assert_eq!(indicators, vec![[1.0, 0.0, 0.0]]);
-
         clear_taps_with_indicators(&mut taps, &mut indicators);
         assert!(taps.is_empty());
         assert!(indicators.is_empty());

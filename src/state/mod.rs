@@ -516,4 +516,27 @@ mod tests {
             );
         });
     }
+
+    #[test]
+    fn setting_timeline_duration_does_not_delete_taps() {
+        pollster::block_on(async {
+            let mut state = match super::State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.dispatch(AppCommand::ToggleEditor);
+
+            // Add some taps beyond 0 duration
+            state.editor.timeline.taps.tap_times = vec![1.0, 2.0, 3.0];
+            state.editor.timeline.taps.tap_indicator_positions = vec![[0.0, 0.0, 0.0]; 3];
+
+            // Set duration to 0
+            state.set_editor_timeline_duration_seconds(0.0);
+
+            // Taps should still be there
+            assert_eq!(state.editor.timeline.taps.tap_times, vec![1.0, 2.0, 3.0]);
+            assert_eq!(state.editor.timeline.taps.tap_indicator_positions.len(), 3);
+        });
+    }
 }

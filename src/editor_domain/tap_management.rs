@@ -69,26 +69,6 @@ pub(crate) fn clear_taps_with_indicators(
     tap_indicator_positions.clear();
 }
 
-pub(crate) fn retain_taps_up_to_duration_with_indicators(
-    tap_times: &mut Vec<f32>,
-    tap_indicator_positions: &mut Vec<[f32; 3]>,
-    duration_seconds: f32,
-) {
-    let mut retained_times = Vec::with_capacity(tap_times.len());
-    let mut retained_positions = Vec::with_capacity(tap_indicator_positions.len());
-    for (index, tap) in tap_times.iter().copied().enumerate() {
-        if tap <= duration_seconds {
-            retained_times.push(tap);
-            if let Some(position) = tap_indicator_positions.get(index).copied() {
-                retained_positions.push(position);
-            }
-        }
-    }
-
-    *tap_times = retained_times;
-    *tap_indicator_positions = retained_positions;
-}
-
 pub(crate) fn toggle_spawn_direction(direction: SpawnDirection) -> SpawnDirection {
     match direction {
         SpawnDirection::Forward => SpawnDirection::Right,

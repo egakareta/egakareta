@@ -1,7 +1,6 @@
 use super::{EditorDirtyFlags, EditorSubsystem, PerfStage, State};
 use crate::editor_domain::{
     add_tap_with_indicator, clear_taps_with_indicators, remove_tap_with_indicator,
-    retain_taps_up_to_duration_with_indicators,
 };
 use crate::game::TimelineSimulationRuntime;
 use crate::platform::state_host::PlatformInstant;
@@ -231,12 +230,6 @@ impl EditorSubsystem {
             .clock
             .time_seconds
             .min(self.timeline.clock.duration_seconds);
-
-        retain_taps_up_to_duration_with_indicators(
-            &mut self.timeline.taps.tap_times,
-            &mut self.timeline.taps.tap_indicator_positions,
-            self.timeline.clock.duration_seconds,
-        );
     }
 
     pub(crate) fn tap_indicator_position_from_world(&self, position: [f32; 3]) -> [f32; 3] {
