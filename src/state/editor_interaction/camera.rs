@@ -1,6 +1,6 @@
 use super::super::{EditorSubsystem, State};
 use crate::types::AppPhase;
-use glam::{Mat4, Vec2, Vec3, Vec4};
+use glam::{Mat4, Vec2, Vec3};
 
 impl EditorSubsystem {
     pub(crate) fn camera_axes_xy(&self) -> (Vec2, Vec2) {

@@ -99,13 +99,3 @@ impl SurfaceHost {
         }
     }
 }
-
-pub(crate) fn log_backend(adapter_info: &wgpu::AdapterInfo) {
-    #[cfg(target_arch = "wasm32")]
-    web_sys::console::log_1(
-        &format!("Using graphics API backend: {:?}", adapter_info.backend).into(),
-    );
-
-    #[cfg(not(target_arch = "wasm32"))]
-    log::info!("Using graphics API backend: {:?}", adapter_info.backend);
-}
