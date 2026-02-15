@@ -646,4 +646,79 @@ mod tests {
             assert_eq!(state.render.gpu.config.height, 720);
         });
     }
+
+    #[test]
+    fn test_command_chain_undo_redo() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            // 1. Enter Editor
+            state.dispatch(AppCommand::ToggleEditor);
+            assert_eq!(state.phase, crate::types::AppPhase::Editor);
+
+            // 2. Place a block
+            let initial_count = state.editor.objects.len();
+            state.dispatch(AppCommand::TurnRight); // In editor, TurnRight = Place Block
+            assert_eq!(state.editor.objects.len(), initial_count + 1);
+
+            // 3. Undo placement
+            state.dispatch(AppCommand::EditorUndo);
+            assert_eq!(state.editor.objects.len(), initial_count);
+
+            // 4. Redo placement
+            state.dispatch(AppCommand::EditorRedo);
+            assert_eq!(state.editor.objects.len(), initial_count + 1);
+        });
+    }
+
+    #[test]
+    fn test_complex_command_sequence() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+            state.dispatch(AppCommand::ToggleEditor);
+
+            let initial_count = state.editor.objects.len();
+
+            // Set a specific block type
+            state.dispatch(AppCommand::EditorSetBlockId("core/lava".to_string()));
+
+            // Move cursor to a known position
+            state.dispatch(AppCommand::NextLevel); // Move X+1
+
+            // Place block at new position
+            state.dispatch(AppCommand::TurnRight);
+            assert_eq!(state.editor.objects.len(), initial_count + 1);
+            let block = state.editor.objects.last().unwrap();
+            assert_eq!(block.block_id, "core/lava");
+            let pos1 = block.position;
+
+            // Move cursor again
+            state.dispatch(AppCommand::NextLevel); // Move X+1
+            state.dispatch(AppCommand::TurnRight);
+            assert_eq!(state.editor.objects.len(), initial_count + 2);
+            let pos2 = state.editor.objects.last().unwrap().position;
+
+            assert!(
+                pos1 != pos2,
+                "Blocks should be at different positions. Pos1: {:?}, Pos2: {:?}",
+                pos1,
+                pos2
+            );
+
+            // Undo once
+            state.dispatch(AppCommand::EditorUndo);
+            assert_eq!(state.editor.objects.len(), initial_count + 1);
+            assert_eq!(state.editor.objects.last().unwrap().position, pos1);
+
+            // Undo twice
+            state.dispatch(AppCommand::EditorUndo);
+            assert_eq!(state.editor.objects.len(), initial_count);
+        });
+    }
 }

@@ -109,6 +109,7 @@ impl State {
         self.session.playing_level_name = level_name;
         self.reset_playing_camera_defaults();
         self.clear_editor_pan_keys();
+        self.editor.runtime.interaction.clipboard = None;
     }
 
     pub(super) fn enter_editor_phase(&mut self, level_name: String) {

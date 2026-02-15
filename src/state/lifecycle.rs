@@ -534,4 +534,50 @@ mod tests {
             state.stop_audio(); // Should not crash
         });
     }
+
+    #[test]
+    fn test_phase_transition_clipboard_clearing() {
+        pollster::block_on(async {
+            use crate::commands::AppCommand;
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            // 1. Setup: Enter editor and copy a block
+            state.dispatch(AppCommand::ToggleEditor);
+            state.dispatch(AppCommand::TurnRight); // Place block
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+            state.dispatch(AppCommand::EditorCopyBlock);
+            assert!(state.editor.runtime.interaction.clipboard.is_some());
+
+            // 2. Transition to playing: Should clear clipboard
+            state.start_level(0);
+            assert_eq!(state.phase, AppPhase::Playing);
+            assert!(
+                state.editor.runtime.interaction.clipboard.is_none(),
+                "Clipboard should be cleared when entering game phase"
+            );
+        });
+    }
+
+    #[test]
+    fn test_editor_start_resets_history() {
+        pollster::block_on(async {
+            use crate::commands::AppCommand;
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.dispatch(AppCommand::ToggleEditor);
+            state.dispatch(AppCommand::TurnRight); // Place block -> adds to undo history
+            assert!(!state.editor.runtime.history.undo.is_empty());
+
+            // Restarting editor (e.g. loading another level) should clear history
+            state.start_editor(0);
+            assert!(state.editor.runtime.history.undo.is_empty());
+        });
+    }
 }
