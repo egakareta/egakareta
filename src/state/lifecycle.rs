@@ -444,6 +444,7 @@ impl State {
                 editor_import_text: String::new(),
                 playing_level_name: None,
                 playtesting_editor: false,
+                playtest_audio_start_seconds: None,
             },
             editor: EditorSubsystem {
                 ui: EditorState::new(),

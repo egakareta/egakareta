@@ -53,6 +53,7 @@ pub(crate) struct SessionSubsystem {
     pub(crate) editor_import_text: String,
     pub(crate) playing_level_name: Option<String>,
     pub(crate) playtesting_editor: bool,
+    pub(crate) playtest_audio_start_seconds: Option<f32>,
 }
 
 /// Bundles all editor-related state into a single subsystem.
@@ -126,7 +127,13 @@ impl State {
                             .clone()
                             .unwrap_or_else(|| "Untitled".to_string());
                         let start_seconds = self
-                            .editor_timeline_elapsed_seconds(self.editor.timeline_time_seconds());
+                            .session
+                            .playtest_audio_start_seconds
+                            .unwrap_or_else(|| {
+                                self.editor_timeline_elapsed_seconds(
+                                    self.editor.timeline_time_seconds(),
+                                )
+                            });
                         self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
                     } else if let Some(level_name) = self.session.playing_level_name.clone() {
                         if let Some(metadata) = self.load_level_metadata(&level_name) {

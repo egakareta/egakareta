@@ -368,6 +368,7 @@ impl State {
         );
 
         self.enter_playing_phase(transition.playing_level_name, true);
+        self.session.playtest_audio_start_seconds = Some(transition.playtest_audio_start_seconds);
         self.gameplay.state = GameState::new();
         self.gameplay.state.objects = transition.objects;
         self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction);

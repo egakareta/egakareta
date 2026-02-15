@@ -1,6 +1,7 @@
 use crate::game::{simulate_timeline_state, TimelineSimulationRuntime};
 use crate::types::{LevelObject, SpawnDirection};
 
+#[allow(dead_code)]
 pub(crate) fn derive_timeline_position(
     spawn: [f32; 3],
     direction: SpawnDirection,

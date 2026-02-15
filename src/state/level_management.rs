@@ -47,9 +47,12 @@ impl State {
                 &self.editor.timeline.taps.tap_times,
                 self.editor.timeline.clock.time_seconds,
             );
+            self.session.playtest_audio_start_seconds =
+                Some(transition.playtest_audio_start_seconds);
             self.gameplay.state.objects = transition.objects;
             self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction);
         } else if let Some(level_name) = self.session.playing_level_name.clone() {
+            self.session.playtest_audio_start_seconds = None;
             if let Some(metadata) = self.load_level_metadata(&level_name) {
                 let transition = build_playing_transition_from_metadata(metadata);
                 self.gameplay.state.objects = transition.objects;
