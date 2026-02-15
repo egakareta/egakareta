@@ -90,7 +90,7 @@ impl State {
     }
 
     pub(super) fn stop_audio(&mut self) {
-        self.audio.stop();
+        self.audio_state.runtime.stop();
     }
 
     pub(super) fn start_audio(&mut self, level_name: &str, metadata: &LevelMetadata) {
@@ -104,20 +104,25 @@ impl State {
         start_seconds: f32,
     ) {
         if let Some(bytes) = self
-            .editor_audio
+            .audio_state
+            .editor
             .local_audio_cache
             .get(&metadata.music.source)
         {
-            self.audio
-                .start_with_bytes_at(&metadata.music.source, bytes, start_seconds);
+            self.audio_state.runtime.start_with_bytes_at(
+                &metadata.music.source,
+                bytes,
+                start_seconds,
+            );
         } else {
-            self.audio
+            self.audio_state
+                .runtime
                 .start_at(level_name, &metadata.music.source, start_seconds);
         }
     }
 
     pub fn trigger_audio_import(&self) {
-        let sender = self.editor_audio.audio_import_channel.0.clone();
+        let sender = self.audio_state.editor.audio_import_channel.0.clone();
         #[cfg(target_arch = "wasm32")]
         {
             wasm_bindgen_futures::spawn_local(async move {
@@ -141,21 +146,28 @@ impl State {
     }
 
     pub(super) fn update_audio_imports(&mut self) {
-        while let Ok((filename, bytes)) = self.editor_audio.audio_import_channel.1.try_recv() {
+        while let Ok((filename, bytes)) = self.audio_state.editor.audio_import_channel.1.try_recv()
+        {
             self.editor_session.editor_music_metadata.source = filename.clone();
-            self.editor_audio.local_audio_cache.insert(filename, bytes);
-            self.editor_audio
+            self.audio_state
+                .editor
+                .local_audio_cache
+                .insert(filename, bytes);
+            self.audio_state
+                .editor
                 .waveform_cache
                 .remove(&self.editor_session.editor_music_metadata.source);
-            self.editor_audio.waveform_loading_source = None;
+            self.audio_state.editor.waveform_loading_source = None;
             self.load_waveform_for_current_audio();
         }
     }
 
     pub(super) fn update_waveform_loading(&mut self) {
-        while let Ok((source, decoded)) = self.editor_audio.waveform_load_channel.1.try_recv() {
+        while let Ok((source, decoded)) = self.audio_state.editor.waveform_load_channel.1.try_recv()
+        {
             if let Some((samples, sample_rate)) = decoded {
-                self.editor_audio
+                self.audio_state
+                    .editor
                     .waveform_cache
                     .insert(source.clone(), (samples.clone(), sample_rate));
 
@@ -174,8 +186,8 @@ impl State {
                 self.editor_timing.waveform_sample_rate = 0;
             }
 
-            if self.editor_audio.waveform_loading_source.as_deref() == Some(source.as_str()) {
-                self.editor_audio.waveform_loading_source = None;
+            if self.audio_state.editor.waveform_loading_source.as_deref() == Some(source.as_str()) {
+                self.audio_state.editor.waveform_loading_source = None;
             }
         }
     }
@@ -183,7 +195,8 @@ impl State {
     pub fn export_level_ldz(&self) -> Result<Vec<u8>, String> {
         let metadata = self.current_editor_metadata();
         let audio_bytes = self
-            .editor_audio
+            .audio_state
+            .editor
             .local_audio_cache
             .get(&metadata.music.source)
             .cloned()

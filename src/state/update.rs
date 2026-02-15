@@ -99,7 +99,8 @@ impl State {
             if self.editor_timeline.playback.playing {
                 let timeline_playback_started_at = PlatformInstant::now();
                 let audio_time = self
-                    .audio
+                    .audio_state
+                    .runtime
                     .playback_time_seconds()
                     .unwrap_or(self.editor_timeline.clock.time_seconds);
                 let clamped_time = audio_time.min(self.editor_timeline.clock.duration_seconds);
@@ -138,7 +139,7 @@ impl State {
                 }
 
                 if clamped_time >= self.editor_timeline.clock.duration_seconds
-                    || !self.audio.is_playing()
+                    || !self.audio_state.runtime.is_playing()
                 {
                     self.editor_timeline.playback.playing = false;
                     self.editor_timeline.playback.runtime = None;

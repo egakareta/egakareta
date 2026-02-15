@@ -191,9 +191,8 @@ pub struct State {
     editor_perf: EditorPerfState,
     editor_timing: EditorTimingState,
     editor_session: EditorSessionState,
-    editor_audio: EditorAudioState,
     player_render: PlayerRenderState,
-    audio: PlatformAudio,
+    audio_state: AudioState,
 }
 
 type AudioImportData = (String, Vec<u8>);
@@ -466,6 +465,11 @@ struct EditorAudioState {
     ),
     waveform_cache: std::collections::HashMap<String, (Vec<f32>, u32)>,
     waveform_loading_source: Option<String>,
+}
+
+struct AudioState {
+    runtime: PlatformAudio,
+    editor: EditorAudioState,
 }
 
 struct EditorCameraState {
@@ -888,7 +892,16 @@ impl State {
                 last_frame: now,
                 accumulator: 0.0,
             },
-            audio: PlatformAudio::new(),
+            audio_state: AudioState {
+                runtime: PlatformAudio::new(),
+                editor: EditorAudioState {
+                    local_audio_cache,
+                    audio_import_channel: std::sync::mpsc::channel(),
+                    waveform_load_channel: std::sync::mpsc::channel(),
+                    waveform_cache: std::collections::HashMap::new(),
+                    waveform_loading_source: None,
+                },
+            },
             editor: EditorState::new(),
             editor_config: EditorConfigState {
                 selected_block_id: DEFAULT_BLOCK_ID.to_string(),
@@ -975,13 +988,6 @@ impl State {
                 editor_import_text: String::new(),
                 playing_level_name: None,
                 playtesting_editor: false,
-            },
-            editor_audio: EditorAudioState {
-                local_audio_cache,
-                audio_import_channel: std::sync::mpsc::channel(),
-                waveform_load_channel: std::sync::mpsc::channel(),
-                waveform_cache: std::collections::HashMap::new(),
-                waveform_loading_source: None,
             },
         }
     }
