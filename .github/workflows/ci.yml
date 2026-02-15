@@ -49,12 +49,7 @@ jobs:
         run: cargo build --verbose
 
       - name: Run tests
-        run: |
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            bun run test -- --nocapture --test-threads=1
-          else
-            bun run test --verbose
-          fi
+        run: bun run test -- --nocapture --test-threads=1
 
       - name: Check cargo formatting
         if: runner.os == 'Linux'
