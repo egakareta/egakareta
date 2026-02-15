@@ -1,16 +1,17 @@
 use crate::commands::AppCommand;
 use crate::editor_ui::components::{MAX_TIMELINE_DURATION_SECONDS, MIN_TIMELINE_DURATION_SECONDS};
-use crate::State;
+use crate::state::EditorUiViewModel;
 
 pub(crate) fn show_timing_mode_bottom_panel(
     ui: &mut egui::Ui,
-    state: &mut State,
+    view: &EditorUiViewModel<'_>,
     duration_seconds: f32,
+    commands: &mut Vec<AppCommand>,
 ) {
     ui.horizontal(|ui| {
         // Playback speed control
         ui.label("Speed:");
-        let speed = state.editor_playback_speed();
+        let speed = view.playback_speed;
         let speeds = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0];
         egui::ComboBox::from_id_salt("playback_speed")
             .selected_text(format!("{:.2}x", speed))
@@ -21,7 +22,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
                         .selectable_label((speed - s).abs() < 0.01, format!("{:.2}x", s))
                         .clicked()
                     {
-                        state.dispatch(AppCommand::EditorSetPlaybackSpeed(s));
+                        commands.push(AppCommand::EditorSetPlaybackSpeed(s));
                     }
                 }
             });
@@ -30,15 +31,15 @@ pub(crate) fn show_timing_mode_bottom_panel(
 
         // Timeline controls (shared with compose)
         ui.label("Timeline:");
-        let mut time_seconds = state.editor_timeline_time_seconds();
+        let mut time_seconds = view.timeline_time_seconds;
         let slider = egui::Slider::new(&mut time_seconds, 0.0..=duration_seconds)
             .text("Time")
             .show_value(true);
         if ui.add(slider).changed() {
-            state.dispatch(AppCommand::EditorSetTimelineTime(time_seconds));
+            commands.push(AppCommand::EditorSetTimelineTime(time_seconds));
         }
 
-        let mut duration = state.editor_timeline_duration_seconds();
+        let mut duration = view.timeline_duration_seconds;
         ui.label("Duration (s):");
         if ui
             .add(
@@ -48,7 +49,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
             )
             .changed()
         {
-            state.dispatch(AppCommand::EditorSetTimelineDuration(duration));
+            commands.push(AppCommand::EditorSetTimelineDuration(duration));
         }
     });
 
@@ -60,21 +61,21 @@ pub(crate) fn show_timing_mode_bottom_panel(
             ui.label("Timing Points:");
             ui.horizontal(|ui| {
                 if ui.button("Add at playhead").clicked() {
-                    let time = state.editor_timeline_time_seconds();
-                    state.dispatch(crate::commands::AppCommand::EditorAddTimingPoint {
+                    let time = view.timeline_time_seconds;
+                    commands.push(crate::commands::AppCommand::EditorAddTimingPoint {
                         time_seconds: time,
                         bpm: 120.0,
                     });
                 }
-                if let Some(selected_idx) = state.editor_timing_selected_index() {
+                if let Some(selected_idx) = view.timing_selected_index {
                     if ui.button("Remove").clicked() {
-                        state.dispatch(crate::commands::AppCommand::EditorRemoveTimingPoint(
+                        commands.push(crate::commands::AppCommand::EditorRemoveTimingPoint(
                             selected_idx,
                         ));
                     }
                     if ui.button("Use current time").clicked() {
-                        let time = state.editor_timeline_time_seconds();
-                        state.dispatch(crate::commands::AppCommand::EditorSetTimingPointTime(
+                        let time = view.timeline_time_seconds;
+                        commands.push(crate::commands::AppCommand::EditorSetTimingPointTime(
                             selected_idx,
                             time,
                         ));
@@ -82,8 +83,8 @@ pub(crate) fn show_timing_mode_bottom_panel(
                 }
             });
 
-            let timing_points = state.editor_timing_points().to_vec();
-            let selected_idx = state.editor_timing_selected_index();
+            let timing_points = view.timing_points;
+            let selected_idx = view.timing_selected_index;
             egui::ScrollArea::vertical()
                 .max_height(80.0)
                 .show(ui, |ui| {
@@ -100,7 +101,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
                             .selectable_label(selected_idx == Some(i), label)
                             .clicked()
                         {
-                            state.dispatch(AppCommand::EditorSetTimingSelected(Some(i)));
+                            commands.push(AppCommand::EditorSetTimingSelected(Some(i)));
                         }
                     }
                     if timing_points.is_empty() {
@@ -113,8 +114,8 @@ pub(crate) fn show_timing_mode_bottom_panel(
 
         // Selected timing point editor
         ui.vertical(|ui| {
-            let timing_points = state.editor_timing_points().to_vec();
-            if let Some(idx) = state.editor_timing_selected_index() {
+            let timing_points = view.timing_points;
+            if let Some(idx) = view.timing_selected_index {
                 if let Some(tp) = timing_points.get(idx) {
                     ui.label(format!("Editing Point #{}", idx + 1));
 
@@ -129,7 +130,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
                             )
                             .changed()
                         {
-                            state.dispatch(AppCommand::EditorSetTimingPointTime(idx, time));
+                            commands.push(AppCommand::EditorSetTimingPointTime(idx, time));
                         }
                     });
 
@@ -140,7 +141,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
                             .add(egui::DragValue::new(&mut bpm).speed(0.1).range(1.0..=999.0))
                             .changed()
                         {
-                            state.dispatch(AppCommand::EditorSetTimingPointBpm(idx, bpm));
+                            commands.push(AppCommand::EditorSetTimingPointBpm(idx, bpm));
                         }
                     });
 
@@ -156,7 +157,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
                             .add(egui::DragValue::new(&mut den).range(1..=32))
                             .changed();
                         if n_changed || d_changed {
-                            state.dispatch(AppCommand::EditorSetTimingPointTimeSignature(
+                            commands.push(AppCommand::EditorSetTimingPointTimeSignature(
                                 idx,
                                 num.max(1) as u32,
                                 den.max(1) as u32,
@@ -175,18 +176,18 @@ pub(crate) fn show_timing_mode_bottom_panel(
         ui.vertical(|ui| {
             ui.label("Tap for BPM:");
             if ui.button("Tap (click repeatedly)").clicked() {
-                state.dispatch(AppCommand::EditorBpmTap);
+                commands.push(AppCommand::EditorBpmTap);
             }
-            if let Some(bpm) = state.editor_bpm_tap_result() {
+            if let Some(bpm) = view.bpm_tap_result {
                 ui.label(format!("Detected: {:.1} BPM", bpm));
-                if let Some(idx) = state.editor_timing_selected_index() {
+                if let Some(idx) = view.timing_selected_index {
                     if ui.button("Apply to selected").clicked() {
-                        state.dispatch(AppCommand::EditorSetTimingPointBpm(idx, bpm));
+                        commands.push(AppCommand::EditorSetTimingPointBpm(idx, bpm));
                     }
                 }
             }
             if ui.button("Reset taps").clicked() {
-                state.dispatch(AppCommand::EditorBpmTapReset);
+                commands.push(AppCommand::EditorBpmTapReset);
             }
         });
     });

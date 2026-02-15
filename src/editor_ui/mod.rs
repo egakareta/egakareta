@@ -2,6 +2,7 @@ pub(crate) mod components;
 pub(crate) mod menu;
 pub(crate) mod modes;
 
+use crate::commands::AppCommand;
 use crate::editor_ui::components::{show_timeline_bar, show_waveform_panel, timeline_metrics};
 use crate::editor_ui::modes::compose::show_compose_mode_bottom_panel;
 use crate::editor_ui::modes::timing::show_timing_mode_bottom_panel;
@@ -14,13 +15,16 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
         return;
     }
 
+    let view = state.editor_ui_view_model();
+    let mut commands = Vec::<AppCommand>::new();
+
     egui::TopBottomPanel::top("editor_top_bar").show(ctx, |ui| {
         ui.horizontal(|ui| {
             // Top-level tabs: Compose / Timing
-            let mode = state.editor_mode();
+            let mode = view.mode;
             let is_compose = mode == EditorMode::Select || mode == EditorMode::Place;
             if ui.selectable_label(is_compose, "Compose").clicked() && !is_compose {
-                state.dispatch(crate::commands::AppCommand::EditorSetMode(
+                commands.push(crate::commands::AppCommand::EditorSetMode(
                     EditorMode::Place,
                 ));
             }
@@ -29,7 +33,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                 .clicked()
                 && mode != EditorMode::Timing
             {
-                state.dispatch(crate::commands::AppCommand::EditorSetMode(
+                commands.push(crate::commands::AppCommand::EditorSetMode(
                     EditorMode::Timing,
                 ));
             }
@@ -38,17 +42,16 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
 
             ui.label("Level:");
 
-            let levels = state.available_levels().to_vec();
-            let selected = state
-                .editor_level_name()
-                .unwrap_or_else(|| "Untitled".to_string());
+            let levels = view.available_levels;
+            let selected = view.level_name.unwrap_or("Untitled");
 
             egui::ComboBox::from_id_salt("level_select")
-                .selected_text(&selected)
+                .selected_text(selected)
                 .show_ui(ui, |ui| {
                     for level in levels {
-                        if ui.selectable_label(selected == level, &level).clicked() {
-                            state.dispatch(crate::commands::AppCommand::EditorLoadLevel(level));
+                        if ui.selectable_label(selected == level, level).clicked() {
+                            commands
+                                .push(crate::commands::AppCommand::EditorLoadLevel(level.clone()));
                         }
                     }
                 });
@@ -56,43 +59,39 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
             ui.separator();
 
             ui.label("Name:");
-            let mut name = state
-                .editor_level_name()
-                .unwrap_or_else(|| "Untitled".to_string());
+            let mut name = selected.to_string();
             if ui.text_edit_singleline(&mut name).changed() {
-                state.dispatch(crate::commands::AppCommand::EditorRenameLevel(name));
+                commands.push(crate::commands::AppCommand::EditorRenameLevel(name));
             }
 
             ui.separator();
 
             if ui.button("Export .ldz").clicked() {
-                state.dispatch(crate::commands::AppCommand::EditorExportLevel);
+                commands.push(crate::commands::AppCommand::EditorExportLevel);
             }
 
             if ui.button("Import .ldz/JSON").clicked() {
-                state.dispatch(crate::commands::AppCommand::EditorSetShowImport(true));
+                commands.push(crate::commands::AppCommand::EditorSetShowImport(true));
             }
 
             if ui.button("Metadata").clicked() {
-                state.dispatch(crate::commands::AppCommand::EditorSetShowMetadata(true));
+                commands.push(crate::commands::AppCommand::EditorSetShowMetadata(true));
             }
         });
     });
 
-    if state.editor_show_metadata() {
+    if view.show_metadata {
         egui::Window::new("Level Metadata").show(ctx, |ui| {
             ui.label("Level Name:");
-            let mut name = state
-                .editor_level_name()
-                .unwrap_or_else(|| "Untitled".to_string());
+            let mut name = view.level_name.unwrap_or("Untitled").to_string();
             if ui.text_edit_singleline(&mut name).changed() {
-                state.dispatch(crate::commands::AppCommand::EditorRenameLevel(name));
+                commands.push(crate::commands::AppCommand::EditorRenameLevel(name));
             }
 
             ui.separator();
             ui.heading("Music");
 
-            let mut music = state.editor_music_metadata().clone();
+            let mut music = view.music_metadata.clone();
             let mut changed = false;
 
             ui.horizontal(|ui| {
@@ -101,7 +100,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                     changed = true;
                 }
                 if ui.button("Import External Audio").clicked() {
-                    state.dispatch(crate::commands::AppCommand::EditorTriggerAudioImport);
+                    commands.push(crate::commands::AppCommand::EditorTriggerAudioImport);
                 }
             });
 
@@ -124,19 +123,19 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
             });
 
             if changed {
-                state.dispatch(crate::commands::AppCommand::EditorUpdateMusic(music));
+                commands.push(crate::commands::AppCommand::EditorUpdateMusic(music));
             }
 
             if ui.button("Close").clicked() {
-                state.dispatch(crate::commands::AppCommand::EditorSetShowMetadata(false));
+                commands.push(crate::commands::AppCommand::EditorSetShowMetadata(false));
             }
         });
     }
 
-    if state.editor_show_import() {
+    if view.show_import {
         egui::Window::new("Import Level").show(ctx, |ui| {
             ui.label("Paste level JSON or Base64 LDZ below:");
-            let mut text = state.editor_import_text().to_string();
+            let mut text = view.import_text.to_string();
             if ui
                 .add(
                     egui::TextEdit::multiline(&mut text)
@@ -145,15 +144,15 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                 )
                 .changed()
             {
-                state.dispatch(crate::commands::AppCommand::EditorSetImportText(text));
+                commands.push(crate::commands::AppCommand::EditorSetImportText(text));
             }
 
             ui.horizontal(|ui| {
                 if ui.button("Import").clicked() {
-                    state.dispatch(crate::commands::AppCommand::EditorCompleteImport);
+                    commands.push(crate::commands::AppCommand::EditorCompleteImport);
                 }
                 if ui.button("Cancel").clicked() {
-                    state.dispatch(crate::commands::AppCommand::EditorSetShowImport(false));
+                    commands.push(crate::commands::AppCommand::EditorSetShowImport(false));
                 }
             });
         });
@@ -163,31 +162,31 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
         .resizable(false)
         .show(ctx, |ui| {
             ui.vertical(|ui| {
-                let duration_seconds = timeline_metrics(state.editor_timeline_duration_seconds());
+                let duration_seconds = timeline_metrics(view.timeline_duration_seconds);
 
-                if state.editor_mode() == EditorMode::Timing {
-                    show_timing_mode_bottom_panel(ui, state, duration_seconds);
+                if view.mode == EditorMode::Timing {
+                    show_timing_mode_bottom_panel(ui, &view, duration_seconds, &mut commands);
                 } else {
-                    show_compose_mode_bottom_panel(ui, state, duration_seconds);
+                    show_compose_mode_bottom_panel(ui, &view, duration_seconds, &mut commands);
                 }
 
                 // Shared timeline bar with beat lines
-                show_timeline_bar(ui, state, duration_seconds);
+                show_timeline_bar(ui, &view, duration_seconds, &mut commands);
             });
         });
 
     // Waveform visualization central panel (Timing mode only)
-    if state.editor_mode() == EditorMode::Timing {
+    if view.mode == EditorMode::Timing {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::central_panel(&ctx.style()).fill(egui::Color32::from_rgb(15, 20, 28)),
             )
             .show(ctx, |ui| {
-                show_waveform_panel(ui, state);
+                show_waveform_panel(ui, &view, &mut commands);
             });
     }
 
-    if state.editor_perf_overlay_enabled() {
+    if view.perf_overlay_enabled {
         egui::Area::new("editor_perf_overlay".into())
             .order(egui::Order::Foreground)
             .anchor(egui::Align2::LEFT_TOP, egui::vec2(12.0, 12.0))
@@ -195,10 +194,15 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                 egui::Frame::window(ui.style())
                     .fill(egui::Color32::from_black_alpha(210))
                     .show(ui, |ui| {
-                        for line in state.editor_perf_overlay_lines() {
+                        for line in &view.perf_overlay_lines {
                             ui.monospace(line);
                         }
                     });
             });
+    }
+
+    drop(view);
+    for command in commands {
+        state.dispatch(command);
     }
 }

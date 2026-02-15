@@ -106,6 +106,25 @@ impl State {
             AppCommand::EditorUpdateMusic(metadata) => self.set_editor_music_metadata(metadata),
             AppCommand::EditorTriggerAudioImport => self.trigger_audio_import(),
 
+            // ── Editor – pointer/input routing ─────────────────────
+            AppCommand::EditorMouseButton { button, pressed } => {
+                if button == 0 && pressed {
+                    if let Some(pos) = self.editor.ui.pointer_screen {
+                        self.handle_primary_click(pos[0], pos[1]);
+                    } else {
+                        self.handle_mouse_button(button, pressed);
+                    }
+                } else {
+                    self.handle_mouse_button(button, pressed);
+                }
+            }
+            AppCommand::EditorPrimaryClick { x, y } => self.handle_primary_click(x, y),
+            AppCommand::EditorPointerMoved { x, y } => self.handle_pointer_moved(x, y),
+            AppCommand::EditorCameraDrag { dx, dy } => self.drag_editor_camera_by_pixels(dx, dy),
+            AppCommand::ResizeSurface { width, height } => {
+                self.resize_surface(crate::types::PhysicalSize::new(width, height));
+            }
+
             // ── Editor – escape context ─────────────────────────────
             AppCommand::EditorEscape => self.handle_editor_escape(),
         }
@@ -457,39 +476,22 @@ impl State {
                 self.process_keyboard_input(&key, pressed, just_pressed);
             }
             InputEvent::MouseButton { button, pressed } => {
-                if button == 0 && pressed {
-                    if let Some(pos) = self.editor.ui.pointer_screen {
-                        self.handle_primary_click(pos[0], pos[1]);
-                    } else {
-                        self.handle_mouse_button(button, pressed);
-                    }
-                } else {
-                    self.handle_mouse_button(button, pressed);
-                }
+                self.dispatch(AppCommand::EditorMouseButton { button, pressed });
             }
             InputEvent::PrimaryClick { x, y } => {
-                self.handle_primary_click(x, y);
+                self.dispatch(AppCommand::EditorPrimaryClick { x, y });
             }
             InputEvent::PointerMoved { x, y } => {
-                let mut handled = false;
-                if self.editor.ui.left_mouse_down && self.is_editor() {
-                    handled = self.drag_editor_gizmo_from_screen(x, y)
-                        || self.drag_editor_selection_from_screen(x, y);
-                }
-
-                if !handled {
-                    self.update_editor_cursor_from_screen(x, y);
-                }
-                self.editor.ui.pointer_screen = Some([x, y]);
+                self.dispatch(AppCommand::EditorPointerMoved { x, y });
             }
             InputEvent::CameraDrag { dx, dy } => {
-                self.drag_editor_camera_by_pixels(dx, dy);
+                self.dispatch(AppCommand::EditorCameraDrag { dx, dy });
             }
             InputEvent::Zoom(delta) => {
                 self.dispatch(AppCommand::EditorAdjustZoom(delta));
             }
             InputEvent::Resize { width, height } => {
-                self.resize_surface(crate::types::PhysicalSize::new(width, height));
+                self.dispatch(AppCommand::ResizeSurface { width, height });
             }
         }
     }

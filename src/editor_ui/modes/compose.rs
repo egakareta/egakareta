@@ -1,38 +1,39 @@
 use crate::block_repository::all_placeable_blocks;
 use crate::commands::AppCommand;
 use crate::editor_ui::components::{MAX_TIMELINE_DURATION_SECONDS, MIN_TIMELINE_DURATION_SECONDS};
+use crate::state::EditorUiViewModel;
 use crate::types::{EditorMode, SpawnDirection};
-use crate::State;
 
 pub(crate) fn show_compose_mode_bottom_panel(
     ui: &mut egui::Ui,
-    state: &mut State,
+    view: &EditorUiViewModel<'_>,
     duration_seconds: f32,
+    commands: &mut Vec<AppCommand>,
 ) {
     ui.horizontal(|ui| {
         ui.label("Mode:");
-        let mode = state.editor_mode();
+        let mode = view.mode;
         if ui
             .selectable_label(mode == EditorMode::Select, "Select")
             .clicked()
         {
-            state.dispatch(AppCommand::EditorSetMode(EditorMode::Select));
+            commands.push(AppCommand::EditorSetMode(EditorMode::Select));
         }
         if ui
             .selectable_label(mode == EditorMode::Place, "Place")
             .clicked()
         {
-            state.dispatch(AppCommand::EditorSetMode(EditorMode::Place));
+            commands.push(AppCommand::EditorSetMode(EditorMode::Place));
         }
 
         ui.separator();
-        let mut snap = state.editor_snap_to_grid();
+        let mut snap = view.snap_to_grid;
         if ui.checkbox(&mut snap, "Snap to Grid").changed() {
-            state.dispatch(AppCommand::EditorSetSnapToGrid(snap));
+            commands.push(AppCommand::EditorSetSnapToGrid(snap));
         }
 
         ui.label("Step:");
-        let mut snap_step = state.editor_snap_step();
+        let mut snap_step = view.snap_step;
         if ui
             .add(
                 egui::DragValue::new(&mut snap_step)
@@ -41,16 +42,16 @@ pub(crate) fn show_compose_mode_bottom_panel(
             )
             .changed()
         {
-            state.dispatch(AppCommand::EditorSetSnapStep(snap_step));
+            commands.push(AppCommand::EditorSetSnapStep(snap_step));
         }
     });
 
-    match state.editor_mode() {
+    match view.mode {
         EditorMode::Place => {
             ui.horizontal(|ui| {
                 ui.label("Block:");
 
-                let current = state.editor_selected_block_id().to_string();
+                let current = view.selected_block_id;
                 for block in all_placeable_blocks() {
                     if !block.placeable {
                         continue;
@@ -59,14 +60,14 @@ pub(crate) fn show_compose_mode_bottom_panel(
                         .selectable_label(current == block.id, &block.display_name)
                         .clicked()
                     {
-                        state.dispatch(AppCommand::EditorSetBlockId(block.id.clone()));
+                        commands.push(AppCommand::EditorSetBlockId(block.id.clone()));
                     }
                 }
             });
         }
         EditorMode::Select => {
             ui.label("Tip: Shift+Click to select multiple blocks.");
-            if let Some(mut selected) = state.editor_selected_block() {
+            if let Some(mut selected) = view.selected_block.clone() {
                 ui.horizontal_wrapped(|ui| {
                     ui.horizontal(|ui| {
                         ui.label("Move:");
@@ -81,7 +82,7 @@ pub(crate) fn show_compose_mode_bottom_panel(
                             .add(egui::DragValue::new(&mut selected.position[2]).prefix("Z "))
                             .changed();
                         if changed {
-                            state.dispatch(crate::commands::AppCommand::EditorUpdateSelectedBlock(
+                            commands.push(crate::commands::AppCommand::EditorUpdateSelectedBlock(
                                 selected.clone(),
                             ));
                         }
@@ -100,7 +101,7 @@ pub(crate) fn show_compose_mode_bottom_panel(
                             .add(egui::DragValue::new(&mut selected.size[2]).prefix("H "))
                             .changed();
                         if changed {
-                            state.dispatch(crate::commands::AppCommand::EditorUpdateSelectedBlock(
+                            commands.push(crate::commands::AppCommand::EditorUpdateSelectedBlock(
                                 selected.clone(),
                             ));
                         }
@@ -116,7 +117,7 @@ pub(crate) fn show_compose_mode_bottom_panel(
                             )
                             .changed()
                         {
-                            state.dispatch(crate::commands::AppCommand::EditorUpdateSelectedBlock(
+                            commands.push(crate::commands::AppCommand::EditorUpdateSelectedBlock(
                                 selected.clone(),
                             ));
                         }
@@ -132,7 +133,7 @@ pub(crate) fn show_compose_mode_bottom_panel(
                             )
                             .changed()
                         {
-                            state.dispatch(crate::commands::AppCommand::EditorUpdateSelectedBlock(
+                            commands.push(crate::commands::AppCommand::EditorUpdateSelectedBlock(
                                 selected.clone(),
                             ));
                         }
@@ -151,9 +152,8 @@ pub(crate) fn show_compose_mode_bottom_panel(
                         {
                             let mut next = selected.clone();
                             next.block_id = block.id.clone();
-                            state.dispatch(crate::commands::AppCommand::EditorUpdateSelectedBlock(
-                                next,
-                            ));
+                            commands
+                                .push(crate::commands::AppCommand::EditorUpdateSelectedBlock(next));
                         }
                     }
                 });
@@ -169,17 +169,17 @@ pub(crate) fn show_compose_mode_bottom_panel(
     ui.horizontal(|ui| {
         ui.label("Timeline:");
 
-        let mut time_seconds = state.editor_timeline_time_seconds();
+        let mut time_seconds = view.timeline_time_seconds;
         let slider = egui::Slider::new(&mut time_seconds, 0.0..=duration_seconds)
             .text("Time")
             .show_value(true);
         if ui.add(slider).changed() {
-            state.dispatch(crate::commands::AppCommand::EditorSetTimelineTime(
+            commands.push(crate::commands::AppCommand::EditorSetTimelineTime(
                 time_seconds,
             ));
         }
 
-        let mut duration = state.editor_timeline_duration_seconds();
+        let mut duration = view.timeline_duration_seconds;
         ui.label("Duration (s):");
         if ui
             .add(
@@ -189,23 +189,24 @@ pub(crate) fn show_compose_mode_bottom_panel(
             )
             .changed()
         {
-            state.dispatch(crate::commands::AppCommand::EditorSetTimelineDuration(
+            commands.push(crate::commands::AppCommand::EditorSetTimelineDuration(
                 duration,
             ));
         }
 
         if ui.button("Add tap").clicked() {
-            state.dispatch(crate::commands::AppCommand::EditorAddTap);
+            commands.push(crate::commands::AppCommand::EditorAddTap);
         }
         if ui.button("Remove tap").clicked() {
-            state.dispatch(crate::commands::AppCommand::EditorRemoveTap);
+            commands.push(crate::commands::AppCommand::EditorRemoveTap);
         }
         if ui.button("Clear taps").clicked() {
-            state.dispatch(crate::commands::AppCommand::EditorClearTaps);
+            commands.push(crate::commands::AppCommand::EditorClearTaps);
         }
     });
 
-    let (position, direction) = state.editor_timeline_preview();
+    let position = view.timeline_preview_position;
+    let direction = view.timeline_preview_direction;
     let direction_label = match direction {
         SpawnDirection::Forward => "Forward",
         SpawnDirection::Right => "Right",
@@ -216,6 +217,6 @@ pub(crate) fn show_compose_mode_bottom_panel(
             position[0], position[1], position[2], direction_label
         ));
         ui.separator();
-        ui.label(format!("FPS: {:.0}", state.editor_fps()));
+        ui.label(format!("FPS: {:.0}", view.fps));
     });
 }

@@ -1,5 +1,5 @@
 use crate::commands::AppCommand;
-use crate::State;
+use crate::state::EditorUiViewModel;
 
 pub(crate) const MIN_TIMELINE_DURATION_SECONDS: f32 = 0.1;
 pub(crate) const MAX_TIMELINE_DURATION_SECONDS: f32 = 600.0;
@@ -8,7 +8,12 @@ pub(crate) fn timeline_metrics(duration_seconds: f32) -> f32 {
     duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS)
 }
 
-pub(crate) fn show_timeline_bar(ui: &mut egui::Ui, state: &mut State, duration_seconds: f32) {
+pub(crate) fn show_timeline_bar(
+    ui: &mut egui::Ui,
+    view: &EditorUiViewModel<'_>,
+    duration_seconds: f32,
+    commands: &mut Vec<AppCommand>,
+) {
     let available_width = ui.available_width();
     let timeline_height = 18.0;
     let (rect, response) = ui.allocate_exact_size(
@@ -28,7 +33,7 @@ pub(crate) fn show_timeline_bar(ui: &mut egui::Ui, state: &mut State, duration_s
     );
 
     // Draw beat lines from timing points
-    let timing_points = state.editor_timing_points();
+    let timing_points = view.timing_points;
     for (tp_idx, tp) in timing_points.iter().enumerate() {
         if tp.bpm <= 0.0 {
             continue;
@@ -60,7 +65,7 @@ pub(crate) fn show_timeline_bar(ui: &mut egui::Ui, state: &mut State, duration_s
     }
 
     // Draw tap circles
-    for tap_time in state.editor_tap_times() {
+    for tap_time in view.tap_times {
         let t = (*tap_time / duration_seconds).clamp(0.0, 1.0);
         let x = rect.left() + rect.width() * t;
         painter.circle_filled(
@@ -71,7 +76,7 @@ pub(crate) fn show_timeline_bar(ui: &mut egui::Ui, state: &mut State, duration_s
     }
 
     // Draw timing point markers (red triangles)
-    for tp in state.editor_timing_points() {
+    for tp in view.timing_points {
         let t = (tp.time_seconds / duration_seconds).clamp(0.0, 1.0);
         let x = rect.left() + rect.width() * t;
         painter.line_segment(
@@ -81,7 +86,7 @@ pub(crate) fn show_timeline_bar(ui: &mut egui::Ui, state: &mut State, duration_s
     }
 
     // Draw playhead
-    let current_t = state.editor_timeline_time_seconds() / duration_seconds;
+    let current_t = view.timeline_time_seconds / duration_seconds;
     let current_x = rect.left() + rect.width() * current_t.clamp(0.0, 1.0);
     painter.line_segment(
         [
@@ -96,19 +101,23 @@ pub(crate) fn show_timeline_bar(ui: &mut egui::Ui, state: &mut State, duration_s
         if let Some(pos) = response.interact_pointer_pos() {
             let t = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
             let time_seconds = t * duration_seconds;
-            state.dispatch(AppCommand::EditorSetTimelineTime(time_seconds));
+            commands.push(AppCommand::EditorSetTimelineTime(time_seconds));
         }
     }
 }
 
-pub(crate) fn show_waveform_panel(ui: &mut egui::Ui, state: &mut State) {
-    let duration_seconds = state
-        .editor_timeline_duration_seconds()
+pub(crate) fn show_waveform_panel(
+    ui: &mut egui::Ui,
+    view: &EditorUiViewModel<'_>,
+    commands: &mut Vec<AppCommand>,
+) {
+    let duration_seconds = view
+        .timeline_duration_seconds
         .max(MIN_TIMELINE_DURATION_SECONDS);
-    let waveform_samples = state.editor_waveform_samples();
-    let sample_rate = state.editor_waveform_sample_rate();
-    let zoom = state.editor_waveform_zoom();
-    let scroll = state.editor_waveform_scroll();
+    let waveform_samples = view.waveform_samples;
+    let sample_rate = view.waveform_sample_rate;
+    let zoom = view.waveform_zoom;
+    let scroll = view.waveform_scroll;
 
     let available_size = ui.available_size();
     let (rect, response) = ui.allocate_exact_size(available_size, egui::Sense::click_and_drag());
@@ -166,7 +175,7 @@ pub(crate) fn show_waveform_panel(ui: &mut egui::Ui, state: &mut State) {
     }
 
     // Draw beat grid lines from timing points
-    let timing_points = state.editor_timing_points();
+    let timing_points = view.timing_points;
     for (tp_idx, tp) in timing_points.iter().enumerate() {
         if tp.bpm <= 0.0 {
             continue;
@@ -238,7 +247,7 @@ pub(crate) fn show_waveform_panel(ui: &mut egui::Ui, state: &mut State) {
     }
 
     // Draw playhead
-    let current_time = state.editor_timeline_time_seconds();
+    let current_time = view.timeline_time_seconds;
     if current_time >= view_start && current_time <= view_end {
         let x = rect.left() + (current_time - view_start) / (view_end - view_start) * rect.width();
         painter.line_segment(
@@ -252,7 +261,7 @@ pub(crate) fn show_waveform_panel(ui: &mut egui::Ui, state: &mut State) {
         if let Some(pos) = response.interact_pointer_pos() {
             let t = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
             let time_seconds = view_start + t * (view_end - view_start);
-            state.dispatch(AppCommand::EditorSetTimelineTime(time_seconds));
+            commands.push(AppCommand::EditorSetTimelineTime(time_seconds));
         }
     }
 
@@ -261,7 +270,7 @@ pub(crate) fn show_waveform_panel(ui: &mut egui::Ui, state: &mut State) {
     if scroll_delta.y.abs() > 0.0 {
         let zoom_factor = 1.0 + scroll_delta.y * 0.002;
         let new_zoom = (zoom * zoom_factor).clamp(0.1, 100.0);
-        state.dispatch(AppCommand::EditorSetWaveformZoom(new_zoom));
+        commands.push(AppCommand::EditorSetWaveformZoom(new_zoom));
     }
     if response.dragged_by(egui::PointerButton::Middle)
         || response.dragged_by(egui::PointerButton::Secondary)
@@ -269,6 +278,6 @@ pub(crate) fn show_waveform_panel(ui: &mut egui::Ui, state: &mut State) {
         let drag_delta = response.drag_delta();
         let time_per_pixel = (view_end - view_start) / rect.width();
         let new_scroll = (scroll - drag_delta.x * time_per_pixel).max(0.0);
-        state.dispatch(AppCommand::EditorSetWaveformScroll(new_scroll));
+        commands.push(AppCommand::EditorSetWaveformScroll(new_scroll));
     }
 }

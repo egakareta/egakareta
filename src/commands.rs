@@ -131,6 +131,18 @@ pub(crate) enum AppCommand {
     /// Trigger the platform audio import dialog.
     EditorTriggerAudioImport,
 
+    // ── Editor – pointer/input routing ─────────────────────────────
+    /// Mouse button state update for editor interaction routing.
+    EditorMouseButton { button: u32, pressed: bool },
+    /// Primary click action at screen coordinates.
+    EditorPrimaryClick { x: f64, y: f64 },
+    /// Pointer moved to screen coordinates.
+    EditorPointerMoved { x: f64, y: f64 },
+    /// Camera drag delta in screen pixels.
+    EditorCameraDrag { dx: f64, dy: f64 },
+    /// Resize render surface to the specified dimensions.
+    ResizeSurface { width: u32, height: u32 },
+
     // ── Editor – escape context ─────────────────────────────
     /// Escape key context-sensitive (stop playback → reset timeline → back to menu).
     EditorEscape,

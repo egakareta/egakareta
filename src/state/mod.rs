@@ -16,6 +16,7 @@ mod render;
 mod runtime;
 mod state_helpers;
 mod update;
+mod view_model;
 
 pub(crate) use audio_state::{AudioState, AudioSubsystem};
 pub(crate) use editor_camera::EditorCameraState;
@@ -30,6 +31,7 @@ pub(crate) use history::EditorHistoryState;
 pub(crate) use perf::{EditorPerfState, PerfStage};
 pub(crate) use render::RenderSubsystem;
 pub(crate) use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
+pub(crate) use view_model::EditorUiViewModel;
 
 use crate::game::GameState;
 #[cfg(not(target_arch = "wasm32"))]
@@ -241,6 +243,19 @@ impl State {
         }
 
         self.turn_right();
+    }
+
+    pub(crate) fn handle_pointer_moved(&mut self, x: f64, y: f64) {
+        let mut handled = false;
+        if self.editor.ui.left_mouse_down && self.is_editor() {
+            handled = self.drag_editor_gizmo_from_screen(x, y)
+                || self.drag_editor_selection_from_screen(x, y);
+        }
+
+        if !handled {
+            self.update_editor_cursor_from_screen(x, y);
+        }
+        self.editor.ui.pointer_screen = Some([x, y]);
     }
 }
 
