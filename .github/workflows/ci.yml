@@ -55,7 +55,7 @@ jobs:
           locked: true
 
       - name: Run tests with coverage
-        run: cargo llvm-cov --lcov --output-path lcov.info
+        run: bun run test:coverage
 
       - name: Check cargo formatting
         run: bun format:cargo -- --check
