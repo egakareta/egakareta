@@ -663,10 +663,24 @@ impl State {
             .time_seconds
             .clamp(0.0, duration_seconds);
         let max_index = cache_len.saturating_sub(1);
-        let target_index = ((target_time / step_seconds).round() as usize).min(max_index);
-        let cached = &self.editor.timeline.snapshot_cache[target_index];
-        let position = cached.position;
-        let direction = cached.direction;
+        let sample_position = (target_time / step_seconds).clamp(0.0, max_index as f32);
+        let lower_index = sample_position.floor() as usize;
+        let upper_index = (lower_index + 1).min(max_index);
+        let alpha = (sample_position - lower_index as f32).clamp(0.0, 1.0);
+
+        let lower = &self.editor.timeline.snapshot_cache[lower_index];
+        let upper = &self.editor.timeline.snapshot_cache[upper_index];
+
+        let position = [
+            lower.position[0] + (upper.position[0] - lower.position[0]) * alpha,
+            lower.position[1] + (upper.position[1] - lower.position[1]) * alpha,
+            lower.position[2] + (upper.position[2] - lower.position[2]) * alpha,
+        ];
+        let direction = if alpha < 0.5 {
+            lower.direction
+        } else {
+            upper.direction
+        };
 
         self.apply_editor_timeline_preview_state(position, direction);
         self.perf_record(PerfStage::PreviewSolveTimeline, solve_started_at);
