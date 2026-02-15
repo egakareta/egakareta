@@ -161,7 +161,30 @@ impl State {
                     self.phase == AppPhase::Editor && self.editor.ui.mode == EditorMode::Timing;
 
                 if !skip_world {
-                    if let Some((buffer, count)) = self.render.meshes.blocks.draw_data() {
+                    if self.phase == AppPhase::Editor {
+                        if let Some((buffer, count)) = self.render.meshes.blocks_static.draw_data()
+                        {
+                            render_pass.set_vertex_buffer(0, buffer.slice(..));
+                            render_pass.set_bind_group(
+                                1,
+                                &self.render.gpu.zero_line_bind_group,
+                                &[],
+                            );
+                            render_pass.draw(0..count, 0..1);
+                        }
+
+                        if let Some((buffer, count)) =
+                            self.render.meshes.blocks_selected.draw_data()
+                        {
+                            render_pass.set_vertex_buffer(0, buffer.slice(..));
+                            render_pass.set_bind_group(
+                                1,
+                                &self.render.gpu.zero_line_bind_group,
+                                &[],
+                            );
+                            render_pass.draw(0..count, 0..1);
+                        }
+                    } else if let Some((buffer, count)) = self.render.meshes.blocks.draw_data() {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         render_pass.draw(0..count, 0..1);

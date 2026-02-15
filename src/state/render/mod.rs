@@ -131,6 +131,8 @@ pub(crate) struct SceneMeshes {
     pub(crate) grid: MeshSlot,
     pub(crate) trail: MeshSlot,
     pub(crate) blocks: MeshSlot,
+    pub(crate) blocks_static: MeshSlot,
+    pub(crate) blocks_selected: MeshSlot,
     pub(crate) editor_cursor: MeshSlot,
     pub(crate) editor_hover_outline: MeshSlot,
     pub(crate) editor_selection_outline: MeshSlot,

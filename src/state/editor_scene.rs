@@ -289,7 +289,11 @@ impl State {
         }
 
         if dirty.rebuild_block_mesh {
-            self.rebuild_block_vertices();
+            if self.phase == AppPhase::Editor && is_dragging {
+                self.rebuild_editor_selected_block_vertices();
+            } else {
+                self.rebuild_block_vertices();
+            }
         }
 
         if dirty.rebuild_selection_overlays {
@@ -554,19 +558,72 @@ impl State {
 
     pub(super) fn rebuild_block_vertices(&mut self) {
         let perf_started_at = PlatformInstant::now();
-        let objects = if self.phase == AppPhase::Editor {
-            &self.editor.objects
+        if self.phase == AppPhase::Editor {
+            self.rebuild_editor_block_vertices_split();
         } else {
-            &self.gameplay.state.objects
-        };
-        let vertices = build_block_vertices(objects);
-
-        self.render.meshes.blocks.replace_with_vertices(
-            &self.render.gpu.device,
-            "Block Vertex Buffer",
-            &vertices,
-        );
+            let vertices = build_block_vertices(&self.gameplay.state.objects);
+            self.render.meshes.blocks.replace_with_vertices(
+                &self.render.gpu.device,
+                "Block Vertex Buffer",
+                &vertices,
+            );
+            self.render.meshes.blocks_static.clear();
+            self.render.meshes.blocks_selected.clear();
+        }
         self.perf_record(PerfStage::BlockMeshRebuild, perf_started_at);
+    }
+
+    fn rebuild_editor_block_vertices_split(&mut self) {
+        let selected_indices = self.selected_block_indices_normalized();
+        let mut selected_mask = vec![false; self.editor.objects.len()];
+        for index in selected_indices {
+            if index < selected_mask.len() {
+                selected_mask[index] = true;
+            }
+        }
+
+        let mut static_objects = Vec::new();
+        let mut selected_objects = Vec::new();
+        for (index, object) in self.editor.objects.iter().enumerate() {
+            if selected_mask[index] {
+                selected_objects.push(object.clone());
+            } else {
+                static_objects.push(object.clone());
+            }
+        }
+
+        let static_vertices = build_block_vertices(&static_objects);
+        let selected_vertices = build_block_vertices(&selected_objects);
+
+        self.render.meshes.blocks_static.replace_with_vertices(
+            &self.render.gpu.device,
+            "Block Static Vertex Buffer",
+            &static_vertices,
+        );
+        self.render.meshes.blocks_selected.replace_with_vertices(
+            &self.render.gpu.device,
+            "Block Selected Vertex Buffer",
+            &selected_vertices,
+        );
+        self.render.meshes.blocks.clear();
+    }
+
+    fn rebuild_editor_selected_block_vertices(&mut self) {
+        let selected_indices = self.selected_block_indices_normalized();
+        let mut selected_objects = Vec::new();
+        for index in selected_indices {
+            if let Some(object) = self.editor.objects.get(index) {
+                selected_objects.push(object.clone());
+            }
+        }
+
+        let selected_vertices = build_block_vertices(&selected_objects);
+        self.render.meshes.blocks_selected.replace_with_vertices(
+            &self.render.gpu.device,
+            "Block Selected Vertex Buffer",
+            &selected_vertices,
+        );
+        self.render.meshes.blocks.clear();
     }
 
     pub(super) fn rebuild_tap_indicator_vertices(&mut self) {

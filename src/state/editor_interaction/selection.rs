@@ -224,6 +224,7 @@ impl EditorSubsystem {
             self.runtime.interaction.gizmo_drag = None;
             self.runtime.interaction.block_drag = None;
             self.mark_dirty(EditorDirtyFlags {
+                rebuild_block_mesh: true,
                 rebuild_selection_overlays: true,
                 ..EditorDirtyFlags::default()
             });
@@ -276,6 +277,7 @@ impl EditorSubsystem {
         }
 
         self.mark_dirty(EditorDirtyFlags {
+            rebuild_block_mesh: true,
             rebuild_selection_overlays: true,
             rebuild_cursor: matches!(changed, EditorInteractionChange::Cursor),
             ..EditorDirtyFlags::default()

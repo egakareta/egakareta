@@ -407,6 +407,8 @@ impl State {
                     grid: grid_mesh,
                     trail: trail_mesh,
                     blocks: block_mesh,
+                    blocks_static: MeshSlot::Empty,
+                    blocks_selected: MeshSlot::Empty,
                     editor_cursor: MeshSlot::Empty,
                     editor_hover_outline: MeshSlot::Empty,
                     editor_selection_outline: MeshSlot::Empty,
