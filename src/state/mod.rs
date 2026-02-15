@@ -124,9 +124,8 @@ impl State {
                             .editor_level_name
                             .clone()
                             .unwrap_or_else(|| "Untitled".to_string());
-                        let start_seconds = self.editor_timeline_elapsed_seconds(
-                            self.editor.timeline.clock.time_seconds,
-                        );
+                        let start_seconds = self
+                            .editor_timeline_elapsed_seconds(self.editor.timeline_time_seconds());
                         self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
                     } else if let Some(level_name) = self.session.playing_level_name.clone() {
                         if let Some(metadata) = self.load_level_metadata(&level_name) {
@@ -191,18 +190,16 @@ impl State {
     }
 
     pub(crate) fn set_editor_right_dragging(&mut self, dragging: bool) {
-        self.editor.ui.right_dragging = dragging;
+        self.editor.set_right_dragging(dragging);
     }
 
     pub(crate) fn handle_mouse_button(&mut self, button: u32, pressed: bool) {
         match button {
             0 => {
-                self.editor.ui.left_mouse_down = pressed;
+                self.editor.set_left_mouse_down(pressed);
                 if !pressed {
-                    let had_drag = self.editor.runtime.interaction.gizmo_drag.is_some()
-                        || self.editor.runtime.interaction.block_drag.is_some();
-                    self.editor.runtime.interaction.gizmo_drag = None;
-                    self.editor.runtime.interaction.block_drag = None;
+                    let had_drag = self.editor.has_gizmo_drag() || self.editor.has_block_drag();
+                    self.editor.clear_interaction_drags();
                     if had_drag {
                         self.sync_editor_objects();
                     }
@@ -218,10 +215,10 @@ impl State {
     }
 
     pub(crate) fn handle_primary_click(&mut self, x: f64, y: f64) {
-        self.editor.ui.pointer_screen = Some([x, y]);
-        self.editor.ui.left_mouse_down = true;
+        self.editor.set_pointer_screen(Some([x, y]));
+        self.editor.set_left_mouse_down(true);
         if self.phase == AppPhase::Editor {
-            match self.editor.ui.mode {
+            match self.editor.mode() {
                 EditorMode::Place => {
                     self.update_editor_cursor_from_screen(x, y);
                     self.place_editor_block();
@@ -247,7 +244,7 @@ impl State {
 
     pub(crate) fn handle_pointer_moved(&mut self, x: f64, y: f64) {
         let mut handled = false;
-        if self.editor.ui.left_mouse_down && self.is_editor() {
+        if self.editor.left_mouse_down() && self.is_editor() {
             handled = self.drag_editor_gizmo_from_screen(x, y)
                 || self.drag_editor_selection_from_screen(x, y);
         }
@@ -255,7 +252,7 @@ impl State {
         if !handled {
             self.update_editor_cursor_from_screen(x, y);
         }
-        self.editor.ui.pointer_screen = Some([x, y]);
+        self.editor.set_pointer_screen(Some([x, y]));
     }
 }
 

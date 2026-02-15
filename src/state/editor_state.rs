@@ -40,6 +40,39 @@ impl EditorSubsystem {
         self.ui.alt_held = held;
     }
 
+    pub(crate) fn set_right_dragging(&mut self, dragging: bool) {
+        self.ui.right_dragging = dragging;
+    }
+
+    pub(crate) fn set_left_mouse_down(&mut self, pressed: bool) {
+        self.ui.left_mouse_down = pressed;
+    }
+
+    pub(crate) fn set_pointer_screen(&mut self, position: Option<[f64; 2]>) {
+        self.ui.pointer_screen = position;
+    }
+
+    pub(crate) fn clear_interaction_drags(&mut self) {
+        self.runtime.interaction.gizmo_drag = None;
+        self.runtime.interaction.block_drag = None;
+    }
+
+    pub(crate) fn left_mouse_down(&self) -> bool {
+        self.ui.left_mouse_down
+    }
+
+    pub(crate) fn has_gizmo_drag(&self) -> bool {
+        self.runtime.interaction.gizmo_drag.is_some()
+    }
+
+    pub(crate) fn has_block_drag(&self) -> bool {
+        self.runtime.interaction.block_drag.is_some()
+    }
+
+    pub(crate) fn timeline_time_seconds(&self) -> f32 {
+        self.timeline.clock.time_seconds
+    }
+
     pub(crate) fn set_block_id(&mut self, block_id: String) {
         self.config.selected_block_id = crate::block_repository::normalize_block_id(&block_id);
     }
@@ -169,10 +202,6 @@ impl EditorSubsystem {
 
     pub(crate) fn selected_block_id(&self) -> &str {
         self.config.selected_block_id.as_str()
-    }
-
-    pub(crate) fn timeline_time_seconds(&self) -> f32 {
-        self.timeline.clock.time_seconds
     }
 
     pub(crate) fn timeline_duration_seconds(&self) -> f32 {
