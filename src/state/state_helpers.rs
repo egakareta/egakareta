@@ -1,4 +1,6 @@
-use super::*;
+use super::State;
+use crate::game::GameState;
+use crate::types::{AppPhase, EditorMode};
 
 impl State {
     pub(super) fn clear_editor_pan_keys(&mut self) {

@@ -1,12 +1,18 @@
-use super::*;
 use base64::Engine as _;
 
+use super::State;
+use crate::editor_domain::{
+    build_editor_playtest_transition, build_playing_transition_from_metadata,
+    derive_tap_indicator_positions, editor_session_init_from_metadata,
+};
+use crate::game::GameState;
 use crate::level_repository::{
     build_ldz_archive, load_builtin_level_metadata, parse_level_metadata_json,
     read_metadata_from_ldz, serialize_level_metadata_pretty,
 };
 use crate::mesh::build_block_obj;
 use crate::platform::io::{log_platform_error, read_editor_music_bytes, save_level_export};
+use crate::types::{AppPhase, LevelMetadata, MusicMetadata};
 
 impl State {
     pub(super) fn start_level(&mut self, index: usize) {

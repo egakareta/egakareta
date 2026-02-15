@@ -1,4 +1,9 @@
-use super::*;
+use super::{EditorDirtyFlags, State};
+use crate::editor_domain::{
+    add_tap_with_indicator, clear_taps_with_indicators, remove_tap_with_indicator,
+    retain_taps_up_to_duration_with_indicators,
+};
+use crate::types::{AppPhase, EditorMode, LevelObject, SpawnDirection, TimingPoint};
 
 impl State {
     pub fn set_editor_pan_up_held(&mut self, held: bool) {

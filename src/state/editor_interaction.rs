@@ -1,5 +1,10 @@
-use super::*;
-use glam::Vec4;
+use glam::{Mat4, Vec2, Vec3, Vec4};
+
+use super::{
+    EditorBlockDrag, EditorDragBlockStart, EditorGizmoDrag, EditorPickResult, GizmoAxis,
+    GizmoDragKind, State,
+};
+use crate::types::{AppPhase, EditorMode, LevelObject};
 
 impl State {
     pub fn drag_editor_gizmo_from_screen(&mut self, x: f64, y: f64) -> bool {

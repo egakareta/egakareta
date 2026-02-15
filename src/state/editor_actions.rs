@@ -1,4 +1,13 @@
-use super::*;
+use glam::Vec2;
+
+use super::{EditorDirtyFlags, PerfStage, State};
+use crate::editor_domain::{
+    add_tap_with_indicator, build_editor_playtest_transition, playtest_return_objects,
+    remove_topmost_block_at_cursor, toggle_spawn_direction,
+};
+use crate::game::{create_menu_scene, GameState, TimelineSimulationRuntime};
+use crate::platform::state_host::PlatformInstant;
+use crate::types::{AppPhase, EditorMode};
 
 impl State {
     pub(super) fn editor_add_tap_at_pointer_position(&mut self) {

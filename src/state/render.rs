@@ -3,7 +3,10 @@ use std::iter;
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 use wgpu::{SurfaceError, TextureViewDescriptor};
 
-use super::*;
+use super::{State, DEPTH_FORMAT};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::platform::state_host::NativeWindow;
+use crate::types::{AppPhase, EditorMode, PhysicalSize};
 
 impl State {
     pub fn render_egui(

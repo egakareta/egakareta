@@ -1,5 +1,6 @@
-use super::*;
+use super::State;
 use crate::commands::AppCommand;
+use crate::types::EditorMode;
 
 impl State {
     /// Central dispatcher: every `AppCommand` is routed here.

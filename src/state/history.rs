@@ -1,4 +1,6 @@
-use super::*;
+use super::{EditorClipboard, EditorHistorySnapshot, State};
+use crate::editor_domain::derive_tap_indicator_positions;
+use crate::types::{AppPhase, LevelObject};
 
 impl State {
     fn editor_history_snapshot(&self) -> EditorHistorySnapshot {

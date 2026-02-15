@@ -1,4 +1,18 @@
-use super::*;
+use glam::Vec3;
+
+use super::{EditorDirtyFlags, EditorTimelineSample, GizmoAxis, GizmoDragKind, PerfStage, State};
+use crate::editor_domain::{
+    create_block_at_cursor, derive_timeline_elapsed_seconds, derive_timeline_position,
+};
+use crate::game::TimelineSimulationRuntime;
+use crate::mesh::{
+    build_block_vertices, build_editor_cursor_vertices, build_editor_gizmo_vertices,
+    build_editor_hover_outline_vertices, build_editor_preview_player_vertices,
+    build_editor_selection_outline_vertices, build_spawn_marker_vertices,
+    build_tap_indicator_vertices, GizmoPart,
+};
+use crate::platform::state_host::PlatformInstant;
+use crate::types::{AppPhase, EditorMode, SpawnDirection};
 
 impl State {
     pub(super) fn tap_indicator_position_from_world(&self, position: [f32; 3]) -> [f32; 3] {

@@ -1,4 +1,10 @@
-use super::*;
+use glam::{Mat4, Vec3};
+
+use super::{PerfStage, State};
+use crate::game::TimelineSimulationRuntime;
+use crate::mesh::build_trail_vertices;
+use crate::platform::state_host::PlatformInstant;
+use crate::types::{AppPhase, CameraUniform, Direction, EditorMode};
 
 impl State {
     pub(crate) fn toggle_editor_perf_overlay(&mut self) {

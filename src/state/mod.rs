@@ -10,26 +10,13 @@ mod render;
 mod state_helpers;
 mod update;
 
-use glam::{Mat4, Vec2, Vec3};
+use glam::Mat4;
 use wgpu::util::DeviceExt;
 
 use crate::block_repository::DEFAULT_BLOCK_ID;
-use crate::editor_domain::{
-    add_tap_with_indicator, build_editor_playtest_transition,
-    build_playing_transition_from_metadata, clear_taps_with_indicators, create_block_at_cursor,
-    derive_tap_indicator_positions, derive_timeline_elapsed_seconds, derive_timeline_position,
-    editor_session_init_from_metadata, playtest_return_objects, remove_tap_with_indicator,
-    remove_topmost_block_at_cursor, retain_taps_up_to_duration_with_indicators,
-    toggle_spawn_direction,
-};
 use crate::game::{create_menu_scene, GameState, TimelineSimulationRuntime};
 use crate::level_repository::builtin_level_names;
-use crate::mesh::{
-    build_block_vertices, build_editor_cursor_vertices, build_editor_gizmo_vertices,
-    build_editor_hover_outline_vertices, build_editor_preview_player_vertices,
-    build_editor_selection_outline_vertices, build_floor_vertices, build_grid_vertices,
-    build_spawn_marker_vertices, build_tap_indicator_vertices, build_trail_vertices, GizmoPart,
-};
+use crate::mesh::{build_block_vertices, build_floor_vertices, build_grid_vertices};
 use crate::platform::audio::PlatformAudio;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::platform::state_host::NativeWindow;
@@ -37,9 +24,8 @@ use crate::platform::state_host::NativeWindow;
 use crate::platform::state_host::WasmCanvas;
 use crate::platform::state_host::{log_backend, PlatformInstant, SurfaceHost};
 use crate::types::{
-    AppPhase, CameraUniform, ColorSpaceUniform, Direction, EditorMode, EditorState, LevelMetadata,
-    LevelObject, LineUniform, MenuState, MusicMetadata, PhysicalSize, SpawnDirection,
-    SpawnMetadata, TimingPoint, Vertex,
+    AppPhase, CameraUniform, ColorSpaceUniform, EditorMode, EditorState, LevelObject, LineUniform,
+    MenuState, MusicMetadata, PhysicalSize, SpawnDirection, SpawnMetadata, TimingPoint, Vertex,
 };
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
