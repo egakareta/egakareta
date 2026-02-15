@@ -6,6 +6,7 @@ use wasm_bindgen::JsCast;
 use web_sys::console;
 use wgpu::SurfaceError;
 
+use crate::commands::InputEvent;
 use crate::platform::input_mapping::egui_key_from_key_str;
 use crate::types::PhysicalSize;
 use crate::{load_menu_wordmark_texture, show_editor_ui, show_menu_wordmark_ui, State};
@@ -233,7 +234,7 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
         };
         state_clone
             .borrow_mut()
-            .adjust_editor_zoom((-event.delta_y() * scale) as f32);
+            .process_input_event(InputEvent::Zoom((-event.delta_y() * scale) as f32));
         event.prevent_default();
     }) as Box<dyn FnMut(_)>);
     canvas
@@ -322,7 +323,11 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
 
         if !*ui_wants_keyboard_clone.borrow() {
             let mut state = state_clone.borrow_mut();
-            state.handle_keyboard_input(&key, true, !event.repeat());
+            state.process_input_event(InputEvent::Key {
+                key: key.clone(),
+                pressed: true,
+                just_pressed: !event.repeat(),
+            });
         }
     }) as Box<dyn FnMut(_)>);
     window
@@ -355,7 +360,11 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
 
         if !*ui_wants_keyboard_clone.borrow() {
             let mut state = state_clone.borrow_mut();
-            state.handle_keyboard_input(&key, false, false);
+            state.process_input_event(InputEvent::Key {
+                key: key.clone(),
+                pressed: false,
+                just_pressed: false,
+            });
         }
     }) as Box<dyn FnMut(_)>);
     window

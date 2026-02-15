@@ -1,4 +1,5 @@
 mod block_repository;
+mod commands;
 mod editor_domain;
 mod editor_ui;
 mod game;

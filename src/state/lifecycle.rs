@@ -224,54 +224,30 @@ impl State {
 
     fn apply_imported_level_metadata(&mut self, metadata: LevelMetadata) {
         let level_name = metadata.name.clone();
-        self.editor_objects = metadata.objects;
+        let init = editor_session_init_from_metadata(Some(metadata));
+
+        self.editor_objects = init.objects;
         self.editor_selected_block_index = None;
         self.editor_selected_block_indices.clear();
         self.editor_hovered_block_index = None;
-        self.editor_spawn = metadata.spawn;
-        self.editor_tap_times = metadata.tap_times;
-        self.editor_timing_points = metadata.timing_points;
+        self.editor_spawn = init.spawn;
+        self.editor_tap_times = init.tap_times;
+        self.editor_timing_points = init.timing_points;
         self.editor_timing_points
             .sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
         self.editor_timing_selected_index = None;
-        if self.editor_tap_times.is_empty() && !metadata.legacy_taps.is_empty() {
-            let seconds_per_step = 1.0 / crate::game::BASE_PLAYER_SPEED.max(0.1);
-            self.editor_tap_times = metadata
-                .legacy_taps
-                .iter()
-                .map(|step| *step as f32 * seconds_per_step)
-                .collect();
-        }
-        self.editor_tap_times
-            .retain(|tap| tap.is_finite() && *tap >= 0.0);
-        self.editor_tap_times.sort_by(f32::total_cmp);
         self.editor_tap_indicator_positions = derive_tap_indicator_positions(
             self.editor_spawn.position,
             self.editor_spawn.direction,
             &self.editor_tap_times,
             &self.editor_objects,
         );
-        self.editor_timeline_time_seconds = metadata.timeline_time_seconds;
-        if self.editor_timeline_time_seconds <= 0.0 && metadata.legacy_timeline_step > 0 {
-            let seconds_per_step = 1.0 / crate::game::BASE_PLAYER_SPEED.max(0.1);
-            self.editor_timeline_time_seconds =
-                metadata.legacy_timeline_step as f32 * seconds_per_step;
-        }
-        self.editor_timeline_duration_seconds = metadata.timeline_duration_seconds.max(0.1);
+        self.editor_timeline_time_seconds = init.timeline_time_seconds;
+        self.editor_timeline_duration_seconds = init.timeline_duration_seconds;
         self.editor_level_name = Some(level_name);
-        self.editor_music_metadata = metadata.music;
-
-        if let Some(first) = self.editor_objects.first() {
-            self.editor.cursor = [
-                first.position[0].round(),
-                first.position[1].round(),
-                first.position[2].round(),
-            ];
-        } else {
-            self.editor.cursor = [0.0, 0.0, 0.0];
-        }
-
-        self.editor_camera_pan = [self.editor.cursor[0] + 0.5, self.editor.cursor[1] + 0.5];
+        self.editor_music_metadata = init.music;
+        self.editor.cursor = init.cursor;
+        self.editor_camera_pan = init.camera_pan;
 
         self.editor_history_undo.clear();
         self.editor_history_redo.clear();

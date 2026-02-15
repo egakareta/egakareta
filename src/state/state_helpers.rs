@@ -103,7 +103,7 @@ impl State {
         self.editor_camera_pitch = 45.0f32.to_radians();
         self.editor_zoom = 1.0;
         self.game = GameState::new();
-        self.trail_mesh.clear();
+        self.meshes.trail.clear();
     }
 
     pub(super) fn enter_menu_phase(&mut self) {

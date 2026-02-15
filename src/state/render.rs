@@ -120,12 +120,12 @@ impl State {
             render_pass.set_bind_group(2, &self.color_space_bind_group, &[]);
 
             if self.phase != AppPhase::Menu && self.editor_mode != EditorMode::Timing {
-                if let Some((buffer, count)) = self.floor_mesh.draw_data() {
+                if let Some((buffer, count)) = self.meshes.floor.draw_data() {
                     render_pass.set_vertex_buffer(0, buffer.slice(..));
                     render_pass.draw(0..count, 0..1);
                 }
 
-                if let Some((buffer, count)) = self.grid_mesh.draw_data() {
+                if let Some((buffer, count)) = self.meshes.grid.draw_data() {
                     render_pass.set_vertex_buffer(0, buffer.slice(..));
                     render_pass.draw(0..count, 0..1);
                 }
@@ -140,13 +140,13 @@ impl State {
                     self.phase == AppPhase::Editor && self.editor_mode == EditorMode::Timing;
 
                 if !skip_world {
-                    if let Some((buffer, count)) = self.block_mesh.draw_data() {
+                    if let Some((buffer, count)) = self.meshes.blocks.draw_data() {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
                         render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
                         render_pass.draw(0..count, 0..1);
                     }
 
-                    if let Some((buffer, count)) = self.trail_mesh.draw_data() {
+                    if let Some((buffer, count)) = self.meshes.trail.draw_data() {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
                         render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
                         render_pass.draw(0..count, 0..1);
@@ -154,37 +154,38 @@ impl State {
                 }
 
                 if self.phase == AppPhase::Editor && !skip_world {
-                    if let Some((buffer, count)) = self.spawn_marker_mesh.draw_data() {
+                    if let Some((buffer, count)) = self.meshes.spawn_marker.draw_data() {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
                         render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
                         render_pass.draw(0..count, 0..1);
                     }
 
-                    if let Some((buffer, count)) = self.tap_indicator_mesh.draw_data() {
+                    if let Some((buffer, count)) = self.meshes.tap_indicators.draw_data() {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
                         render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
                         render_pass.draw(0..count, 0..1);
                     }
 
-                    if let Some((buffer, count)) = self.editor_preview_player_mesh.draw_data() {
+                    if let Some((buffer, count)) = self.meshes.editor_preview_player.draw_data() {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
                         render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
                         render_pass.draw(0..count, 0..1);
                     }
 
-                    if let Some((buffer, count)) = self.editor_selection_outline_mesh.draw_data() {
+                    if let Some((buffer, count)) = self.meshes.editor_selection_outline.draw_data()
+                    {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
                         render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
                         render_pass.draw(0..count, 0..1);
                     }
 
-                    if let Some((buffer, count)) = self.editor_hover_outline_mesh.draw_data() {
+                    if let Some((buffer, count)) = self.meshes.editor_hover_outline.draw_data() {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
                         render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
                         render_pass.draw(0..count, 0..1);
                     }
 
-                    if let Some((buffer, count)) = self.editor_gizmo_mesh.draw_data() {
+                    if let Some((buffer, count)) = self.meshes.editor_gizmo.draw_data() {
                         render_pass.set_pipeline(&self.gizmo_overlay_pipeline);
                         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
                         render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
@@ -200,7 +201,7 @@ impl State {
                     }
 
                     if self.editor_mode == EditorMode::Place {
-                        if let Some((buffer, count)) = self.editor_cursor_mesh.draw_data() {
+                        if let Some((buffer, count)) = self.meshes.editor_cursor.draw_data() {
                             render_pass.set_vertex_buffer(0, buffer.slice(..));
                             render_pass.set_bind_group(1, &self.zero_line_bind_group, &[]);
                             render_pass.draw(0..count, 0..1);

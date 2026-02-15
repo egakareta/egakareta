@@ -8,6 +8,7 @@ use winit::{
     window::{Icon, Window, WindowId},
 };
 
+use crate::commands::InputEvent;
 use crate::platform::input_mapping::{
     key_str_from_winit, mouse_button_index_from_winit, zoom_delta_from_winit,
 };
@@ -144,7 +145,7 @@ impl ApplicationHandler for App {
             WindowEvent::MouseWheel { delta, .. } => {
                 if !egui_consumed {
                     let zoom_delta = zoom_delta_from_winit(delta);
-                    state.adjust_editor_zoom(zoom_delta);
+                    state.process_input_event(InputEvent::Zoom(zoom_delta));
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {
@@ -156,7 +157,11 @@ impl ApplicationHandler for App {
                 let just_pressed = pressed && !event.repeat;
 
                 let key_str = key_str_from_winit(&event.logical_key);
-                state.handle_keyboard_input(&key_str, pressed, just_pressed);
+                state.process_input_event(InputEvent::Key {
+                    key: key_str,
+                    pressed,
+                    just_pressed,
+                });
             }
             WindowEvent::RedrawRequested => {
                 let raw_input = egui_state.take_egui_input(state.window());

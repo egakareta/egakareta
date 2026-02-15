@@ -90,7 +90,7 @@ impl State {
 
         if self.phase == AppPhase::Editor {
             self.accumulator = 0.0;
-            self.trail_mesh.clear();
+            self.meshes.trail.clear();
 
             if self.editor_timeline_playing {
                 let timeline_playback_started_at = PlatformInstant::now();
@@ -260,7 +260,8 @@ impl State {
             trail_vertices.extend(build_trail_vertices(&head_points, self.game.game_over));
         }
 
-        self.trail_mesh
+        self.meshes
+            .trail
             .write_streaming_vertices(&self.queue, &trail_vertices);
 
         self.line_uniform.offset = [

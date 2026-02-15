@@ -310,7 +310,7 @@ impl State {
 
     pub(super) fn rebuild_editor_cursor_vertices(&mut self) {
         let vertices = build_editor_cursor_vertices(self.editor.cursor);
-        self.editor_cursor_mesh.replace_with_vertices(
+        self.meshes.editor_cursor.replace_with_vertices(
             &self.device,
             "Editor Cursor Vertex Buffer",
             &vertices,
@@ -319,7 +319,7 @@ impl State {
 
     pub(super) fn rebuild_editor_hover_outline_vertices(&mut self) {
         if self.phase != AppPhase::Editor || self.editor_mode != EditorMode::Select {
-            self.editor_hover_outline_mesh.clear();
+            self.meshes.editor_hover_outline.clear();
             return;
         }
 
@@ -327,18 +327,18 @@ impl State {
             .editor_hovered_block_index
             .filter(|index| *index < self.editor_objects.len())
         else {
-            self.editor_hover_outline_mesh.clear();
+            self.meshes.editor_hover_outline.clear();
             return;
         };
 
         if self.selection_contains(index) {
-            self.editor_hover_outline_mesh.clear();
+            self.meshes.editor_hover_outline.clear();
             return;
         }
 
         let obj = &self.editor_objects[index];
         let vertices = build_editor_hover_outline_vertices(obj.position, obj.size);
-        self.editor_hover_outline_mesh.replace_with_vertices(
+        self.meshes.editor_hover_outline.replace_with_vertices(
             &self.device,
             "Editor Hover Outline Vertex Buffer",
             &vertices,
@@ -347,12 +347,12 @@ impl State {
 
     pub(super) fn rebuild_editor_gizmo_vertices(&mut self) {
         if self.phase != AppPhase::Editor || self.editor_mode != EditorMode::Select {
-            self.editor_gizmo_mesh.clear();
+            self.meshes.editor_gizmo.clear();
             return;
         }
 
         let Some((bounds_position, bounds_size)) = self.selected_group_bounds() else {
-            self.editor_gizmo_mesh.clear();
+            self.meshes.editor_gizmo.clear();
             return;
         };
 
@@ -390,7 +390,7 @@ impl State {
             axis_width,
             active_part,
         );
-        self.editor_gizmo_mesh.replace_with_vertices(
+        self.meshes.editor_gizmo.replace_with_vertices(
             &self.device,
             "Editor Gizmo Vertex Buffer",
             &vertices,
@@ -399,13 +399,13 @@ impl State {
 
     pub(super) fn rebuild_editor_selection_outline_vertices(&mut self) {
         if self.phase != AppPhase::Editor || self.editor_mode != EditorMode::Select {
-            self.editor_selection_outline_mesh.clear();
+            self.meshes.editor_selection_outline.clear();
             return;
         }
 
         let selected_indices = self.selected_block_indices_normalized();
         if selected_indices.is_empty() {
-            self.editor_selection_outline_mesh.clear();
+            self.meshes.editor_selection_outline.clear();
             return;
         }
 
@@ -418,7 +418,7 @@ impl State {
                 ));
             }
         }
-        self.editor_selection_outline_mesh.replace_with_vertices(
+        self.meshes.editor_selection_outline.replace_with_vertices(
             &self.device,
             "Editor Selection Outline Vertex Buffer",
             &vertices,
@@ -430,7 +430,7 @@ impl State {
             self.editor_spawn.position,
             matches!(self.editor_spawn.direction, SpawnDirection::Right),
         );
-        self.spawn_marker_mesh.replace_with_vertices(
+        self.meshes.spawn_marker.replace_with_vertices(
             &self.device,
             "Spawn Marker Vertex Buffer",
             &vertices,
@@ -441,7 +441,8 @@ impl State {
         let perf_started_at = PlatformInstant::now();
         let vertices = build_block_vertices(&self.game.objects);
 
-        self.block_mesh
+        self.meshes
+            .blocks
             .replace_with_vertices(&self.device, "Block Vertex Buffer", &vertices);
         self.perf_record(PerfStage::BlockMeshRebuild, perf_started_at);
     }
@@ -449,7 +450,7 @@ impl State {
     pub(super) fn rebuild_tap_indicator_vertices(&mut self) {
         let perf_started_at = PlatformInstant::now();
         if self.phase != AppPhase::Editor {
-            self.tap_indicator_mesh.clear();
+            self.meshes.tap_indicators.clear();
             self.perf_record(PerfStage::TapIndicatorMeshRebuild, perf_started_at);
             return;
         }
@@ -463,7 +464,7 @@ impl State {
         positions.dedup();
 
         let vertices = build_tap_indicator_vertices(&positions);
-        self.tap_indicator_mesh.replace_with_vertices(
+        self.meshes.tap_indicators.replace_with_vertices(
             &self.device,
             "Tap Indicator Vertex Buffer",
             &vertices,
@@ -473,7 +474,7 @@ impl State {
 
     pub(super) fn rebuild_editor_preview_player_vertices(&mut self) {
         if self.phase != AppPhase::Editor {
-            self.editor_preview_player_mesh.clear();
+            self.meshes.editor_preview_player.clear();
             return;
         }
 
@@ -496,7 +497,7 @@ impl State {
             .any(|tap| (tap - self.editor_timeline_time_seconds).abs() <= 0.01);
         let preview_origin = [position[0] - 0.5, position[1] - 0.5, position[2]];
         let vertices = build_editor_preview_player_vertices(preview_origin, direction, is_tapping);
-        self.editor_preview_player_mesh.replace_with_vertices(
+        self.meshes.editor_preview_player.replace_with_vertices(
             &self.device,
             "Editor Preview Player Vertex Buffer",
             &vertices,

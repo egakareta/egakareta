@@ -1,3 +1,4 @@
+mod command_dispatch;
 mod editor_actions;
 mod editor_camera;
 mod editor_interaction;
@@ -43,7 +44,7 @@ use crate::types::{
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
-enum MeshSlot {
+pub(crate) enum MeshSlot {
     Empty,
     VertexData {
         buffer: wgpu::Buffer,
@@ -138,6 +139,22 @@ impl MeshSlot {
     }
 }
 
+/// Grouped ownership of all GPU mesh slots used for scene rendering.
+/// Separates mesh lifetime management from application logic.
+pub(crate) struct SceneMeshes {
+    pub(crate) floor: MeshSlot,
+    pub(crate) grid: MeshSlot,
+    pub(crate) trail: MeshSlot,
+    pub(crate) blocks: MeshSlot,
+    pub(crate) editor_cursor: MeshSlot,
+    pub(crate) editor_hover_outline: MeshSlot,
+    pub(crate) editor_selection_outline: MeshSlot,
+    pub(crate) editor_gizmo: MeshSlot,
+    pub(crate) tap_indicators: MeshSlot,
+    pub(crate) spawn_marker: MeshSlot,
+    pub(crate) editor_preview_player: MeshSlot,
+}
+
 pub struct State {
     surface_host: SurfaceHost,
     surface: wgpu::Surface<'static>,
@@ -145,17 +162,7 @@ pub struct State {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: PhysicalSize<u32>,
-    floor_mesh: MeshSlot,
-    grid_mesh: MeshSlot,
-    trail_mesh: MeshSlot,
-    block_mesh: MeshSlot,
-    editor_cursor_mesh: MeshSlot,
-    editor_hover_outline_mesh: MeshSlot,
-    editor_selection_outline_mesh: MeshSlot,
-    editor_gizmo_mesh: MeshSlot,
-    tap_indicator_mesh: MeshSlot,
-    spawn_marker_mesh: MeshSlot,
-    editor_preview_player_mesh: MeshSlot,
+    meshes: SceneMeshes,
     depth_texture: wgpu::Texture,
     depth_view: wgpu::TextureView,
     render_pipeline: wgpu::RenderPipeline,
@@ -786,7 +793,19 @@ impl State {
             queue,
             config,
             size,
-            floor_mesh,
+            meshes: SceneMeshes {
+                floor: floor_mesh,
+                grid: grid_mesh,
+                trail: trail_mesh,
+                blocks: block_mesh,
+                editor_cursor: MeshSlot::Empty,
+                editor_hover_outline: MeshSlot::Empty,
+                editor_selection_outline: MeshSlot::Empty,
+                editor_gizmo: MeshSlot::Empty,
+                tap_indicators: MeshSlot::Empty,
+                spawn_marker: MeshSlot::Empty,
+                editor_preview_player: MeshSlot::Empty,
+            },
             depth_texture,
             depth_view,
             render_pipeline,
@@ -804,16 +823,6 @@ impl State {
             last_frame: now,
             accumulator: 0.0,
             audio: PlatformAudio::new(),
-            grid_mesh,
-            trail_mesh,
-            block_mesh,
-            editor_cursor_mesh: MeshSlot::Empty,
-            editor_hover_outline_mesh: MeshSlot::Empty,
-            editor_selection_outline_mesh: MeshSlot::Empty,
-            editor_gizmo_mesh: MeshSlot::Empty,
-            tap_indicator_mesh: MeshSlot::Empty,
-            spawn_marker_mesh: MeshSlot::Empty,
-            editor_preview_player_mesh: MeshSlot::Empty,
             editor: EditorState::new(),
             editor_selected_block_id: DEFAULT_BLOCK_ID.to_string(),
             editor_objects: Vec::new(),
@@ -984,235 +993,7 @@ impl State {
     }
 
     pub fn handle_keyboard_input(&mut self, key: &str, pressed: bool, just_pressed: bool) {
-        if key == "Shift" {
-            self.set_editor_shift_held(pressed);
-            return;
-        }
-
-        if key == "Control" || key == "ControlLeft" || key == "ControlRight" {
-            self.set_editor_ctrl_held(pressed);
-            return;
-        }
-
-        if key == "Alt" || key == "AltLeft" || key == "AltRight" {
-            self.set_editor_alt_held(pressed);
-            return;
-        }
-
-        if !pressed {
-            match key {
-                "w" | "W" => self.set_editor_pan_up_held(false),
-                "s" | "S" => self.set_editor_pan_down_held(false),
-                "a" | "A" => self.set_editor_pan_left_held(false),
-                "d" | "D" => self.set_editor_pan_right_held(false),
-                _ => {}
-            }
-            return;
-        }
-
-        match key {
-            "ArrowUp" => {
-                if self.is_editor() {
-                    if !self.editor_nudge_selected_blocks(0, 1) {
-                        self.editor_shift_timeline_time(0.1);
-                    }
-                } else if just_pressed {
-                    self.turn_right();
-                }
-            }
-            "ArrowDown" => {
-                if self.is_editor() && !self.editor_nudge_selected_blocks(0, -1) {
-                    self.editor_shift_timeline_time(-0.1);
-                }
-            }
-            "ArrowRight" => {
-                if self.is_editor() {
-                    if !self.editor_nudge_selected_blocks(1, 0) {
-                        self.editor_shift_timeline_time(0.1);
-                    }
-                } else if just_pressed {
-                    self.next_level();
-                }
-            }
-            "ArrowLeft" => {
-                if self.is_editor() {
-                    if !self.editor_nudge_selected_blocks(-1, 0) {
-                        self.editor_shift_timeline_time(-0.1);
-                    }
-                } else if just_pressed {
-                    self.prev_level();
-                }
-            }
-            "w" | "W" => {
-                if self.is_editor() {
-                    self.set_editor_pan_up_held(true);
-                } else if just_pressed {
-                    self.turn_right();
-                }
-            }
-            "s" | "S" => {
-                if self.is_editor() {
-                    self.set_editor_pan_down_held(true);
-                }
-            }
-            " " | "Space" => {
-                if just_pressed {
-                    if self.is_editor() {
-                        self.toggle_editor_timeline_playback();
-                    } else {
-                        self.turn_right();
-                    }
-                }
-            }
-            "d" | "D" => {
-                if self.is_editor() {
-                    if self.editor_ctrl_held && just_pressed {
-                        self.editor_duplicate_selected_block_in_place();
-                    } else {
-                        self.set_editor_pan_right_held(true);
-                    }
-                } else if just_pressed {
-                    self.next_level();
-                }
-            }
-            "a" | "A" => {
-                if self.is_editor() {
-                    self.set_editor_pan_left_held(true);
-                } else if just_pressed {
-                    self.prev_level();
-                }
-            }
-            "Enter" => {
-                if just_pressed {
-                    self.editor_playtest();
-                }
-            }
-            "Backspace" | "Delete" => {
-                if just_pressed {
-                    self.editor_remove_block();
-                }
-            }
-            "Escape" => {
-                if just_pressed {
-                    if self.is_editor() {
-                        if self.editor_timeline_playing {
-                            self.editor_timeline_playing = false;
-                            self.editor_timeline_playback_runtime = None;
-                            self.stop_audio();
-                        } else if self.editor_timeline_time_seconds > 0.001 {
-                            self.set_editor_timeline_time_seconds(0.0);
-                        } else {
-                            self.back_to_menu();
-                        }
-                    } else {
-                        self.back_to_menu();
-                    }
-                }
-            }
-            "q" | "Q" => {
-                if self.is_editor() && just_pressed {
-                    self.set_editor_mode(EditorMode::Select);
-                }
-            }
-            "e" | "E" => {
-                if just_pressed {
-                    if self.is_editor() {
-                        self.set_editor_mode(EditorMode::Place);
-                    } else {
-                        self.toggle_editor();
-                    }
-                }
-            }
-            "p" | "P" => {
-                if just_pressed {
-                    self.editor_set_spawn_here();
-                }
-            }
-            "r" | "R" => {
-                if just_pressed {
-                    self.editor_rotate_spawn_direction();
-                }
-            }
-            "t" | "T" => {
-                if just_pressed && self.is_editor() {
-                    if self.editor_mode == EditorMode::Place {
-                        self.editor_add_tap_at_pointer_position();
-                    } else if self.editor_mode != EditorMode::Timing {
-                        self.set_editor_mode(EditorMode::Timing);
-                    }
-                }
-            }
-            "+" | "=" => {
-                if just_pressed {
-                    self.adjust_editor_zoom(1.0);
-                }
-            }
-            "-" | "_" => {
-                if just_pressed {
-                    self.adjust_editor_zoom(-1.0);
-                }
-            }
-            "1" => {
-                if self.is_editor() && just_pressed {
-                    self.set_editor_block_id("core/standard".to_string());
-                }
-            }
-            "2" => {
-                if self.is_editor() && just_pressed {
-                    self.set_editor_block_id("core/grass".to_string());
-                }
-            }
-            "3" => {
-                if self.is_editor() && just_pressed {
-                    self.set_editor_block_id("core/dirt".to_string());
-                }
-            }
-            "4" => {
-                if self.is_editor() && just_pressed {
-                    self.set_editor_block_id("core/void".to_string());
-                }
-            }
-            "o" | "O" => {
-                if self.is_editor()
-                    && self.editor_ctrl_held
-                    && self.editor_shift_held
-                    && self.editor_alt_held
-                    && just_pressed
-                {
-                    self.trigger_selected_block_obj_export();
-                }
-            }
-            "F12" => {
-                if self.editor_ctrl_held
-                    && self.editor_shift_held
-                    && self.editor_alt_held
-                    && just_pressed
-                {
-                    self.toggle_editor_perf_overlay();
-                }
-            }
-            "c" | "C" => {
-                if self.is_editor() && self.editor_ctrl_held && just_pressed {
-                    self.editor_copy_block();
-                }
-            }
-            "v" | "V" => {
-                if self.is_editor() && self.editor_ctrl_held && just_pressed {
-                    self.editor_paste_block();
-                }
-            }
-            "z" | "Z" => {
-                if self.is_editor() && self.editor_ctrl_held && just_pressed {
-                    self.editor_undo();
-                }
-            }
-            "y" | "Y" => {
-                if self.is_editor() && self.editor_ctrl_held && just_pressed {
-                    self.editor_redo();
-                }
-            }
-            _ => {}
-        }
+        self.process_keyboard_input(key, pressed, just_pressed);
     }
 
     pub fn handle_mouse_button(&mut self, button: u32, pressed: bool) {
