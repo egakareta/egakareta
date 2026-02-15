@@ -9,7 +9,7 @@ impl State {
 
         self.editor.pointer_screen = Some([x, y]);
 
-        let Some(drag) = self.editor_interaction.gizmo_drag.clone() else {
+        let Some(drag) = self.editor_runtime.interaction.gizmo_drag.clone() else {
             return false;
         };
         let mouse_delta = Vec2::new(
@@ -33,11 +33,11 @@ impl State {
         };
 
         let Some(origin_screen) = self.world_to_screen(center) else {
-            self.editor_interaction.gizmo_drag = Some(drag);
+            self.editor_runtime.interaction.gizmo_drag = Some(drag);
             return true;
         };
         let Some(axis_screen) = self.world_to_screen(center + axis_dir) else {
-            self.editor_interaction.gizmo_drag = Some(drag);
+            self.editor_runtime.interaction.gizmo_drag = Some(drag);
             return true;
         };
 
@@ -188,7 +188,7 @@ impl State {
 
         self.editor.pointer_screen = Some([x, y]);
 
-        let Some(drag) = self.editor_interaction.block_drag.clone() else {
+        let Some(drag) = self.editor_runtime.interaction.block_drag.clone() else {
             return false;
         };
         let mouse_delta = Vec2::new(
@@ -341,7 +341,7 @@ impl State {
             }
         }
 
-        self.editor_interaction.gizmo_drag = Some(EditorGizmoDrag {
+        self.editor_runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
             axis,
             kind,
             start_mouse: [x, y],
@@ -394,7 +394,7 @@ impl State {
                 }
             }
 
-            self.editor_interaction.block_drag = Some(EditorBlockDrag {
+            self.editor_runtime.interaction.block_drag = Some(EditorBlockDrag {
                 start_mouse: [x, y],
                 start_center_screen: [center_screen.x, center_screen.y],
                 start_center_world: [center.x, center.y, center.z],
@@ -801,8 +801,8 @@ impl State {
                 self.editor.selected_block_index = None;
                 self.editor.hovered_block_index = None;
             }
-            self.editor_interaction.gizmo_drag = None;
-            self.editor_interaction.block_drag = None;
+            self.editor_runtime.interaction.gizmo_drag = None;
+            self.editor_runtime.interaction.block_drag = None;
             self.rebuild_editor_gizmo_vertices();
             self.rebuild_editor_hover_outline_vertices();
             self.rebuild_editor_selection_outline_vertices();
@@ -837,8 +837,8 @@ impl State {
         }
 
         self.sync_primary_selection_from_indices();
-        self.editor_interaction.gizmo_drag = None;
-        self.editor_interaction.block_drag = None;
+        self.editor_runtime.interaction.gizmo_drag = None;
+        self.editor_runtime.interaction.block_drag = None;
 
         if let Some(index) = self.editor.selected_block_index {
             if let Some(obj) = self.editor_objects.get(index) {

@@ -186,28 +186,15 @@ pub struct State {
     editor_spawn: SpawnMetadata,
     editor_camera: EditorCameraState,
     editor_timeline: EditorTimelineState,
-    editor_dirty: EditorDirtyFlags,
+    editor_runtime: EditorRuntimeState,
     editor_perf: EditorPerfState,
-    editor_gizmo: EditorGizmoState,
     editor_timing: EditorTimingState,
-    editor_interaction: EditorInteractionState,
-    editor_history: EditorHistoryState,
     editor_session: EditorSessionState,
+    editor_audio: EditorAudioState,
     line_uniform: LineUniform,
     last_frame: PlatformInstant,
     accumulator: f32,
     audio: PlatformAudio,
-    local_audio_cache: std::collections::HashMap<String, Vec<u8>>,
-    audio_import_channel: (
-        std::sync::mpsc::Sender<AudioImportData>,
-        std::sync::mpsc::Receiver<AudioImportData>,
-    ),
-    waveform_load_channel: (
-        std::sync::mpsc::Sender<WaveformLoadData>,
-        std::sync::mpsc::Receiver<WaveformLoadData>,
-    ),
-    waveform_cache: std::collections::HashMap<String, (Vec<f32>, u32)>,
-    waveform_loading_source: Option<String>,
 }
 
 type AudioImportData = (String, Vec<u8>);
@@ -452,6 +439,27 @@ struct EditorPerfState {
     fps_smoothed: f32,
 }
 
+struct EditorRuntimeState {
+    dirty: EditorDirtyFlags,
+    gizmo: EditorGizmoState,
+    interaction: EditorInteractionState,
+    history: EditorHistoryState,
+}
+
+struct EditorAudioState {
+    local_audio_cache: std::collections::HashMap<String, Vec<u8>>,
+    audio_import_channel: (
+        std::sync::mpsc::Sender<AudioImportData>,
+        std::sync::mpsc::Receiver<AudioImportData>,
+    ),
+    waveform_load_channel: (
+        std::sync::mpsc::Sender<WaveformLoadData>,
+        std::sync::mpsc::Receiver<WaveformLoadData>,
+    ),
+    waveform_cache: std::collections::HashMap<String, (Vec<f32>, u32)>,
+    waveform_loading_source: Option<String>,
+}
+
 struct EditorCameraState {
     editor_pan: [f32; 2],
     editor_rotation: f32,
@@ -572,15 +580,14 @@ impl State {
         log_backend(&adapter_info);
 
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("Device"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: adapter.limits(),
-                    memory_hints: wgpu::MemoryHints::default(),
-                },
-                None,
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("Device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: adapter.limits(),
+                experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                memory_hints: wgpu::MemoryHints::default(),
+                trace: wgpu::Trace::default(),
+            })
             .await
             .expect("Failed to create device");
 
@@ -749,13 +756,13 @@ impl State {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[Vertex::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -782,13 +789,13 @@ impl State {
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: "vs_main",
+                    entry_point: Some("vs_main"),
                     buffers: &[Vertex::desc()],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: "fs_main",
+                    entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: config.format,
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -911,17 +918,28 @@ impl State {
                     runtime: None,
                 },
             },
-            editor_dirty: EditorDirtyFlags::default(),
+            editor_runtime: EditorRuntimeState {
+                dirty: EditorDirtyFlags::default(),
+                gizmo: EditorGizmoState {
+                    rebuild_accumulator: 0.0,
+                    last_pan: [0.0, 0.0],
+                    last_rotation: -45.0f32.to_radians(),
+                    last_pitch: 45.0f32.to_radians(),
+                    last_zoom: 1.0,
+                },
+                interaction: EditorInteractionState {
+                    gizmo_drag: None,
+                    block_drag: None,
+                    clipboard: None,
+                },
+                history: EditorHistoryState {
+                    undo: Vec::new(),
+                    redo: Vec::new(),
+                },
+            },
             editor_perf: EditorPerfState {
                 profiler: EditorPerfProfiler::new(),
                 fps_smoothed: 0.0,
-            },
-            editor_gizmo: EditorGizmoState {
-                rebuild_accumulator: 0.0,
-                last_pan: [0.0, 0.0],
-                last_rotation: -45.0f32.to_radians(),
-                last_pitch: 45.0f32.to_radians(),
-                last_zoom: 1.0,
             },
             editor_timing: EditorTimingState {
                 timing_points: Vec::new(),
@@ -933,15 +951,6 @@ impl State {
                 waveform_scroll: 0.0,
                 bpm_tap_times: Vec::new(),
                 bpm_tap_result: None,
-            },
-            editor_interaction: EditorInteractionState {
-                gizmo_drag: None,
-                block_drag: None,
-                clipboard: None,
-            },
-            editor_history: EditorHistoryState {
-                undo: Vec::new(),
-                redo: Vec::new(),
             },
             editor_session: EditorSessionState {
                 editor_level_name: None,
@@ -957,11 +966,13 @@ impl State {
                 playing_level_name: None,
                 playtesting_editor: false,
             },
-            local_audio_cache,
-            audio_import_channel: std::sync::mpsc::channel(),
-            waveform_load_channel: std::sync::mpsc::channel(),
-            waveform_cache: std::collections::HashMap::new(),
-            waveform_loading_source: None,
+            editor_audio: EditorAudioState {
+                local_audio_cache,
+                audio_import_channel: std::sync::mpsc::channel(),
+                waveform_load_channel: std::sync::mpsc::channel(),
+                waveform_cache: std::collections::HashMap::new(),
+                waveform_loading_source: None,
+            },
         }
     }
 
@@ -1067,10 +1078,10 @@ impl State {
         match button {
             0 => {
                 if !pressed {
-                    let had_drag = self.editor_interaction.gizmo_drag.is_some()
-                        || self.editor_interaction.block_drag.is_some();
-                    self.editor_interaction.gizmo_drag = None;
-                    self.editor_interaction.block_drag = None;
+                    let had_drag = self.editor_runtime.interaction.gizmo_drag.is_some()
+                        || self.editor_runtime.interaction.block_drag.is_some();
+                    self.editor_runtime.interaction.gizmo_drag = None;
+                    self.editor_runtime.interaction.block_drag = None;
                     if had_drag {
                         self.sync_editor_objects();
                     }

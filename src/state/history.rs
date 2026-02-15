@@ -23,13 +23,14 @@ impl State {
         }
 
         const MAX_HISTORY: usize = 256;
-        if self.editor_history.undo.len() >= MAX_HISTORY {
-            self.editor_history.undo.remove(0);
+        if self.editor_runtime.history.undo.len() >= MAX_HISTORY {
+            self.editor_runtime.history.undo.remove(0);
         }
-        self.editor_history
+        self.editor_runtime
+            .history
             .undo
             .push(self.editor_history_snapshot());
-        self.editor_history.redo.clear();
+        self.editor_runtime.history.redo.clear();
     }
 
     fn apply_editor_history_snapshot(&mut self, snapshot: EditorHistorySnapshot) {
@@ -77,8 +78,8 @@ impl State {
             .time_seconds
             .min(self.editor_timeline.clock.duration_seconds);
 
-        self.editor_interaction.gizmo_drag = None;
-        self.editor_interaction.block_drag = None;
+        self.editor_runtime.interaction.gizmo_drag = None;
+        self.editor_runtime.interaction.block_drag = None;
 
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
@@ -90,11 +91,12 @@ impl State {
             return;
         }
 
-        let Some(snapshot) = self.editor_history.undo.pop() else {
+        let Some(snapshot) = self.editor_runtime.history.undo.pop() else {
             return;
         };
 
-        self.editor_history
+        self.editor_runtime
+            .history
             .redo
             .push(self.editor_history_snapshot());
         self.apply_editor_history_snapshot(snapshot);
@@ -105,11 +107,12 @@ impl State {
             return;
         }
 
-        let Some(snapshot) = self.editor_history.redo.pop() else {
+        let Some(snapshot) = self.editor_runtime.history.redo.pop() else {
             return;
         };
 
-        self.editor_history
+        self.editor_runtime
+            .history
             .undo
             .push(self.editor_history_snapshot());
         self.apply_editor_history_snapshot(snapshot);
@@ -132,13 +135,13 @@ impl State {
                 .into_iter()
                 .map(|index| self.editor_objects[index].clone())
                 .collect();
-            self.editor_interaction.clipboard = Some(EditorClipboard { objects, anchor });
+            self.editor_runtime.interaction.clipboard = Some(EditorClipboard { objects, anchor });
             return;
         }
 
         if let Some(index) = self.topmost_block_index_at_cursor(self.editor.cursor) {
             let block = self.editor_objects[index].clone();
-            self.editor_interaction.clipboard = Some(EditorClipboard {
+            self.editor_runtime.interaction.clipboard = Some(EditorClipboard {
                 anchor: block.position,
                 objects: vec![block],
             });
@@ -150,7 +153,7 @@ impl State {
             return;
         }
 
-        let Some(clipboard) = self.editor_interaction.clipboard.clone() else {
+        let Some(clipboard) = self.editor_runtime.interaction.clipboard.clone() else {
             return;
         };
 
@@ -205,7 +208,7 @@ impl State {
             .map(|index| self.editor_objects[*index].clone())
             .collect();
 
-        self.editor_interaction.clipboard = Some(EditorClipboard {
+        self.editor_runtime.interaction.clipboard = Some(EditorClipboard {
             objects: duplicates.clone(),
             anchor,
         });

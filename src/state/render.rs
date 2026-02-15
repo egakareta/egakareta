@@ -21,6 +21,7 @@ impl State {
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
@@ -37,7 +38,11 @@ impl State {
     }
 
     pub fn create_egui_renderer(&self) -> EguiRenderer {
-        EguiRenderer::new(&self.gpu.device, self.gpu.config.format, None, 1, false)
+        EguiRenderer::new(
+            &self.gpu.device,
+            self.gpu.config.format,
+            egui_wgpu::RendererOptions::default(),
+        )
     }
 
     pub fn render(&mut self) -> Result<(), SurfaceError> {
@@ -98,6 +103,7 @@ impl State {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
+                    depth_slice: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(clear_color),
                         store: wgpu::StoreOp::Store,

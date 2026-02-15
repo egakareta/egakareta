@@ -36,8 +36,8 @@ impl State {
 
     pub(crate) fn set_editor_mode(&mut self, mode: EditorMode) {
         self.editor.mode = mode;
-        self.editor_interaction.gizmo_drag = None;
-        self.editor_interaction.block_drag = None;
+        self.editor_runtime.interaction.gizmo_drag = None;
+        self.editor_runtime.interaction.block_drag = None;
         if mode == EditorMode::Place {
             self.editor.selected_block_index = None;
             self.editor.selected_block_indices.clear();
@@ -97,8 +97,8 @@ impl State {
             return;
         }
 
-        if self.editor_interaction.gizmo_drag.is_none()
-            && self.editor_interaction.block_drag.is_none()
+        if self.editor_runtime.interaction.gizmo_drag.is_none()
+            && self.editor_runtime.interaction.block_drag.is_none()
         {
             self.record_editor_history_state();
         }
@@ -139,8 +139,8 @@ impl State {
             return;
         }
 
-        if self.editor_interaction.gizmo_drag.is_none()
-            && self.editor_interaction.block_drag.is_none()
+        if self.editor_runtime.interaction.gizmo_drag.is_none()
+            && self.editor_runtime.interaction.block_drag.is_none()
         {
             self.record_editor_history_state();
         }
@@ -519,18 +519,18 @@ impl State {
 
         let music_source = self.editor_session.editor_music_metadata.source.clone();
 
-        if let Some((samples, sample_rate)) = self.waveform_cache.get(&music_source) {
+        if let Some((samples, sample_rate)) = self.editor_audio.waveform_cache.get(&music_source) {
             self.editor_timing.waveform_samples = samples.clone();
             self.editor_timing.waveform_sample_rate = *sample_rate;
-            self.waveform_loading_source = None;
+            self.editor_audio.waveform_loading_source = None;
             return;
         }
 
-        if self.waveform_loading_source.as_deref() == Some(music_source.as_str()) {
+        if self.editor_audio.waveform_loading_source.as_deref() == Some(music_source.as_str()) {
             return;
         }
 
-        self.waveform_loading_source = Some(music_source.clone());
+        self.editor_audio.waveform_loading_source = Some(music_source.clone());
         self.editor_timing.waveform_samples.clear();
         self.editor_timing.waveform_sample_rate = 0;
 
@@ -543,8 +543,12 @@ impl State {
                 .editor_level_name
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string());
-            let cached_bytes = self.local_audio_cache.get(&music_source).cloned();
-            let sender = self.waveform_load_channel.0.clone();
+            let cached_bytes = self
+                .editor_audio
+                .local_audio_cache
+                .get(&music_source)
+                .cloned();
+            let sender = self.editor_audio.waveform_load_channel.0.clone();
 
             std::thread::spawn(move || {
                 let bytes = cached_bytes.or_else(|| {
@@ -573,8 +577,12 @@ impl State {
                 .editor_level_name
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string());
-            let cached_bytes = self.local_audio_cache.get(&music_source).cloned();
-            let sender = self.waveform_load_channel.0.clone();
+            let cached_bytes = self
+                .editor_audio
+                .local_audio_cache
+                .get(&music_source)
+                .cloned();
+            let sender = self.editor_audio.waveform_load_channel.0.clone();
 
             spawn_local(async move {
                 let bytes = if let Some(bytes) = cached_bytes {

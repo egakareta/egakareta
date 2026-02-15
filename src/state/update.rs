@@ -149,8 +149,8 @@ impl State {
             }
 
             self.update_editor_pan_from_keys(frame_dt);
-            if self.editor_interaction.gizmo_drag.is_some()
-                || self.editor_interaction.block_drag.is_some()
+            if self.editor_runtime.interaction.gizmo_drag.is_some()
+                || self.editor_runtime.interaction.block_drag.is_some()
             {
                 if let Some(pointer) = self.editor.pointer_screen {
                     let drag_started_at = PlatformInstant::now();
@@ -159,45 +159,50 @@ impl State {
                 }
             }
 
-            let camera_changed = (self.editor_camera.editor_pan[0] - self.editor_gizmo.last_pan[0])
+            let camera_changed = (self.editor_camera.editor_pan[0]
+                - self.editor_runtime.gizmo.last_pan[0])
                 .abs()
                 > 1e-4
-                || (self.editor_camera.editor_pan[1] - self.editor_gizmo.last_pan[1]).abs() > 1e-4
-                || (self.editor_camera.editor_rotation - self.editor_gizmo.last_rotation).abs()
+                || (self.editor_camera.editor_pan[1] - self.editor_runtime.gizmo.last_pan[1]).abs()
                     > 1e-4
-                || (self.editor_camera.editor_pitch - self.editor_gizmo.last_pitch).abs() > 1e-4
-                || (self.editor_camera.editor_zoom - self.editor_gizmo.last_zoom).abs() > 1e-4;
+                || (self.editor_camera.editor_rotation - self.editor_runtime.gizmo.last_rotation)
+                    .abs()
+                    > 1e-4
+                || (self.editor_camera.editor_pitch - self.editor_runtime.gizmo.last_pitch).abs()
+                    > 1e-4
+                || (self.editor_camera.editor_zoom - self.editor_runtime.gizmo.last_zoom).abs()
+                    > 1e-4;
 
             let has_selection = self.editor.selected_block_index.is_some()
                 || !self.editor.selected_block_indices.is_empty();
-            let is_dragging = self.editor_interaction.gizmo_drag.is_some()
-                || self.editor_interaction.block_drag.is_some();
+            let is_dragging = self.editor_runtime.interaction.gizmo_drag.is_some()
+                || self.editor_runtime.interaction.block_drag.is_some();
 
             if has_selection && self.editor.mode == EditorMode::Select {
                 if is_dragging {
                     let gizmo_started_at = PlatformInstant::now();
                     self.rebuild_editor_gizmo_vertices();
                     self.perf_record(PerfStage::GizmoRebuild, gizmo_started_at);
-                    self.editor_gizmo.rebuild_accumulator = 0.0;
+                    self.editor_runtime.gizmo.rebuild_accumulator = 0.0;
                 } else if camera_changed {
-                    self.editor_gizmo.rebuild_accumulator += frame_dt;
-                    if self.editor_gizmo.rebuild_accumulator >= (1.0 / 24.0) {
+                    self.editor_runtime.gizmo.rebuild_accumulator += frame_dt;
+                    if self.editor_runtime.gizmo.rebuild_accumulator >= (1.0 / 24.0) {
                         let gizmo_started_at = PlatformInstant::now();
                         self.rebuild_editor_gizmo_vertices();
                         self.perf_record(PerfStage::GizmoRebuild, gizmo_started_at);
-                        self.editor_gizmo.rebuild_accumulator = 0.0;
+                        self.editor_runtime.gizmo.rebuild_accumulator = 0.0;
                     }
                 } else {
-                    self.editor_gizmo.rebuild_accumulator = 0.0;
+                    self.editor_runtime.gizmo.rebuild_accumulator = 0.0;
                 }
             } else {
-                self.editor_gizmo.rebuild_accumulator = 0.0;
+                self.editor_runtime.gizmo.rebuild_accumulator = 0.0;
             }
 
-            self.editor_gizmo.last_pan = self.editor_camera.editor_pan;
-            self.editor_gizmo.last_rotation = self.editor_camera.editor_rotation;
-            self.editor_gizmo.last_pitch = self.editor_camera.editor_pitch;
-            self.editor_gizmo.last_zoom = self.editor_camera.editor_zoom;
+            self.editor_runtime.gizmo.last_pan = self.editor_camera.editor_pan;
+            self.editor_runtime.gizmo.last_rotation = self.editor_camera.editor_rotation;
+            self.editor_runtime.gizmo.last_pitch = self.editor_camera.editor_pitch;
+            self.editor_runtime.gizmo.last_zoom = self.editor_camera.editor_zoom;
             let dirty_started_at = PlatformInstant::now();
             self.process_editor_dirty();
             self.perf_record(PerfStage::DirtyProcess, dirty_started_at);

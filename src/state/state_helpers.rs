@@ -96,10 +96,10 @@ impl State {
         self.editor.selected_block_index = None;
         self.editor.selected_block_indices.clear();
         self.editor.hovered_block_index = None;
-        self.editor_interaction.gizmo_drag = None;
-        self.editor_interaction.block_drag = None;
-        self.editor_history.undo.clear();
-        self.editor_history.redo.clear();
+        self.editor_runtime.interaction.gizmo_drag = None;
+        self.editor_runtime.interaction.block_drag = None;
+        self.editor_runtime.history.undo.clear();
+        self.editor_runtime.history.redo.clear();
         self.clear_editor_pan_keys();
         self.editor_camera.editor_rotation = -45.0f32.to_radians();
         self.editor_camera.editor_pitch = 45.0f32.to_radians();
@@ -114,8 +114,8 @@ impl State {
         self.editor.selected_block_index = None;
         self.editor.selected_block_indices.clear();
         self.editor.hovered_block_index = None;
-        self.editor_interaction.gizmo_drag = None;
-        self.editor_interaction.block_drag = None;
+        self.editor_runtime.interaction.gizmo_drag = None;
+        self.editor_runtime.interaction.block_drag = None;
         self.editor_session.playing_level_name = None;
         self.editor.right_dragging = false;
         self.clear_editor_pan_keys();

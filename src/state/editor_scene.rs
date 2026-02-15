@@ -154,16 +154,16 @@ impl State {
     }
 
     pub(super) fn mark_editor_dirty(&mut self, dirty: EditorDirtyFlags) {
-        self.editor_dirty.merge(dirty);
+        self.editor_runtime.dirty.merge(dirty);
     }
 
     pub(super) fn process_editor_dirty(&mut self) {
-        let dirty = self.editor_dirty;
+        let dirty = self.editor_runtime.dirty;
         if !dirty.any() {
             return;
         }
 
-        self.editor_dirty = EditorDirtyFlags::default();
+        self.editor_runtime.dirty = EditorDirtyFlags::default();
 
         if dirty.sync_game_objects {
             self.game.objects = self.editor_objects.clone();
@@ -387,7 +387,7 @@ impl State {
         let axis_lengths = self.editor_gizmo_axis_lengths_world(center, 50.0);
         let axis_width = self.editor_gizmo_axis_width_world(center, 3.0);
 
-        let active_part = if let Some(drag) = &self.editor_interaction.gizmo_drag {
+        let active_part = if let Some(drag) = &self.editor_runtime.interaction.gizmo_drag {
             match (drag.axis, drag.kind) {
                 (GizmoAxis::X, GizmoDragKind::Move) => Some(GizmoPart::MoveX),
                 (GizmoAxis::Y, GizmoDragKind::Move) => Some(GizmoPart::MoveY),
