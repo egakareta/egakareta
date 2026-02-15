@@ -11,14 +11,14 @@
         "serve": "bunx serve .",
         "dev": "concurrently \"bun run watch\" \"bun run serve\"",
         "prod": "bun run build && bun dist.js",
-        "prepare": "lefthook install"
+        "prepare": "lefthook install",
+        "install:rust": "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
     },
     "devDependencies": {
         "concurrently": "^9.2.1",
         "lefthook": "^2.1.1",
         "nodemon": "^3.1.11",
         "prettier": "^3.8.1",
-        "wasm-pack": "^0.14.0",
-        "wrangler": "^4.65.0"
+        "wasm-pack": "^0.14.0"
     }
 }
