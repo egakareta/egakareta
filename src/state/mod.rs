@@ -267,8 +267,9 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::{EditorDirtyFlags, LevelObject};
+    use crate::commands::AppCommand;
     use crate::editor_domain::derive_timeline_position;
-    use crate::types::SpawnDirection;
+    use crate::types::{AppPhase, SpawnDirection};
 
     // ── EditorDirtyFlags contract tests ─────────────────────────────
     #[test]
@@ -428,6 +429,91 @@ mod tests {
             // Test primary click in menu starts level
             state.handle_primary_click(0.0, 0.0);
             assert_eq!(state.phase, crate::types::AppPhase::Playing);
+        });
+    }
+
+    #[test]
+    fn timeline_seek_uses_interpolated_snapshot_cache_and_supports_backward_seek() {
+        pollster::block_on(async {
+            let mut state = match super::State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.phase = AppPhase::Editor;
+            state.editor.objects.clear();
+            state.editor.spawn.position = [0.0, 0.0, 0.0];
+            state.editor.spawn.direction = SpawnDirection::Forward;
+            state.editor.timeline.taps.tap_times.clear();
+            state.editor.timeline.clock.duration_seconds = 8.0;
+            state.editor.invalidate_samples();
+
+            let step = state.editor.timeline.snapshot_cache_step_seconds;
+
+            state.set_editor_timeline_time_seconds(0.0);
+            let start_position = state.editor_timeline_preview().0;
+
+            state.set_editor_timeline_time_seconds(step);
+            let end_position = state.editor_timeline_preview().0;
+
+            state.set_editor_timeline_time_seconds(step * 0.5);
+            let half_position = state.editor_timeline_preview().0;
+
+            assert!(
+                !state.editor.timeline.snapshot_cache.is_empty(),
+                "timeline seek should build snapshot cache"
+            );
+            assert_eq!(
+                state.editor.timeline.snapshot_cache_revision,
+                state.editor.timeline.simulation_revision,
+                "snapshot cache revision should match current simulation revision"
+            );
+
+            let expected_half_y = (start_position[1] + end_position[1]) * 0.5;
+            assert!(
+                (half_position[1] - expected_half_y).abs() < 0.02,
+                "half-step seek should interpolate between adjacent cached samples"
+            );
+
+            state.set_editor_timeline_time_seconds(0.0);
+            let rewound_position = state.editor_timeline_preview().0;
+            assert!(
+                (rewound_position[1] - start_position[1]).abs() < 0.02,
+                "backward seek should resolve from snapshot cache"
+            );
+        });
+    }
+
+    #[test]
+    fn editor_playtest_stores_precomputed_audio_start_seconds() {
+        pollster::block_on(async {
+            let mut state = match super::State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.dispatch(AppCommand::ToggleEditor);
+            state.editor.objects.clear();
+            state.editor.timeline.taps.tap_times.clear();
+            state.editor.spawn.position = [0.0, 0.0, 0.0];
+            state.editor.spawn.direction = SpawnDirection::Forward;
+
+            let target_time = 0.85;
+            state.editor.timeline.clock.time_seconds = target_time;
+            let expected_elapsed = state.editor_timeline_elapsed_seconds(target_time);
+
+            state.editor_playtest();
+
+            assert_eq!(state.phase, AppPhase::Playing);
+            let stored = state.session.playtest_audio_start_seconds;
+            assert!(
+                stored.is_some(),
+                "playtest should store precomputed audio start"
+            );
+            assert!(
+                (stored.unwrap_or_default() - expected_elapsed).abs() < 0.02,
+                "stored playtest audio start seconds should match precomputed timeline elapsed"
+            );
         });
     }
 }

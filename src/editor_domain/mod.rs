@@ -151,13 +151,14 @@ mod tests {
     #[test]
     fn builds_editor_playtest_transition() {
         let objects = Vec::new();
+        let timeline_time_seconds = 1.0 / crate::game::BASE_PLAYER_SPEED;
 
         let transition = build_editor_playtest_transition(
             &objects,
             Some("Demo"),
             SpawnMetadata::default(),
             &[],
-            1.0 / crate::game::BASE_PLAYER_SPEED,
+            timeline_time_seconds,
         );
 
         assert!(transition.objects.is_empty());
@@ -166,6 +167,7 @@ mod tests {
             transition.spawn_direction,
             crate::types::SpawnDirection::Forward
         ));
+        assert!((transition.playtest_audio_start_seconds - timeline_time_seconds).abs() < 0.05);
         assert_eq!(transition.playing_level_name.as_deref(), Some("Demo"));
     }
 
