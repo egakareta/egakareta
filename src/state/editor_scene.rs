@@ -15,37 +15,39 @@ impl State {
     }
 
     pub(super) fn invalidate_editor_timeline_samples(&mut self) {
-        self.editor_timeline_cache.dirty = true;
-        self.editor_timeline_cache.rebuild_from_seconds = None;
+        self.editor_timeline.cache.dirty = true;
+        self.editor_timeline.cache.rebuild_from_seconds = None;
     }
 
     pub(super) fn invalidate_editor_timeline_samples_from(&mut self, from_seconds: f32) {
-        self.editor_timeline_cache.dirty = true;
+        self.editor_timeline.cache.dirty = true;
         let clamped = from_seconds.max(0.0);
-        self.editor_timeline_cache.rebuild_from_seconds = Some(
-            self.editor_timeline_cache
+        self.editor_timeline.cache.rebuild_from_seconds = Some(
+            self.editor_timeline
+                .cache
                 .rebuild_from_seconds
                 .map_or(clamped, |existing| existing.min(clamped)),
         );
     }
 
     pub(super) fn ensure_editor_timeline_samples(&mut self) {
-        if !self.editor_timeline_cache.dirty {
+        if !self.editor_timeline.cache.dirty {
             return;
         }
         let perf_started_at = PlatformInstant::now();
 
-        let duration = self.editor_timeline_clock.duration_seconds.max(0.0);
+        let duration = self.editor_timeline.clock.duration_seconds.max(0.0);
         if duration <= 0.0 {
-            self.editor_timeline_cache.samples.clear();
-            self.editor_timeline_cache
+            self.editor_timeline.cache.samples.clear();
+            self.editor_timeline
+                .cache
                 .samples
                 .push(EditorTimelineSample {
                     time_seconds: 0.0,
                     position: self.editor_spawn.position,
                 });
-            self.editor_timeline_cache.dirty = false;
-            self.editor_timeline_cache.rebuild_from_seconds = None;
+            self.editor_timeline.cache.dirty = false;
+            self.editor_timeline.cache.rebuild_from_seconds = None;
             return;
         }
 
@@ -55,35 +57,38 @@ impl State {
 
         let expected_len = sample_count + 1;
         let last_time_matches_duration = self
-            .editor_timeline_cache
+            .editor_timeline
+            .cache
             .samples
             .last()
             .is_some_and(|sample| (sample.time_seconds - duration).abs() <= 1e-3);
 
-        let can_incremental_rebuild = self.editor_timeline_cache.rebuild_from_seconds.is_some()
-            && self.editor_timeline_cache.samples.len() == expected_len
+        let can_incremental_rebuild = self.editor_timeline.cache.rebuild_from_seconds.is_some()
+            && self.editor_timeline.cache.samples.len() == expected_len
             && last_time_matches_duration;
 
         if !can_incremental_rebuild {
-            self.editor_timeline_cache.samples.clear();
+            self.editor_timeline.cache.samples.clear();
         }
 
         let mut runtime = TimelineSimulationRuntime::new_with_dt(
             self.editor_spawn.position,
             self.editor_spawn.direction,
             &self.editor_objects,
-            &self.editor_timeline_taps.tap_times,
+            &self.editor_timeline.taps.tap_times,
             simulation_dt,
         );
 
         let rebuild_from_index = if can_incremental_rebuild {
             let rebuild_from_time = self
-                .editor_timeline_cache
+                .editor_timeline
+                .cache
                 .rebuild_from_seconds
                 .unwrap_or(0.0)
                 .clamp(0.0, duration);
 
-            self.editor_timeline_cache
+            self.editor_timeline
+                .cache
                 .samples
                 .iter()
                 .position(|sample| sample.time_seconds >= rebuild_from_time)
@@ -94,9 +99,10 @@ impl State {
 
         if rebuild_from_index > 0 {
             let rebuild_start_time =
-                self.editor_timeline_cache.samples[rebuild_from_index].time_seconds;
+                self.editor_timeline.cache.samples[rebuild_from_index].time_seconds;
             runtime.advance_to(rebuild_start_time);
-            self.editor_timeline_cache
+            self.editor_timeline
+                .cache
                 .samples
                 .truncate(rebuild_from_index);
         }
@@ -105,13 +111,14 @@ impl State {
             let t = (index as f32 * time_step).min(duration);
             runtime.advance_to(t);
             let snapshot = runtime.snapshot();
-            if index < self.editor_timeline_cache.samples.len() {
-                self.editor_timeline_cache.samples[index] = EditorTimelineSample {
+            if index < self.editor_timeline.cache.samples.len() {
+                self.editor_timeline.cache.samples[index] = EditorTimelineSample {
                     time_seconds: t,
                     position: snapshot.position,
                 };
             } else {
-                self.editor_timeline_cache
+                self.editor_timeline
+                    .cache
                     .samples
                     .push(EditorTimelineSample {
                         time_seconds: t,
@@ -120,8 +127,8 @@ impl State {
             }
         }
 
-        self.editor_timeline_cache.dirty = false;
-        self.editor_timeline_cache.rebuild_from_seconds = None;
+        self.editor_timeline.cache.dirty = false;
+        self.editor_timeline.cache.rebuild_from_seconds = None;
         self.perf_record(PerfStage::TimelineSampleRebuild, perf_started_at);
     }
 
@@ -129,7 +136,8 @@ impl State {
         &self,
         target: [f32; 3],
     ) -> Option<f32> {
-        self.editor_timeline_cache
+        self.editor_timeline
+            .cache
             .samples
             .iter()
             .min_by(|a, b| {
@@ -267,7 +275,7 @@ impl State {
         derive_timeline_position(
             self.editor_spawn.position,
             self.editor_spawn.direction,
-            &self.editor_timeline_taps.tap_times,
+            &self.editor_timeline.taps.tap_times,
             time_seconds,
             &self.editor_objects,
         )
@@ -277,7 +285,7 @@ impl State {
         derive_timeline_elapsed_seconds(
             self.editor_spawn.position,
             self.editor_spawn.direction,
-            &self.editor_timeline_taps.tap_times,
+            &self.editor_timeline.taps.tap_times,
             time_seconds,
             &self.editor_objects,
         )
@@ -288,11 +296,11 @@ impl State {
         position: [f32; 3],
         direction: SpawnDirection,
     ) {
-        self.editor_timeline_preview.position = position;
-        self.editor_timeline_preview.direction = direction;
+        self.editor_timeline.preview.position = position;
+        self.editor_timeline.preview.direction = direction;
 
         let bounds = self.editor.bounds as f32;
-        if !self.editor_timeline_playback.playing {
+        if !self.editor_timeline.playback.playing {
             self.editor.cursor = [
                 position[0].round(),
                 position[1].round(),
@@ -318,7 +326,7 @@ impl State {
         }
 
         let (position, direction) =
-            self.editor_timeline_position(self.editor_timeline_clock.time_seconds);
+            self.editor_timeline_position(self.editor_timeline.clock.time_seconds);
         self.apply_editor_timeline_preview_state(position, direction);
     }
 
@@ -472,7 +480,7 @@ impl State {
             return;
         }
 
-        let mut positions = self.editor_timeline_taps.tap_indicator_positions.clone();
+        let mut positions = self.editor_timeline.taps.tap_indicator_positions.clone();
         positions.sort_unstable_by(|a, b| {
             a[0].total_cmp(&b[0])
                 .then(a[1].total_cmp(&b[1]))
@@ -496,7 +504,7 @@ impl State {
         }
 
         let (position, direction) =
-            self.editor_timeline_position(self.editor_timeline_clock.time_seconds);
+            self.editor_timeline_position(self.editor_timeline.clock.time_seconds);
         self.rebuild_editor_preview_player_vertices_for_state(position, direction);
     }
 
@@ -505,14 +513,15 @@ impl State {
         position: [f32; 3],
         direction: SpawnDirection,
     ) {
-        self.editor_timeline_preview.position = position;
-        self.editor_timeline_preview.direction = direction;
+        self.editor_timeline.preview.position = position;
+        self.editor_timeline.preview.direction = direction;
 
         let is_tapping = self
-            .editor_timeline_taps
+            .editor_timeline
+            .taps
             .tap_times
             .iter()
-            .any(|tap| (tap - self.editor_timeline_clock.time_seconds).abs() <= 0.01);
+            .any(|tap| (tap - self.editor_timeline.clock.time_seconds).abs() <= 0.01);
         let preview_origin = [position[0] - 0.5, position[1] - 0.5, position[2]];
         let vertices = build_editor_preview_player_vertices(preview_origin, direction, is_tapping);
         self.meshes.editor_preview_player.replace_with_vertices(

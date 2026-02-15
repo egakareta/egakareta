@@ -92,19 +92,19 @@ impl State {
             self.accumulator = 0.0;
             self.meshes.trail.clear();
 
-            if self.editor_timeline_playback.playing {
+            if self.editor_timeline.playback.playing {
                 let timeline_playback_started_at = PlatformInstant::now();
                 let audio_time = self
                     .audio
                     .playback_time_seconds()
-                    .unwrap_or(self.editor_timeline_clock.time_seconds);
-                let clamped_time = audio_time.min(self.editor_timeline_clock.duration_seconds);
+                    .unwrap_or(self.editor_timeline.clock.time_seconds);
+                let clamped_time = audio_time.min(self.editor_timeline.clock.duration_seconds);
 
-                if (clamped_time - self.editor_timeline_clock.time_seconds).abs() > 1e-4 {
-                    self.editor_timeline_clock.time_seconds = clamped_time;
+                if (clamped_time - self.editor_timeline.clock.time_seconds).abs() > 1e-4 {
+                    self.editor_timeline.clock.time_seconds = clamped_time;
 
                     let mut applied_runtime_state = false;
-                    if let Some(runtime) = self.editor_timeline_playback.runtime.as_mut() {
+                    if let Some(runtime) = self.editor_timeline.playback.runtime.as_mut() {
                         if clamped_time + 1e-6 >= runtime.elapsed_seconds() {
                             runtime.advance_to(clamped_time);
                             let snapshot = runtime.snapshot();
@@ -121,7 +121,7 @@ impl State {
                             self.editor_spawn.position,
                             self.editor_spawn.direction,
                             &self.editor_objects,
-                            &self.editor_timeline_taps.tap_times,
+                            &self.editor_timeline.taps.tap_times,
                         );
                         runtime.advance_to(clamped_time);
                         let snapshot = runtime.snapshot();
@@ -129,15 +129,15 @@ impl State {
                             snapshot.position,
                             snapshot.direction,
                         );
-                        self.editor_timeline_playback.runtime = Some(runtime);
+                        self.editor_timeline.playback.runtime = Some(runtime);
                     }
                 }
 
-                if clamped_time >= self.editor_timeline_clock.duration_seconds
+                if clamped_time >= self.editor_timeline.clock.duration_seconds
                     || !self.audio.is_playing()
                 {
-                    self.editor_timeline_playback.playing = false;
-                    self.editor_timeline_playback.runtime = None;
+                    self.editor_timeline.playback.playing = false;
+                    self.editor_timeline.playback.runtime = None;
                     self.stop_audio();
                     self.refresh_editor_timeline_position();
                 }
@@ -155,12 +155,12 @@ impl State {
                 }
             }
 
-            let camera_changed = (self.editor_camera_pan[0] - self.editor_gizmo_last_pan[0]).abs()
+            let camera_changed = (self.editor_camera_pan[0] - self.editor_gizmo.last_pan[0]).abs()
                 > 1e-4
-                || (self.editor_camera_pan[1] - self.editor_gizmo_last_pan[1]).abs() > 1e-4
-                || (self.editor_camera_rotation - self.editor_gizmo_last_rotation).abs() > 1e-4
-                || (self.editor_camera_pitch - self.editor_gizmo_last_pitch).abs() > 1e-4
-                || (self.editor_zoom - self.editor_gizmo_last_zoom).abs() > 1e-4;
+                || (self.editor_camera_pan[1] - self.editor_gizmo.last_pan[1]).abs() > 1e-4
+                || (self.editor_camera_rotation - self.editor_gizmo.last_rotation).abs() > 1e-4
+                || (self.editor_camera_pitch - self.editor_gizmo.last_pitch).abs() > 1e-4
+                || (self.editor_zoom - self.editor_gizmo.last_zoom).abs() > 1e-4;
 
             let has_selection = self.editor.selected_block_index.is_some()
                 || !self.editor.selected_block_indices.is_empty();
@@ -172,26 +172,26 @@ impl State {
                     let gizmo_started_at = PlatformInstant::now();
                     self.rebuild_editor_gizmo_vertices();
                     self.perf_record(PerfStage::GizmoRebuild, gizmo_started_at);
-                    self.editor_gizmo_rebuild_accumulator = 0.0;
+                    self.editor_gizmo.rebuild_accumulator = 0.0;
                 } else if camera_changed {
-                    self.editor_gizmo_rebuild_accumulator += frame_dt;
-                    if self.editor_gizmo_rebuild_accumulator >= (1.0 / 24.0) {
+                    self.editor_gizmo.rebuild_accumulator += frame_dt;
+                    if self.editor_gizmo.rebuild_accumulator >= (1.0 / 24.0) {
                         let gizmo_started_at = PlatformInstant::now();
                         self.rebuild_editor_gizmo_vertices();
                         self.perf_record(PerfStage::GizmoRebuild, gizmo_started_at);
-                        self.editor_gizmo_rebuild_accumulator = 0.0;
+                        self.editor_gizmo.rebuild_accumulator = 0.0;
                     }
                 } else {
-                    self.editor_gizmo_rebuild_accumulator = 0.0;
+                    self.editor_gizmo.rebuild_accumulator = 0.0;
                 }
             } else {
-                self.editor_gizmo_rebuild_accumulator = 0.0;
+                self.editor_gizmo.rebuild_accumulator = 0.0;
             }
 
-            self.editor_gizmo_last_pan = self.editor_camera_pan;
-            self.editor_gizmo_last_rotation = self.editor_camera_rotation;
-            self.editor_gizmo_last_pitch = self.editor_camera_pitch;
-            self.editor_gizmo_last_zoom = self.editor_zoom;
+            self.editor_gizmo.last_pan = self.editor_camera_pan;
+            self.editor_gizmo.last_rotation = self.editor_camera_rotation;
+            self.editor_gizmo.last_pitch = self.editor_camera_pitch;
+            self.editor_gizmo.last_zoom = self.editor_zoom;
             let dirty_started_at = PlatformInstant::now();
             self.process_editor_dirty();
             self.perf_record(PerfStage::DirtyProcess, dirty_started_at);

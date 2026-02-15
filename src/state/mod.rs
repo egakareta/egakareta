@@ -190,19 +190,11 @@ pub struct State {
     playing_camera_rotation: f32,
     playing_camera_pitch: f32,
     editor_zoom: f32,
-    editor_timeline_clock: EditorTimelineClockState,
-    editor_timeline_preview: EditorTimelinePreviewState,
-    editor_timeline_taps: EditorTimelineTapState,
-    editor_timeline_cache: EditorTimelineSampleCache,
-    editor_timeline_playback: EditorTimelinePlaybackState,
+    editor_timeline: EditorTimelineState,
     editor_dirty: EditorDirtyFlags,
     editor_perf: EditorPerfProfiler,
     editor_fps_smoothed: f32,
-    editor_gizmo_rebuild_accumulator: f32,
-    editor_gizmo_last_pan: [f32; 2],
-    editor_gizmo_last_rotation: f32,
-    editor_gizmo_last_pitch: f32,
-    editor_gizmo_last_zoom: f32,
+    editor_gizmo: EditorGizmoState,
     editor_timing_points: Vec<TimingPoint>,
     editor_playback_speed: f32,
     editor_waveform_samples: Vec<f32>,
@@ -431,6 +423,22 @@ struct EditorTimelineClockState {
 struct EditorTimelineTapState {
     tap_times: Vec<f32>,
     tap_indicator_positions: Vec<[f32; 3]>,
+}
+
+struct EditorTimelineState {
+    clock: EditorTimelineClockState,
+    preview: EditorTimelinePreviewState,
+    taps: EditorTimelineTapState,
+    cache: EditorTimelineSampleCache,
+    playback: EditorTimelinePlaybackState,
+}
+
+struct EditorGizmoState {
+    rebuild_accumulator: f32,
+    last_pan: [f32; 2],
+    last_rotation: f32,
+    last_pitch: f32,
+    last_zoom: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -854,35 +862,39 @@ impl State {
             playing_camera_rotation: -45.0f32.to_radians(),
             playing_camera_pitch: 45.0f32.to_radians(),
             editor_zoom: 1.0,
-            editor_timeline_clock: EditorTimelineClockState {
-                time_seconds: 0.0,
-                duration_seconds: 16.0,
-            },
-            editor_timeline_preview: EditorTimelinePreviewState {
-                position: [0.0, 0.0, 0.0],
-                direction: SpawnDirection::Forward,
-            },
-            editor_timeline_taps: EditorTimelineTapState {
-                tap_times: Vec::new(),
-                tap_indicator_positions: Vec::new(),
-            },
-            editor_timeline_cache: EditorTimelineSampleCache {
-                samples: Vec::new(),
-                dirty: true,
-                rebuild_from_seconds: None,
-            },
-            editor_timeline_playback: EditorTimelinePlaybackState {
-                playing: false,
-                runtime: None,
+            editor_timeline: EditorTimelineState {
+                clock: EditorTimelineClockState {
+                    time_seconds: 0.0,
+                    duration_seconds: 16.0,
+                },
+                preview: EditorTimelinePreviewState {
+                    position: [0.0, 0.0, 0.0],
+                    direction: SpawnDirection::Forward,
+                },
+                taps: EditorTimelineTapState {
+                    tap_times: Vec::new(),
+                    tap_indicator_positions: Vec::new(),
+                },
+                cache: EditorTimelineSampleCache {
+                    samples: Vec::new(),
+                    dirty: true,
+                    rebuild_from_seconds: None,
+                },
+                playback: EditorTimelinePlaybackState {
+                    playing: false,
+                    runtime: None,
+                },
             },
             editor_dirty: EditorDirtyFlags::default(),
             editor_perf: EditorPerfProfiler::new(),
             editor_fps_smoothed: 0.0,
-            editor_gizmo_rebuild_accumulator: 0.0,
-            editor_gizmo_last_pan: [0.0, 0.0],
-            editor_gizmo_last_rotation: -45.0f32.to_radians(),
-            editor_gizmo_last_pitch: 45.0f32.to_radians(),
-            editor_gizmo_last_zoom: 1.0,
+            editor_gizmo: EditorGizmoState {
+                rebuild_accumulator: 0.0,
+                last_pan: [0.0, 0.0],
+                last_rotation: -45.0f32.to_radians(),
+                last_pitch: 45.0f32.to_radians(),
+                last_zoom: 1.0,
+            },
             editor_timing_points: Vec::new(),
             editor_playback_speed: 1.0,
             editor_waveform_samples: Vec::new(),
@@ -947,7 +959,7 @@ impl State {
                             .clone()
                             .unwrap_or_else(|| "Untitled".to_string());
                         let start_seconds = self.editor_timeline_elapsed_seconds(
-                            self.editor_timeline_clock.time_seconds,
+                            self.editor_timeline.clock.time_seconds,
                         );
                         self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
                     } else if let Some(level_name) = self.playing_level_name.clone() {
