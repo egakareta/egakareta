@@ -161,14 +161,6 @@ pub(crate) struct GpuContext {
 }
 
 impl GpuContext {
-    pub(crate) fn device(&self) -> &wgpu::Device {
-        &self.device
-    }
-
-    pub(crate) fn queue(&self) -> &wgpu::Queue {
-        &self.queue
-    }
-
     pub(crate) fn surface_format(&self) -> wgpu::TextureFormat {
         self.config.format
     }
@@ -233,6 +225,29 @@ impl GpuContext {
     }
 }
 
+pub(crate) struct RenderSubsystem {
+    pub(crate) gpu: GpuContext,
+    pub(crate) meshes: SceneMeshes,
+}
+
+pub(crate) struct GameplaySubsystem {
+    pub(crate) state: GameState,
+}
+
+pub(crate) struct AudioSubsystem {
+    pub(crate) state: AudioState,
+}
+
+pub(crate) struct SessionSubsystem {
+    pub(crate) editor_level_name: Option<String>,
+    pub(crate) editor_music_metadata: MusicMetadata,
+    pub(crate) editor_show_metadata: bool,
+    pub(crate) editor_show_import: bool,
+    pub(crate) editor_import_text: String,
+    pub(crate) playing_level_name: Option<String>,
+    pub(crate) playtesting_editor: bool,
+}
+
 /// Bundles all editor-related state into a single subsystem.
 /// Separates editor concern from the top-level application state.
 pub(crate) struct EditorSubsystem {
@@ -245,18 +260,17 @@ pub(crate) struct EditorSubsystem {
     pub(crate) runtime: EditorRuntimeState,
     pub(crate) perf: EditorPerfState,
     pub(crate) timing: EditorTimingState,
-    pub(crate) session: EditorSessionState,
 }
 
 pub struct State {
-    gpu: GpuContext,
-    meshes: SceneMeshes,
-    game: GameState,
+    render: RenderSubsystem,
+    gameplay: GameplaySubsystem,
+    editor: EditorSubsystem,
+    audio: AudioSubsystem,
+    session: SessionSubsystem,
     phase: AppPhase,
     menu: MenuState,
-    editor: EditorSubsystem,
     frame_runtime: FrameRuntimeState,
-    audio_state: AudioState,
 }
 
 type AudioImportData = (String, Vec<u8>);
@@ -480,16 +494,6 @@ pub(crate) struct EditorTimingState {
     bpm_tap_result: Option<f32>,
 }
 
-pub(crate) struct EditorSessionState {
-    editor_level_name: Option<String>,
-    editor_music_metadata: MusicMetadata,
-    editor_show_metadata: bool,
-    editor_show_import: bool,
-    editor_import_text: String,
-    playing_level_name: Option<String>,
-    playtesting_editor: bool,
-}
-
 pub(crate) struct EditorConfigState {
     selected_block_id: String,
     snap_to_grid: bool,
@@ -522,7 +526,7 @@ struct FrameRuntimeState {
     player_render: PlayerRenderState,
 }
 
-struct EditorAudioState {
+pub(crate) struct EditorAudioState {
     local_audio_cache: std::collections::HashMap<String, Vec<u8>>,
     audio_import_channel: (
         std::sync::mpsc::Sender<AudioImportData>,
@@ -536,9 +540,9 @@ struct EditorAudioState {
     waveform_loading_source: Option<String>,
 }
 
-struct AudioState {
-    runtime: PlatformAudio,
-    editor: EditorAudioState,
+pub(crate) struct AudioState {
+    pub(crate) runtime: PlatformAudio,
+    pub(crate) editor: EditorAudioState,
 }
 
 pub(crate) struct EditorCameraState {
@@ -630,6 +634,19 @@ struct EditorTimelineSample {
 }
 
 impl State {
+    pub(crate) fn device(&self) -> &wgpu::Device {
+        &self.render.gpu.device
+    }
+
+    pub(crate) fn queue(&self) -> &wgpu::Queue {
+        &self.render.gpu.queue
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn window(&self) -> &NativeWindow {
+        self.render.gpu.window()
+    }
+
     #[cfg(target_arch = "wasm32")]
     pub(crate) async fn new(canvas: WasmCanvas) -> Self {
         let (surface_host, instance, surface, size) = SurfaceHost::create_for_wasm(canvas);
@@ -935,38 +952,40 @@ impl State {
         let now = PlatformInstant::now();
 
         Self {
-            gpu: GpuContext {
-                surface_host,
-                surface,
-                device,
-                queue,
-                config,
-                size,
-                depth_texture,
-                depth_view,
-                render_pipeline,
-                gizmo_overlay_pipeline,
-                line_uniform_buffer,
-                zero_line_bind_group,
-                camera_uniform_buffer,
-                camera_bind_group,
-                color_space_bind_group,
-                apply_gamma_correction: should_apply_gamma_correction,
+            render: RenderSubsystem {
+                gpu: GpuContext {
+                    surface_host,
+                    surface,
+                    device,
+                    queue,
+                    config,
+                    size,
+                    depth_texture,
+                    depth_view,
+                    render_pipeline,
+                    gizmo_overlay_pipeline,
+                    line_uniform_buffer,
+                    zero_line_bind_group,
+                    camera_uniform_buffer,
+                    camera_bind_group,
+                    color_space_bind_group,
+                    apply_gamma_correction: should_apply_gamma_correction,
+                },
+                meshes: SceneMeshes {
+                    floor: floor_mesh,
+                    grid: grid_mesh,
+                    trail: trail_mesh,
+                    blocks: block_mesh,
+                    editor_cursor: MeshSlot::Empty,
+                    editor_hover_outline: MeshSlot::Empty,
+                    editor_selection_outline: MeshSlot::Empty,
+                    editor_gizmo: MeshSlot::Empty,
+                    tap_indicators: MeshSlot::Empty,
+                    spawn_marker: MeshSlot::Empty,
+                    editor_preview_player: MeshSlot::Empty,
+                },
             },
-            meshes: SceneMeshes {
-                floor: floor_mesh,
-                grid: grid_mesh,
-                trail: trail_mesh,
-                blocks: block_mesh,
-                editor_cursor: MeshSlot::Empty,
-                editor_hover_outline: MeshSlot::Empty,
-                editor_selection_outline: MeshSlot::Empty,
-                editor_gizmo: MeshSlot::Empty,
-                tap_indicators: MeshSlot::Empty,
-                spawn_marker: MeshSlot::Empty,
-                editor_preview_player: MeshSlot::Empty,
-            },
-            game,
+            gameplay: GameplaySubsystem { state: game },
             phase: AppPhase::Menu,
             menu,
             frame_runtime: FrameRuntimeState {
@@ -976,15 +995,31 @@ impl State {
                 },
                 player_render: PlayerRenderState { line_uniform },
             },
-            audio_state: AudioState {
-                runtime: PlatformAudio::new(),
-                editor: EditorAudioState {
-                    local_audio_cache,
-                    audio_import_channel: std::sync::mpsc::channel(),
-                    waveform_load_channel: std::sync::mpsc::channel(),
-                    waveform_cache: std::collections::HashMap::new(),
-                    waveform_loading_source: None,
+            audio: AudioSubsystem {
+                state: AudioState {
+                    runtime: PlatformAudio::new(),
+                    editor: EditorAudioState {
+                        local_audio_cache,
+                        audio_import_channel: std::sync::mpsc::channel(),
+                        waveform_load_channel: std::sync::mpsc::channel(),
+                        waveform_cache: std::collections::HashMap::new(),
+                        waveform_loading_source: None,
+                    },
                 },
+            },
+            session: SessionSubsystem {
+                editor_level_name: None,
+                editor_music_metadata: MusicMetadata {
+                    source: "music.mp3".to_string(),
+                    title: None,
+                    author: None,
+                    extra: serde_json::Map::new(),
+                },
+                editor_show_metadata: false,
+                editor_show_import: false,
+                editor_import_text: String::new(),
+                playing_level_name: None,
+                playtesting_editor: false,
             },
             editor: EditorSubsystem {
                 ui: EditorState::new(),
@@ -1060,20 +1095,6 @@ impl State {
                     bpm_tap_times: Vec::new(),
                     bpm_tap_result: None,
                 },
-                session: EditorSessionState {
-                    editor_level_name: None,
-                    editor_music_metadata: MusicMetadata {
-                        source: "music.mp3".to_string(),
-                        title: None,
-                        author: None,
-                        extra: serde_json::Map::new(),
-                    },
-                    editor_show_metadata: false,
-                    editor_show_import: false,
-                    editor_import_text: String::new(),
-                    playing_level_name: None,
-                    playtesting_editor: false,
-                },
             },
         }
     }
@@ -1083,10 +1104,10 @@ impl State {
             return;
         }
 
-        if let Some(host) = &self.gpu.surface_host {
+        if let Some(host) = &self.render.gpu.surface_host {
             host.prepare_resize(new_size);
         }
-        self.gpu.apply_resize(new_size);
+        self.render.gpu.apply_resize(new_size);
     }
 
     pub fn turn_right(&mut self) {
@@ -1095,12 +1116,11 @@ impl State {
                 self.start_level(self.menu.selected_level);
             }
             AppPhase::Playing => {
-                if !self.game.started {
-                    self.game.started = true;
-                    if self.editor.session.playtesting_editor {
+                if !self.gameplay.state.started {
+                    self.gameplay.state.started = true;
+                    if self.session.playtesting_editor {
                         let metadata = self.current_editor_metadata();
                         let level_name = self
-                            .editor
                             .session
                             .editor_level_name
                             .clone()
@@ -1109,16 +1129,15 @@ impl State {
                             self.editor.timeline.clock.time_seconds,
                         );
                         self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
-                    } else if let Some(level_name) = self.editor.session.playing_level_name.clone()
-                    {
+                    } else if let Some(level_name) = self.session.playing_level_name.clone() {
                         if let Some(metadata) = self.load_level_metadata(&level_name) {
                             self.start_audio(&level_name, &metadata);
                         }
                     }
-                } else if self.game.game_over {
+                } else if self.gameplay.state.game_over {
                     self.restart_level();
                 } else {
-                    self.game.turn_right();
+                    self.gameplay.state.turn_right();
                 }
             }
             AppPhase::Editor => {
@@ -1154,7 +1173,7 @@ impl State {
         match self.phase {
             AppPhase::Menu => self.start_editor(self.menu.selected_level),
             AppPhase::Editor => self.back_to_menu(),
-            AppPhase::Playing if self.editor.session.playtesting_editor => {
+            AppPhase::Playing if self.session.playtesting_editor => {
                 self.phase = AppPhase::Editor;
                 self.stop_audio();
                 self.sync_editor_objects();

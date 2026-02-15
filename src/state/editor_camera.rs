@@ -35,12 +35,12 @@ impl State {
 
     pub(super) fn playing_camera_offset(&self) -> Vec3 {
         let distance = 28.28;
-        let rotation = if self.game.game_over || !self.game.started {
+        let rotation = if self.gameplay.state.game_over || !self.gameplay.state.started {
             self.editor.camera.playing_rotation
         } else {
             -45.0f32.to_radians()
         };
-        let pitch = if self.game.game_over || !self.game.started {
+        let pitch = if self.gameplay.state.game_over || !self.gameplay.state.started {
             self.editor.camera.playing_pitch
         } else {
             45.0f32.to_radians()

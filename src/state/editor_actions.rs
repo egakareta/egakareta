@@ -139,7 +139,6 @@ impl State {
 
         let metadata = self.current_editor_metadata();
         let level_name = self
-            .editor
             .session
             .editor_level_name
             .clone()
@@ -269,7 +268,6 @@ impl State {
 
             let metadata = self.current_editor_metadata();
             let level_name = self
-                .editor
                 .session
                 .editor_level_name
                 .clone()
@@ -324,15 +322,15 @@ impl State {
 
         let transition = build_editor_playtest_transition(
             &self.editor.objects,
-            self.editor.session.editor_level_name.as_deref(),
+            self.session.editor_level_name.as_deref(),
             self.editor.spawn.clone(),
             &self.editor.timeline.taps.tap_times,
             self.editor.timeline.clock.time_seconds,
         );
 
         self.enter_playing_phase(transition.playing_level_name, true);
-        self.game = GameState::new();
-        self.game.objects = transition.objects;
+        self.gameplay.state = GameState::new();
+        self.gameplay.state.objects = transition.objects;
         self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction);
         self.editor.camera.playing_rotation = transition.camera_rotation;
         self.editor.camera.playing_pitch = transition.camera_pitch;
@@ -374,24 +372,24 @@ impl State {
         self.editor.timeline.playback.runtime = None;
         self.stop_audio();
         if let Some(objects) =
-            playtest_return_objects(self.editor.session.playtesting_editor, &self.editor.objects)
+            playtest_return_objects(self.session.playtesting_editor, &self.editor.objects)
         {
-            self.editor.session.playtesting_editor = false;
+            self.session.playtesting_editor = false;
             self.phase = AppPhase::Editor;
             self.editor.timeline.playback.playing = false;
             self.editor.timeline.playback.runtime = None;
-            self.game = GameState::new();
-            self.game.objects = objects;
+            self.gameplay.state = GameState::new();
+            self.gameplay.state.objects = objects;
             self.rebuild_block_vertices();
             return;
         }
 
         self.enter_menu_phase();
 
-        self.game = GameState::new();
-        self.game.objects = create_menu_scene();
+        self.gameplay.state = GameState::new();
+        self.gameplay.state.objects = create_menu_scene();
         self.rebuild_block_vertices();
-        self.meshes.trail.clear();
+        self.render.meshes.trail.clear();
     }
 
     pub(super) fn move_editor_cursor(&mut self, dx: i32, dy: i32) {

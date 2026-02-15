@@ -373,7 +373,8 @@ impl State {
 
     pub(crate) fn set_editor_playback_speed(&mut self, speed: f32) {
         self.editor.timing.playback_speed = speed.clamp(0.25, 2.0);
-        self.audio_state
+        self.audio
+            .state
             .runtime
             .set_speed(self.editor.timing.playback_speed);
     }
@@ -534,23 +535,23 @@ impl State {
     pub(crate) fn load_waveform_for_current_audio(&mut self) {
         const WAVEFORM_WINDOW: usize = 256;
 
-        let music_source = self.editor.session.editor_music_metadata.source.clone();
+        let music_source = self.session.editor_music_metadata.source.clone();
 
         if let Some((samples, sample_rate)) =
-            self.audio_state.editor.waveform_cache.get(&music_source)
+            self.audio.state.editor.waveform_cache.get(&music_source)
         {
             self.editor.timing.waveform_samples = samples.clone();
             self.editor.timing.waveform_sample_rate = *sample_rate;
-            self.audio_state.editor.waveform_loading_source = None;
+            self.audio.state.editor.waveform_loading_source = None;
             return;
         }
 
-        if self.audio_state.editor.waveform_loading_source.as_deref() == Some(music_source.as_str())
+        if self.audio.state.editor.waveform_loading_source.as_deref() == Some(music_source.as_str())
         {
             return;
         }
 
-        self.audio_state.editor.waveform_loading_source = Some(music_source.clone());
+        self.audio.state.editor.waveform_loading_source = Some(music_source.clone());
         self.editor.timing.waveform_samples.clear();
         self.editor.timing.waveform_sample_rate = 0;
 
@@ -559,18 +560,18 @@ impl State {
             use crate::platform::audio::decode_audio_to_waveform;
             let source_for_thread = music_source.clone();
             let level_name = self
-                .editor
                 .session
                 .editor_level_name
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string());
             let cached_bytes = self
-                .audio_state
+                .audio
+                .state
                 .editor
                 .local_audio_cache
                 .get(&music_source)
                 .cloned();
-            let sender = self.audio_state.editor.waveform_load_channel.0.clone();
+            let sender = self.audio.state.editor.waveform_load_channel.0.clone();
 
             std::thread::spawn(move || {
                 let bytes = cached_bytes.or_else(|| {
@@ -595,18 +596,18 @@ impl State {
 
             let source_for_fetch = music_source.clone();
             let level_name = self
-                .editor
                 .session
                 .editor_level_name
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string());
             let cached_bytes = self
-                .audio_state
+                .audio
+                .state
                 .editor
                 .local_audio_cache
                 .get(&music_source)
                 .cloned();
-            let sender = self.audio_state.editor.waveform_load_channel.0.clone();
+            let sender = self.audio.state.editor.waveform_load_channel.0.clone();
 
             spawn_local(async move {
                 let bytes = if let Some(bytes) = cached_bytes {

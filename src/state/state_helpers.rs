@@ -85,16 +85,16 @@ impl State {
         playtesting_editor: bool,
     ) {
         self.phase = AppPhase::Playing;
-        self.editor.session.playtesting_editor = playtesting_editor;
-        self.editor.session.playing_level_name = level_name;
+        self.session.playtesting_editor = playtesting_editor;
+        self.session.playing_level_name = level_name;
         self.reset_playing_camera_defaults();
         self.clear_editor_pan_keys();
     }
 
     pub(super) fn enter_editor_phase(&mut self, level_name: String) {
         self.phase = AppPhase::Editor;
-        self.editor.session.editor_level_name = Some(level_name);
-        self.editor.session.playtesting_editor = false;
+        self.session.editor_level_name = Some(level_name);
+        self.session.playtesting_editor = false;
         self.editor.ui.right_dragging = false;
         self.editor.ui.mode = EditorMode::Place;
         self.editor.ui.selected_block_index = None;
@@ -108,19 +108,19 @@ impl State {
         self.editor.camera.editor_rotation = -45.0f32.to_radians();
         self.editor.camera.editor_pitch = 45.0f32.to_radians();
         self.editor.camera.editor_zoom = 1.0;
-        self.game = GameState::new();
-        self.meshes.trail.clear();
+        self.gameplay.state = GameState::new();
+        self.render.meshes.trail.clear();
     }
 
     pub(super) fn enter_menu_phase(&mut self) {
-        self.editor.session.playtesting_editor = false;
-        self.editor.session.editor_level_name = None;
+        self.session.playtesting_editor = false;
+        self.session.editor_level_name = None;
         self.editor.ui.selected_block_index = None;
         self.editor.ui.selected_block_indices.clear();
         self.editor.ui.hovered_block_index = None;
         self.editor.runtime.interaction.gizmo_drag = None;
         self.editor.runtime.interaction.block_drag = None;
-        self.editor.session.playing_level_name = None;
+        self.session.playing_level_name = None;
         self.editor.ui.right_dragging = false;
         self.clear_editor_pan_keys();
         self.phase = AppPhase::Menu;

@@ -104,12 +104,13 @@ impl State {
 
         if self.phase == AppPhase::Editor {
             self.frame_runtime.editor.accumulator = 0.0;
-            self.meshes.trail.clear();
+            self.render.meshes.trail.clear();
 
             if self.editor.timeline.playback.playing {
                 let timeline_playback_started_at = PlatformInstant::now();
                 let audio_time = self
-                    .audio_state
+                    .audio
+                    .state
                     .runtime
                     .playback_time_seconds()
                     .unwrap_or(self.editor.timeline.clock.time_seconds);
@@ -149,7 +150,7 @@ impl State {
                 }
 
                 if clamped_time >= self.editor.timeline.clock.duration_seconds
-                    || !self.audio_state.runtime.is_playing()
+                    || !self.audio.state.runtime.is_playing()
                 {
                     self.editor.timeline.playback.playing = false;
                     self.editor.timeline.playback.runtime = None;
@@ -236,25 +237,25 @@ impl State {
         }
 
         while self.frame_runtime.editor.accumulator >= FIXED_DT {
-            self.game.update(FIXED_DT);
+            self.gameplay.state.update(FIXED_DT);
             self.frame_runtime.editor.accumulator -= FIXED_DT;
         }
 
-        if self.game.game_over {
+        if self.gameplay.state.game_over {
             self.stop_audio();
         }
 
         let mut trail_vertices = Vec::new();
-        let player_pos = self.game.position;
+        let player_pos = self.gameplay.state.position;
         // Cull segments that are too far from the player to save on vertices.
         const CULL_DISTANCE_SQ: f32 = 120.0 * 120.0;
 
-        for (segment_index, segment) in self.game.trail_segments.iter().enumerate() {
+        for (segment_index, segment) in self.gameplay.state.trail_segments.iter().enumerate() {
             if segment.is_empty() {
                 continue;
             }
 
-            let is_last_segment = segment_index + 1 == self.game.trail_segments.len();
+            let is_last_segment = segment_index + 1 == self.gameplay.state.trail_segments.len();
 
             // For older segments, check if they are still potentially visible.
             if !is_last_segment {
@@ -267,54 +268,59 @@ impl State {
                 }
             }
 
-            if is_last_segment && self.game.is_grounded {
+            if is_last_segment && self.gameplay.state.is_grounded {
                 let mut points = segment.clone();
-                points.push(self.game.position);
-                trail_vertices.extend(build_trail_vertices(&points, self.game.game_over));
+                points.push(self.gameplay.state.position);
+                trail_vertices.extend(build_trail_vertices(&points, self.gameplay.state.game_over));
             } else {
-                trail_vertices.extend(build_trail_vertices(segment, self.game.game_over));
+                trail_vertices.extend(build_trail_vertices(segment, self.gameplay.state.game_over));
             }
         }
 
-        if !self.game.is_grounded {
+        if !self.gameplay.state.is_grounded {
             let head_length = 0.22;
-            let dir = match self.game.direction {
+            let dir = match self.gameplay.state.direction {
                 Direction::Forward => [0.0, 1.0],
                 Direction::Right => [1.0, 0.0],
             };
             let head_start = [
-                self.game.position[0] - dir[0] * head_length,
-                self.game.position[1] - dir[1] * head_length,
-                self.game.position[2],
+                self.gameplay.state.position[0] - dir[0] * head_length,
+                self.gameplay.state.position[1] - dir[1] * head_length,
+                self.gameplay.state.position[2],
             ];
-            let head_points = [head_start, self.game.position];
-            trail_vertices.extend(build_trail_vertices(&head_points, self.game.game_over));
+            let head_points = [head_start, self.gameplay.state.position];
+            trail_vertices.extend(build_trail_vertices(
+                &head_points,
+                self.gameplay.state.game_over,
+            ));
         }
 
-        self.meshes
+        self.render
+            .meshes
             .trail
-            .write_streaming_vertices(&self.gpu.queue, &trail_vertices);
+            .write_streaming_vertices(&self.render.gpu.queue, &trail_vertices);
 
         self.frame_runtime.player_render.line_uniform.offset = [
-            (self.game.position[0] * 100.0).round() / 100.0,
-            (self.game.position[1] * 100.0).round() / 100.0,
+            (self.gameplay.state.position[0] * 100.0).round() / 100.0,
+            (self.gameplay.state.position[1] * 100.0).round() / 100.0,
         ];
-        self.frame_runtime.player_render.line_uniform.rotation = match self.game.direction {
+        self.frame_runtime.player_render.line_uniform.rotation = match self.gameplay.state.direction
+        {
             Direction::Forward => 0.0,
             Direction::Right => -std::f32::consts::FRAC_PI_2,
         };
 
-        self.gpu.queue.write_buffer(
-            &self.gpu.line_uniform_buffer,
+        self.render.gpu.queue.write_buffer(
+            &self.render.gpu.line_uniform_buffer,
             0,
             bytemuck::bytes_of(&self.frame_runtime.player_render.line_uniform),
         );
 
-        let aspect = self.gpu.config.width as f32 / self.gpu.config.height as f32;
+        let aspect = self.render.gpu.config.width as f32 / self.render.gpu.config.height as f32;
         let pos_3d = Vec3::new(
-            self.game.position[0],
-            self.game.position[1],
-            self.game.position[2],
+            self.gameplay.state.position[0],
+            self.gameplay.state.position[1],
+            self.gameplay.state.position[2],
         );
         let target = pos_3d;
         let offset = self.playing_camera_offset();
@@ -327,8 +333,8 @@ impl State {
             view_proj: view_proj.to_cols_array_2d(),
         };
 
-        self.gpu.queue.write_buffer(
-            &self.gpu.camera_uniform_buffer,
+        self.render.gpu.queue.write_buffer(
+            &self.render.gpu.camera_uniform_buffer,
             0,
             bytemuck::bytes_of(&camera_uniform),
         );
@@ -351,7 +357,7 @@ impl State {
     }
 
     fn update_menu_camera(&mut self) {
-        let aspect = self.gpu.config.width as f32 / self.gpu.config.height as f32;
+        let aspect = self.render.gpu.config.width as f32 / self.render.gpu.config.height as f32;
         let radius = 25.0;
         let angle = -25.0f32.to_radians();
         let eye = Vec3::new(radius * angle.cos(), radius * angle.sin(), 15.0);
@@ -364,15 +370,15 @@ impl State {
             view_proj: view_proj.to_cols_array_2d(),
         };
 
-        self.gpu.queue.write_buffer(
-            &self.gpu.camera_uniform_buffer,
+        self.render.gpu.queue.write_buffer(
+            &self.render.gpu.camera_uniform_buffer,
             0,
             bytemuck::bytes_of(&camera_uniform),
         );
     }
 
     fn update_editor_camera(&mut self) {
-        let aspect = self.gpu.config.width as f32 / self.gpu.config.height as f32;
+        let aspect = self.render.gpu.config.width as f32 / self.render.gpu.config.height as f32;
         let target = Vec3::new(
             self.editor.camera.editor_pan[0],
             self.editor.camera.editor_pan[1],
@@ -388,8 +394,8 @@ impl State {
             view_proj: view_proj.to_cols_array_2d(),
         };
 
-        self.gpu.queue.write_buffer(
-            &self.gpu.camera_uniform_buffer,
+        self.render.gpu.queue.write_buffer(
+            &self.render.gpu.camera_uniform_buffer,
             0,
             bytemuck::bytes_of(&camera_uniform),
         );

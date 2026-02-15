@@ -42,8 +42,8 @@ impl State {
 
     pub fn create_egui_renderer(&self) -> EguiRenderer {
         EguiRenderer::new(
-            &self.gpu.device,
-            self.gpu.config.format,
+            &self.render.gpu.device,
+            self.render.gpu.config.format,
             egui_wgpu::RendererOptions::default(),
         )
     }
@@ -56,7 +56,7 @@ impl State {
     where
         F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
     {
-        let surface = match &self.gpu.surface {
+        let surface = match &self.render.gpu.surface {
             Some(s) => s,
             None => return Ok(()),
         };
@@ -65,16 +65,17 @@ impl State {
             .texture
             .create_view(&TextureViewDescriptor::default());
 
-        let mut encoder = self
-            .gpu
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            });
+        let mut encoder =
+            self.render
+                .gpu
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Render Encoder"),
+                });
 
         {
             let clear_color = match self.phase {
-                AppPhase::Playing if self.game.game_over => wgpu::Color {
+                AppPhase::Playing if self.gameplay.state.game_over => wgpu::Color {
                     r: 0.15,
                     g: 0.05,
                     b: 0.05,
@@ -94,7 +95,7 @@ impl State {
                 },
             };
 
-            let clear_color = if self.gpu.apply_gamma_correction {
+            let clear_color = if self.render.gpu.apply_gamma_correction {
                 wgpu::Color {
                     r: linear_to_srgb(clear_color.r as f32) as f64,
                     g: linear_to_srgb(clear_color.g as f32) as f64,
@@ -117,7 +118,7 @@ impl State {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.gpu.depth_view,
+                    view: &self.render.gpu.depth_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
@@ -128,18 +129,18 @@ impl State {
                 timestamp_writes: None,
             });
 
-            render_pass.set_pipeline(&self.gpu.render_pipeline);
-            render_pass.set_bind_group(0, &self.gpu.camera_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.gpu.zero_line_bind_group, &[]);
-            render_pass.set_bind_group(2, &self.gpu.color_space_bind_group, &[]);
+            render_pass.set_pipeline(&self.render.gpu.render_pipeline);
+            render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+            render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
 
             if self.phase != AppPhase::Menu && self.editor.ui.mode != EditorMode::Timing {
-                if let Some((buffer, count)) = self.meshes.floor.draw_data() {
+                if let Some((buffer, count)) = self.render.meshes.floor.draw_data() {
                     render_pass.set_vertex_buffer(0, buffer.slice(..));
                     render_pass.draw(0..count, 0..1);
                 }
 
-                if let Some((buffer, count)) = self.meshes.grid.draw_data() {
+                if let Some((buffer, count)) = self.render.meshes.grid.draw_data() {
                     render_pass.set_vertex_buffer(0, buffer.slice(..));
                     render_pass.draw(0..count, 0..1);
                 }
@@ -154,70 +155,80 @@ impl State {
                     self.phase == AppPhase::Editor && self.editor.ui.mode == EditorMode::Timing;
 
                 if !skip_world {
-                    if let Some((buffer, count)) = self.meshes.blocks.draw_data() {
+                    if let Some((buffer, count)) = self.render.meshes.blocks.draw_data() {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
-                        render_pass.set_bind_group(1, &self.gpu.zero_line_bind_group, &[]);
+                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         render_pass.draw(0..count, 0..1);
                     }
 
-                    if let Some((buffer, count)) = self.meshes.trail.draw_data() {
+                    if let Some((buffer, count)) = self.render.meshes.trail.draw_data() {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
-                        render_pass.set_bind_group(1, &self.gpu.zero_line_bind_group, &[]);
+                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         render_pass.draw(0..count, 0..1);
                     }
                 }
 
                 if self.phase == AppPhase::Editor && !skip_world {
-                    if let Some((buffer, count)) = self.meshes.spawn_marker.draw_data() {
+                    if let Some((buffer, count)) = self.render.meshes.spawn_marker.draw_data() {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
-                        render_pass.set_bind_group(1, &self.gpu.zero_line_bind_group, &[]);
+                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         render_pass.draw(0..count, 0..1);
                     }
 
-                    if let Some((buffer, count)) = self.meshes.tap_indicators.draw_data() {
+                    if let Some((buffer, count)) = self.render.meshes.tap_indicators.draw_data() {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
-                        render_pass.set_bind_group(1, &self.gpu.zero_line_bind_group, &[]);
+                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         render_pass.draw(0..count, 0..1);
                     }
 
-                    if let Some((buffer, count)) = self.meshes.editor_preview_player.draw_data() {
-                        render_pass.set_vertex_buffer(0, buffer.slice(..));
-                        render_pass.set_bind_group(1, &self.gpu.zero_line_bind_group, &[]);
-                        render_pass.draw(0..count, 0..1);
-                    }
-
-                    if let Some((buffer, count)) = self.meshes.editor_selection_outline.draw_data()
+                    if let Some((buffer, count)) =
+                        self.render.meshes.editor_preview_player.draw_data()
                     {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
-                        render_pass.set_bind_group(1, &self.gpu.zero_line_bind_group, &[]);
+                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         render_pass.draw(0..count, 0..1);
                     }
 
-                    if let Some((buffer, count)) = self.meshes.editor_hover_outline.draw_data() {
+                    if let Some((buffer, count)) =
+                        self.render.meshes.editor_selection_outline.draw_data()
+                    {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
-                        render_pass.set_bind_group(1, &self.gpu.zero_line_bind_group, &[]);
+                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         render_pass.draw(0..count, 0..1);
                     }
 
-                    if let Some((buffer, count)) = self.meshes.editor_gizmo.draw_data() {
-                        render_pass.set_pipeline(&self.gpu.gizmo_overlay_pipeline);
-                        render_pass.set_bind_group(0, &self.gpu.camera_bind_group, &[]);
-                        render_pass.set_bind_group(1, &self.gpu.zero_line_bind_group, &[]);
-                        render_pass.set_bind_group(2, &self.gpu.color_space_bind_group, &[]);
+                    if let Some((buffer, count)) =
+                        self.render.meshes.editor_hover_outline.draw_data()
+                    {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
-                        render_pass.set_bind_group(1, &self.gpu.zero_line_bind_group, &[]);
+                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                        render_pass.draw(0..count, 0..1);
+                    }
+
+                    if let Some((buffer, count)) = self.render.meshes.editor_gizmo.draw_data() {
+                        render_pass.set_pipeline(&self.render.gpu.gizmo_overlay_pipeline);
+                        render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
+                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                        render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                        render_pass.set_vertex_buffer(0, buffer.slice(..));
+                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         render_pass.draw(0..count, 0..1);
 
-                        render_pass.set_pipeline(&self.gpu.render_pipeline);
-                        render_pass.set_bind_group(0, &self.gpu.camera_bind_group, &[]);
-                        render_pass.set_bind_group(1, &self.gpu.zero_line_bind_group, &[]);
-                        render_pass.set_bind_group(2, &self.gpu.color_space_bind_group, &[]);
+                        render_pass.set_pipeline(&self.render.gpu.render_pipeline);
+                        render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
+                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                        render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
                     }
 
                     if self.editor.ui.mode == EditorMode::Place {
-                        if let Some((buffer, count)) = self.meshes.editor_cursor.draw_data() {
+                        if let Some((buffer, count)) = self.render.meshes.editor_cursor.draw_data()
+                        {
                             render_pass.set_vertex_buffer(0, buffer.slice(..));
-                            render_pass.set_bind_group(1, &self.gpu.zero_line_bind_group, &[]);
+                            render_pass.set_bind_group(
+                                1,
+                                &self.render.gpu.zero_line_bind_group,
+                                &[],
+                            );
                             render_pass.draw(0..count, 0..1);
                         }
                     }
@@ -225,45 +236,37 @@ impl State {
             }
         }
 
-        overlay(&self.gpu.device, &self.gpu.queue, &view, &mut encoder);
+        overlay(
+            &self.render.gpu.device,
+            &self.render.gpu.queue,
+            &view,
+            &mut encoder,
+        );
 
-        self.gpu.queue.submit(iter::once(encoder.finish()));
+        self.render.gpu.queue.submit(iter::once(encoder.finish()));
         output.present();
         Ok(())
     }
 
     pub fn surface_format(&self) -> wgpu::TextureFormat {
-        self.gpu.surface_format()
-    }
-
-    pub fn device(&self) -> &wgpu::Device {
-        self.gpu.device()
-    }
-
-    pub fn queue(&self) -> &wgpu::Queue {
-        self.gpu.queue()
+        self.render.gpu.surface_format()
     }
 
     pub fn surface_width(&self) -> u32 {
-        self.gpu.surface_width()
+        self.render.gpu.surface_width()
     }
 
     pub fn surface_height(&self) -> u32 {
-        self.gpu.surface_height()
+        self.render.gpu.surface_height()
     }
 
     pub fn handle_surface_lost(&mut self) {
-        let size = self.gpu.size;
-        self.gpu.apply_resize(size);
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn window(&self) -> &NativeWindow {
-        self.gpu.window()
+        let size = self.render.gpu.size;
+        self.render.gpu.apply_resize(size);
     }
 
     pub fn recreate_surface(&mut self) {
-        let size = self.gpu.current_size();
+        let size = self.render.gpu.current_size();
         self.resize_surface(size);
     }
 }
