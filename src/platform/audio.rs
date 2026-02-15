@@ -1,12 +1,20 @@
 pub(crate) struct PlatformAudio {
     #[cfg(target_arch = "wasm32")]
     current_audio: Option<web_sys::HtmlAudioElement>,
+    #[cfg(target_arch = "wasm32")]
+    current_audio_source: Option<String>,
+    #[cfg(target_arch = "wasm32")]
+    current_blob_url: Option<String>,
+    #[cfg(target_arch = "wasm32")]
+    playback_speed: f32,
     #[cfg(not(target_arch = "wasm32"))]
     _output_stream: Option<rodio::OutputStream>,
     #[cfg(not(target_arch = "wasm32"))]
     output_handle: Option<rodio::OutputStreamHandle>,
     #[cfg(not(target_arch = "wasm32"))]
     current_sink: Option<rodio::Sink>,
+    #[cfg(not(target_arch = "wasm32"))]
+    current_audio_source: Option<String>,
     #[cfg(not(target_arch = "wasm32"))]
     playback_started_at: Option<std::time::Instant>,
     #[cfg(not(target_arch = "wasm32"))]
@@ -21,6 +29,9 @@ impl PlatformAudio {
         {
             Self {
                 current_audio: None,
+                current_audio_source: None,
+                current_blob_url: None,
+                playback_speed: 1.0,
             }
         }
 
@@ -38,6 +49,7 @@ impl PlatformAudio {
                 _output_stream: output_stream,
                 output_handle,
                 current_sink: None,
+                current_audio_source: None,
                 playback_started_at: None,
                 playback_start_offset_seconds: 0.0,
                 playback_speed: 1.0,
@@ -45,20 +57,26 @@ impl PlatformAudio {
         }
     }
 
+    #[cfg(target_arch = "wasm32")]
+    fn revoke_blob_url(&mut self) {
+        if let Some(url) = self.current_blob_url.take() {
+            let _ = web_sys::Url::revoke_object_url(&url);
+        }
+    }
+
     pub(crate) fn stop(&mut self) {
         #[cfg(target_arch = "wasm32")]
-        if let Some(audio) = self.current_audio.take() {
+        if let Some(audio) = &self.current_audio {
             let _ = audio.pause();
         }
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if let Some(sink) = self.current_sink.take() {
-                sink.stop();
+            if let Some(sink) = &self.current_sink {
+                sink.pause();
             }
             self.playback_started_at = None;
             self.playback_start_offset_seconds = 0.0;
-            self.playback_speed = 1.0;
         }
     }
 
@@ -68,43 +86,84 @@ impl PlatformAudio {
         bytes: &[u8],
         start_seconds: f32,
     ) {
+        let source_key = format!("bytes:{}", _music_source);
         let start_seconds = start_seconds.max(0.0);
         self.stop();
 
         #[cfg(target_arch = "wasm32")]
         {
+            if self.current_audio_source.as_deref() == Some(source_key.as_str()) {
+                if let Some(audio) = &self.current_audio {
+                    let _ = audio.set_current_time(start_seconds as f64);
+                    audio.set_playback_rate(self.playback_speed as f64);
+                    let _ = audio.play();
+                    return;
+                }
+            }
+
+            self.revoke_blob_url();
             let uint8_array = unsafe { js_sys::Uint8Array::view(bytes) };
             let blob =
                 web_sys::Blob::new_with_u8_array_sequence(&js_sys::Array::of1(&uint8_array.into()))
                     .unwrap();
             let url = web_sys::Url::create_object_url_with_blob(&blob).unwrap();
             if let Ok(audio) = web_sys::HtmlAudioElement::new_with_src(&url) {
-                if start_seconds > 0.0 {
-                    let _ = audio.set_current_time(start_seconds as f64);
-                }
+                let _ = audio.set_current_time(start_seconds as f64);
+                audio.set_playback_rate(self.playback_speed as f64);
                 let _ = audio.play();
                 self.current_audio = Some(audio);
+                self.current_audio_source = Some(source_key);
+                self.current_blob_url = Some(url);
             }
         }
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            use rodio::Source as _;
+            use std::time::Duration;
+
+            if self.current_audio_source.as_deref() == Some(source_key.as_str()) {
+                if let Some(sink) = &self.current_sink {
+                    if let Err(err) = sink.try_seek(Duration::from_secs_f32(start_seconds)) {
+                        log::warn!(
+                            "Failed to seek imported audio '{}' to {:.3}s: {}",
+                            _music_source,
+                            start_seconds,
+                            err
+                        );
+                    }
+                    sink.set_speed(self.playback_speed);
+                    sink.play();
+                    self.playback_started_at = Some(std::time::Instant::now());
+                    self.playback_start_offset_seconds = start_seconds;
+                    return;
+                }
+            }
+
+            if let Some(sink) = self.current_sink.take() {
+                sink.stop();
+            }
+            self.current_audio_source = None;
 
             if let Some(handle) = &self.output_handle {
                 match rodio::Decoder::new(std::io::Cursor::new(bytes.to_vec())) {
                     Ok(source) => match rodio::Sink::try_new(handle) {
                         Ok(sink) => {
-                            sink.append(
-                                source.skip_duration(std::time::Duration::from_secs_f32(
+                            sink.append(source);
+                            if let Err(err) = sink.try_seek(Duration::from_secs_f32(start_seconds))
+                            {
+                                log::warn!(
+                                    "Failed to seek imported audio '{}' to {:.3}s: {}",
+                                    _music_source,
                                     start_seconds,
-                                )),
-                            );
+                                    err
+                                );
+                            }
+                            sink.set_speed(self.playback_speed);
                             sink.play();
                             self.current_sink = Some(sink);
+                            self.current_audio_source = Some(source_key);
                             self.playback_started_at = Some(std::time::Instant::now());
                             self.playback_start_offset_seconds = start_seconds;
-                            self.playback_speed = 1.0;
                         }
                         Err(err) => {
                             log::warn!("Failed to create audio sink for imported audio: {}", err);
@@ -123,24 +182,59 @@ impl PlatformAudio {
     }
 
     pub(crate) fn start_at(&mut self, level_name: &str, music_source: &str, start_seconds: f32) {
+        let source_key = format!("asset:{}/{}", level_name, music_source);
         let start_seconds = start_seconds.max(0.0);
         self.stop();
 
         #[cfg(target_arch = "wasm32")]
         {
             let audio_url = format!("assets/levels/{}/{}", level_name, music_source);
-            if let Ok(audio) = web_sys::HtmlAudioElement::new_with_src(&audio_url) {
-                if start_seconds > 0.0 {
+            if self.current_audio_source.as_deref() == Some(source_key.as_str()) {
+                if let Some(audio) = &self.current_audio {
                     let _ = audio.set_current_time(start_seconds as f64);
+                    audio.set_playback_rate(self.playback_speed as f64);
+                    let _ = audio.play();
+                    return;
                 }
+            }
+
+            self.revoke_blob_url();
+            if let Ok(audio) = web_sys::HtmlAudioElement::new_with_src(&audio_url) {
+                let _ = audio.set_current_time(start_seconds as f64);
+                audio.set_playback_rate(self.playback_speed as f64);
                 let _ = audio.play();
                 self.current_audio = Some(audio);
+                self.current_audio_source = Some(source_key);
             }
         }
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            use rodio::Source as _;
+            use std::time::Duration;
+
+            if self.current_audio_source.as_deref() == Some(source_key.as_str()) {
+                if let Some(sink) = &self.current_sink {
+                    if let Err(err) = sink.try_seek(Duration::from_secs_f32(start_seconds)) {
+                        log::warn!(
+                            "Failed to seek level music '{}/{}' to {:.3}s: {}",
+                            level_name,
+                            music_source,
+                            start_seconds,
+                            err
+                        );
+                    }
+                    sink.set_speed(self.playback_speed);
+                    sink.play();
+                    self.playback_started_at = Some(std::time::Instant::now());
+                    self.playback_start_offset_seconds = start_seconds;
+                    return;
+                }
+            }
+
+            if let Some(sink) = self.current_sink.take() {
+                sink.stop();
+            }
+            self.current_audio_source = None;
 
             if let Some(handle) = &self.output_handle {
                 let audio_path = format!("assets/levels/{}/{}", level_name, music_source);
@@ -150,14 +244,23 @@ impl PlatformAudio {
                         match rodio::Decoder::new(std::io::Cursor::new(audio_bytes)) {
                             Ok(source) => match rodio::Sink::try_new(handle) {
                                 Ok(sink) => {
-                                    sink.append(source.skip_duration(
-                                        std::time::Duration::from_secs_f32(start_seconds),
-                                    ));
+                                    sink.append(source);
+                                    if let Err(err) =
+                                        sink.try_seek(Duration::from_secs_f32(start_seconds))
+                                    {
+                                        log::warn!(
+                                            "Failed to seek level music '{}' to {:.3}s: {}",
+                                            audio_path,
+                                            start_seconds,
+                                            err
+                                        );
+                                    }
+                                    sink.set_speed(self.playback_speed);
                                     sink.play();
                                     self.current_sink = Some(sink);
+                                    self.current_audio_source = Some(source_key);
                                     self.playback_started_at = Some(std::time::Instant::now());
                                     self.playback_start_offset_seconds = start_seconds;
-                                    self.playback_speed = 1.0;
                                 }
                                 Err(err) => {
                                     log::warn!(
@@ -231,6 +334,7 @@ impl PlatformAudio {
 
         #[cfg(target_arch = "wasm32")]
         {
+            self.playback_speed = speed;
             if let Some(audio) = &self.current_audio {
                 audio.set_playback_rate(speed as f64);
             }
