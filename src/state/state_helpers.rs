@@ -81,16 +81,16 @@ impl State {
         playtesting_editor: bool,
     ) {
         self.phase = AppPhase::Playing;
-        self.playtesting_editor = playtesting_editor;
-        self.playing_level_name = level_name;
+        self.editor_session.playtesting_editor = playtesting_editor;
+        self.editor_session.playing_level_name = level_name;
         self.reset_playing_camera_defaults();
         self.clear_editor_pan_keys();
     }
 
     pub(super) fn enter_editor_phase(&mut self, level_name: String) {
         self.phase = AppPhase::Editor;
-        self.editor_level_name = Some(level_name);
-        self.playtesting_editor = false;
+        self.editor_session.editor_level_name = Some(level_name);
+        self.editor_session.playtesting_editor = false;
         self.editor.right_dragging = false;
         self.editor.mode = EditorMode::Place;
         self.editor.selected_block_index = None;
@@ -109,14 +109,14 @@ impl State {
     }
 
     pub(super) fn enter_menu_phase(&mut self) {
-        self.playtesting_editor = false;
-        self.editor_level_name = None;
+        self.editor_session.playtesting_editor = false;
+        self.editor_session.editor_level_name = None;
         self.editor.selected_block_index = None;
         self.editor.selected_block_indices.clear();
         self.editor.hovered_block_index = None;
         self.editor_interaction.gizmo_drag = None;
         self.editor_interaction.block_drag = None;
-        self.playing_level_name = None;
+        self.editor_session.playing_level_name = None;
         self.editor.right_dragging = false;
         self.clear_editor_pan_keys();
         self.phase = AppPhase::Menu;

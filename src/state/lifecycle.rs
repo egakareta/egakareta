@@ -33,17 +33,17 @@ impl State {
         self.stop_audio();
         self.game = GameState::new();
 
-        if self.playtesting_editor {
+        if self.editor_session.playtesting_editor {
             let transition = build_editor_playtest_transition(
                 &self.editor_objects,
-                self.editor_level_name.as_deref(),
+                self.editor_session.editor_level_name.as_deref(),
                 self.editor_spawn.clone(),
                 &self.editor_timeline.taps.tap_times,
                 self.editor_timeline.clock.time_seconds,
             );
             self.game.objects = transition.objects;
             self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction);
-        } else if let Some(level_name) = self.playing_level_name.clone() {
+        } else if let Some(level_name) = self.editor_session.playing_level_name.clone() {
             if let Some(metadata) = self.load_level_metadata(&level_name) {
                 let transition = build_playing_transition_from_metadata(metadata);
                 self.game.objects = transition.objects;
@@ -65,7 +65,7 @@ impl State {
         let init = editor_session_init_from_metadata(self.load_level_metadata(&level_name));
         self.editor_objects = init.objects;
         self.editor_spawn = init.spawn;
-        self.editor_music_metadata = init.music;
+        self.editor_session.editor_music_metadata = init.music;
         self.editor_timeline.taps.tap_times = init.tap_times;
         self.editor_timing.timing_points = init.timing_points;
         self.editor_timing.timing_selected_index = None;
@@ -138,10 +138,10 @@ impl State {
 
     pub(super) fn update_audio_imports(&mut self) {
         while let Ok((filename, bytes)) = self.audio_import_channel.1.try_recv() {
-            self.editor_music_metadata.source = filename.clone();
+            self.editor_session.editor_music_metadata.source = filename.clone();
             self.local_audio_cache.insert(filename, bytes);
             self.waveform_cache
-                .remove(&self.editor_music_metadata.source);
+                .remove(&self.editor_session.editor_music_metadata.source);
             self.waveform_loading_source = None;
             self.load_waveform_for_current_audio();
         }
@@ -153,14 +153,14 @@ impl State {
                 self.waveform_cache
                     .insert(source.clone(), (samples.clone(), sample_rate));
 
-                if source != self.editor_music_metadata.source {
+                if source != self.editor_session.editor_music_metadata.source {
                     continue;
                 }
 
                 self.editor_timing.waveform_samples = samples;
                 self.editor_timing.waveform_sample_rate = sample_rate;
             } else {
-                if source != self.editor_music_metadata.source {
+                if source != self.editor_session.editor_music_metadata.source {
                     continue;
                 }
 
@@ -181,7 +181,10 @@ impl State {
             .get(&metadata.music.source)
             .cloned()
             .or_else(|| {
-                read_editor_music_bytes(self.editor_level_name.as_deref(), &metadata.music.source)
+                read_editor_music_bytes(
+                    self.editor_session.editor_level_name.as_deref(),
+                    &metadata.music.source,
+                )
             });
         let audio_file = audio_bytes
             .as_ref()
@@ -209,10 +212,11 @@ impl State {
 
     pub(super) fn current_editor_metadata(&self) -> LevelMetadata {
         LevelMetadata::from_editor_state(
-            self.editor_level_name
+            self.editor_session
+                .editor_level_name
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string()),
-            self.editor_music_metadata.clone(),
+            self.editor_session.editor_music_metadata.clone(),
             self.editor_spawn.clone(),
             self.editor_timeline.taps.tap_times.clone(),
             self.editor_timing.timing_points.clone(),
@@ -245,8 +249,8 @@ impl State {
         );
         self.editor_timeline.clock.time_seconds = init.timeline_time_seconds;
         self.editor_timeline.clock.duration_seconds = init.timeline_duration_seconds;
-        self.editor_level_name = Some(level_name);
-        self.editor_music_metadata = init.music;
+        self.editor_session.editor_level_name = Some(level_name);
+        self.editor_session.editor_music_metadata = init.music;
         self.editor.cursor = init.cursor;
         self.editor_camera_pan = init.camera_pan;
 
@@ -261,48 +265,48 @@ impl State {
     pub fn load_builtin_level_into_editor(&mut self, name: &str) {
         if let Some(metadata) = self.load_level_metadata(name) {
             let _ = self.import_level(&serde_json::to_string(&metadata).unwrap());
-            self.editor_level_name = Some(name.to_string());
+            self.editor_session.editor_level_name = Some(name.to_string());
         }
     }
 
     pub fn editor_level_name(&self) -> Option<String> {
-        self.editor_level_name.clone()
+        self.editor_session.editor_level_name.clone()
     }
 
     pub fn set_editor_level_name(&mut self, name: String) {
-        self.editor_level_name = Some(name);
+        self.editor_session.editor_level_name = Some(name);
     }
 
     pub(crate) fn editor_music_metadata(&self) -> &MusicMetadata {
-        &self.editor_music_metadata
+        &self.editor_session.editor_music_metadata
     }
 
     pub(crate) fn set_editor_music_metadata(&mut self, metadata: MusicMetadata) {
-        self.editor_music_metadata = metadata;
+        self.editor_session.editor_music_metadata = metadata;
     }
 
     pub fn editor_show_import(&self) -> bool {
-        self.editor_show_import
+        self.editor_session.editor_show_import
     }
 
     pub fn set_editor_show_import(&mut self, show: bool) {
-        self.editor_show_import = show;
+        self.editor_session.editor_show_import = show;
     }
 
     pub fn editor_import_text(&self) -> &str {
-        &self.editor_import_text
+        &self.editor_session.editor_import_text
     }
 
     pub fn set_editor_import_text(&mut self, text: String) {
-        self.editor_import_text = text;
+        self.editor_session.editor_import_text = text;
     }
 
     pub(crate) fn editor_show_metadata(&self) -> bool {
-        self.editor_show_metadata
+        self.editor_session.editor_show_metadata
     }
 
     pub(crate) fn set_editor_show_metadata(&mut self, show: bool) {
-        self.editor_show_metadata = show;
+        self.editor_session.editor_show_metadata = show;
     }
 
     pub fn available_levels(&self) -> &[String] {
@@ -365,23 +369,23 @@ impl State {
     }
 
     pub fn complete_import(&mut self) {
-        let text = self.editor_import_text.clone();
+        let text = self.editor_session.editor_import_text.clone();
         if let Ok(data) = base64::engine::general_purpose::STANDARD.decode(text.trim()) {
             if let Err(e) = self.import_level_ldz(&data) {
                 log_platform_error(&format!("LDZ Import failed: {}", e));
             } else {
-                self.editor_show_import = false;
-                self.editor_import_text.clear();
+                self.editor_session.editor_show_import = false;
+                self.editor_session.editor_import_text.clear();
                 return;
             }
         }
 
-        let text = self.editor_import_text.clone();
+        let text = self.editor_session.editor_import_text.clone();
         if let Err(e) = self.import_level(&text) {
             log_platform_error(&format!("JSON Import failed: {}", e));
         } else {
-            self.editor_show_import = false;
-            self.editor_import_text.clear();
+            self.editor_session.editor_show_import = false;
+            self.editor_session.editor_import_text.clear();
         }
     }
 }

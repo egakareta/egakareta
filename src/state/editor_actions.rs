@@ -125,6 +125,7 @@ impl State {
 
         let metadata = self.current_editor_metadata();
         let level_name = self
+            .editor_session
             .editor_level_name
             .clone()
             .unwrap_or_else(|| "Untitled".to_string());
@@ -252,6 +253,7 @@ impl State {
 
             let metadata = self.current_editor_metadata();
             let level_name = self
+                .editor_session
                 .editor_level_name
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string());
@@ -305,7 +307,7 @@ impl State {
 
         let transition = build_editor_playtest_transition(
             &self.editor_objects,
-            self.editor_level_name.as_deref(),
+            self.editor_session.editor_level_name.as_deref(),
             self.editor_spawn.clone(),
             &self.editor_timeline.taps.tap_times,
             self.editor_timeline.clock.time_seconds,
@@ -355,9 +357,9 @@ impl State {
         self.editor_timeline.playback.runtime = None;
         self.stop_audio();
         if let Some(objects) =
-            playtest_return_objects(self.playtesting_editor, &self.editor_objects)
+            playtest_return_objects(self.editor_session.playtesting_editor, &self.editor_objects)
         {
-            self.playtesting_editor = false;
+            self.editor_session.playtesting_editor = false;
             self.phase = AppPhase::Editor;
             self.editor_timeline.playback.playing = false;
             self.editor_timeline.playback.runtime = None;

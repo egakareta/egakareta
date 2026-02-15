@@ -200,13 +200,7 @@ pub struct State {
     editor_snap_step: f32,
     editor_interaction: EditorInteractionState,
     editor_history: EditorHistoryState,
-    editor_level_name: Option<String>,
-    editor_music_metadata: MusicMetadata,
-    editor_show_metadata: bool,
-    playing_level_name: Option<String>,
-    editor_show_import: bool,
-    editor_import_text: String,
-    playtesting_editor: bool,
+    editor_session: EditorSessionState,
     line_uniform: LineUniform,
     last_frame: PlatformInstant,
     accumulator: f32,
@@ -443,6 +437,16 @@ struct EditorTimingState {
     waveform_scroll: f32,
     bpm_tap_times: Vec<f64>,
     bpm_tap_result: Option<f32>,
+}
+
+struct EditorSessionState {
+    editor_level_name: Option<String>,
+    editor_music_metadata: MusicMetadata,
+    editor_show_metadata: bool,
+    editor_show_import: bool,
+    editor_import_text: String,
+    playing_level_name: Option<String>,
+    playtesting_editor: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -921,18 +925,20 @@ impl State {
                 undo: Vec::new(),
                 redo: Vec::new(),
             },
-            editor_level_name: None,
-            editor_music_metadata: MusicMetadata {
-                source: "music.mp3".to_string(),
-                title: None,
-                author: None,
-                extra: serde_json::Map::new(),
+            editor_session: EditorSessionState {
+                editor_level_name: None,
+                editor_music_metadata: MusicMetadata {
+                    source: "music.mp3".to_string(),
+                    title: None,
+                    author: None,
+                    extra: serde_json::Map::new(),
+                },
+                editor_show_metadata: false,
+                editor_show_import: false,
+                editor_import_text: String::new(),
+                playing_level_name: None,
+                playtesting_editor: false,
             },
-            editor_show_metadata: false,
-            playing_level_name: None,
-            editor_show_import: false,
-            editor_import_text: String::new(),
-            playtesting_editor: false,
             local_audio_cache,
             audio_import_channel: std::sync::mpsc::channel(),
             waveform_load_channel: std::sync::mpsc::channel(),
@@ -958,9 +964,10 @@ impl State {
             AppPhase::Playing => {
                 if !self.game.started {
                     self.game.started = true;
-                    if self.playtesting_editor {
+                    if self.editor_session.playtesting_editor {
                         let metadata = self.current_editor_metadata();
                         let level_name = self
+                            .editor_session
                             .editor_level_name
                             .clone()
                             .unwrap_or_else(|| "Untitled".to_string());
@@ -968,7 +975,8 @@ impl State {
                             self.editor_timeline.clock.time_seconds,
                         );
                         self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
-                    } else if let Some(level_name) = self.playing_level_name.clone() {
+                    } else if let Some(level_name) = self.editor_session.playing_level_name.clone()
+                    {
                         if let Some(metadata) = self.load_level_metadata(&level_name) {
                             self.start_audio(&level_name, &metadata);
                         }
@@ -1012,7 +1020,7 @@ impl State {
         match self.phase {
             AppPhase::Menu => self.start_editor(self.menu.selected_level),
             AppPhase::Editor => self.back_to_menu(),
-            AppPhase::Playing if self.playtesting_editor => {
+            AppPhase::Playing if self.editor_session.playtesting_editor => {
                 self.phase = AppPhase::Editor;
                 self.stop_audio();
                 self.sync_editor_objects();

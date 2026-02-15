@@ -516,7 +516,7 @@ impl State {
     pub(crate) fn load_waveform_for_current_audio(&mut self) {
         const WAVEFORM_WINDOW: usize = 256;
 
-        let music_source = self.editor_music_metadata.source.clone();
+        let music_source = self.editor_session.editor_music_metadata.source.clone();
 
         if let Some((samples, sample_rate)) = self.waveform_cache.get(&music_source) {
             self.editor_timing.waveform_samples = samples.clone();
@@ -538,6 +538,7 @@ impl State {
             use crate::platform::audio::decode_audio_to_waveform;
             let source_for_thread = music_source.clone();
             let level_name = self
+                .editor_session
                 .editor_level_name
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string());
@@ -567,6 +568,7 @@ impl State {
 
             let source_for_fetch = music_source.clone();
             let level_name = self
+                .editor_session
                 .editor_level_name
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string());
