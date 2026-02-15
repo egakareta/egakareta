@@ -190,10 +190,8 @@ pub struct State {
     playing_camera_rotation: f32,
     playing_camera_pitch: f32,
     editor_zoom: f32,
-    editor_timeline_time_seconds: f32,
-    editor_timeline_duration_seconds: f32,
-    editor_timeline_preview_position: [f32; 3],
-    editor_timeline_preview_direction: SpawnDirection,
+    editor_timeline_clock: EditorTimelineClockState,
+    editor_timeline_preview: EditorTimelinePreviewState,
     editor_tap_times: Vec<f32>,
     editor_tap_indicator_positions: Vec<[f32; 3]>,
     editor_timeline_cache: EditorTimelineSampleCache,
@@ -419,6 +417,16 @@ struct EditorTimelineSampleCache {
 struct EditorTimelinePlaybackState {
     playing: bool,
     runtime: Option<TimelineSimulationRuntime>,
+}
+
+struct EditorTimelinePreviewState {
+    position: [f32; 3],
+    direction: SpawnDirection,
+}
+
+struct EditorTimelineClockState {
+    time_seconds: f32,
+    duration_seconds: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -842,10 +850,14 @@ impl State {
             playing_camera_rotation: -45.0f32.to_radians(),
             playing_camera_pitch: 45.0f32.to_radians(),
             editor_zoom: 1.0,
-            editor_timeline_time_seconds: 0.0,
-            editor_timeline_duration_seconds: 16.0,
-            editor_timeline_preview_position: [0.0, 0.0, 0.0],
-            editor_timeline_preview_direction: SpawnDirection::Forward,
+            editor_timeline_clock: EditorTimelineClockState {
+                time_seconds: 0.0,
+                duration_seconds: 16.0,
+            },
+            editor_timeline_preview: EditorTimelinePreviewState {
+                position: [0.0, 0.0, 0.0],
+                direction: SpawnDirection::Forward,
+            },
             editor_tap_times: Vec::new(),
             editor_tap_indicator_positions: Vec::new(),
             editor_timeline_cache: EditorTimelineSampleCache {
@@ -928,8 +940,9 @@ impl State {
                             .editor_level_name
                             .clone()
                             .unwrap_or_else(|| "Untitled".to_string());
-                        let start_seconds =
-                            self.editor_timeline_elapsed_seconds(self.editor_timeline_time_seconds);
+                        let start_seconds = self.editor_timeline_elapsed_seconds(
+                            self.editor_timeline_clock.time_seconds,
+                        );
                         self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
                     } else if let Some(level_name) = self.playing_level_name.clone() {
                         if let Some(metadata) = self.load_level_metadata(&level_name) {

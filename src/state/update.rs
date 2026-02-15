@@ -97,11 +97,11 @@ impl State {
                 let audio_time = self
                     .audio
                     .playback_time_seconds()
-                    .unwrap_or(self.editor_timeline_time_seconds);
-                let clamped_time = audio_time.min(self.editor_timeline_duration_seconds);
+                    .unwrap_or(self.editor_timeline_clock.time_seconds);
+                let clamped_time = audio_time.min(self.editor_timeline_clock.duration_seconds);
 
-                if (clamped_time - self.editor_timeline_time_seconds).abs() > 1e-4 {
-                    self.editor_timeline_time_seconds = clamped_time;
+                if (clamped_time - self.editor_timeline_clock.time_seconds).abs() > 1e-4 {
+                    self.editor_timeline_clock.time_seconds = clamped_time;
 
                     let mut applied_runtime_state = false;
                     if let Some(runtime) = self.editor_timeline_playback.runtime.as_mut() {
@@ -133,7 +133,8 @@ impl State {
                     }
                 }
 
-                if clamped_time >= self.editor_timeline_duration_seconds || !self.audio.is_playing()
+                if clamped_time >= self.editor_timeline_clock.duration_seconds
+                    || !self.audio.is_playing()
                 {
                     self.editor_timeline_playback.playing = false;
                     self.editor_timeline_playback.runtime = None;

@@ -9,8 +9,8 @@ impl State {
             cursor: self.editor.cursor,
             selected_block_id: self.editor_selected_block_id.clone(),
             spawn: self.editor_spawn.clone(),
-            timeline_time_seconds: self.editor_timeline_time_seconds,
-            timeline_duration_seconds: self.editor_timeline_duration_seconds,
+            timeline_time_seconds: self.editor_timeline_clock.time_seconds,
+            timeline_duration_seconds: self.editor_timeline_clock.duration_seconds,
             tap_times: self.editor_tap_times.clone(),
             tap_indicator_positions: self.editor_tap_indicator_positions.clone(),
             timing_points: self.editor_timing_points.clone(),
@@ -47,8 +47,8 @@ impl State {
         self.editor.cursor = snapshot.cursor;
         self.editor_selected_block_id = snapshot.selected_block_id;
         self.editor_spawn = snapshot.spawn;
-        self.editor_timeline_time_seconds = snapshot.timeline_time_seconds.max(0.0);
-        self.editor_timeline_duration_seconds = snapshot.timeline_duration_seconds.max(0.1);
+        self.editor_timeline_clock.time_seconds = snapshot.timeline_time_seconds.max(0.0);
+        self.editor_timeline_clock.duration_seconds = snapshot.timeline_duration_seconds.max(0.1);
         self.editor_tap_times = snapshot.tap_times;
         self.editor_tap_indicator_positions = snapshot.tap_indicator_positions;
         self.editor_timing_points = snapshot.timing_points;
@@ -56,7 +56,7 @@ impl State {
             .retain(|tap| tap.is_finite() && *tap >= 0.0);
         self.editor_tap_times.sort_by(f32::total_cmp);
         self.editor_tap_times
-            .retain(|tap| *tap <= self.editor_timeline_duration_seconds);
+            .retain(|tap| *tap <= self.editor_timeline_clock.duration_seconds);
         if self.editor_tap_indicator_positions.len() != self.editor_tap_times.len() {
             self.editor_tap_indicator_positions = derive_tap_indicator_positions(
                 self.editor_spawn.position,
@@ -65,9 +65,10 @@ impl State {
                 &self.editor_objects,
             );
         }
-        self.editor_timeline_time_seconds = self
-            .editor_timeline_time_seconds
-            .min(self.editor_timeline_duration_seconds);
+        self.editor_timeline_clock.time_seconds = self
+            .editor_timeline_clock
+            .time_seconds
+            .min(self.editor_timeline_clock.duration_seconds);
 
         self.editor_interaction.gizmo_drag = None;
         self.editor_interaction.block_drag = None;

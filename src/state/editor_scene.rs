@@ -35,7 +35,7 @@ impl State {
         }
         let perf_started_at = PlatformInstant::now();
 
-        let duration = self.editor_timeline_duration_seconds.max(0.0);
+        let duration = self.editor_timeline_clock.duration_seconds.max(0.0);
         if duration <= 0.0 {
             self.editor_timeline_cache.samples.clear();
             self.editor_timeline_cache
@@ -288,8 +288,8 @@ impl State {
         position: [f32; 3],
         direction: SpawnDirection,
     ) {
-        self.editor_timeline_preview_position = position;
-        self.editor_timeline_preview_direction = direction;
+        self.editor_timeline_preview.position = position;
+        self.editor_timeline_preview.direction = direction;
 
         let bounds = self.editor.bounds as f32;
         if !self.editor_timeline_playback.playing {
@@ -318,7 +318,7 @@ impl State {
         }
 
         let (position, direction) =
-            self.editor_timeline_position(self.editor_timeline_time_seconds);
+            self.editor_timeline_position(self.editor_timeline_clock.time_seconds);
         self.apply_editor_timeline_preview_state(position, direction);
     }
 
@@ -496,7 +496,7 @@ impl State {
         }
 
         let (position, direction) =
-            self.editor_timeline_position(self.editor_timeline_time_seconds);
+            self.editor_timeline_position(self.editor_timeline_clock.time_seconds);
         self.rebuild_editor_preview_player_vertices_for_state(position, direction);
     }
 
@@ -505,13 +505,13 @@ impl State {
         position: [f32; 3],
         direction: SpawnDirection,
     ) {
-        self.editor_timeline_preview_position = position;
-        self.editor_timeline_preview_direction = direction;
+        self.editor_timeline_preview.position = position;
+        self.editor_timeline_preview.direction = direction;
 
         let is_tapping = self
             .editor_tap_times
             .iter()
-            .any(|tap| (tap - self.editor_timeline_time_seconds).abs() <= 0.01);
+            .any(|tap| (tap - self.editor_timeline_clock.time_seconds).abs() <= 0.01);
         let preview_origin = [position[0] - 0.5, position[1] - 0.5, position[2]];
         let vertices = build_editor_preview_player_vertices(preview_origin, direction, is_tapping);
         self.meshes.editor_preview_player.replace_with_vertices(

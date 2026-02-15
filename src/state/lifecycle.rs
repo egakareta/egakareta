@@ -39,7 +39,7 @@ impl State {
                 self.editor_level_name.as_deref(),
                 self.editor_spawn.clone(),
                 &self.editor_tap_times,
-                self.editor_timeline_time_seconds,
+                self.editor_timeline_clock.time_seconds,
             );
             self.game.objects = transition.objects;
             self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction);
@@ -75,13 +75,13 @@ impl State {
             &self.editor_tap_times,
             &self.editor_objects,
         );
-        self.editor_timeline_time_seconds = init.timeline_time_seconds;
-        self.editor_timeline_duration_seconds = init.timeline_duration_seconds;
+        self.editor_timeline_clock.time_seconds = init.timeline_time_seconds;
+        self.editor_timeline_clock.duration_seconds = init.timeline_duration_seconds;
         self.editor.cursor = init.cursor;
         self.editor_camera_pan = init.camera_pan;
 
         self.sync_editor_objects();
-        self.set_editor_timeline_time_seconds(self.editor_timeline_time_seconds);
+        self.set_editor_timeline_time_seconds(self.editor_timeline_clock.time_seconds);
         self.rebuild_spawn_marker_vertices();
     }
 
@@ -216,8 +216,8 @@ impl State {
             self.editor_spawn.clone(),
             self.editor_tap_times.clone(),
             self.editor_timing_points.clone(),
-            self.editor_timeline_time_seconds,
-            self.editor_timeline_duration_seconds,
+            self.editor_timeline_clock.time_seconds,
+            self.editor_timeline_clock.duration_seconds,
             self.editor_objects.clone(),
         )
     }
@@ -242,8 +242,8 @@ impl State {
             &self.editor_tap_times,
             &self.editor_objects,
         );
-        self.editor_timeline_time_seconds = init.timeline_time_seconds;
-        self.editor_timeline_duration_seconds = init.timeline_duration_seconds;
+        self.editor_timeline_clock.time_seconds = init.timeline_time_seconds;
+        self.editor_timeline_clock.duration_seconds = init.timeline_duration_seconds;
         self.editor_level_name = Some(level_name);
         self.editor_music_metadata = init.music;
         self.editor.cursor = init.cursor;
@@ -253,7 +253,7 @@ impl State {
         self.editor_history.redo.clear();
 
         self.sync_editor_objects();
-        self.set_editor_timeline_time_seconds(self.editor_timeline_time_seconds);
+        self.set_editor_timeline_time_seconds(self.editor_timeline_clock.time_seconds);
         self.rebuild_spawn_marker_vertices();
     }
 

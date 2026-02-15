@@ -246,11 +246,11 @@ impl State {
     }
 
     pub fn editor_timeline_time_seconds(&self) -> f32 {
-        self.editor_timeline_time_seconds
+        self.editor_timeline_clock.time_seconds
     }
 
     pub fn editor_timeline_duration_seconds(&self) -> f32 {
-        self.editor_timeline_duration_seconds
+        self.editor_timeline_clock.duration_seconds
     }
 
     pub fn editor_tap_times(&self) -> &[f32] {
@@ -262,26 +262,28 @@ impl State {
     }
 
     pub fn set_editor_timeline_time_seconds(&mut self, time_seconds: f32) {
-        let clamped_time = time_seconds.clamp(0.0, self.editor_timeline_duration_seconds.max(0.0));
-        if (clamped_time - self.editor_timeline_time_seconds).abs() <= f32::EPSILON {
+        let clamped_time =
+            time_seconds.clamp(0.0, self.editor_timeline_clock.duration_seconds.max(0.0));
+        if (clamped_time - self.editor_timeline_clock.time_seconds).abs() <= f32::EPSILON {
             return;
         }
 
-        self.editor_timeline_time_seconds = clamped_time;
+        self.editor_timeline_clock.time_seconds = clamped_time;
         self.refresh_editor_timeline_position();
         self.resync_editor_timeline_playback_audio();
     }
 
     pub fn set_editor_timeline_duration_seconds(&mut self, duration_seconds: f32) {
         self.record_editor_history_state();
-        self.editor_timeline_duration_seconds = duration_seconds.max(0.1);
-        self.editor_timeline_time_seconds = self
-            .editor_timeline_time_seconds
-            .min(self.editor_timeline_duration_seconds);
+        self.editor_timeline_clock.duration_seconds = duration_seconds.max(0.1);
+        self.editor_timeline_clock.time_seconds = self
+            .editor_timeline_clock
+            .time_seconds
+            .min(self.editor_timeline_clock.duration_seconds);
         retain_taps_up_to_duration_with_indicators(
             &mut self.editor_tap_times,
             &mut self.editor_tap_indicator_positions,
-            self.editor_timeline_duration_seconds,
+            self.editor_timeline_clock.duration_seconds,
         );
         self.invalidate_editor_timeline_samples();
         self.refresh_editor_timeline_position();
@@ -294,9 +296,9 @@ impl State {
 
     pub fn editor_add_tap(&mut self) {
         self.record_editor_history_state();
-        let tap_time = self.editor_timeline_time_seconds;
+        let tap_time = self.editor_timeline_clock.time_seconds;
         let indicator_cell =
-            self.tap_indicator_position_from_world(self.editor_timeline_preview_position);
+            self.tap_indicator_position_from_world(self.editor_timeline_preview.position);
         add_tap_with_indicator(
             &mut self.editor_tap_times,
             &mut self.editor_tap_indicator_positions,
@@ -313,7 +315,7 @@ impl State {
 
     pub fn editor_remove_tap(&mut self) {
         self.record_editor_history_state();
-        let tap_time = self.editor_timeline_time_seconds;
+        let tap_time = self.editor_timeline_clock.time_seconds;
         remove_tap_with_indicator(
             &mut self.editor_tap_times,
             &mut self.editor_tap_indicator_positions,
@@ -343,8 +345,8 @@ impl State {
 
     pub(crate) fn editor_timeline_preview(&self) -> ([f32; 3], SpawnDirection) {
         (
-            self.editor_timeline_preview_position,
-            self.editor_timeline_preview_direction,
+            self.editor_timeline_preview.position,
+            self.editor_timeline_preview.direction,
         )
     }
 

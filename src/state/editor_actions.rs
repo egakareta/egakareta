@@ -33,14 +33,14 @@ impl State {
                     .editor_tap_times
                     .get(*left_index)
                     .copied()
-                    .unwrap_or(self.editor_timeline_time_seconds);
+                    .unwrap_or(self.editor_timeline_clock.time_seconds);
                 let right_time = self
                     .editor_tap_times
                     .get(*right_index)
                     .copied()
-                    .unwrap_or(self.editor_timeline_time_seconds);
-                let left_distance = (left_time - self.editor_timeline_time_seconds).abs();
-                let right_distance = (right_time - self.editor_timeline_time_seconds).abs();
+                    .unwrap_or(self.editor_timeline_clock.time_seconds);
+                let left_distance = (left_time - self.editor_timeline_clock.time_seconds).abs();
+                let right_distance = (right_time - self.editor_timeline_clock.time_seconds).abs();
                 f32::total_cmp(&left_distance, &right_distance)
             })
             .map(|(index, _)| index)
@@ -50,7 +50,7 @@ impl State {
                 .editor_tap_times
                 .get(remove_index)
                 .copied()
-                .unwrap_or(self.editor_timeline_time_seconds);
+                .unwrap_or(self.editor_timeline_clock.time_seconds);
 
             if remove_index < self.editor_tap_times.len() {
                 self.editor_tap_times.remove(remove_index);
@@ -61,7 +61,7 @@ impl State {
 
             self.invalidate_editor_timeline_samples_from(removed_time);
             let (position, direction) =
-                self.editor_timeline_position(self.editor_timeline_time_seconds);
+                self.editor_timeline_position(self.editor_timeline_clock.time_seconds);
             self.rebuild_editor_preview_player_vertices_for_state(position, direction);
             self.mark_editor_dirty(EditorDirtyFlags {
                 rebuild_tap_indicators: true,
@@ -75,8 +75,8 @@ impl State {
         let solve_started_at = PlatformInstant::now();
         let derived_time = self
             .nearest_editor_timeline_sample_time_for_target(target)
-            .unwrap_or(self.editor_timeline_time_seconds)
-            .clamp(0.0, self.editor_timeline_duration_seconds.max(0.0));
+            .unwrap_or(self.editor_timeline_clock.time_seconds)
+            .clamp(0.0, self.editor_timeline_clock.duration_seconds.max(0.0));
         self.perf_record(PerfStage::TTapSolve, solve_started_at);
         self.record_editor_history_state();
         add_tap_with_indicator(
@@ -87,7 +87,7 @@ impl State {
         );
         self.invalidate_editor_timeline_samples_from(derived_time);
         let (position, direction) =
-            self.editor_timeline_position(self.editor_timeline_time_seconds);
+            self.editor_timeline_position(self.editor_timeline_clock.time_seconds);
         self.rebuild_editor_preview_player_vertices_for_state(position, direction);
         self.mark_editor_dirty(EditorDirtyFlags {
             rebuild_tap_indicators: true,
@@ -109,7 +109,7 @@ impl State {
             &self.editor_tap_times,
         ));
         if let Some(runtime) = self.editor_timeline_playback.runtime.as_mut() {
-            runtime.advance_to(self.editor_timeline_time_seconds);
+            runtime.advance_to(self.editor_timeline_clock.time_seconds);
         }
 
         let metadata = self.current_editor_metadata();
@@ -117,7 +117,8 @@ impl State {
             .editor_level_name
             .clone()
             .unwrap_or_else(|| "Untitled".to_string());
-        let start_seconds = self.editor_timeline_elapsed_seconds(self.editor_timeline_time_seconds);
+        let start_seconds =
+            self.editor_timeline_elapsed_seconds(self.editor_timeline_clock.time_seconds);
         self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
     }
 
@@ -126,9 +127,9 @@ impl State {
             return;
         }
 
-        let next_time = (self.editor_timeline_time_seconds + delta_seconds)
-            .clamp(0.0, self.editor_timeline_duration_seconds);
-        if (next_time - self.editor_timeline_time_seconds).abs() > f32::EPSILON {
+        let next_time = (self.editor_timeline_clock.time_seconds + delta_seconds)
+            .clamp(0.0, self.editor_timeline_clock.duration_seconds);
+        if (next_time - self.editor_timeline_clock.time_seconds).abs() > f32::EPSILON {
             self.set_editor_timeline_time_seconds(next_time);
         }
     }
@@ -235,7 +236,7 @@ impl State {
                 &self.editor_tap_times,
             ));
             if let Some(runtime) = self.editor_timeline_playback.runtime.as_mut() {
-                runtime.advance_to(self.editor_timeline_time_seconds);
+                runtime.advance_to(self.editor_timeline_clock.time_seconds);
             }
 
             let metadata = self.current_editor_metadata();
@@ -244,7 +245,7 @@ impl State {
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string());
             let start_seconds =
-                self.editor_timeline_elapsed_seconds(self.editor_timeline_time_seconds);
+                self.editor_timeline_elapsed_seconds(self.editor_timeline_clock.time_seconds);
             self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
             return;
         }
@@ -296,7 +297,7 @@ impl State {
             self.editor_level_name.as_deref(),
             self.editor_spawn.clone(),
             &self.editor_tap_times,
-            self.editor_timeline_time_seconds,
+            self.editor_timeline_clock.time_seconds,
         );
 
         self.enter_playing_phase(transition.playing_level_name, true);
