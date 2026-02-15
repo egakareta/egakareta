@@ -106,6 +106,15 @@ impl State {
             AppCommand::EditorUpdateMusic(metadata) => self.set_editor_music_metadata(metadata),
             AppCommand::EditorTriggerAudioImport => self.trigger_audio_import(),
 
+            // ── Editor – keyboard state routing ───────────────────
+            AppCommand::EditorSetShiftHeld(held) => self.set_editor_shift_held(held),
+            AppCommand::EditorSetCtrlHeld(held) => self.set_editor_ctrl_held(held),
+            AppCommand::EditorSetAltHeld(held) => self.set_editor_alt_held(held),
+            AppCommand::EditorSetPanUpHeld(held) => self.set_editor_pan_up_held(held),
+            AppCommand::EditorSetPanDownHeld(held) => self.set_editor_pan_down_held(held),
+            AppCommand::EditorSetPanLeftHeld(held) => self.set_editor_pan_left_held(held),
+            AppCommand::EditorSetPanRightHeld(held) => self.set_editor_pan_right_held(held),
+
             // ── Editor – pointer/input routing ─────────────────────
             AppCommand::EditorMouseButton { button, pressed } => {
                 if button == 0 && pressed {
@@ -151,58 +160,58 @@ impl State {
     /// Translate a keyboard event into zero or more `AppCommand`s and
     /// execute them. This replaces the monolithic `handle_keyboard_input`.
     pub fn process_keyboard_input(&mut self, key: &str, pressed: bool, just_pressed: bool) {
-        // Modifier key state is tracked directly (not as commands)
-        // because it's held state, not a discrete action.
-        if key == "Shift" {
-            self.set_editor_shift_held(pressed);
-            return;
-        }
-        if key == "Control" || key == "ControlLeft" || key == "ControlRight" {
-            self.set_editor_ctrl_held(pressed);
-            return;
-        }
-        if key == "Alt" || key == "AltLeft" || key == "AltRight" {
-            self.set_editor_alt_held(pressed);
+        if let Some(cmd) = self.map_modifier_key_to_command(key, pressed) {
+            self.dispatch(cmd);
             return;
         }
 
-        // Key-release tracking for held-state keys (WASD pan).
+        if let Some(cmd) = self.map_pan_key_to_command(key, pressed) {
+            self.dispatch(cmd);
+            return;
+        }
+
         if !pressed {
-            match key {
-                "w" | "W" => self.set_editor_pan_up_held(false),
-                "s" | "S" => self.set_editor_pan_down_held(false),
-                "a" | "A" => self.set_editor_pan_left_held(false),
-                "d" | "D" => self.set_editor_pan_right_held(false),
-                _ => {}
-            }
             return;
-        }
-
-        // WASD pan keys are continuous held-state, not discrete commands.
-        // Handle them before command dispatch.
-        match key {
-            "w" | "W" if self.is_editor() => {
-                self.set_editor_pan_up_held(true);
-                return;
-            }
-            "s" | "S" if self.is_editor() => {
-                self.set_editor_pan_down_held(true);
-                return;
-            }
-            "a" | "A" if self.is_editor() => {
-                self.set_editor_pan_left_held(true);
-                return;
-            }
-            "d" | "D" if self.is_editor() && !self.editor.ui.ctrl_held => {
-                self.set_editor_pan_right_held(true);
-                return;
-            }
-            _ => {}
         }
 
         // Map key-press to command(s).
         if let Some(cmd) = self.map_key_to_command(key, just_pressed) {
             self.dispatch(cmd);
+        }
+    }
+
+    fn map_modifier_key_to_command(&self, key: &str, pressed: bool) -> Option<AppCommand> {
+        match key {
+            "Shift" => Some(AppCommand::EditorSetShiftHeld(pressed)),
+            "Control" | "ControlLeft" | "ControlRight" => {
+                Some(AppCommand::EditorSetCtrlHeld(pressed))
+            }
+            "Alt" | "AltLeft" | "AltRight" => Some(AppCommand::EditorSetAltHeld(pressed)),
+            _ => None,
+        }
+    }
+
+    fn map_pan_key_to_command(&self, key: &str, pressed: bool) -> Option<AppCommand> {
+        match key {
+            "w" | "W" => Some(AppCommand::EditorSetPanUpHeld(pressed && self.is_editor())),
+            "s" | "S" => Some(AppCommand::EditorSetPanDownHeld(
+                pressed && self.is_editor(),
+            )),
+            "a" | "A" => Some(AppCommand::EditorSetPanLeftHeld(
+                pressed && self.is_editor(),
+            )),
+            "d" | "D" => {
+                if pressed {
+                    if self.is_editor() && !self.editor.ui.ctrl_held {
+                        Some(AppCommand::EditorSetPanRightHeld(true))
+                    } else {
+                        None
+                    }
+                } else {
+                    Some(AppCommand::EditorSetPanRightHeld(false))
+                }
+            }
+            _ => None,
         }
     }
 
@@ -646,6 +655,96 @@ mod tests {
             });
             assert_eq!(state.render.gpu.config.width, 1280);
             assert_eq!(state.render.gpu.config.height, 720);
+        });
+    }
+
+    #[test]
+    fn test_keyboard_modifier_aliases_keep_consistent_state() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+            state.dispatch(AppCommand::ToggleEditor);
+
+            state.process_input_event(InputEvent::Key {
+                key: "Control".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert!(state.editor.ui.ctrl_held);
+
+            state.process_input_event(InputEvent::Key {
+                key: "ControlLeft".to_string(),
+                pressed: false,
+                just_pressed: false,
+            });
+            assert!(!state.editor.ui.ctrl_held);
+
+            state.process_input_event(InputEvent::Key {
+                key: "AltRight".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert!(state.editor.ui.alt_held);
+
+            state.process_input_event(InputEvent::Key {
+                key: "Alt".to_string(),
+                pressed: false,
+                just_pressed: false,
+            });
+            assert!(!state.editor.ui.alt_held);
+        });
+    }
+
+    #[test]
+    fn test_keyboard_space_aliases_have_matching_behavior() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            for key in [" ", "Space"] {
+                let mut state = match State::new_test().await {
+                    Some(s) => s,
+                    None => return,
+                };
+
+                state.process_input_event(InputEvent::Key {
+                    key: key.to_string(),
+                    pressed: true,
+                    just_pressed: true,
+                });
+
+                assert_eq!(state.phase, AppPhase::Playing);
+            }
+        });
+    }
+
+    #[test]
+    fn test_keyboard_pan_keys_set_held_state_via_input_events() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+            state.dispatch(AppCommand::ToggleEditor);
+
+            state.process_input_event(InputEvent::Key {
+                key: "w".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert!(state.editor.ui.pan_up_held);
+
+            state.process_input_event(InputEvent::Key {
+                key: "w".to_string(),
+                pressed: false,
+                just_pressed: false,
+            });
+            assert!(!state.editor.ui.pan_up_held);
         });
     }
 

@@ -131,6 +131,22 @@ pub(crate) enum AppCommand {
     /// Trigger the platform audio import dialog.
     EditorTriggerAudioImport,
 
+    // ── Editor – keyboard state routing ───────────────────────────
+    /// Track Shift held state for editor shortcuts.
+    EditorSetShiftHeld(bool),
+    /// Track Ctrl held state for editor shortcuts.
+    EditorSetCtrlHeld(bool),
+    /// Track Alt held state for editor shortcuts.
+    EditorSetAltHeld(bool),
+    /// Track W-pan held state in editor.
+    EditorSetPanUpHeld(bool),
+    /// Track S-pan held state in editor.
+    EditorSetPanDownHeld(bool),
+    /// Track A-pan held state in editor.
+    EditorSetPanLeftHeld(bool),
+    /// Track D-pan held state in editor.
+    EditorSetPanRightHeld(bool),
+
     // ── Editor – pointer/input routing ─────────────────────────────
     /// Mouse button state update for editor interaction routing.
     EditorMouseButton { button: u32, pressed: bool },
