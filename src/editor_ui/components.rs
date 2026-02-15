@@ -14,96 +14,111 @@ pub(crate) fn show_timeline_bar(
     duration_seconds: f32,
     commands: &mut Vec<AppCommand>,
 ) {
-    let available_width = ui.available_width();
-    let timeline_height = 18.0;
-    let (rect, response) = ui.allocate_exact_size(
-        egui::vec2(available_width, timeline_height),
-        egui::Sense::click(),
-    );
-
-    let painter = ui.painter();
-    let center_y = rect.center().y;
-    let stroke = egui::Stroke::new(1.0, egui::Color32::from_gray(160));
-    painter.line_segment(
-        [
-            egui::pos2(rect.left(), center_y),
-            egui::pos2(rect.right(), center_y),
-        ],
-        stroke,
-    );
-
-    // Draw beat lines from timing points
-    let timing_points = view.timing_points;
-    for (tp_idx, tp) in timing_points.iter().enumerate() {
-        if tp.bpm <= 0.0 {
-            continue;
-        }
-        let beat_duration = 60.0 / tp.bpm;
-        let end_time = if tp_idx + 1 < timing_points.len() {
-            timing_points[tp_idx + 1].time_seconds
-        } else {
-            duration_seconds
-        };
-
-        let mut beat = 0u32;
-        let mut time = tp.time_seconds;
-        while time <= end_time {
-            let t = (time / duration_seconds).clamp(0.0, 1.0);
-            let x = rect.left() + rect.width() * t;
-            let is_downbeat = beat.is_multiple_of(tp.time_signature_numerator);
-            let (alpha, width) = if is_downbeat { (100, 1.5) } else { (50, 0.5) };
-            painter.line_segment(
-                [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-                egui::Stroke::new(
-                    width,
-                    egui::Color32::from_rgba_premultiplied(180, 180, 255, alpha),
-                ),
-            );
-            beat += 1;
-            time += beat_duration;
-        }
-    }
-
-    // Draw tap circles
-    for tap_time in view.tap_times {
-        let t = (*tap_time / duration_seconds).clamp(0.0, 1.0);
-        let x = rect.left() + rect.width() * t;
-        painter.circle_filled(
-            egui::pos2(x, center_y),
-            3.0,
-            egui::Color32::from_rgb(255, 170, 64),
-        );
-    }
-
-    // Draw timing point markers (red triangles)
-    for tp in view.timing_points {
-        let t = (tp.time_seconds / duration_seconds).clamp(0.0, 1.0);
-        let x = rect.left() + rect.width() * t;
-        painter.line_segment(
-            [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-            egui::Stroke::new(1.5, egui::Color32::from_rgb(255, 80, 80)),
-        );
-    }
-
-    // Draw playhead
-    let current_t = view.timeline_time_seconds / duration_seconds;
-    let current_x = rect.left() + rect.width() * current_t.clamp(0.0, 1.0);
-    painter.line_segment(
-        [
-            egui::pos2(current_x, rect.top()),
-            egui::pos2(current_x, rect.bottom()),
-        ],
-        egui::Stroke::new(2.0, egui::Color32::from_rgb(120, 200, 255)),
-    );
-
-    // Click to seek
-    if response.clicked() {
-        if let Some(pos) = response.interact_pointer_pos() {
-            let t = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
-            let time_seconds = t * duration_seconds;
+    ui.horizontal(|ui| {
+        ui.label("Timeline:");
+        let mut time_seconds = view.timeline_time_seconds;
+        if ui
+            .add(
+                egui::DragValue::new(&mut time_seconds)
+                    .speed(0.01)
+                    .range(0.0..=duration_seconds),
+            )
+            .changed()
+        {
             commands.push(AppCommand::EditorSetTimelineTime(time_seconds));
         }
-    }
+
+        let available_width = ui.available_width();
+        let timeline_height = 18.0;
+        let (rect, response) = ui.allocate_exact_size(
+            egui::vec2(available_width, timeline_height),
+            egui::Sense::click(),
+        );
+
+        let painter = ui.painter();
+        let center_y = rect.center().y;
+        let stroke = egui::Stroke::new(1.0, egui::Color32::from_gray(160));
+        painter.line_segment(
+            [
+                egui::pos2(rect.left(), center_y),
+                egui::pos2(rect.right(), center_y),
+            ],
+            stroke,
+        );
+
+        // Draw beat lines from timing points
+        let timing_points = view.timing_points;
+        for (tp_idx, tp) in timing_points.iter().enumerate() {
+            if tp.bpm <= 0.0 {
+                continue;
+            }
+            let beat_duration = 60.0 / tp.bpm;
+            let end_time = if tp_idx + 1 < timing_points.len() {
+                timing_points[tp_idx + 1].time_seconds
+            } else {
+                duration_seconds
+            };
+
+            let mut beat = 0u32;
+            let mut time = tp.time_seconds;
+            while time <= end_time {
+                let t = (time / duration_seconds).clamp(0.0, 1.0);
+                let x = rect.left() + rect.width() * t;
+                let is_downbeat = beat.is_multiple_of(tp.time_signature_numerator);
+                let (alpha, width) = if is_downbeat { (100, 1.5) } else { (50, 0.5) };
+                painter.line_segment(
+                    [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+                    egui::Stroke::new(
+                        width,
+                        egui::Color32::from_rgba_premultiplied(180, 180, 255, alpha),
+                    ),
+                );
+                beat += 1;
+                time += beat_duration;
+            }
+        }
+
+        // Draw tap circles
+        for tap_time in view.tap_times {
+            let t = (*tap_time / duration_seconds).clamp(0.0, 1.0);
+            let x = rect.left() + rect.width() * t;
+            painter.circle_filled(
+                egui::pos2(x, center_y),
+                3.0,
+                egui::Color32::from_rgb(255, 170, 64),
+            );
+        }
+
+        // Draw timing point markers (red triangles)
+        for tp in view.timing_points {
+            let t = (tp.time_seconds / duration_seconds).clamp(0.0, 1.0);
+            let x = rect.left() + rect.width() * t;
+            painter.line_segment(
+                [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+                egui::Stroke::new(1.5, egui::Color32::from_rgb(255, 80, 80)),
+            );
+        }
+
+        // Draw playhead
+        let current_t = view.timeline_time_seconds / duration_seconds;
+        let current_x = rect.left() + rect.width() * current_t.clamp(0.0, 1.0);
+        painter.line_segment(
+            [
+                egui::pos2(current_x, rect.top()),
+                egui::pos2(current_x, rect.bottom()),
+            ],
+            egui::Stroke::new(2.0, egui::Color32::from_rgb(120, 200, 255)),
+        );
+
+        // Click to seek
+        if response.clicked() {
+            if let Some(pos) = response.interact_pointer_pos() {
+                let t = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
+                let time_seconds = t * duration_seconds;
+                commands.push(AppCommand::EditorSetTimelineTime(time_seconds));
+            }
+        }
+    });
 }
 
 pub(crate) fn show_waveform_panel(

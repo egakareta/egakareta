@@ -7,7 +7,7 @@ use crate::types::{EditorMode, SpawnDirection};
 pub(crate) fn show_compose_mode_bottom_panel(
     ui: &mut egui::Ui,
     view: &EditorUiViewModel<'_>,
-    duration_seconds: f32,
+    _duration_seconds: f32,
     commands: &mut Vec<AppCommand>,
 ) {
     ui.horizontal(|ui| {
@@ -167,18 +167,6 @@ pub(crate) fn show_compose_mode_bottom_panel(
     ui.separator();
 
     ui.horizontal(|ui| {
-        ui.label("Timeline:");
-
-        let mut time_seconds = view.timeline_time_seconds;
-        let slider = egui::Slider::new(&mut time_seconds, 0.0..=duration_seconds)
-            .text("Time")
-            .show_value(true);
-        if ui.add(slider).changed() {
-            commands.push(crate::commands::AppCommand::EditorSetTimelineTime(
-                time_seconds,
-            ));
-        }
-
         let mut duration = view.timeline_duration_seconds;
         ui.label("Duration (s):");
         if ui
