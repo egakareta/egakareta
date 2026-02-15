@@ -10,6 +10,7 @@
         "watch": "nodemon --watch src -e rs,wgsl --exec \"bun run build\"",
         "serve": "bunx serve .",
         "dev": "concurrently \"bun run watch\" \"bun run serve\"",
+        "prod": "bun run build && bun dist.js",
         "prepare": "lefthook install"
     },
     "devDependencies": {

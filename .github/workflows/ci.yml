@@ -128,15 +128,7 @@ jobs:
         run: bun install
 
       - name: Build WASM
-        run: bun run build
-
-      - name: Prepare distribution
-        run: |
-          mkdir dist
-          cp index.html dist/
-          cp -r pkg dist/
-          cp -r assets dist/
-          touch dist/.nojekyll
+        run: bun prod
 
       - name: Setup Pages
         if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
