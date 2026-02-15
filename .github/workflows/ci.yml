@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   test-and-build-native:
-    name: Test and Build Native (ubuntu-latest)
+    name: Test and Build Native
     runs-on: ubuntu-latest
 
     steps:
