@@ -98,13 +98,6 @@ impl SurfaceHost {
             }
         }
     }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn window(&self) -> &NativeWindow {
-        match self {
-            SurfaceHost::Window(window) => window,
-        }
-    }
 }
 
 pub(crate) fn log_backend(adapter_info: &wgpu::AdapterInfo) {

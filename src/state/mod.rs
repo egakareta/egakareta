@@ -1126,7 +1126,7 @@ impl State {
         self.render.gpu.apply_resize(new_size);
     }
 
-    pub fn turn_right(&mut self) {
+    pub(crate) fn turn_right(&mut self) {
         match self.phase {
             AppPhase::Menu => {
                 self.start_level(self.menu.state.selected_level);
@@ -1165,7 +1165,7 @@ impl State {
         }
     }
 
-    pub fn next_level(&mut self) {
+    pub(crate) fn next_level(&mut self) {
         if self.phase == AppPhase::Menu {
             self.menu.state.selected_level =
                 (self.menu.state.selected_level + 1) % self.menu.state.levels.len();
@@ -1174,7 +1174,7 @@ impl State {
         }
     }
 
-    pub fn prev_level(&mut self) {
+    pub(crate) fn prev_level(&mut self) {
         if self.phase == AppPhase::Menu {
             if self.menu.state.selected_level == 0 {
                 self.menu.state.selected_level = self.menu.state.levels.len() - 1;
@@ -1186,7 +1186,7 @@ impl State {
         }
     }
 
-    pub fn toggle_editor(&mut self) {
+    pub(crate) fn toggle_editor(&mut self) {
         match self.phase {
             AppPhase::Menu => self.start_editor(self.menu.state.selected_level),
             AppPhase::Editor => self.back_to_menu(),
@@ -1207,17 +1207,14 @@ impl State {
         self.phase == AppPhase::Menu
     }
 
-    pub fn set_editor_right_dragging(&mut self, dragging: bool) {
+    pub(crate) fn set_editor_right_dragging(&mut self, dragging: bool) {
         self.editor.ui.right_dragging = dragging;
     }
 
-    pub fn handle_keyboard_input(&mut self, key: &str, pressed: bool, just_pressed: bool) {
-        self.process_keyboard_input(key, pressed, just_pressed);
-    }
-
-    pub fn handle_mouse_button(&mut self, button: u32, pressed: bool) {
+    pub(crate) fn handle_mouse_button(&mut self, button: u32, pressed: bool) {
         match button {
             0 => {
+                self.editor.ui.left_mouse_down = pressed;
                 if !pressed {
                     let had_drag = self.editor.runtime.interaction.gizmo_drag.is_some()
                         || self.editor.runtime.interaction.block_drag.is_some();
@@ -1237,8 +1234,9 @@ impl State {
         }
     }
 
-    pub fn handle_primary_click(&mut self, x: f64, y: f64) {
+    pub(crate) fn handle_primary_click(&mut self, x: f64, y: f64) {
         self.editor.ui.pointer_screen = Some([x, y]);
+        self.editor.ui.left_mouse_down = true;
         if self.phase == AppPhase::Editor {
             match self.editor.ui.mode {
                 EditorMode::Place => {

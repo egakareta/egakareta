@@ -1,4 +1,4 @@
-use glam::{Vec2, Vec3};
+﻿use glam::{Vec2, Vec3};
 
 use super::{EditorDirtyFlags, EditorInteractionChange, EditorSubsystem, GizmoDragKind, State};
 use crate::types::{AppPhase, EditorMode};
@@ -216,7 +216,7 @@ impl EditorSubsystem {
 }
 
 impl State {
-    pub fn drag_editor_gizmo_from_screen(&mut self, x: f64, y: f64) -> bool {
+    pub(crate) fn drag_editor_gizmo_from_screen(&mut self, x: f64, y: f64) -> bool {
         let viewport = Vec2::new(
             self.render.gpu.config.width as f32,
             self.render.gpu.config.height as f32,
@@ -225,7 +225,7 @@ impl State {
             .drag_gizmo_from_screen(x, y, viewport, self.phase)
     }
 
-    pub fn drag_editor_selection_from_screen(&mut self, x: f64, y: f64) -> bool {
+    pub(crate) fn drag_editor_selection_from_screen(&mut self, x: f64, y: f64) -> bool {
         let viewport = Vec2::new(
             self.render.gpu.config.width as f32,
             self.render.gpu.config.height as f32,
@@ -234,7 +234,7 @@ impl State {
             .drag_selection_from_screen(x, y, viewport, self.phase)
     }
 
-    pub fn update_editor_cursor_from_screen(&mut self, x: f64, y: f64) {
+    pub(crate) fn update_editor_cursor_from_screen(&mut self, x: f64, y: f64) {
         let viewport_size = Vec2::new(
             self.render.gpu.config.width as f32,
             self.render.gpu.config.height as f32,
@@ -298,7 +298,7 @@ impl State {
             .select_block_from_screen(x, y, viewport_size, self.phase);
     }
 
-    pub fn drag_editor_camera_by_pixels(&mut self, dx: f64, dy: f64) {
+    pub(crate) fn drag_editor_camera_by_pixels(&mut self, dx: f64, dy: f64) {
         let is_game_active = self.gameplay.state.started && !self.gameplay.state.game_over;
         self.editor
             .drag_camera_by_pixels(dx, dy, self.phase, is_game_active);

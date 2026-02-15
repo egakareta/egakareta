@@ -12,7 +12,6 @@ use crate::commands::InputEvent;
 use crate::platform::input_mapping::{
     key_str_from_winit, mouse_button_index_from_winit, zoom_delta_from_winit,
 };
-use crate::types::PhysicalSize;
 use crate::{load_menu_wordmark_texture, show_editor_ui, show_menu_wordmark_ui, State};
 
 struct App {
@@ -22,7 +21,6 @@ struct App {
     egui_ctx: egui::Context,
     menu_wordmark: Option<egui::TextureHandle>,
     last_cursor_pos: Option<PhysicalPosition<f64>>,
-    left_mouse_down: bool,
 }
 
 impl App {
@@ -34,7 +32,6 @@ impl App {
             egui_ctx: egui::Context::default(),
             menu_wordmark: None,
             last_cursor_pos: None,
-            left_mouse_down: false,
         }
     }
 }
@@ -97,7 +94,10 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(physical_size) => {
-                state.resize_surface(PhysicalSize::new(physical_size.width, physical_size.height));
+                state.process_input_event(InputEvent::Resize {
+                    width: physical_size.width,
+                    height: physical_size.height,
+                });
             }
             WindowEvent::MouseInput {
                 button,
@@ -107,37 +107,24 @@ impl ApplicationHandler for App {
                 if !egui_consumed {
                     let pressed = element_state == winit::event::ElementState::Pressed;
                     let button_idx = mouse_button_index_from_winit(button);
-
-                    if button_idx == 0 {
-                        self.left_mouse_down = pressed;
-                    }
-
-                    if button_idx == 0 && pressed {
-                        if let Some(position) = self.last_cursor_pos {
-                            state.handle_primary_click(position.x, position.y);
-                        } else {
-                            state.handle_mouse_button(button_idx, pressed);
-                        }
-                    } else {
-                        state.handle_mouse_button(button_idx, pressed);
-                    }
+                    state.process_input_event(InputEvent::MouseButton {
+                        button: button_idx,
+                        pressed,
+                    });
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
                 if !egui_consumed {
-                    let mut gizmo_dragged = false;
-                    if self.left_mouse_down {
-                        gizmo_dragged =
-                            state.drag_editor_selection_from_screen(position.x, position.y);
-                    }
+                    state.process_input_event(InputEvent::PointerMoved {
+                        x: position.x,
+                        y: position.y,
+                    });
 
                     if let Some(last) = self.last_cursor_pos {
-                        state
-                            .drag_editor_camera_by_pixels(position.x - last.x, position.y - last.y);
-                    }
-
-                    if !gizmo_dragged {
-                        state.update_editor_cursor_from_screen(position.x, position.y);
+                        state.process_input_event(InputEvent::CameraDrag {
+                            dx: position.x - last.x,
+                            dy: position.y - last.y,
+                        });
                     }
                 }
                 self.last_cursor_pos = Some(position);

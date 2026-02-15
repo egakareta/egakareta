@@ -16,12 +16,6 @@ pub(crate) enum AppCommand {
     PrevLevel,
     /// Toggle between editor and menu/playing.
     ToggleEditor,
-    /// Return to menu (or exit playtest back to editor).
-    BackToMenu,
-
-    // ── Gameplay ────────────────────────────────────────────────────
-    /// Restart the current level.
-    RestartLevel,
 
     // ── Editor – mode switching ─────────────────────────────────────
     /// Switch the editor mode.
@@ -34,8 +28,6 @@ pub(crate) enum AppCommand {
     EditorSetSnapStep(f32),
 
     // ── Editor – block ops ──────────────────────────────────────────
-    /// Place or remove a block at the current cursor position.
-    EditorPlaceBlock,
     /// Remove the block under cursor or selected blocks.
     EditorRemoveBlock,
     /// Duplicate selected blocks in place.
@@ -46,8 +38,6 @@ pub(crate) enum AppCommand {
     EditorPasteBlock,
     /// Update the properties of the currently selected block.
     EditorUpdateSelectedBlock(crate::types::LevelObject),
-    /// Update a block at a specific index.
-    EditorUpdateBlock(usize, crate::types::LevelObject),
 
     // ── Editor – selection / transform ──────────────────────────────
     /// Nudge selected blocks by the given screen-relative offset.

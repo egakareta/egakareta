@@ -13,10 +13,6 @@ impl State {
             AppCommand::NextLevel => self.next_level(),
             AppCommand::PrevLevel => self.prev_level(),
             AppCommand::ToggleEditor => self.toggle_editor(),
-            AppCommand::BackToMenu => self.back_to_menu(),
-
-            // ── Gameplay ────────────────────────────────────────────
-            AppCommand::RestartLevel => self.restart_level(),
 
             // ── Editor – mode switching ─────────────────────────────
             AppCommand::EditorSetMode(mode) => {
@@ -31,7 +27,6 @@ impl State {
             AppCommand::EditorSetSnapStep(step) => self.set_editor_snap_step(step),
 
             // ── Editor – block ops ──────────────────────────────────
-            AppCommand::EditorPlaceBlock => self.place_editor_block(),
             AppCommand::EditorRemoveBlock => self.editor_remove_block(),
             AppCommand::EditorDuplicateBlock => self.editor_duplicate_selected_block_in_place(),
             AppCommand::EditorCopyBlock => self.editor_copy_block(),
@@ -43,7 +38,6 @@ impl State {
                 self.set_editor_selected_block_rotation(obj.rotation_degrees);
                 self.set_editor_selected_block_roundness(obj.roundness);
             }
-            AppCommand::EditorUpdateBlock(index, obj) => self.update_editor_block_at(index, obj),
 
             // ── Editor – selection / transform ──────────────────────
             AppCommand::EditorNudgeSelected { dx, dy } => {
@@ -463,13 +457,30 @@ impl State {
                 self.process_keyboard_input(&key, pressed, just_pressed);
             }
             InputEvent::MouseButton { button, pressed } => {
-                self.handle_mouse_button(button, pressed);
+                if button == 0 && pressed {
+                    if let Some(pos) = self.editor.ui.pointer_screen {
+                        self.handle_primary_click(pos[0], pos[1]);
+                    } else {
+                        self.handle_mouse_button(button, pressed);
+                    }
+                } else {
+                    self.handle_mouse_button(button, pressed);
+                }
             }
             InputEvent::PrimaryClick { x, y } => {
                 self.handle_primary_click(x, y);
             }
             InputEvent::PointerMoved { x, y } => {
-                self.update_editor_cursor_from_screen(x, y);
+                let mut handled = false;
+                if self.editor.ui.left_mouse_down && self.is_editor() {
+                    handled = self.drag_editor_gizmo_from_screen(x, y)
+                        || self.drag_editor_selection_from_screen(x, y);
+                }
+
+                if !handled {
+                    self.update_editor_cursor_from_screen(x, y);
+                }
+                self.editor.ui.pointer_screen = Some([x, y]);
             }
             InputEvent::CameraDrag { dx, dy } => {
                 self.drag_editor_camera_by_pixels(dx, dy);
@@ -509,10 +520,6 @@ mod tests {
             // ToggleEditor from Menu should go to Editor
             state.dispatch(AppCommand::ToggleEditor);
             assert_eq!(state.phase, AppPhase::Editor);
-
-            // BackToMenu from Editor should go to Menu
-            state.dispatch(AppCommand::BackToMenu);
-            assert_eq!(state.phase, AppPhase::Menu);
         });
     }
 
@@ -570,6 +577,55 @@ mod tests {
                 pos_before,
                 pos_after
             );
+        });
+    }
+
+    #[test]
+    fn test_input_event_interaction_state() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+            let mut state = State::new_test().await;
+            state.dispatch(AppCommand::ToggleEditor);
+
+            // 1. Pointer move updates screen coordinates
+            state.process_input_event(InputEvent::PointerMoved { x: 100.0, y: 200.0 });
+            assert_eq!(state.editor.ui.pointer_screen, Some([100.0, 200.0]));
+
+            // 2. Mouse down sets interaction state
+            state.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: true,
+            });
+            assert!(state.editor.ui.left_mouse_down);
+
+            // 3. Mouse up clears interaction state
+            state.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: false,
+            });
+            assert!(!state.editor.ui.left_mouse_down);
+        });
+    }
+
+    #[test]
+    fn test_input_event_zoom_and_resize() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+            let mut state = State::new_test().await;
+            state.dispatch(AppCommand::ToggleEditor);
+
+            // Zoom
+            let initial_zoom = state.editor.camera.editor_zoom;
+            state.process_input_event(InputEvent::Zoom(1.0));
+            assert!(state.editor.camera.editor_zoom > initial_zoom);
+
+            // Resize
+            state.process_input_event(InputEvent::Resize {
+                width: 1280,
+                height: 720,
+            });
+            assert_eq!(state.render.gpu.config.width, 1280);
+            assert_eq!(state.render.gpu.config.height, 720);
         });
     }
 }

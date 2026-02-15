@@ -426,11 +426,4 @@ impl State {
             self.rebuild_editor_cursor_vertices();
         }
     }
-
-    pub(crate) fn update_editor_block_at(&mut self, index: usize, obj: crate::types::LevelObject) {
-        if let Some(block) = self.editor.objects.get_mut(index) {
-            *block = obj;
-            self.mark_editor_dirty(EditorDirtyFlags::from_object_sync());
-        }
-    }
 }

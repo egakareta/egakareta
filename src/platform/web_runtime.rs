@@ -8,7 +8,6 @@ use wgpu::SurfaceError;
 
 use crate::commands::InputEvent;
 use crate::platform::input_mapping::egui_key_from_key_str;
-use crate::types::PhysicalSize;
 use crate::{load_menu_wordmark_texture, show_editor_ui, show_menu_wordmark_ui, State};
 
 #[derive(Default)]
@@ -103,7 +102,7 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
             let height = window.inner_height().unwrap().as_f64().unwrap() as u32;
             state_clone
                 .borrow_mut()
-                .resize_surface(PhysicalSize::new(width, height));
+                .process_input_event(InputEvent::Resize { width, height });
             ui_input_clone.borrow_mut().set_screen(
                 width,
                 height,
@@ -120,25 +119,32 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
     let ui_input_clone = ui_input_rc.clone();
     let ui_wants_pointer_clone = ui_wants_pointer.clone();
     let closure = Closure::wrap(Box::new(move |event: web_sys::MouseEvent| {
-        let x = event.offset_x() as f32;
-        let y = event.offset_y() as f32;
+        let x = event.offset_x() as f64;
+        let y = event.offset_y() as f64;
         let mut ui_input = ui_input_clone.borrow_mut();
-        ui_input.push_pointer_move(x, y);
+        ui_input.push_pointer_move(x as f32, y as f32);
 
         let mut state = state_clone.borrow_mut();
         let button = event.button();
         match button {
-            0 => ui_input.push_pointer_button(x, y, egui::PointerButton::Primary, true),
-            2 => ui_input.push_pointer_button(x, y, egui::PointerButton::Secondary, true),
+            0 => {
+                ui_input.push_pointer_button(x as f32, y as f32, egui::PointerButton::Primary, true)
+            }
+            2 => ui_input.push_pointer_button(
+                x as f32,
+                y as f32,
+                egui::PointerButton::Secondary,
+                true,
+            ),
             _ => {}
         }
 
         if !*ui_wants_pointer_clone.borrow() {
-            if button == 0 {
-                state.handle_primary_click(event.offset_x() as f64, event.offset_y() as f64);
-            } else {
-                state.handle_mouse_button(button as u32, true);
-            }
+            state.process_input_event(InputEvent::PointerMoved { x, y });
+            state.process_input_event(InputEvent::MouseButton {
+                button: button as u32,
+                pressed: true,
+            });
         }
 
         if button == 2 {
@@ -153,20 +159,23 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
     let state_clone = state_rc.clone();
     let ui_input_clone = ui_input_rc.clone();
     let closure = Closure::wrap(Box::new(move |event: web_sys::MouseEvent| {
-        let x = event.offset_x() as f32;
-        let y = event.offset_y() as f32;
+        let x = event.offset_x() as f64;
+        let y = event.offset_y() as f64;
         let mut ui_input = ui_input_clone.borrow_mut();
-        ui_input.push_pointer_move(x, y);
+        ui_input.push_pointer_move(x as f32, y as f32);
         let button = event.button();
         if button == 2 {
-            ui_input.push_pointer_button(x, y, egui::PointerButton::Secondary, false);
+            ui_input.push_pointer_button(x as f32, y as f32, egui::PointerButton::Secondary, false);
             event.prevent_default();
         } else if button == 0 {
-            ui_input.push_pointer_button(x, y, egui::PointerButton::Primary, false);
+            ui_input.push_pointer_button(x as f32, y as f32, egui::PointerButton::Primary, false);
         }
-        state_clone
-            .borrow_mut()
-            .handle_mouse_button(button as u32, false);
+        let mut state = state_clone.borrow_mut();
+        state.process_input_event(InputEvent::PointerMoved { x, y });
+        state.process_input_event(InputEvent::MouseButton {
+            button: button as u32,
+            pressed: false,
+        });
     }) as Box<dyn FnMut(_)>);
     canvas
         .add_event_listener_with_callback("mouseup", closure.as_ref().unchecked_ref())
@@ -177,33 +186,25 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
     let ui_input_clone = ui_input_rc.clone();
     let ui_wants_pointer_clone = ui_wants_pointer.clone();
     let closure = Closure::wrap(Box::new(move |event: web_sys::MouseEvent| {
-        let x = event.offset_x() as f32;
-        let y = event.offset_y() as f32;
-        ui_input_clone.borrow_mut().push_pointer_move(x, y);
+        let x = event.offset_x() as f64;
+        let y = event.offset_y() as f64;
+        ui_input_clone
+            .borrow_mut()
+            .push_pointer_move(x as f32, y as f32);
 
         if *ui_wants_pointer_clone.borrow() {
             return;
         }
 
         let mut state = state_clone.borrow_mut();
+        state.process_input_event(InputEvent::PointerMoved { x, y });
+
         if (event.buttons() & 2) != 0 {
-            state
-                .drag_editor_camera_by_pixels(event.movement_x() as f64, event.movement_y() as f64);
+            state.process_input_event(InputEvent::CameraDrag {
+                dx: event.movement_x() as f64,
+                dy: event.movement_y() as f64,
+            });
             event.prevent_default();
-        } else if (event.buttons() & 1) != 0 {
-            let handled = state.drag_editor_selection_from_screen(
-                event.offset_x() as f64,
-                event.offset_y() as f64,
-            );
-            if !handled {
-                state.update_editor_cursor_from_screen(
-                    event.offset_x() as f64,
-                    event.offset_y() as f64,
-                );
-            }
-        } else {
-            state
-                .update_editor_cursor_from_screen(event.offset_x() as f64, event.offset_y() as f64);
         }
     }) as Box<dyn FnMut(_)>);
     canvas
@@ -270,7 +271,9 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
 
             if let Some(previous) = *pinch_last_distance_clone.borrow() {
                 let pinch_delta = ((distance - previous) * 0.04) as f32;
-                state_clone.borrow_mut().adjust_editor_zoom(pinch_delta);
+                state_clone
+                    .borrow_mut()
+                    .process_input_event(InputEvent::Zoom(pinch_delta));
             }
 
             *pinch_last_distance_clone.borrow_mut() = Some(distance);

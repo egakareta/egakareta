@@ -708,49 +708,49 @@ impl EditorSubsystem {
 }
 
 impl State {
-    pub fn set_editor_pan_up_held(&mut self, held: bool) {
+    pub(crate) fn set_editor_pan_up_held(&mut self, held: bool) {
         if self.phase == AppPhase::Editor {
             self.editor.set_pan_up_held(held);
         }
     }
 
-    pub fn set_editor_pan_down_held(&mut self, held: bool) {
+    pub(crate) fn set_editor_pan_down_held(&mut self, held: bool) {
         if self.phase == AppPhase::Editor {
             self.editor.set_pan_down_held(held);
         }
     }
 
-    pub fn set_editor_pan_left_held(&mut self, held: bool) {
+    pub(crate) fn set_editor_pan_left_held(&mut self, held: bool) {
         if self.phase == AppPhase::Editor {
             self.editor.set_pan_left_held(held);
         }
     }
 
-    pub fn set_editor_pan_right_held(&mut self, held: bool) {
+    pub(crate) fn set_editor_pan_right_held(&mut self, held: bool) {
         if self.phase == AppPhase::Editor {
             self.editor.set_pan_right_held(held);
         }
     }
 
-    pub fn set_editor_shift_held(&mut self, held: bool) {
+    pub(crate) fn set_editor_shift_held(&mut self, held: bool) {
         if self.phase == AppPhase::Editor {
             self.editor.set_shift_held(held);
         }
     }
 
-    pub fn set_editor_ctrl_held(&mut self, held: bool) {
+    pub(crate) fn set_editor_ctrl_held(&mut self, held: bool) {
         if self.phase == AppPhase::Editor {
             self.editor.set_ctrl_held(held);
         }
     }
 
-    pub fn set_editor_alt_held(&mut self, held: bool) {
+    pub(crate) fn set_editor_alt_held(&mut self, held: bool) {
         if self.phase == AppPhase::Editor {
             self.editor.set_alt_held(held);
         }
     }
 
-    pub fn set_editor_block_id(&mut self, block_id: String) {
+    pub(crate) fn set_editor_block_id(&mut self, block_id: String) {
         self.editor.set_block_id(block_id);
     }
 
