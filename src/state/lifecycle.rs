@@ -44,8 +44,6 @@ impl State {
 
     #[cfg(test)]
     pub(crate) async fn new_test() -> Option<State> {
-        let _ = env_logger::builder().is_test(true).try_init();
-
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
