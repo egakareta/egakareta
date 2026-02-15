@@ -3,8 +3,16 @@ use std::iter;
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 use wgpu::{SurfaceError, TextureViewDescriptor};
 
-use super::State;
+use super::super::State;
 use crate::types::{AppPhase, EditorMode};
+
+fn linear_to_srgb(linear: f32) -> f32 {
+    if linear <= 0.0031308 {
+        linear * 12.92
+    } else {
+        linear.powf(1.0 / 2.4) * 1.055 - 0.055
+    }
+}
 
 impl State {
     pub fn render_egui(
@@ -246,33 +254,8 @@ impl State {
         Ok(())
     }
 
-    pub fn surface_format(&self) -> wgpu::TextureFormat {
-        self.render.gpu.surface_format()
-    }
-
-    pub fn surface_width(&self) -> u32 {
-        self.render.gpu.surface_width()
-    }
-
-    pub fn surface_height(&self) -> u32 {
-        self.render.gpu.surface_height()
-    }
-
-    pub fn handle_surface_lost(&mut self) {
-        let size = self.render.gpu.size;
-        self.render.gpu.apply_resize(size);
-    }
-
     pub fn recreate_surface(&mut self) {
         let size = self.render.gpu.current_size();
         self.resize_surface(size);
-    }
-}
-
-fn linear_to_srgb(value: f32) -> f32 {
-    if value <= 0.0031308 {
-        12.92 * value
-    } else {
-        1.055 * value.powf(1.0 / 2.4) - 0.055
     }
 }

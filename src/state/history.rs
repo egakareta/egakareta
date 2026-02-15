@@ -2,6 +2,11 @@ use super::{EditorClipboard, EditorHistorySnapshot, EditorSubsystem, State};
 use crate::editor_domain::derive_tap_indicator_positions;
 use crate::types::{AppPhase, LevelObject};
 
+pub(crate) struct EditorHistoryState {
+    pub(crate) undo: Vec<EditorHistorySnapshot>,
+    pub(crate) redo: Vec<EditorHistorySnapshot>,
+}
+
 impl EditorSubsystem {
     fn history_snapshot(&self) -> EditorHistorySnapshot {
         EditorHistorySnapshot {

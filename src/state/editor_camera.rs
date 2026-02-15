@@ -3,6 +3,15 @@ use glam::{Mat4, Vec2, Vec3};
 use super::{EditorSubsystem, State};
 use crate::types::AppPhase;
 
+pub(crate) struct EditorCameraState {
+    pub(crate) editor_pan: [f32; 2],
+    pub(crate) editor_rotation: f32,
+    pub(crate) editor_pitch: f32,
+    pub(crate) editor_zoom: f32,
+    pub(crate) playing_rotation: f32,
+    pub(crate) playing_pitch: f32,
+}
+
 impl EditorSubsystem {
     pub(crate) fn adjust_zoom(&mut self, delta: f32) {
         const ZOOM_SENSITIVITY: f32 = 0.12;
