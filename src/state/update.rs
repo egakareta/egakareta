@@ -282,11 +282,11 @@ impl State {
             .trail
             .write_streaming_vertices(&self.gpu.queue, &trail_vertices);
 
-        self.line_uniform.offset = [
+        self.player_render.line_uniform.offset = [
             (self.game.position[0] * 100.0).round() / 100.0,
             (self.game.position[1] * 100.0).round() / 100.0,
         ];
-        self.line_uniform.rotation = match self.game.direction {
+        self.player_render.line_uniform.rotation = match self.game.direction {
             Direction::Forward => 0.0,
             Direction::Right => -std::f32::consts::FRAC_PI_2,
         };
@@ -294,7 +294,7 @@ impl State {
         self.gpu.queue.write_buffer(
             &self.gpu.line_uniform_buffer,
             0,
-            bytemuck::bytes_of(&self.line_uniform),
+            bytemuck::bytes_of(&self.player_render.line_uniform),
         );
 
         let aspect = self.gpu.config.width as f32 / self.gpu.config.height as f32;
