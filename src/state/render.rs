@@ -120,7 +120,7 @@ impl State {
             render_pass.set_bind_group(1, &self.gpu.zero_line_bind_group, &[]);
             render_pass.set_bind_group(2, &self.gpu.color_space_bind_group, &[]);
 
-            if self.phase != AppPhase::Menu && self.editor_mode != EditorMode::Timing {
+            if self.phase != AppPhase::Menu && self.editor.mode != EditorMode::Timing {
                 if let Some((buffer, count)) = self.meshes.floor.draw_data() {
                     render_pass.set_vertex_buffer(0, buffer.slice(..));
                     render_pass.draw(0..count, 0..1);
@@ -138,7 +138,7 @@ impl State {
                 || self.phase == AppPhase::Menu
             {
                 let skip_world =
-                    self.phase == AppPhase::Editor && self.editor_mode == EditorMode::Timing;
+                    self.phase == AppPhase::Editor && self.editor.mode == EditorMode::Timing;
 
                 if !skip_world {
                     if let Some((buffer, count)) = self.meshes.blocks.draw_data() {
@@ -201,7 +201,7 @@ impl State {
                         render_pass.set_bind_group(2, &self.gpu.color_space_bind_group, &[]);
                     }
 
-                    if self.editor_mode == EditorMode::Place {
+                    if self.editor.mode == EditorMode::Place {
                         if let Some((buffer, count)) = self.meshes.editor_cursor.draw_data() {
                             render_pass.set_vertex_buffer(0, buffer.slice(..));
                             render_pass.set_bind_group(1, &self.gpu.zero_line_bind_group, &[]);

@@ -342,6 +342,19 @@ pub(crate) struct MenuState {
 pub(crate) struct EditorState {
     pub(crate) cursor: [f32; 3],
     pub(crate) bounds: i32,
+    pub(crate) mode: EditorMode,
+    pub(crate) right_dragging: bool,
+    pub(crate) pan_up_held: bool,
+    pub(crate) pan_down_held: bool,
+    pub(crate) pan_left_held: bool,
+    pub(crate) pan_right_held: bool,
+    pub(crate) shift_held: bool,
+    pub(crate) ctrl_held: bool,
+    pub(crate) alt_held: bool,
+    pub(crate) selected_block_index: Option<usize>,
+    pub(crate) selected_block_indices: Vec<usize>,
+    pub(crate) hovered_block_index: Option<usize>,
+    pub(crate) pointer_screen: Option<[f64; 2]>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -357,6 +370,19 @@ impl EditorState {
         Self {
             cursor: [0.0, 0.0, 0.0],
             bounds: 55,
+            mode: EditorMode::Place,
+            right_dragging: false,
+            pan_up_held: false,
+            pan_down_held: false,
+            pan_left_held: false,
+            pan_right_held: false,
+            shift_held: false,
+            ctrl_held: false,
+            alt_held: false,
+            selected_block_index: None,
+            selected_block_indices: Vec::new(),
+            hovered_block_index: None,
+            pointer_screen: None,
         }
     }
 }

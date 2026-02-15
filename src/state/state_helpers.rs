@@ -2,17 +2,18 @@ use super::*;
 
 impl State {
     pub(super) fn clear_editor_pan_keys(&mut self) {
-        self.editor_pan_up_held = false;
-        self.editor_pan_down_held = false;
-        self.editor_pan_left_held = false;
-        self.editor_pan_right_held = false;
-        self.editor_shift_held = false;
-        self.editor_ctrl_held = false;
+        self.editor.pan_up_held = false;
+        self.editor.pan_down_held = false;
+        self.editor.pan_left_held = false;
+        self.editor.pan_right_held = false;
+        self.editor.shift_held = false;
+        self.editor.ctrl_held = false;
     }
 
     pub(super) fn selected_block_indices_normalized(&self) -> Vec<usize> {
         let mut indices: Vec<usize> = self
-            .editor_selected_block_indices
+            .editor
+            .selected_block_indices
             .iter()
             .copied()
             .filter(|index| *index < self.editor_objects.len())
@@ -20,7 +21,8 @@ impl State {
 
         if indices.is_empty() {
             if let Some(index) = self
-                .editor_selected_block_index
+                .editor
+                .selected_block_index
                 .filter(|index| *index < self.editor_objects.len())
             {
                 indices.push(index);
@@ -34,13 +36,13 @@ impl State {
 
     pub(super) fn sync_primary_selection_from_indices(&mut self) {
         let indices = self.selected_block_indices_normalized();
-        self.editor_selected_block_index = indices.first().copied();
-        self.editor_selected_block_indices = indices;
+        self.editor.selected_block_index = indices.first().copied();
+        self.editor.selected_block_indices = indices;
     }
 
     pub(super) fn selection_contains(&self, index: usize) -> bool {
-        self.editor_selected_block_indices.contains(&index)
-            || self.editor_selected_block_index == Some(index)
+        self.editor.selected_block_indices.contains(&index)
+            || self.editor.selected_block_index == Some(index)
     }
 
     pub(super) fn selected_group_bounds(&self) -> Option<([f32; 3], [f32; 3])> {
@@ -89,15 +91,15 @@ impl State {
         self.phase = AppPhase::Editor;
         self.editor_level_name = Some(level_name);
         self.playtesting_editor = false;
-        self.editor_right_dragging = false;
-        self.editor_mode = EditorMode::Place;
-        self.editor_selected_block_index = None;
-        self.editor_selected_block_indices.clear();
-        self.editor_hovered_block_index = None;
-        self.editor_gizmo_drag = None;
-        self.editor_block_drag = None;
-        self.editor_history_undo.clear();
-        self.editor_history_redo.clear();
+        self.editor.right_dragging = false;
+        self.editor.mode = EditorMode::Place;
+        self.editor.selected_block_index = None;
+        self.editor.selected_block_indices.clear();
+        self.editor.hovered_block_index = None;
+        self.editor_interaction.gizmo_drag = None;
+        self.editor_interaction.block_drag = None;
+        self.editor_history.undo.clear();
+        self.editor_history.redo.clear();
         self.clear_editor_pan_keys();
         self.editor_camera_rotation = -45.0f32.to_radians();
         self.editor_camera_pitch = 45.0f32.to_radians();
@@ -109,13 +111,13 @@ impl State {
     pub(super) fn enter_menu_phase(&mut self) {
         self.playtesting_editor = false;
         self.editor_level_name = None;
-        self.editor_selected_block_index = None;
-        self.editor_selected_block_indices.clear();
-        self.editor_hovered_block_index = None;
-        self.editor_gizmo_drag = None;
-        self.editor_block_drag = None;
+        self.editor.selected_block_index = None;
+        self.editor.selected_block_indices.clear();
+        self.editor.hovered_block_index = None;
+        self.editor_interaction.gizmo_drag = None;
+        self.editor_interaction.block_drag = None;
         self.playing_level_name = None;
-        self.editor_right_dragging = false;
+        self.editor.right_dragging = false;
         self.clear_editor_pan_keys();
         self.phase = AppPhase::Menu;
     }

@@ -81,16 +81,16 @@ impl State {
         }
 
         let mut input = Vec2::ZERO;
-        if self.editor_pan_left_held {
+        if self.editor.pan_left_held {
             input.x -= 1.0;
         }
-        if self.editor_pan_right_held {
+        if self.editor.pan_right_held {
             input.x += 1.0;
         }
-        if self.editor_pan_up_held {
+        if self.editor.pan_up_held {
             input.y += 1.0;
         }
-        if self.editor_pan_down_held {
+        if self.editor.pan_down_held {
             input.y -= 1.0;
         }
 
@@ -106,7 +106,7 @@ impl State {
         let vertical_factor = pitch.sin();
 
         let mut speed_multiplier = 1.0;
-        if self.editor_shift_held {
+        if self.editor.shift_held {
             speed_multiplier = 0.3;
         }
 

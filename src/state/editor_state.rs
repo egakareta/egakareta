@@ -2,31 +2,31 @@ use super::*;
 
 impl State {
     pub fn set_editor_pan_up_held(&mut self, held: bool) {
-        self.editor_pan_up_held = held && self.phase == AppPhase::Editor;
+        self.editor.pan_up_held = held && self.phase == AppPhase::Editor;
     }
 
     pub fn set_editor_pan_down_held(&mut self, held: bool) {
-        self.editor_pan_down_held = held && self.phase == AppPhase::Editor;
+        self.editor.pan_down_held = held && self.phase == AppPhase::Editor;
     }
 
     pub fn set_editor_pan_left_held(&mut self, held: bool) {
-        self.editor_pan_left_held = held && self.phase == AppPhase::Editor;
+        self.editor.pan_left_held = held && self.phase == AppPhase::Editor;
     }
 
     pub fn set_editor_pan_right_held(&mut self, held: bool) {
-        self.editor_pan_right_held = held && self.phase == AppPhase::Editor;
+        self.editor.pan_right_held = held && self.phase == AppPhase::Editor;
     }
 
     pub fn set_editor_shift_held(&mut self, held: bool) {
-        self.editor_shift_held = held && self.phase == AppPhase::Editor;
+        self.editor.shift_held = held && self.phase == AppPhase::Editor;
     }
 
     pub fn set_editor_ctrl_held(&mut self, held: bool) {
-        self.editor_ctrl_held = held && self.phase == AppPhase::Editor;
+        self.editor.ctrl_held = held && self.phase == AppPhase::Editor;
     }
 
     pub fn set_editor_alt_held(&mut self, held: bool) {
-        self.editor_alt_held = held && self.phase == AppPhase::Editor;
+        self.editor.alt_held = held && self.phase == AppPhase::Editor;
     }
 
     pub fn set_editor_block_id(&mut self, block_id: String) {
@@ -34,18 +34,18 @@ impl State {
     }
 
     pub(crate) fn set_editor_mode(&mut self, mode: EditorMode) {
-        self.editor_mode = mode;
-        self.editor_gizmo_drag = None;
-        self.editor_block_drag = None;
+        self.editor.mode = mode;
+        self.editor_interaction.gizmo_drag = None;
+        self.editor_interaction.block_drag = None;
         if mode == EditorMode::Place {
-            self.editor_selected_block_index = None;
-            self.editor_selected_block_indices.clear();
-            self.editor_hovered_block_index = None;
+            self.editor.selected_block_index = None;
+            self.editor.selected_block_indices.clear();
+            self.editor.hovered_block_index = None;
         }
         if mode == EditorMode::Timing {
-            self.editor_selected_block_index = None;
-            self.editor_selected_block_indices.clear();
-            self.editor_hovered_block_index = None;
+            self.editor.selected_block_index = None;
+            self.editor.selected_block_indices.clear();
+            self.editor.hovered_block_index = None;
         }
         self.rebuild_editor_gizmo_vertices();
         self.rebuild_editor_hover_outline_vertices();
@@ -53,7 +53,7 @@ impl State {
     }
 
     pub(crate) fn editor_mode(&self) -> EditorMode {
-        self.editor_mode
+        self.editor.mode
     }
 
     pub(crate) fn editor_snap_to_grid(&self) -> bool {
@@ -66,7 +66,7 @@ impl State {
 
     pub(crate) fn set_editor_snap_to_grid(&mut self, snap: bool) {
         self.editor_snap_to_grid = snap;
-        if self.editor_selected_block_index.is_some() {
+        if self.editor.selected_block_index.is_some() {
             if let Some(obj) = self.editor_selected_block() {
                 self.set_editor_selected_block_position(obj.position);
                 self.set_editor_selected_block_size(obj.size);
@@ -76,7 +76,7 @@ impl State {
 
     pub(crate) fn set_editor_snap_step(&mut self, step: f32) {
         self.editor_snap_step = step.max(0.05);
-        if self.editor_snap_to_grid && self.editor_selected_block_index.is_some() {
+        if self.editor_snap_to_grid && self.editor.selected_block_index.is_some() {
             if let Some(obj) = self.editor_selected_block() {
                 self.set_editor_selected_block_position(obj.position);
                 self.set_editor_selected_block_size(obj.size);
@@ -96,14 +96,17 @@ impl State {
             return;
         }
 
-        if self.editor_gizmo_drag.is_none() && self.editor_block_drag.is_none() {
+        if self.editor_interaction.gizmo_drag.is_none()
+            && self.editor_interaction.block_drag.is_none()
+        {
             self.record_editor_history_state();
         }
 
         self.sync_primary_selection_from_indices();
 
         if let Some(index) = self
-            .editor_selected_block_index
+            .editor
+            .selected_block_index
             .filter(|index| *index < self.editor_objects.len())
         {
             let bounds = self.editor.bounds;
@@ -135,14 +138,17 @@ impl State {
             return;
         }
 
-        if self.editor_gizmo_drag.is_none() && self.editor_block_drag.is_none() {
+        if self.editor_interaction.gizmo_drag.is_none()
+            && self.editor_interaction.block_drag.is_none()
+        {
             self.record_editor_history_state();
         }
 
         self.sync_primary_selection_from_indices();
 
         if let Some(index) = self
-            .editor_selected_block_index
+            .editor
+            .selected_block_index
             .filter(|index| *index < self.editor_objects.len())
         {
             let snap_step = self.editor_snap_step.max(0.05);
@@ -181,7 +187,8 @@ impl State {
         self.sync_primary_selection_from_indices();
 
         if let Some(index) = self
-            .editor_selected_block_index
+            .editor
+            .selected_block_index
             .filter(|index| *index < self.editor_objects.len())
         {
             self.editor_objects[index].block_id =
@@ -202,7 +209,8 @@ impl State {
         self.sync_primary_selection_from_indices();
 
         if let Some(index) = self
-            .editor_selected_block_index
+            .editor
+            .selected_block_index
             .filter(|index| *index < self.editor_objects.len())
         {
             self.editor_objects[index].rotation_degrees = rotation_degrees;
@@ -222,7 +230,8 @@ impl State {
         self.sync_primary_selection_from_indices();
 
         if let Some(index) = self
-            .editor_selected_block_index
+            .editor
+            .selected_block_index
             .filter(|index| *index < self.editor_objects.len())
         {
             self.editor_objects[index].roundness = roundness.max(0.0);

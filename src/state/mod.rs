@@ -209,15 +209,6 @@ pub struct State {
     editor_gizmo_last_rotation: f32,
     editor_gizmo_last_pitch: f32,
     editor_gizmo_last_zoom: f32,
-    editor_right_dragging: bool,
-    editor_pan_up_held: bool,
-    editor_pan_down_held: bool,
-    editor_pan_left_held: bool,
-    editor_pan_right_held: bool,
-    editor_shift_held: bool,
-    editor_ctrl_held: bool,
-    editor_alt_held: bool,
-    editor_mode: EditorMode,
     editor_timing_points: Vec<TimingPoint>,
     editor_playback_speed: f32,
     editor_waveform_samples: Vec<f32>,
@@ -229,15 +220,8 @@ pub struct State {
     editor_bpm_tap_result: Option<f32>,
     editor_snap_to_grid: bool,
     editor_snap_step: f32,
-    editor_selected_block_index: Option<usize>,
-    editor_selected_block_indices: Vec<usize>,
-    editor_hovered_block_index: Option<usize>,
-    editor_gizmo_drag: Option<EditorGizmoDrag>,
-    editor_block_drag: Option<EditorBlockDrag>,
-    editor_pointer_screen: Option<[f64; 2]>,
-    editor_clipboard: Option<EditorClipboard>,
-    editor_history_undo: Vec<EditorHistorySnapshot>,
-    editor_history_redo: Vec<EditorHistorySnapshot>,
+    editor_interaction: EditorInteractionState,
+    editor_history: EditorHistoryState,
     editor_level_name: Option<String>,
     editor_music_metadata: MusicMetadata,
     editor_show_metadata: bool,
@@ -489,6 +473,17 @@ struct EditorHistorySnapshot {
 struct EditorClipboard {
     objects: Vec<LevelObject>,
     anchor: [f32; 3],
+}
+
+struct EditorInteractionState {
+    gizmo_drag: Option<EditorGizmoDrag>,
+    block_drag: Option<EditorBlockDrag>,
+    clipboard: Option<EditorClipboard>,
+}
+
+struct EditorHistoryState {
+    undo: Vec<EditorHistorySnapshot>,
+    redo: Vec<EditorHistorySnapshot>,
 }
 
 #[derive(Clone, Copy)]
@@ -858,15 +853,6 @@ impl State {
             editor_gizmo_last_rotation: -45.0f32.to_radians(),
             editor_gizmo_last_pitch: 45.0f32.to_radians(),
             editor_gizmo_last_zoom: 1.0,
-            editor_right_dragging: false,
-            editor_pan_up_held: false,
-            editor_pan_down_held: false,
-            editor_pan_left_held: false,
-            editor_pan_right_held: false,
-            editor_shift_held: false,
-            editor_ctrl_held: false,
-            editor_alt_held: false,
-            editor_mode: EditorMode::Place,
             editor_timing_points: Vec::new(),
             editor_playback_speed: 1.0,
             editor_waveform_samples: Vec::new(),
@@ -878,15 +864,15 @@ impl State {
             editor_bpm_tap_result: None,
             editor_snap_to_grid: true,
             editor_snap_step: 1.0,
-            editor_selected_block_index: None,
-            editor_selected_block_indices: Vec::new(),
-            editor_hovered_block_index: None,
-            editor_gizmo_drag: None,
-            editor_block_drag: None,
-            editor_pointer_screen: None,
-            editor_clipboard: None,
-            editor_history_undo: Vec::new(),
-            editor_history_redo: Vec::new(),
+            editor_interaction: EditorInteractionState {
+                gizmo_drag: None,
+                block_drag: None,
+                clipboard: None,
+            },
+            editor_history: EditorHistoryState {
+                undo: Vec::new(),
+                redo: Vec::new(),
+            },
             editor_level_name: None,
             editor_music_metadata: MusicMetadata {
                 source: "music.mp3".to_string(),
@@ -995,7 +981,7 @@ impl State {
     }
 
     pub fn set_editor_right_dragging(&mut self, dragging: bool) {
-        self.editor_right_dragging = dragging;
+        self.editor.right_dragging = dragging;
     }
 
     pub fn handle_keyboard_input(&mut self, key: &str, pressed: bool, just_pressed: bool) {
@@ -1006,10 +992,10 @@ impl State {
         match button {
             0 => {
                 if !pressed {
-                    let had_drag =
-                        self.editor_gizmo_drag.is_some() || self.editor_block_drag.is_some();
-                    self.editor_gizmo_drag = None;
-                    self.editor_block_drag = None;
+                    let had_drag = self.editor_interaction.gizmo_drag.is_some()
+                        || self.editor_interaction.block_drag.is_some();
+                    self.editor_interaction.gizmo_drag = None;
+                    self.editor_interaction.block_drag = None;
                     if had_drag {
                         self.sync_editor_objects();
                     }
@@ -1025,9 +1011,9 @@ impl State {
     }
 
     pub fn handle_primary_click(&mut self, x: f64, y: f64) {
-        self.editor_pointer_screen = Some([x, y]);
+        self.editor.pointer_screen = Some([x, y]);
         if self.phase == AppPhase::Editor {
-            match self.editor_mode {
+            match self.editor.mode {
                 EditorMode::Place => {
                     self.update_editor_cursor_from_screen(x, y);
                     self.place_editor_block();

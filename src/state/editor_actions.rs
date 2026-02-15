@@ -3,11 +3,11 @@ use super::*;
 impl State {
     pub(super) fn editor_add_tap_at_pointer_position(&mut self) {
         let total_started_at = PlatformInstant::now();
-        if self.phase != AppPhase::Editor || self.editor_mode != EditorMode::Place {
+        if self.phase != AppPhase::Editor || self.editor.mode != EditorMode::Place {
             return;
         }
 
-        if let Some(pointer) = self.editor_pointer_screen {
+        if let Some(pointer) = self.editor.pointer_screen {
             self.update_editor_cursor_from_screen(pointer[0], pointer[1]);
         }
 
@@ -200,7 +200,8 @@ impl State {
         }
 
         if let Some(index) = self
-            .editor_selected_block_index
+            .editor
+            .selected_block_index
             .filter(|index| selected_indices.contains(index))
             .or_else(|| selected_indices.first().copied())
         {
@@ -267,9 +268,9 @@ impl State {
                     self.editor_objects.remove(index);
                 }
             }
-            self.editor_selected_block_index = None;
-            self.editor_selected_block_indices.clear();
-            self.editor_hovered_block_index = None;
+            self.editor.selected_block_index = None;
+            self.editor.selected_block_indices.clear();
+            self.editor.hovered_block_index = None;
             self.sync_editor_objects();
             self.rebuild_editor_cursor_vertices();
             return;
@@ -304,7 +305,7 @@ impl State {
         self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction);
         self.playing_camera_rotation = transition.camera_rotation;
         self.playing_camera_pitch = transition.camera_pitch;
-        self.editor_right_dragging = false;
+        self.editor.right_dragging = false;
         self.rebuild_block_vertices();
     }
 

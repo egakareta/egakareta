@@ -174,26 +174,27 @@ impl State {
             self.editor.cursor,
             &self.editor_selected_block_id,
         ));
-        self.editor_selected_block_index = None;
-        self.editor_selected_block_indices.clear();
-        self.editor_hovered_block_index = None;
+        self.editor.selected_block_index = None;
+        self.editor.selected_block_indices.clear();
+        self.editor.hovered_block_index = None;
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
     }
 
     pub(super) fn sync_editor_objects(&mut self) {
         self.sync_primary_selection_from_indices();
-        if let Some(index) = self.editor_selected_block_index {
+        if let Some(index) = self.editor.selected_block_index {
             if index >= self.editor_objects.len() {
-                self.editor_selected_block_index = None;
+                self.editor.selected_block_index = None;
             }
         }
-        self.editor_selected_block_indices
+        self.editor
+            .selected_block_indices
             .retain(|index| *index < self.editor_objects.len());
         self.sync_primary_selection_from_indices();
-        if let Some(index) = self.editor_hovered_block_index {
+        if let Some(index) = self.editor.hovered_block_index {
             if index >= self.editor_objects.len() {
-                self.editor_hovered_block_index = None;
+                self.editor.hovered_block_index = None;
             }
         }
         self.invalidate_editor_timeline_samples();
@@ -202,17 +203,18 @@ impl State {
 
     pub(super) fn sync_editor_objects_for_drag(&mut self) {
         self.sync_primary_selection_from_indices();
-        if let Some(index) = self.editor_selected_block_index {
+        if let Some(index) = self.editor.selected_block_index {
             if index >= self.editor_objects.len() {
-                self.editor_selected_block_index = None;
+                self.editor.selected_block_index = None;
             }
         }
-        self.editor_selected_block_indices
+        self.editor
+            .selected_block_indices
             .retain(|index| *index < self.editor_objects.len());
         self.sync_primary_selection_from_indices();
-        if let Some(index) = self.editor_hovered_block_index {
+        if let Some(index) = self.editor.hovered_block_index {
             if index >= self.editor_objects.len() {
-                self.editor_hovered_block_index = None;
+                self.editor.hovered_block_index = None;
             }
         }
         self.invalidate_editor_timeline_samples();
@@ -318,13 +320,14 @@ impl State {
     }
 
     pub(super) fn rebuild_editor_hover_outline_vertices(&mut self) {
-        if self.phase != AppPhase::Editor || self.editor_mode != EditorMode::Select {
+        if self.phase != AppPhase::Editor || self.editor.mode != EditorMode::Select {
             self.meshes.editor_hover_outline.clear();
             return;
         }
 
         let Some(index) = self
-            .editor_hovered_block_index
+            .editor
+            .hovered_block_index
             .filter(|index| *index < self.editor_objects.len())
         else {
             self.meshes.editor_hover_outline.clear();
@@ -346,7 +349,7 @@ impl State {
     }
 
     pub(super) fn rebuild_editor_gizmo_vertices(&mut self) {
-        if self.phase != AppPhase::Editor || self.editor_mode != EditorMode::Select {
+        if self.phase != AppPhase::Editor || self.editor.mode != EditorMode::Select {
             self.meshes.editor_gizmo.clear();
             return;
         }
@@ -364,7 +367,7 @@ impl State {
         let axis_lengths = self.editor_gizmo_axis_lengths_world(center, 50.0);
         let axis_width = self.editor_gizmo_axis_width_world(center, 3.0);
 
-        let active_part = if let Some(drag) = &self.editor_gizmo_drag {
+        let active_part = if let Some(drag) = &self.editor_interaction.gizmo_drag {
             match (drag.axis, drag.kind) {
                 (GizmoAxis::X, GizmoDragKind::Move) => Some(GizmoPart::MoveX),
                 (GizmoAxis::Y, GizmoDragKind::Move) => Some(GizmoPart::MoveY),
@@ -398,7 +401,7 @@ impl State {
     }
 
     pub(super) fn rebuild_editor_selection_outline_vertices(&mut self) {
-        if self.phase != AppPhase::Editor || self.editor_mode != EditorMode::Select {
+        if self.phase != AppPhase::Editor || self.editor.mode != EditorMode::Select {
             self.meshes.editor_selection_outline.clear();
             return;
         }

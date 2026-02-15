@@ -4,8 +4,8 @@ impl State {
     fn editor_history_snapshot(&self) -> EditorHistorySnapshot {
         EditorHistorySnapshot {
             objects: self.editor_objects.clone(),
-            selected_block_index: self.editor_selected_block_index,
-            selected_block_indices: self.editor_selected_block_indices.clone(),
+            selected_block_index: self.editor.selected_block_index,
+            selected_block_indices: self.editor.selected_block_indices.clone(),
             cursor: self.editor.cursor,
             selected_block_id: self.editor_selected_block_id.clone(),
             spawn: self.editor_spawn.clone(),
@@ -23,26 +23,27 @@ impl State {
         }
 
         const MAX_HISTORY: usize = 256;
-        if self.editor_history_undo.len() >= MAX_HISTORY {
-            self.editor_history_undo.remove(0);
+        if self.editor_history.undo.len() >= MAX_HISTORY {
+            self.editor_history.undo.remove(0);
         }
-        self.editor_history_undo
+        self.editor_history
+            .undo
             .push(self.editor_history_snapshot());
-        self.editor_history_redo.clear();
+        self.editor_history.redo.clear();
     }
 
     fn apply_editor_history_snapshot(&mut self, snapshot: EditorHistorySnapshot) {
         self.editor_objects = snapshot.objects;
-        self.editor_selected_block_index = snapshot
+        self.editor.selected_block_index = snapshot
             .selected_block_index
             .filter(|index| *index < self.editor_objects.len());
-        self.editor_selected_block_indices = snapshot
+        self.editor.selected_block_indices = snapshot
             .selected_block_indices
             .into_iter()
             .filter(|index| *index < self.editor_objects.len())
             .collect();
         self.sync_primary_selection_from_indices();
-        self.editor_hovered_block_index = self.editor_selected_block_index;
+        self.editor.hovered_block_index = self.editor.selected_block_index;
         self.editor.cursor = snapshot.cursor;
         self.editor_selected_block_id = snapshot.selected_block_id;
         self.editor_spawn = snapshot.spawn;
@@ -68,8 +69,8 @@ impl State {
             .editor_timeline_time_seconds
             .min(self.editor_timeline_duration_seconds);
 
-        self.editor_gizmo_drag = None;
-        self.editor_block_drag = None;
+        self.editor_interaction.gizmo_drag = None;
+        self.editor_interaction.block_drag = None;
 
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
@@ -81,11 +82,12 @@ impl State {
             return;
         }
 
-        let Some(snapshot) = self.editor_history_undo.pop() else {
+        let Some(snapshot) = self.editor_history.undo.pop() else {
             return;
         };
 
-        self.editor_history_redo
+        self.editor_history
+            .redo
             .push(self.editor_history_snapshot());
         self.apply_editor_history_snapshot(snapshot);
     }
@@ -95,11 +97,12 @@ impl State {
             return;
         }
 
-        let Some(snapshot) = self.editor_history_redo.pop() else {
+        let Some(snapshot) = self.editor_history.redo.pop() else {
             return;
         };
 
-        self.editor_history_undo
+        self.editor_history
+            .undo
             .push(self.editor_history_snapshot());
         self.apply_editor_history_snapshot(snapshot);
     }
@@ -112,7 +115,8 @@ impl State {
         let selected_indices = self.selected_block_indices_normalized();
         if !selected_indices.is_empty() {
             let anchor_index = self
-                .editor_selected_block_index
+                .editor
+                .selected_block_index
                 .filter(|index| selected_indices.contains(index))
                 .unwrap_or(selected_indices[0]);
             let anchor = self.editor_objects[anchor_index].position;
@@ -120,13 +124,13 @@ impl State {
                 .into_iter()
                 .map(|index| self.editor_objects[index].clone())
                 .collect();
-            self.editor_clipboard = Some(EditorClipboard { objects, anchor });
+            self.editor_interaction.clipboard = Some(EditorClipboard { objects, anchor });
             return;
         }
 
         if let Some(index) = self.topmost_block_index_at_cursor(self.editor.cursor) {
             let block = self.editor_objects[index].clone();
-            self.editor_clipboard = Some(EditorClipboard {
+            self.editor_interaction.clipboard = Some(EditorClipboard {
                 anchor: block.position,
                 objects: vec![block],
             });
@@ -138,7 +142,7 @@ impl State {
             return;
         }
 
-        let Some(clipboard) = self.editor_clipboard.clone() else {
+        let Some(clipboard) = self.editor_interaction.clipboard.clone() else {
             return;
         };
 
@@ -164,10 +168,10 @@ impl State {
             new_indices.push(base_len + new_indices.len());
         }
 
-        self.editor_selected_block_index = new_indices.first().copied();
-        self.editor_selected_block_indices = new_indices;
+        self.editor.selected_block_index = new_indices.first().copied();
+        self.editor.selected_block_indices = new_indices;
         self.sync_primary_selection_from_indices();
-        self.editor_hovered_block_index = self.editor_selected_block_index;
+        self.editor.hovered_block_index = self.editor.selected_block_index;
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
     }
@@ -183,7 +187,8 @@ impl State {
         }
 
         let anchor_index = self
-            .editor_selected_block_index
+            .editor
+            .selected_block_index
             .filter(|index| selected_indices.contains(index))
             .unwrap_or(selected_indices[0]);
         let anchor = self.editor_objects[anchor_index].position;
@@ -192,7 +197,7 @@ impl State {
             .map(|index| self.editor_objects[*index].clone())
             .collect();
 
-        self.editor_clipboard = Some(EditorClipboard {
+        self.editor_interaction.clipboard = Some(EditorClipboard {
             objects: duplicates.clone(),
             anchor,
         });
@@ -206,10 +211,10 @@ impl State {
             new_indices.push(base_len + new_indices.len());
         }
 
-        self.editor_selected_block_index = new_indices.first().copied();
-        self.editor_selected_block_indices = new_indices;
+        self.editor.selected_block_index = new_indices.first().copied();
+        self.editor.selected_block_indices = new_indices;
         self.sync_primary_selection_from_indices();
-        self.editor_hovered_block_index = self.editor_selected_block_index;
+        self.editor.hovered_block_index = self.editor.selected_block_index;
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
     }

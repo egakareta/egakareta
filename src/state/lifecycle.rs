@@ -227,9 +227,9 @@ impl State {
         let init = editor_session_init_from_metadata(Some(metadata));
 
         self.editor_objects = init.objects;
-        self.editor_selected_block_index = None;
-        self.editor_selected_block_indices.clear();
-        self.editor_hovered_block_index = None;
+        self.editor.selected_block_index = None;
+        self.editor.selected_block_indices.clear();
+        self.editor.hovered_block_index = None;
         self.editor_spawn = init.spawn;
         self.editor_tap_times = init.tap_times;
         self.editor_timing_points = init.timing_points;
@@ -249,8 +249,8 @@ impl State {
         self.editor.cursor = init.cursor;
         self.editor_camera_pan = init.camera_pan;
 
-        self.editor_history_undo.clear();
-        self.editor_history_redo.clear();
+        self.editor_history.undo.clear();
+        self.editor_history.redo.clear();
 
         self.sync_editor_objects();
         self.set_editor_timeline_time_seconds(self.editor_timeline_time_seconds);
