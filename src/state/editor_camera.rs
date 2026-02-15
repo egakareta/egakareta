@@ -3,25 +3,26 @@ use super::*;
 impl State {
     pub(super) fn editor_camera_axes_xy(&self) -> (Vec2, Vec2) {
         let right = Vec2::new(
-            self.editor_camera_rotation.cos(),
-            self.editor_camera_rotation.sin(),
+            self.editor_camera.editor_rotation.cos(),
+            self.editor_camera.editor_rotation.sin(),
         );
         let up = Vec2::new(
-            -self.editor_camera_rotation.sin(),
-            self.editor_camera_rotation.cos(),
+            -self.editor_camera.editor_rotation.sin(),
+            self.editor_camera.editor_rotation.cos(),
         );
         (right, up)
     }
 
     pub(super) fn editor_camera_offset(&self) -> Vec3 {
-        let zoom = self.editor_zoom.clamp(0.35, 4.0);
+        let zoom = self.editor_camera.editor_zoom.clamp(0.35, 4.0);
         let distance = 24.0 / zoom;
         let pitch = self
-            .editor_camera_pitch
+            .editor_camera
+            .editor_pitch
             .clamp(10.0f32.to_radians(), 85.0f32.to_radians());
         let horizontal_distance = distance * pitch.cos();
         let vertical_distance = distance * pitch.sin();
-        Mat4::from_rotation_z(self.editor_camera_rotation).transform_vector3(Vec3::new(
+        Mat4::from_rotation_z(self.editor_camera.editor_rotation).transform_vector3(Vec3::new(
             0.0,
             -horizontal_distance,
             vertical_distance,
@@ -31,12 +32,12 @@ impl State {
     pub(super) fn playing_camera_offset(&self) -> Vec3 {
         let distance = 28.28;
         let rotation = if self.game.game_over || !self.game.started {
-            self.playing_camera_rotation
+            self.editor_camera.playing_rotation
         } else {
             -45.0f32.to_radians()
         };
         let pitch = if self.game.game_over || !self.game.started {
-            self.playing_camera_pitch
+            self.editor_camera.playing_pitch
         } else {
             45.0f32.to_radians()
         };
@@ -57,7 +58,7 @@ impl State {
 
         const ZOOM_SENSITIVITY: f32 = 0.12;
         let factor = (1.0 + delta * ZOOM_SENSITIVITY).max(0.1);
-        self.editor_zoom = (self.editor_zoom * factor).clamp(0.35, 4.0);
+        self.editor_camera.editor_zoom = (self.editor_camera.editor_zoom * factor).clamp(0.35, 4.0);
     }
 
     pub fn pan_editor_camera_by_input(&mut self, screen_x: f32, screen_y: f32) {
@@ -69,10 +70,10 @@ impl State {
         let world_delta = camera_right_xy * screen_x + camera_up_xy * screen_y;
 
         let max_pan = self.editor.bounds as f32;
-        self.editor_camera_pan[0] =
-            (self.editor_camera_pan[0] + world_delta.x).clamp(-max_pan, max_pan);
-        self.editor_camera_pan[1] =
-            (self.editor_camera_pan[1] + world_delta.y).clamp(-max_pan, max_pan);
+        self.editor_camera.editor_pan[0] =
+            (self.editor_camera.editor_pan[0] + world_delta.x).clamp(-max_pan, max_pan);
+        self.editor_camera.editor_pan[1] =
+            (self.editor_camera.editor_pan[1] + world_delta.y).clamp(-max_pan, max_pan);
     }
 
     pub(super) fn update_editor_pan_from_keys(&mut self, frame_dt: f32) {
@@ -100,7 +101,8 @@ impl State {
 
         let input = input.normalize();
         let pitch = self
-            .editor_camera_pitch
+            .editor_camera
+            .editor_pitch
             .clamp(10.0f32.to_radians(), 85.0f32.to_radians());
         let horizontal_factor = pitch.cos();
         let vertical_factor = pitch.sin();

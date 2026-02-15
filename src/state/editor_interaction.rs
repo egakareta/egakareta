@@ -413,7 +413,11 @@ impl State {
         }
 
         let aspect = self.gpu.config.width as f32 / self.gpu.config.height as f32;
-        let target = Vec3::new(self.editor_camera_pan[0], self.editor_camera_pan[1], 0.0);
+        let target = Vec3::new(
+            self.editor_camera.editor_pan[0],
+            self.editor_camera.editor_pan[1],
+            0.0,
+        );
         let eye = target + self.editor_camera_offset();
         let up = Vec3::new(0.0, 0.0, 1.0);
         let view = Mat4::look_at_rh(eye, target, up);
@@ -698,7 +702,11 @@ impl State {
         }
 
         let aspect = self.gpu.config.width as f32 / self.gpu.config.height as f32;
-        let target = Vec3::new(self.editor_camera_pan[0], self.editor_camera_pan[1], 0.0);
+        let target = Vec3::new(
+            self.editor_camera.editor_pan[0],
+            self.editor_camera.editor_pan[1],
+            0.0,
+        );
         let offset = self.editor_camera_offset();
         let eye = target + offset;
         let up = Vec3::new(0.0, 0.0, 1.0);
@@ -856,12 +864,14 @@ impl State {
         const PITCH_SPEED: f32 = 0.006;
 
         if self.phase == AppPhase::Editor {
-            self.editor_camera_rotation -= dx as f32 * ROTATE_SPEED;
-            self.editor_camera_pitch = (self.editor_camera_pitch + dy as f32 * PITCH_SPEED)
+            self.editor_camera.editor_rotation -= dx as f32 * ROTATE_SPEED;
+            self.editor_camera.editor_pitch = (self.editor_camera.editor_pitch
+                + dy as f32 * PITCH_SPEED)
                 .clamp(10.0f32.to_radians(), 85.0f32.to_radians());
         } else if self.phase == AppPhase::Playing && (self.game.game_over || !self.game.started) {
-            self.playing_camera_rotation -= dx as f32 * ROTATE_SPEED;
-            self.playing_camera_pitch = (self.playing_camera_pitch + dy as f32 * PITCH_SPEED)
+            self.editor_camera.playing_rotation -= dx as f32 * ROTATE_SPEED;
+            self.editor_camera.playing_pitch = (self.editor_camera.playing_pitch
+                + dy as f32 * PITCH_SPEED)
                 .clamp(10.0f32.to_radians(), 85.0f32.to_radians());
         }
     }

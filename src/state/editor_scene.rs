@@ -314,8 +314,8 @@ impl State {
         }
 
         let max_pan = bounds;
-        self.editor_camera_pan[0] = (position[0] + 0.5).clamp(-max_pan, max_pan);
-        self.editor_camera_pan[1] = (position[1] + 0.5).clamp(-max_pan, max_pan);
+        self.editor_camera.editor_pan[0] = (position[0] + 0.5).clamp(-max_pan, max_pan);
+        self.editor_camera.editor_pan[1] = (position[1] + 0.5).clamp(-max_pan, max_pan);
 
         self.rebuild_editor_preview_player_vertices_for_state(position, direction);
     }

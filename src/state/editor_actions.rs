@@ -317,8 +317,8 @@ impl State {
         self.game = GameState::new();
         self.game.objects = transition.objects;
         self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction);
-        self.playing_camera_rotation = transition.camera_rotation;
-        self.playing_camera_pitch = transition.camera_pitch;
+        self.editor_camera.playing_rotation = transition.camera_rotation;
+        self.editor_camera.playing_pitch = transition.camera_pitch;
         self.editor.right_dragging = false;
         self.rebuild_block_vertices();
     }

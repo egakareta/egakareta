@@ -71,8 +71,8 @@ impl State {
     }
 
     pub(super) fn reset_playing_camera_defaults(&mut self) {
-        self.playing_camera_rotation = -45.0f32.to_radians();
-        self.playing_camera_pitch = 45.0f32.to_radians();
+        self.editor_camera.playing_rotation = -45.0f32.to_radians();
+        self.editor_camera.playing_pitch = 45.0f32.to_radians();
     }
 
     pub(super) fn enter_playing_phase(
@@ -101,9 +101,9 @@ impl State {
         self.editor_history.undo.clear();
         self.editor_history.redo.clear();
         self.clear_editor_pan_keys();
-        self.editor_camera_rotation = -45.0f32.to_radians();
-        self.editor_camera_pitch = 45.0f32.to_radians();
-        self.editor_zoom = 1.0;
+        self.editor_camera.editor_rotation = -45.0f32.to_radians();
+        self.editor_camera.editor_pitch = 45.0f32.to_radians();
+        self.editor_camera.editor_zoom = 1.0;
         self.game = GameState::new();
         self.meshes.trail.clear();
     }

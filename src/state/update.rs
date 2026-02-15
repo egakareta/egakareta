@@ -155,12 +155,14 @@ impl State {
                 }
             }
 
-            let camera_changed = (self.editor_camera_pan[0] - self.editor_gizmo.last_pan[0]).abs()
+            let camera_changed = (self.editor_camera.editor_pan[0] - self.editor_gizmo.last_pan[0])
+                .abs()
                 > 1e-4
-                || (self.editor_camera_pan[1] - self.editor_gizmo.last_pan[1]).abs() > 1e-4
-                || (self.editor_camera_rotation - self.editor_gizmo.last_rotation).abs() > 1e-4
-                || (self.editor_camera_pitch - self.editor_gizmo.last_pitch).abs() > 1e-4
-                || (self.editor_zoom - self.editor_gizmo.last_zoom).abs() > 1e-4;
+                || (self.editor_camera.editor_pan[1] - self.editor_gizmo.last_pan[1]).abs() > 1e-4
+                || (self.editor_camera.editor_rotation - self.editor_gizmo.last_rotation).abs()
+                    > 1e-4
+                || (self.editor_camera.editor_pitch - self.editor_gizmo.last_pitch).abs() > 1e-4
+                || (self.editor_camera.editor_zoom - self.editor_gizmo.last_zoom).abs() > 1e-4;
 
             let has_selection = self.editor.selected_block_index.is_some()
                 || !self.editor.selected_block_indices.is_empty();
@@ -188,10 +190,10 @@ impl State {
                 self.editor_gizmo.rebuild_accumulator = 0.0;
             }
 
-            self.editor_gizmo.last_pan = self.editor_camera_pan;
-            self.editor_gizmo.last_rotation = self.editor_camera_rotation;
-            self.editor_gizmo.last_pitch = self.editor_camera_pitch;
-            self.editor_gizmo.last_zoom = self.editor_zoom;
+            self.editor_gizmo.last_pan = self.editor_camera.editor_pan;
+            self.editor_gizmo.last_rotation = self.editor_camera.editor_rotation;
+            self.editor_gizmo.last_pitch = self.editor_camera.editor_pitch;
+            self.editor_gizmo.last_zoom = self.editor_camera.editor_zoom;
             let dirty_started_at = PlatformInstant::now();
             self.process_editor_dirty();
             self.perf_record(PerfStage::DirtyProcess, dirty_started_at);
@@ -341,7 +343,11 @@ impl State {
 
     fn update_editor_camera(&mut self) {
         let aspect = self.gpu.config.width as f32 / self.gpu.config.height as f32;
-        let target = Vec3::new(self.editor_camera_pan[0], self.editor_camera_pan[1], 0.0);
+        let target = Vec3::new(
+            self.editor_camera.editor_pan[0],
+            self.editor_camera.editor_pan[1],
+            0.0,
+        );
         let offset = self.editor_camera_offset();
         let eye = target + offset;
         let up = Vec3::new(0.0, 0.0, 1.0);

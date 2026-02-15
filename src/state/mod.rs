@@ -184,12 +184,7 @@ pub struct State {
     editor_selected_block_id: String,
     editor_objects: Vec<LevelObject>,
     editor_spawn: SpawnMetadata,
-    editor_camera_pan: [f32; 2],
-    editor_camera_rotation: f32,
-    editor_camera_pitch: f32,
-    playing_camera_rotation: f32,
-    playing_camera_pitch: f32,
-    editor_zoom: f32,
+    editor_camera: EditorCameraState,
     editor_timeline: EditorTimelineState,
     editor_dirty: EditorDirtyFlags,
     editor_perf: EditorPerfProfiler,
@@ -447,6 +442,15 @@ struct EditorSessionState {
     editor_import_text: String,
     playing_level_name: Option<String>,
     playtesting_editor: bool,
+}
+
+struct EditorCameraState {
+    editor_pan: [f32; 2],
+    editor_rotation: f32,
+    editor_pitch: f32,
+    editor_zoom: f32,
+    playing_rotation: f32,
+    playing_pitch: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -864,12 +868,14 @@ impl State {
             editor_selected_block_id: DEFAULT_BLOCK_ID.to_string(),
             editor_objects: Vec::new(),
             editor_spawn: SpawnMetadata::default(),
-            editor_camera_pan: [0.0, 0.0],
-            editor_camera_rotation: -45.0f32.to_radians(),
-            editor_camera_pitch: 45.0f32.to_radians(),
-            playing_camera_rotation: -45.0f32.to_radians(),
-            playing_camera_pitch: 45.0f32.to_radians(),
-            editor_zoom: 1.0,
+            editor_camera: EditorCameraState {
+                editor_pan: [0.0, 0.0],
+                editor_rotation: -45.0f32.to_radians(),
+                editor_pitch: 45.0f32.to_radians(),
+                editor_zoom: 1.0,
+                playing_rotation: -45.0f32.to_radians(),
+                playing_pitch: 45.0f32.to_radians(),
+            },
             editor_timeline: EditorTimelineState {
                 clock: EditorTimelineClockState {
                     time_seconds: 0.0,

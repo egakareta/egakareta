@@ -78,7 +78,7 @@ impl State {
         self.editor_timeline.clock.time_seconds = init.timeline_time_seconds;
         self.editor_timeline.clock.duration_seconds = init.timeline_duration_seconds;
         self.editor.cursor = init.cursor;
-        self.editor_camera_pan = init.camera_pan;
+        self.editor_camera.editor_pan = init.camera_pan;
 
         self.sync_editor_objects();
         self.set_editor_timeline_time_seconds(self.editor_timeline.clock.time_seconds);
@@ -252,7 +252,7 @@ impl State {
         self.editor_session.editor_level_name = Some(level_name);
         self.editor_session.editor_music_metadata = init.music;
         self.editor.cursor = init.cursor;
-        self.editor_camera_pan = init.camera_pan;
+        self.editor_camera.editor_pan = init.camera_pan;
 
         self.editor_history.undo.clear();
         self.editor_history.redo.clear();
