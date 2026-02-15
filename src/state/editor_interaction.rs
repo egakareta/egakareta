@@ -408,11 +408,11 @@ impl State {
     }
 
     fn editor_view_proj(&self) -> Option<Mat4> {
-        if self.config.width == 0 || self.config.height == 0 {
+        if self.gpu.config.width == 0 || self.gpu.config.height == 0 {
             return None;
         }
 
-        let aspect = self.config.width as f32 / self.config.height as f32;
+        let aspect = self.gpu.config.width as f32 / self.gpu.config.height as f32;
         let target = Vec3::new(self.editor_camera_pan[0], self.editor_camera_pan[1], 0.0);
         let eye = target + self.editor_camera_offset();
         let up = Vec3::new(0.0, 0.0, 1.0);
@@ -433,8 +433,8 @@ impl State {
             return None;
         }
 
-        let screen_x = (ndc.x + 1.0) * 0.5 * self.config.width as f32;
-        let screen_y = (1.0 - ndc.y) * 0.5 * self.config.height as f32;
+        let screen_x = (ndc.x + 1.0) * 0.5 * self.gpu.config.width as f32;
+        let screen_y = (1.0 - ndc.y) * 0.5 * self.gpu.config.height as f32;
         Some(Vec2::new(screen_x, screen_y))
     }
 
@@ -693,11 +693,11 @@ impl State {
             return None;
         }
 
-        if self.config.width == 0 || self.config.height == 0 {
+        if self.gpu.config.width == 0 || self.gpu.config.height == 0 {
             return None;
         }
 
-        let aspect = self.config.width as f32 / self.config.height as f32;
+        let aspect = self.gpu.config.width as f32 / self.gpu.config.height as f32;
         let target = Vec3::new(self.editor_camera_pan[0], self.editor_camera_pan[1], 0.0);
         let offset = self.editor_camera_offset();
         let eye = target + offset;
@@ -706,8 +706,8 @@ impl State {
         let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 1000.0);
         let inv_view_proj = (proj * view).inverse();
 
-        let ndc_x = (2.0 * x as f32 / self.config.width as f32) - 1.0;
-        let ndc_y = 1.0 - (2.0 * y as f32 / self.config.height as f32);
+        let ndc_x = (2.0 * x as f32 / self.gpu.config.width as f32) - 1.0;
+        let ndc_y = 1.0 - (2.0 * y as f32 / self.gpu.config.height as f32);
 
         let near_clip = Vec4::new(ndc_x, ndc_y, -1.0, 1.0);
         let far_clip = Vec4::new(ndc_x, ndc_y, 1.0, 1.0);

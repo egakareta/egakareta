@@ -155,14 +155,13 @@ pub(crate) struct SceneMeshes {
     pub(crate) editor_preview_player: MeshSlot,
 }
 
-pub struct State {
+pub(crate) struct GpuContext {
     surface_host: SurfaceHost,
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: PhysicalSize<u32>,
-    meshes: SceneMeshes,
     depth_texture: wgpu::Texture,
     depth_view: wgpu::TextureView,
     render_pipeline: wgpu::RenderPipeline,
@@ -173,6 +172,11 @@ pub struct State {
     camera_bind_group: wgpu::BindGroup,
     color_space_bind_group: wgpu::BindGroup,
     apply_gamma_correction: bool,
+}
+
+pub struct State {
+    gpu: GpuContext,
+    meshes: SceneMeshes,
     game: GameState,
     phase: AppPhase,
     menu: MenuState,
@@ -787,12 +791,24 @@ impl State {
         let now = PlatformInstant::now();
 
         Self {
-            surface_host,
-            surface,
-            device,
-            queue,
-            config,
-            size,
+            gpu: GpuContext {
+                surface_host,
+                surface,
+                device,
+                queue,
+                config,
+                size,
+                depth_texture,
+                depth_view,
+                render_pipeline,
+                gizmo_overlay_pipeline,
+                line_uniform_buffer,
+                zero_line_bind_group,
+                camera_uniform_buffer,
+                camera_bind_group,
+                color_space_bind_group,
+                apply_gamma_correction: should_apply_gamma_correction,
+            },
             meshes: SceneMeshes {
                 floor: floor_mesh,
                 grid: grid_mesh,
@@ -806,16 +822,6 @@ impl State {
                 spawn_marker: MeshSlot::Empty,
                 editor_preview_player: MeshSlot::Empty,
             },
-            depth_texture,
-            depth_view,
-            render_pipeline,
-            gizmo_overlay_pipeline,
-            line_uniform_buffer,
-            zero_line_bind_group,
-            camera_uniform_buffer,
-            camera_bind_group,
-            color_space_bind_group,
-            apply_gamma_correction: should_apply_gamma_correction,
             game,
             phase: AppPhase::Menu,
             menu,
@@ -906,7 +912,7 @@ impl State {
             return;
         }
 
-        self.surface_host.prepare_resize(new_size);
+        self.gpu.surface_host.prepare_resize(new_size);
         self.apply_resize(new_size);
     }
 

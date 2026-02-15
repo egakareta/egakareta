@@ -262,7 +262,7 @@ impl State {
 
         self.meshes
             .trail
-            .write_streaming_vertices(&self.queue, &trail_vertices);
+            .write_streaming_vertices(&self.gpu.queue, &trail_vertices);
 
         self.line_uniform.offset = [
             (self.game.position[0] * 100.0).round() / 100.0,
@@ -273,13 +273,13 @@ impl State {
             Direction::Right => -std::f32::consts::FRAC_PI_2,
         };
 
-        self.queue.write_buffer(
-            &self.line_uniform_buffer,
+        self.gpu.queue.write_buffer(
+            &self.gpu.line_uniform_buffer,
             0,
             bytemuck::bytes_of(&self.line_uniform),
         );
 
-        let aspect = self.config.width as f32 / self.config.height as f32;
+        let aspect = self.gpu.config.width as f32 / self.gpu.config.height as f32;
         let pos_3d = Vec3::new(
             self.game.position[0],
             self.game.position[1],
@@ -296,8 +296,8 @@ impl State {
             view_proj: view_proj.to_cols_array_2d(),
         };
 
-        self.queue.write_buffer(
-            &self.camera_uniform_buffer,
+        self.gpu.queue.write_buffer(
+            &self.gpu.camera_uniform_buffer,
             0,
             bytemuck::bytes_of(&camera_uniform),
         );
@@ -315,7 +315,7 @@ impl State {
     }
 
     fn update_menu_camera(&mut self) {
-        let aspect = self.config.width as f32 / self.config.height as f32;
+        let aspect = self.gpu.config.width as f32 / self.gpu.config.height as f32;
         let radius = 25.0;
         let angle = -25.0f32.to_radians();
         let eye = Vec3::new(radius * angle.cos(), radius * angle.sin(), 15.0);
@@ -328,15 +328,15 @@ impl State {
             view_proj: view_proj.to_cols_array_2d(),
         };
 
-        self.queue.write_buffer(
-            &self.camera_uniform_buffer,
+        self.gpu.queue.write_buffer(
+            &self.gpu.camera_uniform_buffer,
             0,
             bytemuck::bytes_of(&camera_uniform),
         );
     }
 
     fn update_editor_camera(&mut self) {
-        let aspect = self.config.width as f32 / self.config.height as f32;
+        let aspect = self.gpu.config.width as f32 / self.gpu.config.height as f32;
         let target = Vec3::new(self.editor_camera_pan[0], self.editor_camera_pan[1], 0.0);
         let offset = self.editor_camera_offset();
         let eye = target + offset;
@@ -348,8 +348,8 @@ impl State {
             view_proj: view_proj.to_cols_array_2d(),
         };
 
-        self.queue.write_buffer(
-            &self.camera_uniform_buffer,
+        self.gpu.queue.write_buffer(
+            &self.gpu.camera_uniform_buffer,
             0,
             bytemuck::bytes_of(&camera_uniform),
         );

@@ -311,7 +311,7 @@ impl State {
     pub(super) fn rebuild_editor_cursor_vertices(&mut self) {
         let vertices = build_editor_cursor_vertices(self.editor.cursor);
         self.meshes.editor_cursor.replace_with_vertices(
-            &self.device,
+            &self.gpu.device,
             "Editor Cursor Vertex Buffer",
             &vertices,
         );
@@ -339,7 +339,7 @@ impl State {
         let obj = &self.editor_objects[index];
         let vertices = build_editor_hover_outline_vertices(obj.position, obj.size);
         self.meshes.editor_hover_outline.replace_with_vertices(
-            &self.device,
+            &self.gpu.device,
             "Editor Hover Outline Vertex Buffer",
             &vertices,
         );
@@ -391,7 +391,7 @@ impl State {
             active_part,
         );
         self.meshes.editor_gizmo.replace_with_vertices(
-            &self.device,
+            &self.gpu.device,
             "Editor Gizmo Vertex Buffer",
             &vertices,
         );
@@ -419,7 +419,7 @@ impl State {
             }
         }
         self.meshes.editor_selection_outline.replace_with_vertices(
-            &self.device,
+            &self.gpu.device,
             "Editor Selection Outline Vertex Buffer",
             &vertices,
         );
@@ -431,7 +431,7 @@ impl State {
             matches!(self.editor_spawn.direction, SpawnDirection::Right),
         );
         self.meshes.spawn_marker.replace_with_vertices(
-            &self.device,
+            &self.gpu.device,
             "Spawn Marker Vertex Buffer",
             &vertices,
         );
@@ -441,9 +441,11 @@ impl State {
         let perf_started_at = PlatformInstant::now();
         let vertices = build_block_vertices(&self.game.objects);
 
-        self.meshes
-            .blocks
-            .replace_with_vertices(&self.device, "Block Vertex Buffer", &vertices);
+        self.meshes.blocks.replace_with_vertices(
+            &self.gpu.device,
+            "Block Vertex Buffer",
+            &vertices,
+        );
         self.perf_record(PerfStage::BlockMeshRebuild, perf_started_at);
     }
 
@@ -465,7 +467,7 @@ impl State {
 
         let vertices = build_tap_indicator_vertices(&positions);
         self.meshes.tap_indicators.replace_with_vertices(
-            &self.device,
+            &self.gpu.device,
             "Tap Indicator Vertex Buffer",
             &vertices,
         );
@@ -498,7 +500,7 @@ impl State {
         let preview_origin = [position[0] - 0.5, position[1] - 0.5, position[2]];
         let vertices = build_editor_preview_player_vertices(preview_origin, direction, is_tapping);
         self.meshes.editor_preview_player.replace_with_vertices(
-            &self.device,
+            &self.gpu.device,
             "Editor Preview Player Vertex Buffer",
             &vertices,
         );
