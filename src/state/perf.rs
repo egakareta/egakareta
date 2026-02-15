@@ -3,6 +3,12 @@ pub(crate) enum PerfStage {
     FrameTotal = 0,
     TimelinePlayback,
     DragSelection,
+    SelectionClick,
+    SelectionPick,
+    SelectionApply,
+    SelectionMarkDirty,
+    PickUnproject,
+    PickRaycast,
     GizmoRebuild,
     DirtyProcess,
     DirtySyncGameObjects,
@@ -14,14 +20,19 @@ pub(crate) enum PerfStage {
     TimelineSampleRebuild,
     TapIndicatorMeshRebuild,
     BlockMeshRebuild,
+    BlockMeshMaskBuild,
     BlockMeshSplitStatic,
     BlockMeshSplitSelected,
+    BlockMeshUploadStatic,
+    BlockMeshUploadSelected,
     BlockMeshSelectedOnly,
+    BlockMeshSelectedOnlyBuild,
+    BlockMeshSelectedOnlyUpload,
     TTapToggleTotal,
     TTapSolve,
 }
 
-pub(crate) const PERF_STAGE_COUNT: usize = 19;
+pub(crate) const PERF_STAGE_COUNT: usize = 30;
 
 #[derive(Clone)]
 pub(crate) struct PerfOverlayEntry {
@@ -43,6 +54,7 @@ impl PerfStage {
             Self::FrameTotal,
             Self::TimelinePlayback,
             Self::DragSelection,
+            Self::SelectionClick,
             Self::GizmoRebuild,
             Self::DirtyProcess,
             Self::TimelineSampleRebuild,
@@ -54,6 +66,12 @@ impl PerfStage {
 
     pub(crate) const fn children(self) -> &'static [PerfStage] {
         match self {
+            Self::SelectionClick => &[
+                Self::SelectionPick,
+                Self::SelectionApply,
+                Self::SelectionMarkDirty,
+            ],
+            Self::SelectionPick => &[Self::PickUnproject, Self::PickRaycast],
             Self::DirtyProcess => &[
                 Self::DirtySyncGameObjects,
                 Self::DirtyRebuildBlockMesh,
@@ -63,9 +81,16 @@ impl PerfStage {
                 Self::DirtyRebuildCursor,
             ],
             Self::BlockMeshRebuild => &[
+                Self::BlockMeshMaskBuild,
                 Self::BlockMeshSplitStatic,
                 Self::BlockMeshSplitSelected,
+                Self::BlockMeshUploadStatic,
+                Self::BlockMeshUploadSelected,
                 Self::BlockMeshSelectedOnly,
+            ],
+            Self::BlockMeshSelectedOnly => &[
+                Self::BlockMeshSelectedOnlyBuild,
+                Self::BlockMeshSelectedOnlyUpload,
             ],
             Self::TTapToggleTotal => &[Self::TTapSolve],
             _ => &[],
@@ -77,6 +102,12 @@ impl PerfStage {
             Self::FrameTotal => "FrameTotal",
             Self::TimelinePlayback => "TimelinePlayback",
             Self::DragSelection => "DragSelection",
+            Self::SelectionClick => "SelectClick",
+            Self::SelectionPick => "SelectPick",
+            Self::SelectionApply => "SelectApply",
+            Self::SelectionMarkDirty => "SelectMarkDirty",
+            Self::PickUnproject => "PickUnproject",
+            Self::PickRaycast => "PickRaycast",
             Self::GizmoRebuild => "GizmoRebuild",
             Self::DirtyProcess => "DirtyProcess",
             Self::DirtySyncGameObjects => "DirtySyncObjects",
@@ -88,9 +119,14 @@ impl PerfStage {
             Self::TimelineSampleRebuild => "TimelineSamples",
             Self::TapIndicatorMeshRebuild => "TapIndicatorMesh",
             Self::BlockMeshRebuild => "BlockMeshRebuild",
+            Self::BlockMeshMaskBuild => "BlockMaskBuild",
             Self::BlockMeshSplitStatic => "BlockMeshSplitStatic",
             Self::BlockMeshSplitSelected => "BlockMeshSplitSelected",
+            Self::BlockMeshUploadStatic => "BlockMeshUploadStatic",
+            Self::BlockMeshUploadSelected => "BlockMeshUploadSelected",
             Self::BlockMeshSelectedOnly => "BlockMeshSelectedOnly",
+            Self::BlockMeshSelectedOnlyBuild => "SelectedOnlyBuild",
+            Self::BlockMeshSelectedOnlyUpload => "SelectedOnlyUpload",
             Self::TTapToggleTotal => "TKeyToggle",
             Self::TTapSolve => "TKeySolve",
         }
@@ -184,6 +220,7 @@ impl EditorPerfProfiler {
         let stages = [
             PerfStage::TimelinePlayback,
             PerfStage::DragSelection,
+            PerfStage::SelectionClick,
             PerfStage::GizmoRebuild,
             PerfStage::DirtyProcess,
             PerfStage::TimelineSampleRebuild,

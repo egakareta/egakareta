@@ -220,7 +220,10 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                 entry.calls,
             );
             egui::CollapsingHeader::new(header_text)
-                .default_open(false)
+                .default_open(matches!(
+                    entry.name,
+                    "DirtyProcess" | "BlockMeshRebuild" | "SelectClick"
+                ))
                 .show(ui, |ui| {
                     for child in &entry.children {
                         show_perf_entry(ui, child);

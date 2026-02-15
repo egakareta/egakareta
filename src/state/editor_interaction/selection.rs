@@ -1,7 +1,8 @@
 use super::super::{
     EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart, EditorInteractionChange,
-    EditorSubsystem, State,
+    EditorSubsystem, PerfStage, State,
 };
+use crate::platform::state_host::PlatformInstant;
 use crate::types::{AppPhase, EditorMode};
 use glam::{Vec2, Vec3};
 
@@ -209,13 +210,18 @@ impl EditorSubsystem {
         viewport: Vec2,
         phase: AppPhase,
     ) -> EditorInteractionChange {
+        let selection_total_started_at = PlatformInstant::now();
         if phase != AppPhase::Editor || self.ui.right_dragging {
+            self.perf_record(PerfStage::SelectionClick, selection_total_started_at);
             return EditorInteractionChange::None;
         }
 
         let additive = self.ui.shift_held;
 
+        let pick_started_at = PlatformInstant::now();
         let Some(pick) = self.pick_from_screen(x, y, viewport) else {
+            self.perf_record(PerfStage::SelectionPick, pick_started_at);
+            let apply_started_at = PlatformInstant::now();
             if !additive {
                 self.ui.selected_block_indices.clear();
                 self.ui.selected_block_index = None;
@@ -223,15 +229,22 @@ impl EditorSubsystem {
             }
             self.runtime.interaction.gizmo_drag = None;
             self.runtime.interaction.block_drag = None;
+            self.perf_record(PerfStage::SelectionApply, apply_started_at);
+
+            let mark_dirty_started_at = PlatformInstant::now();
             self.mark_dirty(EditorDirtyFlags {
                 rebuild_block_mesh: true,
                 rebuild_selection_overlays: true,
                 ..EditorDirtyFlags::default()
             });
+            self.perf_record(PerfStage::SelectionMarkDirty, mark_dirty_started_at);
+            self.perf_record(PerfStage::SelectionClick, selection_total_started_at);
             return EditorInteractionChange::None;
         };
+        self.perf_record(PerfStage::SelectionPick, pick_started_at);
 
         let mut changed = EditorInteractionChange::None;
+        let apply_started_at = PlatformInstant::now();
 
         if let Some(hit_index) = pick.hit_block_index {
             if additive {
@@ -277,12 +290,17 @@ impl EditorSubsystem {
             changed = EditorInteractionChange::Cursor;
         }
 
+        self.perf_record(PerfStage::SelectionApply, apply_started_at);
+
+        let mark_dirty_started_at = PlatformInstant::now();
         self.mark_dirty(EditorDirtyFlags {
             rebuild_block_mesh: true,
             rebuild_selection_overlays: true,
             rebuild_cursor: matches!(changed, EditorInteractionChange::Cursor),
             ..EditorDirtyFlags::default()
         });
+        self.perf_record(PerfStage::SelectionMarkDirty, mark_dirty_started_at);
+        self.perf_record(PerfStage::SelectionClick, selection_total_started_at);
 
         changed
     }

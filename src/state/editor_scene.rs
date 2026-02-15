@@ -625,6 +625,7 @@ impl State {
     }
 
     fn rebuild_editor_block_vertices_split(&mut self) {
+        let mask_build_started_at = PlatformInstant::now();
         let selected_indices = self.selected_block_indices_normalized();
         let mut selected_mask = vec![false; self.editor.objects.len()];
         for index in selected_indices {
@@ -632,6 +633,7 @@ impl State {
                 selected_mask[index] = true;
             }
         }
+        self.perf_record(PerfStage::BlockMeshMaskBuild, mask_build_started_at);
 
         let static_mesh_started_at = PlatformInstant::now();
         let static_vertices = {
@@ -658,15 +660,23 @@ impl State {
         self.perf_record(PerfStage::BlockMeshSplitStatic, static_mesh_started_at);
         self.perf_record(PerfStage::BlockMeshSplitSelected, selected_mesh_started_at);
 
+        let upload_static_started_at = PlatformInstant::now();
         self.render.meshes.blocks_static.replace_with_vertices(
             &self.render.gpu.device,
             "Block Static Vertex Buffer",
             &static_vertices,
         );
+        self.perf_record(PerfStage::BlockMeshUploadStatic, upload_static_started_at);
+
+        let upload_selected_started_at = PlatformInstant::now();
         self.render.meshes.blocks_selected.replace_with_vertices(
             &self.render.gpu.device,
             "Block Selected Vertex Buffer",
             &selected_vertices,
+        );
+        self.perf_record(
+            PerfStage::BlockMeshUploadSelected,
+            upload_selected_started_at,
         );
         self.render.meshes.blocks.clear();
     }
@@ -695,6 +705,7 @@ impl State {
             return;
         };
 
+        let selected_build_started_at = PlatformInstant::now();
         let selected_vertices = {
             let mut selected_objects = Vec::new();
             for (index, object) in self.editor.objects.iter().enumerate() {
@@ -705,10 +716,20 @@ impl State {
 
             build_block_vertices_from_refs(selected_objects)
         };
+        self.perf_record(
+            PerfStage::BlockMeshSelectedOnlyBuild,
+            selected_build_started_at,
+        );
+
+        let selected_upload_started_at = PlatformInstant::now();
         self.render.meshes.blocks_selected.replace_with_vertices(
             &self.render.gpu.device,
             "Block Selected Vertex Buffer",
             &selected_vertices,
+        );
+        self.perf_record(
+            PerfStage::BlockMeshSelectedOnlyUpload,
+            selected_upload_started_at,
         );
         self.render.meshes.blocks.clear();
         self.perf_record(PerfStage::BlockMeshSelectedOnly, selected_only_started_at);

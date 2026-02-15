@@ -1,9 +1,10 @@
-use super::super::{EditorPickResult, EditorSubsystem};
+use super::super::{EditorPickResult, EditorSubsystem, PerfStage};
+use crate::platform::state_host::PlatformInstant;
 use glam::{Vec2, Vec3, Vec4};
 
 impl EditorSubsystem {
     pub(crate) fn pick_from_screen(
-        &self,
+        &mut self,
         x: f64,
         y: f64,
         viewport_size: Vec2,
@@ -12,6 +13,7 @@ impl EditorSubsystem {
             return None;
         }
 
+        let unproject_started_at = PlatformInstant::now();
         let view_proj = self.view_proj(viewport_size);
         let inv_view_proj = view_proj.inverse();
 
@@ -32,11 +34,14 @@ impl EditorSubsystem {
 
         let ray_origin = near_world.truncate();
         let ray_dir = (far_world.truncate() - ray_origin).normalize();
+        self.perf_record(PerfStage::PickUnproject, unproject_started_at);
 
         let mut min_t = f32::INFINITY;
         let mut best_hit_normal = Vec3::Z;
         let mut hit_found = false;
         let mut hit_block_index: Option<usize> = None;
+
+        let raycast_started_at = PlatformInstant::now();
 
         if ray_dir.z.abs() > f32::EPSILON {
             let t = -ray_origin.z / ray_dir.z;
@@ -58,8 +63,11 @@ impl EditorSubsystem {
         }
 
         if !hit_found {
+            self.perf_record(PerfStage::PickRaycast, raycast_started_at);
             return None;
         }
+
+        self.perf_record(PerfStage::PickRaycast, raycast_started_at);
 
         let hit = ray_origin + ray_dir * min_t;
         let target = hit + best_hit_normal * 0.01;
