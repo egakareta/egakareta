@@ -70,7 +70,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 rodio = { version = "0.20", features = ["symphonia-all"] }
 symphonia = { version = "0.5", features = ["all"] }
 winit = "0.30"
-egui-winit = "0.29"
+egui-winit = "0.33"
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false
