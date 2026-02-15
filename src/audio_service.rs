@@ -2,11 +2,14 @@ use std::sync::mpsc::Sender;
 
 const WAVEFORM_WINDOW: usize = 256;
 
+pub type WaveformData = (Vec<f32>, u32);
+pub type WaveformResult = (String, Option<WaveformData>);
+
 pub fn start_waveform_loading(
     music_source: String,
     level_name: String,
     cached_bytes: Option<Vec<u8>>,
-    sender: Sender<(String, Option<(Vec<f32>, u32)>)>,
+    sender: Sender<WaveformResult>,
 ) {
     #[cfg(not(target_arch = "wasm32"))]
     {

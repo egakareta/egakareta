@@ -1441,7 +1441,7 @@ impl EditorSubsystem {
         viewport_size: Vec2,
     ) -> [f32; 3] {
         let mut lengths = [1.0, 1.0, 1.0];
-        for i in 0..3 {
+        for (i, length) in lengths.iter_mut().enumerate() {
             let axis = match i {
                 0 => Vec3::X,
                 1 => Vec3::Y,
@@ -1450,7 +1450,7 @@ impl EditorSubsystem {
             if let Some(scale) =
                 self.pixels_to_world_along_axis(center, axis, screen_size, viewport_size)
             {
-                lengths[i] = scale;
+                *length = scale;
             }
         }
         lengths
