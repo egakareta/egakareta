@@ -547,4 +547,29 @@ mod tests {
             assert_eq!(state.editor.config.selected_block_id, "core/lava");
         });
     }
+
+    #[test]
+    fn test_timeline_shift_updates_preview() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.dispatch(AppCommand::ToggleEditor);
+
+            let (pos_before, _) = state.editor_timeline_preview();
+
+            // Shift timeline forward by 1 second
+            state.dispatch(AppCommand::EditorShiftTimeline(1.0));
+
+            let (pos_after, _) = state.editor_timeline_preview();
+
+            // Player should have moved
+            assert!(
+                (pos_after[0] - pos_before[0]).abs() > 0.001
+                    || (pos_after[1] - pos_before[1]).abs() > 0.001
+                    || (pos_after[2] - pos_before[2]).abs() > 0.001,
+                "Preview position should update when shifting timeline. Before: {:?}, After: {:?}",
+                pos_before,
+                pos_after
+            );
+        });
+    }
 }
