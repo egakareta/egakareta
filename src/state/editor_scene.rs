@@ -298,6 +298,7 @@ impl State {
 
         if dirty.sync_game_objects {
             self.editor.runtime.dirty.sync_game_objects = false;
+            self.perf_record(PerfStage::DirtySyncGameObjects, PlatformInstant::now());
         }
         if dirty.rebuild_block_mesh {
             self.editor.runtime.dirty.rebuild_block_mesh = false;
@@ -316,29 +317,48 @@ impl State {
         }
 
         if dirty.rebuild_block_mesh {
+            let block_mesh_started_at = PlatformInstant::now();
             if self.phase == AppPhase::Editor && is_dragging {
                 self.rebuild_editor_selected_block_vertices();
             } else {
                 self.rebuild_block_vertices();
             }
+            self.perf_record(PerfStage::DirtyRebuildBlockMesh, block_mesh_started_at);
         }
 
         if dirty.rebuild_selection_overlays {
+            let gizmo_started_at = PlatformInstant::now();
             self.rebuild_editor_gizmo_vertices();
+            self.perf_record(PerfStage::DirtyRebuildSelectionOverlays, gizmo_started_at);
+
+            let hover_started_at = PlatformInstant::now();
             self.rebuild_editor_hover_outline_vertices();
+            self.perf_record(PerfStage::DirtyRebuildSelectionOverlays, hover_started_at);
+
+            let outline_started_at = PlatformInstant::now();
             self.rebuild_editor_selection_outline_vertices();
+            self.perf_record(PerfStage::DirtyRebuildSelectionOverlays, outline_started_at);
         }
 
         if dirty.rebuild_tap_indicators {
+            let tap_indicators_started_at = PlatformInstant::now();
             self.rebuild_tap_indicator_vertices();
+            self.perf_record(
+                PerfStage::DirtyRebuildTapIndicators,
+                tap_indicators_started_at,
+            );
         }
 
         if dirty.rebuild_preview_player {
+            let preview_started_at = PlatformInstant::now();
             self.rebuild_editor_preview_player_vertices();
+            self.perf_record(PerfStage::DirtyRebuildPreviewPlayer, preview_started_at);
         }
 
         if dirty.rebuild_cursor {
+            let cursor_started_at = PlatformInstant::now();
             self.rebuild_editor_cursor_vertices();
+            self.perf_record(PerfStage::DirtyRebuildCursor, cursor_started_at);
         }
 
         if dirty.sync_game_objects || dirty.rebuild_block_mesh {
@@ -623,8 +643,13 @@ impl State {
             }
         }
 
+        let static_mesh_started_at = PlatformInstant::now();
         let static_vertices = build_block_vertices(&static_objects);
+        self.perf_record(PerfStage::BlockMeshSplitStatic, static_mesh_started_at);
+
+        let selected_mesh_started_at = PlatformInstant::now();
         let selected_vertices = build_block_vertices(&selected_objects);
+        self.perf_record(PerfStage::BlockMeshSplitSelected, selected_mesh_started_at);
 
         self.render.meshes.blocks_static.replace_with_vertices(
             &self.render.gpu.device,
@@ -640,6 +665,7 @@ impl State {
     }
 
     fn rebuild_editor_selected_block_vertices(&mut self) {
+        let selected_only_started_at = PlatformInstant::now();
         let selected_mask = if let Some(ref cache) = self.editor.selected_mask_cache {
             if cache.len() == self.editor.objects.len() {
                 cache.clone()
@@ -680,6 +706,7 @@ impl State {
             &selected_vertices,
         );
         self.render.meshes.blocks.clear();
+        self.perf_record(PerfStage::BlockMeshSelectedOnly, selected_only_started_at);
     }
 
     pub(super) fn rebuild_tap_indicator_vertices(&mut self) {

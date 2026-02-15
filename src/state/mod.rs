@@ -28,7 +28,7 @@ pub(crate) use editor_interaction::{
 pub(crate) use editor_timeline::{EditorTimelineSample, EditorTimelineState};
 pub(crate) use editor_timing::EditorTimingState;
 pub(crate) use history::EditorHistoryState;
-pub(crate) use perf::{EditorPerfState, PerfStage};
+pub(crate) use perf::{EditorPerfState, PerfOverlayEntry, PerfStage};
 pub(crate) use render::RenderSubsystem;
 pub(crate) use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
 pub(crate) use view_model::EditorUiViewModel;

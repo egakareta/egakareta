@@ -187,6 +187,47 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
     }
 
     if view.perf_overlay_enabled {
+        fn perf_stat_label(
+            name: &str,
+            last_ms: f32,
+            avg_ms: f32,
+            max_ms: f32,
+            calls: u64,
+        ) -> String {
+            format!(
+                "{:<22} last {:>6.2}ms | avg {:>6.2}ms | max {:>6.2}ms | n {}",
+                name, last_ms, avg_ms, max_ms, calls
+            )
+        }
+
+        fn show_perf_entry(ui: &mut egui::Ui, entry: &crate::state::PerfOverlayEntry) {
+            if entry.children.is_empty() {
+                ui.monospace(perf_stat_label(
+                    entry.name,
+                    entry.last_ms,
+                    entry.avg_ms,
+                    entry.max_ms,
+                    entry.calls,
+                ));
+                return;
+            }
+
+            let header_text = perf_stat_label(
+                entry.name,
+                entry.last_ms,
+                entry.avg_ms,
+                entry.max_ms,
+                entry.calls,
+            );
+            egui::CollapsingHeader::new(header_text)
+                .default_open(false)
+                .show(ui, |ui| {
+                    for child in &entry.children {
+                        show_perf_entry(ui, child);
+                    }
+                });
+        }
+
         egui::Area::new("editor_perf_overlay".into())
             .order(egui::Order::Foreground)
             .anchor(egui::Align2::LEFT_TOP, egui::vec2(12.0, 12.0))
@@ -194,8 +235,14 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                 egui::Frame::window(ui.style())
                     .fill(egui::Color32::from_black_alpha(210))
                     .show(ui, |ui| {
-                        for line in &view.perf_overlay_lines {
+                        ui.monospace("Perf Overlay (Ctrl+Shift+Alt+F12)");
+                        ui.monospace(format!("FPS {:.1}", view.fps));
+                        for line in view.perf_overlay_lines.iter().take(1) {
                             ui.monospace(line);
+                        }
+                        ui.separator();
+                        for entry in &view.perf_overlay_entries {
+                            show_perf_entry(ui, entry);
                         }
                     });
             });

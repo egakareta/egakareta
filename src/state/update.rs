@@ -1,6 +1,6 @@
 use glam::{Mat4, Vec3};
 
-use super::{PerfStage, State};
+use super::{PerfOverlayEntry, PerfStage, State};
 use crate::game::TimelineSimulationRuntime;
 use crate::mesh::{build_block_vertices_with_phase, build_trail_vertices};
 use crate::platform::state_host::PlatformInstant;
@@ -33,18 +33,7 @@ impl State {
                 .unwrap_or("none")
         ));
 
-        for stage in [
-            PerfStage::FrameTotal,
-            PerfStage::TimelinePlayback,
-            PerfStage::DragSelection,
-            PerfStage::GizmoRebuild,
-            PerfStage::DirtyProcess,
-            PerfStage::TimelineSampleRebuild,
-            PerfStage::TapIndicatorMeshRebuild,
-            PerfStage::BlockMeshRebuild,
-            PerfStage::TTapToggleTotal,
-            PerfStage::TTapSolve,
-        ] {
+        for stage in PerfStage::roots() {
             let stat = self.editor.perf.profiler.stats[stage.as_index()];
             lines.push(format!(
                 "{:<18} last {:>6.2}ms | avg {:>6.2}ms | max {:>6.2}ms | n {}",
@@ -57,6 +46,14 @@ impl State {
         }
 
         lines
+    }
+
+    pub(crate) fn editor_perf_overlay_entries(&self) -> Vec<PerfOverlayEntry> {
+        if !self.editor.perf.profiler.enabled {
+            return Vec::new();
+        }
+
+        self.editor.perf.profiler.overlay_entries()
     }
 
     pub(super) fn perf_record(&mut self, stage: PerfStage, started_at: PlatformInstant) {

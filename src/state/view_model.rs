@@ -1,4 +1,4 @@
-use super::State;
+use super::{PerfOverlayEntry, State};
 use crate::types::{EditorMode, LevelObject, MusicMetadata, SpawnDirection, TimingPoint};
 
 pub(crate) struct EditorUiViewModel<'a> {
@@ -29,6 +29,7 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) fps: f32,
     pub(crate) perf_overlay_enabled: bool,
     pub(crate) perf_overlay_lines: Vec<String>,
+    pub(crate) perf_overlay_entries: Vec<PerfOverlayEntry>,
 }
 
 impl State {
@@ -38,6 +39,11 @@ impl State {
         let perf_overlay_enabled = self.editor_perf_overlay_enabled();
         let perf_overlay_lines = if perf_overlay_enabled {
             self.editor_perf_overlay_lines()
+        } else {
+            Vec::new()
+        };
+        let perf_overlay_entries = if perf_overlay_enabled {
+            self.editor_perf_overlay_entries()
         } else {
             Vec::new()
         };
@@ -70,6 +76,7 @@ impl State {
             fps: self.editor_fps(),
             perf_overlay_enabled,
             perf_overlay_lines,
+            perf_overlay_entries,
         }
     }
 }

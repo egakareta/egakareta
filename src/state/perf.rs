@@ -5,18 +5,71 @@ pub(crate) enum PerfStage {
     DragSelection,
     GizmoRebuild,
     DirtyProcess,
+    DirtySyncGameObjects,
+    DirtyRebuildBlockMesh,
+    DirtyRebuildSelectionOverlays,
+    DirtyRebuildTapIndicators,
+    DirtyRebuildPreviewPlayer,
+    DirtyRebuildCursor,
     TimelineSampleRebuild,
     TapIndicatorMeshRebuild,
     BlockMeshRebuild,
+    BlockMeshSplitStatic,
+    BlockMeshSplitSelected,
+    BlockMeshSelectedOnly,
     TTapToggleTotal,
     TTapSolve,
 }
 
-pub(crate) const PERF_STAGE_COUNT: usize = 10;
+pub(crate) const PERF_STAGE_COUNT: usize = 19;
+
+#[derive(Clone)]
+pub(crate) struct PerfOverlayEntry {
+    pub(crate) name: &'static str,
+    pub(crate) last_ms: f32,
+    pub(crate) avg_ms: f32,
+    pub(crate) max_ms: f32,
+    pub(crate) calls: u64,
+    pub(crate) children: Vec<PerfOverlayEntry>,
+}
 
 impl PerfStage {
     pub(crate) const fn as_index(self) -> usize {
         self as usize
+    }
+
+    pub(crate) const fn roots() -> &'static [PerfStage] {
+        &[
+            Self::FrameTotal,
+            Self::TimelinePlayback,
+            Self::DragSelection,
+            Self::GizmoRebuild,
+            Self::DirtyProcess,
+            Self::TimelineSampleRebuild,
+            Self::TapIndicatorMeshRebuild,
+            Self::BlockMeshRebuild,
+            Self::TTapToggleTotal,
+        ]
+    }
+
+    pub(crate) const fn children(self) -> &'static [PerfStage] {
+        match self {
+            Self::DirtyProcess => &[
+                Self::DirtySyncGameObjects,
+                Self::DirtyRebuildBlockMesh,
+                Self::DirtyRebuildSelectionOverlays,
+                Self::DirtyRebuildTapIndicators,
+                Self::DirtyRebuildPreviewPlayer,
+                Self::DirtyRebuildCursor,
+            ],
+            Self::BlockMeshRebuild => &[
+                Self::BlockMeshSplitStatic,
+                Self::BlockMeshSplitSelected,
+                Self::BlockMeshSelectedOnly,
+            ],
+            Self::TTapToggleTotal => &[Self::TTapSolve],
+            _ => &[],
+        }
     }
 
     pub(crate) const fn name(self) -> &'static str {
@@ -26,9 +79,18 @@ impl PerfStage {
             Self::DragSelection => "DragSelection",
             Self::GizmoRebuild => "GizmoRebuild",
             Self::DirtyProcess => "DirtyProcess",
+            Self::DirtySyncGameObjects => "DirtySyncObjects",
+            Self::DirtyRebuildBlockMesh => "DirtyBlockMesh",
+            Self::DirtyRebuildSelectionOverlays => "DirtySelectionOverlays",
+            Self::DirtyRebuildTapIndicators => "DirtyTapIndicators",
+            Self::DirtyRebuildPreviewPlayer => "DirtyPreviewPlayer",
+            Self::DirtyRebuildCursor => "DirtyCursor",
             Self::TimelineSampleRebuild => "TimelineSamples",
             Self::TapIndicatorMeshRebuild => "TapIndicatorMesh",
             Self::BlockMeshRebuild => "BlockMeshRebuild",
+            Self::BlockMeshSplitStatic => "BlockMeshSplitStatic",
+            Self::BlockMeshSplitSelected => "BlockMeshSplitSelected",
+            Self::BlockMeshSelectedOnly => "BlockMeshSelectedOnly",
             Self::TTapToggleTotal => "TKeyToggle",
             Self::TTapSolve => "TKeySolve",
         }
@@ -93,6 +155,31 @@ impl EditorPerfProfiler {
         self.frame_stage_ms = [0.0; PERF_STAGE_COUNT];
     }
 
+    fn overlay_entry_for_stage(&self, stage: PerfStage) -> PerfOverlayEntry {
+        let stat = self.stats[stage.as_index()];
+        let children = stage
+            .children()
+            .iter()
+            .map(|child| self.overlay_entry_for_stage(*child))
+            .collect();
+
+        PerfOverlayEntry {
+            name: stage.name(),
+            last_ms: stat.last_ms,
+            avg_ms: stat.ema_ms,
+            max_ms: stat.max_ms,
+            calls: stat.calls,
+            children,
+        }
+    }
+
+    pub(crate) fn overlay_entries(&self) -> Vec<PerfOverlayEntry> {
+        PerfStage::roots()
+            .iter()
+            .map(|stage| self.overlay_entry_for_stage(*stage))
+            .collect()
+    }
+
     pub(crate) fn dominant_stage_this_frame(&self) -> Option<PerfStage> {
         let stages = [
             PerfStage::TimelinePlayback,
@@ -103,7 +190,6 @@ impl EditorPerfProfiler {
             PerfStage::TapIndicatorMeshRebuild,
             PerfStage::BlockMeshRebuild,
             PerfStage::TTapToggleTotal,
-            PerfStage::TTapSolve,
         ];
 
         let mut dominant: Option<(PerfStage, f32)> = None;
