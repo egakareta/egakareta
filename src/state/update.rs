@@ -2,15 +2,15 @@ use super::*;
 
 impl State {
     pub(crate) fn toggle_editor_perf_overlay(&mut self) {
-        self.editor_perf.enabled = !self.editor_perf.enabled;
+        self.editor_perf.profiler.enabled = !self.editor_perf.profiler.enabled;
     }
 
     pub(crate) fn editor_perf_overlay_enabled(&self) -> bool {
-        self.editor_perf.enabled
+        self.editor_perf.profiler.enabled
     }
 
     pub(crate) fn editor_perf_overlay_lines(&self) -> Vec<String> {
-        if !self.editor_perf.enabled {
+        if !self.editor_perf.profiler.enabled {
             return Vec::new();
         }
 
@@ -18,8 +18,9 @@ impl State {
         lines.push("Perf Overlay (Ctrl+Shift+Alt+F12)".to_string());
         lines.push(format!(
             "Spikes(>16.7ms): {} | Last Spike: {}",
-            self.editor_perf.frame_spike_count,
+            self.editor_perf.profiler.frame_spike_count,
             self.editor_perf
+                .profiler
                 .last_spike_stage
                 .map(|stage| stage.name())
                 .unwrap_or("none")
@@ -37,7 +38,7 @@ impl State {
             PerfStage::TTapToggleTotal,
             PerfStage::TTapSolve,
         ] {
-            let stat = self.editor_perf.stats[stage.as_index()];
+            let stat = self.editor_perf.profiler.stats[stage.as_index()];
             lines.push(format!(
                 "{:<18} last {:>6.2}ms | avg {:>6.2}ms | max {:>6.2}ms | n {}",
                 stage.name(),
@@ -53,11 +54,11 @@ impl State {
 
     pub(super) fn perf_record(&mut self, stage: PerfStage, started_at: PlatformInstant) {
         let elapsed_ms = started_at.elapsed().as_secs_f32() * 1000.0;
-        self.editor_perf.observe(stage, elapsed_ms);
+        self.editor_perf.profiler.observe(stage, elapsed_ms);
     }
 
     pub fn update(&mut self) {
-        self.editor_perf.begin_frame();
+        self.editor_perf.profiler.begin_frame();
         self.update_audio_imports();
         self.update_waveform_loading();
         const FIXED_DT: f32 = 1.0 / 120.0;
@@ -67,21 +68,24 @@ impl State {
         self.last_frame = now;
         let frame_dt_ms = frame_dt * 1000.0;
         let instant_fps = 1.0 / frame_dt.max(1e-4);
-        if self.editor_fps_smoothed <= 0.0 {
-            self.editor_fps_smoothed = instant_fps;
+        if self.editor_perf.fps_smoothed <= 0.0 {
+            self.editor_perf.fps_smoothed = instant_fps;
         } else {
-            self.editor_fps_smoothed = self.editor_fps_smoothed * 0.9 + instant_fps * 0.1;
+            self.editor_perf.fps_smoothed = self.editor_perf.fps_smoothed * 0.9 + instant_fps * 0.1;
         }
         self.accumulator = (self.accumulator + frame_dt).min(0.25);
 
         if self.phase == AppPhase::Menu {
             self.accumulator = 0.0;
             self.update_menu_camera();
-            self.editor_perf.observe(PerfStage::FrameTotal, frame_dt_ms);
+            self.editor_perf
+                .profiler
+                .observe(PerfStage::FrameTotal, frame_dt_ms);
             if frame_dt_ms > 16.7 {
-                self.editor_perf.frame_spike_count += 1;
-                self.editor_perf.last_spike_stage = self
+                self.editor_perf.profiler.frame_spike_count += 1;
+                self.editor_perf.profiler.last_spike_stage = self
                     .editor_perf
+                    .profiler
                     .dominant_stage_this_frame()
                     .or(Some(PerfStage::FrameTotal));
             }
@@ -199,11 +203,14 @@ impl State {
             self.perf_record(PerfStage::DirtyProcess, dirty_started_at);
             self.update_editor_camera();
 
-            self.editor_perf.observe(PerfStage::FrameTotal, frame_dt_ms);
+            self.editor_perf
+                .profiler
+                .observe(PerfStage::FrameTotal, frame_dt_ms);
             if frame_dt_ms > 16.7 {
-                self.editor_perf.frame_spike_count += 1;
-                self.editor_perf.last_spike_stage = self
+                self.editor_perf.profiler.frame_spike_count += 1;
+                self.editor_perf.profiler.last_spike_stage = self
                     .editor_perf
+                    .profiler
                     .dominant_stage_this_frame()
                     .or(Some(PerfStage::FrameTotal));
             }
@@ -309,11 +316,14 @@ impl State {
         );
 
         if self.phase == AppPhase::Playing {
-            self.editor_perf.observe(PerfStage::FrameTotal, frame_dt_ms);
+            self.editor_perf
+                .profiler
+                .observe(PerfStage::FrameTotal, frame_dt_ms);
             if frame_dt_ms > 16.7 {
-                self.editor_perf.frame_spike_count += 1;
-                self.editor_perf.last_spike_stage = self
+                self.editor_perf.profiler.frame_spike_count += 1;
+                self.editor_perf.profiler.last_spike_stage = self
                     .editor_perf
+                    .profiler
                     .dominant_stage_this_frame()
                     .or(Some(PerfStage::FrameTotal));
             }

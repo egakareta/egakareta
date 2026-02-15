@@ -259,7 +259,7 @@ impl State {
     }
 
     pub fn editor_fps(&self) -> f32 {
-        self.editor_fps_smoothed
+        self.editor_perf.fps_smoothed
     }
 
     pub fn set_editor_timeline_time_seconds(&mut self, time_seconds: f32) {

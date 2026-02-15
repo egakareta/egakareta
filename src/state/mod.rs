@@ -187,8 +187,7 @@ pub struct State {
     editor_camera: EditorCameraState,
     editor_timeline: EditorTimelineState,
     editor_dirty: EditorDirtyFlags,
-    editor_perf: EditorPerfProfiler,
-    editor_fps_smoothed: f32,
+    editor_perf: EditorPerfState,
     editor_gizmo: EditorGizmoState,
     editor_timing: EditorTimingState,
     editor_interaction: EditorInteractionState,
@@ -446,6 +445,11 @@ struct EditorConfigState {
     selected_block_id: String,
     snap_to_grid: bool,
     snap_step: f32,
+}
+
+struct EditorPerfState {
+    profiler: EditorPerfProfiler,
+    fps_smoothed: f32,
 }
 
 struct EditorCameraState {
@@ -908,8 +912,10 @@ impl State {
                 },
             },
             editor_dirty: EditorDirtyFlags::default(),
-            editor_perf: EditorPerfProfiler::new(),
-            editor_fps_smoothed: 0.0,
+            editor_perf: EditorPerfState {
+                profiler: EditorPerfProfiler::new(),
+                fps_smoothed: 0.0,
+            },
             editor_gizmo: EditorGizmoState {
                 rebuild_accumulator: 0.0,
                 last_pan: [0.0, 0.0],
