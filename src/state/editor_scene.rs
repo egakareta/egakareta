@@ -259,6 +259,17 @@ impl EditorSubsystem {
 }
 
 impl State {
+    fn preview_simulation_dt(&self) -> f32 {
+        let object_count = self.editor.objects.len();
+        if object_count >= 300 {
+            1.0 / 30.0
+        } else if object_count >= 150 {
+            1.0 / 45.0
+        } else {
+            1.0 / 60.0
+        }
+    }
+
     pub(super) fn mark_editor_dirty(&mut self, dirty: EditorDirtyFlags) {
         self.editor.mark_dirty(dirty);
     }
@@ -454,7 +465,7 @@ impl State {
                 self.editor.spawn.direction,
                 &self.editor.objects,
                 &self.editor.timeline.taps.tap_times,
-                1.0 / 120.0,
+                self.preview_simulation_dt(),
             ));
             self.editor.timeline.scrub_runtime_revision = self.editor.timeline.simulation_revision;
         }
@@ -766,8 +777,10 @@ impl State {
             return;
         }
 
+        let solve_started_at = PlatformInstant::now();
         let (position, direction) =
-            self.editor_timeline_position(self.editor.timeline.clock.time_seconds);
+            self.resolve_editor_timeline_position(self.editor.timeline.clock.time_seconds);
+        self.perf_record(PerfStage::PreviewSolveTimeline, solve_started_at);
         self.rebuild_editor_preview_player_vertices_for_state(position, direction);
     }
 
@@ -776,6 +789,7 @@ impl State {
         position: [f32; 3],
         direction: SpawnDirection,
     ) {
+        let mesh_started_at = PlatformInstant::now();
         self.editor.timeline.preview.position = position;
         self.editor.timeline.preview.direction = direction;
 
@@ -796,5 +810,6 @@ impl State {
                 "Editor Preview Player Vertex Buffer",
                 &vertices,
             );
+        self.perf_record(PerfStage::PreviewMeshBuild, mesh_started_at);
     }
 }

@@ -16,6 +16,8 @@ pub(crate) enum PerfStage {
     DirtyRebuildSelectionOverlays,
     DirtyRebuildTapIndicators,
     DirtyRebuildPreviewPlayer,
+    PreviewSolveTimeline,
+    PreviewMeshBuild,
     DirtyRebuildCursor,
     TimelineSampleRebuild,
     TapIndicatorMeshRebuild,
@@ -32,7 +34,7 @@ pub(crate) enum PerfStage {
     TTapSolve,
 }
 
-pub(crate) const PERF_STAGE_COUNT: usize = 30;
+pub(crate) const PERF_STAGE_COUNT: usize = 32;
 
 #[derive(Clone)]
 pub(crate) struct PerfOverlayEntry {
@@ -80,6 +82,9 @@ impl PerfStage {
                 Self::DirtyRebuildPreviewPlayer,
                 Self::DirtyRebuildCursor,
             ],
+            Self::DirtyRebuildPreviewPlayer => {
+                &[Self::PreviewSolveTimeline, Self::PreviewMeshBuild]
+            }
             Self::BlockMeshRebuild => &[
                 Self::BlockMeshMaskBuild,
                 Self::BlockMeshSplitStatic,
@@ -115,6 +120,8 @@ impl PerfStage {
             Self::DirtyRebuildSelectionOverlays => "DirtySelectionOverlays",
             Self::DirtyRebuildTapIndicators => "DirtyTapIndicators",
             Self::DirtyRebuildPreviewPlayer => "DirtyPreviewPlayer",
+            Self::PreviewSolveTimeline => "PreviewSolveTimeline",
+            Self::PreviewMeshBuild => "PreviewMeshBuild",
             Self::DirtyRebuildCursor => "DirtyCursor",
             Self::TimelineSampleRebuild => "TimelineSamples",
             Self::TapIndicatorMeshRebuild => "TapIndicatorMesh",
