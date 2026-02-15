@@ -6,12 +6,13 @@ use crate::editor_domain::{
     derive_tap_indicator_positions, editor_session_init_from_metadata,
 };
 use crate::game::GameState;
-use crate::level_repository::{
-    build_ldz_archive, load_builtin_level_metadata, parse_level_metadata_json,
-    read_metadata_from_ldz, serialize_level_metadata_pretty,
+use crate::import_export_service::{
+    build_level_export, build_level_json_export, parse_level_import, parse_level_ldz_import,
 };
+use crate::level_repository::load_builtin_level_metadata;
 use crate::mesh::build_block_obj;
-use crate::platform::io::{log_platform_error, read_editor_music_bytes, save_level_export};
+use crate::platform::io::{log_platform_error, read_editor_music_bytes};
+use crate::platform::services::{trigger_audio_import, trigger_level_export};
 use crate::types::{AppPhase, LevelMetadata, MusicMetadata};
 
 impl State {
@@ -130,27 +131,7 @@ impl State {
     }
 
     pub fn trigger_audio_import(&self) {
-        let sender = self.audio.state.editor.audio_import_channel.0.clone();
-        #[cfg(target_arch = "wasm32")]
-        {
-            wasm_bindgen_futures::spawn_local(async move {
-                if let Some((filename, bytes)) = crate::platform::io::pick_audio_file().await {
-                    let _ = crate::platform::io::save_audio_to_storage(&filename, &bytes).await;
-                    let _ = sender.send((filename, bytes));
-                }
-            });
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            std::thread::spawn(move || {
-                pollster::block_on(async {
-                    if let Some((filename, bytes)) = crate::platform::io::pick_audio_file().await {
-                        let _ = crate::platform::io::save_audio_to_storage(&filename, &bytes).await;
-                        let _ = sender.send((filename, bytes));
-                    }
-                });
-            });
-        }
+        trigger_audio_import(self.audio.state.editor.audio_import_channel.0.clone());
     }
 
     pub(super) fn update_audio_imports(&mut self) {
@@ -218,25 +199,22 @@ impl State {
                     &metadata.music.source,
                 )
             });
-        let audio_file = audio_bytes
-            .as_ref()
-            .map(|bytes| (metadata.music.source.as_str(), bytes.as_slice()));
 
-        build_ldz_archive(&metadata, audio_file)
+        build_level_export(&metadata, audio_bytes)
     }
 
     pub fn import_level_ldz(&mut self, data: &[u8]) -> Result<(), String> {
-        let metadata = read_metadata_from_ldz(data)?;
+        let metadata = parse_level_ldz_import(data)?;
         self.apply_imported_level_metadata(metadata);
         Ok(())
     }
 
     pub fn export_level(&self) -> String {
-        serialize_level_metadata_pretty(&self.current_editor_metadata()).unwrap_or_default()
+        build_level_json_export(&self.current_editor_metadata())
     }
 
     pub fn import_level(&mut self, json: &str) -> Result<(), String> {
-        let metadata = parse_level_metadata_json(json)?;
+        let metadata = parse_level_import(json)?;
         self.apply_imported_level_metadata(metadata);
 
         Ok(())
@@ -355,9 +333,7 @@ impl State {
                         .unwrap_or_else(|| "level".to_string())
                 );
 
-                if let Err(error) = save_level_export(&filename, &data) {
-                    log_platform_error(&format!("Export failed: {}", error));
-                }
+                trigger_level_export(&filename, &data);
             }
             Err(e) => {
                 log_platform_error(&format!("Export failed: {}", e));
@@ -396,9 +372,7 @@ impl State {
         let filename = format!("{}_selected.obj", object_name);
         let obj = build_block_obj(&block, &object_name);
 
-        if let Err(error) = save_level_export(&filename, obj.as_bytes()) {
-            log_platform_error(&format!("OBJ export failed: {}", error));
-        }
+        trigger_level_export(&filename, obj.as_bytes());
     }
 
     pub fn complete_import(&mut self) {
