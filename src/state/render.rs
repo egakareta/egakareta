@@ -56,7 +56,11 @@ impl State {
     where
         F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
     {
-        let output = self.gpu.surface.get_current_texture()?;
+        let surface = match &self.gpu.surface {
+            Some(s) => s,
+            None => return Ok(()),
+        };
+        let output = surface.get_current_texture()?;
         let view = output
             .texture
             .create_view(&TextureViewDescriptor::default());

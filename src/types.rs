@@ -326,7 +326,7 @@ impl LevelObject {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum AppPhase {
     Menu,
     Playing,
@@ -357,7 +357,7 @@ pub(crate) struct EditorState {
     pub(crate) pointer_screen: Option<[f64; 2]>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum EditorMode {
     Select,
     #[default]

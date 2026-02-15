@@ -436,3 +436,60 @@ impl State {
             || !self.editor.ui.selected_block_indices.is_empty()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::AppCommand;
+    use crate::types::AppPhase;
+
+    #[test]
+    fn test_command_routing_navigation() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            // Initial state should be Menu
+            assert_eq!(state.phase, AppPhase::Menu);
+
+            // ToggleEditor from Menu should go to Editor
+            state.execute_command(AppCommand::ToggleEditor);
+            assert_eq!(state.phase, AppPhase::Editor);
+
+            // BackToMenu from Editor should go to Menu
+            state.execute_command(AppCommand::BackToMenu);
+            assert_eq!(state.phase, AppPhase::Menu);
+        });
+    }
+
+    #[test]
+    fn test_command_routing_editor_modes() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.execute_command(AppCommand::ToggleEditor);
+
+            state.execute_command(AppCommand::EditorModeSelect);
+            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Select);
+
+            state.execute_command(AppCommand::EditorModeTiming);
+            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Timing);
+
+            state.execute_command(AppCommand::EditorModePlace);
+            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Place);
+        });
+    }
+
+    #[test]
+    fn test_command_routing_editor_ops() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.execute_command(AppCommand::ToggleEditor);
+
+            let initial_zoom = state.editor.camera.editor_zoom;
+            state.execute_command(AppCommand::EditorAdjustZoom(0.5));
+            assert!(state.editor.camera.editor_zoom > initial_zoom);
+
+            state.execute_command(AppCommand::EditorSetBlockId("core/lava".to_string()));
+            assert_eq!(state.editor.config.selected_block_id, "core/lava");
+        });
+    }
+}

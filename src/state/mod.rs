@@ -142,8 +142,8 @@ pub(crate) struct SceneMeshes {
 }
 
 pub(crate) struct GpuContext {
-    surface_host: SurfaceHost,
-    surface: wgpu::Surface<'static>,
+    surface_host: Option<SurfaceHost>,
+    surface: Option<wgpu::Surface<'static>>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
@@ -183,18 +183,26 @@ impl GpuContext {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn window(&self) -> &NativeWindow {
-        self.surface_host.window()
+        match &self.surface_host {
+            Some(SurfaceHost::Window(w)) => w,
+            _ => panic!("No window available in this context"),
+        }
     }
 
     pub(crate) fn current_size(&self) -> PhysicalSize<u32> {
-        self.surface_host.current_size()
+        self.surface_host
+            .as_ref()
+            .map(|h| h.current_size())
+            .unwrap_or(self.size)
     }
 
     pub(crate) fn apply_resize(&mut self, new_size: PhysicalSize<u32>) {
         self.size = new_size;
         self.config.width = new_size.width;
         self.config.height = new_size.height;
-        self.surface.configure(&self.device, &self.config);
+        if let Some(surface) = &self.surface {
+            surface.configure(&self.device, &self.config);
+        }
         let (depth_texture, depth_view) = Self::create_depth_texture(&self.device, &self.config);
         self.depth_texture = depth_texture;
         self.depth_view = depth_view;
@@ -625,25 +633,32 @@ impl State {
     #[cfg(target_arch = "wasm32")]
     pub(crate) async fn new(canvas: WasmCanvas) -> Self {
         let (surface_host, instance, surface, size) = SurfaceHost::create_for_wasm(canvas);
-        Self::new_common(instance, surface_host, surface, size).await
+        Self::new_common(instance, Some(surface_host), Some(surface), size).await
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     pub async fn new_native(window: NativeWindow) -> State {
         let (surface_host, instance, surface, size) = SurfaceHost::create_for_native(window);
-        Self::new_common(instance, surface_host, surface, size).await
+        Self::new_common(instance, Some(surface_host), Some(surface), size).await
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn new_test() -> State {
+        let instance = wgpu::Instance::default();
+        let size = PhysicalSize::new(800, 600);
+        Self::new_common(instance, None, None, size).await
     }
 
     async fn new_common(
         instance: wgpu::Instance,
-        surface_host: SurfaceHost,
-        surface: wgpu::Surface<'static>,
+        surface_host: Option<SurfaceHost>,
+        surface: Option<wgpu::Surface<'static>>,
         size: PhysicalSize<u32>,
     ) -> State {
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: Some(&surface),
+                compatible_surface: surface.as_ref(),
                 force_fallback_adapter: false,
             })
             .await
@@ -664,26 +679,32 @@ impl State {
             .await
             .expect("Failed to create device");
 
-        let surface_caps = surface.get_capabilities(&adapter);
-        let surface_format = surface_caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| f.is_srgb())
-            .unwrap_or(surface_caps.formats[0]);
+        let surface_format = if let Some(surface) = &surface {
+            let surface_caps = surface.get_capabilities(&adapter);
+            surface_caps
+                .formats
+                .iter()
+                .copied()
+                .find(|f| f.is_srgb())
+                .unwrap_or(surface_caps.formats[0])
+        } else {
+            wgpu::TextureFormat::Rgba8UnormSrgb
+        };
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
             width: size.width.max(1),
             height: size.height.max(1),
-            present_mode: surface_caps.present_modes[0],
-            alpha_mode: surface_caps.alpha_modes[0],
+            present_mode: wgpu::PresentMode::Fifo,
+            alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
         };
 
-        surface.configure(&device, &config);
+        if let Some(surface) = &surface {
+            surface.configure(&device, &config);
+        }
 
         let (depth_texture, depth_view) = GpuContext::create_depth_texture(&device, &config);
 
@@ -1062,7 +1083,9 @@ impl State {
             return;
         }
 
-        self.gpu.surface_host.prepare_resize(new_size);
+        if let Some(host) = &self.gpu.surface_host {
+            host.prepare_resize(new_size);
+        }
         self.gpu.apply_resize(new_size);
     }
 
@@ -1339,5 +1362,30 @@ mod tests {
         );
         assert!(position[2] <= 3.0);
         assert!(matches!(direction, SpawnDirection::Forward));
+    }
+
+    #[test]
+    fn test_state_phase_integrity() {
+        pollster::block_on(async {
+            let mut state = super::State::new_test().await;
+            assert_eq!(state.phase, crate::types::AppPhase::Menu);
+
+            state.start_editor(0);
+            assert_eq!(state.phase, crate::types::AppPhase::Editor);
+
+            state.toggle_editor(); // Should go back to menu from editor
+            assert_eq!(state.phase, crate::types::AppPhase::Menu);
+        });
+    }
+
+    #[test]
+    fn test_state_input_routing() {
+        pollster::block_on(async {
+            let mut state = super::State::new_test().await;
+
+            // Test primary click in menu starts level
+            state.handle_primary_click(0.0, 0.0);
+            assert_eq!(state.phase, crate::types::AppPhase::Playing);
+        });
     }
 }
