@@ -1,4 +1,4 @@
-use crate::editor_domain::taps::derive_timeline_position;
+use crate::editor_domain::timeline::derive_timeline_position;
 use crate::types::{LevelMetadata, LevelObject, SpawnDirection, SpawnMetadata};
 
 pub(crate) struct EditorPlaytestTransition {

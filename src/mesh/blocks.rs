@@ -1,8 +1,8 @@
 use crate::block_repository::{resolve_block_definition, BlockRenderProfile};
+use crate::mesh::noise::pseudo_random_noise;
 use crate::mesh::obj::{append_obj_mesh, resolve_obj_mesh};
-use crate::mesh::primitives::{
-    append_prism, append_rounded_prism, pseudo_random_noise, rotate_vertices_around_z,
-};
+use crate::mesh::shapes::{append_prism, append_rounded_prism};
+use crate::mesh::transforms::rotate_vertices_around_z;
 use crate::types::{LevelObject, Vertex};
 
 pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {

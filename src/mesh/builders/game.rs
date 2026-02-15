@@ -1,4 +1,4 @@
-use crate::mesh::primitives::{append_prism, append_quad, append_rounded_prism};
+use crate::mesh::shapes::{append_prism, append_quad, append_rounded_prism};
 use crate::types::Vertex;
 
 pub(crate) fn build_trail_vertices(points: &[[f32; 3]], game_over: bool) -> Vec<Vertex> {

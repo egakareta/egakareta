@@ -1,11 +1,13 @@
 pub(crate) mod cursor;
 pub(crate) mod session;
-pub(crate) mod taps;
+pub(crate) mod tap_management;
+pub(crate) mod timeline;
 pub(crate) mod transitions;
 
 pub(crate) use cursor::*;
 pub(crate) use session::*;
-pub(crate) use taps::*;
+pub(crate) use tap_management::*;
+pub(crate) use timeline::*;
 pub(crate) use transitions::*;
 
 #[cfg(test)]
