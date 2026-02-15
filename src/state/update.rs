@@ -64,8 +64,8 @@ impl State {
         const FIXED_DT: f32 = 1.0 / 120.0;
 
         let now = PlatformInstant::now();
-        let frame_dt = (now - self.last_frame).as_secs_f32();
-        self.last_frame = now;
+        let frame_dt = (now - self.editor_frame.last_frame).as_secs_f32();
+        self.editor_frame.last_frame = now;
         let frame_dt_ms = frame_dt * 1000.0;
         let instant_fps = 1.0 / frame_dt.max(1e-4);
         if self.editor_perf.fps_smoothed <= 0.0 {
@@ -73,10 +73,10 @@ impl State {
         } else {
             self.editor_perf.fps_smoothed = self.editor_perf.fps_smoothed * 0.9 + instant_fps * 0.1;
         }
-        self.accumulator = (self.accumulator + frame_dt).min(0.25);
+        self.editor_frame.accumulator = (self.editor_frame.accumulator + frame_dt).min(0.25);
 
         if self.phase == AppPhase::Menu {
-            self.accumulator = 0.0;
+            self.editor_frame.accumulator = 0.0;
             self.update_menu_camera();
             self.editor_perf
                 .profiler
@@ -93,7 +93,7 @@ impl State {
         }
 
         if self.phase == AppPhase::Editor {
-            self.accumulator = 0.0;
+            self.editor_frame.accumulator = 0.0;
             self.meshes.trail.clear();
 
             if self.editor_timeline.playback.playing {
@@ -222,9 +222,9 @@ impl State {
             return;
         }
 
-        while self.accumulator >= FIXED_DT {
+        while self.editor_frame.accumulator >= FIXED_DT {
             self.game.update(FIXED_DT);
-            self.accumulator -= FIXED_DT;
+            self.editor_frame.accumulator -= FIXED_DT;
         }
 
         if self.game.game_over {

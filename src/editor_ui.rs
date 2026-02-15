@@ -25,7 +25,7 @@ pub fn show_menu_wordmark_ui(ctx: &egui::Context, state: &State, wordmark: &egui
         return;
     }
 
-    let max_width = (ctx.screen_rect().width() * 0.68).max(240.0);
+    let max_width = (ctx.content_rect().width() * 0.68).max(240.0);
     let scale = (max_width / texture_size.x).min(1.0);
     let display_size = texture_size * scale;
 

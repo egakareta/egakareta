@@ -187,13 +187,12 @@ pub struct State {
     editor_camera: EditorCameraState,
     editor_timeline: EditorTimelineState,
     editor_runtime: EditorRuntimeState,
+    editor_frame: EditorFrameState,
     editor_perf: EditorPerfState,
     editor_timing: EditorTimingState,
     editor_session: EditorSessionState,
     editor_audio: EditorAudioState,
     line_uniform: LineUniform,
-    last_frame: PlatformInstant,
-    accumulator: f32,
     audio: PlatformAudio,
 }
 
@@ -444,6 +443,11 @@ struct EditorRuntimeState {
     gizmo: EditorGizmoState,
     interaction: EditorInteractionState,
     history: EditorHistoryState,
+}
+
+struct EditorFrameState {
+    last_frame: PlatformInstant,
+    accumulator: f32,
 }
 
 struct EditorAudioState {
@@ -876,8 +880,10 @@ impl State {
             phase: AppPhase::Menu,
             menu,
             line_uniform,
-            last_frame: now,
-            accumulator: 0.0,
+            editor_frame: EditorFrameState {
+                last_frame: now,
+                accumulator: 0.0,
+            },
             audio: PlatformAudio::new(),
             editor: EditorState::new(),
             editor_config: EditorConfigState {
