@@ -11,22 +11,20 @@ use crate::commands::InputEvent;
 use crate::platform::input_mapping::{
     key_str_from_winit, mouse_button_index_from_winit, zoom_delta_from_winit,
 };
-use crate::platform::pipeline::FramePipeline;
-use crate::{load_menu_wordmark_texture, State};
+use crate::platform::runtime::Runtime;
+use crate::State;
 
 struct App {
-    state: Option<State>,
+    runtime: Option<Runtime>,
     egui_state: Option<EguiWinitState>,
-    pipeline: Option<FramePipeline>,
     last_cursor_pos: Option<PhysicalPosition<f64>>,
 }
 
 impl App {
     fn new() -> Self {
         Self {
-            state: None,
+            runtime: None,
             egui_state: None,
-            pipeline: None,
             last_cursor_pos: None,
         }
     }
@@ -34,7 +32,7 @@ impl App {
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.state.is_none() {
+        if self.runtime.is_none() {
             let icon = {
                 let bytes = include_bytes!("../../assets/favicon.png");
                 let image = image::load_from_memory(bytes).expect("Failed to load icon");
@@ -52,21 +50,19 @@ impl ApplicationHandler for App {
                 .expect("Failed to create window");
 
             let state = pollster::block_on(State::new_native(window));
-            let egui_ctx = egui::Context::default();
+            let runtime = Runtime::new(state);
+
             let egui_state = EguiWinitState::new(
-                egui_ctx.clone(),
+                runtime.pipeline.ctx().clone(),
                 egui::ViewportId::ROOT,
-                state.window(),
-                Some(state.window().scale_factor() as f32),
+                runtime.state.window(),
+                Some(runtime.state.window().scale_factor() as f32),
                 None,
                 None,
             );
-            let egui_renderer = state.create_egui_renderer();
-            let menu_wordmark = load_menu_wordmark_texture(&egui_ctx);
 
-            self.state = Some(state);
+            self.runtime = Some(runtime);
             self.egui_state = Some(egui_state);
-            self.pipeline = Some(FramePipeline::new(egui_ctx, egui_renderer, menu_wordmark));
         }
     }
 
@@ -76,21 +72,19 @@ impl ApplicationHandler for App {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
-        let (state, egui_state, pipeline) = match (
-            self.state.as_mut(),
-            self.egui_state.as_mut(),
-            self.pipeline.as_mut(),
-        ) {
-            (Some(s), Some(es), Some(p)) => (s, es, p),
+        let (runtime, egui_state) = match (self.runtime.as_mut(), self.egui_state.as_mut()) {
+            (Some(r), Some(es)) => (r, es),
             _ => return,
         };
 
-        let egui_consumed = egui_state.on_window_event(state.window(), &event).consumed;
+        let egui_consumed = egui_state
+            .on_window_event(runtime.state.window(), &event)
+            .consumed;
 
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(physical_size) => {
-                state.process_input_event(InputEvent::Resize {
+                runtime.state.process_input_event(InputEvent::Resize {
                     width: physical_size.width,
                     height: physical_size.height,
                 });
@@ -103,7 +97,7 @@ impl ApplicationHandler for App {
                 if !egui_consumed {
                     let pressed = element_state == winit::event::ElementState::Pressed;
                     let button_idx = mouse_button_index_from_winit(button);
-                    state.process_input_event(InputEvent::MouseButton {
+                    runtime.state.process_input_event(InputEvent::MouseButton {
                         button: button_idx,
                         pressed,
                     });
@@ -111,13 +105,13 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 if !egui_consumed {
-                    state.process_input_event(InputEvent::PointerMoved {
+                    runtime.state.process_input_event(InputEvent::PointerMoved {
                         x: position.x,
                         y: position.y,
                     });
 
                     if let Some(last) = self.last_cursor_pos {
-                        state.process_input_event(InputEvent::CameraDrag {
+                        runtime.state.process_input_event(InputEvent::CameraDrag {
                             dx: position.x - last.x,
                             dy: position.y - last.y,
                         });
@@ -128,11 +122,13 @@ impl ApplicationHandler for App {
             WindowEvent::MouseWheel { delta, .. } => {
                 if !egui_consumed {
                     let zoom_delta = zoom_delta_from_winit(delta);
-                    state.process_input_event(InputEvent::Zoom(zoom_delta));
+                    runtime
+                        .state
+                        .process_input_event(InputEvent::Zoom(zoom_delta));
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                if egui_consumed || pipeline.ctx().wants_keyboard_input() {
+                if egui_consumed || runtime.pipeline.ctx().wants_keyboard_input() {
                     return;
                 }
 
@@ -140,25 +136,26 @@ impl ApplicationHandler for App {
                 let just_pressed = pressed && !event.repeat;
 
                 let key_str = key_str_from_winit(&event.logical_key);
-                state.process_input_event(InputEvent::Key {
+                runtime.state.process_input_event(InputEvent::Key {
                     key: key_str,
                     pressed,
                     just_pressed,
                 });
             }
             WindowEvent::RedrawRequested => {
-                let raw_input = egui_state.take_egui_input(state.window());
-                let full_output = pipeline.run_frame(state, raw_input);
+                let raw_input = egui_state.take_egui_input(runtime.state.window());
+                let full_output = runtime.run_frame(raw_input);
 
-                egui_state.handle_platform_output(state.window(), full_output.platform_output);
+                egui_state
+                    .handle_platform_output(runtime.state.window(), full_output.platform_output);
             }
             _ => {}
         }
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-        if let Some(state) = &self.state {
-            state.window().request_redraw();
+        if let Some(runtime) = &self.runtime {
+            runtime.state.window().request_redraw();
         }
     }
 }
