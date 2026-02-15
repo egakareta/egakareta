@@ -13,7 +13,7 @@ impl State {
             timeline_duration_seconds: self.editor_timeline.clock.duration_seconds,
             tap_times: self.editor_timeline.taps.tap_times.clone(),
             tap_indicator_positions: self.editor_timeline.taps.tap_indicator_positions.clone(),
-            timing_points: self.editor_timing_points.clone(),
+            timing_points: self.editor_timing.timing_points.clone(),
         }
     }
 
@@ -51,7 +51,7 @@ impl State {
         self.editor_timeline.clock.duration_seconds = snapshot.timeline_duration_seconds.max(0.1);
         self.editor_timeline.taps.tap_times = snapshot.tap_times;
         self.editor_timeline.taps.tap_indicator_positions = snapshot.tap_indicator_positions;
-        self.editor_timing_points = snapshot.timing_points;
+        self.editor_timing.timing_points = snapshot.timing_points;
         self.editor_timeline
             .taps
             .tap_times

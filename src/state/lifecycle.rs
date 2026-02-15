@@ -67,8 +67,8 @@ impl State {
         self.editor_spawn = init.spawn;
         self.editor_music_metadata = init.music;
         self.editor_timeline.taps.tap_times = init.tap_times;
-        self.editor_timing_points = init.timing_points;
-        self.editor_timing_selected_index = None;
+        self.editor_timing.timing_points = init.timing_points;
+        self.editor_timing.timing_selected_index = None;
         self.editor_timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
             self.editor_spawn.position,
             self.editor_spawn.direction,
@@ -157,15 +157,15 @@ impl State {
                     continue;
                 }
 
-                self.editor_waveform_samples = samples;
-                self.editor_waveform_sample_rate = sample_rate;
+                self.editor_timing.waveform_samples = samples;
+                self.editor_timing.waveform_sample_rate = sample_rate;
             } else {
                 if source != self.editor_music_metadata.source {
                     continue;
                 }
 
-                self.editor_waveform_samples.clear();
-                self.editor_waveform_sample_rate = 0;
+                self.editor_timing.waveform_samples.clear();
+                self.editor_timing.waveform_sample_rate = 0;
             }
 
             if self.waveform_loading_source.as_deref() == Some(source.as_str()) {
@@ -215,7 +215,7 @@ impl State {
             self.editor_music_metadata.clone(),
             self.editor_spawn.clone(),
             self.editor_timeline.taps.tap_times.clone(),
-            self.editor_timing_points.clone(),
+            self.editor_timing.timing_points.clone(),
             self.editor_timeline.clock.time_seconds,
             self.editor_timeline.clock.duration_seconds,
             self.editor_objects.clone(),
@@ -232,10 +232,11 @@ impl State {
         self.editor.hovered_block_index = None;
         self.editor_spawn = init.spawn;
         self.editor_timeline.taps.tap_times = init.tap_times;
-        self.editor_timing_points = init.timing_points;
-        self.editor_timing_points
+        self.editor_timing.timing_points = init.timing_points;
+        self.editor_timing
+            .timing_points
             .sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
-        self.editor_timing_selected_index = None;
+        self.editor_timing.timing_selected_index = None;
         self.editor_timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
             self.editor_spawn.position,
             self.editor_spawn.direction,

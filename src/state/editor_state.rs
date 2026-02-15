@@ -352,52 +352,52 @@ impl State {
     }
 
     pub(crate) fn editor_timing_points(&self) -> &[TimingPoint] {
-        &self.editor_timing_points
+        &self.editor_timing.timing_points
     }
 
     pub(crate) fn editor_playback_speed(&self) -> f32 {
-        self.editor_playback_speed
+        self.editor_timing.playback_speed
     }
 
     pub(crate) fn set_editor_playback_speed(&mut self, speed: f32) {
-        self.editor_playback_speed = speed.clamp(0.25, 2.0);
-        self.audio.set_speed(self.editor_playback_speed);
+        self.editor_timing.playback_speed = speed.clamp(0.25, 2.0);
+        self.audio.set_speed(self.editor_timing.playback_speed);
     }
 
     pub(crate) fn editor_timing_selected_index(&self) -> Option<usize> {
-        self.editor_timing_selected_index
+        self.editor_timing.timing_selected_index
     }
 
     pub(crate) fn set_editor_timing_selected_index(&mut self, index: Option<usize>) {
-        self.editor_timing_selected_index = index;
+        self.editor_timing.timing_selected_index = index;
     }
 
     pub(crate) fn editor_waveform_zoom(&self) -> f32 {
-        self.editor_waveform_zoom
+        self.editor_timing.waveform_zoom
     }
 
     pub(crate) fn set_editor_waveform_zoom(&mut self, zoom: f32) {
-        self.editor_waveform_zoom = zoom.clamp(0.1, 100.0);
+        self.editor_timing.waveform_zoom = zoom.clamp(0.1, 100.0);
     }
 
     pub(crate) fn editor_waveform_scroll(&self) -> f32 {
-        self.editor_waveform_scroll
+        self.editor_timing.waveform_scroll
     }
 
     pub(crate) fn set_editor_waveform_scroll(&mut self, scroll: f32) {
-        self.editor_waveform_scroll = scroll.max(0.0);
+        self.editor_timing.waveform_scroll = scroll.max(0.0);
     }
 
     pub(crate) fn editor_waveform_samples(&self) -> &[f32] {
-        &self.editor_waveform_samples
+        &self.editor_timing.waveform_samples
     }
 
     pub(crate) fn editor_waveform_sample_rate(&self) -> u32 {
-        self.editor_waveform_sample_rate
+        self.editor_timing.waveform_sample_rate
     }
 
     pub(crate) fn editor_bpm_tap_result(&self) -> Option<f32> {
-        self.editor_bpm_tap_result
+        self.editor_timing.bpm_tap_result
     }
 
     pub(crate) fn editor_add_timing_point(&mut self, time_seconds: f32, bpm: f32) {
@@ -408,41 +408,45 @@ impl State {
             time_signature_numerator: 4,
             time_signature_denominator: 4,
         };
-        self.editor_timing_points.push(tp);
-        self.editor_timing_points
+        self.editor_timing.timing_points.push(tp);
+        self.editor_timing
+            .timing_points
             .sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
-        self.editor_timing_selected_index = self
-            .editor_timing_points
+        self.editor_timing.timing_selected_index = self
+            .editor_timing
+            .timing_points
             .iter()
             .position(|tp| (tp.time_seconds - time_seconds).abs() < 1e-4);
     }
 
     pub(crate) fn editor_remove_timing_point(&mut self, index: usize) {
-        if index < self.editor_timing_points.len() {
+        if index < self.editor_timing.timing_points.len() {
             self.record_editor_history_state();
-            self.editor_timing_points.remove(index);
-            self.editor_timing_selected_index = None;
+            self.editor_timing.timing_points.remove(index);
+            self.editor_timing.timing_selected_index = None;
         }
     }
 
     pub(crate) fn editor_update_timing_point_time(&mut self, index: usize, time: f32) {
-        if index < self.editor_timing_points.len() {
+        if index < self.editor_timing.timing_points.len() {
             self.record_editor_history_state();
-            let tp = &mut self.editor_timing_points[index];
+            let tp = &mut self.editor_timing.timing_points[index];
             tp.time_seconds = time.max(0.0);
             let bpm = tp.bpm;
-            self.editor_timing_points
+            self.editor_timing
+                .timing_points
                 .sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
-            self.editor_timing_selected_index = self.editor_timing_points.iter().position(|tp| {
-                (tp.time_seconds - time).abs() < 1e-4 && (tp.bpm - bpm).abs() < 1e-4
-            });
+            self.editor_timing.timing_selected_index =
+                self.editor_timing.timing_points.iter().position(|tp| {
+                    (tp.time_seconds - time).abs() < 1e-4 && (tp.bpm - bpm).abs() < 1e-4
+                });
         }
     }
 
     pub(crate) fn editor_update_timing_point_bpm(&mut self, index: usize, bpm: f32) {
-        if index < self.editor_timing_points.len() {
+        if index < self.editor_timing.timing_points.len() {
             self.record_editor_history_state();
-            self.editor_timing_points[index].bpm = bpm.max(1.0);
+            self.editor_timing.timing_points[index].bpm = bpm.max(1.0);
         }
     }
 
@@ -452,10 +456,12 @@ impl State {
         numerator: u32,
         denominator: u32,
     ) {
-        if index < self.editor_timing_points.len() {
+        if index < self.editor_timing.timing_points.len() {
             self.record_editor_history_state();
-            self.editor_timing_points[index].time_signature_numerator = numerator.clamp(1, 32);
-            self.editor_timing_points[index].time_signature_denominator = denominator.clamp(1, 32);
+            self.editor_timing.timing_points[index].time_signature_numerator =
+                numerator.clamp(1, 32);
+            self.editor_timing.timing_points[index].time_signature_denominator =
+                denominator.clamp(1, 32);
         }
     }
 
@@ -474,35 +480,37 @@ impl State {
                 js_sys::Date::now() / 1000.0
             }
         };
-        self.editor_bpm_tap_times.push(now_secs);
+        self.editor_timing.bpm_tap_times.push(now_secs);
 
         // Keep only recent taps (last 3 seconds gap max)
-        if self.editor_bpm_tap_times.len() > 1 {
-            let last = *self.editor_bpm_tap_times.last().unwrap();
-            let second_last = self.editor_bpm_tap_times[self.editor_bpm_tap_times.len() - 2];
+        if self.editor_timing.bpm_tap_times.len() > 1 {
+            let last = *self.editor_timing.bpm_tap_times.last().unwrap();
+            let second_last =
+                self.editor_timing.bpm_tap_times[self.editor_timing.bpm_tap_times.len() - 2];
             if last - second_last > 3.0 {
-                self.editor_bpm_tap_times = vec![now_secs];
-                self.editor_bpm_tap_result = None;
+                self.editor_timing.bpm_tap_times = vec![now_secs];
+                self.editor_timing.bpm_tap_result = None;
                 return;
             }
         }
 
-        if self.editor_bpm_tap_times.len() >= 2 {
+        if self.editor_timing.bpm_tap_times.len() >= 2 {
             let intervals: Vec<f64> = self
-                .editor_bpm_tap_times
+                .editor_timing
+                .bpm_tap_times
                 .windows(2)
                 .map(|w| w[1] - w[0])
                 .collect();
             let avg_interval = intervals.iter().sum::<f64>() / intervals.len() as f64;
             if avg_interval > 0.0 {
-                self.editor_bpm_tap_result = Some((60.0 / avg_interval) as f32);
+                self.editor_timing.bpm_tap_result = Some((60.0 / avg_interval) as f32);
             }
         }
     }
 
     pub(crate) fn editor_bpm_tap_reset(&mut self) {
-        self.editor_bpm_tap_times.clear();
-        self.editor_bpm_tap_result = None;
+        self.editor_timing.bpm_tap_times.clear();
+        self.editor_timing.bpm_tap_result = None;
     }
 
     pub(crate) fn load_waveform_for_current_audio(&mut self) {
@@ -511,8 +519,8 @@ impl State {
         let music_source = self.editor_music_metadata.source.clone();
 
         if let Some((samples, sample_rate)) = self.waveform_cache.get(&music_source) {
-            self.editor_waveform_samples = samples.clone();
-            self.editor_waveform_sample_rate = *sample_rate;
+            self.editor_timing.waveform_samples = samples.clone();
+            self.editor_timing.waveform_sample_rate = *sample_rate;
             self.waveform_loading_source = None;
             return;
         }
@@ -522,8 +530,8 @@ impl State {
         }
 
         self.waveform_loading_source = Some(music_source.clone());
-        self.editor_waveform_samples.clear();
-        self.editor_waveform_sample_rate = 0;
+        self.editor_timing.waveform_samples.clear();
+        self.editor_timing.waveform_sample_rate = 0;
 
         #[cfg(not(target_arch = "wasm32"))]
         {
