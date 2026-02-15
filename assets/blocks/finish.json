@@ -1,0 +1,15 @@
+{
+    "id": "core/finish",
+    "display_name": "Finish",
+    "render": {
+        "profile": "finish_ring",
+        "color_top": [0.45, 0.95, 1.0, 1.0],
+        "color_outline": [0.95, 1.0, 1.0, 0.9]
+    },
+    "behavior": {
+        "collision": "finish",
+        "support_surface": false,
+        "consumed_on_overlap": false
+    },
+    "placeable": true
+}

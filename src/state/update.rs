@@ -2,7 +2,7 @@ use glam::{Mat4, Vec3};
 
 use super::{PerfStage, State};
 use crate::game::TimelineSimulationRuntime;
-use crate::mesh::build_trail_vertices;
+use crate::mesh::{build_block_vertices_with_phase, build_trail_vertices};
 use crate::platform::state_host::PlatformInstant;
 use crate::types::{AppPhase, CameraUniform, Direction, EditorMode};
 
@@ -238,6 +238,24 @@ impl State {
         while self.frame_runtime.editor.accumulator >= FIXED_DT {
             self.gameplay.state.update(FIXED_DT);
             self.frame_runtime.editor.accumulator -= FIXED_DT;
+        }
+
+        if self.gameplay.state.has_animated_blocks() {
+            let animated_vertices = build_block_vertices_with_phase(
+                &self.gameplay.state.objects,
+                self.gameplay.state.block_animation_phase_seconds(),
+            );
+            self.render.meshes.blocks.replace_with_vertices(
+                &self.render.gpu.device,
+                "Block Vertex Buffer",
+                &animated_vertices,
+            );
+        }
+
+        if self.gameplay.state.level_complete && self.gameplay.state.completion_hold_seconds <= 0.0
+        {
+            self.back_to_menu();
+            return;
         }
 
         if self.gameplay.state.game_over {

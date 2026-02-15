@@ -102,6 +102,7 @@ pub(crate) enum BlockRenderProfile {
     Solid,
     VoidFrame,
     SpeedPortal,
+    FinishRing,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -140,6 +141,7 @@ pub(crate) enum BlockCollision {
     PassThrough,
     Hazard,
     Portal,
+    Finish,
 }
 
 #[derive(Clone, Deserialize, Serialize)]

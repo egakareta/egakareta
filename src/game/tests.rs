@@ -138,6 +138,33 @@ fn speed_portal_overlap_removes_portal_and_boosts_speed() {
 }
 
 #[test]
+fn finish_block_overlap_completes_level_after_sink() {
+    let mut game = GameState::new();
+    game.started = true;
+    game.position = [0.5, 0.5, 0.0];
+    game.objects.push(LevelObject {
+        position: [0.0, 0.0, -0.1],
+        size: [1.0, 1.0, 0.2],
+        rotation_degrees: 0.0,
+        roundness: 0.18,
+        block_id: "core/finish".to_string(),
+    });
+
+    game.update(0.0);
+    assert!(!game.level_complete);
+
+    for _ in 0..180 {
+        game.update(1.0 / 120.0);
+        if game.level_complete {
+            break;
+        }
+    }
+
+    assert!(game.level_complete);
+    assert!(!game.game_over);
+}
+
+#[test]
 fn timeline_negative_time_clamps_to_zero() {
     let snapshot =
         simulate_timeline_state([0.0, 0.0, 0.0], SpawnDirection::Forward, &[], &[], -2.0);

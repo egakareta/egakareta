@@ -6,6 +6,13 @@ use crate::mesh::transforms::rotate_vertices_around_z;
 use crate::types::{LevelObject, Vertex};
 
 pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
+    build_block_vertices_with_phase(objects, 0.0)
+}
+
+pub(crate) fn build_block_vertices_with_phase(
+    objects: &[LevelObject],
+    pulse_phase_seconds: f32,
+) -> Vec<Vertex> {
     let mut all_vertices = Vec::new();
 
     for obj in objects {
@@ -39,7 +46,17 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
             }
         }
 
-        if vertices.is_empty() && matches!(block.render.profile, BlockRenderProfile::VoidFrame) {
+        if vertices.is_empty() && matches!(block.render.profile, BlockRenderProfile::FinishRing) {
+            append_finish_ring(
+                vertices,
+                obj,
+                block.render.color_top,
+                block.render.color_outline,
+                pulse_phase_seconds,
+            );
+        } else if vertices.is_empty()
+            && matches!(block.render.profile, BlockRenderProfile::VoidFrame)
+        {
             let color_fill = block.render.color_fill;
             let color_outline = block.render.color_outline;
             let t = 0.05;
@@ -174,4 +191,168 @@ pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
     }
 
     all_vertices
+}
+
+fn append_finish_ring(
+    vertices: &mut Vec<Vertex>,
+    obj: &LevelObject,
+    color_outer: [f32; 4],
+    color_inner: [f32; 4],
+    pulse_phase_seconds: f32,
+) {
+    const SEGMENTS: usize = 28;
+    let center = [
+        obj.position[0] + obj.size[0] * 0.5,
+        obj.position[1] + obj.size[1] * 0.5,
+        obj.position[2] + obj.size[2] * 0.5,
+    ];
+
+    let phase_offset = (obj.position[0] * 0.37 + obj.position[1] * 0.21) * std::f32::consts::PI;
+    let pulse = 1.0 + 0.14 * (pulse_phase_seconds * 5.0 + phase_offset).sin();
+
+    let base_radius = (obj.size[0].min(obj.size[1]) * 0.5 * 0.85).max(0.15);
+    let outer_radius = base_radius * pulse;
+    let inner_radius = (outer_radius * 0.56).max(0.08);
+    let half_thickness = (obj.size[2] * 0.16).clamp(0.03, 0.14);
+    let z_top = center[2] + half_thickness;
+    let z_bottom = center[2] - half_thickness;
+
+    let mut funnel_color = color_inner;
+    funnel_color[3] = (funnel_color[3] * 0.72).clamp(0.0, 1.0);
+    let sink_point = [
+        center[0],
+        center[1],
+        obj.position[2] - obj.size[2] * 0.9 - 0.25,
+    ];
+
+    for index in 0..SEGMENTS {
+        let t0 = index as f32 / SEGMENTS as f32;
+        let t1 = (index + 1) as f32 / SEGMENTS as f32;
+        let a0 = t0 * std::f32::consts::TAU;
+        let a1 = t1 * std::f32::consts::TAU;
+
+        let (cos0, sin0) = (a0.cos(), a0.sin());
+        let (cos1, sin1) = (a1.cos(), a1.sin());
+
+        let outer_top_0 = [
+            center[0] + cos0 * outer_radius,
+            center[1] + sin0 * outer_radius,
+            z_top,
+        ];
+        let outer_top_1 = [
+            center[0] + cos1 * outer_radius,
+            center[1] + sin1 * outer_radius,
+            z_top,
+        ];
+        let inner_top_0 = [
+            center[0] + cos0 * inner_radius,
+            center[1] + sin0 * inner_radius,
+            z_top,
+        ];
+        let inner_top_1 = [
+            center[0] + cos1 * inner_radius,
+            center[1] + sin1 * inner_radius,
+            z_top,
+        ];
+
+        let outer_bottom_0 = [
+            center[0] + cos0 * outer_radius,
+            center[1] + sin0 * outer_radius,
+            z_bottom,
+        ];
+        let outer_bottom_1 = [
+            center[0] + cos1 * outer_radius,
+            center[1] + sin1 * outer_radius,
+            z_bottom,
+        ];
+        let inner_bottom_0 = [
+            center[0] + cos0 * inner_radius,
+            center[1] + sin0 * inner_radius,
+            z_bottom,
+        ];
+        let inner_bottom_1 = [
+            center[0] + cos1 * inner_radius,
+            center[1] + sin1 * inner_radius,
+            z_bottom,
+        ];
+
+        push_triangle(vertices, outer_top_0, outer_top_1, inner_top_1, color_outer);
+        push_triangle(vertices, outer_top_0, inner_top_1, inner_top_0, color_outer);
+
+        push_triangle(
+            vertices,
+            outer_bottom_0,
+            inner_bottom_1,
+            outer_bottom_1,
+            color_outer,
+        );
+        push_triangle(
+            vertices,
+            outer_bottom_0,
+            inner_bottom_0,
+            inner_bottom_1,
+            color_outer,
+        );
+
+        push_triangle(
+            vertices,
+            outer_bottom_0,
+            outer_bottom_1,
+            outer_top_1,
+            color_inner,
+        );
+        push_triangle(
+            vertices,
+            outer_bottom_0,
+            outer_top_1,
+            outer_top_0,
+            color_inner,
+        );
+
+        push_triangle(
+            vertices,
+            inner_bottom_0,
+            inner_top_1,
+            inner_bottom_1,
+            color_inner,
+        );
+        push_triangle(
+            vertices,
+            inner_bottom_0,
+            inner_top_0,
+            inner_top_1,
+            color_inner,
+        );
+
+        if index % 2 == 0 {
+            push_triangle(
+                vertices,
+                inner_bottom_0,
+                inner_bottom_1,
+                sink_point,
+                funnel_color,
+            );
+        }
+    }
+}
+
+fn push_triangle(
+    vertices: &mut Vec<Vertex>,
+    p0: [f32; 3],
+    p1: [f32; 3],
+    p2: [f32; 3],
+    color: [f32; 4],
+) {
+    vertices.push(Vertex {
+        position: p0,
+        color,
+    });
+    vertices.push(Vertex {
+        position: p1,
+        color,
+    });
+    vertices.push(Vertex {
+        position: p2,
+        color,
+    });
 }

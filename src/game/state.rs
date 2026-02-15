@@ -1,5 +1,5 @@
 use super::physics::{aabb_overlaps_object_xy, object_xy_contains, BASE_PLAYER_SPEED};
-use crate::block_repository::{resolve_block_definition, BlockCollision};
+use crate::block_repository::{resolve_block_definition, BlockCollision, BlockRenderProfile};
 use crate::types::{Direction, LevelObject, SpawnDirection};
 
 pub(crate) struct GameState {
@@ -11,7 +11,13 @@ pub(crate) struct GameState {
     pub(crate) vertical_velocity: f32,
     pub(crate) is_grounded: bool,
     pub(crate) game_over: bool,
+    pub(crate) level_complete: bool,
+    pub(crate) completion_hold_seconds: f32,
     pub(crate) started: bool,
+    finishing: bool,
+    finish_target: [f32; 3],
+    finish_sink_velocity: f32,
+    animation_phase_seconds: f32,
 }
 
 pub(crate) fn center_spawn_position(position: [f32; 3]) -> [f32; 3] {
@@ -33,7 +39,13 @@ impl GameState {
             vertical_velocity: 0.0,
             is_grounded: true,
             game_over: false,
+            level_complete: false,
+            completion_hold_seconds: 0.0,
             started: false,
+            finishing: false,
+            finish_target: [0.0, 0.0, 0.0],
+            finish_sink_velocity: 0.0,
+            animation_phase_seconds: 0.0,
         }
     }
 
@@ -45,11 +57,21 @@ impl GameState {
         self.vertical_velocity = 0.0;
         self.is_grounded = true;
         self.game_over = false;
+        self.level_complete = false;
+        self.completion_hold_seconds = 0.0;
+        self.finishing = false;
+        self.finish_sink_velocity = 0.0;
+        self.animation_phase_seconds = 0.0;
         self.trail_segments = vec![vec![centered_position]];
     }
 
     pub(crate) fn turn_right(&mut self) {
-        if self.game_over || !self.started || !self.is_grounded {
+        if self.game_over
+            || self.level_complete
+            || self.finishing
+            || !self.started
+            || !self.is_grounded
+        {
             return;
         }
         self.push_to_active_trail(self.position);
@@ -60,7 +82,23 @@ impl GameState {
     }
 
     pub(crate) fn update(&mut self, dt: f32) {
-        if self.game_over || !self.started {
+        self.animation_phase_seconds += dt.max(0.0);
+
+        if self.level_complete {
+            self.completion_hold_seconds = (self.completion_hold_seconds - dt.max(0.0)).max(0.0);
+            return;
+        }
+
+        if self.game_over {
+            return;
+        }
+
+        if self.finishing {
+            self.update_finish_sequence(dt);
+            return;
+        }
+
+        if !self.started {
             return;
         }
 
@@ -80,6 +118,7 @@ impl GameState {
         // Collision detection
         let mut hit_death = false;
         let mut hit_portals = Vec::new();
+        let mut finish_target: Option<[f32; 3]> = None;
 
         const SNAKE_WIDTH: f32 = 0.8;
         const SNAKE_HEIGHT: f32 = 0.8;
@@ -109,6 +148,15 @@ impl GameState {
                     BlockCollision::Portal => {
                         hit_portals.push(i);
                     }
+                    BlockCollision::Finish => {
+                        if finish_target.is_none() {
+                            finish_target = Some([
+                                obj.position[0] + obj.size[0] * 0.5,
+                                obj.position[1] + obj.size[1] * 0.5,
+                                obj.position[2] + obj.size[2] * 0.5,
+                            ]);
+                        }
+                    }
                     BlockCollision::Hazard => {
                         hit_death = true;
                     }
@@ -135,6 +183,11 @@ impl GameState {
                     }
                 }
             }
+        }
+
+        if let Some(target) = finish_target {
+            self.begin_finish_sequence(target);
+            return;
         }
 
         let was_grounded = self.is_grounded;
@@ -173,6 +226,56 @@ impl GameState {
 
         if self.position[2] < DEATH_Z {
             self.game_over = true;
+        }
+    }
+
+    pub(crate) fn has_animated_blocks(&self) -> bool {
+        self.objects.iter().any(|obj| {
+            matches!(
+                resolve_block_definition(&obj.block_id).render.profile,
+                BlockRenderProfile::FinishRing
+            )
+        })
+    }
+
+    pub(crate) fn block_animation_phase_seconds(&self) -> f32 {
+        self.animation_phase_seconds
+    }
+
+    fn begin_finish_sequence(&mut self, target: [f32; 3]) {
+        self.finishing = true;
+        self.finish_target = target;
+        self.finish_sink_velocity = -1.8;
+        self.vertical_velocity = 0.0;
+        self.is_grounded = false;
+        self.push_to_active_trail(self.position);
+    }
+
+    fn update_finish_sequence(&mut self, dt: f32) {
+        const HORIZONTAL_PULL: f32 = 8.5;
+        const DOWN_ACCEL: f32 = 30.0;
+        const MAX_SINK_SPEED: f32 = 20.0;
+
+        let step = dt.max(0.0);
+        let pull = (HORIZONTAL_PULL * step).clamp(0.0, 1.0);
+
+        self.position[0] += (self.finish_target[0] - self.position[0]) * pull;
+        self.position[1] += (self.finish_target[1] - self.position[1]) * pull;
+
+        self.finish_sink_velocity =
+            (self.finish_sink_velocity - DOWN_ACCEL * step).max(-MAX_SINK_SPEED);
+        self.position[2] += self.finish_sink_velocity * step;
+
+        let dx = self.finish_target[0] - self.position[0];
+        let dy = self.finish_target[1] - self.position[1];
+        let distance_xy_sq = dx * dx + dy * dy;
+        let sink_goal_z = self.finish_target[2] - 1.0;
+
+        if distance_xy_sq <= 0.0064 && self.position[2] <= sink_goal_z {
+            self.finishing = false;
+            self.level_complete = true;
+            self.completion_hold_seconds = 0.6;
+            self.started = false;
         }
     }
 

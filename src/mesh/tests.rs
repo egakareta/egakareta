@@ -84,4 +84,18 @@ f 1/1/1 2/2/1 3/3/1
         assert_eq!(mesh.faces[0][0].texcoord_index, Some(0));
         assert_eq!(mesh.faces[0][0].normal_index, Some(0));
     }
+
+    #[test]
+    fn finish_ring_generates_vertices() {
+        let obj = LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 0.3],
+            rotation_degrees: 0.0,
+            roundness: 0.0,
+            block_id: "core/finish".to_string(),
+        };
+
+        let vertices = build_block_vertices(&[obj]);
+        assert!(!vertices.is_empty());
+    }
 }
