@@ -421,7 +421,7 @@ impl State {
         let target = Vec3::new(
             self.editor.camera.editor_pan[0],
             self.editor.camera.editor_pan[1],
-            0.0,
+            self.editor.camera.editor_target_z,
         );
         let offset = self.editor_camera_offset();
         let eye = target + offset;

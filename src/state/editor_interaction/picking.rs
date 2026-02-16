@@ -89,6 +89,7 @@ impl EditorSubsystem {
 
         Some(EditorPickResult {
             cursor: next_cursor,
+            hit_position: [hit.x, hit.y, hit.z],
             hit_block_index,
         })
     }

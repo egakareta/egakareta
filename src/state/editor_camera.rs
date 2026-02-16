@@ -5,6 +5,7 @@ use crate::types::AppPhase;
 
 pub(crate) struct EditorCameraState {
     pub(crate) editor_pan: [f32; 2],
+    pub(crate) editor_target_z: f32,
     pub(crate) editor_rotation: f32,
     pub(crate) editor_pitch: f32,
     pub(crate) editor_zoom: f32,
@@ -50,9 +51,9 @@ impl EditorSubsystem {
         let pitch = self
             .camera
             .editor_pitch
-            .clamp(0.1f32.to_radians(), 89.9f32.to_radians());
+            .clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
         let horizontal_factor = pitch.cos();
-        let vertical_factor = pitch.sin();
+        let vertical_factor = pitch.sin().abs();
 
         let mut speed_multiplier = 1.0;
         if self.ui.shift_held {
@@ -60,18 +61,33 @@ impl EditorSubsystem {
         }
 
         const PAN_SPEED_UNITS_PER_SEC: f32 = 40.0;
+        const KEY_DOLLY_SPEED_UNITS_PER_SEC: f32 = 8.0;
         self.pan_by_input(
             input.x * PAN_SPEED_UNITS_PER_SEC * frame_dt * speed_multiplier,
             input.y * horizontal_factor * PAN_SPEED_UNITS_PER_SEC * frame_dt * speed_multiplier,
         );
 
         self.adjust_zoom(
-            input.y * vertical_factor * PAN_SPEED_UNITS_PER_SEC * frame_dt * speed_multiplier,
+            input.y * vertical_factor * KEY_DOLLY_SPEED_UNITS_PER_SEC * frame_dt * speed_multiplier,
         );
     }
 }
 
 impl State {
+    pub(super) fn anchor_editor_camera_target_z_from_screen(&mut self, x: f64, y: f64) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        let viewport_size = Vec2::new(
+            self.render.gpu.config.width as f32,
+            self.render.gpu.config.height as f32,
+        );
+        if let Some(pick) = self.editor.pick_from_screen(x, y, viewport_size) {
+            self.editor.camera.editor_target_z = pick.hit_position[2];
+        }
+    }
+
     pub(super) fn editor_camera_axes_xy(&self) -> (Vec2, Vec2) {
         self.editor.camera_axes_xy()
     }

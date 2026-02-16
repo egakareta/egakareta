@@ -16,6 +16,7 @@ pub(crate) enum EditorInteractionChange {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct EditorPickResult {
     pub(crate) cursor: [f32; 3],
+    pub(crate) hit_position: [f32; 3],
     pub(crate) hit_block_index: Option<usize>,
 }
 

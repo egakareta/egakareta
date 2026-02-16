@@ -21,7 +21,7 @@ impl EditorSubsystem {
         let pitch = self
             .camera
             .editor_pitch
-            .clamp(0.1f32.to_radians(), 89.9f32.to_radians());
+            .clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
         let horizontal_distance = distance * pitch.cos();
         let vertical_distance = distance * pitch.sin();
         Mat4::from_rotation_z(self.camera.editor_rotation).transform_vector3(Vec3::new(
@@ -33,7 +33,11 @@ impl EditorSubsystem {
 
     pub(crate) fn view_proj(&self, viewport: Vec2) -> Mat4 {
         let aspect = viewport.x / viewport.y;
-        let target = Vec3::new(self.camera.editor_pan[0], self.camera.editor_pan[1], 0.0);
+        let target = Vec3::new(
+            self.camera.editor_pan[0],
+            self.camera.editor_pan[1],
+            self.camera.editor_target_z,
+        );
         let eye = target + self.camera_offset();
         let up = Vec3::new(0.0, 0.0, 1.0);
         let view = Mat4::look_at_rh(eye, target, up);
@@ -75,7 +79,7 @@ impl EditorSubsystem {
         if phase == AppPhase::Editor {
             self.camera.editor_rotation -= dx as f32 * ROTATE_SPEED;
             self.camera.editor_pitch = (self.camera.editor_pitch + dy as f32 * PITCH_SPEED)
-                .clamp(0.1f32.to_radians(), 89.9f32.to_radians());
+                .clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
         } else if phase == AppPhase::Playing && !is_game_active {
             self.camera.playing_rotation -= dx as f32 * ROTATE_SPEED;
             self.camera.playing_pitch = (self.camera.playing_pitch + dy as f32 * PITCH_SPEED)

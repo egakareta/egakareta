@@ -275,6 +275,11 @@ impl State {
                 }
             }
             2 => {
+                if pressed {
+                    if let Some(pointer) = self.editor.ui.pointer_screen {
+                        self.anchor_editor_camera_target_z_from_screen(pointer[0], pointer[1]);
+                    }
+                }
                 self.set_editor_right_dragging(pressed);
             }
             _ => {}

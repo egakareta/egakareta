@@ -466,6 +466,7 @@ impl State {
                 spawn: SpawnMetadata::default(),
                 camera: EditorCameraState {
                     editor_pan: [0.0, 0.0],
+                    editor_target_z: 0.0,
                     editor_rotation: -45.0f32.to_radians(),
                     editor_pitch: 45.0f32.to_radians(),
                     editor_zoom: 1.0,
