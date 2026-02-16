@@ -58,14 +58,6 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
 
             ui.separator();
 
-            ui.label("Name:");
-            let mut name = selected.to_string();
-            if ui.text_edit_singleline(&mut name).changed() {
-                commands.push(crate::commands::AppCommand::EditorRenameLevel(name));
-            }
-
-            ui.separator();
-
             if ui.button("Export .ldz").clicked() {
                 commands.push(crate::commands::AppCommand::EditorExportLevel);
             }

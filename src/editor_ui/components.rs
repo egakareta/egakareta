@@ -17,12 +17,11 @@ pub(crate) fn show_timeline_bar(
     ui.horizontal(|ui| {
         ui.label("Timeline:");
         let mut time_seconds = view.timeline_time_seconds;
+        let drag_value = egui::DragValue::new(&mut time_seconds)
+            .speed(0.01)
+            .range(0.0..=duration_seconds);
         if ui
-            .add(
-                egui::DragValue::new(&mut time_seconds)
-                    .speed(0.01)
-                    .range(0.0..=duration_seconds),
-            )
+            .add_sized([80.0, ui.spacing().interact_size.y], drag_value)
             .changed()
         {
             commands.push(AppCommand::EditorSetTimelineTime(time_seconds));
