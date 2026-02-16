@@ -200,8 +200,8 @@ impl EditorSubsystem {
         } else {
             1.0
         };
-        self.ui.cursor[0] = self.ui.cursor[0] + dx as f32 * step;
-        self.ui.cursor[1] = self.ui.cursor[1] + dy as f32 * step;
+        self.ui.cursor[0] += dx as f32 * step;
+        self.ui.cursor[1] += dy as f32 * step;
     }
 }
 

@@ -26,6 +26,7 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) waveform_samples: &'a [f32],
     pub(crate) waveform_sample_rate: u32,
     pub(crate) bpm_tap_result: Option<f32>,
+    pub(crate) camera_position: [f32; 3],
     pub(crate) fps: f32,
     pub(crate) perf_overlay_enabled: bool,
     pub(crate) perf_overlay_lines: Vec<String>,
@@ -48,6 +49,13 @@ impl State {
         } else {
             Vec::new()
         };
+
+        let camera_target = glam::Vec3::new(
+            self.editor.camera.editor_pan[0],
+            self.editor.camera.editor_pan[1],
+            0.0,
+        );
+        let camera_position = (camera_target + self.editor.camera_offset()).to_array();
 
         EditorUiViewModel {
             mode: self.editor_mode(),
@@ -74,6 +82,7 @@ impl State {
             waveform_samples: self.editor_waveform_samples(),
             waveform_sample_rate: self.editor_waveform_sample_rate(),
             bpm_tap_result: self.editor_bpm_tap_result(),
+            camera_position,
             fps: self.editor_fps(),
             perf_overlay_enabled,
             perf_overlay_lines,

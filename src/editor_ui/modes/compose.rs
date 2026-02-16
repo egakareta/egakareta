@@ -205,6 +205,11 @@ pub(crate) fn show_compose_mode_bottom_panel(
             position[0], position[1], position[2], direction_label
         ));
         ui.separator();
+        ui.label(format!(
+            "Camera: ({:.1}, {:.1}, {:.1})",
+            view.camera_position[0], view.camera_position[1], view.camera_position[2]
+        ));
+        ui.separator();
         ui.label(format!("FPS: {:.0}", view.fps));
     });
 }
