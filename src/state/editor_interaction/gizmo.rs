@@ -5,6 +5,9 @@ use super::super::{
 use crate::types::AppPhase;
 use glam::{Vec2, Vec3};
 
+const GIZMO_MOVE_PICK_RADIUS_PIXELS: f32 = 32.0;
+const GIZMO_RESIZE_PICK_RADIUS_PIXELS: f32 = 26.0;
+
 impl EditorSubsystem {
     pub(crate) fn drag_gizmo(&mut self, x: f64, y: f64, viewport: Vec2) -> bool {
         self.ui.pointer_screen = Some([x, y]);
@@ -173,10 +176,7 @@ impl EditorSubsystem {
         y: f64,
         viewport_size: Vec2,
     ) -> Option<(GizmoDragKind, GizmoAxis)> {
-        let selected_index = self.ui.selected_block_index?;
-        let obj = self.objects.get(selected_index)?;
-        let bounds_position = obj.position;
-        let bounds_size = obj.size;
+        let (bounds_position, bounds_size) = self.selected_group_bounds()?;
 
         let center = Vec3::new(
             bounds_position[0] + bounds_size[0] * 0.5,
@@ -191,31 +191,37 @@ impl EditorSubsystem {
                 GizmoDragKind::Move,
                 GizmoAxis::X,
                 center + Vec3::new(axis_lengths[0], 0.0, 0.0),
+                GIZMO_MOVE_PICK_RADIUS_PIXELS,
             ),
             (
                 GizmoDragKind::Move,
                 GizmoAxis::Y,
                 center + Vec3::new(0.0, axis_lengths[1], 0.0),
+                GIZMO_MOVE_PICK_RADIUS_PIXELS,
             ),
             (
                 GizmoDragKind::Move,
                 GizmoAxis::Z,
                 center + Vec3::new(0.0, 0.0, axis_lengths[2]),
+                GIZMO_MOVE_PICK_RADIUS_PIXELS,
             ),
             (
                 GizmoDragKind::Move,
                 GizmoAxis::XNeg,
                 center + Vec3::new(-axis_lengths[0], 0.0, 0.0),
+                GIZMO_MOVE_PICK_RADIUS_PIXELS,
             ),
             (
                 GizmoDragKind::Move,
                 GizmoAxis::YNeg,
                 center + Vec3::new(0.0, -axis_lengths[1], 0.0),
+                GIZMO_MOVE_PICK_RADIUS_PIXELS,
             ),
             (
                 GizmoDragKind::Move,
                 GizmoAxis::ZNeg,
                 center + Vec3::new(0.0, 0.0, -axis_lengths[2]),
+                GIZMO_MOVE_PICK_RADIUS_PIXELS,
             ),
             (
                 GizmoDragKind::Resize,
@@ -225,6 +231,7 @@ impl EditorSubsystem {
                     center.y,
                     center.z,
                 ),
+                GIZMO_RESIZE_PICK_RADIUS_PIXELS,
             ),
             (
                 GizmoDragKind::Resize,
@@ -234,6 +241,7 @@ impl EditorSubsystem {
                     bounds_position[1] + bounds_size[1] + 0.36,
                     center.z,
                 ),
+                GIZMO_RESIZE_PICK_RADIUS_PIXELS,
             ),
             (
                 GizmoDragKind::Resize,
@@ -243,29 +251,33 @@ impl EditorSubsystem {
                     center.y,
                     bounds_position[2] + bounds_size[2] + 0.36,
                 ),
+                GIZMO_RESIZE_PICK_RADIUS_PIXELS,
             ),
             (
                 GizmoDragKind::Resize,
                 GizmoAxis::XNeg,
                 Vec3::new(bounds_position[0] - 0.36, center.y, center.z),
+                GIZMO_RESIZE_PICK_RADIUS_PIXELS,
             ),
             (
                 GizmoDragKind::Resize,
                 GizmoAxis::YNeg,
                 Vec3::new(center.x, bounds_position[1] - 0.36, center.z),
+                GIZMO_RESIZE_PICK_RADIUS_PIXELS,
             ),
             (
                 GizmoDragKind::Resize,
                 GizmoAxis::ZNeg,
                 Vec3::new(center.x, center.y, bounds_position[2] - 0.36),
+                GIZMO_RESIZE_PICK_RADIUS_PIXELS,
             ),
         ];
 
         let mut best: Option<(GizmoDragKind, GizmoAxis, f32)> = None;
-        for (kind, axis, world) in candidates {
+        for (kind, axis, world, pick_radius) in candidates {
             if let Some(screen) = self.world_to_screen_v(world, viewport_size) {
                 let dist = screen.distance(pointer);
-                if dist <= 22.0 {
+                if dist <= pick_radius {
                     match best {
                         Some((.., best_dist)) if dist >= best_dist => {}
                         _ => best = Some((kind, axis, dist)),
