@@ -94,19 +94,26 @@ pub struct State {
 }
 
 impl State {
+    /// Returns a reference to the wgpu device for GPU operations.
     pub(crate) fn device(&self) -> &wgpu::Device {
         &self.render.gpu.device
     }
 
+    /// Returns a reference to the wgpu queue for command submission.
     pub(crate) fn queue(&self) -> &wgpu::Queue {
         &self.render.gpu.queue
     }
 
+    /// Returns a reference to the native window (desktop only).
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn window(&self) -> &NativeWindow {
         self.render.gpu.window()
     }
 
+    /// Resizes the rendering surface to the new dimensions.
+    ///
+    /// Skips resizing if either dimension is zero. Prepares the surface host
+    /// for resize if available, then applies the resize to the GPU resources.
     pub(crate) fn resize_surface(&mut self, new_size: PhysicalSize<u32>) {
         if new_size.width == 0 || new_size.height == 0 {
             return;
@@ -118,6 +125,12 @@ impl State {
         self.render.gpu.apply_resize(new_size);
     }
 
+    /// Handles the "turn right" input action based on the current application phase.
+    ///
+    /// - In Menu: Starts the selected level
+    /// - In Playing: Starts gameplay, handles game over restart, or turns the player right
+    /// - In Editor: Places a block at the cursor
+    /// - In GameOver: Returns to menu
     pub(crate) fn turn_right(&mut self) {
         match self.phase {
             AppPhase::Menu => {
@@ -162,6 +175,10 @@ impl State {
         }
     }
 
+    /// Advances to the next level or moves the editor cursor right.
+    ///
+    /// - In Menu: Selects the next level in the list (wraps around)
+    /// - In Editor: Moves the cursor one unit to the right
     pub(crate) fn next_level(&mut self) {
         if self.phase == AppPhase::Menu {
             self.menu.state.selected_level =
@@ -171,6 +188,10 @@ impl State {
         }
     }
 
+    /// Goes to the previous level or moves the editor cursor left.
+    ///
+    /// - In Menu: Selects the previous level in the list (wraps around)
+    /// - In Editor: Moves the cursor one unit to the left
     pub(crate) fn prev_level(&mut self) {
         if self.phase == AppPhase::Menu {
             if self.menu.state.selected_level == 0 {
@@ -183,6 +204,11 @@ impl State {
         }
     }
 
+    /// Toggles between editor and other modes.
+    ///
+    /// - From Menu: Starts the editor for the selected level
+    /// - From Editor: Returns to the menu
+    /// - From Playing (during playtest): Switches back to editor mode
     pub(crate) fn toggle_editor(&mut self) {
         match self.phase {
             AppPhase::Menu => self.start_editor(self.menu.state.selected_level),
@@ -206,10 +232,15 @@ impl State {
         self.phase == AppPhase::Menu
     }
 
+    /// Sets whether the right mouse button is currently being dragged in the editor.
     pub(crate) fn set_editor_right_dragging(&mut self, dragging: bool) {
         self.editor.set_right_dragging(dragging);
     }
 
+    /// Handles mouse button events for editor interactions.
+    ///
+    /// Processes left and right mouse button presses/releases, updating editor state
+    /// and triggering selection or interaction logic as appropriate.
     pub(crate) fn handle_mouse_button(&mut self, button: u32, pressed: bool) {
         match button {
             0 => {
@@ -237,6 +268,11 @@ impl State {
         }
     }
 
+    /// Handles primary click (left mouse button) at the given screen coordinates.
+    ///
+    /// Updates the editor pointer position and processes the click based on the current
+    /// editor mode (Place or Select), potentially starting block placement, gizmo drag,
+    /// or selection operations.
     pub(crate) fn handle_primary_click(&mut self, x: f64, y: f64) {
         self.editor.set_pointer_screen(Some([x, y]));
         self.editor.set_left_mouse_down(true);
@@ -265,6 +301,10 @@ impl State {
         self.turn_right();
     }
 
+    /// Handles pointer movement to the given screen coordinates.
+    ///
+    /// Updates editor interactions such as gizmo dragging, selection dragging,
+    /// or marquee selection if the left mouse button is held down in editor mode.
     pub(crate) fn handle_pointer_moved(&mut self, x: f64, y: f64) {
         let mut handled = false;
         if self.editor.left_mouse_down() && self.is_editor() {

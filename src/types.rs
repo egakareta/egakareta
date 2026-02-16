@@ -352,6 +352,8 @@ pub(crate) enum AppPhase {
 
 /// State for the main menu screen.
 /// Manages level selection and available levels list.
+/// State for the main menu.
+/// Tracks the currently selected level and the list of available levels.
 pub(crate) struct MenuState {
     pub(crate) selected_level: usize,
     pub(crate) levels: Vec<String>,
@@ -415,6 +417,8 @@ impl EditorState {
     }
 }
 
+/// A generic size structure with width and height components.
+/// Used for representing physical dimensions like window size or surface size.
 #[derive(Clone, Copy)]
 pub(crate) struct PhysicalSize<T> {
     pub(crate) width: T,
@@ -436,6 +440,8 @@ pub(crate) enum Direction {
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+/// Uniform buffer for line rendering parameters.
+/// Contains offset and rotation for positioning lines in screen space.
 pub(crate) struct LineUniform {
     pub(crate) offset: [f32; 2],
     pub(crate) rotation: f32,
@@ -444,12 +450,16 @@ pub(crate) struct LineUniform {
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+/// Uniform buffer for camera transformation matrix.
+/// Contains the view-projection matrix for 3D rendering.
 pub(crate) struct CameraUniform {
     pub(crate) view_proj: [[f32; 4]; 4],
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+/// Uniform buffer for color space settings.
+/// Controls gamma correction application in the shader.
 pub(crate) struct ColorSpaceUniform {
     pub(crate) apply_gamma_correction: f32,
     pub(crate) _pad: [f32; 3],

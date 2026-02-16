@@ -1,3 +1,8 @@
+//! Audio service for loading and processing music waveforms.
+//!
+//! Provides functionality to asynchronously load audio files, decode them into
+//! waveform data for visualization, and cache the raw bytes for playback.
+
 use std::sync::mpsc::Sender;
 
 const WAVEFORM_WINDOW: usize = 256;
@@ -5,6 +10,16 @@ const WAVEFORM_WINDOW: usize = 256;
 pub type WaveformData = (Vec<f32>, u32);
 pub type WaveformResult = (String, Option<WaveformData>, Option<Vec<u8>>);
 
+/// Starts asynchronous loading of waveform data for a music track.
+///
+/// On native platforms, spawns a thread to decode the audio file.
+/// On WASM, uses fetch API to load and decode the audio.
+///
+/// # Arguments
+/// * `music_source` - The filename of the music file
+/// * `level_name` - The level directory name containing the music file
+/// * `cached_bytes` - Optional pre-loaded audio bytes to avoid re-reading
+/// * `sender` - Channel sender for the result
 pub fn start_waveform_loading(
     music_source: String,
     level_name: String,

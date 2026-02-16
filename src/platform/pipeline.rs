@@ -1,7 +1,17 @@
+//! Frame pipeline for rendering and UI.
+//!
+//! The `FramePipeline` manages the rendering loop, integrating egui UI with the game state.
+//! It handles UI updates, tessellation, texture management, and delegates rendering to the state.
+
 use crate::{show_editor_ui, show_menu_wordmark_ui, State};
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 use wgpu::SurfaceError;
 
+/// The main frame pipeline that orchestrates UI rendering and game updates.
+///
+/// This struct holds the egui context, renderer, and menu wordmark texture.
+/// It runs each frame by updating the UI, tessellating shapes, updating textures,
+/// running game logic, and rendering everything to the surface.
 pub struct FramePipeline {
     egui_ctx: egui::Context,
     egui_renderer: EguiRenderer,
@@ -9,6 +19,7 @@ pub struct FramePipeline {
 }
 
 impl FramePipeline {
+    /// Creates a new frame pipeline with the given egui context and renderer.
     pub fn new(
         egui_ctx: egui::Context,
         egui_renderer: EguiRenderer,
@@ -21,6 +32,18 @@ impl FramePipeline {
         }
     }
 
+    /// Runs a single frame of the application.
+    ///
+    /// This method:
+    /// 1. Runs the egui UI logic with the provided raw input
+    /// 2. Tessellates the UI shapes for rendering
+    /// 3. Updates egui textures on the GPU
+    /// 4. Updates the game state
+    /// 5. Renders the UI to the surface
+    /// 6. Handles surface errors if they occur
+    /// 7. Frees unused textures
+    ///
+    /// Returns the full egui output for further processing.
     pub fn run_frame(&mut self, state: &mut State, raw_input: egui::RawInput) -> egui::FullOutput {
         let full_output = self.egui_ctx.run(raw_input, |ctx| {
             show_editor_ui(ctx, state);
@@ -72,6 +95,7 @@ impl FramePipeline {
         full_output
     }
 
+    /// Returns a reference to the egui context for UI interactions.
     pub fn ctx(&self) -> &egui::Context {
         &self.egui_ctx
     }

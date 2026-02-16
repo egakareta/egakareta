@@ -24,6 +24,10 @@ impl CachedBlockBehavior {
     }
 }
 
+/// The core gameplay state containing player position, movement, and level objects.
+///
+/// Manages the player's position, direction, speed, trail, collision with level objects,
+/// and game progression states like game over and level completion.
 pub(crate) struct GameState {
     pub(crate) position: [f32; 3],
     pub(crate) direction: Direction,

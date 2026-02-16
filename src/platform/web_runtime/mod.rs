@@ -1,3 +1,8 @@
+//! Web runtime for Line Dash.
+//!
+//! This module provides the WebAssembly entry point for running the game in web browsers.
+//! It handles canvas setup, input event binding, and the animation loop using `requestAnimationFrame`.
+
 use std::{cell::RefCell, rc::Rc};
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::prelude::*;

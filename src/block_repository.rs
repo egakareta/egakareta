@@ -1,3 +1,8 @@
+//! Block repository for managing block definitions and behaviors.
+//!
+//! Provides a catalog of block types loaded from JSON files in assets/blocks/.
+//! Each block defines its visual appearance, collision behavior, and gameplay effects.
+
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -73,6 +78,9 @@ pub(crate) struct BlockDefinition {
 }
 
 impl BlockDefinition {
+    /// Normalizes the block definition by trimming and lowercasing the ID,
+    /// and ensuring the display name is not empty.
+    /// Returns None if the ID is empty after trimming.
     pub(crate) fn normalize(mut self) -> Option<Self> {
         self.id = self.id.trim().to_ascii_lowercase();
         if self.id.is_empty() {
@@ -280,14 +288,17 @@ fn collect_builtin_blocks(dir: &Dir<'_>, definitions: &mut Vec<BlockDefinition>)
     }
 }
 
+/// Returns a slice of all block definitions available for placement in the editor.
 pub(crate) fn all_placeable_blocks() -> &'static [BlockDefinition] {
     &block_catalog().definitions
 }
 
+/// Resolves a block ID to its definition, returning the default block if not found.
 pub(crate) fn resolve_block_definition(block_id: &str) -> &'static BlockDefinition {
     block_catalog().block_for_id(block_id)
 }
 
+/// Normalizes a block ID to its canonical form (e.g., adding "core/" prefix if needed).
 pub(crate) fn normalize_block_id(block_id: &str) -> String {
     block_catalog().resolve_id(block_id).to_string()
 }

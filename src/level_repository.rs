@@ -1,3 +1,8 @@
+//! Level repository for managing built-in and user-created levels.
+//!
+//! Provides functionality to load level metadata from JSON files,
+//! serialize/deserialize levels, and manage the level catalog.
+
 use std::io::{Read, Write as _};
 use std::sync::OnceLock;
 
@@ -17,6 +22,7 @@ fn builtin_levels() -> &'static [LevelMetadata] {
     })
 }
 
+/// Returns the names of all built-in levels.
 pub(crate) fn builtin_level_names() -> Vec<String> {
     builtin_levels()
         .iter()
@@ -24,6 +30,7 @@ pub(crate) fn builtin_level_names() -> Vec<String> {
         .collect()
 }
 
+/// Loads metadata for a built-in level by name.
 pub(crate) fn load_builtin_level_metadata(level_name: &str) -> Option<LevelMetadata> {
     builtin_levels()
         .iter()
@@ -31,6 +38,7 @@ pub(crate) fn load_builtin_level_metadata(level_name: &str) -> Option<LevelMetad
         .cloned()
 }
 
+/// Parses level metadata from a JSON string.
 pub(crate) fn parse_level_metadata_json(json: &str) -> Result<LevelMetadata, String> {
     let mut metadata: LevelMetadata =
         serde_json::from_str(json).map_err(|error| error.to_string())?;
@@ -40,10 +48,12 @@ pub(crate) fn parse_level_metadata_json(json: &str) -> Result<LevelMetadata, Str
     Ok(metadata)
 }
 
+/// Serializes level metadata to a pretty-printed JSON string.
 pub(crate) fn serialize_level_metadata_pretty(metadata: &LevelMetadata) -> Result<String, String> {
     serde_json::to_string_pretty(metadata).map_err(|error| error.to_string())
 }
 
+/// Builds an LDZ archive containing level metadata and optional audio data.
 pub(crate) fn build_ldz_archive(
     metadata: &LevelMetadata,
     audio_file: Option<(&str, &[u8])>,
@@ -70,6 +80,7 @@ pub(crate) fn build_ldz_archive(
     Ok(buffer)
 }
 
+/// Reads level metadata and optional audio data from an LDZ archive.
 pub(crate) fn read_metadata_from_ldz(
     data: &[u8],
 ) -> Result<(LevelMetadata, Option<Vec<u8>>), String> {
