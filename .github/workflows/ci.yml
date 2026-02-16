@@ -54,9 +54,6 @@ jobs:
           crate: cargo-nextest
           locked: true
 
-      - name: Run tests with coverage
-        run: bun run test:coverage
-
       - name: Check cargo formatting
         run: bun format:cargo -- --check
 
@@ -65,6 +62,9 @@ jobs:
 
       - name: Lint with clippy
         run: bun lint
+
+      - name: Run tests with coverage
+        run: bun run test:coverage
 
       - name: Build Release (Linux)
         if: startsWith(github.ref, 'refs/tags/')
