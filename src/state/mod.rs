@@ -41,10 +41,14 @@ use crate::types::{
     SpawnMetadata,
 };
 
+/// Bundles all gameplay-related state into a single subsystem.
+/// Separates gameplay concern from the top-level application state.
 pub(crate) struct GameplaySubsystem {
     pub(crate) state: GameState,
 }
 
+/// Bundles all session-related state into a single subsystem.
+/// Manages level names, music metadata, and playtesting settings.
 pub(crate) struct SessionSubsystem {
     pub(crate) editor_level_name: Option<String>,
     pub(crate) editor_music_metadata: MusicMetadata,
@@ -75,6 +79,9 @@ pub(crate) struct MenuSubsystem {
     pub(crate) state: MenuState,
 }
 
+/// The central state structure that manages all subsystems of the game engine.
+/// It contains subsystems for rendering, gameplay, editor, audio, session, and menu,
+/// and handles the overall application phase and frame runtime.
 pub struct State {
     render: RenderSubsystem,
     gameplay: GameplaySubsystem,
@@ -189,10 +196,12 @@ impl State {
         }
     }
 
+    /// Returns true if the application is currently in editor mode.
     pub fn is_editor(&self) -> bool {
         self.phase == AppPhase::Editor
     }
 
+    /// Returns true if the application is currently in menu mode.
     pub fn is_menu(&self) -> bool {
         self.phase == AppPhase::Menu
     }

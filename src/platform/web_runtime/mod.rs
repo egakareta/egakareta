@@ -9,6 +9,11 @@ use crate::State;
 mod input;
 use input::{setup_web_input_callbacks, WebInputHandler};
 
+/// Runs the game in the web environment.
+/// Initializes the WASM runtime, sets up the canvas, input handlers, and starts the animation loop.
+///
+/// # Arguments
+/// * `canvas_id` - The ID of the HTML canvas element to render to.
 #[wasm_bindgen]
 pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
     console_error_panic_hook::set_once();

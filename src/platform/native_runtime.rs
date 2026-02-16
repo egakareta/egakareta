@@ -160,6 +160,8 @@ impl ApplicationHandler for App {
     }
 }
 
+/// Runs the native application for desktop platforms.
+/// Initializes the event loop, creates the window, and starts the game loop.
 pub fn run_native_app() {
     env_logger::init();
     let event_loop = EventLoop::builder().build().unwrap();

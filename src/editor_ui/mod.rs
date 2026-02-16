@@ -10,6 +10,8 @@ use crate::types::EditorMode;
 use crate::State;
 pub use menu::{load_menu_wordmark_texture, show_menu_wordmark_ui};
 
+/// Shows the editor UI using egui.
+/// Handles the top bar, bottom panels, and other editor interface elements.
 pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
     if !state.is_editor() {
         return;

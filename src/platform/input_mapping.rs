@@ -14,6 +14,7 @@ pub(crate) fn egui_key_from_key_str(key: &str) -> Option<egui::Key> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+/// Converts a winit key to a string representation.
 pub fn key_str_from_winit(logical_key: &winit::keyboard::Key) -> String {
     match logical_key {
         winit::keyboard::Key::Named(named_key) => format!("{:?}", named_key),
@@ -23,6 +24,7 @@ pub fn key_str_from_winit(logical_key: &winit::keyboard::Key) -> String {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+/// Converts a winit mouse button to an index.
 pub fn mouse_button_index_from_winit(button: winit::event::MouseButton) -> u32 {
     match button {
         winit::event::MouseButton::Left => 0,
@@ -35,6 +37,7 @@ pub fn mouse_button_index_from_winit(button: winit::event::MouseButton) -> u32 {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+/// Converts a winit mouse scroll delta to a zoom delta.
 pub fn zoom_delta_from_winit(delta: winit::event::MouseScrollDelta) -> f32 {
     match delta {
         winit::event::MouseScrollDelta::LineDelta(_, y) => y,

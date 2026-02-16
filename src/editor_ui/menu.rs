@@ -2,6 +2,7 @@ use crate::State;
 
 const MENU_WORDMARK_PNG: &[u8] = include_bytes!("../../assets/wordmark.png");
 
+/// Loads the menu wordmark texture from embedded PNG data.
 pub fn load_menu_wordmark_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
     let decoded = image::load_from_memory(MENU_WORDMARK_PNG).ok()?;
     let rgba = decoded.to_rgba8();
@@ -11,6 +12,7 @@ pub fn load_menu_wordmark_texture(ctx: &egui::Context) -> Option<egui::TextureHa
     Some(ctx.load_texture("menu_wordmark", color_image, egui::TextureOptions::LINEAR))
 }
 
+/// Shows the menu wordmark UI overlay.
 pub fn show_menu_wordmark_ui(ctx: &egui::Context, state: &State, wordmark: &egui::TextureHandle) {
     if !state.is_menu() {
         return;

@@ -97,6 +97,8 @@ where
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+/// Represents a vertex in 3D space with position and color.
+/// Used for rendering meshes in the graphics pipeline.
 pub(crate) struct Vertex {
     pub(crate) position: [f32; 3],
     pub(crate) color: [f32; 4],
@@ -115,6 +117,8 @@ impl Vertex {
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+/// Metadata for the music track used in a level.
+/// Includes source file, title, author, and any extra fields.
 pub(crate) struct MusicMetadata {
     #[serde(
         default = "default_music_source",
@@ -148,6 +152,8 @@ fn is_default_music_metadata(value: &MusicMetadata) -> bool {
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+/// A timing point that defines the tempo and time signature at a specific time in the level.
+/// Used for rhythm-based gameplay and music synchronization.
 pub(crate) struct TimingPoint {
     pub(crate) time_seconds: f32,
     pub(crate) bpm: f32,
@@ -180,6 +186,8 @@ fn is_default_time_signature_denominator(value: &u32) -> bool {
 }
 
 #[derive(Deserialize, Serialize, Clone)]
+/// Represents the metadata for a level, including music, spawn, timing, and objects.
+/// This struct is serialized to/from JSON for level files.
 pub(crate) struct LevelMetadata {
     #[serde(
         default = "default_level_format_version",
@@ -245,6 +253,8 @@ impl LevelMetadata {
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+/// Metadata for the player's spawn point in a level.
+/// Defines the initial position and facing direction.
 pub(crate) struct SpawnMetadata {
     #[serde(
         default = "default_spawn_position",
@@ -266,6 +276,8 @@ impl Default for SpawnMetadata {
 
 #[derive(Deserialize, Serialize, Clone, Copy, Default, PartialEq, Eq, Debug)]
 #[serde(rename_all = "lowercase")]
+/// The direction the player faces when spawning.
+/// Used to orient the camera and movement.
 pub(crate) enum SpawnDirection {
     #[default]
     Forward,
@@ -290,6 +302,8 @@ fn is_default_spawn_metadata(value: &SpawnMetadata) -> bool {
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+/// Represents an object in a level, such as a block or obstacle.
+/// Includes position, size, rotation, and block type.
 pub(crate) struct LevelObject {
     #[serde(
         default = "default_level_object_position",
@@ -327,6 +341,8 @@ impl LevelObject {
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
+/// The current phase of the application.
+/// Determines which UI and logic to run.
 pub(crate) enum AppPhase {
     Menu,
     Playing,
@@ -334,11 +350,15 @@ pub(crate) enum AppPhase {
     GameOver,
 }
 
+/// State for the main menu screen.
+/// Manages level selection and available levels list.
 pub(crate) struct MenuState {
     pub(crate) selected_level: usize,
     pub(crate) levels: Vec<String>,
 }
 
+/// State for the level editor.
+/// Manages cursor position, mode, and other editor-specific settings.
 pub(crate) struct EditorState {
     pub(crate) cursor: [f32; 3],
     pub(crate) bounds: i32,
@@ -361,6 +381,8 @@ pub(crate) struct EditorState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// The current mode of the level editor.
+/// Determines what actions are available and how interactions behave.
 pub(crate) enum EditorMode {
     Select,
     #[default]
@@ -406,6 +428,7 @@ impl<T> PhysicalSize<T> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Cardinal directions for movement and orientation.
 pub(crate) enum Direction {
     Forward,
     Right,
