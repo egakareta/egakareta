@@ -2,7 +2,7 @@ use glam::Vec2;
 
 use super::{EditorDirtyFlags, EditorSubsystem, PerfStage, State};
 use crate::editor_domain::{
-    add_tap_with_indicator, build_editor_playtest_transition,
+    add_tap_with_indicator, build_editor_playtest_transition, derive_tap_indicator_positions,
     derive_timeline_time_for_world_target_near_time, playtest_return_objects,
     remove_topmost_block_at_cursor, toggle_spawn_direction, TimelineNearSearch,
 };
@@ -11,6 +11,15 @@ use crate::platform::state_host::PlatformInstant;
 use crate::types::{AppPhase, EditorMode};
 
 impl EditorSubsystem {
+    fn sync_tap_indicators_to_spawn(&mut self) {
+        self.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
+            self.spawn.position,
+            self.spawn.direction,
+            &self.timeline.taps.tap_times,
+            &self.objects,
+        );
+    }
+
     pub(crate) fn toggle_tap_at_cursor(&mut self) -> (Option<f32>, bool) {
         let indicator_cell = self.ui.cursor;
 
@@ -180,11 +189,13 @@ impl EditorSubsystem {
 
     pub(crate) fn set_spawn_here(&mut self) {
         self.spawn.position = self.ui.cursor;
+        self.sync_tap_indicators_to_spawn();
         self.invalidate_samples();
     }
 
     pub(crate) fn rotate_spawn_direction(&mut self) {
         self.spawn.direction = toggle_spawn_direction(self.spawn.direction);
+        self.sync_tap_indicators_to_spawn();
         self.invalidate_samples();
     }
 

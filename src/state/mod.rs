@@ -275,7 +275,7 @@ impl State {
 mod tests {
     use super::{EditorDirtyFlags, LevelObject};
     use crate::commands::AppCommand;
-    use crate::editor_domain::derive_timeline_position;
+    use crate::editor_domain::{derive_tap_indicator_positions, derive_timeline_position};
     use crate::types::{AppPhase, EditorMode, SpawnDirection};
     use glam::{Vec2, Vec3};
 
@@ -610,6 +610,41 @@ mod tests {
             // Taps should still be there
             assert_eq!(state.editor.timeline.taps.tap_times, vec![1.0, 2.0, 3.0]);
             assert_eq!(state.editor.timeline.taps.tap_indicator_positions.len(), 3);
+        });
+    }
+
+    #[test]
+    fn setting_spawn_recomputes_tap_indicator_positions() {
+        pollster::block_on(async {
+            let mut state = match super::State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.dispatch(AppCommand::ToggleEditor);
+            state.editor.objects.clear();
+            state.editor.spawn.position = [0.0, 0.0, 0.0];
+            state.editor.spawn.direction = SpawnDirection::Forward;
+            state.editor.timeline.taps.tap_times = vec![1.0 / crate::game::BASE_PLAYER_SPEED];
+            state.editor.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
+                state.editor.spawn.position,
+                state.editor.spawn.direction,
+                &state.editor.timeline.taps.tap_times,
+                &state.editor.objects,
+            );
+
+            state.editor.ui.cursor = [5.0, 2.0, 0.0];
+            state.editor_set_spawn_here();
+
+            let expected = derive_tap_indicator_positions(
+                state.editor.spawn.position,
+                state.editor.spawn.direction,
+                &state.editor.timeline.taps.tap_times,
+                &state.editor.objects,
+            );
+
+            assert_eq!(state.editor.spawn.position, [5.0, 2.0, 0.0]);
+            assert_eq!(state.editor.timeline.taps.tap_indicator_positions, expected);
         });
     }
 }
