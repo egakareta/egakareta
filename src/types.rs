@@ -364,7 +364,6 @@ pub(crate) struct MenuState {
 /// Manages cursor position, mode, and other editor-specific settings.
 pub(crate) struct EditorState {
     pub(crate) cursor: [f32; 3],
-    pub(crate) bounds: i32,
     pub(crate) mode: EditorMode,
     pub(crate) left_mouse_down: bool,
     pub(crate) right_dragging: bool,
@@ -397,7 +396,6 @@ impl EditorState {
     pub(crate) fn new() -> Self {
         Self {
             cursor: [0.0, 0.0, 0.0],
-            bounds: 55,
             mode: EditorMode::Place,
             left_mouse_down: false,
             right_dragging: false,

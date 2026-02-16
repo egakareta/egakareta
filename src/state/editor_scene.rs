@@ -268,23 +268,19 @@ impl State {
         self.editor.timeline.preview.position = position;
         self.editor.timeline.preview.direction = direction;
 
-        let bounds = self.editor.ui.bounds as f32;
         if !self.editor.timeline.playback.playing {
             self.editor.ui.cursor = [
                 position[0].round(),
                 position[1].round(),
                 position[2].round(),
             ];
-            self.editor.ui.cursor[0] = self.editor.ui.cursor[0].clamp(-bounds, bounds);
-            self.editor.ui.cursor[1] = self.editor.ui.cursor[1].clamp(-bounds, bounds);
             self.editor.ui.cursor[2] = self.editor.ui.cursor[2].max(0.0);
 
             self.rebuild_editor_cursor_vertices();
         }
 
-        let max_pan = bounds;
-        self.editor.camera.editor_pan[0] = (position[0] + 0.5).clamp(-max_pan, max_pan);
-        self.editor.camera.editor_pan[1] = (position[1] + 0.5).clamp(-max_pan, max_pan);
+        self.editor.camera.editor_pan[0] = position[0] + 0.5;
+        self.editor.camera.editor_pan[1] = position[1] + 0.5;
 
         self.rebuild_editor_preview_player_vertices_for_state(position, direction);
     }

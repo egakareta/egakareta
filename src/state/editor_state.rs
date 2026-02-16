@@ -123,7 +123,6 @@ impl EditorSubsystem {
             .selected_block_index
             .filter(|index| *index < self.objects.len())
         {
-            let bounds = self.ui.bounds;
             let snap_step = self.config.snap_step.max(0.05);
             let next_position = if self.config.snap_to_grid {
                 [
@@ -136,8 +135,8 @@ impl EditorSubsystem {
             };
             self.objects[index].position = next_position;
             self.ui.cursor = [
-                next_position[0].clamp(-bounds as f32, bounds as f32),
-                next_position[1].clamp(-bounds as f32, bounds as f32),
+                next_position[0],
+                next_position[1],
                 next_position[2].max(0.0),
             ];
         }

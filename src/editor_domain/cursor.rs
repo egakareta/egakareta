@@ -1,9 +1,9 @@
 use crate::types::LevelObject;
 
 #[allow(dead_code)]
-pub(crate) fn move_cursor_xy(cursor: &mut [f32; 3], dx: i32, dy: i32, bounds: i32) {
-    cursor[0] = (cursor[0] + dx as f32).clamp(-bounds as f32, bounds as f32);
-    cursor[1] = (cursor[1] + dy as f32).clamp(-bounds as f32, bounds as f32);
+pub(crate) fn move_cursor_xy(cursor: &mut [f32; 3], dx: i32, dy: i32, _bounds: i32) {
+    cursor[0] = cursor[0] + dx as f32;
+    cursor[1] = cursor[1] + dy as f32;
 }
 
 pub(crate) fn create_block_at_cursor(cursor: [f32; 3], block_id: &str) -> LevelObject {

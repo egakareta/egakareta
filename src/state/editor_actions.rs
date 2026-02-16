@@ -151,12 +151,7 @@ impl EditorSubsystem {
             .or_else(|| selected_indices.first().copied())
         {
             if let Some(obj) = self.objects.get(index) {
-                let bounds = self.ui.bounds as f32;
-                self.ui.cursor = [
-                    obj.position[0].clamp(-bounds, bounds),
-                    obj.position[1].clamp(-bounds, bounds),
-                    obj.position[2].max(0.0),
-                ];
+                self.ui.cursor = [obj.position[0], obj.position[1], obj.position[2].max(0.0)];
             }
         }
 
@@ -205,10 +200,8 @@ impl EditorSubsystem {
         } else {
             1.0
         };
-        self.ui.cursor[0] = (self.ui.cursor[0] + dx as f32 * step)
-            .clamp(-self.ui.bounds as f32, self.ui.bounds as f32);
-        self.ui.cursor[1] = (self.ui.cursor[1] + dy as f32 * step)
-            .clamp(-self.ui.bounds as f32, self.ui.bounds as f32);
+        self.ui.cursor[0] = self.ui.cursor[0] + dx as f32 * step;
+        self.ui.cursor[1] = self.ui.cursor[1] + dy as f32 * step;
     }
 }
 

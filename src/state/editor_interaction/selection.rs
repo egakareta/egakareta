@@ -280,10 +280,9 @@ impl EditorSubsystem {
         }
 
         if let Some(next_position) = first_cursor {
-            let bounds = self.ui.bounds as f32;
             self.ui.cursor = [
-                next_position[0].clamp(-bounds, bounds),
-                next_position[1].clamp(-bounds, bounds),
+                next_position[0],
+                next_position[1],
                 next_position[2].max(0.0),
             ];
         }

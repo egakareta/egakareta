@@ -85,12 +85,7 @@ impl EditorSubsystem {
             [target.x.floor(), target.y.floor(), target.z.floor()]
         };
 
-        let bounds = self.ui.bounds as f32;
-        let next_cursor = [
-            next_cursor[0].clamp(-bounds, bounds),
-            next_cursor[1].clamp(-bounds, bounds),
-            next_cursor[2].max(0.0),
-        ];
+        let next_cursor = [next_cursor[0], next_cursor[1], next_cursor[2].max(0.0)];
 
         Some(EditorPickResult {
             cursor: next_cursor,

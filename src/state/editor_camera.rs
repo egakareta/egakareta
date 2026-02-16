@@ -23,11 +23,8 @@ impl EditorSubsystem {
         let (camera_right_xy, camera_up_xy) = self.camera_axes_xy();
         let world_delta = camera_right_xy * screen_x + camera_up_xy * screen_y;
 
-        let max_pan = self.ui.bounds as f32;
-        self.camera.editor_pan[0] =
-            (self.camera.editor_pan[0] + world_delta.x).clamp(-max_pan, max_pan);
-        self.camera.editor_pan[1] =
-            (self.camera.editor_pan[1] + world_delta.y).clamp(-max_pan, max_pan);
+        self.camera.editor_pan[0] += world_delta.x;
+        self.camera.editor_pan[1] += world_delta.y;
     }
 
     pub(crate) fn update_pan_from_keys(&mut self, frame_dt: f32) {
