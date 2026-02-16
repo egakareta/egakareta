@@ -30,6 +30,7 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) perf_overlay_enabled: bool,
     pub(crate) perf_overlay_lines: Vec<String>,
     pub(crate) perf_overlay_entries: Vec<PerfOverlayEntry>,
+    pub(crate) marquee_selection_rect_screen: Option<([f64; 2], [f64; 2], bool)>,
 }
 
 impl State {
@@ -77,6 +78,7 @@ impl State {
             perf_overlay_enabled,
             perf_overlay_lines,
             perf_overlay_entries,
+            marquee_selection_rect_screen: self.editor_marquee_selection_rect_screen(),
         }
     }
 }

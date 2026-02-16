@@ -178,6 +178,29 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
             });
     }
 
+    if view.mode == EditorMode::Select {
+        if let Some((start, current, is_active_drag)) = view.marquee_selection_rect_screen {
+            if is_active_drag {
+                let rect = egui::Rect::from_two_pos(
+                    egui::pos2(start[0] as f32, start[1] as f32),
+                    egui::pos2(current[0] as f32, current[1] as f32),
+                );
+                let stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(130, 180, 255));
+                let layer = egui::LayerId::new(
+                    egui::Order::Foreground,
+                    egui::Id::new("editor_marquee_overlay"),
+                );
+                ctx.layer_painter(layer).rect(
+                    rect,
+                    0.0,
+                    egui::Color32::from_rgba_unmultiplied(130, 180, 255, 38),
+                    stroke,
+                    egui::StrokeKind::Outside,
+                );
+            }
+        }
+    }
+
     if view.perf_overlay_enabled {
         fn perf_stat_label(
             name: &str,

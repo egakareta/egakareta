@@ -862,6 +862,64 @@ mod tests {
     }
 
     #[test]
+    fn test_select_mode_marquee_drag_selects_multiple_blocks() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+            state.dispatch(AppCommand::ToggleEditor);
+            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
+
+            state.editor.camera.editor_pan = [0.0, 0.0];
+            state.editor.objects = vec![
+                crate::types::LevelObject {
+                    position: [0.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
+                    rotation_degrees: 0.0,
+                    roundness: 0.18,
+                    block_id: "core/standard".to_string(),
+                },
+                crate::types::LevelObject {
+                    position: [2.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
+                    rotation_degrees: 0.0,
+                    roundness: 0.18,
+                    block_id: "core/standard".to_string(),
+                },
+            ];
+
+            let start_x = 0.0;
+            let start_y = 0.0;
+            let end_x = state.render.gpu.config.width.max(1) as f64;
+            let end_y = state.render.gpu.config.height.max(1) as f64;
+
+            state.process_input_event(InputEvent::PointerMoved {
+                x: start_x as f64,
+                y: start_y as f64,
+            });
+            state.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: true,
+            });
+            state.process_input_event(InputEvent::PointerMoved {
+                x: end_x as f64,
+                y: end_y as f64,
+            });
+            state.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: false,
+            });
+
+            assert_eq!(state.editor.ui.selected_block_indices.len(), 2);
+            assert!(state.editor.ui.selected_block_indices.contains(&0));
+            assert!(state.editor.ui.selected_block_indices.contains(&1));
+        });
+    }
+
+    #[test]
     fn test_command_chain_undo_redo() {
         pollster::block_on(async {
             let mut state = match State::new_test().await {

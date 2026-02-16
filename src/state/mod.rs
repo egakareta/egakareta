@@ -206,6 +206,12 @@ impl State {
             0 => {
                 self.editor.set_left_mouse_down(pressed);
                 if !pressed {
+                    if let Some(pointer) = self.editor.ui.pointer_screen {
+                        self.finish_editor_marquee_selection(pointer[0], pointer[1]);
+                    } else {
+                        self.editor.ui.marquee_start_screen = None;
+                        self.editor.ui.marquee_current_screen = None;
+                    }
                     let had_drag = self.editor.has_gizmo_drag() || self.editor.has_block_drag();
                     self.editor.clear_interaction_drags();
                     if had_drag {
@@ -238,7 +244,7 @@ impl State {
                     if self.begin_editor_selected_block_drag(x, y) {
                         return;
                     }
-                    self.select_editor_block_from_screen(x, y);
+                    self.begin_editor_marquee_selection(x, y);
                 }
                 EditorMode::Timing => {
                     // Timing mode: clicks handled by egui waveform panel
@@ -254,7 +260,8 @@ impl State {
         let mut handled = false;
         if self.editor.left_mouse_down() && self.is_editor() {
             handled = self.drag_editor_gizmo_from_screen(x, y)
-                || self.drag_editor_selection_from_screen(x, y);
+                || self.drag_editor_selection_from_screen(x, y)
+                || self.update_editor_marquee_selection(x, y);
         }
 
         if !handled {

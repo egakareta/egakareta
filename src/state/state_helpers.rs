@@ -123,6 +123,8 @@ impl State {
         self.editor.ui.selected_block_index = None;
         self.editor.ui.selected_block_indices.clear();
         self.editor.ui.hovered_block_index = None;
+        self.editor.ui.marquee_start_screen = None;
+        self.editor.ui.marquee_current_screen = None;
         self.editor.runtime.interaction.gizmo_drag = None;
         self.editor.runtime.interaction.block_drag = None;
         self.editor.runtime.history.undo.clear();
@@ -142,6 +144,8 @@ impl State {
         self.editor.ui.selected_block_index = None;
         self.editor.ui.selected_block_indices.clear();
         self.editor.ui.hovered_block_index = None;
+        self.editor.ui.marquee_start_screen = None;
+        self.editor.ui.marquee_current_screen = None;
         self.editor.runtime.interaction.gizmo_drag = None;
         self.editor.runtime.interaction.block_drag = None;
         self.session.playing_level_name = None;

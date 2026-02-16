@@ -6,7 +6,191 @@ use crate::platform::state_host::PlatformInstant;
 use crate::types::{AppPhase, EditorMode};
 use glam::{Vec2, Vec3};
 
+const MARQUEE_DRAG_THRESHOLD_PX: f64 = 4.0;
+
 impl EditorSubsystem {
+    fn marquee_has_dragged_far_enough(&self) -> bool {
+        let Some(start) = self.ui.marquee_start_screen else {
+            return false;
+        };
+        let current = self.ui.marquee_current_screen.unwrap_or(start);
+        let dx = current[0] - start[0];
+        let dy = current[1] - start[1];
+        (dx * dx + dy * dy) >= MARQUEE_DRAG_THRESHOLD_PX * MARQUEE_DRAG_THRESHOLD_PX
+    }
+
+    pub(crate) fn marquee_selection_rect_screen(&self) -> Option<([f64; 2], [f64; 2], bool)> {
+        let start = self.ui.marquee_start_screen?;
+        let current = self.ui.marquee_current_screen.unwrap_or(start);
+        Some((start, current, self.marquee_has_dragged_far_enough()))
+    }
+
+    pub(crate) fn begin_marquee_selection(&mut self, x: f64, y: f64, phase: AppPhase) -> bool {
+        if phase != AppPhase::Editor || self.ui.right_dragging || self.ui.mode != EditorMode::Select
+        {
+            return false;
+        }
+        self.ui.marquee_start_screen = Some([x, y]);
+        self.ui.marquee_current_screen = Some([x, y]);
+        true
+    }
+
+    pub(crate) fn update_marquee_selection(&mut self, x: f64, y: f64, phase: AppPhase) -> bool {
+        if phase != AppPhase::Editor || self.ui.right_dragging || self.ui.mode != EditorMode::Select
+        {
+            return false;
+        }
+        if self.ui.marquee_start_screen.is_none() {
+            return false;
+        }
+        self.ui.marquee_current_screen = Some([x, y]);
+        true
+    }
+
+    fn rotated_block_screen_bounds(&self, index: usize, viewport: Vec2) -> Option<(Vec2, Vec2)> {
+        let obj = self.objects.get(index)?;
+
+        let center_xy = Vec2::new(
+            obj.position[0] + obj.size[0] * 0.5,
+            obj.position[1] + obj.size[1] * 0.5,
+        );
+        let half = Vec2::new(obj.size[0] * 0.5, obj.size[1] * 0.5);
+        let angle = obj.rotation_degrees.to_radians();
+        let (sin, cos) = angle.sin_cos();
+        let rotate_xy = |v: Vec2| Vec2::new(v.x * cos - v.y * sin, v.x * sin + v.y * cos);
+
+        let z0 = obj.position[2];
+        let z1 = obj.position[2] + obj.size[2];
+
+        let mut points = Vec::with_capacity(10);
+        for local_x in [-half.x, half.x] {
+            for local_y in [-half.y, half.y] {
+                let rotated = rotate_xy(Vec2::new(local_x, local_y));
+                for z in [z0, z1] {
+                    let world = Vec3::new(center_xy.x + rotated.x, center_xy.y + rotated.y, z);
+                    if let Some(screen) = self.world_to_screen_v(world, viewport) {
+                        points.push(screen);
+                    }
+                }
+            }
+        }
+
+        if let Some(center_screen) = self.world_to_screen_v(
+            Vec3::new(center_xy.x, center_xy.y, z0 + obj.size[2] * 0.5),
+            viewport,
+        ) {
+            points.push(center_screen);
+        }
+
+        if points.is_empty() {
+            return None;
+        }
+
+        let mut min = points[0];
+        let mut max = points[0];
+        for p in points.into_iter().skip(1) {
+            min.x = min.x.min(p.x);
+            min.y = min.y.min(p.y);
+            max.x = max.x.max(p.x);
+            max.y = max.y.max(p.y);
+        }
+
+        Some((min, max))
+    }
+
+    fn apply_marquee_selection(&mut self, viewport: Vec2, additive: bool) {
+        let Some(start) = self.ui.marquee_start_screen else {
+            return;
+        };
+        let current = self.ui.marquee_current_screen.unwrap_or(start);
+
+        let rect_min = Vec2::new(
+            start[0].min(current[0]) as f32,
+            start[1].min(current[1]) as f32,
+        );
+        let rect_max = Vec2::new(
+            start[0].max(current[0]) as f32,
+            start[1].max(current[1]) as f32,
+        );
+
+        let mut hits = Vec::new();
+        for index in 0..self.objects.len() {
+            let Some((obj_min, obj_max)) = self.rotated_block_screen_bounds(index, viewport) else {
+                continue;
+            };
+            let overlaps = obj_max.x >= rect_min.x
+                && obj_min.x <= rect_max.x
+                && obj_max.y >= rect_min.y
+                && obj_min.y <= rect_max.y;
+            if overlaps {
+                hits.push(index);
+            }
+        }
+
+        if additive {
+            for hit in hits {
+                if !self.ui.selected_block_indices.contains(&hit) {
+                    self.ui.selected_block_indices.push(hit);
+                }
+            }
+        } else {
+            self.ui.selected_block_indices = hits;
+        }
+
+        self.sync_primary_selection_from_indices();
+        self.selected_mask_cache = None;
+        self.runtime.interaction.gizmo_drag = None;
+        self.runtime.interaction.block_drag = None;
+
+        self.ui.hovered_block_index = self.ui.selected_block_index;
+
+        if let Some(index) = self.ui.selected_block_index {
+            if let Some(obj) = self.objects.get(index) {
+                self.ui.cursor = [obj.position[0], obj.position[1], obj.position[2]];
+            }
+        }
+
+        self.mark_dirty(EditorDirtyFlags {
+            rebuild_block_mesh: true,
+            rebuild_selection_overlays: true,
+            rebuild_cursor: self.ui.selected_block_index.is_some(),
+            ..EditorDirtyFlags::default()
+        });
+    }
+
+    pub(crate) fn finish_marquee_selection(
+        &mut self,
+        x: f64,
+        y: f64,
+        viewport: Vec2,
+        phase: AppPhase,
+    ) -> bool {
+        if phase != AppPhase::Editor || self.ui.mode != EditorMode::Select {
+            self.ui.marquee_start_screen = None;
+            self.ui.marquee_current_screen = None;
+            return false;
+        }
+
+        let had_marquee = self.ui.marquee_start_screen.is_some();
+        if !had_marquee {
+            return false;
+        }
+
+        self.ui.marquee_current_screen = Some([x, y]);
+        let additive = self.ui.shift_held;
+
+        if self.marquee_has_dragged_far_enough() {
+            self.apply_marquee_selection(viewport, additive);
+            self.ui.marquee_start_screen = None;
+            self.ui.marquee_current_screen = None;
+            return true;
+        }
+
+        self.ui.marquee_start_screen = None;
+        self.ui.marquee_current_screen = None;
+        false
+    }
+
     pub(crate) fn drag_selection(&mut self, x: f64, y: f64, viewport: Vec2) -> bool {
         self.ui.pointer_screen = Some([x, y]);
 
@@ -307,6 +491,40 @@ impl EditorSubsystem {
 }
 
 impl State {
+    pub(crate) fn begin_editor_marquee_selection(&mut self, x: f64, y: f64) -> bool {
+        self.editor.begin_marquee_selection(x, y, self.phase)
+    }
+
+    pub(crate) fn update_editor_marquee_selection(&mut self, x: f64, y: f64) -> bool {
+        self.editor.update_marquee_selection(x, y, self.phase)
+    }
+
+    pub(crate) fn finish_editor_marquee_selection(&mut self, x: f64, y: f64) -> bool {
+        let viewport_size = Vec2::new(
+            self.render.gpu.config.width as f32,
+            self.render.gpu.config.height as f32,
+        );
+        let had_marquee = self.editor.ui.marquee_start_screen.is_some();
+        if !had_marquee {
+            return false;
+        }
+
+        let marquee_consumed =
+            self.editor
+                .finish_marquee_selection(x, y, viewport_size, self.phase);
+        if marquee_consumed {
+            return true;
+        }
+
+        if self.phase == AppPhase::Editor && self.editor.mode() == EditorMode::Select {
+            self.editor
+                .select_block_from_screen(x, y, viewport_size, self.phase);
+            return true;
+        }
+
+        false
+    }
+
     pub(crate) fn drag_editor_selection_from_screen(&mut self, x: f64, y: f64) -> bool {
         let viewport = Vec2::new(
             self.render.gpu.config.width as f32,
@@ -323,14 +541,5 @@ impl State {
         );
         self.editor
             .begin_selected_block_drag_ext(x, y, viewport_size, self.phase)
-    }
-
-    pub(crate) fn select_editor_block_from_screen(&mut self, x: f64, y: f64) {
-        let viewport_size = Vec2::new(
-            self.render.gpu.config.width as f32,
-            self.render.gpu.config.height as f32,
-        );
-        self.editor
-            .select_block_from_screen(x, y, viewport_size, self.phase);
     }
 }

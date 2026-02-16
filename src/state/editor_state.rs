@@ -81,6 +81,8 @@ impl EditorSubsystem {
         self.ui.mode = mode;
         self.runtime.interaction.gizmo_drag = None;
         self.runtime.interaction.block_drag = None;
+        self.ui.marquee_start_screen = None;
+        self.ui.marquee_current_screen = None;
         if mode == EditorMode::Place || mode == EditorMode::Timing {
             self.ui.selected_block_index = None;
             self.ui.selected_block_indices.clear();
@@ -641,6 +643,12 @@ impl State {
 
     pub fn editor_fps(&self) -> f32 {
         self.editor.fps()
+    }
+
+    pub(crate) fn editor_marquee_selection_rect_screen(
+        &self,
+    ) -> Option<([f64; 2], [f64; 2], bool)> {
+        self.editor.marquee_selection_rect_screen()
     }
 
     pub fn set_editor_timeline_time_seconds(&mut self, time_seconds: f32) {

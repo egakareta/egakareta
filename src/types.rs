@@ -356,6 +356,8 @@ pub(crate) struct EditorState {
     pub(crate) selected_block_indices: Vec<usize>,
     pub(crate) hovered_block_index: Option<usize>,
     pub(crate) pointer_screen: Option<[f64; 2]>,
+    pub(crate) marquee_start_screen: Option<[f64; 2]>,
+    pub(crate) marquee_current_screen: Option<[f64; 2]>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -385,6 +387,8 @@ impl EditorState {
             selected_block_indices: Vec::new(),
             hovered_block_index: None,
             pointer_screen: None,
+            marquee_start_screen: None,
+            marquee_current_screen: None,
         }
     }
 }
