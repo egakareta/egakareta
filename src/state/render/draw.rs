@@ -94,6 +94,25 @@ impl State {
 
         {
             let clear_color = match self.phase {
+                AppPhase::Splash => {
+                    let p = self.frame_runtime.splash.progress;
+                    // Stay black for the first 40% then fade in
+                    let bg_p = ((p - 0.4) / 0.6).max(0.0);
+                    let eased_bg_p = bg_p * bg_p; // Quadratic ease-in
+
+                    let target_color = wgpu::Color {
+                        r: 0.05,
+                        g: 0.05,
+                        b: 0.08,
+                        a: 1.0,
+                    };
+                    wgpu::Color {
+                        r: target_color.r * eased_bg_p as f64,
+                        g: target_color.g * eased_bg_p as f64,
+                        b: target_color.b * eased_bg_p as f64,
+                        a: 1.0,
+                    }
+                }
                 AppPhase::Playing if self.gameplay.state.game_over => wgpu::Color {
                     r: 0.15,
                     g: 0.05,
@@ -153,7 +172,10 @@ impl State {
             render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
             render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
 
-            if self.phase != AppPhase::Menu && self.editor.ui.mode != EditorMode::Timing {
+            if self.phase != AppPhase::Menu
+                && self.phase != AppPhase::Splash
+                && self.editor.ui.mode != EditorMode::Timing
+            {
                 if let Some((buffer, count)) = self.render.meshes.floor.draw_data() {
                     render_pass.set_vertex_buffer(0, buffer.slice(..));
                     render_pass.draw(0..count, 0..1);

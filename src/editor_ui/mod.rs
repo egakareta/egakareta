@@ -8,7 +8,7 @@ use crate::editor_ui::modes::compose::show_compose_mode_bottom_panel;
 use crate::editor_ui::modes::timing::show_timing_mode_bottom_panel;
 use crate::types::EditorMode;
 use crate::State;
-pub use menu::{load_menu_wordmark_texture, show_menu_wordmark_ui};
+pub use menu::{load_menu_wordmark_texture, show_menu_wordmark_ui, show_splash_screen_ui};
 
 /// Shows the editor UI using egui.
 /// Handles the top bar, bottom panels, and other editor interface elements.

@@ -1,7 +1,7 @@
 use super::render::{GpuContext, MeshSlot, RenderSubsystem, SceneMeshes, DEPTH_FORMAT};
 use super::runtime::{
     EditorDirtyFlags, EditorFrameState, EditorGizmoState, EditorRuntimeState, FrameRuntimeState,
-    PlayerRenderState,
+    PlayerRenderState, SplashRuntimeState,
 };
 use super::{
     AudioState, AudioSubsystem, EditorCameraState, EditorConfigState, EditorHistoryState,
@@ -424,7 +424,7 @@ impl State {
                 },
             },
             gameplay: GameplaySubsystem { state: game },
-            phase: AppPhase::Menu,
+            phase: AppPhase::Splash,
             menu: MenuSubsystem { state: menu },
             frame_runtime: FrameRuntimeState {
                 editor: EditorFrameState {
@@ -432,6 +432,10 @@ impl State {
                     accumulator: 0.0,
                 },
                 player_render: PlayerRenderState { line_uniform },
+                splash: SplashRuntimeState {
+                    start_time: now,
+                    progress: 0.0,
+                },
             },
             audio: AudioSubsystem {
                 state: AudioState::new(local_audio_cache),

@@ -69,7 +69,13 @@ pub(crate) struct PlayerRenderState {
     pub(crate) line_uniform: LineUniform,
 }
 
+pub(crate) struct SplashRuntimeState {
+    pub(crate) start_time: PlatformInstant,
+    pub(crate) progress: f32,
+}
+
 pub(crate) struct FrameRuntimeState {
     pub(crate) editor: EditorFrameState,
     pub(crate) player_render: PlayerRenderState,
+    pub(crate) splash: SplashRuntimeState,
 }

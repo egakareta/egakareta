@@ -344,6 +344,7 @@ impl LevelObject {
 /// The current phase of the application.
 /// Determines which UI and logic to run.
 pub(crate) enum AppPhase {
+    Splash,
     Menu,
     Playing,
     Editor,
