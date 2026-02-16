@@ -16,7 +16,7 @@ impl EditorSubsystem {
     pub(crate) fn adjust_zoom(&mut self, delta: f32) {
         const ZOOM_SENSITIVITY: f32 = 0.12;
         let factor = (1.0 + delta * ZOOM_SENSITIVITY).max(0.1);
-        self.camera.editor_zoom = (self.camera.editor_zoom * factor).clamp(0.35, 4.0);
+        self.camera.editor_zoom = (self.camera.editor_zoom * factor).clamp(0.01, 10.0);
     }
 
     pub(crate) fn pan_by_input(&mut self, screen_x: f32, screen_y: f32) {
@@ -50,7 +50,7 @@ impl EditorSubsystem {
         let pitch = self
             .camera
             .editor_pitch
-            .clamp(10.0f32.to_radians(), 85.0f32.to_radians());
+            .clamp(0.1f32.to_radians(), 89.9f32.to_radians());
         let horizontal_factor = pitch.cos();
         let vertical_factor = pitch.sin();
 
