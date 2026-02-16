@@ -527,6 +527,7 @@ mod tests {
                 Some(s) => s,
                 None => return,
             };
+            state.phase = AppPhase::Menu;
 
             // Initial state should be Menu
             assert_eq!(state.phase, AppPhase::Menu);
@@ -544,6 +545,7 @@ mod tests {
                 Some(s) => s,
                 None => return,
             };
+            state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
 
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
@@ -564,6 +566,7 @@ mod tests {
                 Some(s) => s,
                 None => return,
             };
+            state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
 
             let initial_zoom = state.editor.camera.editor_zoom;
@@ -582,6 +585,7 @@ mod tests {
                 Some(s) => s,
                 None => return,
             };
+            state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
 
             let (pos_before, _) = state.editor_timeline_preview();
@@ -611,6 +615,7 @@ mod tests {
                 Some(s) => s,
                 None => return,
             };
+            state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
 
             // 1. Pointer move updates screen coordinates
@@ -641,6 +646,7 @@ mod tests {
                 Some(s) => s,
                 None => return,
             };
+            state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
 
             // Zoom
@@ -667,6 +673,7 @@ mod tests {
                 Some(s) => s,
                 None => return,
             };
+            state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
 
             state.process_input_event(InputEvent::Key {
@@ -709,6 +716,7 @@ mod tests {
                     Some(s) => s,
                     None => return,
                 };
+                state.phase = AppPhase::Menu;
 
                 state.process_input_event(InputEvent::Key {
                     key: key.to_string(),
@@ -730,6 +738,7 @@ mod tests {
                 Some(s) => s,
                 None => return,
             };
+            state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
 
             state.process_input_event(InputEvent::Key {
@@ -757,12 +766,14 @@ mod tests {
                 Some(s) => s,
                 None => return,
             };
+            native_style.phase = AppPhase::Menu;
             native_style.dispatch(AppCommand::ToggleEditor);
 
             let mut web_style = match State::new_test().await {
                 Some(s) => s,
                 None => return,
             };
+            web_style.phase = AppPhase::Menu;
             web_style.dispatch(AppCommand::ToggleEditor);
 
             // Native path: pointer move then left mouse button press.
@@ -808,12 +819,14 @@ mod tests {
                 Some(s) => s,
                 None => return,
             };
+            native_style.phase = AppPhase::Menu;
             native_style.dispatch(AppCommand::ToggleEditor);
 
             let mut web_style = match State::new_test().await {
                 Some(s) => s,
                 None => return,
             };
+            web_style.phase = AppPhase::Menu;
             web_style.dispatch(AppCommand::ToggleEditor);
 
             // Native-like order around right-drag camera movement.
@@ -870,6 +883,7 @@ mod tests {
                 Some(s) => s,
                 None => return,
             };
+            state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
 
@@ -926,6 +940,7 @@ mod tests {
                 Some(s) => s,
                 None => return,
             };
+            state.phase = AppPhase::Menu;
 
             // 1. Enter Editor
             state.dispatch(AppCommand::ToggleEditor);
@@ -953,6 +968,7 @@ mod tests {
                 Some(s) => s,
                 None => return,
             };
+            state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
 
             let initial_count = state.editor.objects.len();

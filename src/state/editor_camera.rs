@@ -48,13 +48,6 @@ impl EditorSubsystem {
         }
 
         let input = input.normalize();
-        let pitch = self
-            .camera
-            .editor_pitch
-            .clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
-        let horizontal_factor = pitch.cos();
-        let vertical_factor = pitch.sin().abs();
-
         let mut speed_multiplier = 1.0;
         if self.ui.shift_held {
             speed_multiplier = 0.3;
@@ -64,12 +57,10 @@ impl EditorSubsystem {
         const KEY_DOLLY_SPEED_UNITS_PER_SEC: f32 = 8.0;
         self.pan_by_input(
             input.x * PAN_SPEED_UNITS_PER_SEC * frame_dt * speed_multiplier,
-            input.y * horizontal_factor * PAN_SPEED_UNITS_PER_SEC * frame_dt * speed_multiplier,
+            input.y * PAN_SPEED_UNITS_PER_SEC * frame_dt * speed_multiplier,
         );
 
-        self.adjust_zoom(
-            input.y * vertical_factor * KEY_DOLLY_SPEED_UNITS_PER_SEC * frame_dt * speed_multiplier,
-        );
+        self.adjust_zoom(input.y * KEY_DOLLY_SPEED_UNITS_PER_SEC * frame_dt * speed_multiplier);
     }
 }
 

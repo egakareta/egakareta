@@ -579,6 +579,7 @@ mod tests {
                 Some(s) => s,
                 None => return,
             };
+            state.phase = AppPhase::Menu;
 
             // 1. Setup: Enter editor and copy a block
             state.dispatch(AppCommand::ToggleEditor);
@@ -605,6 +606,7 @@ mod tests {
                 Some(s) => s,
                 None => return,
             };
+            state.phase = AppPhase::Menu;
 
             state.dispatch(AppCommand::ToggleEditor);
             state.dispatch(AppCommand::TurnRight); // Place block -> adds to undo history

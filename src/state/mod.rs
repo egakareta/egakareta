@@ -483,7 +483,7 @@ mod tests {
                 Some(s) => s,
                 None => return,
             };
-            assert_eq!(state.phase, crate::types::AppPhase::Menu);
+            assert_eq!(state.phase, crate::types::AppPhase::Splash);
 
             state.start_editor(0);
             assert_eq!(state.phase, crate::types::AppPhase::Editor);
@@ -501,7 +501,11 @@ mod tests {
                 None => return,
             };
 
-            // Test primary click in menu starts level
+            // First click exits splash to menu.
+            state.handle_primary_click(0.0, 0.0);
+            assert_eq!(state.phase, crate::types::AppPhase::Menu);
+
+            // Second click in menu starts level.
             state.handle_primary_click(0.0, 0.0);
             assert_eq!(state.phase, crate::types::AppPhase::Playing);
         });
@@ -632,6 +636,7 @@ mod tests {
                 None => return,
             };
 
+            state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
             state.editor.objects.clear();
             state.editor.timeline.taps.tap_times.clear();
@@ -665,6 +670,7 @@ mod tests {
                 None => return,
             };
 
+            state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
 
             // Add some taps beyond 0 duration
@@ -688,6 +694,7 @@ mod tests {
                 None => return,
             };
 
+            state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
             state.editor.objects.clear();
             state.editor.spawn.position = [0.0, 0.0, 0.0];
