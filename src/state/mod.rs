@@ -276,7 +276,8 @@ mod tests {
     use super::{EditorDirtyFlags, LevelObject};
     use crate::commands::AppCommand;
     use crate::editor_domain::derive_timeline_position;
-    use crate::types::{AppPhase, SpawnDirection};
+    use crate::types::{AppPhase, EditorMode, SpawnDirection};
+    use glam::{Vec2, Vec3};
 
     // ── EditorDirtyFlags contract tests ─────────────────────────────
     #[test]
@@ -436,6 +437,71 @@ mod tests {
             // Test primary click in menu starts level
             state.handle_primary_click(0.0, 0.0);
             assert_eq!(state.phase, crate::types::AppPhase::Playing);
+        });
+    }
+
+    #[test]
+    fn multi_selection_clicking_rendered_gizmo_starts_gizmo_drag_not_block_drag() {
+        pollster::block_on(async {
+            let mut state = match super::State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.start_editor(0);
+            state.editor.ui.mode = EditorMode::Select;
+
+            state.editor.objects = vec![
+                LevelObject {
+                    position: [0.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
+                    rotation_degrees: 0.0,
+                    roundness: 0.18,
+                    block_id: "core/standard".to_string(),
+                },
+                LevelObject {
+                    position: [4.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
+                    rotation_degrees: 0.0,
+                    roundness: 0.18,
+                    block_id: "core/standard".to_string(),
+                },
+            ];
+            state.editor.ui.selected_block_indices = vec![0, 1];
+            state.sync_primary_selection_from_indices();
+
+            let viewport = Vec2::new(
+                state.render.gpu.config.width as f32,
+                state.render.gpu.config.height as f32,
+            );
+            let (bounds_position, bounds_size) = state
+                .selected_group_bounds()
+                .expect("expected group bounds for multi-selection");
+            let center = Vec3::new(
+                bounds_position[0] + bounds_size[0] * 0.5,
+                bounds_position[1] + bounds_size[1] * 0.5,
+                bounds_position[2] + bounds_size[2] * 0.5,
+            );
+            let axis_lengths = state
+                .editor
+                .gizmo_axis_lengths_world(center, 50.0, viewport);
+            let move_x_handle_world = center + Vec3::new(axis_lengths[0], 0.0, 0.0);
+            let move_x_handle_screen = state
+                .editor
+                .world_to_screen_v(move_x_handle_world, viewport)
+                .expect("expected projected gizmo handle");
+
+            state
+                .handle_primary_click(move_x_handle_screen.x as f64, move_x_handle_screen.y as f64);
+
+            assert!(
+                state.editor.runtime.interaction.gizmo_drag.is_some(),
+                "clicking rendered multi-select gizmo handle should start gizmo drag"
+            );
+            assert!(
+                state.editor.runtime.interaction.block_drag.is_none(),
+                "gizmo click must not fall through to block drag"
+            );
         });
     }
 
