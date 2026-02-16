@@ -377,6 +377,11 @@ impl State {
         self.stop_audio();
     }
 
+    /// Removes the currently selected block from the editor.
+    ///
+    /// This action is recorded in the editor's history for undo/redo support.
+    /// If a block is successfully removed, the editor's visual objects and
+    /// cursor vertices are synchronized to reflect the change.
     pub fn editor_remove_block(&mut self) {
         if self.phase == AppPhase::Editor {
             self.record_editor_history_state();
@@ -387,6 +392,11 @@ impl State {
         }
     }
 
+    /// Transitions the application from the editor phase to the playing phase for playtesting.
+    ///
+    /// This method captures the current state of the editor (blocks, taps, spawn point)
+    /// and initializes the gameplay state with these parameters. It also manages
+    /// audio stopping and restarting at the correct point in the timeline.
     pub fn editor_playtest(&mut self) {
         if self.phase != AppPhase::Editor {
             return;
@@ -416,6 +426,10 @@ impl State {
         self.rebuild_block_vertices();
     }
 
+    /// Sets the player's spawn point to the current editor cursor position.
+    ///
+    /// The change is recorded in the editor's history and the spawn marker
+    /// vertices are rebuilt to reflect the new position.
     pub fn editor_set_spawn_here(&mut self) {
         if self.phase == AppPhase::Editor {
             self.record_editor_history_state();
@@ -425,6 +439,10 @@ impl State {
         }
     }
 
+    /// Rotates the player's starting direction at the spawn point.
+    ///
+    /// Each call cycles through available spawn directions. The change is
+    /// recorded in history and the spawn marker's visual representation is updated.
     pub fn editor_rotate_spawn_direction(&mut self) {
         if self.phase == AppPhase::Editor {
             self.record_editor_history_state();
@@ -433,6 +451,10 @@ impl State {
         }
     }
 
+    /// Transitions the application back to the menu or editor from a playtest session.
+    ///
+    /// This stops any active gameplay audio and restores the editor state if the
+    /// session originated from the editor.
     pub fn back_to_menu(&mut self) {
         self.editor.timeline.playback.playing = false;
         self.editor.timeline.playback.runtime = None;

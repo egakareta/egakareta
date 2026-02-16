@@ -60,6 +60,14 @@ impl State {
         self.editor.perf_record(stage, started_at);
     }
 
+    /// Advances the application state by one frame.
+    ///
+    /// This method handles:
+    /// - Audio and waveform loading updates.
+    /// - Smoothing and recording FPS performance metrics.
+    /// - Accumulating time for the fixed-step simulation.
+    /// - Updating the active subsystem (Menu, Editor, or Gameplay) logic.
+    /// - Managing input-driven camera movements.
     pub fn update(&mut self) {
         self.editor.perf.profiler.begin_frame();
         self.update_audio_imports();

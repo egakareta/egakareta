@@ -15,6 +15,11 @@ fn linear_to_srgb(linear: f32) -> f32 {
 }
 
 impl State {
+    /// Renders the `egui` user interface over the current frame.
+    ///
+    /// This should be called after the main scene rendering to ensure the UI
+    /// appears on top. It handles updating `egui` buffers and executing the
+    /// render pass.
     pub fn render_egui(
         &mut self,
         renderer: &mut EguiRenderer,
@@ -46,6 +51,7 @@ impl State {
         })
     }
 
+    /// Creates a new `EguiRenderer` configured for the current GPU device and surface format.
     pub fn create_egui_renderer(&self) -> EguiRenderer {
         EguiRenderer::new(
             &self.render.gpu.device,
@@ -54,10 +60,17 @@ impl State {
         )
     }
 
+    /// Performs a full render of the current application state.
+    ///
+    /// This method clears the surface and draws the active scene (Menu, Editor, or Gameplay).
     pub fn render(&mut self) -> Result<(), SurfaceError> {
         self.render_with_overlay(|_, _, _, _| {})
     }
 
+    /// Renders the current scene with an additional custom overlay pass.
+    ///
+    /// The `overlay` closure is provided with the GPU device, queue, current texture view,
+    /// and a command encoder to perform additional drawing operations.
     pub fn render_with_overlay<F>(&mut self, overlay: F) -> Result<(), SurfaceError>
     where
         F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
@@ -277,6 +290,7 @@ impl State {
         Ok(())
     }
 
+    /// Recreates the window surface following a resize or other configuration change.
     pub fn recreate_surface(&mut self) {
         let size = self.render.gpu.current_size();
         self.resize_surface(size);

@@ -625,22 +625,27 @@ impl State {
         }
     }
 
+    /// Returns the unique identifier of the currently selected block type in the editor.
     pub fn editor_selected_block_id(&self) -> &str {
         self.editor.selected_block_id()
     }
 
+    /// Returns the current playback time of the editor timeline in seconds.
     pub fn editor_timeline_time_seconds(&self) -> f32 {
         self.editor.timeline_time_seconds()
     }
 
+    /// Returns the total duration of the editor timeline in seconds.
     pub fn editor_timeline_duration_seconds(&self) -> f32 {
         self.editor.timeline_duration_seconds()
     }
 
+    /// Returns a slice of all tap event times recorded in the editor's timeline.
     pub fn editor_tap_times(&self) -> &[f32] {
         self.editor.tap_times()
     }
 
+    /// Returns the smoothed frames-per-second (FPS) measurement for the editor.
     pub fn editor_fps(&self) -> f32 {
         self.editor.fps()
     }
@@ -651,6 +656,10 @@ impl State {
         self.editor.marquee_selection_rect_screen()
     }
 
+    /// Sets the current playback time of the editor timeline.
+    ///
+    /// This updates the visual state of the level to reflect the new time
+    /// and synchronizes audio playback if necessary.
     pub fn set_editor_timeline_time_seconds(&mut self, time_seconds: f32) {
         let changed = self.editor.set_timeline_time_seconds(time_seconds);
         if self.phase == AppPhase::Editor {
@@ -775,6 +784,9 @@ impl State {
         self.perf_record(PerfStage::TimelineSampleRebuild, rebuild_started_at);
     }
 
+    /// Sets the total duration of the editor timeline.
+    ///
+    /// This operation is recorded in history and invalidates existing simulation samples.
     pub fn set_editor_timeline_duration_seconds(&mut self, duration_seconds: f32) {
         self.record_editor_history_state();
         self.editor.set_timeline_duration_seconds(duration_seconds);
@@ -786,6 +798,10 @@ impl State {
         });
     }
 
+    /// Adds a tap event at the current timeline position.
+    ///
+    /// The tap position is derived from the world-space preview position.
+    /// This operation is recorded in history.
     pub fn editor_add_tap(&mut self) {
         self.record_editor_history_state();
         let indicator_position = self
@@ -799,6 +815,9 @@ impl State {
         });
     }
 
+    /// Removes the tap event at the current timeline position, if one exists.
+    ///
+    /// This operation is recorded in history and invalidates simulation samples from the removed tap's time.
     pub fn editor_remove_tap(&mut self) {
         self.record_editor_history_state();
         let tap_time = self.editor.remove_tap();
@@ -809,6 +828,9 @@ impl State {
         });
     }
 
+    /// Clears all tap events from the editor's timeline.
+    ///
+    /// This operation is recorded in history and invalidates all simulation samples.
     pub fn editor_clear_taps(&mut self) {
         self.record_editor_history_state();
         self.editor.clear_taps();

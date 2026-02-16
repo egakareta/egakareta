@@ -105,12 +105,19 @@ impl State {
         ))
     }
 
+    /// Adjusts the zoom level of the editor camera.
+    ///
+    /// Positive values zoom in, while negative values zoom out. This only
+    /// applies when the application is in the editor phase.
     pub fn adjust_editor_zoom(&mut self, delta: f32) {
         if self.phase == AppPhase::Editor {
             self.editor.adjust_zoom(delta);
         }
     }
 
+    /// Pans the editor camera based on screen-space input.
+    ///
+    /// This is typically called in response to mouse dragging or touch gestures.
     pub fn pan_editor_camera_by_input(&mut self, screen_x: f32, screen_y: f32) {
         if self.phase == AppPhase::Editor {
             self.editor.pan_by_input(screen_x, screen_y);
@@ -123,12 +130,14 @@ impl State {
         }
     }
 
+    /// Moves the editor cursor one unit up in the grid.
     pub fn move_editor_up(&mut self) {
         if self.phase == AppPhase::Editor {
             self.move_editor_cursor(0, 1);
         }
     }
 
+    /// Moves the editor cursor one unit down in the grid.
     pub fn move_editor_down(&mut self) {
         if self.phase == AppPhase::Editor {
             self.move_editor_cursor(0, -1);

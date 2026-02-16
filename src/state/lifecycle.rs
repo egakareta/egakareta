@@ -34,6 +34,10 @@ impl State {
             .expect("Failed to initialize state: No compatible GPU adapter found")
     }
 
+    /// Creates a new `State` instance for native platforms.
+    ///
+    /// This initializes the GPU surface, adapter, and device using the provided
+    /// `NativeWindow` and configures the default application state.
     #[cfg(not(target_arch = "wasm32"))]
     pub async fn new_native(window: NativeWindow) -> State {
         let (surface_host, instance, surface, size) = SurfaceHost::create_for_native(window);

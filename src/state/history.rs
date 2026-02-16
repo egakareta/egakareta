@@ -216,6 +216,9 @@ impl State {
         self.editor.record_history_state();
     }
 
+    /// Reverts the last recorded action in the editor.
+    ///
+    /// If successful, it synchronizes the editor's visual objects and markers.
     pub fn editor_undo(&mut self) {
         if self.phase == AppPhase::Editor && self.editor.undo() {
             self.sync_editor_objects();
@@ -224,6 +227,9 @@ impl State {
         }
     }
 
+    /// Re-applies a previously undone action in the editor.
+    ///
+    /// If successful, it synchronizes the editor's visual objects and markers.
     pub fn editor_redo(&mut self) {
         if self.phase == AppPhase::Editor && self.editor.redo() {
             self.sync_editor_objects();

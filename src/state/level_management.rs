@@ -101,6 +101,9 @@ impl State {
         load_builtin_level_metadata(level_name)
     }
 
+    /// Exports the current editor level to the Line Dash Zip (.ldz) format.
+    ///
+    /// This format bundles level metadata with the required audio file into a single binary blob.
     pub fn export_level_ldz(&self) -> Result<Vec<u8>, String> {
         let metadata = self.current_editor_metadata();
         let audio_bytes = self
@@ -120,6 +123,9 @@ impl State {
         build_level_export(&metadata, audio_bytes)
     }
 
+    /// Imports a level from the Line Dash Zip (.ldz) binary format.
+    ///
+    /// This replaces the current editor level and caches any bundled audio data.
     pub fn import_level_ldz(&mut self, data: &[u8]) -> Result<(), String> {
         let (metadata, audio_bytes) = parse_level_ldz_import(data)?;
         if let Some(bytes) = audio_bytes {
@@ -133,10 +139,14 @@ impl State {
         Ok(())
     }
 
+    /// Exports the current editor level metadata to a JSON string.
     pub fn export_level(&self) -> String {
         build_level_json_export(&self.current_editor_metadata())
     }
 
+    /// Imports level metadata from a JSON string.
+    ///
+    /// This replaces the current editor level metadata.
     pub fn import_level(&mut self, json: &str) -> Result<(), String> {
         let metadata = parse_level_import(json)?;
         self.apply_imported_level_metadata(metadata);
@@ -197,6 +207,10 @@ impl State {
         self.rebuild_spawn_marker_vertices();
     }
 
+    /// Loads a built-in level by name into the editor.
+    ///
+    /// This stops any active audio and resets the editor's internal state
+    /// before performing the import.
     pub fn load_builtin_level_into_editor(&mut self, name: &str) {
         if let Some(metadata) = self.load_level_metadata(name) {
             self.stop_audio();
@@ -208,10 +222,12 @@ impl State {
         }
     }
 
+    /// Returns the name of the level currently being edited.
     pub fn editor_level_name(&self) -> Option<String> {
         self.session.editor_level_name.clone()
     }
 
+    /// Sets the name for the level currently being edited.
     pub fn set_editor_level_name(&mut self, name: String) {
         self.session.editor_level_name = Some(name);
     }
@@ -224,18 +240,22 @@ impl State {
         self.session.editor_music_metadata = metadata;
     }
 
+    /// Indicates whether the level import UI is currently visible.
     pub fn editor_show_import(&self) -> bool {
         self.session.editor_show_import
     }
 
+    /// Toggles the visibility of the level import UI.
     pub fn set_editor_show_import(&mut self, show: bool) {
         self.session.editor_show_import = show;
     }
 
+    /// Returns the raw text content currently held in the editor's import buffer.
     pub fn editor_import_text(&self) -> &str {
         &self.session.editor_import_text
     }
 
+    /// Sets the raw text content for the editor's import buffer.
     pub fn set_editor_import_text(&mut self, text: String) {
         self.session.editor_import_text = text;
     }
@@ -248,10 +268,12 @@ impl State {
         self.session.editor_show_metadata = show;
     }
 
+    /// Returns a list of all level names available in the application's built-in repository.
     pub fn available_levels(&self) -> &[String] {
         &self.menu.state.levels
     }
 
+    /// Triggers a platform-specific export of the current level as an `.ldz` file.
     pub fn trigger_level_export(&self) {
         match self.export_level_ldz() {
             Ok(data) => {
@@ -269,6 +291,9 @@ impl State {
         }
     }
 
+    /// Triggers a platform-specific export of the currently selected block as an `.obj` 3D model.
+    ///
+    /// This is useful for exporting custom block geometry for use in other 3D software.
     pub fn trigger_selected_block_obj_export(&self) {
         if self.phase != AppPhase::Editor {
             return;
@@ -303,6 +328,9 @@ impl State {
         trigger_level_export(&filename, obj.as_bytes());
     }
 
+    /// Finalizes the level import process by decoding and parsing the current import text.
+    ///
+    /// The input text is expected to be a Base64-encoded Line Dash Zip (.ldz) blob.
     pub fn complete_import(&mut self) {
         let text = self.session.editor_import_text.clone();
         if let Ok(data) = base64::engine::general_purpose::STANDARD.decode(text.trim()) {

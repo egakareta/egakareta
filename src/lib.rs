@@ -1,3 +1,10 @@
+//! Line Dash is a high-performance 3D rhythm game engine written in Rust.
+//!
+//! This crate provides the core game logic, editor functionality, and platform-specific
+//! runtimes for both WebAssembly and native platforms. It uses `wgpu` for hardware-accelerated
+//! rendering and `egui` for the user interface.
+
+#![warn(missing_docs)]
 mod audio_service;
 mod block_repository;
 mod commands;
