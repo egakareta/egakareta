@@ -31,7 +31,7 @@ pub(crate) fn show_timeline_bar(
         let timeline_height = 18.0;
         let (rect, response) = ui.allocate_exact_size(
             egui::vec2(available_width, timeline_height),
-            egui::Sense::click(),
+            egui::Sense::click_and_drag(),
         );
 
         let painter = ui.painter();
@@ -109,8 +109,8 @@ pub(crate) fn show_timeline_bar(
             egui::Stroke::new(2.0, egui::Color32::from_rgb(120, 200, 255)),
         );
 
-        // Click to seek
-        if response.clicked() {
+        // Click or drag to seek
+        if response.dragged() || response.clicked() {
             if let Some(pos) = response.interact_pointer_pos() {
                 let t = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
                 let time_seconds = t * duration_seconds;
@@ -270,8 +270,8 @@ pub(crate) fn show_waveform_panel(
         );
     }
 
-    // Interaction: click to seek
-    if response.clicked() {
+    // Interaction: click or drag to seek
+    if response.dragged_by(egui::PointerButton::Primary) || response.clicked() {
         if let Some(pos) = response.interact_pointer_pos() {
             let t = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
             let time_seconds = view_start + t * (view_end - view_start);
