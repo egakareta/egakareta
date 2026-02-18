@@ -9,6 +9,7 @@ RUN apt-get update \
     curl \
     ca-certificates \
     git \
+    git-lfs \
     pkg-config \
     libssl-dev \
     cmake \
