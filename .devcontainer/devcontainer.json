@@ -4,7 +4,7 @@
         "dockerfile": "Dockerfile",
         "context": ".."
     },
-    "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+    "workspaceFolder": "/workspace",
     "customizations": {
         "vscode": {
             "extensions": [
@@ -15,7 +15,7 @@
             ]
         }
     },
-    "postCreateCommand": "bun run build",
+    "postCreateCommand": "bun install && bun run build",
     "remoteUser": "root",
     "forwardPorts": [3000]
 }

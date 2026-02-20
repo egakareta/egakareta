@@ -12,9 +12,7 @@
         "serve": "bunx serve .",
         "dev": "concurrently \"bun run watch\" \"bun run serve\" --prefix=none",
         "prod": "bun run build && bun dist.js",
-        "prepare": "lefthook install",
-        "install:rust": "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y",
-        "install:tools": "cargo install --locked cargo-nextest cargo-llvm-cov"
+        "prepare": "lefthook install"
     },
     "devDependencies": {
         "concurrently": "^9.2.1",
