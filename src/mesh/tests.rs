@@ -27,6 +27,7 @@ mod tests {
             rotation_degrees: 90.0,
             roundness: 0.18,
             block_id: "core/standard".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
         };
         let vertices = build_block_vertices(&[obj]);
         let positions: Vec<[f32; 3]> = vertices.iter().map(|v| v.position).collect();
@@ -93,6 +94,7 @@ f 1/1/1 2/2/1 3/3/1
             rotation_degrees: 0.0,
             roundness: 0.0,
             block_id: "core/finish".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
         };
 
         let vertices = build_block_vertices(&[obj]);
@@ -107,6 +109,7 @@ f 1/1/1 2/2/1 3/3/1
             rotation_degrees: 0.0,
             roundness: 0.0,
             block_id: "core/grass".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
         };
 
         let vertices = build_block_vertices(&[obj]);

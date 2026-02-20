@@ -49,6 +49,8 @@ where
 
         let mut color_top = block.render.color_top;
         let mut color_side = block.render.color_side;
+        let mut color_fill = block.render.color_fill;
+        let mut color_outline = block.render.color_outline;
 
         if block.render.noise.abs() > f32::EPSILON {
             let noise = pseudo_random_noise(obj.position[0], obj.position[1], obj.position[2]);
@@ -59,6 +61,11 @@ where
             }
         }
 
+        color_top = apply_color_tint(color_top, obj.color_tint);
+        color_side = apply_color_tint(color_side, obj.color_tint);
+        color_fill = apply_color_tint(color_fill, obj.color_tint);
+        color_outline = apply_color_tint(color_outline, obj.color_tint);
+
         if let Some(mesh_path) = block.assets.mesh.as_deref() {
             if let Some(mesh) = resolve_obj_mesh(mesh_path) {
                 append_obj_mesh(vertices, obj, mesh, color_top);
@@ -66,18 +73,10 @@ where
         }
 
         if vertices.is_empty() && matches!(block.render.profile, BlockRenderProfile::FinishRing) {
-            append_finish_ring(
-                vertices,
-                obj,
-                block.render.color_top,
-                block.render.color_outline,
-                pulse_phase_seconds,
-            );
+            append_finish_ring(vertices, obj, color_top, color_outline, pulse_phase_seconds);
         } else if vertices.is_empty()
             && matches!(block.render.profile, BlockRenderProfile::VoidFrame)
         {
-            let color_fill = block.render.color_fill;
-            let color_outline = block.render.color_outline;
             let t = 0.05;
 
             // Fill
@@ -211,6 +210,55 @@ where
     }
 
     all_vertices
+}
+
+fn apply_color_tint(color: [f32; 4], tint_rgb: [f32; 3]) -> [f32; 4] {
+    let (tint_hue, tint_sat, _) = rgb_to_hsv(tint_rgb[0], tint_rgb[1], tint_rgb[2]);
+    if tint_sat <= 1e-4 {
+        return color;
+    }
+
+    let (.., source_sat, source_val) = rgb_to_hsv(color[0], color[1], color[2]);
+    let (r, g, b) = hsv_to_rgb(tint_hue, source_sat, source_val);
+    [r, g, b, color[3]]
+}
+
+fn rgb_to_hsv(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+    let max = r.max(g.max(b));
+    let min = r.min(g.min(b));
+    let delta = max - min;
+
+    let hue = if delta <= f32::EPSILON {
+        0.0
+    } else if (max - r).abs() <= f32::EPSILON {
+        ((g - b) / delta).rem_euclid(6.0) / 6.0
+    } else if (max - g).abs() <= f32::EPSILON {
+        (((b - r) / delta) + 2.0) / 6.0
+    } else {
+        (((r - g) / delta) + 4.0) / 6.0
+    };
+    let sat = if max <= f32::EPSILON {
+        0.0
+    } else {
+        delta / max
+    };
+    (hue, sat, max)
+}
+
+fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (f32, f32, f32) {
+    let c = v * s;
+    let h_prime = h.rem_euclid(1.0) * 6.0;
+    let x = c * (1.0 - (h_prime.rem_euclid(2.0) - 1.0).abs());
+    let (r1, g1, b1) = match h_prime {
+        h if (0.0..1.0).contains(&h) => (c, x, 0.0),
+        h if (1.0..2.0).contains(&h) => (x, c, 0.0),
+        h if (2.0..3.0).contains(&h) => (0.0, c, x),
+        h if (3.0..4.0).contains(&h) => (0.0, x, c),
+        h if (4.0..5.0).contains(&h) => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    let m = v - c;
+    (r1 + m, g1 + m, b1 + m)
 }
 
 fn append_finish_ring(

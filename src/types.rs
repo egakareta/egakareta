@@ -87,6 +87,17 @@ fn is_default_level_object_block_id(value: &String) -> bool {
     value == DEFAULT_BLOCK_ID
 }
 
+fn default_level_object_color_tint() -> [f32; 3] {
+    [1.0, 1.0, 1.0]
+}
+
+fn is_default_level_object_color_tint(value: &[f32; 3]) -> bool {
+    value
+        .iter()
+        .zip(default_level_object_color_tint())
+        .all(|(component, default)| (*component - default).abs() <= 1e-6)
+}
+
 fn deserialize_level_object_block_id<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,
@@ -332,6 +343,11 @@ pub(crate) struct LevelObject {
         skip_serializing_if = "is_default_level_object_block_id"
     )]
     pub(crate) block_id: String,
+    #[serde(
+        default = "default_level_object_color_tint",
+        skip_serializing_if = "is_default_level_object_color_tint"
+    )]
+    pub(crate) color_tint: [f32; 3],
 }
 
 impl LevelObject {
@@ -481,6 +497,7 @@ mod tests {
         assert_eq!(object.rotation_degrees, 0.0);
         assert_eq!(object.roundness, 0.18);
         assert_eq!(object.block_id, "core/standard");
+        assert_eq!(object.color_tint, [1.0, 1.0, 1.0]);
     }
 
     #[test]
@@ -509,6 +526,7 @@ mod tests {
             rotation_degrees: 0.0,
             roundness: 0.18,
             block_id: "core/grass".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
         };
 
         let value = serde_json::to_value(&object).expect("serialize object");
@@ -537,6 +555,7 @@ mod tests {
                 rotation_degrees: 0.0,
                 roundness: 0.18,
                 block_id: "core/standard".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
             }],
         );
 

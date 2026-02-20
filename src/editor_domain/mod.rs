@@ -80,6 +80,7 @@ mod tests {
                 rotation_degrees: 0.0,
                 roundness: 0.18,
                 block_id: "core/standard".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
             },
             LevelObject {
                 position: [0.0, 0.0, 1.0],
@@ -87,6 +88,7 @@ mod tests {
                 rotation_degrees: 0.0,
                 roundness: 0.18,
                 block_id: "core/grass".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
             },
         ];
 
@@ -123,6 +125,7 @@ mod tests {
                 rotation_degrees: 0.0,
                 roundness: 0.18,
                 block_id: "core/standard".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
             }],
             extra: serde_json::Map::new(),
         };
@@ -175,6 +178,7 @@ mod tests {
             rotation_degrees: 0.0,
             roundness: 0.18,
             block_id: "core/standard".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
         }];
 
         assert!(playtest_return_objects(true, &objects).is_some());
@@ -208,6 +212,7 @@ mod tests {
                 rotation_degrees: 0.0,
                 roundness: 0.18,
                 block_id: "core/standard".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
             }],
             extra: serde_json::Map::new(),
         };

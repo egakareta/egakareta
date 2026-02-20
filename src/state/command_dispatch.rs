@@ -37,6 +37,7 @@ impl State {
                 self.set_editor_selected_block_id(obj.block_id);
                 self.set_editor_selected_block_rotation(obj.rotation_degrees);
                 self.set_editor_selected_block_roundness(obj.roundness);
+                self.set_editor_selected_block_color_tint(obj.color_tint);
             }
 
             // ── Editor – selection / transform ──────────────────────
@@ -895,6 +896,7 @@ mod tests {
                     rotation_degrees: 0.0,
                     roundness: 0.18,
                     block_id: "core/standard".to_string(),
+                    color_tint: [1.0, 1.0, 1.0],
                 },
                 crate::types::LevelObject {
                     position: [2.0, 0.0, 0.0],
@@ -902,6 +904,7 @@ mod tests {
                     rotation_degrees: 0.0,
                     roundness: 0.18,
                     block_id: "core/standard".to_string(),
+                    color_tint: [1.0, 1.0, 1.0],
                 },
             ];
 

@@ -464,6 +464,7 @@ mod tests {
             rotation_degrees: 0.0,
             roundness: 0.18,
             block_id: "core/standard".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
         }];
         let (position, direction) = derive_timeline_position(
             [0.0, 0.0, 3.0],
@@ -529,6 +530,7 @@ mod tests {
                     rotation_degrees: 0.0,
                     roundness: 0.18,
                     block_id: "core/standard".to_string(),
+                    color_tint: [1.0, 1.0, 1.0],
                 },
                 LevelObject {
                     position: [4.0, 0.0, 0.0],
@@ -536,6 +538,7 @@ mod tests {
                     rotation_degrees: 0.0,
                     roundness: 0.18,
                     block_id: "core/standard".to_string(),
+                    color_tint: [1.0, 1.0, 1.0],
                 },
             ];
             state.editor.ui.selected_block_indices = vec![0, 1];

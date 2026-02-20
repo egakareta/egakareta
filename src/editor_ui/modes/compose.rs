@@ -142,19 +142,12 @@ pub(crate) fn show_compose_mode_bottom_panel(
 
                 ui.horizontal(|ui| {
                     ui.label("Color:");
-                    for block in all_placeable_blocks() {
-                        if !block.placeable {
-                            continue;
-                        }
-                        if ui
-                            .selectable_label(selected.block_id == block.id, &block.display_name)
-                            .clicked()
-                        {
-                            let mut next = selected.clone();
-                            next.block_id = block.id.clone();
-                            commands
-                                .push(crate::commands::AppCommand::EditorUpdateSelectedBlock(next));
-                        }
+                    let mut color_tint = selected.color_tint;
+                    if ui.color_edit_button_rgb(&mut color_tint).changed() {
+                        selected.color_tint = color_tint;
+                        commands.push(crate::commands::AppCommand::EditorUpdateSelectedBlock(
+                            selected.clone(),
+                        ));
                     }
                 });
             } else {

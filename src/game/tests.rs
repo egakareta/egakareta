@@ -16,6 +16,7 @@ fn test_ground_detection_normal() {
         rotation_degrees: 0.0,
         roundness: 0.18,
         block_id: "core/standard".to_string(),
+        color_tint: [1.0, 1.0, 1.0],
     });
 
     // Player at 0.5, 0.5 (center of block), check ground at 0.5, 0.5
@@ -34,6 +35,7 @@ fn test_ground_detection_under_overhang() {
         rotation_degrees: 0.0,
         roundness: 0.18,
         block_id: "core/standard".to_string(),
+        color_tint: [1.0, 1.0, 1.0],
     });
     // Overhang block at height 3
     game.objects.push(LevelObject {
@@ -42,6 +44,7 @@ fn test_ground_detection_under_overhang() {
         rotation_degrees: 0.0,
         roundness: 0.18,
         block_id: "core/standard".to_string(),
+        color_tint: [1.0, 1.0, 1.0],
     });
 
     // Player is walking on the ground block (z=1).
@@ -79,6 +82,7 @@ fn rotated_object_contains_expected_points() {
         rotation_degrees: 90.0,
         roundness: 0.18,
         block_id: "core/standard".to_string(),
+        color_tint: [1.0, 1.0, 1.0],
     };
 
     assert!(object_xy_contains(&obj, 1.0, 0.5));
@@ -93,6 +97,7 @@ fn rotated_overlap_uses_oriented_bounds() {
         rotation_degrees: 45.0,
         roundness: 0.18,
         block_id: "core/standard".to_string(),
+        color_tint: [1.0, 1.0, 1.0],
     };
 
     assert!(aabb_overlaps_object_xy(0.9, 1.1, 0.3, 0.5, &obj));
@@ -108,6 +113,7 @@ fn rotated_ground_detection_works() {
         rotation_degrees: 90.0,
         roundness: 0.18,
         block_id: "core/standard".to_string(),
+        color_tint: [1.0, 1.0, 1.0],
     });
 
     let inside = game.top_surface_height_at(1.0, 0.5, 3.0);
@@ -128,6 +134,7 @@ fn speed_portal_overlap_removes_portal_and_boosts_speed() {
         rotation_degrees: 30.0,
         roundness: 0.18,
         block_id: "core/speedportal".to_string(),
+        color_tint: [1.0, 1.0, 1.0],
     });
 
     game.update(0.0);
@@ -148,6 +155,7 @@ fn finish_block_overlap_completes_level_after_sink() {
         rotation_degrees: 0.0,
         roundness: 0.18,
         block_id: "core/finish".to_string(),
+        color_tint: [1.0, 1.0, 1.0],
     });
 
     game.update(0.0);

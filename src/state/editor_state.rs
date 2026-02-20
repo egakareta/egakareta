@@ -201,6 +201,16 @@ impl EditorSubsystem {
         }
     }
 
+    pub(crate) fn set_selected_block_color_tint(&mut self, color_tint: [f32; 3]) {
+        if let Some(index) = self
+            .ui
+            .selected_block_index
+            .filter(|index| *index < self.objects.len())
+        {
+            self.objects[index].color_tint = color_tint.map(|component| component.clamp(0.0, 1.0));
+        }
+    }
+
     pub(crate) fn selected_block_id(&self) -> &str {
         self.config.selected_block_id.as_str()
     }
@@ -616,6 +626,24 @@ impl State {
         self.sync_primary_selection_from_indices();
 
         self.editor.set_selected_block_roundness(roundness);
+
+        if self.editor.ui.selected_block_index.is_some() {
+            self.sync_editor_objects();
+            self.rebuild_editor_gizmo_vertices();
+            self.rebuild_editor_selection_outline_vertices();
+        }
+    }
+
+    pub(crate) fn set_editor_selected_block_color_tint(&mut self, color_tint: [f32; 3]) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        self.record_editor_history_state();
+
+        self.sync_primary_selection_from_indices();
+
+        self.editor.set_selected_block_color_tint(color_tint);
 
         if self.editor.ui.selected_block_index.is_some() {
             self.sync_editor_objects();
