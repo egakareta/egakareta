@@ -62,7 +62,7 @@ zip = { version = "8.1", default-features = false, features = ["deflate"] }
 base64 = "0.22"
 egui = "0.33"
 egui-wgpu = "0.33"
-rfd = "0.15"
+rfd = "0.17"
 wgpu-profiler = "0.25.0"
 image = { version = "0.25", default-features = false, features = ["png"] }
 keyframe = "1.1.1"
