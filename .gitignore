@@ -4,6 +4,5 @@
 /.playwright-mcp
 /pkg
 /dist
-!/dist/.nojekyll
 /.wrangler
 lcov.info
