@@ -1,9 +1,11 @@
 use crate::block_repository::{resolve_block_definition, BlockRenderProfile};
 use crate::mesh::noise::pseudo_random_noise;
 use crate::mesh::obj::{append_obj_mesh, resolve_obj_mesh};
-use crate::mesh::shapes::{append_prism, append_rounded_prism};
+use crate::mesh::shapes::append_prism;
 use crate::mesh::transforms::rotate_vertices_around_z;
 use crate::types::{LevelObject, Vertex};
+
+const MARGIN_PROFILE_TOTAL_INSET: f32 = 0.05;
 
 pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
     build_block_vertices_from_refs(objects.iter())
@@ -177,25 +179,26 @@ where
                 color_outline,
             );
         } else if vertices.is_empty() {
-            if obj.roundness > f32::EPSILON {
-                append_rounded_prism(
-                    vertices,
-                    [x_min, y_min, z_min],
-                    [x_max, y_max, z_max],
-                    color_top,
-                    color_side,
-                    obj.roundness,
-                    5,
-                );
-            } else {
-                append_prism(
-                    vertices,
-                    [x_min, y_min, z_min],
-                    [x_max, y_max, z_max],
-                    color_top,
-                    color_side,
-                );
-            }
+            let (render_x_min, render_x_max, render_y_min, render_y_max) =
+                if matches!(block.render.profile, BlockRenderProfile::Margin) {
+                    let x_inset = (obj.size[0] * 0.5).min(MARGIN_PROFILE_TOTAL_INSET * 0.5);
+                    let y_inset = (obj.size[1] * 0.5).min(MARGIN_PROFILE_TOTAL_INSET * 0.5);
+                    (
+                        x_min + x_inset,
+                        x_max - x_inset,
+                        y_min + y_inset,
+                        y_max - y_inset,
+                    )
+                } else {
+                    (x_min, x_max, y_min, y_max)
+                };
+            append_prism(
+                vertices,
+                [render_x_min, render_y_min, z_min],
+                [render_x_max, render_y_max, z_max],
+                color_top,
+                color_side,
+            );
         }
 
         let center = [

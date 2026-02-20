@@ -98,4 +98,24 @@ f 1/1/1 2/2/1 3/3/1
         let vertices = build_block_vertices(&[obj]);
         assert!(!vertices.is_empty());
     }
+
+    #[test]
+    fn margin_profile_renders_with_xy_inset() {
+        let obj = LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: 0.0,
+            roundness: 0.0,
+            block_id: "core/grass".to_string(),
+        };
+
+        let vertices = build_block_vertices(&[obj]);
+        let positions: Vec<[f32; 3]> = vertices.iter().map(|v| v.position).collect();
+        let (min_x, max_x, min_y, max_y) = bounds_xy(&positions);
+
+        assert!((min_x - 0.025).abs() < 1e-5);
+        assert!((max_x - 0.975).abs() < 1e-5);
+        assert!((min_y - 0.025).abs() < 1e-5);
+        assert!((max_y - 0.975).abs() < 1e-5);
+    }
 }

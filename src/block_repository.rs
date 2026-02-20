@@ -108,6 +108,7 @@ pub(crate) struct BlockAssets {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum BlockRenderProfile {
     Solid,
+    Margin,
     VoidFrame,
     SpeedPortal,
     FinishRing,

@@ -1,4 +1,4 @@
-use crate::mesh::shapes::{append_prism, append_quad, append_rounded_prism};
+use crate::mesh::shapes::{append_prism, append_quad};
 use crate::types::Vertex;
 
 pub(crate) fn build_trail_vertices(points: &[[f32; 3]], game_over: bool) -> Vec<Vertex> {
@@ -35,14 +35,12 @@ pub(crate) fn build_trail_vertices(points: &[[f32; 3]], game_over: bool) -> Vec<
             let z_base = p1[2].min(p2[2]);
             let z_top = p1[2].max(p2[2]) + width;
 
-            append_rounded_prism(
+            append_prism(
                 &mut trail_vertices,
                 [x_min, y_min, z_base],
                 [x_max, y_max, z_top],
                 c_top,
                 c_side,
-                width * 0.2,
-                4,
             );
             continue;
         }
@@ -68,14 +66,12 @@ pub(crate) fn build_trail_vertices(points: &[[f32; 3]], game_over: bool) -> Vec<
         let z_min = z_offset;
         let z_max = z_offset + width + z_extra;
 
-        append_rounded_prism(
+        append_prism(
             &mut trail_vertices,
             [x_min, y_min, z_min],
             [x_max, y_max, z_max],
             c_top,
             c_side,
-            width * 0.2,
-            4,
         );
     }
 
