@@ -20,7 +20,7 @@ pollster = "0.3"
 env_logger = "0.11"
 log = "0.4"
 bytemuck = { version = "1.15", features = ["derive"] }
-glam = { version = "0.27", features = ["bytemuck"] }
+glam = { version = "0.32", features = ["bytemuck"] }
 web-sys = { version = "0.3", features = [
     "console",
     "Window",
