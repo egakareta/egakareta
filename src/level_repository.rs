@@ -160,7 +160,7 @@ mod tests {
     #[test]
     fn parses_objects_without_kind_using_default() {
         let mut metadata = load_builtin_level_metadata("Flowerfield").expect("missing level");
-        metadata.objects[0].block_id = "core/standard".to_string();
+        metadata.objects[0].block_id = "core/stone".to_string();
 
         let mut json_value = serde_json::from_str::<serde_json::Value>(
             &serialize_level_metadata_pretty(&metadata).unwrap(),
@@ -172,6 +172,6 @@ mod tests {
             .remove("block_id");
 
         let result = parse_level_metadata_json(&json_value.to_string()).expect("valid metadata");
-        assert_eq!(result.objects[0].block_id, "core/standard");
+        assert_eq!(result.objects[0].block_id, "core/stone");
     }
 }

@@ -9,7 +9,7 @@ use std::sync::OnceLock;
 use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
 
-pub(crate) const DEFAULT_BLOCK_ID: &str = "core/standard";
+pub(crate) const DEFAULT_BLOCK_ID: &str = "core/stone";
 
 static BLOCKS_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/blocks");
 static BLOCK_CATALOG: OnceLock<BlockCatalog> = OnceLock::new();

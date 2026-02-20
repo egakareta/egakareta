@@ -463,7 +463,7 @@ mod tests {
             size: [1.0, 1.0, 1.0],
             rotation_degrees: 0.0,
             roundness: 0.18,
-            block_id: "core/standard".to_string(),
+            block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         }];
         let (position, direction) = derive_timeline_position(
@@ -529,7 +529,7 @@ mod tests {
                     size: [1.0, 1.0, 1.0],
                     rotation_degrees: 0.0,
                     roundness: 0.18,
-                    block_id: "core/standard".to_string(),
+                    block_id: "core/stone".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
                 },
                 LevelObject {
@@ -537,7 +537,7 @@ mod tests {
                     size: [1.0, 1.0, 1.0],
                     rotation_degrees: 0.0,
                     roundness: 0.18,
-                    block_id: "core/standard".to_string(),
+                    block_id: "core/stone".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
                 },
             ];

@@ -393,7 +393,7 @@ impl State {
             }
             "1" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::EditorSetBlockId("core/standard".to_string()))
+                    Some(AppCommand::EditorSetBlockId("core/stone".to_string()))
                 } else {
                     None
                 }
@@ -895,7 +895,7 @@ mod tests {
                     size: [1.0, 1.0, 1.0],
                     rotation_degrees: 0.0,
                     roundness: 0.18,
-                    block_id: "core/standard".to_string(),
+                    block_id: "core/stone".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
                 },
                 crate::types::LevelObject {
@@ -903,7 +903,7 @@ mod tests {
                     size: [1.0, 1.0, 1.0],
                     rotation_degrees: 0.0,
                     roundness: 0.18,
-                    block_id: "core/standard".to_string(),
+                    block_id: "core/stone".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
                 },
             ];

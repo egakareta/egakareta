@@ -496,7 +496,7 @@ mod tests {
         let object: LevelObject = serde_json::from_str(json).expect("valid level object");
         assert_eq!(object.rotation_degrees, 0.0);
         assert_eq!(object.roundness, 0.18);
-        assert_eq!(object.block_id, "core/standard");
+        assert_eq!(object.block_id, "core/stone");
         assert_eq!(object.color_tint, [1.0, 1.0, 1.0]);
     }
 
@@ -554,7 +554,7 @@ mod tests {
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: 0.0,
                 roundness: 0.18,
-                block_id: "core/standard".to_string(),
+                block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             }],
         );

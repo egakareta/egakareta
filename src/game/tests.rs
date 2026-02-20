@@ -15,7 +15,7 @@ fn test_ground_detection_normal() {
         size: [1.0, 1.0, 1.0],
         rotation_degrees: 0.0,
         roundness: 0.18,
-        block_id: "core/standard".to_string(),
+        block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
 
@@ -34,7 +34,7 @@ fn test_ground_detection_under_overhang() {
         size: [1.0, 1.0, 1.0],
         rotation_degrees: 0.0,
         roundness: 0.18,
-        block_id: "core/standard".to_string(),
+        block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
     // Overhang block at height 3
@@ -43,7 +43,7 @@ fn test_ground_detection_under_overhang() {
         size: [1.0, 1.0, 1.0],
         rotation_degrees: 0.0,
         roundness: 0.18,
-        block_id: "core/standard".to_string(),
+        block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
 
@@ -81,7 +81,7 @@ fn rotated_object_contains_expected_points() {
         size: [2.0, 1.0, 1.0],
         rotation_degrees: 90.0,
         roundness: 0.18,
-        block_id: "core/standard".to_string(),
+        block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     };
 
@@ -96,7 +96,7 @@ fn rotated_overlap_uses_oriented_bounds() {
         size: [2.0, 1.0, 1.0],
         rotation_degrees: 45.0,
         roundness: 0.18,
-        block_id: "core/standard".to_string(),
+        block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     };
 
@@ -112,7 +112,7 @@ fn rotated_ground_detection_works() {
         size: [2.0, 1.0, 2.0],
         rotation_degrees: 90.0,
         roundness: 0.18,
-        block_id: "core/standard".to_string(),
+        block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
 
