@@ -1,6 +1,8 @@
 FROM ubuntu:24.04
 
-ARG DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /workspace
 
 # Install necessary packages
 RUN apt-get update \
@@ -32,6 +34,3 @@ RUN curl -fsSL https://bun.sh/install | bash
 # Install Rust
 RUN bun install:rust
 RUN bun install:tools
-
-USER root
-WORKDIR /workspaces/line-dash

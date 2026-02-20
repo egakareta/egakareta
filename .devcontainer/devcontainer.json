@@ -1,9 +1,10 @@
 {
     "name": "line-dash Dev Container",
     "build": {
-        "dockerfile": "Dockerfile"
+        "dockerfile": "Dockerfile",
+        "context": ".."
     },
-    "workspaceFolder": "/workspaces/line-dash",
+    "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
     "customizations": {
         "vscode": {
             "extensions": [
