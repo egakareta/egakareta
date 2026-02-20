@@ -3,6 +3,7 @@
         "rust-lang.rust-analyzer",
         "vadimcn.vscode-lldb",
         "wgsl-analyzer.wgsl-analyzer",
-        "slevesque.vscode-3dviewer"
+        "slevesque.vscode-3dviewer",
+        "tamasfe.even-better-toml"
     ]
 }
