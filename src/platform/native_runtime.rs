@@ -11,6 +11,7 @@ use crate::commands::InputEvent;
 use crate::platform::input_mapping::{
     key_str_from_winit, mouse_button_index_from_winit, zoom_delta_from_winit,
 };
+use crate::platform::input_routing::{should_route_keyboard_input, should_route_pointer_input};
 use crate::platform::runtime::Runtime;
 use crate::State;
 
@@ -94,7 +95,7 @@ impl ApplicationHandler for App {
                 state: element_state,
                 ..
             } => {
-                if !egui_consumed {
+                if should_route_pointer_input(egui_consumed, false) {
                     let pressed = element_state == winit::event::ElementState::Pressed;
                     let button_idx = mouse_button_index_from_winit(button);
                     runtime.state.process_input_event(InputEvent::MouseButton {
@@ -104,7 +105,7 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
-                if !egui_consumed {
+                if should_route_pointer_input(egui_consumed, false) {
                     runtime.state.process_input_event(InputEvent::PointerMoved {
                         x: position.x,
                         y: position.y,
@@ -120,7 +121,7 @@ impl ApplicationHandler for App {
                 self.last_cursor_pos = Some(position);
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                if !egui_consumed {
+                if should_route_pointer_input(egui_consumed, false) {
                     let zoom_delta = zoom_delta_from_winit(delta);
                     runtime
                         .state
@@ -128,7 +129,10 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                if egui_consumed || runtime.pipeline.ctx().wants_keyboard_input() {
+                if !should_route_keyboard_input(
+                    egui_consumed,
+                    runtime.pipeline.ctx().wants_keyboard_input(),
+                ) {
                     return;
                 }
 

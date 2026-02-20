@@ -18,7 +18,10 @@ RUN apt-get update \
     gnupg \
     wget \
     unzip \
-    libclang-dev
+    libclang-dev \
+    libasound2-dev \
+    libudev-dev \
+    pkg-config
 
 # Install Node.js via nvm and install Node 24 in a single layer
 # source nvm in the same RUN so the command is available immediately
@@ -38,6 +41,8 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Install cargo tools
 RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+
+RUN rustup component add llvm-tools-preview
 RUN cargo binstall cargo-nextest cargo-llvm-cov -y
 
 # Copy the project files into the container

@@ -5,6 +5,7 @@ use web_sys::{HtmlCanvasElement, Window};
 
 use crate::commands::InputEvent;
 use crate::platform::input_mapping::egui_key_from_key_str;
+use crate::platform::input_routing::{should_route_keyboard_input, should_route_pointer_input};
 use crate::platform::runtime::Runtime;
 
 #[derive(Default)]
@@ -138,7 +139,7 @@ pub fn setup_web_input_callbacks(
                 _ => {}
             }
 
-            if !*ui_wants_pointer.borrow() {
+            if should_route_pointer_input(false, *ui_wants_pointer.borrow()) {
                 runtime
                     .state
                     .process_input_event(InputEvent::PointerMoved { x, y });
@@ -206,7 +207,7 @@ pub fn setup_web_input_callbacks(
                 .borrow_mut()
                 .push_pointer_move(x as f32, y as f32);
 
-            if *ui_wants_pointer.borrow() {
+            if !should_route_pointer_input(false, *ui_wants_pointer.borrow()) {
                 return;
             }
 
@@ -245,7 +246,7 @@ pub fn setup_web_input_callbacks(
         let runtime_rc = runtime_rc.clone();
         let ui_wants_pointer = ui_wants_pointer.clone();
         let closure = Closure::wrap(Box::new(move |event: web_sys::WheelEvent| {
-            if *ui_wants_pointer.borrow() {
+            if !should_route_pointer_input(false, *ui_wants_pointer.borrow()) {
                 event.prevent_default();
                 return;
             }
@@ -362,7 +363,7 @@ pub fn setup_web_input_callbacks(
                 });
             }
 
-            if !*ui_wants_keyboard.borrow() {
+            if should_route_keyboard_input(false, *ui_wants_keyboard.borrow()) {
                 let mut runtime = runtime_rc.borrow_mut();
                 runtime.state.process_input_event(InputEvent::Key {
                     key: key.clone(),
@@ -402,7 +403,7 @@ pub fn setup_web_input_callbacks(
                 });
             }
 
-            if !*ui_wants_keyboard.borrow() {
+            if should_route_keyboard_input(false, *ui_wants_keyboard.borrow()) {
                 let mut runtime = runtime_rc.borrow_mut();
                 runtime.state.process_input_event(InputEvent::Key {
                     key: key.clone(),

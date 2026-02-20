@@ -1,26 +1,7 @@
+use crate::platform::audio_backend::{create_audio_backend, AudioBackend};
+
 pub(crate) struct PlatformAudio {
-    #[cfg(target_arch = "wasm32")]
-    current_audio: Option<web_sys::HtmlAudioElement>,
-    #[cfg(target_arch = "wasm32")]
-    current_audio_source: Option<String>,
-    #[cfg(target_arch = "wasm32")]
-    current_blob_url: Option<String>,
-    #[cfg(target_arch = "wasm32")]
-    playback_speed: f32,
-    #[cfg(not(target_arch = "wasm32"))]
-    _output_stream: Option<rodio::OutputStream>,
-    #[cfg(not(target_arch = "wasm32"))]
-    output_handle: Option<rodio::OutputStreamHandle>,
-    #[cfg(not(target_arch = "wasm32"))]
-    current_sink: Option<rodio::Sink>,
-    #[cfg(not(target_arch = "wasm32"))]
-    current_audio_source: Option<String>,
-    #[cfg(not(target_arch = "wasm32"))]
-    playback_started_at: Option<std::time::Instant>,
-    #[cfg(not(target_arch = "wasm32"))]
-    playback_start_offset_seconds: f32,
-    #[cfg(not(target_arch = "wasm32"))]
-    playback_speed: f32,
+    backend: Box<dyn AudioBackend>,
 }
 
 fn accumulate_waveform_frame_peak(
@@ -59,333 +40,63 @@ fn accumulate_interleaved_samples(
 
 impl PlatformAudio {
     pub(crate) fn new() -> Self {
-        #[cfg(target_arch = "wasm32")]
-        {
-            Self {
-                current_audio: None,
-                current_audio_source: None,
-                current_blob_url: None,
-                playback_speed: 1.0,
-            }
-        }
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let (output_stream, output_handle) = match rodio::OutputStream::try_default() {
-                Ok((stream, handle)) => (Some(stream), Some(handle)),
-                Err(err) => {
-                    log::warn!("Failed to initialize native audio output: {}", err);
-                    (None, None)
-                }
-            };
-
-            Self {
-                _output_stream: output_stream,
-                output_handle,
-                current_sink: None,
-                current_audio_source: None,
-                playback_started_at: None,
-                playback_start_offset_seconds: 0.0,
-                playback_speed: 1.0,
-            }
-        }
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    fn revoke_blob_url(&mut self) {
-        if let Some(url) = self.current_blob_url.take() {
-            let _ = web_sys::Url::revoke_object_url(&url);
+        Self {
+            backend: create_audio_backend(),
         }
     }
 
     pub(crate) fn stop(&mut self) {
-        #[cfg(target_arch = "wasm32")]
-        if let Some(audio) = &self.current_audio {
-            let _ = audio.pause();
-        }
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            if let Some(sink) = &self.current_sink {
-                sink.pause();
-            }
-            self.playback_started_at = None;
-            self.playback_start_offset_seconds = 0.0;
-        }
+        self.backend.stop();
     }
 
     pub(crate) fn start_with_bytes_at(
         &mut self,
-        _music_source: &str,
+        music_source: &str,
         bytes: &[u8],
         start_seconds: f32,
     ) {
-        let source_key = format!("bytes:{}", _music_source);
+        let source_key = format!("bytes:{}", music_source);
         let start_seconds = start_seconds.max(0.0);
-        self.stop();
+        self.backend.stop();
 
-        #[cfg(target_arch = "wasm32")]
-        {
-            if self.current_audio_source.as_deref() == Some(source_key.as_str()) {
-                if let Some(audio) = &self.current_audio {
-                    let _ = audio.set_current_time(start_seconds as f64);
-                    audio.set_playback_rate(self.playback_speed as f64);
-                    let _ = audio.play();
-                    return;
-                }
-            }
-
-            self.revoke_blob_url();
-            let uint8_array = unsafe { js_sys::Uint8Array::view(bytes) };
-            let blob =
-                web_sys::Blob::new_with_u8_array_sequence(&js_sys::Array::of1(&uint8_array.into()))
-                    .unwrap();
-            let url = web_sys::Url::create_object_url_with_blob(&blob).unwrap();
-            if let Ok(audio) = web_sys::HtmlAudioElement::new_with_src(&url) {
-                let _ = audio.set_current_time(start_seconds as f64);
-                audio.set_playback_rate(self.playback_speed as f64);
-                let _ = audio.play();
-                self.current_audio = Some(audio);
-                self.current_audio_source = Some(source_key);
-                self.current_blob_url = Some(url);
-            }
+        if self.backend.can_reuse_source(&source_key) {
+            self.backend.seek_and_play(start_seconds);
+            return;
         }
 
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            use std::time::Duration;
-
-            if self.current_audio_source.as_deref() == Some(source_key.as_str()) {
-                if let Some(sink) = &self.current_sink {
-                    if let Err(err) = sink.try_seek(Duration::from_secs_f32(start_seconds)) {
-                        log::warn!(
-                            "Failed to seek imported audio '{}' to {:.3}s: {}",
-                            _music_source,
-                            start_seconds,
-                            err
-                        );
-                    }
-                    sink.set_speed(self.playback_speed);
-                    sink.play();
-                    self.playback_started_at = Some(std::time::Instant::now());
-                    self.playback_start_offset_seconds = start_seconds;
-                    return;
-                }
-            }
-
-            if let Some(sink) = self.current_sink.take() {
-                sink.stop();
-            }
-            self.current_audio_source = None;
-
-            if let Some(handle) = &self.output_handle {
-                match rodio::Decoder::new(std::io::Cursor::new(bytes.to_vec())) {
-                    Ok(source) => match rodio::Sink::try_new(handle) {
-                        Ok(sink) => {
-                            sink.append(source);
-                            if let Err(err) = sink.try_seek(Duration::from_secs_f32(start_seconds))
-                            {
-                                log::warn!(
-                                    "Failed to seek imported audio '{}' to {:.3}s: {}",
-                                    _music_source,
-                                    start_seconds,
-                                    err
-                                );
-                            }
-                            sink.set_speed(self.playback_speed);
-                            sink.play();
-                            self.current_sink = Some(sink);
-                            self.current_audio_source = Some(source_key);
-                            self.playback_started_at = Some(std::time::Instant::now());
-                            self.playback_start_offset_seconds = start_seconds;
-                        }
-                        Err(err) => {
-                            log::warn!("Failed to create audio sink for imported audio: {}", err);
-                        }
-                    },
-                    Err(err) => {
-                        log::warn!(
-                            "Failed to decode imported level music '{}': {}",
-                            _music_source,
-                            err
-                        );
-                    }
-                }
-            }
-        }
+        self.backend
+            .replace_with_bytes(source_key, music_source, bytes, start_seconds);
     }
 
     pub(crate) fn start_at(&mut self, level_name: &str, music_source: &str, start_seconds: f32) {
         let source_key = format!("asset:{}/{}", level_name, music_source);
         let start_seconds = start_seconds.max(0.0);
-        self.stop();
+        self.backend.stop();
 
-        #[cfg(target_arch = "wasm32")]
-        {
-            let audio_url = format!("assets/levels/{}/{}", level_name, music_source);
-            if self.current_audio_source.as_deref() == Some(source_key.as_str()) {
-                if let Some(audio) = &self.current_audio {
-                    let _ = audio.set_current_time(start_seconds as f64);
-                    audio.set_playback_rate(self.playback_speed as f64);
-                    let _ = audio.play();
-                    return;
-                }
-            }
-
-            self.revoke_blob_url();
-            if let Ok(audio) = web_sys::HtmlAudioElement::new_with_src(&audio_url) {
-                let _ = audio.set_current_time(start_seconds as f64);
-                audio.set_playback_rate(self.playback_speed as f64);
-                let _ = audio.play();
-                self.current_audio = Some(audio);
-                self.current_audio_source = Some(source_key);
-            }
+        if self.backend.can_reuse_source(&source_key) {
+            self.backend.seek_and_play(start_seconds);
+            return;
         }
 
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            use std::time::Duration;
-
-            if self.current_audio_source.as_deref() == Some(source_key.as_str()) {
-                if let Some(sink) = &self.current_sink {
-                    if let Err(err) = sink.try_seek(Duration::from_secs_f32(start_seconds)) {
-                        log::warn!(
-                            "Failed to seek level music '{}/{}' to {:.3}s: {}",
-                            level_name,
-                            music_source,
-                            start_seconds,
-                            err
-                        );
-                    }
-                    sink.set_speed(self.playback_speed);
-                    sink.play();
-                    self.playback_started_at = Some(std::time::Instant::now());
-                    self.playback_start_offset_seconds = start_seconds;
-                    return;
-                }
-            }
-
-            if let Some(sink) = self.current_sink.take() {
-                sink.stop();
-            }
-            self.current_audio_source = None;
-
-            if let Some(handle) = &self.output_handle {
-                let audio_path = format!("assets/levels/{}/{}", level_name, music_source);
-
-                match std::fs::read(&audio_path) {
-                    Ok(audio_bytes) => {
-                        match rodio::Decoder::new(std::io::Cursor::new(audio_bytes)) {
-                            Ok(source) => match rodio::Sink::try_new(handle) {
-                                Ok(sink) => {
-                                    sink.append(source);
-                                    if let Err(err) =
-                                        sink.try_seek(Duration::from_secs_f32(start_seconds))
-                                    {
-                                        log::warn!(
-                                            "Failed to seek level music '{}' to {:.3}s: {}",
-                                            audio_path,
-                                            start_seconds,
-                                            err
-                                        );
-                                    }
-                                    sink.set_speed(self.playback_speed);
-                                    sink.play();
-                                    self.current_sink = Some(sink);
-                                    self.current_audio_source = Some(source_key);
-                                    self.playback_started_at = Some(std::time::Instant::now());
-                                    self.playback_start_offset_seconds = start_seconds;
-                                }
-                                Err(err) => {
-                                    log::warn!(
-                                        "Failed to create audio sink for '{}': {}",
-                                        audio_path,
-                                        err
-                                    );
-                                }
-                            },
-                            Err(err) => {
-                                log::warn!(
-                                    "Failed to decode level music '{}': {}",
-                                    audio_path,
-                                    err
-                                );
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        log::warn!("Failed to read level music '{}': {}", audio_path, err);
-                    }
-                }
-            }
-        }
+        self.backend
+            .replace_with_asset(source_key, level_name, music_source, start_seconds);
     }
 
     pub(crate) fn playback_time_seconds(&self) -> Option<f32> {
-        #[cfg(target_arch = "wasm32")]
-        {
-            self.current_audio
-                .as_ref()
-                .map(|audio| audio.current_time() as f32)
-        }
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let sink = self.current_sink.as_ref()?;
-            if sink.empty() {
-                return None;
-            }
-
-            let started_at = self.playback_started_at?;
-            Some(
-                self.playback_start_offset_seconds
-                    + started_at.elapsed().as_secs_f32() * self.playback_speed,
-            )
-        }
+        self.backend.playback_time_seconds()
     }
 
     pub(crate) fn is_playing(&self) -> bool {
-        #[cfg(target_arch = "wasm32")]
-        {
-            if let Some(audio) = &self.current_audio {
-                !audio.paused() && !audio.ended()
-            } else {
-                false
-            }
-        }
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            self.current_sink
-                .as_ref()
-                .map(|sink| !sink.empty())
-                .unwrap_or(false)
-        }
+        self.backend.is_playing()
     }
 
     pub(crate) fn set_speed(&mut self, speed: f32) {
-        let speed = speed.clamp(0.25, 2.0);
+        self.backend.set_speed(speed.clamp(0.25, 2.0));
+    }
 
-        #[cfg(target_arch = "wasm32")]
-        {
-            self.playback_speed = speed;
-            if let Some(audio) = &self.current_audio {
-                audio.set_playback_rate(speed as f64);
-            }
-        }
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            if let Some(started_at) = self.playback_started_at {
-                let elapsed_real = started_at.elapsed().as_secs_f32();
-                self.playback_start_offset_seconds += elapsed_real * self.playback_speed;
-                self.playback_started_at = Some(std::time::Instant::now());
-            }
-            self.playback_speed = speed;
-            if let Some(sink) = &self.current_sink {
-                sink.set_speed(speed);
-            }
-        }
+    #[cfg(test)]
+    fn with_backend(backend: Box<dyn AudioBackend>) -> Self {
+        Self { backend }
     }
 }
 
@@ -541,8 +252,80 @@ pub(crate) async fn decode_audio_to_waveform_async(
 
 #[cfg(test)]
 mod tests {
-    use super::{accumulate_interleaved_samples, accumulate_waveform_frame_peak};
+    use super::{accumulate_waveform_frame_peak, PlatformAudio};
+    use crate::platform::audio_backend::AudioBackend;
+    use std::sync::{Arc, Mutex};
 
+    #[cfg(not(target_arch = "wasm32"))]
+    use super::accumulate_interleaved_samples;
+
+    #[derive(Default)]
+    struct MockState {
+        stop_calls: usize,
+        reuse: bool,
+        seek_calls: usize,
+        replace_bytes_calls: usize,
+        replace_asset_calls: usize,
+        last_speed: Option<f32>,
+    }
+
+    struct MockBackend {
+        state: Arc<Mutex<MockState>>,
+    }
+
+    impl MockBackend {
+        fn new(state: Arc<Mutex<MockState>>) -> Self {
+            Self { state }
+        }
+    }
+
+    impl AudioBackend for MockBackend {
+        fn stop(&mut self) {
+            self.state.lock().unwrap().stop_calls += 1;
+        }
+
+        fn can_reuse_source(&self, _source_key: &str) -> bool {
+            self.state.lock().unwrap().reuse
+        }
+
+        fn seek_and_play(&mut self, _start_seconds: f32) {
+            self.state.lock().unwrap().seek_calls += 1;
+        }
+
+        fn replace_with_bytes(
+            &mut self,
+            _source_key: String,
+            _music_source: &str,
+            _bytes: &[u8],
+            _start_seconds: f32,
+        ) {
+            self.state.lock().unwrap().replace_bytes_calls += 1;
+        }
+
+        fn replace_with_asset(
+            &mut self,
+            _source_key: String,
+            _level_name: &str,
+            _music_source: &str,
+            _start_seconds: f32,
+        ) {
+            self.state.lock().unwrap().replace_asset_calls += 1;
+        }
+
+        fn playback_time_seconds(&self) -> Option<f32> {
+            None
+        }
+
+        fn is_playing(&self) -> bool {
+            false
+        }
+
+        fn set_speed(&mut self, speed: f32) {
+            self.state.lock().unwrap().last_speed = Some(speed);
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn interleaved_stereo_accumulates_per_frame_not_per_channel() {
         let interleaved = vec![
@@ -588,5 +371,45 @@ mod tests {
         assert_eq!(peaks, vec![0.8]);
         assert_eq!(window_count, 0);
         assert_eq!(window_peak, 0.0);
+    }
+
+    #[test]
+    fn reuses_existing_source_before_replacing() {
+        let state = Arc::new(Mutex::new(MockState {
+            reuse: true,
+            ..Default::default()
+        }));
+        let backend = Box::new(MockBackend::new(state.clone()));
+        let mut audio = PlatformAudio::with_backend(backend);
+        audio.start_with_bytes_at("music.mp3", &[1, 2, 3], 1.0);
+
+        let state = state.lock().unwrap();
+        assert_eq!(state.stop_calls, 1);
+        assert_eq!(state.seek_calls, 1);
+        assert_eq!(state.replace_bytes_calls, 0);
+    }
+
+    #[test]
+    fn replaces_when_source_is_not_reusable() {
+        let state = Arc::new(Mutex::new(MockState::default()));
+        let backend = Box::new(MockBackend::new(state.clone()));
+        let mut audio = PlatformAudio::with_backend(backend);
+        audio.start_at("level", "music.mp3", 2.0);
+
+        let state = state.lock().unwrap();
+        assert_eq!(state.stop_calls, 1);
+        assert_eq!(state.seek_calls, 0);
+        assert_eq!(state.replace_asset_calls, 1);
+    }
+
+    #[test]
+    fn clamps_speed_before_delegating() {
+        let state = Arc::new(Mutex::new(MockState::default()));
+        let backend = Box::new(MockBackend::new(state.clone()));
+        let mut audio = PlatformAudio::with_backend(backend);
+        audio.set_speed(10.0);
+
+        let state = state.lock().unwrap();
+        assert_eq!(state.last_speed, Some(2.0));
     }
 }

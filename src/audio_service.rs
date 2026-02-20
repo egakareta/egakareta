@@ -5,6 +5,8 @@
 
 use std::sync::mpsc::Sender;
 
+use crate::platform::task::spawn_background;
+
 const WAVEFORM_WINDOW: usize = 256;
 
 pub type WaveformData = (Vec<f32>, u32);
@@ -26,66 +28,71 @@ pub fn start_waveform_loading(
     cached_bytes: Option<Vec<u8>>,
     sender: Sender<WaveformResult>,
 ) {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        use crate::platform::audio::decode_audio_to_waveform;
-        let source_for_thread = music_source.clone();
+    let source_for_send = music_source.clone();
+    let source_for_load = music_source.clone();
 
-        std::thread::spawn(move || {
-            let bytes = cached_bytes.or_else(|| {
-                let audio_path = format!("assets/levels/{}/{}", level_name, source_for_thread);
+    spawn_background(async move {
+        let bytes = if let Some(bytes) = cached_bytes {
+            Some(bytes)
+        } else {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let audio_path = format!("assets/levels/{}/{}", level_name, source_for_load);
                 std::fs::read(&audio_path).ok()
-            });
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                use wasm_bindgen::JsCast as _;
+                use wasm_bindgen_futures::JsFuture;
 
-            let decoded = if let Some(ref bytes) = bytes {
-                decode_audio_to_waveform(bytes, WAVEFORM_WINDOW)
-            } else {
-                None
-            };
-
-            let _ = sender.send((source_for_thread, decoded, bytes));
-        });
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        use wasm_bindgen::JsCast as _;
-        use wasm_bindgen_futures::{spawn_local, JsFuture};
-
-        let source_for_fetch = music_source.clone();
-        let source_for_send = music_source.clone();
-
-        spawn_local(async move {
-            let bytes = if let Some(bytes) = cached_bytes {
-                Some(bytes)
-            } else {
-                let audio_path = format!("assets/levels/{}/{}", level_name, source_for_fetch);
-                let fetched = async {
-                    let window = web_sys::window()?;
-                    let response_value = JsFuture::from(window.fetch_with_str(&audio_path))
-                        .await
-                        .ok()?;
-                    let response: web_sys::Response = response_value.dyn_into().ok()?;
-                    if !response.ok() {
-                        return None;
+                let audio_path = format!("assets/levels/{}/{}", level_name, source_for_load);
+                let window = web_sys::window();
+                if let Some(window) = window {
+                    if let Ok(response_value) =
+                        JsFuture::from(window.fetch_with_str(&audio_path)).await
+                    {
+                        if let Ok(response) = response_value.dyn_into::<web_sys::Response>() {
+                            if response.ok() {
+                                if let Some(array_buffer_promise) = response.array_buffer().ok() {
+                                    if let Ok(array_buffer) =
+                                        JsFuture::from(array_buffer_promise).await
+                                    {
+                                        let uint8_array = js_sys::Uint8Array::new(&array_buffer);
+                                        Some(uint8_array.to_vec())
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
                     }
-                    let array_buffer = JsFuture::from(response.array_buffer().ok()?).await.ok()?;
-                    let uint8_array = js_sys::Uint8Array::new(&array_buffer);
-                    Some(uint8_array.to_vec())
+                } else {
+                    None
                 }
-                .await;
+            }
+        };
 
-                fetched
-            };
+        let decoded = if let Some(ref bytes) = bytes {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                crate::platform::audio::decode_audio_to_waveform(bytes, WAVEFORM_WINDOW)
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                crate::platform::audio::decode_audio_to_waveform_async(bytes, WAVEFORM_WINDOW).await
+            }
+        } else {
+            None
+        };
 
-            let decoded = if let Some(ref bytes) = bytes {
-                crate::platform::audio::decode_audio_to_waveform_async(&bytes, WAVEFORM_WINDOW)
-                    .await
-            } else {
-                None
-            };
-
-            let _ = sender.send((source_for_send, decoded, bytes));
-        });
-    }
+        let _ = sender.send((source_for_send, decoded, bytes));
+    });
 }
