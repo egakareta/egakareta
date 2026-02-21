@@ -30,8 +30,10 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@main
+      - name: Install cargo tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest,cargo-llvm-cov
 
       - name: Cache apt packages
         uses: actions/cache@v4
@@ -57,9 +59,6 @@ jobs:
 
       - name: Install llvm-tools-preview
         run: rustup component add llvm-tools-preview
-
-      - name: Install cargo-nextest and cargo-llvm-cov
-        run: cargo binstall cargo-nextest cargo-llvm-cov -y
 
       - name: Check cargo formatting
         run: bun format:cargo -- --check
