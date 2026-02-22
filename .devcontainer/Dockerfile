@@ -2,8 +2,6 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-WORKDIR /workspace
-
 # Install necessary packages
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
@@ -44,6 +42,3 @@ RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/ca
 
 RUN rustup component add llvm-tools-preview
 RUN cargo binstall cargo-nextest cargo-llvm-cov -y
-
-# Copy the project files into the container
-COPY . .
