@@ -26,7 +26,7 @@ mod tests {
             size: [2.0, 1.0, 1.0],
             rotation_degrees: 90.0,
             roundness: 0.18,
-            block_id: "core/stone".to_string(),
+            block_id: "core/dirt".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         };
         let vertices = build_block_vertices(&[obj]);
