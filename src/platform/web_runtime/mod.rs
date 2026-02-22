@@ -4,15 +4,25 @@
 //! It handles canvas setup, input event binding, and the animation loop using `requestAnimationFrame`.
 
 use std::{cell::RefCell, rc::Rc};
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
 use crate::platform::runtime::Runtime;
 use crate::State;
 
+use gloo_render::{request_animation_frame, AnimationFrame};
+use gloo_utils::window;
+
 mod input;
 use input::{setup_web_input_callbacks, WebInputHandler};
+
+fn request_frame(f: Rc<RefCell<Option<AnimationFrame>>>, mut cb: impl FnMut(f64) + 'static) {
+    let f_clone = f.clone();
+    *f.borrow_mut() = Some(request_animation_frame(move |time| {
+        cb(time);
+        request_frame(f_clone, cb);
+    }));
+}
 
 /// Runs the game in the web environment.
 /// Initializes the WASM runtime, sets up the canvas, input handlers, and starts the animation loop.
@@ -22,7 +32,7 @@ use input::{setup_web_input_callbacks, WebInputHandler};
 #[wasm_bindgen]
 pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
     console_error_panic_hook::set_once();
-    let window = web_sys::window().unwrap();
+    let window = window();
     let document = window.document().unwrap();
     let canvas = document
         .get_element_by_id(&canvas_id)
@@ -45,7 +55,7 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
     let ui_wants_pointer = Rc::new(RefCell::new(false));
     let ui_wants_keyboard = Rc::new(RefCell::new(false));
 
-    setup_web_input_callbacks(
+    let listeners = setup_web_input_callbacks(
         &window,
         &canvas,
         runtime_rc.clone(),
@@ -54,14 +64,14 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
         ui_wants_keyboard.clone(),
     );
 
-    let f: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
-    let g = f.clone();
     let runtime_clone = runtime_rc.clone();
     let input_handler_clone = input_handler_rc.clone();
     let ui_wants_pointer_clone = ui_wants_pointer.clone();
     let ui_wants_keyboard_clone = ui_wants_keyboard.clone();
 
-    *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
+    let frame_handle = Rc::new(RefCell::new(None));
+    request_frame(frame_handle, move |_time| {
+        let _keep_listeners = &listeners;
         let mut runtime = runtime_clone.borrow_mut();
 
         let raw_input = input_handler_clone.borrow_mut().take_egui_input();
@@ -69,17 +79,7 @@ pub async fn run_game(canvas_id: String) -> Result<(), JsValue> {
 
         *ui_wants_pointer_clone.borrow_mut() = runtime.pipeline.ctx().wants_pointer_input();
         *ui_wants_keyboard_clone.borrow_mut() = runtime.pipeline.ctx().wants_keyboard_input();
-
-        let window = web_sys::window().unwrap();
-        window
-            .request_animation_frame(f.borrow().as_ref().unwrap().as_ref().unchecked_ref())
-            .unwrap();
-    }) as Box<dyn FnMut()>));
-
-    web_sys::window()
-        .unwrap()
-        .request_animation_frame(g.borrow().as_ref().unwrap().as_ref().unchecked_ref())
-        .unwrap();
+    });
 
     Ok(())
 }

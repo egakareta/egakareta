@@ -35,7 +35,7 @@ pub(crate) fn create_audio_backend() -> Box<dyn AudioBackend> {
 struct WebAudioBackend {
     current_audio: Option<web_sys::HtmlAudioElement>,
     current_audio_source: Option<String>,
-    current_blob_url: Option<String>,
+    current_blob_url: Option<gloo_file::ObjectUrl>,
     playback_speed: f32,
 }
 
@@ -47,12 +47,6 @@ impl WebAudioBackend {
             current_audio_source: None,
             current_blob_url: None,
             playback_speed: 1.0,
-        }
-    }
-
-    fn revoke_blob_url(&mut self) {
-        if let Some(url) = self.current_blob_url.take() {
-            let _ = web_sys::Url::revoke_object_url(&url);
         }
     }
 }
@@ -71,7 +65,7 @@ impl AudioBackend for WebAudioBackend {
 
     fn seek_and_play(&mut self, start_seconds: f32) {
         if let Some(audio) = &self.current_audio {
-            let _ = audio.set_current_time(start_seconds as f64);
+            audio.set_current_time(start_seconds as f64);
             audio.set_playback_rate(self.playback_speed as f64);
             let _ = audio.play();
         }
@@ -84,31 +78,12 @@ impl AudioBackend for WebAudioBackend {
         bytes: &[u8],
         start_seconds: f32,
     ) {
-        self.revoke_blob_url();
-        let uint8_array = unsafe { js_sys::Uint8Array::view(bytes) };
-        let blob = match web_sys::Blob::new_with_u8_array_sequence(&js_sys::Array::of1(
-            &uint8_array.into(),
-        )) {
-            Ok(blob) => blob,
-            Err(err) => {
-                web_sys::console::error_1(&format!("Failed to create blob: {:?}", err).into());
-                return;
-            }
-        };
-
-        let url = match web_sys::Url::create_object_url_with_blob(&blob) {
-            Ok(url) => url,
-            Err(err) => {
-                web_sys::console::error_1(
-                    &format!("Failed to create object URL for audio: {:?}", err).into(),
-                );
-                return;
-            }
-        };
+        let blob = gloo_file::Blob::new(bytes);
+        let url = gloo_file::ObjectUrl::from(blob);
 
         match web_sys::HtmlAudioElement::new_with_src(&url) {
             Ok(audio) => {
-                let _ = audio.set_current_time(start_seconds as f64);
+                audio.set_current_time(start_seconds as f64);
                 audio.set_playback_rate(self.playback_speed as f64);
                 let _ = audio.play();
                 self.current_audio = Some(audio);
@@ -116,10 +91,7 @@ impl AudioBackend for WebAudioBackend {
                 self.current_blob_url = Some(url);
             }
             Err(err) => {
-                web_sys::console::error_1(
-                    &format!("Failed to create HTML audio element: {:?}", err).into(),
-                );
-                let _ = web_sys::Url::revoke_object_url(&url);
+                gloo_console::error!("Failed to create HTML audio element: {:?}", err);
             }
         }
     }
@@ -131,11 +103,11 @@ impl AudioBackend for WebAudioBackend {
         music_source: &str,
         start_seconds: f32,
     ) {
-        self.revoke_blob_url();
+        self.current_blob_url = None;
         let audio_url = format!("assets/levels/{}/{}", level_name, music_source);
 
         if let Ok(audio) = web_sys::HtmlAudioElement::new_with_src(&audio_url) {
-            let _ = audio.set_current_time(start_seconds as f64);
+            audio.set_current_time(start_seconds as f64);
             audio.set_playback_rate(self.playback_speed as f64);
             let _ = audio.play();
             self.current_audio = Some(audio);

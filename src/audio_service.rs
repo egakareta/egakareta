@@ -42,41 +42,18 @@ pub fn start_waveform_loading(
             }
             #[cfg(target_arch = "wasm32")]
             {
-                use wasm_bindgen::JsCast as _;
-                use wasm_bindgen_futures::JsFuture;
-
                 let audio_path = format!("assets/levels/{}/{}", level_name, source_for_load);
-                let window = web_sys::window();
-                if let Some(window) = window {
-                    if let Ok(response_value) =
-                        JsFuture::from(window.fetch_with_str(&audio_path)).await
-                    {
-                        if let Ok(response) = response_value.dyn_into::<web_sys::Response>() {
-                            if response.ok() {
-                                if let Some(array_buffer_promise) = response.array_buffer().ok() {
-                                    if let Ok(array_buffer) =
-                                        JsFuture::from(array_buffer_promise).await
-                                    {
-                                        let uint8_array = js_sys::Uint8Array::new(&array_buffer);
-                                        Some(uint8_array.to_vec())
-                                    } else {
-                                        None
-                                    }
-                                } else {
-                                    None
-                                }
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
+                async {
+                    let resp = gloo_net::http::Request::get(&audio_path)
+                        .send()
+                        .await
+                        .ok()?;
+                    if !resp.ok() {
+                        return None;
                     }
-                } else {
-                    None
+                    resp.binary().await.ok()
                 }
+                .await
             }
         };
 

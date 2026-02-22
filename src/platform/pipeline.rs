@@ -79,13 +79,13 @@ impl FramePipeline {
                 #[cfg(not(target_arch = "wasm32"))]
                 eprintln!("OutOfMemory error in render pipeline");
                 #[cfg(target_arch = "wasm32")]
-                web_sys::console::error_1(&"OutOfMemory error in render pipeline".into());
+                gloo_console::error!("OutOfMemory error in render pipeline");
             }
             Err(err) => {
                 #[cfg(not(target_arch = "wasm32"))]
                 eprintln!("Render error: {:?}", err);
                 #[cfg(target_arch = "wasm32")]
-                web_sys::console::error_1(&format!("Render error: {:?}", err).into());
+                gloo_console::error!(format!("Render error: {:?}", err));
             }
         }
 
