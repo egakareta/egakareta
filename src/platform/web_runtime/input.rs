@@ -1,4 +1,4 @@
-use gloo_events::EventListener;
+use gloo_events::{EventListener, EventListenerOptions};
 use std::{cell::RefCell, rc::Rc};
 use wasm_bindgen::JsCast;
 use web_sys::{HtmlCanvasElement, Window};
@@ -117,9 +117,11 @@ pub fn setup_web_input_callbacks(
         let runtime_rc = runtime_rc.clone();
         let input_handler_rc = input_handler_rc.clone();
         let ui_wants_pointer = ui_wants_pointer.clone();
-        listeners.push(EventListener::new(
+        let options = EventListenerOptions::enable_prevent_default();
+        listeners.push(EventListener::new_with_options(
             canvas,
             "mousedown",
+            options,
             move |event: &web_sys::Event| {
                 let event = event.unchecked_ref::<web_sys::MouseEvent>();
                 let x = event.offset_x() as f64;
@@ -166,9 +168,11 @@ pub fn setup_web_input_callbacks(
     {
         let runtime_rc = runtime_rc.clone();
         let input_handler_rc = input_handler_rc.clone();
-        listeners.push(EventListener::new(
+        let options = EventListenerOptions::enable_prevent_default();
+        listeners.push(EventListener::new_with_options(
             canvas,
             "mouseup",
+            options,
             move |event: &web_sys::Event| {
                 let event = event.unchecked_ref::<web_sys::MouseEvent>();
                 let x = event.offset_x() as f64;
@@ -209,9 +213,11 @@ pub fn setup_web_input_callbacks(
         let runtime_rc = runtime_rc.clone();
         let input_handler_rc = input_handler_rc.clone();
         let ui_wants_pointer = ui_wants_pointer.clone();
-        listeners.push(EventListener::new(
+        let options = EventListenerOptions::enable_prevent_default();
+        listeners.push(EventListener::new_with_options(
             canvas,
             "mousemove",
+            options,
             move |event: &web_sys::Event| {
                 let event = event.unchecked_ref::<web_sys::MouseEvent>();
                 let x = event.offset_x() as f64;
@@ -242,9 +248,11 @@ pub fn setup_web_input_callbacks(
 
     // Context Menu
     {
-        listeners.push(EventListener::new(
+        let options = EventListenerOptions::enable_prevent_default();
+        listeners.push(EventListener::new_with_options(
             canvas,
             "contextmenu",
+            options,
             move |event: &web_sys::Event| {
                 let event = event.unchecked_ref::<web_sys::MouseEvent>();
                 event.prevent_default();
@@ -256,9 +264,11 @@ pub fn setup_web_input_callbacks(
     {
         let runtime_rc = runtime_rc.clone();
         let ui_wants_pointer = ui_wants_pointer.clone();
-        listeners.push(EventListener::new(
+        let options = EventListenerOptions::enable_prevent_default();
+        listeners.push(EventListener::new_with_options(
             canvas,
             "wheel",
+            options,
             move |event: &web_sys::Event| {
                 let event = event.unchecked_ref::<web_sys::WheelEvent>();
                 if !should_route_pointer_input(false, *ui_wants_pointer.borrow()) {
@@ -283,9 +293,11 @@ pub fn setup_web_input_callbacks(
     // Touch Start
     {
         let input_handler_rc = input_handler_rc.clone();
-        listeners.push(EventListener::new(
+        let options = EventListenerOptions::enable_prevent_default();
+        listeners.push(EventListener::new_with_options(
             canvas,
             "touchstart",
+            options,
             move |event: &web_sys::Event| {
                 let event = event.unchecked_ref::<web_sys::TouchEvent>();
                 if event.touches().length() == 2 {
@@ -305,9 +317,11 @@ pub fn setup_web_input_callbacks(
     {
         let runtime_rc = runtime_rc.clone();
         let input_handler_rc = input_handler_rc.clone();
-        listeners.push(EventListener::new(
+        let options = EventListenerOptions::enable_prevent_default();
+        listeners.push(EventListener::new_with_options(
             canvas,
             "touchmove",
+            options,
             move |event: &web_sys::Event| {
                 let event = event.unchecked_ref::<web_sys::TouchEvent>();
                 if event.touches().length() == 2 {
