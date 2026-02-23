@@ -1,0 +1,7 @@
+"$schema" = "./node_modules/wrangler/config-schema.json"
+name = "line-dash"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-02-15"
+
+[vars]
+SKIP_DEPENDENCY_INSTALL = true
