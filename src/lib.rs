@@ -18,9 +18,11 @@ mod platform;
 mod state;
 mod types;
 
-pub use editor_ui::{
-    load_menu_wordmark_texture, show_editor_ui, show_menu_wordmark_ui, show_splash_screen_ui,
-};
+pub use editor_ui::load_menu_wordmark_texture;
+#[allow(unused_imports)]
+pub use editor_ui::show_editor_ui;
+#[allow(unused_imports)]
+pub(crate) use editor_ui::{show_level_select_ui, show_menu_wordmark_ui, show_splash_screen_ui};
 #[cfg(not(target_arch = "wasm32"))]
 pub use platform::input_mapping::{
     key_str_from_winit, mouse_button_index_from_winit, zoom_delta_from_winit,

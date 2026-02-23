@@ -117,6 +117,25 @@ impl State {
             return;
         }
 
+        if self.phase == AppPhase::LevelSelect {
+            self.frame_runtime.editor.accumulator = 0.0;
+            self.update_level_select_camera();
+            self.editor
+                .perf
+                .profiler
+                .observe(PerfStage::FrameTotal, frame_dt_ms);
+            if frame_dt_ms > 16.7 {
+                self.editor.perf.profiler.frame_spike_count += 1;
+                self.editor.perf.profiler.last_spike_stage = self
+                    .editor
+                    .perf
+                    .profiler
+                    .dominant_stage_this_frame()
+                    .or(Some(PerfStage::FrameTotal));
+            }
+            return;
+        }
+
         if self.phase == AppPhase::Editor {
             self.frame_runtime.editor.accumulator = 0.0;
             self.render.meshes.trail.clear();
@@ -401,6 +420,47 @@ impl State {
         let angle = -25.0f32.to_radians();
         let eye = Vec3::new(radius * angle.cos(), radius * angle.sin(), 15.0);
         let target = Vec3::new(0.0, 0.0, 0.0);
+        let up = Vec3::new(0.0, 0.0, 1.0);
+        let view = Mat4::look_at_rh(eye, target, up);
+        let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
+        let view_proj = proj * view;
+        let camera_uniform = CameraUniform {
+            view_proj: view_proj.to_cols_array_2d(),
+        };
+
+        self.render.gpu.queue.write_buffer(
+            &self.render.gpu.camera_uniform_buffer,
+            0,
+            bytemuck::bytes_of(&camera_uniform),
+        );
+    }
+
+    fn update_level_select_camera(&mut self) {
+        let aspect = self.render.gpu.config.width as f32 / self.render.gpu.config.height as f32;
+
+        // Get preview camera from level select state, or use defaults
+        let preview_camera = self.level_select.state.preview_camera.clone();
+        let camera = preview_camera.unwrap_or_default();
+
+        // Extract camera parameters
+        // position: [x, y, z] - camera target/look-at point
+        // rotation: radians - horizontal rotation around the target
+        // pitch: radians - vertical angle
+        // zoom: float - distance from target (lower = closer/zoomed in)
+        let target = Vec3::new(camera.position[0], camera.position[1], camera.position[2]);
+
+        // Calculate camera offset from target based on rotation, pitch, and zoom
+        // Zoom affects the distance: zoom of 1.0 is base, higher zoom = further away
+        let distance = 25.0 * camera.zoom;
+
+        // Calculate eye position from rotation and pitch
+        let horizontal_dist = distance * camera.pitch.cos();
+        let eye = Vec3::new(
+            target.x + horizontal_dist * camera.rotation.sin(),
+            target.y + horizontal_dist * camera.rotation.cos(),
+            target.z + distance * camera.pitch.sin(),
+        );
+
         let up = Vec3::new(0.0, 0.0, 1.0);
         let view = Mat4::look_at_rh(eye, target, up);
         let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);

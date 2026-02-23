@@ -154,4 +154,90 @@ impl State {
         self.clear_editor_pan_keys();
         self.phase = AppPhase::Menu;
     }
+
+    /// Enters the level select screen from the menu.
+    pub(crate) fn enter_level_select(&mut self) {
+        if self.phase == AppPhase::Menu {
+            // Initialize level select with the same selected level as menu
+            self.level_select.state.selected_level = self.menu.state.selected_level;
+            self.phase = AppPhase::LevelSelect;
+            // Load the level metadata for the selected level
+            self.load_level_select_level();
+        }
+    }
+
+    /// Loads the level objects and preview camera for the currently selected level.
+    pub(crate) fn load_level_select_level(&mut self) {
+        let level_index = self.level_select.state.selected_level;
+        let level_name = self.menu.state.levels.get(level_index).cloned();
+
+        if let Some(name) = level_name {
+            // Load the level metadata
+            if let Some(metadata) = self.load_level_metadata(&name) {
+                // Store the preview camera
+                self.level_select.state.preview_camera = metadata.preview_camera;
+
+                // Load the level objects into gameplay state for rendering
+                self.gameplay.state.objects = metadata.objects;
+                self.gameplay.state.rebuild_behavior_cache();
+
+                // Rebuild the block vertices for rendering
+                self.rebuild_block_vertices();
+            } else {
+                self.level_select.state.preview_camera = None;
+            }
+        }
+    }
+
+    /// Exits the level select screen back to the menu.
+    pub(crate) fn exit_level_select(&mut self) {
+        if self.phase == AppPhase::LevelSelect {
+            // Sync the selected level back to menu
+            self.menu.state.selected_level = self.level_select.state.selected_level;
+            // Clear level select state
+            self.level_select.state.preview_camera = None;
+            self.gameplay.state.objects.clear();
+            self.gameplay.state.rebuild_behavior_cache();
+            self.rebuild_block_vertices();
+            self.phase = AppPhase::Menu;
+        }
+    }
+
+    /// Selects the next level in the level select screen.
+    pub(crate) fn level_select_next_level(&mut self) {
+        if self.phase == AppPhase::LevelSelect {
+            let level_count = self.menu.state.levels.len();
+            if level_count > 0 {
+                self.level_select.state.selected_level =
+                    (self.level_select.state.selected_level + 1) % level_count;
+                // Reload the level data for the new selection
+                self.load_level_select_level();
+            }
+        }
+    }
+
+    /// Selects the previous level in the level select screen.
+    pub(crate) fn level_select_prev_level(&mut self) {
+        if self.phase == AppPhase::LevelSelect {
+            let level_count = self.menu.state.levels.len();
+            if level_count > 0 {
+                if self.level_select.state.selected_level == 0 {
+                    self.level_select.state.selected_level = level_count - 1;
+                } else {
+                    self.level_select.state.selected_level -= 1;
+                }
+                // Reload the level data for the new selection
+                self.load_level_select_level();
+            }
+        }
+    }
+
+    /// Starts playing the selected level from the level select screen.
+    pub(crate) fn level_select_play(&mut self) {
+        if self.phase == AppPhase::LevelSelect {
+            let selected = self.level_select.state.selected_level;
+            self.exit_level_select();
+            self.start_level(selected);
+        }
+    }
 }

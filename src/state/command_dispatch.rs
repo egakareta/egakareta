@@ -13,6 +13,11 @@ impl State {
             AppCommand::NextLevel => self.next_level(),
             AppCommand::PrevLevel => self.prev_level(),
             AppCommand::ToggleEditor => self.toggle_editor(),
+            AppCommand::EnterLevelSelect => self.enter_level_select(),
+            AppCommand::ExitLevelSelect => self.exit_level_select(),
+            AppCommand::LevelSelectNextLevel => self.level_select_next_level(),
+            AppCommand::LevelSelectPrevLevel => self.level_select_prev_level(),
+            AppCommand::LevelSelectPlay => self.level_select_play(),
 
             // ── Editor – mode switching ─────────────────────────────
             AppCommand::EditorSetMode(mode) => {
@@ -84,6 +89,7 @@ impl State {
             // ── Editor – spawn ──────────────────────────────────────
             AppCommand::EditorSetSpawnHere => self.editor_set_spawn_here(),
             AppCommand::EditorRotateSpawnDirection => self.editor_rotate_spawn_direction(),
+            AppCommand::EditorSetPreviewCameraHere => self.editor_set_preview_camera_here(),
 
             // ── Editor – history ────────────────────────────────────
             AppCommand::EditorUndo => self.editor_undo(),
@@ -352,7 +358,13 @@ impl State {
             }
             "p" | "P" => {
                 if just_pressed {
-                    Some(AppCommand::EditorSetSpawnHere)
+                    if self.is_editor() && self.editor.ui.shift_held {
+                        Some(AppCommand::EditorSetPreviewCameraHere)
+                    } else if self.is_editor() {
+                        Some(AppCommand::EditorSetSpawnHere)
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }

@@ -113,6 +113,45 @@ pub(crate) fn build_spawn_marker_vertices(position: [f32; 3], faces_right: bool)
     vertices
 }
 
+/// Builds a mesh for the preview camera marker.
+/// This is a camera icon showing where the level preview will be taken from.
+pub(crate) fn build_preview_camera_marker_vertices(position: [f32; 3]) -> Vec<Vertex> {
+    let mut vertices = Vec::new();
+    let x = position[0];
+    let y = position[1];
+    let z = position[2];
+
+    // Draw a simple camera body (box shape)
+    // Main body
+    append_prism(
+        &mut vertices,
+        [x - 0.3, y - 0.2, z],
+        [x + 0.3, y + 0.2, z + 0.15],
+        [0.3, 0.3, 0.8, 1.0], // Blue-ish color
+        [0.15, 0.15, 0.4, 1.0],
+    );
+
+    // Lens (front part)
+    append_prism(
+        &mut vertices,
+        [x - 0.1, y - 0.1, z + 0.15],
+        [x + 0.1, y + 0.1, z + 0.25],
+        [0.1, 0.1, 0.1, 1.0], // Dark gray
+        [0.05, 0.05, 0.05, 1.0],
+    );
+
+    // Viewfinder (top)
+    append_prism(
+        &mut vertices,
+        [x - 0.1, y + 0.2, z],
+        [x + 0.1, y + 0.3, z + 0.08],
+        [0.2, 0.2, 0.6, 1.0], // Blue
+        [0.1, 0.1, 0.3, 1.0],
+    );
+
+    vertices
+}
+
 pub(crate) fn build_tap_indicator_vertices(positions: &[[f32; 3]]) -> Vec<Vertex> {
     let mut vertices = Vec::new();
     let color = [0.0, 0.0, 0.0, 1.0]; // Black

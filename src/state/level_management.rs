@@ -92,10 +92,12 @@ impl State {
         self.editor.ui.cursor = init.cursor;
         self.editor.camera.editor_pan = init.camera_pan;
         self.editor.camera.editor_target_z = init.cursor[2];
+        self.editor.preview_camera = init.preview_camera;
 
         self.sync_editor_objects();
         self.set_editor_timeline_time_seconds(self.editor.timeline.clock.time_seconds);
         self.rebuild_spawn_marker_vertices();
+        self.rebuild_preview_camera_marker_vertices();
     }
 
     pub(super) fn load_level_metadata(&self, level_name: &str) -> Option<LevelMetadata> {
@@ -163,6 +165,7 @@ impl State {
                 .unwrap_or_else(|| "Untitled".to_string()),
             self.session.editor_music_metadata.clone(),
             self.editor.spawn.clone(),
+            self.editor.preview_camera.clone(),
             self.editor.timeline.taps.tap_times.clone(),
             self.editor.timing.timing_points.clone(),
             self.editor.timeline.clock.time_seconds,

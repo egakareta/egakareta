@@ -6,7 +6,7 @@
 /// native and WASM targets a single code-path, and makes future
 /// replay / macro / test harness support trivial.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum AppCommand {
+pub enum AppCommand {
     // ── Navigation / Phase ──────────────────────────────────────────
     /// Primary action: in menu → start level, in game → turn, in editor → place block
     TurnRight,
@@ -16,6 +16,16 @@ pub(crate) enum AppCommand {
     PrevLevel,
     /// Toggle between editor and menu/playing.
     ToggleEditor,
+    /// Enter the level select screen from menu.
+    EnterLevelSelect,
+    /// Exit the level select screen back to menu.
+    ExitLevelSelect,
+    /// Select the next level in level select screen.
+    LevelSelectNextLevel,
+    /// Select the previous level in level select screen.
+    LevelSelectPrevLevel,
+    /// Play the selected level from level select screen.
+    LevelSelectPlay,
 
     // ── Editor – mode switching ─────────────────────────────────────
     /// Switch the editor mode.
@@ -94,6 +104,8 @@ pub(crate) enum AppCommand {
     EditorSetSpawnHere,
     /// Rotate the spawn direction.
     EditorRotateSpawnDirection,
+    /// Set preview camera to current camera position.
+    EditorSetPreviewCameraHere,
 
     // ── Editor – history ────────────────────────────────────────────
     /// Undo the last editor action.

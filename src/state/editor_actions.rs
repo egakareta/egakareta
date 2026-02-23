@@ -444,6 +444,27 @@ impl State {
         }
     }
 
+    /// Sets the preview camera to the current editor camera position.
+    ///
+    /// This captures the current camera pan, rotation, pitch, and zoom for use
+    /// in level previews (e.g., in the level select screen).
+    pub fn editor_set_preview_camera_here(&mut self) {
+        if self.phase == AppPhase::Editor {
+            self.record_editor_history_state();
+            self.editor.preview_camera = Some(crate::types::PreviewCamera {
+                position: [
+                    self.editor.camera.editor_pan[0],
+                    self.editor.camera.editor_pan[1],
+                    self.editor.camera.editor_target_z,
+                ],
+                rotation: self.editor.camera.editor_rotation,
+                pitch: self.editor.camera.editor_pitch,
+                zoom: self.editor.camera.editor_zoom,
+            });
+            self.rebuild_preview_camera_marker_vertices();
+        }
+    }
+
     /// Transitions the application back to the menu or editor from a playtest session.
     ///
     /// This stops any active gameplay audio and restores the editor state if the

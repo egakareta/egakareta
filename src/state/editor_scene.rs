@@ -6,7 +6,8 @@ use crate::mesh::{
     build_block_vertices, build_block_vertices_from_refs, build_editor_cursor_vertices,
     build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
     build_editor_preview_player_vertices, build_editor_selection_outline_vertices,
-    build_spawn_marker_vertices, build_tap_indicator_vertices, GizmoPart,
+    build_preview_camera_marker_vertices, build_spawn_marker_vertices,
+    build_tap_indicator_vertices, GizmoPart,
 };
 use crate::platform::state_host::PlatformInstant;
 use crate::types::{AppPhase, EditorMode, SpawnDirection};
@@ -420,6 +421,27 @@ impl State {
             "Spawn Marker Vertex Buffer",
             &vertices,
         );
+    }
+
+    pub(super) fn rebuild_preview_camera_marker_vertices(&mut self) {
+        if self.phase != AppPhase::Editor {
+            self.render.meshes.preview_camera_marker.clear();
+            return;
+        }
+
+        if let Some(ref preview_camera) = self.editor.preview_camera {
+            let vertices = build_preview_camera_marker_vertices(preview_camera.position);
+            self.render
+                .meshes
+                .preview_camera_marker
+                .replace_with_vertices(
+                    &self.render.gpu.device,
+                    "Preview Camera Marker Vertex Buffer",
+                    &vertices,
+                );
+        } else {
+            self.render.meshes.preview_camera_marker.clear();
+        }
     }
 
     pub(super) fn rebuild_block_vertices(&mut self) {

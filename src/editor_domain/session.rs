@@ -11,6 +11,7 @@ pub(crate) struct EditorSessionInit {
     pub(crate) timeline_duration_seconds: f32,
     pub(crate) cursor: [f32; 3],
     pub(crate) camera_pan: [f32; 2],
+    pub(crate) preview_camera: Option<crate::types::PreviewCamera>,
 }
 
 pub(crate) fn editor_session_init_from_metadata(
@@ -26,6 +27,7 @@ pub(crate) fn editor_session_init_from_metadata(
         timeline_duration_seconds,
         legacy_taps,
         legacy_timeline_step,
+        preview_camera,
     ) = if let Some(metadata) = metadata {
         (
             metadata.objects,
@@ -37,6 +39,7 @@ pub(crate) fn editor_session_init_from_metadata(
             metadata.timeline_duration_seconds,
             metadata.legacy_taps,
             metadata.legacy_timeline_step,
+            metadata.preview_camera,
         )
     } else {
         (
@@ -49,6 +52,7 @@ pub(crate) fn editor_session_init_from_metadata(
             16.0,
             Vec::new(),
             0,
+            None,
         )
     };
 
@@ -83,6 +87,7 @@ pub(crate) fn editor_session_init_from_metadata(
         timeline_duration_seconds: timeline_duration_seconds.max(0.1),
         cursor,
         camera_pan,
+        preview_camera,
     }
 }
 

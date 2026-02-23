@@ -210,6 +210,8 @@ pub(crate) struct LevelMetadata {
     pub(crate) music: MusicMetadata,
     #[serde(default, skip_serializing_if = "is_default_spawn_metadata")]
     pub(crate) spawn: SpawnMetadata,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) preview_camera: Option<PreviewCamera>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) tap_times: Vec<f32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -240,6 +242,7 @@ impl LevelMetadata {
         name: String,
         music: MusicMetadata,
         spawn: SpawnMetadata,
+        preview_camera: Option<PreviewCamera>,
         tap_times: Vec<f32>,
         timing_points: Vec<TimingPoint>,
         timeline_time_seconds: f32,
@@ -251,6 +254,7 @@ impl LevelMetadata {
             name,
             music,
             spawn,
+            preview_camera,
             tap_times,
             timing_points,
             timeline_time_seconds,
@@ -312,6 +316,75 @@ fn is_default_spawn_metadata(value: &SpawnMetadata) -> bool {
     is_default_spawn_position(&value.position) && is_default_spawn_direction(&value.direction)
 }
 
+fn default_preview_camera_position() -> [f32; 3] {
+    [0.0, 10.0, 20.0]
+}
+
+fn default_preview_camera_rotation() -> f32 {
+    0.0
+}
+
+fn default_preview_camera_pitch() -> f32 {
+    -0.4
+}
+
+fn default_preview_camera_zoom() -> f32 {
+    1.0
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+/// Metadata for the preview camera in level select.
+/// Defines the camera position, rotation, pitch, and zoom for previewing a level.
+pub(crate) struct PreviewCamera {
+    #[serde(
+        default = "default_preview_camera_position",
+        skip_serializing_if = "is_default_preview_camera_position"
+    )]
+    pub(crate) position: [f32; 3],
+    #[serde(
+        default = "default_preview_camera_rotation",
+        skip_serializing_if = "is_default_preview_camera_rotation"
+    )]
+    pub(crate) rotation: f32,
+    #[serde(
+        default = "default_preview_camera_pitch",
+        skip_serializing_if = "is_default_preview_camera_pitch"
+    )]
+    pub(crate) pitch: f32,
+    #[serde(
+        default = "default_preview_camera_zoom",
+        skip_serializing_if = "is_default_preview_camera_zoom"
+    )]
+    pub(crate) zoom: f32,
+}
+
+impl Default for PreviewCamera {
+    fn default() -> Self {
+        Self {
+            position: default_preview_camera_position(),
+            rotation: default_preview_camera_rotation(),
+            pitch: default_preview_camera_pitch(),
+            zoom: default_preview_camera_zoom(),
+        }
+    }
+}
+
+fn is_default_preview_camera_position(value: &[f32; 3]) -> bool {
+    value.iter().all(|component| component.abs() <= 1e-6)
+}
+
+fn is_default_preview_camera_rotation(value: &f32) -> bool {
+    value.abs() <= 1e-6
+}
+
+fn is_default_preview_camera_pitch(value: &f32) -> bool {
+    (value - default_preview_camera_pitch()).abs() <= 1e-6
+}
+
+fn is_default_preview_camera_zoom(value: &f32) -> bool {
+    (value - 1.0).abs() <= 1e-6
+}
+
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 /// Represents an object in a level, such as a block or obstacle.
 /// Includes position, size, rotation, and block type.
@@ -362,6 +435,7 @@ impl LevelObject {
 pub(crate) enum AppPhase {
     Splash,
     Menu,
+    LevelSelect,
     Playing,
     Editor,
     GameOver,
@@ -374,6 +448,13 @@ pub(crate) enum AppPhase {
 pub(crate) struct MenuState {
     pub(crate) selected_level: usize,
     pub(crate) levels: Vec<String>,
+}
+
+/// State for the level select screen.
+/// Tracks the currently selected level index for level selection.
+pub(crate) struct LevelSelectState {
+    pub(crate) selected_level: usize,
+    pub(crate) preview_camera: Option<PreviewCamera>,
 }
 
 /// State for the level editor.
@@ -545,6 +626,7 @@ mod tests {
             "Minimal".to_string(),
             MusicMetadata::default(),
             SpawnMetadata::default(),
+            None,
             Vec::new(),
             Vec::new(),
             0.0,

@@ -37,8 +37,8 @@ use crate::game::GameState;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::platform::state_host::NativeWindow;
 use crate::types::{
-    AppPhase, EditorMode, EditorState, LevelObject, MenuState, MusicMetadata, PhysicalSize,
-    SpawnMetadata,
+    AppPhase, EditorMode, EditorState, LevelObject, LevelSelectState, MenuState, MusicMetadata,
+    PhysicalSize, SpawnMetadata,
 };
 
 /// Bundles all gameplay-related state into a single subsystem.
@@ -73,10 +73,15 @@ pub(crate) struct EditorSubsystem {
     pub(crate) perf: EditorPerfState,
     pub(crate) timing: EditorTimingState,
     pub(crate) selected_mask_cache: Option<Vec<bool>>,
+    pub(crate) preview_camera: Option<crate::types::PreviewCamera>,
 }
 
 pub(crate) struct MenuSubsystem {
     pub(crate) state: MenuState,
+}
+
+pub(crate) struct LevelSelectSubsystem {
+    pub(crate) state: LevelSelectState,
 }
 
 /// The central state structure that manages all subsystems of the game engine.
@@ -89,6 +94,7 @@ pub struct State {
     audio: AudioSubsystem,
     session: SessionSubsystem,
     menu: MenuSubsystem,
+    level_select: LevelSelectSubsystem,
     phase: AppPhase,
     frame_runtime: FrameRuntimeState,
 }
@@ -139,6 +145,9 @@ impl State {
             AppPhase::Menu => {
                 self.start_level(self.menu.state.selected_level);
             }
+            AppPhase::LevelSelect => {
+                self.start_level(self.level_select.state.selected_level);
+            }
             AppPhase::Playing => {
                 if !self.gameplay.state.started {
                     self.gameplay.state.started = true;
@@ -181,11 +190,15 @@ impl State {
     /// Advances to the next level or moves the editor cursor right.
     ///
     /// - In Menu: Selects the next level in the list (wraps around)
+    /// - In LevelSelect: Selects the next level in the list (wraps around)
     /// - In Editor: Moves the cursor one unit to the right
     pub(crate) fn next_level(&mut self) {
         if self.phase == AppPhase::Menu {
             self.menu.state.selected_level =
                 (self.menu.state.selected_level + 1) % self.menu.state.levels.len();
+        } else if self.phase == AppPhase::LevelSelect {
+            self.level_select.state.selected_level =
+                (self.level_select.state.selected_level + 1) % self.menu.state.levels.len();
         } else if self.phase == AppPhase::Editor {
             self.move_editor_cursor(1, 0);
         }
@@ -194,6 +207,7 @@ impl State {
     /// Goes to the previous level or moves the editor cursor left.
     ///
     /// - In Menu: Selects the previous level in the list (wraps around)
+    /// - In LevelSelect: Selects the previous level in the list (wraps around)
     /// - In Editor: Moves the cursor one unit to the left
     pub(crate) fn prev_level(&mut self) {
         if self.phase == AppPhase::Menu {
@@ -201,6 +215,12 @@ impl State {
                 self.menu.state.selected_level = self.menu.state.levels.len() - 1;
             } else {
                 self.menu.state.selected_level -= 1;
+            }
+        } else if self.phase == AppPhase::LevelSelect {
+            if self.level_select.state.selected_level == 0 {
+                self.level_select.state.selected_level = self.menu.state.levels.len() - 1;
+            } else {
+                self.level_select.state.selected_level -= 1;
             }
         } else if self.phase == AppPhase::Editor {
             self.move_editor_cursor(-1, 0);
@@ -232,12 +252,27 @@ impl State {
 
     /// Returns true if the application is currently in menu mode.
     pub fn is_menu(&self) -> bool {
-        self.phase == AppPhase::Menu
+        self.phase == AppPhase::Menu || self.phase == AppPhase::LevelSelect
+    }
+
+    /// Returns true if the application is currently in level select mode.
+    pub fn is_level_select(&self) -> bool {
+        self.phase == AppPhase::LevelSelect
     }
 
     /// Returns true if the application is currently in splash mode.
     pub fn is_splash(&self) -> bool {
         self.phase == AppPhase::Splash
+    }
+
+    /// Returns the list of available level names.
+    pub fn menu_levels(&self) -> &[String] {
+        &self.menu.state.levels
+    }
+
+    /// Returns the currently selected level index in level select.
+    pub fn level_select_index(&self) -> usize {
+        self.level_select.state.selected_level
     }
 
     /// Returns the progress of the splash screen animation (0.0 to 1.0).

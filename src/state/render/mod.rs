@@ -140,6 +140,7 @@ pub(crate) struct SceneMeshes {
     pub(crate) tap_indicators: MeshSlot,
     pub(crate) spawn_marker: MeshSlot,
     pub(crate) editor_preview_player: MeshSlot,
+    pub(crate) preview_camera_marker: MeshSlot,
 }
 
 pub(crate) struct GpuContext {

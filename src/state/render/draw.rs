@@ -125,6 +125,12 @@ impl State {
                     b: 0.09,
                     a: 1.0,
                 },
+                AppPhase::LevelSelect => wgpu::Color {
+                    r: 0.04,
+                    g: 0.07,
+                    b: 0.09,
+                    a: 1.0,
+                },
                 _ => wgpu::Color {
                     r: 0.05,
                     g: 0.05,
@@ -174,6 +180,7 @@ impl State {
 
             if self.phase != AppPhase::Menu
                 && self.phase != AppPhase::Splash
+                && self.phase != AppPhase::LevelSelect
                 && self.editor.ui.mode != EditorMode::Timing
             {
                 if let Some((buffer, count)) = self.render.meshes.floor.draw_data() {
@@ -191,6 +198,7 @@ impl State {
                 || self.phase == AppPhase::GameOver
                 || self.phase == AppPhase::Editor
                 || self.phase == AppPhase::Menu
+                || self.phase == AppPhase::LevelSelect
             {
                 let skip_world =
                     self.phase == AppPhase::Editor && self.editor.ui.mode == EditorMode::Timing;
@@ -234,6 +242,14 @@ impl State {
 
                 if self.phase == AppPhase::Editor && !skip_world {
                     if let Some((buffer, count)) = self.render.meshes.spawn_marker.draw_data() {
+                        render_pass.set_vertex_buffer(0, buffer.slice(..));
+                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                        render_pass.draw(0..count, 0..1);
+                    }
+
+                    if let Some((buffer, count)) =
+                        self.render.meshes.preview_camera_marker.draw_data()
+                    {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         render_pass.draw(0..count, 0..1);

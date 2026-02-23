@@ -6,7 +6,8 @@ use super::runtime::{
 use super::{
     AudioState, AudioSubsystem, EditorCameraState, EditorConfigState, EditorHistoryState,
     EditorInteractionState, EditorPerfState, EditorSubsystem, EditorTimelineState,
-    EditorTimingState, GameplaySubsystem, MenuSubsystem, SessionSubsystem, State,
+    EditorTimingState, GameplaySubsystem, LevelSelectSubsystem, MenuSubsystem, SessionSubsystem,
+    State,
 };
 use glam::Mat4;
 use wgpu::util::DeviceExt;
@@ -21,8 +22,8 @@ use crate::platform::state_host::NativeWindow;
 use crate::platform::state_host::WasmCanvas;
 use crate::platform::state_host::{PlatformInstant, SurfaceHost};
 use crate::types::{
-    AppPhase, CameraUniform, ColorSpaceUniform, EditorState, LineUniform, MenuState, MusicMetadata,
-    PhysicalSize, SpawnMetadata, Vertex,
+    AppPhase, CameraUniform, ColorSpaceUniform, EditorState, LevelSelectState, LineUniform,
+    MenuState, MusicMetadata, PhysicalSize, SpawnMetadata, Vertex,
 };
 
 impl State {
@@ -421,11 +422,18 @@ impl State {
                     tap_indicators: MeshSlot::Empty,
                     spawn_marker: MeshSlot::Empty,
                     editor_preview_player: MeshSlot::Empty,
+                    preview_camera_marker: MeshSlot::Empty,
                 },
             },
             gameplay: GameplaySubsystem { state: game },
             phase: AppPhase::Splash,
             menu: MenuSubsystem { state: menu },
+            level_select: LevelSelectSubsystem {
+                state: LevelSelectState {
+                    selected_level: 0,
+                    preview_camera: None,
+                },
+            },
             frame_runtime: FrameRuntimeState {
                 editor: EditorFrameState {
                     last_frame: now,
@@ -493,6 +501,7 @@ impl State {
                 perf: EditorPerfState::new(),
                 timing: EditorTimingState::new(),
                 selected_mask_cache: None,
+                preview_camera: None,
             },
         })
     }
