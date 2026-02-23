@@ -63,9 +63,9 @@ export default function AuthStatus() {
             ) : (
                 <Link
                     href="/auth/login"
-                    className="flex items-center gap-2 text-cyan-400 hover:text-cyan-300 transition-colors uppercase tracking-wider text-xs font-bold font-display"
+                    className="flex items-center gap-2 text-cyan-400 hover:text-cyan-300 transition-colors tracking-wider text-xs font-bold font-display"
                 >
-                    <span>Connect</span>
+                    <span>login</span>
                 </Link>
             )}
         </>

@@ -3,6 +3,7 @@
 @theme {
     --font-sans: var(--font-sora), "Sora", sans-serif;
     --font-display: var(--font-unbounded), "Unbounded", sans-serif;
+    --font-wordmark: var(--font-wordmark), "Rubik 80s Fade", sans-serif;
     --color-tech-bg: #030712; /* gray-950/black mix */
     --color-tech-border: rgba(34, 211, 238, 0.2); /* cyan-400/20 */
     --color-tech-cyan: #22d3ee; /* cyan-400 */

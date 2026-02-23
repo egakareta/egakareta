@@ -38,10 +38,10 @@ export default function SkylineNav() {
 
                     {/* Desktop Nav */}
                     <nav className="hidden md:flex items-center gap-8 ml-4">
-                        <NavLink href="/play">Play</NavLink>
-                        <NavLink href="/beatmaps">Beatmaps</NavLink>
-                        <NavLink href="/leaderboards/pp">Rankings</NavLink>
-                        <NavLink href="/about">About</NavLink>
+                        <NavLink href="/play">play</NavLink>
+                        <NavLink href="/beatmaps">beatmaps</NavLink>
+                        <NavLink href="/leaderboards/pp">rankings</NavLink>
+                        <NavLink href="/about">about</NavLink>
                     </nav>
                 </div>
 
@@ -115,7 +115,7 @@ function NavLink({
     return (
         <Link
             href={href}
-            className="text-sm font-bold tracking-widest text-slate-400 hover:text-white uppercase transition-colors font-display"
+            className="text-sm font-bold tracking-widest text-slate-400 hover:text-white transition-colors font-display"
         >
             {children}
         </Link>

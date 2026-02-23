@@ -55,25 +55,12 @@ export default function Home() {
                 {/* Hero Section */}
                 <div className="mx-auto max-w-3xl py-24 sm:py-32 lg:pt-40">
                     <div className="text-center">
-                        <h1 className="font-display text-5xl font-bold tracking-tight text-white sm:text-7xl">
-                            <span className="block bg-clip-text text-transparent bg-linear-to-r from-cyan-400 via-violet-400 to-fuchsia-400 text-6xl sm:text-8xl mt-2 tracking-tighter drop-shadow-[0_0_35px_rgba(168,85,247,0.4)] animate-pulse-slow">
-                                Line Dash
-                            </span>
-                            <span className="bg-clip-text text-transparent bg-linear-to-b from-slate-200 to-slate-500">
-                                Feel the beat, follow the line.
-                            </span>
+                        <h1 className="font-wordmark bg-clip-text text-transparent bg-linear-to-r from-cyan-400 via-violet-400 to-fuchsia-400 text-6xl sm:text-8xl mt-2 tracking-tighter drop-shadow-[0_0_35px_rgba(168,85,247,0.4)] animate-pulse-slow">
+                            line dash
                         </h1>
-
-                        <p className="mt-8 text-lg leading-8 text-slate-400 max-w-2xl mx-auto border-l-2 border-fuchsia-500/30 pl-6 text-left font-mono bg-slate-900/40 p-4 rounded-r-lg backdrop-blur-sm">
-                            <span className="text-cyan-500">{">"}</span>{" "}
-                            INITIALIZING HIGH-PERFORMANCE WEBGL RENDERER...
-                            <br />
-                            <span className="text-fuchsia-500">{">"}</span>{" "}
-                            LOADING COMMUNITY ASSETS...
-                            <br />
-                            <span className="text-white">{">"}</span> SYSTEM
-                            READY.
-                        </p>
+                        <h2 className="font-display text-3xl tracking-tight sm:text-5xl bg-clip-text text-transparent bg-linear-to-b from-slate-200 to-slate-500">
+                            Feel the beat, follow the line.
+                        </h2>
 
                         <div className="mt-10 flex items-center justify-center gap-x-6">
                             <Link
@@ -81,16 +68,16 @@ export default function Home() {
                                 className="group relative px-8 py-3 bg-linear-to-r from-cyan-500 to-fuchsia-600 text-white font-bold uppercase tracking-widest hover:from-cyan-400 hover:to-fuchsia-500 transition-all -skew-x-12 shadow-[0_0_20px_rgba(217,70,239,0.4)]"
                             >
                                 <span className="block skew-x-12">
-                                    Initiate Sequence
+                                    play now
                                 </span>
                                 <div className="absolute inset-0 border border-white/20 group-hover:scale-105 transition-transform"></div>
                             </Link>
                             <Link
-                                href="/about"
+                                href="/auth/signup"
                                 className="text-sm font-semibold leading-6 text-slate-300 uppercase tracking-widest hover:text-white transition-colors flex items-center gap-2"
                             >
                                 <span className="w-2 h-2 rounded-full bg-fuchsia-500 animate-pulse"></span>
-                                System Specs <span aria-hidden="true">→</span>
+                                sign up <span aria-hidden="true">→</span>
                             </Link>
                         </div>
                     </div>

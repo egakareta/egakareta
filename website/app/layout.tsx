@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Sora, Unbounded } from "next/font/google";
+import { Sora, Unbounded, Rubik_80s_Fade } from "next/font/google";
 import type { ReactNode } from "react";
 import SkylineNav from "@/components/SkylineNav";
 import "./globals.css";
@@ -16,6 +16,12 @@ const unbounded = Unbounded({
     display: "swap",
 });
 
+const rubik_80s_fade = Rubik_80s_Fade({
+    subsets: ["latin"],
+    display: "swap",
+    weight: "400",
+});
+
 export const metadata: Metadata = {
     title: "Line Dash",
     description: "Feel the beat, follow the line.",
@@ -27,7 +33,10 @@ export default function RootLayout({
     children: ReactNode;
 }>) {
     return (
-        <html lang="en" className={`${sora.variable} ${unbounded.variable}`}>
+        <html
+            lang="en"
+            className={`${sora.variable} ${unbounded.variable} ${rubik_80s_fade.style}`}
+        >
             <head>
                 <link rel="icon" href="/assets/favicon.png" type="image/png" />
             </head>
