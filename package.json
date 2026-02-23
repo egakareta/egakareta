@@ -12,6 +12,7 @@
         "test:coverage": "cargo llvm-cov nextest --lcov --output-path lcov.info",
         "watch": "nodemon --watch src -e rs,wgsl --exec \"bun build:game\"",
         "dev": "concurrently \"bun watch\" \"cd website && bun dev\" --prefix=none",
+        "prod": "bun run build",
         "prepare:lefthook": "lefthook install",
         "prepare:assets": "ln -sfn ../../assets website/public/assets",
         "prepare": "bun prepare:lefthook && bun prepare:assets"
