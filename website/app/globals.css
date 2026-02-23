@@ -1,9 +1,8 @@
 @import "tailwindcss";
 
 @theme {
-    --font-sans: "Sora", "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
-    --font-display:
-        "Space Grotesk", "Sora", "Avenir Next", "Segoe UI", sans-serif;
+    --font-sans: var(--font-sora), "Sora", sans-serif;
+    --font-display: var(--font-unbounded), "Unbounded", sans-serif;
 }
 
 @layer base {

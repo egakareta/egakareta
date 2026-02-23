@@ -1,7 +1,20 @@
 import type { Metadata } from "next";
+import { Sora, Unbounded } from "next/font/google";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import "./globals.css";
+
+const sora = Sora({
+    subsets: ["latin"],
+    variable: "--font-sora",
+    display: "swap",
+});
+
+const unbounded = Unbounded({
+    subsets: ["latin"],
+    variable: "--font-unbounded",
+    display: "swap",
+});
 
 export const metadata: Metadata = {
     title: "Line Dash",
@@ -14,7 +27,7 @@ export default function RootLayout({
     children: ReactNode;
 }>) {
     return (
-        <html lang="en">
+        <html lang="en" className={`${sora.variable} ${unbounded.variable}`}>
             <head>
                 <link rel="icon" href="/assets/favicon.png" type="image/png" />
             </head>

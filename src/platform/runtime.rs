@@ -10,6 +10,25 @@ pub struct Runtime {
 impl Runtime {
     pub fn new(state: State) -> Self {
         let egui_ctx = egui::Context::default();
+
+        // Load custom font: Sora
+        let mut fonts = egui::FontDefinitions::default();
+        fonts.font_data.insert(
+            "sora".to_owned(),
+            egui::FontData::from_static(include_bytes!("../../assets/Sora.ttf")).into(),
+        );
+        fonts
+            .families
+            .entry(egui::FontFamily::Proportional)
+            .or_default()
+            .insert(0, "sora".to_owned());
+        fonts
+            .families
+            .entry(egui::FontFamily::Monospace)
+            .or_default()
+            .push("sora".to_owned());
+        egui_ctx.set_fonts(fonts);
+
         let egui_renderer = state.create_egui_renderer();
         let menu_wordmark = load_menu_wordmark_texture(&egui_ctx);
         let pipeline = FramePipeline::new(egui_ctx, egui_renderer, menu_wordmark);
