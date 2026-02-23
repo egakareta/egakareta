@@ -15,7 +15,7 @@ function SignupForm() {
 
     const supabase = createClient();
 
-    const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
+    const handleSignup = async (e: React.SubmitEvent<HTMLFormElement>) => {
         e.preventDefault();
         setLoading(true);
         setError(null);

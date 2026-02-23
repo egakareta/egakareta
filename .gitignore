@@ -8,3 +8,4 @@ website/.next
 website/out
 website/public/assets
 website/.env.local
+website/tsconfig.tsbuildinfo
