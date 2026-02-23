@@ -40,7 +40,7 @@ export default function RootLayout({
                     <SkylineNav />
 
                     {/* Content padding adjusted for new fixed header */}
-                    <main className="flex-1 pt-32">{children}</main>
+                    <main className="flex-1 pt-20">{children}</main>
 
                     <footer className="border-t border-slate-800 bg-slate-950 py-8 text-center text-xs text-slate-500 font-mono uppercase tracking-widest">
                         <div className="mx-auto max-w-7xl px-6 flex flex-col sm:flex-row justify-between items-center gap-4">
