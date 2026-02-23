@@ -1,162 +1,136 @@
 import Link from "next/link";
 
-const phaseThreeFeatures = [
+const features = [
     {
+        id: "MOD_01",
         title: "Account System",
-        description:
-            "Sign in with email or Google, or stay in local guest mode and upgrade later.",
-        href: "/auth/signup",
+        desc: "Persistent progression. Guest mode available.",
+        link: "/auth/signup",
+        status: "ACTIVE",
     },
     {
-        title: "Beatmap Uploads",
-        description:
-            "Publish maps with metadata, audio files, and direct share links powered by cloud storage.",
-        href: "/beatmaps",
+        id: "MOD_02",
+        title: "Beatmap Cloud",
+        desc: "Global database. Direct share links. Metadata sync.",
+        link: "/beatmaps",
+        status: "ONLINE",
     },
     {
-        title: "Discover Feed",
-        description:
-            "Browse by popularity, difficulty, date, and tags to find maps worth grinding.",
-        href: "/beatmaps",
-    },
-    {
-        title: "Creator Profiles",
-        description:
-            "Follow mappers, track releases, and build reputation before ranked curation opens.",
-        href: "/profiles/nova",
-    },
-];
-
-const rankedRoadmap = [
-    "Community nomination and quality review flow for ranked candidates.",
-    "Dual difficulty display with nominator stars and community average.",
-    "Performance points model that evolves with map data and mod usage.",
-    "Leaderboards and score submission tuned for competitive consistency.",
-];
-
-const pillars = [
-    {
-        heading: "One Input, High Skill Ceiling",
-        copy: "A single click controls 90 degree turns, but precision, route memory, and rhythm mastery separate players.",
-    },
-    {
-        heading: "Editor-First Content",
-        copy: "The in-game editor remains the center of the ecosystem: timeline tools, instant playtest, and fast iteration.",
-    },
-    {
-        heading: "Web + Native Reach",
-        copy: "Rust and wgpu keep gameplay logic shared across desktop and browser so the community grows in one place.",
+        id: "MOD_03",
+        title: "Discovery Feed",
+        desc: "Algorithmic sorting. Tag filtration. Difficulty metrics.",
+        link: "/beatmaps",
+        status: "BETA",
     },
 ];
 
 export default function Home() {
     return (
-        <main className="mx-auto grid w-[min(1100px,calc(100%-1.3rem))] gap-5 py-6 sm:w-[min(1100px,calc(100%-2.4rem))] sm:py-14">
-            <section className="animate-[rise_650ms_ease-out_both] rounded-2xl border border-sky-200/30 bg-slate-950/65 p-5 backdrop-blur-sm sm:p-9">
-                <p className="m-0 text-xs font-bold tracking-[0.14em] text-cyan-300 uppercase">
-                    Phase 3 Incoming
-                </p>
-                <h1 className="font-display mt-3 max-w-[16ch] text-4xl leading-[1.14] font-semibold sm:text-5xl md:text-6xl">
-                    Line Dash is moving from a playable engine to a
-                    creator-driven rhythm platform.
-                </h1>
-                <p className="mt-4 max-w-[65ch] text-base leading-7 text-slate-300 sm:text-lg sm:leading-8">
-                    We already have a working core game and level editor. Next,
-                    we are shipping the online layer: accounts, map sharing,
-                    discovery, and creator identity.
-                </p>
-                <div className="mt-6 flex flex-wrap gap-3.5">
-                    <Link
-                        href="/beatmaps"
-                        className="rounded-full bg-linear-to-r from-cyan-300 to-sky-200 px-4 py-2.5 text-sm font-bold text-sky-950 transition-transform duration-200 hover:-translate-y-0.5"
-                    >
-                        Browse community beatmaps
-                    </Link>
-                    <Link
-                        href="/auth/signup"
-                        className="rounded-full border border-sky-200/35 px-4 py-2.5 text-sm font-bold text-slate-100 transition-transform duration-200 hover:-translate-y-0.5"
-                    >
-                        Create account
-                    </Link>
-                </div>
-            </section>
-
-            <section
-                className="grid gap-4 md:grid-cols-3"
-                aria-label="Vision pillars"
+        <div className="relative isolate pt-14 dark:bg-slate-950">
+            {/* Background Effects */}
+            <div
+                className="absolute inset-x-0 -top-40 -z-10 transform-gpu overflow-hidden blur-3xl sm:-top-80"
+                aria-hidden="true"
             >
-                {pillars.map((pillar) => (
-                    <article
-                        key={pillar.heading}
-                        className="animate-[rise_700ms_ease-out_both] rounded-xl border border-cyan-100/20 bg-slate-950/80 p-5"
-                    >
-                        <h2 className="font-display m-0 text-xl leading-[1.14] font-semibold">
-                            {pillar.heading}
-                        </h2>
-                        <p className="mt-3 text-base leading-7 text-slate-300">
-                            {pillar.copy}
+                <div className="relative left-[calc(50%-11rem)] aspect-[1155/678] w-[36.125rem] -translate-x-1/2 rotate-[30deg] bg-gradient-to-tr from-cyan-500 to-blue-500 opacity-20 sm:left-[calc(50%-30rem)] sm:w-[72.1875rem]"></div>
+            </div>
+
+            <div className="mx-auto max-w-7xl px-6 lg:px-8">
+                {/* Hero Section */}
+                <div className="mx-auto max-w-3xl py-24 sm:py-32 lg:pt-40">
+                    <div className="hidden sm:mb-8 sm:flex sm:justify-center">
+                        <div className="relative rounded-full px-3 py-1 text-sm leading-6 text-slate-400 ring-1 ring-cyan-500/20 hover:ring-cyan-500/40 transition-all">
+                            <span className="font-mono text-cyan-400">
+                                SYS_UPDATE:{" "}
+                            </span>{" "}
+                            Phase 3 Deployment{" "}
+                            <a
+                                href="#changelog"
+                                className="font-semibold text-cyan-500"
+                            >
+                                <span
+                                    className="absolute inset-0"
+                                    aria-hidden="true"
+                                ></span>
+                                Read more <span aria-hidden="true">&rarr;</span>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div className="text-center">
+                        <h1 className="font-display text-5xl font-bold tracking-tight text-white sm:text-7xl uppercase bg-clip-text text-transparent bg-gradient-to-b from-white to-slate-500">
+                            Rhythm Engine
+                            <span className="block text-cyan-400 text-6xl sm:text-8xl mt-2 tracking-tighter drop-shadow-[0_0_15px_rgba(34,211,238,0.5)]">
+                                Line Dash
+                            </span>
+                        </h1>
+
+                        <p className="mt-6 text-lg leading-8 text-slate-400 max-w-2xl mx-auto border-l-2 border-cyan-500/30 pl-6 text-left font-mono">
+                            {">"} INITIALIZING HIGH-PERFORMANCE WEBGL
+                            RENDERER...
+                            <br />
+                            {">"} LOADING COMMUNITY ASSETS...
+                            <br />
+                            {">"} SYSTEM READY.
                         </p>
-                    </article>
-                ))}
-            </section>
 
-            <section
-                id="phase-three"
-                className="animate-[rise_650ms_ease-out_both] rounded-2xl border border-sky-200/30 bg-slate-950/65 p-5 backdrop-blur-sm sm:p-8"
-            >
-                <header>
-                    <p className="m-0 text-xs font-bold tracking-[0.14em] text-cyan-300 uppercase">
-                        Phase 3 Scope
-                    </p>
-                    <h2 className="font-display mt-2 text-3xl leading-[1.14] font-semibold sm:text-4xl">
-                        Community shipping lane
-                    </h2>
-                    <p className="mt-4 max-w-[72ch] leading-7 text-slate-300">
-                        This release turns local creations into shareable
-                        content and prepares the data model for ranking,
-                        curation, and long-term progression.
-                    </p>
-                </header>
-                <div className="mt-5 grid gap-3.5 md:grid-cols-2">
-                    {phaseThreeFeatures.map((feature) => (
-                        <Link
-                            key={feature.title}
-                            href={feature.href}
-                            className="rounded-xl border border-cyan-200/25 bg-slate-950/80 p-4"
-                        >
-                            <h3 className="font-display m-0 text-lg leading-[1.14] font-semibold">
-                                {feature.title}
-                            </h3>
-                            <p className="mt-2.5 leading-7 text-slate-300">
-                                {feature.description}
-                            </p>
-                        </Link>
-                    ))}
+                        <div className="mt-10 flex items-center justify-center gap-x-6">
+                            <Link
+                                href="/play"
+                                className="group relative px-8 py-3 bg-cyan-500 text-slate-950 font-bold uppercase tracking-widest hover:bg-cyan-400 transition-all skew-x-[-12deg]"
+                            >
+                                <span className="block skew-x-[12deg]">
+                                    Initiate Sequence
+                                </span>
+                                <div className="absolute inset-0 border border-white/20 group-hover:scale-105 transition-transform"></div>
+                            </Link>
+                            <Link
+                                href="/about"
+                                className="text-sm font-semibold leading-6 text-white uppercase tracking-widest hover:text-cyan-400 transition-colors"
+                            >
+                                System Specs <span aria-hidden="true">→</span>
+                            </Link>
+                        </div>
+                    </div>
                 </div>
-            </section>
 
-            <section
-                id="ranked"
-                className="animate-[rise_650ms_ease-out_both] rounded-2xl border border-sky-200/30 bg-slate-950/65 p-5 backdrop-blur-sm sm:p-8"
-            >
-                <p className="m-0 text-xs font-bold tracking-[0.14em] text-cyan-300 uppercase">
-                    After Phase 3
-                </p>
-                <h2 className="font-display mt-2 text-3xl leading-[1.14] font-semibold sm:text-4xl">
-                    Ranked play foundation
-                </h2>
-                <ul className="mt-4 grid list-disc gap-2.5 pl-5 text-slate-300 marker:text-cyan-500">
-                    {rankedRoadmap.map((item) => (
-                        <li key={item}>{item}</li>
-                    ))}
-                </ul>
-                <Link
-                    href="/leaderboards/pp"
-                    className="mt-5 inline-block rounded-full border border-cyan-200/40 px-4 py-2 text-sm font-semibold text-cyan-200 hover:text-cyan-100"
-                >
-                    View PP leaderboard prototype
-                </Link>
-            </section>
-        </main>
+                {/* Dashboard Grid */}
+                <div className="mx-auto max-w-7xl px-6 lg:px-8 pb-24">
+                    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                        {features.map((feature) => (
+                            <div
+                                key={feature.id}
+                                className="relative group bg-slate-900/50 border border-slate-800 p-6 hover:border-cyan-500/50 transition-colors overflow-hidden"
+                            >
+                                {/* Tech Corner Markers */}
+                                <div className="absolute top-0 left-0 w-2 h-2 border-t-2 border-l-2 border-slate-700 group-hover:border-cyan-500 transition-colors"></div>
+                                <div className="absolute top-0 right-0 w-2 h-2 border-t-2 border-r-2 border-slate-700 group-hover:border-cyan-500 transition-colors"></div>
+                                <div className="absolute bottom-0 left-0 w-2 h-2 border-b-2 border-l-2 border-slate-700 group-hover:border-cyan-500 transition-colors"></div>
+                                <div className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-slate-700 group-hover:border-cyan-500 transition-colors"></div>
+
+                                <div className="flex justify-between items-start mb-4">
+                                    <span className="font-mono text-xs text-cyan-500/70">
+                                        {feature.id}
+                                    </span>
+                                    <span className="font-mono text-[10px] bg-cyan-950 text-cyan-300 px-2 py-0.5 border border-cyan-900">
+                                        {feature.status}
+                                    </span>
+                                </div>
+
+                                <h3 className="font-display text-xl font-bold text-white mb-2 group-hover:text-cyan-400 transition-colors">
+                                    <Link href={feature.link}>
+                                        <span className="absolute inset-0"></span>
+                                        {feature.title}
+                                    </Link>
+                                </h3>
+                                <p className="text-slate-400 text-sm leading-relaxed font-mono">
+                                    {feature.desc}
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </div>
     );
 }
