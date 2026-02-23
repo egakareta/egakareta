@@ -1,5 +1,0 @@
-name = "line-dash"
-pages_build_output_dir = "website/out"
-compatibility_date = "2026-02-15"
-
-[env.production]

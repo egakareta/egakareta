@@ -2,7 +2,7 @@
 **/*.rs.bk
 **/node_modules
 **/.playwright-mcp
-**/pkg
+**/dist
 lcov.info
 website/.next
 website/out
