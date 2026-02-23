@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import { Sora, Unbounded } from "next/font/google";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { createClient } from "@/lib/supabase/server";
-import { signout } from "./auth/actions";
+import AuthStatus from "@/components/AuthStatus";
 import "./globals.css";
 
 const sora = Sora({
@@ -23,16 +22,11 @@ export const metadata: Metadata = {
     description: "Feel the beat, follow the line.",
 };
 
-export default async function RootLayout({
+export default function RootLayout({
     children,
 }: Readonly<{
     children: ReactNode;
 }>) {
-    const supabase = await createClient();
-    const {
-        data: { user },
-    } = await supabase.auth.getUser();
-
     return (
         <html lang="en" className={`${sora.variable} ${unbounded.variable}`}>
             <head>
@@ -73,32 +67,7 @@ export default async function RootLayout({
                                 >
                                     Rankings
                                 </Link>
-                                {user ? (
-                                    <div className="flex items-center gap-4">
-                                        <Link
-                                            href={`/profiles/${user.user_metadata.username}`}
-                                            className="hidden sm:block text-slate-400 hover:text-cyan-400 transition-colors uppercase tracking-wide text-xs"
-                                        >
-                                            {user.user_metadata.username}
-                                        </Link>
-                                        <form action={signout}>
-                                            <button className="flex items-center gap-2 border border-fuchsia-500/50 bg-gradient-to-r from-fuchsia-500/10 to-purple-500/10 px-4 py-1.5 text-fuchsia-400 hover:text-white hover:from-fuchsia-500/80 hover:to-purple-500/80 hover:border-white/50 transition-all uppercase tracking-wider text-xs font-bold skew-x-[-10deg]">
-                                                <span className="skew-x-[10deg]">
-                                                    Log Out
-                                                </span>
-                                            </button>
-                                        </form>
-                                    </div>
-                                ) : (
-                                    <Link
-                                        href="/auth/login"
-                                        className="ml-2 flex items-center gap-2 border border-cyan-500/50 bg-gradient-to-r from-cyan-500/10 to-fuchsia-500/10 px-4 py-1.5 text-cyan-400 hover:text-white hover:from-cyan-500/80 hover:to-fuchsia-500/80 hover:border-white/50 transition-all uppercase tracking-wider text-xs font-bold skew-x-[-10deg]"
-                                    >
-                                        <span className="skew-x-[10deg]">
-                                            Connect
-                                        </span>
-                                    </Link>
-                                )}
+                                <AuthStatus />
                             </div>
                         </nav>
 

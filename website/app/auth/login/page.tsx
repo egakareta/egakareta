@@ -1,12 +1,48 @@
-import Link from "next/link";
-import { login } from "../actions";
+"use client";
 
-export default async function LoginPage({
-    searchParams,
-}: {
-    searchParams: Promise<{ message?: string; error?: string }>;
-}) {
-    const params = await searchParams;
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useState, Suspense } from "react";
+import { createClient } from "@/lib/supabase/client";
+
+function LoginForm() {
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    const [error, setError] = useState<string | null>(
+        searchParams.get("error"),
+    );
+    const [message, setMessage] = useState<string | null>(
+        searchParams.get("message"),
+    );
+    const [loading, setLoading] = useState(false);
+
+    const supabase = createClient();
+
+    const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        setLoading(true);
+        setError(null);
+        setMessage(null);
+
+        const formData = new FormData(e.currentTarget);
+        const email = formData.get("email") as string;
+        const password = formData.get("password") as string;
+
+        const { error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+        });
+
+        if (error) {
+            setError(error.message);
+            setLoading(false);
+            return;
+        }
+
+        router.push("/");
+        router.refresh();
+    };
+
     return (
         <main className="mx-auto w-[min(760px,calc(100%-1.3rem))] py-8 sm:w-[min(760px,calc(100%-2.4rem))] sm:py-14">
             <section className="rounded-2xl border border-sky-200/30 bg-slate-950/70 p-5 backdrop-blur-sm sm:p-8">
@@ -21,18 +57,18 @@ export default async function LoginPage({
                     progress.
                 </p>
 
-                {params.message && (
+                {message && (
                     <div className="mt-4 rounded-md bg-cyan-900/50 p-3 text-sm text-cyan-200 border border-cyan-500/30">
-                        {params.message}
+                        {message}
                     </div>
                 )}
-                {params.error && (
+                {error && (
                     <div className="mt-4 rounded-md bg-red-900/50 p-3 text-sm text-red-200 border border-red-500/30">
-                        {params.error}
+                        {error}
                     </div>
                 )}
 
-                <form className="mt-6 grid gap-4">
+                <form onSubmit={handleLogin} className="mt-6 grid gap-4">
                     <label className="grid gap-2 text-sm">
                         Email
                         <input
@@ -54,10 +90,10 @@ export default async function LoginPage({
                         />
                     </label>
                     <button
-                        formAction={login}
-                        className="rounded-full bg-linear-to-r from-cyan-300 to-sky-200 px-4 py-2.5 text-sm font-bold text-sky-950 hover:opacity-90 transition-opacity"
+                        disabled={loading}
+                        className="rounded-full bg-linear-to-r from-cyan-300 to-sky-200 px-4 py-2.5 text-sm font-bold text-sky-950 hover:opacity-90 transition-opacity disabled:opacity-50"
                     >
-                        Log in
+                        {loading ? "Logging in..." : "Log in"}
                     </button>
                 </form>
 
@@ -88,5 +124,13 @@ export default async function LoginPage({
                 </p>
             </section>
         </main>
+    );
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense>
+            <LoginForm />
+        </Suspense>
     );
 }
