@@ -7,3 +7,4 @@ lcov.info
 website/.next
 website/out
 website/public/assets
+website/.env.local

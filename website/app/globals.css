@@ -6,6 +6,7 @@
     --color-tech-bg: #030712; /* gray-950/black mix */
     --color-tech-border: rgba(34, 211, 238, 0.2); /* cyan-400/20 */
     --color-tech-cyan: #22d3ee; /* cyan-400 */
+    --color-tech-pink: #d946ef; /* fuchsia-500 */
 }
 
 @layer base {
@@ -13,18 +14,18 @@
         @apply min-h-screen antialiased text-slate-300 bg-slate-950;
         background-color: #020617; /* Slate 950 */
         background-image:
-            linear-gradient(rgba(34, 211, 238, 0.05) 1px, transparent 1px),
+            linear-gradient(rgba(34, 211, 238, 0.03) 1px, transparent 1px),
             linear-gradient(
                 90deg,
-                rgba(34, 211, 238, 0.05) 1px,
+                rgba(217, 70, 239, 0.03) 1px,
                 transparent 1px
             );
         background-size: 40px 40px;
     }
 
     ::selection {
-        background: rgba(34, 211, 238, 0.2);
-        color: #22d3ee;
+        background: rgba(217, 70, 239, 0.2);
+        color: #d946ef;
     }
 }
 

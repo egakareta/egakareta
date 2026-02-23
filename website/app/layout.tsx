@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Sora, Unbounded } from "next/font/google";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { createClient } from "@/lib/supabase/server";
+import { signout } from "./auth/actions";
 import "./globals.css";
 
 const sora = Sora({
@@ -21,11 +23,16 @@ export const metadata: Metadata = {
     description: "Feel the beat, follow the line.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
     children,
 }: Readonly<{
     children: ReactNode;
 }>) {
+    const supabase = await createClient();
+    const {
+        data: { user },
+    } = await supabase.auth.getUser();
+
     return (
         <html lang="en" className={`${sora.variable} ${unbounded.variable}`}>
             <head>
@@ -43,12 +50,12 @@ export default function RootLayout({
                                     href="/"
                                     className="group flex items-center gap-2"
                                 >
-                                    <div className="h-6 w-1 bg-cyan-400 group-hover:bg-cyan-300 transition-colors" />
-                                    <span className="font-display text-lg font-bold tracking-widest text-slate-100 group-hover:text-cyan-400 transition-colors">
+                                    <div className="h-6 w-1 bg-gradient-to-b from-cyan-400 to-fuchsia-500 group-hover:from-cyan-300 group-hover:to-fuchsia-400 transition-colors" />
+                                    <span className="font-display text-lg font-bold tracking-widest text-slate-100 group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-gradient-to-r group-hover:from-cyan-400 group-hover:to-fuchsia-500 transition-all">
                                         LINE DASH
                                     </span>
                                 </Link>
-                                <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-mono font-medium text-cyan-500 bg-cyan-950/30 border border-cyan-900/50 rounded-sm uppercase tracking-wider">
+                                <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-mono font-medium text-fuchsia-400 bg-fuchsia-950/30 border border-fuchsia-900/50 rounded-sm uppercase tracking-wider shadow-[0_0_10px_rgba(217,70,239,0.2)]">
                                     V 0.3.0 // BETA
                                 </span>
                             </div>
@@ -62,23 +69,41 @@ export default function RootLayout({
                                 </Link>
                                 <Link
                                     href="/leaderboards/pp"
-                                    className="hidden sm:block px-3 py-1 text-slate-400 hover:text-cyan-400 transition-colors uppercase tracking-wide text-xs"
+                                    className="hidden sm:block px-3 py-1 text-slate-400 hover:text-fuchsia-400 transition-colors uppercase tracking-wide text-xs"
                                 >
                                     Rankings
                                 </Link>
-                                <Link
-                                    href="/auth/login"
-                                    className="ml-2 flex items-center gap-2 border border-cyan-500/50 bg-cyan-500/10 px-4 py-1.5 text-cyan-400 hover:bg-cyan-500/20 hover:border-cyan-400 transition-all uppercase tracking-wider text-xs font-bold skew-x-[-10deg]"
-                                >
-                                    <span className="skew-x-[10deg]">
-                                        Connect
-                                    </span>
-                                </Link>
+                                {user ? (
+                                    <div className="flex items-center gap-4">
+                                        <Link
+                                            href={`/profiles/${user.user_metadata.username}`}
+                                            className="hidden sm:block text-slate-400 hover:text-cyan-400 transition-colors uppercase tracking-wide text-xs"
+                                        >
+                                            {user.user_metadata.username}
+                                        </Link>
+                                        <form action={signout}>
+                                            <button className="flex items-center gap-2 border border-fuchsia-500/50 bg-gradient-to-r from-fuchsia-500/10 to-purple-500/10 px-4 py-1.5 text-fuchsia-400 hover:text-white hover:from-fuchsia-500/80 hover:to-purple-500/80 hover:border-white/50 transition-all uppercase tracking-wider text-xs font-bold skew-x-[-10deg]">
+                                                <span className="skew-x-[10deg]">
+                                                    Log Out
+                                                </span>
+                                            </button>
+                                        </form>
+                                    </div>
+                                ) : (
+                                    <Link
+                                        href="/auth/login"
+                                        className="ml-2 flex items-center gap-2 border border-cyan-500/50 bg-gradient-to-r from-cyan-500/10 to-fuchsia-500/10 px-4 py-1.5 text-cyan-400 hover:text-white hover:from-cyan-500/80 hover:to-fuchsia-500/80 hover:border-white/50 transition-all uppercase tracking-wider text-xs font-bold skew-x-[-10deg]"
+                                    >
+                                        <span className="skew-x-[10deg]">
+                                            Connect
+                                        </span>
+                                    </Link>
+                                )}
                             </div>
                         </nav>
 
                         {/* Technical decorative line */}
-                        <div className="absolute bottom-0 left-0 h-[1px] w-full bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent opacity-50" />
+                        <div className="absolute bottom-0 left-0 h-[1px] w-full bg-gradient-to-r from-transparent via-cyan-500 to-fuchsia-500 via-transparent to-transparent opacity-50" />
                     </header>
 
                     <main className="flex-1">{children}</main>
