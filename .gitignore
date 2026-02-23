@@ -6,3 +6,5 @@
 /dist
 /.wrangler
 lcov.info
+website/.next
+website/out

@@ -12,6 +12,8 @@
         "serve": "bunx serve .",
         "dev": "concurrently \"bun run watch\" \"bun run serve\" --prefix=none",
         "prod": "bun run build && bun dist.js",
+        "site:dev": "cd website && bun run dev",
+        "site:build": "cd website && bun run build",
         "prepare": "lefthook install"
     },
     "devDependencies": {

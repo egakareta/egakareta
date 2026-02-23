@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+@theme {
+    --font-sans: "Sora", "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
+    --font-display:
+        "Space Grotesk", "Sora", "Avenir Next", "Segoe UI", sans-serif;
+}
+
+@layer base {
+    body {
+        @apply min-h-screen antialiased text-slate-100;
+        background:
+            radial-gradient(
+                circle at 15% 10%,
+                rgba(44, 173, 224, 0.25),
+                transparent 35%
+            ),
+            radial-gradient(
+                circle at 88% 20%,
+                rgba(74, 131, 255, 0.24),
+                transparent 30%
+            ),
+            linear-gradient(160deg, #0f172a 0%, #132b43 48%, #04111e 100%);
+    }
+}
+
+@keyframes rise {
+    from {
+        opacity: 0;
+        transform: translateY(22px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
