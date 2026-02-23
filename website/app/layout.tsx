@@ -4,9 +4,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-    title: "Line Dash | Community Rhythm Engine",
-    description:
-        "Line Dash is a cross-platform 3D rhythm game where community mappers create, share, and rank beatmaps.",
+    title: "Line Dash",
+    description: "Feel the beat, follow the line.",
 };
 
 export default function RootLayout({
@@ -16,6 +15,9 @@ export default function RootLayout({
 }>) {
     return (
         <html lang="en">
+            <head>
+                <link rel="icon" href="/assets/favicon.png" type="image/png" />
+            </head>
             <body className="font-sans">
                 <div className="mx-auto min-h-screen w-[min(1200px,calc(100%-1.2rem))] sm:w-[min(1200px,calc(100%-2rem))]">
                     <header className="sticky top-2 z-20 mt-2 rounded-2xl border border-sky-200/20 bg-slate-950/70 px-4 py-3 backdrop-blur-md sm:px-6">

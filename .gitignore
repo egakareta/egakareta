@@ -1,10 +1,9 @@
 /target
 **/*.rs.bk
 **/node_modules
-/.playwright-mcp
-/pkg
-/dist
-/.wrangler
+**/.playwright-mcp
+**/pkg
 lcov.info
 website/.next
 website/out
+website/public/assets
