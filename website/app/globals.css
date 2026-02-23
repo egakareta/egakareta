@@ -85,3 +85,37 @@
     border-bottom: 2px solid var(--color-tech-cyan);
     border-right: 2px solid var(--color-tech-cyan);
 }
+
+@layer utilities {
+    .clip-chamfer-logo {
+        clip-path: polygon(
+            0 0,
+            100% 0,
+            100% 100%,
+            20px 100%,
+            0 calc(100% - 20px)
+        );
+    }
+
+    .clip-chamfer-nav {
+        clip-path: polygon(
+            20px 0,
+            100% 0,
+            100% calc(100% - 20px),
+            calc(100% - 20px) 100%,
+            0 100%,
+            0 20px
+        );
+    }
+
+    .clip-chamfer-item {
+        clip-path: polygon(
+            10px 0,
+            100% 0,
+            100% calc(100% - 10px),
+            calc(100% - 10px) 100%,
+            0 100%,
+            0 10px
+        );
+    }
+}

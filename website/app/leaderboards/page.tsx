@@ -30,7 +30,7 @@ export default function LeaderboardsIndexPage() {
                             Beatmap Leaderboard
                         </h2>
                         <p className="mt-2 text-slate-300">
-                            Per-map score race with accuracy and mods.
+                            Per-map score race with mods.
                         </p>
                     </Link>
                 </div>

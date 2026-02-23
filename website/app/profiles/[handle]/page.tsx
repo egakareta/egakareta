@@ -65,7 +65,7 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
                     </h2>
                     <p className="mt-2 text-slate-300">
                         {ppRow
-                            ? `Global #${ppRow.rank} with ${ppRow.pp.toLocaleString()} PP and ${ppRow.accuracy} average accuracy.`
+                            ? `Global #${ppRow.rank} with ${ppRow.pp.toLocaleString()} PP.`
                             : `Global #${profile.globalRank} with ${profile.totalPp.toLocaleString()} PP.`}
                     </p>
                     <Link

@@ -42,7 +42,6 @@ export default async function BeatmapLeaderboardPage({
                             <tr>
                                 <th className="px-4 py-3">#</th>
                                 <th className="px-4 py-3">Player</th>
-                                <th className="px-4 py-3">Accuracy</th>
                                 <th className="px-4 py-3">Score</th>
                                 <th className="px-4 py-3">PP</th>
                                 <th className="px-4 py-3">Mods</th>
@@ -65,9 +64,6 @@ export default async function BeatmapLeaderboardPage({
                                         >
                                             {entry.playerHandle}
                                         </Link>
-                                    </td>
-                                    <td className="px-4 py-3">
-                                        {entry.accuracy}
                                     </td>
                                     <td className="px-4 py-3">{entry.score}</td>
                                     <td className="px-4 py-3">{entry.pp}</td>

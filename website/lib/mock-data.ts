@@ -21,7 +21,6 @@ export type Beatmap = {
 export type ScoreEntry = {
     rank: number;
     playerHandle: string;
-    accuracy: string;
     score: string;
     pp: number;
     mods: string;
@@ -41,7 +40,6 @@ export type PpEntry = {
     handle: string;
     country: string;
     pp: number;
-    accuracy: string;
     rankedScore: string;
     mapsCleared: number;
 };
@@ -121,7 +119,6 @@ export const mapLeaderboards: Record<string, ScoreEntry[]> = {
         {
             rank: 1,
             playerHandle: "zen",
-            accuracy: "99.21%",
             score: "1,254,870",
             pp: 312,
             mods: "+HD",
@@ -130,7 +127,6 @@ export const mapLeaderboards: Record<string, ScoreEntry[]> = {
         {
             rank: 2,
             playerHandle: "lyra",
-            accuracy: "98.94%",
             score: "1,249,034",
             pp: 307,
             mods: "+NM",
@@ -139,7 +135,6 @@ export const mapLeaderboards: Record<string, ScoreEntry[]> = {
         {
             rank: 3,
             playerHandle: "atlas",
-            accuracy: "98.65%",
             score: "1,242,110",
             pp: 301,
             mods: "+HR",
@@ -150,7 +145,6 @@ export const mapLeaderboards: Record<string, ScoreEntry[]> = {
         {
             rank: 1,
             playerHandle: "kairo",
-            accuracy: "99.51%",
             score: "1,132,222",
             pp: 264,
             mods: "+NM",
@@ -159,7 +153,6 @@ export const mapLeaderboards: Record<string, ScoreEntry[]> = {
         {
             rank: 2,
             playerHandle: "mira",
-            accuracy: "98.89%",
             score: "1,120,100",
             pp: 252,
             mods: "+EZ",
@@ -168,7 +161,6 @@ export const mapLeaderboards: Record<string, ScoreEntry[]> = {
         {
             rank: 3,
             playerHandle: "taro",
-            accuracy: "98.12%",
             score: "1,113,803",
             pp: 243,
             mods: "+NM",
@@ -179,7 +171,6 @@ export const mapLeaderboards: Record<string, ScoreEntry[]> = {
         {
             rank: 1,
             playerHandle: "nova",
-            accuracy: "100.00%",
             score: "980,000",
             pp: 58,
             mods: "+NM",
@@ -188,7 +179,6 @@ export const mapLeaderboards: Record<string, ScoreEntry[]> = {
         {
             rank: 2,
             playerHandle: "ray",
-            accuracy: "99.81%",
             score: "976,100",
             pp: 56,
             mods: "+NM",
@@ -197,7 +187,6 @@ export const mapLeaderboards: Record<string, ScoreEntry[]> = {
         {
             rank: 3,
             playerHandle: "sol",
-            accuracy: "99.32%",
             score: "970,820",
             pp: 53,
             mods: "+DT",
@@ -249,7 +238,6 @@ export const ppLeaderboard: PpEntry[] = [
         handle: "zen",
         country: "US",
         pp: 15432,
-        accuracy: "98.97%",
         rankedScore: "942,118,211",
         mapsCleared: 938,
     },
@@ -258,7 +246,6 @@ export const ppLeaderboard: PpEntry[] = [
         handle: "lyra",
         country: "DE",
         pp: 15112,
-        accuracy: "98.71%",
         rankedScore: "903,401,833",
         mapsCleared: 887,
     },
@@ -267,7 +254,6 @@ export const ppLeaderboard: PpEntry[] = [
         handle: "atlas",
         country: "KR",
         pp: 14980,
-        accuracy: "98.64%",
         rankedScore: "884,002,153",
         mapsCleared: 864,
     },
@@ -276,7 +262,6 @@ export const ppLeaderboard: PpEntry[] = [
         handle: "nova",
         country: "CA",
         pp: 14621,
-        accuracy: "98.22%",
         rankedScore: "841,221,985",
         mapsCleared: 812,
     },
@@ -285,7 +270,6 @@ export const ppLeaderboard: PpEntry[] = [
         handle: "kairo",
         country: "JP",
         pp: 14302,
-        accuracy: "97.94%",
         rankedScore: "803,111,720",
         mapsCleared: 778,
     },

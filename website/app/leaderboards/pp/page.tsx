@@ -24,7 +24,6 @@ export default function PpLeaderboardPage() {
                                 <th className="px-4 py-3">Player</th>
                                 <th className="px-4 py-3">Country</th>
                                 <th className="px-4 py-3">PP</th>
-                                <th className="px-4 py-3">Accuracy</th>
                                 <th className="px-4 py-3">Ranked Score</th>
                                 <th className="px-4 py-3">Clears</th>
                             </tr>
@@ -51,9 +50,6 @@ export default function PpLeaderboardPage() {
                                     </td>
                                     <td className="px-4 py-3 font-semibold text-cyan-200">
                                         {entry.pp.toLocaleString()}
-                                    </td>
-                                    <td className="px-4 py-3">
-                                        {entry.accuracy}
                                     </td>
                                     <td className="px-4 py-3">
                                         {entry.rankedScore}

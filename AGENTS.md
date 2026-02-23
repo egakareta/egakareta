@@ -21,7 +21,7 @@ All primary scripts are managed via `bun` in the `package.json` file. Please use
 ### Build & Run
 
 - **Development Server:** `bun run dev` (Runs a watch process and an HTTP server via `nodemon` and `concurrently`)
-- **Web Build:** `bun run build` (Compiles Rust to WASM using `wasm-pack build --target web`)
+- **Web Build:** `bun run build` (Compiles Rust to WASM using `wasm-pack build --target web --out-dir website/public/pkg`)
 - **Production Build:** `bun run prod` (Builds and runs the bundled JS output)
 - **Watch Mode (Internal):** `bun run watch` (Rebuilds Rust/WGSL on change)
 
@@ -50,6 +50,7 @@ Understanding the project structure is crucial for idiomatic changes:
 - `src/editor_ui/` & `src/editor_domain/` - Egui-based UI components and editor state management.
 - `src/types.rs` - Core data types (like `LevelObject`), serialization details, and default value generators for `serde`.
 - `assets/` - Static assets, textures, and default data to be embedded or loaded.
+- `website/public/assets` - Symlink to `assets/` for web access.
 - `shader.wgsl` - The core WebGPU shader for rendering the game world.
 
 ## 4. Code Style & Conventions
