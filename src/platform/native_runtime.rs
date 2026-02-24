@@ -43,7 +43,7 @@ impl ApplicationHandler for App {
             };
 
             let window_attributes = Window::default_attributes()
-                .with_title("Line Dash")
+                .with_title("egakareta")
                 .with_inner_size(winit::dpi::LogicalSize::new(800.0, 600.0))
                 .with_window_icon(icon);
             let window = event_loop

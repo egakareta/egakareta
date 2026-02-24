@@ -1,13 +1,13 @@
 [package]
-name = "line-dash"
+name = "egakareta"
 version = "0.1.0"
 edition = "2021"
 description = "Feel the beat, follow the line."
-repository = "https://github.com/evilbocchi/line-dash"
+repository = "https://github.com/evilbocchi/egakareta"
 license = "MIT"
 
 [lib]
-name = "line_dash_lib"
+name = "egakareta_lib"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]

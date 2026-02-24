@@ -722,6 +722,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "egakareta"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64",
+ "bytemuck",
+ "console_error_panic_hook",
+ "directories",
+ "egui",
+ "egui-wgpu",
+ "egui-winit",
+ "env_logger",
+ "glam",
+ "gloo-console",
+ "gloo-events",
+ "gloo-file",
+ "gloo-net",
+ "gloo-render",
+ "gloo-utils 0.2.0",
+ "image",
+ "include_dir",
+ "js-sys",
+ "keyframe",
+ "log",
+ "pollster",
+ "rexie",
+ "rfd",
+ "rodio",
+ "serde",
+ "serde_json",
+ "symphonia",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
+ "wgpu",
+ "wgpu-profiler",
+ "winit",
+ "zip",
+]
+
+[[package]]
 name = "egui"
 version = "0.33.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1536,48 +1578,6 @@ dependencies = [
  "bitflags 2.10.0",
  "libc",
  "redox_syscall 0.7.0",
-]
-
-[[package]]
-name = "line-dash"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64",
- "bytemuck",
- "console_error_panic_hook",
- "directories",
- "egui",
- "egui-wgpu",
- "egui-winit",
- "env_logger",
- "glam",
- "gloo-console",
- "gloo-events",
- "gloo-file",
- "gloo-net",
- "gloo-render",
- "gloo-utils 0.2.0",
- "image",
- "include_dir",
- "js-sys",
- "keyframe",
- "log",
- "pollster",
- "rexie",
- "rfd",
- "rodio",
- "serde",
- "serde_json",
- "symphonia",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
- "web-time",
- "wgpu",
- "wgpu-profiler",
- "winit",
- "zip",
 ]
 
 [[package]]

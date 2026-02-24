@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Line Dash</title>
+        <title>egakareta</title>
         <link rel="icon" type="image/png" href="assets/favicon.png" />
         <style>
             html,
@@ -108,7 +108,7 @@
                 const adapterProto = globalThis.GPUAdapter?.prototype ?? proto;
                 if (
                     !adapterProto ||
-                    adapterProto.__lineDashRequestDevicePatched
+                    adapterProto.__egakaretaRequestDevicePatched
                 )
                     return;
 
@@ -142,7 +142,7 @@
 
                 Object.defineProperty(
                     adapterProto,
-                    "__lineDashRequestDevicePatched",
+                    "__egakaretaRequestDevicePatched",
                     {
                         value: true,
                         enumerable: false,
@@ -157,7 +157,7 @@
 
                 // Import the WebAssembly module
                 const { default: init, run_game } =
-                    await import("./pkg/line_dash_lib.js");
+                    await import("./pkg/egakareta_lib.js");
 
                 // Initialize WebAssembly
                 await init();

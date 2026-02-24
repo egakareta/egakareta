@@ -1,4 +1,4 @@
-//! Web runtime for Line Dash.
+//! Web runtime for egakareta.
 //!
 //! This module provides the WebAssembly entry point for running the game in web browsers.
 //! It handles canvas setup, input event binding, and the animation loop using `requestAnimationFrame`.

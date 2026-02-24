@@ -1,5 +1,5 @@
 {
-    "name": "line-dash Dev Container",
+    "name": "egakareta Dev Container",
     "build": {
         "dockerfile": "Dockerfile",
         "context": ".."

@@ -60,11 +60,11 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
 
             ui.separator();
 
-            if ui.button("Export .ldz").clicked() {
+            if ui.button("Export .egz").clicked() {
                 commands.push(crate::commands::AppCommand::EditorExportLevel);
             }
 
-            if ui.button("Import .ldz/JSON").clicked() {
+            if ui.button("Import .egz/JSON").clicked() {
                 commands.push(crate::commands::AppCommand::EditorSetShowImport(true));
             }
 
@@ -128,7 +128,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
 
     if view.show_import {
         egui::Window::new("Import Level").show(ctx, |ui| {
-            ui.label("Paste level JSON or Base64 LDZ below:");
+            ui.label("Paste level JSON or Base64 egz below:");
             let mut text = view.import_text.to_string();
             if ui
                 .add(

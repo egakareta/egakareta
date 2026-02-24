@@ -302,7 +302,7 @@ pub(crate) fn build_block_obj(level_object: &LevelObject, object_name: &str) -> 
 fn build_obj_from_vertices(vertices: &[Vertex], object_name: &str) -> String {
     use std::fmt::Write as _;
     let mut output = String::new();
-    let _ = writeln!(&mut output, "# line-dash block export");
+    let _ = writeln!(&mut output, "# egakareta block export");
     let _ = writeln!(&mut output, "o {}", object_name);
 
     for vertex in vertices {

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 #[cfg(target_arch = "wasm32")]
-const AUDIO_DB_NAME: &str = "line-dash-audio";
+const AUDIO_DB_NAME: &str = "egakareta-audio";
 #[cfg(target_arch = "wasm32")]
 const AUDIO_STORE_NAME: &str = "audio";
 
@@ -90,7 +90,7 @@ impl AudioStorage for PlatformAudioStorage {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn audio_storage_dir() -> Result<std::path::PathBuf, String> {
-    let dirs = directories::ProjectDirs::from("com", "line_dash", "line_dash")
+    let dirs = directories::ProjectDirs::from("com", "egakareta", "egakareta")
         .ok_or_else(|| "Failed to resolve application data directory".to_string())?;
     Ok(dirs.data_local_dir().join("user_audio"))
 }

@@ -53,8 +53,8 @@ pub(crate) fn serialize_level_metadata_pretty(metadata: &LevelMetadata) -> Resul
     serde_json::to_string_pretty(metadata).map_err(|error| error.to_string())
 }
 
-/// Builds an LDZ archive containing level metadata and optional audio data.
-pub(crate) fn build_ldz_archive(
+/// Builds an egz archive containing level metadata and optional audio data.
+pub(crate) fn build_egz_archive(
     metadata: &LevelMetadata,
     audio_file: Option<(&str, &[u8])>,
 ) -> Result<Vec<u8>, String> {
@@ -80,8 +80,8 @@ pub(crate) fn build_ldz_archive(
     Ok(buffer)
 }
 
-/// Reads level metadata and optional audio data from an LDZ archive.
-pub(crate) fn read_metadata_from_ldz(
+/// Reads level metadata and optional audio data from an egz archive.
+pub(crate) fn read_metadata_from_egz(
     data: &[u8],
 ) -> Result<(LevelMetadata, Option<Vec<u8>>), String> {
     let mut archive =

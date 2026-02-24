@@ -1,10 +1,10 @@
-# Agent Instructions: Line Dash Codebase
+# Agent Instructions: Egakareta Codebase
 
-Welcome to the `line-dash` repository! This document outlines the project architecture, tooling, style conventions, and workflow to ensure any AI agent or contributor can confidently and safely operate within the codebase.
+Welcome to the `egakareta` repository! This document outlines the project architecture, tooling, style conventions, and workflow to ensure any AI agent or contributor can confidently and safely operate within the codebase.
 
 ## 1. Project Overview
 
-**Line Dash** is a high-performance 3D rhythm game engine written in Rust. It utilizes:
+**egakareta** is a high-performance 3D rhythm game engine written in Rust. It utilizes:
 
 - **Rust (2021 Edition)** as the core programming language.
 - **wgpu** for cross-platform, hardware-accelerated 3D rendering.
@@ -43,7 +43,7 @@ All primary scripts are managed via `bun` in the `package.json` file. Please use
 Understanding the project structure is crucial for idiomatic changes:
 
 - `src/lib.rs` - The primary library entry point exposing core modules.
-- `src/main.rs` - The application binary entry point. Extremely thin wrapper around `line_dash_lib::run_native_app()` (or a no-op on `wasm32`).
+- `src/main.rs` - The application binary entry point. Extremely thin wrapper around `egakareta_lib::run_native_app()` (or a no-op on `wasm32`).
 - `src/game/` - Core engine logic, simulation, and physics. This must be completely decoupled from rendering and I/O to allow headless simulation.
 - `src/platform/` - Platform-specific implementations (e.g., `web_runtime.rs` vs `native_runtime.rs`). Contains the abstraction layer over Winit, file storage (`rexie` for indexedDB on Web, `directories` on Native), and audio (`rodio`/`symphonia` vs Web Audio API).
 - `src/state/` - Manages the high-level game and editor state.
@@ -100,4 +100,4 @@ Understanding the project structure is crucial for idiomatic changes:
 
 ---
 
-By meticulously following these guidelines, you ensure `line-dash` remains robust, maintainable, and highly performant across all supported platforms.
+By meticulously following these guidelines, you ensure `egakareta` remains robust, maintainable, and highly performant across all supported platforms.

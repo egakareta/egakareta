@@ -5,7 +5,7 @@ use crate::editor_domain::{
 };
 use crate::game::GameState;
 use crate::import_export_service::{
-    build_level_export, build_level_json_export, parse_level_import, parse_level_ldz_import,
+    build_level_export, build_level_json_export, parse_level_egz_import, parse_level_import,
 };
 use crate::level_repository::load_builtin_level_metadata;
 use crate::mesh::build_block_obj;
@@ -102,10 +102,10 @@ impl State {
         load_builtin_level_metadata(level_name)
     }
 
-    /// Exports the current editor level to the Line Dash Zip (.ldz) format.
+    /// Exports the current editor level to the egakareta zip (.egz) format.
     ///
     /// This format bundles level metadata with the required audio file into a single binary blob.
-    pub fn export_level_ldz(&self) -> Result<Vec<u8>, String> {
+    pub fn export_level_egz(&self) -> Result<Vec<u8>, String> {
         let metadata = self.current_editor_metadata();
         let audio_bytes = self
             .audio
@@ -124,11 +124,11 @@ impl State {
         build_level_export(&metadata, audio_bytes)
     }
 
-    /// Imports a level from the Line Dash Zip (.ldz) binary format.
+    /// Imports a level from the egakareta Zip (.egz) binary format.
     ///
     /// This replaces the current editor level and caches any bundled audio data.
-    pub fn import_level_ldz(&mut self, data: &[u8]) -> Result<(), String> {
-        let (metadata, audio_bytes) = parse_level_ldz_import(data)?;
+    pub fn import_level_egz(&mut self, data: &[u8]) -> Result<(), String> {
+        let (metadata, audio_bytes) = parse_level_egz_import(data)?;
         if let Some(bytes) = audio_bytes {
             self.audio
                 .state
@@ -275,12 +275,12 @@ impl State {
         &self.menu.state.levels
     }
 
-    /// Triggers a platform-specific export of the current level as an `.ldz` file.
+    /// Triggers a platform-specific export of the current level as an `.egz` file.
     pub fn trigger_level_export(&self) {
-        match self.export_level_ldz() {
+        match self.export_level_egz() {
             Ok(data) => {
                 let filename = format!(
-                    "{}.ldz",
+                    "{}.egz",
                     self.editor_level_name()
                         .unwrap_or_else(|| "level".to_string())
                 );
@@ -332,12 +332,12 @@ impl State {
 
     /// Finalizes the level import process by decoding and parsing the current import text.
     ///
-    /// The input text is expected to be a Base64-encoded Line Dash Zip (.ldz) blob.
+    /// The input text is expected to be a Base64-encoded egakareta zip (.egz) blob.
     pub fn complete_import(&mut self) {
         let text = self.session.editor_import_text.clone();
         if let Ok(data) = base64::engine::general_purpose::STANDARD.decode(text.trim()) {
-            if let Err(e) = self.import_level_ldz(&data) {
-                log_platform_error(&format!("LDZ Import failed: {}", e));
+            if let Err(e) = self.import_level_egz(&data) {
+                log_platform_error(&format!("EGZ Import failed: {}", e));
             } else {
                 self.session.editor_show_import = false;
                 self.session.editor_import_text.clear();

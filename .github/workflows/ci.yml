@@ -87,19 +87,19 @@ jobs:
       - name: Prepare Artifacts
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          cp target/x86_64-unknown-linux-gnu/release/line-dash line-dash-linux
-          cp target/x86_64-pc-windows-gnu/release/line-dash.exe line-dash-windows.exe
-          cp target/x86_64-apple-darwin/release/line-dash line-dash-macos
+          cp target/x86_64-unknown-linux-gnu/release/egakareta egakareta-linux
+          cp target/x86_64-pc-windows-gnu/release/egakareta.exe egakareta-windows.exe
+          cp target/x86_64-apple-darwin/release/egakareta egakareta-macos
 
       - name: Upload Artifacts
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
-          name: line-dash-native
+          name: egakareta-native
           path: |
-            line-dash-linux
-            line-dash-windows.exe
-            line-dash-macos
+            egakareta-linux
+            egakareta-windows.exe
+            egakareta-macos
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
@@ -185,7 +185,7 @@ jobs:
       - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: line-dash-*
+          pattern: egakareta-*
           merge-multiple: true
           path: artifacts
 
