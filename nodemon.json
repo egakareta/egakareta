@@ -1,5 +1,4 @@
 {
-    "watch": ["src"],
-    "ext": "rs,wgsl",
-    "exec": "wasm-pack build --target web"
+    "watch": ["src", "assets"],
+    "ext": "*"
 }

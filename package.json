@@ -8,7 +8,7 @@
         "lint": "cargo clippy -- -D warnings",
         "test": "cargo nextest run",
         "test:coverage": "cargo llvm-cov nextest --lcov --output-path lcov.info",
-        "watch": "nodemon --watch src -e rs,wgsl --exec \"bun run build\"",
+        "watch": "nodemon --exec \"bun run build\"",
         "serve": "bunx serve .",
         "dev": "concurrently \"bun run watch\" \"bun run serve\" --prefix=none",
         "prod": "bun run build && bun dist.js",
