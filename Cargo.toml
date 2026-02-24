@@ -65,7 +65,7 @@ base64 = "0.22"
 egui = "0.33"
 egui-wgpu = "0.33"
 rfd = "0.17"
-wgpu-profiler = "0.25.0"
+wgpu-profiler = "0.26.0"
 image = { version = "0.25", default-features = false, features = ["png"] }
 keyframe = "1.1.1"
 async-trait = "0.1"
