@@ -14,7 +14,7 @@ crate-type = ["cdylib", "rlib"]
 console_error_panic_hook = "0.1"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
-wgpu = { version = "27.0.1", features = ["webgpu", "webgl"] }
+wgpu = { version = "27", features = ["webgpu", "webgl"] }
 pollster = "0.4"
 env_logger = "0.11"
 log = "0.4"
@@ -51,27 +51,27 @@ web-sys = { version = "0.3", features = [
 ] }
 js-sys = "0.3"
 web-time = "1.1"
-gloo-console = "0.3.0"
-gloo-events = "0.2.0"
-gloo-file = "0.3.0"
-gloo-net = "0.3.1"
-gloo-render = "0.2.0"
-gloo-utils = "0.2.0"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+gloo-console = "0.3"
+gloo-events = "0.2"
+gloo-file = "0.3"
+gloo-net = "0.6"
+gloo-render = "0.2"
+gloo-utils = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 include_dir = "0.7"
 zip = { version = "8.1", default-features = false, features = ["deflate"] }
 base64 = "0.22"
 egui = "0.33"
 egui-wgpu = "0.33"
 rfd = "0.17"
-wgpu-profiler = "0.25.0"
+wgpu-profiler = "0.26"
 image = { version = "0.25", default-features = false, features = ["png"] }
-keyframe = "1.1.1"
+keyframe = "1.1"
 async-trait = "0.1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-rodio = { version = "0.20", features = ["symphonia-all"] }
+rodio = { version = "0.22", features = ["symphonia-all"] }
 symphonia = { version = "0.5", features = ["all"] }
 winit = "0.30"
 egui-winit = "0.33"

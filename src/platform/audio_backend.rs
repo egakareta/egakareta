@@ -139,9 +139,8 @@ impl AudioBackend for WebAudioBackend {
 
 #[cfg(not(target_arch = "wasm32"))]
 struct NativeAudioBackend {
-    _output_stream: Option<rodio::OutputStream>,
-    output_handle: Option<rodio::OutputStreamHandle>,
-    current_sink: Option<rodio::Sink>,
+    _output_device: Option<rodio::MixerDeviceSink>,
+    current_player: Option<rodio::Player>,
     current_audio_source: Option<String>,
     playback_started_at: Option<std::time::Instant>,
     playback_start_offset_seconds: f32,
@@ -151,18 +150,18 @@ struct NativeAudioBackend {
 #[cfg(not(target_arch = "wasm32"))]
 impl NativeAudioBackend {
     fn new() -> Self {
-        let (output_stream, output_handle) = match rodio::OutputStream::try_default() {
-            Ok((stream, handle)) => (Some(stream), Some(handle)),
-            Err(err) => {
-                log::warn!("Failed to initialize native audio output: {}", err);
-                (None, None)
-            }
-        };
+        let output_device =
+            match rodio::DeviceSinkBuilder::from_default_device().and_then(|b| b.open_stream()) {
+                Ok(device) => Some(device),
+                Err(err) => {
+                    log::warn!("Failed to initialize native audio output: {}", err);
+                    None
+                }
+            };
 
         Self {
-            _output_stream: output_stream,
-            output_handle,
-            current_sink: None,
+            _output_device: output_device,
+            current_player: None,
             current_audio_source: None,
             playback_started_at: None,
             playback_start_offset_seconds: 0.0,
@@ -179,31 +178,26 @@ impl NativeAudioBackend {
     ) {
         use std::time::Duration;
 
-        let Some(handle) = &self.output_handle else {
+        let Some(device) = &self._output_device else {
             return;
         };
 
-        let sink = match rodio::Sink::try_new(handle) {
-            Ok(sink) => sink,
-            Err(err) => {
-                log::warn!("Failed to create audio sink for {}: {}", context, err);
-                return;
-            }
-        };
+        let (player, output) = rodio::Player::new();
+        device.mixer().add(output);
 
-        sink.append(decoded);
-        if let Err(err) = sink.try_seek(Duration::from_secs_f32(start_seconds)) {
+        player.append(decoded);
+        if let Err(err) = player.try_seek(Duration::from_secs_f32(start_seconds)) {
             log::warn!(
-                "Failed to seek audio '{}' to {:.3}s: {}",
+                "Failed to seek audio '{}' to {:.3}s: {:?}",
                 context,
                 start_seconds,
                 err
             );
         }
 
-        sink.set_speed(self.playback_speed);
-        sink.play();
-        self.current_sink = Some(sink);
+        player.set_speed(self.playback_speed);
+        player.play();
+        self.current_player = Some(player);
         self.current_audio_source = Some(source_key);
         self.playback_started_at = Some(std::time::Instant::now());
         self.playback_start_offset_seconds = start_seconds;
@@ -213,8 +207,8 @@ impl NativeAudioBackend {
 #[cfg(not(target_arch = "wasm32"))]
 impl AudioBackend for NativeAudioBackend {
     fn stop(&mut self) {
-        if let Some(sink) = &self.current_sink {
-            sink.pause();
+        if let Some(player) = &self.current_player {
+            player.pause();
         }
         self.playback_started_at = None;
         self.playback_start_offset_seconds = 0.0;
@@ -227,16 +221,16 @@ impl AudioBackend for NativeAudioBackend {
     fn seek_and_play(&mut self, start_seconds: f32) {
         use std::time::Duration;
 
-        if let Some(sink) = &self.current_sink {
-            if let Err(err) = sink.try_seek(Duration::from_secs_f32(start_seconds)) {
+        if let Some(player) = &self.current_player {
+            if let Err(err) = player.try_seek(Duration::from_secs_f32(start_seconds)) {
                 log::warn!(
-                    "Failed to seek reused audio to {:.3}s: {}",
+                    "Failed to seek reused audio to {:.3}s: {:?}",
                     start_seconds,
                     err
                 );
             }
-            sink.set_speed(self.playback_speed);
-            sink.play();
+            player.set_speed(self.playback_speed);
+            player.play();
             self.playback_started_at = Some(std::time::Instant::now());
             self.playback_start_offset_seconds = start_seconds;
         }
@@ -249,8 +243,8 @@ impl AudioBackend for NativeAudioBackend {
         bytes: &[u8],
         start_seconds: f32,
     ) {
-        if let Some(sink) = self.current_sink.take() {
-            sink.stop();
+        if let Some(player) = self.current_player.take() {
+            player.stop();
         }
         self.current_audio_source = None;
 
@@ -276,8 +270,8 @@ impl AudioBackend for NativeAudioBackend {
         music_source: &str,
         start_seconds: f32,
     ) {
-        if let Some(sink) = self.current_sink.take() {
-            sink.stop();
+        if let Some(player) = self.current_player.take() {
+            player.stop();
         }
         self.current_audio_source = None;
 
@@ -301,8 +295,8 @@ impl AudioBackend for NativeAudioBackend {
     }
 
     fn playback_time_seconds(&self) -> Option<f32> {
-        let sink = self.current_sink.as_ref()?;
-        if sink.empty() {
+        let player = self.current_player.as_ref()?;
+        if player.empty() {
             return None;
         }
 
@@ -314,9 +308,9 @@ impl AudioBackend for NativeAudioBackend {
     }
 
     fn is_playing(&self) -> bool {
-        self.current_sink
+        self.current_player
             .as_ref()
-            .map(|sink| !sink.empty())
+            .map(|player| !player.empty())
             .unwrap_or(false)
     }
 
@@ -327,8 +321,8 @@ impl AudioBackend for NativeAudioBackend {
             self.playback_started_at = Some(std::time::Instant::now());
         }
         self.playback_speed = speed;
-        if let Some(sink) = &self.current_sink {
-            sink.set_speed(speed);
+        if let Some(player) = &self.current_player {
+            player.set_speed(speed);
         }
     }
 }
