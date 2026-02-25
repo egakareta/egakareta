@@ -119,45 +119,58 @@
         <canvas id="gameCanvas"></canvas>
 
         <script type="module">
+            console.log("modulescript loaded");
             const loading = document.getElementById("loading");
             const loadingText = document.getElementById("loading-text");
             const progressBar = document.querySelector(".progress-fill");
             const errorDiv = document.getElementById("error");
 
-            const fetchWithProgress = async (url) => {
-                const response = await fetch(url);
-                const contentLength = response.headers.get("Content-Length");
-                const total = contentLength ? parseInt(contentLength, 10) : 0;
+            const fetchMultipleWithProgress = async (urls) => {
+                const responses = await Promise.all(
+                    urls.map((url) => fetch(url)),
+                );
+                let total = 0;
                 let loaded = 0;
 
-                const stream = new ReadableStream({
-                    async start(controller) {
-                        const reader = response.body.getReader();
-                        while (true) {
-                            const { done, value } = await reader.read();
-                            if (done) break;
-                            loaded += value.byteLength;
-                            if (total) {
-                                const percent = Math.min(
-                                    100,
-                                    Math.round((loaded / total) * 100),
-                                );
-                                progressBar.style.width = `${percent}%`;
-                                loadingText.textContent = `loading... ${percent}%`;
-                            }
-                            controller.enqueue(value);
-                        }
-                        controller.close();
-                    },
+                responses.forEach((res) => {
+                    const contentLength = res.headers.get("Content-Length");
+                    if (contentLength) {
+                        total += parseInt(contentLength, 10);
+                    }
                 });
 
-                return new Response(stream, {
-                    headers: {
-                        "content-type":
-                            response.headers.get("content-type") ||
-                            "application/wasm",
-                    },
+                const streams = responses.map((res) => {
+                    const stream = new ReadableStream({
+                        async start(controller) {
+                            const reader = res.body.getReader();
+                            while (true) {
+                                const { done, value } = await reader.read();
+                                if (done) break;
+                                loaded += value.byteLength;
+                                if (total) {
+                                    const percent = Math.min(
+                                        100,
+                                        Math.round((loaded / total) * 100),
+                                    );
+                                    progressBar.style.width = `${percent}%`;
+                                    loadingText.textContent = `loading... ${percent}%`;
+                                }
+                                controller.enqueue(value);
+                            }
+                            controller.close();
+                        },
+                    });
+
+                    return new Response(stream, {
+                        headers: {
+                            "content-type":
+                                res.headers.get("content-type") ||
+                                "application/octet-stream",
+                        },
+                    });
                 });
+
+                return streams;
             };
 
             const installWebGpuLimitsCompat = () => {
@@ -214,17 +227,36 @@
             };
 
             try {
+                console.log("starting to load");
                 installWebGpuLimitsCompat();
+                console.log("webgpu limits compatibility patch installed");
+
+                // Fetch both JS and WASM with a combined progress bar
+                const [jsResponse, wasmResponse] =
+                    await fetchMultipleWithProgress([
+                        "./pkg/egakareta_lib.js",
+                        "./pkg/egakareta_lib_bg.wasm",
+                    ]);
+                console.log("both js and wasm fetched");
+
+                // Create an object URL for the JS module so we can import it dynamically
+                const jsBlob = await jsResponse.blob();
+                const jsUrl = URL.createObjectURL(
+                    new Blob([jsBlob], { type: "text/javascript" }),
+                );
 
                 // Import the WebAssembly module
-                const { default: init, run_game } =
-                    await import("./pkg/egakareta_lib.js");
+                const { default: init, run_game } = await import(jsUrl);
+
+                // Clean up the object URL
+                URL.revokeObjectURL(jsUrl);
+
+                console.log("wasm module imported");
 
                 // Initialize WebAssembly
-                const response = await fetchWithProgress(
-                    "./pkg/egakareta_lib_bg.wasm",
-                );
-                await init(response);
+                await init(wasmResponse);
+
+                console.log("wasm module initialized");
 
                 // Run the game
                 await run_game("gameCanvas");
