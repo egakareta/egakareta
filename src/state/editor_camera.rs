@@ -54,31 +54,23 @@ impl EditorSubsystem {
         }
 
         const PAN_SPEED_UNITS_PER_SEC: f32 = 40.0;
-        const KEY_DOLLY_SPEED_UNITS_PER_SEC: f32 = 8.0;
-        self.pan_by_input(
-            input.x * PAN_SPEED_UNITS_PER_SEC * frame_dt * speed_multiplier,
-            input.y * PAN_SPEED_UNITS_PER_SEC * frame_dt * speed_multiplier,
-        );
+        let speed = PAN_SPEED_UNITS_PER_SEC * frame_dt * speed_multiplier;
 
-        self.adjust_zoom(input.y * KEY_DOLLY_SPEED_UNITS_PER_SEC * frame_dt * speed_multiplier);
+        let offset = self.camera_offset();
+        let forward = -offset.normalize();
+
+        let (right_xy, _) = self.camera_axes_xy();
+        let right = Vec3::new(right_xy.x, right_xy.y, 0.0);
+
+        let movement = right * (input.x * speed) + forward * (input.y * speed);
+
+        self.camera.editor_pan[0] += movement.x;
+        self.camera.editor_pan[1] += movement.y;
+        self.camera.editor_target_z += movement.z;
     }
 }
 
 impl State {
-    pub(super) fn anchor_editor_camera_target_z_from_screen(&mut self, x: f64, y: f64) {
-        if self.phase != AppPhase::Editor {
-            return;
-        }
-
-        let viewport_size = Vec2::new(
-            self.render.gpu.config.width as f32,
-            self.render.gpu.config.height as f32,
-        );
-        if let Some(pick) = self.editor.pick_from_screen(x, y, viewport_size) {
-            self.editor.camera.editor_target_z = pick.hit_position[2];
-        }
-    }
-
     pub(super) fn editor_camera_axes_xy(&self) -> (Vec2, Vec2) {
         self.editor.camera_axes_xy()
     }
