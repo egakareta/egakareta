@@ -1,9 +1,26 @@
 {
-    "name": "egakareta Dev Container",
+    "name": "egakareta game dev",
     "build": {
         "dockerfile": "Dockerfile",
         "context": ".."
     },
+    "runArgs": [
+        "--device=/dev/dri",
+        "--device=/dev/snd",
+        "--ipc=host",
+        "--net=host",
+        "--gpus=all"
+    ],
+    "containerEnv": {
+        "DISPLAY": "${localEnv:DISPLAY}",
+        "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}",
+        "XDG_RUNTIME_DIR": "${localEnv:XDG_RUNTIME_DIR}",
+        "PULSE_SERVER": "${localEnv:PULSE_SERVER}"
+    },
+    "mounts": [
+        "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind,consistency=cached",
+        "source=${localEnv:XDG_RUNTIME_DIR},target=${localEnv:XDG_RUNTIME_DIR},type=bind,consistency=cached"
+    ],
     "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
     "customizations": {
         "vscode": {
@@ -18,5 +35,5 @@
     },
     "postCreateCommand": "bun install && bun run build",
     "remoteUser": "root",
-    "forwardPorts": [3000]
+    "forwardPorts": [3000, 54324, 54323, 54321]
 }
