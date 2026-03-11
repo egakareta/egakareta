@@ -8,6 +8,7 @@
         "format": "bun run format:cargo && bun run format:prettier",
         "lint": "cargo clippy -- -D warnings",
         "test": "cargo nextest run",
+        "test:db": "supabase test db",
         "test:coverage": "cargo llvm-cov nextest --lcov --output-path lcov.info",
         "watch": "nodemon --exec \"bun run build\"",
         "serve": "bunx serve .",
