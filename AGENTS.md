@@ -1,6 +1,4 @@
-# Agent Instructions: Egakareta Codebase
-
-Welcome to the `egakareta` repository! This document outlines the project architecture, tooling, style conventions, and workflow to ensure any AI agent or contributor can confidently and safely operate within the codebase.
+# Agent Instructions
 
 ## 1. Project Overview
 
@@ -11,6 +9,7 @@ Welcome to the `egakareta` repository! This document outlines the project archit
 - **egui** for the user interface and level editor toolset.
 - **wasm-pack** to target WebAssembly (`wasm32`) for the web version.
 - **Bun** as the package manager and script runner for frontend/tooling.
+- **Supabase** for backend services.
 
 The application compiles to both Native (desktop) and WebAssembly (browser). You **must** ensure changes preserve this dual compatibility. This is the single most important architectural constraint in the repository.
 
@@ -97,6 +96,7 @@ Understanding the project structure is crucial for idiomatic changes:
 3. **Reference Existing Code:** If implementing UI, review existing `egui` implementations in `src/editor_ui/`. For core mechanics, review `src/game/physics.rs`.
 4. **No Unrelated Formatting Changes:** Never format or refactor code outside the immediate scope of the feature or bug fix. Let `bun run format` handle consistency.
 5. **Security & Integrity:** Never commit secrets, local debug paths, or bypassing comments like `#[allow(dead_code)]` unless absolutely unavoidable and well-justified.
+6. **Overwrite Database:** This project has not been released. If you need to make breaking changes to the database schema, do not worry about migration scripts. You can simply update the schema and reset the database as needed during development.
 
 ---
 
