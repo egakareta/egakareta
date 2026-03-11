@@ -4,3 +4,20 @@ compatibility_date = "2026-02-24"
 
 [vars]
 SKIP_DEPENDENCY_INSTALL = "true"
+
+[[r2_buckets]]
+binding = "BEATMAP_AUDIO"
+bucket_name = "beatmap-audio"
+
+[[r2_buckets]]
+binding = "BEATMAP_DATA"
+bucket_name = "beatmap-data"
+
+[env.preview]
+[[env.preview.r2_buckets]]
+binding = "BEATMAP_AUDIO"
+bucket_name = "beatmap-audio-preview"
+
+[[env.preview.r2_buckets]]
+binding = "BEATMAP_DATA"
+bucket_name = "beatmap-data-preview"

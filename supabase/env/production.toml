@@ -1,0 +1,11 @@
+[auth]
+site_url = "https://egakareta.com"
+
+[auth.email.smtp]
+enabled = true
+host = "smtp.resend.com"
+port = 465
+user = "resend"
+pass = "env(RESEND_API_KEY)"
+admin_email = "team@egakareta.com"
+sender_name = "egakareta"
