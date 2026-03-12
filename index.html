@@ -22,8 +22,6 @@
 
             canvas {
                 display: block;
-                width: 100vw;
-                height: 100vh;
                 user-select: none;
                 -webkit-user-drag: none;
                 -khtml-user-drag: none;
@@ -260,7 +258,7 @@
                 console.log("wasm module initialized");
 
                 // Run the game
-                await run_game("gameCanvas");
+                await run_game();
 
                 // Hide loading and start the game
                 loading.style.display = "none";

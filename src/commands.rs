@@ -180,7 +180,7 @@ pub(crate) enum AppCommand {
 
 /// Unified input event produced by platform adapters.
 ///
-/// Both `native_runtime` and `web_runtime` translate their raw
+/// Platform runtimes translate their raw
 /// platform events into `InputEvent`s, which `State` processes
 /// through a single code-path.
 #[derive(Debug, Clone)]

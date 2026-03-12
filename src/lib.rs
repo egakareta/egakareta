@@ -25,8 +25,8 @@ pub use editor_ui::{
 pub use platform::input_mapping::{
     key_str_from_winit, mouse_button_index_from_winit, zoom_delta_from_winit,
 };
+#[cfg(target_arch = "wasm32")]
+pub use platform::native_runtime::run_game;
 #[cfg(not(target_arch = "wasm32"))]
 pub use platform::native_runtime::run_native_app;
-#[cfg(target_arch = "wasm32")]
-pub use platform::web_runtime::run_game;
 pub use state::State;

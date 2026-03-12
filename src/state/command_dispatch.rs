@@ -594,6 +594,27 @@ mod tests {
     }
 
     #[test]
+    fn test_resize_routing() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            let new_width = 1280;
+            let new_height = 720;
+
+            state.process_input_event(crate::commands::InputEvent::Resize {
+                width: new_width,
+                height: new_height,
+            });
+
+            assert_eq!(state.render.gpu.config.width, new_width);
+            assert_eq!(state.render.gpu.config.height, new_height);
+        });
+    }
+
+    #[test]
     fn test_command_routing_editor_ops() {
         pollster::block_on(async {
             let mut state = match State::new_test().await {
