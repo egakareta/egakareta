@@ -228,21 +228,27 @@ pub(crate) fn show_waveform_panel(
         // Waveform drawing
         const WAVEFORM_WINDOW: usize = 256;
         let samples_per_second = sample_rate as f32 / WAVEFORM_WINDOW as f32;
-        let start_sample = (view_start * samples_per_second) as usize;
-        let end_sample = ((view_end * samples_per_second) as usize).min(waveform_samples.len());
+        let pixels_per_second = rect.width() / visible_duration;
+
+        let start_sample = (view_start * samples_per_second).floor().max(0.0) as usize;
+        let end_sample = (view_end * samples_per_second).ceil().max(0.0) as usize;
+        let end_sample = end_sample.min(waveform_samples.len());
 
         if end_sample > start_sample {
             let waveform_color = egui::Color32::from_rgba_premultiplied(100, 160, 255, 120);
             let center_y = rect.center().y;
             let half_height = rect.height() * 0.4;
 
-            let pixel_per_sample = rect.width() / (end_sample - start_sample).max(1) as f32;
+            let pixel_per_sample = pixels_per_second / samples_per_second;
 
             for (idx, &amplitude) in waveform_samples[start_sample..end_sample]
                 .iter()
                 .enumerate()
             {
-                let x = rect.left() + idx as f32 * pixel_per_sample;
+                let sample_idx = start_sample + idx;
+                let sample_time = sample_idx as f32 / samples_per_second;
+                let x = rect.left() + (sample_time - view_start) * pixels_per_second;
+
                 let amplitude = amplitude.clamp(0.0, 1.0);
                 let bar_height = amplitude * half_height;
 
