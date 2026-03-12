@@ -73,7 +73,7 @@ impl EditorSubsystem {
             return;
         }
 
-        const ROTATE_SPEED: f32 = 0.008;
+        const ROTATE_SPEED: f32 = 0.004;
         const PITCH_SPEED: f32 = 0.006;
 
         if phase == AppPhase::Editor {
