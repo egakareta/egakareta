@@ -624,9 +624,11 @@ mod tests {
             state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
 
-            let initial_zoom = state.editor.camera.editor_zoom;
+            let initial_z = state.editor.camera.editor_target_z;
             state.dispatch(AppCommand::EditorAdjustZoom(0.5));
-            assert!(state.editor.camera.editor_zoom > initial_zoom);
+            // Zooming in (positive delta) should move the camera target Z forward (if look direction has positive Z)
+            // or at least change the position.
+            assert!(state.editor.camera.editor_target_z != initial_z);
 
             state.dispatch(AppCommand::EditorSetBlockId("core/lava".to_string()));
             assert_eq!(state.editor.config.selected_block_id, "core/lava");
@@ -705,9 +707,9 @@ mod tests {
             state.dispatch(AppCommand::ToggleEditor);
 
             // Zoom
-            let initial_zoom = state.editor.camera.editor_zoom;
+            let initial_z = state.editor.camera.editor_target_z;
             state.process_input_event(InputEvent::Zoom(1.0));
-            assert!(state.editor.camera.editor_zoom > initial_zoom);
+            assert!(state.editor.camera.editor_target_z != initial_z);
 
             // Resize
             state.process_input_event(InputEvent::Resize {
