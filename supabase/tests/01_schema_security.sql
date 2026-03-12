@@ -1,5 +1,5 @@
 begin;
-select plan(21);
+select plan(20);
 select ok(
         exists (
             select 1
