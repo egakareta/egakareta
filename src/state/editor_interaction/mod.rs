@@ -4,7 +4,7 @@ mod gizmo;
 mod picking;
 mod selection;
 
-use crate::types::{LevelObject, SpawnMetadata};
+use crate::types::{CameraKeypoint, LevelObject, SpawnMetadata};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EditorInteractionChange {
@@ -73,6 +73,8 @@ pub(crate) struct EditorHistorySnapshot {
     pub(crate) tap_times: Vec<f32>,
     pub(crate) tap_indicator_positions: Vec<[f32; 3]>,
     pub(crate) timing_points: Vec<crate::types::TimingPoint>,
+    pub(crate) camera_keypoints: Vec<CameraKeypoint>,
+    pub(crate) selected_camera_keypoint_index: Option<usize>,
 }
 
 #[derive(Clone)]

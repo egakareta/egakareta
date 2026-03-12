@@ -45,6 +45,38 @@ fn is_default_timeline_duration_seconds(value: &f32) -> bool {
     (value - default_timeline_duration_seconds()).abs() <= 1e-6
 }
 
+fn default_camera_keypoint_target_position() -> [f32; 3] {
+    [0.0, 0.0, 0.0]
+}
+
+fn is_default_camera_keypoint_target_position(value: &[f32; 3]) -> bool {
+    value.iter().all(|component| component.abs() <= 1e-6)
+}
+
+fn default_camera_keypoint_rotation() -> f32 {
+    -45.0f32.to_radians()
+}
+
+fn is_default_camera_keypoint_rotation(value: &f32) -> bool {
+    (*value - default_camera_keypoint_rotation()).abs() <= 1e-6
+}
+
+fn default_camera_keypoint_pitch() -> f32 {
+    45.0f32.to_radians()
+}
+
+fn is_default_camera_keypoint_pitch(value: &f32) -> bool {
+    (*value - default_camera_keypoint_pitch()).abs() <= 1e-6
+}
+
+fn default_camera_keypoint_zoom() -> f32 {
+    1.0
+}
+
+fn is_default_camera_keypoint_zoom(value: &f32) -> bool {
+    (*value - 1.0).abs() <= 1e-6
+}
+
 fn default_block_rotation_degrees() -> f32 {
     0.0
 }
@@ -196,6 +228,61 @@ fn is_default_time_signature_denominator(value: &u32) -> bool {
     *value == 4
 }
 
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum CameraKeypointMode {
+    Follow,
+    #[default]
+    Static,
+}
+
+fn is_default_camera_keypoint_mode(value: &CameraKeypointMode) -> bool {
+    matches!(value, CameraKeypointMode::Static)
+}
+
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum CameraKeypointEasing {
+    #[default]
+    Linear,
+    EaseIn,
+    EaseOut,
+    EaseInOut,
+}
+
+fn is_default_camera_keypoint_easing(value: &CameraKeypointEasing) -> bool {
+    matches!(value, CameraKeypointEasing::Linear)
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+pub(crate) struct CameraKeypoint {
+    pub(crate) time_seconds: f32,
+    #[serde(default, skip_serializing_if = "is_default_camera_keypoint_mode")]
+    pub(crate) mode: CameraKeypointMode,
+    #[serde(default, skip_serializing_if = "is_default_camera_keypoint_easing")]
+    pub(crate) easing: CameraKeypointEasing,
+    #[serde(
+        default = "default_camera_keypoint_target_position",
+        skip_serializing_if = "is_default_camera_keypoint_target_position"
+    )]
+    pub(crate) target_position: [f32; 3],
+    #[serde(
+        default = "default_camera_keypoint_rotation",
+        skip_serializing_if = "is_default_camera_keypoint_rotation"
+    )]
+    pub(crate) rotation: f32,
+    #[serde(
+        default = "default_camera_keypoint_pitch",
+        skip_serializing_if = "is_default_camera_keypoint_pitch"
+    )]
+    pub(crate) pitch: f32,
+    #[serde(
+        default = "default_camera_keypoint_zoom",
+        skip_serializing_if = "is_default_camera_keypoint_zoom"
+    )]
+    pub(crate) zoom: f32,
+}
+
 #[derive(Deserialize, Serialize, Clone)]
 /// Represents the metadata for a level, including music, spawn, timing, and objects.
 /// This struct is serialized to/from JSON for level files.
@@ -224,6 +311,8 @@ pub(crate) struct LevelMetadata {
         skip_serializing_if = "is_default_timeline_duration_seconds"
     )]
     pub(crate) timeline_duration_seconds: f32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) camera_keypoints: Vec<CameraKeypoint>,
     #[serde(default, rename = "taps", skip_serializing)]
     pub(crate) legacy_taps: Vec<u32>,
     #[serde(default, rename = "timeline_step", skip_serializing)]
@@ -244,6 +333,7 @@ impl LevelMetadata {
         timing_points: Vec<TimingPoint>,
         timeline_time_seconds: f32,
         timeline_duration_seconds: f32,
+        camera_keypoints: Vec<CameraKeypoint>,
         objects: Vec<LevelObject>,
     ) -> Self {
         Self {
@@ -255,6 +345,7 @@ impl LevelMetadata {
             timing_points,
             timeline_time_seconds,
             timeline_duration_seconds,
+            camera_keypoints,
             legacy_taps: Vec::new(),
             legacy_timeline_step: 0,
             objects,
@@ -482,7 +573,11 @@ pub(crate) struct ColorSpaceUniform {
 
 #[cfg(test)]
 mod tests {
-    use super::{LevelMetadata, LevelObject, MusicMetadata, SpawnDirection, SpawnMetadata};
+    use super::{
+        default_camera_keypoint_pitch, default_camera_keypoint_rotation,
+        default_camera_keypoint_zoom, CameraKeypoint, CameraKeypointEasing, CameraKeypointMode,
+        LevelMetadata, LevelObject, MusicMetadata, SpawnDirection, SpawnMetadata,
+    };
     use serde_json::json;
 
     #[test]
@@ -549,6 +644,7 @@ mod tests {
             Vec::new(),
             0.0,
             16.0,
+            Vec::new(),
             vec![LevelObject {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
@@ -567,6 +663,7 @@ mod tests {
         assert!(value.get("tap_times").is_none());
         assert!(value.get("timeline_time_seconds").is_none());
         assert!(value.get("timeline_duration_seconds").is_none());
+        assert!(value.get("camera_keypoints").is_none());
         assert!(value.get("taps").is_none());
         assert!(value.get("timeline_step").is_none());
         assert_eq!(value["objects"].as_array().map(|v| v.len()), Some(1));
@@ -576,5 +673,27 @@ mod tests {
         assert!(object.get("rotation_degrees").is_none());
         assert!(object.get("roundness").is_none());
         assert!(object.get("block_id").is_none());
+    }
+
+    #[test]
+    fn camera_keypoint_serialization_omits_default_pose_fields() {
+        let keypoint = CameraKeypoint {
+            time_seconds: 2.5,
+            mode: CameraKeypointMode::Follow,
+            easing: CameraKeypointEasing::EaseInOut,
+            target_position: [0.0, 0.0, 0.0],
+            rotation: default_camera_keypoint_rotation(),
+            pitch: default_camera_keypoint_pitch(),
+            zoom: default_camera_keypoint_zoom(),
+        };
+
+        let value = serde_json::to_value(&keypoint).expect("serialize camera keypoint");
+        let expected = json!({
+            "time_seconds": 2.5,
+            "mode": "follow",
+            "easing": "ease_in_out"
+        });
+
+        assert_eq!(value, expected);
     }
 }

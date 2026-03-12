@@ -2,7 +2,7 @@ use crate::block_repository::all_placeable_blocks;
 use crate::commands::AppCommand;
 use crate::editor_ui::components::{MAX_TIMELINE_DURATION_SECONDS, MIN_TIMELINE_DURATION_SECONDS};
 use crate::state::EditorUiViewModel;
-use crate::types::{EditorMode, SpawnDirection};
+use crate::types::{CameraKeypointEasing, CameraKeypointMode, EditorMode, SpawnDirection};
 
 pub(crate) fn show_compose_mode_bottom_panel(
     ui: &mut egui::Ui,
@@ -186,6 +186,189 @@ pub(crate) fn show_compose_mode_bottom_panel(
         }
     });
 
+    ui.separator();
+
+    ui.collapsing("Camera Track", |ui| {
+        ui.horizontal(|ui| {
+            if ui.button("Add at playhead (Shift+K)").clicked() {
+                commands.push(AppCommand::EditorAddCameraKeypoint);
+            }
+
+            if let Some(selected_idx) = view.camera_selected_index {
+                if ui.button("Remove").clicked() {
+                    commands.push(AppCommand::EditorRemoveCameraKeypoint(selected_idx));
+                }
+                if ui.button("Use current camera").clicked() {
+                    commands.push(AppCommand::EditorCaptureSelectedCameraKeypoint);
+                }
+                if ui.button("Jump editor camera").clicked() {
+                    commands.push(AppCommand::EditorApplySelectedCameraKeypoint);
+                }
+                if let Some(selected_keypoint) = view.camera_keypoints.get(selected_idx).cloned() {
+                    if ui.button("Use playhead time").clicked() {
+                        let mut updated = selected_keypoint;
+                        updated.time_seconds = view.timeline_time_seconds;
+                        commands.push(AppCommand::EditorUpdateCameraKeypoint(
+                            selected_idx,
+                            updated,
+                        ));
+                    }
+                }
+            }
+        });
+
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                ui.label("Keypoints:");
+                egui::ScrollArea::vertical()
+                    .max_height(110.0)
+                    .show(ui, |ui| {
+                        for (index, keypoint) in view.camera_keypoints.iter().enumerate() {
+                            let label = format!(
+                                "#{}: {:.2}s | {} | {}",
+                                index + 1,
+                                keypoint.time_seconds,
+                                match keypoint.mode {
+                                    CameraKeypointMode::Follow => "Follow",
+                                    CameraKeypointMode::Static => "Static",
+                                },
+                                match keypoint.easing {
+                                    CameraKeypointEasing::Linear => "Linear",
+                                    CameraKeypointEasing::EaseIn => "Ease In",
+                                    CameraKeypointEasing::EaseOut => "Ease Out",
+                                    CameraKeypointEasing::EaseInOut => "Ease In/Out",
+                                }
+                            );
+                            if ui
+                                .selectable_label(view.camera_selected_index == Some(index), label)
+                                .clicked()
+                            {
+                                commands.push(AppCommand::EditorSetCameraKeypointSelected(Some(index)));
+                            }
+                        }
+
+                        if view.camera_keypoints.is_empty() {
+                            ui.label("No camera keypoints yet.");
+                        }
+                    });
+            });
+
+            ui.separator();
+
+            ui.vertical(|ui| {
+                if let Some(selected_idx) = view.camera_selected_index {
+                    if let Some(selected_keypoint) = view.camera_keypoints.get(selected_idx).cloned() {
+                        let mut keypoint = selected_keypoint;
+                        ui.label(format!("Editing Camera Keypoint #{}", selected_idx + 1));
+
+                        let mut changed = false;
+
+                        ui.horizontal(|ui| {
+                            ui.label("Time:");
+                            changed |= ui
+                                .add(
+                                    egui::DragValue::new(&mut keypoint.time_seconds)
+                                        .speed(0.01)
+                                        .range(0.0..=view.timeline_duration_seconds.max(0.1)),
+                                )
+                                .changed();
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label("Mode:");
+                            let mut mode = keypoint.mode;
+                            egui::ComboBox::from_id_salt("camera_keypoint_mode")
+                                .selected_text(match mode {
+                                    CameraKeypointMode::Follow => "Follow",
+                                    CameraKeypointMode::Static => "Static",
+                                })
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(&mut mode, CameraKeypointMode::Follow, "Follow");
+                                    ui.selectable_value(&mut mode, CameraKeypointMode::Static, "Static");
+                                });
+                            if mode != keypoint.mode {
+                                keypoint.mode = mode;
+                                changed = true;
+                            }
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label("Easing:");
+                            let mut easing = keypoint.easing;
+                            egui::ComboBox::from_id_salt("camera_keypoint_easing")
+                                .selected_text(match easing {
+                                    CameraKeypointEasing::Linear => "Linear",
+                                    CameraKeypointEasing::EaseIn => "Ease In",
+                                    CameraKeypointEasing::EaseOut => "Ease Out",
+                                    CameraKeypointEasing::EaseInOut => "Ease In/Out",
+                                })
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(&mut easing, CameraKeypointEasing::Linear, "Linear");
+                                    ui.selectable_value(&mut easing, CameraKeypointEasing::EaseIn, "Ease In");
+                                    ui.selectable_value(&mut easing, CameraKeypointEasing::EaseOut, "Ease Out");
+                                    ui.selectable_value(&mut easing, CameraKeypointEasing::EaseInOut, "Ease In/Out");
+                                });
+                            if easing != keypoint.easing {
+                                keypoint.easing = easing;
+                                changed = true;
+                            }
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label("Target:");
+                            changed |= ui
+                                .add(egui::DragValue::new(&mut keypoint.target_position[0]).prefix("X "))
+                                .changed();
+                            changed |= ui
+                                .add(egui::DragValue::new(&mut keypoint.target_position[1]).prefix("Y "))
+                                .changed();
+                            changed |= ui
+                                .add(egui::DragValue::new(&mut keypoint.target_position[2]).prefix("Z "))
+                                .changed();
+                        });
+
+                        let mut rotation_degrees = keypoint.rotation.to_degrees();
+                        let mut pitch_degrees = keypoint.pitch.to_degrees();
+                        ui.horizontal(|ui| {
+                            ui.label("Orientation:");
+                            if ui
+                                .add(egui::DragValue::new(&mut rotation_degrees).speed(0.5).prefix("Rot ").suffix("°"))
+                                .changed()
+                            {
+                                keypoint.rotation = rotation_degrees.to_radians();
+                                changed = true;
+                            }
+                            if ui
+                                .add(egui::DragValue::new(&mut pitch_degrees).speed(0.5).prefix("Pitch ").suffix("°"))
+                                .changed()
+                            {
+                                keypoint.pitch = pitch_degrees.to_radians();
+                                changed = true;
+                            }
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label("Zoom:");
+                            changed |= ui
+                                .add(egui::DragValue::new(&mut keypoint.zoom).speed(0.01).range(0.01..=10.0))
+                                .changed();
+                        });
+
+                        if keypoint.mode == CameraKeypointMode::Follow {
+                            ui.label("Follow blends toward the live player-follow camera during this segment.");
+                        }
+
+                        if changed {
+                            commands.push(AppCommand::EditorUpdateCameraKeypoint(selected_idx, keypoint));
+                        }
+                    }
+                } else {
+                    ui.label("Select a camera keypoint to edit it.");
+                }
+            });
+        });
+    });
+
     let position = view.timeline_preview_position;
     let direction = view.timeline_preview_direction;
     let direction_label = match direction {
@@ -199,8 +382,18 @@ pub(crate) fn show_compose_mode_bottom_panel(
         ));
         ui.separator();
         ui.label(format!(
-            "Camera: ({:.1}, {:.1}, {:.1})",
+            "Editor Camera: ({:.1}, {:.1}, {:.1})",
             view.camera_position[0], view.camera_position[1], view.camera_position[2]
+        ));
+        ui.separator();
+        ui.label(format!(
+            "Timeline Camera: ({:.1}, {:.1}, {:.1}) -> ({:.1}, {:.1}, {:.1})",
+            view.camera_preview_position[0],
+            view.camera_preview_position[1],
+            view.camera_preview_position[2],
+            view.camera_preview_target[0],
+            view.camera_preview_target[1],
+            view.camera_preview_target[2],
         ));
         ui.separator();
         ui.label(format!("FPS: {:.0}", view.fps));

@@ -31,6 +31,7 @@ impl CachedBlockBehavior {
 pub(crate) struct GameState {
     pub(crate) position: [f32; 3],
     pub(crate) direction: Direction,
+    pub(crate) elapsed_seconds: f32,
     pub(crate) speed: f32,
     pub(crate) trail_segments: Vec<Vec<[f32; 3]>>,
     pub(crate) objects: Vec<LevelObject>,
@@ -60,6 +61,7 @@ impl GameState {
         Self {
             position: [0.0, 0.0, 0.0],
             direction: Direction::Forward,
+            elapsed_seconds: 0.0,
             speed: BASE_PLAYER_SPEED,
             trail_segments: vec![vec![[0.0, 0.0, 0.0]]],
             objects: Vec::new(),
@@ -90,6 +92,7 @@ impl GameState {
         let centered_position = center_spawn_position(position);
         self.position = centered_position;
         self.direction = direction.into();
+        self.elapsed_seconds = 0.0;
         self.speed = BASE_PLAYER_SPEED;
         self.vertical_velocity = 0.0;
         self.is_grounded = true;
@@ -138,6 +141,8 @@ impl GameState {
         if !self.started {
             return;
         }
+
+        self.elapsed_seconds += dt.max(0.0);
 
         const GRAVITY: f32 = 26.0;
         const MAX_FALL_SPEED: f32 = 40.0;

@@ -4,7 +4,9 @@ use crate::editor_domain::{
 };
 use crate::game::TimelineSimulationRuntime;
 use crate::platform::state_host::PlatformInstant;
-use crate::types::{AppPhase, EditorMode, LevelObject, SpawnDirection, TimingPoint};
+use crate::types::{
+    AppPhase, CameraKeypoint, EditorMode, LevelObject, SpawnDirection, TimingPoint,
+};
 
 impl EditorSubsystem {
     pub(crate) fn perf_record(&mut self, stage: PerfStage, started_at: PlatformInstant) {
@@ -868,12 +870,69 @@ impl State {
         });
     }
 
+    pub(crate) fn editor_add_camera_keypoint(&mut self) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        self.record_editor_history_state();
+        self.editor.add_camera_keypoint();
+    }
+
+    pub(crate) fn editor_remove_camera_keypoint(&mut self, index: usize) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        self.record_editor_history_state();
+        self.editor.remove_camera_keypoint(index);
+    }
+
+    pub(crate) fn set_editor_camera_keypoint_selected(&mut self, selected: Option<usize>) {
+        if self.phase == AppPhase::Editor {
+            self.editor.set_camera_keypoint_selected(selected);
+        }
+    }
+
+    pub(crate) fn editor_update_camera_keypoint(&mut self, index: usize, keypoint: CameraKeypoint) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        self.record_editor_history_state();
+        self.editor.update_camera_keypoint(index, keypoint);
+    }
+
+    pub(crate) fn editor_capture_selected_camera_keypoint(&mut self) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        self.record_editor_history_state();
+        self.editor.capture_selected_camera_keypoint();
+    }
+
+    pub(crate) fn editor_apply_selected_camera_keypoint(&mut self) {
+        if self.phase == AppPhase::Editor {
+            self.editor
+                .apply_selected_camera_keypoint_to_editor_camera();
+        }
+    }
+
     pub(crate) fn editor_timeline_preview(&self) -> ([f32; 3], SpawnDirection) {
         self.editor.timeline_preview()
     }
 
     pub(crate) fn editor_timing_points(&self) -> &[TimingPoint] {
         self.editor.timing_points()
+    }
+
+    pub(crate) fn editor_camera_keypoints(&self) -> &[CameraKeypoint] {
+        self.editor.camera_keypoints()
+    }
+
+    pub(crate) fn editor_selected_camera_keypoint_index(&self) -> Option<usize> {
+        self.editor.selected_camera_keypoint_index()
     }
 
     pub(crate) fn editor_playback_speed(&self) -> f32 {

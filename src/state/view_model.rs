@@ -1,5 +1,7 @@
 use super::{PerfOverlayEntry, State};
-use crate::types::{EditorMode, LevelObject, MusicMetadata, SpawnDirection, TimingPoint};
+use crate::types::{
+    CameraKeypoint, EditorMode, LevelObject, MusicMetadata, SpawnDirection, TimingPoint,
+};
 
 pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) mode: EditorMode,
@@ -26,7 +28,11 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) waveform_samples: &'a [f32],
     pub(crate) waveform_sample_rate: u32,
     pub(crate) bpm_tap_result: Option<f32>,
+    pub(crate) camera_keypoints: &'a [CameraKeypoint],
+    pub(crate) camera_selected_index: Option<usize>,
     pub(crate) camera_position: [f32; 3],
+    pub(crate) camera_preview_position: [f32; 3],
+    pub(crate) camera_preview_target: [f32; 3],
     pub(crate) camera_rotation: f32,
     pub(crate) camera_pitch: f32,
     pub(crate) fps: f32,
@@ -58,6 +64,7 @@ impl State {
             self.editor.camera.editor_target_z,
         );
         let camera_position = (camera_target + self.editor.camera_offset()).to_array();
+        let (camera_preview_position, camera_preview_target) = self.editor_preview_camera_view();
 
         EditorUiViewModel {
             mode: self.editor_mode(),
@@ -84,7 +91,11 @@ impl State {
             waveform_samples: self.editor_waveform_samples(),
             waveform_sample_rate: self.editor_waveform_sample_rate(),
             bpm_tap_result: self.editor_bpm_tap_result(),
+            camera_keypoints: self.editor_camera_keypoints(),
+            camera_selected_index: self.editor_selected_camera_keypoint_index(),
             camera_position,
+            camera_preview_position,
+            camera_preview_target,
             camera_rotation: self.editor.camera.editor_rotation,
             camera_pitch: self.editor.camera.editor_pitch,
             fps: self.editor_fps(),

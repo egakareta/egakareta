@@ -21,6 +21,8 @@ impl EditorSubsystem {
             tap_times: self.timeline.taps.tap_times.clone(),
             tap_indicator_positions: self.timeline.taps.tap_indicator_positions.clone(),
             timing_points: self.timing.timing_points.clone(),
+            camera_keypoints: self.camera.keypoints.clone(),
+            selected_camera_keypoint_index: self.camera.selected_keypoint_index,
         }
     }
 
@@ -54,6 +56,10 @@ impl EditorSubsystem {
         self.timeline.taps.tap_times = snapshot.tap_times;
         self.timeline.taps.tap_indicator_positions = snapshot.tap_indicator_positions;
         self.timing.timing_points = snapshot.timing_points;
+        self.camera.keypoints = snapshot.camera_keypoints;
+        self.camera.selected_keypoint_index = snapshot
+            .selected_camera_keypoint_index
+            .filter(|index| *index < self.camera.keypoints.len());
 
         self.timeline
             .taps
@@ -79,6 +85,12 @@ impl EditorSubsystem {
             .clock
             .time_seconds
             .min(self.timeline.clock.duration_seconds);
+        self.camera
+            .keypoints
+            .retain(|keypoint| keypoint.time_seconds.is_finite());
+        self.camera
+            .keypoints
+            .sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
 
         self.runtime.interaction.gizmo_drag = None;
         self.runtime.interaction.block_drag = None;

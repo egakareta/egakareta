@@ -106,6 +106,18 @@ pub(crate) enum AppCommand {
     EditorAdjustZoom(f32),
     /// Snap the editor camera to an absolute orientation in radians.
     EditorSetCameraOrientation { rotation: f32, pitch: f32 },
+    /// Capture a new camera keypoint from the current editor camera at the playhead.
+    EditorAddCameraKeypoint,
+    /// Remove a camera keypoint by index.
+    EditorRemoveCameraKeypoint(usize),
+    /// Select or deselect a camera keypoint in the UI.
+    EditorSetCameraKeypointSelected(Option<usize>),
+    /// Replace an existing camera keypoint.
+    EditorUpdateCameraKeypoint(usize, crate::types::CameraKeypoint),
+    /// Overwrite the selected camera keypoint pose from the current editor camera.
+    EditorCaptureSelectedCameraKeypoint,
+    /// Snap the editor viewport to the selected camera keypoint.
+    EditorApplySelectedCameraKeypoint,
 
     // ── Editor – misc ───────────────────────────────────────────────
     /// Toggle the performance overlay.

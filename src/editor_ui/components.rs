@@ -152,6 +152,31 @@ pub(crate) fn show_timeline_bar(
             }
         }
 
+        // Draw camera keypoint markers near the top edge.
+        for (index, keypoint) in view.camera_keypoints.iter().enumerate() {
+            if keypoint.time_seconds < view_start || keypoint.time_seconds > view_end {
+                continue;
+            }
+
+            let x = rect.left()
+                + (keypoint.time_seconds - view_start) / visible_duration * rect.width();
+            let fill = match keypoint.mode {
+                crate::types::CameraKeypointMode::Follow => egui::Color32::from_rgb(110, 210, 140),
+                crate::types::CameraKeypointMode::Static => egui::Color32::from_rgb(255, 210, 90),
+            };
+            let stroke = if view.camera_selected_index == Some(index) {
+                egui::Stroke::new(2.0, egui::Color32::WHITE)
+            } else {
+                egui::Stroke::new(1.0, egui::Color32::from_rgba_premultiplied(20, 24, 30, 220))
+            };
+            let points = vec![
+                egui::pos2(x, rect.top() + 2.0),
+                egui::pos2(x - 5.0, rect.top() + 10.0),
+                egui::pos2(x + 5.0, rect.top() + 10.0),
+            ];
+            painter.add(egui::Shape::convex_polygon(points, fill, stroke));
+        }
+
         // Draw playhead
         if view.timeline_time_seconds >= view_start && view.timeline_time_seconds <= view_end {
             let current_x = rect.left()
@@ -194,6 +219,43 @@ pub(crate) fn show_timeline_bar(
                 let zoom_factor = 1.0 + scroll_delta.y * 0.002;
                 let new_zoom = (timeline_zoom * zoom_factor).clamp(0.1, 10.0);
                 commands.push(AppCommand::EditorSetWaveformZoom(new_zoom));
+            }
+        }
+
+        if response.clicked_by(egui::PointerButton::Primary) {
+            if let Some(pointer) = response.interact_pointer_pos() {
+                let mut nearest_camera_index = None;
+                let mut nearest_distance = f32::INFINITY;
+
+                for (index, keypoint) in view.camera_keypoints.iter().enumerate() {
+                    if keypoint.time_seconds < view_start || keypoint.time_seconds > view_end {
+                        continue;
+                    }
+
+                    let x = rect.left()
+                        + (keypoint.time_seconds - view_start) / visible_duration * rect.width();
+                    let distance = (x - pointer.x).abs();
+                    if distance < nearest_distance {
+                        nearest_distance = distance;
+                        nearest_camera_index = Some(index);
+                    }
+                }
+
+                if let Some(index) = nearest_camera_index.filter(|_| nearest_distance <= 8.0) {
+                    commands.push(AppCommand::EditorSetCameraKeypointSelected(Some(index)));
+                    commands.push(AppCommand::EditorSetTimelineTime(
+                        view.camera_keypoints[index]
+                            .time_seconds
+                            .clamp(0.0, duration_seconds),
+                    ));
+                } else {
+                    let normalized_x = ((pointer.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
+                    let clicked_time = view_start + normalized_x * visible_duration;
+                    commands.push(AppCommand::EditorSetCameraKeypointSelected(None));
+                    commands.push(AppCommand::EditorSetTimelineTime(
+                        clicked_time.clamp(0.0, duration_seconds),
+                    ));
+                }
             }
         }
     });

@@ -394,14 +394,7 @@ impl State {
         );
 
         let aspect = self.render.gpu.config.width as f32 / self.render.gpu.config.height as f32;
-        let pos_3d = Vec3::new(
-            self.gameplay.state.position[0],
-            self.gameplay.state.position[1],
-            self.gameplay.state.position[2],
-        );
-        let target = pos_3d;
-        let offset = self.playing_camera_offset();
-        let eye = pos_3d + offset;
+        let (eye, target) = self.playing_camera_view();
         let up = Vec3::new(0.0, 0.0, 1.0);
         let view = Mat4::look_at_rh(eye, target, up);
         let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);

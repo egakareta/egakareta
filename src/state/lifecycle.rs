@@ -472,6 +472,8 @@ impl State {
                     editor_zoom: 1.0,
                     playing_rotation: -45.0f32.to_radians(),
                     playing_pitch: 45.0f32.to_radians(),
+                    keypoints: Vec::new(),
+                    selected_keypoint_index: None,
                 },
                 timeline: EditorTimelineState::new(),
                 runtime: EditorRuntimeState {

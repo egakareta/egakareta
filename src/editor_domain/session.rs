@@ -1,5 +1,7 @@
 use crate::game::BASE_PLAYER_SPEED;
-use crate::types::{LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata, TimingPoint};
+use crate::types::{
+    CameraKeypoint, LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata, TimingPoint,
+};
 
 pub(crate) struct EditorSessionInit {
     pub(crate) objects: Vec<LevelObject>,
@@ -9,6 +11,7 @@ pub(crate) struct EditorSessionInit {
     pub(crate) timing_points: Vec<TimingPoint>,
     pub(crate) timeline_time_seconds: f32,
     pub(crate) timeline_duration_seconds: f32,
+    pub(crate) camera_keypoints: Vec<CameraKeypoint>,
     pub(crate) cursor: [f32; 3],
     pub(crate) camera_pan: [f32; 2],
 }
@@ -24,6 +27,7 @@ pub(crate) fn editor_session_init_from_metadata(
         timing_points,
         mut timeline_time_seconds,
         timeline_duration_seconds,
+        mut camera_keypoints,
         legacy_taps,
         legacy_timeline_step,
     ) = if let Some(metadata) = metadata {
@@ -35,6 +39,7 @@ pub(crate) fn editor_session_init_from_metadata(
             metadata.timing_points,
             metadata.timeline_time_seconds,
             metadata.timeline_duration_seconds,
+            metadata.camera_keypoints,
             metadata.legacy_taps,
             metadata.legacy_timeline_step,
         )
@@ -47,6 +52,7 @@ pub(crate) fn editor_session_init_from_metadata(
             Vec::new(),
             0.0,
             16.0,
+            Vec::new(),
             Vec::new(),
             0,
         )
@@ -70,6 +76,8 @@ pub(crate) fn editor_session_init_from_metadata(
 
     tap_times.retain(|tap| tap.is_finite() && *tap >= 0.0);
     tap_times.sort_by(f32::total_cmp);
+    camera_keypoints.retain(|keypoint| keypoint.time_seconds.is_finite());
+    camera_keypoints.sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
     let cursor = cursor_from_objects(&objects);
     let camera_pan = camera_pan_from_cursor(cursor);
 
@@ -81,6 +89,7 @@ pub(crate) fn editor_session_init_from_metadata(
         timing_points,
         timeline_time_seconds,
         timeline_duration_seconds: timeline_duration_seconds.max(0.1),
+        camera_keypoints,
         cursor,
         camera_pan,
     }

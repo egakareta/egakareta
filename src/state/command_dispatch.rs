@@ -94,6 +94,22 @@ impl State {
             AppCommand::EditorSetCameraOrientation { rotation, pitch } => {
                 self.set_editor_camera_orientation(rotation, pitch)
             }
+            AppCommand::EditorAddCameraKeypoint => self.editor_add_camera_keypoint(),
+            AppCommand::EditorRemoveCameraKeypoint(index) => {
+                self.editor_remove_camera_keypoint(index)
+            }
+            AppCommand::EditorSetCameraKeypointSelected(selected) => {
+                self.set_editor_camera_keypoint_selected(selected)
+            }
+            AppCommand::EditorUpdateCameraKeypoint(index, keypoint) => {
+                self.editor_update_camera_keypoint(index, keypoint)
+            }
+            AppCommand::EditorCaptureSelectedCameraKeypoint => {
+                self.editor_capture_selected_camera_keypoint()
+            }
+            AppCommand::EditorApplySelectedCameraKeypoint => {
+                self.editor_apply_selected_camera_keypoint()
+            }
 
             // ── Editor – misc ───────────────────────────────────────
             AppCommand::EditorTogglePerfOverlay => self.toggle_editor_perf_overlay(),
@@ -383,6 +399,13 @@ impl State {
                     } else {
                         None
                     }
+                } else {
+                    None
+                }
+            }
+            "k" | "K" => {
+                if self.is_editor() && self.editor.ui.shift_held && just_pressed {
+                    Some(AppCommand::EditorAddCameraKeypoint)
                 } else {
                     None
                 }
