@@ -147,10 +147,21 @@ impl EditorSubsystem {
 
     fn insert_camera_keypoint_sorted(&mut self, mut keypoint: CameraKeypoint) -> usize {
         self.sanitize_camera_keypoint(&mut keypoint);
+
+        if let Some(existing_index) =
+            self.camera.keypoints.iter().position(|existing| {
+                existing.time_seconds.to_bits() == keypoint.time_seconds.to_bits()
+            })
+        {
+            self.camera.keypoints[existing_index] = keypoint;
+            self.camera.selected_keypoint_index = Some(existing_index);
+            return existing_index;
+        }
+
         let insert_index = self
             .camera
             .keypoints
-            .partition_point(|existing| existing.time_seconds <= keypoint.time_seconds);
+            .partition_point(|existing| existing.time_seconds < keypoint.time_seconds);
         self.camera.keypoints.insert(insert_index, keypoint);
         self.camera.selected_keypoint_index = Some(insert_index);
         insert_index
