@@ -321,6 +321,13 @@ impl State {
                     None
                 }
             }
+            "MediaPlayPause" | "MediaPlay" | "MediaPause" => {
+                if just_pressed && self.is_editor() {
+                    Some(AppCommand::EditorToggleTimelinePlayback)
+                } else {
+                    None
+                }
+            }
             "Backspace" | "Delete" => {
                 if just_pressed {
                     Some(AppCommand::EditorRemoveBlock)

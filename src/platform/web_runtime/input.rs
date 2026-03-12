@@ -379,6 +379,17 @@ pub fn setup_web_input_callbacks(
             move |event: &web_sys::Event| {
                 let event = event.unchecked_ref::<web_sys::KeyboardEvent>();
                 let key = event.key();
+
+                // Intercept media keys to prevent default browser behavior (unexpected plays/pauses)
+                match key.as_str() {
+                    "MediaPlayPause" | "MediaPlay" | "MediaPause" | "MediaStop"
+                    | "MediaTrackNext" | "MediaTrackPrevious" | "MediaNextTrack"
+                    | "MediaPreviousTrack" => {
+                        event.prevent_default();
+                    }
+                    _ => {}
+                }
+
                 let mut input = input_handler_rc.borrow_mut();
                 if key == "Shift" {
                     input.modifiers.shift = true;
@@ -424,6 +435,17 @@ pub fn setup_web_input_callbacks(
             move |event: &web_sys::Event| {
                 let event = event.unchecked_ref::<web_sys::KeyboardEvent>();
                 let key = event.key();
+
+                // Intercept media keys to prevent default browser behavior (unexpected plays/pauses)
+                match key.as_str() {
+                    "MediaPlayPause" | "MediaPlay" | "MediaPause" | "MediaStop"
+                    | "MediaTrackNext" | "MediaTrackPrevious" | "MediaNextTrack"
+                    | "MediaPreviousTrack" => {
+                        event.prevent_default();
+                    }
+                    _ => {}
+                }
+
                 let mut input = input_handler_rc.borrow_mut();
                 if key == "Shift" {
                     input.modifiers.shift = false;

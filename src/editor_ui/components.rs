@@ -3,6 +3,22 @@ use crate::state::EditorUiViewModel;
 
 pub(crate) const MIN_TIMELINE_DURATION_SECONDS: f32 = 0.1;
 pub(crate) const MAX_TIMELINE_DURATION_SECONDS: f32 = 600.0;
+pub(crate) const DEFAULT_TIMELINE_WINDOW_SECONDS: f32 = 20.0;
+
+fn timeline_visible_duration(duration_seconds: f32, zoom: f32) -> f32 {
+    let duration = duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS);
+    let zoom = zoom.clamp(0.1, 10.0);
+    (DEFAULT_TIMELINE_WINDOW_SECONDS / zoom).clamp(MIN_TIMELINE_DURATION_SECONDS, duration)
+}
+
+fn timeline_view_bounds(duration_seconds: f32, zoom: f32, scroll: f32) -> (f32, f32) {
+    let _duration = duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS);
+    let visible_duration = timeline_visible_duration(duration_seconds, zoom);
+    // Removed max_scroll/clamp to allow playhead to stay centered at start/end by going beyond 0..duration
+    let view_start = scroll;
+    let view_end = view_start + visible_duration;
+    (view_start, view_end)
+}
 
 pub(crate) fn timeline_metrics(duration_seconds: f32) -> f32 {
     duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS)
@@ -14,8 +30,19 @@ pub(crate) fn show_timeline_bar(
     duration_seconds: f32,
     commands: &mut Vec<AppCommand>,
 ) {
+    let duration_seconds = duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS);
+    let timeline_zoom = view.waveform_zoom;
+    let visible_duration = timeline_visible_duration(duration_seconds, timeline_zoom);
+    // Removed max_scroll/clamp to allow playhead to stay centered at start/end by going beyond 0..duration
+    let centered_scroll = view.timeline_time_seconds - visible_duration * 0.5;
+    if (centered_scroll - view.waveform_scroll).abs() > 0.0001 {
+        commands.push(AppCommand::EditorSetWaveformScroll(centered_scroll));
+    }
+    let view_start = centered_scroll;
+    let view_end = view_start + visible_duration;
+
     ui.horizontal(|ui| {
-        ui.label("Timeline:");
+        ui.label("Time:");
         let mut time_seconds = view.timeline_time_seconds;
         let drag_value = egui::DragValue::new(&mut time_seconds)
             .speed(0.01)
@@ -26,6 +53,26 @@ pub(crate) fn show_timeline_bar(
         {
             commands.push(AppCommand::EditorSetTimelineTime(time_seconds));
         }
+
+        ui.add_space(4.0);
+        let button_size = egui::vec2(22.0, ui.spacing().interact_size.y);
+        if ui
+            .add_sized(button_size, egui::Button::new("-"))
+            .on_hover_text("Zoom Out")
+            .clicked()
+        {
+            let new_zoom = (timeline_zoom / 1.25).clamp(0.1, 10.0);
+            commands.push(AppCommand::EditorSetWaveformZoom(new_zoom));
+        }
+        if ui
+            .add_sized(button_size, egui::Button::new("+"))
+            .on_hover_text("Zoom In")
+            .clicked()
+        {
+            let new_zoom = (timeline_zoom * 1.25).clamp(0.1, 10.0);
+            commands.push(AppCommand::EditorSetWaveformZoom(new_zoom));
+        }
+        ui.add_space(4.0);
 
         let available_width = ui.available_width();
         let timeline_height = 18.0;
@@ -61,60 +108,92 @@ pub(crate) fn show_timeline_bar(
             let mut beat = 0u32;
             let mut time = tp.time_seconds;
             while time <= end_time {
-                let t = (time / duration_seconds).clamp(0.0, 1.0);
-                let x = rect.left() + rect.width() * t;
-                let is_downbeat = beat.is_multiple_of(tp.time_signature_numerator);
-                let (alpha, width) = if is_downbeat { (100, 1.5) } else { (50, 0.5) };
-                painter.line_segment(
-                    [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-                    egui::Stroke::new(
-                        width,
-                        egui::Color32::from_rgba_premultiplied(180, 180, 255, alpha),
-                    ),
-                );
+                if time >= view_start && time <= view_end {
+                    let x = rect.left() + (time - view_start) / visible_duration * rect.width();
+                    let is_downbeat = beat.is_multiple_of(tp.time_signature_numerator);
+                    let (alpha, width) = if is_downbeat { (100, 1.5) } else { (50, 0.5) };
+                    painter.line_segment(
+                        [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+                        egui::Stroke::new(
+                            width,
+                            egui::Color32::from_rgba_premultiplied(180, 180, 255, alpha),
+                        ),
+                    );
+                }
                 beat += 1;
                 time += beat_duration;
+                if beat > 10000 {
+                    break;
+                }
             }
         }
 
         // Draw tap circles
         for tap_time in view.tap_times {
-            let t = (*tap_time / duration_seconds).clamp(0.0, 1.0);
-            let x = rect.left() + rect.width() * t;
-            painter.circle_filled(
-                egui::pos2(x, center_y),
-                3.0,
-                egui::Color32::from_rgb(255, 170, 64),
-            );
+            if *tap_time >= view_start && *tap_time <= view_end {
+                let x = rect.left() + (*tap_time - view_start) / visible_duration * rect.width();
+                painter.circle_filled(
+                    egui::pos2(x, center_y),
+                    3.0,
+                    egui::Color32::from_rgb(255, 170, 64),
+                );
+            }
         }
 
-        // Draw timing point markers (red triangles)
+        // Draw timing point markers (red vertical lines)
         for tp in view.timing_points {
-            let t = (tp.time_seconds / duration_seconds).clamp(0.0, 1.0);
-            let x = rect.left() + rect.width() * t;
-            painter.line_segment(
-                [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-                egui::Stroke::new(1.5, egui::Color32::from_rgb(255, 80, 80)),
-            );
+            if tp.time_seconds >= view_start && tp.time_seconds <= view_end {
+                let x =
+                    rect.left() + (tp.time_seconds - view_start) / visible_duration * rect.width();
+                painter.line_segment(
+                    [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+                    egui::Stroke::new(1.5, egui::Color32::from_rgb(255, 80, 80)),
+                );
+            }
         }
 
         // Draw playhead
-        let current_t = view.timeline_time_seconds / duration_seconds;
-        let current_x = rect.left() + rect.width() * current_t.clamp(0.0, 1.0);
-        painter.line_segment(
-            [
-                egui::pos2(current_x, rect.top()),
-                egui::pos2(current_x, rect.bottom()),
-            ],
-            egui::Stroke::new(2.0, egui::Color32::from_rgb(120, 200, 255)),
-        );
+        if view.timeline_time_seconds >= view_start && view.timeline_time_seconds <= view_end {
+            let current_x = rect.left()
+                + (view.timeline_time_seconds - view_start) / visible_duration * rect.width();
+            painter.line_segment(
+                [
+                    egui::pos2(current_x, rect.top()),
+                    egui::pos2(current_x, rect.bottom()),
+                ],
+                egui::Stroke::new(2.0, egui::Color32::from_rgb(120, 200, 255)),
+            );
+        }
 
-        // Click or drag to seek
-        if response.dragged() || response.clicked() {
-            if let Some(pos) = response.interact_pointer_pos() {
-                let t = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
-                let time_seconds = t * duration_seconds;
-                commands.push(AppCommand::EditorSetTimelineTime(time_seconds));
+        // Drag primary to move timeline around the fixed playhead.
+        if response.dragged_by(egui::PointerButton::Primary) {
+            let pointer_delta_x = ui.input(|i| i.pointer.delta().x);
+            if pointer_delta_x.abs() > 0.0 {
+                let time_per_pixel = visible_duration / rect.width().max(1.0);
+                let new_time = (view.timeline_time_seconds - pointer_delta_x * time_per_pixel)
+                    .clamp(0.0, duration_seconds);
+                commands.push(AppCommand::EditorSetTimelineTime(new_time));
+            }
+        }
+
+        // Pan visible window with middle/right drag.
+        if response.dragged_by(egui::PointerButton::Middle)
+            || response.dragged_by(egui::PointerButton::Secondary)
+        {
+            let drag_delta = response.drag_delta();
+            let time_per_pixel = visible_duration / rect.width().max(1.0);
+            // Removed max_scroll/clamp to allow playhead to stay centered at start/end by going beyond 0..duration
+            let new_scroll = view_start - drag_delta.x * time_per_pixel;
+            commands.push(AppCommand::EditorSetWaveformScroll(new_scroll));
+        }
+
+        // Mouse wheel over the timeline bar adjusts window width.
+        if response.hovered() {
+            let scroll_delta = ui.input(|i| i.raw_scroll_delta);
+            if scroll_delta.y.abs() > 0.0 {
+                let zoom_factor = 1.0 + scroll_delta.y * 0.002;
+                let new_zoom = (timeline_zoom * zoom_factor).clamp(0.1, 10.0);
+                commands.push(AppCommand::EditorSetWaveformZoom(new_zoom));
             }
         }
     });
@@ -141,9 +220,9 @@ pub(crate) fn show_waveform_panel(
     painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(15, 20, 28));
 
     // Visible time window
-    let visible_duration = duration_seconds / zoom;
-    let view_start = scroll;
-    let view_end = (scroll + visible_duration).min(duration_seconds);
+    let (view_start, view_end) = timeline_view_bounds(duration_seconds, zoom, scroll);
+    let visible_duration = (view_end - view_start).max(MIN_TIMELINE_DURATION_SECONDS);
+    let max_scroll = (duration_seconds - visible_duration).max(0.0);
 
     if !waveform_samples.is_empty() && sample_rate > 0 {
         // Waveform drawing
@@ -205,7 +284,7 @@ pub(crate) fn show_waveform_panel(
         let mut time = tp.time_seconds;
         while time <= end_time {
             if time >= view_start && time <= view_end {
-                let x = rect.left() + (time - view_start) / (view_end - view_start) * rect.width();
+                let x = rect.left() + (time - view_start) / visible_duration * rect.width();
                 let is_downbeat = beat.is_multiple_of(tp.time_signature_numerator);
                 let (color, width) = if is_downbeat {
                     (
@@ -244,8 +323,7 @@ pub(crate) fn show_waveform_panel(
     // Draw timing point markers (red vertical lines with BPM labels)
     for tp in timing_points {
         if tp.time_seconds >= view_start && tp.time_seconds <= view_end {
-            let x = rect.left()
-                + (tp.time_seconds - view_start) / (view_end - view_start) * rect.width();
+            let x = rect.left() + (tp.time_seconds - view_start) / visible_duration * rect.width();
             painter.line_segment(
                 [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
                 egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 80, 80)),
@@ -263,35 +341,99 @@ pub(crate) fn show_waveform_panel(
     // Draw playhead
     let current_time = view.timeline_time_seconds;
     if current_time >= view_start && current_time <= view_end {
-        let x = rect.left() + (current_time - view_start) / (view_end - view_start) * rect.width();
+        let x = rect.left() + (current_time - view_start) / visible_duration * rect.width();
         painter.line_segment(
             [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
             egui::Stroke::new(2.0, egui::Color32::from_rgb(120, 200, 255)),
         );
     }
 
-    // Interaction: click or drag to seek
-    if response.dragged_by(egui::PointerButton::Primary) || response.clicked() {
-        if let Some(pos) = response.interact_pointer_pos() {
-            let t = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
-            let time_seconds = view_start + t * (view_end - view_start);
-            commands.push(AppCommand::EditorSetTimelineTime(time_seconds));
+    // Interaction: drag primary to move timeline around the fixed playhead (relative scrubbing)
+    if response.dragged_by(egui::PointerButton::Primary) {
+        let pointer_delta_x = ui.input(|i| i.pointer.delta().x);
+        if pointer_delta_x.abs() > 0.0 {
+            let time_per_pixel = visible_duration / rect.width().max(1.0);
+            let new_time = (view.timeline_time_seconds - pointer_delta_x * time_per_pixel)
+                .clamp(0.0, duration_seconds);
+            commands.push(AppCommand::EditorSetTimelineTime(new_time));
         }
     }
 
     // Scroll with mouse wheel to zoom, drag to pan (via scroll offset)
-    let scroll_delta = ui.input(|i| i.raw_scroll_delta);
-    if scroll_delta.y.abs() > 0.0 {
-        let zoom_factor = 1.0 + scroll_delta.y * 0.002;
-        let new_zoom = (zoom * zoom_factor).clamp(0.1, 100.0);
-        commands.push(AppCommand::EditorSetWaveformZoom(new_zoom));
+    if response.hovered() {
+        let scroll_delta = ui.input(|i| i.raw_scroll_delta);
+        if scroll_delta.y.abs() > 0.0 {
+            let zoom_factor = 1.0 + scroll_delta.y * 0.002;
+            let new_zoom = (zoom * zoom_factor).clamp(0.1, 10.0);
+            commands.push(AppCommand::EditorSetWaveformZoom(new_zoom));
+        }
     }
     if response.dragged_by(egui::PointerButton::Middle)
         || response.dragged_by(egui::PointerButton::Secondary)
     {
         let drag_delta = response.drag_delta();
-        let time_per_pixel = (view_end - view_start) / rect.width();
-        let new_scroll = (scroll - drag_delta.x * time_per_pixel).max(0.0);
+        let time_per_pixel = visible_duration / rect.width().max(1.0);
+        let new_scroll = (view_start - drag_delta.x * time_per_pixel).clamp(0.0, max_scroll);
         commands.push(AppCommand::EditorSetWaveformScroll(new_scroll));
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn approx_eq(a: f32, b: f32, eps: f32) {
+        assert!((a - b).abs() <= eps, "expected {a} ~= {b}");
+    }
+
+    #[test]
+    fn test_timeline_visible_duration() {
+        // Default zoom 1.0 should give default window
+        approx_eq(
+            timeline_visible_duration(100.0, 1.0),
+            DEFAULT_TIMELINE_WINDOW_SECONDS,
+            0.001,
+        );
+
+        // Zoom in (2.0) should give smaller window (10.0s)
+        approx_eq(timeline_visible_duration(100.0, 2.0), 10.0, 0.001);
+
+        // Zoom out (0.5) should give larger window (40.0s)
+        approx_eq(timeline_visible_duration(100.0, 0.5), 40.0, 0.001);
+
+        // Should be clamped to duration
+        approx_eq(timeline_visible_duration(10.0, 1.0), 10.0, 0.001);
+
+        // Should be clamped to max zoom (10.0), giving a 2.0s window with current limits
+        approx_eq(timeline_visible_duration(100.0, 1000.0), 2.0, 0.001);
+    }
+
+    #[test]
+    fn test_timeline_view_bounds() {
+        let (start, end) = timeline_view_bounds(100.0, 1.0, 10.0);
+        approx_eq(start, 10.0, 0.001);
+        approx_eq(end, 30.0, 0.001);
+    }
+
+    #[test]
+    fn test_zoom_scaling_logic() {
+        let initial_zoom: f32 = 1.0;
+
+        // Zoom in logic
+        let zoom_in_1 = (initial_zoom * 1.25).clamp(0.1, 10.0);
+        approx_eq(zoom_in_1, 1.25, 0.001);
+
+        let zoom_in_2 = (zoom_in_1 * 1.25).clamp(0.1, 10.0);
+        approx_eq(zoom_in_2, 1.5625, 0.001);
+
+        // Zoom out logic
+        let zoom_out_1 = (initial_zoom / 1.25).clamp(0.1, 10.0);
+        approx_eq(zoom_out_1, 0.8, 0.001);
+
+        // Clamping logic
+        let max_zoom = (9.0_f32 * 1.25).clamp(0.1, 10.0);
+        approx_eq(max_zoom, 10.0, 0.001);
+
+        let min_zoom = (0.12_f32 * 0.8).clamp(0.1, 10.0);
+        approx_eq(min_zoom, 0.1, 0.001);
     }
 }
