@@ -42,7 +42,8 @@ return coalesce(email_exists, false);
 end;
 $$;
 -- Handle new user signups. When a new user is created in the auth.users table, this function will automatically insert a corresponding profile into the profiles table and initialize their 2FA configuration in the user_2fa_config table.
-create or replace function public.handle_new_user() returns trigger as $$ begin
+create or replace function public.handle_new_user() returns trigger language plpgsql security definer
+set search_path = public as $$ begin
 insert into public.profiles (id, username, country)
 values (
         new.id,
@@ -56,7 +57,7 @@ insert into public.user_2fa_config (user_id)
 values (new.id);
 return new;
 end;
-$$ language plpgsql security definer;
+$$;
 -- Whenever a new user is created in the auth.users table, automatically create a corresponding profile and 2FA config.
 create trigger on_auth_user_created
 after
@@ -130,7 +131,7 @@ where id = NEW.comment_id;
 end if;
 return null;
 end;
-$$ LANGUAGE plpgsql security definer;
+$$ LANGUAGE plpgsql security definer set search_path = public;
 -- Trigger to keep comment vote tallies in sync across insert, update, and delete operations.
 create trigger update_comment_votes_count_trigger
 after

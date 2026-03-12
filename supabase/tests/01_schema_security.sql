@@ -104,16 +104,6 @@ select ok(
             from pg_policies
             where schemaname = 'public'
                 and tablename = 'user_webauthn_credentials'
-                and policyname = 'Users can view their own WebAuthn credentials.'
-        ),
-        'WebAuthn select policy exists'
-    );
-select ok(
-        exists (
-            select 1
-            from pg_policies
-            where schemaname = 'public'
-                and tablename = 'user_webauthn_credentials'
                 and policyname = 'Users can manage their own WebAuthn credentials.'
         ),
         'WebAuthn manage policy exists'

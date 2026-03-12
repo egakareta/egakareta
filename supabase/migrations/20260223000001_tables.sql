@@ -184,16 +184,26 @@ create policy "Public profiles are viewable by everyone." on profiles for
 select using (true);
 create policy "Users can insert their own non-admin profile." on profiles for
 insert with check (
-        auth.uid() = id
+        (
+            select auth.uid()
+        ) = id
         and not is_admin
     );
 create policy "Users can update own profile, except for admin status." on public.profiles for
-update using (auth.uid() = id) with check (
-        auth.uid() = id
+update using (
+        (
+            select auth.uid()
+        ) = id
+    ) with check (
+        (
+            select auth.uid()
+        ) = id
         and is_admin = (
             select p.is_admin
             from public.profiles p
-            where p.id = auth.uid()
+            where p.id = (
+                    select auth.uid()
+                )
         )
     );
 -- profile_stats
@@ -205,31 +215,63 @@ create policy "Beatmaps are viewable by everyone." on beatmaps for
 select using (true);
 create policy "Users can upload their own unranked beatmaps." on beatmaps for
 insert with check (
-        auth.uid() = mapper_id
+        (
+            select auth.uid()
+        ) = mapper_id
         and status = 'UNRANKED'
     );
 create policy "Users can update their own unranked beatmaps." on beatmaps for
 update using (
-        auth.uid() = mapper_id
+        (
+            select auth.uid()
+        ) = mapper_id
         and status = 'UNRANKED'
     );
 -- beatmap_tags
 create policy "Beatmap tags are viewable by everyone." on public.beatmap_tags for
 select using (true);
-create policy "Mappers can manage tags for their maps." on public.beatmap_tags for all using (
+create policy "Mappers can insert tags for their maps." on public.beatmap_tags for
+insert with check (
+        exists (
+            select 1
+            from public.beatmaps b
+            where b.id = beatmap_tags.beatmap_id
+                and b.mapper_id = (
+                    select auth.uid()
+                )
+                and b.status = 'UNRANKED'
+        )
+    );
+create policy "Mappers can update tags for their maps." on public.beatmap_tags for
+update using (
+        exists (
+            select 1
+            from public.beatmaps b
+            where b.id = beatmap_tags.beatmap_id
+                and b.mapper_id = (
+                    select auth.uid()
+                )
+                and b.status = 'UNRANKED'
+        )
+    ) with check (
+        exists (
+            select 1
+            from public.beatmaps b
+            where b.id = beatmap_tags.beatmap_id
+                and b.mapper_id = (
+                    select auth.uid()
+                )
+                and b.status = 'UNRANKED'
+        )
+    );
+create policy "Mappers can delete tags for their maps." on public.beatmap_tags for delete using (
     exists (
         select 1
         from public.beatmaps b
         where b.id = beatmap_tags.beatmap_id
-            and b.mapper_id = auth.uid()
-            and b.status = 'UNRANKED'
-    )
-) with check (
-    exists (
-        select 1
-        from public.beatmaps b
-        where b.id = beatmap_tags.beatmap_id
-            and b.mapper_id = auth.uid()
+            and b.mapper_id = (
+                select auth.uid()
+            )
             and b.status = 'UNRANKED'
     )
 );
@@ -243,11 +285,15 @@ create policy "Comments are viewable by everyone." on public.comments for
 select using (true);
 create policy "Users can post their own comments." on public.comments for
 insert with check (
-        auth.uid() = profile_id
+        (
+            select auth.uid()
+        ) = profile_id
         and not exists (
             select 1
             from public.profiles
-            where id = auth.uid()
+            where id = (
+                    select auth.uid()
+                )
                 and (
                     muted_until is not null
                     and muted_until > now()
@@ -256,11 +302,15 @@ insert with check (
     );
 create policy "Users can update their own comments." on public.comments for
 update using (
-        auth.uid() = profile_id
+        (
+            select auth.uid()
+        ) = profile_id
         and not exists (
             select 1
             from public.profiles
-            where id = auth.uid()
+            where id = (
+                    select auth.uid()
+                )
                 and (
                     muted_until is not null
                     and muted_until > now()
@@ -268,11 +318,15 @@ update using (
         )
     );
 create policy "Users can delete their own comments, admins delete any." on public.comments for delete using (
-    auth.uid() = profile_id
+    (
+        select auth.uid()
+    ) = profile_id
     or exists (
         select 1
         from public.profiles
-        where id = auth.uid()
+        where id = (
+                select auth.uid()
+            )
             and is_admin = true
     )
 );
@@ -280,21 +334,47 @@ create policy "Users can delete their own comments, admins delete any." on publi
 create policy "Comment votes are viewable by everyone." on public.comment_votes for
 select using (true);
 create policy "Users can vote." on public.comment_votes for
-insert with check (auth.uid() = user_id);
+insert with check (
+        (
+            select auth.uid()
+        ) = user_id
+    );
 create policy "Users can update their own vote." on public.comment_votes for
-update using (auth.uid() = user_id);
-create policy "Users can delete their own vote." on public.comment_votes for delete using (auth.uid() = user_id);
+update using (
+        (
+            select auth.uid()
+        ) = user_id
+    );
+create policy "Users can delete their own vote." on public.comment_votes for delete using (
+    (
+        select auth.uid()
+    ) = user_id
+);
 -- profile_rank_pp_snapshots
 create policy "Rank/PP snapshots are viewable by everyone." on public.profile_rank_pp_snapshots for
 select using (true);
 -- user_2fa_config
 create policy "Users can view their own 2FA config." on public.user_2fa_config for
-select using (auth.uid() = user_id);
+select using (
+        (
+            select auth.uid()
+        ) = user_id
+    );
 create policy "Users can update their own 2FA config." on public.user_2fa_config for
-update using (auth.uid() = user_id);
+update using (
+        (
+            select auth.uid()
+        ) = user_id
+    );
 create policy "Users can insert their own 2FA config." on public.user_2fa_config for
-insert with check (auth.uid() = user_id);
+insert with check (
+        (
+            select auth.uid()
+        ) = user_id
+    );
 -- user_webauthn_credentials
-create policy "Users can view their own WebAuthn credentials." on public.user_webauthn_credentials for
-select using (auth.uid() = user_id);
-create policy "Users can manage their own WebAuthn credentials." on public.user_webauthn_credentials for all using (auth.uid() = user_id);
+create policy "Users can manage their own WebAuthn credentials." on public.user_webauthn_credentials for all using (
+    (
+        select auth.uid()
+    ) = user_id
+);
