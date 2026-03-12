@@ -3,8 +3,8 @@ use glam::Vec3;
 use super::{EditorDirtyFlags, EditorSubsystem, GizmoAxis, GizmoDragKind, PerfStage, State};
 use crate::editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds};
 use crate::mesh::{
-    build_block_vertices, build_block_vertices_from_refs, build_editor_cursor_vertices,
-    build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
+    build_block_vertices, build_block_vertices_from_refs, build_camera_keypoint_marker_vertices,
+    build_editor_cursor_vertices, build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
     build_editor_preview_player_vertices, build_editor_selection_outline_vertices,
     build_spawn_marker_vertices, build_tap_indicator_vertices, GizmoPart,
 };
@@ -203,6 +203,13 @@ impl State {
             let gizmo_started_at = PlatformInstant::now();
             self.rebuild_editor_gizmo_vertices();
             self.perf_record(PerfStage::DirtyRebuildSelectionOverlays, gizmo_started_at);
+
+            let camera_keypoints_started_at = PlatformInstant::now();
+            self.rebuild_camera_keypoint_marker_vertices();
+            self.perf_record(
+                PerfStage::DirtyRebuildSelectionOverlays,
+                camera_keypoints_started_at,
+            );
 
             let hover_started_at = PlatformInstant::now();
             self.rebuild_editor_hover_outline_vertices();
@@ -420,6 +427,32 @@ impl State {
             "Spawn Marker Vertex Buffer",
             &vertices,
         );
+    }
+
+    pub(super) fn rebuild_camera_keypoint_marker_vertices(&mut self) {
+        if self.phase != AppPhase::Editor {
+            self.render.meshes.camera_keypoint_markers.clear();
+            return;
+        }
+
+        let keypoints = self.editor.camera_keypoints();
+        if keypoints.is_empty() {
+            self.render.meshes.camera_keypoint_markers.clear();
+            return;
+        }
+
+        let vertices = build_camera_keypoint_marker_vertices(
+            keypoints,
+            self.editor.selected_camera_keypoint_index(),
+        );
+        self.render
+            .meshes
+            .camera_keypoint_markers
+            .replace_with_vertices(
+                &self.render.gpu.device,
+                "Camera Keypoint Marker Vertex Buffer",
+                &vertices,
+            );
     }
 
     pub(super) fn rebuild_block_vertices(&mut self) {

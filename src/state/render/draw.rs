@@ -239,6 +239,14 @@ impl State {
                         render_pass.draw(0..count, 0..1);
                     }
 
+                    if let Some((buffer, count)) =
+                        self.render.meshes.camera_keypoint_markers.draw_data()
+                    {
+                        render_pass.set_vertex_buffer(0, buffer.slice(..));
+                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                        render_pass.draw(0..count, 0..1);
+                    }
+
                     if let Some((buffer, count)) = self.render.meshes.tap_indicators.draw_data() {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);

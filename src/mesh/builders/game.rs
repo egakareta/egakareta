@@ -1,5 +1,6 @@
+use crate::mesh::advanced_shapes::{append_cone, append_sphere};
 use crate::mesh::shapes::{append_prism, append_quad};
-use crate::types::Vertex;
+use crate::types::{CameraKeypoint, CameraKeypointMode, Vertex};
 
 pub(crate) fn build_trail_vertices(points: &[[f32; 3]], game_over: bool) -> Vec<Vertex> {
     let mut trail_vertices = Vec::new();
@@ -173,5 +174,79 @@ pub(crate) fn build_tap_indicator_vertices(positions: &[[f32; 3]]) -> Vec<Vertex
             );
         }
     }
+    vertices
+}
+
+pub(crate) fn build_camera_keypoint_marker_vertices(
+    keypoints: &[CameraKeypoint],
+    selected_index: Option<usize>,
+) -> Vec<Vertex> {
+    const CAMERA_BASE_DISTANCE: f32 = 24.0;
+    const MIN_CAMERA_ZOOM: f32 = 0.01;
+    const MAX_CAMERA_ZOOM: f32 = 10.0;
+
+    let mut vertices = Vec::new();
+
+    for (index, keypoint) in keypoints.iter().enumerate() {
+        let is_selected = selected_index == Some(index);
+        let zoom = keypoint.zoom.clamp(MIN_CAMERA_ZOOM, MAX_CAMERA_ZOOM);
+        let distance = CAMERA_BASE_DISTANCE / zoom;
+
+        let (sin_rotation, cos_rotation) = keypoint.rotation.sin_cos();
+        let (sin_pitch, cos_pitch) = keypoint.pitch.sin_cos();
+
+        // Mirrors the editor camera pose: keypoints are rendered at camera eye position.
+        let offset = [
+            cos_pitch * sin_rotation * distance,
+            -cos_pitch * cos_rotation * distance,
+            sin_pitch * distance,
+        ];
+        let eye = [
+            keypoint.target_position[0] + offset[0],
+            keypoint.target_position[1] + offset[1],
+            keypoint.target_position[2] + offset[2],
+        ];
+
+        let forward = if distance > f32::EPSILON {
+            [
+                -offset[0] / distance,
+                -offset[1] / distance,
+                -offset[2] / distance,
+            ]
+        } else {
+            [0.0, 1.0, 0.0]
+        };
+
+        let (ball_color, arrow_color) = if is_selected {
+            ([1.0, 0.9, 0.25, 0.95], [1.0, 0.8, 0.1, 0.95])
+        } else if matches!(keypoint.mode, CameraKeypointMode::Follow) {
+            ([0.95, 0.4, 0.2, 0.85], [1.0, 0.55, 0.25, 0.9])
+        } else {
+            ([0.2, 0.75, 1.0, 0.85], [0.25, 0.85, 1.0, 0.9])
+        };
+
+        let ball_radius = if is_selected { 0.42 } else { 0.34 };
+        append_sphere(&mut vertices, eye, ball_radius, ball_color);
+
+        let shaft_start = [
+            eye[0] + forward[0] * (ball_radius * 1.05),
+            eye[1] + forward[1] * (ball_radius * 1.05),
+            eye[2] + forward[2] * (ball_radius * 1.05),
+        ];
+        let shaft_end = [
+            shaft_start[0] + forward[0] * 1.2,
+            shaft_start[1] + forward[1] * 1.2,
+            shaft_start[2] + forward[2] * 1.2,
+        ];
+        let tip = [
+            shaft_end[0] + forward[0] * 0.6,
+            shaft_end[1] + forward[1] * 0.6,
+            shaft_end[2] + forward[2] * 0.6,
+        ];
+
+        append_cone(&mut vertices, shaft_start, shaft_end, 0.09, arrow_color);
+        append_cone(&mut vertices, shaft_end, tip, 0.22, arrow_color);
+    }
+
     vertices
 }

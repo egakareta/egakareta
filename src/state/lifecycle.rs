@@ -420,6 +420,7 @@ impl State {
                     editor_gizmo: MeshSlot::Empty,
                     tap_indicators: MeshSlot::Empty,
                     spawn_marker: MeshSlot::Empty,
+                    camera_keypoint_markers: MeshSlot::Empty,
                     editor_preview_player: MeshSlot::Empty,
                 },
             },

@@ -877,6 +877,10 @@ impl State {
 
         self.record_editor_history_state();
         self.editor.add_camera_keypoint();
+        self.mark_editor_dirty(EditorDirtyFlags {
+            rebuild_selection_overlays: true,
+            ..EditorDirtyFlags::default()
+        });
     }
 
     pub(crate) fn editor_remove_camera_keypoint(&mut self, index: usize) {
@@ -886,11 +890,19 @@ impl State {
 
         self.record_editor_history_state();
         self.editor.remove_camera_keypoint(index);
+        self.mark_editor_dirty(EditorDirtyFlags {
+            rebuild_selection_overlays: true,
+            ..EditorDirtyFlags::default()
+        });
     }
 
     pub(crate) fn set_editor_camera_keypoint_selected(&mut self, selected: Option<usize>) {
         if self.phase == AppPhase::Editor {
             self.editor.set_camera_keypoint_selected(selected);
+            self.mark_editor_dirty(EditorDirtyFlags {
+                rebuild_selection_overlays: true,
+                ..EditorDirtyFlags::default()
+            });
         }
     }
 
@@ -901,6 +913,10 @@ impl State {
 
         self.record_editor_history_state();
         self.editor.update_camera_keypoint(index, keypoint);
+        self.mark_editor_dirty(EditorDirtyFlags {
+            rebuild_selection_overlays: true,
+            ..EditorDirtyFlags::default()
+        });
     }
 
     pub(crate) fn editor_capture_selected_camera_keypoint(&mut self) {
@@ -910,6 +926,10 @@ impl State {
 
         self.record_editor_history_state();
         self.editor.capture_selected_camera_keypoint();
+        self.mark_editor_dirty(EditorDirtyFlags {
+            rebuild_selection_overlays: true,
+            ..EditorDirtyFlags::default()
+        });
     }
 
     pub(crate) fn editor_apply_selected_camera_keypoint(&mut self) {
