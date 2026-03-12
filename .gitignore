@@ -6,3 +6,4 @@
 /dist
 /.wrangler
 lcov.info
+.env*
