@@ -1,7 +1,7 @@
 use crate::game::{simulate_timeline_state, TimelineSimulationRuntime};
 use crate::types::{LevelObject, SpawnDirection};
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn derive_timeline_position(
     spawn: [f32; 3],
     direction: SpawnDirection,
@@ -60,7 +60,7 @@ pub(crate) fn derive_tap_indicator_positions(
     positions
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn derive_timeline_time_for_world_target(
     spawn: [f32; 3],
     direction: SpawnDirection,
@@ -162,7 +162,6 @@ pub(crate) fn derive_timeline_time_for_world_target(
     full_time
 }
 
-#[allow(dead_code)]
 pub(crate) fn derive_timeline_time_for_world_target_near_time(
     spawn: [f32; 3],
     direction: SpawnDirection,
@@ -252,7 +251,6 @@ pub(crate) fn derive_timeline_time_for_world_target_near_time(
     refined_time.clamp(range_start, range_end)
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub(crate) struct TimelineNearSearch {
     pub(crate) seed_time: f32,

@@ -98,7 +98,7 @@ f 1/1/1 2/2/1 3/3/1
         };
 
         let vertices = build_block_vertices(&[obj]);
-        assert!(!vertices.is_empty());
+        assert!(vertices.len() >= 168); // 28 segments * (outer + inner + face) triangles
     }
 
     #[test]

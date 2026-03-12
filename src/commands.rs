@@ -166,17 +166,6 @@ pub(crate) enum AppCommand {
     EditorEscape,
 }
 
-/// Modifier key state accompanying an input event.
-/// Currently tracked internally by `command_dispatch`; will be attached
-/// to `InputEvent` variants once modifier-aware platform routing is complete.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-#[allow(dead_code)]
-pub struct Modifiers {
-    pub shift: bool,
-    pub ctrl: bool,
-    pub alt: bool,
-}
-
 /// Unified input event produced by platform adapters.
 ///
 /// Both `native_runtime` and `web_runtime` translate their raw

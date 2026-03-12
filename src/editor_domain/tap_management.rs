@@ -1,18 +1,5 @@
 use crate::types::SpawnDirection;
 
-#[allow(dead_code)]
-pub(crate) fn add_tap_time(tap_times: &mut Vec<f32>, time_seconds: f32) {
-    const TAP_EPSILON_SECONDS: f32 = 0.01;
-    let clamped_time = time_seconds.max(0.0);
-    if !tap_times
-        .iter()
-        .any(|existing| (existing - clamped_time).abs() <= TAP_EPSILON_SECONDS)
-    {
-        tap_times.push(clamped_time);
-        tap_times.sort_by(f32::total_cmp);
-    }
-}
-
 pub(crate) fn add_tap_with_indicator(
     tap_times: &mut Vec<f32>,
     tap_indicator_positions: &mut Vec<[f32; 3]>,
@@ -33,12 +20,6 @@ pub(crate) fn add_tap_with_indicator(
     tap_indicator_positions.insert(insert_index, indicator_position);
 }
 
-#[allow(dead_code)]
-pub(crate) fn remove_tap_time(tap_times: &mut Vec<f32>, time_seconds: f32) {
-    const TAP_EPSILON_SECONDS: f32 = 0.01;
-    tap_times.retain(|tap| (tap - time_seconds).abs() > TAP_EPSILON_SECONDS);
-}
-
 pub(crate) fn remove_tap_with_indicator(
     tap_times: &mut Vec<f32>,
     tap_indicator_positions: &mut Vec<[f32; 3]>,
@@ -54,11 +35,6 @@ pub(crate) fn remove_tap_with_indicator(
             tap_indicator_positions.remove(index);
         }
     }
-}
-
-#[allow(dead_code)]
-pub(crate) fn clear_tap_times(tap_times: &mut Vec<f32>) {
-    tap_times.clear();
 }
 
 pub(crate) fn clear_taps_with_indicators(

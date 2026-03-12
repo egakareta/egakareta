@@ -16,23 +16,6 @@ mod tests {
     use crate::types::{LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata};
 
     #[test]
-    fn keeps_tap_times_unique_and_sorted() {
-        let mut taps = vec![0.4, 0.1];
-        add_tap_time(&mut taps, 0.3);
-        add_tap_time(&mut taps, 0.1);
-        assert_eq!(taps, vec![0.1, 0.3, 0.4]);
-    }
-
-    #[test]
-    fn can_remove_and_clear_tap_times() {
-        let mut taps = vec![0.1, 0.2, 0.3];
-        remove_tap_time(&mut taps, 0.2);
-        assert_eq!(taps, vec![0.1, 0.3]);
-        clear_tap_times(&mut taps);
-        assert!(taps.is_empty());
-    }
-
-    #[test]
     fn keeps_tap_indicators_in_sync_with_tap_time_edits() {
         let mut taps = Vec::new();
         let mut indicators = Vec::new();
@@ -54,13 +37,6 @@ mod tests {
         clear_taps_with_indicators(&mut taps, &mut indicators);
         assert!(taps.is_empty());
         assert!(indicators.is_empty());
-    }
-
-    #[test]
-    fn moves_cursor_within_bounds() {
-        let mut cursor = [0.0, 0.0, 0.0];
-        move_cursor_xy(&mut cursor, 8, -10, 3);
-        assert_eq!(cursor, [3.0, -3.0, 0.0]);
     }
 
     #[test]
