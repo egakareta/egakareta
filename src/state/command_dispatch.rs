@@ -91,6 +91,9 @@ impl State {
 
             // ── Editor – zoom ───────────────────────────────────────
             AppCommand::EditorAdjustZoom(delta) => self.adjust_editor_zoom(delta),
+            AppCommand::EditorSetCameraOrientation { rotation, pitch } => {
+                self.set_editor_camera_orientation(rotation, pitch)
+            }
 
             // ── Editor – misc ───────────────────────────────────────
             AppCommand::EditorTogglePerfOverlay => self.toggle_editor_perf_overlay(),

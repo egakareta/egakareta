@@ -104,6 +104,8 @@ pub(crate) enum AppCommand {
     // ── Editor – zoom ───────────────────────────────────────────────
     /// Adjust zoom by the given delta.
     EditorAdjustZoom(f32),
+    /// Snap the editor camera to an absolute orientation in radians.
+    EditorSetCameraOrientation { rotation: f32, pitch: f32 },
 
     // ── Editor – misc ───────────────────────────────────────────────
     /// Toggle the performance overlay.
