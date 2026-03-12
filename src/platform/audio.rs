@@ -67,8 +67,7 @@ impl PlatformAudio {
         let start_seconds = start_seconds.max(0.0);
         self.backend.stop();
 
-        if self.backend.can_reuse_source(&source_key) {
-            self.backend.seek_and_play(start_seconds);
+        if self.backend.can_reuse_source(&source_key) && self.backend.seek_and_play(start_seconds) {
             return;
         }
 
@@ -110,8 +109,7 @@ impl PlatformAudio {
         let start_seconds = start_seconds.max(0.0);
         self.backend.stop();
 
-        if self.backend.can_reuse_source(&source_key) {
-            self.backend.seek_and_play(start_seconds);
+        if self.backend.can_reuse_source(&source_key) && self.backend.seek_and_play(start_seconds) {
             return;
         }
 
@@ -304,6 +302,7 @@ mod tests {
     struct MockState {
         stop_calls: usize,
         reuse: bool,
+        seek_success: bool,
         seek_calls: usize,
         replace_bytes_calls: usize,
         replace_asset_calls: usize,
@@ -330,8 +329,10 @@ mod tests {
             self.state.lock().unwrap().reuse
         }
 
-        fn seek_and_play(&mut self, _start_seconds: f32) {
-            self.state.lock().unwrap().seek_calls += 1;
+        fn seek_and_play(&mut self, _start_seconds: f32) -> bool {
+            let mut state = self.state.lock().unwrap();
+            state.seek_calls += 1;
+            state.seek_success
         }
 
         fn replace_with_bytes(
@@ -425,6 +426,7 @@ mod tests {
     fn reuses_existing_source_before_replacing() {
         let state = Arc::new(Mutex::new(MockState {
             reuse: true,
+            seek_success: true,
             ..Default::default()
         }));
         let backend = Box::new(MockBackend::new(state.clone()));
@@ -435,6 +437,23 @@ mod tests {
         assert_eq!(state.stop_calls, 1);
         assert_eq!(state.seek_calls, 1);
         assert_eq!(state.replace_bytes_calls, 0);
+    }
+
+    #[test]
+    fn replaces_when_reuse_seek_fails() {
+        let state = Arc::new(Mutex::new(MockState {
+            reuse: true,
+            seek_success: false,
+            ..Default::default()
+        }));
+        let backend = Box::new(MockBackend::new(state.clone()));
+        let mut audio = PlatformAudio::with_backend(backend);
+        audio.start_at("level", "music.mp3", 0.0);
+
+        let state = state.lock().unwrap();
+        assert_eq!(state.stop_calls, 1);
+        assert_eq!(state.seek_calls, 1);
+        assert_eq!(state.replace_asset_calls, 1);
     }
 
     #[test]

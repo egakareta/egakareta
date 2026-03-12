@@ -1,7 +1,7 @@
 pub(crate) trait AudioBackend {
     fn stop(&mut self);
     fn can_reuse_source(&self, source_key: &str) -> bool;
-    fn seek_and_play(&mut self, start_seconds: f32);
+    fn seek_and_play(&mut self, start_seconds: f32) -> bool;
     fn replace_with_bytes(
         &mut self,
         source_key: String,
@@ -66,11 +66,14 @@ impl AudioBackend for WebAudioBackend {
         self.current_audio_source.as_deref() == Some(source_key)
     }
 
-    fn seek_and_play(&mut self, start_seconds: f32) {
+    fn seek_and_play(&mut self, start_seconds: f32) -> bool {
         if let Some(audio) = &self.current_audio {
             audio.set_current_time(start_seconds as f64);
             audio.set_playback_rate(self.playback_speed as f64);
             let _ = audio.play();
+            true
+        } else {
+            false
         }
     }
 
@@ -236,7 +239,7 @@ impl AudioBackend for NativeAudioBackend {
         self.current_audio_source.as_deref() == Some(source_key)
     }
 
-    fn seek_and_play(&mut self, start_seconds: f32) {
+    fn seek_and_play(&mut self, start_seconds: f32) -> bool {
         use std::time::Duration;
 
         if let Some(player) = &self.current_player {
@@ -246,11 +249,15 @@ impl AudioBackend for NativeAudioBackend {
                     start_seconds,
                     err
                 );
+                return false;
             }
             player.set_speed(self.playback_speed);
             player.play();
             self.playback_started_at = Some(std::time::Instant::now());
             self.playback_start_offset_seconds = start_seconds;
+            true
+        } else {
+            false
         }
     }
 
