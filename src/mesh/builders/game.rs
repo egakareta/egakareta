@@ -182,15 +182,12 @@ pub(crate) fn build_camera_keypoint_marker_vertices(
     selected_index: Option<usize>,
 ) -> Vec<Vertex> {
     const CAMERA_BASE_DISTANCE: f32 = 24.0;
-    const MIN_CAMERA_ZOOM: f32 = 0.01;
-    const MAX_CAMERA_ZOOM: f32 = 10.0;
 
     let mut vertices = Vec::new();
 
     for (index, keypoint) in keypoints.iter().enumerate() {
         let is_selected = selected_index == Some(index);
-        let zoom = keypoint.zoom.clamp(MIN_CAMERA_ZOOM, MAX_CAMERA_ZOOM);
-        let distance = CAMERA_BASE_DISTANCE / zoom;
+        let distance = CAMERA_BASE_DISTANCE;
 
         let (sin_rotation, cos_rotation) = keypoint.rotation.sin_cos();
         let (sin_pitch, cos_pitch) = keypoint.pitch.sin_cos();

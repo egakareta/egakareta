@@ -102,7 +102,7 @@ pub(crate) enum AppCommand {
     EditorRedo,
 
     // ── Editor – zoom ───────────────────────────────────────────────
-    /// Adjust zoom by the given delta.
+    /// Adjust zoom by moving the camera along its look vector.
     EditorAdjustZoom(f32),
     /// Snap the editor camera to an absolute orientation in radians.
     EditorSetCameraOrientation { rotation: f32, pitch: f32 },

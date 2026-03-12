@@ -69,12 +69,20 @@ fn is_default_camera_keypoint_pitch(value: &f32) -> bool {
     (*value - default_camera_keypoint_pitch()).abs() <= 1e-6
 }
 
-fn default_camera_keypoint_zoom() -> f32 {
+fn default_camera_keypoint_transition_interval_seconds() -> f32 {
     1.0
 }
 
-fn is_default_camera_keypoint_zoom(value: &f32) -> bool {
-    (*value - 1.0).abs() <= 1e-6
+fn is_default_camera_keypoint_transition_interval_seconds(value: &f32) -> bool {
+    (*value - default_camera_keypoint_transition_interval_seconds()).abs() <= 1e-6
+}
+
+fn default_camera_keypoint_use_full_segment_transition() -> bool {
+    false
+}
+
+fn is_default_camera_keypoint_use_full_segment_transition(value: &bool) -> bool {
+    !*value
 }
 
 fn default_block_rotation_degrees() -> f32 {
@@ -262,6 +270,16 @@ pub(crate) struct CameraKeypoint {
     #[serde(default, skip_serializing_if = "is_default_camera_keypoint_easing")]
     pub(crate) easing: CameraKeypointEasing,
     #[serde(
+        default = "default_camera_keypoint_transition_interval_seconds",
+        skip_serializing_if = "is_default_camera_keypoint_transition_interval_seconds"
+    )]
+    pub(crate) transition_interval_seconds: f32,
+    #[serde(
+        default = "default_camera_keypoint_use_full_segment_transition",
+        skip_serializing_if = "is_default_camera_keypoint_use_full_segment_transition"
+    )]
+    pub(crate) use_full_segment_transition: bool,
+    #[serde(
         default = "default_camera_keypoint_target_position",
         skip_serializing_if = "is_default_camera_keypoint_target_position"
     )]
@@ -276,11 +294,6 @@ pub(crate) struct CameraKeypoint {
         skip_serializing_if = "is_default_camera_keypoint_pitch"
     )]
     pub(crate) pitch: f32,
-    #[serde(
-        default = "default_camera_keypoint_zoom",
-        skip_serializing_if = "is_default_camera_keypoint_zoom"
-    )]
-    pub(crate) zoom: f32,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -575,8 +588,9 @@ pub(crate) struct ColorSpaceUniform {
 mod tests {
     use super::{
         default_camera_keypoint_pitch, default_camera_keypoint_rotation,
-        default_camera_keypoint_zoom, CameraKeypoint, CameraKeypointEasing, CameraKeypointMode,
-        LevelMetadata, LevelObject, MusicMetadata, SpawnDirection, SpawnMetadata,
+        default_camera_keypoint_transition_interval_seconds, CameraKeypoint, CameraKeypointEasing,
+        CameraKeypointMode, LevelMetadata, LevelObject, MusicMetadata, SpawnDirection,
+        SpawnMetadata,
     };
     use serde_json::json;
 
@@ -681,10 +695,11 @@ mod tests {
             time_seconds: 2.5,
             mode: CameraKeypointMode::Follow,
             easing: CameraKeypointEasing::EaseInOut,
+            transition_interval_seconds: default_camera_keypoint_transition_interval_seconds(),
+            use_full_segment_transition: false,
             target_position: [0.0, 0.0, 0.0],
             rotation: default_camera_keypoint_rotation(),
             pitch: default_camera_keypoint_pitch(),
-            zoom: default_camera_keypoint_zoom(),
         };
 
         let value = serde_json::to_value(&keypoint).expect("serialize camera keypoint");

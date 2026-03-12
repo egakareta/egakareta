@@ -49,7 +49,6 @@ pub(crate) struct EditorGizmoState {
     pub(crate) last_pan: [f32; 2],
     pub(crate) last_rotation: f32,
     pub(crate) last_pitch: f32,
-    pub(crate) last_zoom: f32,
 }
 
 pub(crate) struct EditorRuntimeState {

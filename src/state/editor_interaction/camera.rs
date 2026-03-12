@@ -16,8 +16,7 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn camera_offset(&self) -> Vec3 {
-        let zoom = self.camera.editor_zoom.clamp(0.01, 10.0);
-        let distance = 24.0 / zoom;
+        let distance = 24.0;
         let pitch = self
             .camera
             .editor_pitch

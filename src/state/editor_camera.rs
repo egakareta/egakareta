@@ -5,11 +5,10 @@ use crate::types::{AppPhase, CameraKeypoint, CameraKeypointEasing, CameraKeypoin
 
 const EDITOR_CAMERA_BASE_DISTANCE: f32 = 24.0;
 const PLAY_CAMERA_DISTANCE: f32 = 28.28;
-const MIN_CAMERA_ZOOM: f32 = 0.01;
-const MAX_CAMERA_ZOOM: f32 = 10.0;
 const MIN_EDITOR_PITCH: f32 = -89.9f32.to_radians();
 const MAX_EDITOR_PITCH: f32 = 89.9f32.to_radians();
 const MIN_PLAYING_PITCH: f32 = 0.1f32.to_radians();
+const DEFAULT_CAMERA_KEYPOINT_TRANSITION_INTERVAL_SECONDS: f32 = 1.0;
 pub(crate) const DEFAULT_PLAY_CAMERA_ROTATION: f32 = -std::f32::consts::FRAC_PI_4;
 pub(crate) const DEFAULT_PLAY_CAMERA_PITCH: f32 = std::f32::consts::FRAC_PI_4;
 
@@ -24,7 +23,6 @@ pub(crate) struct EditorCameraState {
     pub(crate) editor_target_z: f32,
     pub(crate) editor_rotation: f32,
     pub(crate) editor_pitch: f32,
-    pub(crate) editor_zoom: f32,
     pub(crate) playing_rotation: f32,
     pub(crate) playing_pitch: f32,
     pub(crate) keypoints: Vec<CameraKeypoint>,
@@ -41,8 +39,8 @@ fn offset_from_rotation_pitch(rotation: f32, pitch: f32, distance: f32) -> Vec3 
     ))
 }
 
-fn editor_camera_offset_for_pose(rotation: f32, pitch: f32, zoom: f32) -> Vec3 {
-    let distance = EDITOR_CAMERA_BASE_DISTANCE / zoom.clamp(MIN_CAMERA_ZOOM, MAX_CAMERA_ZOOM);
+fn editor_camera_offset_for_pose(rotation: f32, pitch: f32) -> Vec3 {
+    let distance = EDITOR_CAMERA_BASE_DISTANCE;
     let pitch = pitch.clamp(MIN_EDITOR_PITCH, MAX_EDITOR_PITCH);
     offset_from_rotation_pitch(rotation, pitch, distance)
 }
@@ -107,18 +105,18 @@ impl EditorSubsystem {
         } else {
             DEFAULT_PLAY_CAMERA_PITCH
         };
-        keypoint.zoom = if keypoint.zoom.is_finite() {
-            keypoint.zoom.clamp(MIN_CAMERA_ZOOM, MAX_CAMERA_ZOOM)
+        keypoint.transition_interval_seconds = if keypoint.transition_interval_seconds.is_finite() {
+            keypoint.transition_interval_seconds.max(0.0)
         } else {
-            1.0
+            DEFAULT_CAMERA_KEYPOINT_TRANSITION_INTERVAL_SECONDS
         };
+        // use_full_segment_transition is a bool, no sanitization needed besides ensuring it's not forgotten
     }
 
     fn static_camera_view_for_keypoint(keypoint: &CameraKeypoint) -> CameraViewSample {
         let target = Vec3::from_array(keypoint.target_position);
         CameraViewSample {
-            eye: target
-                + editor_camera_offset_for_pose(keypoint.rotation, keypoint.pitch, keypoint.zoom),
+            eye: target + editor_camera_offset_for_pose(keypoint.rotation, keypoint.pitch),
             target,
         }
     }
@@ -136,10 +134,11 @@ impl EditorSubsystem {
             time_seconds,
             mode: CameraKeypointMode::Static,
             easing: CameraKeypointEasing::Linear,
+            transition_interval_seconds: DEFAULT_CAMERA_KEYPOINT_TRANSITION_INTERVAL_SECONDS,
+            use_full_segment_transition: false,
             target_position: self.editor_camera_target().to_array(),
             rotation: self.camera.editor_rotation,
             pitch: self.camera.editor_pitch,
-            zoom: self.camera.editor_zoom,
         };
         self.sanitize_camera_keypoint(&mut keypoint);
         keypoint
@@ -227,7 +226,6 @@ impl EditorSubsystem {
         keypoint.target_position = captured.target_position;
         keypoint.rotation = captured.rotation;
         keypoint.pitch = captured.pitch;
-        keypoint.zoom = captured.zoom;
         self.update_camera_keypoint(index, keypoint)
     }
 
@@ -243,15 +241,17 @@ impl EditorSubsystem {
         self.camera.editor_target_z = keypoint.target_position[2];
         self.camera.editor_rotation = keypoint.rotation;
         self.camera.editor_pitch = keypoint.pitch.clamp(MIN_EDITOR_PITCH, MAX_EDITOR_PITCH);
-        self.camera.editor_zoom = keypoint.zoom.clamp(MIN_CAMERA_ZOOM, MAX_CAMERA_ZOOM);
         true
     }
 
     pub(crate) fn adjust_zoom(&mut self, delta: f32) {
-        const ZOOM_SENSITIVITY: f32 = 0.12;
-        let factor = (1.0 + delta * ZOOM_SENSITIVITY).max(0.1);
-        self.camera.editor_zoom =
-            (self.camera.editor_zoom * factor).clamp(MIN_CAMERA_ZOOM, MAX_CAMERA_ZOOM);
+        let offset = self.camera_offset();
+        let look_dir = -offset.normalize();
+        let move_vec = look_dir * delta * 2.0;
+
+        self.camera.editor_pan[0] += move_vec.x;
+        self.camera.editor_pan[1] += move_vec.y;
+        self.camera.editor_target_z += move_vec.z;
     }
 
     pub(crate) fn pan_by_input(&mut self, screen_x: f32, screen_y: f32) {
@@ -370,7 +370,20 @@ impl State {
             }
 
             let end_sample = self.resolve_camera_keypoint_sample(first, live_follow_sample);
-            let alpha = eased_alpha(first.easing, clamped_time / first.time_seconds.max(1e-6));
+            let transition_start = if first.use_full_segment_transition {
+                0.0
+            } else {
+                (first.time_seconds - first.transition_interval_seconds.max(0.0)).max(0.0)
+            };
+            if clamped_time <= transition_start {
+                return live_follow_sample;
+            }
+
+            let transition_duration = (first.time_seconds - transition_start).max(1e-6);
+            let alpha = eased_alpha(
+                first.easing,
+                (clamped_time - transition_start) / transition_duration,
+            );
             return interpolate_camera_samples(live_follow_sample, end_sample, alpha);
         }
 
@@ -388,8 +401,18 @@ impl State {
             return live_follow_sample;
         }
 
-        let segment_duration = (next.time_seconds - previous.time_seconds).max(1e-6);
-        let local_alpha = (clamped_time - previous.time_seconds) / segment_duration;
+        let transition_start = if next.use_full_segment_transition {
+            previous.time_seconds
+        } else {
+            (next.time_seconds - next.transition_interval_seconds.max(0.0))
+                .max(previous.time_seconds)
+        };
+        if clamped_time <= transition_start {
+            return start_sample;
+        }
+
+        let transition_duration = (next.time_seconds - transition_start).max(1e-6);
+        let local_alpha = (clamped_time - transition_start) / transition_duration;
         let eased = eased_alpha(next.easing, local_alpha);
         interpolate_camera_samples(start_sample, end_sample, eased)
     }
@@ -411,10 +434,7 @@ impl State {
         (sample.eye.to_array(), sample.target.to_array())
     }
 
-    /// Adjusts the zoom level of the editor camera.
-    ///
-    /// Positive values zoom in, while negative values zoom out. This only
-    /// applies when the application is in the editor phase.
+    /// Adjusts the zoom level of the editor camera by moving its position.
     pub fn adjust_editor_zoom(&mut self, delta: f32) {
         if self.phase == AppPhase::Editor {
             self.editor.adjust_zoom(delta);
@@ -485,10 +505,11 @@ mod tests {
             time_seconds: 1.0,
             mode: CameraKeypointMode::Follow,
             easing: CameraKeypointEasing::Linear,
+            transition_interval_seconds: 1.0,
+            use_full_segment_transition: false,
             target_position: [0.0, 0.0, 0.0],
             rotation: 0.0,
             pitch: 0.0,
-            zoom: 1.0,
         };
         let static_keypoint = CameraKeypoint {
             mode: CameraKeypointMode::Static,

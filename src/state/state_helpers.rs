@@ -132,7 +132,6 @@ impl State {
         self.clear_editor_pan_keys();
         self.editor.camera.editor_rotation = -45.0f32.to_radians();
         self.editor.camera.editor_pitch = 45.0f32.to_radians();
-        self.editor.camera.editor_zoom = 1.0;
         self.editor.camera.editor_target_z = 0.0;
         self.editor.camera.selected_keypoint_index = None;
         self.gameplay.state = GameState::new();

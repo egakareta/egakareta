@@ -240,8 +240,6 @@ impl State {
                     .abs()
                     > 1e-4
                 || (self.editor.camera.editor_pitch - self.editor.runtime.gizmo.last_pitch).abs()
-                    > 1e-4
-                || (self.editor.camera.editor_zoom - self.editor.runtime.gizmo.last_zoom).abs()
                     > 1e-4;
 
             let has_selection = self.editor.ui.selected_block_index.is_some()
@@ -273,7 +271,6 @@ impl State {
             self.editor.runtime.gizmo.last_pan = self.editor.camera.editor_pan;
             self.editor.runtime.gizmo.last_rotation = self.editor.camera.editor_rotation;
             self.editor.runtime.gizmo.last_pitch = self.editor.camera.editor_pitch;
-            self.editor.runtime.gizmo.last_zoom = self.editor.camera.editor_zoom;
             let dirty_started_at = PlatformInstant::now();
             self.process_editor_dirty(frame_dt);
             self.perf_record(PerfStage::DirtyProcess, dirty_started_at);

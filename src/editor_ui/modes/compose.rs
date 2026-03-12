@@ -263,7 +263,9 @@ pub(crate) fn show_compose_mode_bottom_panel(
 
                         let mut changed = false;
 
-                        ui.horizontal(|ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing.x = 8.0;
+
                             ui.label("Time:");
                             changed |= ui
                                 .add(
@@ -272,9 +274,9 @@ pub(crate) fn show_compose_mode_bottom_panel(
                                         .range(0.0..=view.timeline_duration_seconds.max(0.1)),
                                 )
                                 .changed();
-                        });
 
-                        ui.horizontal(|ui| {
+                            ui.separator();
+
                             ui.label("Mode:");
                             let mut mode = keypoint.mode;
                             egui::ComboBox::from_id_salt("camera_keypoint_mode")
@@ -290,9 +292,9 @@ pub(crate) fn show_compose_mode_bottom_panel(
                                 keypoint.mode = mode;
                                 changed = true;
                             }
-                        });
 
-                        ui.horizontal(|ui| {
+                            ui.separator();
+
                             ui.label("Easing:");
                             let mut easing = keypoint.easing;
                             egui::ComboBox::from_id_salt("camera_keypoint_easing")
@@ -312,9 +314,27 @@ pub(crate) fn show_compose_mode_bottom_panel(
                                 keypoint.easing = easing;
                                 changed = true;
                             }
-                        });
 
-                        ui.horizontal(|ui| {
+                            ui.separator();
+
+                            ui.label("Transition:");
+                            changed |= ui
+                                .checkbox(&mut keypoint.use_full_segment_transition, "Full Segment")
+                                .changed();
+
+                            if !keypoint.use_full_segment_transition {
+                                changed |= ui
+                                    .add(
+                                        egui::DragValue::new(&mut keypoint.transition_interval_seconds)
+                                            .speed(0.01)
+                                            .range(0.0..=view.timeline_duration_seconds.max(0.1))
+                                            .suffix("s"),
+                                    )
+                                    .changed();
+                            }
+
+                            ui.separator();
+
                             ui.label("Target:");
                             changed |= ui
                                 .add(egui::DragValue::new(&mut keypoint.target_position[0]).prefix("X "))
@@ -325,11 +345,11 @@ pub(crate) fn show_compose_mode_bottom_panel(
                             changed |= ui
                                 .add(egui::DragValue::new(&mut keypoint.target_position[2]).prefix("Z "))
                                 .changed();
-                        });
 
-                        let mut rotation_degrees = keypoint.rotation.to_degrees();
-                        let mut pitch_degrees = keypoint.pitch.to_degrees();
-                        ui.horizontal(|ui| {
+                            ui.separator();
+
+                            let mut rotation_degrees = keypoint.rotation.to_degrees();
+                            let mut pitch_degrees = keypoint.pitch.to_degrees();
                             ui.label("Orientation:");
                             if ui
                                 .add(egui::DragValue::new(&mut rotation_degrees).speed(0.5).prefix("Rot ").suffix("°"))
@@ -345,13 +365,6 @@ pub(crate) fn show_compose_mode_bottom_panel(
                                 keypoint.pitch = pitch_degrees.to_radians();
                                 changed = true;
                             }
-                        });
-
-                        ui.horizontal(|ui| {
-                            ui.label("Zoom:");
-                            changed |= ui
-                                .add(egui::DragValue::new(&mut keypoint.zoom).speed(0.01).range(0.01..=10.0))
-                                .changed();
                         });
 
                         if keypoint.mode == CameraKeypointMode::Follow {
