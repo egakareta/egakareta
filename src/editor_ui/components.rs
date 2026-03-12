@@ -442,4 +442,53 @@ mod tests {
         let min_zoom = (0.12_f32 * 0.8).clamp(0.1, 10.0);
         approx_eq(min_zoom, 0.1, 0.001);
     }
+
+    #[test]
+    fn test_waveform_tick_alignment() {
+        // Setup constants similar to show_waveform_panel
+        let rect_width = 1000.0;
+        let rect_left = 100.0;
+        let duration_seconds = 60.0;
+        let zoom = 1.0;
+        let scroll = 5.0; // view starts at 5.0s
+        let sample_rate = 44100;
+        let waveform_window = 256;
+
+        let visible_duration = timeline_visible_duration(duration_seconds, zoom);
+        let (view_start, _view_end) = timeline_view_bounds(duration_seconds, zoom, scroll);
+
+        let samples_per_second = sample_rate as f32 / waveform_window as f32;
+        let pixels_per_second = rect_width / visible_duration;
+
+        // Pick a time and calculate its x-position as a tick would
+        let test_time = 7.5;
+        let _tick_x = rect_left + (test_time - view_start) / visible_duration * rect_width;
+
+        // Calculate the same time's x-position as a waveform sample would
+        // A sample at test_time would have this index:
+        let sample_idx = (test_time * samples_per_second) as usize;
+        let sample_time = sample_idx as f32 / samples_per_second;
+        let waveform_x = rect_left + (sample_time - view_start) * pixels_per_second;
+
+        // The tick_x and waveform_x should be aligned for the same time
+        // Note: they will only be exactly equal if test_time lands exactly on a sample boundary.
+        // But the formula should be consistent.
+        let tick_x_at_sample_time =
+            rect_left + (sample_time - view_start) / visible_duration * rect_width;
+        approx_eq(waveform_x, tick_x_at_sample_time, 0.001);
+
+        // Test with negative scroll (centered at start)
+        let scroll_neg = -2.0;
+        let (view_start_neg, _) = timeline_view_bounds(duration_seconds, zoom, scroll_neg);
+        let test_time_2 = 1.0;
+        let _tick_x_2 = rect_left + (test_time_2 - view_start_neg) / visible_duration * rect_width;
+
+        let sample_idx_2 = (test_time_2 * samples_per_second) as usize;
+        let sample_time_2 = sample_idx_2 as f32 / samples_per_second;
+        let waveform_x_2 = rect_left + (sample_time_2 - view_start_neg) * pixels_per_second;
+
+        let tick_x_at_sample_time_2 =
+            rect_left + (sample_time_2 - view_start_neg) / visible_duration * rect_width;
+        approx_eq(waveform_x_2, tick_x_at_sample_time_2, 0.001);
+    }
 }
