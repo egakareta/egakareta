@@ -18,6 +18,8 @@ RUN apt-get update \
     unzip \
     libclang-dev \
     libasound2-dev \
+    libasound2-plugins \
+    libmariadb-dev \
     libudev-dev \
     libxkbcommon-dev \
     libxkbcommon-x11-dev \
@@ -28,7 +30,17 @@ RUN apt-get update \
     libxrandr-dev \
     libvulkan-dev \
     libfontconfig1-dev \
-    pkg-config
+    mesa-vulkan-drivers \
+    libgl1-mesa-dri \
+    libgl1 \
+    xvfb \
+    alsa-utils \
+    x11-utils \
+    pkg-config \
+    gcc \
+    swig \
+    pipewire-alsa \
+    pipewire
 
 # Install Node.js via nvm and install Node 24 in a single layer
 # source nvm in the same RUN so the command is available immediately
