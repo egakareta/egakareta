@@ -294,6 +294,8 @@ fn show_view_selector_cube(
     camera_pitch: f32,
     commands: &mut Vec<AppCommand>,
 ) {
+    const ROTATE_SPEED: f32 = 0.004;
+    const PITCH_SPEED: f32 = 0.006;
     const FACE_SET: [ViewCubeFace; 6] = [
         ViewCubeFace {
             label: "Front",
@@ -375,7 +377,7 @@ fn show_view_selector_cube(
         .show(ctx, |ui| {
             let side = 128.0;
             let (rect, response) =
-                ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::click());
+                ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::click_and_drag());
             let painter = ui.painter_at(rect);
 
             painter.rect_filled(
@@ -524,7 +526,19 @@ fn show_view_selector_cube(
                 );
             }
 
-            if response.clicked() {
+            let dragging_cube = response.dragged_by(egui::PointerButton::Primary)
+                || response.dragged_by(egui::PointerButton::Secondary);
+            if dragging_cube {
+                let pointer_delta = ui.input(|input| input.pointer.delta());
+                if pointer_delta != egui::Vec2::ZERO {
+                    commands.push(AppCommand::EditorSetCameraOrientation {
+                        rotation: camera_rotation - pointer_delta.x * ROTATE_SPEED,
+                        pitch: camera_pitch + pointer_delta.y * PITCH_SPEED,
+                    });
+                }
+            }
+
+            if response.clicked() && !dragging_cube {
                 if let Some(idx) = hovered_face {
                     let face = &rendered_faces[idx];
                     commands.push(AppCommand::EditorSetCameraOrientation {
