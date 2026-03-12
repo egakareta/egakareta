@@ -94,6 +94,10 @@ impl PlatformAudio {
         self.backend.set_speed(speed.clamp(0.25, 2.0));
     }
 
+    pub(crate) fn play_sfx(&mut self, asset_path: &str) {
+        self.backend.play_sfx(asset_path);
+    }
+
     #[cfg(test)]
     fn with_backend(backend: Box<dyn AudioBackend>) -> Self {
         Self { backend }
@@ -322,6 +326,10 @@ mod tests {
 
         fn set_speed(&mut self, speed: f32) {
             self.state.lock().unwrap().last_speed = Some(speed);
+        }
+
+        fn play_sfx(&mut self, _asset_path: &str) {
+            // no-op for mock
         }
     }
 

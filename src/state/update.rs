@@ -137,6 +137,7 @@ impl State {
                 }
 
                 if (clamped_time - self.editor.timeline.clock.time_seconds).abs() > 1e-4 {
+                    let old_time = self.editor.timeline.clock.time_seconds;
                     self.editor.timeline.clock.time_seconds = clamped_time;
 
                     if simulate_preview {
@@ -167,6 +168,42 @@ impl State {
                                 snapshot.direction,
                             );
                             self.editor.timeline.playback.runtime = Some(runtime);
+                        }
+                    } else if clamped_time > old_time {
+                        if let Some(tp) = self
+                            .editor
+                            .timing
+                            .timing_points
+                            .iter()
+                            .rev()
+                            .find(|tp| tp.time_seconds <= clamped_time)
+                        {
+                            if tp.bpm > 0.0 {
+                                let beat_duration = 60.0 / tp.bpm;
+                                let old_beat = if old_time < tp.time_seconds {
+                                    -1
+                                } else {
+                                    ((old_time - tp.time_seconds) / beat_duration).floor() as i64
+                                };
+                                let new_beat = ((clamped_time - tp.time_seconds) / beat_duration)
+                                    .floor() as i64;
+
+                                if new_beat > old_beat {
+                                    let is_downbeat =
+                                        new_beat % (tp.time_signature_numerator.max(1) as i64) == 0;
+                                    if is_downbeat {
+                                        self.audio
+                                            .state
+                                            .runtime
+                                            .play_sfx("assets/metronome_major.mp3");
+                                    } else {
+                                        self.audio
+                                            .state
+                                            .runtime
+                                            .play_sfx("assets/metronome_minor.mp3");
+                                    }
+                                }
+                            }
                         }
                     }
                 }

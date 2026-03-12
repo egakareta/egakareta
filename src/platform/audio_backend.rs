@@ -19,6 +19,7 @@ pub(crate) trait AudioBackend {
     fn playback_time_seconds(&self) -> Option<f32>;
     fn is_playing(&self) -> bool;
     fn set_speed(&mut self, speed: f32);
+    fn play_sfx(&mut self, asset_path: &str);
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -37,6 +38,7 @@ struct WebAudioBackend {
     current_audio_source: Option<String>,
     current_blob_url: Option<gloo_file::ObjectUrl>,
     playback_speed: f32,
+    sfx_pool: std::collections::HashMap<String, Vec<web_sys::HtmlAudioElement>>,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -47,6 +49,7 @@ impl WebAudioBackend {
             current_audio_source: None,
             current_blob_url: None,
             playback_speed: 1.0,
+            sfx_pool: std::collections::HashMap::new(),
         }
     }
 }
@@ -135,6 +138,17 @@ impl AudioBackend for WebAudioBackend {
             audio.set_playback_rate(speed as f64);
         }
     }
+
+    fn play_sfx(&mut self, asset_path: &str) {
+        let pool = self.sfx_pool.entry(asset_path.to_string()).or_default();
+        if let Some(audio) = pool.iter().find(|a| a.ended() || a.paused()) {
+            audio.set_current_time(0.0);
+            let _ = audio.play();
+        } else if let Ok(audio) = web_sys::HtmlAudioElement::new_with_src(asset_path) {
+            let _ = audio.play();
+            pool.push(audio);
+        }
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -145,6 +159,8 @@ struct NativeAudioBackend {
     playback_started_at: Option<std::time::Instant>,
     playback_start_offset_seconds: f32,
     playback_speed: f32,
+    active_sfx: Vec<rodio::Player>,
+    sfx_cache: std::collections::HashMap<String, Vec<u8>>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -166,6 +182,8 @@ impl NativeAudioBackend {
             playback_started_at: None,
             playback_start_offset_seconds: 0.0,
             playback_speed: 1.0,
+            active_sfx: Vec::new(),
+            sfx_cache: std::collections::HashMap::new(),
         }
     }
 
@@ -323,6 +341,29 @@ impl AudioBackend for NativeAudioBackend {
         self.playback_speed = speed;
         if let Some(player) = &self.current_player {
             player.set_speed(speed);
+        }
+    }
+
+    fn play_sfx(&mut self, asset_path: &str) {
+        self.active_sfx.retain(|player| !player.empty());
+
+        if let Some(device) = &self._output_device {
+            let bytes = if let Some(cached) = self.sfx_cache.get(asset_path) {
+                cached.clone()
+            } else if let Ok(b) = std::fs::read(asset_path) {
+                self.sfx_cache.insert(asset_path.to_string(), b.clone());
+                b
+            } else {
+                return;
+            };
+
+            if let Ok(decoded) = rodio::Decoder::new(std::io::Cursor::new(bytes)) {
+                let (player, output) = rodio::Player::new();
+                device.mixer().add(output);
+                player.append(decoded);
+                player.play();
+                self.active_sfx.push(player);
+            }
         }
     }
 }
