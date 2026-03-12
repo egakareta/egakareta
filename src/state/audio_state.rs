@@ -1,5 +1,5 @@
-use crate::platform::audio::PlatformAudio;
-use std::collections::HashMap;
+use crate::platform::audio::{runtime_asset_source_key, PlatformAudio};
+use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{Receiver, Sender};
 
 use super::State;
@@ -7,7 +7,17 @@ use crate::platform::services::trigger_audio_import;
 use crate::types::LevelMetadata;
 
 pub(crate) type AudioImportData = (String, Vec<u8>);
+pub(crate) type RuntimeAudioPreloadData = crate::audio_service::AudioPreloadResult;
 pub(crate) type WaveformLoadData = (String, Option<(Vec<f32>, u32)>, Option<Vec<u8>>);
+
+pub(crate) struct RuntimeAudioPreloadState {
+    pub(crate) preloaded_audio: HashMap<String, Vec<u8>>,
+    pub(crate) preloading_source_keys: HashSet<String>,
+    pub(crate) preload_channel: (
+        Sender<RuntimeAudioPreloadData>,
+        Receiver<RuntimeAudioPreloadData>,
+    ),
+}
 
 pub(crate) struct EditorAudioState {
     pub(crate) local_audio_cache: HashMap<String, Vec<u8>>,
@@ -19,6 +29,7 @@ pub(crate) struct EditorAudioState {
 
 pub(crate) struct AudioState {
     pub(crate) runtime: PlatformAudio,
+    pub(crate) runtime_preload: RuntimeAudioPreloadState,
     pub(crate) editor: EditorAudioState,
 }
 
@@ -30,6 +41,11 @@ impl AudioState {
     pub(crate) fn new(local_audio_cache: HashMap<String, Vec<u8>>) -> Self {
         Self {
             runtime: PlatformAudio::new(),
+            runtime_preload: RuntimeAudioPreloadState {
+                preloaded_audio: HashMap::new(),
+                preloading_source_keys: HashSet::new(),
+                preload_channel: std::sync::mpsc::channel(),
+            },
             editor: EditorAudioState {
                 local_audio_cache,
                 audio_import_channel: std::sync::mpsc::channel(),
@@ -39,9 +55,41 @@ impl AudioState {
             },
         }
     }
+
+    pub(crate) fn preload_runtime_audio(&mut self, level_name: &str, music_source: &str) {
+        let source_key = runtime_asset_source_key(level_name, music_source);
+        if self
+            .runtime_preload
+            .preloaded_audio
+            .contains_key(&source_key)
+            || self
+                .runtime_preload
+                .preloading_source_keys
+                .contains(&source_key)
+        {
+            return;
+        }
+
+        self.runtime_preload
+            .preloading_source_keys
+            .insert(source_key.clone());
+
+        crate::audio_service::start_audio_preload(
+            source_key,
+            level_name.to_string(),
+            music_source.to_string(),
+            self.runtime_preload.preload_channel.0.clone(),
+        );
+    }
 }
 
 impl State {
+    pub(crate) fn preload_runtime_audio(&mut self, level_name: &str, music_source: &str) {
+        self.audio
+            .state
+            .preload_runtime_audio(level_name, music_source);
+    }
+
     pub(crate) fn stop_audio(&mut self) {
         self.audio.state.runtime.stop();
     }
@@ -56,14 +104,36 @@ impl State {
         metadata: &LevelMetadata,
         start_seconds: f32,
     ) {
-        if let Some(bytes) = self
+        let source_key = runtime_asset_source_key(level_name, &metadata.music.source);
+        let editor_bytes =
+            if self.phase == crate::types::AppPhase::Editor || self.session.playtesting_editor {
+                self.audio
+                    .state
+                    .editor
+                    .local_audio_cache
+                    .get(&metadata.music.source)
+                    .cloned()
+            } else {
+                None
+            };
+
+        self.update_runtime_audio_preloads();
+
+        if let Some(bytes) = editor_bytes {
+            self.audio.state.runtime.start_with_bytes_at(
+                &metadata.music.source,
+                &bytes,
+                start_seconds,
+            );
+        } else if let Some(bytes) = self
             .audio
             .state
-            .editor
-            .local_audio_cache
-            .get(&metadata.music.source)
+            .runtime_preload
+            .preloaded_audio
+            .get(&source_key)
         {
-            self.audio.state.runtime.start_with_bytes_at(
+            self.audio.state.runtime.start_preloaded_asset_at(
+                level_name,
                 &metadata.music.source,
                 bytes,
                 start_seconds,
@@ -96,6 +166,31 @@ impl State {
                 .remove(&self.session.editor_music_metadata.source);
             self.audio.state.editor.waveform_loading_source = None;
             self.load_waveform_for_current_audio();
+        }
+    }
+
+    pub(crate) fn update_runtime_audio_preloads(&mut self) {
+        while let Ok((source_key, bytes)) = self
+            .audio
+            .state
+            .runtime_preload
+            .preload_channel
+            .1
+            .try_recv()
+        {
+            self.audio
+                .state
+                .runtime_preload
+                .preloading_source_keys
+                .remove(&source_key);
+
+            if let Some(bytes) = bytes {
+                self.audio
+                    .state
+                    .runtime_preload
+                    .preloaded_audio
+                    .insert(source_key, bytes);
+            }
         }
     }
 
@@ -180,5 +275,23 @@ impl State {
             cached_bytes,
             sender,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AudioState;
+    use crate::platform::audio::runtime_asset_source_key;
+    use std::collections::HashMap;
+
+    #[test]
+    fn queues_runtime_audio_preload_by_level_and_source() {
+        let mut state = AudioState::new(HashMap::new());
+        state.preload_runtime_audio("Flowerfield", "music.mp3");
+
+        assert!(state
+            .runtime_preload
+            .preloading_source_keys
+            .contains(&runtime_asset_source_key("Flowerfield", "music.mp3")));
     }
 }

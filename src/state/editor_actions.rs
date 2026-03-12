@@ -407,6 +407,11 @@ impl State {
             self.editor.timeline.clock.time_seconds,
         );
 
+        let music_source = self.session.editor_music_metadata.source.clone();
+        if let Some(level_name) = transition.playing_level_name.as_deref() {
+            self.preload_runtime_audio(level_name, &music_source);
+        }
+
         self.enter_playing_phase(transition.playing_level_name, true);
         self.session.playtest_audio_start_seconds = Some(transition.playtest_audio_start_seconds);
         self.gameplay.state = GameState::new();

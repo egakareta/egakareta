@@ -24,6 +24,7 @@ impl State {
         self.stop_audio();
 
         if let Some(metadata) = self.load_level_metadata(&level_name) {
+            self.preload_runtime_audio(&level_name, &metadata.music.source);
             let transition = build_playing_transition_from_metadata(metadata);
             log::debug!("Starting level: {}", transition.level_name);
             self.gameplay.state.objects = transition.objects;

@@ -4,6 +4,14 @@ pub(crate) struct PlatformAudio {
     backend: Box<dyn AudioBackend>,
 }
 
+pub(crate) fn runtime_asset_source_key(level_name: &str, music_source: &str) -> String {
+    format!("asset:{}/{}", level_name, music_source)
+}
+
+fn runtime_bytes_source_key(music_source: &str) -> String {
+    format!("bytes:{}", music_source)
+}
+
 fn accumulate_waveform_frame_peak(
     peaks: &mut Vec<f32>,
     window_peak: &mut f32,
@@ -49,13 +57,13 @@ impl PlatformAudio {
         self.backend.stop();
     }
 
-    pub(crate) fn start_with_bytes_at(
+    fn start_with_source_key_at(
         &mut self,
+        source_key: String,
         music_source: &str,
         bytes: &[u8],
         start_seconds: f32,
     ) {
-        let source_key = format!("bytes:{}", music_source);
         let start_seconds = start_seconds.max(0.0);
         self.backend.stop();
 
@@ -68,8 +76,37 @@ impl PlatformAudio {
             .replace_with_bytes(source_key, music_source, bytes, start_seconds);
     }
 
+    pub(crate) fn start_with_bytes_at(
+        &mut self,
+        music_source: &str,
+        bytes: &[u8],
+        start_seconds: f32,
+    ) {
+        self.start_with_source_key_at(
+            runtime_bytes_source_key(music_source),
+            music_source,
+            bytes,
+            start_seconds,
+        );
+    }
+
+    pub(crate) fn start_preloaded_asset_at(
+        &mut self,
+        level_name: &str,
+        music_source: &str,
+        bytes: &[u8],
+        start_seconds: f32,
+    ) {
+        self.start_with_source_key_at(
+            runtime_asset_source_key(level_name, music_source),
+            music_source,
+            bytes,
+            start_seconds,
+        );
+    }
+
     pub(crate) fn start_at(&mut self, level_name: &str, music_source: &str, start_seconds: f32) {
-        let source_key = format!("asset:{}/{}", level_name, music_source);
+        let source_key = runtime_asset_source_key(level_name, music_source);
         let start_seconds = start_seconds.max(0.0);
         self.backend.stop();
 
@@ -270,6 +307,7 @@ mod tests {
         seek_calls: usize,
         replace_bytes_calls: usize,
         replace_asset_calls: usize,
+        last_bytes_source_key: Option<String>,
         last_speed: Option<f32>,
     }
 
@@ -298,12 +336,14 @@ mod tests {
 
         fn replace_with_bytes(
             &mut self,
-            _source_key: String,
+            source_key: String,
             _music_source: &str,
             _bytes: &[u8],
             _start_seconds: f32,
         ) {
-            self.state.lock().unwrap().replace_bytes_calls += 1;
+            let mut state = self.state.lock().unwrap();
+            state.replace_bytes_calls += 1;
+            state.last_bytes_source_key = Some(source_key);
         }
 
         fn replace_with_asset(
@@ -408,6 +448,21 @@ mod tests {
         assert_eq!(state.stop_calls, 1);
         assert_eq!(state.seek_calls, 0);
         assert_eq!(state.replace_asset_calls, 1);
+    }
+
+    #[test]
+    fn preloaded_assets_use_level_scoped_source_keys() {
+        let state = Arc::new(Mutex::new(MockState::default()));
+        let backend = Box::new(MockBackend::new(state.clone()));
+        let mut audio = PlatformAudio::with_backend(backend);
+        audio.start_preloaded_asset_at("level", "music.mp3", &[1, 2, 3], 0.5);
+
+        let state = state.lock().unwrap();
+        assert_eq!(state.replace_bytes_calls, 1);
+        assert_eq!(
+            state.last_bytes_source_key.as_deref(),
+            Some("asset:level/music.mp3")
+        );
     }
 
     #[test]

@@ -7,10 +7,45 @@ use std::sync::mpsc::Sender;
 
 use crate::platform::task::spawn_background;
 
+pub type AudioPreloadResult = (String, Option<Vec<u8>>);
 const WAVEFORM_WINDOW: usize = 256;
 
 pub type WaveformData = (Vec<f32>, u32);
 pub type WaveformResult = (String, Option<WaveformData>, Option<Vec<u8>>);
+
+async fn load_level_audio_bytes(level_name: &str, music_source: &str) -> Option<Vec<u8>> {
+    let audio_path = format!("assets/levels/{}/{}", level_name, music_source);
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::fs::read(&audio_path).ok()
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        let response = gloo_net::http::Request::get(&audio_path)
+            .send()
+            .await
+            .ok()?;
+        if !response.ok() {
+            return None;
+        }
+
+        response.binary().await.ok()
+    }
+}
+
+pub fn start_audio_preload(
+    source_key: String,
+    level_name: String,
+    music_source: String,
+    sender: Sender<AudioPreloadResult>,
+) {
+    spawn_background(async move {
+        let bytes = load_level_audio_bytes(&level_name, &music_source).await;
+        let _ = sender.send((source_key, bytes));
+    });
+}
 
 /// Starts asynchronous loading of waveform data for a music track.
 ///
@@ -35,26 +70,7 @@ pub fn start_waveform_loading(
         let bytes = if let Some(bytes) = cached_bytes {
             Some(bytes)
         } else {
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                let audio_path = format!("assets/levels/{}/{}", level_name, source_for_load);
-                std::fs::read(&audio_path).ok()
-            }
-            #[cfg(target_arch = "wasm32")]
-            {
-                let audio_path = format!("assets/levels/{}/{}", level_name, source_for_load);
-                async {
-                    let resp = gloo_net::http::Request::get(&audio_path)
-                        .send()
-                        .await
-                        .ok()?;
-                    if !resp.ok() {
-                        return None;
-                    }
-                    resp.binary().await.ok()
-                }
-                .await
-            }
+            load_level_audio_bytes(&level_name, &source_for_load).await
         };
 
         let decoded = if let Some(ref bytes) = bytes {
