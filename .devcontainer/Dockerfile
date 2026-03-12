@@ -19,6 +19,15 @@ RUN apt-get update \
     libclang-dev \
     libasound2-dev \
     libudev-dev \
+    libxkbcommon-dev \
+    libxkbcommon-x11-dev \
+    libwayland-dev \
+    libx11-dev \
+    libxcursor-dev \
+    libxi-dev \
+    libxrandr-dev \
+    libvulkan-dev \
+    libfontconfig1-dev \
     pkg-config
 
 # Install Node.js via nvm and install Node 24 in a single layer

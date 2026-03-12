@@ -4,6 +4,9 @@
         "vadimcn.vscode-lldb",
         "wgsl-analyzer.wgsl-analyzer",
         "slevesque.vscode-3dviewer",
-        "tamasfe.even-better-toml"
+        "tamasfe.even-better-toml",
+        "supabase.vscode-supabase-extension",
+        "foxundermoon.shell-format",
+        "mtxr.sqltools"
     ]
 }

@@ -4,23 +4,16 @@
         "dockerfile": "Dockerfile",
         "context": ".."
     },
-    "runArgs": [
-        "--device=/dev/dri",
-        "--device=/dev/snd",
-        "--ipc=host",
-        "--net=host",
-        "--gpus=all"
-    ],
+    "features": {
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+    },
+    "runArgs": ["--gpus=all", "--ipc=host"],
     "containerEnv": {
         "DISPLAY": "${localEnv:DISPLAY}",
         "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}",
         "XDG_RUNTIME_DIR": "${localEnv:XDG_RUNTIME_DIR}",
         "PULSE_SERVER": "${localEnv:PULSE_SERVER}"
     },
-    "mounts": [
-        "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind,consistency=cached",
-        "source=${localEnv:XDG_RUNTIME_DIR},target=${localEnv:XDG_RUNTIME_DIR},type=bind,consistency=cached"
-    ],
     "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
     "customizations": {
         "vscode": {
@@ -29,11 +22,17 @@
                 "ms-vscode.cpptools",
                 "esbenp.prettier-vscode",
                 "dbaeumer.vscode-eslint",
-                "tamasfe.even-better-toml"
+                "tamasfe.even-better-toml",
+                "Supabase.vscode-supabase-extension",
+                "foxundermoon.shell-format",
+                "vadimcn.vscode-lldb",
+                "slevesque.vscode-3dviewer",
+                "wgsl-analyzer.wgsl-analyzer",
+                "mtxr.sqltools"
             ]
         }
     },
-    "postCreateCommand": "bun install && bun run build",
+    "postCreateCommand": "bun install && bunx supabase start",
     "remoteUser": "root",
     "forwardPorts": [3000, 54324, 54323, 54321]
 }
