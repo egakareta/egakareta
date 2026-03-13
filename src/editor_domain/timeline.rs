@@ -261,6 +261,7 @@ pub(crate) struct TimelineState {
     pub(crate) position: [f32; 3],
     pub(crate) direction: SpawnDirection,
     pub(crate) elapsed_seconds: f32,
+    pub(crate) speed: f32,
 }
 
 pub(crate) fn derive_timeline_state(
@@ -277,5 +278,6 @@ pub(crate) fn derive_timeline_state(
         position: simulated.position,
         direction: simulated.direction,
         elapsed_seconds: simulated.elapsed_seconds,
+        speed: simulated.speed,
     }
 }

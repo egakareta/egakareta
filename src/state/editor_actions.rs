@@ -417,7 +417,11 @@ impl State {
         self.gameplay.state = GameState::new();
         self.gameplay.state.objects = transition.objects;
         self.gameplay.state.rebuild_behavior_cache();
-        self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction);
+        self.apply_spawn_to_game(
+            transition.spawn_position,
+            transition.spawn_direction,
+            Some(transition.spawn_speed),
+        );
         self.editor.camera.playing_rotation = transition.camera_rotation;
         self.editor.camera.playing_pitch = transition.camera_pitch;
         self.editor.ui.right_dragging = false;

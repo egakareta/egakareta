@@ -5,6 +5,7 @@ pub(crate) struct TimelineSimulationState {
     pub(crate) position: [f32; 3],
     pub(crate) direction: SpawnDirection,
     pub(crate) elapsed_seconds: f32,
+    pub(crate) speed: f32,
 }
 
 pub(crate) struct TimelineSimulationRuntime {
@@ -112,6 +113,7 @@ impl TimelineSimulationRuntime {
                 Direction::Right => SpawnDirection::Right,
             },
             elapsed_seconds: self.elapsed_seconds,
+            speed: self.game.speed,
         }
     }
 }

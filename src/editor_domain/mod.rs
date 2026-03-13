@@ -163,6 +163,41 @@ mod tests {
     }
 
     #[test]
+    fn playtest_transition_respects_speed_portals() {
+        use crate::game::BASE_PLAYER_SPEED;
+
+        // Place a speed portal at [0, 5, 0] (5 units ahead of spawn)
+        let objects = vec![LevelObject {
+            position: [0.5, 5.5, 0.5],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: 0.0,
+            roundness: 0.18,
+            block_id: "core/speedportal".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        }];
+
+        // Advance timeline past the portal (e.g., 10 units / BASE_PLAYER_SPEED seconds)
+        let timeline_time_seconds = 10.0 / BASE_PLAYER_SPEED;
+
+        let transition = build_editor_playtest_transition(
+            &objects,
+            None,
+            SpawnMetadata::default(),
+            &[],
+            timeline_time_seconds,
+        );
+
+        // BASE_PLAYER_SPEED * 1.5 (from speedportal.json)
+        let expected_speed = BASE_PLAYER_SPEED * 1.5;
+        assert!(
+            (transition.spawn_speed - expected_speed).abs() < 0.1,
+            "Speed should be multiplied by the portal: expected {}, got {}",
+            expected_speed,
+            transition.spawn_speed
+        );
+    }
+
+    #[test]
     fn builds_playing_transition_from_metadata() {
         let metadata = LevelMetadata {
             format_version: 1,
