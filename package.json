@@ -2,7 +2,7 @@
     "name": "egakareta",
     "scripts": {
         "benchmark": "cargo test benchmark_ -- --ignored",
-        "build": "wasm-pack build --target web",
+        "build": "wasm-pack build -t web -d dist/pkg && bun dist.js",
         "format:cargo": "cargo fmt",
         "format:prettier": "prettier --write .",
         "format": "bun run format:cargo && bun run format:prettier",
@@ -12,9 +12,9 @@
         "test:db": "supabase test db",
         "test:coverage": "cargo llvm-cov nextest --lcov --output-path lcov.info",
         "watch": "nodemon --exec \"bun run build\"",
-        "serve": "bunx serve .",
+        "serve": "bunx wrangler pages dev",
         "dev": "concurrently \"bun run watch\" \"bun run serve\" --prefix=none",
-        "prod": "bun run build && bun dist.js",
+        "prod": "bun run build",
         "prepare": "lefthook install"
     },
     "devDependencies": {

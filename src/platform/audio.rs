@@ -29,7 +29,6 @@ fn accumulate_waveform_frame_peak(
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn accumulate_interleaved_samples(
     samples: &[f32],
     channel_count: usize,
@@ -141,7 +140,6 @@ impl PlatformAudio {
 
 /// Decode audio bytes to a downsampled waveform suitable for display.
 /// Returns (peak_samples, sample_rate) where peak_samples contains one peak per window.
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn decode_audio_to_waveform(
     bytes: &[u8],
     window_size: usize,
@@ -236,66 +234,12 @@ pub(crate) fn decode_audio_to_waveform(
     Some((peaks, sample_rate))
 }
 
-#[cfg(target_arch = "wasm32")]
-pub(crate) async fn decode_audio_to_waveform_async(
-    bytes: &[u8],
-    window_size: usize,
-) -> Option<(Vec<f32>, u32)> {
-    use wasm_bindgen::JsCast as _;
-
-    let context = web_sys::AudioContext::new().ok()?;
-    let uint8_array = js_sys::Uint8Array::from(bytes);
-    let array_buffer = uint8_array.buffer();
-
-    let decode_promise = context.decode_audio_data(&array_buffer).ok()?;
-    let decoded = wasm_bindgen_futures::JsFuture::from(decode_promise)
-        .await
-        .ok()?;
-    let audio_buffer: web_sys::AudioBuffer = decoded.dyn_into().ok()?;
-
-    let sample_rate = audio_buffer.sample_rate() as u32;
-    let channels = audio_buffer.number_of_channels().max(1) as usize;
-    let frame_len = audio_buffer.length() as usize;
-
-    let mut channel_data = Vec::with_capacity(channels);
-    for channel_index in 0..channels {
-        let channel = audio_buffer.get_channel_data(channel_index as u32).ok()?;
-        channel_data.push(channel);
-    }
-
-    let mut peaks: Vec<f32> = Vec::new();
-    let mut window_peak: f32 = 0.0;
-    let mut window_count: usize = 0;
-    for frame_index in 0..frame_len {
-        let mut frame_peak = 0.0f32;
-        for channel in &channel_data {
-            frame_peak = frame_peak.max(channel[frame_index].abs());
-        }
-        accumulate_waveform_frame_peak(
-            &mut peaks,
-            &mut window_peak,
-            &mut window_count,
-            frame_peak,
-            window_size,
-        );
-    }
-
-    if window_count > 0 {
-        peaks.push(window_peak);
-    }
-
-    let _ = context.close();
-
-    Some((peaks, sample_rate))
-}
-
 #[cfg(test)]
 mod tests {
     use super::{accumulate_waveform_frame_peak, PlatformAudio};
     use crate::platform::audio_backend::AudioBackend;
     use std::sync::{Arc, Mutex};
 
-    #[cfg(not(target_arch = "wasm32"))]
     use super::accumulate_interleaved_samples;
 
     #[derive(Default)]
@@ -374,7 +318,6 @@ mod tests {
         }
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn interleaved_stereo_accumulates_per_frame_not_per_channel() {
         let interleaved = vec![

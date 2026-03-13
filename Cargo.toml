@@ -70,10 +70,12 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 keyframe = "1.1"
 async-trait = "0.1"
 winit = "0.30"
+getrandom = { version = "0", features = ["wasm_js"] }
+cpal = { version = "0.17", features = ["wasm-bindgen", "audioworklet"] }
+rodio = { version = "0.22", features = ["symphonia-all", "wasm-bindgen"] }
+symphonia = { version = "0.5", features = ["all"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-rodio = { version = "0.22", features = ["symphonia-all"] }
-symphonia = { version = "0.5", features = ["all"] }
 directories = "6.0"
 egui-winit = "0.33"
 

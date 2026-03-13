@@ -48,9 +48,7 @@ pub fn start_audio_preload(
 }
 
 /// Starts asynchronous loading of waveform data for a music track.
-///
-/// On native platforms, spawns a thread to decode the audio file.
-/// On WASM, uses fetch API to load and decode the audio.
+/// Spawns a thread to decode the audio file.
 ///
 /// # Arguments
 /// * `music_source` - The filename of the music file
@@ -74,14 +72,7 @@ pub fn start_waveform_loading(
         };
 
         let decoded = if let Some(ref bytes) = bytes {
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                crate::platform::audio::decode_audio_to_waveform(bytes, WAVEFORM_WINDOW)
-            }
-            #[cfg(target_arch = "wasm32")]
-            {
-                crate::platform::audio::decode_audio_to_waveform_async(bytes, WAVEFORM_WINDOW).await
-            }
+            crate::platform::audio::decode_audio_to_waveform(bytes, WAVEFORM_WINDOW)
         } else {
             None
         };

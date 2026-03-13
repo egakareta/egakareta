@@ -18,14 +18,6 @@ fs.copyFileSync(
     path.join(distPath, "index.html"),
 );
 
-// Copy pkg folder to dist
-const pkgSrcPath = path.join(__dirname, "pkg");
-const pkgDestPath = path.join(distPath, "pkg");
-if (fs.existsSync(pkgDestPath)) {
-    fs.rmSync(pkgDestPath, { recursive: true });
-}
-fs.cpSync(pkgSrcPath, pkgDestPath, { recursive: true });
-
 // Copy assets folder to dist
 const assetsSrcPath = path.join(__dirname, "assets");
 const assetsDestPath = path.join(distPath, "assets");
@@ -36,4 +28,13 @@ fs.cpSync(assetsSrcPath, assetsDestPath, { recursive: true });
 
 // Add .nojekyll file to dist
 fs.writeFileSync(path.join(distPath, ".nojekyll"), "");
+
+// Add _headers file to dist
+const headersContent = `
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+`;
+fs.writeFileSync(path.join(distPath, "_headers"), headersContent.trim());
+
 console.log(`created dist in ${Date.now() - start}ms`);
