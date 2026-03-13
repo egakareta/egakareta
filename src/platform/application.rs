@@ -371,11 +371,18 @@ impl ApplicationHandler for App {
     }
 }
 
+fn log_envs() {
+    log::info!("API_URL: {}", env!("API_URL"));
+    log::info!("PUBLISHABLE_KEY: {}", env!("PUBLISHABLE_KEY"));
+}
+
 /// Runs the native application for desktop platforms.
 /// Initializes the event loop, creates the window, and starts the game loop.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn run_native_app() {
     env_logger::init();
+    log_envs();
+
     let event_loop = EventLoop::builder().build().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = App::new_native();
@@ -389,6 +396,7 @@ pub async fn run_game() -> Result<(), JsValue> {
     // Set up logging to browser console
     console_log::init_with_level(log::Level::Debug).expect("failed to init logger");
     console_error_panic_hook::set_once();
+    log_envs();
 
     let browser_window = web_sys::window().ok_or_else(|| JsValue::from_str("Missing window"))?;
     let document = browser_window
