@@ -34,6 +34,7 @@ const headersContent = `
 /*
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: require-corp
+  Cross-Origin-Resource-Policy: same-site
 `;
 fs.writeFileSync(path.join(distPath, "_headers"), headersContent.trim());
 
