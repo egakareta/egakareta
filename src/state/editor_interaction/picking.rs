@@ -2,6 +2,10 @@ use super::super::{EditorPickResult, EditorSubsystem, PerfStage};
 use crate::platform::state_host::PlatformInstant;
 use glam::{Vec2, Vec3, Vec4};
 
+const CAMERA_KEYPOINT_BALL_PICK_RADIUS: f32 = 0.55;
+const CAMERA_KEYPOINT_ARROW_PICK_RADIUS: f32 = 0.55;
+const CAMERA_KEYPOINT_ARROW_PICK_OFFSET: f32 = 1.4;
+
 impl EditorSubsystem {
     pub(crate) fn pick_from_screen(
         &mut self,
@@ -40,6 +44,7 @@ impl EditorSubsystem {
         let mut best_hit_normal = Vec3::Z;
         let mut hit_found = false;
         let mut hit_block_index: Option<usize> = None;
+        let mut hit_camera_keypoint_index: Option<usize> = None;
 
         let raycast_started_at = PlatformInstant::now();
 
@@ -57,7 +62,39 @@ impl EditorSubsystem {
                     min_t = t;
                     hit_found = true;
                     hit_block_index = Some(index);
+                    hit_camera_keypoint_index = None;
                     best_hit_normal = normal;
+                }
+            }
+        }
+
+        for (index, keypoint) in self.camera_keypoints().iter().enumerate() {
+            let marker_eye = self.camera_keypoint_marker_eye(keypoint);
+            let marker_forward = self.camera_keypoint_marker_forward(keypoint);
+
+            let mut marker_t = self.ray_intersect_sphere(
+                ray_origin,
+                ray_dir,
+                marker_eye,
+                CAMERA_KEYPOINT_BALL_PICK_RADIUS,
+            );
+
+            let arrow_center = marker_eye + marker_forward * CAMERA_KEYPOINT_ARROW_PICK_OFFSET;
+            if let Some(arrow_t) = self.ray_intersect_sphere(
+                ray_origin,
+                ray_dir,
+                arrow_center,
+                CAMERA_KEYPOINT_ARROW_PICK_RADIUS,
+            ) {
+                marker_t = Some(marker_t.map_or(arrow_t, |best| best.min(arrow_t)));
+            }
+
+            if let Some(t) = marker_t {
+                if t < min_t {
+                    min_t = t;
+                    hit_found = true;
+                    hit_block_index = None;
+                    hit_camera_keypoint_index = Some(index);
                 }
             }
         }
@@ -90,7 +127,42 @@ impl EditorSubsystem {
         Some(EditorPickResult {
             cursor: next_cursor,
             hit_block_index,
+            hit_camera_keypoint_index,
         })
+    }
+
+    fn ray_intersect_sphere(
+        &self,
+        ray_origin: Vec3,
+        ray_dir: Vec3,
+        center: Vec3,
+        radius: f32,
+    ) -> Option<f32> {
+        let a = ray_dir.length_squared();
+        if a <= f32::EPSILON {
+            return None;
+        }
+
+        let oc = ray_origin - center;
+        let b = 2.0 * oc.dot(ray_dir);
+        let c = oc.length_squared() - radius * radius;
+        let discriminant = b * b - 4.0 * a * c;
+        if discriminant < 0.0 {
+            return None;
+        }
+
+        let sqrt_discriminant = discriminant.sqrt();
+        let inv_two_a = 0.5 / a;
+        let t0 = (-b - sqrt_discriminant) * inv_two_a;
+        let t1 = (-b + sqrt_discriminant) * inv_two_a;
+
+        if t0 >= 0.0 {
+            Some(t0)
+        } else if t1 >= 0.0 {
+            Some(t1)
+        } else {
+            None
+        }
     }
 
     pub(crate) fn ray_intersect_rotated_block(

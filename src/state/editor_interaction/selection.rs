@@ -7,6 +7,7 @@ use crate::types::{AppPhase, EditorMode};
 use glam::{Vec2, Vec3};
 
 const MARQUEE_DRAG_THRESHOLD_PX: f64 = 4.0;
+const CAMERA_KEYPOINT_MARQUEE_RADIUS_PX: f32 = 16.0;
 
 impl EditorSubsystem {
     fn marquee_has_dragged_far_enough(&self) -> bool {
@@ -98,6 +99,40 @@ impl EditorSubsystem {
         Some((min, max))
     }
 
+    fn marquee_keypoint_hit(
+        &self,
+        rect_min: Vec2,
+        rect_max: Vec2,
+        viewport: Vec2,
+    ) -> Option<usize> {
+        let rect_center = (rect_min + rect_max) * 0.5;
+        let mut best_hit: Option<(usize, f32)> = None;
+
+        for (index, keypoint) in self.camera_keypoints().iter().enumerate() {
+            let eye = self.camera_keypoint_marker_eye(keypoint);
+            let Some(screen) = self.world_to_screen_v(eye, viewport) else {
+                continue;
+            };
+
+            let overlaps = screen.x + CAMERA_KEYPOINT_MARQUEE_RADIUS_PX >= rect_min.x
+                && screen.x - CAMERA_KEYPOINT_MARQUEE_RADIUS_PX <= rect_max.x
+                && screen.y + CAMERA_KEYPOINT_MARQUEE_RADIUS_PX >= rect_min.y
+                && screen.y - CAMERA_KEYPOINT_MARQUEE_RADIUS_PX <= rect_max.y;
+
+            if !overlaps {
+                continue;
+            }
+
+            let distance_to_center = screen.distance(rect_center);
+            match best_hit {
+                Some((_, best_distance)) if distance_to_center >= best_distance => {}
+                _ => best_hit = Some((index, distance_to_center)),
+            }
+        }
+
+        best_hit.map(|(index, _)| index)
+    }
+
     fn apply_marquee_selection(&mut self, viewport: Vec2, additive: bool) {
         let Some(start) = self.ui.marquee_start_screen else {
             return;
@@ -135,6 +170,15 @@ impl EditorSubsystem {
             }
         } else {
             self.ui.selected_block_indices = hits;
+        }
+
+        let keypoint_hit = self.marquee_keypoint_hit(rect_min, rect_max, viewport);
+        if additive {
+            if let Some(index) = keypoint_hit {
+                self.set_camera_keypoint_selected(Some(index));
+            }
+        } else {
+            self.set_camera_keypoint_selected(keypoint_hit);
         }
 
         self.sync_primary_selection_from_indices();
@@ -409,6 +453,7 @@ impl EditorSubsystem {
                 self.ui.selected_block_indices.clear();
                 self.ui.selected_block_index = None;
                 self.ui.hovered_block_index = None;
+                self.set_camera_keypoint_selected(None);
             }
             self.runtime.interaction.gizmo_drag = None;
             self.runtime.interaction.block_drag = None;
@@ -429,7 +474,23 @@ impl EditorSubsystem {
         let mut changed = EditorInteractionChange::None;
         let apply_started_at = PlatformInstant::now();
 
-        if let Some(hit_index) = pick.hit_block_index {
+        if let Some(hit_keypoint_index) = pick.hit_camera_keypoint_index {
+            if additive && self.selected_camera_keypoint_index() == Some(hit_keypoint_index) {
+                self.set_camera_keypoint_selected(None);
+            } else {
+                self.set_camera_keypoint_selected(Some(hit_keypoint_index));
+            }
+
+            if !additive {
+                self.ui.selected_block_indices.clear();
+                self.ui.selected_block_index = None;
+            }
+            self.ui.hovered_block_index = None;
+            changed = EditorInteractionChange::Hover;
+        } else if let Some(hit_index) = pick.hit_block_index {
+            if !additive {
+                self.set_camera_keypoint_selected(None);
+            }
             if additive {
                 if let Some(existing) = self
                     .ui
@@ -455,6 +516,7 @@ impl EditorSubsystem {
             self.ui.selected_block_indices.clear();
             self.ui.selected_block_index = None;
             self.ui.hovered_block_index = None;
+            self.set_camera_keypoint_selected(None);
             changed = EditorInteractionChange::Hover;
         }
 

@@ -121,6 +121,21 @@ impl EditorSubsystem {
         }
     }
 
+    pub(crate) fn camera_keypoint_marker_eye(&self, keypoint: &CameraKeypoint) -> Vec3 {
+        Vec3::from_array(keypoint.target_position)
+            + editor_camera_offset_for_pose(keypoint.rotation, keypoint.pitch)
+    }
+
+    pub(crate) fn camera_keypoint_marker_forward(&self, keypoint: &CameraKeypoint) -> Vec3 {
+        let eye = self.camera_keypoint_marker_eye(keypoint);
+        let to_target = Vec3::from_array(keypoint.target_position) - eye;
+        if to_target.length_squared() <= f32::EPSILON {
+            Vec3::Y
+        } else {
+            to_target.normalize()
+        }
+    }
+
     pub(crate) fn editor_camera_target(&self) -> Vec3 {
         Vec3::new(
             self.camera.editor_pan[0],

@@ -552,7 +552,8 @@ impl State {
 mod tests {
     use super::State;
     use crate::commands::AppCommand;
-    use crate::types::AppPhase;
+    use crate::types::{AppPhase, CameraKeypoint, CameraKeypointEasing, CameraKeypointMode};
+    use glam::Vec2;
 
     #[test]
     fn test_command_routing_navigation() {
@@ -989,6 +990,124 @@ mod tests {
             assert_eq!(state.editor.ui.selected_block_indices.len(), 2);
             assert!(state.editor.ui.selected_block_indices.contains(&0));
             assert!(state.editor.ui.selected_block_indices.contains(&1));
+        });
+    }
+
+    #[test]
+    fn test_select_mode_click_selects_camera_keypoint_marker() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+            state.phase = AppPhase::Menu;
+            state.dispatch(AppCommand::ToggleEditor);
+            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
+
+            let camera_offset = state.editor.camera_offset();
+            let target = state.editor.editor_camera_target() + (-camera_offset.normalize() * 8.0);
+            state.editor.camera.keypoints = vec![CameraKeypoint {
+                time_seconds: 1.0,
+                mode: CameraKeypointMode::Static,
+                easing: CameraKeypointEasing::Linear,
+                transition_interval_seconds: 1.0,
+                use_full_segment_transition: false,
+                target_position: target.to_array(),
+                rotation: state.editor.camera.editor_rotation,
+                pitch: state.editor.camera.editor_pitch,
+            }];
+            state.editor.camera.selected_keypoint_index = None;
+
+            let marker_eye = state
+                .editor
+                .camera_keypoint_marker_eye(&state.editor.camera.keypoints[0]);
+            let viewport = Vec2::new(
+                state.render.gpu.config.width as f32,
+                state.render.gpu.config.height as f32,
+            );
+            let marker_screen = state
+                .editor
+                .world_to_screen_v(marker_eye, viewport)
+                .expect("camera marker should project to the screen");
+
+            state.process_input_event(InputEvent::PointerMoved {
+                x: marker_screen.x as f64,
+                y: marker_screen.y as f64,
+            });
+            state.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: true,
+            });
+            state.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: false,
+            });
+
+            assert_eq!(state.editor.camera.selected_keypoint_index, Some(0));
+        });
+    }
+
+    #[test]
+    fn test_select_mode_marquee_selects_camera_keypoint_marker() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+            state.phase = AppPhase::Menu;
+            state.dispatch(AppCommand::ToggleEditor);
+            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
+
+            let camera_offset = state.editor.camera_offset();
+            let target = state.editor.editor_camera_target() + (-camera_offset.normalize() * 8.0);
+            state.editor.camera.keypoints = vec![CameraKeypoint {
+                time_seconds: 1.0,
+                mode: CameraKeypointMode::Static,
+                easing: CameraKeypointEasing::Linear,
+                transition_interval_seconds: 1.0,
+                use_full_segment_transition: false,
+                target_position: target.to_array(),
+                rotation: state.editor.camera.editor_rotation,
+                pitch: state.editor.camera.editor_pitch,
+            }];
+            state.editor.camera.selected_keypoint_index = None;
+
+            let marker_eye = state
+                .editor
+                .camera_keypoint_marker_eye(&state.editor.camera.keypoints[0]);
+            let viewport = Vec2::new(
+                state.render.gpu.config.width as f32,
+                state.render.gpu.config.height as f32,
+            );
+            let marker_screen = state
+                .editor
+                .world_to_screen_v(marker_eye, viewport)
+                .expect("camera marker should project to the screen");
+
+            let start_x = marker_screen.x as f64 - 24.0;
+            let start_y = marker_screen.y as f64 - 24.0;
+            let end_x = marker_screen.x as f64 + 24.0;
+            let end_y = marker_screen.y as f64 + 24.0;
+
+            state.process_input_event(InputEvent::PointerMoved {
+                x: start_x,
+                y: start_y,
+            });
+            state.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: true,
+            });
+            state.process_input_event(InputEvent::PointerMoved { x: end_x, y: end_y });
+            state.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: false,
+            });
+
+            assert_eq!(state.editor.camera.selected_keypoint_index, Some(0));
         });
     }
 
