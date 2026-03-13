@@ -507,9 +507,33 @@ pub(crate) struct EditorState {
 /// Determines what actions are available and how interactions behave.
 pub(crate) enum EditorMode {
     Select,
+    Move,
+    Scale,
     #[default]
     Place,
     Timing,
+}
+
+impl EditorMode {
+    pub(crate) fn is_selection_mode(self) -> bool {
+        matches!(self, Self::Select | Self::Move | Self::Scale)
+    }
+
+    pub(crate) fn is_compose_mode(self) -> bool {
+        matches!(self, Self::Select | Self::Move | Self::Scale | Self::Place)
+    }
+
+    pub(crate) fn shows_move_gizmo(self) -> bool {
+        self == Self::Move
+    }
+
+    pub(crate) fn shows_scale_gizmo(self) -> bool {
+        self == Self::Scale
+    }
+
+    pub(crate) fn shows_gizmo(self) -> bool {
+        self.shows_move_gizmo() || self.shows_scale_gizmo()
+    }
 }
 
 impl EditorState {

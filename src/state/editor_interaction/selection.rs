@@ -3,7 +3,7 @@ use super::super::{
     EditorSubsystem, PerfStage, State,
 };
 use crate::platform::state_host::PlatformInstant;
-use crate::types::{AppPhase, EditorMode};
+use crate::types::AppPhase;
 use glam::{Vec2, Vec3};
 
 const MARQUEE_DRAG_THRESHOLD_PX: f64 = 4.0;
@@ -27,7 +27,7 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn begin_marquee_selection(&mut self, x: f64, y: f64, phase: AppPhase) -> bool {
-        if phase != AppPhase::Editor || self.ui.right_dragging || self.ui.mode != EditorMode::Select
+        if phase != AppPhase::Editor || self.ui.right_dragging || !self.ui.mode.is_selection_mode()
         {
             return false;
         }
@@ -37,7 +37,7 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn update_marquee_selection(&mut self, x: f64, y: f64, phase: AppPhase) -> bool {
-        if phase != AppPhase::Editor || self.ui.right_dragging || self.ui.mode != EditorMode::Select
+        if phase != AppPhase::Editor || self.ui.right_dragging || !self.ui.mode.is_selection_mode()
         {
             return false;
         }
@@ -209,7 +209,7 @@ impl EditorSubsystem {
         viewport: Vec2,
         phase: AppPhase,
     ) -> bool {
-        if phase != AppPhase::Editor || self.ui.mode != EditorMode::Select {
+        if phase != AppPhase::Editor || !self.ui.mode.is_selection_mode() {
             self.ui.marquee_start_screen = None;
             self.ui.marquee_current_screen = None;
             return false;
@@ -335,7 +335,7 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn begin_block_drag(&mut self, x: f64, y: f64, viewport_size: Vec2) -> bool {
-        if self.ui.mode != EditorMode::Select {
+        if !self.ui.mode.is_selection_mode() {
             return false;
         }
 
@@ -394,7 +394,7 @@ impl EditorSubsystem {
         viewport: Vec2,
         phase: AppPhase,
     ) -> bool {
-        if phase != AppPhase::Editor || self.ui.right_dragging || self.ui.mode != EditorMode::Select
+        if phase != AppPhase::Editor || self.ui.right_dragging || !self.ui.mode.is_selection_mode()
         {
             return false;
         }
@@ -577,7 +577,7 @@ impl State {
             return true;
         }
 
-        if self.phase == AppPhase::Editor && self.editor.mode() == EditorMode::Select {
+        if self.phase == AppPhase::Editor && self.editor.mode().is_selection_mode() {
             self.editor
                 .select_block_from_screen(x, y, viewport_size, self.phase);
             return true;

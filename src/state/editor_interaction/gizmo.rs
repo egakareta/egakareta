@@ -175,6 +175,13 @@ impl EditorSubsystem {
         y: f64,
         viewport_size: Vec2,
     ) -> Option<(GizmoDragKind, GizmoAxis)> {
+        let mode = self.ui.mode;
+        let allow_move = mode.shows_move_gizmo();
+        let allow_scale = mode.shows_scale_gizmo();
+        if !allow_move && !allow_scale {
+            return None;
+        }
+
         let (bounds_position, bounds_size) = self.selected_group_bounds()?;
 
         let center = Vec3::new(
@@ -185,92 +192,100 @@ impl EditorSubsystem {
         let axis_lengths = self.gizmo_axis_lengths_world(center, 50.0, viewport_size);
         let pointer = Vec2::new(x as f32, y as f32);
 
-        let candidates = [
-            (
-                GizmoDragKind::Move,
-                GizmoAxis::X,
-                center + Vec3::new(axis_lengths[0], 0.0, 0.0),
-                GIZMO_MOVE_PICK_RADIUS_PIXELS,
-            ),
-            (
-                GizmoDragKind::Move,
-                GizmoAxis::Y,
-                center + Vec3::new(0.0, axis_lengths[1], 0.0),
-                GIZMO_MOVE_PICK_RADIUS_PIXELS,
-            ),
-            (
-                GizmoDragKind::Move,
-                GizmoAxis::Z,
-                center + Vec3::new(0.0, 0.0, axis_lengths[2]),
-                GIZMO_MOVE_PICK_RADIUS_PIXELS,
-            ),
-            (
-                GizmoDragKind::Move,
-                GizmoAxis::XNeg,
-                center + Vec3::new(-axis_lengths[0], 0.0, 0.0),
-                GIZMO_MOVE_PICK_RADIUS_PIXELS,
-            ),
-            (
-                GizmoDragKind::Move,
-                GizmoAxis::YNeg,
-                center + Vec3::new(0.0, -axis_lengths[1], 0.0),
-                GIZMO_MOVE_PICK_RADIUS_PIXELS,
-            ),
-            (
-                GizmoDragKind::Move,
-                GizmoAxis::ZNeg,
-                center + Vec3::new(0.0, 0.0, -axis_lengths[2]),
-                GIZMO_MOVE_PICK_RADIUS_PIXELS,
-            ),
-            (
-                GizmoDragKind::Resize,
-                GizmoAxis::X,
-                Vec3::new(
-                    bounds_position[0] + bounds_size[0] + 0.36,
-                    center.y,
-                    center.z,
+        let mut candidates: Vec<(GizmoDragKind, GizmoAxis, Vec3, f32)> = Vec::new();
+        if allow_move {
+            candidates.extend_from_slice(&[
+                (
+                    GizmoDragKind::Move,
+                    GizmoAxis::X,
+                    center + Vec3::new(axis_lengths[0], 0.0, 0.0),
+                    GIZMO_MOVE_PICK_RADIUS_PIXELS,
                 ),
-                GIZMO_RESIZE_PICK_RADIUS_PIXELS,
-            ),
-            (
-                GizmoDragKind::Resize,
-                GizmoAxis::Y,
-                Vec3::new(
-                    center.x,
-                    bounds_position[1] + bounds_size[1] + 0.36,
-                    center.z,
+                (
+                    GizmoDragKind::Move,
+                    GizmoAxis::Y,
+                    center + Vec3::new(0.0, axis_lengths[1], 0.0),
+                    GIZMO_MOVE_PICK_RADIUS_PIXELS,
                 ),
-                GIZMO_RESIZE_PICK_RADIUS_PIXELS,
-            ),
-            (
-                GizmoDragKind::Resize,
-                GizmoAxis::Z,
-                Vec3::new(
-                    center.x,
-                    center.y,
-                    bounds_position[2] + bounds_size[2] + 0.36,
+                (
+                    GizmoDragKind::Move,
+                    GizmoAxis::Z,
+                    center + Vec3::new(0.0, 0.0, axis_lengths[2]),
+                    GIZMO_MOVE_PICK_RADIUS_PIXELS,
                 ),
-                GIZMO_RESIZE_PICK_RADIUS_PIXELS,
-            ),
-            (
-                GizmoDragKind::Resize,
-                GizmoAxis::XNeg,
-                Vec3::new(bounds_position[0] - 0.36, center.y, center.z),
-                GIZMO_RESIZE_PICK_RADIUS_PIXELS,
-            ),
-            (
-                GizmoDragKind::Resize,
-                GizmoAxis::YNeg,
-                Vec3::new(center.x, bounds_position[1] - 0.36, center.z),
-                GIZMO_RESIZE_PICK_RADIUS_PIXELS,
-            ),
-            (
-                GizmoDragKind::Resize,
-                GizmoAxis::ZNeg,
-                Vec3::new(center.x, center.y, bounds_position[2] - 0.36),
-                GIZMO_RESIZE_PICK_RADIUS_PIXELS,
-            ),
-        ];
+                (
+                    GizmoDragKind::Move,
+                    GizmoAxis::XNeg,
+                    center + Vec3::new(-axis_lengths[0], 0.0, 0.0),
+                    GIZMO_MOVE_PICK_RADIUS_PIXELS,
+                ),
+                (
+                    GizmoDragKind::Move,
+                    GizmoAxis::YNeg,
+                    center + Vec3::new(0.0, -axis_lengths[1], 0.0),
+                    GIZMO_MOVE_PICK_RADIUS_PIXELS,
+                ),
+                (
+                    GizmoDragKind::Move,
+                    GizmoAxis::ZNeg,
+                    center + Vec3::new(0.0, 0.0, -axis_lengths[2]),
+                    GIZMO_MOVE_PICK_RADIUS_PIXELS,
+                ),
+            ]);
+        }
+
+        if allow_scale {
+            candidates.extend_from_slice(&[
+                (
+                    GizmoDragKind::Resize,
+                    GizmoAxis::X,
+                    Vec3::new(
+                        bounds_position[0] + bounds_size[0] + 0.36,
+                        center.y,
+                        center.z,
+                    ),
+                    GIZMO_RESIZE_PICK_RADIUS_PIXELS,
+                ),
+                (
+                    GizmoDragKind::Resize,
+                    GizmoAxis::Y,
+                    Vec3::new(
+                        center.x,
+                        bounds_position[1] + bounds_size[1] + 0.36,
+                        center.z,
+                    ),
+                    GIZMO_RESIZE_PICK_RADIUS_PIXELS,
+                ),
+                (
+                    GizmoDragKind::Resize,
+                    GizmoAxis::Z,
+                    Vec3::new(
+                        center.x,
+                        center.y,
+                        bounds_position[2] + bounds_size[2] + 0.36,
+                    ),
+                    GIZMO_RESIZE_PICK_RADIUS_PIXELS,
+                ),
+                (
+                    GizmoDragKind::Resize,
+                    GizmoAxis::XNeg,
+                    Vec3::new(bounds_position[0] - 0.36, center.y, center.z),
+                    GIZMO_RESIZE_PICK_RADIUS_PIXELS,
+                ),
+                (
+                    GizmoDragKind::Resize,
+                    GizmoAxis::YNeg,
+                    Vec3::new(center.x, bounds_position[1] - 0.36, center.z),
+                    GIZMO_RESIZE_PICK_RADIUS_PIXELS,
+                ),
+                (
+                    GizmoDragKind::Resize,
+                    GizmoAxis::ZNeg,
+                    Vec3::new(center.x, center.y, bounds_position[2] - 0.36),
+                    GIZMO_RESIZE_PICK_RADIUS_PIXELS,
+                ),
+            ]);
+        }
 
         let mut best: Option<(GizmoDragKind, GizmoAxis, f32)> = None;
         for (kind, axis, world, pick_radius) in candidates {
@@ -349,7 +364,7 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn begin_gizmo_drag(&mut self, x: f64, y: f64, viewport_size: Vec2) -> bool {
-        if self.ui.mode != crate::types::EditorMode::Select {
+        if !self.ui.mode.shows_gizmo() {
             return false;
         }
 

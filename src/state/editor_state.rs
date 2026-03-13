@@ -85,7 +85,7 @@ impl EditorSubsystem {
         self.runtime.interaction.block_drag = None;
         self.ui.marquee_start_screen = None;
         self.ui.marquee_current_screen = None;
-        if mode == EditorMode::Place || mode == EditorMode::Timing {
+        if !mode.is_selection_mode() {
             self.ui.selected_block_index = None;
             self.ui.selected_block_indices.clear();
             self.ui.hovered_block_index = None;

@@ -290,23 +290,20 @@ impl State {
         self.editor.set_pointer_screen(Some([x, y]));
         self.editor.set_left_mouse_down(true);
         if self.phase == AppPhase::Editor {
-            match self.editor.mode() {
-                EditorMode::Place => {
-                    self.update_editor_cursor_from_screen(x, y);
-                    self.place_editor_block();
+            let mode = self.editor.mode();
+            if mode == EditorMode::Place {
+                self.update_editor_cursor_from_screen(x, y);
+                self.place_editor_block();
+            } else if mode.is_selection_mode() {
+                if self.begin_editor_gizmo_drag(x, y) {
+                    return;
                 }
-                EditorMode::Select => {
-                    if self.begin_editor_gizmo_drag(x, y) {
-                        return;
-                    }
-                    if self.begin_editor_selected_block_drag(x, y) {
-                        return;
-                    }
-                    self.begin_editor_marquee_selection(x, y);
+                if self.begin_editor_selected_block_drag(x, y) {
+                    return;
                 }
-                EditorMode::Timing => {
-                    // Timing mode: clicks handled by egui waveform panel
-                }
+                self.begin_editor_marquee_selection(x, y);
+            } else if mode == EditorMode::Timing {
+                // Timing mode: clicks handled by egui waveform panel
             }
             return;
         }
@@ -516,7 +513,7 @@ mod tests {
             };
 
             state.start_editor(0);
-            state.editor.ui.mode = EditorMode::Select;
+            state.editor.ui.mode = EditorMode::Move;
 
             state.editor.objects = vec![
                 LevelObject {

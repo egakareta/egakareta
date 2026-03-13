@@ -247,7 +247,7 @@ impl State {
             let is_dragging = self.editor.runtime.interaction.gizmo_drag.is_some()
                 || self.editor.runtime.interaction.block_drag.is_some();
 
-            if has_selection && self.editor.ui.mode == EditorMode::Select {
+            if has_selection && self.editor.ui.mode.shows_gizmo() {
                 if is_dragging {
                     let gizmo_started_at = PlatformInstant::now();
                     self.rebuild_editor_gizmo_vertices();

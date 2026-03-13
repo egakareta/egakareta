@@ -34,7 +34,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
         ui.horizontal(|ui| {
             // Top-level tabs: Compose / Timing
             let mode = view.mode;
-            let is_compose = mode == EditorMode::Select || mode == EditorMode::Place;
+            let is_compose = mode.is_compose_mode();
             if ui.selectable_label(is_compose, "Compose").clicked() && !is_compose {
                 commands.push(crate::commands::AppCommand::EditorSetMode(
                     EditorMode::Place,
@@ -194,7 +194,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
         show_view_selector_cube(ctx, view.camera_rotation, view.camera_pitch, &mut commands);
     }
 
-    if view.mode == EditorMode::Select {
+    if view.mode.is_selection_mode() {
         if let Some((start, current, is_active_drag)) = view.marquee_selection_rect_screen {
             if is_active_drag {
                 let rect = egui::Rect::from_two_pos(

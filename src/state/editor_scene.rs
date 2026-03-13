@@ -9,7 +9,7 @@ use crate::mesh::{
     build_spawn_marker_vertices, build_tap_indicator_vertices, GizmoPart,
 };
 use crate::platform::state_host::PlatformInstant;
-use crate::types::{AppPhase, EditorMode, SpawnDirection};
+use crate::types::{AppPhase, SpawnDirection};
 
 impl EditorSubsystem {
     pub(crate) fn mark_dirty(&mut self, dirty: EditorDirtyFlags) {
@@ -302,7 +302,7 @@ impl State {
     }
 
     pub(super) fn rebuild_editor_hover_outline_vertices(&mut self) {
-        if self.phase != AppPhase::Editor || self.editor.ui.mode != EditorMode::Select {
+        if self.phase != AppPhase::Editor || !self.editor.ui.mode.is_selection_mode() {
             self.render.meshes.editor_hover_outline.clear();
             return;
         }
@@ -335,7 +335,8 @@ impl State {
     }
 
     pub(super) fn rebuild_editor_gizmo_vertices(&mut self) {
-        if self.phase != AppPhase::Editor || self.editor.ui.mode != EditorMode::Select {
+        let mode = self.editor.ui.mode;
+        if self.phase != AppPhase::Editor || !mode.shows_gizmo() {
             self.render.meshes.editor_gizmo.clear();
             return;
         }
@@ -377,6 +378,8 @@ impl State {
             bounds_size,
             axis_lengths,
             axis_width,
+            mode.shows_move_gizmo(),
+            mode.shows_scale_gizmo(),
             active_part,
         );
         self.render.meshes.editor_gizmo.replace_with_vertices(
@@ -387,7 +390,7 @@ impl State {
     }
 
     pub(super) fn rebuild_editor_selection_outline_vertices(&mut self) {
-        if self.phase != AppPhase::Editor || self.editor.ui.mode != EditorMode::Select {
+        if self.phase != AppPhase::Editor || !self.editor.ui.mode.is_selection_mode() {
             self.render.meshes.editor_selection_outline.clear();
             return;
         }

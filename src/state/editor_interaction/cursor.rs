@@ -1,5 +1,5 @@
 use super::super::{EditorInteractionChange, EditorSubsystem, State};
-use crate::types::{AppPhase, EditorMode};
+use crate::types::AppPhase;
 use glam::Vec2;
 
 impl EditorSubsystem {
@@ -12,14 +12,14 @@ impl EditorSubsystem {
         self.ui.pointer_screen = Some([x, y]);
 
         let Some(pick) = self.pick_from_screen(x, y, viewport_size) else {
-            if self.ui.mode == EditorMode::Select && self.ui.hovered_block_index.is_some() {
+            if self.ui.mode.is_selection_mode() && self.ui.hovered_block_index.is_some() {
                 self.ui.hovered_block_index = None;
                 return EditorInteractionChange::Hover;
             }
             return EditorInteractionChange::None;
         };
 
-        if self.ui.mode == EditorMode::Select {
+        if self.ui.mode.is_selection_mode() {
             if self.ui.hovered_block_index != pick.hit_block_index {
                 self.ui.hovered_block_index = pick.hit_block_index;
                 return EditorInteractionChange::Hover;

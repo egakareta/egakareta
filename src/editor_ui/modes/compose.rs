@@ -20,6 +20,18 @@ pub(crate) fn show_compose_mode_bottom_panel(
             commands.push(AppCommand::EditorSetMode(EditorMode::Select));
         }
         if ui
+            .selectable_label(mode == EditorMode::Move, "Move")
+            .clicked()
+        {
+            commands.push(AppCommand::EditorSetMode(EditorMode::Move));
+        }
+        if ui
+            .selectable_label(mode == EditorMode::Scale, "Scale")
+            .clicked()
+        {
+            commands.push(AppCommand::EditorSetMode(EditorMode::Scale));
+        }
+        if ui
             .selectable_label(mode == EditorMode::Place, "Place")
             .clicked()
         {
@@ -65,8 +77,8 @@ pub(crate) fn show_compose_mode_bottom_panel(
                 }
             });
         }
-        EditorMode::Select => {
-            ui.label("Tip: Shift+Click to select multiple blocks.");
+        EditorMode::Select | EditorMode::Move | EditorMode::Scale => {
+            ui.label("Tip: Shift+Click to select multiple blocks. Hotkeys: 1 Select, 2 Move, 3 Scale, 4 Place.");
             if let Some(mut selected) = view.selected_block.clone() {
                 ui.horizontal_wrapped(|ui| {
                     ui.horizontal(|ui| {
@@ -151,7 +163,7 @@ pub(crate) fn show_compose_mode_bottom_panel(
                     }
                 });
             } else {
-                ui.label("Select mode: click a block to edit it.");
+                ui.label("Selection mode: click a block to edit it.");
             }
         }
         EditorMode::Timing => {} // handled separately

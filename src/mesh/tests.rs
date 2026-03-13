@@ -46,6 +46,8 @@ mod tests {
             [2.0, 2.0, 2.0],
             [3.0, 4.0, 5.0],
             0.1,
+            true,
+            true,
             None,
         );
         assert!(!vertices.is_empty());

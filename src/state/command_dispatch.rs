@@ -358,20 +358,10 @@ impl State {
                     None
                 }
             }
-            "q" | "Q" => {
-                if self.is_editor() && just_pressed {
-                    Some(AppCommand::EditorSetMode(EditorMode::Select))
-                } else {
-                    None
-                }
-            }
+            "q" | "Q" => None,
             "e" | "E" => {
-                if just_pressed {
-                    if self.is_editor() {
-                        Some(AppCommand::EditorSetMode(EditorMode::Place))
-                    } else {
-                        Some(AppCommand::ToggleEditor)
-                    }
+                if !self.is_editor() && just_pressed {
+                    Some(AppCommand::ToggleEditor)
                 } else {
                     None
                 }
@@ -426,26 +416,70 @@ impl State {
             }
             "1" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::EditorSetBlockId("core/stone".to_string()))
+                    if self.editor.ui.shift_held {
+                        Some(AppCommand::EditorSetBlockId("core/stone".to_string()))
+                    } else {
+                        Some(AppCommand::EditorSetMode(EditorMode::Select))
+                    }
                 } else {
                     None
                 }
             }
             "2" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::EditorSetBlockId("core/grass".to_string()))
+                    if self.editor.ui.shift_held {
+                        Some(AppCommand::EditorSetBlockId("core/grass".to_string()))
+                    } else {
+                        Some(AppCommand::EditorSetMode(EditorMode::Move))
+                    }
                 } else {
                     None
                 }
             }
             "3" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::EditorSetBlockId("core/dirt".to_string()))
+                    if self.editor.ui.shift_held {
+                        Some(AppCommand::EditorSetBlockId("core/dirt".to_string()))
+                    } else {
+                        Some(AppCommand::EditorSetMode(EditorMode::Scale))
+                    }
                 } else {
                     None
                 }
             }
             "4" => {
+                if self.is_editor() && just_pressed {
+                    if self.editor.ui.shift_held {
+                        Some(AppCommand::EditorSetBlockId("core/void".to_string()))
+                    } else {
+                        Some(AppCommand::EditorSetMode(EditorMode::Place))
+                    }
+                } else {
+                    None
+                }
+            }
+            "!" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorSetBlockId("core/stone".to_string()))
+                } else {
+                    None
+                }
+            }
+            "@" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorSetBlockId("core/grass".to_string()))
+                } else {
+                    None
+                }
+            }
+            "#" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorSetBlockId("core/dirt".to_string()))
+                } else {
+                    None
+                }
+            }
+            "$" => {
                 if self.is_editor() && just_pressed {
                     Some(AppCommand::EditorSetBlockId("core/void".to_string()))
                 } else {
@@ -585,6 +619,12 @@ mod tests {
 
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Select);
+
+            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Move));
+            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Move);
+
+            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Scale));
+            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Scale);
 
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Timing));
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Timing);
@@ -812,6 +852,173 @@ mod tests {
                 just_pressed: false,
             });
             assert!(!state.editor.ui.pan_up_held);
+        });
+    }
+
+    #[test]
+    fn test_keyboard_numeric_hotkeys_switch_editor_modes() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+            state.phase = AppPhase::Menu;
+            state.dispatch(AppCommand::ToggleEditor);
+
+            state.process_input_event(InputEvent::Key {
+                key: "1".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Select);
+
+            state.process_input_event(InputEvent::Key {
+                key: "2".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Move);
+
+            state.process_input_event(InputEvent::Key {
+                key: "3".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Scale);
+
+            state.process_input_event(InputEvent::Key {
+                key: "4".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Place);
+        });
+    }
+
+    #[test]
+    fn test_keyboard_shift_number_hotkeys_select_blocks() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+            state.phase = AppPhase::Menu;
+            state.dispatch(AppCommand::ToggleEditor);
+
+            state.process_input_event(InputEvent::Key {
+                key: "Shift".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+
+            state.process_input_event(InputEvent::Key {
+                key: "1".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert_eq!(state.editor.config.selected_block_id, "core/stone");
+
+            state.process_input_event(InputEvent::Key {
+                key: "2".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert_eq!(state.editor.config.selected_block_id, "core/grass");
+
+            state.process_input_event(InputEvent::Key {
+                key: "3".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert_eq!(state.editor.config.selected_block_id, "core/dirt");
+
+            state.process_input_event(InputEvent::Key {
+                key: "4".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert_eq!(state.editor.config.selected_block_id, "core/void");
+
+            state.process_input_event(InputEvent::Key {
+                key: "Shift".to_string(),
+                pressed: false,
+                just_pressed: false,
+            });
+        });
+    }
+
+    #[test]
+    fn test_keyboard_shifted_symbol_hotkeys_select_blocks() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+            state.phase = AppPhase::Menu;
+            state.dispatch(AppCommand::ToggleEditor);
+
+            state.process_input_event(InputEvent::Key {
+                key: "!".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert_eq!(state.editor.config.selected_block_id, "core/stone");
+
+            state.process_input_event(InputEvent::Key {
+                key: "@".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert_eq!(state.editor.config.selected_block_id, "core/grass");
+
+            state.process_input_event(InputEvent::Key {
+                key: "#".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert_eq!(state.editor.config.selected_block_id, "core/dirt");
+
+            state.process_input_event(InputEvent::Key {
+                key: "$".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert_eq!(state.editor.config.selected_block_id, "core/void");
+        });
+    }
+
+    #[test]
+    fn test_keyboard_qe_do_not_switch_modes_in_editor() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+            state.phase = AppPhase::Menu;
+            state.dispatch(AppCommand::ToggleEditor);
+            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Scale));
+
+            state.process_input_event(InputEvent::Key {
+                key: "q".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Scale);
+
+            state.process_input_event(InputEvent::Key {
+                key: "e".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Scale);
         });
     }
 
