@@ -200,6 +200,7 @@
                 await init(wasmResponse);
 
                 console.log("wasm module initialized");
+                console.log("isolated:", self.crossOriginIsolated);
 
                 // Run the game
                 await run_game();
