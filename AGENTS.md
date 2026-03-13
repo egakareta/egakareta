@@ -55,15 +55,8 @@ Understanding the project structure is crucial for idiomatic changes:
 
 ### Platform Duality (WASM vs Native)
 
-- **Never** use synchronous, blocking I/O on the main thread since it freezes the web version.
-- Use conditional compilation `#[cfg(target_arch = "wasm32")]` and `#[cfg(not(target_arch = "wasm32"))]` rigorously.
-- When interacting with Web APIs (DOM, IndexedDB, Web Audio), depend heavily on `web-sys`, `js-sys`, and `wasm-bindgen`.
+- Use conditional compilation `#[cfg(target_arch = "wasm32")]` and `#[cfg(not(target_arch = "wasm32"))]` as needed to separate platform-specific logic. However, strive to keep the logic as unified as possible and prefer libraries that support both targets seamlessly.
 - Instead of standard library `std::time`, use `web_time` to guarantee compatibility across platforms.
-
-### Imports & Visibility
-
-- Order imports logically: `std` modules first, third-party crates (`serde`, `glam`, `wgpu`) second, `crate` internal modules last.
-- Be extremely conservative with visibility. Use `pub(crate)` to encapsulate logic inside the library unless it absolutely needs to be exposed in `lib.rs`'s public API. Avoid bare `pub` on internal structs or fields to prevent accidental tight coupling.
 
 ### Error Handling
 
