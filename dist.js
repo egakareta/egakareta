@@ -4,6 +4,8 @@ import url from "url";
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
+const start = Date.now();
+
 // Create dist folder if it doesn't exist
 const distPath = path.join(__dirname, "dist");
 if (!fs.existsSync(distPath)) {
@@ -34,3 +36,4 @@ fs.cpSync(assetsSrcPath, assetsDestPath, { recursive: true });
 
 // Add .nojekyll file to dist
 fs.writeFileSync(path.join(distPath, ".nojekyll"), "");
+console.log(`created dist in ${Date.now() - start}ms`);
