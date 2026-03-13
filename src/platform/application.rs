@@ -273,15 +273,13 @@ impl ApplicationHandler for App {
                 button,
                 state: element_state,
                 ..
-            } => {
-                if should_route_pointer_input(egui_consumed, false) {
-                    let pressed = element_state == ElementState::Pressed;
-                    let button_idx = mouse_button_index_from_winit(button);
-                    runtime.state.process_input_event(InputEvent::MouseButton {
-                        button: button_idx,
-                        pressed,
-                    });
-                }
+            } if should_route_pointer_input(egui_consumed, false) => {
+                let pressed = element_state == ElementState::Pressed;
+                let button_idx = mouse_button_index_from_winit(button);
+                runtime.state.process_input_event(InputEvent::MouseButton {
+                    button: button_idx,
+                    pressed,
+                });
             }
             WindowEvent::CursorMoved { position, .. } => {
                 if should_route_pointer_input(egui_consumed, false) {
@@ -299,13 +297,13 @@ impl ApplicationHandler for App {
                 }
                 self.last_cursor_pos = Some(position);
             }
-            WindowEvent::MouseWheel { delta, .. } => {
-                if should_route_pointer_input(egui_consumed, false) {
-                    let zoom_delta = zoom_delta_from_winit(delta);
-                    runtime
-                        .state
-                        .process_input_event(InputEvent::Zoom(zoom_delta));
-                }
+            WindowEvent::MouseWheel { delta, .. }
+                if should_route_pointer_input(egui_consumed, false) =>
+            {
+                let zoom_delta = zoom_delta_from_winit(delta);
+                runtime
+                    .state
+                    .process_input_event(InputEvent::Zoom(zoom_delta));
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if !should_route_keyboard_input(
@@ -388,6 +386,8 @@ pub fn run_native_app() {
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub async fn run_game() -> Result<(), JsValue> {
+    // Set up logging to browser console
+    console_log::init_with_level(log::Level::Debug).expect("failed to init logger");
     console_error_panic_hook::set_once();
 
     let browser_window = web_sys::window().ok_or_else(|| JsValue::from_str("Missing window"))?;
