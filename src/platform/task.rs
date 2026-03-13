@@ -21,7 +21,7 @@ where
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::spawn_background;
-    use std::time::Duration;
+    use web_time::Duration;
 
     #[test]
     fn executes_background_future() {

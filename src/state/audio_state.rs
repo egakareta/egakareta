@@ -94,6 +94,10 @@ impl State {
         self.audio.state.runtime.stop();
     }
 
+    pub(crate) fn resume_audio(&mut self) {
+        self.audio.state.runtime.resume();
+    }
+
     pub(crate) fn start_audio(&mut self, level_name: &str, metadata: &LevelMetadata) {
         self.start_audio_at_seconds(level_name, metadata, 0.0);
     }

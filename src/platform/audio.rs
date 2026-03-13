@@ -1,7 +1,7 @@
-use crate::platform::audio_backend::{create_audio_backend, AudioBackend};
+use crate::platform::audio_backend::AudioBackend;
 
 pub(crate) struct PlatformAudio {
-    backend: Box<dyn AudioBackend>,
+    backend: AudioBackend,
 }
 
 pub(crate) fn runtime_asset_source_key(level_name: &str, music_source: &str) -> String {
@@ -48,7 +48,7 @@ fn accumulate_interleaved_samples(
 impl PlatformAudio {
     pub(crate) fn new() -> Self {
         Self {
-            backend: create_audio_backend(),
+            backend: AudioBackend::new(),
         }
     }
 
@@ -128,17 +128,16 @@ impl PlatformAudio {
         self.backend.set_speed(speed.clamp(0.25, 2.0));
     }
 
-    pub(crate) fn play_sfx(&mut self, asset_path: &str) {
-        self.backend.play_sfx(asset_path);
+    pub(crate) fn play_sfx(&mut self, asset_bytes: &'static [u8]) {
+        self.backend.play_sfx(asset_bytes);
+    }
+
+    pub(crate) fn resume(&mut self) {
+        self.backend.resume();
     }
 
     pub(crate) fn backend_name(&self) -> String {
         self.backend.backend_name()
-    }
-
-    #[cfg(test)]
-    fn with_backend(backend: Box<dyn AudioBackend>) -> Self {
-        Self { backend }
     }
 }
 
@@ -158,6 +157,7 @@ pub(crate) fn decode_audio_to_waveform(
 
     let source = std::io::Cursor::new(bytes.to_vec());
     let mss = MediaSourceStream::new(Box::new(source), Default::default());
+    log::info!("Decoding audio to waveform ({} bytes)", bytes.len());
     let hint = Hint::new();
     let probed = symphonia::default::get_probe()
         .format(
@@ -235,96 +235,14 @@ pub(crate) fn decode_audio_to_waveform(
         peaks.push(window_peak);
     }
 
+    log::info!("Audio waveform decoding complete ({} peaks)", peaks.len());
     Some((peaks, sample_rate))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{accumulate_waveform_frame_peak, PlatformAudio};
-    use crate::platform::audio_backend::AudioBackend;
-    use std::sync::{Arc, Mutex};
-
     use super::accumulate_interleaved_samples;
-
-    #[derive(Default)]
-    struct MockState {
-        stop_calls: usize,
-        reuse: bool,
-        seek_success: bool,
-        seek_calls: usize,
-        replace_bytes_calls: usize,
-        replace_asset_calls: usize,
-        last_bytes_source_key: Option<String>,
-        last_speed: Option<f32>,
-    }
-
-    struct MockBackend {
-        state: Arc<Mutex<MockState>>,
-    }
-
-    impl MockBackend {
-        fn new(state: Arc<Mutex<MockState>>) -> Self {
-            Self { state }
-        }
-    }
-
-    impl AudioBackend for MockBackend {
-        fn stop(&mut self) {
-            self.state.lock().unwrap().stop_calls += 1;
-        }
-
-        fn can_reuse_source(&self, _source_key: &str) -> bool {
-            self.state.lock().unwrap().reuse
-        }
-
-        fn seek_and_play(&mut self, _start_seconds: f32) -> bool {
-            let mut state = self.state.lock().unwrap();
-            state.seek_calls += 1;
-            state.seek_success
-        }
-
-        fn replace_with_bytes(
-            &mut self,
-            source_key: String,
-            _music_source: &str,
-            _bytes: &[u8],
-            _start_seconds: f32,
-        ) {
-            let mut state = self.state.lock().unwrap();
-            state.replace_bytes_calls += 1;
-            state.last_bytes_source_key = Some(source_key);
-        }
-
-        fn replace_with_asset(
-            &mut self,
-            _source_key: String,
-            _level_name: &str,
-            _music_source: &str,
-            _start_seconds: f32,
-        ) {
-            self.state.lock().unwrap().replace_asset_calls += 1;
-        }
-
-        fn playback_time_seconds(&self) -> Option<f32> {
-            None
-        }
-
-        fn is_playing(&self) -> bool {
-            false
-        }
-
-        fn set_speed(&mut self, speed: f32) {
-            self.state.lock().unwrap().last_speed = Some(speed);
-        }
-
-        fn play_sfx(&mut self, _asset_path: &str) {
-            // no-op for mock
-        }
-
-        fn backend_name(&self) -> String {
-            "MockBackend".to_string()
-        }
-    }
+    use super::accumulate_waveform_frame_peak;
 
     #[test]
     fn interleaved_stereo_accumulates_per_frame_not_per_channel() {
@@ -371,78 +289,5 @@ mod tests {
         assert_eq!(peaks, vec![0.8]);
         assert_eq!(window_count, 0);
         assert_eq!(window_peak, 0.0);
-    }
-
-    #[test]
-    fn reuses_existing_source_before_replacing() {
-        let state = Arc::new(Mutex::new(MockState {
-            reuse: true,
-            seek_success: true,
-            ..Default::default()
-        }));
-        let backend = Box::new(MockBackend::new(state.clone()));
-        let mut audio = PlatformAudio::with_backend(backend);
-        audio.start_with_bytes_at("music.mp3", &[1, 2, 3], 1.0);
-
-        let state = state.lock().unwrap();
-        assert_eq!(state.stop_calls, 1);
-        assert_eq!(state.seek_calls, 1);
-        assert_eq!(state.replace_bytes_calls, 0);
-    }
-
-    #[test]
-    fn replaces_when_reuse_seek_fails() {
-        let state = Arc::new(Mutex::new(MockState {
-            reuse: true,
-            seek_success: false,
-            ..Default::default()
-        }));
-        let backend = Box::new(MockBackend::new(state.clone()));
-        let mut audio = PlatformAudio::with_backend(backend);
-        audio.start_at("level", "music.mp3", 0.0);
-
-        let state = state.lock().unwrap();
-        assert_eq!(state.stop_calls, 1);
-        assert_eq!(state.seek_calls, 1);
-        assert_eq!(state.replace_asset_calls, 1);
-    }
-
-    #[test]
-    fn replaces_when_source_is_not_reusable() {
-        let state = Arc::new(Mutex::new(MockState::default()));
-        let backend = Box::new(MockBackend::new(state.clone()));
-        let mut audio = PlatformAudio::with_backend(backend);
-        audio.start_at("level", "music.mp3", 2.0);
-
-        let state = state.lock().unwrap();
-        assert_eq!(state.stop_calls, 1);
-        assert_eq!(state.seek_calls, 0);
-        assert_eq!(state.replace_asset_calls, 1);
-    }
-
-    #[test]
-    fn preloaded_assets_use_level_scoped_source_keys() {
-        let state = Arc::new(Mutex::new(MockState::default()));
-        let backend = Box::new(MockBackend::new(state.clone()));
-        let mut audio = PlatformAudio::with_backend(backend);
-        audio.start_preloaded_asset_at("level", "music.mp3", &[1, 2, 3], 0.5);
-
-        let state = state.lock().unwrap();
-        assert_eq!(state.replace_bytes_calls, 1);
-        assert_eq!(
-            state.last_bytes_source_key.as_deref(),
-            Some("asset:level/music.mp3")
-        );
-    }
-
-    #[test]
-    fn clamps_speed_before_delegating() {
-        let state = Arc::new(Mutex::new(MockState::default()));
-        let backend = Box::new(MockBackend::new(state.clone()));
-        let mut audio = PlatformAudio::with_backend(backend);
-        audio.set_speed(10.0);
-
-        let state = state.lock().unwrap();
-        assert_eq!(state.last_speed, Some(2.0));
     }
 }

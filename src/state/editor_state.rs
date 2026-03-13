@@ -1035,8 +1035,8 @@ impl State {
         let now_secs = {
             #[cfg(not(target_arch = "wasm32"))]
             {
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
+                web_time::SystemTime::now()
+                    .duration_since(web_time::UNIX_EPOCH)
                     .map(|d| d.as_secs_f64())
                     .unwrap_or(0.0)
             }

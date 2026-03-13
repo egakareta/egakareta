@@ -193,15 +193,13 @@ impl State {
                                     let is_downbeat =
                                         new_beat % (tp.time_signature_numerator.max(1) as i64) == 0;
                                     if is_downbeat {
-                                        self.audio
-                                            .state
-                                            .runtime
-                                            .play_sfx("assets/metronome_major.mp3");
+                                        self.audio.state.runtime.play_sfx(include_bytes!(
+                                            "../../assets/metronome_major.mp3"
+                                        ));
                                     } else {
-                                        self.audio
-                                            .state
-                                            .runtime
-                                            .play_sfx("assets/metronome_minor.mp3");
+                                        self.audio.state.runtime.play_sfx(include_bytes!(
+                                            "../../assets/metronome_minor.mp3"
+                                        ));
                                     }
                                 }
                             }

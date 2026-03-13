@@ -14,25 +14,7 @@ pub type WaveformData = (Vec<f32>, u32);
 pub type WaveformResult = (String, Option<WaveformData>, Option<Vec<u8>>);
 
 async fn load_level_audio_bytes(level_name: &str, music_source: &str) -> Option<Vec<u8>> {
-    let audio_path = format!("assets/levels/{}/{}", level_name, music_source);
-
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        std::fs::read(&audio_path).ok()
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        let response = gloo_net::http::Request::get(&audio_path)
-            .send()
-            .await
-            .ok()?;
-        if !response.ok() {
-            return None;
-        }
-
-        response.binary().await.ok()
-    }
+    crate::level_repository::get_builtin_audio(level_name, music_source).map(|bytes| bytes.to_vec())
 }
 
 pub fn start_audio_preload(

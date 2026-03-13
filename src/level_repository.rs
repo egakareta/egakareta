@@ -38,6 +38,12 @@ pub(crate) fn load_builtin_level_metadata(level_name: &str) -> Option<LevelMetad
         .cloned()
 }
 
+/// Retrieves the raw audio bytes for a built-in level's music file.
+pub(crate) fn get_builtin_audio(level_name: &str, music_source: &str) -> Option<&'static [u8]> {
+    let path = format!("{}/{}", level_name, music_source);
+    LEVELS_DIR.get_file(path).map(|f| f.contents())
+}
+
 /// Parses level metadata from a JSON string.
 pub(crate) fn parse_level_metadata_json(json: &str) -> Result<LevelMetadata, String> {
     let mut metadata: LevelMetadata =

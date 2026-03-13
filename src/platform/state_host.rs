@@ -6,11 +6,7 @@ pub(crate) type WasmCanvas = web_sys::HtmlCanvasElement;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) type NativeWindow = winit::window::Window;
 
-#[cfg(target_arch = "wasm32")]
 pub(crate) type PlatformInstant = web_time::Instant;
-
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) type PlatformInstant = std::time::Instant;
 
 pub(crate) enum SurfaceHost {
     #[cfg(target_arch = "wasm32")]

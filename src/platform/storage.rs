@@ -136,9 +136,8 @@ impl AudioStorage for PlatformAudioStorage {
         music_source: &str,
     ) -> Option<Vec<u8>> {
         if let Some(name) = level_name {
-            let audio_path = format!("assets/levels/{}/{}", name, music_source);
-            if let Ok(bytes) = std::fs::read(audio_path) {
-                return Some(bytes);
+            if let Some(bytes) = crate::level_repository::get_builtin_audio(name, music_source) {
+                return Some(bytes.to_vec());
             }
         }
 

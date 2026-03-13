@@ -1,282 +1,224 @@
-pub(crate) trait AudioBackend {
-    fn stop(&mut self);
-    fn can_reuse_source(&self, source_key: &str) -> bool;
-    fn seek_and_play(&mut self, start_seconds: f32) -> bool;
-    fn replace_with_bytes(
-        &mut self,
-        source_key: String,
-        music_source: &str,
-        bytes: &[u8],
-        start_seconds: f32,
-    );
-    fn replace_with_asset(
-        &mut self,
-        source_key: String,
-        level_name: &str,
-        music_source: &str,
-        start_seconds: f32,
-    );
-    fn playback_time_seconds(&self) -> Option<f32>;
-    fn is_playing(&self) -> bool;
-    fn set_speed(&mut self, speed: f32);
-    fn play_sfx(&mut self, asset_path: &str);
+use std::cell::RefCell;
+use std::io::Cursor;
+use std::rc::Rc;
+
+fn select_host() -> cpal::Host {
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Ok(host) = cpal::host_from_id(cpal::HostId::AudioWorklet) {
+            return host;
+        }
+    }
+    cpal::default_host()
 }
 
-#[cfg(target_arch = "wasm32")]
-pub(crate) fn create_audio_backend() -> Box<dyn AudioBackend> {
-    Box::new(WebAudioBackend::new())
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn create_audio_backend() -> Box<dyn AudioBackend> {
-    Box::new(NativeAudioBackend::new())
-}
-
-#[cfg(target_arch = "wasm32")]
-struct WebAudioBackend {
-    current_audio: Option<web_sys::HtmlAudioElement>,
-    current_audio_source: Option<String>,
-    current_blob_url: Option<gloo_file::ObjectUrl>,
-    playback_speed: f32,
-    sfx_pool: std::collections::HashMap<String, Vec<web_sys::HtmlAudioElement>>,
-}
-
-#[cfg(target_arch = "wasm32")]
-impl WebAudioBackend {
-    fn new() -> Self {
-        Self {
-            current_audio: None,
-            current_audio_source: None,
-            current_blob_url: None,
-            playback_speed: 1.0,
-            sfx_pool: std::collections::HashMap::new(),
-        }
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-impl AudioBackend for WebAudioBackend {
-    fn stop(&mut self) {
-        if let Some(audio) = &self.current_audio {
-            let _ = audio.pause();
-        }
-    }
-
-    fn can_reuse_source(&self, source_key: &str) -> bool {
-        self.current_audio_source.as_deref() == Some(source_key)
-    }
-
-    fn seek_and_play(&mut self, start_seconds: f32) -> bool {
-        if let Some(audio) = &self.current_audio {
-            audio.set_current_time(start_seconds as f64);
-            audio.set_playback_rate(self.playback_speed as f64);
-            let _ = audio.play();
-            true
-        } else {
-            false
-        }
-    }
-
-    fn replace_with_bytes(
-        &mut self,
-        source_key: String,
-        _music_source: &str,
-        bytes: &[u8],
-        start_seconds: f32,
-    ) {
-        let blob = gloo_file::Blob::new(bytes);
-        let url = gloo_file::ObjectUrl::from(blob);
-
-        match web_sys::HtmlAudioElement::new_with_src(&url) {
-            Ok(audio) => {
-                audio.set_current_time(start_seconds as f64);
-                audio.set_playback_rate(self.playback_speed as f64);
-                let _ = audio.play();
-                self.current_audio = Some(audio);
-                self.current_audio_source = Some(source_key);
-                self.current_blob_url = Some(url);
-            }
-            Err(err) => {
-                gloo_console::error!("Failed to create HTML audio element: {:?}", err);
-            }
-        }
-    }
-
-    fn replace_with_asset(
-        &mut self,
-        source_key: String,
-        level_name: &str,
-        music_source: &str,
-        start_seconds: f32,
-    ) {
-        self.current_blob_url = None;
-        let audio_url = format!("assets/levels/{}/{}", level_name, music_source);
-
-        if let Ok(audio) = web_sys::HtmlAudioElement::new_with_src(&audio_url) {
-            audio.set_current_time(start_seconds as f64);
-            audio.set_playback_rate(self.playback_speed as f64);
-            let _ = audio.play();
-            self.current_audio = Some(audio);
-            self.current_audio_source = Some(source_key);
-        }
-    }
-
-    fn playback_time_seconds(&self) -> Option<f32> {
-        self.current_audio
-            .as_ref()
-            .map(|audio| audio.current_time() as f32)
-    }
-
-    fn is_playing(&self) -> bool {
-        if let Some(audio) = &self.current_audio {
-            !audio.paused() && !audio.ended()
-        } else {
-            false
-        }
-    }
-
-    fn set_speed(&mut self, speed: f32) {
-        self.playback_speed = speed;
-        if let Some(audio) = &self.current_audio {
-            audio.set_playback_rate(speed as f64);
-        }
-    }
-
-    fn play_sfx(&mut self, asset_path: &str) {
-        let pool = self.sfx_pool.entry(asset_path.to_string()).or_default();
-        if let Some(audio) = pool.iter().find(|a| a.ended() || a.paused()) {
-            audio.set_current_time(0.0);
-            let _ = audio.play();
-        } else if let Ok(audio) = web_sys::HtmlAudioElement::new_with_src(asset_path) {
-            let _ = audio.play();
-            pool.push(audio);
-        }
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-struct NativeAudioBackend {
+struct RodioBackendInner {
     _output_device: Option<rodio::MixerDeviceSink>,
+    device_tried: bool,
     current_player: Option<rodio::Player>,
     current_audio_source: Option<String>,
-    playback_started_at: Option<std::time::Instant>,
+    playback_started_at: Option<web_time::Instant>,
     playback_start_offset_seconds: f32,
     playback_speed: f32,
     active_sfx: Vec<rodio::Player>,
-    sfx_cache: std::collections::HashMap<String, Vec<u8>>,
+    backend_name: String,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-impl NativeAudioBackend {
-    fn new() -> Self {
-        let output_device =
-            match rodio::DeviceSinkBuilder::from_default_device().and_then(|b| b.open_stream()) {
-                Ok(device) => Some(device),
-                Err(err) => {
-                    log::warn!("Failed to initialize native audio output: {}", err);
-                    None
-                }
-            };
+impl RodioBackendInner {
+    fn ensure_device(&mut self) -> Option<&rodio::MixerDeviceSink> {
+        if self._output_device.is_some() {
+            return self._output_device.as_ref();
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.device_tried {
+            return None;
+        }
+        self.device_tried = true;
 
-        Self {
-            _output_device: output_device,
-            current_player: None,
-            current_audio_source: None,
-            playback_started_at: None,
-            playback_start_offset_seconds: 0.0,
-            playback_speed: 1.0,
-            active_sfx: Vec::new(),
-            sfx_cache: std::collections::HashMap::new(),
+        log::info!("Initializing audio backend on demand");
+
+        use cpal::traits::HostTrait;
+        log::info!("Available hosts: {:?}", cpal::available_hosts());
+        let host = select_host();
+        let host_id = host.id();
+
+        log::info!("Selected audio host: {:?}", host_id);
+        self.backend_name = host_id.to_string();
+
+        self._output_device = match host.default_output_device() {
+            Some(device) => {
+                use cpal::traits::DeviceTrait;
+                #[allow(deprecated)]
+                if let Ok(name) = device.name() {
+                    log::info!("Audio device: {}", name);
+                    self.backend_name = format!("{:?} ({})", host_id, name);
+                }
+                match rodio::DeviceSinkBuilder::from_device(device).and_then(|b| b.open_stream()) {
+                    Ok(sink) => {
+                        log::info!("Audio stream opened successfully");
+                        Some(sink)
+                    }
+                    Err(err) => {
+                        log::warn!("Failed to open audio stream: {}", err);
+                        None
+                    }
+                }
+            }
+            None => {
+                log::warn!("No default audio output device found");
+                None
+            }
+        };
+
+        self._output_device.as_ref()
+    }
+
+    fn resume(&mut self) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            // On WASM, initializing the device inside a user interaction (like a click)
+            // allows the AudioContext to start in the "running" state.
+            if self._output_device.is_none() {
+                let _ = self.ensure_device();
+            } else {
+                // TODO
+                // If the device already exists, we might need to resume the AudioContext.
+                // rodio/cpal don't easily expose the context, but we can try to resume it via web-sys
+                // if we can find it. However, just calling ensure_device() is often enough
+                // if it hasn't been called in a user interaction yet.
+                // For now, let's just log that we are attempting to resume.
+                log::trace!("AudioBackend: already initialized, skipping resume for now");
+            }
         }
     }
 
     fn set_new_sink(
         &mut self,
         source_key: String,
-        decoded: rodio::Decoder<std::io::Cursor<Vec<u8>>>,
+        decoded: rodio::Decoder<Cursor<Vec<u8>>>,
         start_seconds: f32,
-        context: &str,
+        _context: &str,
     ) {
-        use std::time::Duration;
+        use web_time::Duration;
 
-        let Some(device) = &self._output_device else {
+        let Some(device) = self.ensure_device() else {
             return;
         };
 
+        log::trace!("RodioBackendInner: creating new player");
         let (player, output) = rodio::Player::new();
+        log::trace!("RodioBackendInner: adding output to mixer");
         device.mixer().add(output);
 
-        player.append(decoded);
-        if let Err(err) = player.try_seek(Duration::from_secs_f32(start_seconds)) {
-            log::warn!(
-                "Failed to seek audio '{}' to {:.3}s: {:?}",
-                context,
-                start_seconds,
-                err
-            );
+        log::trace!("RodioBackendInner: appending decoded source");
+        use rodio::Source;
+        if start_seconds > 0.001 {
+            log::trace!("RodioBackendInner: skipping to {:.3}s", start_seconds);
+            player.append(decoded.skip_duration(Duration::from_secs_f32(start_seconds)));
+        } else {
+            player.append(decoded);
         }
 
         player.set_speed(self.playback_speed);
         player.play();
         self.current_player = Some(player);
         self.current_audio_source = Some(source_key);
-        self.playback_started_at = Some(std::time::Instant::now());
+        self.playback_started_at = Some(web_time::Instant::now());
         self.playback_start_offset_seconds = start_seconds;
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-impl AudioBackend for NativeAudioBackend {
-    fn stop(&mut self) {
-        if let Some(player) = &self.current_player {
+pub(crate) struct AudioBackend {
+    inner: Rc<RefCell<RodioBackendInner>>,
+}
+
+impl AudioBackend {
+    pub(crate) fn new() -> Self {
+        let host_id = select_host().id();
+
+        Self {
+            inner: Rc::new(RefCell::new(RodioBackendInner {
+                _output_device: None,
+                device_tried: false,
+                current_player: None,
+                current_audio_source: None,
+                playback_started_at: None,
+                playback_start_offset_seconds: 0.0,
+                playback_speed: 1.0,
+                active_sfx: Vec::new(),
+                backend_name: host_id.to_string(),
+            })),
+        }
+    }
+}
+
+impl AudioBackend {
+    pub(crate) fn stop(&mut self) {
+        let mut inner = self.inner.borrow_mut();
+        if let Some(player) = &inner.current_player {
             player.pause();
         }
-        self.playback_started_at = None;
-        self.playback_start_offset_seconds = 0.0;
+        inner.playback_started_at = None;
+        inner.playback_start_offset_seconds = 0.0;
     }
 
-    fn can_reuse_source(&self, source_key: &str) -> bool {
-        self.current_audio_source.as_deref() == Some(source_key)
+    pub(crate) fn can_reuse_source(&self, source_key: &str) -> bool {
+        self.inner.borrow().current_audio_source.as_deref() == Some(source_key)
     }
 
-    fn seek_and_play(&mut self, start_seconds: f32) -> bool {
-        use std::time::Duration;
+    pub(crate) fn seek_and_play(&mut self, start_seconds: f32) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        {
+            // Player::try_seek blocks the main thread on WASM, leading to a deadlock.
+            // We disable reuse on WASM to force a fresh sink which uses non-blocking skip_duration.
+            let _ = start_seconds;
+            return false;
+        }
 
-        if let Some(player) = &self.current_player {
-            if let Err(err) = player.try_seek(Duration::from_secs_f32(start_seconds)) {
-                log::warn!(
-                    "Failed to seek reused audio to {:.3}s: {:?}",
-                    start_seconds,
-                    err
-                );
-                return false;
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            use web_time::Duration;
+            let mut inner = self.inner.borrow_mut();
+
+            if let Some(player) = &inner.current_player {
+                if let Err(err) = player.try_seek(Duration::from_secs_f32(start_seconds)) {
+                    log::warn!(
+                        "Failed to seek reused audio to {:.3}s: {:?}",
+                        start_seconds,
+                        err
+                    );
+                    return false;
+                }
+                player.set_speed(inner.playback_speed);
+                player.play();
+                inner.playback_started_at = Some(web_time::Instant::now());
+                inner.playback_start_offset_seconds = start_seconds;
+                true
+            } else {
+                false
             }
-            player.set_speed(self.playback_speed);
-            player.play();
-            self.playback_started_at = Some(std::time::Instant::now());
-            self.playback_start_offset_seconds = start_seconds;
-            true
-        } else {
-            false
         }
     }
 
-    fn replace_with_bytes(
+    pub(crate) fn replace_with_bytes(
         &mut self,
         source_key: String,
         music_source: &str,
         bytes: &[u8],
         start_seconds: f32,
     ) {
-        if let Some(player) = self.current_player.take() {
+        let mut inner = self.inner.borrow_mut();
+        if let Some(player) = inner.current_player.take() {
             player.stop();
         }
-        self.current_audio_source = None;
+        inner.current_audio_source = None;
 
-        match rodio::Decoder::new(std::io::Cursor::new(bytes.to_vec())) {
+        log::trace!("RodioAudioBackend: decoding {} bytes", bytes.len());
+        match rodio::Decoder::new(Cursor::new(bytes.to_vec())) {
             Ok(decoded) => {
+                log::trace!("RodioAudioBackend: decoding successful");
                 let context = format!("imported audio '{}'", music_source);
-                self.set_new_sink(source_key, decoded, start_seconds, &context);
+                inner.set_new_sink(source_key, decoded, start_seconds, &context);
             }
             Err(err) => {
                 log::warn!(
@@ -288,30 +230,47 @@ impl AudioBackend for NativeAudioBackend {
         }
     }
 
-    fn replace_with_asset(
+    pub(crate) fn replace_with_asset(
         &mut self,
         source_key: String,
         level_name: &str,
         music_source: &str,
         start_seconds: f32,
     ) {
-        if let Some(player) = self.current_player.take() {
-            player.stop();
+        {
+            let mut inner = self.inner.borrow_mut();
+            if let Some(player) = inner.current_player.take() {
+                player.stop();
+            }
+            inner.current_audio_source = None;
         }
-        self.current_audio_source = None;
 
         let audio_path = format!("assets/levels/{}/{}", level_name, music_source);
-        let audio_bytes = match std::fs::read(&audio_path) {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                log::warn!("Failed to read level music '{}': {}", audio_path, err);
+
+        log::trace!("RodioAudioBackend: loading asset {}", audio_path);
+        let audio_bytes = match crate::level_repository::get_builtin_audio(level_name, music_source)
+        {
+            Some(bytes) => bytes.to_vec(),
+            None => {
+                log::warn!("Failed to read level music '{}'", audio_path);
                 return;
             }
         };
 
-        match rodio::Decoder::new(std::io::Cursor::new(audio_bytes)) {
+        log::trace!(
+            "RodioAudioBackend: decoding {} bytes from asset",
+            audio_bytes.len()
+        );
+        let cursor = Cursor::new(audio_bytes);
+        match rodio::Decoder::new(cursor) {
             Ok(decoded) => {
-                self.set_new_sink(source_key, decoded, start_seconds, &audio_path);
+                log::trace!("RodioAudioBackend: asset decoding successful");
+                self.inner.borrow_mut().set_new_sink(
+                    source_key,
+                    decoded,
+                    start_seconds,
+                    &audio_path,
+                );
             }
             Err(err) => {
                 log::warn!("Failed to decode level music '{}': {}", audio_path, err);
@@ -319,58 +278,62 @@ impl AudioBackend for NativeAudioBackend {
         }
     }
 
-    fn playback_time_seconds(&self) -> Option<f32> {
-        let player = self.current_player.as_ref()?;
+    pub(crate) fn playback_time_seconds(&self) -> Option<f32> {
+        let inner = self.inner.borrow();
+        let player = inner.current_player.as_ref()?;
         if player.empty() {
             return None;
         }
 
-        let started_at = self.playback_started_at?;
+        let started_at = inner.playback_started_at?;
         Some(
-            self.playback_start_offset_seconds
-                + started_at.elapsed().as_secs_f32() * self.playback_speed,
+            inner.playback_start_offset_seconds
+                + started_at.elapsed().as_secs_f32() * inner.playback_speed,
         )
     }
 
-    fn is_playing(&self) -> bool {
-        self.current_player
+    pub(crate) fn is_playing(&self) -> bool {
+        self.inner
+            .borrow()
+            .current_player
             .as_ref()
             .map(|player| !player.empty())
             .unwrap_or(false)
     }
 
-    fn set_speed(&mut self, speed: f32) {
-        if let Some(started_at) = self.playback_started_at {
+    pub(crate) fn set_speed(&mut self, speed: f32) {
+        let mut inner = self.inner.borrow_mut();
+        if let Some(started_at) = inner.playback_started_at {
             let elapsed_real = started_at.elapsed().as_secs_f32();
-            self.playback_start_offset_seconds += elapsed_real * self.playback_speed;
-            self.playback_started_at = Some(std::time::Instant::now());
+            inner.playback_start_offset_seconds += elapsed_real * inner.playback_speed;
+            inner.playback_started_at = Some(web_time::Instant::now());
         }
-        self.playback_speed = speed;
-        if let Some(player) = &self.current_player {
+        inner.playback_speed = speed;
+        if let Some(player) = &inner.current_player {
             player.set_speed(speed);
         }
     }
 
-    fn play_sfx(&mut self, asset_path: &str) {
-        self.active_sfx.retain(|player| !player.empty());
+    pub(crate) fn play_sfx(&mut self, asset_bytes: &'static [u8]) {
+        let mut inner = self.inner.borrow_mut();
+        inner.active_sfx.retain(|player| !player.empty());
 
-        if let Some(device) = &self._output_device {
-            let bytes = if let Some(cached) = self.sfx_cache.get(asset_path) {
-                cached.clone()
-            } else if let Ok(b) = std::fs::read(asset_path) {
-                self.sfx_cache.insert(asset_path.to_string(), b.clone());
-                b
-            } else {
-                return;
-            };
-
-            if let Ok(decoded) = rodio::Decoder::new(std::io::Cursor::new(bytes)) {
+        if let Ok(decoded) = rodio::Decoder::new(Cursor::new(asset_bytes)) {
+            if let Some(device) = inner.ensure_device() {
                 let (player, output) = rodio::Player::new();
                 device.mixer().add(output);
                 player.append(decoded);
                 player.play();
-                self.active_sfx.push(player);
+                inner.active_sfx.push(player);
             }
         }
+    }
+
+    pub(crate) fn resume(&mut self) {
+        self.inner.borrow_mut().resume();
+    }
+
+    pub(crate) fn backend_name(&self) -> String {
+        self.inner.borrow().backend_name.clone()
     }
 }

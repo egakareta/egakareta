@@ -274,6 +274,7 @@ impl ApplicationHandler for App {
                 state: element_state,
                 ..
             } if should_route_pointer_input(egui_consumed, false) => {
+                runtime.state.resume_audio();
                 let pressed = element_state == ElementState::Pressed;
                 let button_idx = mouse_button_index_from_winit(button);
                 runtime.state.process_input_event(InputEvent::MouseButton {
@@ -313,6 +314,7 @@ impl ApplicationHandler for App {
                     return;
                 }
 
+                runtime.state.resume_audio();
                 let pressed = event.state == ElementState::Pressed;
                 let just_pressed = pressed && !event.repeat;
 
@@ -324,6 +326,7 @@ impl ApplicationHandler for App {
                 });
             }
             WindowEvent::Touch(touch) => {
+                runtime.state.resume_audio();
                 Self::handle_touch_event(
                     &mut self.touch_points,
                     &mut self.pinch_last_distance,
