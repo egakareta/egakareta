@@ -173,37 +173,24 @@
             };
 
             try {
-                // Fetch both JS and WASM with a combined progress bar
-                console.log("fetching js and wasm");
-                const [jsResponse, wasmResponse] =
-                    await fetchMultipleWithProgress([
-                        "./pkg/egakareta_lib.js",
-                        "./pkg/egakareta_lib_bg.wasm",
-                    ]);
-                console.log("both js and wasm fetched");
+                console.log("importing js");
+                const { default: init, run_game } =
+                    await import("./pkg/egakareta_lib.js");
 
-                // Create an object URL for the JS module so we can import it dynamically
-                const jsBlob = await jsResponse.blob();
-                const jsUrl = URL.createObjectURL(
-                    new Blob([jsBlob], { type: "text/javascript" }),
-                );
-
-                // Import the WebAssembly module
-                const { default: init, run_game } = await import(jsUrl);
-
-                // Clean up the object URL
-                URL.revokeObjectURL(jsUrl);
-
-                console.log("wasm module imported");
+                console.log("fetching wasm");
+                const [wasmResponse] = await fetchMultipleWithProgress([
+                    "./pkg/egakareta_lib_bg.wasm",
+                ]);
 
                 // Initialize WebAssembly
+                console.log("initializing wasm");
                 await init(wasmResponse);
 
-                console.log("wasm module initialized");
                 console.log("isolated:", self.crossOriginIsolated);
+                console.log("starting game");
 
                 // Run the game
-                await run_game();
+                await run_game("gameCanvas");
 
                 // Hide loading and start the game
                 loading.style.display = "none";
