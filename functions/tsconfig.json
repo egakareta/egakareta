@@ -1,0 +1,15 @@
+{
+    "compilerOptions": {
+        "target": "esnext",
+        "module": "esnext",
+        "moduleResolution": "node",
+        "skipLibCheck": true,
+        "lib": ["esnext", "webworker"],
+        "types": ["./cloudflare-env.d.ts", "node"],
+        "strict": true,
+        "baseUrl": ".",
+        "paths": {
+            "@/*": ["./*"]
+        }
+    }
+}
