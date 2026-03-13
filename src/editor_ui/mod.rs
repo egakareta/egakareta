@@ -270,7 +270,10 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                     .fill(egui::Color32::from_black_alpha(210))
                     .show(ui, |ui| {
                         ui.monospace("Perf Overlay (Ctrl+Shift+Alt+F12)");
-                        ui.monospace(format!("FPS {:.1}", view.fps));
+                        ui.monospace(format!(
+                            "FPS {:.1} | Graphics: {} | Audio: {}",
+                            view.fps, view.graphics_backend, view.audio_backend
+                        ));
                         for line in view.perf_overlay_lines.iter().take(1) {
                             ui.monospace(line);
                         }

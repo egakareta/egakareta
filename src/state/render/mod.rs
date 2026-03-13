@@ -146,6 +146,7 @@ pub(crate) struct SceneMeshes {
 pub(crate) struct GpuContext {
     pub(crate) surface_host: Option<SurfaceHost>,
     pub(crate) surface: Option<wgpu::Surface<'static>>,
+    pub(crate) adapter_info: wgpu::AdapterInfo,
     pub(crate) device: wgpu::Device,
     pub(crate) queue: wgpu::Queue,
     pub(crate) config: wgpu::SurfaceConfiguration,

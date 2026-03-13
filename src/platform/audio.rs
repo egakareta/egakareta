@@ -132,6 +132,10 @@ impl PlatformAudio {
         self.backend.play_sfx(asset_path);
     }
 
+    pub(crate) fn backend_name(&self) -> String {
+        self.backend.backend_name()
+    }
+
     #[cfg(test)]
     fn with_backend(backend: Box<dyn AudioBackend>) -> Self {
         Self { backend }
@@ -315,6 +319,10 @@ mod tests {
 
         fn play_sfx(&mut self, _asset_path: &str) {
             // no-op for mock
+        }
+
+        fn backend_name(&self) -> String {
+            "MockBackend".to_string()
         }
     }
 

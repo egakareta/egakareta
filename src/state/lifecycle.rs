@@ -392,6 +392,7 @@ impl State {
                 gpu: GpuContext {
                     surface_host,
                     surface,
+                    adapter_info,
                     device,
                     queue,
                     config,
