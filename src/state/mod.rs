@@ -298,7 +298,7 @@ impl State {
                 if self.begin_editor_gizmo_drag(x, y) {
                     return;
                 }
-                if self.begin_editor_selected_block_drag(x, y) {
+                if !self.editor.ui.shift_held && self.begin_editor_selected_block_drag(x, y) {
                     return;
                 }
                 self.begin_editor_marquee_selection(x, y);
@@ -718,6 +718,63 @@ mod tests {
 
             assert_eq!(state.editor.spawn.position, [5.0, 2.0, 0.0]);
             assert_eq!(state.editor.timeline.taps.tap_indicator_positions, expected);
+        });
+    }
+
+    #[test]
+    fn test_handle_primary_click_shift_priority() {
+        pollster::block_on(async {
+            let mut state = match super::State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Select;
+
+            // Scenario 1: Shift is held. Marquee should start even if we are over a selected block.
+            state.editor.ui.shift_held = true;
+
+            // Add a block and select it
+            state.editor.objects.push(LevelObject {
+                position: [-5.0, -5.0, -5.0],
+                size: [10.0, 10.0, 10.0],
+                rotation_degrees: 0.0,
+                roundness: 0.18,
+                block_id: "core/stone".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            });
+            state.editor.ui.selected_block_indices.push(0);
+
+            // Set camera to look at origin from above
+            state.editor.camera.editor_pan = [0.0, 0.0];
+            state.editor.camera.editor_target_z = 0.0;
+            state.editor.camera.editor_pitch = -std::f32::consts::FRAC_PI_2; // Looking straight down
+            state.editor.camera.editor_rotation = 0.0;
+
+            // Click at the center (400, 300 in a 800x600 viewport)
+            state.handle_primary_click(400.0, 300.0);
+
+            assert!(
+                state.editor.ui.marquee_start_screen.is_some(),
+                "Marquee should have started when Shift is held"
+            );
+            assert!(
+                state.editor.runtime.interaction.block_drag.is_none(),
+                "Block drag should NOT have started when Shift is held"
+            );
+
+            // Scenario 2: Shift is NOT held. Block drag should start.
+            state.editor.ui.marquee_start_screen = None;
+            state.editor.set_left_mouse_down(false);
+            state.editor.ui.shift_held = false;
+
+            state.handle_primary_click(400.0, 300.0);
+
+            assert!(
+                state.editor.runtime.interaction.block_drag.is_some(),
+                "Block drag should have started when Shift is NOT held"
+            );
         });
     }
 }
