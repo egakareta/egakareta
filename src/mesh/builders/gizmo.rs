@@ -68,8 +68,13 @@ pub(crate) fn build_editor_gizmo_vertices(
             };
             let active = active_part == Some(variant);
             let sign = if neg { -1.0 } else { 1.0 };
-            let start = center[0] + arm_start_offset * sign;
-            let end = center[0] + x_length * sign;
+            let face = if neg {
+                position[0]
+            } else {
+                position[0] + size[0]
+            };
+            let start = face + arm_start_offset * sign;
+            let end = face + x_length * sign;
             let (p_min_x, p_max_x) = if neg {
                 (end + tip_length, start)
             } else {
@@ -100,8 +105,13 @@ pub(crate) fn build_editor_gizmo_vertices(
             };
             let active = active_part == Some(variant);
             let sign = if neg { -1.0 } else { 1.0 };
-            let start = center[1] + arm_start_offset * sign;
-            let end = center[1] + y_length * sign;
+            let face = if neg {
+                position[1]
+            } else {
+                position[1] + size[1]
+            };
+            let start = face + arm_start_offset * sign;
+            let end = face + y_length * sign;
             let (p_min_y, p_max_y) = if neg {
                 (end + tip_length, start)
             } else {
@@ -132,8 +142,13 @@ pub(crate) fn build_editor_gizmo_vertices(
             };
             let active = active_part == Some(variant);
             let sign = if neg { -1.0 } else { 1.0 };
-            let start = center[2] + arm_start_offset * sign;
-            let end = center[2] + z_length * sign;
+            let face = if neg {
+                position[2]
+            } else {
+                position[2] + size[2]
+            };
+            let start = face + arm_start_offset * sign;
+            let end = face + z_length * sign;
             let (p_min_z, p_max_z) = if neg {
                 (end + tip_length, start)
             } else {

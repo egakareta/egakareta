@@ -198,37 +198,49 @@ impl EditorSubsystem {
                 (
                     GizmoDragKind::Move,
                     GizmoAxis::X,
-                    center + Vec3::new(axis_lengths[0], 0.0, 0.0),
+                    Vec3::new(
+                        bounds_position[0] + bounds_size[0] + axis_lengths[0],
+                        center.y,
+                        center.z,
+                    ),
                     GIZMO_MOVE_PICK_RADIUS_PIXELS,
                 ),
                 (
                     GizmoDragKind::Move,
                     GizmoAxis::Y,
-                    center + Vec3::new(0.0, axis_lengths[1], 0.0),
+                    Vec3::new(
+                        center.x,
+                        bounds_position[1] + bounds_size[1] + axis_lengths[1],
+                        center.z,
+                    ),
                     GIZMO_MOVE_PICK_RADIUS_PIXELS,
                 ),
                 (
                     GizmoDragKind::Move,
                     GizmoAxis::Z,
-                    center + Vec3::new(0.0, 0.0, axis_lengths[2]),
+                    Vec3::new(
+                        center.x,
+                        center.y,
+                        bounds_position[2] + bounds_size[2] + axis_lengths[2],
+                    ),
                     GIZMO_MOVE_PICK_RADIUS_PIXELS,
                 ),
                 (
                     GizmoDragKind::Move,
                     GizmoAxis::XNeg,
-                    center + Vec3::new(-axis_lengths[0], 0.0, 0.0),
+                    Vec3::new(bounds_position[0] - axis_lengths[0], center.y, center.z),
                     GIZMO_MOVE_PICK_RADIUS_PIXELS,
                 ),
                 (
                     GizmoDragKind::Move,
                     GizmoAxis::YNeg,
-                    center + Vec3::new(0.0, -axis_lengths[1], 0.0),
+                    Vec3::new(center.x, bounds_position[1] - axis_lengths[1], center.z),
                     GIZMO_MOVE_PICK_RADIUS_PIXELS,
                 ),
                 (
                     GizmoDragKind::Move,
                     GizmoAxis::ZNeg,
-                    center + Vec3::new(0.0, 0.0, -axis_lengths[2]),
+                    Vec3::new(center.x, center.y, bounds_position[2] - axis_lengths[2]),
                     GIZMO_MOVE_PICK_RADIUS_PIXELS,
                 ),
             ]);

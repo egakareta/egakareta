@@ -551,7 +551,11 @@ mod tests {
             let axis_lengths = state
                 .editor
                 .gizmo_axis_lengths_world(center, 50.0, viewport);
-            let move_x_handle_world = center + Vec3::new(axis_lengths[0], 0.0, 0.0);
+            let move_x_handle_world = Vec3::new(
+                bounds_position[0] + bounds_size[0] + axis_lengths[0],
+                center.y,
+                center.z,
+            );
             let move_x_handle_screen = state
                 .editor
                 .world_to_screen_v(move_x_handle_world, viewport)
