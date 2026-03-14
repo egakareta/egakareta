@@ -32,12 +32,20 @@ struct App {
     last_cursor_pos: Option<PhysicalPosition<f64>>,
     touch_points: HashMap<u64, PhysicalPosition<f64>>,
     pinch_last_distance: Option<f64>,
+    primary_touch_id: Option<u64>,
     #[cfg(target_arch = "wasm32")]
     prebuilt_runtime: Option<Runtime>,
     #[cfg(target_arch = "wasm32")]
     web_canvas: Option<web_sys::HtmlCanvasElement>,
     #[cfg(target_arch = "wasm32")]
     web_window: Option<Window>,
+}
+
+#[derive(Clone, Copy)]
+struct TouchPointEvent {
+    id: u64,
+    location: PhysicalPosition<f64>,
+    phase: TouchPhase,
 }
 
 impl App {
@@ -50,6 +58,7 @@ impl App {
             last_cursor_pos: None,
             touch_points: HashMap::new(),
             pinch_last_distance: None,
+            primary_touch_id: None,
             #[cfg(target_arch = "wasm32")]
             prebuilt_runtime: None,
             #[cfg(target_arch = "wasm32")]
@@ -68,6 +77,7 @@ impl App {
             last_cursor_pos: None,
             touch_points: HashMap::new(),
             pinch_last_distance: None,
+            primary_touch_id: None,
             prebuilt_runtime: Some(runtime),
             web_canvas: Some(canvas),
             web_window: None,
@@ -77,9 +87,42 @@ impl App {
     fn handle_touch_event(
         touch_points: &mut HashMap<u64, PhysicalPosition<f64>>,
         pinch_last_distance: &mut Option<f64>,
+        primary_touch_id: &mut Option<u64>,
+        last_cursor_pos: &mut Option<PhysicalPosition<f64>>,
+        egui_consumed: bool,
         runtime: &mut Runtime,
         touch: Touch,
     ) {
+        let touch_event = TouchPointEvent {
+            id: touch.id,
+            location: touch.location,
+            phase: touch.phase,
+        };
+
+        for event in Self::collect_touch_input_events(
+            touch_points,
+            pinch_last_distance,
+            primary_touch_id,
+            last_cursor_pos,
+            egui_consumed,
+            touch_event,
+        ) {
+            runtime.state.process_input_event(event);
+        }
+    }
+
+    fn collect_touch_input_events(
+        touch_points: &mut HashMap<u64, PhysicalPosition<f64>>,
+        pinch_last_distance: &mut Option<f64>,
+        primary_touch_id: &mut Option<u64>,
+        last_cursor_pos: &mut Option<PhysicalPosition<f64>>,
+        egui_consumed: bool,
+        touch: TouchPointEvent,
+    ) -> Vec<InputEvent> {
+        let mut events = Vec::new();
+        let is_routed = should_route_pointer_input(egui_consumed, false);
+        let previous_count = touch_points.len();
+
         match touch.phase {
             TouchPhase::Started | TouchPhase::Moved => {
                 touch_points.insert(touch.id, touch.location);
@@ -89,7 +132,78 @@ impl App {
             }
         }
 
-        if touch_points.len() == 2 {
+        let current_count = touch_points.len();
+
+        // Cancel Primary Touch when a 2nd finger is added (1 -> >1 touches)
+        if previous_count == 1
+            && current_count > 1
+            && touch.phase == TouchPhase::Started
+            && primary_touch_id.is_some()
+        {
+            events.push(InputEvent::MouseButton {
+                button: 0,
+                pressed: false,
+            });
+            *primary_touch_id = None; // Cleared so lifting fingers doesn't trigger another release
+            *last_cursor_pos = None;
+        }
+
+        if !is_routed {
+            if touch_points.is_empty() {
+                *pinch_last_distance = None;
+                *primary_touch_id = None;
+                *last_cursor_pos = None;
+            }
+            return events;
+        }
+
+        // Primary Touch Down
+        if previous_count == 0 && current_count == 1 && touch.phase == TouchPhase::Started {
+            *primary_touch_id = Some(touch.id);
+
+            events.push(InputEvent::PointerMoved {
+                x: touch.location.x,
+                y: touch.location.y,
+            });
+            events.push(InputEvent::MouseButton {
+                button: 0,
+                pressed: true,
+            });
+            *last_cursor_pos = Some(touch.location);
+        }
+
+        // Primary Touch Move
+        if current_count == 1
+            && touch.phase == TouchPhase::Moved
+            && *primary_touch_id == Some(touch.id)
+        {
+            events.push(InputEvent::PointerMoved {
+                x: touch.location.x,
+                y: touch.location.y,
+            });
+
+            if let Some(last) = *last_cursor_pos {
+                events.push(InputEvent::CameraDrag {
+                    dx: touch.location.x - last.x,
+                    dy: touch.location.y - last.y,
+                });
+            }
+            *last_cursor_pos = Some(touch.location);
+        }
+
+        // Primary Touch Up
+        if (touch.phase == TouchPhase::Ended || touch.phase == TouchPhase::Cancelled)
+            && *primary_touch_id == Some(touch.id)
+        {
+            events.push(InputEvent::MouseButton {
+                button: 0,
+                pressed: false,
+            });
+            *primary_touch_id = None;
+            *last_cursor_pos = None;
+        }
+
+        if current_count == 2 {
             let mut touches = touch_points.values();
             if let (Some(first), Some(second)) = (touches.next(), touches.next()) {
                 let dx = second.x - first.x;
@@ -98,9 +212,7 @@ impl App {
 
                 if let Some(previous) = *pinch_last_distance {
                     let pinch_delta = ((distance - previous) * 0.04) as f32;
-                    runtime
-                        .state
-                        .process_input_event(InputEvent::Zoom(pinch_delta));
+                    events.push(InputEvent::Zoom(pinch_delta));
                 }
 
                 *pinch_last_distance = Some(distance);
@@ -108,6 +220,8 @@ impl App {
         } else {
             *pinch_last_distance = None;
         }
+
+        events
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -330,6 +444,9 @@ impl ApplicationHandler for App {
                 Self::handle_touch_event(
                     &mut self.touch_points,
                     &mut self.pinch_last_distance,
+                    &mut self.primary_touch_id,
+                    &mut self.last_cursor_pos,
+                    egui_consumed,
                     runtime,
                     touch,
                 );
@@ -371,6 +488,181 @@ impl ApplicationHandler for App {
         if let Some(runtime) = &self.runtime {
             runtime.state.window().request_redraw();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{App, TouchPointEvent};
+    use crate::commands::InputEvent;
+    use std::collections::HashMap;
+    use winit::{dpi::PhysicalPosition, event::TouchPhase};
+
+    fn pos(x: f64, y: f64) -> PhysicalPosition<f64> {
+        PhysicalPosition::new(x, y)
+    }
+
+    fn approx_eq(a: f32, b: f32, eps: f32) -> bool {
+        (a - b).abs() <= eps
+    }
+
+    #[test]
+    fn second_touch_cancels_primary_and_prevents_duplicate_release() {
+        let mut touch_points = HashMap::new();
+        let mut pinch_last_distance = None;
+        let mut primary_touch_id = None;
+        let mut last_cursor_pos = None;
+
+        let start_events = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            false,
+            TouchPointEvent {
+                id: 1,
+                location: pos(10.0, 20.0),
+                phase: TouchPhase::Started,
+            },
+        );
+
+        assert_eq!(start_events.len(), 2);
+        assert!(matches!(
+            start_events[0],
+            InputEvent::PointerMoved { x: 10.0, y: 20.0 }
+        ));
+        assert!(matches!(
+            start_events[1],
+            InputEvent::MouseButton {
+                button: 0,
+                pressed: true
+            }
+        ));
+        assert_eq!(primary_touch_id, Some(1));
+
+        let second_touch_events = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            false,
+            TouchPointEvent {
+                id: 2,
+                location: pos(40.0, 40.0),
+                phase: TouchPhase::Started,
+            },
+        );
+
+        assert_eq!(second_touch_events.len(), 1);
+        assert!(matches!(
+            second_touch_events[0],
+            InputEvent::MouseButton {
+                button: 0,
+                pressed: false
+            }
+        ));
+        assert_eq!(primary_touch_id, None);
+        assert_eq!(last_cursor_pos, None);
+
+        let end_primary_after_cancel_events = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            false,
+            TouchPointEvent {
+                id: 1,
+                location: pos(10.0, 20.0),
+                phase: TouchPhase::Ended,
+            },
+        );
+
+        assert!(end_primary_after_cancel_events
+            .iter()
+            .all(|event| !matches!(event, InputEvent::MouseButton { .. })));
+    }
+
+    #[test]
+    fn pinch_move_emits_zoom_delta() {
+        let mut touch_points = HashMap::new();
+        let mut pinch_last_distance = None;
+        let mut primary_touch_id = None;
+        let mut last_cursor_pos = None;
+
+        let _ = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            false,
+            TouchPointEvent {
+                id: 1,
+                location: pos(0.0, 0.0),
+                phase: TouchPhase::Started,
+            },
+        );
+
+        let _ = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            false,
+            TouchPointEvent {
+                id: 2,
+                location: pos(0.0, 100.0),
+                phase: TouchPhase::Started,
+            },
+        );
+
+        let move_events = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            false,
+            TouchPointEvent {
+                id: 2,
+                location: pos(0.0, 120.0),
+                phase: TouchPhase::Moved,
+            },
+        );
+
+        assert_eq!(move_events.len(), 1);
+        let zoom_delta = match move_events[0] {
+            InputEvent::Zoom(delta) => delta,
+            _ => panic!("expected zoom input event"),
+        };
+        assert!(approx_eq(zoom_delta, 0.8, 0.0001));
+    }
+
+    #[test]
+    fn egui_consumed_clears_touch_state_when_all_touches_end() {
+        let mut touch_points = HashMap::new();
+        touch_points.insert(7, pos(1.0, 2.0));
+
+        let mut pinch_last_distance = Some(42.0);
+        let mut primary_touch_id = Some(7);
+        let mut last_cursor_pos = Some(pos(5.0, 6.0));
+
+        let events = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            true,
+            TouchPointEvent {
+                id: 7,
+                location: pos(1.0, 2.0),
+                phase: TouchPhase::Ended,
+            },
+        );
+
+        assert!(events.is_empty());
+        assert!(touch_points.is_empty());
+        assert_eq!(pinch_last_distance, None);
+        assert_eq!(primary_touch_id, None);
+        assert_eq!(last_cursor_pos, None);
     }
 }
 
