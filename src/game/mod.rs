@@ -5,6 +5,7 @@ pub(crate) mod state;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
 pub(crate) use physics::*;
 pub(crate) use scenes::*;
 pub(crate) use simulation::*;

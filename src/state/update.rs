@@ -4,9 +4,30 @@ use super::{PerfOverlayEntry, PerfStage, State};
 use crate::game::TimelineSimulationRuntime;
 use crate::mesh::{build_block_vertices_with_phase, build_trail_vertices};
 use crate::platform::state_host::PlatformInstant;
-use crate::types::{AppPhase, CameraUniform, Direction, EditorMode};
+use crate::types::{
+    apply_timed_triggers_to_objects, AppPhase, CameraUniform, Direction, EditorMode,
+};
 
 impl State {
+    fn apply_playing_object_triggers(&mut self) {
+        if self.phase != AppPhase::Playing || !self.editor.has_object_transform_triggers() {
+            return;
+        }
+
+        let time_seconds = self.gameplay.state.elapsed_seconds.max(0.0);
+        let base_objects = self
+            .session
+            .playing_trigger_base_objects
+            .get_or_insert_with(|| self.gameplay.state.objects.clone());
+
+        if base_objects.len() != self.gameplay.state.objects.len() {
+            *base_objects = self.gameplay.state.objects.clone();
+        }
+
+        self.gameplay.state.objects =
+            apply_timed_triggers_to_objects(base_objects, self.editor.triggers(), time_seconds);
+    }
+
     pub(crate) fn toggle_editor_perf_overlay(&mut self) {
         self.editor.perf.profiler.enabled = !self.editor.perf.profiler.enabled;
     }
@@ -141,6 +162,13 @@ impl State {
                     let old_time = self.editor.timeline.clock.time_seconds;
                     self.editor.timeline.clock.time_seconds = clamped_time;
 
+                    if self.editor.has_object_transform_triggers() {
+                        self.mark_editor_dirty(super::EditorDirtyFlags {
+                            rebuild_block_mesh: true,
+                            ..super::EditorDirtyFlags::default()
+                        });
+                    }
+
                     if simulate_preview {
                         let mut applied_runtime_state = false;
                         if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
@@ -212,6 +240,12 @@ impl State {
                 {
                     self.editor.timeline.playback.playing = false;
                     self.editor.timeline.playback.runtime = None;
+                    if self.editor.has_object_transform_triggers() {
+                        self.mark_editor_dirty(super::EditorDirtyFlags {
+                            rebuild_block_mesh: true,
+                            ..super::EditorDirtyFlags::default()
+                        });
+                    }
                     self.stop_audio();
                 }
                 self.perf_record(PerfStage::TimelinePlayback, timeline_playback_started_at);
@@ -290,10 +324,15 @@ impl State {
             return;
         }
 
+        self.apply_playing_object_triggers();
+
         while self.frame_runtime.editor.accumulator >= FIXED_DT {
+            self.apply_playing_object_triggers();
             self.gameplay.state.update(FIXED_DT);
             self.frame_runtime.editor.accumulator -= FIXED_DT;
         }
+
+        self.apply_playing_object_triggers();
 
         if self.gameplay.state.has_animated_blocks() {
             let animated_vertices = build_block_vertices_with_phase(

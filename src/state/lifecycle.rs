@@ -6,7 +6,8 @@ use super::runtime::{
 use super::{
     AudioState, AudioSubsystem, EditorCameraState, EditorConfigState, EditorHistoryState,
     EditorInteractionState, EditorPerfState, EditorSubsystem, EditorTimelineState,
-    EditorTimingState, GameplaySubsystem, MenuSubsystem, SessionSubsystem, State,
+    EditorTimingState, EditorTriggerState, GameplaySubsystem, MenuSubsystem, SessionSubsystem,
+    State,
 };
 use glam::Mat4;
 use wgpu::util::DeviceExt;
@@ -496,6 +497,7 @@ impl State {
                 playing_level_name: None,
                 playtesting_editor: false,
                 playtest_audio_start_seconds: None,
+                playing_trigger_base_objects: None,
             },
             editor: EditorSubsystem {
                 ui: EditorState::new(),
@@ -516,6 +518,7 @@ impl State {
                     keypoints: Vec::new(),
                     selected_keypoint_index: None,
                 },
+                triggers: EditorTriggerState::new(),
                 timeline: EditorTimelineState::new(),
                 runtime: EditorRuntimeState {
                     dirty: EditorDirtyFlags::from_object_sync(),

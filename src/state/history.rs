@@ -23,6 +23,8 @@ impl EditorSubsystem {
             timing_points: self.timing.timing_points.clone(),
             camera_keypoints: self.camera.keypoints.clone(),
             selected_camera_keypoint_index: self.camera.selected_keypoint_index,
+            triggers: self.triggers.items.clone(),
+            selected_trigger_index: self.triggers.selected_index,
         }
     }
 
@@ -60,6 +62,10 @@ impl EditorSubsystem {
         self.camera.selected_keypoint_index = snapshot
             .selected_camera_keypoint_index
             .filter(|index| *index < self.camera.keypoints.len());
+        self.triggers.items = snapshot.triggers;
+        self.triggers.selected_index = snapshot
+            .selected_trigger_index
+            .filter(|index| *index < self.triggers.items.len());
 
         self.timeline
             .taps
@@ -91,6 +97,13 @@ impl EditorSubsystem {
         self.camera
             .keypoints
             .sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
+        self.triggers
+            .items
+            .retain(|trigger| trigger.time_seconds.is_finite());
+        self.triggers
+            .items
+            .sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
+        self.sync_camera_keypoints_from_triggers();
 
         self.runtime.interaction.gizmo_drag = None;
         self.runtime.interaction.block_drag = None;

@@ -93,9 +93,7 @@ mod tests {
             timing_points: Vec::new(),
             timeline_time_seconds: 0.5,
             timeline_duration_seconds: 16.0,
-            camera_keypoints: Vec::new(),
-            legacy_taps: Vec::new(),
-            legacy_timeline_step: 0,
+            triggers: Vec::new(),
             objects: vec![LevelObject {
                 position: [4.0, 6.0, 0.0],
                 size: [1.0, 1.0, 1.0],
@@ -216,9 +214,7 @@ mod tests {
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 16.0,
-            camera_keypoints: Vec::new(),
-            legacy_taps: Vec::new(),
-            legacy_timeline_step: 0,
+            triggers: Vec::new(),
             objects: vec![LevelObject {
                 position: [1.0, 2.0, 0.0],
                 size: [1.0, 1.0, 1.0],

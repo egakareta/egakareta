@@ -1,6 +1,5 @@
-use crate::game::BASE_PLAYER_SPEED;
 use crate::types::{
-    CameraKeypoint, LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata, TimingPoint,
+    LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata, TimedTrigger, TimingPoint,
 };
 
 pub(crate) struct EditorSessionInit {
@@ -11,7 +10,7 @@ pub(crate) struct EditorSessionInit {
     pub(crate) timing_points: Vec<TimingPoint>,
     pub(crate) timeline_time_seconds: f32,
     pub(crate) timeline_duration_seconds: f32,
-    pub(crate) camera_keypoints: Vec<CameraKeypoint>,
+    pub(crate) triggers: Vec<TimedTrigger>,
     pub(crate) cursor: [f32; 3],
     pub(crate) camera_pan: [f32; 2],
 }
@@ -27,10 +26,9 @@ pub(crate) fn editor_session_init_from_metadata(
         timing_points,
         mut timeline_time_seconds,
         timeline_duration_seconds,
-        mut camera_keypoints,
-        legacy_taps,
-        legacy_timeline_step,
+        mut triggers,
     ) = if let Some(metadata) = metadata {
+        let triggers = metadata.resolved_triggers();
         (
             metadata.objects,
             metadata.spawn,
@@ -39,9 +37,7 @@ pub(crate) fn editor_session_init_from_metadata(
             metadata.timing_points,
             metadata.timeline_time_seconds,
             metadata.timeline_duration_seconds,
-            metadata.camera_keypoints,
-            metadata.legacy_taps,
-            metadata.legacy_timeline_step,
+            triggers,
         )
     } else {
         (
@@ -53,31 +49,15 @@ pub(crate) fn editor_session_init_from_metadata(
             0.0,
             16.0,
             Vec::new(),
-            Vec::new(),
-            0,
         )
     };
-
-    if tap_times.is_empty() && !legacy_taps.is_empty() {
-        let seconds_per_step = 1.0 / BASE_PLAYER_SPEED.max(0.1);
-        tap_times = legacy_taps
-            .iter()
-            .copied()
-            .map(|step| step as f32 * seconds_per_step)
-            .collect();
-    }
-
-    if timeline_time_seconds <= 0.0 && legacy_timeline_step > 0 {
-        let seconds_per_step = 1.0 / BASE_PLAYER_SPEED.max(0.1);
-        timeline_time_seconds = legacy_timeline_step as f32 * seconds_per_step;
-    }
 
     timeline_time_seconds = timeline_time_seconds.clamp(0.0, timeline_duration_seconds.max(0.1));
 
     tap_times.retain(|tap| tap.is_finite() && *tap >= 0.0);
     tap_times.sort_by(f32::total_cmp);
-    camera_keypoints.retain(|keypoint| keypoint.time_seconds.is_finite());
-    camera_keypoints.sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
+    triggers.retain(|trigger| trigger.time_seconds.is_finite());
+    triggers.sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
     let cursor = cursor_from_objects(&objects);
     let camera_pan = camera_pan_from_cursor(cursor);
 
@@ -89,7 +69,7 @@ pub(crate) fn editor_session_init_from_metadata(
         timing_points,
         timeline_time_seconds,
         timeline_duration_seconds: timeline_duration_seconds.max(0.1),
-        camera_keypoints,
+        triggers,
         cursor,
         camera_pan,
     }

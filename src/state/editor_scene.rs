@@ -9,7 +9,9 @@ use crate::mesh::{
     build_spawn_marker_vertices, build_tap_indicator_vertices, GizmoPart,
 };
 use crate::platform::state_host::PlatformInstant;
-use crate::types::{AppPhase, SpawnDirection};
+use crate::types::{
+    apply_timed_triggers_to_objects, AppPhase, EditorMode, LevelObject, SpawnDirection,
+};
 
 impl EditorSubsystem {
     pub(crate) fn mark_dirty(&mut self, dirty: EditorDirtyFlags) {
@@ -134,6 +136,22 @@ impl EditorSubsystem {
 impl State {
     pub(super) fn mark_editor_dirty(&mut self, dirty: EditorDirtyFlags) {
         self.editor.mark_dirty(dirty);
+    }
+
+    fn editor_runtime_objects_for_render(&self) -> Option<Vec<LevelObject>> {
+        if self.phase != AppPhase::Editor
+            || !self.editor.timeline.playback.playing
+            || self.editor.ui.mode == EditorMode::Timing
+            || !self.editor.has_object_transform_triggers()
+        {
+            return None;
+        }
+
+        Some(apply_timed_triggers_to_objects(
+            &self.editor.objects,
+            self.editor.triggers(),
+            self.editor.timeline.clock.time_seconds,
+        ))
     }
 
     pub(super) fn process_editor_dirty(&mut self, frame_dt: f32) {
@@ -446,16 +464,25 @@ impl State {
             return;
         }
 
-        let keypoints = self.editor.camera_keypoints();
-        if keypoints.is_empty() {
+        let markers = self.editor.camera_trigger_markers();
+        if markers.is_empty() {
             self.render.meshes.camera_keypoint_markers.clear();
             return;
         }
 
-        let vertices = build_camera_keypoint_marker_vertices(
-            keypoints,
-            self.editor.selected_camera_keypoint_index(),
-        );
+        let keypoints = markers
+            .iter()
+            .map(|(_, keypoint)| keypoint.clone())
+            .collect::<Vec<_>>();
+        let selected_keypoint_index =
+            self.editor
+                .selected_trigger_index()
+                .and_then(|trigger_index| {
+                    self.editor
+                        .camera_keypoint_index_for_trigger_index(trigger_index)
+                });
+
+        let vertices = build_camera_keypoint_marker_vertices(&keypoints, selected_keypoint_index);
         self.render
             .meshes
             .camera_keypoint_markers
@@ -484,9 +511,13 @@ impl State {
     }
 
     fn rebuild_editor_block_vertices_split(&mut self) {
+        let object_source = self
+            .editor_runtime_objects_for_render()
+            .unwrap_or_else(|| self.editor.objects.clone());
+
         let mask_build_started_at = PlatformInstant::now();
         let selected_indices = self.selected_block_indices_normalized();
-        let mut selected_mask = vec![false; self.editor.objects.len()];
+        let mut selected_mask = vec![false; object_source.len()];
         for index in selected_indices {
             if index < selected_mask.len() {
                 selected_mask[index] = true;
@@ -497,7 +528,7 @@ impl State {
         let static_mesh_started_at = PlatformInstant::now();
         let static_vertices = {
             let mut static_objects = Vec::new();
-            for (index, object) in self.editor.objects.iter().enumerate() {
+            for (index, object) in object_source.iter().enumerate() {
                 if !selected_mask[index] {
                     static_objects.push(object);
                 }
@@ -508,7 +539,7 @@ impl State {
         let selected_mesh_started_at = PlatformInstant::now();
         let selected_vertices = {
             let mut selected_objects = Vec::new();
-            for (index, object) in self.editor.objects.iter().enumerate() {
+            for (index, object) in object_source.iter().enumerate() {
                 if selected_mask[index] {
                     selected_objects.push(object);
                 }
@@ -541,15 +572,19 @@ impl State {
     }
 
     fn rebuild_editor_selected_block_vertices(&mut self) {
+        let object_source = self
+            .editor_runtime_objects_for_render()
+            .unwrap_or_else(|| self.editor.objects.clone());
+
         let selected_only_started_at = PlatformInstant::now();
         if self
             .editor
             .selected_mask_cache
             .as_ref()
-            .is_none_or(|cache| cache.len() != self.editor.objects.len())
+            .is_none_or(|cache| cache.len() != object_source.len())
         {
             let selected_indices = self.selected_block_indices_normalized();
-            let mut mask = vec![false; self.editor.objects.len()];
+            let mut mask = vec![false; object_source.len()];
             for index in selected_indices {
                 if index < mask.len() {
                     mask[index] = true;
@@ -567,7 +602,7 @@ impl State {
         let selected_build_started_at = PlatformInstant::now();
         let selected_vertices = {
             let mut selected_objects = Vec::new();
-            for (index, object) in self.editor.objects.iter().enumerate() {
+            for (index, object) in object_source.iter().enumerate() {
                 if selected_mask[index] {
                     selected_objects.push(object);
                 }

@@ -118,6 +118,14 @@ pub(crate) enum AppCommand {
     EditorCaptureSelectedCameraKeypoint,
     /// Snap the editor viewport to the selected camera keypoint.
     EditorApplySelectedCameraKeypoint,
+    /// Add a new timeline trigger.
+    EditorAddTrigger(crate::types::TimedTrigger),
+    /// Remove a trigger by index.
+    EditorRemoveTrigger(usize),
+    /// Select or deselect a trigger in the UI.
+    EditorSetTriggerSelected(Option<usize>),
+    /// Replace an existing trigger.
+    EditorUpdateTrigger(usize, crate::types::TimedTrigger),
 
     // ── Editor – misc ───────────────────────────────────────────────
     /// Toggle the performance overlay.

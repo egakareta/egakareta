@@ -1,7 +1,10 @@
 use glam::{Mat4, Vec2, Vec3};
 
 use super::{EditorSubsystem, State};
-use crate::types::{AppPhase, CameraKeypoint, CameraKeypointEasing, CameraKeypointMode};
+use crate::types::{
+    timed_triggers_to_camera_keypoints, AppPhase, CameraKeypoint, CameraKeypointEasing,
+    CameraKeypointMode,
+};
 
 const EDITOR_CAMERA_BASE_DISTANCE: f32 = 24.0;
 const PLAY_CAMERA_DISTANCE: f32 = 28.28;
@@ -159,28 +162,6 @@ impl EditorSubsystem {
         keypoint
     }
 
-    fn insert_camera_keypoint_sorted(&mut self, mut keypoint: CameraKeypoint) -> usize {
-        self.sanitize_camera_keypoint(&mut keypoint);
-
-        if let Some(existing_index) =
-            self.camera.keypoints.iter().position(|existing| {
-                existing.time_seconds.to_bits() == keypoint.time_seconds.to_bits()
-            })
-        {
-            self.camera.keypoints[existing_index] = keypoint;
-            self.camera.selected_keypoint_index = Some(existing_index);
-            return existing_index;
-        }
-
-        let insert_index = self
-            .camera
-            .keypoints
-            .partition_point(|existing| existing.time_seconds < keypoint.time_seconds);
-        self.camera.keypoints.insert(insert_index, keypoint);
-        self.camera.selected_keypoint_index = Some(insert_index);
-        insert_index
-    }
-
     pub(crate) fn camera_keypoints(&self) -> &[CameraKeypoint] {
         &self.camera.keypoints
     }
@@ -191,57 +172,9 @@ impl EditorSubsystem {
             .filter(|index| *index < self.camera.keypoints.len())
     }
 
-    pub(crate) fn add_camera_keypoint(&mut self) -> usize {
-        let keypoint = self.capture_current_camera_keypoint(self.timeline.clock.time_seconds);
-        self.insert_camera_keypoint_sorted(keypoint)
-    }
-
-    pub(crate) fn remove_camera_keypoint(&mut self, index: usize) -> bool {
-        if index >= self.camera.keypoints.len() {
-            return false;
-        }
-
-        self.camera.keypoints.remove(index);
-        self.camera.selected_keypoint_index = match self.camera.keypoints.is_empty() {
-            true => None,
-            false => Some(index.min(self.camera.keypoints.len() - 1)),
-        };
-        true
-    }
-
     pub(crate) fn set_camera_keypoint_selected(&mut self, selected: Option<usize>) {
         self.camera.selected_keypoint_index =
             selected.filter(|index| *index < self.camera.keypoints.len());
-    }
-
-    pub(crate) fn update_camera_keypoint(
-        &mut self,
-        index: usize,
-        mut keypoint: CameraKeypoint,
-    ) -> Option<usize> {
-        if index >= self.camera.keypoints.len() {
-            return None;
-        }
-
-        self.sanitize_camera_keypoint(&mut keypoint);
-        self.camera.keypoints.remove(index);
-        let insert_index = self
-            .camera
-            .keypoints
-            .partition_point(|existing| existing.time_seconds <= keypoint.time_seconds);
-        self.camera.keypoints.insert(insert_index, keypoint);
-        self.camera.selected_keypoint_index = Some(insert_index);
-        Some(insert_index)
-    }
-
-    pub(crate) fn capture_selected_camera_keypoint(&mut self) -> Option<usize> {
-        let index = self.selected_camera_keypoint_index()?;
-        let mut keypoint = self.camera.keypoints.get(index)?.clone();
-        let captured = self.capture_current_camera_keypoint(keypoint.time_seconds);
-        keypoint.target_position = captured.target_position;
-        keypoint.rotation = captured.rotation;
-        keypoint.pitch = captured.pitch;
-        self.update_camera_keypoint(index, keypoint)
     }
 
     pub(crate) fn apply_selected_camera_keypoint_to_editor_camera(&mut self) -> bool {
@@ -370,7 +303,7 @@ impl State {
         let live_follow_sample = self
             .editor
             .resolve_live_follow_sample(live_follow_target, is_game_active);
-        let keypoints = &self.editor.camera.keypoints;
+        let keypoints = timed_triggers_to_camera_keypoints(self.editor.triggers());
         if keypoints.is_empty() {
             return live_follow_sample;
         }

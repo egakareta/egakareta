@@ -108,6 +108,7 @@ impl State {
         self.session.playtesting_editor = playtesting_editor;
         self.session.playing_level_name = level_name;
         self.session.playtest_audio_start_seconds = None;
+        self.session.playing_trigger_base_objects = None;
         self.reset_playing_camera_defaults();
         self.clear_editor_pan_keys();
         self.editor.runtime.interaction.clipboard = None;
@@ -118,6 +119,7 @@ impl State {
         self.session.editor_level_name = Some(level_name);
         self.session.playtesting_editor = false;
         self.session.playtest_audio_start_seconds = None;
+        self.session.playing_trigger_base_objects = None;
         self.editor.ui.right_dragging = false;
         self.editor.ui.mode = EditorMode::Place;
         self.editor.ui.selected_block_index = None;
@@ -141,6 +143,7 @@ impl State {
     pub(super) fn enter_menu_phase(&mut self) {
         self.session.playtesting_editor = false;
         self.session.playtest_audio_start_seconds = None;
+        self.session.playing_trigger_base_objects = None;
         self.session.editor_level_name = None;
         self.editor.ui.selected_block_index = None;
         self.editor.ui.selected_block_indices.clear();

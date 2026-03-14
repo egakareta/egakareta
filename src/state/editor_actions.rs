@@ -340,6 +340,12 @@ impl State {
         self.editor.timeline.playback.playing = !self.editor.timeline.playback.playing;
 
         if self.editor.timeline.playback.playing {
+            if self.editor.has_object_transform_triggers() {
+                self.mark_editor_dirty(EditorDirtyFlags {
+                    rebuild_block_mesh: true,
+                    ..EditorDirtyFlags::default()
+                });
+            }
             if self.editor.ui.mode == EditorMode::Timing {
                 self.editor.timeline.playback.runtime = None;
             } else {
@@ -367,6 +373,12 @@ impl State {
         }
 
         self.editor.timeline.playback.runtime = None;
+        if self.editor.has_object_transform_triggers() {
+            self.mark_editor_dirty(EditorDirtyFlags {
+                rebuild_block_mesh: true,
+                ..EditorDirtyFlags::default()
+            });
+        }
         self.stop_audio();
     }
 
@@ -417,6 +429,7 @@ impl State {
         self.gameplay.state = GameState::new();
         self.gameplay.state.objects = transition.objects;
         self.gameplay.state.rebuild_behavior_cache();
+        self.session.playing_trigger_base_objects = Some(self.gameplay.state.objects.clone());
         self.apply_spawn_to_game(
             transition.spawn_position,
             transition.spawn_direction,

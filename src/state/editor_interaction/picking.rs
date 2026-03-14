@@ -44,7 +44,7 @@ impl EditorSubsystem {
         let mut best_hit_normal = Vec3::Z;
         let mut hit_found = false;
         let mut hit_block_index: Option<usize> = None;
-        let mut hit_camera_keypoint_index: Option<usize> = None;
+        let mut hit_trigger_index: Option<usize> = None;
 
         let raycast_started_at = PlatformInstant::now();
 
@@ -62,15 +62,15 @@ impl EditorSubsystem {
                     min_t = t;
                     hit_found = true;
                     hit_block_index = Some(index);
-                    hit_camera_keypoint_index = None;
+                    hit_trigger_index = None;
                     best_hit_normal = normal;
                 }
             }
         }
 
-        for (index, keypoint) in self.camera_keypoints().iter().enumerate() {
-            let marker_eye = self.camera_keypoint_marker_eye(keypoint);
-            let marker_forward = self.camera_keypoint_marker_forward(keypoint);
+        for (trigger_index, keypoint) in self.camera_trigger_markers() {
+            let marker_eye = self.camera_keypoint_marker_eye(&keypoint);
+            let marker_forward = self.camera_keypoint_marker_forward(&keypoint);
 
             let mut marker_t = self.ray_intersect_sphere(
                 ray_origin,
@@ -94,7 +94,7 @@ impl EditorSubsystem {
                     min_t = t;
                     hit_found = true;
                     hit_block_index = None;
-                    hit_camera_keypoint_index = Some(index);
+                    hit_trigger_index = Some(trigger_index);
                 }
             }
         }
@@ -127,7 +127,7 @@ impl EditorSubsystem {
         Some(EditorPickResult {
             cursor: next_cursor,
             hit_block_index,
-            hit_camera_keypoint_index,
+            hit_trigger_index,
         })
     }
 

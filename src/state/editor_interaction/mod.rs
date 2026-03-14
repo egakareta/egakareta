@@ -4,7 +4,7 @@ mod gizmo;
 mod picking;
 mod selection;
 
-use crate::types::{CameraKeypoint, LevelObject, SpawnMetadata};
+use crate::types::{CameraKeypoint, LevelObject, SpawnMetadata, TimedTrigger};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EditorInteractionChange {
@@ -17,7 +17,7 @@ pub(crate) enum EditorInteractionChange {
 pub(crate) struct EditorPickResult {
     pub(crate) cursor: [f32; 3],
     pub(crate) hit_block_index: Option<usize>,
-    pub(crate) hit_camera_keypoint_index: Option<usize>,
+    pub(crate) hit_trigger_index: Option<usize>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -76,6 +76,8 @@ pub(crate) struct EditorHistorySnapshot {
     pub(crate) timing_points: Vec<crate::types::TimingPoint>,
     pub(crate) camera_keypoints: Vec<CameraKeypoint>,
     pub(crate) selected_camera_keypoint_index: Option<usize>,
+    pub(crate) triggers: Vec<TimedTrigger>,
+    pub(crate) selected_trigger_index: Option<usize>,
 }
 
 #[derive(Clone)]

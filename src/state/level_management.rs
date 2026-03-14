@@ -27,12 +27,13 @@ impl State {
 
         if let Some(metadata) = self.load_level_metadata(&level_name) {
             self.preload_runtime_audio(&level_name, &metadata.music.source);
-            self.editor.camera.keypoints = metadata.camera_keypoints.clone();
-            self.editor.camera.selected_keypoint_index = None;
+            self.editor.set_triggers(metadata.resolved_triggers());
+            self.editor.set_trigger_selected(None);
             let transition = build_playing_transition_from_metadata(metadata);
             log::debug!("Starting level: {}", transition.level_name);
             self.gameplay.state.objects = transition.objects;
             self.gameplay.state.rebuild_behavior_cache();
+            self.session.playing_trigger_base_objects = Some(self.gameplay.state.objects.clone());
             self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction, None);
         }
 
@@ -57,6 +58,7 @@ impl State {
                 Some(transition.playtest_audio_start_seconds);
             self.gameplay.state.objects = transition.objects;
             self.gameplay.state.rebuild_behavior_cache();
+            self.session.playing_trigger_base_objects = Some(self.gameplay.state.objects.clone());
             self.apply_spawn_to_game(
                 transition.spawn_position,
                 transition.spawn_direction,
@@ -66,11 +68,13 @@ impl State {
         } else if let Some(level_name) = self.session.playing_level_name.clone() {
             self.session.playtest_audio_start_seconds = None;
             if let Some(metadata) = self.load_level_metadata(&level_name) {
-                self.editor.camera.keypoints = metadata.camera_keypoints.clone();
-                self.editor.camera.selected_keypoint_index = None;
+                self.editor.set_triggers(metadata.resolved_triggers());
+                self.editor.set_trigger_selected(None);
                 let transition = build_playing_transition_from_metadata(metadata);
                 self.gameplay.state.objects = transition.objects;
                 self.gameplay.state.rebuild_behavior_cache();
+                self.session.playing_trigger_base_objects =
+                    Some(self.gameplay.state.objects.clone());
                 self.apply_spawn_to_game(
                     transition.spawn_position,
                     transition.spawn_direction,
@@ -97,8 +101,8 @@ impl State {
         self.editor.timeline.taps.tap_times = init.tap_times;
         self.editor.timing.timing_points = init.timing_points;
         self.editor.timing.timing_selected_index = None;
-        self.editor.camera.keypoints = init.camera_keypoints;
-        self.editor.camera.selected_keypoint_index = None;
+        self.editor.set_triggers(init.triggers);
+        self.editor.set_trigger_selected(None);
         self.editor.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
             self.editor.spawn.position,
             self.editor.spawn.direction,
@@ -185,7 +189,7 @@ impl State {
             self.editor.timing.timing_points.clone(),
             self.editor.timeline.clock.time_seconds,
             self.editor.timeline.clock.duration_seconds,
-            self.editor.camera.keypoints.clone(),
+            self.editor.triggers().to_vec(),
             self.editor.objects.clone(),
         )
     }
@@ -206,8 +210,8 @@ impl State {
             .timing_points
             .sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
         self.editor.timing.timing_selected_index = None;
-        self.editor.camera.keypoints = init.camera_keypoints;
-        self.editor.camera.selected_keypoint_index = None;
+        self.editor.set_triggers(init.triggers);
+        self.editor.set_trigger_selected(None);
         self.editor.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
             self.editor.spawn.position,
             self.editor.spawn.direction,

@@ -89,7 +89,7 @@ Understanding the project structure is crucial for idiomatic changes:
 3. **Reference Existing Code:** If implementing UI, review existing `egui` implementations in `src/editor_ui/`. For core mechanics, review `src/game/physics.rs`.
 4. **No Unrelated Formatting Changes:** Never format or refactor code outside the immediate scope of the feature or bug fix. Let `bun run format` handle consistency.
 5. **Security & Integrity:** Never commit secrets, local debug paths, or bypassing comments like `#[allow(dead_code)]` unless absolutely unavoidable and well-justified.
-6. **Overwrite Database:** This project has not been released. If you need to make breaking changes to the database schema, do not worry about migration scripts. You can simply update the schema and reset the database as needed during development.
+6. **Overwrite Database:** This project has not been released. If you need to make breaking changes to the database schema, do not worry about migration scripts. You can simply update the schema and reset the database as needed during development. Same goes for CURRENT_LEVEL_FORMAT_VERSION, do not worry about backward compatibility for now.
 
 ---
 

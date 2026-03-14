@@ -110,6 +110,14 @@ impl State {
             AppCommand::EditorApplySelectedCameraKeypoint => {
                 self.editor_apply_selected_camera_keypoint()
             }
+            AppCommand::EditorAddTrigger(trigger) => self.editor_add_trigger(trigger),
+            AppCommand::EditorRemoveTrigger(index) => self.editor_remove_trigger(index),
+            AppCommand::EditorSetTriggerSelected(selected) => {
+                self.set_editor_trigger_selected(selected)
+            }
+            AppCommand::EditorUpdateTrigger(index, trigger) => {
+                self.editor_update_trigger(index, trigger)
+            }
 
             // ── Editor – misc ───────────────────────────────────────
             AppCommand::EditorTogglePerfOverlay => self.toggle_editor_perf_overlay(),
@@ -716,7 +724,10 @@ impl State {
 mod tests {
     use super::State;
     use crate::commands::AppCommand;
-    use crate::types::{AppPhase, CameraKeypoint, CameraKeypointEasing, CameraKeypointMode};
+    use crate::types::{
+        camera_keypoints_to_timed_triggers, AppPhase, CameraKeypoint, CameraKeypointEasing,
+        CameraKeypointMode,
+    };
     use glam::Vec2;
 
     #[test]
@@ -1345,7 +1356,7 @@ mod tests {
 
             let camera_offset = state.editor.camera_offset();
             let target = state.editor.editor_camera_target() + (-camera_offset.normalize() * 8.0);
-            state.editor.camera.keypoints = vec![CameraKeypoint {
+            let keypoint = CameraKeypoint {
                 time_seconds: 1.0,
                 mode: CameraKeypointMode::Static,
                 easing: CameraKeypointEasing::Linear,
@@ -1354,12 +1365,15 @@ mod tests {
                 target_position: target.to_array(),
                 rotation: state.editor.camera.editor_rotation,
                 pitch: state.editor.camera.editor_pitch,
-            }];
-            state.editor.camera.selected_keypoint_index = None;
-
-            let marker_eye = state
+            };
+            state
                 .editor
-                .camera_keypoint_marker_eye(&state.editor.camera.keypoints[0]);
+                .set_triggers(camera_keypoints_to_timed_triggers(std::slice::from_ref(
+                    &keypoint,
+                )));
+            state.editor.set_trigger_selected(None);
+
+            let marker_eye = state.editor.camera_keypoint_marker_eye(&keypoint);
             let viewport = Vec2::new(
                 state.render.gpu.config.width as f32,
                 state.render.gpu.config.height as f32,
@@ -1401,7 +1415,7 @@ mod tests {
 
             let camera_offset = state.editor.camera_offset();
             let target = state.editor.editor_camera_target() + (-camera_offset.normalize() * 8.0);
-            state.editor.camera.keypoints = vec![CameraKeypoint {
+            let keypoint = CameraKeypoint {
                 time_seconds: 1.0,
                 mode: CameraKeypointMode::Static,
                 easing: CameraKeypointEasing::Linear,
@@ -1410,12 +1424,15 @@ mod tests {
                 target_position: target.to_array(),
                 rotation: state.editor.camera.editor_rotation,
                 pitch: state.editor.camera.editor_pitch,
-            }];
-            state.editor.camera.selected_keypoint_index = None;
-
-            let marker_eye = state
+            };
+            state
                 .editor
-                .camera_keypoint_marker_eye(&state.editor.camera.keypoints[0]);
+                .set_triggers(camera_keypoints_to_timed_triggers(std::slice::from_ref(
+                    &keypoint,
+                )));
+            state.editor.set_trigger_selected(None);
+
+            let marker_eye = state.editor.camera_keypoint_marker_eye(&keypoint);
             let viewport = Vec2::new(
                 state.render.gpu.config.width as f32,
                 state.render.gpu.config.height as f32,

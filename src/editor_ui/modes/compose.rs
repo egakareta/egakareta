@@ -2,7 +2,10 @@ use crate::block_repository::all_placeable_blocks;
 use crate::commands::AppCommand;
 use crate::editor_ui::components::{MAX_TIMELINE_DURATION_SECONDS, MIN_TIMELINE_DURATION_SECONDS};
 use crate::state::EditorUiViewModel;
-use crate::types::{CameraKeypointEasing, CameraKeypointMode, EditorMode, SpawnDirection};
+use crate::types::{
+    camera_keypoints_to_timed_triggers, CameraKeypointEasing, CameraKeypointMode, EditorMode,
+    SpawnDirection, TimedTriggerAction, TimedTriggerTarget,
+};
 
 pub(crate) fn show_compose_mode_bottom_panel(
     ui: &mut egui::Ui,
@@ -201,6 +204,79 @@ pub(crate) fn show_compose_mode_bottom_panel(
     ui.separator();
 
     ui.collapsing("Camera Track", |ui| {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(format!("Triggers: {}", view.triggers.len()));
+
+            if ui.button("Add trigger from selected keypoint").clicked() {
+                if let Some(selected_idx) = view.camera_selected_index {
+                    if let Some(keypoint) = view.camera_keypoints.get(selected_idx) {
+                        if let Some(trigger) =
+                            camera_keypoints_to_timed_triggers(std::slice::from_ref(keypoint))
+                                .into_iter()
+                                .next()
+                        {
+                            commands.push(AppCommand::EditorAddTrigger(trigger));
+                        }
+                    }
+                }
+            }
+
+            if let Some(selected_idx) = view.trigger_selected_index {
+                if ui.button("Remove selected trigger").clicked() {
+                    commands.push(AppCommand::EditorRemoveTrigger(selected_idx));
+                }
+
+                if ui.button("Use playhead time (trigger)").clicked() {
+                    if let Some(selected_trigger) = view.triggers.get(selected_idx).cloned() {
+                        let mut updated = selected_trigger;
+                        updated.time_seconds = view.timeline_time_seconds;
+                        commands.push(AppCommand::EditorUpdateTrigger(selected_idx, updated));
+                    }
+                }
+            }
+        });
+
+        egui::ScrollArea::vertical().max_height(72.0).show(ui, |ui| {
+            for (index, trigger) in view.triggers.iter().enumerate() {
+                let target_label = match trigger.target {
+                    TimedTriggerTarget::Camera => "Camera",
+                    TimedTriggerTarget::Object { .. } => "Object",
+                    TimedTriggerTarget::Objects { .. } => "Objects",
+                };
+                let action_label = match trigger.action {
+                    TimedTriggerAction::MoveTo { .. } => "Move",
+                    TimedTriggerAction::RotateTo { .. } => "Rotate",
+                    TimedTriggerAction::ScaleTo { .. } => "Scale",
+                    TimedTriggerAction::CameraPose { .. } => "Camera Pose",
+                    TimedTriggerAction::CameraFollow { .. } => "Camera Follow",
+                };
+                let label = format!(
+                    "#{:02}  {:.2}s  {} -> {}",
+                    index + 1,
+                    trigger.time_seconds,
+                    target_label,
+                    action_label
+                );
+                if ui
+                    .selectable_label(view.trigger_selected_index == Some(index), label)
+                    .clicked()
+                {
+                    commands.push(AppCommand::EditorSetTriggerSelected(Some(index)));
+                    commands.push(AppCommand::EditorSetTimelineTime(
+                        trigger
+                            .time_seconds
+                            .clamp(0.0, view.timeline_duration_seconds.max(0.1)),
+                    ));
+                }
+            }
+
+            if view.triggers.is_empty() {
+                ui.label("No triggers yet.");
+            }
+        });
+
+        ui.separator();
+
         ui.horizontal(|ui| {
             if ui.button("Add at playhead (Shift+K)").clicked() {
                 commands.push(AppCommand::EditorAddCameraKeypoint);

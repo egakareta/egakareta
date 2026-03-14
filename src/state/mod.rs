@@ -8,6 +8,7 @@ mod editor_scene;
 mod editor_state;
 mod editor_timeline;
 mod editor_timing;
+mod editor_triggers;
 mod history;
 mod level_management;
 mod lifecycle;
@@ -27,6 +28,7 @@ pub(crate) use editor_interaction::{
 };
 pub(crate) use editor_timeline::EditorTimelineState;
 pub(crate) use editor_timing::EditorTimingState;
+pub(crate) use editor_triggers::EditorTriggerState;
 pub(crate) use history::EditorHistoryState;
 pub(crate) use perf::{EditorPerfState, PerfOverlayEntry, PerfStage};
 pub(crate) use render::RenderSubsystem;
@@ -65,6 +67,7 @@ pub(crate) struct SessionSubsystem {
     pub(crate) playing_level_name: Option<String>,
     pub(crate) playtesting_editor: bool,
     pub(crate) playtest_audio_start_seconds: Option<f32>,
+    pub(crate) playing_trigger_base_objects: Option<Vec<LevelObject>>,
 }
 
 /// Bundles all editor-related state into a single subsystem.
@@ -75,6 +78,7 @@ pub(crate) struct EditorSubsystem {
     pub(crate) objects: Vec<LevelObject>,
     pub(crate) spawn: SpawnMetadata,
     pub(crate) camera: EditorCameraState,
+    pub(crate) triggers: EditorTriggerState,
     pub(crate) timeline: EditorTimelineState,
     pub(crate) runtime: EditorRuntimeState,
     pub(crate) perf: EditorPerfState,
