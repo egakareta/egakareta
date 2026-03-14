@@ -1,4 +1,4 @@
 {
-    "watch": ["src", "assets"],
+    "watch": ["src", "assets", "index.html", "dist.js"],
     "ext": "*"
 }
