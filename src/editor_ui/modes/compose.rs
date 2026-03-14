@@ -81,7 +81,6 @@ pub(crate) fn show_compose_mode_bottom_panel(
             });
         }
         EditorMode::Select | EditorMode::Move | EditorMode::Scale => {
-            ui.label("Tip: Shift+Click to select multiple blocks. Hotkeys: 1 Select, 2 Move, 3 Scale, 4 Place.");
             if let Some(mut selected) = view.selected_block.clone() {
                 ui.horizontal_wrapped(|ui| {
                     ui.horizontal(|ui| {
@@ -483,18 +482,18 @@ pub(crate) fn show_compose_mode_bottom_panel(
         ));
         ui.separator();
         ui.label(format!(
-            "Editor Camera: ({:.1}, {:.1}, {:.1})",
-            view.camera_position[0], view.camera_position[1], view.camera_position[2]
-        ));
-        ui.separator();
-        ui.label(format!(
-            "Timeline Camera: ({:.1}, {:.1}, {:.1}) -> ({:.1}, {:.1}, {:.1})",
+            "Player Camera: ({:.1}, {:.1}, {:.1}) -> ({:.1}, {:.1}, {:.1})",
             view.camera_preview_position[0],
             view.camera_preview_position[1],
             view.camera_preview_position[2],
             view.camera_preview_target[0],
             view.camera_preview_target[1],
             view.camera_preview_target[2],
+        ));
+        ui.separator();
+        ui.label(format!(
+            "Editor Camera: ({:.1}, {:.1}, {:.1})",
+            view.camera_position[0], view.camera_position[1], view.camera_position[2]
         ));
         ui.separator();
         ui.label(format!("FPS: {:.0}", view.fps));
