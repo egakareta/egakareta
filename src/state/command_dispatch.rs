@@ -1,6 +1,6 @@
 use super::State;
 use crate::commands::AppCommand;
-use crate::types::EditorMode;
+use crate::types::{normalize_binding_key, EditorMode, KeyChord};
 
 impl State {
     /// Central dispatcher: every `AppCommand` is routed here.
@@ -121,6 +121,25 @@ impl State {
             AppCommand::EditorExportLevel => self.trigger_level_export(),
             AppCommand::EditorSetShowMetadata(show) => self.set_editor_show_metadata(show),
             AppCommand::EditorSetShowImport(show) => self.set_editor_show_import(show),
+            AppCommand::EditorToggleSettings => {
+                self.set_editor_show_settings(!self.editor_show_settings())
+            }
+            AppCommand::EditorSetShowSettings(show) => self.set_editor_show_settings(show),
+            AppCommand::EditorSetSettingsSection(section) => {
+                self.set_editor_settings_section(section)
+            }
+            AppCommand::EditorSetGraphicsBackend(backend) => {
+                self.set_preferred_graphics_backend(backend)
+            }
+            AppCommand::EditorSetAudioBackend(backend) => self.set_preferred_audio_backend(backend),
+            AppCommand::EditorSetKeybindCapture(action) => {
+                self.set_editor_keybind_capture_action(action)
+            }
+            AppCommand::EditorSetKeybind { action, chord } => {
+                self.set_keybind_for_action(action, chord)
+            }
+            AppCommand::EditorClearKeybind(action) => self.clear_keybind_for_action(&action),
+            AppCommand::EditorResetEssentialKeybinds => self.reset_essential_keybinds(),
             AppCommand::EditorSetImportText(text) => self.set_editor_import_text(text),
             AppCommand::EditorCompleteImport => self.complete_import(),
             AppCommand::EditorUpdateMusic(metadata) => self.set_editor_music_metadata(metadata),
@@ -194,6 +213,34 @@ impl State {
             return;
         }
 
+        if let Some(action) = self
+            .editor_keybind_capture_action()
+            .map(|value| value.to_string())
+        {
+            if !just_pressed {
+                return;
+            }
+
+            if Self::is_modifier_key(key) {
+                return;
+            }
+
+            if key == "Escape" {
+                self.dispatch(AppCommand::EditorSetKeybindCapture(None));
+                return;
+            }
+
+            let chord = KeyChord::new(
+                normalize_binding_key(key),
+                self.editor.ui.ctrl_held,
+                self.editor.ui.shift_held,
+                self.editor.ui.alt_held,
+            );
+            self.dispatch(AppCommand::EditorSetKeybind { action, chord });
+            self.dispatch(AppCommand::EditorSetKeybindCapture(None));
+            return;
+        }
+
         // Map key-press to command(s).
         if let Some(cmd) = self.map_key_to_command(key, just_pressed) {
             self.dispatch(cmd);
@@ -238,6 +285,10 @@ impl State {
     /// Pure mapping from key string + modifiers → command.
     /// Returns `None` for keys that have no command binding.
     fn map_key_to_command(&self, key: &str, just_pressed: bool) -> Option<AppCommand> {
+        if let Some(cmd) = self.map_keybind_to_command(key, just_pressed) {
+            return Some(cmd);
+        }
+
         match key {
             "ArrowUp" => {
                 if self.is_editor() {
@@ -303,20 +354,17 @@ impl State {
             }
             " " | "Space" => {
                 if just_pressed {
-                    if self.is_editor() {
-                        Some(AppCommand::EditorToggleTimelinePlayback)
-                    } else {
+                    if !self.is_editor() {
                         Some(AppCommand::TurnRight)
+                    } else {
+                        None
                     }
                 } else {
                     None
                 }
             }
             "d" | "D" => {
-                // In editor with Ctrl: duplicate (pan handled above).
-                if self.is_editor() && self.editor.ui.ctrl_held && just_pressed {
-                    Some(AppCommand::EditorDuplicateBlock)
-                } else if !self.is_editor() && just_pressed {
+                if !self.is_editor() && just_pressed {
                     Some(AppCommand::NextLevel)
                 } else {
                     None
@@ -331,11 +379,8 @@ impl State {
                 }
             }
             "Enter" => {
-                if just_pressed {
-                    Some(AppCommand::EditorPlaytest)
-                } else {
-                    None
-                }
+                let _ = just_pressed;
+                None
             }
             "MediaPlayPause" | "MediaPlay" | "MediaPause" => {
                 if just_pressed && self.is_editor() {
@@ -345,18 +390,12 @@ impl State {
                 }
             }
             "Backspace" | "Delete" => {
-                if just_pressed {
-                    Some(AppCommand::EditorRemoveBlock)
-                } else {
-                    None
-                }
+                let _ = just_pressed;
+                None
             }
             "Escape" => {
-                if just_pressed {
-                    Some(AppCommand::EditorEscape)
-                } else {
-                    None
-                }
+                let _ = just_pressed;
+                None
             }
             "q" | "Q" => None,
             "e" | "E" => {
@@ -510,35 +549,126 @@ impl State {
                 }
             }
             "c" | "C" => {
-                if self.is_editor() && self.editor.ui.ctrl_held && just_pressed {
+                let _ = just_pressed;
+                None
+            }
+            "v" | "V" => {
+                let _ = just_pressed;
+                None
+            }
+            "z" | "Z" => {
+                let _ = just_pressed;
+                None
+            }
+            "y" | "Y" => {
+                let _ = just_pressed;
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn map_keybind_to_command(&self, key: &str, just_pressed: bool) -> Option<AppCommand> {
+        if !just_pressed {
+            return None;
+        }
+
+        let normalized_key = normalize_binding_key(key);
+        let ctrl = self.editor.ui.ctrl_held;
+        let shift = self.editor.ui.shift_held;
+        let alt = self.editor.ui.alt_held;
+
+        for binding in &self.app_settings().keybinds {
+            let chord = binding.chord.normalized();
+            if chord.key == normalized_key
+                && chord.ctrl == ctrl
+                && chord.shift == shift
+                && chord.alt == alt
+            {
+                if let Some(command) = self.command_for_keybind_action(&binding.action) {
+                    return Some(command);
+                }
+            }
+        }
+
+        None
+    }
+
+    fn command_for_keybind_action(&self, action: &str) -> Option<AppCommand> {
+        match action {
+            "toggle_settings" => {
+                if self.is_editor() {
+                    Some(AppCommand::EditorToggleSettings)
+                } else {
+                    None
+                }
+            }
+            "toggle_timeline_playback" => {
+                if self.is_editor() {
+                    Some(AppCommand::EditorToggleTimelinePlayback)
+                } else {
+                    None
+                }
+            }
+            "playtest" => {
+                if self.is_editor() {
+                    Some(AppCommand::EditorPlaytest)
+                } else {
+                    None
+                }
+            }
+            "remove_block" => {
+                if self.is_editor() {
+                    Some(AppCommand::EditorRemoveBlock)
+                } else {
+                    None
+                }
+            }
+            "copy" => {
+                if self.is_editor() {
                     Some(AppCommand::EditorCopyBlock)
                 } else {
                     None
                 }
             }
-            "v" | "V" => {
-                if self.is_editor() && self.editor.ui.ctrl_held && just_pressed {
+            "paste" => {
+                if self.is_editor() {
                     Some(AppCommand::EditorPasteBlock)
                 } else {
                     None
                 }
             }
-            "z" | "Z" => {
-                if self.is_editor() && self.editor.ui.ctrl_held && just_pressed {
+            "duplicate" => {
+                if self.is_editor() {
+                    Some(AppCommand::EditorDuplicateBlock)
+                } else {
+                    None
+                }
+            }
+            "undo" => {
+                if self.is_editor() {
                     Some(AppCommand::EditorUndo)
                 } else {
                     None
                 }
             }
-            "y" | "Y" => {
-                if self.is_editor() && self.editor.ui.ctrl_held && just_pressed {
+            "redo" => {
+                if self.is_editor() {
                     Some(AppCommand::EditorRedo)
                 } else {
                     None
                 }
             }
+            "escape" => Some(AppCommand::EditorEscape),
             _ => None,
         }
+    }
+
+    fn is_modifier_key(key: &str) -> bool {
+        matches!(
+            key,
+            "Shift" | "Control" | "ControlLeft" | "ControlRight" | "Alt" | "AltLeft" | "AltRight"
+        )
     }
 
     /// Process a unified `InputEvent`.
@@ -1392,6 +1522,84 @@ mod tests {
             // Undo twice
             state.dispatch(AppCommand::EditorUndo);
             assert_eq!(state.editor.objects.len(), initial_count);
+        });
+    }
+
+    #[test]
+    fn test_ctrl_o_toggles_settings_sidebar() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+            state.phase = AppPhase::Menu;
+            state.dispatch(AppCommand::ToggleEditor);
+
+            assert!(!state.editor_show_settings());
+
+            state.process_input_event(InputEvent::Key {
+                key: "Control".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            state.process_input_event(InputEvent::Key {
+                key: "o".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert!(state.editor_show_settings());
+
+            state.process_input_event(InputEvent::Key {
+                key: "o".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert!(!state.editor_show_settings());
+        });
+    }
+
+    #[test]
+    fn test_custom_copy_keybind_replaces_default_combo() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+            state.phase = AppPhase::Menu;
+            state.dispatch(AppCommand::ToggleEditor);
+            state.dispatch(AppCommand::TurnRight);
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+            state.editor.runtime.interaction.clipboard = None;
+
+            state.dispatch(AppCommand::EditorSetKeybind {
+                action: "copy".to_string(),
+                chord: crate::types::KeyChord::new("b", true, false, false),
+            });
+
+            state.process_input_event(InputEvent::Key {
+                key: "Control".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            state.process_input_event(InputEvent::Key {
+                key: "b".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert!(state.editor.runtime.interaction.clipboard.is_some());
+
+            state.editor.runtime.interaction.clipboard = None;
+            state.process_input_event(InputEvent::Key {
+                key: "c".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert!(state.editor.runtime.interaction.clipboard.is_none());
         });
     }
 }

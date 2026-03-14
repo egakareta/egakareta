@@ -11,7 +11,9 @@ use crate::level_repository::load_builtin_level_metadata;
 use crate::mesh::build_block_obj;
 use crate::platform::io::{log_platform_error, read_editor_music_bytes};
 use crate::platform::services::trigger_level_export;
-use crate::types::{AppPhase, LevelMetadata, MusicMetadata};
+use crate::types::{
+    AppPhase, AppSettings, KeyChord, LevelMetadata, MusicMetadata, SettingsSection,
+};
 use base64::Engine as _;
 
 impl State {
@@ -269,6 +271,99 @@ impl State {
     /// Toggles the visibility of the level import UI.
     pub fn set_editor_show_import(&mut self, show: bool) {
         self.session.editor_show_import = show;
+    }
+
+    pub(crate) fn editor_show_settings(&self) -> bool {
+        self.session.editor_show_settings
+    }
+
+    pub(crate) fn set_editor_show_settings(&mut self, show: bool) {
+        self.session.editor_show_settings = show;
+        if !show {
+            self.session.editor_keybind_capture_action = None;
+        }
+    }
+
+    pub(crate) fn editor_settings_section(&self) -> SettingsSection {
+        self.session.editor_settings_section
+    }
+
+    pub(crate) fn set_editor_settings_section(&mut self, section: SettingsSection) {
+        self.session.editor_settings_section = section;
+    }
+
+    pub(crate) fn editor_keybind_capture_action(&self) -> Option<&str> {
+        self.session.editor_keybind_capture_action.as_deref()
+    }
+
+    pub(crate) fn set_editor_keybind_capture_action(&mut self, action: Option<String>) {
+        self.session.editor_keybind_capture_action = action;
+    }
+
+    pub(crate) fn app_settings(&self) -> &AppSettings {
+        &self.session.app_settings
+    }
+
+    pub(crate) fn available_graphics_backends(&self) -> &[String] {
+        &self.session.available_graphics_backends
+    }
+
+    pub(crate) fn available_audio_backends(&self) -> &[String] {
+        &self.session.available_audio_backends
+    }
+
+    pub(crate) fn settings_restart_required(&self) -> bool {
+        self.session.settings_restart_required
+    }
+
+    pub(crate) fn set_preferred_graphics_backend(&mut self, backend_name: String) {
+        if self.session.app_settings.graphics_backend == backend_name {
+            return;
+        }
+
+        self.session.app_settings.graphics_backend = backend_name;
+        self.session.settings_restart_required = true;
+        self.persist_app_settings();
+    }
+
+    pub(crate) fn set_preferred_audio_backend(&mut self, backend_name: String) {
+        if !self
+            .audio
+            .state
+            .runtime
+            .set_preferred_backend_name(&backend_name)
+        {
+            return;
+        }
+
+        self.session.app_settings.audio_backend = backend_name;
+        self.persist_app_settings();
+    }
+
+    pub(crate) fn set_keybind_for_action(&mut self, action: String, chord: KeyChord) {
+        self.session.app_settings.set_keybind(&action, chord);
+        self.persist_app_settings();
+    }
+
+    pub(crate) fn clear_keybind_for_action(&mut self, action: &str) {
+        self.session.app_settings.clear_keybind(action);
+        self.persist_app_settings();
+    }
+
+    pub(crate) fn reset_essential_keybinds(&mut self) {
+        self.session.app_settings.reset_essential_keybinds();
+        self.persist_app_settings();
+    }
+
+    pub(crate) fn persist_app_settings(&self) {
+        let settings = self.session.app_settings.clone();
+        crate::platform::task::spawn_background(async move {
+            if let Err(error) = crate::platform::io::save_app_settings_to_storage(&settings).await {
+                crate::platform::io::log_platform_error(&format!(
+                    "Failed to persist app settings: {error}"
+                ));
+            }
+        });
     }
 
     /// Returns the raw text content currently held in the editor's import buffer.

@@ -492,6 +492,9 @@ impl State {
 
     pub(crate) fn set_editor_block_id(&mut self, block_id: String) {
         self.editor.set_block_id(block_id);
+        self.session.app_settings.editor_selected_block_id =
+            self.editor.config.selected_block_id.clone();
+        self.persist_app_settings();
     }
 
     pub(crate) fn set_editor_mode(&mut self, mode: EditorMode) {
@@ -515,6 +518,8 @@ impl State {
 
     pub(crate) fn set_editor_snap_to_grid(&mut self, snap: bool) {
         self.editor.set_snap_to_grid(snap);
+        self.session.app_settings.editor_snap_to_grid = self.editor.config.snap_to_grid;
+        self.persist_app_settings();
         if self.editor.ui.selected_block_index.is_some() {
             if let Some(obj) = self.editor_selected_block() {
                 self.set_editor_selected_block_position(obj.position);
@@ -525,6 +530,8 @@ impl State {
 
     pub(crate) fn set_editor_snap_step(&mut self, step: f32) {
         self.editor.set_snap_step(step);
+        self.session.app_settings.editor_snap_step = self.editor.config.snap_step;
+        self.persist_app_settings();
         if self.editor.config.snap_to_grid && self.editor.ui.selected_block_index.is_some() {
             if let Some(obj) = self.editor_selected_block() {
                 self.set_editor_selected_block_position(obj.position);

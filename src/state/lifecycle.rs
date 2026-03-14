@@ -11,7 +11,6 @@ use super::{
 use glam::Mat4;
 use wgpu::util::DeviceExt;
 
-use crate::block_repository::DEFAULT_BLOCK_ID;
 use crate::game::{create_menu_scene, GameState};
 use crate::level_repository::builtin_level_names;
 use crate::mesh::{build_block_vertices, build_floor_vertices, build_grid_vertices};
@@ -22,8 +21,26 @@ use crate::platform::state_host::WasmCanvas;
 use crate::platform::state_host::{PlatformInstant, SurfaceHost};
 use crate::types::{
     AppPhase, CameraUniform, ColorSpaceUniform, EditorState, LineUniform, MenuState, MusicMetadata,
-    PhysicalSize, SpawnMetadata, Vertex,
+    PhysicalSize, SettingsSection, SpawnMetadata, Vertex,
 };
+
+fn discover_graphics_backends() -> Vec<String> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        vec!["BrowserWebGpu".to_string(), "Gl".to_string()]
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        vec![
+            "Auto".to_string(),
+            "Vulkan".to_string(),
+            "Metal".to_string(),
+            "Dx12".to_string(),
+            "Gl".to_string(),
+        ]
+    }
+}
 
 impl State {
     #[cfg(target_arch = "wasm32")]
@@ -380,7 +397,25 @@ impl State {
         game.objects = create_menu_scene();
         game.rebuild_behavior_cache();
 
+        let mut app_settings = match crate::platform::io::load_app_settings_from_storage().await {
+            Ok(settings) => settings,
+            Err(error) => {
+                crate::platform::io::log_platform_error(&format!(
+                    "Failed to load app settings: {error}"
+                ));
+                crate::types::AppSettings::default()
+            }
+        };
+        app_settings.editor_selected_block_id =
+            crate::block_repository::normalize_block_id(&app_settings.editor_selected_block_id);
+
         let local_audio_cache = crate::platform::io::load_all_local_audio().await;
+        let available_graphics_backends = discover_graphics_backends();
+        let available_audio_backends = crate::platform::audio::available_backend_names();
+        let mut audio_state = AudioState::new(local_audio_cache);
+        let _ = audio_state
+            .runtime
+            .set_preferred_backend_name(&app_settings.audio_backend);
 
         let block_vertices = build_block_vertices(&game.objects);
         let block_mesh = MeshSlot::from_vertices(&device, "Block Vertex Buffer", &block_vertices);
@@ -439,9 +474,7 @@ impl State {
                     progress: 0.0,
                 },
             },
-            audio: AudioSubsystem {
-                state: AudioState::new(local_audio_cache),
-            },
+            audio: AudioSubsystem { state: audio_state },
             session: SessionSubsystem {
                 editor_level_name: None,
                 editor_music_metadata: MusicMetadata {
@@ -452,7 +485,14 @@ impl State {
                 },
                 editor_show_metadata: false,
                 editor_show_import: false,
+                editor_show_settings: false,
+                editor_settings_section: SettingsSection::Backends,
+                editor_keybind_capture_action: None,
                 editor_import_text: String::new(),
+                settings_restart_required: false,
+                available_graphics_backends,
+                available_audio_backends,
+                app_settings: app_settings.clone(),
                 playing_level_name: None,
                 playtesting_editor: false,
                 playtest_audio_start_seconds: None,
@@ -460,9 +500,9 @@ impl State {
             editor: EditorSubsystem {
                 ui: EditorState::new(),
                 config: EditorConfigState {
-                    selected_block_id: DEFAULT_BLOCK_ID.to_string(),
-                    snap_to_grid: true,
-                    snap_step: 1.0,
+                    selected_block_id: app_settings.editor_selected_block_id.clone(),
+                    snap_to_grid: app_settings.editor_snap_to_grid,
+                    snap_step: app_settings.editor_snap_step.max(0.05),
                 },
                 objects: Vec::new(),
                 spawn: SpawnMetadata::default(),

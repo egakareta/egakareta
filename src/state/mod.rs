@@ -37,8 +37,8 @@ use crate::game::GameState;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::platform::state_host::NativeWindow;
 use crate::types::{
-    AppPhase, EditorMode, EditorState, LevelObject, MenuState, MusicMetadata, PhysicalSize,
-    SpawnMetadata,
+    AppPhase, AppSettings, EditorMode, EditorState, LevelObject, MenuState, MusicMetadata,
+    PhysicalSize, SettingsSection, SpawnMetadata,
 };
 
 /// Bundles all gameplay-related state into a single subsystem.
@@ -54,7 +54,14 @@ pub(crate) struct SessionSubsystem {
     pub(crate) editor_music_metadata: MusicMetadata,
     pub(crate) editor_show_metadata: bool,
     pub(crate) editor_show_import: bool,
+    pub(crate) editor_show_settings: bool,
+    pub(crate) editor_settings_section: SettingsSection,
+    pub(crate) editor_keybind_capture_action: Option<String>,
     pub(crate) editor_import_text: String,
+    pub(crate) settings_restart_required: bool,
+    pub(crate) available_graphics_backends: Vec<String>,
+    pub(crate) available_audio_backends: Vec<String>,
+    pub(crate) app_settings: AppSettings,
     pub(crate) playing_level_name: Option<String>,
     pub(crate) playtesting_editor: bool,
     pub(crate) playtest_audio_start_seconds: Option<f32>,

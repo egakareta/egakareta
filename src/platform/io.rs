@@ -1,4 +1,5 @@
 use crate::platform::storage;
+use crate::types::AppSettings;
 
 pub(crate) fn save_level_export(filename: &str, data: &[u8]) -> Result<(), String> {
     #[cfg(target_arch = "wasm32")]
@@ -63,4 +64,12 @@ pub(crate) fn read_editor_music_bytes(
     music_source: &str,
 ) -> Option<Vec<u8>> {
     storage::read_editor_music_bytes(level_name, music_source)
+}
+
+pub(crate) async fn load_app_settings_from_storage() -> Result<AppSettings, String> {
+    storage::load_app_settings().await
+}
+
+pub(crate) async fn save_app_settings_to_storage(settings: &AppSettings) -> Result<(), String> {
+    storage::save_app_settings(settings).await
 }

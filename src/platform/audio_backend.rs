@@ -2,19 +2,76 @@ use std::cell::RefCell;
 use std::io::Cursor;
 use std::rc::Rc;
 
-fn select_host() -> cpal::Host {
+fn host_label(host_id: cpal::HostId) -> String {
+    format!("{:?}", host_id)
+}
+
+fn parse_host_id_by_label(label: &str) -> Option<cpal::HostId> {
+    let trimmed = label.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("Default") {
+        return None;
+    }
+
+    if let Some(host_id) = cpal::available_hosts()
+        .into_iter()
+        .find(|host_id| host_label(*host_id).eq_ignore_ascii_case(trimmed))
+    {
+        return Some(host_id);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        if host_label(cpal::HostId::AudioWorklet).eq_ignore_ascii_case(trimmed) {
+            return Some(cpal::HostId::AudioWorklet);
+        }
+    }
+
+    None
+}
+
+fn select_host(preferred_host: Option<cpal::HostId>) -> cpal::Host {
+    if let Some(host_id) = preferred_host {
+        if let Ok(host) = cpal::host_from_id(host_id) {
+            return host;
+        }
+    }
+
     #[cfg(target_arch = "wasm32")]
     {
         if let Ok(host) = cpal::host_from_id(cpal::HostId::AudioWorklet) {
             return host;
         }
     }
+
     cpal::default_host()
+}
+
+fn available_host_labels() -> Vec<String> {
+    let mut labels = vec!["Default".to_string()];
+
+    for host_id in cpal::available_hosts() {
+        labels.push(host_label(host_id));
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        if cpal::host_from_id(cpal::HostId::AudioWorklet).is_ok() {
+            let worklet = host_label(cpal::HostId::AudioWorklet);
+            if !labels.iter().any(|entry| entry == &worklet) {
+                labels.push(worklet);
+            }
+        }
+    }
+
+    labels.sort();
+    labels.dedup();
+    labels
 }
 
 struct RodioBackendInner {
     _output_device: Option<rodio::MixerDeviceSink>,
     device_tried: bool,
+    preferred_host: Option<cpal::HostId>,
     current_player: Option<rodio::Player>,
     current_audio_source: Option<String>,
     playback_started_at: Option<web_time::Instant>,
@@ -39,7 +96,7 @@ impl RodioBackendInner {
 
         use cpal::traits::HostTrait;
         log::info!("Available hosts: {:?}", cpal::available_hosts());
-        let host = select_host();
+        let host = select_host(self.preferred_host);
         let host_id = host.id();
 
         log::info!("Selected audio host: {:?}", host_id);
@@ -134,12 +191,13 @@ pub(crate) struct AudioBackend {
 
 impl AudioBackend {
     pub(crate) fn new() -> Self {
-        let host_id = select_host().id();
+        let host_id = select_host(None).id();
 
         Self {
             inner: Rc::new(RefCell::new(RodioBackendInner {
                 _output_device: None,
                 device_tried: false,
+                preferred_host: None,
                 current_player: None,
                 current_audio_source: None,
                 playback_started_at: None,
@@ -153,6 +211,45 @@ impl AudioBackend {
 }
 
 impl AudioBackend {
+    pub(crate) fn available_backend_names() -> Vec<String> {
+        available_host_labels()
+    }
+
+    pub(crate) fn set_preferred_backend_name(&mut self, backend_name: &str) -> bool {
+        let parsed = parse_host_id_by_label(backend_name);
+        if !backend_name.trim().is_empty()
+            && !backend_name.eq_ignore_ascii_case("Default")
+            && parsed.is_none()
+        {
+            return false;
+        }
+
+        let mut inner = self.inner.borrow_mut();
+        if inner.preferred_host == parsed {
+            return true;
+        }
+
+        inner.preferred_host = parsed;
+        if let Some(player) = inner.current_player.take() {
+            player.stop();
+        }
+        for player in inner.active_sfx.drain(..) {
+            player.stop();
+        }
+        inner.current_audio_source = None;
+        inner.playback_started_at = None;
+        inner.playback_start_offset_seconds = 0.0;
+        inner._output_device = None;
+        inner.device_tried = false;
+        inner.backend_name = if let Some(host_id) = inner.preferred_host {
+            host_label(host_id)
+        } else {
+            "Default".to_string()
+        };
+
+        true
+    }
+
     pub(crate) fn stop(&mut self) {
         let mut inner = self.inner.borrow_mut();
         if let Some(player) = &inner.current_player {

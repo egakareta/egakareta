@@ -5,6 +5,8 @@ use crate::block_repository::{normalize_block_id, DEFAULT_BLOCK_ID};
 
 pub(crate) const CURRENT_LEVEL_FORMAT_VERSION: u32 = 1;
 
+pub(crate) const APP_SETTINGS_VERSION: u32 = 1;
+
 fn default_level_format_version() -> u32 {
     CURRENT_LEVEL_FORMAT_VERSION
 }
@@ -136,6 +138,70 @@ fn is_default_level_object_color_tint(value: &[f32; 3]) -> bool {
         .iter()
         .zip(default_level_object_color_tint())
         .all(|(component, default)| (*component - default).abs() <= 1e-6)
+}
+
+fn default_app_settings_version() -> u32 {
+    APP_SETTINGS_VERSION
+}
+
+fn is_default_app_settings_version(value: &u32) -> bool {
+    *value == APP_SETTINGS_VERSION
+}
+
+fn default_editor_selected_block_id() -> String {
+    DEFAULT_BLOCK_ID.to_string()
+}
+
+fn is_default_editor_selected_block_id(value: &String) -> bool {
+    value == DEFAULT_BLOCK_ID
+}
+
+fn default_editor_snap_to_grid_setting() -> bool {
+    true
+}
+
+fn is_default_editor_snap_to_grid_setting(value: &bool) -> bool {
+    *value
+}
+
+fn default_editor_snap_step_setting() -> f32 {
+    1.0
+}
+
+fn is_default_editor_snap_step_setting(value: &f32) -> bool {
+    (*value - 1.0).abs() <= 1e-6
+}
+
+fn default_graphics_backend_setting() -> String {
+    #[cfg(target_arch = "wasm32")]
+    {
+        "BrowserWebGpu".to_string()
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        "Auto".to_string()
+    }
+}
+
+fn is_default_graphics_backend_setting(value: &String) -> bool {
+    value == &default_graphics_backend_setting()
+}
+
+fn default_audio_backend_setting() -> String {
+    "Default".to_string()
+}
+
+fn is_default_audio_backend_setting(value: &String) -> bool {
+    value == "Default"
+}
+
+fn default_app_keybinds() -> Vec<KeybindBinding> {
+    default_essential_keybinds()
+}
+
+fn is_default_app_keybinds(value: &[KeybindBinding]) -> bool {
+    value == default_essential_keybinds().as_slice()
 }
 
 fn deserialize_level_object_block_id<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -469,6 +535,231 @@ pub(crate) enum AppPhase {
     Playing,
     Editor,
     GameOver,
+}
+
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub(crate) enum SettingsSection {
+    #[default]
+    Backends,
+    Keybinds,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct KeyChord {
+    pub(crate) key: String,
+    #[serde(default)]
+    pub(crate) ctrl: bool,
+    #[serde(default)]
+    pub(crate) shift: bool,
+    #[serde(default)]
+    pub(crate) alt: bool,
+}
+
+impl KeyChord {
+    pub(crate) fn new(key: impl Into<String>, ctrl: bool, shift: bool, alt: bool) -> Self {
+        Self {
+            key: normalize_binding_key(&key.into()),
+            ctrl,
+            shift,
+            alt,
+        }
+    }
+
+    pub(crate) fn normalized(&self) -> Self {
+        Self {
+            key: normalize_binding_key(&self.key),
+            ctrl: self.ctrl,
+            shift: self.shift,
+            alt: self.alt,
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct KeybindBinding {
+    pub(crate) action: String,
+    pub(crate) chord: KeyChord,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+pub(crate) struct AppSettings {
+    #[serde(
+        default = "default_app_settings_version",
+        skip_serializing_if = "is_default_app_settings_version"
+    )]
+    pub(crate) version: u32,
+    #[serde(
+        default = "default_editor_selected_block_id",
+        skip_serializing_if = "is_default_editor_selected_block_id"
+    )]
+    pub(crate) editor_selected_block_id: String,
+    #[serde(
+        default = "default_editor_snap_to_grid_setting",
+        skip_serializing_if = "is_default_editor_snap_to_grid_setting"
+    )]
+    pub(crate) editor_snap_to_grid: bool,
+    #[serde(
+        default = "default_editor_snap_step_setting",
+        skip_serializing_if = "is_default_editor_snap_step_setting"
+    )]
+    pub(crate) editor_snap_step: f32,
+    #[serde(
+        default = "default_graphics_backend_setting",
+        skip_serializing_if = "is_default_graphics_backend_setting"
+    )]
+    pub(crate) graphics_backend: String,
+    #[serde(
+        default = "default_audio_backend_setting",
+        skip_serializing_if = "is_default_audio_backend_setting"
+    )]
+    pub(crate) audio_backend: String,
+    #[serde(
+        default = "default_app_keybinds",
+        skip_serializing_if = "is_default_app_keybinds"
+    )]
+    pub(crate) keybinds: Vec<KeybindBinding>,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            version: APP_SETTINGS_VERSION,
+            editor_selected_block_id: default_editor_selected_block_id(),
+            editor_snap_to_grid: default_editor_snap_to_grid_setting(),
+            editor_snap_step: default_editor_snap_step_setting(),
+            graphics_backend: default_graphics_backend_setting(),
+            audio_backend: default_audio_backend_setting(),
+            keybinds: default_app_keybinds(),
+        }
+    }
+}
+
+impl AppSettings {
+    pub(crate) fn keybind_for_action(&self, action: &str) -> Option<&KeyChord> {
+        self.keybinds
+            .iter()
+            .find(|binding| binding.action == action)
+            .map(|binding| &binding.chord)
+    }
+
+    pub(crate) fn set_keybind(&mut self, action: &str, chord: KeyChord) {
+        let normalized = chord.normalized();
+        self.keybinds
+            .retain(|binding| binding.action != action && binding.chord.normalized() != normalized);
+        self.keybinds.push(KeybindBinding {
+            action: action.to_string(),
+            chord: normalized,
+        });
+    }
+
+    pub(crate) fn clear_keybind(&mut self, action: &str) {
+        self.keybinds.retain(|binding| binding.action != action);
+    }
+
+    pub(crate) fn reset_essential_keybinds(&mut self) {
+        let mut preserved = self.keybinds.clone();
+        for (action, _) in essential_keybind_actions() {
+            preserved.retain(|binding| binding.action != *action);
+        }
+        preserved.extend(default_essential_keybinds());
+        self.keybinds = preserved;
+    }
+}
+
+pub(crate) fn normalize_binding_key(key: &str) -> String {
+    match key {
+        " " => "Space".to_string(),
+        "ControlLeft" | "ControlRight" => "Control".to_string(),
+        "AltLeft" | "AltRight" => "Alt".to_string(),
+        _ => {
+            if key.len() == 1 {
+                key.to_ascii_lowercase()
+            } else {
+                key.to_string()
+            }
+        }
+    }
+}
+
+pub(crate) fn format_key_chord(chord: &KeyChord) -> String {
+    let mut parts = Vec::new();
+    if chord.ctrl {
+        parts.push("Ctrl".to_string());
+    }
+    if chord.shift {
+        parts.push("Shift".to_string());
+    }
+    if chord.alt {
+        parts.push("Alt".to_string());
+    }
+
+    let key = if chord.key.len() == 1 {
+        chord.key.to_ascii_uppercase()
+    } else {
+        chord.key.clone()
+    };
+    parts.push(key);
+    parts.join("+")
+}
+
+pub(crate) fn essential_keybind_actions() -> &'static [(&'static str, &'static str)] {
+    &[
+        ("toggle_settings", "Toggle Settings Sidebar"),
+        ("toggle_timeline_playback", "Toggle Timeline Playback"),
+        ("playtest", "Start Playtest"),
+        ("remove_block", "Remove Block"),
+        ("copy", "Copy"),
+        ("paste", "Paste"),
+        ("duplicate", "Duplicate"),
+        ("undo", "Undo"),
+        ("redo", "Redo"),
+        ("escape", "Context Escape"),
+    ]
+}
+
+pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
+    vec![
+        KeybindBinding {
+            action: "toggle_settings".to_string(),
+            chord: KeyChord::new("o", true, false, false),
+        },
+        KeybindBinding {
+            action: "toggle_timeline_playback".to_string(),
+            chord: KeyChord::new("Space", false, false, false),
+        },
+        KeybindBinding {
+            action: "playtest".to_string(),
+            chord: KeyChord::new("Enter", false, false, false),
+        },
+        KeybindBinding {
+            action: "remove_block".to_string(),
+            chord: KeyChord::new("Delete", false, false, false),
+        },
+        KeybindBinding {
+            action: "copy".to_string(),
+            chord: KeyChord::new("c", true, false, false),
+        },
+        KeybindBinding {
+            action: "paste".to_string(),
+            chord: KeyChord::new("v", true, false, false),
+        },
+        KeybindBinding {
+            action: "duplicate".to_string(),
+            chord: KeyChord::new("d", true, false, false),
+        },
+        KeybindBinding {
+            action: "undo".to_string(),
+            chord: KeyChord::new("z", true, false, false),
+        },
+        KeybindBinding {
+            action: "redo".to_string(),
+            chord: KeyChord::new("y", true, false, false),
+        },
+        KeybindBinding {
+            action: "escape".to_string(),
+            chord: KeyChord::new("Escape", false, false, false),
+        },
+    ]
 }
 
 /// State for the main menu screen.

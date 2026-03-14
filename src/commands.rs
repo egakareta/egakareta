@@ -136,6 +136,27 @@ pub(crate) enum AppCommand {
     EditorSetShowMetadata(bool),
     /// Open or close the import/export raw data window.
     EditorSetShowImport(bool),
+    /// Toggle the settings sidebar visibility.
+    EditorToggleSettings,
+    /// Open or close the settings sidebar.
+    EditorSetShowSettings(bool),
+    /// Select which settings section is displayed in the sidebar.
+    EditorSetSettingsSection(crate::types::SettingsSection),
+    /// Set preferred graphics backend for subsequent launches.
+    EditorSetGraphicsBackend(String),
+    /// Set preferred audio backend and apply immediately when possible.
+    EditorSetAudioBackend(String),
+    /// Start or cancel keybind capture for an action.
+    EditorSetKeybindCapture(Option<String>),
+    /// Set a keybind mapping for an action.
+    EditorSetKeybind {
+        action: String,
+        chord: crate::types::KeyChord,
+    },
+    /// Clear the keybind mapping for an action.
+    EditorClearKeybind(String),
+    /// Reset essential keybinds to defaults.
+    EditorResetEssentialKeybinds,
     /// Update the text in the raw import field.
     EditorSetImportText(String),
     /// Parse and apply the raw import text.

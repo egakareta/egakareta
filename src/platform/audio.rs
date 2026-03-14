@@ -1,5 +1,9 @@
 use crate::platform::audio_backend::AudioBackend;
 
+pub(crate) fn available_backend_names() -> Vec<String> {
+    AudioBackend::available_backend_names()
+}
+
 pub(crate) struct PlatformAudio {
     backend: AudioBackend,
 }
@@ -138,6 +142,10 @@ impl PlatformAudio {
 
     pub(crate) fn backend_name(&self) -> String {
         self.backend.backend_name()
+    }
+
+    pub(crate) fn set_preferred_backend_name(&mut self, backend_name: &str) -> bool {
+        self.backend.set_preferred_backend_name(backend_name)
     }
 }
 

@@ -6,7 +6,7 @@ use crate::commands::AppCommand;
 use crate::editor_ui::components::{show_timeline_bar, show_waveform_panel, timeline_metrics};
 use crate::editor_ui::modes::compose::show_compose_mode_bottom_panel;
 use crate::editor_ui::modes::timing::show_timing_mode_bottom_panel;
-use crate::types::EditorMode;
+use crate::types::{essential_keybind_actions, format_key_chord, EditorMode, SettingsSection};
 use crate::State;
 use glam::{Mat3, Vec3};
 pub use menu::{load_menu_wordmark_texture, show_menu_wordmark_ui, show_splash_screen_ui};
@@ -29,6 +29,156 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
 
     let view = state.editor_ui_view_model();
     let mut commands = Vec::<AppCommand>::new();
+
+    if view.show_settings {
+        egui::SidePanel::left("editor_settings_sidebar")
+            .resizable(true)
+            .default_width(320.0)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.heading("Settings");
+                    if ui.button("Close").clicked() {
+                        commands.push(crate::commands::AppCommand::EditorSetShowSettings(false));
+                    }
+                });
+
+                ui.separator();
+
+                ui.horizontal(|ui| {
+                    if ui
+                        .selectable_label(
+                            view.settings_section == SettingsSection::Backends,
+                            "Backends",
+                        )
+                        .clicked()
+                    {
+                        commands.push(crate::commands::AppCommand::EditorSetSettingsSection(
+                            SettingsSection::Backends,
+                        ));
+                    }
+
+                    if ui
+                        .selectable_label(
+                            view.settings_section == SettingsSection::Keybinds,
+                            "Keybinds",
+                        )
+                        .clicked()
+                    {
+                        commands.push(crate::commands::AppCommand::EditorSetSettingsSection(
+                            SettingsSection::Keybinds,
+                        ));
+                    }
+                });
+
+                ui.separator();
+
+                match view.settings_section {
+                    SettingsSection::Backends => {
+                        ui.label("Graphics backend");
+                        let mut graphics_choice = view.configured_graphics_backend.to_string();
+                        egui::ComboBox::from_id_salt("settings_graphics_backend")
+                            .selected_text(graphics_choice.as_str())
+                            .show_ui(ui, |ui| {
+                                for backend in view.graphics_backend_options {
+                                    if ui
+                                        .selectable_label(graphics_choice == *backend, backend)
+                                        .clicked()
+                                    {
+                                        graphics_choice = backend.clone();
+                                    }
+                                }
+                            });
+                        if graphics_choice != view.configured_graphics_backend {
+                            commands.push(crate::commands::AppCommand::EditorSetGraphicsBackend(
+                                graphics_choice,
+                            ));
+                        }
+
+                        if view.settings_restart_required {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(255, 196, 96),
+                                "Graphics backend change will apply after restart.",
+                            );
+                        }
+
+                        ui.separator();
+                        ui.label("Audio backend");
+                        let mut audio_choice = view.configured_audio_backend.to_string();
+                        egui::ComboBox::from_id_salt("settings_audio_backend")
+                            .selected_text(audio_choice.as_str())
+                            .show_ui(ui, |ui| {
+                                for backend in view.audio_backend_options {
+                                    if ui
+                                        .selectable_label(audio_choice == *backend, backend)
+                                        .clicked()
+                                    {
+                                        audio_choice = backend.clone();
+                                    }
+                                }
+                            });
+                        if audio_choice != view.configured_audio_backend {
+                            commands.push(crate::commands::AppCommand::EditorSetAudioBackend(
+                                audio_choice,
+                            ));
+                        }
+                    }
+                    SettingsSection::Keybinds => {
+                        if let Some(action) = view.keybind_capture_action {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(180, 235, 255),
+                                format!(
+                                    "Capturing new shortcut for {}. Press Esc to cancel.",
+                                    action
+                                ),
+                            );
+                            ui.separator();
+                        }
+
+                        for (action, label) in essential_keybind_actions() {
+                            let key_label = view
+                                .app_settings
+                                .keybind_for_action(action)
+                                .map(format_key_chord)
+                                .unwrap_or_else(|| "Unbound".to_string());
+
+                            ui.horizontal(|ui| {
+                                ui.label(*label);
+                                ui.monospace(key_label);
+
+                                let is_capturing = view.keybind_capture_action == Some(*action);
+                                if is_capturing {
+                                    if ui.button("Cancel").clicked() {
+                                        commands.push(
+                                            crate::commands::AppCommand::EditorSetKeybindCapture(
+                                                None,
+                                            ),
+                                        );
+                                    }
+                                } else if ui.button("Change").clicked() {
+                                    commands.push(
+                                        crate::commands::AppCommand::EditorSetKeybindCapture(Some(
+                                            (*action).to_string(),
+                                        )),
+                                    );
+                                }
+
+                                if ui.button("Clear").clicked() {
+                                    commands.push(crate::commands::AppCommand::EditorClearKeybind(
+                                        (*action).to_string(),
+                                    ));
+                                }
+                            });
+                        }
+
+                        ui.separator();
+                        if ui.button("Reset Essentials to Defaults").clicked() {
+                            commands
+                                .push(crate::commands::AppCommand::EditorResetEssentialKeybinds);
+                        }
+                    }
+                }
+            });
+    }
 
     egui::TopBottomPanel::top("editor_top_bar").show(ctx, |ui| {
         ui.horizontal(|ui| {
@@ -80,6 +230,10 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
 
             if ui.button("Metadata").clicked() {
                 commands.push(crate::commands::AppCommand::EditorSetShowMetadata(true));
+            }
+
+            if ui.button("Settings").clicked() {
+                commands.push(crate::commands::AppCommand::EditorToggleSettings);
             }
         });
     });
