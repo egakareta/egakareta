@@ -11,6 +11,34 @@
         "title": "Golden Haze",
         "unicodeTitle": "Golden Haze"
     },
+    "triggers": [
+        {
+            "time_seconds": 0.5,
+            "duration_seconds": 2.0,
+            "easing": "ease_in_out",
+            "target": {
+                "kind": "object",
+                "object_id": 0
+            },
+            "action": {
+                "kind": "move_to",
+                "position": [0.0, 15.0, 2.0]
+            }
+        },
+        {
+            "time_seconds": 1.0,
+            "duration_seconds": 1.5,
+            "easing": "ease_out",
+            "target": {
+                "kind": "object",
+                "object_id": 1
+            },
+            "action": {
+                "kind": "rotate_to",
+                "rotation_degrees": 180.0
+            }
+        }
+    ],
     "objects": [
         {
             "position": [0.0, 10.0, 0.0],
