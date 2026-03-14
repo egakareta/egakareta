@@ -74,8 +74,8 @@ impl State {
 
         let camera_target = glam::Vec3::new(
             self.editor.camera.editor_pan[0],
-            self.editor.camera.editor_pan[1],
             self.editor.camera.editor_target_z,
+            self.editor.camera.editor_pan[1],
         );
         let camera_position = (camera_target + self.editor.camera_offset()).to_array();
         let (camera_preview_position, camera_preview_target) = self.editor_preview_camera_view();

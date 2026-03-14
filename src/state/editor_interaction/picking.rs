@@ -41,15 +41,15 @@ impl EditorSubsystem {
         self.perf_record(PerfStage::PickUnproject, unproject_started_at);
 
         let mut min_t = f32::INFINITY;
-        let mut best_hit_normal = Vec3::Z;
+        let mut best_hit_normal = Vec3::Y;
         let mut hit_found = false;
         let mut hit_block_index: Option<usize> = None;
         let mut hit_trigger_index: Option<usize> = None;
 
         let raycast_started_at = PlatformInstant::now();
 
-        if ray_dir.z.abs() > f32::EPSILON {
-            let t = -ray_origin.z / ray_dir.z;
+        if ray_dir.y.abs() > f32::EPSILON {
+            let t = -ray_origin.y / ray_dir.y;
             if t >= 0.0 {
                 min_t = t;
                 hit_found = true;
@@ -122,7 +122,7 @@ impl EditorSubsystem {
             [target.x.floor(), target.y.floor(), target.z.floor()]
         };
 
-        let next_cursor = [next_cursor[0], next_cursor[1], next_cursor[2].max(0.0)];
+        let next_cursor = [next_cursor[0], next_cursor[1].max(0.0), next_cursor[2]];
 
         Some(EditorPickResult {
             cursor: next_cursor,
@@ -179,17 +179,17 @@ impl EditorSubsystem {
         let half = Vec3::new(obj.size[0] * 0.5, obj.size[1] * 0.5, obj.size[2] * 0.5);
         let inv_angle = -obj.rotation_degrees.to_radians();
 
-        let local_origin_xy = self.rotate_vec2(
-            Vec2::new(ray_origin.x - center.x, ray_origin.y - center.y),
+        let local_origin_xz = self.rotate_vec2(
+            Vec2::new(ray_origin.x - center.x, ray_origin.z - center.z),
             inv_angle,
         );
-        let local_dir_xy = self.rotate_vec2(Vec2::new(ray_dir.x, ray_dir.y), inv_angle);
+        let local_dir_xz = self.rotate_vec2(Vec2::new(ray_dir.x, ray_dir.z), inv_angle);
         let local_origin = Vec3::new(
-            local_origin_xy.x,
-            local_origin_xy.y,
-            ray_origin.z - center.z,
+            local_origin_xz.x,
+            ray_origin.y - center.y,
+            local_origin_xz.y,
         );
-        let local_dir = Vec3::new(local_dir_xy.x, local_dir_xy.y, ray_dir.z);
+        let local_dir = Vec3::new(local_dir_xz.x, ray_dir.y, local_dir_xz.y);
 
         let min = -half;
         let max = half;
@@ -253,8 +253,8 @@ impl EditorSubsystem {
         };
 
         let angle = obj.rotation_degrees.to_radians();
-        let normal_xy = self.rotate_vec2(Vec2::new(normal_local.x, normal_local.y), angle);
-        let normal = Vec3::new(normal_xy.x, normal_xy.y, normal_local.z);
+        let normal_xz = self.rotate_vec2(Vec2::new(normal_local.x, normal_local.z), angle);
+        let normal = Vec3::new(normal_xz.x, normal_local.y, normal_xz.y);
 
         Some((t_hit, normal))
     }

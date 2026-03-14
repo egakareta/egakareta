@@ -118,10 +118,10 @@ impl EditorSubsystem {
         for (index, obj) in self.objects.iter().enumerate() {
             let occupies_x = cursor[0] + 0.5 >= obj.position[0]
                 && cursor[0] + 0.5 <= obj.position[0] + obj.size[0];
-            let occupies_y = cursor[1] + 0.5 >= obj.position[1]
-                && cursor[1] + 0.5 <= obj.position[1] + obj.size[1];
-            if occupies_x && occupies_y {
-                let top = obj.position[2] + obj.size[2];
+            let occupies_z = cursor[2] + 0.5 >= obj.position[2]
+                && cursor[2] + 0.5 <= obj.position[2] + obj.size[2];
+            if occupies_x && occupies_z {
+                let top = obj.position[1] + obj.size[1];
                 if top > top_height {
                     top_height = top;
                     top_index = Some(index);
@@ -307,13 +307,14 @@ impl State {
                 position[1].round(),
                 position[2].round(),
             ];
-            self.editor.ui.cursor[2] = self.editor.ui.cursor[2].max(0.0);
+            self.editor.ui.cursor[1] = self.editor.ui.cursor[1].max(0.0);
 
             self.rebuild_editor_cursor_vertices();
         }
 
         self.editor.camera.editor_pan[0] = position[0] + 0.5;
-        self.editor.camera.editor_pan[1] = position[1] + 0.5;
+        self.editor.camera.editor_pan[1] = position[2] + 0.5;
+        self.editor.camera.editor_target_z = position[1];
 
         self.rebuild_editor_preview_player_vertices_for_state(position, direction);
     }
@@ -695,7 +696,7 @@ impl State {
             let idx = tap_times.partition_point(|t| *t < current_time - 0.01);
             idx < tap_times.len() && (tap_times[idx] - current_time).abs() <= 0.01
         };
-        let preview_origin = [position[0] - 0.5, position[1] - 0.5, position[2]];
+        let preview_origin = [position[0] - 0.5, position[1], position[2] - 0.5];
         let vertices = build_editor_preview_player_vertices(preview_origin, direction, is_tapping);
         self.render
             .meshes

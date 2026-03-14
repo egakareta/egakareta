@@ -6,10 +6,10 @@ impl EditorSubsystem {
     pub(crate) fn camera_axes_xy(&self) -> (Vec2, Vec2) {
         let right = Vec2::new(
             self.camera.editor_rotation.cos(),
-            self.camera.editor_rotation.sin(),
+            -self.camera.editor_rotation.sin(),
         );
         let up = Vec2::new(
-            -self.camera.editor_rotation.sin(),
+            self.camera.editor_rotation.sin(),
             self.camera.editor_rotation.cos(),
         );
         (right, up)
@@ -23,10 +23,10 @@ impl EditorSubsystem {
             .clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
         let horizontal_distance = distance * pitch.cos();
         let vertical_distance = distance * pitch.sin();
-        Mat4::from_rotation_z(self.camera.editor_rotation).transform_vector3(Vec3::new(
+        Mat4::from_rotation_y(self.camera.editor_rotation).transform_vector3(Vec3::new(
             0.0,
-            -horizontal_distance,
             vertical_distance,
+            -horizontal_distance,
         ))
     }
 
@@ -34,11 +34,11 @@ impl EditorSubsystem {
         let aspect = viewport.x / viewport.y;
         let target = Vec3::new(
             self.camera.editor_pan[0],
-            self.camera.editor_pan[1],
             self.camera.editor_target_z,
+            self.camera.editor_pan[1],
         );
         let eye = target + self.camera_offset();
-        let up = Vec3::new(0.0, 0.0, 1.0);
+        let up = Vec3::new(0.0, 1.0, 0.0);
         let view = Mat4::look_at_rh(eye, target, up);
         let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
         proj * view

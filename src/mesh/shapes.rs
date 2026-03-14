@@ -10,130 +10,87 @@ pub(crate) fn append_prism(
     let [x_min, y_min, z_min] = min;
     let [x_max, y_max, z_max] = max;
 
-    vertices.push(Vertex {
-        position: [x_min, y_min, z_max],
-        color: color_top,
-    });
-    vertices.push(Vertex {
-        position: [x_max, y_min, z_max],
-        color: color_top,
-    });
-    vertices.push(Vertex {
-        position: [x_max, y_max, z_max],
-        color: color_top,
-    });
-    vertices.push(Vertex {
-        position: [x_min, y_min, z_max],
-        color: color_top,
-    });
-    vertices.push(Vertex {
-        position: [x_max, y_max, z_max],
-        color: color_top,
-    });
-    vertices.push(Vertex {
-        position: [x_min, y_max, z_max],
-        color: color_top,
-    });
+    let mut push_face =
+        |p0: [f32; 3], p1: [f32; 3], p2: [f32; 3], p3: [f32; 3], color: [f32; 4]| {
+            vertices.push(Vertex {
+                position: p0,
+                color,
+            });
+            vertices.push(Vertex {
+                position: p1,
+                color,
+            });
+            vertices.push(Vertex {
+                position: p2,
+                color,
+            });
+            vertices.push(Vertex {
+                position: p0,
+                color,
+            });
+            vertices.push(Vertex {
+                position: p2,
+                color,
+            });
+            vertices.push(Vertex {
+                position: p3,
+                color,
+            });
+        };
 
-    vertices.push(Vertex {
-        position: [x_min, y_max, z_min],
-        color: color_side,
-    });
-    vertices.push(Vertex {
-        position: [x_max, y_max, z_min],
-        color: color_side,
-    });
-    vertices.push(Vertex {
-        position: [x_max, y_max, z_max],
-        color: color_side,
-    });
-    vertices.push(Vertex {
-        position: [x_min, y_max, z_min],
-        color: color_side,
-    });
-    vertices.push(Vertex {
-        position: [x_max, y_max, z_max],
-        color: color_side,
-    });
-    vertices.push(Vertex {
-        position: [x_min, y_max, z_max],
-        color: color_side,
-    });
+    // Top (+Y)
+    push_face(
+        [x_min, y_max, z_min],
+        [x_min, y_max, z_max],
+        [x_max, y_max, z_max],
+        [x_max, y_max, z_min],
+        color_top,
+    );
 
-    vertices.push(Vertex {
-        position: [x_max, y_min, z_min],
-        color: color_side,
-    });
-    vertices.push(Vertex {
-        position: [x_max, y_max, z_min],
-        color: color_side,
-    });
-    vertices.push(Vertex {
-        position: [x_max, y_max, z_max],
-        color: color_side,
-    });
-    vertices.push(Vertex {
-        position: [x_max, y_min, z_min],
-        color: color_side,
-    });
-    vertices.push(Vertex {
-        position: [x_max, y_max, z_max],
-        color: color_side,
-    });
-    vertices.push(Vertex {
-        position: [x_max, y_min, z_max],
-        color: color_side,
-    });
+    // +X
+    push_face(
+        [x_max, y_min, z_min],
+        [x_max, y_max, z_min],
+        [x_max, y_max, z_max],
+        [x_max, y_min, z_max],
+        color_side,
+    );
 
-    vertices.push(Vertex {
-        position: [x_min, y_min, z_min],
-        color: color_side,
-    });
-    vertices.push(Vertex {
-        position: [x_min, y_max, z_max],
-        color: color_side,
-    });
-    vertices.push(Vertex {
-        position: [x_min, y_max, z_min],
-        color: color_side,
-    });
-    vertices.push(Vertex {
-        position: [x_min, y_min, z_min],
-        color: color_side,
-    });
-    vertices.push(Vertex {
-        position: [x_min, y_min, z_max],
-        color: color_side,
-    });
-    vertices.push(Vertex {
-        position: [x_min, y_max, z_max],
-        color: color_side,
-    });
+    // -X
+    push_face(
+        [x_min, y_min, z_min],
+        [x_min, y_min, z_max],
+        [x_min, y_max, z_max],
+        [x_min, y_max, z_min],
+        color_side,
+    );
 
-    vertices.push(Vertex {
-        position: [x_min, y_min, z_min],
-        color: color_side,
-    });
-    vertices.push(Vertex {
-        position: [x_max, y_min, z_max],
-        color: color_side,
-    });
-    vertices.push(Vertex {
-        position: [x_max, y_min, z_min],
-        color: color_side,
-    });
-    vertices.push(Vertex {
-        position: [x_min, y_min, z_min],
-        color: color_side,
-    });
-    vertices.push(Vertex {
-        position: [x_min, y_min, z_max],
-        color: color_side,
-    });
-    vertices.push(Vertex {
-        position: [x_max, y_min, z_max],
-        color: color_side,
-    });
+    // +Z
+    push_face(
+        [x_min, y_min, z_max],
+        [x_max, y_min, z_max],
+        [x_max, y_max, z_max],
+        [x_min, y_max, z_max],
+        color_side,
+    );
+
+    // -Z
+    push_face(
+        [x_min, y_min, z_min],
+        [x_min, y_max, z_min],
+        [x_max, y_max, z_min],
+        [x_max, y_min, z_min],
+        color_side,
+    );
+
+    // Bottom (-Y)
+    push_face(
+        [x_min, y_min, z_min],
+        [x_max, y_min, z_min],
+        [x_max, y_min, z_max],
+        [x_min, y_min, z_max],
+        color_side,
+    );
 }
 
 pub(crate) fn append_quad(

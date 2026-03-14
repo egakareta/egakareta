@@ -396,8 +396,8 @@ impl State {
             };
             let head_start = [
                 self.gameplay.state.position[0] - dir[0] * head_length,
-                self.gameplay.state.position[1] - dir[1] * head_length,
-                self.gameplay.state.position[2],
+                self.gameplay.state.position[1],
+                self.gameplay.state.position[2] - dir[1] * head_length,
             ];
             let head_points = [head_start, self.gameplay.state.position];
             trail_vertices.extend(build_trail_vertices(
@@ -413,7 +413,7 @@ impl State {
 
         self.frame_runtime.player_render.line_uniform.offset = [
             (self.gameplay.state.position[0] * 100.0).round() / 100.0,
-            (self.gameplay.state.position[1] * 100.0).round() / 100.0,
+            (self.gameplay.state.position[2] * 100.0).round() / 100.0,
         ];
         self.frame_runtime.player_render.line_uniform.rotation = match self.gameplay.state.direction
         {
@@ -429,7 +429,7 @@ impl State {
 
         let aspect = self.render.gpu.config.width as f32 / self.render.gpu.config.height as f32;
         let (eye, target) = self.playing_camera_view();
-        let up = Vec3::new(0.0, 0.0, 1.0);
+        let up = Vec3::new(0.0, 1.0, 0.0);
         let view = Mat4::look_at_rh(eye, target, up);
         let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
         let view_proj = proj * view;
@@ -464,9 +464,9 @@ impl State {
         let aspect = self.render.gpu.config.width as f32 / self.render.gpu.config.height as f32;
         let radius = 25.0;
         let angle = -25.0f32.to_radians();
-        let eye = Vec3::new(radius * angle.cos(), radius * angle.sin(), 15.0);
+        let eye = Vec3::new(radius * angle.cos(), 15.0, radius * angle.sin());
         let target = Vec3::new(0.0, 0.0, 0.0);
-        let up = Vec3::new(0.0, 0.0, 1.0);
+        let up = Vec3::new(0.0, 1.0, 0.0);
         let view = Mat4::look_at_rh(eye, target, up);
         let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
         let view_proj = proj * view;
@@ -485,12 +485,12 @@ impl State {
         let aspect = self.render.gpu.config.width as f32 / self.render.gpu.config.height as f32;
         let target = Vec3::new(
             self.editor.camera.editor_pan[0],
-            self.editor.camera.editor_pan[1],
             self.editor.camera.editor_target_z,
+            self.editor.camera.editor_pan[1],
         );
         let offset = self.editor_camera_offset();
         let eye = target + offset;
-        let up = Vec3::new(0.0, 0.0, 1.0);
+        let up = Vec3::new(0.0, 1.0, 0.0);
         let view = Mat4::look_at_rh(eye, target, up);
         let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
         let view_proj = proj * view;

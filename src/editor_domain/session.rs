@@ -88,5 +88,5 @@ fn cursor_from_objects(objects: &[LevelObject]) -> [f32; 3] {
 }
 
 fn camera_pan_from_cursor(cursor: [f32; 3]) -> [f32; 2] {
-    [cursor[0] + 0.5, cursor[1] + 0.5]
+    [cursor[0] + 0.5, cursor[2] + 0.5]
 }

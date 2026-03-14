@@ -1,4 +1,4 @@
-use super::physics::{aabb_overlaps_object_xy, object_xy_contains, BASE_PLAYER_SPEED};
+use super::physics::{aabb_overlaps_object_xz, object_xz_contains, BASE_PLAYER_SPEED};
 use crate::block_repository::{resolve_block_definition, BlockCollision, BlockRenderProfile};
 use crate::types::{Direction, LevelObject, SpawnDirection};
 
@@ -51,8 +51,8 @@ pub(crate) struct GameState {
 pub(crate) fn center_spawn_position(position: [f32; 3]) -> [f32; 3] {
     [
         position[0].floor() + 0.5,
-        position[1].floor() + 0.5,
-        position[2],
+        position[1],
+        position[2].floor() + 0.5,
     ]
 }
 
@@ -147,7 +147,7 @@ impl GameState {
         const GRAVITY: f32 = 26.0;
         const MAX_FALL_SPEED: f32 = 40.0;
         const SNAP_DISTANCE: f32 = 0.3;
-        const DEATH_Z: f32 = -6.0;
+        const DEATH_Y: f32 = -6.0;
 
         let delta = match self.direction {
             Direction::Forward => [0.0, 1.0],
@@ -155,7 +155,7 @@ impl GameState {
         };
 
         self.position[0] += delta[0] * self.speed * dt;
-        self.position[1] += delta[1] * self.speed * dt;
+        self.position[2] += delta[1] * self.speed * dt;
 
         // Collision detection
         let mut hit_death = false;
@@ -172,23 +172,23 @@ impl GameState {
 
         let s_min_x = x - SNAKE_WIDTH / 2.0 + TOLERANCE;
         let s_max_x = x + SNAKE_WIDTH / 2.0 - TOLERANCE;
-        let s_min_y = y - SNAKE_WIDTH / 2.0 + TOLERANCE;
-        let s_max_y = y + SNAKE_WIDTH / 2.0 - TOLERANCE;
-        let s_min_z = z + TOLERANCE;
-        let s_max_z = z + SNAKE_HEIGHT - TOLERANCE;
+        let s_min_z = z - SNAKE_WIDTH / 2.0 + TOLERANCE;
+        let s_max_z = z + SNAKE_WIDTH / 2.0 - TOLERANCE;
+        let s_min_y = y + TOLERANCE;
+        let s_max_y = y + SNAKE_HEIGHT - TOLERANCE;
 
         for (i, obj) in self.objects.iter().enumerate() {
-            let o_min_z = obj.position[2];
-            let o_max_z = obj.position[2] + obj.size[2];
+            let o_min_y = obj.position[1];
+            let o_max_y = obj.position[1] + obj.size[1];
             let behavior = self
                 .cached_behaviors
                 .get(i)
                 .copied()
                 .unwrap_or_else(|| CachedBlockBehavior::from_block_id(&obj.block_id));
 
-            if aabb_overlaps_object_xy(s_min_x, s_max_x, s_min_y, s_max_y, obj)
-                && s_max_z > o_min_z
-                && s_min_z < o_max_z
+            if aabb_overlaps_object_xz(s_min_x, s_max_x, s_min_z, s_max_z, obj)
+                && s_max_y > o_min_y
+                && s_min_y < o_max_y
             {
                 match behavior.collision {
                     BlockCollision::Portal => {
@@ -245,27 +245,27 @@ impl GameState {
         let was_grounded = self.is_grounded;
         let mut is_grounded = false;
 
-        let support_height = self.top_surface_height_at(
+        let support_height = self.top_surface_y_at(
             self.position[0],
-            self.position[1],
-            self.position[2] + SNAP_DISTANCE,
+            self.position[2],
+            self.position[1] + SNAP_DISTANCE,
         );
 
         if let Some(top) = support_height {
             let close_enough =
-                self.position[2] <= top + SNAP_DISTANCE && self.position[2] >= top - SNAP_DISTANCE;
+                self.position[1] <= top + SNAP_DISTANCE && self.position[1] >= top - SNAP_DISTANCE;
             if self.vertical_velocity <= 0.0 && close_enough {
-                self.position[2] = top;
+                self.position[1] = top;
                 self.vertical_velocity = 0.0;
                 is_grounded = true;
             } else {
                 self.vertical_velocity =
                     (self.vertical_velocity - GRAVITY * dt).max(-MAX_FALL_SPEED);
-                self.position[2] += self.vertical_velocity * dt;
+                self.position[1] += self.vertical_velocity * dt;
             }
         } else {
             self.vertical_velocity = (self.vertical_velocity - GRAVITY * dt).max(-MAX_FALL_SPEED);
-            self.position[2] += self.vertical_velocity * dt;
+            self.position[1] += self.vertical_velocity * dt;
         }
 
         if was_grounded && !is_grounded {
@@ -276,7 +276,7 @@ impl GameState {
 
         self.is_grounded = is_grounded;
 
-        if self.position[2] < DEATH_Z {
+        if self.position[1] < DEATH_Y {
             self.game_over = true;
         }
     }
@@ -312,18 +312,18 @@ impl GameState {
         let pull = (HORIZONTAL_PULL * step).clamp(0.0, 1.0);
 
         self.position[0] += (self.finish_target[0] - self.position[0]) * pull;
-        self.position[1] += (self.finish_target[1] - self.position[1]) * pull;
+        self.position[2] += (self.finish_target[2] - self.position[2]) * pull;
 
         self.finish_sink_velocity =
             (self.finish_sink_velocity - DOWN_ACCEL * step).max(-MAX_SINK_SPEED);
-        self.position[2] += self.finish_sink_velocity * step;
+        self.position[1] += self.finish_sink_velocity * step;
 
         let dx = self.finish_target[0] - self.position[0];
-        let dy = self.finish_target[1] - self.position[1];
-        let distance_xy_sq = dx * dx + dy * dy;
-        let sink_goal_z = self.finish_target[2] - 1.0;
+        let dz = self.finish_target[2] - self.position[2];
+        let distance_xz_sq = dx * dx + dz * dz;
+        let sink_goal_y = self.finish_target[1] - 1.0;
 
-        if distance_xy_sq <= 0.0064 && self.position[2] <= sink_goal_z {
+        if distance_xz_sq <= 0.0064 && self.position[1] <= sink_goal_y {
             self.finishing = false;
             self.level_complete = true;
             self.completion_hold_seconds = 0.6;
@@ -352,7 +352,7 @@ impl GameState {
         }
     }
 
-    pub(crate) fn top_surface_height_at(&self, x: f32, y: f32, max_z: f32) -> Option<f32> {
+    pub(crate) fn top_surface_y_at(&self, x: f32, z: f32, max_y: f32) -> Option<f32> {
         let mut top_surface: Option<f32> = Some(0.0);
         for (i, obj) in self.objects.iter().enumerate() {
             let is_support = self
@@ -367,9 +367,9 @@ impl GameState {
             if !is_support {
                 continue;
             }
-            if object_xy_contains(obj, x, y) {
-                let top = obj.position[2] + obj.size[2];
-                if top <= max_z {
+            if object_xz_contains(obj, x, z) {
+                let top = obj.position[1] + obj.size[1];
+                if top <= max_y {
                     top_surface = match top_surface {
                         Some(existing) if existing > top => Some(existing),
                         _ => Some(top),

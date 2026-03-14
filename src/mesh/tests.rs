@@ -5,18 +5,18 @@ mod tests {
     use crate::mesh::obj::parse_obj_mesh;
     use crate::types::LevelObject;
 
-    fn bounds_xy(vertices: &[[f32; 3]]) -> (f32, f32, f32, f32) {
+    fn bounds_xz(vertices: &[[f32; 3]]) -> (f32, f32, f32, f32) {
         let mut min_x = f32::INFINITY;
         let mut max_x = f32::NEG_INFINITY;
-        let mut min_y = f32::INFINITY;
-        let mut max_y = f32::NEG_INFINITY;
+        let mut min_z = f32::INFINITY;
+        let mut max_z = f32::NEG_INFINITY;
         for pos in vertices {
             min_x = min_x.min(pos[0]);
             max_x = max_x.max(pos[0]);
-            min_y = min_y.min(pos[1]);
-            max_y = max_y.max(pos[1]);
+            min_z = min_z.min(pos[2]);
+            max_z = max_z.max(pos[2]);
         }
-        (min_x, max_x, min_y, max_y)
+        (min_x, max_x, min_z, max_z)
     }
 
     #[test]
@@ -31,12 +31,12 @@ mod tests {
         };
         let vertices = build_block_vertices(&[obj]);
         let positions: Vec<[f32; 3]> = vertices.iter().map(|v| v.position).collect();
-        let (min_x, max_x, min_y, max_y) = bounds_xy(&positions);
+        let (min_x, max_x, min_z, max_z) = bounds_xz(&positions);
 
         assert!((min_x - 0.5).abs() < 1e-5);
         assert!((max_x - 1.5).abs() < 1e-5);
-        assert!((min_y - -0.5).abs() < 1e-5);
-        assert!((max_y - 1.5).abs() < 1e-5);
+        assert!((min_z - -0.5).abs() < 1e-5);
+        assert!((max_z - 1.5).abs() < 1e-5);
     }
 
     #[test]
@@ -104,7 +104,7 @@ f 1/1/1 2/2/1 3/3/1
     }
 
     #[test]
-    fn margin_profile_renders_with_xy_inset() {
+    fn margin_profile_renders_with_xz_inset() {
         let obj = LevelObject {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
@@ -116,11 +116,11 @@ f 1/1/1 2/2/1 3/3/1
 
         let vertices = build_block_vertices(&[obj]);
         let positions: Vec<[f32; 3]> = vertices.iter().map(|v| v.position).collect();
-        let (min_x, max_x, min_y, max_y) = bounds_xy(&positions);
+        let (min_x, max_x, min_z, max_z) = bounds_xz(&positions);
 
         assert!((min_x - 0.025).abs() < 1e-5);
         assert!((max_x - 0.975).abs() < 1e-5);
-        assert!((min_y - 0.025).abs() < 1e-5);
-        assert!((max_y - 0.975).abs() < 1e-5);
+        assert!((min_z - 0.025).abs() < 1e-5);
+        assert!((max_z - 0.975).abs() < 1e-5);
     }
 }

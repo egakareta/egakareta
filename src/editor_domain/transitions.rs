@@ -52,7 +52,7 @@ pub(crate) fn build_editor_playtest_transition(
         spawn_speed: state.speed,
         playtest_audio_start_seconds: state.elapsed_seconds,
         playing_level_name: editor_level_name.map(|name| name.to_string()),
-        camera_rotation: -45.0f32.to_radians(),
+        camera_rotation: 45.0f32.to_radians(),
         camera_pitch: 45.0f32.to_radians(),
     }
 }

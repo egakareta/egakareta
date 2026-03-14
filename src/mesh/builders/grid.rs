@@ -6,68 +6,68 @@ pub(crate) fn build_grid_vertices() -> Vec<Vertex> {
     let step = 1.0;
     let grid_color = [0.2, 0.22, 0.26, 1.0];
     let line_width = 0.02;
-    let grid_z = 0.01;
+    let grid_y = 0.01;
 
     let mut x = -extent;
     while x <= extent {
         let x_min = x - line_width;
         let x_max = x + line_width;
         grid_vertices.push(Vertex {
-            position: [x_min, -extent, grid_z],
+            position: [x_min, grid_y, -extent],
             color: grid_color,
         });
         grid_vertices.push(Vertex {
-            position: [x_max, -extent, grid_z],
+            position: [x_max, grid_y, -extent],
             color: grid_color,
         });
         grid_vertices.push(Vertex {
-            position: [x_max, extent, grid_z],
+            position: [x_max, grid_y, extent],
             color: grid_color,
         });
         grid_vertices.push(Vertex {
-            position: [x_min, -extent, grid_z],
+            position: [x_min, grid_y, -extent],
             color: grid_color,
         });
         grid_vertices.push(Vertex {
-            position: [x_max, extent, grid_z],
+            position: [x_max, grid_y, extent],
             color: grid_color,
         });
         grid_vertices.push(Vertex {
-            position: [x_min, extent, grid_z],
+            position: [x_min, grid_y, extent],
             color: grid_color,
         });
         x += step;
     }
 
-    let mut y = -extent;
-    while y <= extent {
-        let y_min = y - line_width;
-        let y_max = y + line_width;
+    let mut z = -extent;
+    while z <= extent {
+        let z_min = z - line_width;
+        let z_max = z + line_width;
         grid_vertices.push(Vertex {
-            position: [-extent, y_min, grid_z],
+            position: [-extent, grid_y, z_min],
             color: grid_color,
         });
         grid_vertices.push(Vertex {
-            position: [extent, y_min, grid_z],
+            position: [extent, grid_y, z_min],
             color: grid_color,
         });
         grid_vertices.push(Vertex {
-            position: [extent, y_max, grid_z],
+            position: [extent, grid_y, z_max],
             color: grid_color,
         });
         grid_vertices.push(Vertex {
-            position: [-extent, y_min, grid_z],
+            position: [-extent, grid_y, z_min],
             color: grid_color,
         });
         grid_vertices.push(Vertex {
-            position: [extent, y_max, grid_z],
+            position: [extent, grid_y, z_max],
             color: grid_color,
         });
         grid_vertices.push(Vertex {
-            position: [-extent, y_max, grid_z],
+            position: [-extent, grid_y, z_max],
             color: grid_color,
         });
-        y += step;
+        z += step;
     }
 
     grid_vertices

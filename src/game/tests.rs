@@ -1,4 +1,4 @@
-use super::physics::{aabb_overlaps_object_xy, object_xy_contains, BASE_PLAYER_SPEED};
+use super::physics::{aabb_overlaps_object_xz, object_xz_contains, BASE_PLAYER_SPEED};
 use super::simulation::{simulate_timeline_state, TimelineSimulationRuntime};
 use super::state::GameState;
 use crate::types::{LevelObject, SpawnDirection};
@@ -19,9 +19,8 @@ fn test_ground_detection_normal() {
         color_tint: [1.0, 1.0, 1.0],
     });
 
-    // Player at 0.5, 0.5 (center of block), check ground at 0.5, 0.5
-    // Max Z should be > 1.0 to detect the block top
-    let height = game.top_surface_height_at(0.5, 0.5, 2.0);
+    // Player at x=0.5, z=0.5 (center of block), check top Y height.
+    let height = game.top_surface_y_at(0.5, 0.5, 2.0);
     assert_eq!(height, Some(1.0));
 }
 
@@ -39,7 +38,7 @@ fn test_ground_detection_under_overhang() {
     });
     // Overhang block at height 3
     game.objects.push(LevelObject {
-        position: [0.0, 0.0, 3.0],
+        position: [0.0, 3.0, 0.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: 0.0,
         roundness: 0.18,
@@ -47,10 +46,10 @@ fn test_ground_detection_under_overhang() {
         color_tint: [1.0, 1.0, 1.0],
     });
 
-    // Player is walking on the ground block (z=1).
-    // We check ground height with max_z slightly above player head (e.g. 1.0 + SNAP)
+    // Player is walking on the ground block (y=1).
+    // We check top surface with max_y slightly above player head.
     // It should ignore the block at z=3.
-    let height = game.top_surface_height_at(0.5, 0.5, 1.5);
+    let height = game.top_surface_y_at(0.5, 0.5, 1.5);
     assert_eq!(height, Some(1.0));
 }
 
@@ -85,8 +84,8 @@ fn rotated_object_contains_expected_points() {
         color_tint: [1.0, 1.0, 1.0],
     };
 
-    assert!(object_xy_contains(&obj, 1.0, 0.5));
-    assert!(!object_xy_contains(&obj, 2.1, 0.5));
+    assert!(object_xz_contains(&obj, 1.0, 0.5));
+    assert!(!object_xz_contains(&obj, 2.1, 0.5));
 }
 
 #[test]
@@ -100,8 +99,8 @@ fn rotated_overlap_uses_oriented_bounds() {
         color_tint: [1.0, 1.0, 1.0],
     };
 
-    assert!(aabb_overlaps_object_xy(0.9, 1.1, 0.3, 0.5, &obj));
-    assert!(!aabb_overlaps_object_xy(3.0, 3.4, 3.0, 3.4, &obj));
+    assert!(aabb_overlaps_object_xz(0.9, 1.1, 0.3, 0.5, &obj));
+    assert!(!aabb_overlaps_object_xz(3.0, 3.4, 3.0, 3.4, &obj));
 }
 
 #[test]
@@ -109,15 +108,15 @@ fn rotated_ground_detection_works() {
     let mut game = GameState::new();
     game.objects.push(LevelObject {
         position: [0.0, 0.0, 0.0],
-        size: [2.0, 1.0, 2.0],
+        size: [2.0, 2.0, 1.0],
         rotation_degrees: 90.0,
         roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
 
-    let inside = game.top_surface_height_at(1.0, 0.5, 3.0);
-    let outside = game.top_surface_height_at(2.2, 0.5, 3.0);
+    let inside = game.top_surface_y_at(1.0, 0.5, 3.0);
+    let outside = game.top_surface_y_at(2.2, 0.5, 3.0);
     assert_eq!(inside, Some(2.0));
     assert_eq!(outside, Some(0.0));
 }
@@ -126,7 +125,7 @@ fn rotated_ground_detection_works() {
 fn speed_portal_overlap_removes_portal_and_boosts_speed() {
     let mut game = GameState::new();
     game.started = true;
-    game.position = [0.5, 0.2, 0.0];
+    game.position = [0.5, 0.0, 0.2];
     game.speed = 1.0;
     game.objects.push(LevelObject {
         position: [0.0, 0.0, 0.0],
@@ -148,10 +147,10 @@ fn speed_portal_overlap_removes_portal_and_boosts_speed() {
 fn finish_block_overlap_completes_level_after_sink() {
     let mut game = GameState::new();
     game.started = true;
-    game.position = [0.5, 0.5, 0.0];
+    game.position = [0.5, 0.0, 0.5];
     game.objects.push(LevelObject {
-        position: [0.0, 0.0, -0.1],
-        size: [1.0, 1.0, 0.2],
+        position: [0.0, -0.1, 0.0],
+        size: [1.0, 0.2, 1.0],
         rotation_degrees: 0.0,
         roundness: 0.18,
         block_id: "core/finish".to_string(),
@@ -178,8 +177,8 @@ fn timeline_negative_time_clamps_to_zero() {
         simulate_timeline_state([0.0, 0.0, 0.0], SpawnDirection::Forward, &[], &[], -2.0);
 
     approx_eq(snapshot.position[0], 0.5, 1e-6);
-    approx_eq(snapshot.position[1], 0.5, 1e-6);
-    approx_eq(snapshot.position[2], 0.0, 1e-6);
+    approx_eq(snapshot.position[1], 0.0, 1e-6);
+    approx_eq(snapshot.position[2], 0.5, 1e-6);
     assert!(matches!(snapshot.direction, SpawnDirection::Forward));
     approx_eq(snapshot.elapsed_seconds, 0.0, 1e-6);
 }
@@ -192,7 +191,7 @@ fn timeline_tap_at_zero_turns_before_movement() {
 
     assert!(matches!(snapshot.direction, SpawnDirection::Right));
     approx_eq(snapshot.position[0], 1.5, 0.05);
-    approx_eq(snapshot.position[1], 0.5, 0.05);
+    approx_eq(snapshot.position[2], 0.5, 0.05);
     approx_eq(snapshot.elapsed_seconds, dt, 1e-6);
 }
 

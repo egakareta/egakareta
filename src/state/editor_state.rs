@@ -129,17 +129,17 @@ impl EditorSubsystem {
             let next_position = if self.config.snap_to_grid {
                 [
                     (position[0] / snap_step).round() * snap_step,
-                    (position[1] / snap_step).round() * snap_step,
-                    (position[2].max(0.0) / snap_step).round() * snap_step,
+                    (position[1].max(0.0) / snap_step).round() * snap_step,
+                    (position[2] / snap_step).round() * snap_step,
                 ]
             } else {
-                [position[0], position[1], position[2].max(0.0)]
+                [position[0], position[1].max(0.0), position[2]]
             };
             self.objects[index].position = next_position;
             self.ui.cursor = [
                 next_position[0],
-                next_position[1],
-                next_position[2].max(0.0),
+                next_position[1].max(0.0),
+                next_position[2],
             ];
         }
     }
@@ -253,8 +253,8 @@ impl EditorSubsystem {
         };
         [
             ((position[0] - 0.5) / step).round() * step,
-            ((position[1] - 0.5) / step).round() * step,
-            (position[2] / step).round() * step,
+            (position[1] / step).round() * step,
+            ((position[2] - 0.5) / step).round() * step,
         ]
     }
 

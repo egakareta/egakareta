@@ -12,7 +12,7 @@ const MIN_EDITOR_PITCH: f32 = -89.9f32.to_radians();
 const MAX_EDITOR_PITCH: f32 = 89.9f32.to_radians();
 const MIN_PLAYING_PITCH: f32 = 0.1f32.to_radians();
 const DEFAULT_CAMERA_KEYPOINT_TRANSITION_INTERVAL_SECONDS: f32 = 1.0;
-pub(crate) const DEFAULT_PLAY_CAMERA_ROTATION: f32 = -std::f32::consts::FRAC_PI_4;
+pub(crate) const DEFAULT_PLAY_CAMERA_ROTATION: f32 = std::f32::consts::FRAC_PI_4;
 pub(crate) const DEFAULT_PLAY_CAMERA_PITCH: f32 = std::f32::consts::FRAC_PI_4;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -35,10 +35,10 @@ pub(crate) struct EditorCameraState {
 fn offset_from_rotation_pitch(rotation: f32, pitch: f32, distance: f32) -> Vec3 {
     let horizontal_distance = distance * pitch.cos();
     let vertical_distance = distance * pitch.sin();
-    Mat4::from_rotation_z(rotation).transform_vector3(Vec3::new(
+    Mat4::from_rotation_y(rotation).transform_vector3(Vec3::new(
         0.0,
-        -horizontal_distance,
         vertical_distance,
+        -horizontal_distance,
     ))
 }
 
@@ -133,7 +133,7 @@ impl EditorSubsystem {
         let eye = self.camera_keypoint_marker_eye(keypoint);
         let to_target = Vec3::from_array(keypoint.target_position) - eye;
         if to_target.length_squared() <= f32::EPSILON {
-            Vec3::Y
+            Vec3::Z
         } else {
             to_target.normalize()
         }
@@ -142,8 +142,8 @@ impl EditorSubsystem {
     pub(crate) fn editor_camera_target(&self) -> Vec3 {
         Vec3::new(
             self.camera.editor_pan[0],
-            self.camera.editor_pan[1],
             self.camera.editor_target_z,
+            self.camera.editor_pan[1],
         )
     }
 
@@ -185,8 +185,8 @@ impl EditorSubsystem {
             return false;
         };
 
-        self.camera.editor_pan = [keypoint.target_position[0], keypoint.target_position[1]];
-        self.camera.editor_target_z = keypoint.target_position[2];
+        self.camera.editor_pan = [keypoint.target_position[0], keypoint.target_position[2]];
+        self.camera.editor_target_z = keypoint.target_position[1];
         self.camera.editor_rotation = keypoint.rotation;
         self.camera.editor_pitch = keypoint.pitch.clamp(MIN_EDITOR_PITCH, MAX_EDITOR_PITCH);
         true
@@ -198,8 +198,8 @@ impl EditorSubsystem {
         let move_vec = look_dir * delta * 2.0;
 
         self.camera.editor_pan[0] += move_vec.x;
-        self.camera.editor_pan[1] += move_vec.y;
-        self.camera.editor_target_z += move_vec.z;
+        self.camera.editor_pan[1] += move_vec.z;
+        self.camera.editor_target_z += move_vec.y;
     }
 
     pub(crate) fn pan_by_input(&mut self, screen_x: f32, screen_y: f32) {
@@ -242,13 +242,13 @@ impl EditorSubsystem {
         let forward = -offset.normalize();
 
         let (right_xy, _) = self.camera_axes_xy();
-        let right = Vec3::new(right_xy.x, right_xy.y, 0.0);
+        let right = Vec3::new(right_xy.x, 0.0, right_xy.y);
 
-        let movement = right * (input.x * speed) + forward * (input.y * speed);
+        let movement = right * (-input.x * speed) + forward * (input.y * speed);
 
         self.camera.editor_pan[0] += movement.x;
-        self.camera.editor_pan[1] += movement.y;
-        self.camera.editor_target_z += movement.z;
+        self.camera.editor_pan[1] += movement.z;
+        self.camera.editor_target_z += movement.y;
     }
 
     fn resolve_live_follow_sample(&self, target: Vec3, is_game_active: bool) -> CameraViewSample {

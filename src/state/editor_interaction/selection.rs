@@ -51,24 +51,24 @@ impl EditorSubsystem {
     fn rotated_block_screen_bounds(&self, index: usize, viewport: Vec2) -> Option<(Vec2, Vec2)> {
         let obj = self.objects.get(index)?;
 
-        let center_xy = Vec2::new(
+        let center_xz = Vec2::new(
             obj.position[0] + obj.size[0] * 0.5,
-            obj.position[1] + obj.size[1] * 0.5,
+            obj.position[2] + obj.size[2] * 0.5,
         );
-        let half = Vec2::new(obj.size[0] * 0.5, obj.size[1] * 0.5);
+        let half = Vec2::new(obj.size[0] * 0.5, obj.size[2] * 0.5);
         let angle = obj.rotation_degrees.to_radians();
         let (sin, cos) = angle.sin_cos();
-        let rotate_xy = |v: Vec2| Vec2::new(v.x * cos - v.y * sin, v.x * sin + v.y * cos);
+        let rotate_xz = |v: Vec2| Vec2::new(v.x * cos - v.y * sin, v.x * sin + v.y * cos);
 
-        let z0 = obj.position[2];
-        let z1 = obj.position[2] + obj.size[2];
+        let y0 = obj.position[1];
+        let y1 = obj.position[1] + obj.size[1];
 
         let mut points = Vec::with_capacity(10);
         for local_x in [-half.x, half.x] {
-            for local_y in [-half.y, half.y] {
-                let rotated = rotate_xy(Vec2::new(local_x, local_y));
-                for z in [z0, z1] {
-                    let world = Vec3::new(center_xy.x + rotated.x, center_xy.y + rotated.y, z);
+            for local_z in [-half.y, half.y] {
+                let rotated = rotate_xz(Vec2::new(local_x, local_z));
+                for y in [y0, y1] {
+                    let world = Vec3::new(center_xz.x + rotated.x, y, center_xz.y + rotated.y);
                     if let Some(screen) = self.world_to_screen_v(world, viewport) {
                         points.push(screen);
                     }
@@ -77,7 +77,7 @@ impl EditorSubsystem {
         }
 
         if let Some(center_screen) = self.world_to_screen_v(
-            Vec3::new(center_xy.x, center_xy.y, z0 + obj.size[2] * 0.5),
+            Vec3::new(center_xz.x, y0 + obj.size[1] * 0.5, center_xz.y),
             viewport,
         ) {
             points.push(center_screen);
@@ -260,8 +260,8 @@ impl EditorSubsystem {
             Vec2::new(drag.start_center_screen[0], drag.start_center_screen[1]) - origin_screen;
         let effective_mouse_delta = mouse_delta + camera_shift;
 
-        let right_world = Vec3::new(camera_right_xy.x, camera_right_xy.y, 0.0);
-        let up_world = Vec3::new(camera_up_xy.x, camera_up_xy.y, 0.0);
+        let right_world = Vec3::new(camera_right_xy.x, 0.0, camera_right_xy.y);
+        let up_world = Vec3::new(camera_up_xy.x, 0.0, camera_up_xy.y);
 
         let Some(right_screen) = self.world_to_screen_v(center + right_world, viewport) else {
             return true;
@@ -297,18 +297,18 @@ impl EditorSubsystem {
                     block.position[0]
                         + world_right_factor * camera_right_xy.x
                         + world_up_factor * camera_up_xy.x,
-                    block.position[1]
+                    block.position[1],
+                    block.position[2]
                         + world_right_factor * camera_right_xy.y
                         + world_up_factor * camera_up_xy.y,
-                    block.position[2],
                 ];
 
                 if snap_enabled {
                     next[0] = (next[0] / snap_step).round() * snap_step;
-                    next[1] = (next[1] / snap_step).round() * snap_step;
-                    next[2] = (next[2].max(0.0) / snap_step).round() * snap_step;
+                    next[1] = (next[1].max(0.0) / snap_step).round() * snap_step;
+                    next[2] = (next[2] / snap_step).round() * snap_step;
                 } else {
-                    next[2] = next[2].max(0.0);
+                    next[1] = next[1].max(0.0);
                 }
 
                 obj.position = next;
@@ -321,8 +321,8 @@ impl EditorSubsystem {
         if let Some(next_position) = first_cursor {
             self.ui.cursor = [
                 next_position[0],
-                next_position[1],
-                next_position[2].max(0.0),
+                next_position[1].max(0.0),
+                next_position[2],
             ];
         }
 

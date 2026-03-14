@@ -85,8 +85,8 @@ impl EditorSubsystem {
             .clamp(0.0, duration_seconds);
         let target_world = [
             indicator_cell[0] + 0.5,
-            indicator_cell[1] + 0.5,
-            indicator_cell[2],
+            indicator_cell[1],
+            indicator_cell[2] + 0.5,
         ];
         let preview_cell = self.tap_indicator_position_from_world(self.timeline.preview.position);
         let derived_time = if (preview_cell[0] - indicator_cell[0]).abs() <= 0.001
@@ -131,7 +131,7 @@ impl EditorSubsystem {
         }
     }
 
-    pub(crate) fn nudge_selected(&mut self, world_dx: f32, world_dy: f32) -> bool {
+    pub(crate) fn nudge_selected(&mut self, world_dx: f32, world_dz: f32) -> bool {
         let selected_indices = self.selected_indices_normalized();
         if selected_indices.is_empty() {
             return false;
@@ -140,7 +140,7 @@ impl EditorSubsystem {
         for index in &selected_indices {
             if let Some(obj) = self.objects.get_mut(*index) {
                 obj.position[0] += world_dx;
-                obj.position[1] += world_dy;
+                obj.position[2] += world_dz;
             }
         }
 
@@ -151,7 +151,7 @@ impl EditorSubsystem {
             .or_else(|| selected_indices.first().copied())
         {
             if let Some(obj) = self.objects.get(index) {
-                self.ui.cursor = [obj.position[0], obj.position[1], obj.position[2].max(0.0)];
+                self.ui.cursor = [obj.position[0], obj.position[1].max(0.0), obj.position[2]];
             }
         }
 
@@ -201,7 +201,7 @@ impl EditorSubsystem {
             1.0
         };
         self.ui.cursor[0] += dx as f32 * step;
-        self.ui.cursor[1] += dy as f32 * step;
+        self.ui.cursor[2] += dy as f32 * step;
     }
 }
 

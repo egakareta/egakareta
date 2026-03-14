@@ -44,8 +44,8 @@ pub(crate) fn derive_tap_indicator_positions(
         let snapshot = runtime.snapshot();
         positions.push([
             (snapshot.position[0] - 0.5).round(),
-            (snapshot.position[1] - 0.5).round(),
-            snapshot.position[2].round(),
+            snapshot.position[1].round(),
+            (snapshot.position[2] - 0.5).round(),
         ]);
     }
 

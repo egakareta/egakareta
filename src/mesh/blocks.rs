@@ -2,7 +2,7 @@ use crate::block_repository::{resolve_block_definition, BlockRenderProfile};
 use crate::mesh::noise::pseudo_random_noise;
 use crate::mesh::obj::{append_obj_mesh, resolve_obj_mesh};
 use crate::mesh::shapes::append_prism;
-use crate::mesh::transforms::rotate_vertices_around_z;
+use crate::mesh::transforms::rotate_vertices_around_y;
 use crate::types::{LevelObject, Vertex};
 
 const MARGIN_PROFILE_TOTAL_INSET: f32 = 0.05;
@@ -178,23 +178,31 @@ where
                 color_outline,
             );
         } else if vertices.is_empty() {
-            let (render_x_min, render_x_max, render_y_min, render_y_max) =
-                if matches!(block.render.profile, BlockRenderProfile::Margin) {
-                    let x_inset = (obj.size[0] * 0.5).min(MARGIN_PROFILE_TOTAL_INSET * 0.5);
-                    let y_inset = (obj.size[1] * 0.5).min(MARGIN_PROFILE_TOTAL_INSET * 0.5);
-                    (
-                        x_min + x_inset,
-                        x_max - x_inset,
-                        y_min + y_inset,
-                        y_max - y_inset,
-                    )
-                } else {
-                    (x_min, x_max, y_min, y_max)
-                };
+            let (
+                render_x_min,
+                render_x_max,
+                render_y_min,
+                render_y_max,
+                render_z_min,
+                render_z_max,
+            ) = if matches!(block.render.profile, BlockRenderProfile::Margin) {
+                let x_inset = (obj.size[0] * 0.5).min(MARGIN_PROFILE_TOTAL_INSET * 0.5);
+                let z_inset = (obj.size[2] * 0.5).min(MARGIN_PROFILE_TOTAL_INSET * 0.5);
+                (
+                    x_min + x_inset,
+                    x_max - x_inset,
+                    y_min,
+                    y_max,
+                    z_min + z_inset,
+                    z_max - z_inset,
+                )
+            } else {
+                (x_min, x_max, y_min, y_max, z_min, z_max)
+            };
             append_prism(
                 vertices,
-                [render_x_min, render_y_min, z_min],
-                [render_x_max, render_y_max, z_max],
+                [render_x_min, render_y_min, render_z_min],
+                [render_x_max, render_y_max, render_z_max],
                 color_top,
                 color_side,
             );
@@ -205,7 +213,7 @@ where
             obj.position[1] + obj.size[1] * 0.5,
             obj.position[2] + obj.size[2] * 0.5,
         ];
-        rotate_vertices_around_z(&mut object_vertices, center, obj.rotation_degrees);
+        rotate_vertices_around_y(&mut object_vertices, center, obj.rotation_degrees);
         all_vertices.extend(object_vertices);
     }
 
@@ -275,22 +283,22 @@ fn append_finish_ring(
         obj.position[2] + obj.size[2] * 0.5,
     ];
 
-    let phase_offset = (obj.position[0] * 0.37 + obj.position[1] * 0.21) * std::f32::consts::PI;
+    let phase_offset = (obj.position[0] * 0.37 + obj.position[2] * 0.21) * std::f32::consts::PI;
     let pulse = 1.0 + 0.14 * (pulse_phase_seconds * 5.0 + phase_offset).sin();
 
-    let base_radius = (obj.size[0].min(obj.size[1]) * 0.5 * 0.85).max(0.15);
+    let base_radius = (obj.size[0].min(obj.size[2]) * 0.5 * 0.85).max(0.15);
     let outer_radius = base_radius * pulse;
     let inner_radius = (outer_radius * 0.56).max(0.08);
-    let half_thickness = (obj.size[2] * 0.16).clamp(0.03, 0.14);
-    let z_top = center[2] + half_thickness;
-    let z_bottom = center[2] - half_thickness;
+    let half_thickness = (obj.size[1] * 0.16).clamp(0.03, 0.14);
+    let y_top = center[1] + half_thickness;
+    let y_bottom = center[1] - half_thickness;
 
     let mut funnel_color = color_inner;
     funnel_color[3] = (funnel_color[3] * 0.72).clamp(0.0, 1.0);
     let sink_point = [
         center[0],
-        center[1],
-        obj.position[2] - obj.size[2] * 0.9 - 0.25,
+        obj.position[1] - obj.size[1] * 0.9 - 0.25,
+        center[2],
     ];
 
     for index in 0..SEGMENTS {
@@ -304,44 +312,44 @@ fn append_finish_ring(
 
         let outer_top_0 = [
             center[0] + cos0 * outer_radius,
-            center[1] + sin0 * outer_radius,
-            z_top,
+            y_top,
+            center[2] + sin0 * outer_radius,
         ];
         let outer_top_1 = [
             center[0] + cos1 * outer_radius,
-            center[1] + sin1 * outer_radius,
-            z_top,
+            y_top,
+            center[2] + sin1 * outer_radius,
         ];
         let inner_top_0 = [
             center[0] + cos0 * inner_radius,
-            center[1] + sin0 * inner_radius,
-            z_top,
+            y_top,
+            center[2] + sin0 * inner_radius,
         ];
         let inner_top_1 = [
             center[0] + cos1 * inner_radius,
-            center[1] + sin1 * inner_radius,
-            z_top,
+            y_top,
+            center[2] + sin1 * inner_radius,
         ];
 
         let outer_bottom_0 = [
             center[0] + cos0 * outer_radius,
-            center[1] + sin0 * outer_radius,
-            z_bottom,
+            y_bottom,
+            center[2] + sin0 * outer_radius,
         ];
         let outer_bottom_1 = [
             center[0] + cos1 * outer_radius,
-            center[1] + sin1 * outer_radius,
-            z_bottom,
+            y_bottom,
+            center[2] + sin1 * outer_radius,
         ];
         let inner_bottom_0 = [
             center[0] + cos0 * inner_radius,
-            center[1] + sin0 * inner_radius,
-            z_bottom,
+            y_bottom,
+            center[2] + sin0 * inner_radius,
         ];
         let inner_bottom_1 = [
             center[0] + cos1 * inner_radius,
-            center[1] + sin1 * inner_radius,
-            z_bottom,
+            y_bottom,
+            center[2] + sin1 * inner_radius,
         ];
 
         push_triangle(vertices, outer_top_0, outer_top_1, inner_top_1, color_outer);

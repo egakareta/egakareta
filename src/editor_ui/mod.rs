@@ -456,15 +456,15 @@ fn show_view_selector_cube(
     const FACE_SET: [ViewCubeFace; 6] = [
         ViewCubeFace {
             label: "Front",
-            normal: Vec3::Y,
-            indices: [3, 2, 6, 7],
+            normal: Vec3::Z,
+            indices: [4, 5, 6, 7],
             rotation: 0.0,
             pitch: 0.0,
         },
         ViewCubeFace {
             label: "Back",
-            normal: Vec3::new(0.0, -1.0, 0.0),
-            indices: [1, 0, 4, 5],
+            normal: Vec3::new(0.0, 0.0, -1.0),
+            indices: [0, 1, 2, 3],
             rotation: std::f32::consts::PI,
             pitch: 0.0,
         },
@@ -484,15 +484,15 @@ fn show_view_selector_cube(
         },
         ViewCubeFace {
             label: "Top",
-            normal: Vec3::Z,
-            indices: [7, 6, 5, 4],
+            normal: Vec3::Y,
+            indices: [3, 2, 6, 7],
             rotation: 0.0,
             pitch: 89.0f32.to_radians(),
         },
         ViewCubeFace {
             label: "Bottom",
-            normal: Vec3::new(0.0, 0.0, -1.0),
-            indices: [0, 1, 2, 3],
+            normal: Vec3::new(0.0, -1.0, 0.0),
+            indices: [1, 0, 4, 5],
             rotation: 0.0,
             pitch: -89.0f32.to_radians(),
         },
@@ -546,7 +546,7 @@ fn show_view_selector_cube(
             let pitch = camera_pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
             let horizontal = pitch.cos();
             let offset =
-                Mat3::from_rotation_z(camera_rotation) * Vec3::new(0.0, -horizontal, pitch.sin());
+                Mat3::from_rotation_y(camera_rotation) * Vec3::new(0.0, pitch.sin(), -horizontal);
             let forward = (-offset).normalize_or_zero();
 
             if forward.length_squared() <= f32::EPSILON {
@@ -554,7 +554,7 @@ fn show_view_selector_cube(
             }
 
             let to_camera = -forward;
-            let mut right = forward.cross(Vec3::Z);
+            let mut right = forward.cross(Vec3::Y);
             if right.length_squared() <= f32::EPSILON {
                 right = Vec3::X;
             } else {

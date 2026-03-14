@@ -28,44 +28,44 @@ pub(crate) fn build_trail_vertices(points: &[[f32; 3]], game_over: bool) -> Vec<
         let dy = p2[1] - p1[1];
         let dz = p2[2] - p1[2];
 
-        if dx.abs() <= f32::EPSILON && dy.abs() <= f32::EPSILON {
+        if dx.abs() <= f32::EPSILON && dz.abs() <= f32::EPSILON {
             let x_min = p1[0] - width / 2.0;
             let x_max = p1[0] + width / 2.0;
-            let y_min = p1[1] - width / 2.0;
-            let y_max = p1[1] + width / 2.0;
-            let z_base = p1[2].min(p2[2]);
-            let z_top = p1[2].max(p2[2]) + width;
+            let z_min = p1[2] - width / 2.0;
+            let z_max = p1[2] + width / 2.0;
+            let y_base = p1[1].min(p2[1]);
+            let y_top = p1[1].max(p2[1]) + width;
 
             append_prism(
                 &mut trail_vertices,
-                [x_min, y_min, z_base],
-                [x_max, y_max, z_top],
+                [x_min, y_base, z_min],
+                [x_max, y_top, z_max],
                 c_top,
                 c_side,
             );
             continue;
         }
 
-        let (x_min, x_max, y_min, y_max) = if dx.abs() > dy.abs() {
+        let (x_min, x_max, z_min, z_max) = if dx.abs() > dz.abs() {
             (
                 p1[0].min(p2[0]) - width / 2.0,
                 p1[0].max(p2[0]) + width / 2.0,
-                p1[1] - width / 2.0,
-                p1[1] + width / 2.0,
+                p1[2] - width / 2.0,
+                p1[2] + width / 2.0,
             )
         } else {
             (
                 p1[0] - width / 2.0,
                 p1[0] + width / 2.0,
-                p1[1].min(p2[1]) - width / 2.0,
-                p1[1].max(p2[1]) + width / 2.0,
+                p1[2].min(p2[2]) - width / 2.0,
+                p1[2].max(p2[2]) + width / 2.0,
             )
         };
 
-        let z_offset = p1[2].min(p2[2]);
-        let z_extra = dz.abs() * 0.5;
-        let z_min = z_offset;
-        let z_max = z_offset + width + z_extra;
+        let y_offset = p1[1].min(p2[1]);
+        let y_extra = dy.abs() * 0.5;
+        let y_min = y_offset;
+        let y_max = y_offset + width + y_extra;
 
         append_prism(
             &mut trail_vertices,
@@ -87,8 +87,8 @@ pub(crate) fn build_spawn_marker_vertices(position: [f32; 3], faces_right: bool)
 
     append_prism(
         &mut vertices,
-        [x + 0.1, y + 0.1, z],
-        [x + 0.9, y + 0.9, z + 0.5],
+        [x + 0.1, y, z + 0.1],
+        [x + 0.9, y + 0.5, z + 0.9],
         [0.25, 0.95, 0.35, 1.0],
         [0.1, 0.45, 0.15, 1.0],
     );
@@ -96,16 +96,16 @@ pub(crate) fn build_spawn_marker_vertices(position: [f32; 3], faces_right: bool)
     if faces_right {
         append_prism(
             &mut vertices,
-            [x + 0.9, y + 0.35, z],
-            [x + 1.3, y + 0.65, z + 0.7],
+            [x + 0.9, y, z + 0.35],
+            [x + 1.3, y + 0.7, z + 0.65],
             [0.2, 0.9, 0.3, 1.0],
             [0.1, 0.45, 0.15, 1.0],
         );
     } else {
         append_prism(
             &mut vertices,
-            [x + 0.35, y + 0.9, z],
-            [x + 0.65, y + 1.3, z + 0.7],
+            [x + 0.35, y, z + 0.9],
+            [x + 0.65, y + 0.7, z + 1.3],
             [0.2, 0.9, 0.3, 1.0],
             [0.1, 0.45, 0.15, 1.0],
         );
@@ -124,9 +124,9 @@ pub(crate) fn build_tap_indicator_vertices(positions: &[[f32; 3]]) -> Vec<Vertex
     for &pos in positions {
         let x_min = pos[0];
         let x_max = x_min + 1.0;
-        let y_min = pos[1];
-        let y_max = y_min + 1.0;
-        let z = pos[2] + 0.1; // 0.1 above ground
+        let z_min = pos[2];
+        let z_max = z_min + 1.0;
+        let y = pos[1] + 0.1; // 0.1 above ground
 
         let starts = [0.0, 0.4, 0.8];
 
@@ -136,40 +136,40 @@ pub(crate) fn build_tap_indicator_vertices(positions: &[[f32; 3]]) -> Vec<Vertex
             // Bottom edge
             append_quad(
                 &mut vertices,
-                [x_min + start, y_min, z],
-                [x_min + end, y_min, z],
-                [x_min + end, y_min + thickness, z],
-                [x_min + start, y_min + thickness, z],
+                [x_min + start, y, z_min],
+                [x_min + end, y, z_min],
+                [x_min + end, y, z_min + thickness],
+                [x_min + start, y, z_min + thickness],
                 color,
             );
 
             // Top edge
             append_quad(
                 &mut vertices,
-                [x_min + start, y_max - thickness, z],
-                [x_min + end, y_max - thickness, z],
-                [x_min + end, y_max, z],
-                [x_min + start, y_max, z],
+                [x_min + start, y, z_max - thickness],
+                [x_min + end, y, z_max - thickness],
+                [x_min + end, y, z_max],
+                [x_min + start, y, z_max],
                 color,
             );
 
             // Left edge
             append_quad(
                 &mut vertices,
-                [x_min, y_min + start, z],
-                [x_min + thickness, y_min + start, z],
-                [x_min + thickness, y_min + end, z],
-                [x_min, y_min + end, z],
+                [x_min, y, z_min + start],
+                [x_min + thickness, y, z_min + start],
+                [x_min + thickness, y, z_min + end],
+                [x_min, y, z_min + end],
                 color,
             );
 
             // Right edge
             append_quad(
                 &mut vertices,
-                [x_max - thickness, y_min + start, z],
-                [x_max, y_min + start, z],
-                [x_max, y_min + end, z],
-                [x_max - thickness, y_min + end, z],
+                [x_max - thickness, y, z_min + start],
+                [x_max, y, z_min + start],
+                [x_max, y, z_min + end],
+                [x_max - thickness, y, z_min + end],
                 color,
             );
         }
@@ -194,9 +194,9 @@ pub(crate) fn build_camera_keypoint_marker_vertices(
 
         // Mirrors the editor camera pose: keypoints are rendered at camera eye position.
         let offset = [
-            cos_pitch * sin_rotation * distance,
-            -cos_pitch * cos_rotation * distance,
+            -cos_pitch * sin_rotation * distance,
             sin_pitch * distance,
+            -cos_pitch * cos_rotation * distance,
         ];
         let eye = [
             keypoint.target_position[0] + offset[0],
@@ -211,7 +211,7 @@ pub(crate) fn build_camera_keypoint_marker_vertices(
                 -offset[2] / distance,
             ]
         } else {
-            [0.0, 1.0, 0.0]
+            [0.0, 0.0, 1.0]
         };
 
         let (ball_color, arrow_color) = if is_selected {

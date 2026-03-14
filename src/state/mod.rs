@@ -397,7 +397,7 @@ mod tests {
             &[],
         );
         assert!((position[0] - 0.5).abs() < 0.1);
-        assert!((position[1] - 3.5).abs() < 0.1);
+        assert!((position[2] - 3.5).abs() < 0.1);
         assert!(matches!(direction, SpawnDirection::Forward));
     }
 
@@ -413,7 +413,7 @@ mod tests {
             &[],
         );
         assert!((position[0] - 2.5).abs() < 0.1);
-        assert!((position[1] - 3.5).abs() < 0.1);
+        assert!((position[2] - 3.5).abs() < 0.1);
         assert!(matches!(direction, SpawnDirection::Forward));
     }
 
@@ -423,7 +423,7 @@ mod tests {
         let (position, direction) =
             derive_timeline_position([0.0, 0.0, 0.0], SpawnDirection::Forward, &taps, 0.0, &[]);
         assert!((position[0] - 0.5).abs() < 0.1);
-        assert!((position[1] - 0.5).abs() < 0.1);
+        assert!((position[2] - 0.5).abs() < 0.1);
         assert!(matches!(direction, SpawnDirection::Right));
     }
 
@@ -432,14 +432,14 @@ mod tests {
         let step_time = 1.0 / crate::game::BASE_PLAYER_SPEED;
         let taps = [5.0 * step_time];
         let (position, direction) = derive_timeline_position(
-            [1.0, 1.0, 0.0],
+            [1.0, 0.0, 1.0],
             SpawnDirection::Forward,
             &taps,
             2.0 * step_time,
             &[],
         );
         assert!((position[0] - 1.5).abs() < 0.1);
-        assert!((position[1] - 3.5).abs() < 0.1);
+        assert!((position[2] - 3.5).abs() < 0.1);
         assert!(matches!(direction, SpawnDirection::Forward));
     }
 
@@ -448,21 +448,21 @@ mod tests {
         let step_time = 1.0 / crate::game::BASE_PLAYER_SPEED;
         let taps = [2.0 * step_time];
         let (position, direction) = derive_timeline_position(
-            [2.0, 2.0, 0.0],
+            [2.0, 0.0, 2.0],
             SpawnDirection::Right,
             &taps,
             3.0 * step_time,
             &[],
         );
         assert!((position[0] - 4.5).abs() < 0.1);
-        assert!((position[1] - 3.5).abs() < 0.1);
+        assert!((position[2] - 3.5).abs() < 0.1);
         assert!(matches!(direction, SpawnDirection::Forward));
     }
 
     #[test]
     fn falls_from_elevated_platform() {
         let objects = [LevelObject {
-            position: [0.0, 0.0, 2.0],
+            position: [0.0, 2.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: 0.0,
             roundness: 0.18,
@@ -470,13 +470,13 @@ mod tests {
             color_tint: [1.0, 1.0, 1.0],
         }];
         let (position, direction) = derive_timeline_position(
-            [0.0, 0.0, 3.0],
+            [0.0, 3.0, 0.0],
             SpawnDirection::Forward,
             &[],
             1.0 / crate::game::BASE_PLAYER_SPEED,
             &objects,
         );
-        assert!(position[2] <= 3.0);
+        assert!(position[1] <= 3.0);
         assert!(matches!(direction, SpawnDirection::Forward));
     }
 

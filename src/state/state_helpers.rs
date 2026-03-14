@@ -95,7 +95,7 @@ impl State {
     }
 
     pub(super) fn reset_playing_camera_defaults(&mut self) {
-        self.editor.camera.playing_rotation = -45.0f32.to_radians();
+        self.editor.camera.playing_rotation = 45.0f32.to_radians();
         self.editor.camera.playing_pitch = 45.0f32.to_radians();
     }
 
@@ -132,7 +132,7 @@ impl State {
         self.editor.runtime.history.undo.clear();
         self.editor.runtime.history.redo.clear();
         self.clear_editor_pan_keys();
-        self.editor.camera.editor_rotation = -45.0f32.to_radians();
+        self.editor.camera.editor_rotation = 45.0f32.to_radians();
         self.editor.camera.editor_pitch = 45.0f32.to_radians();
         self.editor.camera.editor_target_z = 0.0;
         self.editor.camera.selected_keypoint_index = None;

@@ -59,8 +59,8 @@ mod tests {
                 color_tint: [1.0, 1.0, 1.0],
             },
             LevelObject {
-                position: [0.0, 0.0, 1.0],
-                size: [1.0, 1.0, 2.0],
+                position: [0.0, 1.0, 0.0],
+                size: [1.0, 2.0, 1.0],
                 rotation_degrees: 0.0,
                 roundness: 0.18,
                 block_id: "core/grass".to_string(),
@@ -107,7 +107,7 @@ mod tests {
 
         let init = editor_session_init_from_metadata(Some(metadata));
         assert_eq!(init.cursor, [4.0, 6.0, 0.0]);
-        assert_eq!(init.camera_pan, [4.5, 6.5]);
+        assert_eq!(init.camera_pan, [4.5, 0.5]);
         assert_eq!(init.tap_times, vec![0.2, 0.8]);
         assert!((init.timeline_time_seconds - 0.5).abs() <= 1e-6);
     }
@@ -136,7 +136,7 @@ mod tests {
         );
 
         assert!(transition.objects.is_empty());
-        assert!((transition.spawn_position[1] - 1.5).abs() < 0.1);
+        assert!((transition.spawn_position[2] - 1.5).abs() < 0.1);
         assert!(matches!(
             transition.spawn_direction,
             crate::types::SpawnDirection::Forward
@@ -164,9 +164,9 @@ mod tests {
     fn playtest_transition_respects_speed_portals() {
         use crate::game::BASE_PLAYER_SPEED;
 
-        // Place a speed portal at [0, 5, 0] (5 units ahead of spawn)
+        // Place a speed portal at [0, 0, 5] (5 units ahead of spawn on Z).
         let objects = vec![LevelObject {
-            position: [0.5, 5.5, 0.5],
+            position: [0.5, 0.0, 5.5],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: 0.0,
             roundness: 0.18,
@@ -238,7 +238,7 @@ mod tests {
 
     #[test]
     fn derives_timeline_time_for_forward_target_cell() {
-        let target = [0.5, 4.5, 0.0];
+        let target = [0.5, 0.0, 4.5];
         let time = derive_timeline_time_for_world_target(
             [0.0, 0.0, 0.0],
             crate::types::SpawnDirection::Forward,
@@ -253,7 +253,7 @@ mod tests {
 
     #[test]
     fn derives_timeline_time_for_turned_target_cell() {
-        let target = [2.5, 0.5, 0.0];
+        let target = [2.5, 0.0, 0.5];
         let time = derive_timeline_time_for_world_target(
             [0.0, 0.0, 0.0],
             crate::types::SpawnDirection::Forward,
@@ -283,7 +283,7 @@ mod tests {
     #[test]
     fn derives_timeline_time_prefers_last_tap_segment_when_target_is_near_it() {
         let taps = [0.4, 0.8, 1.2];
-        let target = [10.0, 0.5, 0.0];
+        let target = [10.0, 0.0, 0.5];
         let time = derive_timeline_time_for_world_target(
             [0.0, 0.0, 0.0],
             crate::types::SpawnDirection::Forward,
@@ -302,7 +302,7 @@ mod tests {
     #[test]
     fn derives_timeline_time_falls_back_to_earlier_segment_when_needed() {
         let taps = [1.0, 2.0, 3.0];
-        let target = [0.5, 1.5, 0.0];
+        let target = [0.5, 0.0, 1.5];
         let time = derive_timeline_time_for_world_target(
             [0.0, 0.0, 0.0],
             crate::types::SpawnDirection::Forward,
@@ -317,7 +317,7 @@ mod tests {
 
     #[test]
     fn derives_timeline_time_near_seed_matches_expected_local_target() {
-        let target = [0.5, 4.5, 0.0];
+        let target = [0.5, 0.0, 4.5];
         let time = derive_timeline_time_for_world_target_near_time(
             [0.0, 0.0, 0.0],
             crate::types::SpawnDirection::Forward,
@@ -341,7 +341,7 @@ mod tests {
     fn near_solver_stays_within_requested_window() {
         let seed = 2.2;
         let window = 0.35;
-        let target = [0.5, 8.5, 0.0];
+        let target = [0.5, 0.0, 8.5];
         let time = derive_timeline_time_for_world_target_near_time(
             [0.0, 0.0, 0.0],
             crate::types::SpawnDirection::Forward,
@@ -360,7 +360,7 @@ mod tests {
 
     #[test]
     fn near_solver_tracks_turned_segment_target() {
-        let target = [2.5, 0.5, 0.0];
+        let target = [2.5, 0.0, 0.5];
         let time = derive_timeline_time_for_world_target_near_time(
             [0.0, 0.0, 0.0],
             crate::types::SpawnDirection::Forward,
@@ -418,8 +418,8 @@ mod tests {
             let (position, _) = derive_timeline_position(spawn, direction, &taps, tap, &[]);
             expected.push([
                 (position[0] - 0.5).round(),
-                (position[1] - 0.5).round(),
-                position[2].round(),
+                position[1].round(),
+                (position[2] - 0.5).round(),
             ]);
         }
         expected.sort_by(|a, b| {

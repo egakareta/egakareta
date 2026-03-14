@@ -109,10 +109,10 @@ pub(crate) fn show_compose_mode_bottom_panel(
                             .add(egui::DragValue::new(&mut selected.size[0]).prefix("W "))
                             .changed();
                         changed |= ui
-                            .add(egui::DragValue::new(&mut selected.size[1]).prefix("D "))
+                            .add(egui::DragValue::new(&mut selected.size[1]).prefix("H "))
                             .changed();
                         changed |= ui
-                            .add(egui::DragValue::new(&mut selected.size[2]).prefix("H "))
+                            .add(egui::DragValue::new(&mut selected.size[2]).prefix("D "))
                             .changed();
                         if changed {
                             commands.push(crate::commands::AppCommand::EditorUpdateSelectedBlock(

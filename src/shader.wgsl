@@ -38,12 +38,12 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     let c = cos(u_line.rotation);
     let s = sin(u_line.rotation);
     let rotated_pos = vec3<f32>(
-        input.position.x * c - input.position.y * s,
-        input.position.x * s + input.position.y * c,
-        input.position.z
+        input.position.x * c - input.position.z * s,
+        input.position.y,
+        input.position.x * s + input.position.z * c
     );
     
-    let offset = vec3<f32>(u_line.offset, 0.0);
+    let offset = vec3<f32>(u_line.offset.x, 0.0, u_line.offset.y);
     out.position = u_camera.view_proj * vec4<f32>(rotated_pos + offset, 1.0);
     out.color = input.color;
     return out;

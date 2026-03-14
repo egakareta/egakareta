@@ -72,10 +72,10 @@ impl EditorSubsystem {
                         }
                         if snap_enabled {
                             next[0] = (next[0] / snap_step).round() * snap_step;
-                            next[1] = (next[1] / snap_step).round() * snap_step;
-                            next[2] = (next[2].max(0.0) / snap_step).round() * snap_step;
+                            next[1] = (next[1].max(0.0) / snap_step).round() * snap_step;
+                            next[2] = (next[2] / snap_step).round() * snap_step;
                         } else {
-                            next[2] = next[2].max(0.0);
+                            next[1] = next[1].max(0.0);
                         }
                         obj.position = next;
                         if first_cursor.is_none() {
@@ -86,8 +86,8 @@ impl EditorSubsystem {
                 if let Some(next_position) = first_cursor {
                     self.ui.cursor = [
                         next_position[0],
-                        next_position[1],
-                        next_position[2].max(0.0),
+                        next_position[1].max(0.0),
+                        next_position[2],
                     ];
                 }
             }
@@ -135,17 +135,14 @@ impl EditorSubsystem {
                                 obj.size[0] = s;
                             }
                             GizmoAxis::YNeg => {
-                                let mut s = block.size[1] - world_delta;
                                 let mut p = block.position[1] + world_delta;
                                 let top_edge = block.position[1] + block.size[1];
                                 if snap_enabled {
                                     p = (p / snap_step).round() * snap_step;
-                                    s = (top_edge - p).max(min_size);
-                                    p = top_edge - s;
-                                } else {
-                                    s = s.max(min_size);
-                                    p = top_edge - s;
                                 }
+                                p = p.max(0.0);
+                                let s = (top_edge - p).max(min_size);
+                                p = top_edge - s;
                                 obj.position[1] = p;
                                 obj.size[1] = s;
                             }
@@ -155,7 +152,6 @@ impl EditorSubsystem {
                                 if snap_enabled {
                                     p = (p / snap_step).round() * snap_step;
                                 }
-                                p = p.max(0.0);
                                 let s = (upper_edge - p).max(min_size);
                                 p = upper_edge - s;
                                 obj.position[2] = p;

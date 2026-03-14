@@ -113,7 +113,7 @@ impl State {
         self.editor.timeline.clock.duration_seconds = init.timeline_duration_seconds;
         self.editor.ui.cursor = init.cursor;
         self.editor.camera.editor_pan = init.camera_pan;
-        self.editor.camera.editor_target_z = init.cursor[2];
+        self.editor.camera.editor_target_z = init.cursor[1];
 
         self.sync_editor_objects();
         self.set_editor_timeline_time_seconds(self.editor.timeline.clock.time_seconds);
@@ -224,7 +224,7 @@ impl State {
         self.session.editor_music_metadata = init.music;
         self.editor.ui.cursor = init.cursor;
         self.editor.camera.editor_pan = init.camera_pan;
-        self.editor.camera.editor_target_z = init.cursor[2];
+        self.editor.camera.editor_target_z = init.cursor[1];
 
         self.editor.runtime.history.undo.clear();
         self.editor.runtime.history.redo.clear();

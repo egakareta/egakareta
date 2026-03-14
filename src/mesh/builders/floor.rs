@@ -1,3 +1,4 @@
+use crate::mesh::shapes::append_prism;
 use crate::types::Vertex;
 
 pub(crate) fn build_floor_vertices() -> Vec<Vertex> {
@@ -9,138 +10,21 @@ pub(crate) fn build_floor_vertices() -> Vec<Vertex> {
     let tile_margin = 0.05;
 
     for x in -extent..extent {
-        for y in -extent..extent {
+        for z in -extent..extent {
             let x_min = x as f32 + tile_margin;
             let x_max = (x + 1) as f32 - tile_margin;
-            let y_min = y as f32 + tile_margin;
-            let y_max = (y + 1) as f32 - tile_margin;
-            let z_min = -tile_height;
-            let z_max = 0.0;
+            let z_min = z as f32 + tile_margin;
+            let z_max = (z + 1) as f32 - tile_margin;
+            let y_min = -tile_height;
+            let y_max = 0.0;
 
-            floor_vertices.push(Vertex {
-                position: [x_min, y_min, z_max],
-                color: tile_color_top,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_max, y_min, z_max],
-                color: tile_color_top,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_max, y_max, z_max],
-                color: tile_color_top,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_min, y_min, z_max],
-                color: tile_color_top,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_max, y_max, z_max],
-                color: tile_color_top,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_min, y_max, z_max],
-                color: tile_color_top,
-            });
-
-            floor_vertices.push(Vertex {
-                position: [x_min, y_max, z_min],
-                color: tile_color_side,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_max, y_max, z_min],
-                color: tile_color_side,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_max, y_max, z_max],
-                color: tile_color_side,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_min, y_max, z_min],
-                color: tile_color_side,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_max, y_max, z_max],
-                color: tile_color_side,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_min, y_max, z_max],
-                color: tile_color_side,
-            });
-
-            floor_vertices.push(Vertex {
-                position: [x_min, y_min, z_min],
-                color: tile_color_side,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_max, y_min, z_max],
-                color: tile_color_side,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_max, y_min, z_min],
-                color: tile_color_side,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_min, y_min, z_min],
-                color: tile_color_side,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_min, y_min, z_max],
-                color: tile_color_side,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_max, y_min, z_max],
-                color: tile_color_side,
-            });
-
-            floor_vertices.push(Vertex {
-                position: [x_max, y_min, z_min],
-                color: tile_color_side,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_max, y_max, z_min],
-                color: tile_color_side,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_max, y_max, z_max],
-                color: tile_color_side,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_max, y_min, z_min],
-                color: tile_color_side,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_max, y_max, z_max],
-                color: tile_color_side,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_max, y_min, z_max],
-                color: tile_color_side,
-            });
-
-            floor_vertices.push(Vertex {
-                position: [x_min, y_min, z_min],
-                color: tile_color_side,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_min, y_max, z_max],
-                color: tile_color_side,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_min, y_max, z_min],
-                color: tile_color_side,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_min, y_min, z_min],
-                color: tile_color_side,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_min, y_min, z_max],
-                color: tile_color_side,
-            });
-            floor_vertices.push(Vertex {
-                position: [x_min, y_max, z_max],
-                color: tile_color_side,
-            });
+            append_prism(
+                &mut floor_vertices,
+                [x_min, y_min, z_min],
+                [x_max, y_max, z_max],
+                tile_color_top,
+                tile_color_side,
+            );
         }
     }
 

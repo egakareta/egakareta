@@ -21,10 +21,10 @@ pub(crate) fn remove_topmost_block_at_cursor(
     for (index, obj) in objects.iter().enumerate() {
         let occupies_x =
             cursor[0] + 0.5 >= obj.position[0] && cursor[0] + 0.5 <= obj.position[0] + obj.size[0];
-        let occupies_y =
-            cursor[1] + 0.5 >= obj.position[1] && cursor[1] + 0.5 <= obj.position[1] + obj.size[1];
-        if occupies_x && occupies_y {
-            let top = obj.position[2] + obj.size[2];
+        let occupies_z =
+            cursor[2] + 0.5 >= obj.position[2] && cursor[2] + 0.5 <= obj.position[2] + obj.size[2];
+        if occupies_x && occupies_z {
+            let top = obj.position[1] + obj.size[1];
             if top > top_height {
                 top_height = top;
                 top_index = Some(index);
