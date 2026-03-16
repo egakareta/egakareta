@@ -10,7 +10,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
 ) {
     ui.horizontal(|ui| {
         // Playback speed control
-        ui.label("Speed:");
+        ui.label(format!("{} Speed:", egui_phosphor::regular::GAUGE));
         let speed = view.playback_speed;
         let speeds = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0];
         egui::ComboBox::from_id_salt("playback_speed")
@@ -30,7 +30,10 @@ pub(crate) fn show_timing_mode_bottom_panel(
         ui.separator();
 
         let mut duration = view.timeline_duration_seconds;
-        ui.label("Duration (s):");
+        ui.label(format!(
+            "{} Duration (s):",
+            egui_phosphor::regular::HOURGLASS
+        ));
         if ui
             .add(
                 egui::DragValue::new(&mut duration)
@@ -48,9 +51,18 @@ pub(crate) fn show_timing_mode_bottom_panel(
     ui.horizontal(|ui| {
         // Timing points list
         ui.vertical(|ui| {
-            ui.label("Timing Points:");
+            ui.label(format!(
+                "{} Timing Points:",
+                egui_phosphor::regular::METRONOME
+            ));
             ui.horizontal(|ui| {
-                if ui.button("Add at playhead").clicked() {
+                if ui
+                    .button(format!(
+                        "{} Add at playhead",
+                        egui_phosphor::regular::PLUS_CIRCLE
+                    ))
+                    .clicked()
+                {
                     let time = view.timeline_time_seconds;
                     commands.push(crate::commands::AppCommand::EditorAddTimingPoint {
                         time_seconds: time,
@@ -58,12 +70,21 @@ pub(crate) fn show_timing_mode_bottom_panel(
                     });
                 }
                 if let Some(selected_idx) = view.timing_selected_index {
-                    if ui.button("Remove").clicked() {
+                    if ui
+                        .button(format!("{} Remove", egui_phosphor::regular::TRASH))
+                        .clicked()
+                    {
                         commands.push(crate::commands::AppCommand::EditorRemoveTimingPoint(
                             selected_idx,
                         ));
                     }
-                    if ui.button("Use current time").clicked() {
+                    if ui
+                        .button(format!(
+                            "{} Use current time",
+                            egui_phosphor::regular::CLOCK_AFTERNOON
+                        ))
+                        .clicked()
+                    {
                         let time = view.timeline_time_seconds;
                         commands.push(crate::commands::AppCommand::EditorSetTimingPointTime(
                             selected_idx,

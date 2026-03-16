@@ -36,8 +36,8 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
             .default_width(320.0)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.heading("Settings");
-                    if ui.button("Close").clicked() {
+                    ui.heading(format!("{} Settings", egui_phosphor::regular::GEAR));
+                    if ui.button(egui_phosphor::regular::X).clicked() {
                         commands.push(crate::commands::AppCommand::EditorSetShowSettings(false));
                     }
                 });
@@ -48,7 +48,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                     if ui
                         .selectable_label(
                             view.settings_section == SettingsSection::Backends,
-                            "Backends",
+                            format!("{} Backends", egui_phosphor::regular::MONITOR),
                         )
                         .clicked()
                     {
@@ -60,7 +60,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                     if ui
                         .selectable_label(
                             view.settings_section == SettingsSection::Keybinds,
-                            "Keybinds",
+                            format!("{} Keybinds", egui_phosphor::regular::KEYBOARD),
                         )
                         .clicked()
                     {
@@ -74,7 +74,10 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
 
                 match view.settings_section {
                     SettingsSection::Backends => {
-                        ui.label("Graphics backend");
+                        ui.label(format!(
+                            "{} Graphics backend",
+                            egui_phosphor::regular::DESKTOP
+                        ));
                         let mut graphics_choice = view.configured_graphics_backend.to_string();
                         egui::ComboBox::from_id_salt("settings_graphics_backend")
                             .selected_text(graphics_choice.as_str())
@@ -97,12 +100,18 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                         if view.settings_restart_required {
                             ui.colored_label(
                                 egui::Color32::from_rgb(255, 196, 96),
-                                "Graphics backend change will apply after restart.",
+                                format!(
+                                    "{} Graphics backend change will apply after restart.",
+                                    egui_phosphor::regular::WARNING
+                                ),
                             );
                         }
 
                         ui.separator();
-                        ui.label("Audio backend");
+                        ui.label(format!(
+                            "{} Audio backend",
+                            egui_phosphor::regular::SPEAKER_HIGH
+                        ));
                         let mut audio_choice = view.configured_audio_backend.to_string();
                         egui::ComboBox::from_id_salt("settings_audio_backend")
                             .selected_text(audio_choice.as_str())
@@ -202,7 +211,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
 
             ui.separator();
 
-            ui.label("Level:");
+            ui.label(format!("{} Level:", egui_phosphor::regular::MAP_TRIFOLD));
 
             let levels = view.available_levels;
             let selected = view.level_name.unwrap_or("Untitled");
@@ -220,74 +229,98 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
 
             ui.separator();
 
-            if ui.button("Export .egz").clicked() {
+            if ui
+                .button(format!("{} Export .egz", egui_phosphor::regular::DOWNLOAD))
+                .clicked()
+            {
                 commands.push(crate::commands::AppCommand::EditorExportLevel);
             }
 
-            if ui.button("Import .egz/JSON").clicked() {
+            if ui
+                .button(format!(
+                    "{} Import .egz/JSON",
+                    egui_phosphor::regular::UPLOAD
+                ))
+                .clicked()
+            {
                 commands.push(crate::commands::AppCommand::EditorSetShowImport(true));
             }
 
-            if ui.button("Metadata").clicked() {
+            if ui
+                .button(format!("{} Metadata", egui_phosphor::regular::INFO))
+                .clicked()
+            {
                 commands.push(crate::commands::AppCommand::EditorSetShowMetadata(true));
             }
 
-            if ui.button("Settings").clicked() {
+            if ui
+                .button(format!("{} Settings", egui_phosphor::regular::GEAR))
+                .clicked()
+            {
                 commands.push(crate::commands::AppCommand::EditorToggleSettings);
             }
         });
     });
 
     if view.show_metadata {
-        egui::Window::new("Level Metadata").show(ctx, |ui| {
-            ui.label("Level Name:");
-            let mut name = view.level_name.unwrap_or("Untitled").to_string();
-            if ui.text_edit_singleline(&mut name).changed() {
-                commands.push(crate::commands::AppCommand::EditorRenameLevel(name));
-            }
-
-            ui.separator();
-            ui.heading("Music");
-
-            let mut music = view.music_metadata.clone();
-            let mut changed = false;
-
-            ui.horizontal(|ui| {
-                ui.label("Source:");
-                if ui.text_edit_singleline(&mut music.source).changed() {
-                    changed = true;
+        egui::Window::new(format!("{} Level Metadata", egui_phosphor::regular::INFO)).show(
+            ctx,
+            |ui| {
+                ui.label(format!("{} Level Name:", egui_phosphor::regular::PENCIL));
+                let mut name = view.level_name.unwrap_or("Untitled").to_string();
+                if ui.text_edit_singleline(&mut name).changed() {
+                    commands.push(crate::commands::AppCommand::EditorRenameLevel(name));
                 }
-                if ui.button("Import External Audio").clicked() {
-                    commands.push(crate::commands::AppCommand::EditorTriggerAudioImport);
+
+                ui.separator();
+                ui.heading(format!("{} Music", egui_phosphor::regular::MUSIC_NOTE));
+
+                let mut music = view.music_metadata.clone();
+                let mut changed = false;
+
+                ui.horizontal(|ui| {
+                    ui.label(format!("{} Source:", egui_phosphor::regular::GLOBE));
+                    if ui.text_edit_singleline(&mut music.source).changed() {
+                        changed = true;
+                    }
+                    if ui
+                        .button(format!(
+                            "{} Import External Audio",
+                            egui_phosphor::regular::FILE_AUDIO
+                        ))
+                        .clicked()
+                    {
+                        commands.push(crate::commands::AppCommand::EditorTriggerAudioImport);
+                    }
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label(format!("{} Title:", egui_phosphor::regular::TEXT_T));
+                    let mut title = music.title.clone().unwrap_or_default();
+                    if ui.text_edit_singleline(&mut title).changed() {
+                        music.title = Some(title);
+                        changed = true;
+                    }
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label(format!("{} Author:", egui_phosphor::regular::USER));
+                    let mut author = music.author.clone().unwrap_or_default();
+                    if ui.text_edit_singleline(&mut author).changed() {
+                        music.author = Some(author);
+                        changed = true;
+                    }
+                });
+
+                if changed {
+                    commands.push(crate::commands::AppCommand::EditorUpdateMusic(music));
                 }
-            });
 
-            ui.horizontal(|ui| {
-                ui.label("Title:");
-                let mut title = music.title.clone().unwrap_or_default();
-                if ui.text_edit_singleline(&mut title).changed() {
-                    music.title = Some(title);
-                    changed = true;
+                if ui.button("Close").clicked() {
+                    commands.push(crate::commands::AppCommand::EditorSetShowMetadata(false));
                 }
-            });
-
-            ui.horizontal(|ui| {
-                ui.label("Author:");
-                let mut author = music.author.clone().unwrap_or_default();
-                if ui.text_edit_singleline(&mut author).changed() {
-                    music.author = Some(author);
-                    changed = true;
-                }
-            });
-
-            if changed {
-                commands.push(crate::commands::AppCommand::EditorUpdateMusic(music));
-            }
-
-            if ui.button("Close").clicked() {
-                commands.push(crate::commands::AppCommand::EditorSetShowMetadata(false));
-            }
-        });
+            },
+        );
     }
 
     if view.show_import {

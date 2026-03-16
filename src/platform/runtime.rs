@@ -10,6 +10,11 @@ pub struct Runtime {
 impl Runtime {
     pub fn new(state: State) -> Self {
         let egui_ctx = egui::Context::default();
+
+        let mut fonts = egui::FontDefinitions::default();
+        egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+        egui_ctx.set_fonts(fonts);
+
         let egui_renderer = state.create_egui_renderer();
         let menu_wordmark = load_menu_wordmark_texture(&egui_ctx);
         let pipeline = FramePipeline::new(egui_ctx, egui_renderer, menu_wordmark);

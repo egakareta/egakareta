@@ -42,7 +42,7 @@ pub(crate) fn show_timeline_bar(
     let view_end = view_start + visible_duration;
 
     ui.horizontal(|ui| {
-        ui.label("Time:");
+        ui.label(format!("{} Time:", egui_phosphor::regular::CLOCK));
         let mut time_seconds = view.timeline_time_seconds;
         let drag_value = egui::DragValue::new(&mut time_seconds)
             .speed(0.01)
@@ -57,7 +57,10 @@ pub(crate) fn show_timeline_bar(
         ui.add_space(4.0);
         let button_size = egui::vec2(22.0, ui.spacing().interact_size.y);
         if ui
-            .add_sized(button_size, egui::Button::new("-"))
+            .add_sized(
+                button_size,
+                egui::Button::new(egui_phosphor::regular::MAGNIFYING_GLASS_MINUS),
+            )
             .on_hover_text("Zoom Out")
             .clicked()
         {
@@ -65,7 +68,10 @@ pub(crate) fn show_timeline_bar(
             commands.push(AppCommand::EditorSetWaveformZoom(new_zoom));
         }
         if ui
-            .add_sized(button_size, egui::Button::new("+"))
+            .add_sized(
+                button_size,
+                egui::Button::new(egui_phosphor::regular::MAGNIFYING_GLASS_PLUS),
+            )
             .on_hover_text("Zoom In")
             .clicked()
         {

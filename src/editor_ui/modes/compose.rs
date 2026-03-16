@@ -17,25 +17,37 @@ pub(crate) fn show_compose_mode_bottom_panel(
         ui.label("Mode:");
         let mode = view.mode;
         if ui
-            .selectable_label(mode == EditorMode::Select, "Select")
+            .selectable_label(
+                mode == EditorMode::Select,
+                format!("{} Select", egui_phosphor::regular::CURSOR_CLICK),
+            )
             .clicked()
         {
             commands.push(AppCommand::EditorSetMode(EditorMode::Select));
         }
         if ui
-            .selectable_label(mode == EditorMode::Move, "Move")
+            .selectable_label(
+                mode == EditorMode::Move,
+                format!("{} Move", egui_phosphor::regular::ARROWS_OUT),
+            )
             .clicked()
         {
             commands.push(AppCommand::EditorSetMode(EditorMode::Move));
         }
         if ui
-            .selectable_label(mode == EditorMode::Scale, "Scale")
+            .selectable_label(
+                mode == EditorMode::Scale,
+                format!("{} Scale", egui_phosphor::regular::CORNERS_OUT),
+            )
             .clicked()
         {
             commands.push(AppCommand::EditorSetMode(EditorMode::Scale));
         }
         if ui
-            .selectable_label(mode == EditorMode::Place, "Place")
+            .selectable_label(
+                mode == EditorMode::Place,
+                format!("{} Place", egui_phosphor::regular::CUBE),
+            )
             .clicked()
         {
             commands.push(AppCommand::EditorSetMode(EditorMode::Place));
@@ -43,7 +55,13 @@ pub(crate) fn show_compose_mode_bottom_panel(
 
         ui.separator();
         let mut snap = view.snap_to_grid;
-        if ui.checkbox(&mut snap, "Snap to Grid").changed() {
+        if ui
+            .checkbox(
+                &mut snap,
+                format!("{} Snap to Grid", egui_phosphor::regular::GRID_FOUR),
+            )
+            .changed()
+        {
             commands.push(AppCommand::EditorSetSnapToGrid(snap));
         }
 
