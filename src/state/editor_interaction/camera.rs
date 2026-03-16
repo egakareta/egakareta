@@ -97,11 +97,28 @@ impl State {
         let is_game_active = self.gameplay.state.started && !self.gameplay.state.game_over;
         self.editor
             .drag_camera_by_pixels(dx, dy, self.phase, is_game_active);
+
+        if self.phase == AppPhase::Editor {
+            self.editor.mark_dirty(crate::state::EditorDirtyFlags {
+                rebuild_selection_overlays: true,
+                rebuild_cursor: true,
+                rebuild_tap_indicators: true,
+                rebuild_preview_player: true,
+                ..Default::default()
+            });
+        }
     }
 
     pub(crate) fn set_editor_camera_orientation(&mut self, rotation: f32, pitch: f32) {
         if self.phase == AppPhase::Editor {
             self.editor.set_editor_camera_orientation(rotation, pitch);
+            self.editor.mark_dirty(crate::state::EditorDirtyFlags {
+                rebuild_selection_overlays: true,
+                rebuild_cursor: true,
+                rebuild_tap_indicators: true,
+                rebuild_preview_player: true,
+                ..Default::default()
+            });
         }
     }
 }

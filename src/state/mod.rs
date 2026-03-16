@@ -24,7 +24,7 @@ pub(crate) use editor_camera::EditorCameraState;
 pub(crate) use editor_config_state::EditorConfigState;
 pub(crate) use editor_interaction::{
     EditorBlockDrag, EditorClipboard, EditorDragBlockStart, EditorGizmoDrag, EditorHistorySnapshot,
-    EditorInteractionChange, EditorInteractionState, EditorPickResult, GizmoAxis, GizmoDragKind,
+    EditorInteractionState,
 };
 pub(crate) use editor_timeline::EditorTimelineState;
 pub(crate) use editor_timing::EditorTimingState;
@@ -334,8 +334,18 @@ impl State {
                 || self.update_editor_marquee_selection(x, y);
         }
 
-        if !handled {
+        if !handled && self.is_editor() {
             self.update_editor_cursor_from_screen(x, y);
+
+            let viewport_size = glam::Vec2::new(
+                self.render.gpu.config.width as f32,
+                self.render.gpu.config.height as f32,
+            );
+            let next_hover = self.editor.pick_gizmo_handle(x, y, viewport_size);
+            if self.editor.runtime.interaction.hovered_gizmo != next_hover {
+                self.editor.runtime.interaction.hovered_gizmo = next_hover;
+                self.rebuild_editor_gizmo_vertices();
+            }
         }
         self.editor.set_pointer_screen(Some([x, y]));
     }
@@ -561,12 +571,8 @@ mod tests {
             );
             let axis_lengths = state
                 .editor
-                .gizmo_axis_lengths_world(center, 50.0, viewport);
-            let move_x_handle_world = Vec3::new(
-                bounds_position[0] + bounds_size[0] + axis_lengths[0],
-                center.y,
-                center.z,
-            );
+                .gizmo_axis_lengths_world(center, 80.0, viewport);
+            let move_x_handle_world = Vec3::new(center.x + axis_lengths[0], center.y, center.z);
             let move_x_handle_screen = state
                 .editor
                 .world_to_screen_v(move_x_handle_world, viewport)

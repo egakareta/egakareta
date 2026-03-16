@@ -3,7 +3,7 @@ mod tests {
     use crate::mesh::blocks::build_block_vertices;
     use crate::mesh::builders::{build_editor_gizmo_vertices, build_editor_hover_outline_vertices};
     use crate::mesh::obj::parse_obj_mesh;
-    use crate::types::LevelObject;
+    use crate::types::{GizmoPart, LevelObject, Vertex};
 
     fn bounds_xz(vertices: &[[f32; 3]]) -> (f32, f32, f32, f32) {
         let mut min_x = f32::INFINITY;
@@ -40,14 +40,124 @@ mod tests {
     }
 
     #[test]
+    fn gizmo_hover_tip_growth_preserves_shaft_length() {
+        let position = [0.0, 0.0, 0.0];
+        let size = [1.0, 1.0, 1.0];
+        let axis_lengths = [10.0, 10.0, 10.0];
+        let axis_width = 1.0;
+        let resize_radius = 1.0;
+        let resize_offsets = [1.0, 1.0, 1.0];
+
+        // 1. Get vertices without hover
+        let vertices_normal = build_editor_gizmo_vertices(
+            position,
+            size,
+            axis_lengths,
+            axis_width,
+            resize_radius,
+            resize_offsets,
+            true,
+            false,
+            None,
+            None,
+        );
+
+        // 2. Get vertices with MoveX hovered
+        let vertices_hovered = build_editor_gizmo_vertices(
+            position,
+            size,
+            axis_lengths,
+            axis_width,
+            resize_radius,
+            resize_offsets,
+            true,
+            false,
+            Some(GizmoPart::MoveX),
+            None,
+        );
+
+        // Function to find the max X of the shaft (prism vertices)
+        let find_shaft_end_x = |verts: &[Vertex], is_hovered: bool| -> f32 {
+            let target_color = if is_hovered {
+                [1.0, 0.0, 0.0, 1.0]
+            } else {
+                [0.804, 0.0, 0.0, 0.6]
+            };
+            let target_color_dark = [
+                target_color[0] * 0.8,
+                target_color[1] * 0.8,
+                target_color[2] * 0.8,
+                target_color[3] * 0.8,
+            ];
+
+            let shaft_verts: Vec<_> = verts
+                .iter()
+                .filter(|v| {
+                    let matches_color = (v.color[0] - target_color[0]).abs() < 0.01
+                        && (v.color[1] - target_color[1]).abs() < 0.01;
+                    let matches_dark = (v.color[0] - target_color_dark[0]).abs() < 0.01
+                        && (v.color[1] - target_color_dark[1]).abs() < 0.01;
+
+                    (matches_color || matches_dark) && v.position[0] > 0.5
+                })
+                .collect();
+
+            // The shaft (prism) has 36 vertices. Some might be from the cone (tip),
+            // but the shaft is generated before the cone in the builder.
+            // The shaft's far end (p_max_x) is what we want.
+            shaft_verts[0..36]
+                .iter()
+                .map(|v| v.position[0])
+                .fold(f32::NEG_INFINITY, f32::max)
+        };
+
+        let end_x_normal = find_shaft_end_x(&vertices_normal, false);
+        let end_x_hovered = find_shaft_end_x(&vertices_hovered, true);
+
+        // Shaft end should be identical because we fixed shaft length and start offset
+        assert!(
+            (end_x_normal - end_x_hovered).abs() < 1e-5,
+            "Shaft end X should be identical. Normal: {}, Hovered: {}",
+            end_x_normal,
+            end_x_hovered
+        );
+
+        // Function to find the absolute max X (the tip of the cone)
+        let find_tip_end_x = |verts: &[Vertex]| -> f32 {
+            // Since we only have one X arrow and it's the furthest thing in +X,
+            // we can just look for the max X.
+            // We filter for high R component to avoid any white/black helper vertices if they exist.
+            verts
+                .iter()
+                .filter(|v| v.color[0] > 0.5 && v.position[0] > 0.5)
+                .map(|v| v.position[0])
+                .fold(f32::NEG_INFINITY, f32::max)
+        };
+
+        let tip_x_normal = find_tip_end_x(&vertices_normal);
+        let tip_x_hovered = find_tip_end_x(&vertices_hovered);
+
+        // Tip should be further out because tip_length increased
+        assert!(
+            tip_x_hovered > tip_x_normal,
+            "Tip should be longer when hovered. Normal: {}, Hovered: {}",
+            tip_x_normal,
+            tip_x_hovered
+        );
+    }
+
+    #[test]
     fn gizmo_vertices_generate_with_screen_scaled_inputs() {
         let vertices = build_editor_gizmo_vertices(
             [0.0, 0.0, 0.0],
             [2.0, 2.0, 2.0],
             [3.0, 4.0, 5.0],
             0.1,
+            0.2,
+            [0.3, 0.3, 0.3],
             true,
             true,
+            None,
             None,
         );
         assert!(!vertices.is_empty());
@@ -61,7 +171,7 @@ mod tests {
 
     #[test]
     fn hover_outline_vertices_are_translucent() {
-        let vertices = build_editor_hover_outline_vertices([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        let vertices = build_editor_hover_outline_vertices([0.0, 0.0, 0.0], [1.0, 1.0, 1.0], 0.03);
         assert!(!vertices.is_empty());
         assert!(vertices.iter().any(|v| v.color[3] < 1.0));
     }

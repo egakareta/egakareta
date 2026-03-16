@@ -1,31 +1,19 @@
 use crate::mesh::advanced_shapes::{append_cone, append_sphere};
 use crate::mesh::shapes::append_prism;
-use crate::types::Vertex;
+use crate::types::{GizmoPart, Vertex};
 
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub(crate) enum GizmoPart {
-    MoveX,
-    MoveY,
-    MoveZ,
-    MoveXNeg,
-    MoveYNeg,
-    MoveZNeg,
-    ResizeX,
-    ResizeY,
-    ResizeZ,
-    ResizeXNeg,
-    ResizeYNeg,
-    ResizeZNeg,
-}
-
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_editor_gizmo_vertices(
     position: [f32; 3],
     size: [f32; 3],
     axis_lengths: [f32; 3],
     axis_width: f32,
+    resize_radius: f32,
+    resize_offsets: [f32; 3],
     show_move_handles: bool,
     show_scale_handles: bool,
-    active_part: Option<GizmoPart>,
+    hovered_part: Option<GizmoPart>,
+    dragged_part: Option<GizmoPart>,
 ) -> Vec<Vertex> {
     let mut vertices = Vec::new();
 
@@ -35,28 +23,12 @@ pub(crate) fn build_editor_gizmo_vertices(
         position[2] + size[2] * 0.5,
     ];
 
-    let shaft = axis_width.max(0.0005) * 0.5;
-    let tip_length = shaft * 6.0;
-    let cone_radius = shaft * 2.5;
-    let arm_start_offset = shaft * 2.0;
-    let x_length = axis_lengths[0].max(arm_start_offset + tip_length);
-    let y_length = axis_lengths[1].max(arm_start_offset + tip_length);
-    let z_length = axis_lengths[2].max(arm_start_offset + tip_length);
-
-    let color_x_base = [1.0, 0.05, 0.05, 0.6];
-    let color_x_dark = [0.85, 0.0, 0.0, 0.4];
-    let color_y_base = [0.05, 1.0, 0.05, 0.6];
-    let color_y_dark = [0.0, 0.85, 0.0, 0.4];
-    let color_z_base = [0.05, 0.05, 1.0, 0.6];
-    let color_z_dark = [0.0, 0.0, 0.85, 0.4];
-
-    let darken = |color: [f32; 4], active: bool| -> [f32; 4] {
-        if active {
-            [color[0] * 0.6, color[1] * 0.6, color[2] * 0.6, color[3]]
-        } else {
-            color
-        }
-    };
+    let color_x_normal = [0.804, 0.0, 0.0, 0.6];
+    let color_x_active = [1.0, 0.0, 0.0, 1.0];
+    let color_y_normal = [0.0, 0.804, 0.0, 0.6];
+    let color_y_active = [0.0, 1.0, 0.0, 1.0];
+    let color_z_normal = [0.0, 0.0, 0.6, 0.6];
+    let color_z_active = [0.0, 0.0, 1.0, 1.0];
 
     if show_move_handles {
         // X move arms
@@ -66,15 +38,39 @@ pub(crate) fn build_editor_gizmo_vertices(
             } else {
                 GizmoPart::MoveX
             };
-            let active = active_part == Some(variant);
-            let sign = if neg { -1.0 } else { 1.0 };
-            let face = if neg {
-                position[0]
+            let is_hovered = hovered_part == Some(variant);
+            let is_dragged = dragged_part == Some(variant);
+            let active = is_hovered || is_dragged;
+            let width_mult = if is_hovered && !is_dragged { 1.35 } else { 1.0 };
+
+            let base_shaft = axis_width.max(0.0005) * 0.5;
+            let base_tip_length = base_shaft * 10.0;
+            let arm_start_offset = base_shaft * 6.0;
+
+            let shaft = base_shaft * width_mult;
+            let tip_length = shaft * 10.0;
+            let cone_radius = shaft * 2.5;
+
+            let base_x_length = axis_lengths[0].max(arm_start_offset + base_tip_length);
+            let shaft_length = base_x_length - arm_start_offset - base_tip_length;
+            let x_length = arm_start_offset + shaft_length + tip_length;
+
+            let color = if active {
+                color_x_active
             } else {
-                position[0] + size[0]
+                color_x_normal
             };
-            let start = face + arm_start_offset * sign;
-            let end = face + x_length * sign;
+            let color_dark = [
+                color[0] * 0.8,
+                color[1] * 0.8,
+                color[2] * 0.8,
+                color[3] * 0.8,
+            ];
+
+            let sign = if neg { -1.0 } else { 1.0 };
+            let origin = center[0];
+            let start = origin + arm_start_offset * sign;
+            let end = origin + x_length * sign;
             let (p_min_x, p_max_x) = if neg {
                 (end + tip_length, start)
             } else {
@@ -84,15 +80,15 @@ pub(crate) fn build_editor_gizmo_vertices(
                 &mut vertices,
                 [p_min_x, center[1] - shaft, center[2] - shaft],
                 [p_max_x, center[1] + shaft, center[2] + shaft],
-                darken(color_x_base, active),
-                darken(color_x_dark, active),
+                color,
+                color_dark,
             );
             append_cone(
                 &mut vertices,
                 [end - tip_length * sign, center[1], center[2]],
                 [end, center[1], center[2]],
                 cone_radius,
-                darken(color_x_base, active),
+                color,
             );
         }
 
@@ -103,15 +99,39 @@ pub(crate) fn build_editor_gizmo_vertices(
             } else {
                 GizmoPart::MoveY
             };
-            let active = active_part == Some(variant);
-            let sign = if neg { -1.0 } else { 1.0 };
-            let face = if neg {
-                position[1]
+            let is_hovered = hovered_part == Some(variant);
+            let is_dragged = dragged_part == Some(variant);
+            let active = is_hovered || is_dragged;
+            let width_mult = if is_hovered && !is_dragged { 1.35 } else { 1.0 };
+
+            let base_shaft = axis_width.max(0.0005) * 0.5;
+            let base_tip_length = base_shaft * 10.0;
+            let arm_start_offset = base_shaft * 6.0;
+
+            let shaft = base_shaft * width_mult;
+            let tip_length = shaft * 10.0;
+            let cone_radius = shaft * 2.5;
+
+            let base_y_length = axis_lengths[1].max(arm_start_offset + base_tip_length);
+            let shaft_length = base_y_length - arm_start_offset - base_tip_length;
+            let y_length = arm_start_offset + shaft_length + tip_length;
+
+            let color = if active {
+                color_y_active
             } else {
-                position[1] + size[1]
+                color_y_normal
             };
-            let start = face + arm_start_offset * sign;
-            let end = face + y_length * sign;
+            let color_dark = [
+                color[0] * 0.8,
+                color[1] * 0.8,
+                color[2] * 0.8,
+                color[3] * 0.8,
+            ];
+
+            let sign = if neg { -1.0 } else { 1.0 };
+            let origin = center[1];
+            let start = origin + arm_start_offset * sign;
+            let end = origin + y_length * sign;
             let (p_min_y, p_max_y) = if neg {
                 (end + tip_length, start)
             } else {
@@ -121,15 +141,15 @@ pub(crate) fn build_editor_gizmo_vertices(
                 &mut vertices,
                 [center[0] - shaft, p_min_y, center[2] - shaft],
                 [center[0] + shaft, p_max_y, center[2] + shaft],
-                darken(color_y_base, active),
-                darken(color_y_dark, active),
+                color,
+                color_dark,
             );
             append_cone(
                 &mut vertices,
                 [center[0], end - tip_length * sign, center[2]],
                 [center[0], end, center[2]],
                 cone_radius,
-                darken(color_y_base, active),
+                color,
             );
         }
 
@@ -140,15 +160,39 @@ pub(crate) fn build_editor_gizmo_vertices(
             } else {
                 GizmoPart::MoveZ
             };
-            let active = active_part == Some(variant);
-            let sign = if neg { -1.0 } else { 1.0 };
-            let face = if neg {
-                position[2]
+            let is_hovered = hovered_part == Some(variant);
+            let is_dragged = dragged_part == Some(variant);
+            let active = is_hovered || is_dragged;
+            let width_mult = if is_hovered && !is_dragged { 1.35 } else { 1.0 };
+
+            let base_shaft = axis_width.max(0.0005) * 0.5;
+            let base_tip_length = base_shaft * 10.0;
+            let arm_start_offset = base_shaft * 6.0;
+
+            let shaft = base_shaft * width_mult;
+            let tip_length = shaft * 10.0;
+            let cone_radius = shaft * 2.5;
+
+            let base_z_length = axis_lengths[2].max(arm_start_offset + base_tip_length);
+            let shaft_length = base_z_length - arm_start_offset - base_tip_length;
+            let z_length = arm_start_offset + shaft_length + tip_length;
+
+            let color = if active {
+                color_z_active
             } else {
-                position[2] + size[2]
+                color_z_normal
             };
-            let start = face + arm_start_offset * sign;
-            let end = face + z_length * sign;
+            let color_dark = [
+                color[0] * 0.8,
+                color[1] * 0.8,
+                color[2] * 0.8,
+                color[3] * 0.8,
+            ];
+
+            let sign = if neg { -1.0 } else { 1.0 };
+            let origin = center[2];
+            let start = origin + arm_start_offset * sign;
+            let end = origin + z_length * sign;
             let (p_min_z, p_max_z) = if neg {
                 (end + tip_length, start)
             } else {
@@ -158,22 +202,21 @@ pub(crate) fn build_editor_gizmo_vertices(
                 &mut vertices,
                 [center[0] - shaft, center[1] - shaft, p_min_z],
                 [center[0] + shaft, center[1] + shaft, p_max_z],
-                darken(color_z_base, active),
-                darken(color_z_dark, active),
+                color,
+                color_dark,
             );
             append_cone(
                 &mut vertices,
                 [center[0], center[1], end - tip_length * sign],
                 [center[0], center[1], end],
                 cone_radius,
-                darken(color_z_base, active),
+                color,
             );
         }
     }
 
     // Resize handles
-    let resize_radius = 0.25;
-    let inner_resize_radius = 0.1;
+    let inner_resize_radius = resize_radius * 0.4;
     let inner_color = [0.0, 0.0, 0.0, 0.025];
 
     if show_scale_handles {
@@ -184,25 +227,29 @@ pub(crate) fn build_editor_gizmo_vertices(
             } else {
                 GizmoPart::ResizeX
             };
-            let active = active_part == Some(variant);
-            let x = if neg {
-                position[0] - resize_radius
+            let is_hovered = hovered_part == Some(variant);
+            let is_dragged = dragged_part == Some(variant);
+            let active = is_hovered || is_dragged;
+            let current_radius = if is_hovered && !is_dragged {
+                resize_radius * 1.35
             } else {
-                position[0] + size[0] + resize_radius
+                resize_radius
+            };
+
+            let color = if active {
+                color_x_active
+            } else {
+                color_x_normal
+            };
+
+            let x = if neg {
+                position[0] - resize_offsets[0]
+            } else {
+                position[0] + size[0] + resize_offsets[0]
             };
             let pos = [x, center[1], center[2]];
-            append_sphere(
-                &mut vertices,
-                pos,
-                resize_radius,
-                darken(color_x_base, active),
-            );
-            append_sphere(
-                &mut vertices,
-                pos,
-                inner_resize_radius,
-                darken(inner_color, active),
-            );
+            append_sphere(&mut vertices, pos, current_radius, color);
+            append_sphere(&mut vertices, pos, inner_resize_radius, inner_color);
         }
 
         // Y resize
@@ -212,25 +259,29 @@ pub(crate) fn build_editor_gizmo_vertices(
             } else {
                 GizmoPart::ResizeY
             };
-            let active = active_part == Some(variant);
-            let y = if neg {
-                position[1] - resize_radius
+            let is_hovered = hovered_part == Some(variant);
+            let is_dragged = dragged_part == Some(variant);
+            let active = is_hovered || is_dragged;
+            let current_radius = if is_hovered && !is_dragged {
+                resize_radius * 1.35
             } else {
-                position[1] + size[1] + resize_radius
+                resize_radius
+            };
+
+            let color = if active {
+                color_y_active
+            } else {
+                color_y_normal
+            };
+
+            let y = if neg {
+                position[1] - resize_offsets[1]
+            } else {
+                position[1] + size[1] + resize_offsets[1]
             };
             let pos = [center[0], y, center[2]];
-            append_sphere(
-                &mut vertices,
-                pos,
-                resize_radius,
-                darken(color_y_base, active),
-            );
-            append_sphere(
-                &mut vertices,
-                pos,
-                inner_resize_radius,
-                darken(inner_color, active),
-            );
+            append_sphere(&mut vertices, pos, current_radius, color);
+            append_sphere(&mut vertices, pos, inner_resize_radius, inner_color);
         }
 
         // Z resize
@@ -240,25 +291,29 @@ pub(crate) fn build_editor_gizmo_vertices(
             } else {
                 GizmoPart::ResizeZ
             };
-            let active = active_part == Some(variant);
-            let z = if neg {
-                position[2] - resize_radius
+            let is_hovered = hovered_part == Some(variant);
+            let is_dragged = dragged_part == Some(variant);
+            let active = is_hovered || is_dragged;
+            let current_radius = if is_hovered && !is_dragged {
+                resize_radius * 1.35
             } else {
-                position[2] + size[2] + resize_radius
+                resize_radius
+            };
+
+            let color = if active {
+                color_z_active
+            } else {
+                color_z_normal
+            };
+
+            let z = if neg {
+                position[2] - resize_offsets[2]
+            } else {
+                position[2] + size[2] + resize_offsets[2]
             };
             let pos = [center[0], center[1], z];
-            append_sphere(
-                &mut vertices,
-                pos,
-                resize_radius,
-                darken(color_z_base, active),
-            );
-            append_sphere(
-                &mut vertices,
-                pos,
-                inner_resize_radius,
-                darken(inner_color, active),
-            );
+            append_sphere(&mut vertices, pos, current_radius, color);
+            append_sphere(&mut vertices, pos, inner_resize_radius, inner_color);
         }
     }
 

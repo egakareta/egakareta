@@ -525,6 +525,7 @@ impl State {
                     gizmo: EditorGizmoState {
                         rebuild_accumulator: 0.0,
                         last_pan: [0.0, 0.0],
+                        last_target_z: 0.0,
                         last_rotation: 0.0,
                         last_pitch: 0.0,
                     },

@@ -47,6 +47,7 @@ impl EditorDirtyFlags {
 pub(crate) struct EditorGizmoState {
     pub(crate) rebuild_accumulator: f32,
     pub(crate) last_pan: [f32; 2],
+    pub(crate) last_target_z: f32,
     pub(crate) last_rotation: f32,
     pub(crate) last_pitch: f32,
 }

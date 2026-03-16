@@ -1,16 +1,16 @@
 use glam::Vec3;
 
-use super::{EditorDirtyFlags, EditorSubsystem, GizmoAxis, GizmoDragKind, PerfStage, State};
+use super::{EditorDirtyFlags, EditorSubsystem, PerfStage, State};
 use crate::editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds};
 use crate::mesh::{
     build_block_vertices, build_block_vertices_from_refs, build_camera_keypoint_marker_vertices,
     build_editor_cursor_vertices, build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
     build_editor_preview_player_vertices, build_editor_selection_outline_vertices,
-    build_spawn_marker_vertices, build_tap_indicator_vertices, GizmoPart,
+    build_spawn_marker_vertices, build_tap_indicator_vertices,
 };
 use crate::platform::state_host::PlatformInstant;
 use crate::types::{
-    apply_timed_triggers_to_objects, AppPhase, EditorMode, LevelObject, SpawnDirection,
+    apply_timed_triggers_to_objects, AppPhase, EditorMode, GizmoPart, LevelObject, SpawnDirection,
 };
 
 impl EditorSubsystem {
@@ -334,30 +334,59 @@ impl State {
             return;
         }
 
-        let Some(index) = self
+        let mut indices_to_outline = Vec::new();
+
+        if let Some(index) = self
             .editor
             .ui
             .hovered_block_index
             .filter(|index| *index < self.editor.objects.len())
-        else {
-            self.render.meshes.editor_hover_outline.clear();
-            return;
-        };
+        {
+            if !self.selection_contains(index) {
+                indices_to_outline.push(index);
+            }
+        }
 
-        if self.selection_contains(index) {
+        if self.editor.marquee_selection_rect_screen().is_some() {
+            let viewport = glam::Vec2::new(
+                self.render.gpu.config.width as f32,
+                self.render.gpu.config.height as f32,
+            );
+            for hit in self.editor.marquee_overlapping_blocks(viewport) {
+                if !self.selection_contains(hit) && !indices_to_outline.contains(&hit) {
+                    indices_to_outline.push(hit);
+                }
+            }
+        }
+
+        if indices_to_outline.is_empty() {
             self.render.meshes.editor_hover_outline.clear();
             return;
         }
 
-        let obj = &self.editor.objects[index];
-        let vertices = build_editor_hover_outline_vertices(obj.position, obj.size);
+        let mut all_vertices = Vec::new();
+        for index in indices_to_outline {
+            let obj = &self.editor.objects[index];
+            let center = glam::Vec3::new(
+                obj.position[0] + obj.size[0] * 0.5,
+                obj.position[1] + obj.size[1] * 0.5,
+                obj.position[2] + obj.size[2] * 0.5,
+            );
+            let line_width = self.editor_gizmo_axis_width_world(center, 3.0);
+            all_vertices.append(&mut build_editor_hover_outline_vertices(
+                obj.position,
+                obj.size,
+                line_width,
+            ));
+        }
+
         self.render
             .meshes
             .editor_hover_outline
             .replace_with_vertices(
                 &self.render.gpu.device,
                 "Editor Hover Outline Vertex Buffer",
-                &vertices,
+                &all_vertices,
             );
     }
 
@@ -378,36 +407,37 @@ impl State {
             bounds_position[1] + bounds_size[1] * 0.5,
             bounds_position[2] + bounds_size[2] * 0.5,
         );
-        let axis_lengths = self.editor_gizmo_axis_lengths_world(center, 50.0);
-        let axis_width = self.editor_gizmo_axis_width_world(center, 3.0);
+        let axis_lengths = self.editor_gizmo_axis_lengths_world(center, 100.0);
+        let axis_width = self.editor_gizmo_axis_width_world(center, 4.5);
+        let resize_radius = self.editor_gizmo_axis_width_world(center, 6.0);
+        let resize_offsets = self.editor_gizmo_axis_lengths_world(center, 9.0);
 
-        let active_part = if let Some(drag) = &self.editor.runtime.interaction.gizmo_drag {
-            match (drag.axis, drag.kind) {
-                (GizmoAxis::X, GizmoDragKind::Move) => Some(GizmoPart::MoveX),
-                (GizmoAxis::Y, GizmoDragKind::Move) => Some(GizmoPart::MoveY),
-                (GizmoAxis::Z, GizmoDragKind::Move) => Some(GizmoPart::MoveZ),
-                (GizmoAxis::XNeg, GizmoDragKind::Move) => Some(GizmoPart::MoveXNeg),
-                (GizmoAxis::YNeg, GizmoDragKind::Move) => Some(GizmoPart::MoveYNeg),
-                (GizmoAxis::ZNeg, GizmoDragKind::Move) => Some(GizmoPart::MoveZNeg),
-                (GizmoAxis::X, GizmoDragKind::Resize) => Some(GizmoPart::ResizeX),
-                (GizmoAxis::Y, GizmoDragKind::Resize) => Some(GizmoPart::ResizeY),
-                (GizmoAxis::Z, GizmoDragKind::Resize) => Some(GizmoPart::ResizeZ),
-                (GizmoAxis::XNeg, GizmoDragKind::Resize) => Some(GizmoPart::ResizeXNeg),
-                (GizmoAxis::YNeg, GizmoDragKind::Resize) => Some(GizmoPart::ResizeYNeg),
-                (GizmoAxis::ZNeg, GizmoDragKind::Resize) => Some(GizmoPart::ResizeZNeg),
-            }
-        } else {
-            None
-        };
+        let dragged_part = self
+            .editor
+            .runtime
+            .interaction
+            .gizmo_drag
+            .as_ref()
+            .map(|drag| GizmoPart::from_axis_kind(drag.axis, drag.kind));
+
+        let hovered_part = self
+            .editor
+            .runtime
+            .interaction
+            .hovered_gizmo
+            .map(|(kind, axis)| GizmoPart::from_axis_kind(axis, kind));
 
         let vertices = build_editor_gizmo_vertices(
             bounds_position,
             bounds_size,
             axis_lengths,
             axis_width,
+            resize_radius,
+            resize_offsets,
             mode.shows_move_gizmo(),
             mode.shows_scale_gizmo(),
-            active_part,
+            hovered_part,
+            dragged_part,
         );
         self.render.meshes.editor_gizmo.replace_with_vertices(
             &self.render.gpu.device,
@@ -431,9 +461,16 @@ impl State {
         let mut vertices = Vec::new();
         for index in selected_indices {
             if let Some(obj) = self.editor.objects.get(index) {
+                let center = glam::Vec3::new(
+                    obj.position[0] + obj.size[0] * 0.5,
+                    obj.position[1] + obj.size[1] * 0.5,
+                    obj.position[2] + obj.size[2] * 0.5,
+                );
+                let line_width = self.editor_gizmo_axis_width_world(center, 2.0);
                 vertices.extend(build_editor_selection_outline_vertices(
                     obj.position,
                     obj.size,
+                    line_width,
                 ));
             }
         }

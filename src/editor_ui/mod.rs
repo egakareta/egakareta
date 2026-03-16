@@ -388,7 +388,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                     egui::pos2(start[0] as f32, start[1] as f32),
                     egui::pos2(current[0] as f32, current[1] as f32),
                 );
-                let stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(130, 180, 255));
+                let stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(25, 153, 255));
                 let layer = egui::LayerId::new(
                     egui::Order::Foreground,
                     egui::Id::new("editor_marquee_overlay"),
@@ -396,7 +396,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                 ctx.layer_painter(layer).rect(
                     rect,
                     0.0,
-                    egui::Color32::from_rgba_unmultiplied(130, 180, 255, 38),
+                    egui::Color32::from_rgba_unmultiplied(25, 153, 255, 38),
                     stroke,
                     egui::StrokeKind::Outside,
                 );

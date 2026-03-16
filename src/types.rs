@@ -3,6 +3,71 @@ use serde::{Deserialize, Serialize};
 
 use crate::block_repository::{normalize_block_id, DEFAULT_BLOCK_ID};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EditorInteractionChange {
+    None,
+    Hover,
+    Cursor,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct EditorPickResult {
+    pub(crate) cursor: [f32; 3],
+    pub(crate) hit_block_index: Option<usize>,
+    pub(crate) hit_trigger_index: Option<usize>,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(crate) enum GizmoAxis {
+    X,
+    Y,
+    Z,
+    XNeg,
+    YNeg,
+    ZNeg,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(crate) enum GizmoDragKind {
+    Move,
+    Resize,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(crate) enum GizmoPart {
+    MoveX,
+    MoveY,
+    MoveZ,
+    MoveXNeg,
+    MoveYNeg,
+    MoveZNeg,
+    ResizeX,
+    ResizeY,
+    ResizeZ,
+    ResizeXNeg,
+    ResizeYNeg,
+    ResizeZNeg,
+}
+
+impl GizmoPart {
+    pub(crate) fn from_axis_kind(axis: GizmoAxis, kind: GizmoDragKind) -> Self {
+        match (axis, kind) {
+            (GizmoAxis::X, GizmoDragKind::Move) => GizmoPart::MoveX,
+            (GizmoAxis::Y, GizmoDragKind::Move) => GizmoPart::MoveY,
+            (GizmoAxis::Z, GizmoDragKind::Move) => GizmoPart::MoveZ,
+            (GizmoAxis::XNeg, GizmoDragKind::Move) => GizmoPart::MoveXNeg,
+            (GizmoAxis::YNeg, GizmoDragKind::Move) => GizmoPart::MoveYNeg,
+            (GizmoAxis::ZNeg, GizmoDragKind::Move) => GizmoPart::MoveZNeg,
+            (GizmoAxis::X, GizmoDragKind::Resize) => GizmoPart::ResizeX,
+            (GizmoAxis::Y, GizmoDragKind::Resize) => GizmoPart::ResizeY,
+            (GizmoAxis::Z, GizmoDragKind::Resize) => GizmoPart::ResizeZ,
+            (GizmoAxis::XNeg, GizmoDragKind::Resize) => GizmoPart::ResizeXNeg,
+            (GizmoAxis::YNeg, GizmoDragKind::Resize) => GizmoPart::ResizeYNeg,
+            (GizmoAxis::ZNeg, GizmoDragKind::Resize) => GizmoPart::ResizeZNeg,
+        }
+    }
+}
+
 pub(crate) const CURRENT_LEVEL_FORMAT_VERSION: u32 = 1;
 
 pub(crate) const APP_SETTINGS_VERSION: u32 = 1;

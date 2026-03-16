@@ -1,5 +1,6 @@
-use super::super::{EditorPickResult, EditorSubsystem, PerfStage};
+use super::super::{EditorSubsystem, PerfStage};
 use crate::platform::state_host::PlatformInstant;
+use crate::types::EditorPickResult;
 use glam::{Vec2, Vec3, Vec4};
 
 const CAMERA_KEYPOINT_BALL_PICK_RADIUS: f32 = 0.55;

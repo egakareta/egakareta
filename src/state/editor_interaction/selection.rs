@@ -1,9 +1,9 @@
 use super::super::{
-    EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart, EditorInteractionChange,
-    EditorSubsystem, PerfStage, State,
+    EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart, EditorSubsystem, PerfStage, State,
 };
 use crate::platform::state_host::PlatformInstant;
 use crate::types::AppPhase;
+use crate::types::EditorInteractionChange;
 use glam::{Vec2, Vec3};
 
 const MARQUEE_DRAG_THRESHOLD_PX: f64 = 4.0;
@@ -46,6 +46,37 @@ impl EditorSubsystem {
         }
         self.ui.marquee_current_screen = Some([x, y]);
         true
+    }
+
+    pub(crate) fn marquee_overlapping_blocks(&self, viewport: Vec2) -> Vec<usize> {
+        let Some(start) = self.ui.marquee_start_screen else {
+            return Vec::new();
+        };
+        let current = self.ui.marquee_current_screen.unwrap_or(start);
+
+        let rect_min = Vec2::new(
+            start[0].min(current[0]) as f32,
+            start[1].min(current[1]) as f32,
+        );
+        let rect_max = Vec2::new(
+            start[0].max(current[0]) as f32,
+            start[1].max(current[1]) as f32,
+        );
+
+        let mut hits = Vec::new();
+        for index in 0..self.objects.len() {
+            let Some((obj_min, obj_max)) = self.rotated_block_screen_bounds(index, viewport) else {
+                continue;
+            };
+            let overlaps = obj_max.x >= rect_min.x
+                && obj_min.x <= rect_max.x
+                && obj_max.y >= rect_min.y
+                && obj_min.y <= rect_max.y;
+            if overlaps {
+                hits.push(index);
+            }
+        }
+        hits
     }
 
     fn rotated_block_screen_bounds(&self, index: usize, viewport: Vec2) -> Option<(Vec2, Vec2)> {
@@ -143,19 +174,7 @@ impl EditorSubsystem {
             start[1].max(current[1]) as f32,
         );
 
-        let mut hits = Vec::new();
-        for index in 0..self.objects.len() {
-            let Some((obj_min, obj_max)) = self.rotated_block_screen_bounds(index, viewport) else {
-                continue;
-            };
-            let overlaps = obj_max.x >= rect_min.x
-                && obj_min.x <= rect_max.x
-                && obj_max.y >= rect_min.y
-                && obj_min.y <= rect_max.y;
-            if overlaps {
-                hits.push(index);
-            }
-        }
+        let hits = self.marquee_overlapping_blocks(viewport);
 
         if additive {
             for hit in hits {
@@ -548,11 +567,19 @@ impl EditorSubsystem {
 
 impl State {
     pub(crate) fn begin_editor_marquee_selection(&mut self, x: f64, y: f64) -> bool {
-        self.editor.begin_marquee_selection(x, y, self.phase)
+        let handled = self.editor.begin_marquee_selection(x, y, self.phase);
+        if handled {
+            self.rebuild_editor_hover_outline_vertices();
+        }
+        handled
     }
 
     pub(crate) fn update_editor_marquee_selection(&mut self, x: f64, y: f64) -> bool {
-        self.editor.update_marquee_selection(x, y, self.phase)
+        let handled = self.editor.update_marquee_selection(x, y, self.phase);
+        if handled {
+            self.rebuild_editor_hover_outline_vertices();
+        }
+        handled
     }
 
     pub(crate) fn finish_editor_marquee_selection(&mut self, x: f64, y: f64) -> bool {
@@ -569,8 +596,11 @@ impl State {
             self.editor
                 .finish_marquee_selection(x, y, viewport_size, self.phase);
         if marquee_consumed {
+            self.rebuild_editor_hover_outline_vertices();
             return true;
         }
+
+        self.rebuild_editor_hover_outline_vertices();
 
         if self.phase == AppPhase::Editor && self.editor.mode().is_selection_mode() {
             self.editor

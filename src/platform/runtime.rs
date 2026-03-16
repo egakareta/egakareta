@@ -12,6 +12,23 @@ impl Runtime {
         let egui_ctx = egui::Context::default();
 
         let mut fonts = egui::FontDefinitions::default();
+        fonts.font_data.insert(
+            "sora".to_owned(),
+            std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+                "../../assets/Sora.ttf"
+            ))),
+        );
+        fonts
+            .families
+            .entry(egui::FontFamily::Proportional)
+            .or_default()
+            .insert(0, "sora".to_owned());
+        fonts
+            .families
+            .entry(egui::FontFamily::Monospace)
+            .or_default()
+            .insert(0, "sora".to_owned());
+
         egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
         egui_ctx.set_fonts(fonts);
 

@@ -4,37 +4,9 @@ mod gizmo;
 mod picking;
 mod selection;
 
-use crate::types::{CameraKeypoint, LevelObject, SpawnMetadata, TimedTrigger};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum EditorInteractionChange {
-    None,
-    Hover,
-    Cursor,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct EditorPickResult {
-    pub(crate) cursor: [f32; 3],
-    pub(crate) hit_block_index: Option<usize>,
-    pub(crate) hit_trigger_index: Option<usize>,
-}
-
-#[derive(Clone, Copy, PartialEq)]
-pub(crate) enum GizmoAxis {
-    X,
-    Y,
-    Z,
-    XNeg,
-    YNeg,
-    ZNeg,
-}
-
-#[derive(Clone, Copy, PartialEq)]
-pub(crate) enum GizmoDragKind {
-    Move,
-    Resize,
-}
+use crate::types::{
+    CameraKeypoint, GizmoAxis, GizmoDragKind, LevelObject, SpawnMetadata, TimedTrigger,
+};
 
 #[derive(Clone)]
 pub(crate) struct EditorGizmoDrag {
@@ -88,6 +60,7 @@ pub(crate) struct EditorClipboard {
 
 pub(crate) struct EditorInteractionState {
     pub(crate) gizmo_drag: Option<EditorGizmoDrag>,
+    pub(crate) hovered_gizmo: Option<(GizmoDragKind, GizmoAxis)>,
     pub(crate) block_drag: Option<EditorBlockDrag>,
     pub(crate) clipboard: Option<EditorClipboard>,
 }
@@ -96,6 +69,7 @@ impl EditorInteractionState {
     pub(crate) fn new() -> Self {
         Self {
             gizmo_drag: None,
+            hovered_gizmo: None,
             block_drag: None,
             clipboard: None,
         }

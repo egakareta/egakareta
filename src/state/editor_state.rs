@@ -987,9 +987,18 @@ impl State {
     }
 
     pub(crate) fn editor_apply_selected_camera_keypoint(&mut self) {
-        if self.phase == AppPhase::Editor {
-            self.editor
-                .apply_selected_camera_keypoint_to_editor_camera();
+        if self.phase == AppPhase::Editor
+            && self
+                .editor
+                .apply_selected_camera_keypoint_to_editor_camera()
+        {
+            self.mark_editor_dirty(EditorDirtyFlags {
+                rebuild_selection_overlays: true,
+                rebuild_cursor: true,
+                rebuild_tap_indicators: true,
+                rebuild_preview_player: true,
+                ..EditorDirtyFlags::default()
+            });
         }
     }
 

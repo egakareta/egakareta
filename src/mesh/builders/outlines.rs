@@ -4,19 +4,21 @@ use crate::types::Vertex;
 pub(crate) fn build_editor_selection_outline_vertices(
     position: [f32; 3],
     size: [f32; 3],
+    line_width: f32,
 ) -> Vec<Vertex> {
     let mut vertices = Vec::new();
 
-    let x0 = position[0] - 0.015;
-    let x1 = position[0] + size[0] + 0.015;
-    let y0 = position[1] - 0.015;
-    let y1 = position[1] + size[1] + 0.015;
-    let z0 = position[2] - 0.015;
-    let z1 = position[2] + size[2] + 0.015;
+    let offset = line_width / 6.0;
+    let x0 = position[0] - offset;
+    let x1 = position[0] + size[0] + offset;
+    let y0 = position[1] - offset;
+    let y1 = position[1] + size[1] + offset;
+    let z0 = position[2] - offset;
+    let z1 = position[2] + size[2] + offset;
 
-    let thickness = 0.045;
-    let color_top = [0.45, 0.9, 1.0, 0.8];
-    let color_side = [0.25, 0.75, 0.9, 0.8];
+    let thickness = line_width * 0.5;
+    let color_top = [0.098, 0.6, 1.0, 0.8];
+    let color_side = [0.078, 0.48, 0.8, 0.8];
 
     // Edges along X
     for (y, z) in [(y0, z0), (y1, z0), (y0, z1), (y1, z1)] {
@@ -57,17 +59,19 @@ pub(crate) fn build_editor_selection_outline_vertices(
 pub(crate) fn build_editor_hover_outline_vertices(
     position: [f32; 3],
     size: [f32; 3],
+    line_width: f32,
 ) -> Vec<Vertex> {
     let mut vertices = Vec::new();
 
-    let x0 = position[0] - 0.01;
-    let x1 = position[0] + size[0] + 0.01;
-    let y0 = position[1] - 0.01;
-    let y1 = position[1] + size[1] + 0.01;
-    let z0 = position[2] - 0.01;
-    let z1 = position[2] + size[2] + 0.01;
+    let offset = line_width / 6.0;
+    let x0 = position[0] - offset;
+    let x1 = position[0] + size[0] + offset;
+    let y0 = position[1] - offset;
+    let y1 = position[1] + size[1] + offset;
+    let z0 = position[2] - offset;
+    let z1 = position[2] + size[2] + offset;
 
-    let thickness = 0.03;
+    let thickness = line_width * 0.5;
     let color_top = [0.62, 0.9, 1.0, 0.45];
     let color_side = [0.45, 0.82, 0.95, 0.38];
 

@@ -1,5 +1,6 @@
-use super::super::{EditorInteractionChange, EditorSubsystem, State};
+use super::super::{EditorSubsystem, State};
 use crate::types::AppPhase;
+use crate::types::EditorInteractionChange;
 use glam::Vec2;
 
 impl EditorSubsystem {

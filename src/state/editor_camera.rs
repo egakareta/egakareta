@@ -386,6 +386,13 @@ impl State {
     pub fn adjust_editor_zoom(&mut self, delta: f32) {
         if self.phase == AppPhase::Editor {
             self.editor.adjust_zoom(delta);
+            self.editor.mark_dirty(crate::state::EditorDirtyFlags {
+                rebuild_selection_overlays: true,
+                rebuild_cursor: true,
+                rebuild_tap_indicators: true,
+                rebuild_preview_player: true,
+                ..Default::default()
+            });
         }
     }
 
@@ -395,12 +402,29 @@ impl State {
     pub fn pan_editor_camera_by_input(&mut self, screen_x: f32, screen_y: f32) {
         if self.phase == AppPhase::Editor {
             self.editor.pan_by_input(screen_x, screen_y);
+            self.editor.mark_dirty(crate::state::EditorDirtyFlags {
+                rebuild_selection_overlays: true,
+                rebuild_cursor: true,
+                rebuild_tap_indicators: true,
+                rebuild_preview_player: true,
+                ..Default::default()
+            });
         }
     }
 
     pub(super) fn update_editor_pan_from_keys(&mut self, frame_dt: f32) {
         if self.phase == AppPhase::Editor {
+            let previous_pan = self.editor.camera.editor_pan;
             self.editor.update_pan_from_keys(frame_dt);
+            if previous_pan != self.editor.camera.editor_pan {
+                self.editor.mark_dirty(crate::state::EditorDirtyFlags {
+                    rebuild_selection_overlays: true,
+                    rebuild_cursor: true,
+                    rebuild_tap_indicators: true,
+                    rebuild_preview_player: true,
+                    ..Default::default()
+                });
+            }
         }
     }
 

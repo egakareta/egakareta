@@ -1,12 +1,12 @@
 use super::super::{
-    EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag, EditorSubsystem, GizmoAxis,
-    GizmoDragKind, State,
+    EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag, EditorSubsystem, State,
 };
 use crate::types::AppPhase;
+use crate::types::{GizmoAxis, GizmoDragKind};
 use glam::{Vec2, Vec3};
 
-const GIZMO_MOVE_PICK_RADIUS_PIXELS: f32 = 32.0;
-const GIZMO_RESIZE_PICK_RADIUS_PIXELS: f32 = 26.0;
+const GIZMO_MOVE_PICK_RADIUS_PIXELS: f32 = 40.0;
+const GIZMO_RESIZE_PICK_RADIUS_PIXELS: f32 = 32.0;
 
 impl EditorSubsystem {
     pub(crate) fn drag_gizmo(&mut self, x: f64, y: f64, viewport: Vec2) -> bool {
@@ -185,7 +185,8 @@ impl EditorSubsystem {
             bounds_position[1] + bounds_size[1] * 0.5,
             bounds_position[2] + bounds_size[2] * 0.5,
         );
-        let axis_lengths = self.gizmo_axis_lengths_world(center, 50.0, viewport_size);
+        let axis_lengths = self.gizmo_axis_lengths_world(center, 64.0, viewport_size);
+        let resize_offsets = self.gizmo_axis_lengths_world(center, 9.0, viewport_size);
         let pointer = Vec2::new(x as f32, y as f32);
 
         let mut candidates: Vec<(GizmoDragKind, GizmoAxis, Vec3, f32)> = Vec::new();
@@ -194,49 +195,37 @@ impl EditorSubsystem {
                 (
                     GizmoDragKind::Move,
                     GizmoAxis::X,
-                    Vec3::new(
-                        bounds_position[0] + bounds_size[0] + axis_lengths[0],
-                        center.y,
-                        center.z,
-                    ),
+                    Vec3::new(center.x + axis_lengths[0], center.y, center.z),
                     GIZMO_MOVE_PICK_RADIUS_PIXELS,
                 ),
                 (
                     GizmoDragKind::Move,
                     GizmoAxis::Y,
-                    Vec3::new(
-                        center.x,
-                        bounds_position[1] + bounds_size[1] + axis_lengths[1],
-                        center.z,
-                    ),
+                    Vec3::new(center.x, center.y + axis_lengths[1], center.z),
                     GIZMO_MOVE_PICK_RADIUS_PIXELS,
                 ),
                 (
                     GizmoDragKind::Move,
                     GizmoAxis::Z,
-                    Vec3::new(
-                        center.x,
-                        center.y,
-                        bounds_position[2] + bounds_size[2] + axis_lengths[2],
-                    ),
+                    Vec3::new(center.x, center.y, center.z + axis_lengths[2]),
                     GIZMO_MOVE_PICK_RADIUS_PIXELS,
                 ),
                 (
                     GizmoDragKind::Move,
                     GizmoAxis::XNeg,
-                    Vec3::new(bounds_position[0] - axis_lengths[0], center.y, center.z),
+                    Vec3::new(center.x - axis_lengths[0], center.y, center.z),
                     GIZMO_MOVE_PICK_RADIUS_PIXELS,
                 ),
                 (
                     GizmoDragKind::Move,
                     GizmoAxis::YNeg,
-                    Vec3::new(center.x, bounds_position[1] - axis_lengths[1], center.z),
+                    Vec3::new(center.x, center.y - axis_lengths[1], center.z),
                     GIZMO_MOVE_PICK_RADIUS_PIXELS,
                 ),
                 (
                     GizmoDragKind::Move,
                     GizmoAxis::ZNeg,
-                    Vec3::new(center.x, center.y, bounds_position[2] - axis_lengths[2]),
+                    Vec3::new(center.x, center.y, center.z - axis_lengths[2]),
                     GIZMO_MOVE_PICK_RADIUS_PIXELS,
                 ),
             ]);
@@ -248,7 +237,7 @@ impl EditorSubsystem {
                     GizmoDragKind::Resize,
                     GizmoAxis::X,
                     Vec3::new(
-                        bounds_position[0] + bounds_size[0] + 0.36,
+                        bounds_position[0] + bounds_size[0] + resize_offsets[0],
                         center.y,
                         center.z,
                     ),
@@ -259,7 +248,7 @@ impl EditorSubsystem {
                     GizmoAxis::Y,
                     Vec3::new(
                         center.x,
-                        bounds_position[1] + bounds_size[1] + 0.36,
+                        bounds_position[1] + bounds_size[1] + resize_offsets[1],
                         center.z,
                     ),
                     GIZMO_RESIZE_PICK_RADIUS_PIXELS,
@@ -270,26 +259,26 @@ impl EditorSubsystem {
                     Vec3::new(
                         center.x,
                         center.y,
-                        bounds_position[2] + bounds_size[2] + 0.36,
+                        bounds_position[2] + bounds_size[2] + resize_offsets[2],
                     ),
                     GIZMO_RESIZE_PICK_RADIUS_PIXELS,
                 ),
                 (
                     GizmoDragKind::Resize,
                     GizmoAxis::XNeg,
-                    Vec3::new(bounds_position[0] - 0.36, center.y, center.z),
+                    Vec3::new(bounds_position[0] - resize_offsets[0], center.y, center.z),
                     GIZMO_RESIZE_PICK_RADIUS_PIXELS,
                 ),
                 (
                     GizmoDragKind::Resize,
                     GizmoAxis::YNeg,
-                    Vec3::new(center.x, bounds_position[1] - 0.36, center.z),
+                    Vec3::new(center.x, bounds_position[1] - resize_offsets[1], center.z),
                     GIZMO_RESIZE_PICK_RADIUS_PIXELS,
                 ),
                 (
                     GizmoDragKind::Resize,
                     GizmoAxis::ZNeg,
-                    Vec3::new(center.x, center.y, bounds_position[2] - 0.36),
+                    Vec3::new(center.x, center.y, bounds_position[2] - resize_offsets[2]),
                     GIZMO_RESIZE_PICK_RADIUS_PIXELS,
                 ),
             ]);
@@ -333,20 +322,8 @@ impl EditorSubsystem {
         screen_size: f32,
         viewport_size: Vec2,
     ) -> [f32; 3] {
-        let mut lengths = [1.0, 1.0, 1.0];
-        for (i, length) in lengths.iter_mut().enumerate() {
-            let axis = match i {
-                0 => Vec3::X,
-                1 => Vec3::Y,
-                _ => Vec3::Z,
-            };
-            if let Some(scale) =
-                self.pixels_to_world_along_axis(center, axis, screen_size, viewport_size)
-            {
-                *length = scale;
-            }
-        }
-        lengths
+        let scale = self.gizmo_axis_width_world(center, screen_size, viewport_size);
+        [scale, scale, scale]
     }
 
     pub(crate) fn gizmo_axis_width_world(
@@ -358,17 +335,15 @@ impl EditorSubsystem {
         let x = self.pixels_to_world_along_axis(center, Vec3::X, target_pixels, viewport_size);
         let y = self.pixels_to_world_along_axis(center, Vec3::Y, target_pixels, viewport_size);
         let z = self.pixels_to_world_along_axis(center, Vec3::Z, target_pixels, viewport_size);
-        let mut sum = 0.0;
-        let mut count = 0.0;
-        for value in [x, y, z].into_iter().flatten() {
-            sum += value;
-            count += 1.0;
+
+        let mut min_scale: Option<f32> = None;
+        for scale in [x, y, z].into_iter().flatten() {
+            if min_scale.is_none() || scale < min_scale.unwrap() {
+                min_scale = Some(scale);
+            }
         }
-        if count > 0.0 {
-            sum / count
-        } else {
-            0.06
-        }
+
+        min_scale.unwrap_or(0.06)
     }
 
     pub(crate) fn begin_gizmo_drag(&mut self, x: f64, y: f64, viewport_size: Vec2) -> bool {

@@ -1342,6 +1342,84 @@ mod tests {
     }
 
     #[test]
+    fn test_select_mode_marquee_hover_highlights_blocks_during_drag() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+            state.phase = AppPhase::Menu;
+            state.dispatch(AppCommand::ToggleEditor);
+            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
+
+            state.editor.camera.editor_pan = [0.0, 0.0];
+            state.editor.objects = vec![crate::types::LevelObject {
+                position: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: 0.0,
+                roundness: 0.18,
+                block_id: "core/stone".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            }];
+
+            // Ensure we are not hovering anything initially
+            state.editor.ui.hovered_block_index = None;
+            state.rebuild_editor_hover_outline_vertices();
+            assert!(state
+                .render
+                .meshes
+                .editor_hover_outline
+                .draw_data()
+                .is_none());
+
+            let start_x = 0.0;
+            let start_y = 0.0;
+            let end_x = state.render.gpu.config.width.max(1) as f64;
+            let end_y = state.render.gpu.config.height.max(1) as f64;
+
+            state.process_input_event(InputEvent::PointerMoved {
+                x: start_x,
+                y: start_y,
+            });
+            state.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: true,
+            });
+            state.process_input_event(InputEvent::PointerMoved { x: end_x, y: end_y });
+
+            // Now the hover outline should be populated because the marquee is active and covers the block
+            assert!(
+                state
+                    .render
+                    .meshes
+                    .editor_hover_outline
+                    .draw_data()
+                    .is_some(),
+                "Hover outline should be populated during marquee drag"
+            );
+
+            // Finish marquee
+            state.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: false,
+            });
+
+            // After release, the block is selected, so it shouldn't have a hover outline
+            assert!(
+                state
+                    .render
+                    .meshes
+                    .editor_hover_outline
+                    .draw_data()
+                    .is_none(),
+                "Hover outline should be cleared after marquee release"
+            );
+        });
+    }
+
+    #[test]
     fn test_select_mode_click_selects_camera_keypoint_marker() {
         pollster::block_on(async {
             use crate::commands::InputEvent;
