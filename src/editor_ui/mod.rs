@@ -8,6 +8,7 @@ use crate::editor_ui::modes::compose::show_compose_mode_bottom_panel;
 use crate::editor_ui::modes::timing::show_timing_mode_bottom_panel;
 use crate::types::{essential_keybind_actions, format_key_chord, EditorMode, SettingsSection};
 use crate::State;
+use egui::epaint::{Mesh, Vertex, WHITE_UV};
 use glam::{Mat3, Vec3};
 pub use menu::{load_menu_wordmark_texture, show_menu_wordmark_ui, show_splash_screen_ui};
 
@@ -18,6 +19,29 @@ struct ViewCubeFace {
     indices: [usize; 4],
     rotation: f32,
     pitch: f32,
+}
+
+fn sort_quad_by_angle(center: egui::Pos2, quad: [egui::Pos2; 4]) -> [egui::Pos2; 4] {
+    let mut points = quad.to_vec();
+    points.sort_by(|a, b| {
+        let angle_a = (a.y - center.y).atan2(a.x - center.x);
+        let angle_b = (b.y - center.y).atan2(b.x - center.x);
+        angle_a.total_cmp(&angle_b)
+    });
+    [points[0], points[1], points[2], points[3]]
+}
+
+fn add_face_mesh(painter: &egui::Painter, quad: [egui::Pos2; 4], color: egui::Color32) {
+    let mut mesh = Mesh::default();
+    for pos in quad {
+        mesh.vertices.push(Vertex {
+            pos,
+            uv: WHITE_UV,
+            color,
+        });
+    }
+    mesh.indices.extend_from_slice(&[0, 1, 2, 0, 2, 3]);
+    painter.add(egui::Shape::mesh(mesh));
 }
 
 /// Shows the editor UI using egui.
@@ -561,6 +585,122 @@ fn show_view_selector_cube(
         true
     }
 
+    fn convex_hull(points: &[egui::Pos2]) -> Vec<egui::Pos2> {
+        if points.len() <= 3 {
+            return points.to_vec();
+        }
+
+        let mut sorted = points.to_vec();
+        sorted.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.y.total_cmp(&b.y)));
+
+        fn cross(o: egui::Pos2, a: egui::Pos2, b: egui::Pos2) -> f32 {
+            (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+        }
+
+        let mut lower: Vec<egui::Pos2> = Vec::new();
+        for p in &sorted {
+            while lower.len() >= 2
+                && cross(lower[lower.len() - 2], lower[lower.len() - 1], *p) <= 0.0
+            {
+                lower.pop();
+            }
+            lower.push(*p);
+        }
+
+        let mut upper: Vec<egui::Pos2> = Vec::new();
+        for p in sorted.iter().rev() {
+            while upper.len() >= 2
+                && cross(upper[upper.len() - 2], upper[upper.len() - 1], *p) <= 0.0
+            {
+                upper.pop();
+            }
+            upper.push(*p);
+        }
+
+        lower.pop();
+        upper.pop();
+        lower.extend(upper);
+        lower
+    }
+
+    fn polygon_winding(points: &[egui::Pos2]) -> f32 {
+        let mut area = 0.0;
+        for i in 0..points.len() {
+            let a = points[i];
+            let b = points[(i + 1) % points.len()];
+            area += (b.x - a.x) * (b.y + a.y);
+        }
+        area
+    }
+
+    fn rounded_convex_polygon(
+        points: &[egui::Pos2],
+        radius: f32,
+        arc_segments: usize,
+    ) -> Vec<egui::Pos2> {
+        if points.len() < 3 || radius <= 0.0 || arc_segments == 0 {
+            return points.to_vec();
+        }
+
+        let winding = polygon_winding(points);
+        let ccw = winding < 0.0;
+        let mut rounded = Vec::new();
+
+        for i in 0..points.len() {
+            let prev = points[(i + points.len() - 1) % points.len()];
+            let curr = points[i];
+            let next = points[(i + 1) % points.len()];
+
+            let v1 = (prev - curr).normalized();
+            let v2 = (next - curr).normalized();
+
+            let dot = (v1.x * v2.x + v1.y * v2.y).clamp(-1.0, 1.0);
+            let angle = dot.acos();
+            if angle <= f32::EPSILON {
+                rounded.push(curr);
+                continue;
+            }
+
+            let offset = radius / (angle * 0.5).tan();
+            let offset = offset.min((prev - curr).length() * 0.5);
+            let offset = offset.min((next - curr).length() * 0.5);
+
+            let tangent1 = curr + v1 * offset;
+            let tangent2 = curr + v2 * offset;
+            let bisector = (v1 + v2).normalized();
+            if bisector.length_sq() <= f32::EPSILON {
+                rounded.push(curr);
+                continue;
+            }
+            let center_distance = radius / (angle * 0.5).sin();
+            let center = curr + bisector * center_distance;
+
+            let start_angle = (tangent1.y - center.y).atan2(tangent1.x - center.x);
+            let mut end_angle = (tangent2.y - center.y).atan2(tangent2.x - center.x);
+
+            if ccw {
+                if end_angle < start_angle {
+                    end_angle += std::f32::consts::TAU;
+                }
+            } else if end_angle > start_angle {
+                end_angle -= std::f32::consts::TAU;
+            }
+
+            rounded.push(tangent1);
+            let step = (end_angle - start_angle) / arc_segments as f32;
+            for s in 1..arc_segments {
+                let angle = start_angle + step * s as f32;
+                rounded.push(egui::pos2(
+                    center.x + angle.cos() * radius,
+                    center.y + angle.sin() * radius,
+                ));
+            }
+            rounded.push(tangent2);
+        }
+
+        rounded
+    }
+
     egui::Area::new("editor_view_selector_cube".into())
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-14.0, 52.0))
@@ -624,6 +764,16 @@ fn show_view_selector_cube(
                 depth[idx] = local_z;
             }
 
+            let hull = convex_hull(&projected);
+            if hull.len() >= 3 {
+                let rounded_hull = rounded_convex_polygon(&hull, 6.0, 4);
+                painter.add(egui::Shape::convex_polygon(
+                    rounded_hull,
+                    egui::Color32::from_rgba_unmultiplied(182, 214, 236, 72),
+                    egui::Stroke::NONE,
+                ));
+            }
+
             let mut rendered_faces = Vec::<RenderedFace>::new();
             for face in FACE_SET {
                 let facing = face.normal.dot(to_camera);
@@ -631,7 +781,8 @@ fn show_view_selector_cube(
                     continue;
                 }
 
-                let poly = [
+                let face_inset: f32 = 1.2;
+                let raw_poly = [
                     projected[face.indices[0]],
                     projected[face.indices[1]],
                     projected[face.indices[2]],
@@ -643,9 +794,23 @@ fn show_view_selector_cube(
                     + depth[face.indices[3]])
                     * 0.25;
                 let center = egui::pos2(
-                    (poly[0].x + poly[1].x + poly[2].x + poly[3].x) * 0.25,
-                    (poly[0].y + poly[1].y + poly[2].y + poly[3].y) * 0.25,
+                    (raw_poly[0].x + raw_poly[1].x + raw_poly[2].x + raw_poly[3].x) * 0.25,
+                    (raw_poly[0].y + raw_poly[1].y + raw_poly[2].y + raw_poly[3].y) * 0.25,
                 );
+
+                // sort to avoid aa seam artifacts
+                let mut poly = [egui::Pos2::ZERO; 4];
+                for i in 0..4 {
+                    let point = raw_poly[i];
+                    let to_center = center - point;
+                    let distance = to_center.length();
+                    poly[i] = if distance > f32::EPSILON {
+                        point + to_center / distance * face_inset.min(distance * 0.5)
+                    } else {
+                        point
+                    };
+                }
+                let poly = sort_quad_by_angle(center, poly);
                 rendered_faces.push(RenderedFace {
                     label: face.label,
                     polygon: poly,
@@ -673,19 +838,13 @@ fn show_view_selector_cube(
             for (idx, face) in rendered_faces.iter().enumerate() {
                 let hover_boost = if hovered_face == Some(idx) { 28 } else { 0 };
                 let alpha = (40.0 + face.facing * 90.0).round() as u8;
-                painter.add(egui::Shape::convex_polygon(
-                    face.polygon.to_vec(),
-                    egui::Color32::from_rgba_unmultiplied(
-                        182,
-                        214,
-                        236,
-                        alpha.saturating_add(hover_boost),
-                    ),
-                    egui::Stroke::new(
-                        1.0,
-                        egui::Color32::from_rgba_unmultiplied(220, 240, 255, 180),
-                    ),
-                ));
+                let face_color = egui::Color32::from_rgba_unmultiplied(
+                    182,
+                    214,
+                    236,
+                    alpha.saturating_add(hover_boost),
+                );
+                add_face_mesh(&painter, face.polygon, face_color);
                 if face.facing > 0.2 {
                     painter.text(
                         face.center,
@@ -738,4 +897,54 @@ fn show_view_selector_cube(
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sort_quad_by_angle;
+
+    fn is_convex_quad(quad: &[egui::Pos2; 4]) -> bool {
+        let mut sign = 0.0f32;
+        for i in 0..4 {
+            let a = quad[i];
+            let b = quad[(i + 1) % 4];
+            let c = quad[(i + 2) % 4];
+            let cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
+            if cross.abs() <= 1.0e-6 {
+                continue;
+            }
+            if sign == 0.0 {
+                sign = cross.signum();
+            } else if sign * cross < 0.0 {
+                return false;
+            }
+        }
+        sign != 0.0
+    }
+
+    #[test]
+    fn sort_quad_by_angle_returns_convex_winding_for_scrambled_square() {
+        let center = egui::pos2(0.0, 0.0);
+        let quad = [
+            egui::pos2(1.0, 1.0),
+            egui::pos2(-1.0, 1.0),
+            egui::pos2(1.0, -1.0),
+            egui::pos2(-1.0, -1.0),
+        ];
+        let sorted = sort_quad_by_angle(center, quad);
+        assert!(is_convex_quad(&sorted));
+    }
+
+    #[test]
+    fn sort_quad_by_angle_handles_skewed_quads() {
+        let center = egui::pos2(0.05, -0.12);
+        let quad = [
+            egui::pos2(1.3, 0.8),
+            egui::pos2(-0.9, 1.1),
+            egui::pos2(0.9, -1.4),
+            egui::pos2(-1.1, -0.6),
+        ];
+        let sorted = sort_quad_by_angle(center, quad);
+        assert!(is_convex_quad(&sorted));
+    }
 }
