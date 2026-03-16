@@ -11,7 +11,7 @@ pub type AudioPreloadResult = (String, Option<Vec<u8>>);
 const WAVEFORM_WINDOW: usize = 256;
 
 pub type WaveformData = (Vec<f32>, u32);
-pub type WaveformResult = (String, Option<WaveformData>, Option<Vec<u8>>);
+pub type WaveformResult = (String, String, Option<WaveformData>, Option<Vec<u8>>);
 
 async fn load_level_audio_bytes(level_name: &str, music_source: &str) -> Option<Vec<u8>> {
     crate::level_repository::get_builtin_audio(level_name, music_source).map(|bytes| bytes.to_vec())
@@ -44,6 +44,7 @@ pub fn start_waveform_loading(
     sender: Sender<WaveformResult>,
 ) {
     let source_for_send = music_source.clone();
+    let level_for_send = level_name.clone();
     let source_for_load = music_source.clone();
 
     spawn_background(async move {
@@ -59,6 +60,6 @@ pub fn start_waveform_loading(
             None
         };
 
-        let _ = sender.send((source_for_send, decoded, bytes));
+        let _ = sender.send((source_for_send, level_for_send, decoded, bytes));
     });
 }

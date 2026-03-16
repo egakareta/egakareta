@@ -8,7 +8,7 @@ use crate::types::LevelMetadata;
 
 pub(crate) type AudioImportData = (String, Vec<u8>);
 pub(crate) type RuntimeAudioPreloadData = crate::audio_service::AudioPreloadResult;
-pub(crate) type WaveformLoadData = (String, Option<(Vec<f32>, u32)>, Option<Vec<u8>>);
+pub(crate) type WaveformLoadData = crate::audio_service::WaveformResult;
 
 pub(crate) struct RuntimeAudioPreloadState {
     pub(crate) preloaded_audio: HashMap<String, Vec<u8>>,
@@ -157,17 +157,20 @@ impl State {
     pub(crate) fn update_audio_imports(&mut self) {
         while let Ok((filename, bytes)) = self.audio.state.editor.audio_import_channel.1.try_recv()
         {
+            let level_name = self
+                .session
+                .editor_level_name
+                .clone()
+                .unwrap_or_else(|| "Untitled".to_string());
+            let source_key = runtime_asset_source_key(&level_name, &filename);
+
             self.session.editor_music_metadata.source = filename.clone();
             self.audio
                 .state
                 .editor
                 .local_audio_cache
                 .insert(filename, bytes);
-            self.audio
-                .state
-                .editor
-                .waveform_cache
-                .remove(&self.session.editor_music_metadata.source);
+            self.audio.state.editor.waveform_cache.remove(&source_key);
             self.audio.state.editor.waveform_loading_source = None;
             self.load_waveform_for_current_audio();
         }
@@ -199,24 +202,30 @@ impl State {
     }
 
     pub(crate) fn update_waveform_loading(&mut self) {
-        while let Ok((source, decoded, bytes)) =
+        while let Ok((source, level_name, decoded, bytes)) =
             self.audio.state.editor.waveform_load_channel.1.try_recv()
         {
+            let source_key = runtime_asset_source_key(&level_name, &source);
+
             if let Some((samples, sample_rate)) = decoded {
                 self.audio
                     .state
                     .editor
                     .waveform_cache
-                    .insert(source.clone(), (samples.clone(), sample_rate));
+                    .insert(source_key.clone(), (samples.clone(), sample_rate));
 
-                if source != self.session.editor_music_metadata.source {
+                if source != self.session.editor_music_metadata.source
+                    || self.session.editor_level_name.as_deref() != Some(&level_name)
+                {
                     continue;
                 }
 
                 self.editor.timing.waveform_samples = samples;
                 self.editor.timing.waveform_sample_rate = sample_rate;
             } else {
-                if source != self.session.editor_music_metadata.source {
+                if source != self.session.editor_music_metadata.source
+                    || self.session.editor_level_name.as_deref() != Some(&level_name)
+                {
                     continue;
                 }
 
@@ -225,14 +234,18 @@ impl State {
             }
 
             if let Some(bytes) = bytes {
+                // We cache builtin bytes in runtime_preload instead of local_audio_cache
+                // to avoid filename collisions (e.g., both Flowerfield and Golden Haze using "audio.mp3")
                 self.audio
                     .state
-                    .editor
-                    .local_audio_cache
-                    .insert(source.clone(), bytes);
+                    .runtime_preload
+                    .preloaded_audio
+                    .insert(source_key.clone(), bytes);
             }
 
-            if self.audio.state.editor.waveform_loading_source.as_deref() == Some(source.as_str()) {
+            if self.audio.state.editor.waveform_loading_source.as_deref()
+                == Some(source_key.as_str())
+            {
                 self.audio.state.editor.waveform_loading_source = None;
             }
         }
@@ -240,9 +253,15 @@ impl State {
 
     pub(crate) fn load_waveform_for_current_audio(&mut self) {
         let music_source = self.session.editor_music_metadata.source.clone();
+        let level_name = self
+            .session
+            .editor_level_name
+            .clone()
+            .unwrap_or_else(|| "Untitled".to_string());
+        let source_key = runtime_asset_source_key(&level_name, &music_source);
 
         if let Some((samples, sample_rate)) =
-            self.audio.state.editor.waveform_cache.get(&music_source)
+            self.audio.state.editor.waveform_cache.get(&source_key)
         {
             self.editor.timing.waveform_samples = samples.clone();
             self.editor.timing.waveform_sample_rate = *sample_rate;
@@ -250,27 +269,29 @@ impl State {
             return;
         }
 
-        if self.audio.state.editor.waveform_loading_source.as_deref() == Some(music_source.as_str())
-        {
+        if self.audio.state.editor.waveform_loading_source.as_deref() == Some(source_key.as_str()) {
             return;
         }
 
-        self.audio.state.editor.waveform_loading_source = Some(music_source.clone());
+        self.audio.state.editor.waveform_loading_source = Some(source_key.clone());
         self.editor.timing.waveform_samples.clear();
         self.editor.timing.waveform_sample_rate = 0;
 
-        let level_name = self
-            .session
-            .editor_level_name
-            .clone()
-            .unwrap_or_else(|| "Untitled".to_string());
         let cached_bytes = self
             .audio
             .state
             .editor
             .local_audio_cache
             .get(&music_source)
-            .cloned();
+            .cloned()
+            .or_else(|| {
+                self.audio
+                    .state
+                    .runtime_preload
+                    .preloaded_audio
+                    .get(&source_key)
+                    .cloned()
+            });
         let sender = self.audio.state.editor.waveform_load_channel.0.clone();
 
         crate::audio_service::start_waveform_loading(
