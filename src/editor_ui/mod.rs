@@ -21,6 +21,51 @@ struct ViewCubeFace {
     pitch: f32,
 }
 
+const VIEW_CUBE_FACES: [ViewCubeFace; 6] = [
+    ViewCubeFace {
+        label: "Front",
+        normal: Vec3::Z,
+        indices: [4, 5, 6, 7],
+        rotation: std::f32::consts::PI,
+        pitch: 0.0,
+    },
+    ViewCubeFace {
+        label: "Back",
+        normal: Vec3::new(0.0, 0.0, -1.0),
+        indices: [0, 1, 2, 3],
+        rotation: 0.0,
+        pitch: 0.0,
+    },
+    ViewCubeFace {
+        label: "Left",
+        normal: Vec3::new(-1.0, 0.0, 0.0),
+        indices: [0, 3, 7, 4],
+        rotation: std::f32::consts::FRAC_PI_2,
+        pitch: 0.0,
+    },
+    ViewCubeFace {
+        label: "Right",
+        normal: Vec3::X,
+        indices: [2, 1, 5, 6],
+        rotation: -std::f32::consts::FRAC_PI_2,
+        pitch: 0.0,
+    },
+    ViewCubeFace {
+        label: "Top",
+        normal: Vec3::Y,
+        indices: [3, 2, 6, 7],
+        rotation: 0.0,
+        pitch: 89.0f32.to_radians(),
+    },
+    ViewCubeFace {
+        label: "Bottom",
+        normal: Vec3::new(0.0, -1.0, 0.0),
+        indices: [1, 0, 4, 5],
+        rotation: 0.0,
+        pitch: -89.0f32.to_radians(),
+    },
+];
+
 fn sort_quad_by_angle(center: egui::Pos2, quad: [egui::Pos2; 4]) -> [egui::Pos2; 4] {
     let mut points = quad.to_vec();
     points.sort_by(|a, b| {
@@ -510,50 +555,6 @@ fn show_view_selector_cube(
 ) {
     const ROTATE_SPEED: f32 = 0.004;
     const PITCH_SPEED: f32 = 0.006;
-    const FACE_SET: [ViewCubeFace; 6] = [
-        ViewCubeFace {
-            label: "Front",
-            normal: Vec3::Z,
-            indices: [4, 5, 6, 7],
-            rotation: 0.0,
-            pitch: 0.0,
-        },
-        ViewCubeFace {
-            label: "Back",
-            normal: Vec3::new(0.0, 0.0, -1.0),
-            indices: [0, 1, 2, 3],
-            rotation: std::f32::consts::PI,
-            pitch: 0.0,
-        },
-        ViewCubeFace {
-            label: "Left",
-            normal: Vec3::new(-1.0, 0.0, 0.0),
-            indices: [0, 3, 7, 4],
-            rotation: -std::f32::consts::FRAC_PI_2,
-            pitch: 0.0,
-        },
-        ViewCubeFace {
-            label: "Right",
-            normal: Vec3::X,
-            indices: [2, 1, 5, 6],
-            rotation: std::f32::consts::FRAC_PI_2,
-            pitch: 0.0,
-        },
-        ViewCubeFace {
-            label: "Top",
-            normal: Vec3::Y,
-            indices: [3, 2, 6, 7],
-            rotation: 0.0,
-            pitch: 89.0f32.to_radians(),
-        },
-        ViewCubeFace {
-            label: "Bottom",
-            normal: Vec3::new(0.0, -1.0, 0.0),
-            indices: [1, 0, 4, 5],
-            rotation: 0.0,
-            pitch: -89.0f32.to_radians(),
-        },
-    ];
 
     struct RenderedFace {
         label: &'static str,
@@ -775,7 +776,7 @@ fn show_view_selector_cube(
             }
 
             let mut rendered_faces = Vec::<RenderedFace>::new();
-            for face in FACE_SET {
+            for face in VIEW_CUBE_FACES {
                 let facing = face.normal.dot(to_camera);
                 if facing <= 0.02 {
                     continue;
@@ -902,6 +903,19 @@ fn show_view_selector_cube(
 #[cfg(test)]
 mod tests {
     use super::sort_quad_by_angle;
+    use super::VIEW_CUBE_FACES;
+    use glam::{Mat3, Vec3};
+
+    fn camera_forward_from_orientation(rotation: f32, pitch: f32) -> Vec3 {
+        let pitch = pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
+        let horizontal = pitch.cos();
+        let offset = Mat3::from_rotation_y(rotation) * Vec3::new(0.0, pitch.sin(), -horizontal);
+        (-offset).normalize_or_zero()
+    }
+
+    fn approx_eq(a: f32, b: f32, eps: f32) -> bool {
+        (a - b).abs() <= eps
+    }
 
     fn is_convex_quad(quad: &[egui::Pos2; 4]) -> bool {
         let mut sign = 0.0f32;
@@ -946,5 +960,19 @@ mod tests {
         ];
         let sorted = sort_quad_by_angle(center, quad);
         assert!(is_convex_quad(&sorted));
+    }
+
+    #[test]
+    fn view_cube_face_rotations_match_face_normals() {
+        for face in VIEW_CUBE_FACES {
+            let forward = camera_forward_from_orientation(face.rotation, face.pitch);
+            let dot = forward.dot(face.normal.normalize_or_zero());
+            assert!(
+                dot < -0.999 || approx_eq(dot, -1.0, 0.002),
+                "Face {} should align camera forward opposite the normal (dot={})",
+                face.label,
+                dot
+            );
+        }
     }
 }
