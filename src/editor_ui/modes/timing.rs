@@ -56,19 +56,6 @@ pub(crate) fn show_timing_mode_bottom_panel(
                 egui_phosphor::regular::METRONOME
             ));
             ui.horizontal(|ui| {
-                if ui
-                    .button(format!(
-                        "{} Add at playhead",
-                        egui_phosphor::regular::PLUS_CIRCLE
-                    ))
-                    .clicked()
-                {
-                    let time = view.timeline_time_seconds;
-                    commands.push(crate::commands::AppCommand::EditorAddTimingPoint {
-                        time_seconds: time,
-                        bpm: 120.0,
-                    });
-                }
                 if let Some(selected_idx) = view.timing_selected_index {
                     if ui
                         .button(format!("{} Remove", egui_phosphor::regular::TRASH))

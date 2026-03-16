@@ -11,15 +11,6 @@ fn timeline_visible_duration(duration_seconds: f32, zoom: f32) -> f32 {
     (DEFAULT_TIMELINE_WINDOW_SECONDS / zoom).clamp(MIN_TIMELINE_DURATION_SECONDS, duration)
 }
 
-fn timeline_view_bounds(duration_seconds: f32, zoom: f32, scroll: f32) -> (f32, f32) {
-    let _duration = duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS);
-    let visible_duration = timeline_visible_duration(duration_seconds, zoom);
-    // Removed max_scroll/clamp to allow playhead to stay centered at start/end by going beyond 0..duration
-    let view_start = scroll;
-    let view_end = view_start + visible_duration;
-    (view_start, view_end)
-}
-
 pub(crate) fn timeline_metrics(duration_seconds: f32) -> f32 {
     duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS)
 }
@@ -204,18 +195,10 @@ pub(crate) fn show_timeline_bar(
                 let new_time = (view.timeline_time_seconds - pointer_delta_x * time_per_pixel)
                     .clamp(0.0, duration_seconds);
                 commands.push(AppCommand::EditorSetTimelineTime(new_time));
+                commands.push(AppCommand::EditorSetWaveformScroll(
+                    new_time - visible_duration * 0.5,
+                ));
             }
-        }
-
-        // Pan visible window with middle/right drag.
-        if response.dragged_by(egui::PointerButton::Middle)
-            || response.dragged_by(egui::PointerButton::Secondary)
-        {
-            let drag_delta = response.drag_delta();
-            let time_per_pixel = visible_duration / rect.width().max(1.0);
-            // Removed max_scroll/clamp to allow playhead to stay centered at start/end by going beyond 0..duration
-            let new_scroll = view_start - drag_delta.x * time_per_pixel;
-            commands.push(AppCommand::EditorSetWaveformScroll(new_scroll));
         }
 
         // Mouse wheel over the timeline bar adjusts window width.
@@ -278,7 +261,6 @@ pub(crate) fn show_waveform_panel(
     let waveform_samples = view.waveform_samples;
     let sample_rate = view.waveform_sample_rate;
     let zoom = view.waveform_zoom;
-    let scroll = view.waveform_scroll;
 
     let available_size = ui.available_size();
     let (rect, response) = ui.allocate_exact_size(available_size, egui::Sense::click_and_drag());
@@ -287,10 +269,10 @@ pub(crate) fn show_waveform_panel(
     // Background
     painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(15, 20, 28));
 
-    // Visible time window
-    let (view_start, view_end) = timeline_view_bounds(duration_seconds, zoom, scroll);
-    let visible_duration = (view_end - view_start).max(MIN_TIMELINE_DURATION_SECONDS);
-    let max_scroll = (duration_seconds - visible_duration).max(0.0);
+    // Visible time window (centered on playhead to prevent drift)
+    let visible_duration = timeline_visible_duration(duration_seconds, zoom);
+    let view_start = view.timeline_time_seconds - visible_duration * 0.5;
+    let view_end = view_start + visible_duration;
 
     if !waveform_samples.is_empty() && sample_rate > 0 {
         // Waveform drawing
@@ -420,6 +402,20 @@ pub(crate) fn show_waveform_panel(
             [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
             egui::Stroke::new(2.0, egui::Color32::from_rgb(120, 200, 255)),
         );
+
+        // Add timing point button
+        let button_size = egui::vec2(20.0, 20.0);
+        let button_rect = egui::Rect::from_center_size(egui::pos2(x, rect.center().y), button_size);
+        if ui
+            .put(button_rect, egui::Button::new(egui_phosphor::regular::PLUS))
+            .on_hover_text("Add timing point at playhead")
+            .clicked()
+        {
+            commands.push(AppCommand::EditorAddTimingPoint {
+                time_seconds: current_time,
+                bpm: 120.0,
+            });
+        }
     }
 
     // Interaction: drag primary to move timeline around the fixed playhead (relative scrubbing)
@@ -430,10 +426,13 @@ pub(crate) fn show_waveform_panel(
             let new_time = (view.timeline_time_seconds - pointer_delta_x * time_per_pixel)
                 .clamp(0.0, duration_seconds);
             commands.push(AppCommand::EditorSetTimelineTime(new_time));
+            commands.push(AppCommand::EditorSetWaveformScroll(
+                new_time - visible_duration * 0.5,
+            ));
         }
     }
 
-    // Scroll with mouse wheel to zoom, drag to pan (via scroll offset)
+    // Scroll with mouse wheel to zoom
     if response.hovered() {
         let scroll_delta = ui.input(|i| i.raw_scroll_delta);
         if scroll_delta.y.abs() > 0.0 {
@@ -441,14 +440,6 @@ pub(crate) fn show_waveform_panel(
             let new_zoom = (zoom * zoom_factor).clamp(0.1, 10.0);
             commands.push(AppCommand::EditorSetWaveformZoom(new_zoom));
         }
-    }
-    if response.dragged_by(egui::PointerButton::Middle)
-        || response.dragged_by(egui::PointerButton::Secondary)
-    {
-        let drag_delta = response.drag_delta();
-        let time_per_pixel = visible_duration / rect.width().max(1.0);
-        let new_scroll = (view_start - drag_delta.x * time_per_pixel).clamp(0.0, max_scroll);
-        commands.push(AppCommand::EditorSetWaveformScroll(new_scroll));
     }
 }
 #[cfg(test)]
@@ -482,13 +473,6 @@ mod tests {
     }
 
     #[test]
-    fn test_timeline_view_bounds() {
-        let (start, end) = timeline_view_bounds(100.0, 1.0, 10.0);
-        approx_eq(start, 10.0, 0.001);
-        approx_eq(end, 30.0, 0.001);
-    }
-
-    #[test]
     fn test_zoom_scaling_logic() {
         let initial_zoom: f32 = 1.0;
 
@@ -518,12 +502,12 @@ mod tests {
         let rect_left = 100.0;
         let duration_seconds = 60.0;
         let zoom = 1.0;
-        let scroll = 5.0; // view starts at 5.0s
+        let playhead_time = 15.0; // Playhead at 15s
         let sample_rate = 44100;
         let waveform_window = 256;
 
         let visible_duration = timeline_visible_duration(duration_seconds, zoom);
-        let (view_start, _view_end) = timeline_view_bounds(duration_seconds, zoom, scroll);
+        let view_start = playhead_time - visible_duration * 0.5;
 
         let samples_per_second = sample_rate as f32 / waveform_window as f32;
         let pixels_per_second = rect_width / visible_duration;
@@ -539,24 +523,8 @@ mod tests {
         let waveform_x = rect_left + (sample_time - view_start) * pixels_per_second;
 
         // The tick_x and waveform_x should be aligned for the same time
-        // Note: they will only be exactly equal if test_time lands exactly on a sample boundary.
-        // But the formula should be consistent.
         let tick_x_at_sample_time =
             rect_left + (sample_time - view_start) / visible_duration * rect_width;
         approx_eq(waveform_x, tick_x_at_sample_time, 0.001);
-
-        // Test with negative scroll (centered at start)
-        let scroll_neg = -2.0;
-        let (view_start_neg, _) = timeline_view_bounds(duration_seconds, zoom, scroll_neg);
-        let test_time_2 = 1.0;
-        let _tick_x_2 = rect_left + (test_time_2 - view_start_neg) / visible_duration * rect_width;
-
-        let sample_idx_2 = (test_time_2 * samples_per_second) as usize;
-        let sample_time_2 = sample_idx_2 as f32 / samples_per_second;
-        let waveform_x_2 = rect_left + (sample_time_2 - view_start_neg) * pixels_per_second;
-
-        let tick_x_at_sample_time_2 =
-            rect_left + (sample_time_2 - view_start_neg) / visible_duration * rect_width;
-        approx_eq(waveform_x_2, tick_x_at_sample_time_2, 0.001);
     }
 }
