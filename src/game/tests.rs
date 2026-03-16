@@ -18,6 +18,7 @@ fn test_ground_detection_normal() {
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
+    game.rebuild_behavior_cache();
 
     // Player at x=0.5, z=0.5 (center of block), check top Y height.
     let height = game.top_surface_y_at(0.5, 0.5, 2.0);
@@ -45,6 +46,7 @@ fn test_ground_detection_under_overhang() {
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
+    game.rebuild_behavior_cache();
 
     // Player is walking on the ground block (y=1).
     // We check top surface with max_y slightly above player head.
@@ -114,6 +116,7 @@ fn rotated_ground_detection_works() {
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
+    game.rebuild_behavior_cache();
 
     let inside = game.top_surface_y_at(1.0, 0.5, 3.0);
     let outside = game.top_surface_y_at(2.2, 0.5, 3.0);
@@ -135,7 +138,7 @@ fn speed_portal_overlap_removes_portal_and_boosts_speed() {
         block_id: "core/speedportal".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
-
+    game.rebuild_behavior_cache();
     game.update(0.0);
 
     approx_eq(game.speed, 1.5, 1e-6);
@@ -156,6 +159,7 @@ fn finish_block_overlap_completes_level_after_sink() {
         block_id: "core/finish".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
+    game.rebuild_behavior_cache();
 
     game.update(0.0);
     assert!(!game.level_complete);

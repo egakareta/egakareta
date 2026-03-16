@@ -1,4 +1,5 @@
 use super::physics::{aabb_overlaps_object_xz, object_xz_contains, BASE_PLAYER_SPEED};
+use super::spatial::SpatialGrid;
 use crate::block_repository::{resolve_block_definition, BlockCollision, BlockRenderProfile};
 use crate::types::{Direction, LevelObject, SpawnDirection};
 
@@ -36,6 +37,7 @@ pub(crate) struct GameState {
     pub(crate) trail_segments: Vec<Vec<[f32; 3]>>,
     pub(crate) objects: Vec<LevelObject>,
     cached_behaviors: Vec<CachedBlockBehavior>,
+    spatial_grid: SpatialGrid,
     pub(crate) vertical_velocity: f32,
     pub(crate) is_grounded: bool,
     pub(crate) game_over: bool,
@@ -66,6 +68,7 @@ impl GameState {
             trail_segments: vec![vec![[0.0, 0.0, 0.0]]],
             objects: Vec::new(),
             cached_behaviors: Vec::new(),
+            spatial_grid: SpatialGrid::default(),
             vertical_velocity: 0.0,
             is_grounded: true,
             game_over: false,
@@ -86,6 +89,15 @@ impl GameState {
             .iter()
             .map(|obj| CachedBlockBehavior::from_block_id(&obj.block_id))
             .collect();
+
+        self.rebuild_spatial_grid();
+    }
+
+    fn rebuild_spatial_grid(&mut self) {
+        self.spatial_grid.clear();
+        for (idx, obj) in self.objects.iter().enumerate() {
+            self.spatial_grid.insert_object(idx, obj);
+        }
     }
 
     pub(crate) fn apply_spawn(&mut self, position: [f32; 3], direction: SpawnDirection) {
@@ -177,7 +189,12 @@ impl GameState {
         let s_min_y = y + TOLERANCE;
         let s_max_y = y + SNAKE_HEIGHT - TOLERANCE;
 
-        for (i, obj) in self.objects.iter().enumerate() {
+        let query_indices = self
+            .spatial_grid
+            .query_aabb(s_min_x, s_max_x, s_min_z, s_max_z);
+
+        for i in query_indices {
+            let obj = &self.objects[i];
             let o_min_y = obj.position[1];
             let o_max_y = obj.position[1] + obj.size[1];
             let behavior = self
@@ -220,20 +237,26 @@ impl GameState {
         }
 
         if !hit_portals.is_empty() {
+            let mut removed = false;
             for i in hit_portals.into_iter().rev() {
                 if let Some(behavior) = self.cached_behaviors.get(i).copied() {
                     self.speed *= behavior.speed_multiplier.max(0.1);
                     if behavior.consumed_on_overlap {
                         self.objects.remove(i);
                         self.cached_behaviors.remove(i);
+                        removed = true;
                     }
                 } else if let Some(portal) = self.objects.get(i) {
                     let behavior = &resolve_block_definition(&portal.block_id).behavior;
                     self.speed *= behavior.speed_multiplier.max(0.1);
                     if behavior.consumed_on_overlap {
                         self.objects.remove(i);
+                        removed = true;
                     }
                 }
+            }
+            if removed {
+                self.rebuild_spatial_grid();
             }
         }
 
@@ -354,7 +377,10 @@ impl GameState {
 
     pub(crate) fn top_surface_y_at(&self, x: f32, z: f32, max_y: f32) -> Option<f32> {
         let mut top_surface: Option<f32> = Some(0.0);
-        for (i, obj) in self.objects.iter().enumerate() {
+        let query_indices = self.spatial_grid.query_point(x, z);
+
+        for &i in query_indices {
+            let obj = &self.objects[i];
             let is_support = self
                 .cached_behaviors
                 .get(i)
