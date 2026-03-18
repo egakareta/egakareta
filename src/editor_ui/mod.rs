@@ -857,18 +857,24 @@ fn show_view_selector_cube(
                 }
             }
 
-            let axis_origin = egui::pos2(rect.left() + 22.0, rect.bottom() - 22.0);
-            let axis_len = 16.0;
+            let axis_origin = projected[0];
             let axes = [
-                ("X", Vec3::X, egui::Color32::from_rgb(240, 104, 104)),
-                ("Y", Vec3::Y, egui::Color32::from_rgb(116, 232, 152)),
-                ("Z", Vec3::Z, egui::Color32::from_rgb(104, 154, 255)),
+                ("X", projected[1], egui::Color32::from_rgb(240, 104, 104)),
+                ("Y", projected[3], egui::Color32::from_rgb(116, 232, 152)),
+                ("Z", projected[4], egui::Color32::from_rgb(104, 154, 255)),
             ];
-            for (label, axis, color) in axes {
-                let tip = axis_origin + egui::vec2(axis.dot(right), -axis.dot(up)) * axis_len;
+            for (label, tip, color) in axes {
                 painter.line_segment([axis_origin, tip], egui::Stroke::new(1.6, color));
+
+                let direction = tip - axis_origin;
+                let direction_len = direction.length();
+                let label_pos = if direction_len > f32::EPSILON {
+                    tip + direction * (6.0 / direction_len)
+                } else {
+                    tip
+                };
                 painter.text(
-                    tip,
+                    label_pos,
                     egui::Align2::CENTER_CENTER,
                     label,
                     egui::FontId::proportional(10.0),
