@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod tests {
     use crate::mesh::blocks::build_block_vertices;
-    use crate::mesh::builders::{build_editor_gizmo_vertices, build_editor_hover_outline_vertices};
+    use crate::mesh::builders::{
+        build_editor_gizmo_vertices, build_editor_hover_outline_vertices, GizmoParams,
+    };
     use crate::mesh::obj::parse_obj_mesh;
     use crate::types::{GizmoPart, LevelObject, Vertex};
 
@@ -49,32 +51,32 @@ mod tests {
         let resize_offsets = [1.0, 1.0, 1.0];
 
         // 1. Get vertices without hover
-        let vertices_normal = build_editor_gizmo_vertices(
+        let vertices_normal = build_editor_gizmo_vertices(GizmoParams {
             position,
             size,
             axis_lengths,
             axis_width,
             resize_radius,
             resize_offsets,
-            true,
-            false,
-            None,
-            None,
-        );
+            show_move_handles: true,
+            show_scale_handles: false,
+            hovered_part: None,
+            dragged_part: None,
+        });
 
         // 2. Get vertices with MoveX hovered
-        let vertices_hovered = build_editor_gizmo_vertices(
+        let vertices_hovered = build_editor_gizmo_vertices(GizmoParams {
             position,
             size,
             axis_lengths,
             axis_width,
             resize_radius,
             resize_offsets,
-            true,
-            false,
-            Some(GizmoPart::MoveX),
-            None,
-        );
+            show_move_handles: true,
+            show_scale_handles: false,
+            hovered_part: Some(GizmoPart::MoveX),
+            dragged_part: None,
+        });
 
         // Function to find the max X of the shaft (prism vertices)
         let find_shaft_end_x = |verts: &[Vertex], is_hovered: bool| -> f32 {
@@ -148,18 +150,18 @@ mod tests {
 
     #[test]
     fn gizmo_vertices_generate_with_screen_scaled_inputs() {
-        let vertices = build_editor_gizmo_vertices(
-            [0.0, 0.0, 0.0],
-            [2.0, 2.0, 2.0],
-            [3.0, 4.0, 5.0],
-            0.1,
-            0.2,
-            [0.3, 0.3, 0.3],
-            true,
-            true,
-            None,
-            None,
-        );
+        let vertices = build_editor_gizmo_vertices(GizmoParams {
+            position: [0.0, 0.0, 0.0],
+            size: [2.0, 2.0, 2.0],
+            axis_lengths: [3.0, 4.0, 5.0],
+            axis_width: 0.1,
+            resize_radius: 0.2,
+            resize_offsets: [0.3, 0.3, 0.3],
+            show_move_handles: true,
+            show_scale_handles: true,
+            hovered_part: None,
+            dragged_part: None,
+        });
         assert!(!vertices.is_empty());
 
         let max_x = vertices

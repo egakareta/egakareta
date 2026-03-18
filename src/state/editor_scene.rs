@@ -6,7 +6,7 @@ use crate::mesh::{
     build_block_vertices, build_block_vertices_from_refs, build_camera_keypoint_marker_vertices,
     build_editor_cursor_vertices, build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
     build_editor_preview_player_vertices, build_editor_selection_outline_vertices,
-    build_spawn_marker_vertices, build_tap_indicator_vertices,
+    build_spawn_marker_vertices, build_tap_indicator_vertices, GizmoParams,
 };
 use crate::platform::state_host::PlatformInstant;
 use crate::types::{
@@ -432,18 +432,18 @@ impl State {
             .hovered_gizmo
             .map(|(kind, axis)| GizmoPart::from_axis_kind(axis, kind));
 
-        let vertices = build_editor_gizmo_vertices(
-            bounds_position,
-            bounds_size,
+        let vertices = build_editor_gizmo_vertices(GizmoParams {
+            position: bounds_position,
+            size: bounds_size,
             axis_lengths,
             axis_width,
             resize_radius,
             resize_offsets,
-            mode.shows_move_gizmo(),
-            mode.shows_scale_gizmo(),
+            show_move_handles: mode.shows_move_gizmo(),
+            show_scale_handles: mode.shows_scale_gizmo(),
             hovered_part,
             dragged_part,
-        );
+        });
         self.render.meshes.editor_gizmo.replace_with_vertices(
             &self.render.gpu.device,
             "Editor Gizmo Vertex Buffer",

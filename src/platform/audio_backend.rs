@@ -105,8 +105,7 @@ impl RodioBackendInner {
         self._output_device = match host.default_output_device() {
             Some(device) => {
                 use cpal::traits::DeviceTrait;
-                #[allow(deprecated)]
-                if let Ok(name) = device.name() {
+                if let Ok(name) = device.id() {
                     log::info!("Audio device: {}", name);
                     self.backend_name = format!("{:?} ({})", host_id, name);
                 }

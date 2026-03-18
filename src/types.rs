@@ -763,18 +763,31 @@ pub(crate) struct LevelMetadata {
     pub(crate) extra: serde_json::Map<String, serde_json::Value>,
 }
 
+pub(crate) struct EditorStateParams {
+    pub name: String,
+    pub music: MusicMetadata,
+    pub spawn: SpawnMetadata,
+    pub tap_times: Vec<f32>,
+    pub timing_points: Vec<TimingPoint>,
+    pub timeline_time_seconds: f32,
+    pub timeline_duration_seconds: f32,
+    pub triggers: Vec<TimedTrigger>,
+    pub objects: Vec<LevelObject>,
+}
+
 impl LevelMetadata {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_editor_state(
-        name: String,
-        music: MusicMetadata,
-        spawn: SpawnMetadata,
-        tap_times: Vec<f32>,
-        timing_points: Vec<TimingPoint>,
-        timeline_time_seconds: f32,
-        timeline_duration_seconds: f32,
-        triggers: Vec<TimedTrigger>,
-        objects: Vec<LevelObject>,
+        EditorStateParams {
+            name,
+            music,
+            spawn,
+            tap_times,
+            timing_points,
+            timeline_time_seconds,
+            timeline_duration_seconds,
+            triggers,
+            objects,
+        }: EditorStateParams,
     ) -> Self {
         Self {
             format_version: CURRENT_LEVEL_FORMAT_VERSION,
@@ -1289,9 +1302,9 @@ mod tests {
         apply_timed_triggers_to_objects, camera_keypoints_to_timed_triggers,
         default_camera_keypoint_pitch, default_camera_keypoint_rotation,
         default_camera_keypoint_transition_interval_seconds, timed_triggers_to_camera_keypoints,
-        CameraKeypoint, CameraKeypointEasing, CameraKeypointMode, LevelMetadata, LevelObject,
-        MusicMetadata, SpawnDirection, SpawnMetadata, TimedTrigger, TimedTriggerAction,
-        TimedTriggerTarget,
+        CameraKeypoint, CameraKeypointEasing, CameraKeypointMode, EditorStateParams, LevelMetadata,
+        LevelObject, MusicMetadata, SpawnDirection, SpawnMetadata, TimedTrigger,
+        TimedTriggerAction, TimedTriggerTarget,
     };
     use serde_json::json;
 
@@ -1351,16 +1364,16 @@ mod tests {
 
     #[test]
     fn level_metadata_serialization_omits_default_fields() {
-        let metadata = LevelMetadata::from_editor_state(
-            "Minimal".to_string(),
-            MusicMetadata::default(),
-            SpawnMetadata::default(),
-            Vec::new(),
-            Vec::new(),
-            0.0,
-            16.0,
-            Vec::new(),
-            vec![LevelObject {
+        let metadata = LevelMetadata::from_editor_state(EditorStateParams {
+            name: "Minimal".to_string(),
+            music: MusicMetadata::default(),
+            spawn: SpawnMetadata::default(),
+            tap_times: Vec::new(),
+            timing_points: Vec::new(),
+            timeline_time_seconds: 0.0,
+            timeline_duration_seconds: 16.0,
+            triggers: Vec::new(),
+            objects: vec![LevelObject {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: 0.0,
@@ -1368,7 +1381,7 @@ mod tests {
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             }],
-        );
+        });
 
         let value = serde_json::to_value(&metadata).expect("serialize metadata");
         assert_eq!(value["name"], "Minimal");

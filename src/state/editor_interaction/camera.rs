@@ -180,16 +180,14 @@ impl State {
     }
 
     pub(crate) fn update_editor_camera_transition(&mut self, frame_dt: f32) {
-        if self.phase == AppPhase::Editor {
-            if self.editor.update_camera_transition(frame_dt) {
-                self.editor.mark_dirty(crate::state::EditorDirtyFlags {
-                    rebuild_selection_overlays: true,
-                    rebuild_cursor: true,
-                    rebuild_tap_indicators: true,
-                    rebuild_preview_player: true,
-                    ..Default::default()
-                });
-            }
+        if self.phase == AppPhase::Editor && self.editor.update_camera_transition(frame_dt) {
+            self.editor.mark_dirty(crate::state::EditorDirtyFlags {
+                rebuild_selection_overlays: true,
+                rebuild_cursor: true,
+                rebuild_tap_indicators: true,
+                rebuild_preview_player: true,
+                ..Default::default()
+            });
         }
     }
 }

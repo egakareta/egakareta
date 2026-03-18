@@ -2,18 +2,32 @@ use crate::mesh::advanced_shapes::{append_cone, append_sphere};
 use crate::mesh::shapes::append_prism;
 use crate::types::{GizmoPart, Vertex};
 
-#[allow(clippy::too_many_arguments)]
+pub(crate) struct GizmoParams {
+    pub position: [f32; 3],
+    pub size: [f32; 3],
+    pub axis_lengths: [f32; 3],
+    pub axis_width: f32,
+    pub resize_radius: f32,
+    pub resize_offsets: [f32; 3],
+    pub show_move_handles: bool,
+    pub show_scale_handles: bool,
+    pub hovered_part: Option<GizmoPart>,
+    pub dragged_part: Option<GizmoPart>,
+}
+
 pub(crate) fn build_editor_gizmo_vertices(
-    position: [f32; 3],
-    size: [f32; 3],
-    axis_lengths: [f32; 3],
-    axis_width: f32,
-    resize_radius: f32,
-    resize_offsets: [f32; 3],
-    show_move_handles: bool,
-    show_scale_handles: bool,
-    hovered_part: Option<GizmoPart>,
-    dragged_part: Option<GizmoPart>,
+    GizmoParams {
+        position,
+        size,
+        axis_lengths,
+        axis_width,
+        resize_radius,
+        resize_offsets,
+        show_move_handles,
+        show_scale_handles,
+        hovered_part,
+        dragged_part,
+    }: GizmoParams,
 ) -> Vec<Vertex> {
     let mut vertices = Vec::new();
 

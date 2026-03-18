@@ -178,20 +178,21 @@ impl State {
     }
 
     pub(super) fn current_editor_metadata(&self) -> LevelMetadata {
-        LevelMetadata::from_editor_state(
-            self.session
+        LevelMetadata::from_editor_state(crate::types::EditorStateParams {
+            name: self
+                .session
                 .editor_level_name
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string()),
-            self.session.editor_music_metadata.clone(),
-            self.editor.spawn.clone(),
-            self.editor.timeline.taps.tap_times.clone(),
-            self.editor.timing.timing_points.clone(),
-            self.editor.timeline.clock.time_seconds,
-            self.editor.timeline.clock.duration_seconds,
-            self.editor.triggers().to_vec(),
-            self.editor.objects.clone(),
-        )
+            music: self.session.editor_music_metadata.clone(),
+            spawn: self.editor.spawn.clone(),
+            tap_times: self.editor.timeline.taps.tap_times.clone(),
+            timing_points: self.editor.timing.timing_points.clone(),
+            timeline_time_seconds: self.editor.timeline.clock.time_seconds,
+            timeline_duration_seconds: self.editor.timeline.clock.duration_seconds,
+            triggers: self.editor.triggers().to_vec(),
+            objects: self.editor.objects.clone(),
+        })
     }
 
     pub(crate) fn apply_imported_level_metadata(&mut self, metadata: LevelMetadata) {
