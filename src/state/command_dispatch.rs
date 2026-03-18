@@ -91,9 +91,11 @@ impl State {
 
             // ── Editor – zoom ───────────────────────────────────────
             AppCommand::EditorAdjustZoom(delta) => self.adjust_editor_zoom(delta),
-            AppCommand::EditorSetCameraOrientation { rotation, pitch } => {
-                self.set_editor_camera_orientation(rotation, pitch)
-            }
+            AppCommand::EditorSetCameraOrientation {
+                rotation,
+                pitch,
+                transition_seconds,
+            } => self.set_editor_camera_orientation(rotation, pitch, transition_seconds),
             AppCommand::EditorAddCameraKeypoint => self.editor_add_camera_keypoint(),
             AppCommand::EditorRemoveCameraKeypoint(index) => {
                 self.editor_remove_camera_keypoint(index)

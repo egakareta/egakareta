@@ -86,9 +86,60 @@ impl EditorSubsystem {
         }
     }
 
-    pub(crate) fn set_editor_camera_orientation(&mut self, rotation: f32, pitch: f32) {
+    pub(crate) fn set_editor_camera_orientation(
+        &mut self,
+        rotation: f32,
+        pitch: f32,
+        transition_seconds: Option<f32>,
+    ) {
+        if let Some(duration) = transition_seconds {
+            if duration > 0.0 {
+                let current_rot = self.camera.editor_rotation;
+                let current_pitch = self.camera.editor_pitch;
+
+                let mut target_rot = rotation;
+                let diff = target_rot - current_rot;
+                if diff > std::f32::consts::PI {
+                    target_rot -= std::f32::consts::TAU;
+                } else if diff < -std::f32::consts::PI {
+                    target_rot += std::f32::consts::TAU;
+                }
+
+                self.camera.transition = Some(crate::state::editor_camera::CameraTransition {
+                    start_rotation: current_rot,
+                    start_pitch: current_pitch,
+                    target_rotation: target_rot,
+                    target_pitch: pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians()),
+                    elapsed: 0.0,
+                    duration,
+                });
+                return;
+            }
+        }
+
+        self.camera.transition = None;
         self.camera.editor_rotation = rotation;
         self.camera.editor_pitch = pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
+    }
+
+    pub(crate) fn update_camera_transition(&mut self, frame_dt: f32) -> bool {
+        let Some(mut transition) = self.camera.transition.take() else {
+            return false;
+        };
+
+        transition.elapsed += frame_dt;
+        let alpha = (transition.elapsed / transition.duration).clamp(0.0, 1.0);
+
+        self.camera.editor_rotation = transition.start_rotation
+            + (transition.target_rotation - transition.start_rotation) * alpha;
+        self.camera.editor_pitch =
+            transition.start_pitch + (transition.target_pitch - transition.start_pitch) * alpha;
+
+        if alpha < 1.0 {
+            self.camera.transition = Some(transition);
+        }
+
+        true
     }
 }
 
@@ -109,9 +160,15 @@ impl State {
         }
     }
 
-    pub(crate) fn set_editor_camera_orientation(&mut self, rotation: f32, pitch: f32) {
+    pub(crate) fn set_editor_camera_orientation(
+        &mut self,
+        rotation: f32,
+        pitch: f32,
+        transition_seconds: Option<f32>,
+    ) {
         if self.phase == AppPhase::Editor {
-            self.editor.set_editor_camera_orientation(rotation, pitch);
+            self.editor
+                .set_editor_camera_orientation(rotation, pitch, transition_seconds);
             self.editor.mark_dirty(crate::state::EditorDirtyFlags {
                 rebuild_selection_overlays: true,
                 rebuild_cursor: true,
@@ -119,6 +176,20 @@ impl State {
                 rebuild_preview_player: true,
                 ..Default::default()
             });
+        }
+    }
+
+    pub(crate) fn update_editor_camera_transition(&mut self, frame_dt: f32) {
+        if self.phase == AppPhase::Editor {
+            if self.editor.update_camera_transition(frame_dt) {
+                self.editor.mark_dirty(crate::state::EditorDirtyFlags {
+                    rebuild_selection_overlays: true,
+                    rebuild_cursor: true,
+                    rebuild_tap_indicators: true,
+                    rebuild_preview_player: true,
+                    ..Default::default()
+                });
+            }
         }
     }
 }

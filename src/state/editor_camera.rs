@@ -30,6 +30,16 @@ pub(crate) struct EditorCameraState {
     pub(crate) playing_pitch: f32,
     pub(crate) keypoints: Vec<CameraKeypoint>,
     pub(crate) selected_keypoint_index: Option<usize>,
+    pub(crate) transition: Option<CameraTransition>,
+}
+
+pub(crate) struct CameraTransition {
+    pub(crate) start_rotation: f32,
+    pub(crate) start_pitch: f32,
+    pub(crate) target_rotation: f32,
+    pub(crate) target_pitch: f32,
+    pub(crate) elapsed: f32,
+    pub(crate) duration: f32,
 }
 
 fn offset_from_rotation_pitch(rotation: f32, pitch: f32, distance: f32) -> Vec3 {

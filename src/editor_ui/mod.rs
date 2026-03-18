@@ -890,6 +890,7 @@ fn show_view_selector_cube(
                     commands.push(AppCommand::EditorSetCameraOrientation {
                         rotation: camera_rotation - pointer_delta.x * ROTATE_SPEED,
                         pitch: camera_pitch + pointer_delta.y * PITCH_SPEED,
+                        transition_seconds: None,
                     });
                 }
             }
@@ -900,6 +901,7 @@ fn show_view_selector_cube(
                     commands.push(AppCommand::EditorSetCameraOrientation {
                         rotation: face.rotation,
                         pitch: face.pitch,
+                        transition_seconds: Some(0.25),
                     });
                 }
             }

@@ -105,7 +105,11 @@ pub(crate) enum AppCommand {
     /// Adjust zoom by moving the camera along its look vector.
     EditorAdjustZoom(f32),
     /// Snap the editor camera to an absolute orientation in radians.
-    EditorSetCameraOrientation { rotation: f32, pitch: f32 },
+    EditorSetCameraOrientation {
+        rotation: f32,
+        pitch: f32,
+        transition_seconds: Option<f32>,
+    },
     /// Capture a new camera keypoint from the current editor camera at the playhead.
     EditorAddCameraKeypoint,
     /// Remove a camera keypoint by index.

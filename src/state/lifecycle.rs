@@ -517,6 +517,7 @@ impl State {
                     playing_pitch: 45.0f32.to_radians(),
                     keypoints: Vec::new(),
                     selected_keypoint_index: None,
+                    transition: None,
                 },
                 triggers: EditorTriggerState::new(),
                 timeline: EditorTimelineState::new(),

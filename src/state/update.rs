@@ -252,6 +252,7 @@ impl State {
             }
 
             self.update_editor_pan_from_keys(frame_dt);
+            self.update_editor_camera_transition(frame_dt);
             if self.editor.runtime.interaction.gizmo_drag.is_some()
                 || self.editor.runtime.interaction.block_drag.is_some()
             {
