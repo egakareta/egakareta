@@ -54,6 +54,7 @@ mod tests {
         let vertices_normal = build_editor_gizmo_vertices(GizmoParams {
             position,
             size,
+            rotation_degrees: [0.0, 0.0, 0.0],
             axis_lengths,
             axis_width,
             resize_radius,
@@ -69,6 +70,7 @@ mod tests {
         let vertices_hovered = build_editor_gizmo_vertices(GizmoParams {
             position,
             size,
+            rotation_degrees: [0.0, 0.0, 0.0],
             axis_lengths,
             axis_width,
             resize_radius,
@@ -155,6 +157,7 @@ mod tests {
         let vertices = build_editor_gizmo_vertices(GizmoParams {
             position: [0.0, 0.0, 0.0],
             size: [2.0, 2.0, 2.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
             axis_lengths: [3.0, 4.0, 5.0],
             axis_width: 0.1,
             resize_radius: 0.2,

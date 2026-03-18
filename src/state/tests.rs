@@ -620,3 +620,91 @@ fn test_timing_mode_persistence_during_playback() {
         assert!(state.editor.runtime.interaction.last_mode.is_none());
     });
 }
+#[test]
+fn test_gizmo_hover_priority_suppresses_block_outline() {
+    pollster::block_on(async {
+        let mut state = match State::new_test().await {
+            Some(s) => s,
+            None => return,
+        };
+
+        state.phase = AppPhase::Editor;
+        state.editor.set_mode(EditorMode::Move);
+
+        // 1. Add a primary block and select it to show the gizmo
+        state.editor.objects.push(LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.18,
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        });
+        state.editor.ui.selected_block_indices.push(0);
+        state.sync_editor_objects();
+
+        let viewport = Vec2::new(
+            state.render.gpu.config.width as f32,
+            state.render.gpu.config.height as f32,
+        );
+
+        // 2. Find screen position of a gizmo handle (e.g. Move X)
+        let (bounds_position, bounds_size) = state
+            .selected_group_bounds()
+            .expect("expected group bounds");
+        let center = Vec3::new(
+            bounds_position[0] + bounds_size[0] * 0.5,
+            bounds_position[1] + bounds_size[1] * 0.5,
+            bounds_position[2] + bounds_size[2] * 0.5,
+        );
+        let axis_lengths = state
+            .editor
+            .gizmo_axis_lengths_world(center, 100.0, viewport);
+        let move_x_handle_world = Vec3::new(center.x + axis_lengths[0], center.y, center.z);
+        let move_x_handle_screen = state
+            .editor
+            .world_to_screen_v(move_x_handle_world, viewport)
+            .expect("expected projected gizmo handle");
+
+        // 3. Add a second block exactly where the gizmo handle is projected
+        // This ensures that a raycast from the mouse position *would* hit a block.
+        state.editor.objects.push(LevelObject {
+            position: [
+                move_x_handle_world.x - 0.5,
+                move_x_handle_world.y - 0.5,
+                move_x_handle_world.z - 0.5,
+            ],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.18,
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        });
+        state.sync_editor_objects();
+
+        // 4. Verify that picking at the gizmo handle's screen coordinates hits the second block.
+        // This confirms the test scenario: block underneath the gizmo.
+        let pick = state
+            .editor
+            .pick_from_screen(
+                move_x_handle_screen.x as f64,
+                move_x_handle_screen.y as f64,
+                viewport,
+            )
+            .expect("expected pick to hit the second block behind the gizmo handle");
+        assert_eq!(pick.hit_block_index, Some(1));
+
+        // 5. Move pointer to the gizmo handle.
+        state.handle_pointer_moved(move_x_handle_screen.x as f64, move_x_handle_screen.y as f64);
+
+        // 6. Assertions: Gizmo should be hovered, and block hover should be SUPPRESSED.
+        assert!(
+            state.editor.runtime.interaction.hovered_gizmo.is_some(),
+            "expected gizmo handle to be hovered"
+        );
+        assert!(
+            state.editor.ui.hovered_block_index.is_none(),
+            "expected block hover to be suppressed while gizmo handle is hovered, even though a block is behind it"
+        );
+    });
+}

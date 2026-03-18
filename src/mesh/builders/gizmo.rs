@@ -1,10 +1,15 @@
 use crate::mesh::advanced_shapes::{append_cone, append_sphere};
 use crate::mesh::shapes::append_prism;
 use crate::types::{GizmoPart, Vertex};
+use glam::Vec3;
+
+const ROTATE_RING_SEGMENTS: usize = 72;
+const ROTATE_RING_TUBE_SEGMENTS: usize = 12;
 
 pub(crate) struct GizmoParams {
     pub position: [f32; 3],
     pub size: [f32; 3],
+    pub rotation_degrees: [f32; 3],
     pub axis_lengths: [f32; 3],
     pub axis_width: f32,
     pub resize_radius: f32,
@@ -20,6 +25,7 @@ pub(crate) fn build_editor_gizmo_vertices(
     GizmoParams {
         position,
         size,
+        rotation_degrees,
         axis_lengths,
         axis_width,
         resize_radius,
@@ -334,47 +340,208 @@ pub(crate) fn build_editor_gizmo_vertices(
     }
 
     if show_rotate_handles {
-        let rotate_radius = resize_radius * 1.2;
-        let inner_rotate_radius = rotate_radius * 0.5;
-        let rotate_offset = [
-            axis_lengths[0] * 1.3,
-            axis_lengths[1] * 1.3,
-            axis_lengths[2] * 1.3,
-        ];
+        let ring_radius = axis_lengths[0] * 0.78;
+        let base_tube_radius = axis_width.max(0.0005) * 0.15;
 
-        for (variant, pos, normal, active_color) in [
-            (
-                GizmoPart::RotateX,
-                [center[0] + rotate_offset[0], center[1], center[2]],
-                color_x_normal,
-                color_x_active,
-            ),
-            (
-                GizmoPart::RotateY,
-                [center[0], center[1] + rotate_offset[1], center[2]],
-                color_y_normal,
-                color_y_active,
-            ),
-            (
-                GizmoPart::RotateZ,
-                [center[0], center[1], center[2] + rotate_offset[2]],
-                color_z_normal,
-                color_z_active,
-            ),
+        for (variant, normal, active_color) in [
+            (GizmoPart::RotateX, color_x_normal, color_x_active),
+            (GizmoPart::RotateY, color_y_normal, color_y_active),
+            (GizmoPart::RotateZ, color_z_normal, color_z_active),
         ] {
             let is_hovered = hovered_part == Some(variant);
             let is_dragged = dragged_part == Some(variant);
             let active = is_hovered || is_dragged;
-            let current_radius = if is_hovered && !is_dragged {
-                rotate_radius * 1.25
+            let tube_radius = if is_hovered && !is_dragged {
+                base_tube_radius * 1.35
             } else {
-                rotate_radius
+                base_tube_radius
             };
             let color = if active { active_color } else { normal };
-            append_sphere(&mut vertices, pos, current_radius, color);
-            append_sphere(&mut vertices, pos, inner_rotate_radius, inner_color);
+
+            append_rotation_ring(
+                &mut vertices,
+                center,
+                rotation_degrees,
+                variant,
+                ring_radius,
+                tube_radius,
+                color,
+            );
         }
     }
 
     vertices
+}
+
+fn append_rotation_ring(
+    vertices: &mut Vec<Vertex>,
+    center: [f32; 3],
+    rotation_degrees: [f32; 3],
+    ring_part: GizmoPart,
+    radius: f32,
+    tube_radius: f32,
+    color: [f32; 4],
+) {
+    let rotation = glam::Quat::from_euler(
+        glam::EulerRot::XYZ,
+        rotation_degrees[0].to_radians(),
+        rotation_degrees[1].to_radians(),
+        rotation_degrees[2].to_radians(),
+    );
+
+    for i in 0..ROTATE_RING_SEGMENTS {
+        let next_i = (i + 1) % ROTATE_RING_SEGMENTS;
+        let theta0 = (i as f32 / ROTATE_RING_SEGMENTS as f32) * std::f32::consts::TAU;
+        let theta1 = (next_i as f32 / ROTATE_RING_SEGMENTS as f32) * std::f32::consts::TAU;
+
+        for j in 0..ROTATE_RING_TUBE_SEGMENTS {
+            let next_j = (j + 1) % ROTATE_RING_TUBE_SEGMENTS;
+            let phi0 = (j as f32 / ROTATE_RING_TUBE_SEGMENTS as f32) * std::f32::consts::TAU;
+            let phi1 = (next_j as f32 / ROTATE_RING_TUBE_SEGMENTS as f32) * std::f32::consts::TAU;
+
+            let p00 = rotation_ring_point(
+                center,
+                rotation,
+                ring_part,
+                theta0,
+                phi0,
+                radius,
+                tube_radius,
+            );
+            let p10 = rotation_ring_point(
+                center,
+                rotation,
+                ring_part,
+                theta1,
+                phi0,
+                radius,
+                tube_radius,
+            );
+            let p11 = rotation_ring_point(
+                center,
+                rotation,
+                ring_part,
+                theta1,
+                phi1,
+                radius,
+                tube_radius,
+            );
+            let p01 = rotation_ring_point(
+                center,
+                rotation,
+                ring_part,
+                theta0,
+                phi1,
+                radius,
+                tube_radius,
+            );
+
+            append_double_sided_quad(vertices, p00, p10, p11, p01, color);
+        }
+    }
+
+    // Add 2 orb handles per ring (6 sides total across 3 rings)
+    let handle_radius = tube_radius * 10.0;
+    for i in 0..2 {
+        let theta = (i as f32 / 2.0) * std::f32::consts::TAU;
+        let p = rotation_ring_point(center, rotation, ring_part, theta, 0.0, radius, 0.0);
+        append_sphere(vertices, p, handle_radius, color);
+    }
+}
+
+fn append_double_sided_quad(
+    vertices: &mut Vec<Vertex>,
+    p00: [f32; 3],
+    p10: [f32; 3],
+    p11: [f32; 3],
+    p01: [f32; 3],
+    color: [f32; 4],
+) {
+    // Front face
+    vertices.push(Vertex {
+        position: p00,
+        color,
+    });
+    vertices.push(Vertex {
+        position: p10,
+        color,
+    });
+    vertices.push(Vertex {
+        position: p11,
+        color,
+    });
+    vertices.push(Vertex {
+        position: p00,
+        color,
+    });
+    vertices.push(Vertex {
+        position: p11,
+        color,
+    });
+    vertices.push(Vertex {
+        position: p01,
+        color,
+    });
+
+    // Back face
+    vertices.push(Vertex {
+        position: p11,
+        color,
+    });
+    vertices.push(Vertex {
+        position: p10,
+        color,
+    });
+    vertices.push(Vertex {
+        position: p00,
+        color,
+    });
+    vertices.push(Vertex {
+        position: p01,
+        color,
+    });
+    vertices.push(Vertex {
+        position: p11,
+        color,
+    });
+    vertices.push(Vertex {
+        position: p00,
+        color,
+    });
+}
+
+fn rotation_ring_point(
+    center: [f32; 3],
+    rotation: glam::Quat,
+    ring_part: GizmoPart,
+    theta: f32,
+    phi: f32,
+    ring_radius: f32,
+    tube_radius: f32,
+) -> [f32; 3] {
+    let (sin_t, cos_t) = theta.sin_cos();
+    let (sin_p, cos_p) = phi.sin_cos();
+
+    // The circle is defined in the XY plane before assigning it to the specific axis
+    let circle_pos = Vec3::new(cos_t, sin_t, 0.0);
+    // The normal to the circle
+    let normal = Vec3::new(cos_t, sin_t, 0.0);
+    // The bitangent
+    let bitangent = Vec3::new(0.0, 0.0, 1.0);
+
+    // Create the tube cross-section point relative to the circle path
+    let tube_offset = normal * (cos_p * tube_radius) + bitangent * (sin_p * tube_radius);
+    let mut local_pos = circle_pos * ring_radius + tube_offset;
+
+    // Map to the correct axis
+    local_pos = match ring_part {
+        GizmoPart::RotateZ => local_pos, // Already in XY plane
+        GizmoPart::RotateX => Vec3::new(local_pos.z, local_pos.x, local_pos.y), // Map XY to YZ
+        GizmoPart::RotateY => Vec3::new(local_pos.y, local_pos.z, local_pos.x), // Map XY to ZX
+        _ => local_pos,
+    };
+
+    // Apply rotation and translation
+    let world_pos = Vec3::from_array(center) + rotation * local_pos;
+    world_pos.to_array()
 }

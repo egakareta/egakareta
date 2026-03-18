@@ -414,7 +414,7 @@ impl State {
         );
         let axis_lengths = self.editor_gizmo_axis_lengths_world(center, 100.0);
         let axis_width = self.editor_gizmo_axis_width_world(center, 4.5);
-        let resize_radius = self.editor_gizmo_axis_width_world(center, 4.5);
+        let resize_radius = self.editor_gizmo_axis_width_world(center, 8.5);
         let resize_offsets = self.editor_gizmo_axis_lengths_world(center, 9.0);
 
         let dragged_part = self
@@ -432,9 +432,18 @@ impl State {
             .hovered_gizmo
             .map(|(kind, axis)| GizmoPart::from_axis_kind(axis, kind));
 
+        let rotation_degrees = self
+            .editor
+            .selected_indices_normalized()
+            .first()
+            .and_then(|&index| self.editor.objects.get(index))
+            .map(|obj| obj.rotation_degrees)
+            .unwrap_or([0.0, 0.0, 0.0]);
+
         let vertices = build_editor_gizmo_vertices(GizmoParams {
             position: bounds_position,
             size: bounds_size,
+            rotation_degrees,
             axis_lengths,
             axis_width,
             resize_radius,

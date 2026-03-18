@@ -7,8 +7,7 @@ use glam::{Vec2, Vec3};
 
 const GIZMO_MOVE_PICK_RADIUS_PIXELS: f32 = 40.0;
 const GIZMO_RESIZE_PICK_RADIUS_PIXELS: f32 = 32.0;
-const GIZMO_ROTATE_PICK_RADIUS_PIXELS: f32 = 30.0;
-const GIZMO_ROTATE_DEGREES_PER_PIXEL: f32 = 0.5;
+const GIZMO_ROTATE_PICK_RADIUS_PIXELS: f32 = 18.0;
 
 impl EditorSubsystem {
     pub(crate) fn drag_gizmo(&mut self, x: f64, y: f64, viewport: Vec2) -> bool {
@@ -31,11 +30,27 @@ impl EditorSubsystem {
             drag.start_center_world[1],
             drag.start_center_world[2],
         );
-        let axis_dir = match drag.axis {
+        let mut axis_dir = match drag.axis {
             GizmoAxis::X | GizmoAxis::XNeg => Vec3::X,
             GizmoAxis::Y | GizmoAxis::YNeg => Vec3::Y,
             GizmoAxis::Z | GizmoAxis::ZNeg => Vec3::Z,
         };
+
+        if drag.kind == GizmoDragKind::Rotate {
+            let rotation = drag
+                .start_blocks
+                .first()
+                .map(|b| {
+                    glam::Quat::from_euler(
+                        glam::EulerRot::XYZ,
+                        b.rotation_degrees[0].to_radians(),
+                        b.rotation_degrees[1].to_radians(),
+                        b.rotation_degrees[2].to_radians(),
+                    )
+                })
+                .unwrap_or_default();
+            axis_dir = rotation * axis_dir;
+        }
 
         let Some(origin_screen) = self.world_to_screen_v(center, viewport) else {
             self.runtime.interaction.gizmo_drag = Some(drag);
@@ -53,8 +68,6 @@ impl EditorSubsystem {
 
         let axis_screen_dir = axis_screen_delta.normalize();
         let projected_pixels = effective_mouse_delta.dot(axis_screen_dir);
-        let tangent_screen_dir = Vec2::new(-axis_screen_dir.y, axis_screen_dir.x);
-        let projected_tangent_pixels = effective_mouse_delta.dot(tangent_screen_dir);
         let pixels_per_world_unit = axis_screen_delta.length();
         if pixels_per_world_unit <= f32::EPSILON {
             return true;
@@ -171,19 +184,51 @@ impl EditorSubsystem {
                     GizmoAxis::Y | GizmoAxis::YNeg => 1,
                     GizmoAxis::Z | GizmoAxis::ZNeg => 2,
                 };
-                let axis_sign = match drag.axis {
-                    GizmoAxis::XNeg | GizmoAxis::YNeg | GizmoAxis::ZNeg => -1.0,
-                    _ => 1.0,
-                };
-                let raw_delta_degrees = projected_tangent_pixels * GIZMO_ROTATE_DEGREES_PER_PIXEL;
+
+                let mut raw_delta_degrees = 0.0;
+                let start_vec = Vec2::new(
+                    drag.start_mouse[0] as f32 - drag.start_center_screen[0],
+                    drag.start_mouse[1] as f32 - drag.start_center_screen[1],
+                );
+                let current_vec = Vec2::new(
+                    x as f32 - drag.start_center_screen[0],
+                    y as f32 - drag.start_center_screen[1],
+                );
+
+                if start_vec.length_squared() > f32::EPSILON
+                    && current_vec.length_squared() > f32::EPSILON
+                {
+                    let start_angle = start_vec.y.atan2(start_vec.x);
+                    let current_angle = current_vec.y.atan2(current_vec.x);
+                    let mut diff = current_angle - start_angle;
+
+                    if diff > std::f32::consts::PI {
+                        diff -= std::f32::consts::TAU;
+                    } else if diff < -std::f32::consts::PI {
+                        diff += std::f32::consts::TAU;
+                    }
+
+                    let target = Vec3::new(
+                        self.camera.editor_pan[0],
+                        self.camera.editor_target_z,
+                        self.camera.editor_pan[1],
+                    );
+                    let eye = target + self.camera_offset();
+                    let view_dir = (target - eye).normalize_or_zero();
+
+                    let is_facing_camera = axis_dir.dot(view_dir) < 0.0;
+                    let sign = if is_facing_camera { -1.0 } else { 1.0 };
+
+                    raw_delta_degrees = diff.to_degrees() * sign;
+                }
+
                 let snap_enabled = self.config.snap_rotation;
                 let snap_step = self.config.snap_rotation_step_degrees.max(1.0);
 
                 for block in &drag.start_blocks {
                     if let Some(obj) = self.objects.get_mut(block.index) {
                         let mut next = block.rotation_degrees;
-                        next[axis_index] =
-                            block.rotation_degrees[axis_index] + raw_delta_degrees * axis_sign;
+                        next[axis_index] = block.rotation_degrees[axis_index] + raw_delta_degrees;
                         if snap_enabled {
                             next[axis_index] = (next[axis_index] / snap_step).round() * snap_step;
                         }
@@ -192,6 +237,7 @@ impl EditorSubsystem {
                 }
             }
         }
+        self.runtime.interaction.gizmo_drag = Some(drag);
         true
     }
 
@@ -216,9 +262,8 @@ impl EditorSubsystem {
             bounds_position[1] + bounds_size[1] * 0.5,
             bounds_position[2] + bounds_size[2] * 0.5,
         );
-        let axis_lengths = self.gizmo_axis_lengths_world(center, 64.0, viewport_size);
+        let axis_lengths = self.gizmo_axis_lengths_world(center, 100.0, viewport_size);
         let resize_offsets = self.gizmo_axis_lengths_world(center, 9.0, viewport_size);
-        let rotate_offsets = self.gizmo_axis_lengths_world(center, 130.0, viewport_size);
         let pointer = Vec2::new(x as f32, y as f32);
 
         let mut candidates: Vec<(GizmoDragKind, GizmoAxis, Vec3, f32)> = Vec::new();
@@ -317,26 +362,40 @@ impl EditorSubsystem {
         }
 
         if allow_rotate {
-            candidates.extend_from_slice(&[
-                (
-                    GizmoDragKind::Rotate,
-                    GizmoAxis::X,
-                    Vec3::new(center.x + rotate_offsets[0], center.y, center.z),
-                    GIZMO_ROTATE_PICK_RADIUS_PIXELS,
-                ),
-                (
-                    GizmoDragKind::Rotate,
-                    GizmoAxis::Y,
-                    Vec3::new(center.x, center.y + rotate_offsets[1], center.z),
-                    GIZMO_ROTATE_PICK_RADIUS_PIXELS,
-                ),
-                (
-                    GizmoDragKind::Rotate,
-                    GizmoAxis::Z,
-                    Vec3::new(center.x, center.y, center.z + rotate_offsets[2]),
-                    GIZMO_ROTATE_PICK_RADIUS_PIXELS,
-                ),
-            ]);
+            let rotation_degrees = self
+                .selected_indices_normalized()
+                .first()
+                .and_then(|&index| self.objects.get(index))
+                .map(|obj| obj.rotation_degrees)
+                .unwrap_or([0.0, 0.0, 0.0]);
+            let rotation = glam::Quat::from_euler(
+                glam::EulerRot::XYZ,
+                rotation_degrees[0].to_radians(),
+                rotation_degrees[1].to_radians(),
+                rotation_degrees[2].to_radians(),
+            );
+
+            let ring_radius = axis_lengths[0] * 0.78;
+            for axis in [GizmoAxis::X, GizmoAxis::Y, GizmoAxis::Z] {
+                for sample in 0..2 {
+                    let theta = (sample as f32 / 2.0) * std::f32::consts::TAU;
+                    let (sin_t, cos_t) = theta.sin_cos();
+                    let mut local = match axis {
+                        GizmoAxis::X => Vec3::new(0.0, cos_t, sin_t),
+                        GizmoAxis::Y => Vec3::new(sin_t, 0.0, cos_t),
+                        GizmoAxis::Z => Vec3::new(cos_t, sin_t, 0.0),
+                        _ => Vec3::ZERO,
+                    };
+                    local = rotation * local;
+                    let sample_world = center + local * ring_radius;
+                    candidates.push((
+                        GizmoDragKind::Rotate,
+                        axis,
+                        sample_world,
+                        GIZMO_ROTATE_PICK_RADIUS_PIXELS * 2.5,
+                    ));
+                }
+            }
         }
 
         let mut best: Option<(GizmoDragKind, GizmoAxis, f32)> = None;

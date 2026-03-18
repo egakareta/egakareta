@@ -21,8 +21,14 @@ impl EditorSubsystem {
         };
 
         if self.ui.mode.is_selection_mode() {
-            if self.ui.hovered_block_index != pick.hit_block_index {
-                self.ui.hovered_block_index = pick.hit_block_index;
+            let next_hover = if self.runtime.interaction.hovered_gizmo.is_some() {
+                None
+            } else {
+                pick.hit_block_index
+            };
+
+            if self.ui.hovered_block_index != next_hover {
+                self.ui.hovered_block_index = next_hover;
                 return EditorInteractionChange::Hover;
             }
             return EditorInteractionChange::None;

@@ -346,8 +346,6 @@ impl State {
         }
 
         if !handled && self.is_editor() {
-            self.update_editor_cursor_from_screen(x, y);
-
             let viewport_size = glam::Vec2::new(
                 self.render.gpu.config.width as f32,
                 self.render.gpu.config.height as f32,
@@ -357,6 +355,8 @@ impl State {
                 self.editor.runtime.interaction.hovered_gizmo = next_hover;
                 self.rebuild_editor_gizmo_vertices();
             }
+
+            self.update_editor_cursor_from_screen(x, y);
         }
         self.editor.set_pointer_screen(Some([x, y]));
     }
