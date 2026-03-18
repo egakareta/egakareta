@@ -527,8 +527,8 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                     .show(ui, |ui| {
                         ui.monospace("Perf Overlay (Ctrl+Shift+Alt+F12)");
                         ui.monospace(format!(
-                            "FPS {:.1} | Graphics: {} | Audio: {}",
-                            view.fps, view.graphics_backend, view.audio_backend
+                            "{} | {} | FPS {:.1}",
+                            view.graphics_backend, view.audio_backend, view.fps
                         ));
                         for line in view.perf_overlay_lines.iter().take(1) {
                             ui.monospace(line);

@@ -42,7 +42,6 @@ impl State {
         }
 
         let mut lines = Vec::new();
-        lines.push("Perf Overlay (Ctrl+Shift+Alt+F12)".to_string());
         lines.push(format!(
             "Spikes(>16.7ms): {} | Last Spike: {}",
             self.editor.perf.profiler.frame_spike_count,
