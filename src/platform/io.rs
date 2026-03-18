@@ -4,23 +4,24 @@ use crate::types::AppSettings;
 pub(crate) fn save_level_export(filename: &str, data: &[u8]) -> Result<(), String> {
     #[cfg(target_arch = "wasm32")]
     {
+        use js_sys::Uint8Array;
         use wasm_bindgen::JsCast;
+        use web_sys::HtmlAnchorElement;
 
         let document = gloo_utils::document();
-        let blob = gloo_file::Blob::new(data);
+        let uint8_array = Uint8Array::new_with_length(data.len() as u32);
+        uint8_array.copy_from(data);
+        let blob = gloo_file::Blob::new(uint8_array.buffer());
         let url = gloo_file::ObjectUrl::from(blob);
 
         let anchor = document
             .create_element("a")
             .map_err(|error| format!("Failed to create anchor: {:?}", error))?
-            .dyn_into::<web_sys::HtmlElement>()
+            .dyn_into::<HtmlAnchorElement>()
             .map_err(|error| format!("Failed to cast anchor: {:?}", error))?;
-        anchor
-            .set_attribute("href", &url.to_string())
-            .map_err(|error| format!("Failed setting href: {:?}", error))?;
-        anchor
-            .set_attribute("download", filename)
-            .map_err(|error| format!("Failed setting download filename: {:?}", error))?;
+
+        anchor.set_href(&url.to_string());
+        anchor.set_download(filename);
         anchor.click();
 
         Ok(())
