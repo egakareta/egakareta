@@ -71,6 +71,10 @@ impl EditorSubsystem {
         self.runtime.interaction.block_drag.is_some()
     }
 
+    pub(crate) fn is_playing(&self) -> bool {
+        self.timeline.playback.playing
+    }
+
     pub(crate) fn timeline_time_seconds(&self) -> f32 {
         self.timeline.clock.time_seconds
     }
@@ -85,7 +89,7 @@ impl EditorSubsystem {
         self.runtime.interaction.block_drag = None;
         self.ui.marquee_start_screen = None;
         self.ui.marquee_current_screen = None;
-        if !mode.is_selection_mode() {
+        if !mode.can_select() {
             self.ui.selected_block_index = None;
             self.ui.selected_block_indices.clear();
             self.ui.hovered_block_index = None;
@@ -664,6 +668,11 @@ impl State {
     /// Returns the unique identifier of the currently selected block type in the editor.
     pub fn editor_selected_block_id(&self) -> &str {
         self.editor.selected_block_id()
+    }
+
+    /// Returns whether the editor timeline is currently playing.
+    pub fn editor_is_playing(&self) -> bool {
+        self.editor.is_playing()
     }
 
     /// Returns the current playback time of the editor timeline in seconds.

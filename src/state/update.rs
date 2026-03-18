@@ -488,13 +488,18 @@ impl State {
 
     fn update_editor_camera(&mut self) {
         let aspect = self.render.gpu.config.width as f32 / self.render.gpu.config.height as f32;
-        let target = Vec3::new(
-            self.editor.camera.editor_pan[0],
-            self.editor.camera.editor_target_z,
-            self.editor.camera.editor_pan[1],
-        );
-        let offset = self.editor_camera_offset();
-        let eye = target + offset;
+        let (eye, target) = if self.editor_is_playing() {
+            let (e, t) = self.editor_preview_camera_view();
+            (Vec3::from_array(e), Vec3::from_array(t))
+        } else {
+            let target = Vec3::new(
+                self.editor.camera.editor_pan[0],
+                self.editor.camera.editor_target_z,
+                self.editor.camera.editor_pan[1],
+            );
+            let offset = self.editor_camera_offset();
+            (target + offset, target)
+        };
         let up = Vec3::new(0.0, 1.0, 0.0);
         let view = Mat4::look_at_rh(eye, target, up);
         let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);

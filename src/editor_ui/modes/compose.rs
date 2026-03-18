@@ -186,7 +186,7 @@ pub(crate) fn show_compose_mode_bottom_panel(
                 ui.label("Selection mode: click a block to edit it.");
             }
         }
-        EditorMode::Timing => {} // handled separately
+        EditorMode::Timing | EditorMode::Null => {} // handled separately
     }
 
     ui.separator();

@@ -47,6 +47,22 @@ pub(crate) fn show_timeline_bar(
 
         ui.add_space(4.0);
         let button_size = egui::vec2(22.0, ui.spacing().interact_size.y);
+
+        let play_icon = if view.playing {
+            egui_phosphor::regular::PAUSE
+        } else {
+            egui_phosphor::regular::PLAY
+        };
+        let play_tooltip = if view.playing { "Pause" } else { "Play" };
+        if ui
+            .add_sized(button_size, egui::Button::new(play_icon))
+            .on_hover_text(format!("{} (Space)", play_tooltip))
+            .clicked()
+        {
+            commands.push(AppCommand::EditorToggleTimelinePlayback);
+        }
+        ui.add_space(4.0);
+
         if ui
             .add_sized(
                 button_size,

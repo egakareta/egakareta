@@ -889,6 +889,19 @@ impl LevelObject {
     }
 }
 
+impl Default for LevelObject {
+    fn default() -> Self {
+        Self {
+            position: default_level_object_position(),
+            size: default_level_object_size(),
+            rotation_degrees: default_block_rotation_degrees(),
+            roundness: default_block_roundness(),
+            block_id: default_level_object_block_id(),
+            color_tint: default_level_object_color_tint(),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 /// The current phase of the application.
 /// Determines which UI and logic to run.
@@ -1166,6 +1179,7 @@ pub(crate) enum EditorMode {
     #[default]
     Place,
     Timing,
+    Null,
 }
 
 impl EditorMode {
@@ -1174,7 +1188,10 @@ impl EditorMode {
     }
 
     pub(crate) fn is_compose_mode(self) -> bool {
-        matches!(self, Self::Select | Self::Move | Self::Scale | Self::Place)
+        matches!(
+            self,
+            Self::Select | Self::Move | Self::Scale | Self::Place | Self::Null
+        )
     }
 
     pub(crate) fn shows_move_gizmo(self) -> bool {
@@ -1187,6 +1204,10 @@ impl EditorMode {
 
     pub(crate) fn shows_gizmo(self) -> bool {
         self.shows_move_gizmo() || self.shows_scale_gizmo()
+    }
+
+    pub(crate) fn can_select(self) -> bool {
+        self != Self::Null && self != Self::Timing
     }
 }
 

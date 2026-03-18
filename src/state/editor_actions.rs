@@ -340,6 +340,9 @@ impl State {
         self.editor.timeline.playback.playing = !self.editor.timeline.playback.playing;
 
         if self.editor.timeline.playback.playing {
+            self.editor.runtime.interaction.last_mode = Some(self.editor.ui.mode);
+            self.editor.set_mode(EditorMode::Null);
+
             if self.editor.has_object_transform_triggers() {
                 self.mark_editor_dirty(EditorDirtyFlags {
                     rebuild_block_mesh: true,
@@ -373,6 +376,12 @@ impl State {
         }
 
         self.editor.timeline.playback.runtime = None;
+        if let Some(last_mode) = self.editor.runtime.interaction.last_mode.take() {
+            self.editor.set_mode(last_mode);
+        } else {
+            self.editor.set_mode(EditorMode::Place);
+        }
+
         if self.editor.has_object_transform_triggers() {
             self.mark_editor_dirty(EditorDirtyFlags {
                 rebuild_block_mesh: true,

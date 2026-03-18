@@ -347,7 +347,7 @@ impl State {
             }
         }
 
-        if self.editor.marquee_selection_rect_screen().is_some() {
+        if let Some((_, _, true)) = self.editor.marquee_selection_rect_screen() {
             let viewport = glam::Vec2::new(
                 self.render.gpu.config.width as f32,
                 self.render.gpu.config.height as f32,
@@ -372,7 +372,12 @@ impl State {
                 obj.position[1] + obj.size[1] * 0.5,
                 obj.position[2] + obj.size[2] * 0.5,
             );
-            let line_width = self.editor_gizmo_axis_width_world(center, 3.0);
+            let target_pixels = if self.editor.ui.left_mouse_down {
+                6.0
+            } else {
+                3.0
+            };
+            let line_width = self.editor_gizmo_axis_width_world(center, target_pixels);
             all_vertices.append(&mut build_editor_hover_outline_vertices(
                 obj.position,
                 obj.size,
@@ -409,7 +414,7 @@ impl State {
         );
         let axis_lengths = self.editor_gizmo_axis_lengths_world(center, 100.0);
         let axis_width = self.editor_gizmo_axis_width_world(center, 4.5);
-        let resize_radius = self.editor_gizmo_axis_width_world(center, 6.0);
+        let resize_radius = self.editor_gizmo_axis_width_world(center, 4.5);
         let resize_offsets = self.editor_gizmo_axis_lengths_world(center, 9.0);
 
         let dragged_part = self
