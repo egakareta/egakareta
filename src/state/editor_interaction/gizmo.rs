@@ -398,20 +398,37 @@ impl EditorSubsystem {
             }
         }
 
-        let mut best: Option<(GizmoDragKind, GizmoAxis, f32)> = None;
+        let target = Vec3::new(
+            self.camera.editor_pan[0],
+            self.camera.editor_target_z,
+            self.camera.editor_pan[1],
+        );
+        let eye = target + self.camera_offset();
+
+        let mut best: Option<(GizmoDragKind, GizmoAxis, f32, f32)> = None;
         for (kind, axis, world, pick_radius) in candidates {
             if let Some(screen) = self.world_to_screen_v(world, viewport_size) {
                 let dist = screen.distance(pointer);
                 if dist <= pick_radius {
+                    let depth = world.distance_squared(eye);
                     match best {
-                        Some((.., best_dist)) if dist >= best_dist => {}
-                        _ => best = Some((kind, axis, dist)),
+                        Some((.., best_dist, best_depth)) => {
+                            let is_better = if (dist - best_dist).abs() > 10.0 {
+                                dist < best_dist
+                            } else {
+                                depth < best_depth
+                            };
+                            if is_better {
+                                best = Some((kind, axis, dist, depth));
+                            }
+                        }
+                        None => best = Some((kind, axis, dist, depth)),
                     }
                 }
             }
         }
 
-        best.map(|(kind, axis, _)| (kind, axis))
+        best.map(|(kind, axis, _, _)| (kind, axis))
     }
 
     pub(crate) fn pixels_to_world_along_axis(
