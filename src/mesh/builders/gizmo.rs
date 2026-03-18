@@ -11,6 +11,7 @@ pub(crate) struct GizmoParams {
     pub resize_offsets: [f32; 3],
     pub show_move_handles: bool,
     pub show_scale_handles: bool,
+    pub show_rotate_handles: bool,
     pub hovered_part: Option<GizmoPart>,
     pub dragged_part: Option<GizmoPart>,
 }
@@ -25,6 +26,7 @@ pub(crate) fn build_editor_gizmo_vertices(
         resize_offsets,
         show_move_handles,
         show_scale_handles,
+        show_rotate_handles,
         hovered_part,
         dragged_part,
     }: GizmoParams,
@@ -328,6 +330,49 @@ pub(crate) fn build_editor_gizmo_vertices(
             let pos = [center[0], center[1], z];
             append_sphere(&mut vertices, pos, current_radius, color);
             append_sphere(&mut vertices, pos, inner_resize_radius, inner_color);
+        }
+    }
+
+    if show_rotate_handles {
+        let rotate_radius = resize_radius * 1.2;
+        let inner_rotate_radius = rotate_radius * 0.5;
+        let rotate_offset = [
+            axis_lengths[0] * 1.3,
+            axis_lengths[1] * 1.3,
+            axis_lengths[2] * 1.3,
+        ];
+
+        for (variant, pos, normal, active_color) in [
+            (
+                GizmoPart::RotateX,
+                [center[0] + rotate_offset[0], center[1], center[2]],
+                color_x_normal,
+                color_x_active,
+            ),
+            (
+                GizmoPart::RotateY,
+                [center[0], center[1] + rotate_offset[1], center[2]],
+                color_y_normal,
+                color_y_active,
+            ),
+            (
+                GizmoPart::RotateZ,
+                [center[0], center[1], center[2] + rotate_offset[2]],
+                color_z_normal,
+                color_z_active,
+            ),
+        ] {
+            let is_hovered = hovered_part == Some(variant);
+            let is_dragged = dragged_part == Some(variant);
+            let active = is_hovered || is_dragged;
+            let current_radius = if is_hovered && !is_dragged {
+                rotate_radius * 1.25
+            } else {
+                rotate_radius
+            };
+            let color = if active { active_color } else { normal };
+            append_sphere(&mut vertices, pos, current_radius, color);
+            append_sphere(&mut vertices, pos, inner_rotate_radius, inner_color);
         }
     }
 

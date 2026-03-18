@@ -19,7 +19,7 @@ fn test_marquee_no_redundant_selections_before_drag_started() {
         state.editor.objects.push(LevelObject {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
-            rotation_degrees: 0.0,
+            rotation_degrees: [0.0, 0.0, 0.0],
             roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
@@ -27,7 +27,7 @@ fn test_marquee_no_redundant_selections_before_drag_started() {
         state.editor.objects.push(LevelObject {
             position: [5.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
-            rotation_degrees: 0.0,
+            rotation_degrees: [0.0, 0.0, 0.0],
             roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
@@ -196,7 +196,7 @@ fn falls_from_elevated_platform() {
     let objects = [LevelObject {
         position: [0.0, 2.0, 0.0],
         size: [1.0, 1.0, 1.0],
-        rotation_degrees: 0.0,
+        rotation_degrees: [0.0, 0.0, 0.0],
         roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
@@ -262,7 +262,7 @@ fn multi_selection_clicking_rendered_gizmo_starts_gizmo_drag_not_block_drag() {
             LevelObject {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
-                rotation_degrees: 0.0,
+                rotation_degrees: [0.0, 0.0, 0.0],
                 roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
@@ -270,7 +270,7 @@ fn multi_selection_clicking_rendered_gizmo_starts_gizmo_drag_not_block_drag() {
             LevelObject {
                 position: [4.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
-                rotation_degrees: 0.0,
+                rotation_degrees: [0.0, 0.0, 0.0],
                 roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
@@ -477,7 +477,7 @@ fn test_handle_primary_click_shift_priority() {
         state.editor.objects.push(LevelObject {
             position: [-5.0, -5.0, -5.0],
             size: [10.0, 10.0, 10.0],
-            rotation_degrees: 0.0,
+            rotation_degrees: [0.0, 0.0, 0.0],
             roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
@@ -564,7 +564,7 @@ fn editor_null_mode_clears_selection() {
         state.editor.objects.push(LevelObject {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
-            rotation_degrees: 0.0,
+            rotation_degrees: [0.0, 0.0, 0.0],
             roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],

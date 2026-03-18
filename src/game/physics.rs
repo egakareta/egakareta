@@ -1,39 +1,14 @@
 use crate::types::LevelObject;
+use glam::{EulerRot, Mat3, Vec2, Vec3};
 
 pub(crate) const BASE_PLAYER_SPEED: f32 = 8.0;
 
-pub(crate) fn rotate_point_around_center_2d(
-    point: [f32; 2],
-    center: [f32; 2],
-    radians: f32,
-) -> [f32; 2] {
-    let sin = radians.sin();
-    let cos = radians.cos();
-    let dx = point[0] - center[0];
-    let dy = point[1] - center[1];
-    [
-        center[0] + (dx * cos - dy * sin),
-        center[1] + (dx * sin + dy * cos),
-    ]
-}
-
 pub(crate) fn object_xz_contains(obj: &LevelObject, x: f32, z: f32) -> bool {
-    // Fast path for axis-aligned objects (most common case)
-    if obj.rotation_degrees.abs() < 0.001 {
-        return x >= obj.position[0]
-            && x < obj.position[0] + obj.size[0]
-            && z >= obj.position[2]
-            && z < obj.position[2] + obj.size[2];
+    let polygon = object_projected_xz_polygon(obj);
+    if polygon.len() < 3 {
+        return false;
     }
-    let center = [
-        obj.position[0] + obj.size[0] * 0.5,
-        obj.position[2] + obj.size[2] * 0.5,
-    ];
-    let local = rotate_point_around_center_2d([x, z], center, -obj.rotation_degrees.to_radians());
-    local[0] >= obj.position[0]
-        && local[0] < obj.position[0] + obj.size[0]
-        && local[1] >= obj.position[2]
-        && local[1] < obj.position[2] + obj.size[2]
+    point_in_polygon(Vec2::new(x, z), &polygon)
 }
 
 pub(crate) fn aabb_overlaps_object_xz(
@@ -43,43 +18,150 @@ pub(crate) fn aabb_overlaps_object_xz(
     max_z: f32,
     obj: &LevelObject,
 ) -> bool {
-    // Fast path for axis-aligned objects — simple AABB vs AABB
-    if obj.rotation_degrees.abs() < 0.001 {
-        let obj_max_x = obj.position[0] + obj.size[0];
-        let obj_max_z = obj.position[2] + obj.size[2];
-        return max_x > obj.position[0]
-            && min_x < obj_max_x
-            && max_z > obj.position[2]
-            && min_z < obj_max_z;
+    let polygon = object_projected_xz_polygon(obj);
+    if polygon.len() < 3 {
+        return false;
     }
 
-    let aabb_center_x = (min_x + max_x) * 0.5;
-    let aabb_center_z = (min_z + max_z) * 0.5;
-    let aabb_half_x = (max_x - min_x) * 0.5;
-    let aabb_half_z = (max_z - min_z) * 0.5;
+    let rect = [
+        Vec2::new(min_x, min_z),
+        Vec2::new(max_x, min_z),
+        Vec2::new(max_x, max_z),
+        Vec2::new(min_x, max_z),
+    ];
 
-    let rect_center_x = obj.position[0] + obj.size[0] * 0.5;
-    let rect_center_z = obj.position[2] + obj.size[2] * 0.5;
-    let rect_half_x = obj.size[0] * 0.5;
-    let rect_half_z = obj.size[2] * 0.5;
+    let mut axes: Vec<Vec2> = Vec::with_capacity(polygon.len() + 2);
+    axes.push(Vec2::X);
+    axes.push(Vec2::Y);
+    for i in 0..polygon.len() {
+        let a = polygon[i];
+        let b = polygon[(i + 1) % polygon.len()];
+        let edge = b - a;
+        if edge.length_squared() <= f32::EPSILON {
+            continue;
+        }
+        let normal = Vec2::new(-edge.y, edge.x).normalize();
+        axes.push(normal);
+    }
 
-    let theta = obj.rotation_degrees.to_radians();
-    let axis_u = [theta.cos(), theta.sin()];
-    let axis_v = [-theta.sin(), theta.cos()];
-
-    let axes = [[1.0, 0.0], [0.0, 1.0], axis_u, axis_v];
     for axis in axes {
-        let aabb_proj_center = aabb_center_x * axis[0] + aabb_center_z * axis[1];
-        let aabb_proj_radius = aabb_half_x * axis[0].abs() + aabb_half_z * axis[1].abs();
-
-        let rect_proj_center = rect_center_x * axis[0] + rect_center_z * axis[1];
-        let rect_proj_radius = rect_half_x * (axis_u[0] * axis[0] + axis_u[1] * axis[1]).abs()
-            + rect_half_z * (axis_v[0] * axis[0] + axis_v[1] * axis[1]).abs();
-
-        if (aabb_proj_center - rect_proj_center).abs() > aabb_proj_radius + rect_proj_radius {
+        let (poly_min, poly_max) = project_points(axis, &polygon);
+        let (rect_min, rect_max) = project_points(axis, &rect);
+        if poly_max < rect_min || rect_max < poly_min {
             return false;
         }
     }
 
     true
+}
+
+fn object_projected_xz_polygon(obj: &LevelObject) -> Vec<Vec2> {
+    let center = Vec3::new(
+        obj.position[0] + obj.size[0] * 0.5,
+        obj.position[1] + obj.size[1] * 0.5,
+        obj.position[2] + obj.size[2] * 0.5,
+    );
+    let half = Vec3::new(obj.size[0] * 0.5, obj.size[1] * 0.5, obj.size[2] * 0.5);
+    let rotation = Mat3::from_euler(
+        EulerRot::XYZ,
+        obj.rotation_degrees[0].to_radians(),
+        obj.rotation_degrees[1].to_radians(),
+        obj.rotation_degrees[2].to_radians(),
+    );
+
+    let mut points: Vec<Vec2> = Vec::with_capacity(8);
+    for sx in [-1.0, 1.0] {
+        for sy in [-1.0, 1.0] {
+            for sz in [-1.0, 1.0] {
+                let local = Vec3::new(half.x * sx, half.y * sy, half.z * sz);
+                let world = center + rotation * local;
+                points.push(Vec2::new(world.x, world.z));
+            }
+        }
+    }
+
+    convex_hull(points)
+}
+
+fn point_in_polygon(point: Vec2, polygon: &[Vec2]) -> bool {
+    let mut inside = false;
+    let mut j = polygon.len() - 1;
+    for i in 0..polygon.len() {
+        let pi = polygon[i];
+        let pj = polygon[j];
+        let denom = pj.y - pi.y;
+        let intersects = ((pi.y > point.y) != (pj.y > point.y))
+            && (point.x < (pj.x - pi.x) * (point.y - pi.y) / denom + pi.x);
+        if intersects {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
+}
+
+fn convex_hull(mut points: Vec<Vec2>) -> Vec<Vec2> {
+    if points.len() <= 1 {
+        return points;
+    }
+
+    points.sort_by(|a, b| {
+        let cmp_x = f32::total_cmp(&a.x, &b.x);
+        if cmp_x.is_eq() {
+            f32::total_cmp(&a.y, &b.y)
+        } else {
+            cmp_x
+        }
+    });
+    points.dedup_by(|a, b| (a.x - b.x).abs() <= 1e-6 && (a.y - b.y).abs() <= 1e-6);
+
+    if points.len() <= 2 {
+        return points;
+    }
+
+    let mut lower: Vec<Vec2> = Vec::new();
+    for point in &points {
+        while lower.len() >= 2
+            && cross(
+                lower[lower.len() - 1] - lower[lower.len() - 2],
+                *point - lower[lower.len() - 1],
+            ) <= 0.0
+        {
+            lower.pop();
+        }
+        lower.push(*point);
+    }
+
+    let mut upper: Vec<Vec2> = Vec::new();
+    for point in points.iter().rev() {
+        while upper.len() >= 2
+            && cross(
+                upper[upper.len() - 1] - upper[upper.len() - 2],
+                *point - upper[upper.len() - 1],
+            ) <= 0.0
+        {
+            upper.pop();
+        }
+        upper.push(*point);
+    }
+
+    lower.pop();
+    upper.pop();
+    lower.extend(upper);
+    lower
+}
+
+fn cross(a: Vec2, b: Vec2) -> f32 {
+    a.x * b.y - a.y * b.x
+}
+
+fn project_points(axis: Vec2, points: &[Vec2]) -> (f32, f32) {
+    let mut min = f32::INFINITY;
+    let mut max = f32::NEG_INFINITY;
+    for point in points {
+        let dot = axis.dot(*point);
+        min = min.min(dot);
+        max = max.max(dot);
+    }
+    (min, max)
 }

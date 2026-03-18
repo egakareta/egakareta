@@ -31,6 +31,7 @@ pub(crate) enum GizmoAxis {
 pub(crate) enum GizmoDragKind {
     Move,
     Resize,
+    Rotate,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -47,6 +48,9 @@ pub(crate) enum GizmoPart {
     ResizeXNeg,
     ResizeYNeg,
     ResizeZNeg,
+    RotateX,
+    RotateY,
+    RotateZ,
 }
 
 impl GizmoPart {
@@ -64,11 +68,14 @@ impl GizmoPart {
             (GizmoAxis::XNeg, GizmoDragKind::Resize) => GizmoPart::ResizeXNeg,
             (GizmoAxis::YNeg, GizmoDragKind::Resize) => GizmoPart::ResizeYNeg,
             (GizmoAxis::ZNeg, GizmoDragKind::Resize) => GizmoPart::ResizeZNeg,
+            (GizmoAxis::X | GizmoAxis::XNeg, GizmoDragKind::Rotate) => GizmoPart::RotateX,
+            (GizmoAxis::Y | GizmoAxis::YNeg, GizmoDragKind::Rotate) => GizmoPart::RotateY,
+            (GizmoAxis::Z | GizmoAxis::ZNeg, GizmoDragKind::Rotate) => GizmoPart::RotateZ,
         }
     }
 }
 
-pub(crate) const CURRENT_LEVEL_FORMAT_VERSION: u32 = 1;
+pub(crate) const CURRENT_LEVEL_FORMAT_VERSION: u32 = 2;
 
 pub(crate) const APP_SETTINGS_VERSION: u32 = 1;
 
@@ -168,16 +175,16 @@ fn is_default_timed_trigger_target(value: &TimedTriggerTarget) -> bool {
     matches!(value, TimedTriggerTarget::Camera)
 }
 
-fn default_block_rotation_degrees() -> f32 {
-    0.0
+fn default_block_rotation_degrees() -> [f32; 3] {
+    [0.0, 0.0, 0.0]
 }
 
 fn default_block_roundness() -> f32 {
     0.18
 }
 
-fn is_default_block_rotation_degrees(value: &f32) -> bool {
-    value.abs() <= 1e-6
+fn is_default_block_rotation_degrees(value: &[f32; 3]) -> bool {
+    value.iter().all(|component| component.abs() <= 1e-6)
 }
 
 fn is_default_block_roundness(value: &f32) -> bool {
@@ -251,6 +258,22 @@ fn default_editor_snap_step_setting() -> f32 {
 
 fn is_default_editor_snap_step_setting(value: &f32) -> bool {
     (*value - 1.0).abs() <= 1e-6
+}
+
+fn default_editor_rotation_snap_setting() -> bool {
+    true
+}
+
+fn is_default_editor_rotation_snap_setting(value: &bool) -> bool {
+    *value
+}
+
+fn default_editor_rotation_snap_step_setting() -> f32 {
+    15.0
+}
+
+fn is_default_editor_rotation_snap_step_setting(value: &f32) -> bool {
+    (*value - 15.0).abs() <= 1e-6
 }
 
 fn default_graphics_backend_setting() -> String {
@@ -458,7 +481,7 @@ pub(crate) enum TimedTriggerAction {
         position: [f32; 3],
     },
     RotateTo {
-        rotation_degrees: f32,
+        rotation_degrees: [f32; 3],
     },
     ScaleTo {
         size: [f32; 3],
@@ -708,8 +731,13 @@ pub(crate) fn apply_timed_triggers_to_objects(
                     }
                 }
                 TimedTriggerAction::RotateTo { rotation_degrees } => {
-                    let current = object.rotation_degrees;
-                    object.rotation_degrees = current + (*rotation_degrees - current) * progress;
+                    for (current, target) in object
+                        .rotation_degrees
+                        .iter_mut()
+                        .zip(rotation_degrees.iter())
+                    {
+                        *current = *current + (*target - *current) * progress;
+                    }
                 }
                 TimedTriggerAction::ScaleTo { size } => {
                     for (current, target) in object.size.iter_mut().zip(size.iter()) {
@@ -876,7 +904,7 @@ pub(crate) struct LevelObject {
         default = "default_block_rotation_degrees",
         skip_serializing_if = "is_default_block_rotation_degrees"
     )]
-    pub(crate) rotation_degrees: f32,
+    pub(crate) rotation_degrees: [f32; 3],
     #[serde(
         default = "default_block_roundness",
         skip_serializing_if = "is_default_block_roundness"
@@ -993,6 +1021,16 @@ pub(crate) struct AppSettings {
     )]
     pub(crate) editor_snap_step: f32,
     #[serde(
+        default = "default_editor_rotation_snap_setting",
+        skip_serializing_if = "is_default_editor_rotation_snap_setting"
+    )]
+    pub(crate) editor_rotation_snap: bool,
+    #[serde(
+        default = "default_editor_rotation_snap_step_setting",
+        skip_serializing_if = "is_default_editor_rotation_snap_step_setting"
+    )]
+    pub(crate) editor_rotation_snap_step: f32,
+    #[serde(
         default = "default_graphics_backend_setting",
         skip_serializing_if = "is_default_graphics_backend_setting"
     )]
@@ -1016,6 +1054,8 @@ impl Default for AppSettings {
             editor_selected_block_id: default_editor_selected_block_id(),
             editor_snap_to_grid: default_editor_snap_to_grid_setting(),
             editor_snap_step: default_editor_snap_step_setting(),
+            editor_rotation_snap: default_editor_rotation_snap_setting(),
+            editor_rotation_snap_step: default_editor_rotation_snap_step_setting(),
             graphics_backend: default_graphics_backend_setting(),
             audio_backend: default_audio_backend_setting(),
             keybinds: default_app_keybinds(),
@@ -1189,6 +1229,7 @@ pub(crate) enum EditorMode {
     Select,
     Move,
     Scale,
+    Rotate,
     #[default]
     Place,
     Timing,
@@ -1197,13 +1238,13 @@ pub(crate) enum EditorMode {
 
 impl EditorMode {
     pub(crate) fn is_selection_mode(self) -> bool {
-        matches!(self, Self::Select | Self::Move | Self::Scale)
+        matches!(self, Self::Select | Self::Move | Self::Scale | Self::Rotate)
     }
 
     pub(crate) fn is_compose_mode(self) -> bool {
         matches!(
             self,
-            Self::Select | Self::Move | Self::Scale | Self::Place | Self::Null
+            Self::Select | Self::Move | Self::Scale | Self::Rotate | Self::Place | Self::Null
         )
     }
 
@@ -1215,8 +1256,12 @@ impl EditorMode {
         self == Self::Scale
     }
 
+    pub(crate) fn shows_rotate_gizmo(self) -> bool {
+        self == Self::Rotate
+    }
+
     pub(crate) fn shows_gizmo(self) -> bool {
-        self.shows_move_gizmo() || self.shows_scale_gizmo()
+        self.shows_move_gizmo() || self.shows_scale_gizmo() || self.shows_rotate_gizmo()
     }
 
     pub(crate) fn can_select(self) -> bool {
@@ -1317,7 +1362,7 @@ mod tests {
         }"#;
 
         let object: LevelObject = serde_json::from_str(json).expect("valid level object");
-        assert_eq!(object.rotation_degrees, 0.0);
+        assert_eq!(object.rotation_degrees, [0.0, 0.0, 0.0]);
         assert_eq!(object.roundness, 0.18);
         assert_eq!(object.block_id, "core/stone");
         assert_eq!(object.color_tint, [1.0, 1.0, 1.0]);
@@ -1336,7 +1381,7 @@ mod tests {
 
         let metadata: LevelMetadata = serde_json::from_str(json).expect("valid metadata");
         assert_eq!(metadata.objects.len(), 1);
-        assert_eq!(metadata.objects[0].rotation_degrees, 0.0);
+        assert_eq!(metadata.objects[0].rotation_degrees, [0.0, 0.0, 0.0]);
         assert_eq!(metadata.objects[0].roundness, 0.18);
         assert!(matches!(metadata.spawn.direction, SpawnDirection::Forward));
     }
@@ -1346,7 +1391,7 @@ mod tests {
         let object = LevelObject {
             position: [1.0, 2.0, 3.0],
             size: [4.0, 5.0, 6.0],
-            rotation_degrees: 0.0,
+            rotation_degrees: [0.0, 0.0, 0.0],
             roundness: 0.18,
             block_id: "core/grass".to_string(),
             color_tint: [1.0, 1.0, 1.0],
@@ -1376,7 +1421,7 @@ mod tests {
             objects: vec![LevelObject {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
-                rotation_degrees: 0.0,
+                rotation_degrees: [0.0, 0.0, 0.0],
                 roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
@@ -1499,7 +1544,7 @@ mod tests {
             LevelObject {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
-                rotation_degrees: 0.0,
+                rotation_degrees: [0.0, 0.0, 0.0],
                 roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
@@ -1507,7 +1552,7 @@ mod tests {
             LevelObject {
                 position: [3.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
-                rotation_degrees: 0.0,
+                rotation_degrees: [0.0, 0.0, 0.0],
                 roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
@@ -1521,7 +1566,7 @@ mod tests {
                 easing: CameraKeypointEasing::Linear,
                 target: TimedTriggerTarget::Object { object_id: 1 },
                 action: TimedTriggerAction::RotateTo {
-                    rotation_degrees: 90.0,
+                    rotation_degrees: [0.0, 90.0, 0.0],
                 },
             },
             TimedTrigger {
@@ -1550,10 +1595,10 @@ mod tests {
         assert!((t_half[0].position[0] - 5.0).abs() <= 1e-5);
         assert_eq!(t_half[0].size, [2.0, 2.0, 2.0]);
         assert_eq!(t_half[1].size, [2.0, 2.0, 2.0]);
-        assert!((t_half[1].rotation_degrees - 90.0).abs() <= 1e-5);
+        assert!((t_half[1].rotation_degrees[1] - 90.0).abs() <= 1e-5);
 
         let t_done = apply_timed_triggers_to_objects(&base_objects, &triggers, 3.0);
         assert!((t_done[0].position[0] - 10.0).abs() <= 1e-5);
-        assert!((t_done[1].rotation_degrees - 90.0).abs() <= 1e-5);
+        assert!((t_done[1].rotation_degrees[1] - 90.0).abs() <= 1e-5);
     }
 }

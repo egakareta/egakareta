@@ -4,7 +4,7 @@ pub(crate) fn create_block_at_cursor(cursor: [f32; 3], block_id: &str) -> LevelO
     LevelObject {
         position: cursor,
         size: [1.0, 1.0, 1.0],
-        rotation_degrees: 0.0,
+        rotation_degrees: [0.0, 0.0, 0.0],
         roundness: 0.18,
         block_id: block_id.to_string(),
         color_tint: [1.0, 1.0, 1.0],

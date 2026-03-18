@@ -7,6 +7,8 @@ use glam::{Vec2, Vec3};
 
 const GIZMO_MOVE_PICK_RADIUS_PIXELS: f32 = 40.0;
 const GIZMO_RESIZE_PICK_RADIUS_PIXELS: f32 = 32.0;
+const GIZMO_ROTATE_PICK_RADIUS_PIXELS: f32 = 30.0;
+const GIZMO_ROTATE_DEGREES_PER_PIXEL: f32 = 0.5;
 
 impl EditorSubsystem {
     pub(crate) fn drag_gizmo(&mut self, x: f64, y: f64, viewport: Vec2) -> bool {
@@ -51,6 +53,8 @@ impl EditorSubsystem {
 
         let axis_screen_dir = axis_screen_delta.normalize();
         let projected_pixels = effective_mouse_delta.dot(axis_screen_dir);
+        let tangent_screen_dir = Vec2::new(-axis_screen_dir.y, axis_screen_dir.x);
+        let projected_tangent_pixels = effective_mouse_delta.dot(tangent_screen_dir);
         let pixels_per_world_unit = axis_screen_delta.length();
         if pixels_per_world_unit <= f32::EPSILON {
             return true;
@@ -161,6 +165,32 @@ impl EditorSubsystem {
                     }
                 }
             }
+            GizmoDragKind::Rotate => {
+                let axis_index = match drag.axis {
+                    GizmoAxis::X | GizmoAxis::XNeg => 0,
+                    GizmoAxis::Y | GizmoAxis::YNeg => 1,
+                    GizmoAxis::Z | GizmoAxis::ZNeg => 2,
+                };
+                let axis_sign = match drag.axis {
+                    GizmoAxis::XNeg | GizmoAxis::YNeg | GizmoAxis::ZNeg => -1.0,
+                    _ => 1.0,
+                };
+                let raw_delta_degrees = projected_tangent_pixels * GIZMO_ROTATE_DEGREES_PER_PIXEL;
+                let snap_enabled = self.config.snap_rotation;
+                let snap_step = self.config.snap_rotation_step_degrees.max(1.0);
+
+                for block in &drag.start_blocks {
+                    if let Some(obj) = self.objects.get_mut(block.index) {
+                        let mut next = block.rotation_degrees;
+                        next[axis_index] =
+                            block.rotation_degrees[axis_index] + raw_delta_degrees * axis_sign;
+                        if snap_enabled {
+                            next[axis_index] = (next[axis_index] / snap_step).round() * snap_step;
+                        }
+                        obj.rotation_degrees = next;
+                    }
+                }
+            }
         }
         true
     }
@@ -174,7 +204,8 @@ impl EditorSubsystem {
         let mode = self.ui.mode;
         let allow_move = mode.shows_move_gizmo();
         let allow_scale = mode.shows_scale_gizmo();
-        if !allow_move && !allow_scale {
+        let allow_rotate = mode.shows_rotate_gizmo();
+        if !allow_move && !allow_scale && !allow_rotate {
             return None;
         }
 
@@ -187,6 +218,7 @@ impl EditorSubsystem {
         );
         let axis_lengths = self.gizmo_axis_lengths_world(center, 64.0, viewport_size);
         let resize_offsets = self.gizmo_axis_lengths_world(center, 9.0, viewport_size);
+        let rotate_offsets = self.gizmo_axis_lengths_world(center, 130.0, viewport_size);
         let pointer = Vec2::new(x as f32, y as f32);
 
         let mut candidates: Vec<(GizmoDragKind, GizmoAxis, Vec3, f32)> = Vec::new();
@@ -280,6 +312,29 @@ impl EditorSubsystem {
                     GizmoAxis::ZNeg,
                     Vec3::new(center.x, center.y, bounds_position[2] - resize_offsets[2]),
                     GIZMO_RESIZE_PICK_RADIUS_PIXELS,
+                ),
+            ]);
+        }
+
+        if allow_rotate {
+            candidates.extend_from_slice(&[
+                (
+                    GizmoDragKind::Rotate,
+                    GizmoAxis::X,
+                    Vec3::new(center.x + rotate_offsets[0], center.y, center.z),
+                    GIZMO_ROTATE_PICK_RADIUS_PIXELS,
+                ),
+                (
+                    GizmoDragKind::Rotate,
+                    GizmoAxis::Y,
+                    Vec3::new(center.x, center.y + rotate_offsets[1], center.z),
+                    GIZMO_ROTATE_PICK_RADIUS_PIXELS,
+                ),
+                (
+                    GizmoDragKind::Rotate,
+                    GizmoAxis::Z,
+                    Vec3::new(center.x, center.y, center.z + rotate_offsets[2]),
+                    GIZMO_ROTATE_PICK_RADIUS_PIXELS,
                 ),
             ]);
         }
@@ -380,6 +435,7 @@ impl EditorSubsystem {
                     index,
                     position: obj.position,
                     size: obj.size,
+                    rotation_degrees: obj.rotation_degrees,
                 });
             }
         }

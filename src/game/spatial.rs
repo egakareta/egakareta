@@ -1,4 +1,5 @@
 use crate::types::LevelObject;
+use glam::{EulerRot, Mat3};
 use std::collections::HashMap;
 
 pub(crate) const GRID_CELL_SIZE: f32 = 4.0;
@@ -14,36 +15,28 @@ impl SpatialGrid {
     }
 
     pub(crate) fn insert_object(&mut self, index: usize, obj: &LevelObject) {
-        // Calculate the bounding box of the object in world coordinates
-        // For simplicity, we use the AABB even if rotated, as it's just for broad-phase
-        let (min_x, max_x, min_z, max_z) = if obj.rotation_degrees.abs() < 0.001 {
-            (
-                obj.position[0],
-                obj.position[0] + obj.size[0],
-                obj.position[2],
-                obj.position[2] + obj.size[2],
-            )
-        } else {
-            // For rotated blocks, a conservative AABB
-            let rad = obj.rotation_degrees.to_radians();
-            let cos = rad.cos().abs();
-            let sin = rad.sin().abs();
-            let half_w = obj.size[0] * 0.5;
-            let half_d = obj.size[2] * 0.5;
+        let center_x = obj.position[0] + obj.size[0] * 0.5;
+        let center_z = obj.position[2] + obj.size[2] * 0.5;
+        let half_x = obj.size[0] * 0.5;
+        let half_y = obj.size[1] * 0.5;
+        let half_z = obj.size[2] * 0.5;
+        let rotation = Mat3::from_euler(
+            EulerRot::XYZ,
+            obj.rotation_degrees[0].to_radians(),
+            obj.rotation_degrees[1].to_radians(),
+            obj.rotation_degrees[2].to_radians(),
+        );
+        let matrix = rotation.to_cols_array_2d();
 
-            let extent_x = half_w * cos + half_d * sin;
-            let extent_z = half_w * sin + half_d * cos;
+        let extent_x =
+            matrix[0][0].abs() * half_x + matrix[1][0].abs() * half_y + matrix[2][0].abs() * half_z;
+        let extent_z =
+            matrix[0][2].abs() * half_x + matrix[1][2].abs() * half_y + matrix[2][2].abs() * half_z;
 
-            let center_x = obj.position[0] + obj.size[0] * 0.5;
-            let center_z = obj.position[2] + obj.size[2] * 0.5;
-
-            (
-                center_x - extent_x,
-                center_x + extent_x,
-                center_z - extent_z,
-                center_z + extent_z,
-            )
-        };
+        let min_x = center_x - extent_x;
+        let max_x = center_x + extent_x;
+        let min_z = center_z - extent_z;
+        let max_z = center_z + extent_z;
 
         let start_x = (min_x / GRID_CELL_SIZE).floor() as i32;
         let end_x = (max_x / GRID_CELL_SIZE).floor() as i32;

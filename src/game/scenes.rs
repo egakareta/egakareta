@@ -17,7 +17,7 @@ pub(crate) fn create_menu_scene() -> Vec<LevelObject> {
             objects.push(LevelObject {
                 position: [x as f32 * 2.0, height, z as f32 * 2.0],
                 size: [2.0, 2.0, 2.0],
-                rotation_degrees: 0.0,
+                rotation_degrees: [0.0, 0.0, 0.0],
                 roundness: 0.18,
                 block_id: "core/grass".to_string(),
                 color_tint: [1.0, 1.0, 1.0],

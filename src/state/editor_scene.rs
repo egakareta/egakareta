@@ -441,6 +441,7 @@ impl State {
             resize_offsets,
             show_move_handles: mode.shows_move_gizmo(),
             show_scale_handles: mode.shows_scale_gizmo(),
+            show_rotate_handles: mode.shows_rotate_gizmo(),
             hovered_part,
             dragged_part,
         });

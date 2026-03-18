@@ -26,6 +26,10 @@ pub(crate) enum AppCommand {
     EditorSetSnapToGrid(bool),
     /// Set the grid snap step.
     EditorSetSnapStep(f32),
+    /// Set whether rotation uses snapping.
+    EditorSetSnapRotation(bool),
+    /// Set the rotation snap step in degrees.
+    EditorSetSnapRotationStep(f32),
 
     // ── Editor – block ops ──────────────────────────────────────────
     /// Remove the block under cursor or selected blocks.

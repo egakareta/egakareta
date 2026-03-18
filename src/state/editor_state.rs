@@ -108,6 +108,14 @@ impl EditorSubsystem {
         self.config.snap_step
     }
 
+    pub(crate) fn snap_rotation(&self) -> bool {
+        self.config.snap_rotation
+    }
+
+    pub(crate) fn snap_rotation_step_degrees(&self) -> f32 {
+        self.config.snap_rotation_step_degrees
+    }
+
     pub(crate) fn selected_block(&self) -> Option<LevelObject> {
         self.selected_indices_normalized()
             .first()
@@ -121,6 +129,14 @@ impl EditorSubsystem {
 
     pub(crate) fn set_snap_step(&mut self, step: f32) {
         self.config.snap_step = step.max(0.05);
+    }
+
+    pub(crate) fn set_snap_rotation(&mut self, snap: bool) {
+        self.config.snap_rotation = snap;
+    }
+
+    pub(crate) fn set_snap_rotation_step_degrees(&mut self, step: f32) {
+        self.config.snap_rotation_step_degrees = step.max(1.0);
     }
 
     pub(crate) fn set_selected_block_position(&mut self, position: [f32; 3]) {
@@ -187,13 +203,19 @@ impl EditorSubsystem {
         }
     }
 
-    pub(crate) fn set_selected_block_rotation(&mut self, rotation_degrees: f32) {
+    pub(crate) fn set_selected_block_rotation(&mut self, rotation_degrees: [f32; 3]) {
         if let Some(index) = self
             .ui
             .selected_block_index
             .filter(|index| *index < self.objects.len())
         {
-            self.objects[index].rotation_degrees = rotation_degrees;
+            let next_rotation = if self.config.snap_rotation {
+                let step = self.config.snap_rotation_step_degrees.max(1.0);
+                rotation_degrees.map(|component| (component / step).round() * step)
+            } else {
+                rotation_degrees
+            };
+            self.objects[index].rotation_degrees = next_rotation;
         }
     }
 
@@ -520,6 +542,14 @@ impl State {
         self.editor.snap_step()
     }
 
+    pub(crate) fn editor_snap_rotation(&self) -> bool {
+        self.editor.snap_rotation()
+    }
+
+    pub(crate) fn editor_snap_rotation_step_degrees(&self) -> f32 {
+        self.editor.snap_rotation_step_degrees()
+    }
+
     pub(crate) fn set_editor_snap_to_grid(&mut self, snap: bool) {
         self.editor.set_snap_to_grid(snap);
         self.session.app_settings.editor_snap_to_grid = self.editor.config.snap_to_grid;
@@ -540,6 +570,29 @@ impl State {
             if let Some(obj) = self.editor_selected_block() {
                 self.set_editor_selected_block_position(obj.position);
                 self.set_editor_selected_block_size(obj.size);
+            }
+        }
+    }
+
+    pub(crate) fn set_editor_snap_rotation(&mut self, snap: bool) {
+        self.editor.set_snap_rotation(snap);
+        self.session.app_settings.editor_rotation_snap = self.editor.config.snap_rotation;
+        self.persist_app_settings();
+        if self.editor.ui.selected_block_index.is_some() {
+            if let Some(obj) = self.editor_selected_block() {
+                self.set_editor_selected_block_rotation(obj.rotation_degrees);
+            }
+        }
+    }
+
+    pub(crate) fn set_editor_snap_rotation_step(&mut self, step: f32) {
+        self.editor.set_snap_rotation_step_degrees(step);
+        self.session.app_settings.editor_rotation_snap_step =
+            self.editor.config.snap_rotation_step_degrees;
+        self.persist_app_settings();
+        if self.editor.config.snap_rotation && self.editor.ui.selected_block_index.is_some() {
+            if let Some(obj) = self.editor_selected_block() {
+                self.set_editor_selected_block_rotation(obj.rotation_degrees);
             }
         }
     }
@@ -611,7 +664,7 @@ impl State {
         }
     }
 
-    pub(crate) fn set_editor_selected_block_rotation(&mut self, rotation_degrees: f32) {
+    pub(crate) fn set_editor_selected_block_rotation(&mut self, rotation_degrees: [f32; 3]) {
         if self.phase != AppPhase::Editor {
             return;
         }

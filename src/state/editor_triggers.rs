@@ -62,9 +62,13 @@ impl EditorSubsystem {
                 });
             }
             TimedTriggerAction::RotateTo { rotation_degrees } => {
-                if !rotation_degrees.is_finite() {
-                    *rotation_degrees = 0.0;
-                }
+                *rotation_degrees = rotation_degrees.map(|component| {
+                    if component.is_finite() {
+                        component
+                    } else {
+                        0.0
+                    }
+                });
             }
             TimedTriggerAction::ScaleTo { size } => {
                 *size = size.map(|component| {

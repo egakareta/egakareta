@@ -13,7 +13,7 @@ fn test_ground_detection_normal() {
     game.objects.push(LevelObject {
         position: [0.0, 0.0, 0.0],
         size: [1.0, 1.0, 1.0],
-        rotation_degrees: 0.0,
+        rotation_degrees: [0.0, 0.0, 0.0],
         roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
@@ -32,7 +32,7 @@ fn test_ground_detection_under_overhang() {
     game.objects.push(LevelObject {
         position: [0.0, 0.0, 0.0],
         size: [1.0, 1.0, 1.0],
-        rotation_degrees: 0.0,
+        rotation_degrees: [0.0, 0.0, 0.0],
         roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
@@ -41,7 +41,7 @@ fn test_ground_detection_under_overhang() {
     game.objects.push(LevelObject {
         position: [0.0, 3.0, 0.0],
         size: [1.0, 1.0, 1.0],
-        rotation_degrees: 0.0,
+        rotation_degrees: [0.0, 0.0, 0.0],
         roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
@@ -80,7 +80,7 @@ fn rotated_object_contains_expected_points() {
     let obj = LevelObject {
         position: [0.0, 0.0, 0.0],
         size: [2.0, 1.0, 1.0],
-        rotation_degrees: 90.0,
+        rotation_degrees: [0.0, 90.0, 0.0],
         roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
@@ -95,7 +95,7 @@ fn rotated_overlap_uses_oriented_bounds() {
     let obj = LevelObject {
         position: [0.0, 0.0, 0.0],
         size: [2.0, 1.0, 1.0],
-        rotation_degrees: 45.0,
+        rotation_degrees: [0.0, 45.0, 0.0],
         roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
@@ -111,7 +111,7 @@ fn rotated_ground_detection_works() {
     game.objects.push(LevelObject {
         position: [0.0, 0.0, 0.0],
         size: [2.0, 2.0, 1.0],
-        rotation_degrees: 90.0,
+        rotation_degrees: [0.0, 90.0, 0.0],
         roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
@@ -133,7 +133,7 @@ fn speed_portal_overlap_removes_portal_and_boosts_speed() {
     game.objects.push(LevelObject {
         position: [0.0, 0.0, 0.0],
         size: [1.0, 1.0, 1.0],
-        rotation_degrees: 30.0,
+        rotation_degrees: [0.0, 30.0, 0.0],
         roundness: 0.18,
         block_id: "core/speedportal".to_string(),
         color_tint: [1.0, 1.0, 1.0],
@@ -154,7 +154,7 @@ fn finish_block_overlap_completes_level_after_sink() {
     game.objects.push(LevelObject {
         position: [0.0, -0.1, 0.0],
         size: [1.0, 0.2, 1.0],
-        rotation_degrees: 0.0,
+        rotation_degrees: [0.0, 0.0, 0.0],
         roundness: 0.18,
         block_id: "core/finish".to_string(),
         color_tint: [1.0, 1.0, 1.0],

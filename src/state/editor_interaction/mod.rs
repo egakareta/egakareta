@@ -31,6 +31,7 @@ pub(crate) struct EditorDragBlockStart {
     pub(crate) index: usize,
     pub(crate) position: [f32; 3],
     pub(crate) size: [f32; 3],
+    pub(crate) rotation_degrees: [f32; 3],
 }
 
 #[derive(Clone)]

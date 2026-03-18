@@ -1,7 +1,7 @@
 use super::super::{EditorSubsystem, PerfStage};
 use crate::platform::state_host::PlatformInstant;
 use crate::types::EditorPickResult;
-use glam::{Vec2, Vec3, Vec4};
+use glam::{EulerRot, Mat3, Vec2, Vec3, Vec4};
 
 const CAMERA_KEYPOINT_BALL_PICK_RADIUS: f32 = 0.55;
 const CAMERA_KEYPOINT_ARROW_PICK_RADIUS: f32 = 0.55;
@@ -178,19 +178,16 @@ impl EditorSubsystem {
             obj.position[2] + obj.size[2] * 0.5,
         );
         let half = Vec3::new(obj.size[0] * 0.5, obj.size[1] * 0.5, obj.size[2] * 0.5);
-        let inv_angle = -obj.rotation_degrees.to_radians();
+        let rotation = Mat3::from_euler(
+            EulerRot::XYZ,
+            obj.rotation_degrees[0].to_radians(),
+            obj.rotation_degrees[1].to_radians(),
+            obj.rotation_degrees[2].to_radians(),
+        );
+        let inv_rotation = rotation.transpose();
 
-        let local_origin_xz = self.rotate_vec2(
-            Vec2::new(ray_origin.x - center.x, ray_origin.z - center.z),
-            inv_angle,
-        );
-        let local_dir_xz = self.rotate_vec2(Vec2::new(ray_dir.x, ray_dir.z), inv_angle);
-        let local_origin = Vec3::new(
-            local_origin_xz.x,
-            ray_origin.y - center.y,
-            local_origin_xz.y,
-        );
-        let local_dir = Vec3::new(local_dir_xz.x, ray_dir.y, local_dir_xz.y);
+        let local_origin = inv_rotation * (ray_origin - center);
+        let local_dir = inv_rotation * ray_dir;
 
         let min = -half;
         let max = half;
@@ -253,15 +250,8 @@ impl EditorSubsystem {
             (t_max, normal_exit)
         };
 
-        let angle = obj.rotation_degrees.to_radians();
-        let normal_xz = self.rotate_vec2(Vec2::new(normal_local.x, normal_local.z), angle);
-        let normal = Vec3::new(normal_xz.x, normal_local.y, normal_xz.y);
+        let normal = rotation * normal_local;
 
         Some((t_hit, normal))
-    }
-
-    fn rotate_vec2(&self, v: Vec2, radians: f32) -> Vec2 {
-        let (sin, cos) = radians.sin_cos();
-        Vec2::new(v.x * cos - v.y * sin, v.x * sin + v.y * cos)
     }
 }

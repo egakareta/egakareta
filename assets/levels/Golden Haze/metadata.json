@@ -35,7 +35,7 @@
             },
             "action": {
                 "kind": "rotate_to",
-                "rotation_degrees": 180.0
+                "rotation_degrees": [0.0, 180.0, 0.0]
             }
         }
     ],

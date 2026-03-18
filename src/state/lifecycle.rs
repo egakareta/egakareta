@@ -505,6 +505,8 @@ impl State {
                     selected_block_id: app_settings.editor_selected_block_id.clone(),
                     snap_to_grid: app_settings.editor_snap_to_grid,
                     snap_step: app_settings.editor_snap_step.max(0.05),
+                    snap_rotation: app_settings.editor_rotation_snap,
+                    snap_rotation_step_degrees: app_settings.editor_rotation_snap_step.max(1.0),
                 },
                 objects: Vec::new(),
                 spawn: SpawnMetadata::default(),

@@ -2,7 +2,7 @@ use crate::block_repository::{resolve_block_definition, BlockRenderProfile};
 use crate::mesh::noise::pseudo_random_noise;
 use crate::mesh::obj::{append_obj_mesh, resolve_obj_mesh};
 use crate::mesh::shapes::append_prism;
-use crate::mesh::transforms::rotate_vertices_around_y;
+use crate::mesh::transforms::rotate_vertices_around_euler;
 use crate::types::{LevelObject, Vertex};
 
 const MARGIN_PROFILE_TOTAL_INSET: f32 = 0.05;
@@ -213,7 +213,7 @@ where
             obj.position[1] + obj.size[1] * 0.5,
             obj.position[2] + obj.size[2] * 0.5,
         ];
-        rotate_vertices_around_y(&mut object_vertices, center, obj.rotation_degrees);
+        rotate_vertices_around_euler(&mut object_vertices, center, obj.rotation_degrees);
         all_vertices.extend(object_vertices);
     }
 

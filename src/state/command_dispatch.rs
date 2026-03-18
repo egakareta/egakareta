@@ -25,6 +25,8 @@ impl State {
             AppCommand::EditorSetBlockId(id) => self.set_editor_block_id(id),
             AppCommand::EditorSetSnapToGrid(snap) => self.set_editor_snap_to_grid(snap),
             AppCommand::EditorSetSnapStep(step) => self.set_editor_snap_step(step),
+            AppCommand::EditorSetSnapRotation(snap) => self.set_editor_snap_rotation(snap),
+            AppCommand::EditorSetSnapRotationStep(step) => self.set_editor_snap_rotation_step(step),
 
             // ── Editor – block ops ──────────────────────────────────
             AppCommand::EditorRemoveBlock => self.editor_remove_block(),
@@ -486,6 +488,13 @@ impl State {
             }
             "4" => {
                 if self.is_editor() && just_pressed && !self.editor.ui.shift_held {
+                    Some(AppCommand::EditorSetMode(EditorMode::Rotate))
+                } else {
+                    None
+                }
+            }
+            "5" => {
+                if self.is_editor() && just_pressed && !self.editor.ui.shift_held {
                     Some(AppCommand::EditorSetMode(EditorMode::Place))
                 } else {
                     None
@@ -724,6 +733,9 @@ mod tests {
 
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Scale));
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Scale);
+
+            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Rotate));
+            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Rotate);
 
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Timing));
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Timing);
@@ -992,6 +1004,13 @@ mod tests {
                 pressed: true,
                 just_pressed: true,
             });
+            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Rotate);
+
+            state.process_input_event(InputEvent::Key {
+                key: "5".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Place);
         });
     }
@@ -1160,7 +1179,7 @@ mod tests {
                 crate::types::LevelObject {
                     position: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
-                    rotation_degrees: 0.0,
+                    rotation_degrees: [0.0, 0.0, 0.0],
                     roundness: 0.18,
                     block_id: "core/stone".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
@@ -1168,7 +1187,7 @@ mod tests {
                 crate::types::LevelObject {
                     position: [2.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
-                    rotation_degrees: 0.0,
+                    rotation_degrees: [0.0, 0.0, 0.0],
                     roundness: 0.18,
                     block_id: "core/stone".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
@@ -1220,7 +1239,7 @@ mod tests {
             state.editor.objects = vec![crate::types::LevelObject {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
-                rotation_degrees: 0.0,
+                rotation_degrees: [0.0, 0.0, 0.0],
                 roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],

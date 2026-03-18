@@ -1,17 +1,29 @@
 use crate::types::Vertex;
+use glam::{EulerRot, Mat3, Vec3};
 
-pub(crate) fn rotate_vertices_around_y(vertices: &mut [Vertex], center: [f32; 3], degrees: f32) {
-    if degrees.abs() <= f32::EPSILON {
+pub(crate) fn rotate_vertices_around_euler(
+    vertices: &mut [Vertex],
+    center: [f32; 3],
+    degrees: [f32; 3],
+) {
+    if degrees
+        .iter()
+        .all(|component| component.abs() <= f32::EPSILON)
+    {
         return;
     }
 
-    let radians = degrees.to_radians();
-    let (sin_theta, cos_theta) = radians.sin_cos();
+    let rotation = Mat3::from_euler(
+        EulerRot::XYZ,
+        degrees[0].to_radians(),
+        degrees[1].to_radians(),
+        degrees[2].to_radians(),
+    );
+    let center = Vec3::from(center);
 
     for vertex in vertices.iter_mut() {
-        let dx = vertex.position[0] - center[0];
-        let dz = vertex.position[2] - center[2];
-        vertex.position[0] = center[0] + dx * cos_theta - dz * sin_theta;
-        vertex.position[2] = center[2] + dx * sin_theta + dz * cos_theta;
+        let local = Vec3::from(vertex.position) - center;
+        let world = center + rotation * local;
+        vertex.position = world.to_array();
     }
 }

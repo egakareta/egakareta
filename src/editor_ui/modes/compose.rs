@@ -44,6 +44,12 @@ pub(crate) fn show_compose_mode_bottom_panel(
             commands.push(AppCommand::EditorSetMode(EditorMode::Scale));
         }
         if ui
+            .selectable_label(mode == EditorMode::Rotate, "Rotate")
+            .clicked()
+        {
+            commands.push(AppCommand::EditorSetMode(EditorMode::Rotate));
+        }
+        if ui
             .selectable_label(
                 mode == EditorMode::Place,
                 format!("{} Place", egui_phosphor::regular::CUBE),
@@ -77,6 +83,26 @@ pub(crate) fn show_compose_mode_bottom_panel(
         {
             commands.push(AppCommand::EditorSetSnapStep(snap_step));
         }
+
+        ui.separator();
+        let mut snap_rotation = view.snap_rotation;
+        if ui.checkbox(&mut snap_rotation, "Snap Rotation").changed() {
+            commands.push(AppCommand::EditorSetSnapRotation(snap_rotation));
+        }
+
+        ui.label("Rot Step:");
+        let mut snap_rotation_step = view.snap_rotation_step_degrees;
+        if ui
+            .add(
+                egui::DragValue::new(&mut snap_rotation_step)
+                    .speed(0.5)
+                    .range(1.0..=180.0)
+                    .suffix("°"),
+            )
+            .changed()
+        {
+            commands.push(AppCommand::EditorSetSnapRotationStep(snap_rotation_step));
+        }
     });
 
     match view.mode {
@@ -98,7 +124,7 @@ pub(crate) fn show_compose_mode_bottom_panel(
                 }
             });
         }
-        EditorMode::Select | EditorMode::Move | EditorMode::Scale => {
+        EditorMode::Select | EditorMode::Move | EditorMode::Scale | EditorMode::Rotate => {
             if let Some(mut selected) = view.selected_block.clone() {
                 ui.horizontal_wrapped(|ui| {
                     ui.horizontal(|ui| {
@@ -140,15 +166,33 @@ pub(crate) fn show_compose_mode_bottom_panel(
                     });
 
                     ui.horizontal(|ui| {
-                        ui.label("Angle:");
-                        if ui
+                        ui.label("Rotate:");
+                        let mut changed = false;
+                        changed |= ui
                             .add(
-                                egui::DragValue::new(&mut selected.rotation_degrees)
+                                egui::DragValue::new(&mut selected.rotation_degrees[0])
                                     .speed(0.5)
+                                    .prefix("X ")
                                     .suffix("°"),
                             )
-                            .changed()
-                        {
+                            .changed();
+                        changed |= ui
+                            .add(
+                                egui::DragValue::new(&mut selected.rotation_degrees[1])
+                                    .speed(0.5)
+                                    .prefix("Y ")
+                                    .suffix("°"),
+                            )
+                            .changed();
+                        changed |= ui
+                            .add(
+                                egui::DragValue::new(&mut selected.rotation_degrees[2])
+                                    .speed(0.5)
+                                    .prefix("Z ")
+                                    .suffix("°"),
+                            )
+                            .changed();
+                        if changed {
                             commands.push(crate::commands::AppCommand::EditorUpdateSelectedBlock(
                                 selected.clone(),
                             ));

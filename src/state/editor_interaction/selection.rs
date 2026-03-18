@@ -4,7 +4,7 @@ use super::super::{
 use crate::platform::state_host::PlatformInstant;
 use crate::types::AppPhase;
 use crate::types::EditorInteractionChange;
-use glam::{Vec2, Vec3};
+use glam::{EulerRot, Mat3, Vec2, Vec3};
 
 const MARQUEE_DRAG_THRESHOLD_PX: f64 = 4.0;
 const CAMERA_KEYPOINT_MARQUEE_RADIUS_PX: f32 = 16.0;
@@ -82,24 +82,25 @@ impl EditorSubsystem {
     fn rotated_block_screen_bounds(&self, index: usize, viewport: Vec2) -> Option<(Vec2, Vec2)> {
         let obj = self.objects.get(index)?;
 
-        let center_xz = Vec2::new(
+        let center = Vec3::new(
             obj.position[0] + obj.size[0] * 0.5,
+            obj.position[1] + obj.size[1] * 0.5,
             obj.position[2] + obj.size[2] * 0.5,
         );
-        let half = Vec2::new(obj.size[0] * 0.5, obj.size[2] * 0.5);
-        let angle = obj.rotation_degrees.to_radians();
-        let (sin, cos) = angle.sin_cos();
-        let rotate_xz = |v: Vec2| Vec2::new(v.x * cos - v.y * sin, v.x * sin + v.y * cos);
-
-        let y0 = obj.position[1];
-        let y1 = obj.position[1] + obj.size[1];
+        let half = Vec3::new(obj.size[0] * 0.5, obj.size[1] * 0.5, obj.size[2] * 0.5);
+        let rotation = Mat3::from_euler(
+            EulerRot::XYZ,
+            obj.rotation_degrees[0].to_radians(),
+            obj.rotation_degrees[1].to_radians(),
+            obj.rotation_degrees[2].to_radians(),
+        );
 
         let mut points = Vec::with_capacity(10);
-        for local_x in [-half.x, half.x] {
-            for local_z in [-half.y, half.y] {
-                let rotated = rotate_xz(Vec2::new(local_x, local_z));
-                for y in [y0, y1] {
-                    let world = Vec3::new(center_xz.x + rotated.x, y, center_xz.y + rotated.y);
+        for sx in [-1.0, 1.0] {
+            for sy in [-1.0, 1.0] {
+                for sz in [-1.0, 1.0] {
+                    let local = Vec3::new(half.x * sx, half.y * sy, half.z * sz);
+                    let world = center + rotation * local;
                     if let Some(screen) = self.world_to_screen_v(world, viewport) {
                         points.push(screen);
                     }
@@ -107,10 +108,7 @@ impl EditorSubsystem {
             }
         }
 
-        if let Some(center_screen) = self.world_to_screen_v(
-            Vec3::new(center_xz.x, y0 + obj.size[1] * 0.5, center_xz.y),
-            viewport,
-        ) {
+        if let Some(center_screen) = self.world_to_screen_v(center, viewport) {
             points.push(center_screen);
         }
 
@@ -385,6 +383,7 @@ impl EditorSubsystem {
                         index,
                         position: obj.position,
                         size: obj.size,
+                        rotation_degrees: obj.rotation_degrees,
                     });
                 }
             }
