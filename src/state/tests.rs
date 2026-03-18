@@ -578,3 +578,45 @@ fn editor_null_mode_clears_selection() {
         assert!(state.editor.ui.selected_block_index.is_none());
     });
 }
+
+#[test]
+fn test_timing_mode_persistence_during_playback() {
+    pollster::block_on(async {
+        let mut state = match State::new_test().await {
+            Some(s) => s,
+            None => return,
+        };
+        state.phase = AppPhase::Editor;
+
+        // 1. Enter Timing Mode
+        state.editor.set_mode(EditorMode::Timing);
+        assert_eq!(state.editor.ui.mode, EditorMode::Timing);
+
+        // 2. Toggle playback
+        state.toggle_editor_timeline_playback();
+
+        // Mode should be Null for playback safety
+        assert_eq!(state.editor.ui.mode, EditorMode::Null);
+        // last_mode should be Timing
+        assert_eq!(
+            state.editor.runtime.interaction.last_mode,
+            Some(EditorMode::Timing)
+        );
+
+        // 3. Verify ViewModel shows we are still conceptually in Timing
+        let view = state.editor_ui_view_model();
+        let is_timing = view.mode == EditorMode::Timing
+            || (view.mode == EditorMode::Null && view.last_mode == Some(EditorMode::Timing));
+        assert!(
+            is_timing,
+            "UI should still consider itself in Timing mode during playback"
+        );
+
+        // 4. Toggle playback off
+        state.toggle_editor_timeline_playback();
+
+        // Should return to Timing mode
+        assert_eq!(state.editor.ui.mode, EditorMode::Timing);
+        assert!(state.editor.runtime.interaction.last_mode.is_none());
+    });
+}

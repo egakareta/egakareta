@@ -6,6 +6,7 @@ use crate::types::{
 
 pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) mode: EditorMode,
+    pub(crate) last_mode: Option<EditorMode>,
     pub(crate) available_levels: &'a [String],
     pub(crate) level_name: Option<&'a str>,
     pub(crate) show_metadata: bool,
@@ -83,6 +84,7 @@ impl State {
 
         EditorUiViewModel {
             mode: self.editor_mode(),
+            last_mode: self.editor.runtime.interaction.last_mode,
             available_levels: self.available_levels(),
             level_name: self.session.editor_level_name.as_deref(),
             show_metadata: self.editor_show_metadata(),

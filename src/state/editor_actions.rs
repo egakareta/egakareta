@@ -340,7 +340,8 @@ impl State {
         self.editor.timeline.playback.playing = !self.editor.timeline.playback.playing;
 
         if self.editor.timeline.playback.playing {
-            self.editor.runtime.interaction.last_mode = Some(self.editor.ui.mode);
+            let last_mode = self.editor.ui.mode;
+            self.editor.runtime.interaction.last_mode = Some(last_mode);
             self.editor.set_mode(EditorMode::Null);
 
             if self.editor.has_object_transform_triggers() {
@@ -349,7 +350,7 @@ impl State {
                     ..EditorDirtyFlags::default()
                 });
             }
-            if self.editor.ui.mode == EditorMode::Timing {
+            if last_mode == EditorMode::Timing {
                 self.editor.timeline.playback.runtime = None;
             } else {
                 self.editor.timeline.playback.runtime = Some(TimelineSimulationRuntime::new(

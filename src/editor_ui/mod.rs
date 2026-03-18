@@ -99,6 +99,12 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
     let view = state.editor_ui_view_model();
     let mut commands = Vec::<AppCommand>::new();
 
+    let mode = view.mode;
+    let last_mode = view.last_mode;
+    let is_timing = mode == EditorMode::Timing
+        || (mode == EditorMode::Null && last_mode == Some(EditorMode::Timing));
+    let is_compose = mode.is_compose_mode() && !is_timing;
+
     if view.show_settings {
         egui::SidePanel::left("editor_settings_sidebar")
             .resizable(true)
@@ -261,18 +267,12 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
     egui::TopBottomPanel::top("editor_top_bar").show(ctx, |ui| {
         ui.horizontal(|ui| {
             // Top-level tabs: Compose / Timing
-            let mode = view.mode;
-            let is_compose = mode.is_compose_mode();
             if ui.selectable_label(is_compose, "Compose").clicked() && !is_compose {
                 commands.push(crate::commands::AppCommand::EditorSetMode(
                     EditorMode::Place,
                 ));
             }
-            if ui
-                .selectable_label(mode == EditorMode::Timing, "Timing")
-                .clicked()
-                && mode != EditorMode::Timing
-            {
+            if ui.selectable_label(is_timing, "Timing").clicked() && !is_timing {
                 commands.push(crate::commands::AppCommand::EditorSetMode(
                     EditorMode::Timing,
                 ));
@@ -424,7 +424,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
             ui.vertical(|ui| {
                 let duration_seconds = timeline_metrics(view.timeline_duration_seconds);
 
-                if view.mode == EditorMode::Timing {
+                if is_timing {
                     show_timing_mode_bottom_panel(ui, &view, duration_seconds, &mut commands);
                 } else {
                     show_compose_mode_bottom_panel(ui, &view, duration_seconds, &mut commands);
@@ -436,7 +436,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
         });
 
     // Waveform visualization central panel (Timing mode only)
-    if view.mode == EditorMode::Timing {
+    if is_timing {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::central_panel(&ctx.style()).fill(egui::Color32::from_rgb(15, 20, 28)),
@@ -446,7 +446,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
             });
     }
 
-    if view.mode != EditorMode::Timing {
+    if !is_timing {
         show_view_selector_cube(ctx, view.camera_rotation, view.camera_pitch, &mut commands);
     }
 
