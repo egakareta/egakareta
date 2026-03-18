@@ -464,73 +464,29 @@ impl State {
                 }
             }
             "1" => {
-                if self.is_editor() && just_pressed {
-                    if self.editor.ui.shift_held {
-                        Some(AppCommand::EditorSetBlockId("core/stone".to_string()))
-                    } else {
-                        Some(AppCommand::EditorSetMode(EditorMode::Select))
-                    }
+                if self.is_editor() && just_pressed && !self.editor.ui.shift_held {
+                    Some(AppCommand::EditorSetMode(EditorMode::Select))
                 } else {
                     None
                 }
             }
             "2" => {
-                if self.is_editor() && just_pressed {
-                    if self.editor.ui.shift_held {
-                        Some(AppCommand::EditorSetBlockId("core/grass".to_string()))
-                    } else {
-                        Some(AppCommand::EditorSetMode(EditorMode::Move))
-                    }
+                if self.is_editor() && just_pressed && !self.editor.ui.shift_held {
+                    Some(AppCommand::EditorSetMode(EditorMode::Move))
                 } else {
                     None
                 }
             }
             "3" => {
-                if self.is_editor() && just_pressed {
-                    if self.editor.ui.shift_held {
-                        Some(AppCommand::EditorSetBlockId("core/dirt".to_string()))
-                    } else {
-                        Some(AppCommand::EditorSetMode(EditorMode::Scale))
-                    }
+                if self.is_editor() && just_pressed && !self.editor.ui.shift_held {
+                    Some(AppCommand::EditorSetMode(EditorMode::Scale))
                 } else {
                     None
                 }
             }
             "4" => {
-                if self.is_editor() && just_pressed {
-                    if self.editor.ui.shift_held {
-                        Some(AppCommand::EditorSetBlockId("core/void".to_string()))
-                    } else {
-                        Some(AppCommand::EditorSetMode(EditorMode::Place))
-                    }
-                } else {
-                    None
-                }
-            }
-            "!" => {
-                if self.is_editor() && just_pressed {
-                    Some(AppCommand::EditorSetBlockId("core/stone".to_string()))
-                } else {
-                    None
-                }
-            }
-            "@" => {
-                if self.is_editor() && just_pressed {
-                    Some(AppCommand::EditorSetBlockId("core/grass".to_string()))
-                } else {
-                    None
-                }
-            }
-            "#" => {
-                if self.is_editor() && just_pressed {
-                    Some(AppCommand::EditorSetBlockId("core/dirt".to_string()))
-                } else {
-                    None
-                }
-            }
-            "$" => {
-                if self.is_editor() && just_pressed {
-                    Some(AppCommand::EditorSetBlockId("core/void".to_string()))
+                if self.is_editor() && just_pressed && !self.editor.ui.shift_held {
+                    Some(AppCommand::EditorSetMode(EditorMode::Place))
                 } else {
                     None
                 }
@@ -1037,102 +993,6 @@ mod tests {
                 just_pressed: true,
             });
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Place);
-        });
-    }
-
-    #[test]
-    fn test_keyboard_shift_number_hotkeys_select_blocks() {
-        pollster::block_on(async {
-            use crate::commands::InputEvent;
-
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
-            state.phase = AppPhase::Menu;
-            state.dispatch(AppCommand::ToggleEditor);
-
-            state.process_input_event(InputEvent::Key {
-                key: "Shift".to_string(),
-                pressed: true,
-                just_pressed: true,
-            });
-
-            state.process_input_event(InputEvent::Key {
-                key: "1".to_string(),
-                pressed: true,
-                just_pressed: true,
-            });
-            assert_eq!(state.editor.config.selected_block_id, "core/stone");
-
-            state.process_input_event(InputEvent::Key {
-                key: "2".to_string(),
-                pressed: true,
-                just_pressed: true,
-            });
-            assert_eq!(state.editor.config.selected_block_id, "core/grass");
-
-            state.process_input_event(InputEvent::Key {
-                key: "3".to_string(),
-                pressed: true,
-                just_pressed: true,
-            });
-            assert_eq!(state.editor.config.selected_block_id, "core/dirt");
-
-            state.process_input_event(InputEvent::Key {
-                key: "4".to_string(),
-                pressed: true,
-                just_pressed: true,
-            });
-            assert_eq!(state.editor.config.selected_block_id, "core/void");
-
-            state.process_input_event(InputEvent::Key {
-                key: "Shift".to_string(),
-                pressed: false,
-                just_pressed: false,
-            });
-        });
-    }
-
-    #[test]
-    fn test_keyboard_shifted_symbol_hotkeys_select_blocks() {
-        pollster::block_on(async {
-            use crate::commands::InputEvent;
-
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
-            state.phase = AppPhase::Menu;
-            state.dispatch(AppCommand::ToggleEditor);
-
-            state.process_input_event(InputEvent::Key {
-                key: "!".to_string(),
-                pressed: true,
-                just_pressed: true,
-            });
-            assert_eq!(state.editor.config.selected_block_id, "core/stone");
-
-            state.process_input_event(InputEvent::Key {
-                key: "@".to_string(),
-                pressed: true,
-                just_pressed: true,
-            });
-            assert_eq!(state.editor.config.selected_block_id, "core/grass");
-
-            state.process_input_event(InputEvent::Key {
-                key: "#".to_string(),
-                pressed: true,
-                just_pressed: true,
-            });
-            assert_eq!(state.editor.config.selected_block_id, "core/dirt");
-
-            state.process_input_event(InputEvent::Key {
-                key: "$".to_string(),
-                pressed: true,
-                just_pressed: true,
-            });
-            assert_eq!(state.editor.config.selected_block_id, "core/void");
         });
     }
 
