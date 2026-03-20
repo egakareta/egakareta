@@ -1,6 +1,7 @@
 use crate::mesh::advanced_shapes::{append_cone, append_sphere};
 use crate::mesh::shapes::{append_prism, append_quad};
 use crate::types::{CameraKeypoint, CameraKeypointMode, Vertex};
+use glam::Vec3;
 
 pub(crate) fn build_trail_vertices(points: &[[f32; 3]], game_over: bool) -> Vec<Vertex> {
     let mut trail_vertices = Vec::new();
@@ -180,8 +181,10 @@ pub(crate) fn build_tap_indicator_vertices(positions: &[[f32; 3]]) -> Vec<Vertex
 pub(crate) fn build_camera_keypoint_marker_vertices(
     keypoints: &[CameraKeypoint],
     selected_index: Option<usize>,
+    current_camera_eye: Option<Vec3>,
 ) -> Vec<Vertex> {
     const CAMERA_BASE_DISTANCE: f32 = 24.0;
+    const HIDE_DISTANCE_SQUARED: f32 = 0.5 * 0.5;
 
     let mut vertices = Vec::new();
 
@@ -203,6 +206,14 @@ pub(crate) fn build_camera_keypoint_marker_vertices(
             keypoint.target_position[1] + offset[1],
             keypoint.target_position[2] + offset[2],
         ];
+
+        // Skip rendering if the camera is inside the keypoint.
+        if let Some(cam_eye) = current_camera_eye {
+            let keypoint_eye_vec = Vec3::from_array(eye);
+            if cam_eye.distance_squared(keypoint_eye_vec) < HIDE_DISTANCE_SQUARED {
+                continue;
+            }
+        }
 
         let forward = if distance > f32::EPSILON {
             [

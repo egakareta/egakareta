@@ -535,7 +535,20 @@ impl State {
                         .camera_keypoint_index_for_trigger_index(trigger_index)
                 });
 
-        let vertices = build_camera_keypoint_marker_vertices(&keypoints, selected_keypoint_index);
+        let current_camera_eye = if self.editor_is_playing() {
+            let (e, _) = self.editor_preview_camera_view();
+            Some(Vec3::from_array(e))
+        } else {
+            let target = self.editor.editor_camera_target();
+            let offset = self.editor_camera_offset();
+            Some(target + offset)
+        };
+
+        let vertices = build_camera_keypoint_marker_vertices(
+            &keypoints,
+            selected_keypoint_index,
+            current_camera_eye,
+        );
         self.render
             .meshes
             .camera_keypoint_markers
