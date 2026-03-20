@@ -1233,6 +1233,7 @@ pub(crate) enum EditorMode {
     Rotate,
     #[default]
     Place,
+    Trigger,
     Timing,
     Null,
 }
@@ -1245,7 +1246,13 @@ impl EditorMode {
     pub(crate) fn is_compose_mode(self) -> bool {
         matches!(
             self,
-            Self::Select | Self::Move | Self::Scale | Self::Rotate | Self::Place | Self::Null
+            Self::Select
+                | Self::Move
+                | Self::Scale
+                | Self::Rotate
+                | Self::Place
+                | Self::Trigger
+                | Self::Null
         )
     }
 
@@ -1266,7 +1273,7 @@ impl EditorMode {
     }
 
     pub(crate) fn can_select(self) -> bool {
-        self != Self::Null && self != Self::Timing
+        self != Self::Null && self != Self::Timing && self != Self::Trigger
     }
 }
 

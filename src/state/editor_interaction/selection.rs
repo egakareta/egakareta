@@ -2,8 +2,7 @@ use super::super::{
     EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart, EditorSubsystem, PerfStage, State,
 };
 use crate::platform::state_host::PlatformInstant;
-use crate::types::AppPhase;
-use crate::types::EditorInteractionChange;
+use crate::types::{AppPhase, EditorInteractionChange, EditorMode};
 use glam::{EulerRot, Mat3, Vec2, Vec3};
 
 const MARQUEE_DRAG_THRESHOLD_PX: f64 = 4.0;
@@ -27,8 +26,9 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn begin_marquee_selection(&mut self, x: f64, y: f64, phase: AppPhase) -> bool {
-        if phase != AppPhase::Editor || self.ui.right_dragging || !self.ui.mode.is_selection_mode()
-        {
+        let allows_marquee =
+            self.ui.mode.is_selection_mode() || self.ui.mode == EditorMode::Trigger;
+        if phase != AppPhase::Editor || self.ui.right_dragging || !allows_marquee {
             return false;
         }
         self.ui.marquee_start_screen = Some([x, y]);
@@ -37,8 +37,9 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn update_marquee_selection(&mut self, x: f64, y: f64, phase: AppPhase) -> bool {
-        if phase != AppPhase::Editor || self.ui.right_dragging || !self.ui.mode.is_selection_mode()
-        {
+        let allows_marquee =
+            self.ui.mode.is_selection_mode() || self.ui.mode == EditorMode::Trigger;
+        if phase != AppPhase::Editor || self.ui.right_dragging || !allows_marquee {
             return false;
         }
         if self.ui.marquee_start_screen.is_none() {
@@ -172,16 +173,22 @@ impl EditorSubsystem {
             start[1].max(current[1]) as f32,
         );
 
-        let hits = self.marquee_overlapping_blocks(viewport);
+        if self.ui.mode.is_selection_mode() {
+            let hits = self.marquee_overlapping_blocks(viewport);
 
-        if additive {
-            for hit in hits {
-                if !self.ui.selected_block_indices.contains(&hit) {
-                    self.ui.selected_block_indices.push(hit);
+            if additive {
+                for hit in hits {
+                    if !self.ui.selected_block_indices.contains(&hit) {
+                        self.ui.selected_block_indices.push(hit);
+                    }
                 }
+            } else {
+                self.ui.selected_block_indices = hits;
             }
         } else {
-            self.ui.selected_block_indices = hits;
+            self.ui.selected_block_indices.clear();
+            self.ui.selected_block_index = None;
+            self.ui.hovered_block_index = None;
         }
 
         let trigger_hit = self.marquee_trigger_hit(rect_min, rect_max, viewport);
@@ -221,7 +228,9 @@ impl EditorSubsystem {
         viewport: Vec2,
         phase: AppPhase,
     ) -> bool {
-        if phase != AppPhase::Editor || !self.ui.mode.is_selection_mode() {
+        let allows_marquee =
+            self.ui.mode.is_selection_mode() || self.ui.mode == EditorMode::Trigger;
+        if phase != AppPhase::Editor || !allows_marquee {
             self.ui.marquee_start_screen = None;
             self.ui.marquee_current_screen = None;
             return false;
@@ -484,6 +493,7 @@ impl EditorSubsystem {
         };
         self.perf_record(PerfStage::SelectionPick, pick_started_at);
 
+        let trigger_mode = self.ui.mode == EditorMode::Trigger;
         let mut changed = EditorInteractionChange::None;
         let apply_started_at = PlatformInstant::now();
 
@@ -494,37 +504,47 @@ impl EditorSubsystem {
                 self.set_trigger_selected(Some(hit_trigger_index));
             }
 
-            if !additive {
+            if !additive || trigger_mode {
                 self.ui.selected_block_indices.clear();
                 self.ui.selected_block_index = None;
             }
             self.ui.hovered_block_index = None;
             changed = EditorInteractionChange::Hover;
         } else if let Some(hit_index) = pick.hit_block_index {
-            if !additive {
-                self.set_trigger_selected(None);
-            }
-            if additive {
-                if let Some(existing) = self
-                    .ui
-                    .selected_block_indices
-                    .iter()
-                    .position(|idx| *idx == hit_index)
-                {
-                    self.ui.selected_block_indices.remove(existing);
-                    if self.ui.selected_block_indices.is_empty() {
-                        self.ui.selected_block_index = None;
-                        self.ui.hovered_block_index = None;
+            if trigger_mode {
+                if !additive {
+                    self.set_trigger_selected(None);
+                }
+                self.ui.selected_block_indices.clear();
+                self.ui.selected_block_index = None;
+                self.ui.hovered_block_index = None;
+                changed = EditorInteractionChange::Hover;
+            } else {
+                if !additive {
+                    self.set_trigger_selected(None);
+                }
+                if additive {
+                    if let Some(existing) = self
+                        .ui
+                        .selected_block_indices
+                        .iter()
+                        .position(|idx| *idx == hit_index)
+                    {
+                        self.ui.selected_block_indices.remove(existing);
+                        if self.ui.selected_block_indices.is_empty() {
+                            self.ui.selected_block_index = None;
+                            self.ui.hovered_block_index = None;
+                        }
+                    } else {
+                        self.ui.selected_block_indices.push(hit_index);
                     }
                 } else {
+                    self.ui.selected_block_indices.clear();
                     self.ui.selected_block_indices.push(hit_index);
                 }
-            } else {
-                self.ui.selected_block_indices.clear();
-                self.ui.selected_block_indices.push(hit_index);
+                self.ui.hovered_block_index = Some(hit_index);
+                changed = EditorInteractionChange::Hover;
             }
-            self.ui.hovered_block_index = Some(hit_index);
-            changed = EditorInteractionChange::Hover;
         } else if !additive {
             self.ui.selected_block_indices.clear();
             self.ui.selected_block_index = None;
@@ -601,7 +621,10 @@ impl State {
 
         self.rebuild_editor_hover_outline_vertices();
 
-        if self.phase == AppPhase::Editor && self.editor.mode().is_selection_mode() {
+        let mode = self.editor.mode();
+        if self.phase == AppPhase::Editor
+            && (mode.is_selection_mode() || mode == EditorMode::Trigger)
+        {
             self.editor
                 .select_block_from_screen(x, y, viewport_size, self.phase);
             return true;

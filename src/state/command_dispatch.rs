@@ -99,6 +99,7 @@ impl State {
                 transition_seconds,
             } => self.set_editor_camera_orientation(rotation, pitch, transition_seconds),
             AppCommand::EditorAddCameraTrigger => self.editor_add_camera_trigger(),
+            AppCommand::EditorAddTrigger(trigger) => self.editor_add_trigger(trigger),
             AppCommand::EditorCaptureSelectedCameraTrigger => {
                 self.editor_capture_selected_camera_trigger()
             }
@@ -490,6 +491,13 @@ impl State {
                     None
                 }
             }
+            "6" => {
+                if self.is_editor() && just_pressed && !self.editor.ui.shift_held {
+                    Some(AppCommand::EditorSetMode(EditorMode::Trigger))
+                } else {
+                    None
+                }
+            }
             "o" | "O" => {
                 if self.is_editor()
                     && self.editor.ui.ctrl_held
@@ -732,6 +740,9 @@ mod tests {
 
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Place));
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Place);
+
+            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Trigger));
+            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Trigger);
         });
     }
 
@@ -1002,6 +1013,13 @@ mod tests {
                 just_pressed: true,
             });
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Place);
+
+            state.process_input_event(InputEvent::Key {
+                key: "6".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Trigger);
         });
     }
 
@@ -1411,6 +1429,56 @@ mod tests {
             });
 
             assert_eq!(state.editor.selected_trigger_index(), Some(0));
+        });
+    }
+
+    #[test]
+    fn test_trigger_mode_click_does_not_select_blocks() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+            state.phase = AppPhase::Menu;
+            state.dispatch(AppCommand::ToggleEditor);
+            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Trigger));
+
+            state.editor.objects.push(crate::types::LevelObject {
+                position: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                roundness: 0.18,
+                block_id: "core/stone".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            });
+
+            let viewport = Vec2::new(
+                state.render.gpu.config.width as f32,
+                state.render.gpu.config.height as f32,
+            );
+            let block_center = glam::Vec3::new(0.5, 0.5, 0.5);
+            let block_screen = state
+                .editor
+                .world_to_screen_v(block_center, viewport)
+                .expect("block center should project to the screen");
+
+            state.process_input_event(InputEvent::PointerMoved {
+                x: block_screen.x as f64,
+                y: block_screen.y as f64,
+            });
+            state.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: true,
+            });
+            state.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: false,
+            });
+
+            assert!(state.editor.ui.selected_block_index.is_none());
+            assert!(state.editor.ui.selected_block_indices.is_empty());
         });
     }
 

@@ -522,6 +522,7 @@ fn editor_mode_selection_constraints() {
     assert!(EditorMode::Move.can_select());
     assert!(EditorMode::Scale.can_select());
     assert!(EditorMode::Place.can_select());
+    assert!(!EditorMode::Trigger.can_select());
     assert!(!EditorMode::Timing.can_select());
     assert!(!EditorMode::Null.can_select());
 }

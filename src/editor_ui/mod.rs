@@ -6,6 +6,7 @@ use crate::commands::AppCommand;
 use crate::editor_ui::components::{show_timeline_bar, show_waveform_panel, timeline_metrics};
 use crate::editor_ui::modes::compose::show_compose_mode_bottom_panel;
 use crate::editor_ui::modes::timing::show_timing_mode_bottom_panel;
+use crate::editor_ui::modes::trigger::show_trigger_mode_bottom_panel;
 use crate::types::{essential_keybind_actions, format_key_chord, EditorMode, SettingsSection};
 use crate::State;
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
@@ -426,6 +427,8 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
 
                 if is_timing {
                     show_timing_mode_bottom_panel(ui, &view, duration_seconds, &mut commands);
+                } else if view.mode == EditorMode::Trigger {
+                    show_trigger_mode_bottom_panel(ui, &view, duration_seconds, &mut commands);
                 } else {
                     show_compose_mode_bottom_panel(ui, &view, duration_seconds, &mut commands);
                 }
@@ -450,7 +453,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
         show_view_selector_cube(ctx, view.camera_rotation, view.camera_pitch, &mut commands);
     }
 
-    if view.mode.is_selection_mode() {
+    if view.mode.is_selection_mode() || view.mode == EditorMode::Trigger {
         if let Some((start, current, is_active_drag)) = view.marquee_selection_rect_screen {
             if is_active_drag {
                 let rect = egui::Rect::from_two_pos(

@@ -960,6 +960,19 @@ impl State {
         });
     }
 
+    pub(crate) fn editor_add_trigger(&mut self, trigger: TimedTrigger) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        self.record_editor_history_state();
+        self.editor.add_trigger(trigger);
+        self.mark_editor_dirty(EditorDirtyFlags {
+            rebuild_selection_overlays: true,
+            ..EditorDirtyFlags::default()
+        });
+    }
+
     pub(crate) fn editor_capture_selected_camera_trigger(&mut self) {
         if self.phase != AppPhase::Editor {
             return;

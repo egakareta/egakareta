@@ -324,6 +324,8 @@ impl State {
                     return;
                 }
                 self.begin_editor_marquee_selection(x, y);
+            } else if mode == EditorMode::Trigger {
+                self.begin_editor_marquee_selection(x, y);
             } else if mode == EditorMode::Timing {
                 // Timing mode: clicks handled by egui waveform panel
             }
