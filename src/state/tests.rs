@@ -2,8 +2,13 @@ use super::EditorDirtyFlags;
 use super::State;
 use crate::commands::AppCommand;
 use crate::editor_domain::{derive_tap_indicator_positions, derive_timeline_position};
+use crate::game::{center_spawn_position, simulate_timeline_state_with_triggers};
 use crate::types::{AppPhase, EditorMode, LevelObject, SpawnDirection};
 use glam::{Vec2, Vec3};
+
+fn approx_eq(a: f32, b: f32, eps: f32) {
+    assert!((a - b).abs() <= eps, "expected {a} ~= {b}");
+}
 
 #[test]
 fn test_marquee_no_redundant_selections_before_drag_started() {
@@ -226,6 +231,130 @@ fn test_state_phase_integrity() {
 
         state.toggle_editor(); // Should go back to menu from editor
         assert_eq!(state.phase, crate::types::AppPhase::Menu);
+    });
+}
+
+fn configure_trigger_policy_parity_scene(
+    state: &mut State,
+    simulate_trigger_hitboxes: bool,
+    timeline_time_seconds: f32,
+) {
+    state.editor.objects = vec![LevelObject {
+        position: [8.0, 0.0, 8.0],
+        size: [1.0, 1.0, 1.0],
+        rotation_degrees: [0.0, 0.0, 0.0],
+        roundness: 0.18,
+        block_id: "core/speedportal".to_string(),
+        color_tint: [1.0, 1.0, 1.0],
+    }];
+    state.editor.spawn.position = [0.0, 0.0, 0.0];
+    state.editor.spawn.direction = SpawnDirection::Forward;
+    state.editor.timeline.taps.tap_times.clear();
+    state.editor.set_triggers(vec![crate::types::TimedTrigger {
+        time_seconds: 0.0,
+        duration_seconds: 0.0,
+        easing: crate::types::TimedTriggerEasing::Linear,
+        target: crate::types::TimedTriggerTarget::Object { object_id: 0 },
+        action: crate::types::TimedTriggerAction::MoveTo {
+            position: [0.0, 0.0, 1.0],
+        },
+    }]);
+    state.set_editor_simulate_trigger_hitboxes(simulate_trigger_hitboxes);
+    state.editor.timeline.clock.time_seconds = timeline_time_seconds;
+}
+
+#[test]
+fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_disabled() {
+    pollster::block_on(async {
+        let mut state = match State::new_test().await {
+            Some(s) => s,
+            None => return,
+        };
+
+        state.start_editor(0);
+        let timeline_time_seconds = 0.35;
+        configure_trigger_policy_parity_scene(&mut state, false, timeline_time_seconds);
+
+        let expected = simulate_timeline_state_with_triggers(
+            state.editor.spawn.position,
+            state.editor.spawn.direction,
+            &state.editor.objects,
+            &state.editor.timeline.taps.tap_times,
+            state.editor.triggers(),
+            state.editor.simulate_trigger_hitboxes(),
+            timeline_time_seconds,
+        );
+
+        state.toggle_editor_timeline_playback();
+        let playback_snapshot = state
+            .editor
+            .timeline
+            .playback
+            .runtime
+            .as_ref()
+            .expect("playback runtime should be initialized")
+            .snapshot();
+
+        approx_eq(playback_snapshot.position[0], expected.position[0], 1e-4);
+        approx_eq(playback_snapshot.position[1], expected.position[1], 1e-4);
+        approx_eq(playback_snapshot.position[2], expected.position[2], 1e-4);
+        approx_eq(playback_snapshot.speed, expected.speed, 1e-4);
+
+        state.editor_playtest();
+        let centered_expected = center_spawn_position(expected.position);
+        approx_eq(state.gameplay.state.position[0], centered_expected[0], 1e-4);
+        approx_eq(state.gameplay.state.position[1], centered_expected[1], 1e-4);
+        approx_eq(state.gameplay.state.position[2], centered_expected[2], 1e-4);
+        approx_eq(state.gameplay.state.speed, expected.speed, 1e-4);
+        assert!(!state.session.playing_trigger_hitboxes);
+    });
+}
+
+#[test]
+fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_enabled() {
+    pollster::block_on(async {
+        let mut state = match State::new_test().await {
+            Some(s) => s,
+            None => return,
+        };
+
+        state.start_editor(0);
+        let timeline_time_seconds = 0.35;
+        configure_trigger_policy_parity_scene(&mut state, true, timeline_time_seconds);
+
+        let expected = simulate_timeline_state_with_triggers(
+            state.editor.spawn.position,
+            state.editor.spawn.direction,
+            &state.editor.objects,
+            &state.editor.timeline.taps.tap_times,
+            state.editor.triggers(),
+            state.editor.simulate_trigger_hitboxes(),
+            timeline_time_seconds,
+        );
+
+        state.toggle_editor_timeline_playback();
+        let playback_snapshot = state
+            .editor
+            .timeline
+            .playback
+            .runtime
+            .as_ref()
+            .expect("playback runtime should be initialized")
+            .snapshot();
+
+        approx_eq(playback_snapshot.position[0], expected.position[0], 1e-4);
+        approx_eq(playback_snapshot.position[1], expected.position[1], 1e-4);
+        approx_eq(playback_snapshot.position[2], expected.position[2], 1e-4);
+        approx_eq(playback_snapshot.speed, expected.speed, 1e-4);
+
+        state.editor_playtest();
+        let centered_expected = center_spawn_position(expected.position);
+        approx_eq(state.gameplay.state.position[0], centered_expected[0], 1e-4);
+        approx_eq(state.gameplay.state.position[1], centered_expected[1], 1e-4);
+        approx_eq(state.gameplay.state.position[2], centered_expected[2], 1e-4);
+        approx_eq(state.gameplay.state.speed, expected.speed, 1e-4);
+        assert!(state.session.playing_trigger_hitboxes);
+        assert!(state.gameplay.state.speed > crate::game::BASE_PLAYER_SPEED);
     });
 }
 
