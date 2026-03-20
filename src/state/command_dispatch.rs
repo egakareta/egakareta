@@ -98,23 +98,13 @@ impl State {
                 pitch,
                 transition_seconds,
             } => self.set_editor_camera_orientation(rotation, pitch, transition_seconds),
-            AppCommand::EditorAddCameraKeypoint => self.editor_add_camera_keypoint(),
-            AppCommand::EditorRemoveCameraKeypoint(index) => {
-                self.editor_remove_camera_keypoint(index)
+            AppCommand::EditorAddCameraTrigger => self.editor_add_camera_trigger(),
+            AppCommand::EditorCaptureSelectedCameraTrigger => {
+                self.editor_capture_selected_camera_trigger()
             }
-            AppCommand::EditorSetCameraKeypointSelected(selected) => {
-                self.set_editor_camera_keypoint_selected(selected)
+            AppCommand::EditorApplySelectedCameraTrigger => {
+                self.editor_apply_selected_camera_trigger()
             }
-            AppCommand::EditorUpdateCameraKeypoint(index, keypoint) => {
-                self.editor_update_camera_keypoint(index, keypoint)
-            }
-            AppCommand::EditorCaptureSelectedCameraKeypoint => {
-                self.editor_capture_selected_camera_keypoint()
-            }
-            AppCommand::EditorApplySelectedCameraKeypoint => {
-                self.editor_apply_selected_camera_keypoint()
-            }
-            AppCommand::EditorAddTrigger(trigger) => self.editor_add_trigger(trigger),
             AppCommand::EditorRemoveTrigger(index) => self.editor_remove_trigger(index),
             AppCommand::EditorSetTriggerSelected(selected) => {
                 self.set_editor_trigger_selected(selected)
@@ -446,7 +436,7 @@ impl State {
             }
             "k" | "K" => {
                 if self.is_editor() && self.editor.ui.shift_held && just_pressed {
-                    Some(AppCommand::EditorAddCameraKeypoint)
+                    Some(AppCommand::EditorAddCameraTrigger)
                 } else {
                     None
                 }
@@ -692,8 +682,8 @@ mod tests {
     use super::State;
     use crate::commands::AppCommand;
     use crate::types::{
-        camera_keypoints_to_timed_triggers, AppPhase, CameraKeypoint, CameraKeypointEasing,
-        CameraKeypointMode,
+        camera_triggers_to_timed_triggers, AppPhase, CameraTrigger, CameraTriggerMode,
+        TimedTriggerEasing,
     };
     use glam::Vec2;
 
@@ -1301,7 +1291,7 @@ mod tests {
     }
 
     #[test]
-    fn test_select_mode_click_selects_camera_keypoint_marker() {
+    fn test_select_mode_click_selects_camera_trigger_marker() {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
@@ -1315,10 +1305,10 @@ mod tests {
 
             let camera_offset = state.editor.camera_offset();
             let target = state.editor.editor_camera_target() + (-camera_offset.normalize() * 8.0);
-            let keypoint = CameraKeypoint {
+            let camera_trigger = CameraTrigger {
                 time_seconds: 1.0,
-                mode: CameraKeypointMode::Static,
-                easing: CameraKeypointEasing::Linear,
+                mode: CameraTriggerMode::Static,
+                easing: TimedTriggerEasing::Linear,
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 target_position: target.to_array(),
@@ -1327,12 +1317,12 @@ mod tests {
             };
             state
                 .editor
-                .set_triggers(camera_keypoints_to_timed_triggers(std::slice::from_ref(
-                    &keypoint,
+                .set_triggers(camera_triggers_to_timed_triggers(std::slice::from_ref(
+                    &camera_trigger,
                 )));
             state.editor.set_trigger_selected(None);
 
-            let marker_eye = state.editor.camera_keypoint_marker_eye(&keypoint);
+            let marker_eye = state.editor.camera_trigger_marker_eye(&camera_trigger);
             let viewport = Vec2::new(
                 state.render.gpu.config.width as f32,
                 state.render.gpu.config.height as f32,
@@ -1355,12 +1345,12 @@ mod tests {
                 pressed: false,
             });
 
-            assert_eq!(state.editor.camera.selected_keypoint_index, Some(0));
+            assert_eq!(state.editor.selected_trigger_index(), Some(0));
         });
     }
 
     #[test]
-    fn test_select_mode_marquee_selects_camera_keypoint_marker() {
+    fn test_select_mode_marquee_selects_camera_trigger_marker() {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
@@ -1374,10 +1364,10 @@ mod tests {
 
             let camera_offset = state.editor.camera_offset();
             let target = state.editor.editor_camera_target() + (-camera_offset.normalize() * 8.0);
-            let keypoint = CameraKeypoint {
+            let camera_trigger = CameraTrigger {
                 time_seconds: 1.0,
-                mode: CameraKeypointMode::Static,
-                easing: CameraKeypointEasing::Linear,
+                mode: CameraTriggerMode::Static,
+                easing: TimedTriggerEasing::Linear,
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 target_position: target.to_array(),
@@ -1386,12 +1376,12 @@ mod tests {
             };
             state
                 .editor
-                .set_triggers(camera_keypoints_to_timed_triggers(std::slice::from_ref(
-                    &keypoint,
+                .set_triggers(camera_triggers_to_timed_triggers(std::slice::from_ref(
+                    &camera_trigger,
                 )));
             state.editor.set_trigger_selected(None);
 
-            let marker_eye = state.editor.camera_keypoint_marker_eye(&keypoint);
+            let marker_eye = state.editor.camera_trigger_marker_eye(&camera_trigger);
             let viewport = Vec2::new(
                 state.render.gpu.config.width as f32,
                 state.render.gpu.config.height as f32,
@@ -1420,7 +1410,7 @@ mod tests {
                 pressed: false,
             });
 
-            assert_eq!(state.editor.camera.selected_keypoint_index, Some(0));
+            assert_eq!(state.editor.selected_trigger_index(), Some(0));
         });
     }
 

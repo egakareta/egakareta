@@ -4,9 +4,7 @@ use crate::editor_domain::{
 };
 use crate::game::TimelineSimulationRuntime;
 use crate::platform::state_host::PlatformInstant;
-use crate::types::{
-    AppPhase, CameraKeypoint, EditorMode, LevelObject, SpawnDirection, TimedTrigger, TimingPoint,
-};
+use crate::types::{AppPhase, EditorMode, LevelObject, SpawnDirection, TimedTrigger, TimingPoint};
 
 impl EditorSubsystem {
     pub(crate) fn perf_record(&mut self, stage: PerfStage, started_at: PlatformInstant) {
@@ -946,113 +944,72 @@ impl State {
         });
     }
 
-    pub(crate) fn editor_add_camera_keypoint(&mut self) {
+    pub(crate) fn editor_add_camera_trigger(&mut self) {
         if self.phase != AppPhase::Editor {
             return;
         }
 
         self.record_editor_history_state();
-        let keypoint = self
+        let trigger = self
             .editor
-            .capture_current_camera_keypoint(self.editor.timeline.clock.time_seconds);
-        if let Some(trigger) = EditorSubsystem::camera_keypoint_to_trigger(&keypoint) {
-            self.editor.add_trigger(trigger);
-            self.editor.sync_camera_keypoints_from_triggers();
-        }
+            .capture_current_camera_trigger(self.editor.timeline.clock.time_seconds);
+        self.editor.add_trigger(trigger);
         self.mark_editor_dirty(EditorDirtyFlags {
             rebuild_selection_overlays: true,
             ..EditorDirtyFlags::default()
         });
     }
 
-    pub(crate) fn editor_remove_camera_keypoint(&mut self, index: usize) {
+    pub(crate) fn editor_capture_selected_camera_trigger(&mut self) {
         if self.phase != AppPhase::Editor {
             return;
         }
 
         self.record_editor_history_state();
-        if let Some(trigger_index) = self.editor.camera_trigger_index_for_keypoint_index(index) {
-            self.editor.remove_trigger(trigger_index);
-            self.editor.sync_camera_keypoints_from_triggers();
-        }
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_selection_overlays: true,
-            ..EditorDirtyFlags::default()
-        });
-    }
-
-    pub(crate) fn set_editor_camera_keypoint_selected(&mut self, selected: Option<usize>) {
-        if self.phase == AppPhase::Editor {
-            self.editor.set_camera_keypoint_selected(selected);
-            let selected_trigger = selected.and_then(|keypoint_index| {
-                self.editor
-                    .camera_trigger_index_for_keypoint_index(keypoint_index)
-            });
-            self.editor.set_trigger_selected(selected_trigger);
-            self.mark_editor_dirty(EditorDirtyFlags {
-                rebuild_selection_overlays: true,
-                ..EditorDirtyFlags::default()
-            });
-        }
-    }
-
-    pub(crate) fn editor_update_camera_keypoint(&mut self, index: usize, keypoint: CameraKeypoint) {
-        if self.phase != AppPhase::Editor {
-            return;
-        }
-
-        self.record_editor_history_state();
-        if let Some(trigger_index) = self.editor.camera_trigger_index_for_keypoint_index(index) {
-            if let Some(trigger) = EditorSubsystem::camera_keypoint_to_trigger(&keypoint) {
-                self.editor.update_trigger(trigger_index, trigger);
-                self.editor.sync_camera_keypoints_from_triggers();
-            }
-        }
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_selection_overlays: true,
-            ..EditorDirtyFlags::default()
-        });
-    }
-
-    pub(crate) fn editor_capture_selected_camera_keypoint(&mut self) {
-        if self.phase != AppPhase::Editor {
-            return;
-        }
-
-        self.record_editor_history_state();
-        let Some(selected_index) = self.editor.selected_camera_keypoint_index() else {
+        let Some(selected_index) = self.editor.selected_trigger_index() else {
             return;
         };
-        let Some(mut keypoint) = self.editor.camera_keypoints().get(selected_index).cloned() else {
+        let Some(trigger) = self.editor.triggers().get(selected_index).cloned() else {
             return;
         };
+        if !EditorSubsystem::is_camera_track_trigger(&trigger) {
+            return;
+        }
+
         let captured = self
             .editor
-            .capture_current_camera_keypoint(keypoint.time_seconds);
-        keypoint.target_position = captured.target_position;
-        keypoint.rotation = captured.rotation;
-        keypoint.pitch = captured.pitch;
-
-        if let Some(trigger_index) = self
-            .editor
-            .camera_trigger_index_for_keypoint_index(selected_index)
+            .capture_current_camera_trigger(trigger.time_seconds);
+        let mut updated = trigger;
+        if let (
+            crate::types::TimedTriggerAction::CameraPose {
+                target_position,
+                rotation,
+                pitch,
+                ..
+            },
+            crate::types::TimedTriggerAction::CameraPose {
+                target_position: captured_target_position,
+                rotation: captured_rotation,
+                pitch: captured_pitch,
+                ..
+            },
+        ) = (&mut updated.action, captured.action)
         {
-            if let Some(trigger) = EditorSubsystem::camera_keypoint_to_trigger(&keypoint) {
-                self.editor.update_trigger(trigger_index, trigger);
-                self.editor.sync_camera_keypoints_from_triggers();
-            }
+            *target_position = captured_target_position;
+            *rotation = captured_rotation;
+            *pitch = captured_pitch;
+            self.editor.update_trigger(selected_index, updated);
         }
+
         self.mark_editor_dirty(EditorDirtyFlags {
             rebuild_selection_overlays: true,
             ..EditorDirtyFlags::default()
         });
     }
 
-    pub(crate) fn editor_apply_selected_camera_keypoint(&mut self) {
+    pub(crate) fn editor_apply_selected_camera_trigger(&mut self) {
         if self.phase == AppPhase::Editor
-            && self
-                .editor
-                .apply_selected_camera_keypoint_to_editor_camera()
+            && self.editor.apply_selected_camera_trigger_to_editor_camera()
         {
             self.mark_editor_dirty(EditorDirtyFlags {
                 rebuild_selection_overlays: true,
@@ -1072,34 +1029,12 @@ impl State {
         self.editor.timing_points()
     }
 
-    pub(crate) fn editor_camera_keypoints(&self) -> &[CameraKeypoint] {
-        self.editor.camera_keypoints()
-    }
-
     pub(crate) fn editor_triggers(&self) -> &[TimedTrigger] {
         self.editor.triggers()
     }
 
-    pub(crate) fn editor_selected_camera_keypoint_index(&self) -> Option<usize> {
-        self.editor.selected_camera_keypoint_index()
-    }
-
     pub(crate) fn editor_selected_trigger_index(&self) -> Option<usize> {
         self.editor.selected_trigger_index()
-    }
-
-    pub(crate) fn editor_add_trigger(&mut self, trigger: TimedTrigger) {
-        if self.phase != AppPhase::Editor {
-            return;
-        }
-
-        self.record_editor_history_state();
-        self.editor.add_trigger(trigger);
-        self.editor.sync_camera_keypoints_from_triggers();
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_selection_overlays: true,
-            ..EditorDirtyFlags::default()
-        });
     }
 
     pub(crate) fn editor_remove_trigger(&mut self, index: usize) {
@@ -1109,7 +1044,6 @@ impl State {
 
         self.record_editor_history_state();
         self.editor.remove_trigger(index);
-        self.editor.sync_camera_keypoints_from_triggers();
         self.mark_editor_dirty(EditorDirtyFlags {
             rebuild_selection_overlays: true,
             ..EditorDirtyFlags::default()
@@ -1133,7 +1067,6 @@ impl State {
 
         self.record_editor_history_state();
         self.editor.update_trigger(index, trigger);
-        self.editor.sync_camera_keypoints_from_triggers();
         self.mark_editor_dirty(EditorDirtyFlags {
             rebuild_selection_overlays: true,
             ..EditorDirtyFlags::default()

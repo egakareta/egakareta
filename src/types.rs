@@ -119,43 +119,43 @@ fn is_default_timeline_duration_seconds(value: &f32) -> bool {
     (value - default_timeline_duration_seconds()).abs() <= 1e-6
 }
 
-fn default_camera_keypoint_target_position() -> [f32; 3] {
+fn default_camera_trigger_target_position() -> [f32; 3] {
     [0.0, 0.0, 0.0]
 }
 
-fn is_default_camera_keypoint_target_position(value: &[f32; 3]) -> bool {
+fn is_default_camera_trigger_target_position(value: &[f32; 3]) -> bool {
     value.iter().all(|component| component.abs() <= 1e-6)
 }
 
-fn default_camera_keypoint_rotation() -> f32 {
+fn default_camera_trigger_rotation() -> f32 {
     -45.0f32.to_radians()
 }
 
-fn is_default_camera_keypoint_rotation(value: &f32) -> bool {
-    (*value - default_camera_keypoint_rotation()).abs() <= 1e-6
+fn is_default_camera_trigger_rotation(value: &f32) -> bool {
+    (*value - default_camera_trigger_rotation()).abs() <= 1e-6
 }
 
-fn default_camera_keypoint_pitch() -> f32 {
+fn default_camera_trigger_pitch() -> f32 {
     45.0f32.to_radians()
 }
 
-fn is_default_camera_keypoint_pitch(value: &f32) -> bool {
-    (*value - default_camera_keypoint_pitch()).abs() <= 1e-6
+fn is_default_camera_trigger_pitch(value: &f32) -> bool {
+    (*value - default_camera_trigger_pitch()).abs() <= 1e-6
 }
 
-fn default_camera_keypoint_transition_interval_seconds() -> f32 {
+fn default_camera_trigger_transition_interval_seconds() -> f32 {
     1.0
 }
 
-fn is_default_camera_keypoint_transition_interval_seconds(value: &f32) -> bool {
-    (*value - default_camera_keypoint_transition_interval_seconds()).abs() <= 1e-6
+fn is_default_camera_trigger_transition_interval_seconds(value: &f32) -> bool {
+    (*value - default_camera_trigger_transition_interval_seconds()).abs() <= 1e-6
 }
 
-fn default_camera_keypoint_use_full_segment_transition() -> bool {
+fn default_camera_trigger_use_full_segment_transition() -> bool {
     false
 }
 
-fn is_default_camera_keypoint_use_full_segment_transition(value: &bool) -> bool {
+fn is_default_camera_trigger_use_full_segment_transition(value: &bool) -> bool {
     !*value
 }
 
@@ -408,19 +408,19 @@ fn is_default_time_signature_denominator(value: &u32) -> bool {
 
 #[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum CameraKeypointMode {
+pub(crate) enum CameraTriggerMode {
     Follow,
     #[default]
     Static,
 }
 
-fn is_default_camera_keypoint_mode(value: &CameraKeypointMode) -> bool {
-    matches!(value, CameraKeypointMode::Static)
+fn is_default_camera_trigger_mode(value: &CameraTriggerMode) -> bool {
+    matches!(value, CameraTriggerMode::Static)
 }
 
 #[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum CameraKeypointEasing {
+pub(crate) enum TimedTriggerEasing {
     #[default]
     Linear,
     EaseIn,
@@ -428,40 +428,40 @@ pub(crate) enum CameraKeypointEasing {
     EaseInOut,
 }
 
-fn is_default_camera_keypoint_easing(value: &CameraKeypointEasing) -> bool {
-    matches!(value, CameraKeypointEasing::Linear)
+fn is_default_camera_trigger_easing(value: &TimedTriggerEasing) -> bool {
+    matches!(value, TimedTriggerEasing::Linear)
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
-pub(crate) struct CameraKeypoint {
+pub(crate) struct CameraTrigger {
     pub(crate) time_seconds: f32,
-    #[serde(default, skip_serializing_if = "is_default_camera_keypoint_mode")]
-    pub(crate) mode: CameraKeypointMode,
-    #[serde(default, skip_serializing_if = "is_default_camera_keypoint_easing")]
-    pub(crate) easing: CameraKeypointEasing,
+    #[serde(default, skip_serializing_if = "is_default_camera_trigger_mode")]
+    pub(crate) mode: CameraTriggerMode,
+    #[serde(default, skip_serializing_if = "is_default_camera_trigger_easing")]
+    pub(crate) easing: TimedTriggerEasing,
     #[serde(
-        default = "default_camera_keypoint_transition_interval_seconds",
-        skip_serializing_if = "is_default_camera_keypoint_transition_interval_seconds"
+        default = "default_camera_trigger_transition_interval_seconds",
+        skip_serializing_if = "is_default_camera_trigger_transition_interval_seconds"
     )]
     pub(crate) transition_interval_seconds: f32,
     #[serde(
-        default = "default_camera_keypoint_use_full_segment_transition",
-        skip_serializing_if = "is_default_camera_keypoint_use_full_segment_transition"
+        default = "default_camera_trigger_use_full_segment_transition",
+        skip_serializing_if = "is_default_camera_trigger_use_full_segment_transition"
     )]
     pub(crate) use_full_segment_transition: bool,
     #[serde(
-        default = "default_camera_keypoint_target_position",
-        skip_serializing_if = "is_default_camera_keypoint_target_position"
+        default = "default_camera_trigger_target_position",
+        skip_serializing_if = "is_default_camera_trigger_target_position"
     )]
     pub(crate) target_position: [f32; 3],
     #[serde(
-        default = "default_camera_keypoint_rotation",
-        skip_serializing_if = "is_default_camera_keypoint_rotation"
+        default = "default_camera_trigger_rotation",
+        skip_serializing_if = "is_default_camera_trigger_rotation"
     )]
     pub(crate) rotation: f32,
     #[serde(
-        default = "default_camera_keypoint_pitch",
-        skip_serializing_if = "is_default_camera_keypoint_pitch"
+        default = "default_camera_trigger_pitch",
+        skip_serializing_if = "is_default_camera_trigger_pitch"
     )]
     pub(crate) pitch: f32,
 }
@@ -488,40 +488,40 @@ pub(crate) enum TimedTriggerAction {
     },
     CameraPose {
         #[serde(
-            default = "default_camera_keypoint_transition_interval_seconds",
-            skip_serializing_if = "is_default_camera_keypoint_transition_interval_seconds"
+            default = "default_camera_trigger_transition_interval_seconds",
+            skip_serializing_if = "is_default_camera_trigger_transition_interval_seconds"
         )]
         transition_interval_seconds: f32,
         #[serde(
-            default = "default_camera_keypoint_use_full_segment_transition",
-            skip_serializing_if = "is_default_camera_keypoint_use_full_segment_transition"
+            default = "default_camera_trigger_use_full_segment_transition",
+            skip_serializing_if = "is_default_camera_trigger_use_full_segment_transition"
         )]
         use_full_segment_transition: bool,
         #[serde(
-            default = "default_camera_keypoint_target_position",
-            skip_serializing_if = "is_default_camera_keypoint_target_position"
+            default = "default_camera_trigger_target_position",
+            skip_serializing_if = "is_default_camera_trigger_target_position"
         )]
         target_position: [f32; 3],
         #[serde(
-            default = "default_camera_keypoint_rotation",
-            skip_serializing_if = "is_default_camera_keypoint_rotation"
+            default = "default_camera_trigger_rotation",
+            skip_serializing_if = "is_default_camera_trigger_rotation"
         )]
         rotation: f32,
         #[serde(
-            default = "default_camera_keypoint_pitch",
-            skip_serializing_if = "is_default_camera_keypoint_pitch"
+            default = "default_camera_trigger_pitch",
+            skip_serializing_if = "is_default_camera_trigger_pitch"
         )]
         pitch: f32,
     },
     CameraFollow {
         #[serde(
-            default = "default_camera_keypoint_transition_interval_seconds",
-            skip_serializing_if = "is_default_camera_keypoint_transition_interval_seconds"
+            default = "default_camera_trigger_transition_interval_seconds",
+            skip_serializing_if = "is_default_camera_trigger_transition_interval_seconds"
         )]
         transition_interval_seconds: f32,
         #[serde(
-            default = "default_camera_keypoint_use_full_segment_transition",
-            skip_serializing_if = "is_default_camera_keypoint_use_full_segment_transition"
+            default = "default_camera_trigger_use_full_segment_transition",
+            skip_serializing_if = "is_default_camera_trigger_use_full_segment_transition"
         )]
         use_full_segment_transition: bool,
     },
@@ -535,8 +535,8 @@ pub(crate) struct TimedTrigger {
         skip_serializing_if = "is_default_timed_trigger_duration_seconds"
     )]
     pub(crate) duration_seconds: f32,
-    #[serde(default, skip_serializing_if = "is_default_camera_keypoint_easing")]
-    pub(crate) easing: CameraKeypointEasing,
+    #[serde(default, skip_serializing_if = "is_default_camera_trigger_easing")]
+    pub(crate) easing: TimedTriggerEasing,
     #[serde(
         default = "default_timed_trigger_target",
         skip_serializing_if = "is_default_timed_trigger_target"
@@ -545,29 +545,30 @@ pub(crate) struct TimedTrigger {
     pub(crate) action: TimedTriggerAction,
 }
 
-pub(crate) fn camera_keypoints_to_timed_triggers(
-    camera_keypoints: &[CameraKeypoint],
+#[cfg(test)]
+pub(crate) fn camera_triggers_to_timed_triggers(
+    camera_triggers: &[CameraTrigger],
 ) -> Vec<TimedTrigger> {
-    let mut triggers = Vec::with_capacity(camera_keypoints.len());
-    for keypoint in camera_keypoints {
-        let action = match keypoint.mode {
-            CameraKeypointMode::Follow => TimedTriggerAction::CameraFollow {
-                transition_interval_seconds: keypoint.transition_interval_seconds,
-                use_full_segment_transition: keypoint.use_full_segment_transition,
+    let mut triggers = Vec::with_capacity(camera_triggers.len());
+    for camera_trigger in camera_triggers {
+        let action = match camera_trigger.mode {
+            CameraTriggerMode::Follow => TimedTriggerAction::CameraFollow {
+                transition_interval_seconds: camera_trigger.transition_interval_seconds,
+                use_full_segment_transition: camera_trigger.use_full_segment_transition,
             },
-            CameraKeypointMode::Static => TimedTriggerAction::CameraPose {
-                transition_interval_seconds: keypoint.transition_interval_seconds,
-                use_full_segment_transition: keypoint.use_full_segment_transition,
-                target_position: keypoint.target_position,
-                rotation: keypoint.rotation,
-                pitch: keypoint.pitch,
+            CameraTriggerMode::Static => TimedTriggerAction::CameraPose {
+                transition_interval_seconds: camera_trigger.transition_interval_seconds,
+                use_full_segment_transition: camera_trigger.use_full_segment_transition,
+                target_position: camera_trigger.target_position,
+                rotation: camera_trigger.rotation,
+                pitch: camera_trigger.pitch,
             },
         };
 
         triggers.push(TimedTrigger {
-            time_seconds: keypoint.time_seconds,
+            time_seconds: camera_trigger.time_seconds,
             duration_seconds: 0.0,
-            easing: keypoint.easing,
+            easing: camera_trigger.easing,
             target: TimedTriggerTarget::Camera,
             action,
         });
@@ -577,8 +578,8 @@ pub(crate) fn camera_keypoints_to_timed_triggers(
     triggers
 }
 
-pub(crate) fn timed_triggers_to_camera_keypoints(triggers: &[TimedTrigger]) -> Vec<CameraKeypoint> {
-    let mut keypoints = Vec::new();
+pub(crate) fn timed_triggers_to_camera_triggers(triggers: &[TimedTrigger]) -> Vec<CameraTrigger> {
+    let mut camera_triggers = Vec::new();
 
     for trigger in triggers {
         if !matches!(trigger.target, TimedTriggerTarget::Camera) {
@@ -593,9 +594,9 @@ pub(crate) fn timed_triggers_to_camera_keypoints(triggers: &[TimedTrigger]) -> V
                 rotation,
                 pitch,
             } => {
-                keypoints.push(CameraKeypoint {
+                camera_triggers.push(CameraTrigger {
                     time_seconds: trigger.time_seconds,
-                    mode: CameraKeypointMode::Static,
+                    mode: CameraTriggerMode::Static,
                     easing: trigger.easing,
                     transition_interval_seconds,
                     use_full_segment_transition,
@@ -608,15 +609,15 @@ pub(crate) fn timed_triggers_to_camera_keypoints(triggers: &[TimedTrigger]) -> V
                 transition_interval_seconds,
                 use_full_segment_transition,
             } => {
-                keypoints.push(CameraKeypoint {
+                camera_triggers.push(CameraTrigger {
                     time_seconds: trigger.time_seconds,
-                    mode: CameraKeypointMode::Follow,
+                    mode: CameraTriggerMode::Follow,
                     easing: trigger.easing,
                     transition_interval_seconds,
                     use_full_segment_transition,
-                    target_position: default_camera_keypoint_target_position(),
-                    rotation: default_camera_keypoint_rotation(),
-                    pitch: default_camera_keypoint_pitch(),
+                    target_position: default_camera_trigger_target_position(),
+                    rotation: default_camera_trigger_rotation(),
+                    pitch: default_camera_trigger_pitch(),
                 });
             }
             TimedTriggerAction::MoveTo { .. }
@@ -625,18 +626,18 @@ pub(crate) fn timed_triggers_to_camera_keypoints(triggers: &[TimedTrigger]) -> V
         }
     }
 
-    keypoints.retain(|keypoint| keypoint.time_seconds.is_finite());
-    keypoints.sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
-    keypoints
+    camera_triggers.retain(|trigger| trigger.time_seconds.is_finite());
+    camera_triggers.sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
+    camera_triggers
 }
 
-fn timed_trigger_eased_alpha(easing: CameraKeypointEasing, alpha: f32) -> f32 {
+fn timed_trigger_eased_alpha(easing: TimedTriggerEasing, alpha: f32) -> f32 {
     let alpha = alpha.clamp(0.0, 1.0);
     match easing {
-        CameraKeypointEasing::Linear => alpha,
-        CameraKeypointEasing::EaseIn => alpha * alpha,
-        CameraKeypointEasing::EaseOut => 1.0 - (1.0 - alpha) * (1.0 - alpha),
-        CameraKeypointEasing::EaseInOut => {
+        TimedTriggerEasing::Linear => alpha,
+        TimedTriggerEasing::EaseIn => alpha * alpha,
+        TimedTriggerEasing::EaseOut => 1.0 - (1.0 - alpha) * (1.0 - alpha),
+        TimedTriggerEasing::EaseInOut => {
             if alpha < 0.5 {
                 2.0 * alpha * alpha
             } else {
@@ -1344,12 +1345,12 @@ pub(crate) struct ColorSpaceUniform {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_timed_triggers_to_objects, camera_keypoints_to_timed_triggers,
-        default_camera_keypoint_pitch, default_camera_keypoint_rotation,
-        default_camera_keypoint_transition_interval_seconds, timed_triggers_to_camera_keypoints,
-        CameraKeypoint, CameraKeypointEasing, CameraKeypointMode, EditorStateParams, LevelMetadata,
-        LevelObject, MusicMetadata, SpawnDirection, SpawnMetadata, TimedTrigger,
-        TimedTriggerAction, TimedTriggerTarget,
+        apply_timed_triggers_to_objects, camera_triggers_to_timed_triggers,
+        default_camera_trigger_pitch, default_camera_trigger_rotation,
+        default_camera_trigger_transition_interval_seconds, timed_triggers_to_camera_triggers,
+        CameraTrigger, CameraTriggerMode, EditorStateParams, LevelMetadata, LevelObject,
+        MusicMetadata, SpawnDirection, SpawnMetadata, TimedTrigger, TimedTriggerAction,
+        TimedTriggerEasing, TimedTriggerTarget,
     };
     use serde_json::json;
 
@@ -1436,7 +1437,7 @@ mod tests {
         assert!(value.get("tap_times").is_none());
         assert!(value.get("timeline_time_seconds").is_none());
         assert!(value.get("timeline_duration_seconds").is_none());
-        assert!(value.get("camera_keypoints").is_none());
+        assert!(value.get("camera_triggers").is_none());
         assert!(value.get("taps").is_none());
         assert!(value.get("timeline_step").is_none());
         assert_eq!(value["objects"].as_array().map(|v| v.len()), Some(1));
@@ -1449,19 +1450,19 @@ mod tests {
     }
 
     #[test]
-    fn camera_keypoint_serialization_omits_default_pose_fields() {
-        let keypoint = CameraKeypoint {
+    fn camera_trigger_serialization_omits_default_pose_fields() {
+        let camera_trigger = CameraTrigger {
             time_seconds: 2.5,
-            mode: CameraKeypointMode::Follow,
-            easing: CameraKeypointEasing::EaseInOut,
-            transition_interval_seconds: default_camera_keypoint_transition_interval_seconds(),
+            mode: CameraTriggerMode::Follow,
+            easing: TimedTriggerEasing::EaseInOut,
+            transition_interval_seconds: default_camera_trigger_transition_interval_seconds(),
             use_full_segment_transition: false,
             target_position: [0.0, 0.0, 0.0],
-            rotation: default_camera_keypoint_rotation(),
-            pitch: default_camera_keypoint_pitch(),
+            rotation: default_camera_trigger_rotation(),
+            pitch: default_camera_trigger_pitch(),
         };
 
-        let value = serde_json::to_value(&keypoint).expect("serialize camera keypoint");
+        let value = serde_json::to_value(&camera_trigger).expect("serialize camera trigger");
         let expected = json!({
             "time_seconds": 2.5,
             "mode": "follow",
@@ -1472,22 +1473,22 @@ mod tests {
     }
 
     #[test]
-    fn converts_camera_keypoints_to_triggers_and_back() {
-        let keypoints = vec![
-            CameraKeypoint {
+    fn converts_camera_triggers_to_triggers_and_back() {
+        let camera_triggers = vec![
+            CameraTrigger {
                 time_seconds: 0.5,
-                mode: CameraKeypointMode::Follow,
-                easing: CameraKeypointEasing::EaseIn,
+                mode: CameraTriggerMode::Follow,
+                easing: TimedTriggerEasing::EaseIn,
                 transition_interval_seconds: 0.4,
                 use_full_segment_transition: true,
                 target_position: [0.0, 0.0, 0.0],
-                rotation: default_camera_keypoint_rotation(),
-                pitch: default_camera_keypoint_pitch(),
+                rotation: default_camera_trigger_rotation(),
+                pitch: default_camera_trigger_pitch(),
             },
-            CameraKeypoint {
+            CameraTrigger {
                 time_seconds: 1.0,
-                mode: CameraKeypointMode::Static,
-                easing: CameraKeypointEasing::EaseOut,
+                mode: CameraTriggerMode::Static,
+                easing: TimedTriggerEasing::EaseOut,
                 transition_interval_seconds: 0.25,
                 use_full_segment_transition: false,
                 target_position: [1.0, 2.0, 3.0],
@@ -1496,7 +1497,7 @@ mod tests {
             },
         ];
 
-        let triggers = camera_keypoints_to_timed_triggers(&keypoints);
+        let triggers = camera_triggers_to_timed_triggers(&camera_triggers);
         assert_eq!(triggers.len(), 2);
         assert!(matches!(triggers[0].target, TimedTriggerTarget::Camera));
         assert!(matches!(
@@ -1504,8 +1505,8 @@ mod tests {
             TimedTriggerAction::CameraFollow { .. }
         ));
 
-        let restored = timed_triggers_to_camera_keypoints(&triggers);
-        assert_eq!(restored, keypoints);
+        let restored = timed_triggers_to_camera_triggers(&triggers);
+        assert_eq!(restored, camera_triggers);
     }
 
     #[test]
@@ -1519,10 +1520,10 @@ mod tests {
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 16.0,
-            triggers: camera_keypoints_to_timed_triggers(&[CameraKeypoint {
+            triggers: camera_triggers_to_timed_triggers(&[CameraTrigger {
                 time_seconds: 1.2,
-                mode: CameraKeypointMode::Static,
-                easing: CameraKeypointEasing::Linear,
+                mode: CameraTriggerMode::Static,
+                easing: TimedTriggerEasing::Linear,
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 target_position: [2.0, 3.0, 4.0],
@@ -1533,7 +1534,7 @@ mod tests {
             extra: serde_json::Map::new(),
         };
 
-        let resolved = timed_triggers_to_camera_keypoints(&metadata.resolved_triggers());
+        let resolved = timed_triggers_to_camera_triggers(&metadata.resolved_triggers());
         assert_eq!(resolved.len(), 1);
         assert!((resolved[0].time_seconds - 1.2).abs() <= 1e-6);
     }
@@ -1563,7 +1564,7 @@ mod tests {
             TimedTrigger {
                 time_seconds: 0.0,
                 duration_seconds: 0.0,
-                easing: CameraKeypointEasing::Linear,
+                easing: TimedTriggerEasing::Linear,
                 target: TimedTriggerTarget::Object { object_id: 1 },
                 action: TimedTriggerAction::RotateTo {
                     rotation_degrees: [0.0, 90.0, 0.0],
@@ -1572,7 +1573,7 @@ mod tests {
             TimedTrigger {
                 time_seconds: 1.0,
                 duration_seconds: 2.0,
-                easing: CameraKeypointEasing::Linear,
+                easing: TimedTriggerEasing::Linear,
                 target: TimedTriggerTarget::Object { object_id: 0 },
                 action: TimedTriggerAction::MoveTo {
                     position: [10.0, 0.0, 0.0],
@@ -1581,7 +1582,7 @@ mod tests {
             TimedTrigger {
                 time_seconds: 2.0,
                 duration_seconds: 0.0,
-                easing: CameraKeypointEasing::Linear,
+                easing: TimedTriggerEasing::Linear,
                 target: TimedTriggerTarget::Objects {
                     object_ids: vec![0, 1],
                 },

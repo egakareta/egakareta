@@ -1,7 +1,7 @@
 use super::EditorSubsystem;
 use crate::types::{
-    camera_keypoints_to_timed_triggers, timed_triggers_to_camera_keypoints, CameraKeypoint,
-    TimedTrigger, TimedTriggerAction, TimedTriggerTarget,
+    timed_triggers_to_camera_triggers, CameraTrigger, TimedTrigger, TimedTriggerAction,
+    TimedTriggerTarget,
 };
 
 pub(crate) struct EditorTriggerState {
@@ -19,7 +19,7 @@ impl EditorTriggerState {
 }
 
 impl EditorSubsystem {
-    fn is_camera_track_trigger(trigger: &TimedTrigger) -> bool {
+    pub(crate) fn is_camera_track_trigger(trigger: &TimedTrigger) -> bool {
         matches!(trigger.target, TimedTriggerTarget::Camera)
             && matches!(
                 trigger.action,
@@ -144,41 +144,7 @@ impl EditorSubsystem {
             .filter(|index| *index < self.triggers.items.len())
     }
 
-    pub(crate) fn camera_trigger_index_for_keypoint_index(
-        &self,
-        keypoint_index: usize,
-    ) -> Option<usize> {
-        let mut camera_keypoint_cursor = 0usize;
-        for (trigger_index, trigger) in self.triggers.items.iter().enumerate() {
-            if !Self::is_camera_track_trigger(trigger) {
-                continue;
-            }
-            if camera_keypoint_cursor == keypoint_index {
-                return Some(trigger_index);
-            }
-            camera_keypoint_cursor += 1;
-        }
-        None
-    }
-
-    pub(crate) fn camera_keypoint_index_for_trigger_index(
-        &self,
-        trigger_index: usize,
-    ) -> Option<usize> {
-        let mut camera_keypoint_cursor = 0usize;
-        for (index, trigger) in self.triggers.items.iter().enumerate() {
-            if !Self::is_camera_track_trigger(trigger) {
-                continue;
-            }
-            if index == trigger_index {
-                return Some(camera_keypoint_cursor);
-            }
-            camera_keypoint_cursor += 1;
-        }
-        None
-    }
-
-    pub(crate) fn camera_trigger_markers(&self) -> Vec<(usize, CameraKeypoint)> {
+    pub(crate) fn camera_trigger_markers(&self) -> Vec<(usize, CameraTrigger)> {
         self.triggers
             .items
             .iter()
@@ -188,10 +154,11 @@ impl EditorSubsystem {
                     return None;
                 }
 
-                let keypoint = timed_triggers_to_camera_keypoints(std::slice::from_ref(trigger))
-                    .into_iter()
-                    .next()?;
-                Some((index, keypoint))
+                let camera_trigger =
+                    timed_triggers_to_camera_triggers(std::slice::from_ref(trigger))
+                        .into_iter()
+                        .next()?;
+                Some((index, camera_trigger))
             })
             .collect()
     }
@@ -218,13 +185,6 @@ impl EditorSubsystem {
             .triggers
             .selected_index
             .filter(|index| *index < self.triggers.items.len());
-        self.sync_camera_keypoints_from_triggers();
-    }
-
-    pub(crate) fn camera_keypoint_to_trigger(keypoint: &CameraKeypoint) -> Option<TimedTrigger> {
-        camera_keypoints_to_timed_triggers(std::slice::from_ref(keypoint))
-            .into_iter()
-            .next()
     }
 
     pub(crate) fn add_trigger(&mut self, trigger: TimedTrigger) -> usize {
@@ -267,22 +227,5 @@ impl EditorSubsystem {
 
     pub(crate) fn set_trigger_selected(&mut self, selected: Option<usize>) {
         self.triggers.selected_index = selected.filter(|index| *index < self.triggers.items.len());
-        self.sync_camera_keypoints_from_triggers();
-    }
-
-    pub(crate) fn sync_camera_keypoints_from_triggers(&mut self) {
-        let next_camera_selected = self
-            .selected_trigger_index()
-            .and_then(|trigger_index| self.camera_keypoint_index_for_trigger_index(trigger_index));
-
-        self.camera.keypoints = timed_triggers_to_camera_keypoints(&self.triggers.items);
-        self.camera.selected_keypoint_index = next_camera_selected
-            .or(self.camera.selected_keypoint_index)
-            .filter(|index| *index < self.camera.keypoints.len());
-
-        if self.camera.selected_keypoint_index.is_none() && self.selected_trigger_index().is_some()
-        {
-            self.triggers.selected_index = None;
-        }
     }
 }

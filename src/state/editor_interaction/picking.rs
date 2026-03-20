@@ -3,9 +3,9 @@ use crate::platform::state_host::PlatformInstant;
 use crate::types::EditorPickResult;
 use glam::{EulerRot, Mat3, Vec2, Vec3, Vec4};
 
-const CAMERA_KEYPOINT_BALL_PICK_RADIUS: f32 = 0.55;
-const CAMERA_KEYPOINT_ARROW_PICK_RADIUS: f32 = 0.55;
-const CAMERA_KEYPOINT_ARROW_PICK_OFFSET: f32 = 1.4;
+const CAMERA_TRIGGER_BALL_PICK_RADIUS: f32 = 0.55;
+const CAMERA_TRIGGER_ARROW_PICK_RADIUS: f32 = 0.55;
+const CAMERA_TRIGGER_ARROW_PICK_OFFSET: f32 = 1.4;
 
 impl EditorSubsystem {
     pub(crate) fn pick_from_screen(
@@ -69,23 +69,23 @@ impl EditorSubsystem {
             }
         }
 
-        for (trigger_index, keypoint) in self.camera_trigger_markers() {
-            let marker_eye = self.camera_keypoint_marker_eye(&keypoint);
-            let marker_forward = self.camera_keypoint_marker_forward(&keypoint);
+        for (trigger_index, camera_trigger) in self.camera_trigger_markers() {
+            let marker_eye = self.camera_trigger_marker_eye(&camera_trigger);
+            let marker_forward = self.camera_trigger_marker_forward(&camera_trigger);
 
             let mut marker_t = self.ray_intersect_sphere(
                 ray_origin,
                 ray_dir,
                 marker_eye,
-                CAMERA_KEYPOINT_BALL_PICK_RADIUS,
+                CAMERA_TRIGGER_BALL_PICK_RADIUS,
             );
 
-            let arrow_center = marker_eye + marker_forward * CAMERA_KEYPOINT_ARROW_PICK_OFFSET;
+            let arrow_center = marker_eye + marker_forward * CAMERA_TRIGGER_ARROW_PICK_OFFSET;
             if let Some(arrow_t) = self.ray_intersect_sphere(
                 ray_origin,
                 ray_dir,
                 arrow_center,
-                CAMERA_KEYPOINT_ARROW_PICK_RADIUS,
+                CAMERA_TRIGGER_ARROW_PICK_RADIUS,
             ) {
                 marker_t = Some(marker_t.map_or(arrow_t, |best| best.min(arrow_t)));
             }

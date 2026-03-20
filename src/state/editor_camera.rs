@@ -2,8 +2,8 @@ use glam::{Mat4, Vec2, Vec3};
 
 use super::{EditorSubsystem, State};
 use crate::types::{
-    timed_triggers_to_camera_keypoints, AppPhase, CameraKeypoint, CameraKeypointEasing,
-    CameraKeypointMode,
+    timed_triggers_to_camera_triggers, AppPhase, CameraTrigger, CameraTriggerMode, TimedTrigger,
+    TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
 };
 
 const EDITOR_CAMERA_BASE_DISTANCE: f32 = 24.0;
@@ -11,7 +11,7 @@ const PLAY_CAMERA_DISTANCE: f32 = 28.28;
 const MIN_EDITOR_PITCH: f32 = -89.9f32.to_radians();
 const MAX_EDITOR_PITCH: f32 = 89.9f32.to_radians();
 const MIN_PLAYING_PITCH: f32 = 0.1f32.to_radians();
-const DEFAULT_CAMERA_KEYPOINT_TRANSITION_INTERVAL_SECONDS: f32 = 1.0;
+const DEFAULT_CAMERA_TRIGGER_TRANSITION_INTERVAL_SECONDS: f32 = 1.0;
 pub(crate) const DEFAULT_PLAY_CAMERA_ROTATION: f32 = std::f32::consts::FRAC_PI_4;
 pub(crate) const DEFAULT_PLAY_CAMERA_PITCH: f32 = std::f32::consts::FRAC_PI_4;
 
@@ -28,8 +28,6 @@ pub(crate) struct EditorCameraState {
     pub(crate) editor_pitch: f32,
     pub(crate) playing_rotation: f32,
     pub(crate) playing_pitch: f32,
-    pub(crate) keypoints: Vec<CameraKeypoint>,
-    pub(crate) selected_keypoint_index: Option<usize>,
     pub(crate) transition: Option<CameraTransition>,
 }
 
@@ -66,13 +64,13 @@ fn lerp_vec3(a: Vec3, b: Vec3, alpha: f32) -> Vec3 {
     a + (b - a) * alpha
 }
 
-fn eased_alpha(easing: CameraKeypointEasing, alpha: f32) -> f32 {
+fn eased_alpha(easing: TimedTriggerEasing, alpha: f32) -> f32 {
     let alpha = alpha.clamp(0.0, 1.0);
     match easing {
-        CameraKeypointEasing::Linear => alpha,
-        CameraKeypointEasing::EaseIn => alpha * alpha,
-        CameraKeypointEasing::EaseOut => 1.0 - (1.0 - alpha) * (1.0 - alpha),
-        CameraKeypointEasing::EaseInOut => {
+        TimedTriggerEasing::Linear => alpha,
+        TimedTriggerEasing::EaseIn => alpha * alpha,
+        TimedTriggerEasing::EaseOut => 1.0 - (1.0 - alpha) * (1.0 - alpha),
+        TimedTriggerEasing::EaseInOut => {
             if alpha < 0.5 {
                 2.0 * alpha * alpha
             } else {
@@ -94,54 +92,23 @@ fn interpolate_camera_samples(
 }
 
 impl EditorSubsystem {
-    fn sanitize_camera_keypoint(&self, keypoint: &mut CameraKeypoint) {
-        let duration = self.timeline.clock.duration_seconds.max(0.1);
-        keypoint.time_seconds = if keypoint.time_seconds.is_finite() {
-            keypoint.time_seconds.clamp(0.0, duration)
-        } else {
-            0.0
-        };
-        keypoint.target_position = keypoint.target_position.map(|component| {
-            if component.is_finite() {
-                component
-            } else {
-                0.0
-            }
-        });
-        keypoint.rotation = if keypoint.rotation.is_finite() {
-            keypoint.rotation
-        } else {
-            DEFAULT_PLAY_CAMERA_ROTATION
-        };
-        keypoint.pitch = if keypoint.pitch.is_finite() {
-            keypoint.pitch.clamp(MIN_EDITOR_PITCH, MAX_EDITOR_PITCH)
-        } else {
-            DEFAULT_PLAY_CAMERA_PITCH
-        };
-        keypoint.transition_interval_seconds = if keypoint.transition_interval_seconds.is_finite() {
-            keypoint.transition_interval_seconds.max(0.0)
-        } else {
-            DEFAULT_CAMERA_KEYPOINT_TRANSITION_INTERVAL_SECONDS
-        };
-        // use_full_segment_transition is a bool, no sanitization needed besides ensuring it's not forgotten
-    }
-
-    fn static_camera_view_for_keypoint(keypoint: &CameraKeypoint) -> CameraViewSample {
-        let target = Vec3::from_array(keypoint.target_position);
+    fn static_camera_view_for_trigger(camera_trigger: &CameraTrigger) -> CameraViewSample {
+        let target = Vec3::from_array(camera_trigger.target_position);
         CameraViewSample {
-            eye: target + editor_camera_offset_for_pose(keypoint.rotation, keypoint.pitch),
+            eye: target
+                + editor_camera_offset_for_pose(camera_trigger.rotation, camera_trigger.pitch),
             target,
         }
     }
 
-    pub(crate) fn camera_keypoint_marker_eye(&self, keypoint: &CameraKeypoint) -> Vec3 {
-        Vec3::from_array(keypoint.target_position)
-            + editor_camera_offset_for_pose(keypoint.rotation, keypoint.pitch)
+    pub(crate) fn camera_trigger_marker_eye(&self, camera_trigger: &CameraTrigger) -> Vec3 {
+        Vec3::from_array(camera_trigger.target_position)
+            + editor_camera_offset_for_pose(camera_trigger.rotation, camera_trigger.pitch)
     }
 
-    pub(crate) fn camera_keypoint_marker_forward(&self, keypoint: &CameraKeypoint) -> Vec3 {
-        let eye = self.camera_keypoint_marker_eye(keypoint);
-        let to_target = Vec3::from_array(keypoint.target_position) - eye;
+    pub(crate) fn camera_trigger_marker_forward(&self, camera_trigger: &CameraTrigger) -> Vec3 {
+        let eye = self.camera_trigger_marker_eye(camera_trigger);
+        let to_target = Vec3::from_array(camera_trigger.target_position) - eye;
         if to_target.length_squared() <= f32::EPSILON {
             Vec3::Z
         } else {
@@ -157,48 +124,45 @@ impl EditorSubsystem {
         )
     }
 
-    pub(crate) fn capture_current_camera_keypoint(&self, time_seconds: f32) -> CameraKeypoint {
-        let mut keypoint = CameraKeypoint {
+    pub(crate) fn capture_current_camera_trigger(&self, time_seconds: f32) -> TimedTrigger {
+        TimedTrigger {
             time_seconds,
-            mode: CameraKeypointMode::Static,
-            easing: CameraKeypointEasing::Linear,
-            transition_interval_seconds: DEFAULT_CAMERA_KEYPOINT_TRANSITION_INTERVAL_SECONDS,
-            use_full_segment_transition: false,
-            target_position: self.editor_camera_target().to_array(),
-            rotation: self.camera.editor_rotation,
-            pitch: self.camera.editor_pitch,
-        };
-        self.sanitize_camera_keypoint(&mut keypoint);
-        keypoint
+            duration_seconds: 0.0,
+            easing: TimedTriggerEasing::Linear,
+            target: TimedTriggerTarget::Camera,
+            action: TimedTriggerAction::CameraPose {
+                transition_interval_seconds: DEFAULT_CAMERA_TRIGGER_TRANSITION_INTERVAL_SECONDS,
+                use_full_segment_transition: false,
+                target_position: self.editor_camera_target().to_array(),
+                rotation: self.camera.editor_rotation,
+                pitch: self.camera.editor_pitch,
+            },
+        }
     }
 
-    pub(crate) fn camera_keypoints(&self) -> &[CameraKeypoint] {
-        &self.camera.keypoints
-    }
-
-    pub(crate) fn selected_camera_keypoint_index(&self) -> Option<usize> {
-        self.camera
-            .selected_keypoint_index
-            .filter(|index| *index < self.camera.keypoints.len())
-    }
-
-    pub(crate) fn set_camera_keypoint_selected(&mut self, selected: Option<usize>) {
-        self.camera.selected_keypoint_index =
-            selected.filter(|index| *index < self.camera.keypoints.len());
-    }
-
-    pub(crate) fn apply_selected_camera_keypoint_to_editor_camera(&mut self) -> bool {
-        let Some(index) = self.selected_camera_keypoint_index() else {
+    pub(crate) fn apply_selected_camera_trigger_to_editor_camera(&mut self) -> bool {
+        let Some(index) = self.selected_trigger_index() else {
             return false;
         };
-        let Some(keypoint) = self.camera.keypoints.get(index) else {
+        let Some(trigger) = self.triggers().get(index) else {
+            return false;
+        };
+        let Some(camera_trigger) = timed_triggers_to_camera_triggers(std::slice::from_ref(trigger))
+            .into_iter()
+            .next()
+        else {
             return false;
         };
 
-        self.camera.editor_pan = [keypoint.target_position[0], keypoint.target_position[2]];
-        self.camera.editor_target_z = keypoint.target_position[1];
-        self.camera.editor_rotation = keypoint.rotation;
-        self.camera.editor_pitch = keypoint.pitch.clamp(MIN_EDITOR_PITCH, MAX_EDITOR_PITCH);
+        self.camera.editor_pan = [
+            camera_trigger.target_position[0],
+            camera_trigger.target_position[2],
+        ];
+        self.camera.editor_target_z = camera_trigger.target_position[1];
+        self.camera.editor_rotation = camera_trigger.rotation;
+        self.camera.editor_pitch = camera_trigger
+            .pitch
+            .clamp(MIN_EDITOR_PITCH, MAX_EDITOR_PITCH);
         true
     }
 
@@ -291,15 +255,15 @@ impl State {
         self.editor.camera_offset()
     }
 
-    fn resolve_camera_keypoint_sample(
+    fn resolve_camera_trigger_sample(
         &self,
-        keypoint: &CameraKeypoint,
+        camera_trigger: &CameraTrigger,
         live_follow_sample: CameraViewSample,
     ) -> CameraViewSample {
-        match keypoint.mode {
-            CameraKeypointMode::Follow => live_follow_sample,
-            CameraKeypointMode::Static => {
-                EditorSubsystem::static_camera_view_for_keypoint(keypoint)
+        match camera_trigger.mode {
+            CameraTriggerMode::Follow => live_follow_sample,
+            CameraTriggerMode::Static => {
+                EditorSubsystem::static_camera_view_for_trigger(camera_trigger)
             }
         }
     }
@@ -313,21 +277,22 @@ impl State {
         let live_follow_sample = self
             .editor
             .resolve_live_follow_sample(live_follow_target, is_game_active);
-        let keypoints = timed_triggers_to_camera_keypoints(self.editor.triggers());
-        if keypoints.is_empty() {
+        let camera_triggers = timed_triggers_to_camera_triggers(self.editor.triggers());
+        if camera_triggers.is_empty() {
             return live_follow_sample;
         }
 
         let clamped_time = time_seconds.max(0.0);
-        let next_index = keypoints.partition_point(|keypoint| keypoint.time_seconds < clamped_time);
+        let next_index =
+            camera_triggers.partition_point(|trigger| trigger.time_seconds < clamped_time);
 
         if next_index == 0 {
-            let first = &keypoints[0];
+            let first = &camera_triggers[0];
             if first.time_seconds <= 1e-6 {
-                return self.resolve_camera_keypoint_sample(first, live_follow_sample);
+                return self.resolve_camera_trigger_sample(first, live_follow_sample);
             }
 
-            let end_sample = self.resolve_camera_keypoint_sample(first, live_follow_sample);
+            let end_sample = self.resolve_camera_trigger_sample(first, live_follow_sample);
             let transition_start = if first.use_full_segment_transition {
                 0.0
             } else {
@@ -345,17 +310,17 @@ impl State {
             return interpolate_camera_samples(live_follow_sample, end_sample, alpha);
         }
 
-        if next_index >= keypoints.len() {
-            let last = keypoints.last().expect("camera keypoints not empty");
-            return self.resolve_camera_keypoint_sample(last, live_follow_sample);
+        if next_index >= camera_triggers.len() {
+            let last = camera_triggers.last().expect("camera triggers not empty");
+            return self.resolve_camera_trigger_sample(last, live_follow_sample);
         }
 
-        let previous = &keypoints[next_index - 1];
-        let next = &keypoints[next_index];
-        let start_sample = self.resolve_camera_keypoint_sample(previous, live_follow_sample);
-        let end_sample = self.resolve_camera_keypoint_sample(next, live_follow_sample);
+        let previous = &camera_triggers[next_index - 1];
+        let next = &camera_triggers[next_index];
+        let start_sample = self.resolve_camera_trigger_sample(previous, live_follow_sample);
+        let end_sample = self.resolve_camera_trigger_sample(next, live_follow_sample);
 
-        if previous.mode == CameraKeypointMode::Follow && next.mode == CameraKeypointMode::Follow {
+        if previous.mode == CameraTriggerMode::Follow && next.mode == CameraTriggerMode::Follow {
             return live_follow_sample;
         }
 
@@ -456,13 +421,13 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::{eased_alpha, interpolate_camera_samples, CameraViewSample};
-    use crate::types::{CameraKeypoint, CameraKeypointEasing, CameraKeypointMode};
+    use crate::types::{CameraTrigger, CameraTriggerMode, TimedTriggerEasing};
     use glam::Vec3;
 
     #[test]
     fn ease_in_out_alpha_is_symmetric() {
-        let first_half = eased_alpha(CameraKeypointEasing::EaseInOut, 0.25);
-        let second_half = eased_alpha(CameraKeypointEasing::EaseInOut, 0.75);
+        let first_half = eased_alpha(TimedTriggerEasing::EaseInOut, 0.25);
+        let second_half = eased_alpha(TimedTriggerEasing::EaseInOut, 0.75);
         assert!((first_half - (1.0 - second_half)).abs() <= 1e-6);
     }
 
@@ -482,22 +447,22 @@ mod tests {
     }
 
     #[test]
-    fn camera_keypoint_modes_are_distinct() {
-        let follow = CameraKeypoint {
+    fn camera_trigger_modes_are_distinct() {
+        let follow = CameraTrigger {
             time_seconds: 1.0,
-            mode: CameraKeypointMode::Follow,
-            easing: CameraKeypointEasing::Linear,
+            mode: CameraTriggerMode::Follow,
+            easing: TimedTriggerEasing::Linear,
             transition_interval_seconds: 1.0,
             use_full_segment_transition: false,
             target_position: [0.0, 0.0, 0.0],
             rotation: 0.0,
             pitch: 0.0,
         };
-        let static_keypoint = CameraKeypoint {
-            mode: CameraKeypointMode::Static,
+        let static_trigger = CameraTrigger {
+            mode: CameraTriggerMode::Static,
             ..follow.clone()
         };
 
-        assert_ne!(follow.mode, static_keypoint.mode);
+        assert_ne!(follow.mode, static_trigger.mode);
     }
 }

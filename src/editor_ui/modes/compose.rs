@@ -3,8 +3,7 @@ use crate::commands::AppCommand;
 use crate::editor_ui::components::{MAX_TIMELINE_DURATION_SECONDS, MIN_TIMELINE_DURATION_SECONDS};
 use crate::state::EditorUiViewModel;
 use crate::types::{
-    CameraKeypointEasing, CameraKeypointMode, EditorMode, SpawnDirection, TimedTriggerAction,
-    TimedTriggerTarget,
+    EditorMode, SpawnDirection, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
 };
 
 pub(crate) fn show_compose_mode_bottom_panel(
@@ -325,167 +324,219 @@ pub(crate) fn show_compose_mode_bottom_panel(
 
     ui.separator();
 
-    ui.horizontal(|ui| {
-        if ui.button("Add at playhead (Shift+K)").clicked() {
-            commands.push(AppCommand::EditorAddCameraKeypoint);
+    ui.horizontal_wrapped(|ui| {
+        if ui
+            .button("Add camera trigger at playhead (Shift+K)")
+            .clicked()
+        {
+            commands.push(AppCommand::EditorAddCameraTrigger);
         }
 
-        if let Some(selected_idx) = view.camera_selected_index {
-            if ui.button("Remove").clicked() {
-                commands.push(AppCommand::EditorRemoveCameraKeypoint(selected_idx));
-            }
-            if ui.button("Use current camera").clicked() {
-                commands.push(AppCommand::EditorCaptureSelectedCameraKeypoint);
-            }
-            if ui.button("Jump editor camera").clicked() {
-                commands.push(AppCommand::EditorApplySelectedCameraKeypoint);
-            }
-            if let Some(selected_keypoint) = view.camera_keypoints.get(selected_idx).cloned() {
-                if ui.button("Use playhead time").clicked() {
-                    let mut updated = selected_keypoint;
-                    updated.time_seconds = view.timeline_time_seconds;
-                    commands.push(AppCommand::EditorUpdateCameraKeypoint(
-                        selected_idx,
-                        updated,
-                    ));
+        if let Some(selected_idx) = view.trigger_selected_index {
+            if let Some(selected_trigger) = view.triggers.get(selected_idx) {
+                let is_camera_trigger =
+                    matches!(selected_trigger.target, TimedTriggerTarget::Camera)
+                        && matches!(
+                            selected_trigger.action,
+                            TimedTriggerAction::CameraPose { .. }
+                                | TimedTriggerAction::CameraFollow { .. }
+                        );
+
+                if is_camera_trigger {
+                    if ui.button("Capture current camera pose").clicked() {
+                        commands.push(AppCommand::EditorCaptureSelectedCameraTrigger);
+                    }
+                    if ui.button("Jump editor camera").clicked() {
+                        commands.push(AppCommand::EditorApplySelectedCameraTrigger);
+                    }
                 }
             }
         }
     });
 
-    ui.horizontal(|ui| {
-        ui.vertical(|ui| {
-            ui.label("Keypoints:");
-            egui::ScrollArea::vertical()
-                .max_height(110.0)
-                .show(ui, |ui| {
-                    for (index, keypoint) in view.camera_keypoints.iter().enumerate() {
-                        let label = format!(
-                            "#{}: {:.2}s | {} | {}",
-                            index + 1,
-                            keypoint.time_seconds,
-                            match keypoint.mode {
-                                CameraKeypointMode::Follow => "Follow",
-                                CameraKeypointMode::Static => "Static",
-                            },
-                            match keypoint.easing {
-                                CameraKeypointEasing::Linear => "Linear",
-                                CameraKeypointEasing::EaseIn => "Ease In",
-                                CameraKeypointEasing::EaseOut => "Ease Out",
-                                CameraKeypointEasing::EaseInOut => "Ease In/Out",
-                            }
+    ui.separator();
+
+    if let Some(selected_idx) = view.trigger_selected_index {
+        if let Some(selected_trigger) = view.triggers.get(selected_idx).cloned() {
+            let mut trigger = selected_trigger;
+            let mut changed = false;
+
+            ui.label(format!("Editing Trigger #{}", selected_idx + 1));
+
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+
+                ui.label("Time:");
+                changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut trigger.time_seconds)
+                            .speed(0.01)
+                            .range(0.0..=view.timeline_duration_seconds.max(0.1)),
+                    )
+                    .changed();
+
+                ui.separator();
+
+                ui.label("Duration:");
+                changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut trigger.duration_seconds)
+                            .speed(0.01)
+                            .range(0.0..=view.timeline_duration_seconds.max(0.1))
+                            .suffix("s"),
+                    )
+                    .changed();
+
+                ui.separator();
+
+                ui.label("Easing:");
+                let mut easing = trigger.easing;
+                egui::ComboBox::from_id_salt("trigger_easing")
+                    .selected_text(match easing {
+                        TimedTriggerEasing::Linear => "Linear",
+                        TimedTriggerEasing::EaseIn => "Ease In",
+                        TimedTriggerEasing::EaseOut => "Ease Out",
+                        TimedTriggerEasing::EaseInOut => "Ease In/Out",
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut easing, TimedTriggerEasing::Linear, "Linear");
+                        ui.selectable_value(&mut easing, TimedTriggerEasing::EaseIn, "Ease In");
+                        ui.selectable_value(&mut easing, TimedTriggerEasing::EaseOut, "Ease Out");
+                        ui.selectable_value(
+                            &mut easing,
+                            TimedTriggerEasing::EaseInOut,
+                            "Ease In/Out",
                         );
-                        if ui
-                            .selectable_label(view.camera_selected_index == Some(index), label)
-                            .clicked()
-                        {
-                            commands.push(AppCommand::EditorSetCameraKeypointSelected(Some(index)));
+                    });
+                if easing != trigger.easing {
+                    trigger.easing = easing;
+                    changed = true;
+                }
+            });
+
+            ui.horizontal_wrapped(|ui| {
+                let target_label = match trigger.target {
+                    TimedTriggerTarget::Camera => "Camera",
+                    TimedTriggerTarget::Object { .. } => "Object",
+                    TimedTriggerTarget::Objects { .. } => "Objects",
+                };
+                let action_label = match trigger.action {
+                    TimedTriggerAction::MoveTo { .. } => "Move",
+                    TimedTriggerAction::RotateTo { .. } => "Rotate",
+                    TimedTriggerAction::ScaleTo { .. } => "Scale",
+                    TimedTriggerAction::CameraPose { .. } => "Camera Pose",
+                    TimedTriggerAction::CameraFollow { .. } => "Camera Follow",
+                };
+                ui.label(format!("Target: {}", target_label));
+                ui.separator();
+                ui.label(format!("Action: {}", action_label));
+            });
+
+            match &mut trigger.target {
+                TimedTriggerTarget::Camera => {}
+                TimedTriggerTarget::Object { object_id } => {
+                    ui.horizontal(|ui| {
+                        ui.label("Object ID:");
+                        changed |= ui
+                            .add(egui::DragValue::new(object_id).range(0..=u32::MAX))
+                            .changed();
+                    });
+                }
+                TimedTriggerTarget::Objects { object_ids } => {
+                    let mut text = object_ids
+                        .iter()
+                        .map(|id| id.to_string())
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    ui.horizontal(|ui| {
+                        ui.label("Object IDs:");
+                        if ui.text_edit_singleline(&mut text).changed() {
+                            let mut parsed = text
+                                .split(',')
+                                .filter_map(|segment| segment.trim().parse::<u32>().ok())
+                                .collect::<Vec<_>>();
+                            parsed.sort_unstable();
+                            parsed.dedup();
+                            if *object_ids != parsed {
+                                *object_ids = parsed;
+                                changed = true;
+                            }
                         }
-                    }
+                    });
+                }
+            }
 
-                    if view.camera_keypoints.is_empty() {
-                        ui.label("No camera keypoints yet.");
-                    }
-                });
-        });
-
-        ui.separator();
-
-        ui.vertical(|ui| {
-            if let Some(selected_idx) = view.camera_selected_index {
-                if let Some(selected_keypoint) = view.camera_keypoints.get(selected_idx).cloned() {
-                    let mut keypoint = selected_keypoint;
-                    ui.label(format!("Editing Camera Keypoint #{}", selected_idx + 1));
-
-                    let mut changed = false;
-
-                    ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing.x = 8.0;
-
-                        ui.label("Time:");
+            match &mut trigger.action {
+                TimedTriggerAction::MoveTo { position } => {
+                    ui.horizontal(|ui| {
+                        ui.label("Position:");
+                        changed |= ui
+                            .add(egui::DragValue::new(&mut position[0]).prefix("X "))
+                            .changed();
+                        changed |= ui
+                            .add(egui::DragValue::new(&mut position[1]).prefix("Y "))
+                            .changed();
+                        changed |= ui
+                            .add(egui::DragValue::new(&mut position[2]).prefix("Z "))
+                            .changed();
+                    });
+                }
+                TimedTriggerAction::RotateTo { rotation_degrees } => {
+                    ui.horizontal(|ui| {
+                        ui.label("Rotation:");
                         changed |= ui
                             .add(
-                                egui::DragValue::new(&mut keypoint.time_seconds)
-                                    .speed(0.01)
-                                    .range(0.0..=view.timeline_duration_seconds.max(0.1)),
+                                egui::DragValue::new(&mut rotation_degrees[0])
+                                    .prefix("X ")
+                                    .suffix("°"),
                             )
                             .changed();
-
-                        ui.separator();
-
-                        ui.label("Mode:");
-                        let mut mode = keypoint.mode;
-                        egui::ComboBox::from_id_salt("camera_keypoint_mode")
-                            .selected_text(match mode {
-                                CameraKeypointMode::Follow => "Follow",
-                                CameraKeypointMode::Static => "Static",
-                            })
-                            .show_ui(ui, |ui| {
-                                ui.selectable_value(
-                                    &mut mode,
-                                    CameraKeypointMode::Follow,
-                                    "Follow",
-                                );
-                                ui.selectable_value(
-                                    &mut mode,
-                                    CameraKeypointMode::Static,
-                                    "Static",
-                                );
-                            });
-                        if mode != keypoint.mode {
-                            keypoint.mode = mode;
-                            changed = true;
-                        }
-
-                        ui.separator();
-
-                        ui.label("Easing:");
-                        let mut easing = keypoint.easing;
-                        egui::ComboBox::from_id_salt("camera_keypoint_easing")
-                            .selected_text(match easing {
-                                CameraKeypointEasing::Linear => "Linear",
-                                CameraKeypointEasing::EaseIn => "Ease In",
-                                CameraKeypointEasing::EaseOut => "Ease Out",
-                                CameraKeypointEasing::EaseInOut => "Ease In/Out",
-                            })
-                            .show_ui(ui, |ui| {
-                                ui.selectable_value(
-                                    &mut easing,
-                                    CameraKeypointEasing::Linear,
-                                    "Linear",
-                                );
-                                ui.selectable_value(
-                                    &mut easing,
-                                    CameraKeypointEasing::EaseIn,
-                                    "Ease In",
-                                );
-                                ui.selectable_value(
-                                    &mut easing,
-                                    CameraKeypointEasing::EaseOut,
-                                    "Ease Out",
-                                );
-                                ui.selectable_value(
-                                    &mut easing,
-                                    CameraKeypointEasing::EaseInOut,
-                                    "Ease In/Out",
-                                );
-                            });
-                        if easing != keypoint.easing {
-                            keypoint.easing = easing;
-                            changed = true;
-                        }
-
-                        ui.separator();
-
+                        changed |= ui
+                            .add(
+                                egui::DragValue::new(&mut rotation_degrees[1])
+                                    .prefix("Y ")
+                                    .suffix("°"),
+                            )
+                            .changed();
+                        changed |= ui
+                            .add(
+                                egui::DragValue::new(&mut rotation_degrees[2])
+                                    .prefix("Z ")
+                                    .suffix("°"),
+                            )
+                            .changed();
+                    });
+                }
+                TimedTriggerAction::ScaleTo { size } => {
+                    ui.horizontal(|ui| {
+                        ui.label("Scale:");
+                        changed |= ui
+                            .add(egui::DragValue::new(&mut size[0]).prefix("X "))
+                            .changed();
+                        changed |= ui
+                            .add(egui::DragValue::new(&mut size[1]).prefix("Y "))
+                            .changed();
+                        changed |= ui
+                            .add(egui::DragValue::new(&mut size[2]).prefix("Z "))
+                            .changed();
+                    });
+                }
+                TimedTriggerAction::CameraPose {
+                    transition_interval_seconds,
+                    use_full_segment_transition,
+                    target_position,
+                    rotation,
+                    pitch,
+                } => {
+                    ui.horizontal_wrapped(|ui| {
                         ui.label("Transition:");
                         changed |= ui
-                            .checkbox(&mut keypoint.use_full_segment_transition, "Full Segment")
+                            .checkbox(use_full_segment_transition, "Full Segment")
                             .changed();
-
-                        if !keypoint.use_full_segment_transition {
+                        if !*use_full_segment_transition {
                             changed |= ui
                                 .add(
-                                    egui::DragValue::new(&mut keypoint.transition_interval_seconds)
+                                    egui::DragValue::new(transition_interval_seconds)
                                         .speed(0.01)
                                         .range(0.0..=view.timeline_duration_seconds.max(0.1))
                                         .suffix("s"),
@@ -494,28 +545,20 @@ pub(crate) fn show_compose_mode_bottom_panel(
                         }
 
                         ui.separator();
-
                         ui.label("Target:");
                         changed |= ui
-                            .add(
-                                egui::DragValue::new(&mut keypoint.target_position[0]).prefix("X "),
-                            )
+                            .add(egui::DragValue::new(&mut target_position[0]).prefix("X "))
                             .changed();
                         changed |= ui
-                            .add(
-                                egui::DragValue::new(&mut keypoint.target_position[1]).prefix("Y "),
-                            )
+                            .add(egui::DragValue::new(&mut target_position[1]).prefix("Y "))
                             .changed();
                         changed |= ui
-                            .add(
-                                egui::DragValue::new(&mut keypoint.target_position[2]).prefix("Z "),
-                            )
+                            .add(egui::DragValue::new(&mut target_position[2]).prefix("Z "))
                             .changed();
 
                         ui.separator();
-
-                        let mut rotation_degrees = keypoint.rotation.to_degrees();
-                        let mut pitch_degrees = keypoint.pitch.to_degrees();
+                        let mut rotation_degrees = rotation.to_degrees();
+                        let mut pitch_degrees = pitch.to_degrees();
                         ui.label("Orientation:");
                         if ui
                             .add(
@@ -526,7 +569,7 @@ pub(crate) fn show_compose_mode_bottom_panel(
                             )
                             .changed()
                         {
-                            keypoint.rotation = rotation_degrees.to_radians();
+                            *rotation = rotation_degrees.to_radians();
                             changed = true;
                         }
                         if ui
@@ -538,23 +581,41 @@ pub(crate) fn show_compose_mode_bottom_panel(
                             )
                             .changed()
                         {
-                            keypoint.pitch = pitch_degrees.to_radians();
+                            *pitch = pitch_degrees.to_radians();
                             changed = true;
                         }
                     });
-
-                    if changed {
-                        commands.push(AppCommand::EditorUpdateCameraKeypoint(
-                            selected_idx,
-                            keypoint,
-                        ));
-                    }
                 }
-            } else {
-                ui.label("Select a camera keypoint to edit it.");
+                TimedTriggerAction::CameraFollow {
+                    transition_interval_seconds,
+                    use_full_segment_transition,
+                } => {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label("Transition:");
+                        changed |= ui
+                            .checkbox(use_full_segment_transition, "Full Segment")
+                            .changed();
+                        if !*use_full_segment_transition {
+                            changed |= ui
+                                .add(
+                                    egui::DragValue::new(transition_interval_seconds)
+                                        .speed(0.01)
+                                        .range(0.0..=view.timeline_duration_seconds.max(0.1))
+                                        .suffix("s"),
+                                )
+                                .changed();
+                        }
+                    });
+                }
             }
-        });
-    });
+
+            if changed {
+                commands.push(AppCommand::EditorUpdateTrigger(selected_idx, trigger));
+            }
+        }
+    } else {
+        ui.label("Select a trigger to edit it.");
+    }
 
     let position = view.timeline_preview_position;
     let direction = view.timeline_preview_direction;

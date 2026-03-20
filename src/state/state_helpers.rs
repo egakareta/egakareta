@@ -135,7 +135,6 @@ impl State {
         self.editor.camera.editor_rotation = 45.0f32.to_radians();
         self.editor.camera.editor_pitch = 45.0f32.to_radians();
         self.editor.camera.editor_target_z = 0.0;
-        self.editor.camera.selected_keypoint_index = None;
         self.gameplay.state = GameState::new();
         self.render.meshes.trail.clear();
     }
@@ -154,7 +153,6 @@ impl State {
         self.editor.runtime.interaction.block_drag = None;
         self.session.playing_level_name = None;
         self.editor.ui.right_dragging = false;
-        self.editor.camera.selected_keypoint_index = None;
         self.clear_editor_pan_keys();
         self.phase = AppPhase::Menu;
     }

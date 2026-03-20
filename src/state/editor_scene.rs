@@ -3,7 +3,7 @@ use glam::Vec3;
 use super::{EditorDirtyFlags, EditorSubsystem, PerfStage, State};
 use crate::editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds};
 use crate::mesh::{
-    build_block_vertices, build_block_vertices_from_refs, build_camera_keypoint_marker_vertices,
+    build_block_vertices, build_block_vertices_from_refs, build_camera_trigger_marker_vertices,
     build_editor_cursor_vertices, build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
     build_editor_preview_player_vertices, build_editor_selection_outline_vertices,
     build_spawn_marker_vertices, build_tap_indicator_vertices, GizmoParams,
@@ -222,11 +222,11 @@ impl State {
             self.rebuild_editor_gizmo_vertices();
             self.perf_record(PerfStage::DirtyRebuildSelectionOverlays, gizmo_started_at);
 
-            let camera_keypoints_started_at = PlatformInstant::now();
-            self.rebuild_camera_keypoint_marker_vertices();
+            let camera_triggers_started_at = PlatformInstant::now();
+            self.rebuild_camera_trigger_marker_vertices();
             self.perf_record(
                 PerfStage::DirtyRebuildSelectionOverlays,
-                camera_keypoints_started_at,
+                camera_triggers_started_at,
             );
 
             let hover_started_at = PlatformInstant::now();
@@ -511,28 +511,29 @@ impl State {
         );
     }
 
-    pub(super) fn rebuild_camera_keypoint_marker_vertices(&mut self) {
+    pub(super) fn rebuild_camera_trigger_marker_vertices(&mut self) {
         if self.phase != AppPhase::Editor {
-            self.render.meshes.camera_keypoint_markers.clear();
+            self.render.meshes.camera_trigger_markers.clear();
             return;
         }
 
         let markers = self.editor.camera_trigger_markers();
         if markers.is_empty() {
-            self.render.meshes.camera_keypoint_markers.clear();
+            self.render.meshes.camera_trigger_markers.clear();
             return;
         }
 
-        let keypoints = markers
+        let camera_triggers = markers
             .iter()
-            .map(|(_, keypoint)| keypoint.clone())
+            .map(|(_, camera_trigger)| camera_trigger.clone())
             .collect::<Vec<_>>();
-        let selected_keypoint_index =
+        let selected_camera_trigger_index =
             self.editor
                 .selected_trigger_index()
-                .and_then(|trigger_index| {
-                    self.editor
-                        .camera_keypoint_index_for_trigger_index(trigger_index)
+                .and_then(|selected_trigger_index| {
+                    markers
+                        .iter()
+                        .position(|(trigger_index, _)| *trigger_index == selected_trigger_index)
                 });
 
         let current_camera_eye = if self.editor_is_playing() {
@@ -544,17 +545,17 @@ impl State {
             Some(target + offset)
         };
 
-        let vertices = build_camera_keypoint_marker_vertices(
-            &keypoints,
-            selected_keypoint_index,
+        let vertices = build_camera_trigger_marker_vertices(
+            &camera_triggers,
+            selected_camera_trigger_index,
             current_camera_eye,
         );
         self.render
             .meshes
-            .camera_keypoint_markers
+            .camera_trigger_markers
             .replace_with_vertices(
                 &self.render.gpu.device,
-                "Camera Keypoint Marker Vertex Buffer",
+                "Camera Trigger Marker Vertex Buffer",
                 &vertices,
             );
     }

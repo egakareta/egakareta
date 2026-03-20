@@ -139,7 +139,7 @@ pub(crate) struct SceneMeshes {
     pub(crate) editor_gizmo: MeshSlot,
     pub(crate) tap_indicators: MeshSlot,
     pub(crate) spawn_marker: MeshSlot,
-    pub(crate) camera_keypoint_markers: MeshSlot,
+    pub(crate) camera_trigger_markers: MeshSlot,
     pub(crate) editor_preview_player: MeshSlot,
 }
 

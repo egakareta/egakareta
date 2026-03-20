@@ -5,7 +5,7 @@ mod picking;
 mod selection;
 
 use crate::types::{
-    CameraKeypoint, EditorMode, GizmoAxis, GizmoDragKind, LevelObject, SpawnMetadata, TimedTrigger,
+    EditorMode, GizmoAxis, GizmoDragKind, LevelObject, SpawnMetadata, TimedTrigger,
 };
 
 #[derive(Clone)]
@@ -47,8 +47,6 @@ pub(crate) struct EditorHistorySnapshot {
     pub(crate) tap_times: Vec<f32>,
     pub(crate) tap_indicator_positions: Vec<[f32; 3]>,
     pub(crate) timing_points: Vec<crate::types::TimingPoint>,
-    pub(crate) camera_keypoints: Vec<CameraKeypoint>,
-    pub(crate) selected_camera_keypoint_index: Option<usize>,
     pub(crate) triggers: Vec<TimedTrigger>,
     pub(crate) selected_trigger_index: Option<usize>,
 }

@@ -1,7 +1,7 @@
 use super::{PerfOverlayEntry, State};
 use crate::types::{
-    AppSettings, CameraKeypoint, EditorMode, LevelObject, MusicMetadata, SettingsSection,
-    SpawnDirection, TimedTrigger, TimingPoint,
+    AppSettings, EditorMode, LevelObject, MusicMetadata, SettingsSection, SpawnDirection,
+    TimedTrigger, TimingPoint,
 };
 
 pub(crate) struct EditorUiViewModel<'a> {
@@ -42,8 +42,6 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) waveform_samples: &'a [f32],
     pub(crate) waveform_sample_rate: u32,
     pub(crate) bpm_tap_result: Option<f32>,
-    pub(crate) camera_keypoints: &'a [CameraKeypoint],
-    pub(crate) camera_selected_index: Option<usize>,
     pub(crate) triggers: &'a [TimedTrigger],
     pub(crate) trigger_selected_index: Option<usize>,
     pub(crate) camera_position: [f32; 3],
@@ -122,8 +120,6 @@ impl State {
             waveform_samples: self.editor_waveform_samples(),
             waveform_sample_rate: self.editor_waveform_sample_rate(),
             bpm_tap_result: self.editor_bpm_tap_result(),
-            camera_keypoints: self.editor_camera_keypoints(),
-            camera_selected_index: self.editor_selected_camera_keypoint_index(),
             triggers: self.editor_triggers(),
             trigger_selected_index: self.editor_selected_trigger_index(),
             camera_position,

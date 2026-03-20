@@ -7,7 +7,7 @@ use crate::types::EditorInteractionChange;
 use glam::{EulerRot, Mat3, Vec2, Vec3};
 
 const MARQUEE_DRAG_THRESHOLD_PX: f64 = 4.0;
-const CAMERA_KEYPOINT_MARQUEE_RADIUS_PX: f32 = 16.0;
+const CAMERA_TRIGGER_MARQUEE_RADIUS_PX: f32 = 16.0;
 
 impl EditorSubsystem {
     fn marquee_has_dragged_far_enough(&self) -> bool {
@@ -132,16 +132,16 @@ impl EditorSubsystem {
         let rect_center = (rect_min + rect_max) * 0.5;
         let mut best_hit: Option<(usize, f32)> = None;
 
-        for (trigger_index, keypoint) in self.camera_trigger_markers() {
-            let eye = self.camera_keypoint_marker_eye(&keypoint);
+        for (trigger_index, camera_trigger) in self.camera_trigger_markers() {
+            let eye = self.camera_trigger_marker_eye(&camera_trigger);
             let Some(screen) = self.world_to_screen_v(eye, viewport) else {
                 continue;
             };
 
-            let overlaps = screen.x + CAMERA_KEYPOINT_MARQUEE_RADIUS_PX >= rect_min.x
-                && screen.x - CAMERA_KEYPOINT_MARQUEE_RADIUS_PX <= rect_max.x
-                && screen.y + CAMERA_KEYPOINT_MARQUEE_RADIUS_PX >= rect_min.y
-                && screen.y - CAMERA_KEYPOINT_MARQUEE_RADIUS_PX <= rect_max.y;
+            let overlaps = screen.x + CAMERA_TRIGGER_MARQUEE_RADIUS_PX >= rect_min.x
+                && screen.x - CAMERA_TRIGGER_MARQUEE_RADIUS_PX <= rect_max.x
+                && screen.y + CAMERA_TRIGGER_MARQUEE_RADIUS_PX >= rect_min.y
+                && screen.y - CAMERA_TRIGGER_MARQUEE_RADIUS_PX <= rect_max.y;
 
             if !overlaps {
                 continue;

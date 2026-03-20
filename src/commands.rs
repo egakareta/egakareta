@@ -114,20 +114,12 @@ pub(crate) enum AppCommand {
         pitch: f32,
         transition_seconds: Option<f32>,
     },
-    /// Capture a new camera keypoint from the current editor camera at the playhead.
-    EditorAddCameraKeypoint,
-    /// Remove a camera keypoint by index.
-    EditorRemoveCameraKeypoint(usize),
-    /// Select or deselect a camera keypoint in the UI.
-    EditorSetCameraKeypointSelected(Option<usize>),
-    /// Replace an existing camera keypoint.
-    EditorUpdateCameraKeypoint(usize, crate::types::CameraKeypoint),
-    /// Overwrite the selected camera keypoint pose from the current editor camera.
-    EditorCaptureSelectedCameraKeypoint,
-    /// Snap the editor viewport to the selected camera keypoint.
-    EditorApplySelectedCameraKeypoint,
-    /// Add a new timeline trigger.
-    EditorAddTrigger(crate::types::TimedTrigger),
+    /// Capture a new camera trigger from the current editor camera at the playhead.
+    EditorAddCameraTrigger,
+    /// Overwrite the selected camera trigger pose from the current editor camera.
+    EditorCaptureSelectedCameraTrigger,
+    /// Snap the editor viewport to the selected camera trigger.
+    EditorApplySelectedCameraTrigger,
     /// Remove a trigger by index.
     EditorRemoveTrigger(usize),
     /// Select or deselect a trigger in the UI.
