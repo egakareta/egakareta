@@ -72,6 +72,7 @@ pub(crate) struct SessionSubsystem {
     pub(crate) playing_level_name: Option<String>,
     pub(crate) playtesting_editor: bool,
     pub(crate) playtest_audio_start_seconds: Option<f32>,
+    pub(crate) playing_trigger_hitboxes: bool,
     pub(crate) playing_trigger_base_objects: Option<Vec<LevelObject>>,
 }
 

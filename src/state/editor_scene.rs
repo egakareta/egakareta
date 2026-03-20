@@ -1,7 +1,8 @@
 use glam::Vec3;
 
 use super::{EditorDirtyFlags, EditorSubsystem, PerfStage, State};
-use crate::editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds};
+use crate::editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds_with_triggers};
+use crate::game::trigger_transformed_objects_at_time;
 use crate::mesh::{
     build_block_vertices, build_block_vertices_from_refs, build_camera_trigger_marker_vertices,
     build_editor_cursor_vertices, build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
@@ -9,9 +10,7 @@ use crate::mesh::{
     build_spawn_marker_vertices, build_tap_indicator_vertices, GizmoParams,
 };
 use crate::platform::state_host::PlatformInstant;
-use crate::types::{
-    apply_timed_triggers_to_objects, AppPhase, EditorMode, GizmoPart, LevelObject, SpawnDirection,
-};
+use crate::types::{AppPhase, EditorMode, GizmoPart, LevelObject, SpawnDirection};
 
 impl EditorSubsystem {
     pub(crate) fn mark_dirty(&mut self, dirty: EditorDirtyFlags) {
@@ -102,12 +101,14 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn timeline_elapsed_seconds(&self, time_seconds: f32) -> f32 {
-        derive_timeline_elapsed_seconds(
+        derive_timeline_elapsed_seconds_with_triggers(
             self.spawn.position,
             self.spawn.direction,
             &self.timeline.taps.tap_times,
             time_seconds,
             &self.objects,
+            self.triggers(),
+            self.simulate_trigger_hitboxes(),
         )
     }
 
@@ -147,7 +148,7 @@ impl State {
             return None;
         }
 
-        Some(apply_timed_triggers_to_objects(
+        Some(trigger_transformed_objects_at_time(
             &self.editor.objects,
             self.editor.triggers(),
             self.editor.timeline.clock.time_seconds,

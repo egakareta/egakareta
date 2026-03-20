@@ -11,6 +11,7 @@ pub(crate) struct EditorSessionInit {
     pub(crate) timeline_time_seconds: f32,
     pub(crate) timeline_duration_seconds: f32,
     pub(crate) triggers: Vec<TimedTrigger>,
+    pub(crate) simulate_trigger_hitboxes: bool,
     pub(crate) cursor: [f32; 3],
     pub(crate) camera_pan: [f32; 2],
 }
@@ -27,6 +28,7 @@ pub(crate) fn editor_session_init_from_metadata(
         mut timeline_time_seconds,
         timeline_duration_seconds,
         mut triggers,
+        simulate_trigger_hitboxes,
     ) = if let Some(metadata) = metadata {
         let triggers = metadata.resolved_triggers();
         (
@@ -38,6 +40,7 @@ pub(crate) fn editor_session_init_from_metadata(
             metadata.timeline_time_seconds,
             metadata.timeline_duration_seconds,
             triggers,
+            metadata.simulate_trigger_hitboxes,
         )
     } else {
         (
@@ -49,6 +52,7 @@ pub(crate) fn editor_session_init_from_metadata(
             0.0,
             16.0,
             Vec::new(),
+            false,
         )
     };
 
@@ -70,6 +74,7 @@ pub(crate) fn editor_session_init_from_metadata(
         timeline_time_seconds,
         timeline_duration_seconds: timeline_duration_seconds.max(0.1),
         triggers,
+        simulate_trigger_hitboxes,
         cursor,
         camera_pan,
     }

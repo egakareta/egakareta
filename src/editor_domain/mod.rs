@@ -94,6 +94,7 @@ mod tests {
             timeline_time_seconds: 0.5,
             timeline_duration_seconds: 16.0,
             triggers: Vec::new(),
+            simulate_trigger_hitboxes: false,
             objects: vec![LevelObject {
                 position: [4.0, 6.0, 0.0],
                 size: [1.0, 1.0, 1.0],
@@ -132,6 +133,8 @@ mod tests {
             Some("Demo"),
             SpawnMetadata::default(),
             &[],
+            &[],
+            false,
             timeline_time_seconds,
         );
 
@@ -182,6 +185,8 @@ mod tests {
             None,
             SpawnMetadata::default(),
             &[],
+            &[],
+            false,
             timeline_time_seconds,
         );
 
@@ -215,6 +220,7 @@ mod tests {
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 16.0,
             triggers: Vec::new(),
+            simulate_trigger_hitboxes: false,
             objects: vec![LevelObject {
                 position: [1.0, 2.0, 0.0],
                 size: [1.0, 1.0, 1.0],

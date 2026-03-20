@@ -1,5 +1,5 @@
-use crate::editor_domain::timeline::derive_timeline_state;
-use crate::types::{LevelMetadata, LevelObject, SpawnDirection, SpawnMetadata};
+use crate::editor_domain::timeline::derive_timeline_state_with_triggers;
+use crate::types::{LevelMetadata, LevelObject, SpawnDirection, SpawnMetadata, TimedTrigger};
 
 pub(crate) struct EditorPlaytestTransition {
     pub(crate) objects: Vec<LevelObject>,
@@ -35,14 +35,18 @@ pub(crate) fn build_editor_playtest_transition(
     editor_level_name: Option<&str>,
     editor_spawn: SpawnMetadata,
     tap_times: &[f32],
+    triggers: &[TimedTrigger],
+    simulate_trigger_hitboxes: bool,
     timeline_time_seconds: f32,
 ) -> EditorPlaytestTransition {
-    let state = derive_timeline_state(
+    let state = derive_timeline_state_with_triggers(
         editor_spawn.position,
         editor_spawn.direction,
         tap_times,
         timeline_time_seconds,
         editor_objects,
+        triggers,
+        simulate_trigger_hitboxes,
     );
 
     EditorPlaytestTransition {

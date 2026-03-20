@@ -48,6 +48,7 @@ pub(crate) struct GameState {
     finish_target: [f32; 3],
     finish_sink_velocity: f32,
     animation_phase_seconds: f32,
+    consumed_object_indices: Vec<usize>,
 }
 
 pub(crate) fn center_spawn_position(position: [f32; 3]) -> [f32; 3] {
@@ -79,6 +80,7 @@ impl GameState {
             finish_target: [0.0, 0.0, 0.0],
             finish_sink_velocity: 0.0,
             animation_phase_seconds: 0.0,
+            consumed_object_indices: Vec::new(),
         }
     }
 
@@ -114,6 +116,7 @@ impl GameState {
         self.finishing = false;
         self.finish_sink_velocity = 0.0;
         self.animation_phase_seconds = 0.0;
+        self.consumed_object_indices.clear();
         self.trail_segments = vec![vec![centered_position]];
     }
 
@@ -134,6 +137,7 @@ impl GameState {
     }
 
     pub(crate) fn update(&mut self, dt: f32) {
+        self.consumed_object_indices.clear();
         self.animation_phase_seconds += dt.max(0.0);
 
         if self.level_complete {
@@ -244,6 +248,7 @@ impl GameState {
                     if behavior.consumed_on_overlap {
                         self.objects.remove(i);
                         self.cached_behaviors.remove(i);
+                        self.consumed_object_indices.push(i);
                         removed = true;
                     }
                 } else if let Some(portal) = self.objects.get(i) {
@@ -251,6 +256,7 @@ impl GameState {
                     self.speed *= behavior.speed_multiplier.max(0.1);
                     if behavior.consumed_on_overlap {
                         self.objects.remove(i);
+                        self.consumed_object_indices.push(i);
                         removed = true;
                     }
                 }
@@ -315,6 +321,10 @@ impl GameState {
 
     pub(crate) fn block_animation_phase_seconds(&self) -> f32 {
         self.animation_phase_seconds
+    }
+
+    pub(crate) fn take_consumed_object_indices(&mut self) -> Vec<usize> {
+        std::mem::take(&mut self.consumed_object_indices)
     }
 
     fn begin_finish_sequence(&mut self, target: [f32; 3]) {

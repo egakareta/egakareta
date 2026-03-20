@@ -128,6 +128,8 @@ pub(crate) enum AppCommand {
     EditorSetTriggerSelected(Option<usize>),
     /// Replace an existing trigger.
     EditorUpdateTrigger(usize, crate::types::TimedTrigger),
+    /// Set whether timed object triggers move gameplay hitboxes during play.
+    EditorSetSimulateTriggerHitboxes(bool),
 
     // ── Editor – misc ───────────────────────────────────────────────
     /// Toggle the performance overlay.

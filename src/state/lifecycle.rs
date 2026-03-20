@@ -497,6 +497,7 @@ impl State {
                 playing_level_name: None,
                 playtesting_editor: false,
                 playtest_audio_start_seconds: None,
+                playing_trigger_hitboxes: false,
                 playing_trigger_base_objects: None,
             },
             editor: EditorSubsystem {

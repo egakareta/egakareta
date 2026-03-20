@@ -29,6 +29,7 @@ impl State {
             self.preload_runtime_audio(&level_name, &metadata.music.source);
             self.editor.set_triggers(metadata.resolved_triggers());
             self.editor.set_trigger_selected(None);
+            self.session.playing_trigger_hitboxes = metadata.simulate_trigger_hitboxes;
             let transition = build_playing_transition_from_metadata(metadata);
             log::debug!("Starting level: {}", transition.level_name);
             self.gameplay.state.objects = transition.objects;
@@ -52,12 +53,15 @@ impl State {
                 self.session.editor_level_name.as_deref(),
                 self.editor.spawn.clone(),
                 &self.editor.timeline.taps.tap_times,
+                self.editor.triggers(),
+                self.editor.simulate_trigger_hitboxes(),
                 self.editor.timeline.clock.time_seconds,
             );
             self.session.playtest_audio_start_seconds =
                 Some(transition.playtest_audio_start_seconds);
             self.gameplay.state.objects = transition.objects;
             self.gameplay.state.rebuild_behavior_cache();
+            self.session.playing_trigger_hitboxes = self.editor.simulate_trigger_hitboxes();
             self.session.playing_trigger_base_objects = Some(self.gameplay.state.objects.clone());
             self.apply_spawn_to_game(
                 transition.spawn_position,
@@ -70,6 +74,7 @@ impl State {
             if let Some(metadata) = self.load_level_metadata(&level_name) {
                 self.editor.set_triggers(metadata.resolved_triggers());
                 self.editor.set_trigger_selected(None);
+                self.session.playing_trigger_hitboxes = metadata.simulate_trigger_hitboxes;
                 let transition = build_playing_transition_from_metadata(metadata);
                 self.gameplay.state.objects = transition.objects;
                 self.gameplay.state.rebuild_behavior_cache();
@@ -103,6 +108,8 @@ impl State {
         self.editor.timing.timing_selected_index = None;
         self.editor.set_triggers(init.triggers);
         self.editor.set_trigger_selected(None);
+        self.editor
+            .set_simulate_trigger_hitboxes(init.simulate_trigger_hitboxes);
         self.editor.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
             self.editor.spawn.position,
             self.editor.spawn.direction,
@@ -191,6 +198,7 @@ impl State {
             timeline_time_seconds: self.editor.timeline.clock.time_seconds,
             timeline_duration_seconds: self.editor.timeline.clock.duration_seconds,
             triggers: self.editor.triggers().to_vec(),
+            simulate_trigger_hitboxes: self.editor.simulate_trigger_hitboxes(),
             objects: self.editor.objects.clone(),
         })
     }
@@ -213,6 +221,8 @@ impl State {
         self.editor.timing.timing_selected_index = None;
         self.editor.set_triggers(init.triggers);
         self.editor.set_trigger_selected(None);
+        self.editor
+            .set_simulate_trigger_hitboxes(init.simulate_trigger_hitboxes);
         self.editor.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
             self.editor.spawn.position,
             self.editor.spawn.direction,

@@ -23,6 +23,7 @@ impl EditorSubsystem {
             timing_points: self.timing.timing_points.clone(),
             triggers: self.triggers.items.clone(),
             selected_trigger_index: self.triggers.selected_index,
+            simulate_trigger_hitboxes: self.triggers.simulate_trigger_hitboxes,
         }
     }
 
@@ -57,6 +58,7 @@ impl EditorSubsystem {
         self.timeline.taps.tap_indicator_positions = snapshot.tap_indicator_positions;
         self.timing.timing_points = snapshot.timing_points;
         self.triggers.items = snapshot.triggers;
+        self.triggers.simulate_trigger_hitboxes = snapshot.simulate_trigger_hitboxes;
         self.triggers.selected_index = snapshot
             .selected_trigger_index
             .filter(|index| *index < self.triggers.items.len());

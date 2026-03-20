@@ -49,6 +49,7 @@ pub(crate) struct EditorHistorySnapshot {
     pub(crate) timing_points: Vec<crate::types::TimingPoint>,
     pub(crate) triggers: Vec<TimedTrigger>,
     pub(crate) selected_trigger_index: Option<usize>,
+    pub(crate) simulate_trigger_hitboxes: bool,
 }
 
 #[derive(Clone)]

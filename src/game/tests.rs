@@ -1,7 +1,12 @@
 use super::physics::{aabb_overlaps_object_xz, object_xz_contains, BASE_PLAYER_SPEED};
-use super::simulation::{simulate_timeline_state, TimelineSimulationRuntime};
+use super::simulation::{
+    simulate_timeline_state, simulate_timeline_state_with_triggers, TimelineSimulationRuntime,
+};
 use super::state::GameState;
-use crate::types::{LevelObject, SpawnDirection};
+use crate::types::{
+    LevelObject, SpawnDirection, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
+    TimedTriggerTarget,
+};
 
 fn approx_eq(a: f32, b: f32, eps: f32) {
     assert!((a - b).abs() <= eps, "expected {a} ~= {b}");
@@ -230,4 +235,79 @@ fn timeline_incremental_runtime_matches_direct_simulation() {
             | (SpawnDirection::Right, SpawnDirection::Right)
     ));
     approx_eq(incremental.elapsed_seconds, direct.elapsed_seconds, 1e-6);
+}
+
+#[test]
+fn timeline_trigger_hitbox_mode_does_not_resurrect_consumed_portals() {
+    let objects = vec![LevelObject {
+        position: [0.0, 0.0, 1.0],
+        size: [1.0, 1.0, 1.0],
+        rotation_degrees: [0.0, 0.0, 0.0],
+        roundness: 0.18,
+        block_id: "core/speedportal".to_string(),
+        color_tint: [1.0, 1.0, 1.0],
+    }];
+
+    let triggers = vec![TimedTrigger {
+        time_seconds: 0.0,
+        duration_seconds: 0.0,
+        easing: TimedTriggerEasing::Linear,
+        target: TimedTriggerTarget::Object { object_id: 0 },
+        action: TimedTriggerAction::MoveTo {
+            position: [0.0, 0.0, 1.0],
+        },
+    }];
+
+    let mut runtime = TimelineSimulationRuntime::new_with_triggers(
+        [0.0, 0.0, 0.0],
+        SpawnDirection::Forward,
+        &objects,
+        &[],
+        &triggers,
+        true,
+    );
+    runtime.advance_to(0.6);
+
+    let snapshot = runtime.snapshot();
+    approx_eq(snapshot.speed, BASE_PLAYER_SPEED * 1.5, 1e-4);
+}
+
+#[test]
+fn timeline_state_with_disabled_trigger_hitboxes_matches_plain_simulation() {
+    let objects = vec![LevelObject {
+        position: [0.0, 0.0, 2.0],
+        size: [1.0, 1.0, 1.0],
+        rotation_degrees: [0.0, 0.0, 0.0],
+        roundness: 0.18,
+        block_id: "core/stone".to_string(),
+        color_tint: [1.0, 1.0, 1.0],
+    }];
+
+    let triggers = vec![TimedTrigger {
+        time_seconds: 0.0,
+        duration_seconds: 1.0,
+        easing: TimedTriggerEasing::Linear,
+        target: TimedTriggerTarget::Object { object_id: 0 },
+        action: TimedTriggerAction::MoveTo {
+            position: [5.0, 0.0, 2.0],
+        },
+    }];
+
+    let plain =
+        simulate_timeline_state([0.0, 0.0, 0.0], SpawnDirection::Forward, &objects, &[], 0.5);
+
+    let trigger_disabled = simulate_timeline_state_with_triggers(
+        [0.0, 0.0, 0.0],
+        SpawnDirection::Forward,
+        &objects,
+        &[],
+        &triggers,
+        false,
+        0.5,
+    );
+
+    approx_eq(plain.position[0], trigger_disabled.position[0], 1e-6);
+    approx_eq(plain.position[1], trigger_disabled.position[1], 1e-6);
+    approx_eq(plain.position[2], trigger_disabled.position[2], 1e-6);
+    approx_eq(plain.speed, trigger_disabled.speed, 1e-6);
 }

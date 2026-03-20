@@ -113,6 +113,9 @@ impl State {
             AppCommand::EditorUpdateTrigger(index, trigger) => {
                 self.editor_update_trigger(index, trigger)
             }
+            AppCommand::EditorSetSimulateTriggerHitboxes(enabled) => {
+                self.set_editor_simulate_trigger_hitboxes(enabled)
+            }
 
             // ── Editor – misc ───────────────────────────────────────
             AppCommand::EditorTogglePerfOverlay => self.toggle_editor_perf_overlay(),

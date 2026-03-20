@@ -243,12 +243,15 @@ impl State {
         if self.editor.ui.mode == EditorMode::Timing {
             self.editor.timeline.playback.runtime = None;
         } else {
-            self.editor.timeline.playback.runtime = Some(TimelineSimulationRuntime::new(
-                self.editor.spawn.position,
-                self.editor.spawn.direction,
-                &self.editor.objects,
-                &self.editor.timeline.taps.tap_times,
-            ));
+            self.editor.timeline.playback.runtime =
+                Some(TimelineSimulationRuntime::new_with_triggers(
+                    self.editor.spawn.position,
+                    self.editor.spawn.direction,
+                    &self.editor.objects,
+                    &self.editor.timeline.taps.tap_times,
+                    self.editor.triggers(),
+                    self.editor.simulate_trigger_hitboxes(),
+                ));
             if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
                 runtime.advance_to(self.editor.timeline.clock.time_seconds);
             }
@@ -353,12 +356,15 @@ impl State {
             if last_mode == EditorMode::Timing {
                 self.editor.timeline.playback.runtime = None;
             } else {
-                self.editor.timeline.playback.runtime = Some(TimelineSimulationRuntime::new(
-                    self.editor.spawn.position,
-                    self.editor.spawn.direction,
-                    &self.editor.objects,
-                    &self.editor.timeline.taps.tap_times,
-                ));
+                self.editor.timeline.playback.runtime =
+                    Some(TimelineSimulationRuntime::new_with_triggers(
+                        self.editor.spawn.position,
+                        self.editor.spawn.direction,
+                        &self.editor.objects,
+                        &self.editor.timeline.taps.tap_times,
+                        self.editor.triggers(),
+                        self.editor.simulate_trigger_hitboxes(),
+                    ));
                 if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
                     runtime.advance_to(self.editor.timeline.clock.time_seconds);
                 }
@@ -426,6 +432,8 @@ impl State {
             self.session.editor_level_name.as_deref(),
             self.editor.spawn.clone(),
             &self.editor.timeline.taps.tap_times,
+            self.editor.triggers(),
+            self.editor.simulate_trigger_hitboxes(),
             self.editor.timeline.clock.time_seconds,
         );
 
@@ -439,6 +447,7 @@ impl State {
         self.gameplay.state = GameState::new();
         self.gameplay.state.objects = transition.objects;
         self.gameplay.state.rebuild_behavior_cache();
+        self.session.playing_trigger_hitboxes = self.editor.simulate_trigger_hitboxes();
         self.session.playing_trigger_base_objects = Some(self.gameplay.state.objects.clone());
         self.apply_spawn_to_game(
             transition.spawn_position,
@@ -488,6 +497,7 @@ impl State {
             playtest_return_objects(self.session.playtesting_editor, &self.editor.objects)
         {
             self.session.playtesting_editor = false;
+            self.session.playing_trigger_hitboxes = false;
             self.phase = AppPhase::Editor;
             self.editor.timeline.playback.playing = false;
             self.editor.timeline.playback.runtime = None;

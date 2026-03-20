@@ -290,6 +290,21 @@ pub(crate) fn show_trigger_mode_bottom_panel(
 ) {
     show_mode_and_snap_controls(ui, view, commands);
 
+    ui.horizontal(|ui| {
+        let mut simulate_hitboxes = view.simulate_trigger_hitboxes;
+        if ui
+            .checkbox(
+                &mut simulate_hitboxes,
+                "Timed Object Triggers Move Hitboxes During Play",
+            )
+            .changed()
+        {
+            commands.push(AppCommand::EditorSetSimulateTriggerHitboxes(
+                simulate_hitboxes,
+            ));
+        }
+    });
+
     ui.separator();
 
     ui.horizontal_wrapped(|ui| {

@@ -167,6 +167,14 @@ fn is_default_timed_trigger_duration_seconds(value: &f32) -> bool {
     value.abs() <= 1e-6
 }
 
+fn default_simulate_trigger_hitboxes() -> bool {
+    false
+}
+
+fn is_default_simulate_trigger_hitboxes(value: &bool) -> bool {
+    !*value
+}
+
 fn default_timed_trigger_target() -> TimedTriggerTarget {
     TimedTriggerTarget::Camera
 }
@@ -786,6 +794,11 @@ pub(crate) struct LevelMetadata {
     pub(crate) timeline_duration_seconds: f32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) triggers: Vec<TimedTrigger>,
+    #[serde(
+        default = "default_simulate_trigger_hitboxes",
+        skip_serializing_if = "is_default_simulate_trigger_hitboxes"
+    )]
+    pub(crate) simulate_trigger_hitboxes: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) objects: Vec<LevelObject>,
     #[serde(flatten)]
@@ -801,6 +814,7 @@ pub(crate) struct EditorStateParams {
     pub timeline_time_seconds: f32,
     pub timeline_duration_seconds: f32,
     pub triggers: Vec<TimedTrigger>,
+    pub simulate_trigger_hitboxes: bool,
     pub objects: Vec<LevelObject>,
 }
 
@@ -815,6 +829,7 @@ impl LevelMetadata {
             timeline_time_seconds,
             timeline_duration_seconds,
             triggers,
+            simulate_trigger_hitboxes,
             objects,
         }: EditorStateParams,
     ) -> Self {
@@ -828,6 +843,7 @@ impl LevelMetadata {
             timeline_time_seconds,
             timeline_duration_seconds,
             triggers,
+            simulate_trigger_hitboxes,
             objects,
             extra: serde_json::Map::new(),
         }
@@ -1426,6 +1442,7 @@ mod tests {
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 16.0,
             triggers: Vec::new(),
+            simulate_trigger_hitboxes: false,
             objects: vec![LevelObject {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
@@ -1444,6 +1461,7 @@ mod tests {
         assert!(value.get("tap_times").is_none());
         assert!(value.get("timeline_time_seconds").is_none());
         assert!(value.get("timeline_duration_seconds").is_none());
+        assert!(value.get("simulate_trigger_hitboxes").is_none());
         assert!(value.get("camera_triggers").is_none());
         assert!(value.get("taps").is_none());
         assert!(value.get("timeline_step").is_none());
@@ -1454,6 +1472,25 @@ mod tests {
         assert!(object.get("rotation_degrees").is_none());
         assert!(object.get("roundness").is_none());
         assert!(object.get("block_id").is_none());
+    }
+
+    #[test]
+    fn level_metadata_serialization_includes_simulate_trigger_hitboxes_when_enabled() {
+        let metadata = LevelMetadata::from_editor_state(EditorStateParams {
+            name: "HitboxPolicy".to_string(),
+            music: MusicMetadata::default(),
+            spawn: SpawnMetadata::default(),
+            tap_times: Vec::new(),
+            timing_points: Vec::new(),
+            timeline_time_seconds: 0.0,
+            timeline_duration_seconds: 16.0,
+            triggers: Vec::new(),
+            simulate_trigger_hitboxes: true,
+            objects: Vec::new(),
+        });
+
+        let value = serde_json::to_value(&metadata).expect("serialize metadata");
+        assert_eq!(value.get("simulate_trigger_hitboxes"), Some(&json!(true)));
     }
 
     #[test]
@@ -1537,6 +1574,7 @@ mod tests {
                 rotation: 0.4,
                 pitch: 0.6,
             }]),
+            simulate_trigger_hitboxes: false,
             objects: Vec::new(),
             extra: serde_json::Map::new(),
         };

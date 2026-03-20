@@ -1,31 +1,118 @@
 use glam::{Mat4, Vec3};
 
 use super::{PerfOverlayEntry, PerfStage, State};
-use crate::game::TimelineSimulationRuntime;
+use crate::game::{
+    advance_simulation_time, trigger_transformed_objects_at_time, TimelineSimulationRuntime,
+};
 use crate::mesh::{build_block_vertices_with_phase, build_trail_vertices};
 use crate::platform::state_host::PlatformInstant;
-use crate::types::{
-    apply_timed_triggers_to_objects, AppPhase, CameraUniform, Direction, EditorMode,
-};
+use crate::types::{AppPhase, CameraUniform, Direction, EditorMode, LevelObject};
 
 impl State {
-    fn apply_playing_object_triggers(&mut self) {
+    fn playing_trigger_objects_at_time(&mut self, time_seconds: f32) -> Option<Vec<LevelObject>> {
         if self.phase != AppPhase::Playing || !self.editor.has_object_transform_triggers() {
-            return;
+            return None;
         }
 
-        let time_seconds = self.gameplay.state.elapsed_seconds.max(0.0);
         let base_objects = self
             .session
             .playing_trigger_base_objects
             .get_or_insert_with(|| self.gameplay.state.objects.clone());
 
-        if base_objects.len() != self.gameplay.state.objects.len() {
+        if !self.session.playing_trigger_hitboxes
+            && base_objects.len() != self.gameplay.state.objects.len()
+        {
             *base_objects = self.gameplay.state.objects.clone();
         }
 
-        self.gameplay.state.objects =
-            apply_timed_triggers_to_objects(base_objects, self.editor.triggers(), time_seconds);
+        Some(trigger_transformed_objects_at_time(
+            base_objects,
+            self.editor.triggers(),
+            time_seconds.max(0.0),
+        ))
+    }
+
+    fn prune_playing_trigger_base_objects_from_consumed(&mut self) {
+        if !self.session.playing_trigger_hitboxes {
+            let _ = self.gameplay.state.take_consumed_object_indices();
+            return;
+        }
+
+        let consumed_indices = self.gameplay.state.take_consumed_object_indices();
+        if consumed_indices.is_empty() {
+            return;
+        }
+
+        let Some(base_objects) = self.session.playing_trigger_base_objects.as_mut() else {
+            return;
+        };
+
+        let mut indices = consumed_indices;
+        indices.sort_unstable();
+        indices.dedup();
+        for index in indices.into_iter().rev() {
+            if index < base_objects.len() {
+                base_objects.remove(index);
+            }
+        }
+    }
+
+    fn apply_playing_object_triggers(&mut self, time_seconds: f32) -> Option<Vec<LevelObject>> {
+        let transformed = self.playing_trigger_objects_at_time(time_seconds)?;
+
+        if self.session.playing_trigger_hitboxes {
+            self.gameplay.state.objects = transformed.clone();
+            self.gameplay.state.rebuild_behavior_cache();
+        }
+
+        Some(transformed)
+    }
+
+    fn target_playing_time(&self, frame_dt: f32) -> f32 {
+        let elapsed = self.gameplay.state.elapsed_seconds.max(0.0);
+        if !self.gameplay.state.started || self.gameplay.state.game_over {
+            return elapsed;
+        }
+
+        let fallback_target = elapsed + frame_dt.max(0.0);
+        let audio_target = self
+            .audio
+            .state
+            .runtime
+            .playback_time_seconds()
+            .unwrap_or(fallback_target);
+
+        let clamped_forward_target = audio_target.max(elapsed);
+        clamped_forward_target.min(elapsed + 0.25)
+    }
+
+    fn advance_playing_state_to_time(
+        &mut self,
+        target_time: f32,
+        simulation_dt: f32,
+    ) -> Option<Vec<LevelObject>> {
+        let mut trigger_render_objects: Option<Vec<LevelObject>> = None;
+        let mut elapsed_seconds = self.gameplay.state.elapsed_seconds;
+
+        advance_simulation_time(
+            &mut elapsed_seconds,
+            target_time,
+            simulation_dt,
+            |step_target, step_dt| {
+                trigger_render_objects = self.apply_playing_object_triggers(step_target);
+                self.gameplay.state.update(step_dt);
+                self.prune_playing_trigger_base_objects_from_consumed();
+                !self.gameplay.state.game_over
+            },
+        );
+        self.gameplay.state.elapsed_seconds = elapsed_seconds;
+
+        if self.editor.has_object_transform_triggers() {
+            trigger_render_objects =
+                self.apply_playing_object_triggers(self.gameplay.state.elapsed_seconds);
+        }
+
+        trigger_render_objects
     }
 
     pub(crate) fn toggle_editor_perf_overlay(&mut self) {
@@ -183,11 +270,13 @@ impl State {
                         }
 
                         if !applied_runtime_state {
-                            let mut runtime = TimelineSimulationRuntime::new(
+                            let mut runtime = TimelineSimulationRuntime::new_with_triggers(
                                 self.editor.spawn.position,
                                 self.editor.spawn.direction,
                                 &self.editor.objects,
                                 &self.editor.timeline.taps.tap_times,
+                                self.editor.triggers(),
+                                self.editor.simulate_trigger_hitboxes(),
                             );
                             runtime.advance_to(clamped_time);
                             let snapshot = runtime.snapshot();
@@ -328,19 +417,16 @@ impl State {
             return;
         }
 
-        self.apply_playing_object_triggers();
+        let target_time = self.target_playing_time(frame_dt);
+        let trigger_render_objects = self.advance_playing_state_to_time(target_time, FIXED_DT);
+        self.frame_runtime.editor.accumulator = 0.0;
 
-        while self.frame_runtime.editor.accumulator >= FIXED_DT {
-            self.apply_playing_object_triggers();
-            self.gameplay.state.update(FIXED_DT);
-            self.frame_runtime.editor.accumulator -= FIXED_DT;
-        }
-
-        self.apply_playing_object_triggers();
-
-        if self.gameplay.state.has_animated_blocks() {
+        let render_objects = trigger_render_objects
+            .as_deref()
+            .unwrap_or(&self.gameplay.state.objects);
+        if self.gameplay.state.has_animated_blocks() || trigger_render_objects.is_some() {
             let animated_vertices = build_block_vertices_with_phase(
-                &self.gameplay.state.objects,
+                render_objects,
                 self.gameplay.state.block_animation_phase_seconds(),
             );
             self.render.meshes.blocks.replace_with_vertices(

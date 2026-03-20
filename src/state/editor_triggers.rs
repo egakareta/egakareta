@@ -7,6 +7,7 @@ use crate::types::{
 pub(crate) struct EditorTriggerState {
     pub(crate) items: Vec<TimedTrigger>,
     pub(crate) selected_index: Option<usize>,
+    pub(crate) simulate_trigger_hitboxes: bool,
 }
 
 impl EditorTriggerState {
@@ -14,6 +15,7 @@ impl EditorTriggerState {
         Self {
             items: Vec::new(),
             selected_index: None,
+            simulate_trigger_hitboxes: false,
         }
     }
 }
@@ -173,6 +175,14 @@ impl EditorSubsystem {
                         | TimedTriggerAction::ScaleTo { .. }
                 )
         })
+    }
+
+    pub(crate) fn simulate_trigger_hitboxes(&self) -> bool {
+        self.triggers.simulate_trigger_hitboxes
+    }
+
+    pub(crate) fn set_simulate_trigger_hitboxes(&mut self, enabled: bool) {
+        self.triggers.simulate_trigger_hitboxes = enabled;
     }
 
     pub(crate) fn set_triggers(&mut self, mut triggers: Vec<TimedTrigger>) {

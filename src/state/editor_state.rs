@@ -859,11 +859,13 @@ impl State {
                 0
             };
 
-        let mut runtime = TimelineSimulationRuntime::new(
+        let mut runtime = TimelineSimulationRuntime::new_with_triggers(
             self.editor.spawn.position,
             self.editor.spawn.direction,
             &self.editor.objects,
             &self.editor.timeline.taps.tap_times,
+            self.editor.triggers(),
+            self.editor.simulate_trigger_hitboxes(),
         );
 
         // Fast-forward runtime to the resume point
@@ -1054,6 +1056,10 @@ impl State {
         self.editor.triggers()
     }
 
+    pub(crate) fn editor_simulate_trigger_hitboxes(&self) -> bool {
+        self.editor.simulate_trigger_hitboxes()
+    }
+
     pub(crate) fn editor_selected_trigger_index(&self) -> Option<usize> {
         self.editor.selected_trigger_index()
     }
@@ -1090,6 +1096,25 @@ impl State {
         self.editor.update_trigger(index, trigger);
         self.mark_editor_dirty(EditorDirtyFlags {
             rebuild_selection_overlays: true,
+            ..EditorDirtyFlags::default()
+        });
+    }
+
+    pub(crate) fn set_editor_simulate_trigger_hitboxes(&mut self, enabled: bool) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        if self.editor.simulate_trigger_hitboxes() == enabled {
+            return;
+        }
+
+        self.record_editor_history_state();
+        self.editor.set_simulate_trigger_hitboxes(enabled);
+        self.editor.invalidate_samples();
+        self.mark_editor_dirty(EditorDirtyFlags {
+            rebuild_preview_player: true,
+            rebuild_block_mesh: true,
             ..EditorDirtyFlags::default()
         });
     }
