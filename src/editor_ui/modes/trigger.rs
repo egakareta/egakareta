@@ -1,11 +1,9 @@
 use crate::commands::AppCommand;
+use crate::editor_ui::modes::shared::{show_mode_and_snap_controls, show_player_camera_status_row};
 use crate::state::EditorUiViewModel;
-use crate::types::{
-    EditorMode, SpawnDirection, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
-    TimedTriggerTarget,
-};
+use crate::types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
 
-fn make_object_trigger(
+fn make_trigger(
     view: &EditorUiViewModel<'_>,
     target: TimedTriggerTarget,
     action: TimedTriggerAction,
@@ -44,209 +42,333 @@ fn selected_size_or_default(view: &EditorUiViewModel<'_>) -> [f32; 3] {
         .unwrap_or([1.0, 1.0, 1.0])
 }
 
+fn trigger_target_label(target: &TimedTriggerTarget) -> &'static str {
+    match target {
+        TimedTriggerTarget::Camera => "Camera",
+        TimedTriggerTarget::Object { .. } => "Object",
+        TimedTriggerTarget::Objects { .. } => "Objects",
+    }
+}
+
+fn trigger_action_label(action: &TimedTriggerAction) -> &'static str {
+    match action {
+        TimedTriggerAction::MoveTo { .. } => "Move",
+        TimedTriggerAction::RotateTo { .. } => "Rotate",
+        TimedTriggerAction::ScaleTo { .. } => "Scale",
+        TimedTriggerAction::CameraPose { .. } => "Camera Pose",
+        TimedTriggerAction::CameraFollow { .. } => "Camera Follow",
+    }
+}
+
+fn is_camera_track_trigger(trigger: &TimedTrigger) -> bool {
+    matches!(trigger.target, TimedTriggerTarget::Camera)
+        && matches!(
+            trigger.action,
+            TimedTriggerAction::CameraPose { .. } | TimedTriggerAction::CameraFollow { .. }
+        )
+}
+
+fn add_trigger_button(
+    ui: &mut egui::Ui,
+    label: &str,
+    view: &EditorUiViewModel<'_>,
+    target: TimedTriggerTarget,
+    action: TimedTriggerAction,
+    commands: &mut Vec<AppCommand>,
+) {
+    if ui.button(label).clicked() {
+        commands.push(AppCommand::EditorAddTrigger(make_trigger(
+            view, target, action,
+        )));
+    }
+}
+
+fn show_transition_controls(
+    ui: &mut egui::Ui,
+    transition_interval_seconds: &mut f32,
+    use_full_segment_transition: &mut bool,
+    timeline_duration_seconds: f32,
+) -> bool {
+    let mut changed = false;
+    ui.label("Transition:");
+    changed |= ui
+        .checkbox(use_full_segment_transition, "Full Segment")
+        .changed();
+    if !*use_full_segment_transition {
+        changed |= ui
+            .add(
+                egui::DragValue::new(transition_interval_seconds)
+                    .speed(0.01)
+                    .range(0.0..=timeline_duration_seconds.max(0.1))
+                    .suffix("s"),
+            )
+            .changed();
+    }
+    changed
+}
+
+fn show_target_editor(ui: &mut egui::Ui, target: &mut TimedTriggerTarget) -> bool {
+    let mut changed = false;
+    match target {
+        TimedTriggerTarget::Camera => {}
+        TimedTriggerTarget::Object { object_id } => {
+            ui.horizontal(|ui| {
+                ui.label("Object ID:");
+                changed |= ui
+                    .add(egui::DragValue::new(object_id).range(0..=u32::MAX))
+                    .changed();
+            });
+        }
+        TimedTriggerTarget::Objects { object_ids } => {
+            let mut text = object_ids
+                .iter()
+                .map(|id| id.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            ui.horizontal(|ui| {
+                ui.label("Object IDs:");
+                if ui.text_edit_singleline(&mut text).changed() {
+                    let mut parsed = text
+                        .split(',')
+                        .filter_map(|segment| segment.trim().parse::<u32>().ok())
+                        .collect::<Vec<_>>();
+                    parsed.sort_unstable();
+                    parsed.dedup();
+                    if *object_ids != parsed {
+                        *object_ids = parsed;
+                        changed = true;
+                    }
+                }
+            });
+        }
+    }
+    changed
+}
+
+fn show_action_editor(
+    ui: &mut egui::Ui,
+    action: &mut TimedTriggerAction,
+    timeline_duration_seconds: f32,
+) -> bool {
+    let mut changed = false;
+
+    match action {
+        TimedTriggerAction::MoveTo { position } => {
+            ui.horizontal(|ui| {
+                ui.label("Position:");
+                changed |= ui
+                    .add(egui::DragValue::new(&mut position[0]).prefix("X "))
+                    .changed();
+                changed |= ui
+                    .add(egui::DragValue::new(&mut position[1]).prefix("Y "))
+                    .changed();
+                changed |= ui
+                    .add(egui::DragValue::new(&mut position[2]).prefix("Z "))
+                    .changed();
+            });
+        }
+        TimedTriggerAction::RotateTo { rotation_degrees } => {
+            ui.horizontal(|ui| {
+                ui.label("Rotation:");
+                changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut rotation_degrees[0])
+                            .prefix("X ")
+                            .suffix("°"),
+                    )
+                    .changed();
+                changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut rotation_degrees[1])
+                            .prefix("Y ")
+                            .suffix("°"),
+                    )
+                    .changed();
+                changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut rotation_degrees[2])
+                            .prefix("Z ")
+                            .suffix("°"),
+                    )
+                    .changed();
+            });
+        }
+        TimedTriggerAction::ScaleTo { size } => {
+            ui.horizontal(|ui| {
+                ui.label("Scale:");
+                changed |= ui
+                    .add(egui::DragValue::new(&mut size[0]).prefix("X "))
+                    .changed();
+                changed |= ui
+                    .add(egui::DragValue::new(&mut size[1]).prefix("Y "))
+                    .changed();
+                changed |= ui
+                    .add(egui::DragValue::new(&mut size[2]).prefix("Z "))
+                    .changed();
+            });
+        }
+        TimedTriggerAction::CameraPose {
+            transition_interval_seconds,
+            use_full_segment_transition,
+            target_position,
+            rotation,
+            pitch,
+        } => {
+            ui.horizontal_wrapped(|ui| {
+                changed |= show_transition_controls(
+                    ui,
+                    transition_interval_seconds,
+                    use_full_segment_transition,
+                    timeline_duration_seconds,
+                );
+
+                ui.separator();
+                ui.label("Target:");
+                changed |= ui
+                    .add(egui::DragValue::new(&mut target_position[0]).prefix("X "))
+                    .changed();
+                changed |= ui
+                    .add(egui::DragValue::new(&mut target_position[1]).prefix("Y "))
+                    .changed();
+                changed |= ui
+                    .add(egui::DragValue::new(&mut target_position[2]).prefix("Z "))
+                    .changed();
+
+                ui.separator();
+                let mut rotation_degrees = rotation.to_degrees();
+                let mut pitch_degrees = pitch.to_degrees();
+                ui.label("Orientation:");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut rotation_degrees)
+                            .speed(0.5)
+                            .prefix("Rot ")
+                            .suffix("°"),
+                    )
+                    .changed()
+                {
+                    *rotation = rotation_degrees.to_radians();
+                    changed = true;
+                }
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut pitch_degrees)
+                            .speed(0.5)
+                            .prefix("Pitch ")
+                            .suffix("°"),
+                    )
+                    .changed()
+                {
+                    *pitch = pitch_degrees.to_radians();
+                    changed = true;
+                }
+            });
+        }
+        TimedTriggerAction::CameraFollow {
+            transition_interval_seconds,
+            use_full_segment_transition,
+        } => {
+            ui.horizontal_wrapped(|ui| {
+                changed |= show_transition_controls(
+                    ui,
+                    transition_interval_seconds,
+                    use_full_segment_transition,
+                    timeline_duration_seconds,
+                );
+            });
+        }
+    }
+
+    changed
+}
+
 pub(crate) fn show_trigger_mode_bottom_panel(
     ui: &mut egui::Ui,
     view: &EditorUiViewModel<'_>,
     _duration_seconds: f32,
     commands: &mut Vec<AppCommand>,
 ) {
-    ui.horizontal(|ui| {
-        ui.label("Mode:");
-        let mode = view.mode;
-        if ui
-            .selectable_label(
-                mode == EditorMode::Select,
-                format!("{} Select", egui_phosphor::regular::CURSOR_CLICK),
-            )
-            .clicked()
-        {
-            commands.push(AppCommand::EditorSetMode(EditorMode::Select));
-        }
-        if ui
-            .selectable_label(
-                mode == EditorMode::Move,
-                format!("{} Move", egui_phosphor::regular::ARROWS_OUT),
-            )
-            .clicked()
-        {
-            commands.push(AppCommand::EditorSetMode(EditorMode::Move));
-        }
-        if ui
-            .selectable_label(
-                mode == EditorMode::Scale,
-                format!("{} Scale", egui_phosphor::regular::CORNERS_OUT),
-            )
-            .clicked()
-        {
-            commands.push(AppCommand::EditorSetMode(EditorMode::Scale));
-        }
-        if ui
-            .selectable_label(mode == EditorMode::Rotate, "Rotate")
-            .clicked()
-        {
-            commands.push(AppCommand::EditorSetMode(EditorMode::Rotate));
-        }
-        if ui
-            .selectable_label(
-                mode == EditorMode::Place,
-                format!("{} Place", egui_phosphor::regular::CUBE),
-            )
-            .clicked()
-        {
-            commands.push(AppCommand::EditorSetMode(EditorMode::Place));
-        }
-        if ui
-            .selectable_label(
-                mode == EditorMode::Trigger,
-                format!("{} Trigger", egui_phosphor::regular::LIGHTNING),
-            )
-            .clicked()
-        {
-            commands.push(AppCommand::EditorSetMode(EditorMode::Trigger));
-        }
-
-        ui.separator();
-        let mut snap = view.snap_to_grid;
-        if ui
-            .checkbox(
-                &mut snap,
-                format!("{} Snap to Grid", egui_phosphor::regular::GRID_FOUR),
-            )
-            .changed()
-        {
-            commands.push(AppCommand::EditorSetSnapToGrid(snap));
-        }
-
-        ui.label("Step:");
-        let mut snap_step = view.snap_step;
-        if ui
-            .add(
-                egui::DragValue::new(&mut snap_step)
-                    .speed(0.05)
-                    .range(0.05..=100.0),
-            )
-            .changed()
-        {
-            commands.push(AppCommand::EditorSetSnapStep(snap_step));
-        }
-
-        ui.separator();
-        let mut snap_rotation = view.snap_rotation;
-        if ui.checkbox(&mut snap_rotation, "Snap Rotation").changed() {
-            commands.push(AppCommand::EditorSetSnapRotation(snap_rotation));
-        }
-
-        ui.label("Rot Step:");
-        let mut snap_rotation_step = view.snap_rotation_step_degrees;
-        if ui
-            .add(
-                egui::DragValue::new(&mut snap_rotation_step)
-                    .speed(0.5)
-                    .range(1.0..=180.0)
-                    .suffix("°"),
-            )
-            .changed()
-        {
-            commands.push(AppCommand::EditorSetSnapRotationStep(snap_rotation_step));
-        }
-    });
+    show_mode_and_snap_controls(ui, view, commands);
 
     ui.separator();
 
     ui.horizontal_wrapped(|ui| {
+        let object_id = selected_object_id_or_default(view);
+        let position = selected_position_or_default(view);
+        let rotation_degrees = selected_rotation_or_default(view);
+        let size = selected_size_or_default(view);
+
         if ui.button("Add camera pose trigger (Shift+K)").clicked() {
             commands.push(AppCommand::EditorAddCameraTrigger);
         }
 
-        if ui.button("Add camera follow trigger").clicked() {
-            let trigger = make_object_trigger(
-                view,
-                TimedTriggerTarget::Camera,
-                TimedTriggerAction::CameraFollow {
-                    transition_interval_seconds: 1.0,
-                    use_full_segment_transition: false,
-                },
-            );
-            commands.push(AppCommand::EditorAddTrigger(trigger));
-        }
+        add_trigger_button(
+            ui,
+            "Add camera follow trigger",
+            view,
+            TimedTriggerTarget::Camera,
+            TimedTriggerAction::CameraFollow {
+                transition_interval_seconds: 1.0,
+                use_full_segment_transition: false,
+            },
+            commands,
+        );
 
-        if ui.button("Add object move trigger").clicked() {
-            let trigger = make_object_trigger(
-                view,
-                TimedTriggerTarget::Object {
-                    object_id: selected_object_id_or_default(view),
-                },
-                TimedTriggerAction::MoveTo {
-                    position: selected_position_or_default(view),
-                },
-            );
-            commands.push(AppCommand::EditorAddTrigger(trigger));
-        }
+        add_trigger_button(
+            ui,
+            "Add object move trigger",
+            view,
+            TimedTriggerTarget::Object { object_id },
+            TimedTriggerAction::MoveTo { position },
+            commands,
+        );
+        add_trigger_button(
+            ui,
+            "Add object rotate trigger",
+            view,
+            TimedTriggerTarget::Object { object_id },
+            TimedTriggerAction::RotateTo { rotation_degrees },
+            commands,
+        );
+        add_trigger_button(
+            ui,
+            "Add object scale trigger",
+            view,
+            TimedTriggerTarget::Object { object_id },
+            TimedTriggerAction::ScaleTo { size },
+            commands,
+        );
 
-        if ui.button("Add object rotate trigger").clicked() {
-            let trigger = make_object_trigger(
-                view,
-                TimedTriggerTarget::Object {
-                    object_id: selected_object_id_or_default(view),
-                },
-                TimedTriggerAction::RotateTo {
-                    rotation_degrees: selected_rotation_or_default(view),
-                },
-            );
-            commands.push(AppCommand::EditorAddTrigger(trigger));
-        }
-
-        if ui.button("Add object scale trigger").clicked() {
-            let trigger = make_object_trigger(
-                view,
-                TimedTriggerTarget::Object {
-                    object_id: selected_object_id_or_default(view),
-                },
-                TimedTriggerAction::ScaleTo {
-                    size: selected_size_or_default(view),
-                },
-            );
-            commands.push(AppCommand::EditorAddTrigger(trigger));
-        }
-
-        if ui.button("Add objects move trigger").clicked() {
-            let trigger = make_object_trigger(
-                view,
-                TimedTriggerTarget::Objects {
-                    object_ids: vec![selected_object_id_or_default(view)],
-                },
-                TimedTriggerAction::MoveTo {
-                    position: selected_position_or_default(view),
-                },
-            );
-            commands.push(AppCommand::EditorAddTrigger(trigger));
-        }
-
-        if ui.button("Add objects rotate trigger").clicked() {
-            let trigger = make_object_trigger(
-                view,
-                TimedTriggerTarget::Objects {
-                    object_ids: vec![selected_object_id_or_default(view)],
-                },
-                TimedTriggerAction::RotateTo {
-                    rotation_degrees: selected_rotation_or_default(view),
-                },
-            );
-            commands.push(AppCommand::EditorAddTrigger(trigger));
-        }
-
-        if ui.button("Add objects scale trigger").clicked() {
-            let trigger = make_object_trigger(
-                view,
-                TimedTriggerTarget::Objects {
-                    object_ids: vec![selected_object_id_or_default(view)],
-                },
-                TimedTriggerAction::ScaleTo {
-                    size: selected_size_or_default(view),
-                },
-            );
-            commands.push(AppCommand::EditorAddTrigger(trigger));
-        }
+        add_trigger_button(
+            ui,
+            "Add objects move trigger",
+            view,
+            TimedTriggerTarget::Objects {
+                object_ids: vec![object_id],
+            },
+            TimedTriggerAction::MoveTo { position },
+            commands,
+        );
+        add_trigger_button(
+            ui,
+            "Add objects rotate trigger",
+            view,
+            TimedTriggerTarget::Objects {
+                object_ids: vec![object_id],
+            },
+            TimedTriggerAction::RotateTo { rotation_degrees },
+            commands,
+        );
+        add_trigger_button(
+            ui,
+            "Add objects scale trigger",
+            view,
+            TimedTriggerTarget::Objects {
+                object_ids: vec![object_id],
+            },
+            TimedTriggerAction::ScaleTo { size },
+            commands,
+        );
     });
 
     ui.separator();
@@ -273,24 +395,12 @@ pub(crate) fn show_trigger_mode_bottom_panel(
         .max_height(72.0)
         .show(ui, |ui| {
             for (index, trigger) in view.triggers.iter().enumerate() {
-                let target_label = match trigger.target {
-                    TimedTriggerTarget::Camera => "Camera",
-                    TimedTriggerTarget::Object { .. } => "Object",
-                    TimedTriggerTarget::Objects { .. } => "Objects",
-                };
-                let action_label = match trigger.action {
-                    TimedTriggerAction::MoveTo { .. } => "Move",
-                    TimedTriggerAction::RotateTo { .. } => "Rotate",
-                    TimedTriggerAction::ScaleTo { .. } => "Scale",
-                    TimedTriggerAction::CameraPose { .. } => "Camera Pose",
-                    TimedTriggerAction::CameraFollow { .. } => "Camera Follow",
-                };
                 let label = format!(
                     "#{:02}  {:.2}s  {} -> {}",
                     index + 1,
                     trigger.time_seconds,
-                    target_label,
-                    action_label
+                    trigger_target_label(&trigger.target),
+                    trigger_action_label(&trigger.action)
                 );
                 if ui
                     .selectable_label(view.trigger_selected_index == Some(index), label)
@@ -315,15 +425,7 @@ pub(crate) fn show_trigger_mode_bottom_panel(
     ui.horizontal_wrapped(|ui| {
         if let Some(selected_idx) = view.trigger_selected_index {
             if let Some(selected_trigger) = view.triggers.get(selected_idx) {
-                let is_camera_trigger =
-                    matches!(selected_trigger.target, TimedTriggerTarget::Camera)
-                        && matches!(
-                            selected_trigger.action,
-                            TimedTriggerAction::CameraPose { .. }
-                                | TimedTriggerAction::CameraFollow { .. }
-                        );
-
-                if is_camera_trigger {
+                if is_camera_track_trigger(selected_trigger) {
                     if ui.button("Capture current camera pose").clicked() {
                         commands.push(AppCommand::EditorCaptureSelectedCameraTrigger);
                     }
@@ -396,199 +498,13 @@ pub(crate) fn show_trigger_mode_bottom_panel(
             });
 
             ui.horizontal_wrapped(|ui| {
-                let target_label = match trigger.target {
-                    TimedTriggerTarget::Camera => "Camera",
-                    TimedTriggerTarget::Object { .. } => "Object",
-                    TimedTriggerTarget::Objects { .. } => "Objects",
-                };
-                let action_label = match trigger.action {
-                    TimedTriggerAction::MoveTo { .. } => "Move",
-                    TimedTriggerAction::RotateTo { .. } => "Rotate",
-                    TimedTriggerAction::ScaleTo { .. } => "Scale",
-                    TimedTriggerAction::CameraPose { .. } => "Camera Pose",
-                    TimedTriggerAction::CameraFollow { .. } => "Camera Follow",
-                };
-                ui.label(format!("Target: {}", target_label));
+                ui.label(format!("Target: {}", trigger_target_label(&trigger.target)));
                 ui.separator();
-                ui.label(format!("Action: {}", action_label));
+                ui.label(format!("Action: {}", trigger_action_label(&trigger.action)));
             });
 
-            match &mut trigger.target {
-                TimedTriggerTarget::Camera => {}
-                TimedTriggerTarget::Object { object_id } => {
-                    ui.horizontal(|ui| {
-                        ui.label("Object ID:");
-                        changed |= ui
-                            .add(egui::DragValue::new(object_id).range(0..=u32::MAX))
-                            .changed();
-                    });
-                }
-                TimedTriggerTarget::Objects { object_ids } => {
-                    let mut text = object_ids
-                        .iter()
-                        .map(|id| id.to_string())
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    ui.horizontal(|ui| {
-                        ui.label("Object IDs:");
-                        if ui.text_edit_singleline(&mut text).changed() {
-                            let mut parsed = text
-                                .split(',')
-                                .filter_map(|segment| segment.trim().parse::<u32>().ok())
-                                .collect::<Vec<_>>();
-                            parsed.sort_unstable();
-                            parsed.dedup();
-                            if *object_ids != parsed {
-                                *object_ids = parsed;
-                                changed = true;
-                            }
-                        }
-                    });
-                }
-            }
-
-            match &mut trigger.action {
-                TimedTriggerAction::MoveTo { position } => {
-                    ui.horizontal(|ui| {
-                        ui.label("Position:");
-                        changed |= ui
-                            .add(egui::DragValue::new(&mut position[0]).prefix("X "))
-                            .changed();
-                        changed |= ui
-                            .add(egui::DragValue::new(&mut position[1]).prefix("Y "))
-                            .changed();
-                        changed |= ui
-                            .add(egui::DragValue::new(&mut position[2]).prefix("Z "))
-                            .changed();
-                    });
-                }
-                TimedTriggerAction::RotateTo { rotation_degrees } => {
-                    ui.horizontal(|ui| {
-                        ui.label("Rotation:");
-                        changed |= ui
-                            .add(
-                                egui::DragValue::new(&mut rotation_degrees[0])
-                                    .prefix("X ")
-                                    .suffix("°"),
-                            )
-                            .changed();
-                        changed |= ui
-                            .add(
-                                egui::DragValue::new(&mut rotation_degrees[1])
-                                    .prefix("Y ")
-                                    .suffix("°"),
-                            )
-                            .changed();
-                        changed |= ui
-                            .add(
-                                egui::DragValue::new(&mut rotation_degrees[2])
-                                    .prefix("Z ")
-                                    .suffix("°"),
-                            )
-                            .changed();
-                    });
-                }
-                TimedTriggerAction::ScaleTo { size } => {
-                    ui.horizontal(|ui| {
-                        ui.label("Scale:");
-                        changed |= ui
-                            .add(egui::DragValue::new(&mut size[0]).prefix("X "))
-                            .changed();
-                        changed |= ui
-                            .add(egui::DragValue::new(&mut size[1]).prefix("Y "))
-                            .changed();
-                        changed |= ui
-                            .add(egui::DragValue::new(&mut size[2]).prefix("Z "))
-                            .changed();
-                    });
-                }
-                TimedTriggerAction::CameraPose {
-                    transition_interval_seconds,
-                    use_full_segment_transition,
-                    target_position,
-                    rotation,
-                    pitch,
-                } => {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label("Transition:");
-                        changed |= ui
-                            .checkbox(use_full_segment_transition, "Full Segment")
-                            .changed();
-                        if !*use_full_segment_transition {
-                            changed |= ui
-                                .add(
-                                    egui::DragValue::new(transition_interval_seconds)
-                                        .speed(0.01)
-                                        .range(0.0..=view.timeline_duration_seconds.max(0.1))
-                                        .suffix("s"),
-                                )
-                                .changed();
-                        }
-
-                        ui.separator();
-                        ui.label("Target:");
-                        changed |= ui
-                            .add(egui::DragValue::new(&mut target_position[0]).prefix("X "))
-                            .changed();
-                        changed |= ui
-                            .add(egui::DragValue::new(&mut target_position[1]).prefix("Y "))
-                            .changed();
-                        changed |= ui
-                            .add(egui::DragValue::new(&mut target_position[2]).prefix("Z "))
-                            .changed();
-
-                        ui.separator();
-                        let mut rotation_degrees = rotation.to_degrees();
-                        let mut pitch_degrees = pitch.to_degrees();
-                        ui.label("Orientation:");
-                        if ui
-                            .add(
-                                egui::DragValue::new(&mut rotation_degrees)
-                                    .speed(0.5)
-                                    .prefix("Rot ")
-                                    .suffix("°"),
-                            )
-                            .changed()
-                        {
-                            *rotation = rotation_degrees.to_radians();
-                            changed = true;
-                        }
-                        if ui
-                            .add(
-                                egui::DragValue::new(&mut pitch_degrees)
-                                    .speed(0.5)
-                                    .prefix("Pitch ")
-                                    .suffix("°"),
-                            )
-                            .changed()
-                        {
-                            *pitch = pitch_degrees.to_radians();
-                            changed = true;
-                        }
-                    });
-                }
-                TimedTriggerAction::CameraFollow {
-                    transition_interval_seconds,
-                    use_full_segment_transition,
-                } => {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label("Transition:");
-                        changed |= ui
-                            .checkbox(use_full_segment_transition, "Full Segment")
-                            .changed();
-                        if !*use_full_segment_transition {
-                            changed |= ui
-                                .add(
-                                    egui::DragValue::new(transition_interval_seconds)
-                                        .speed(0.01)
-                                        .range(0.0..=view.timeline_duration_seconds.max(0.1))
-                                        .suffix("s"),
-                                )
-                                .changed();
-                        }
-                    });
-                }
-            }
+            changed |= show_target_editor(ui, &mut trigger.target);
+            changed |= show_action_editor(ui, &mut trigger.action, view.timeline_duration_seconds);
 
             if changed {
                 commands.push(AppCommand::EditorUpdateTrigger(selected_idx, trigger));
@@ -598,33 +514,5 @@ pub(crate) fn show_trigger_mode_bottom_panel(
         ui.label("Select a trigger to edit it.");
     }
 
-    let position = view.timeline_preview_position;
-    let direction = view.timeline_preview_direction;
-    let direction_label = match direction {
-        SpawnDirection::Forward => "Forward",
-        SpawnDirection::Right => "Right",
-    };
-    ui.horizontal(|ui| {
-        ui.label(format!(
-            "Player: ({:.1}, {:.1}, {:.1}) | {}",
-            position[0], position[1], position[2], direction_label
-        ));
-        ui.separator();
-        ui.label(format!(
-            "Player Camera: ({:.1}, {:.1}, {:.1}) -> ({:.1}, {:.1}, {:.1})",
-            view.camera_preview_position[0],
-            view.camera_preview_position[1],
-            view.camera_preview_position[2],
-            view.camera_preview_target[0],
-            view.camera_preview_target[1],
-            view.camera_preview_target[2],
-        ));
-        ui.separator();
-        ui.label(format!(
-            "Editor Camera: ({:.1}, {:.1}, {:.1})",
-            view.camera_position[0], view.camera_position[1], view.camera_position[2]
-        ));
-        ui.separator();
-        ui.label(format!("FPS: {:.0}", view.fps));
-    });
+    show_player_camera_status_row(ui, view);
 }
