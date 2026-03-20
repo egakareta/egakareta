@@ -313,7 +313,7 @@ impl EditorSubsystem {
             - right_screen_delta.y * effective_mouse_delta.x)
             * inv_det;
 
-        let snap_enabled = self.config.snap_to_grid;
+        let snap_enabled = self.effective_snap_to_grid();
         let snap_step = self.config.snap_step.max(0.05);
 
         let mut first_cursor: Option<[f32; 3]> = None;

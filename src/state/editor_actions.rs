@@ -195,7 +195,7 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn move_cursor(&mut self, dx: i32, dy: i32) {
-        let step = if self.config.snap_to_grid {
+        let step = if self.effective_snap_to_grid() {
             self.config.snap_step.max(0.05)
         } else {
             1.0
@@ -313,7 +313,7 @@ impl State {
             (0, world_dy.signum())
         };
 
-        let nudge_step = if self.editor.config.snap_to_grid {
+        let nudge_step = if self.editor.effective_snap_to_grid() {
             self.editor.config.snap_step.max(0.05)
         } else {
             1.0

@@ -252,7 +252,7 @@ impl State {
 
     fn map_modifier_key_to_command(&self, key: &str, pressed: bool) -> Option<AppCommand> {
         match key {
-            "Shift" => Some(AppCommand::EditorSetShiftHeld(pressed)),
+            "Shift" | "ShiftLeft" | "ShiftRight" => Some(AppCommand::EditorSetShiftHeld(pressed)),
             "Control" | "ControlLeft" | "ControlRight" => {
                 Some(AppCommand::EditorSetCtrlHeld(pressed))
             }

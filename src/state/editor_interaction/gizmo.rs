@@ -76,7 +76,7 @@ impl EditorSubsystem {
 
         match drag.kind {
             GizmoDragKind::Move => {
-                let snap_enabled = self.config.snap_to_grid;
+                let snap_enabled = self.effective_snap_to_grid();
                 let snap_step = self.config.snap_step.max(0.05);
                 let mut first_cursor: Option<[f32; 3]> = None;
                 for block in &drag.start_blocks {
@@ -109,7 +109,7 @@ impl EditorSubsystem {
                 }
             }
             GizmoDragKind::Resize => {
-                let snap_enabled = self.config.snap_to_grid;
+                let snap_enabled = self.effective_snap_to_grid();
                 let snap_step = self.config.snap_step.max(0.05);
                 let min_size = if snap_enabled { snap_step } else { 0.25 };
                 for block in &drag.start_blocks {
@@ -222,7 +222,7 @@ impl EditorSubsystem {
                     raw_delta_degrees = diff.to_degrees() * sign;
                 }
 
-                let snap_enabled = self.config.snap_rotation;
+                let snap_enabled = self.effective_snap_rotation();
                 let snap_step = self.config.snap_rotation_step_degrees.max(1.0);
 
                 for block in &drag.start_blocks {

@@ -102,12 +102,20 @@ impl EditorSubsystem {
         self.config.snap_to_grid
     }
 
+    pub(crate) fn effective_snap_to_grid(&self) -> bool {
+        self.config.snap_to_grid && !self.ui.ctrl_held
+    }
+
     pub(crate) fn snap_step(&self) -> f32 {
         self.config.snap_step
     }
 
     pub(crate) fn snap_rotation(&self) -> bool {
         self.config.snap_rotation
+    }
+
+    pub(crate) fn effective_snap_rotation(&self) -> bool {
+        self.config.snap_rotation && !self.ui.ctrl_held
     }
 
     pub(crate) fn snap_rotation_step_degrees(&self) -> f32 {
@@ -144,7 +152,7 @@ impl EditorSubsystem {
             .filter(|index| *index < self.objects.len())
         {
             let snap_step = self.config.snap_step.max(0.05);
-            let next_position = if self.config.snap_to_grid {
+            let next_position = if self.effective_snap_to_grid() {
                 [
                     (position[0] / snap_step).round() * snap_step,
                     (position[1].max(0.0) / snap_step).round() * snap_step,
@@ -169,7 +177,7 @@ impl EditorSubsystem {
             .filter(|index| *index < self.objects.len())
         {
             let snap_step = self.config.snap_step.max(0.05);
-            let snapped_size = if self.config.snap_to_grid {
+            let snapped_size = if self.effective_snap_to_grid() {
                 [
                     (size[0] / snap_step).round() * snap_step,
                     (size[1] / snap_step).round() * snap_step,
@@ -178,7 +186,7 @@ impl EditorSubsystem {
             } else {
                 size
             };
-            let min_size = if self.config.snap_to_grid {
+            let min_size = if self.effective_snap_to_grid() {
                 snap_step
             } else {
                 0.25
@@ -207,7 +215,7 @@ impl EditorSubsystem {
             .selected_block_index
             .filter(|index| *index < self.objects.len())
         {
-            let next_rotation = if self.config.snap_rotation {
+            let next_rotation = if self.effective_snap_rotation() {
                 let step = self.config.snap_rotation_step_degrees.max(1.0);
                 rotation_degrees.map(|component| (component / step).round() * step)
             } else {
@@ -270,7 +278,7 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn tap_indicator_position_from_world(&self, position: [f32; 3]) -> [f32; 3] {
-        let step = if self.config.snap_to_grid {
+        let step = if self.effective_snap_to_grid() {
             self.config.snap_step.max(0.05)
         } else {
             1.0

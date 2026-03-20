@@ -110,7 +110,7 @@ impl EditorSubsystem {
         let hit = ray_origin + ray_dir * min_t;
         let target = hit + best_hit_normal * 0.01;
 
-        let snap_enabled = self.config.snap_to_grid;
+        let snap_enabled = self.effective_snap_to_grid();
         let snap_step = self.config.snap_step.max(0.05);
 
         let next_cursor = if snap_enabled {
