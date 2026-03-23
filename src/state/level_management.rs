@@ -63,7 +63,7 @@ impl State {
             self.gameplay.state.rebuild_behavior_cache();
             self.session.playing_trigger_hitboxes = self.editor.simulate_trigger_hitboxes();
             self.session.playing_trigger_base_objects = Some(self.gameplay.state.objects.clone());
-            self.apply_spawn_to_game(
+            self.apply_spawn_exact_to_game(
                 transition.spawn_position,
                 transition.spawn_direction,
                 Some(transition.spawn_speed),

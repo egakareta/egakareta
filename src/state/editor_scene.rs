@@ -290,6 +290,18 @@ impl State {
         }
     }
 
+    pub(super) fn apply_spawn_exact_to_game(
+        &mut self,
+        position: [f32; 3],
+        direction: SpawnDirection,
+        speed: Option<f32>,
+    ) {
+        self.gameplay.state.apply_spawn_exact(position, direction);
+        if let Some(speed) = speed {
+            self.gameplay.state.speed = speed;
+        }
+    }
+
     pub(super) fn editor_timeline_elapsed_seconds(&self, time_seconds: f32) -> f32 {
         self.editor.timeline_elapsed_seconds(time_seconds)
     }

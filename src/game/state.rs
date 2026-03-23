@@ -102,9 +102,18 @@ impl GameState {
         }
     }
 
-    pub(crate) fn apply_spawn(&mut self, position: [f32; 3], direction: SpawnDirection) {
-        let centered_position = center_spawn_position(position);
-        self.position = centered_position;
+    fn apply_spawn_internal(
+        &mut self,
+        position: [f32; 3],
+        direction: SpawnDirection,
+        center_to_grid: bool,
+    ) {
+        let spawn_position = if center_to_grid {
+            center_spawn_position(position)
+        } else {
+            position
+        };
+        self.position = spawn_position;
         self.direction = direction.into();
         self.elapsed_seconds = 0.0;
         self.speed = BASE_PLAYER_SPEED;
@@ -117,7 +126,15 @@ impl GameState {
         self.finish_sink_velocity = 0.0;
         self.animation_phase_seconds = 0.0;
         self.consumed_object_indices.clear();
-        self.trail_segments = vec![vec![centered_position]];
+        self.trail_segments = vec![vec![spawn_position]];
+    }
+
+    pub(crate) fn apply_spawn(&mut self, position: [f32; 3], direction: SpawnDirection) {
+        self.apply_spawn_internal(position, direction, true);
+    }
+
+    pub(crate) fn apply_spawn_exact(&mut self, position: [f32; 3], direction: SpawnDirection) {
+        self.apply_spawn_internal(position, direction, false);
     }
 
     pub(crate) fn turn_right(&mut self) {

@@ -2,7 +2,7 @@ use super::EditorDirtyFlags;
 use super::State;
 use crate::commands::AppCommand;
 use crate::editor_domain::{derive_tap_indicator_positions, derive_timeline_position};
-use crate::game::{center_spawn_position, simulate_timeline_state_with_triggers};
+use crate::game::simulate_timeline_state_with_triggers;
 use crate::types::{AppPhase, EditorMode, LevelObject, SpawnDirection};
 use glam::{Vec2, Vec3};
 
@@ -301,10 +301,9 @@ fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_disabled(
         approx_eq(playback_snapshot.speed, expected.speed, 1e-4);
 
         state.editor_playtest();
-        let centered_expected = center_spawn_position(expected.position);
-        approx_eq(state.gameplay.state.position[0], centered_expected[0], 1e-4);
-        approx_eq(state.gameplay.state.position[1], centered_expected[1], 1e-4);
-        approx_eq(state.gameplay.state.position[2], centered_expected[2], 1e-4);
+        approx_eq(state.gameplay.state.position[0], expected.position[0], 1e-4);
+        approx_eq(state.gameplay.state.position[1], expected.position[1], 1e-4);
+        approx_eq(state.gameplay.state.position[2], expected.position[2], 1e-4);
         approx_eq(state.gameplay.state.speed, expected.speed, 1e-4);
         assert!(!state.session.playing_trigger_hitboxes);
     });
@@ -348,10 +347,9 @@ fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_enabled()
         approx_eq(playback_snapshot.speed, expected.speed, 1e-4);
 
         state.editor_playtest();
-        let centered_expected = center_spawn_position(expected.position);
-        approx_eq(state.gameplay.state.position[0], centered_expected[0], 1e-4);
-        approx_eq(state.gameplay.state.position[1], centered_expected[1], 1e-4);
-        approx_eq(state.gameplay.state.position[2], centered_expected[2], 1e-4);
+        approx_eq(state.gameplay.state.position[0], expected.position[0], 1e-4);
+        approx_eq(state.gameplay.state.position[1], expected.position[1], 1e-4);
+        approx_eq(state.gameplay.state.position[2], expected.position[2], 1e-4);
         approx_eq(state.gameplay.state.speed, expected.speed, 1e-4);
         assert!(state.session.playing_trigger_hitboxes);
         assert!(state.gameplay.state.speed > crate::game::BASE_PLAYER_SPEED);
