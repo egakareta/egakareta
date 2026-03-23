@@ -3,6 +3,7 @@ use super::State;
 use crate::commands::AppCommand;
 use crate::editor_domain::{derive_tap_indicator_positions, derive_timeline_position};
 use crate::game::simulate_timeline_state_with_triggers;
+use crate::platform::audio::runtime_asset_source_key;
 use crate::types::{AppPhase, EditorMode, LevelObject, SpawnDirection};
 use glam::{Vec2, Vec3};
 
@@ -522,6 +523,111 @@ fn editor_playtest_stores_precomputed_audio_start_seconds() {
         assert!(
             (stored.unwrap_or_default() - expected_elapsed).abs() < 0.02,
             "stored playtest audio start seconds should match precomputed timeline elapsed"
+        );
+        assert!(
+            (state.gameplay.state.elapsed_seconds - expected_elapsed).abs() < 0.02,
+            "playtest gameplay elapsed_seconds should be initialized to precomputed timeline elapsed"
+        );
+    });
+}
+
+#[test]
+fn editor_playtest_nonzero_timeline_handoff_stays_synced_after_first_input() {
+    pollster::block_on(async {
+        let mut state = match State::new_test().await {
+            Some(s) => s,
+            None => return,
+        };
+
+        state.phase = AppPhase::Menu;
+        state.dispatch(AppCommand::ToggleEditor);
+        state.editor.objects.clear();
+        state.editor.timeline.taps.tap_times = vec![0.35, 0.7, 1.1];
+        state.editor.spawn.position = [0.0, 0.0, 0.0];
+        state.editor.spawn.direction = SpawnDirection::Forward;
+
+        let target_time = 1.25;
+        state.editor.timeline.clock.time_seconds = target_time;
+        let expected_elapsed = state.editor_timeline_elapsed_seconds(target_time);
+        assert!(
+            expected_elapsed > 0.5,
+            "regression setup should use a non-trivial timeline offset"
+        );
+
+        state.editor_playtest();
+
+        let stored = state
+            .session
+            .playtest_audio_start_seconds
+            .unwrap_or_default();
+        assert!(
+            (stored - expected_elapsed).abs() < 0.02,
+            "playtest should store the non-zero timeline elapsed seconds"
+        );
+        assert!(
+            (state.gameplay.state.elapsed_seconds - expected_elapsed).abs() < 0.02,
+            "playtest should initialize gameplay elapsed_seconds from the same timeline elapsed"
+        );
+
+        state.turn_right();
+        assert!(
+            state.gameplay.state.started,
+            "first input should start gameplay"
+        );
+        assert!(
+            (state.gameplay.state.elapsed_seconds - expected_elapsed).abs() < 0.02,
+            "first input should not reset elapsed time and trigger catch-up movement"
+        );
+    });
+}
+
+#[test]
+fn editor_playtest_warms_audio_before_first_input() {
+    pollster::block_on(async {
+        let mut state = match State::new_test().await {
+            Some(s) => s,
+            None => return,
+        };
+
+        state.phase = AppPhase::Menu;
+        state.dispatch(AppCommand::ToggleEditor);
+
+        let level_name = state
+            .session
+            .editor_level_name
+            .clone()
+            .unwrap_or_else(|| "Untitled".to_string());
+        let music_source = state.session.editor_music_metadata.source.clone();
+
+        let target_time = 0.85;
+        state.editor.timeline.clock.time_seconds = target_time;
+        let expected_elapsed = state.editor_timeline_elapsed_seconds(target_time);
+
+        state.editor_playtest();
+
+        let warmup = state
+            .audio
+            .state
+            .runtime_preload
+            .last_warmup_request
+            .clone();
+        assert!(
+            warmup.is_some(),
+            "playtest should warm up runtime audio before first input"
+        );
+        let (source_key, warmup_seconds) = warmup.unwrap_or_default();
+        assert_eq!(
+            source_key,
+            runtime_asset_source_key(&level_name, &music_source),
+            "warmup should target the active playtest source"
+        );
+        assert!(
+            (warmup_seconds - expected_elapsed).abs() < 0.02,
+            "warmup should use precomputed timeline elapsed seconds"
+        );
+        assert!(
+            !state.gameplay.state.started,
+            "warmup must happen before first input starts gameplay"
         );
     });
 }

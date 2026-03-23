@@ -438,9 +438,19 @@ impl State {
         );
 
         let music_source = self.session.editor_music_metadata.source.clone();
+        let metadata = self.current_editor_metadata();
+        let level_name = transition
+            .playing_level_name
+            .clone()
+            .unwrap_or_else(|| "Untitled".to_string());
         if let Some(level_name) = transition.playing_level_name.as_deref() {
             self.preload_runtime_audio(level_name, &music_source);
         }
+        self.warmup_audio_at_seconds(
+            &level_name,
+            &metadata,
+            transition.playtest_audio_start_seconds,
+        );
 
         self.enter_playing_phase(transition.playing_level_name, true);
         self.session.playtest_audio_start_seconds = Some(transition.playtest_audio_start_seconds);
@@ -454,6 +464,7 @@ impl State {
             transition.spawn_direction,
             Some(transition.spawn_speed),
         );
+        self.gameplay.state.elapsed_seconds = transition.playtest_audio_start_seconds;
         self.editor.camera.playing_rotation = transition.camera_rotation;
         self.editor.camera.playing_pitch = transition.camera_pitch;
         self.editor.ui.right_dragging = false;

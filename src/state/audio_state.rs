@@ -17,6 +17,8 @@ pub(crate) struct RuntimeAudioPreloadState {
         Sender<RuntimeAudioPreloadData>,
         Receiver<RuntimeAudioPreloadData>,
     ),
+    #[cfg(test)]
+    pub(crate) last_warmup_request: Option<(String, f32)>,
 }
 
 pub(crate) struct EditorAudioState {
@@ -45,6 +47,8 @@ impl AudioState {
                 preloaded_audio: HashMap::new(),
                 preloading_source_keys: HashSet::new(),
                 preload_channel: std::sync::mpsc::channel(),
+                #[cfg(test)]
+                last_warmup_request: None,
             },
             editor: EditorAudioState {
                 local_audio_cache,
@@ -147,6 +151,61 @@ impl State {
                 .state
                 .runtime
                 .start_at(level_name, &metadata.music.source, start_seconds);
+        }
+    }
+
+    pub(crate) fn warmup_audio_at_seconds(
+        &mut self,
+        level_name: &str,
+        metadata: &LevelMetadata,
+        start_seconds: f32,
+    ) {
+        let source_key = runtime_asset_source_key(level_name, &metadata.music.source);
+
+        let editor_bytes =
+            if self.phase == crate::types::AppPhase::Editor || self.session.playtesting_editor {
+                self.audio
+                    .state
+                    .editor
+                    .local_audio_cache
+                    .get(&metadata.music.source)
+                    .cloned()
+            } else {
+                None
+            };
+
+        self.update_runtime_audio_preloads();
+
+        if let Some(bytes) = editor_bytes {
+            self.audio.state.runtime.warmup_with_bytes_at(
+                &metadata.music.source,
+                &bytes,
+                start_seconds,
+            );
+        } else if let Some(bytes) = self
+            .audio
+            .state
+            .runtime_preload
+            .preloaded_audio
+            .get(&source_key)
+        {
+            self.audio.state.runtime.warmup_preloaded_asset_at(
+                level_name,
+                &metadata.music.source,
+                bytes,
+                start_seconds,
+            );
+        } else {
+            self.audio
+                .state
+                .runtime
+                .warmup_at(level_name, &metadata.music.source, start_seconds);
+        }
+
+        #[cfg(test)]
+        {
+            self.audio.state.runtime_preload.last_warmup_request =
+                Some((source_key, start_seconds.max(0.0)));
         }
     }
 

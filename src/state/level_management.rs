@@ -57,6 +57,16 @@ impl State {
                 self.editor.simulate_trigger_hitboxes(),
                 self.editor.timeline.clock.time_seconds,
             );
+            let metadata = self.current_editor_metadata();
+            let level_name = transition
+                .playing_level_name
+                .clone()
+                .unwrap_or_else(|| "Untitled".to_string());
+            self.warmup_audio_at_seconds(
+                &level_name,
+                &metadata,
+                transition.playtest_audio_start_seconds,
+            );
             self.session.playtest_audio_start_seconds =
                 Some(transition.playtest_audio_start_seconds);
             self.gameplay.state.objects = transition.objects;

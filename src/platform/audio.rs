@@ -92,6 +92,24 @@ impl PlatformAudio {
         );
     }
 
+    pub(crate) fn warmup_with_bytes_at(
+        &mut self,
+        music_source: &str,
+        bytes: &[u8],
+        start_seconds: f32,
+    ) {
+        let source_key = runtime_bytes_source_key(music_source);
+        let start_seconds = start_seconds.max(0.0);
+        self.backend.stop();
+
+        if self.backend.can_reuse_source(&source_key) {
+            return;
+        }
+
+        self.backend
+            .warmup_with_bytes(source_key, music_source, bytes, start_seconds);
+    }
+
     pub(crate) fn start_preloaded_asset_at(
         &mut self,
         level_name: &str,
@@ -107,6 +125,25 @@ impl PlatformAudio {
         );
     }
 
+    pub(crate) fn warmup_preloaded_asset_at(
+        &mut self,
+        level_name: &str,
+        music_source: &str,
+        bytes: &[u8],
+        start_seconds: f32,
+    ) {
+        let source_key = runtime_asset_source_key(level_name, music_source);
+        let start_seconds = start_seconds.max(0.0);
+        self.backend.stop();
+
+        if self.backend.can_reuse_source(&source_key) {
+            return;
+        }
+
+        self.backend
+            .warmup_with_bytes(source_key, music_source, bytes, start_seconds);
+    }
+
     pub(crate) fn start_at(&mut self, level_name: &str, music_source: &str, start_seconds: f32) {
         let source_key = runtime_asset_source_key(level_name, music_source);
         let start_seconds = start_seconds.max(0.0);
@@ -118,6 +155,19 @@ impl PlatformAudio {
 
         self.backend
             .replace_with_asset(source_key, level_name, music_source, start_seconds);
+    }
+
+    pub(crate) fn warmup_at(&mut self, level_name: &str, music_source: &str, start_seconds: f32) {
+        let source_key = runtime_asset_source_key(level_name, music_source);
+        let start_seconds = start_seconds.max(0.0);
+        self.backend.stop();
+
+        if self.backend.can_reuse_source(&source_key) {
+            return;
+        }
+
+        self.backend
+            .warmup_with_asset(source_key, level_name, music_source, start_seconds);
     }
 
     pub(crate) fn playback_time_seconds(&self) -> Option<f32> {

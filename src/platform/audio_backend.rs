@@ -153,6 +153,7 @@ impl RodioBackendInner {
         source_key: String,
         decoded: rodio::Decoder<Cursor<Vec<u8>>>,
         start_seconds: f32,
+        autoplay: bool,
         _context: &str,
     ) {
         use web_time::Duration;
@@ -176,11 +177,17 @@ impl RodioBackendInner {
         }
 
         player.set_speed(self.playback_speed);
-        player.play();
+        if autoplay {
+            player.play();
+            self.playback_started_at = Some(web_time::Instant::now());
+            self.playback_start_offset_seconds = start_seconds;
+        } else {
+            player.pause();
+            self.playback_started_at = None;
+            self.playback_start_offset_seconds = 0.0;
+        }
         self.current_player = Some(player);
         self.current_audio_source = Some(source_key);
-        self.playback_started_at = Some(web_time::Instant::now());
-        self.playback_start_offset_seconds = start_seconds;
     }
 }
 
@@ -303,6 +310,27 @@ impl AudioBackend {
         bytes: &[u8],
         start_seconds: f32,
     ) {
+        self.replace_with_bytes_internal(source_key, music_source, bytes, start_seconds, true);
+    }
+
+    pub(crate) fn warmup_with_bytes(
+        &mut self,
+        source_key: String,
+        music_source: &str,
+        bytes: &[u8],
+        start_seconds: f32,
+    ) {
+        self.replace_with_bytes_internal(source_key, music_source, bytes, start_seconds, false);
+    }
+
+    fn replace_with_bytes_internal(
+        &mut self,
+        source_key: String,
+        music_source: &str,
+        bytes: &[u8],
+        start_seconds: f32,
+        autoplay: bool,
+    ) {
         let mut inner = self.inner.borrow_mut();
         if let Some(player) = inner.current_player.take() {
             player.stop();
@@ -314,7 +342,7 @@ impl AudioBackend {
             Ok(decoded) => {
                 log::trace!("RodioAudioBackend: decoding successful");
                 let context = format!("imported audio '{}'", music_source);
-                inner.set_new_sink(source_key, decoded, start_seconds, &context);
+                inner.set_new_sink(source_key, decoded, start_seconds, autoplay, &context);
             }
             Err(err) => {
                 log::warn!(
@@ -332,6 +360,33 @@ impl AudioBackend {
         level_name: &str,
         music_source: &str,
         start_seconds: f32,
+    ) {
+        self.replace_with_asset_internal(source_key, level_name, music_source, start_seconds, true);
+    }
+
+    pub(crate) fn warmup_with_asset(
+        &mut self,
+        source_key: String,
+        level_name: &str,
+        music_source: &str,
+        start_seconds: f32,
+    ) {
+        self.replace_with_asset_internal(
+            source_key,
+            level_name,
+            music_source,
+            start_seconds,
+            false,
+        );
+    }
+
+    fn replace_with_asset_internal(
+        &mut self,
+        source_key: String,
+        level_name: &str,
+        music_source: &str,
+        start_seconds: f32,
+        autoplay: bool,
     ) {
         {
             let mut inner = self.inner.borrow_mut();
@@ -365,6 +420,7 @@ impl AudioBackend {
                     source_key,
                     decoded,
                     start_seconds,
+                    autoplay,
                     &audio_path,
                 );
             }
