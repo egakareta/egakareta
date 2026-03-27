@@ -55,7 +55,7 @@ web-time = "1.1"
 gloo-console = "0.3"
 gloo-events = "0.2"
 gloo-file = "0.3"
-gloo-net = "0.6"
+gloo-net = "0.7"
 gloo-render = "0.2"
 gloo-utils = "0.2"
 serde = { version = "1", features = ["derive"] }
