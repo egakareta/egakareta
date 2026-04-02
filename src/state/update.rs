@@ -4,7 +4,9 @@ use super::{PerfOverlayEntry, PerfStage, State};
 use crate::game::{
     advance_simulation_time, trigger_transformed_objects_at_time, TimelineSimulationRuntime,
 };
-use crate::mesh::{build_block_vertices_with_phase, build_trail_vertices};
+use crate::mesh::{
+    build_block_vertices_with_phase, build_trail_vertices, build_trail_vertices_with_alpha,
+};
 use crate::platform::state_host::PlatformInstant;
 use crate::types::{AppPhase, CameraUniform, Direction, EditorMode, LevelObject};
 
@@ -113,6 +115,131 @@ impl State {
         }
 
         trigger_render_objects
+    }
+
+    fn build_editor_playback_trail_vertices(
+        runtime: &TimelineSimulationRuntime,
+    ) -> Vec<crate::types::Vertex> {
+        const EDITOR_PLAYBACK_TRAIL_ALPHA: f32 = 0.45;
+        const POSITION_EPSILON: f32 = 0.001;
+
+        let mut trail_vertices = Vec::new();
+        let player_pos = runtime.position();
+        let is_grounded = runtime.is_grounded();
+        let is_game_over = runtime.game_over();
+        let trail_segments = runtime.trail_segments();
+
+        for (segment_index, segment) in trail_segments.iter().enumerate() {
+            if segment.is_empty() {
+                continue;
+            }
+
+            let is_last_segment = segment_index + 1 == trail_segments.len();
+            trail_vertices.extend(build_trail_vertices_with_alpha(
+                segment,
+                is_game_over,
+                EDITOR_PLAYBACK_TRAIL_ALPHA,
+            ));
+
+            if !is_last_segment || !is_grounded {
+                continue;
+            }
+
+            let Some(last_point) = segment.last() else {
+                continue;
+            };
+
+            let dx = player_pos[0] - last_point[0];
+            let dy = player_pos[1] - last_point[1];
+            let dz = player_pos[2] - last_point[2];
+            if dx.abs() > POSITION_EPSILON
+                || dy.abs() > POSITION_EPSILON
+                || dz.abs() > POSITION_EPSILON
+            {
+                trail_vertices.extend(build_trail_vertices_with_alpha(
+                    &[*last_point, player_pos],
+                    is_game_over,
+                    EDITOR_PLAYBACK_TRAIL_ALPHA,
+                ));
+            }
+        }
+
+        if !is_grounded {
+            let head_length = 0.22;
+            let dir = match runtime.direction() {
+                Direction::Forward => [0.0, 1.0],
+                Direction::Right => [1.0, 0.0],
+            };
+            let head_start = [
+                player_pos[0] - dir[0] * head_length,
+                player_pos[1],
+                player_pos[2] - dir[1] * head_length,
+            ];
+            let head_points = [head_start, player_pos];
+            trail_vertices.extend(build_trail_vertices_with_alpha(
+                &head_points,
+                is_game_over,
+                EDITOR_PLAYBACK_TRAIL_ALPHA,
+            ));
+        }
+
+        trail_vertices
+    }
+
+    fn update_editor_playback_trail_mesh(&mut self) {
+        let Some(runtime) = self.editor.timeline.playback.runtime.as_ref() else {
+            self.render.meshes.trail.clear();
+            return;
+        };
+
+        let trail_vertices = Self::build_editor_playback_trail_vertices(runtime);
+        self.render
+            .meshes
+            .trail
+            .write_streaming_vertices(&self.render.gpu.queue, &trail_vertices);
+    }
+
+    fn update_editor_scrub_trail_mesh(&mut self) {
+        let target_time = self
+            .editor
+            .timeline
+            .clock
+            .time_seconds
+            .clamp(0.0, self.editor.timeline.clock.duration_seconds.max(0.0));
+
+        let needs_reset = match self.editor.timeline.scrub_runtime.as_ref() {
+            Some(runtime) => {
+                self.editor.timeline.scrub_runtime_revision
+                    != self.editor.timeline.simulation_revision
+                    || target_time + 1e-6 < runtime.elapsed_seconds()
+            }
+            None => true,
+        };
+
+        if needs_reset {
+            self.editor.timeline.scrub_runtime =
+                Some(TimelineSimulationRuntime::new_with_triggers(
+                    self.editor.spawn.position,
+                    self.editor.spawn.direction,
+                    &self.editor.objects,
+                    &self.editor.timeline.taps.tap_times,
+                    self.editor.triggers(),
+                    self.editor.simulate_trigger_hitboxes(),
+                ));
+            self.editor.timeline.scrub_runtime_revision = self.editor.timeline.simulation_revision;
+        }
+
+        let Some(runtime) = self.editor.timeline.scrub_runtime.as_mut() else {
+            self.render.meshes.trail.clear();
+            return;
+        };
+
+        runtime.advance_to(target_time);
+        let trail_vertices = Self::build_editor_playback_trail_vertices(runtime);
+        self.render
+            .meshes
+            .trail
+            .write_streaming_vertices(&self.render.gpu.queue, &trail_vertices);
     }
 
     pub(crate) fn toggle_editor_perf_overlay(&mut self) {
@@ -323,6 +450,10 @@ impl State {
                     }
                 }
 
+                if simulate_preview {
+                    self.update_editor_playback_trail_mesh();
+                }
+
                 if clamped_time >= self.editor.timeline.clock.duration_seconds
                     || !self.audio.state.runtime.is_playing()
                 {
@@ -337,6 +468,8 @@ impl State {
                     self.stop_audio();
                 }
                 self.perf_record(PerfStage::TimelinePlayback, timeline_playback_started_at);
+            } else if self.editor.ui.mode != EditorMode::Timing {
+                self.update_editor_scrub_trail_mesh();
             }
 
             self.update_editor_pan_from_keys(frame_dt);

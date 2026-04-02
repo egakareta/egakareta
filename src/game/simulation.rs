@@ -189,6 +189,26 @@ impl TimelineSimulationRuntime {
         self.elapsed_seconds
     }
 
+    pub(crate) fn position(&self) -> [f32; 3] {
+        self.game.position
+    }
+
+    pub(crate) fn direction(&self) -> Direction {
+        self.game.direction
+    }
+
+    pub(crate) fn is_grounded(&self) -> bool {
+        self.game.is_grounded
+    }
+
+    pub(crate) fn game_over(&self) -> bool {
+        self.game.game_over
+    }
+
+    pub(crate) fn trail_segments(&self) -> &[Vec<[f32; 3]>] {
+        &self.game.trail_segments
+    }
+
     pub(crate) fn snapshot(&self) -> TimelineSimulationState {
         TimelineSimulationState {
             position: self.game.position,
