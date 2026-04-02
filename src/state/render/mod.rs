@@ -154,6 +154,7 @@ pub(crate) struct GpuContext {
     pub(crate) depth_texture: wgpu::Texture,
     pub(crate) depth_view: wgpu::TextureView,
     pub(crate) render_pipeline: wgpu::RenderPipeline,
+    pub(crate) editor_ghost_trail_pipeline: wgpu::RenderPipeline,
     pub(crate) gizmo_overlay_pipeline: wgpu::RenderPipeline,
     pub(crate) line_uniform_buffer: wgpu::Buffer,
     pub(crate) zero_line_bind_group: wgpu::BindGroup,

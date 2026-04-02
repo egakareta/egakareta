@@ -226,9 +226,39 @@ impl State {
                     }
 
                     if let Some((buffer, count)) = self.render.meshes.trail.draw_data() {
+                        if self.phase == AppPhase::Editor {
+                            render_pass.set_pipeline(&self.render.gpu.editor_ghost_trail_pipeline);
+                            render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
+                            render_pass.set_bind_group(
+                                1,
+                                &self.render.gpu.zero_line_bind_group,
+                                &[],
+                            );
+                            render_pass.set_bind_group(
+                                2,
+                                &self.render.gpu.color_space_bind_group,
+                                &[],
+                            );
+                        }
+
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         render_pass.draw(0..count, 0..1);
+
+                        if self.phase == AppPhase::Editor {
+                            render_pass.set_pipeline(&self.render.gpu.render_pipeline);
+                            render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
+                            render_pass.set_bind_group(
+                                1,
+                                &self.render.gpu.zero_line_bind_group,
+                                &[],
+                            );
+                            render_pass.set_bind_group(
+                                2,
+                                &self.render.gpu.color_space_bind_group,
+                                &[],
+                            );
+                        }
                     }
                 }
 
@@ -248,14 +278,6 @@ impl State {
                     }
 
                     if let Some((buffer, count)) = self.render.meshes.tap_indicators.draw_data() {
-                        render_pass.set_vertex_buffer(0, buffer.slice(..));
-                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                        render_pass.draw(0..count, 0..1);
-                    }
-
-                    if let Some((buffer, count)) =
-                        self.render.meshes.editor_preview_player.draw_data()
-                    {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         render_pass.draw(0..count, 0..1);

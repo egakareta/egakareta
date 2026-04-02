@@ -4,7 +4,7 @@ use crate::types::{CameraTrigger, CameraTriggerMode, Vertex};
 use glam::Vec3;
 
 pub(crate) fn build_trail_vertices(points: &[[f32; 3]], game_over: bool) -> Vec<Vertex> {
-    build_trail_vertices_with_alpha(points, game_over, 1.0)
+    build_trail_vertices_internal(points, game_over, 1.0)
 }
 
 pub(crate) fn build_trail_vertices_with_alpha(
@@ -12,6 +12,10 @@ pub(crate) fn build_trail_vertices_with_alpha(
     game_over: bool,
     alpha: f32,
 ) -> Vec<Vertex> {
+    build_trail_vertices_internal(points, game_over, alpha)
+}
+
+fn build_trail_vertices_internal(points: &[[f32; 3]], game_over: bool, alpha: f32) -> Vec<Vertex> {
     let mut trail_vertices = Vec::new();
     let width = 0.8;
     let alpha = alpha.clamp(0.0, 1.0);

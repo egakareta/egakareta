@@ -358,6 +358,81 @@ fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_enabled()
 }
 
 #[test]
+fn editor_scrub_draws_ghost_trail_without_preview_head_mesh() {
+    pollster::block_on(async {
+        let mut state = match State::new_test().await {
+            Some(s) => s,
+            None => return,
+        };
+
+        state.start_editor(0);
+        state.editor.set_mode(EditorMode::Place);
+        state.set_editor_timeline_time_seconds(0.65);
+
+        state.update();
+
+        let trail_count = state
+            .render
+            .meshes
+            .trail
+            .draw_data()
+            .map(|(_, count)| count)
+            .unwrap_or(0);
+        assert!(
+            trail_count > 0,
+            "editor scrub should draw ghost trail vertices when timeline time is non-zero"
+        );
+        assert!(
+            state
+                .render
+                .meshes
+                .editor_preview_player
+                .draw_data()
+                .is_none(),
+            "preview head mesh should remain empty"
+        );
+    });
+}
+
+#[test]
+fn editor_playback_draws_ghost_trail_without_preview_head_mesh() {
+    pollster::block_on(async {
+        let mut state = match State::new_test().await {
+            Some(s) => s,
+            None => return,
+        };
+
+        state.start_editor(0);
+        state.editor.set_mode(EditorMode::Place);
+        state.set_editor_timeline_time_seconds(0.65);
+        state.toggle_editor_timeline_playback();
+
+        state.update();
+
+        let trail_count = state
+            .render
+            .meshes
+            .trail
+            .draw_data()
+            .map(|(_, count)| count)
+            .unwrap_or(0);
+        assert!(
+            trail_count > 0,
+            "editor playback should draw ghost trail vertices"
+        );
+        assert!(
+            state
+                .render
+                .meshes
+                .editor_preview_player
+                .draw_data()
+                .is_none(),
+            "preview head mesh should remain empty during playback"
+        );
+    });
+}
+
+#[test]
 fn test_state_input_routing() {
     pollster::block_on(async {
         let mut state = match State::new_test().await {

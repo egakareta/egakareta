@@ -1,6 +1,5 @@
-use super::game::build_trail_vertices_with_alpha;
 use crate::mesh::shapes::append_prism;
-use crate::types::{SpawnDirection, Vertex};
+use crate::types::Vertex;
 
 pub(crate) fn build_editor_cursor_vertices(cursor: [f32; 3]) -> Vec<Vertex> {
     let mut vertices = Vec::new();
@@ -22,25 +21,4 @@ pub(crate) fn build_editor_cursor_vertices(cursor: [f32; 3]) -> Vec<Vertex> {
     );
 
     vertices
-}
-
-pub(crate) fn build_editor_preview_player_vertices(
-    position: [f32; 3],
-    direction: SpawnDirection,
-    is_tapping: bool,
-) -> Vec<Vertex> {
-    let center = [position[0] + 0.5, position[1], position[2] + 0.5];
-    let head_length = if is_tapping { 0.44 } else { 0.32 };
-    let alpha = if is_tapping { 0.62 } else { 0.42 };
-    let dir = match direction {
-        SpawnDirection::Forward => [0.0, 1.0],
-        SpawnDirection::Right => [1.0, 0.0],
-    };
-    let head_start = [
-        center[0] - dir[0] * head_length,
-        center[1],
-        center[2] - dir[1] * head_length,
-    ];
-
-    build_trail_vertices_with_alpha(&[head_start, center], false, alpha)
 }

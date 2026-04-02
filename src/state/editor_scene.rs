@@ -6,8 +6,8 @@ use crate::game::trigger_transformed_objects_at_time;
 use crate::mesh::{
     build_block_vertices, build_block_vertices_from_refs, build_camera_trigger_marker_vertices,
     build_editor_cursor_vertices, build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
-    build_editor_preview_player_vertices, build_editor_selection_outline_vertices,
-    build_spawn_marker_vertices, build_tap_indicator_vertices, GizmoParams,
+    build_editor_selection_outline_vertices, build_spawn_marker_vertices,
+    build_tap_indicator_vertices, GizmoParams,
 };
 use crate::platform::state_host::PlatformInstant;
 use crate::types::{AppPhase, EditorMode, GizmoPart, LevelObject, SpawnDirection};
@@ -748,14 +748,7 @@ impl State {
     }
 
     pub(super) fn rebuild_editor_preview_player_vertices(&mut self) {
-        if self.phase != AppPhase::Editor {
-            self.render.meshes.editor_preview_player.clear();
-            return;
-        }
-
-        let position = self.editor.timeline.preview.position;
-        let direction = self.editor.timeline.preview.direction;
-        self.rebuild_editor_preview_player_vertices_for_state(position, direction);
+        self.render.meshes.editor_preview_player.clear();
     }
 
     pub(super) fn rebuild_editor_preview_player_vertices_for_state(
@@ -763,28 +756,8 @@ impl State {
         position: [f32; 3],
         direction: SpawnDirection,
     ) {
-        let mesh_started_at = PlatformInstant::now();
         self.editor.timeline.preview.position = position;
         self.editor.timeline.preview.direction = direction;
-
-        let tap_times = &self.editor.timeline.taps.tap_times;
-        let current_time = self.editor.timeline.clock.time_seconds;
-        let is_tapping = if tap_times.is_empty() {
-            false
-        } else {
-            let idx = tap_times.partition_point(|t| *t < current_time - 0.01);
-            idx < tap_times.len() && (tap_times[idx] - current_time).abs() <= 0.01
-        };
-        let preview_origin = [position[0] - 0.5, position[1], position[2] - 0.5];
-        let vertices = build_editor_preview_player_vertices(preview_origin, direction, is_tapping);
-        self.render
-            .meshes
-            .editor_preview_player
-            .replace_with_vertices(
-                &self.render.gpu.device,
-                "Editor Preview Player Vertex Buffer",
-                &vertices,
-            );
-        self.perf_record(PerfStage::PreviewMeshBuild, mesh_started_at);
+        self.render.meshes.editor_preview_player.clear();
     }
 }
