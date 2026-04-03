@@ -178,6 +178,7 @@ impl State {
             render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
             render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
             render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+            render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
 
             if self.phase != AppPhase::Menu
                 && self.phase != AppPhase::Splash
@@ -246,6 +247,11 @@ impl State {
                                 &self.render.gpu.color_space_bind_group,
                                 &[],
                             );
+                            render_pass.set_bind_group(
+                                3,
+                                &self.render.gpu.block_texture_bind_group,
+                                &[],
+                            );
                         }
 
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
@@ -263,6 +269,11 @@ impl State {
                             render_pass.set_bind_group(
                                 2,
                                 &self.render.gpu.color_space_bind_group,
+                                &[],
+                            );
+                            render_pass.set_bind_group(
+                                3,
+                                &self.render.gpu.block_texture_bind_group,
                                 &[],
                             );
                         }
@@ -311,6 +322,11 @@ impl State {
                         render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                        render_pass.set_bind_group(
+                            3,
+                            &self.render.gpu.block_texture_bind_group,
+                            &[],
+                        );
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         render_pass.draw(0..count, 0..1);
@@ -319,6 +335,11 @@ impl State {
                         render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                        render_pass.set_bind_group(
+                            3,
+                            &self.render.gpu.block_texture_bind_group,
+                            &[],
+                        );
                     }
 
                     if self.editor.ui.mode == EditorMode::Place {

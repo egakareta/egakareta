@@ -19,30 +19,12 @@ pub(crate) fn build_grid_vertices() -> Vec<Vertex> {
     while x <= extent {
         let x_min = x - line_width;
         let x_max = x + line_width;
-        grid_vertices.push(Vertex {
-            position: [x_min, grid_y, -extent],
-            color: grid_color,
-        });
-        grid_vertices.push(Vertex {
-            position: [x_max, grid_y, -extent],
-            color: grid_color,
-        });
-        grid_vertices.push(Vertex {
-            position: [x_max, grid_y, extent],
-            color: grid_color,
-        });
-        grid_vertices.push(Vertex {
-            position: [x_min, grid_y, -extent],
-            color: grid_color,
-        });
-        grid_vertices.push(Vertex {
-            position: [x_max, grid_y, extent],
-            color: grid_color,
-        });
-        grid_vertices.push(Vertex {
-            position: [x_min, grid_y, extent],
-            color: grid_color,
-        });
+        grid_vertices.push(Vertex::untextured([x_min, grid_y, -extent], grid_color));
+        grid_vertices.push(Vertex::untextured([x_max, grid_y, -extent], grid_color));
+        grid_vertices.push(Vertex::untextured([x_max, grid_y, extent], grid_color));
+        grid_vertices.push(Vertex::untextured([x_min, grid_y, -extent], grid_color));
+        grid_vertices.push(Vertex::untextured([x_max, grid_y, extent], grid_color));
+        grid_vertices.push(Vertex::untextured([x_min, grid_y, extent], grid_color));
         x += step;
     }
 
@@ -50,30 +32,12 @@ pub(crate) fn build_grid_vertices() -> Vec<Vertex> {
     while z <= extent {
         let z_min = z - line_width;
         let z_max = z + line_width;
-        grid_vertices.push(Vertex {
-            position: [-extent, grid_y, z_min],
-            color: grid_color,
-        });
-        grid_vertices.push(Vertex {
-            position: [extent, grid_y, z_min],
-            color: grid_color,
-        });
-        grid_vertices.push(Vertex {
-            position: [extent, grid_y, z_max],
-            color: grid_color,
-        });
-        grid_vertices.push(Vertex {
-            position: [-extent, grid_y, z_min],
-            color: grid_color,
-        });
-        grid_vertices.push(Vertex {
-            position: [extent, grid_y, z_max],
-            color: grid_color,
-        });
-        grid_vertices.push(Vertex {
-            position: [-extent, grid_y, z_max],
-            color: grid_color,
-        });
+        grid_vertices.push(Vertex::untextured([-extent, grid_y, z_min], grid_color));
+        grid_vertices.push(Vertex::untextured([extent, grid_y, z_min], grid_color));
+        grid_vertices.push(Vertex::untextured([extent, grid_y, z_max], grid_color));
+        grid_vertices.push(Vertex::untextured([-extent, grid_y, z_min], grid_color));
+        grid_vertices.push(Vertex::untextured([extent, grid_y, z_max], grid_color));
+        grid_vertices.push(Vertex::untextured([-extent, grid_y, z_max], grid_color));
         z += step;
     }
 

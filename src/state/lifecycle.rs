@@ -19,6 +19,7 @@ use super::{
 use glam::Mat4;
 use wgpu::util::DeviceExt;
 
+use crate::block_repository::block_texture_atlas;
 use crate::game::{create_menu_scene, GameState};
 use crate::level_repository::builtin_level_names;
 use crate::mesh::{build_block_vertices, build_floor_vertices, build_grid_vertices};
@@ -274,6 +275,110 @@ impl State {
                 }],
             });
 
+        let block_texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Block Texture Bind Group Layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2Array,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
+        let texture_atlas = block_texture_atlas();
+        let block_texture_array = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Block Texture Array"),
+            size: wgpu::Extent3d {
+                width: texture_atlas.width,
+                height: texture_atlas.height,
+                depth_or_array_layers: texture_atlas.layers.len().max(1) as u32,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        for (layer_index, layer) in texture_atlas.layers.iter().enumerate() {
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &block_texture_array,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: layer_index as u32,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                layer.rgba.as_slice(),
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * texture_atlas.width),
+                    rows_per_image: Some(texture_atlas.height),
+                },
+                wgpu::Extent3d {
+                    width: texture_atlas.width,
+                    height: texture_atlas.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+
+        let block_texture_array_view =
+            block_texture_array.create_view(&wgpu::TextureViewDescriptor {
+                label: Some("Block Texture Array View"),
+                format: Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+                dimension: Some(wgpu::TextureViewDimension::D2Array),
+                usage: Some(wgpu::TextureUsages::TEXTURE_BINDING),
+                aspect: wgpu::TextureAspect::All,
+                base_mip_level: 0,
+                mip_level_count: Some(1),
+                base_array_layer: 0,
+                array_layer_count: Some(texture_atlas.layers.len().max(1) as u32),
+            });
+
+        let block_texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Block Texture Sampler"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let block_texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Block Texture Bind Group"),
+            layout: &block_texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&block_texture_array_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&block_texture_sampler),
+                },
+            ],
+        });
+
         let zero_line_uniform_buffer =
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Zero Line Uniform Buffer"),
@@ -318,6 +423,7 @@ impl State {
                 &camera_bind_group_layout,
                 &line_bind_group_layout,
                 &color_space_bind_group_layout,
+                &block_texture_bind_group_layout,
             ],
             push_constant_ranges: &[],
         });
@@ -490,6 +596,7 @@ impl State {
                     camera_uniform_buffer,
                     camera_bind_group,
                     color_space_bind_group,
+                    block_texture_bind_group,
                     apply_gamma_correction: should_apply_gamma_correction,
                 },
                 meshes: SceneMeshes {

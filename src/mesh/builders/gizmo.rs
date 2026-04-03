@@ -465,56 +465,20 @@ fn append_double_sided_quad(
     color: [f32; 4],
 ) {
     // Front face
-    vertices.push(Vertex {
-        position: p00,
-        color,
-    });
-    vertices.push(Vertex {
-        position: p10,
-        color,
-    });
-    vertices.push(Vertex {
-        position: p11,
-        color,
-    });
-    vertices.push(Vertex {
-        position: p00,
-        color,
-    });
-    vertices.push(Vertex {
-        position: p11,
-        color,
-    });
-    vertices.push(Vertex {
-        position: p01,
-        color,
-    });
+    vertices.push(Vertex::untextured(p00, color));
+    vertices.push(Vertex::untextured(p10, color));
+    vertices.push(Vertex::untextured(p11, color));
+    vertices.push(Vertex::untextured(p00, color));
+    vertices.push(Vertex::untextured(p11, color));
+    vertices.push(Vertex::untextured(p01, color));
 
     // Back face
-    vertices.push(Vertex {
-        position: p11,
-        color,
-    });
-    vertices.push(Vertex {
-        position: p10,
-        color,
-    });
-    vertices.push(Vertex {
-        position: p00,
-        color,
-    });
-    vertices.push(Vertex {
-        position: p01,
-        color,
-    });
-    vertices.push(Vertex {
-        position: p11,
-        color,
-    });
-    vertices.push(Vertex {
-        position: p00,
-        color,
-    });
+    vertices.push(Vertex::untextured(p11, color));
+    vertices.push(Vertex::untextured(p10, color));
+    vertices.push(Vertex::untextured(p00, color));
+    vertices.push(Vertex::untextured(p01, color));
+    vertices.push(Vertex::untextured(p11, color));
+    vertices.push(Vertex::untextured(p00, color));
 }
 
 fn rotation_ring_point(

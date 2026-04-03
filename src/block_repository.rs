@@ -13,6 +13,7 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
+use image::imageops::FilterType;
 use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +21,10 @@ pub(crate) const DEFAULT_BLOCK_ID: &str = "core/stone";
 
 static BLOCKS_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/blocks");
 static BLOCK_CATALOG: OnceLock<BlockCatalog> = OnceLock::new();
+static BLOCK_TEXTURE_ATLAS: OnceLock<BlockTextureAtlas> = OnceLock::new();
+
+const BLOCK_TEXTURE_EDGE: u32 = 64;
+const DEFAULT_BLOCK_TEXTURE_KEY: &str = "__default_white__";
 
 fn default_display_name() -> String {
     "Standard".to_string()
@@ -30,11 +35,11 @@ fn default_render_profile() -> BlockRenderProfile {
 }
 
 fn default_color_top() -> [f32; 4] {
-    [0.4, 0.4, 0.45, 1.0]
+    [1.0, 1.0, 1.0, 1.0]
 }
 
 fn default_color_side() -> [f32; 4] {
-    [0.2, 0.2, 0.25, 1.0]
+    [1.0, 1.0, 1.0, 1.0]
 }
 
 fn default_color_fill() -> [f32; 4] {
@@ -106,9 +111,109 @@ pub(crate) struct BlockAssets {
     #[serde(default)]
     pub(crate) texture: Option<String>,
     #[serde(default)]
+    pub(crate) texture_top: Option<String>,
+    #[serde(default)]
+    pub(crate) texture_side: Option<String>,
+    #[serde(default)]
     pub(crate) mesh: Option<String>,
     #[serde(default)]
     pub(crate) icon: Option<String>,
+}
+
+#[derive(Clone)]
+pub(crate) struct BlockTextureLayer {
+    pub(crate) rgba: Vec<u8>,
+}
+
+pub(crate) struct BlockTextureAtlas {
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) layers: Vec<BlockTextureLayer>,
+    by_key: HashMap<String, u32>,
+    default_layer: u32,
+}
+
+impl BlockTextureAtlas {
+    fn new() -> Self {
+        let mut atlas = Self {
+            width: BLOCK_TEXTURE_EDGE,
+            height: BLOCK_TEXTURE_EDGE,
+            layers: Vec::new(),
+            by_key: HashMap::new(),
+            default_layer: 0,
+        };
+
+        atlas.add_layer(
+            DEFAULT_BLOCK_TEXTURE_KEY,
+            vec![255; (BLOCK_TEXTURE_EDGE * BLOCK_TEXTURE_EDGE * 4) as usize],
+        );
+
+        atlas
+    }
+
+    fn add_layer(&mut self, key: &str, rgba: Vec<u8>) {
+        let index = self.layers.len() as u32;
+        let normalized = normalize_texture_key(key);
+        self.layers.push(BlockTextureLayer { rgba });
+
+        self.insert_texture_alias(&normalized, index);
+
+        if let Some(trimmed) = normalized.strip_prefix("assets/blocks/") {
+            self.insert_texture_alias(trimmed, index);
+        }
+
+        if let Some(file_name) = normalized.rsplit('/').next() {
+            self.insert_texture_alias(file_name, index);
+
+            if let Some(stem) = file_name.rsplit_once('.') {
+                self.insert_texture_alias(stem.0, index);
+            }
+        }
+    }
+
+    fn insert_texture_alias(&mut self, key: &str, index: u32) {
+        let normalized = normalize_texture_key(key);
+        if normalized.is_empty() {
+            return;
+        }
+        self.by_key.entry(normalized).or_insert(index);
+    }
+
+    pub(crate) fn resolve_layer(&self, key: &str) -> Option<u32> {
+        let normalized = normalize_texture_key(key);
+        if normalized.is_empty() {
+            return None;
+        }
+
+        if let Some(index) = self.by_key.get(&normalized) {
+            return Some(*index);
+        }
+
+        if !normalized.ends_with(".png") {
+            let with_extension = format!("{normalized}.png");
+            if let Some(index) = self.by_key.get(&with_extension) {
+                return Some(*index);
+            }
+
+            let with_prefix = format!("assets/blocks/{with_extension}");
+            if let Some(index) = self.by_key.get(&with_prefix) {
+                return Some(*index);
+            }
+        }
+
+        let with_prefix = format!("assets/blocks/{normalized}");
+        self.by_key.get(&with_prefix).copied()
+    }
+
+    pub(crate) fn default_layer(&self) -> u32 {
+        self.default_layer
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct BlockTextureLayers {
+    pub(crate) top: u32,
+    pub(crate) side: u32,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -293,6 +398,106 @@ fn collect_builtin_blocks(dir: &Dir<'_>, definitions: &mut Vec<BlockDefinition>)
 
     for child in dir.dirs() {
         collect_builtin_blocks(child, definitions);
+    }
+}
+
+fn normalize_texture_key(value: &str) -> String {
+    value.trim().replace('\\', "/").to_ascii_lowercase()
+}
+
+fn collect_builtin_texture_files(dir: &Dir<'_>, files: &mut Vec<(String, Vec<u8>)>) {
+    for file in dir.files() {
+        let is_png = file
+            .path()
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(|extension| extension.eq_ignore_ascii_case("png"))
+            .unwrap_or(false);
+
+        if !is_png {
+            continue;
+        }
+
+        let normalized_path = normalize_texture_key(file.path().to_string_lossy().as_ref());
+        files.push((normalized_path, file.contents().to_vec()));
+    }
+
+    for child in dir.dirs() {
+        collect_builtin_texture_files(child, files);
+    }
+}
+
+pub(crate) fn block_texture_atlas() -> &'static BlockTextureAtlas {
+    BLOCK_TEXTURE_ATLAS.get_or_init(|| {
+        let mut atlas = BlockTextureAtlas::new();
+        let mut files = Vec::new();
+        collect_builtin_texture_files(&BLOCKS_DIR, &mut files);
+        files.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+
+        for (path, bytes) in files {
+            let decoded = match image::load_from_memory(&bytes) {
+                Ok(image) => image,
+                Err(error) => {
+                    log::warn!("Failed to decode block texture {path}: {error}");
+                    continue;
+                }
+            };
+
+            let rgba = decoded.to_rgba8();
+            let resized =
+                if rgba.width() != BLOCK_TEXTURE_EDGE || rgba.height() != BLOCK_TEXTURE_EDGE {
+                    image::imageops::resize(
+                        &rgba,
+                        BLOCK_TEXTURE_EDGE,
+                        BLOCK_TEXTURE_EDGE,
+                        FilterType::Triangle,
+                    )
+                } else {
+                    rgba
+                };
+
+            atlas.add_layer(&path, resized.into_raw());
+        }
+
+        atlas
+    })
+}
+
+pub(crate) fn resolve_block_texture_layers(block_id: &str) -> BlockTextureLayers {
+    let block = resolve_block_definition(block_id);
+    let atlas = block_texture_atlas();
+
+    let resolve_layer = |key: Option<&str>, face: &str| -> u32 {
+        match key {
+            Some(value) => match atlas.resolve_layer(value) {
+                Some(layer) => layer,
+                None => {
+                    log::warn!(
+                        "Missing {face} texture for block {}: {}. Falling back to default.",
+                        block.id,
+                        value
+                    );
+                    atlas.default_layer()
+                }
+            },
+            None => atlas.default_layer(),
+        }
+    };
+
+    let top_key = block
+        .assets
+        .texture_top
+        .as_deref()
+        .or(block.assets.texture.as_deref());
+    let side_key = block
+        .assets
+        .texture_side
+        .as_deref()
+        .or(block.assets.texture.as_deref());
+
+    BlockTextureLayers {
+        top: resolve_layer(top_key, "top"),
+        side: resolve_layer(side_key, "side"),
     }
 }
 

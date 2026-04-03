@@ -338,12 +338,37 @@ where
 pub(crate) struct Vertex {
     pub(crate) position: [f32; 3],
     pub(crate) color: [f32; 4],
+    pub(crate) uv: [f32; 2],
+    pub(crate) texture_layer: f32,
 }
 
 impl Vertex {
+    pub(crate) fn untextured(position: [f32; 3], color: [f32; 4]) -> Self {
+        Self {
+            position,
+            color,
+            uv: [0.0, 0.0],
+            texture_layer: 0.0,
+        }
+    }
+
+    pub(crate) fn textured(
+        position: [f32; 3],
+        color: [f32; 4],
+        uv: [f32; 2],
+        texture_layer: u32,
+    ) -> Self {
+        Self {
+            position,
+            color,
+            uv,
+            texture_layer: texture_layer as f32,
+        }
+    }
+
     pub(crate) fn desc() -> wgpu::VertexBufferLayout<'static> {
-        const ATTRS: [wgpu::VertexAttribute; 2] =
-            wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4];
+        const ATTRS: [wgpu::VertexAttribute; 4] =
+            wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4, 2 => Float32x2, 3 => Float32];
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as u64,
             step_mode: wgpu::VertexStepMode::Vertex,

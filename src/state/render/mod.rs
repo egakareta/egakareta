@@ -168,6 +168,7 @@ pub(crate) struct GpuContext {
     pub(crate) camera_uniform_buffer: wgpu::Buffer,
     pub(crate) camera_bind_group: wgpu::BindGroup,
     pub(crate) color_space_bind_group: wgpu::BindGroup,
+    pub(crate) block_texture_bind_group: wgpu::BindGroup,
     pub(crate) apply_gamma_correction: bool,
 }
 

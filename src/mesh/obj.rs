@@ -241,6 +241,7 @@ pub(crate) fn append_obj_mesh(
     obj: &LevelObject,
     mesh: &ObjMesh,
     color: [f32; 4],
+    texture_layer: u32,
 ) {
     let span = [
         (mesh.max[0] - mesh.min[0]).max(f32::EPSILON),
@@ -260,10 +261,11 @@ pub(crate) fn append_obj_mesh(
                 (raw[2] - mesh.min[2]) / span[2],
             ];
 
-            let _uv = corner
+            let uv = corner
                 .texcoord_index
                 .and_then(|index| mesh.texcoords.get(index))
-                .copied();
+                .copied()
+                .unwrap_or([normalized[0], 1.0 - normalized[1]]);
 
             let normal_tint = corner
                 .normal_index
@@ -283,19 +285,21 @@ pub(crate) fn append_obj_mesh(
                 })
                 .unwrap_or(1.0);
 
-            vertices.push(Vertex {
-                position: [
+            vertices.push(Vertex::textured(
+                [
                     obj.position[0] + normalized[0] * obj.size[0],
                     obj.position[1] + normalized[1] * obj.size[1],
                     obj.position[2] + normalized[2] * obj.size[2],
                 ],
-                color: [
+                [
                     color[0] * normal_tint,
                     color[1] * normal_tint,
                     color[2] * normal_tint,
                     color[3],
                 ],
-            });
+                uv,
+                texture_layer,
+            ));
         }
     }
 }

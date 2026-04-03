@@ -98,18 +98,9 @@ pub(crate) fn append_cone(
         ];
         let c_tip = apply_lighting(color, n_tip);
 
-        vertices.push(Vertex {
-            position: base_points[i],
-            color: c_base_i,
-        });
-        vertices.push(Vertex {
-            position: base_points[next],
-            color: c_base_next,
-        });
-        vertices.push(Vertex {
-            position: tip,
-            color: c_tip,
-        });
+        vertices.push(Vertex::untextured(base_points[i], c_base_i));
+        vertices.push(Vertex::untextured(base_points[next], c_base_next));
+        vertices.push(Vertex::untextured(tip, c_tip));
     }
 
     // Base cap
@@ -118,18 +109,9 @@ pub(crate) fn append_cone(
 
     for i in 0..segments {
         let next = (i + 1) % segments;
-        vertices.push(Vertex {
-            position: base_center,
-            color: c_base,
-        });
-        vertices.push(Vertex {
-            position: base_points[next],
-            color: c_base,
-        });
-        vertices.push(Vertex {
-            position: base_points[i],
-            color: c_base,
-        });
+        vertices.push(Vertex::untextured(base_center, c_base));
+        vertices.push(Vertex::untextured(base_points[next], c_base));
+        vertices.push(Vertex::untextured(base_points[i], c_base));
     }
 }
 
@@ -191,31 +173,13 @@ pub(crate) fn append_sphere(
             let c01 = apply_lighting(color, n01);
             let c11 = apply_lighting(color, n11);
 
-            vertices.push(Vertex {
-                position: p00,
-                color: c00,
-            });
-            vertices.push(Vertex {
-                position: p10,
-                color: c10,
-            });
-            vertices.push(Vertex {
-                position: p01,
-                color: c01,
-            });
+            vertices.push(Vertex::untextured(p00, c00));
+            vertices.push(Vertex::untextured(p10, c10));
+            vertices.push(Vertex::untextured(p01, c01));
 
-            vertices.push(Vertex {
-                position: p10,
-                color: c10,
-            });
-            vertices.push(Vertex {
-                position: p11,
-                color: c11,
-            });
-            vertices.push(Vertex {
-                position: p01,
-                color: c01,
-            });
+            vertices.push(Vertex::untextured(p10, c10));
+            vertices.push(Vertex::untextured(p11, c11));
+            vertices.push(Vertex::untextured(p01, c01));
         }
     }
 }
