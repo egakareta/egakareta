@@ -19,6 +19,7 @@ mod editor_domain;
 mod editor_ui;
 mod game;
 mod import_export_service;
+mod level_codec;
 mod level_repository;
 mod mesh;
 mod platform;
@@ -28,6 +29,8 @@ mod types;
 pub use editor_ui::{
     load_menu_wordmark_texture, show_editor_ui, show_menu_wordmark_ui, show_splash_screen_ui,
 };
+pub use import_export_service::convert_level_json_to_binary;
+pub use import_export_service::normalize_level_binary_format;
 #[cfg(target_arch = "wasm32")]
 pub use platform::application::run_game;
 #[cfg(not(target_arch = "wasm32"))]

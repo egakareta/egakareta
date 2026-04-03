@@ -291,7 +291,7 @@ impl State {
             let key_match = chord.key == normalized_key;
             let modifiers_match = chord.ctrl == ctrl && chord.shift == shift && chord.alt == alt;
 
-            if key_match && (pressed && modifiers_match || !pressed) {
+            if key_match && (!pressed || modifiers_match) {
                 match binding.action.as_str() {
                     "pan_up" => commands.push(AppCommand::EditorSetPanUpHeld(pressed)),
                     "pan_down" => commands.push(AppCommand::EditorSetPanDownHeld(pressed)),

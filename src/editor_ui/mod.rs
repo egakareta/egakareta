@@ -250,25 +250,24 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
 
                                             ui.horizontal(|ui| {
                                                 ui.label(label);
-                                                if is_not_default {
-                                                    if ui
+                                                if is_not_default
+                                                    && ui
                                                         .button(
                                                             egui_phosphor::regular::ARROW_CLOCKWISE,
                                                         )
                                                         .on_hover_text("Reset to default")
                                                         .clicked()
-                                                    {
-                                                        commands.push(
-                                                            crate::commands::AppCommand::EditorResetKeybind(
-                                                                action.to_string(),
-                                                            ),
-                                                        );
-                                                        commands.push(
-                                                            crate::commands::AppCommand::EditorSetKeybindCapture(
-                                                                None,
-                                                            ),
-                                                        );
-                                                    }
+                                                {
+                                                    commands.push(
+                                                        crate::commands::AppCommand::EditorResetKeybind(
+                                                            action.to_string(),
+                                                        ),
+                                                    );
+                                                    commands.push(
+                                                        crate::commands::AppCommand::EditorSetKeybindCapture(
+                                                            None,
+                                                        ),
+                                                    );
                                                 }
 
                                                 ui.with_layout(
@@ -289,23 +288,22 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                                                                     slot,
                                                                 ));
 
-                                                            if chord.is_some() {
-                                                                if ui
+                                                            if chord.is_some()
+                                                                && ui
                                                                     .button(egui_phosphor::regular::X)
                                                                     .clicked()
-                                                                {
-                                                                    commands.push(
-                                                                        crate::commands::AppCommand::EditorClearKeybindSlot {
-                                                                            action: action.to_string(),
-                                                                            slot,
-                                                                        },
-                                                                    );
-                                                                    commands.push(
-                                                                        crate::commands::AppCommand::EditorSetKeybindCapture(
-                                                                            None,
-                                                                        ),
-                                                                    );
-                                                                }
+                                                            {
+                                                                commands.push(
+                                                                    crate::commands::AppCommand::EditorClearKeybindSlot {
+                                                                        action: action.to_string(),
+                                                                        slot,
+                                                                    },
+                                                                );
+                                                                commands.push(
+                                                                    crate::commands::AppCommand::EditorSetKeybindCapture(
+                                                                        None,
+                                                                    ),
+                                                                );
                                                             }
 
                                                             let (bg_color, display_label) =
@@ -404,7 +402,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
 
             if ui
                 .button(format!(
-                    "{} Import .egz/JSON",
+                    "{} Import .egz/Binary",
                     egui_phosphor::regular::UPLOAD
                 ))
                 .clicked()

@@ -12,7 +12,8 @@ use crate::editor_domain::{
 };
 use crate::game::GameState;
 use crate::import_export_service::{
-    build_level_export, build_level_json_export, parse_level_egz_import, parse_level_import,
+    build_level_binary_export, build_level_export, parse_level_binary_import,
+    parse_level_egz_import,
 };
 use crate::level_repository::load_builtin_level_metadata;
 use crate::mesh::build_block_obj;
@@ -186,16 +187,16 @@ impl State {
         Ok(())
     }
 
-    /// Exports the current editor level metadata to a JSON string.
-    pub fn export_level(&self) -> String {
-        build_level_json_export(&self.current_editor_metadata())
+    /// Exports the current editor level metadata to binary bytes.
+    pub fn export_level(&self) -> Result<Vec<u8>, String> {
+        build_level_binary_export(&self.current_editor_metadata())
     }
 
-    /// Imports level metadata from a JSON string.
+    /// Imports level metadata from a binary payload.
     ///
     /// This replaces the current editor level metadata.
-    pub fn import_level(&mut self, json: &str) -> Result<(), String> {
-        let metadata = parse_level_import(json)?;
+    pub fn import_level(&mut self, data: &[u8]) -> Result<(), String> {
+        let metadata = parse_level_binary_import(data)?;
         self.apply_imported_level_metadata(metadata);
 
         Ok(())
@@ -272,7 +273,7 @@ impl State {
             self.editor.timeline.playback.playing = false;
             self.editor.timeline.playback.runtime = None;
             self.editor.runtime.interaction.clipboard = None;
-            let _ = self.import_level(&serde_json::to_string(&metadata).unwrap());
+            self.apply_imported_level_metadata(metadata);
             self.session.editor_level_name = Some(name.to_string());
         }
     }
@@ -485,22 +486,28 @@ impl State {
 
     /// Finalizes the level import process by decoding and parsing the current import text.
     ///
-    /// The input text is expected to be a Base64-encoded egakareta zip (.egz) blob.
+    /// The input text is expected to be Base64-encoded `.egz` or binary metadata bytes.
     pub fn complete_import(&mut self) {
         let text = self.session.editor_import_text.clone();
-        if let Ok(data) = base64::engine::general_purpose::STANDARD.decode(text.trim()) {
-            if let Err(e) = self.import_level_egz(&data) {
-                log_platform_error(&format!("EGZ Import failed: {}", e));
-            } else {
-                self.session.editor_show_import = false;
-                self.session.editor_import_text.clear();
+        let data = match base64::engine::general_purpose::STANDARD.decode(text.trim()) {
+            Ok(data) => data,
+            Err(error) => {
+                log_platform_error(&format!(
+                    "Binary import expects Base64 input (.egz or binary metadata): {}",
+                    error
+                ));
                 return;
             }
+        };
+
+        if self.import_level_egz(&data).is_ok() {
+            self.session.editor_show_import = false;
+            self.session.editor_import_text.clear();
+            return;
         }
 
-        let text = self.session.editor_import_text.clone();
-        if let Err(e) = self.import_level(&text) {
-            log_platform_error(&format!("JSON Import failed: {}", e));
+        if let Err(error) = self.import_level(&data) {
+            log_platform_error(&format!("Binary import failed: {}", error));
         } else {
             self.session.editor_show_import = false;
             self.session.editor_import_text.clear();
