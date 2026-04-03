@@ -26,6 +26,8 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
@@ -35,18 +37,11 @@ jobs:
         with:
           tool: cargo-nextest,cargo-llvm-cov
 
-      - name: Cache apt packages
-        uses: actions/cache@v4
+      - name: Install apt packages
+        uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          path: /var/cache/apt/archives
-          key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/ci.yml') }}
-          restore-keys: |
-            ${{ runner.os }}-apt-
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev libudev-dev pkg-config
+          packages: libasound2-dev libudev-dev pkg-config
+          version: 1.0
 
       - name: Install cross toolchains
         if: startsWith(github.ref, 'refs/tags/')
