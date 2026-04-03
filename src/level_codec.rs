@@ -620,7 +620,11 @@ fn rle_decode_palette_indices(runs: &[ObjectRun]) -> Result<Vec<u16>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_level_metadata_binary, encode_level_metadata_binary};
+    use super::{
+        count_compact_bits, decode_level_metadata_binary, encode_level_metadata_binary,
+        BinaryLevelPayloadV1, COMPRESSION_NONE, COMPRESSION_ZSTD, LEVEL_CODEC_V1,
+        LEVEL_CODEC_VERSION, LEVEL_MAGIC,
+    };
     use crate::level_repository::load_builtin_level_metadata;
     use crate::types::LevelObject;
 
@@ -661,5 +665,164 @@ mod tests {
 
         assert_eq!(decoded.name, metadata.name);
         assert_eq!(decoded.objects, metadata.objects);
+    }
+
+    #[test]
+    fn hybrid_compact_stream_uses_linear_indices_and_roundtrips() {
+        let mut metadata =
+            load_builtin_level_metadata("Flowerfield").expect("missing built-in level");
+        metadata.name = "Hybrid Compact".to_string();
+        metadata.objects = vec![
+            LevelObject {
+                block_id: "core/stone".to_string(),
+                position: [10.0, 20.0, 30.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                roundness: 0.0,
+                color_tint: [1.0, 1.0, 1.0],
+            },
+            LevelObject {
+                block_id: "core/grass".to_string(),
+                position: [11.25, 21.0, 31.0],
+                size: [2.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                roundness: 0.0,
+                color_tint: [1.0, 1.0, 1.0],
+            },
+        ];
+
+        let encoded = encode_level_metadata_binary(&metadata).expect("encode");
+        let payload = decode_v2_payload_for_test(&encoded);
+
+        assert!(!payload.object_compact_mask.is_empty());
+        assert_eq!(count_compact_bits(&payload.object_compact_mask, 2), 1);
+        assert_eq!(payload.object_linear_indices.len(), 1);
+        assert_eq!(payload.object_positions.len(), 1);
+        assert_eq!(payload.object_sizes.len(), 1);
+
+        let decoded = decode_level_metadata_binary(&encoded).expect("decode");
+        assert_eq!(decoded.objects, metadata.objects);
+    }
+
+    #[test]
+    fn decodes_legacy_v1_uncompressed_payload() {
+        let mut metadata =
+            load_builtin_level_metadata("Golden Haze").expect("missing built-in level");
+        metadata.name = "Legacy Decode".to_string();
+        metadata.objects = vec![LevelObject {
+            block_id: "core/stone".to_string(),
+            position: [2.0, 3.0, 4.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.0,
+            color_tint: [1.0, 1.0, 1.0],
+        }];
+
+        let encoded_v2 = encode_level_metadata_binary(&metadata).expect("encode v2");
+        let payload = decode_v2_payload_for_test(&encoded_v2);
+        let legacy_bytes = encode_v1_uncompressed_for_test(&payload);
+
+        let decoded = decode_level_metadata_binary(&legacy_bytes).expect("decode v1");
+        assert_eq!(decoded.name, metadata.name);
+        assert_eq!(decoded.objects, metadata.objects);
+    }
+
+    #[test]
+    fn rejects_corrupt_compact_stream_lengths() {
+        let mut metadata =
+            load_builtin_level_metadata("Flowerfield").expect("missing built-in level");
+        metadata.objects = vec![
+            LevelObject {
+                block_id: "core/stone".to_string(),
+                position: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                roundness: 0.0,
+                color_tint: [1.0, 1.0, 1.0],
+            },
+            LevelObject {
+                block_id: "core/grass".to_string(),
+                position: [0.5, 0.0, 0.0],
+                size: [2.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                roundness: 0.0,
+                color_tint: [1.0, 1.0, 1.0],
+            },
+        ];
+
+        let encoded = encode_level_metadata_binary(&metadata).expect("encode");
+        let mut payload = decode_v2_payload_for_test(&encoded);
+        payload.object_linear_indices.clear();
+
+        let corrupted = encode_v2_uncompressed_for_test(&payload);
+        let error = match decode_level_metadata_binary(&corrupted) {
+            Ok(_) => panic!("expected decode failure"),
+            Err(error) => error,
+        };
+        assert!(error.contains("Compact object index stream length mismatch"));
+    }
+
+    fn decode_v2_payload_for_test(bytes: &[u8]) -> BinaryLevelPayloadV1 {
+        assert!(bytes.len() >= 15);
+        assert_eq!(&bytes[0..4], &LEVEL_MAGIC);
+
+        let version = u16::from_le_bytes([bytes[4], bytes[5]]);
+        assert_eq!(version, LEVEL_CODEC_VERSION);
+
+        let compression = bytes[6];
+        let payload_len = u32::from_le_bytes([bytes[7], bytes[8], bytes[9], bytes[10]]) as usize;
+        let decompressed_len =
+            u32::from_le_bytes([bytes[11], bytes[12], bytes[13], bytes[14]]) as usize;
+        assert_eq!(bytes.len(), 15 + payload_len);
+
+        let payload_bytes = match compression {
+            COMPRESSION_NONE => {
+                assert_eq!(decompressed_len, payload_len);
+                bytes[15..].to_vec()
+            }
+            COMPRESSION_ZSTD => {
+                zstd::bulk::decompress(&bytes[15..], decompressed_len).expect("decompress")
+            }
+            _ => panic!("unexpected compression flag"),
+        };
+
+        serde_cbor::from_slice(&payload_bytes).expect("deserialize payload")
+    }
+
+    fn encode_v1_uncompressed_for_test(payload: &BinaryLevelPayloadV1) -> Vec<u8> {
+        let payload_bytes = serde_cbor::to_vec(payload).expect("serialize payload");
+
+        let mut encoded = Vec::with_capacity(4 + 2 + 1 + 4 + payload_bytes.len());
+        encoded.extend_from_slice(&LEVEL_MAGIC);
+        encoded.extend_from_slice(&LEVEL_CODEC_V1.to_le_bytes());
+        encoded.push(COMPRESSION_NONE);
+        encoded.extend_from_slice(
+            &u32::try_from(payload_bytes.len())
+                .expect("payload size")
+                .to_le_bytes(),
+        );
+        encoded.extend_from_slice(&payload_bytes);
+        encoded
+    }
+
+    fn encode_v2_uncompressed_for_test(payload: &BinaryLevelPayloadV1) -> Vec<u8> {
+        let payload_bytes = serde_cbor::to_vec(payload).expect("serialize payload");
+
+        let mut encoded = Vec::with_capacity(4 + 2 + 1 + 4 + 4 + payload_bytes.len());
+        encoded.extend_from_slice(&LEVEL_MAGIC);
+        encoded.extend_from_slice(&LEVEL_CODEC_VERSION.to_le_bytes());
+        encoded.push(COMPRESSION_NONE);
+        encoded.extend_from_slice(
+            &u32::try_from(payload_bytes.len())
+                .expect("payload size")
+                .to_le_bytes(),
+        );
+        encoded.extend_from_slice(
+            &u32::try_from(payload_bytes.len())
+                .expect("payload size")
+                .to_le_bytes(),
+        );
+        encoded.extend_from_slice(&payload_bytes);
+        encoded
     }
 }
