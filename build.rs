@@ -6,6 +6,7 @@
 
 */
 use std::collections::HashSet;
+use std::path::Path;
 
 // Whitelist of keys to bake into the binary
 const BAKE_KEYS: &[&str] = &["API_URL", "PUBLISHABLE_KEY"];
@@ -15,6 +16,7 @@ fn main() {
     println!("cargo:rerun-if-changed=.env.preview");
     println!("cargo:rerun-if-changed=.env.production");
     println!("cargo:rerun-if-env-changed=BUILD_ENV");
+    println!("cargo:rerun-if-changed=assets/levels");
 
     let build_env = std::env::var("BUILD_ENV").unwrap_or_else(|_| "local".to_string());
 
@@ -48,5 +50,17 @@ fn main() {
                 println!("cargo:rustc-env={}={}", key, value);
             }
         }
+    }
+
+    let levels_dir = Path::new("assets/levels");
+    if levels_dir.is_dir() {
+        let level_count = std::fs::read_dir(levels_dir)
+            .map(|entries| {
+                entries
+                    .filter(|e| e.as_ref().map(|e| e.path().is_dir()).unwrap_or(false))
+                    .count()
+            })
+            .unwrap_or(0);
+        println!("cargo:warning=Using {} levels", level_count);
     }
 }
