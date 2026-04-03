@@ -275,44 +275,42 @@ impl EditorSubsystem {
 
         let mut candidates: Vec<(GizmoDragKind, GizmoAxis, Vec3, f32)> = Vec::new();
         if allow_move {
-            candidates.extend_from_slice(&[
-                (
+            for &(axis, dir, neg) in &[
+                (GizmoAxis::X, Vec3::X, false),
+                (GizmoAxis::Y, Vec3::Y, false),
+                (GizmoAxis::Z, Vec3::Z, false),
+                (GizmoAxis::XNeg, Vec3::X, true),
+                (GizmoAxis::YNeg, Vec3::Y, true),
+                (GizmoAxis::ZNeg, Vec3::Z, true),
+            ] {
+                let axis_len = match axis {
+                    GizmoAxis::X | GizmoAxis::XNeg => axis_lengths[0],
+                    GizmoAxis::Y | GizmoAxis::YNeg => axis_lengths[1],
+                    GizmoAxis::Z | GizmoAxis::ZNeg => axis_lengths[2],
+                };
+                let sign = if neg { -1.0 } else { 1.0 };
+                let tip = center + dir * axis_len * sign;
+                let base = center + dir * 0.01 * sign;
+                let mid = (tip + base) * 0.5;
+                candidates.push((
                     GizmoDragKind::Move,
-                    GizmoAxis::X,
-                    Vec3::new(center.x + axis_lengths[0], center.y, center.z),
+                    axis,
+                    tip,
                     GIZMO_MOVE_PICK_RADIUS_PIXELS,
-                ),
-                (
+                ));
+                candidates.push((
                     GizmoDragKind::Move,
-                    GizmoAxis::Y,
-                    Vec3::new(center.x, center.y + axis_lengths[1], center.z),
+                    axis,
+                    mid,
                     GIZMO_MOVE_PICK_RADIUS_PIXELS,
-                ),
-                (
+                ));
+                candidates.push((
                     GizmoDragKind::Move,
-                    GizmoAxis::Z,
-                    Vec3::new(center.x, center.y, center.z + axis_lengths[2]),
+                    axis,
+                    base,
                     GIZMO_MOVE_PICK_RADIUS_PIXELS,
-                ),
-                (
-                    GizmoDragKind::Move,
-                    GizmoAxis::XNeg,
-                    Vec3::new(center.x - axis_lengths[0], center.y, center.z),
-                    GIZMO_MOVE_PICK_RADIUS_PIXELS,
-                ),
-                (
-                    GizmoDragKind::Move,
-                    GizmoAxis::YNeg,
-                    Vec3::new(center.x, center.y - axis_lengths[1], center.z),
-                    GIZMO_MOVE_PICK_RADIUS_PIXELS,
-                ),
-                (
-                    GizmoDragKind::Move,
-                    GizmoAxis::ZNeg,
-                    Vec3::new(center.x, center.y, center.z - axis_lengths[2]),
-                    GIZMO_MOVE_PICK_RADIUS_PIXELS,
-                ),
-            ]);
+                ));
+            }
         }
 
         if allow_scale {

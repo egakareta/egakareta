@@ -450,7 +450,7 @@ pub(crate) fn block_texture_atlas() -> &'static BlockTextureAtlas {
                         &rgba,
                         BLOCK_TEXTURE_EDGE,
                         BLOCK_TEXTURE_EDGE,
-                        FilterType::Triangle,
+                        FilterType::Nearest,
                     )
                 } else {
                     rgba

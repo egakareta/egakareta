@@ -11,7 +11,7 @@ use crate::commands::AppCommand;
 use crate::editor_domain::{derive_tap_indicator_positions, derive_timeline_position};
 use crate::game::simulate_timeline_state_with_triggers;
 use crate::platform::audio::runtime_asset_source_key;
-use crate::types::{AppPhase, EditorMode, LevelObject, SpawnDirection};
+use crate::types::{AppPhase, EditorMode, GizmoAxis, GizmoDragKind, LevelObject, SpawnDirection};
 use glam::{Vec2, Vec3};
 
 fn approx_eq(a: f32, b: f32, eps: f32) {
@@ -936,6 +936,85 @@ fn test_timing_mode_persistence_during_playback() {
         assert!(state.editor.runtime.interaction.last_mode.is_none());
     });
 }
+#[test]
+fn test_gizmo_move_shaft_is_pickable() {
+    pollster::block_on(async {
+        let mut state = match State::new_test().await {
+            Some(s) => s,
+            None => return,
+        };
+
+        state.phase = AppPhase::Editor;
+        state.editor.set_mode(EditorMode::Move);
+
+        state.editor.objects.push(LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.18,
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        });
+        state.editor.ui.selected_block_indices.push(0);
+        state.sync_editor_objects();
+
+        let viewport = Vec2::new(
+            state.render.gpu.config.width as f32,
+            state.render.gpu.config.height as f32,
+        );
+
+        let (bounds_position, bounds_size) = state
+            .selected_group_bounds()
+            .expect("expected group bounds");
+        let center = Vec3::new(
+            bounds_position[0] + bounds_size[0] * 0.5,
+            bounds_position[1] + bounds_size[1] * 0.5,
+            bounds_position[2] + bounds_size[2] * 0.5,
+        );
+        let axis_lengths = state
+            .editor
+            .gizmo_axis_lengths_world(center, 100.0, viewport);
+
+        // Test the midpoint of the X+ arrow shaft (not the tip)
+        let shaft_mid_world = center + Vec3::X * axis_lengths[0] * 0.5;
+        let shaft_mid_screen = state
+            .editor
+            .world_to_screen_v(shaft_mid_world, viewport)
+            .expect("expected projected shaft midpoint");
+
+        let picked = state.editor.pick_gizmo_handle(
+            shaft_mid_screen.x as f64,
+            shaft_mid_screen.y as f64,
+            viewport,
+        );
+
+        assert_eq!(
+            picked,
+            Some((GizmoDragKind::Move, GizmoAxis::X)),
+            "midpoint of move arrow shaft should be pickable"
+        );
+
+        // Test a point 75% along the X+ shaft (far enough from center to avoid Y axis ambiguity)
+        let shaft_quarter_world = center + Vec3::X * axis_lengths[0] * 0.75;
+        let shaft_quarter_screen = state
+            .editor
+            .world_to_screen_v(shaft_quarter_world, viewport)
+            .expect("expected projected shaft quarter point");
+
+        let picked_quarter = state.editor.pick_gizmo_handle(
+            shaft_quarter_screen.x as f64,
+            shaft_quarter_screen.y as f64,
+            viewport,
+        );
+
+        assert_eq!(
+            picked_quarter,
+            Some((GizmoDragKind::Move, GizmoAxis::X)),
+            "quarter point of move arrow shaft should be pickable"
+        );
+    });
+}
+
 #[test]
 fn test_gizmo_hover_priority_suppresses_block_outline() {
     pollster::block_on(async {
