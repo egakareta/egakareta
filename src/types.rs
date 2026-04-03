@@ -1090,8 +1090,7 @@ impl AppSettings {
 
     pub(crate) fn set_keybind(&mut self, action: &str, chord: KeyChord) {
         let normalized = chord.normalized();
-        self.keybinds
-            .retain(|binding| binding.action != action && binding.chord.normalized() != normalized);
+        self.keybinds.retain(|binding| binding.action != action);
         self.keybinds.push(KeybindBinding {
             action: action.to_string(),
             chord: normalized,
@@ -1163,11 +1162,17 @@ pub(crate) fn essential_keybind_actions() -> &'static [(&'static str, &'static s
         ("Editor", "duplicate", "Duplicate"),
         ("Editor", "undo", "Undo"),
         ("Editor", "redo", "Redo"),
+        ("Editor", "pan_up", "Pan Up"),
+        ("Editor", "pan_down", "Pan Down"),
+        ("Editor", "pan_left", "Pan Left"),
+        ("Editor", "pan_right", "Pan Right"),
+        ("Editor", "nudge_up", "Nudge Block Up"),
+        ("Editor", "nudge_down", "Nudge Block Down"),
+        ("Editor", "nudge_left", "Nudge Block Left"),
+        ("Editor", "nudge_right", "Nudge Block Right"),
+        ("Timeline", "timeline_forward", "Shift Timeline Forward"),
+        ("Timeline", "timeline_backward", "Shift Timeline Backward"),
         ("General", "escape", "Context Escape"),
-        ("Editor Navigation", "pan_up", "Pan Up"),
-        ("Editor Navigation", "pan_down", "Pan Down"),
-        ("Editor Navigation", "pan_left", "Pan Left"),
-        ("Editor Navigation", "pan_right", "Pan Right"),
     ]
 }
 
@@ -1210,10 +1215,6 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
             chord: KeyChord::new("y", true, false, false),
         },
         KeybindBinding {
-            action: "escape".to_string(),
-            chord: KeyChord::new("Escape", false, false, false),
-        },
-        KeybindBinding {
             action: "pan_up".to_string(),
             chord: KeyChord::new("w", false, false, false),
         },
@@ -1228,6 +1229,42 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
         KeybindBinding {
             action: "pan_right".to_string(),
             chord: KeyChord::new("d", false, false, false),
+        },
+        KeybindBinding {
+            action: "nudge_up".to_string(),
+            chord: KeyChord::new("ArrowUp", false, false, false),
+        },
+        KeybindBinding {
+            action: "nudge_down".to_string(),
+            chord: KeyChord::new("ArrowDown", false, false, false),
+        },
+        KeybindBinding {
+            action: "nudge_left".to_string(),
+            chord: KeyChord::new("ArrowLeft", false, false, false),
+        },
+        KeybindBinding {
+            action: "nudge_right".to_string(),
+            chord: KeyChord::new("ArrowRight", false, false, false),
+        },
+        KeybindBinding {
+            action: "timeline_forward".to_string(),
+            chord: KeyChord::new("ArrowRight", false, false, false),
+        },
+        KeybindBinding {
+            action: "timeline_forward".to_string(),
+            chord: KeyChord::new("ArrowUp", false, false, false),
+        },
+        KeybindBinding {
+            action: "timeline_backward".to_string(),
+            chord: KeyChord::new("ArrowLeft", false, false, false),
+        },
+        KeybindBinding {
+            action: "timeline_backward".to_string(),
+            chord: KeyChord::new("ArrowDown", false, false, false),
+        },
+        KeybindBinding {
+            action: "escape".to_string(),
+            chord: KeyChord::new("Escape", false, false, false),
         },
     ]
 }

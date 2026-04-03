@@ -434,13 +434,17 @@ impl State {
         game.objects = create_menu_scene();
         game.rebuild_behavior_cache();
 
-        let mut app_settings = match crate::platform::io::load_app_settings_from_storage().await {
-            Ok(settings) => settings,
-            Err(error) => {
-                crate::platform::io::log_platform_error(&format!(
-                    "Failed to load app settings: {error}"
-                ));
-                crate::types::AppSettings::default()
+        let mut app_settings = if cfg!(test) {
+            crate::types::AppSettings::default()
+        } else {
+            match crate::platform::io::load_app_settings_from_storage().await {
+                Ok(settings) => settings,
+                Err(error) => {
+                    crate::platform::io::log_platform_error(&format!(
+                        "Failed to load app settings: {error}"
+                    ));
+                    crate::types::AppSettings::default()
+                }
             }
         };
         app_settings.editor_selected_block_id =

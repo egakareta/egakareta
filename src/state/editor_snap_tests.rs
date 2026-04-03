@@ -1,6 +1,7 @@
 use super::State;
 use crate::commands::AppCommand;
 use crate::types::AppPhase;
+use glam::{Vec2, Vec3};
 
 #[test]
 fn test_editor_snap_override_with_ctrl() {
@@ -104,20 +105,92 @@ fn test_editor_nudge_respects_ctrl_override() {
         });
         state.editor.ui.selected_block_index = Some(0);
 
-        // 1. Nudge with snapping (Ctrl OFF) -> should move by 2.0
+        // 1. Nudge with snapping (Ctrl OFF) -> should move by snap step magnitude
+        let start_x = state.editor.objects[0].position[0];
         state.editor.ui.ctrl_held = false;
         state.editor_nudge_selected_blocks(1, 0);
+        let after_first = state.editor.objects[0].position[0];
+        let delta_first = after_first - start_x;
         assert_eq!(
-            state.editor.objects[0].position[0], 2.0,
-            "Nudge should use snap step (2.0) when snapping is active"
+            delta_first.abs(),
+            2.0,
+            "Nudge should use snap step magnitude (2.0) when snapping is active"
         );
 
-        // 2. Nudge without snapping (Ctrl ON) -> should move by 1.0 (default nudge)
+        // 2. Nudge without snapping (Ctrl ON) -> should move by default unit magnitude
         state.editor.ui.ctrl_held = true;
         state.editor_nudge_selected_blocks(1, 0);
+        let after_second = state.editor.objects[0].position[0];
+        let delta_second = after_second - after_first;
         assert_eq!(
-            state.editor.objects[0].position[0], 3.0,
-            "Nudge should use unit step (1.0) when snapping is overridden by Ctrl"
+            delta_second.abs(),
+            1.0,
+            "Nudge should use unit step magnitude (1.0) when snapping is overridden by Ctrl"
+        );
+        assert_eq!(
+            delta_first.signum(),
+            delta_second.signum(),
+            "Repeated nudges with same input should move in the same direction"
+        );
+    });
+}
+
+#[test]
+fn test_editor_nudge_left_right_screen_direction_regression() {
+    pollster::block_on(async {
+        let mut state = match State::new_test().await {
+            Some(s) => s,
+            None => return,
+        };
+        state.phase = AppPhase::Editor;
+        state.editor.config.snap_to_grid = true;
+        state.editor.config.snap_step = 1.0;
+
+        state.editor.objects.push(crate::types::LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.18,
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        });
+        state.editor.ui.selected_block_index = Some(0);
+
+        // Make camera orientation deterministic for screen-space assertions.
+        state
+            .editor
+            .set_editor_camera_orientation(0.0, std::f32::consts::FRAC_PI_4, None);
+
+        let viewport = Vec2::new(1280.0, 720.0);
+        let screen_x = |state: &State| {
+            state
+                .editor
+                .world_to_screen_v(Vec3::from_array(state.editor.objects[0].position), viewport)
+                .map(|pos| pos.x)
+                .expect("Selected object should project to screen")
+        };
+
+        let baseline_x = screen_x(&state);
+        assert!(
+            state.editor_nudge_selected_blocks(1, 0),
+            "Right nudge should apply when a block is selected"
+        );
+        let right_x = screen_x(&state);
+        assert!(
+            right_x > baseline_x,
+            "Nudge right should move the selected block to the screen-right direction"
+        );
+
+        state.editor.objects[0].position = [0.0, 0.0, 0.0];
+        let baseline_x = screen_x(&state);
+        assert!(
+            state.editor_nudge_selected_blocks(-1, 0),
+            "Left nudge should apply when a block is selected"
+        );
+        let left_x = screen_x(&state);
+        assert!(
+            left_x < baseline_x,
+            "Nudge left should move the selected block to the screen-left direction"
         );
     });
 }

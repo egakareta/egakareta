@@ -301,7 +301,7 @@ impl State {
             best.1
         };
 
-        let right_world = nearest_cardinal(camera_right_xy);
+        let right_world = nearest_cardinal(-camera_right_xy);
         let up_world = nearest_cardinal(camera_up_xy);
         let world_dx = right_world[0] * dx + up_world[0] * dy;
         let world_dy = right_world[1] * dx + up_world[1] * dy;
