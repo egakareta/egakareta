@@ -375,6 +375,18 @@ impl State {
         self.persist_app_settings();
     }
 
+    pub(crate) fn reset_keybind_for_action(&mut self, action: &str) {
+        if let Some(binding) = crate::types::default_essential_keybinds()
+            .iter()
+            .find(|b| b.action == action)
+        {
+            self.session
+                .app_settings
+                .set_keybind(action, binding.chord.clone());
+            self.persist_app_settings();
+        }
+    }
+
     pub(crate) fn reset_essential_keybinds(&mut self) {
         self.session.app_settings.reset_essential_keybinds();
         self.persist_app_settings();

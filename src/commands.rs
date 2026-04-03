@@ -167,8 +167,10 @@ pub(crate) enum AppCommand {
     },
     /// Clear the keybind mapping for an action.
     EditorClearKeybind(String),
-    /// Reset essential keybinds to defaults.
-    EditorResetEssentialKeybinds,
+    /// Reset a single keybind to its default value.
+    EditorResetKeybind(String),
+    /// Reset keybinds to defaults.
+    EditorResetKeybinds,
     /// Update the text in the raw import field.
     EditorSetImportText(String),
     /// Parse and apply the raw import text.

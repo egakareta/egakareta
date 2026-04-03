@@ -145,7 +145,8 @@ impl State {
                 self.set_keybind_for_action(action, chord)
             }
             AppCommand::EditorClearKeybind(action) => self.clear_keybind_for_action(&action),
-            AppCommand::EditorResetEssentialKeybinds => self.reset_essential_keybinds(),
+            AppCommand::EditorResetKeybind(action) => self.reset_keybind_for_action(&action),
+            AppCommand::EditorResetKeybinds => self.reset_essential_keybinds(),
             AppCommand::EditorSetImportText(text) => self.set_editor_import_text(text),
             AppCommand::EditorCompleteImport => self.complete_import(),
             AppCommand::EditorUpdateMusic(metadata) => self.set_editor_music_metadata(metadata),
@@ -265,27 +266,31 @@ impl State {
     }
 
     fn map_pan_key_to_command(&self, key: &str, pressed: bool) -> Option<AppCommand> {
-        match key {
-            "w" | "W" => Some(AppCommand::EditorSetPanUpHeld(pressed && self.is_editor())),
-            "s" | "S" => Some(AppCommand::EditorSetPanDownHeld(
-                pressed && self.is_editor(),
-            )),
-            "a" | "A" => Some(AppCommand::EditorSetPanLeftHeld(
-                pressed && self.is_editor(),
-            )),
-            "d" | "D" => {
-                if pressed {
-                    if self.is_editor() && !self.editor.ui.ctrl_held {
-                        Some(AppCommand::EditorSetPanRightHeld(true))
-                    } else {
-                        None
-                    }
-                } else {
-                    Some(AppCommand::EditorSetPanRightHeld(false))
+        if !self.is_editor() {
+            return None;
+        }
+
+        let normalized_key = crate::types::normalize_binding_key(key);
+        let ctrl = self.editor.ui.ctrl_held;
+        let shift = self.editor.ui.shift_held;
+        let alt = self.editor.ui.alt_held;
+
+        for binding in &self.app_settings().keybinds {
+            let chord = binding.chord.normalized();
+            let key_match = chord.key == normalized_key;
+            let modifiers_match = chord.ctrl == ctrl && chord.shift == shift && chord.alt == alt;
+
+            if key_match && (pressed && modifiers_match || !pressed) {
+                match binding.action.as_str() {
+                    "pan_up" => return Some(AppCommand::EditorSetPanUpHeld(pressed)),
+                    "pan_down" => return Some(AppCommand::EditorSetPanDownHeld(pressed)),
+                    "pan_left" => return Some(AppCommand::EditorSetPanLeftHeld(pressed)),
+                    "pan_right" => return Some(AppCommand::EditorSetPanRightHeld(pressed)),
+                    _ => {}
                 }
             }
-            _ => None,
         }
+        None
     }
 
     /// Pure mapping from key string + modifiers → command.

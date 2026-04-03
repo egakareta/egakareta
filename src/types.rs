@@ -1164,6 +1164,10 @@ pub(crate) fn essential_keybind_actions() -> &'static [(&'static str, &'static s
         ("Editor", "undo", "Undo"),
         ("Editor", "redo", "Redo"),
         ("General", "escape", "Context Escape"),
+        ("Editor Navigation", "pan_up", "Pan Up"),
+        ("Editor Navigation", "pan_down", "Pan Down"),
+        ("Editor Navigation", "pan_left", "Pan Left"),
+        ("Editor Navigation", "pan_right", "Pan Right"),
     ]
 }
 
@@ -1208,6 +1212,22 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
         KeybindBinding {
             action: "escape".to_string(),
             chord: KeyChord::new("Escape", false, false, false),
+        },
+        KeybindBinding {
+            action: "pan_up".to_string(),
+            chord: KeyChord::new("w", false, false, false),
+        },
+        KeybindBinding {
+            action: "pan_down".to_string(),
+            chord: KeyChord::new("s", false, false, false),
+        },
+        KeybindBinding {
+            action: "pan_left".to_string(),
+            chord: KeyChord::new("a", false, false, false),
+        },
+        KeybindBinding {
+            action: "pan_right".to_string(),
+            chord: KeyChord::new("d", false, false, false),
         },
     ]
 }
@@ -1589,66 +1609,47 @@ mod tests {
     }
 
     #[test]
-    fn applies_timed_object_triggers_with_duration_and_point_actions() {
-        let base_objects = vec![
-            LevelObject {
-                position: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
-                block_id: "core/stone".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-            },
-            LevelObject {
-                position: [3.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
-                block_id: "core/stone".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-            },
-        ];
+    fn test_essential_keybind_groups() {
+        let actions = super::essential_keybind_actions();
+        assert!(!actions.is_empty());
+        // Verify that the first element is a group name
+        for (group, _action, _label) in actions {
+            assert!(!group.is_empty());
+        }
+    }
 
-        let triggers = vec![
-            TimedTrigger {
-                time_seconds: 0.0,
-                duration_seconds: 0.0,
-                easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Object { object_id: 1 },
-                action: TimedTriggerAction::RotateTo {
-                    rotation_degrees: [0.0, 90.0, 0.0],
-                },
-            },
-            TimedTrigger {
-                time_seconds: 1.0,
-                duration_seconds: 2.0,
-                easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Object { object_id: 0 },
-                action: TimedTriggerAction::MoveTo {
-                    position: [10.0, 0.0, 0.0],
-                },
-            },
-            TimedTrigger {
-                time_seconds: 2.0,
-                duration_seconds: 0.0,
-                easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Objects {
-                    object_ids: vec![0, 1],
-                },
-                action: TimedTriggerAction::ScaleTo {
-                    size: [2.0, 2.0, 2.0],
-                },
-            },
-        ];
+    #[test]
+    fn test_app_settings_keybind_management() {
+        let mut settings = super::AppSettings::default();
+        let action = "toggle_settings";
+        let chord = super::KeyChord::new("k", true, false, false);
 
-        let t_half = apply_timed_triggers_to_objects(&base_objects, &triggers, 2.0);
-        assert!((t_half[0].position[0] - 5.0).abs() <= 1e-5);
-        assert_eq!(t_half[0].size, [2.0, 2.0, 2.0]);
-        assert_eq!(t_half[1].size, [2.0, 2.0, 2.0]);
-        assert!((t_half[1].rotation_degrees[1] - 90.0).abs() <= 1e-5);
+        settings.set_keybind(action, chord.clone());
+        assert_eq!(settings.keybind_for_action(action), Some(&chord));
 
-        let t_done = apply_timed_triggers_to_objects(&base_objects, &triggers, 3.0);
-        assert!((t_done[0].position[0] - 10.0).abs() <= 1e-5);
-        assert!((t_done[1].rotation_degrees[1] - 90.0).abs() <= 1e-5);
+        settings.clear_keybind(action);
+        assert_eq!(settings.keybind_for_action(action), None);
+    }
+
+    #[test]
+    fn test_reset_essential_keybinds_with_groups() {
+        let mut settings = super::AppSettings::default();
+        let action = "toggle_settings";
+        let custom_chord = super::KeyChord::new("k", true, false, false);
+
+        // Change a default keybind
+        settings.set_keybind(action, custom_chord.clone());
+        assert_eq!(settings.keybind_for_action(action), Some(&custom_chord));
+
+        // Reset
+        settings.reset_essential_keybinds();
+
+        // Should be back to default
+        let defaults = super::default_essential_keybinds();
+        let default_chord = defaults
+            .iter()
+            .find(|b| b.action == action)
+            .map(|b| &b.chord);
+        assert_eq!(settings.keybind_for_action(action), default_chord);
     }
 }

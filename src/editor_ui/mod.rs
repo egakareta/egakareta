@@ -208,17 +208,6 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                         }
                     }
                     SettingsSection::Keybinds => {
-                        if let Some(action) = view.keybind_capture_action {
-                            ui.colored_label(
-                                egui::Color32::from_rgb(180, 235, 255),
-                                format!(
-                                    "Capturing new shortcut for {}. Press Esc to cancel.",
-                                    action
-                                ),
-                            );
-                            ui.separator();
-                        }
-
                         let mut grouped_actions: std::collections::BTreeMap<
                             &'static str,
                             Vec<(&'static str, &'static str)>,
@@ -230,20 +219,50 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                                 .push((*action, *label));
                         }
 
+                        let default_keybinds = crate::types::default_essential_keybinds();
+
                         egui::ScrollArea::vertical()
                             .id_salt("keybinds_scroll")
                             .show(ui, |ui| {
                                 for (group, actions) in grouped_actions {
                                     ui.collapsing(group, |ui| {
                                         for (action, label) in actions {
-                                            let key_label = view
-                                                .app_settings
-                                                .keybind_for_action(action)
+                                            let current_chord =
+                                                view.app_settings.keybind_for_action(action);
+                                            let key_label = current_chord
                                                 .map(format_key_chord)
                                                 .unwrap_or_else(|| "Unbound".to_string());
 
+                                            let default_chord = default_keybinds
+                                                .iter()
+                                                .find(|b| b.action == action)
+                                                .map(|b| &b.chord);
+
+                                            let is_not_default = current_chord != default_chord;
+
                                             ui.horizontal(|ui| {
                                                 ui.label(label);
+                                                if is_not_default {
+                                                    if ui
+                                                        .button(
+                                                            egui_phosphor::regular::ARROW_CLOCKWISE,
+                                                        )
+                                                        .on_hover_text("Reset to default")
+                                                        .clicked()
+                                                    {
+                                                        commands.push(
+                                                            crate::commands::AppCommand::EditorResetKeybind(
+                                                                action.to_string(),
+                                                            ),
+                                                        );
+                                                        commands.push(
+                                                            crate::commands::AppCommand::EditorSetKeybindCapture(
+                                                                None,
+                                                            ),
+                                                        );
+                                                    }
+                                                }
+
                                                 ui.with_layout(
                                                     egui::Layout::right_to_left(egui::Align::Center),
                                                     |ui| {
@@ -256,31 +275,46 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                                                                     action.to_string(),
                                                                 ),
                                                             );
+                                                            commands.push(
+                                                                crate::commands::AppCommand::EditorSetKeybindCapture(
+                                                                    None,
+                                                                ),
+                                                            );
                                                         }
 
                                                         let is_capturing = view
                                                             .keybind_capture_action
                                                             == Some(action);
-                                                        if is_capturing {
-                                                            if ui.button("Cancel").clicked() {
-                                                                commands.push(
-                                                                    crate::commands::AppCommand::EditorSetKeybindCapture(
-                                                                        None,
-                                                                    ),
-                                                                );
-                                                            }
+
+                                                        let (bg_color, display_label) = if is_capturing
+                                                        {
+                                                            (
+                                                                egui::Color32::from_rgb(0, 120, 215),
+                                                                "...".to_string(),
+                                                            )
                                                         } else {
-                                                            let button_label =
-                                                                egui::RichText::new(key_label)
-                                                                    .monospace();
-                                                            ui.visuals_mut().widgets.inactive.bg_fill =
-                                                                egui::Color32::from_gray(32);
-                                                            if ui.button(button_label).clicked() {
-                                                                commands.push(
-                                                                    crate::commands::AppCommand::EditorSetKeybindCapture(Some(
-                                                                        action.to_string(),
-                                                                    )),
-                                                                );
+                                                            (
+                                                                egui::Color32::from_gray(32),
+                                                                key_label,
+                                                            )
+                                                        };
+
+                                                        if ui
+                                                            .add(
+                                                                egui::Button::new(
+                                                                    egui::RichText::new(
+                                                                        display_label,
+                                                                    )
+                                                                    .monospace(),
+                                                                )
+                                                                .fill(bg_color),
+                                                            )
+                                                            .clicked()
+                                                        {
+                                                            if is_capturing {
+                                                                commands.push(crate::commands::AppCommand::EditorSetKeybindCapture(None));
+                                                            } else {
+                                                                commands.push(crate::commands::AppCommand::EditorSetKeybindCapture(Some(action.to_string())));
                                                             }
                                                         }
                                                     },
@@ -291,9 +325,9 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                                 }
 
                                 ui.separator();
-                                if ui.button("Reset Essentials to Defaults").clicked() {
+                                if ui.button("Reset to Defaults").clicked() {
                                     commands.push(
-                                        crate::commands::AppCommand::EditorResetEssentialKeybinds,
+                                        crate::commands::AppCommand::EditorResetKeybinds,
                                     );
                                 }
                             });
