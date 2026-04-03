@@ -13,7 +13,7 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) show_import: bool,
     pub(crate) show_settings: bool,
     pub(crate) settings_section: SettingsSection,
-    pub(crate) keybind_capture_action: Option<&'a str>,
+    pub(crate) keybind_capture_action: Option<&'a (String, usize)>,
     pub(crate) import_text: &'a str,
     pub(crate) music_metadata: &'a MusicMetadata,
     pub(crate) app_settings: &'a AppSettings,

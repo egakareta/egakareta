@@ -158,18 +158,19 @@ pub(crate) enum AppCommand {
     EditorSetGraphicsBackend(String),
     /// Set preferred audio backend and apply immediately when possible.
     EditorSetAudioBackend(String),
-    /// Start or cancel keybind capture for an action.
-    EditorSetKeybindCapture(Option<String>),
-    /// Set a keybind mapping for an action.
+    /// Start or cancel keybind capture for an action slot.
+    EditorSetKeybindCapture(Option<(String, usize)>),
+    /// Set a keybind mapping for an action at a specific slot.
     EditorSetKeybind {
         action: String,
+        slot: usize,
         chord: crate::types::KeyChord,
     },
-    /// Clear the keybind mapping for an action.
-    EditorClearKeybind(String),
-    /// Reset a single keybind to its default value.
+    /// Clear the keybind mapping for an action at a specific slot.
+    EditorClearKeybindSlot { action: String, slot: usize },
+    /// Reset a single keybind action to its default values.
     EditorResetKeybind(String),
-    /// Reset keybinds to defaults.
+    /// Reset all keybinds to defaults.
     EditorResetKeybinds,
     /// Update the text in the raw import field.
     EditorSetImportText(String),

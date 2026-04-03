@@ -141,10 +141,14 @@ impl State {
             AppCommand::EditorSetKeybindCapture(action) => {
                 self.set_editor_keybind_capture_action(action)
             }
-            AppCommand::EditorSetKeybind { action, chord } => {
-                self.set_keybind_for_action(action, chord)
+            AppCommand::EditorSetKeybind {
+                action,
+                slot,
+                chord,
+            } => self.set_keybind_for_action(action, slot, chord),
+            AppCommand::EditorClearKeybindSlot { action, slot } => {
+                self.clear_keybind_slot_for_action(&action, slot)
             }
-            AppCommand::EditorClearKeybind(action) => self.clear_keybind_for_action(&action),
             AppCommand::EditorResetKeybind(action) => self.reset_keybind_for_action(&action),
             AppCommand::EditorResetKeybinds => self.reset_essential_keybinds(),
             AppCommand::EditorSetImportText(text) => self.set_editor_import_text(text),
@@ -219,10 +223,7 @@ impl State {
             return;
         }
 
-        if let Some(action) = self
-            .editor_keybind_capture_action()
-            .map(|value| value.to_string())
-        {
+        if let Some((action, slot)) = self.editor_keybind_capture_action().cloned() {
             if !just_pressed {
                 return;
             }
@@ -242,7 +243,11 @@ impl State {
                 self.editor.ui.shift_held,
                 self.editor.ui.alt_held,
             );
-            self.dispatch(AppCommand::EditorSetKeybind { action, chord });
+            self.dispatch(AppCommand::EditorSetKeybind {
+                action,
+                slot,
+                chord,
+            });
             self.dispatch(AppCommand::EditorSetKeybindCapture(None));
             return;
         }
@@ -383,16 +388,6 @@ impl State {
             "k" | "K" => {
                 if self.is_editor() && self.editor.ui.shift_held && just_pressed {
                     commands.push(AppCommand::EditorAddCameraTrigger);
-                }
-            }
-            "+" | "=" => {
-                if just_pressed {
-                    commands.push(AppCommand::EditorAdjustZoom(1.0));
-                }
-            }
-            "-" | "_" => {
-                if just_pressed {
-                    commands.push(AppCommand::EditorAdjustZoom(-1.0));
                 }
             }
             "1" => {
@@ -605,6 +600,20 @@ impl State {
             "escape" => {
                 if just_pressed {
                     Some(AppCommand::EditorEscape)
+                } else {
+                    None
+                }
+            }
+            "zoom_in" => {
+                if just_pressed {
+                    Some(AppCommand::EditorAdjustZoom(1.0))
+                } else {
+                    None
+                }
+            }
+            "zoom_out" => {
+                if just_pressed {
+                    Some(AppCommand::EditorAdjustZoom(-1.0))
                 } else {
                     None
                 }
@@ -1588,6 +1597,7 @@ mod tests {
 
             state.dispatch(AppCommand::EditorSetKeybind {
                 action: "copy".to_string(),
+                slot: 0,
                 chord: crate::types::KeyChord::new("b", true, false, false),
             });
 

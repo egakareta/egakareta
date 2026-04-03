@@ -1088,23 +1088,114 @@ impl AppSettings {
             .map(|binding| &binding.chord)
     }
 
+    pub(crate) fn keybinds_for_action(&self, action: &str) -> Vec<&KeyChord> {
+        self.keybinds
+            .iter()
+            .filter(|binding| binding.action == action)
+            .map(|binding| &binding.chord)
+            .collect()
+    }
+
     pub(crate) fn set_keybind(&mut self, action: &str, chord: KeyChord) {
         let normalized = chord.normalized();
-        self.keybinds.retain(|binding| binding.action != action);
+
+        // Prevent duplicate chord for SAME action
+        if self
+            .keybinds
+            .iter()
+            .any(|b| b.action == action && b.chord == normalized)
+        {
+            return;
+        }
+
+        let capacity = essential_keybind_actions()
+            .iter()
+            .find(|m| m.action == action)
+            .map(|m| m.capacity)
+            .unwrap_or(1);
+
+        let existing_indices: Vec<usize> = self
+            .keybinds
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.action == action)
+            .map(|(i, _)| i)
+            .collect();
+
+        if capacity == 1 {
+            self.keybinds.retain(|binding| binding.action != action);
+        } else if existing_indices.len() >= capacity {
+            // Replace the first one if at capacity and called through generic setter
+            if let Some(&first_idx) = existing_indices.first() {
+                self.keybinds.remove(first_idx);
+            }
+        }
+
         self.keybinds.push(KeybindBinding {
             action: action.to_string(),
             chord: normalized,
         });
     }
 
+    pub(crate) fn set_keybind_at_slot(&mut self, action: &str, slot: usize, chord: KeyChord) {
+        let normalized = chord.normalized();
+
+        // Prevent duplicate chord for SAME action
+        if self
+            .keybinds
+            .iter()
+            .any(|b| b.action == action && b.chord == normalized)
+        {
+            return;
+        }
+
+        let existing_indices: Vec<usize> = self
+            .keybinds
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.action == action)
+            .map(|(i, _)| i)
+            .collect();
+
+        if slot < existing_indices.len() {
+            self.keybinds[existing_indices[slot]].chord = normalized;
+        } else {
+            let capacity = essential_keybind_actions()
+                .iter()
+                .find(|m| m.action == action)
+                .map(|m| m.capacity)
+                .unwrap_or(1);
+            if existing_indices.len() < capacity {
+                self.keybinds.push(KeybindBinding {
+                    action: action.to_string(),
+                    chord: normalized,
+                });
+            }
+        }
+    }
+
     pub(crate) fn clear_keybind(&mut self, action: &str) {
         self.keybinds.retain(|binding| binding.action != action);
     }
 
+    pub(crate) fn clear_keybind_slot(&mut self, action: &str, slot: usize) {
+        let existing_indices: Vec<usize> = self
+            .keybinds
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.action == action)
+            .map(|(i, _)| i)
+            .collect();
+
+        if slot < existing_indices.len() {
+            self.keybinds.remove(existing_indices[slot]);
+        }
+    }
+
     pub(crate) fn reset_essential_keybinds(&mut self) {
         let mut preserved = self.keybinds.clone();
-        for (_, action, _) in essential_keybind_actions() {
-            preserved.retain(|binding| binding.action != *action);
+        for metadata in essential_keybind_actions() {
+            preserved.retain(|binding| binding.action != metadata.action);
         }
         preserved.extend(default_essential_keybinds());
         self.keybinds = preserved;
@@ -1147,32 +1238,147 @@ pub(crate) fn format_key_chord(chord: &KeyChord) -> String {
     parts.join("+")
 }
 
-pub(crate) fn essential_keybind_actions() -> &'static [(&'static str, &'static str, &'static str)] {
+pub(crate) struct KeybindActionMetadata {
+    pub(crate) group: &'static str,
+    pub(crate) action: &'static str,
+    pub(crate) label: &'static str,
+    pub(crate) capacity: usize,
+}
+
+pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
     &[
-        ("General", "toggle_settings", "Toggle Settings Sidebar"),
-        (
-            "Timeline",
-            "toggle_timeline_playback",
-            "Toggle Timeline Playback",
-        ),
-        ("Timeline", "playtest", "Start Playtest"),
-        ("Editor", "remove_block", "Remove Block"),
-        ("Editor", "copy", "Copy"),
-        ("Editor", "paste", "Paste"),
-        ("Editor", "duplicate", "Duplicate"),
-        ("Editor", "undo", "Undo"),
-        ("Editor", "redo", "Redo"),
-        ("Editor", "pan_up", "Pan Up"),
-        ("Editor", "pan_down", "Pan Down"),
-        ("Editor", "pan_left", "Pan Left"),
-        ("Editor", "pan_right", "Pan Right"),
-        ("Editor", "nudge_up", "Nudge Block Up"),
-        ("Editor", "nudge_down", "Nudge Block Down"),
-        ("Editor", "nudge_left", "Nudge Block Left"),
-        ("Editor", "nudge_right", "Nudge Block Right"),
-        ("Timeline", "timeline_forward", "Shift Timeline Forward"),
-        ("Timeline", "timeline_backward", "Shift Timeline Backward"),
-        ("General", "escape", "Context Escape"),
+        KeybindActionMetadata {
+            group: "General",
+            action: "toggle_settings",
+            label: "Toggle Settings Sidebar",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Timeline",
+            action: "toggle_timeline_playback",
+            label: "Toggle Timeline Playback",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Timeline",
+            action: "playtest",
+            label: "Start Playtest",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "remove_block",
+            label: "Remove Block",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "copy",
+            label: "Copy",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "paste",
+            label: "Paste",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "duplicate",
+            label: "Duplicate",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "undo",
+            label: "Undo",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "redo",
+            label: "Redo",
+            capacity: 2,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "pan_up",
+            label: "Pan Up",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "pan_down",
+            label: "Pan Down",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "pan_left",
+            label: "Pan Left",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "pan_right",
+            label: "Pan Right",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "nudge_up",
+            label: "Nudge Block Up",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "nudge_down",
+            label: "Nudge Block Down",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "nudge_left",
+            label: "Nudge Block Left",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "nudge_right",
+            label: "Nudge Block Right",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Timeline",
+            action: "timeline_forward",
+            label: "Shift Timeline Forward",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Timeline",
+            action: "timeline_backward",
+            label: "Shift Timeline Backward",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "zoom_in",
+            label: "Zoom In",
+            capacity: 2,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "zoom_out",
+            label: "Zoom Out",
+            capacity: 2,
+        },
+        KeybindActionMetadata {
+            group: "General",
+            action: "escape",
+            label: "Context Escape",
+            capacity: 1,
+        },
     ]
 }
 
@@ -1215,6 +1421,10 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
             chord: KeyChord::new("y", true, false, false),
         },
         KeybindBinding {
+            action: "redo".to_string(),
+            chord: KeyChord::new("z", true, true, false),
+        },
+        KeybindBinding {
             action: "pan_up".to_string(),
             chord: KeyChord::new("w", false, false, false),
         },
@@ -1251,16 +1461,24 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
             chord: KeyChord::new("ArrowRight", false, false, false),
         },
         KeybindBinding {
-            action: "timeline_forward".to_string(),
-            chord: KeyChord::new("ArrowUp", false, false, false),
-        },
-        KeybindBinding {
             action: "timeline_backward".to_string(),
             chord: KeyChord::new("ArrowLeft", false, false, false),
         },
         KeybindBinding {
-            action: "timeline_backward".to_string(),
-            chord: KeyChord::new("ArrowDown", false, false, false),
+            action: "zoom_in".to_string(),
+            chord: KeyChord::new("=", false, false, false),
+        },
+        KeybindBinding {
+            action: "zoom_in".to_string(),
+            chord: KeyChord::new("+", false, false, false),
+        },
+        KeybindBinding {
+            action: "zoom_out".to_string(),
+            chord: KeyChord::new("-", false, false, false),
+        },
+        KeybindBinding {
+            action: "zoom_out".to_string(),
+            chord: KeyChord::new("_", false, false, false),
         },
         KeybindBinding {
             action: "escape".to_string(),
@@ -1429,12 +1647,11 @@ pub(crate) struct ColorSpaceUniform {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_timed_triggers_to_objects, camera_triggers_to_timed_triggers,
-        default_camera_trigger_pitch, default_camera_trigger_rotation,
-        default_camera_trigger_transition_interval_seconds, timed_triggers_to_camera_triggers,
-        CameraTrigger, CameraTriggerMode, EditorStateParams, LevelMetadata, LevelObject,
-        MusicMetadata, SpawnDirection, SpawnMetadata, TimedTrigger, TimedTriggerAction,
-        TimedTriggerEasing, TimedTriggerTarget,
+        camera_triggers_to_timed_triggers, default_camera_trigger_pitch,
+        default_camera_trigger_rotation, default_camera_trigger_transition_interval_seconds,
+        timed_triggers_to_camera_triggers, CameraTrigger, CameraTriggerMode, EditorStateParams,
+        LevelMetadata, LevelObject, MusicMetadata, SpawnDirection, SpawnMetadata,
+        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
     };
     use serde_json::json;
 
@@ -1649,23 +1866,55 @@ mod tests {
     fn test_essential_keybind_groups() {
         let actions = super::essential_keybind_actions();
         assert!(!actions.is_empty());
-        // Verify that the first element is a group name
-        for (group, _action, _label) in actions {
-            assert!(!group.is_empty());
+        for metadata in actions {
+            assert!(!metadata.group.is_empty());
+            assert!(!metadata.action.is_empty());
         }
     }
 
     #[test]
     fn test_app_settings_keybind_management() {
         let mut settings = super::AppSettings::default();
-        let action = "toggle_settings";
-        let chord = super::KeyChord::new("k", true, false, false);
+        let action = "zoom_in"; // capacity 2
+        let chord1 = super::KeyChord::new("=", false, false, false);
+        let chord2 = super::KeyChord::new("+", false, false, false);
+        let chord3 = super::KeyChord::new("k", true, false, false);
 
-        settings.set_keybind(action, chord.clone());
-        assert_eq!(settings.keybind_for_action(action), Some(&chord));
-
+        // Clear defaults first to be sure
         settings.clear_keybind(action);
-        assert_eq!(settings.keybind_for_action(action), None);
+        assert_eq!(settings.keybinds_for_action(action).len(), 0);
+
+        // Test multi-slot append
+        settings.set_keybind_at_slot(action, 0, chord1.clone());
+        settings.set_keybind_at_slot(action, 1, chord2.clone());
+        assert_eq!(settings.keybinds_for_action(action).len(), 2);
+
+        // Test duplicate chord prevention SAME action
+        settings.set_keybind_at_slot(action, 1, chord1.clone());
+        assert_eq!(settings.keybinds_for_action(action).len(), 2);
+        assert_eq!(settings.keybinds_for_action(action)[0], &chord1);
+        assert_eq!(settings.keybinds_for_action(action)[1], &chord2);
+
+        // Test capacity enforcement (max 2)
+        settings.set_keybind_at_slot(action, 2, chord3.clone());
+        assert_eq!(settings.keybinds_for_action(action).len(), 2);
+
+        // Test slot replacement
+        settings.set_keybind_at_slot(action, 0, chord3.clone());
+        assert_eq!(settings.keybinds_for_action(action).len(), 2);
+        assert!(settings.keybinds_for_action(action).contains(&&chord3));
+
+        // Test single-slot replacement
+        let single_action = "undo";
+        let u_chord = super::KeyChord::new("u", false, false, false);
+        settings.set_keybind(single_action, u_chord.clone());
+        assert_eq!(settings.keybinds_for_action(single_action).len(), 1);
+        assert_eq!(settings.keybind_for_action(single_action), Some(&u_chord));
+
+        let u_chord2 = super::KeyChord::new("z", true, false, false);
+        settings.set_keybind(single_action, u_chord2.clone());
+        assert_eq!(settings.keybinds_for_action(single_action).len(), 1);
+        assert_eq!(settings.keybind_for_action(single_action), Some(&u_chord2));
     }
 
     #[test]

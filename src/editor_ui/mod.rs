@@ -210,13 +210,13 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                     SettingsSection::Keybinds => {
                         let mut grouped_actions: std::collections::BTreeMap<
                             &'static str,
-                            Vec<(&'static str, &'static str)>,
+                            Vec<&'static crate::types::KeybindActionMetadata>,
                         > = std::collections::BTreeMap::new();
-                        for (group, action, label) in essential_keybind_actions() {
+                        for metadata in essential_keybind_actions() {
                             grouped_actions
-                                .entry(group)
+                                .entry(metadata.group)
                                 .or_default()
-                                .push((*action, *label));
+                                .push(metadata);
                         }
 
                         let default_keybinds = crate::types::default_essential_keybinds();
@@ -226,19 +226,20 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                             .show(ui, |ui| {
                                 for (group, actions) in grouped_actions {
                                     ui.collapsing(group, |ui| {
-                                        for (action, label) in actions {
-                                            let current_chord =
-                                                view.app_settings.keybind_for_action(action);
-                                            let key_label = current_chord
-                                                .map(format_key_chord)
-                                                .unwrap_or_else(|| "Unbound".to_string());
+                                        for metadata in actions {
+                                            let action = metadata.action;
+                                            let label = metadata.label;
+                                            let capacity = metadata.capacity;
 
-                                            let default_chord = default_keybinds
+                                            let current_chords =
+                                                view.app_settings.keybinds_for_action(action);
+                                            let default_chords: Vec<_> = default_keybinds
                                                 .iter()
-                                                .find(|b| b.action == action)
-                                                .map(|b| &b.chord);
+                                                .filter(|b| b.action == action)
+                                                .map(|b| &b.chord)
+                                                .collect();
 
-                                            let is_not_default = current_chord != default_chord;
+                                            let is_not_default = current_chords != default_chords;
 
                                             ui.horizontal(|ui| {
                                                 ui.label(label);
@@ -266,55 +267,74 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                                                 ui.with_layout(
                                                     egui::Layout::right_to_left(egui::Align::Center),
                                                     |ui| {
-                                                        if ui
-                                                            .button(egui_phosphor::regular::X)
-                                                            .clicked()
-                                                        {
-                                                            commands.push(
-                                                                crate::commands::AppCommand::EditorClearKeybind(
+                                                        for slot in (0..capacity).rev() {
+                                                            let chord = current_chords.get(slot);
+                                                            let key_label = chord
+                                                                .map(|c| format_key_chord(c))
+                                                                .unwrap_or_else(|| {
+                                                                    "Unbound".to_string()
+                                                                });
+
+                                                            let is_capturing = view
+                                                                .keybind_capture_action
+                                                                == Some(&(
                                                                     action.to_string(),
-                                                                ),
-                                                            );
-                                                            commands.push(
-                                                                crate::commands::AppCommand::EditorSetKeybindCapture(
-                                                                    None,
-                                                                ),
-                                                            );
-                                                        }
+                                                                    slot,
+                                                                ));
 
-                                                        let is_capturing = view
-                                                            .keybind_capture_action
-                                                            == Some(action);
+                                                            if chord.is_some() {
+                                                                if ui
+                                                                    .button(egui_phosphor::regular::X)
+                                                                    .clicked()
+                                                                {
+                                                                    commands.push(
+                                                                        crate::commands::AppCommand::EditorClearKeybindSlot {
+                                                                            action: action.to_string(),
+                                                                            slot,
+                                                                        },
+                                                                    );
+                                                                    commands.push(
+                                                                        crate::commands::AppCommand::EditorSetKeybindCapture(
+                                                                            None,
+                                                                        ),
+                                                                    );
+                                                                }
+                                                            }
 
-                                                        let (bg_color, display_label) = if is_capturing
-                                                        {
-                                                            (
-                                                                egui::Color32::from_rgb(0, 120, 215),
-                                                                "...".to_string(),
-                                                            )
-                                                        } else {
-                                                            (
-                                                                egui::Color32::from_gray(32),
-                                                                key_label,
-                                                            )
-                                                        };
-
-                                                        if ui
-                                                            .add(
-                                                                egui::Button::new(
-                                                                    egui::RichText::new(
-                                                                        display_label,
+                                                            let (bg_color, display_label) =
+                                                                if is_capturing {
+                                                                    (
+                                                                        egui::Color32::from_rgb(
+                                                                            0, 120, 215,
+                                                                        ),
+                                                                        "...".to_string(),
                                                                     )
-                                                                    .monospace(),
+                                                                } else {
+                                                                    (
+                                                                        egui::Color32::from_gray(
+                                                                            32,
+                                                                        ),
+                                                                        key_label,
+                                                                    )
+                                                                };
+
+                                                            if ui
+                                                                .add(
+                                                                    egui::Button::new(
+                                                                        egui::RichText::new(
+                                                                            display_label,
+                                                                        )
+                                                                        .monospace(),
+                                                                    )
+                                                                    .fill(bg_color),
                                                                 )
-                                                                .fill(bg_color),
-                                                            )
-                                                            .clicked()
-                                                        {
-                                                            if is_capturing {
-                                                                commands.push(crate::commands::AppCommand::EditorSetKeybindCapture(None));
-                                                            } else {
-                                                                commands.push(crate::commands::AppCommand::EditorSetKeybindCapture(Some(action.to_string())));
+                                                                .clicked()
+                                                            {
+                                                                if is_capturing {
+                                                                    commands.push(crate::commands::AppCommand::EditorSetKeybindCapture(None));
+                                                                } else {
+                                                                    commands.push(crate::commands::AppCommand::EditorSetKeybindCapture(Some((action.to_string(), slot))));
+                                                                }
                                                             }
                                                         }
                                                     },
@@ -326,9 +346,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
 
                                 ui.separator();
                                 if ui.button("Reset to Defaults").clicked() {
-                                    commands.push(
-                                        crate::commands::AppCommand::EditorResetKeybinds,
-                                    );
+                                    commands.push(crate::commands::AppCommand::EditorResetKeybinds);
                                 }
                             });
                     }

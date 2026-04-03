@@ -317,11 +317,11 @@ impl State {
         self.session.editor_settings_section = section;
     }
 
-    pub(crate) fn editor_keybind_capture_action(&self) -> Option<&str> {
-        self.session.editor_keybind_capture_action.as_deref()
+    pub(crate) fn editor_keybind_capture_action(&self) -> Option<&(String, usize)> {
+        self.session.editor_keybind_capture_action.as_ref()
     }
 
-    pub(crate) fn set_editor_keybind_capture_action(&mut self, action: Option<String>) {
+    pub(crate) fn set_editor_keybind_capture_action(&mut self, action: Option<(String, usize)>) {
         self.session.editor_keybind_capture_action = action;
     }
 
@@ -365,13 +365,15 @@ impl State {
         self.persist_app_settings();
     }
 
-    pub(crate) fn set_keybind_for_action(&mut self, action: String, chord: KeyChord) {
-        self.session.app_settings.set_keybind(&action, chord);
+    pub(crate) fn set_keybind_for_action(&mut self, action: String, slot: usize, chord: KeyChord) {
+        self.session
+            .app_settings
+            .set_keybind_at_slot(&action, slot, chord);
         self.persist_app_settings();
     }
 
-    pub(crate) fn clear_keybind_for_action(&mut self, action: &str) {
-        self.session.app_settings.clear_keybind(action);
+    pub(crate) fn clear_keybind_slot_for_action(&mut self, action: &str, slot: usize) {
+        self.session.app_settings.clear_keybind_slot(action, slot);
         self.persist_app_settings();
     }
 

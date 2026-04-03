@@ -63,7 +63,7 @@ pub(crate) struct SessionSubsystem {
     pub(crate) editor_show_import: bool,
     pub(crate) editor_show_settings: bool,
     pub(crate) editor_settings_section: SettingsSection,
-    pub(crate) editor_keybind_capture_action: Option<String>,
+    pub(crate) editor_keybind_capture_action: Option<(String, usize)>,
     pub(crate) editor_import_text: String,
     pub(crate) settings_restart_required: bool,
     pub(crate) available_graphics_backends: Vec<String>,
