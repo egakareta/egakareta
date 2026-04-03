@@ -219,47 +219,84 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                             ui.separator();
                         }
 
-                        for (action, label) in essential_keybind_actions() {
-                            let key_label = view
-                                .app_settings
-                                .keybind_for_action(action)
-                                .map(format_key_chord)
-                                .unwrap_or_else(|| "Unbound".to_string());
+                        let mut grouped_actions: std::collections::BTreeMap<
+                            &'static str,
+                            Vec<(&'static str, &'static str)>,
+                        > = std::collections::BTreeMap::new();
+                        for (group, action, label) in essential_keybind_actions() {
+                            grouped_actions
+                                .entry(group)
+                                .or_default()
+                                .push((*action, *label));
+                        }
 
-                            ui.horizontal(|ui| {
-                                ui.label(*label);
-                                ui.monospace(key_label);
+                        egui::ScrollArea::vertical()
+                            .id_salt("keybinds_scroll")
+                            .show(ui, |ui| {
+                                for (group, actions) in grouped_actions {
+                                    ui.collapsing(group, |ui| {
+                                        for (action, label) in actions {
+                                            let key_label = view
+                                                .app_settings
+                                                .keybind_for_action(action)
+                                                .map(format_key_chord)
+                                                .unwrap_or_else(|| "Unbound".to_string());
 
-                                let is_capturing = view.keybind_capture_action == Some(*action);
-                                if is_capturing {
-                                    if ui.button("Cancel").clicked() {
-                                        commands.push(
-                                            crate::commands::AppCommand::EditorSetKeybindCapture(
-                                                None,
-                                            ),
-                                        );
-                                    }
-                                } else if ui.button("Change").clicked() {
+                                            ui.horizontal(|ui| {
+                                                ui.label(label);
+                                                ui.with_layout(
+                                                    egui::Layout::right_to_left(egui::Align::Center),
+                                                    |ui| {
+                                                        if ui
+                                                            .button(egui_phosphor::regular::X)
+                                                            .clicked()
+                                                        {
+                                                            commands.push(
+                                                                crate::commands::AppCommand::EditorClearKeybind(
+                                                                    action.to_string(),
+                                                                ),
+                                                            );
+                                                        }
+
+                                                        let is_capturing = view
+                                                            .keybind_capture_action
+                                                            == Some(action);
+                                                        if is_capturing {
+                                                            if ui.button("Cancel").clicked() {
+                                                                commands.push(
+                                                                    crate::commands::AppCommand::EditorSetKeybindCapture(
+                                                                        None,
+                                                                    ),
+                                                                );
+                                                            }
+                                                        } else {
+                                                            let button_label =
+                                                                egui::RichText::new(key_label)
+                                                                    .monospace();
+                                                            ui.visuals_mut().widgets.inactive.bg_fill =
+                                                                egui::Color32::from_gray(32);
+                                                            if ui.button(button_label).clicked() {
+                                                                commands.push(
+                                                                    crate::commands::AppCommand::EditorSetKeybindCapture(Some(
+                                                                        action.to_string(),
+                                                                    )),
+                                                                );
+                                                            }
+                                                        }
+                                                    },
+                                                );
+                                            });
+                                        }
+                                    });
+                                }
+
+                                ui.separator();
+                                if ui.button("Reset Essentials to Defaults").clicked() {
                                     commands.push(
-                                        crate::commands::AppCommand::EditorSetKeybindCapture(Some(
-                                            (*action).to_string(),
-                                        )),
+                                        crate::commands::AppCommand::EditorResetEssentialKeybinds,
                                     );
                                 }
-
-                                if ui.button("Clear").clicked() {
-                                    commands.push(crate::commands::AppCommand::EditorClearKeybind(
-                                        (*action).to_string(),
-                                    ));
-                                }
                             });
-                        }
-
-                        ui.separator();
-                        if ui.button("Reset Essentials to Defaults").clicked() {
-                            commands
-                                .push(crate::commands::AppCommand::EditorResetEssentialKeybinds);
-                        }
                     }
                 }
             });

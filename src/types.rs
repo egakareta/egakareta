@@ -1104,7 +1104,7 @@ impl AppSettings {
 
     pub(crate) fn reset_essential_keybinds(&mut self) {
         let mut preserved = self.keybinds.clone();
-        for (action, _) in essential_keybind_actions() {
+        for (_, action, _) in essential_keybind_actions() {
             preserved.retain(|binding| binding.action != *action);
         }
         preserved.extend(default_essential_keybinds());
@@ -1148,18 +1148,22 @@ pub(crate) fn format_key_chord(chord: &KeyChord) -> String {
     parts.join("+")
 }
 
-pub(crate) fn essential_keybind_actions() -> &'static [(&'static str, &'static str)] {
+pub(crate) fn essential_keybind_actions() -> &'static [(&'static str, &'static str, &'static str)] {
     &[
-        ("toggle_settings", "Toggle Settings Sidebar"),
-        ("toggle_timeline_playback", "Toggle Timeline Playback"),
-        ("playtest", "Start Playtest"),
-        ("remove_block", "Remove Block"),
-        ("copy", "Copy"),
-        ("paste", "Paste"),
-        ("duplicate", "Duplicate"),
-        ("undo", "Undo"),
-        ("redo", "Redo"),
-        ("escape", "Context Escape"),
+        ("General", "toggle_settings", "Toggle Settings Sidebar"),
+        (
+            "Timeline",
+            "toggle_timeline_playback",
+            "Toggle Timeline Playback",
+        ),
+        ("Timeline", "playtest", "Start Playtest"),
+        ("Editor", "remove_block", "Remove Block"),
+        ("Editor", "copy", "Copy"),
+        ("Editor", "paste", "Paste"),
+        ("Editor", "duplicate", "Duplicate"),
+        ("Editor", "undo", "Undo"),
+        ("Editor", "redo", "Redo"),
+        ("General", "escape", "Context Escape"),
     ]
 }
 
