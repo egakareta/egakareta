@@ -96,6 +96,7 @@ jobs:
       - run: bun install
       - run: bun run build
       - uses: softprops/action-gh-release@v1
+        continue-on-error: true
         with:
           files: dist/**/*
           draft: true
@@ -139,6 +140,7 @@ jobs:
           version: 1.0
       - run: cargo build --release --verbose --target ${{ matrix.target }}
       - uses: softprops/action-gh-release@v1
+        continue-on-error: true
         with:
           files: ${{ matrix.binary_path }}
           draft: true
