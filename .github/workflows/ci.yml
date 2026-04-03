@@ -26,6 +26,10 @@ jobs:
         with:
           components: clippy, rustfmt, rust-src
       - uses: Swatinem/rust-cache@v2
+      - uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: libasound2-dev libudev-dev pkg-config
+          version: 1.0
       - run: bun install
       - run: bun format:cargo -- --check
       - run: bun format:prettier -- --check
@@ -34,6 +38,10 @@ jobs:
   test-rust:
     name: Rust Tests
     runs-on: ubuntu-latest
+    environment: preview
+    env:
+      API_URL: ${{ vars.API_URL }}
+      PUBLISHABLE_KEY: ${{ vars.PUBLISHABLE_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -67,6 +75,10 @@ jobs:
   build-web:
     name: Build WebAssembly
     runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'push' && 'production' || 'preview' }}
+    env:
+      API_URL: ${{ vars.API_URL }}
+      PUBLISHABLE_KEY: ${{ vars.PUBLISHABLE_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -101,6 +113,10 @@ jobs:
             artifact_name: egakareta-macos
             binary_path: target/x86_64-apple-darwin/release/egakareta
     runs-on: ${{ matrix.os }}
+    environment: ${{ github.event_name == 'push' && 'production' || 'preview' }}
+    env:
+      API_URL: ${{ vars.API_URL }}
+      PUBLISHABLE_KEY: ${{ vars.PUBLISHABLE_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
