@@ -282,14 +282,13 @@ impl State {
 
         let normalized_key = crate::types::normalize_binding_key(key);
         let ctrl = self.editor.ui.ctrl_held;
-        let shift = self.editor.ui.shift_held;
         let alt = self.editor.ui.alt_held;
 
         let mut commands = Vec::new();
         for binding in &self.app_settings().keybinds {
             let chord = binding.chord.normalized();
             let key_match = chord.key == normalized_key;
-            let modifiers_match = chord.ctrl == ctrl && chord.shift == shift && chord.alt == alt;
+            let modifiers_match = chord.ctrl == ctrl && chord.alt == alt;
 
             if key_match && (!pressed || modifiers_match) {
                 match binding.action.as_str() {
