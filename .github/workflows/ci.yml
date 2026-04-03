@@ -27,7 +27,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@nightly
         with:
-          components: clippy, rustfmt
+          components: clippy, llvm-tools-preview, rustfmt, rust-src
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
@@ -51,9 +51,6 @@ jobs:
 
       - name: Install dependencies (Bun)
         run: bun install
-
-      - name: Install llvm-tools-preview
-        run: rustup component add llvm-tools-preview
 
       - name: Check cargo formatting
         run: bun format:cargo -- --check
