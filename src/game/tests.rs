@@ -1,3 +1,10 @@
+/*
+
+* Copyright (c) egakareta <team@egakareta.com>.
+* Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+* See LICENSE and COMMERICAL.md for details.
+
+*/
 use super::physics::{aabb_overlaps_object_xz, object_xz_contains, BASE_PLAYER_SPEED};
 use super::simulation::{
     simulate_timeline_state, simulate_timeline_state_with_triggers, TimelineSimulationRuntime,

@@ -1,3 +1,10 @@
+/*
+
+* Copyright (c) egakareta <team@egakareta.com>.
+* Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+* See LICENSE and COMMERICAL.md for details.
+
+*/
 use crate::block_repository::{resolve_block_definition, BlockRenderProfile};
 use crate::mesh::noise::pseudo_random_noise;
 use crate::mesh::obj::{append_obj_mesh, resolve_obj_mesh};

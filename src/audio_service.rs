@@ -1,3 +1,10 @@
+/*
+
+* Copyright (c) egakareta <team@egakareta.com>.
+* Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+* See LICENSE and COMMERICAL.md for details.
+
+*/
 //! Audio service for loading and processing music waveforms.
 //!
 //! Provides functionality to asynchronously load audio files, decode them into

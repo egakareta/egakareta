@@ -1,3 +1,10 @@
+/*
+
+* Copyright (c) egakareta <team@egakareta.com>.
+* Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+* See LICENSE and COMMERICAL.md for details.
+
+*/
 use crate::types::{LevelObject, Vertex};
 use include_dir::{include_dir, Dir};
 use std::collections::HashMap;

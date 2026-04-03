@@ -1,3 +1,10 @@
+/*
+
+* Copyright (c) egakareta <team@egakareta.com>.
+* Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+* See LICENSE and COMMERICAL.md for details.
+
+*/
 use crate::commands::AppCommand;
 use crate::editor_ui::modes::shared::{show_mode_and_snap_controls, show_player_camera_status_row};
 use crate::state::EditorUiViewModel;

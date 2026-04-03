@@ -1,3 +1,10 @@
+/*
+
+* Copyright (c) egakareta <team@egakareta.com>.
+* Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+* See LICENSE and COMMERICAL.md for details.
+
+*/
 pub(crate) struct EditorConfigState {
     pub(crate) selected_block_id: String,
     pub(crate) snap_to_grid: bool,

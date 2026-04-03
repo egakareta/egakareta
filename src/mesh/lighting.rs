@@ -1,3 +1,10 @@
+/*
+
+* Copyright (c) egakareta <team@egakareta.com>.
+* Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+* See LICENSE and COMMERICAL.md for details.
+
+*/
 pub(crate) fn apply_lighting(base_color: [f32; 4], normal: [f32; 3]) -> [f32; 4] {
     let light_dir = [0.57735, 0.57735, 0.57735];
     let ambient = 0.6;

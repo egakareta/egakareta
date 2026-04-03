@@ -1,3 +1,10 @@
+/*
+
+* Copyright (c) egakareta <team@egakareta.com>.
+* Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+* See LICENSE and COMMERICAL.md for details.
+
+*/
 use super::{EditorClipboard, EditorHistorySnapshot, EditorSubsystem, State};
 use crate::editor_domain::derive_tap_indicator_positions;
 use crate::types::{AppPhase, LevelObject};

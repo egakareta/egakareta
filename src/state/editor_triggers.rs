@@ -1,3 +1,10 @@
+/*
+
+* Copyright (c) egakareta <team@egakareta.com>.
+* Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+* See LICENSE and COMMERICAL.md for details.
+
+*/
 use super::EditorSubsystem;
 use crate::types::{
     timed_triggers_to_camera_triggers, CameraTrigger, TimedTrigger, TimedTriggerAction,

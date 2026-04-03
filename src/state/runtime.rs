@@ -1,3 +1,10 @@
+/*
+
+* Copyright (c) egakareta <team@egakareta.com>.
+* Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+* See LICENSE and COMMERICAL.md for details.
+
+*/
 use super::editor_interaction::EditorInteractionState;
 use super::history::EditorHistoryState;
 use crate::platform::state_host::PlatformInstant;

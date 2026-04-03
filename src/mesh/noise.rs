@@ -1,3 +1,10 @@
+/*
+
+* Copyright (c) egakareta <team@egakareta.com>.
+* Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+* See LICENSE and COMMERICAL.md for details.
+
+*/
 pub(crate) fn pseudo_random_noise(x: f32, y: f32, z: f32) -> f32 {
     let seed = ((x as i32).wrapping_mul(73856093)
         ^ (y as i32).wrapping_mul(19349663)

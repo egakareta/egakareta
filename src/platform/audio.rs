@@ -1,3 +1,10 @@
+/*
+
+* Copyright (c) egakareta <team@egakareta.com>.
+* Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+* See LICENSE and COMMERICAL.md for details.
+
+*/
 use crate::platform::audio_backend::AudioBackend;
 
 pub(crate) fn available_backend_names() -> Vec<String> {

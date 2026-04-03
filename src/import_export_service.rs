@@ -1,3 +1,10 @@
+/*
+
+* Copyright (c) egakareta <team@egakareta.com>.
+* Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+* See LICENSE and COMMERICAL.md for details.
+
+*/
 use crate::level_repository::{
     build_egz_archive, parse_level_metadata_json, read_metadata_from_egz,
     serialize_level_metadata_pretty,

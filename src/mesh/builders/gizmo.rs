@@ -1,3 +1,10 @@
+/*
+
+* Copyright (c) egakareta <team@egakareta.com>.
+* Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+* See LICENSE and COMMERICAL.md for details.
+
+*/
 use crate::mesh::advanced_shapes::{append_cone, append_sphere};
 use crate::mesh::shapes::append_prism;
 use crate::types::{GizmoPart, Vertex};

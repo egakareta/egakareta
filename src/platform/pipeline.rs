@@ -1,3 +1,10 @@
+/*
+
+* Copyright (c) egakareta <team@egakareta.com>.
+* Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+* See LICENSE and COMMERICAL.md for details.
+
+*/
 //! Frame pipeline for rendering and UI.
 //!
 //! The `FramePipeline` manages the rendering loop, integrating egui UI with the game state.

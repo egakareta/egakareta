@@ -1,3 +1,10 @@
+/*
+
+* Copyright (c) egakareta <team@egakareta.com>.
+* Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+* See LICENSE and COMMERICAL.md for details.
+
+*/
 //! Block repository for managing block definitions and behaviors.
 //!
 //! Provides a catalog of block types loaded from JSON files in assets/blocks/.

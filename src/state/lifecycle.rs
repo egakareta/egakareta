@@ -1,3 +1,10 @@
+/*
+
+* Copyright (c) egakareta <team@egakareta.com>.
+* Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+* See LICENSE and COMMERICAL.md for details.
+
+*/
 use super::render::{GpuContext, MeshSlot, RenderSubsystem, SceneMeshes, DEPTH_FORMAT};
 use super::runtime::{
     EditorDirtyFlags, EditorFrameState, EditorGizmoState, EditorRuntimeState, FrameRuntimeState,
