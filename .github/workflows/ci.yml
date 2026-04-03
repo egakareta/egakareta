@@ -19,6 +19,10 @@ jobs:
   checks:
     name: Code Quality Checks
     runs-on: ubuntu-latest
+    environment: preview
+    env:
+      API_URL: ${{ vars.API_URL }}
+      PUBLISHABLE_KEY: ${{ vars.PUBLISHABLE_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
