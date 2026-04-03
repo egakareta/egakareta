@@ -27,7 +27,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@nightly
         with:
-          components: rustfmt
+          components: clippy, rustfmt
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
