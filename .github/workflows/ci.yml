@@ -94,11 +94,16 @@ jobs:
           components: rust-src
       - uses: Swatinem/rust-cache@v2
       - run: bun install
-      - run: bun run build
+
+      - name: Build WebAssembly
+        run: bun run build
+
+      - run: zip -r egakareta-web.zip dist
+
       - uses: softprops/action-gh-release@v1
         continue-on-error: true
         with:
-          files: dist/**/*
+          files: egakareta-web.zip
           draft: true
 
   build-native:
@@ -113,7 +118,7 @@ jobs:
             binary_path: target/x86_64-unknown-linux-gnu/release/egakareta
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: egakareta-windows.exe
+            artifact_name: egakareta-windows
             binary_path: target/x86_64-pc-windows-msvc/release/egakareta.exe
           - os: macos-latest
             target: x86_64-apple-darwin
@@ -138,9 +143,17 @@ jobs:
         with:
           packages: libasound2-dev libudev-dev pkg-config
           version: 1.0
-      - run: cargo build --release --verbose --target ${{ matrix.target }}
+
+      - name: Build ${{ matrix.artifact_name }}
+        run: cargo build --release --verbose --target ${{ matrix.target }}
+
+      - if: matrix.os == 'windows-latest'
+        run: Compress-Archive -Path ${{ matrix.binary_path }} -DestinationPath ${{ matrix.artifact_name }}.zip
+      - if: matrix.os != 'windows-latest'
+        run: zip -j ${{ matrix.artifact_name }}.zip ${{ matrix.binary_path }}
+
       - uses: softprops/action-gh-release@v1
         continue-on-error: true
         with:
-          files: ${{ matrix.binary_path }}
+          files: ${{ matrix.artifact_name }}.zip
           draft: true
