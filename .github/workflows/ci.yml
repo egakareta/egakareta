@@ -19,6 +19,10 @@ jobs:
   test-and-build-native:
     name: Test and Build Native
     runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'push' && 'production' || 'preview' }}
+    env:
+      API_URL: ${{ vars.API_URL }}
+      PUBLISHABLE_KEY: ${{ vars.PUBLISHABLE_KEY }}
 
     steps:
       - uses: actions/checkout@v4
