@@ -24,7 +24,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - uses: dtolnay/rust-toolchain@nightly
         with:
-          components: clippy, rustfmt
+          components: clippy, rustfmt, rust-src
       - uses: Swatinem/rust-cache@v2
       - run: bun install
       - run: bun format:cargo -- --check
@@ -39,7 +39,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - uses: dtolnay/rust-toolchain@nightly
         with:
-          components: llvm-tools-preview
+          components: llvm-tools-preview, rust-src
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
@@ -85,6 +85,7 @@ jobs:
   build-native:
     name: Build Native (${{ matrix.os }})
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -108,7 +109,10 @@ jobs:
           components: rust-src
       - uses: Swatinem/rust-cache@v2
       - if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get install -y libasound2-dev libudev-dev pkg-config
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: libasound2-dev libudev-dev pkg-config
+          version: 1.0
       - run: cargo build --release --verbose --target ${{ matrix.target }}
       - uses: softprops/action-gh-release@v1
         with:
