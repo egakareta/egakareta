@@ -1,3 +1,5 @@
+/// <reference types="bun" />
+
 /*
 
 * Copyright (c) egakareta <team@egakareta.com>.
