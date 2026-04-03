@@ -422,11 +422,7 @@ mod tests {
         let mut expected = Vec::new();
         for tap in taps {
             let (position, _) = derive_timeline_position(spawn, direction, &taps, tap, &[]);
-            expected.push([
-                (position[0] - 0.5).round(),
-                position[1].round(),
-                (position[2] - 0.5).round(),
-            ]);
+            expected.push([position[0] - 0.5, position[1], position[2] - 0.5]);
         }
         expected.sort_by(|a, b| {
             a[0].total_cmp(&b[0])
@@ -439,6 +435,11 @@ mod tests {
                 && (a[2] - b[2]).abs() < 0.001
         });
 
-        assert_eq!(derived, expected);
+        assert_eq!(derived.len(), expected.len());
+        for (left, right) in derived.iter().zip(expected.iter()) {
+            assert!((left[0] - right[0]).abs() < 0.001);
+            assert!((left[1] - right[1]).abs() < 0.001);
+            assert!((left[2] - right[2]).abs() < 0.001);
+        }
     }
 }

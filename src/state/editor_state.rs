@@ -278,16 +278,7 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn tap_indicator_position_from_world(&self, position: [f32; 3]) -> [f32; 3] {
-        let step = if self.effective_snap_to_grid() {
-            self.config.snap_step.max(0.05)
-        } else {
-            1.0
-        };
-        [
-            ((position[0] - 0.5) / step).round() * step,
-            (position[1] / step).round() * step,
-            ((position[2] - 0.5) / step).round() * step,
-        ]
+        [position[0] - 0.5, position[1], position[2] - 0.5]
     }
 
     pub(crate) fn add_tap(&mut self, indicator_position: [f32; 3]) -> f32 {

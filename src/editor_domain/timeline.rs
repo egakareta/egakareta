@@ -63,9 +63,9 @@ pub(crate) fn derive_tap_indicator_positions(
         runtime.advance_to(tap_time);
         let snapshot = runtime.snapshot();
         positions.push([
-            (snapshot.position[0] - 0.5).round(),
-            snapshot.position[1].round(),
-            (snapshot.position[2] - 0.5).round(),
+            snapshot.position[0] - 0.5,
+            snapshot.position[1],
+            snapshot.position[2] - 0.5,
         ]);
     }
 
