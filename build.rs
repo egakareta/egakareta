@@ -21,8 +21,13 @@ fn main() {
 
     let allowed: HashSet<&str> = BAKE_KEYS.iter().copied().collect();
 
-    let contents =
-        std::fs::read_to_string(env_file).unwrap_or_else(|_| panic!("Could not read {}", env_file));
+    let contents = match std::fs::read_to_string(env_file) {
+        Ok(c) => c,
+        Err(_) => {
+            println!("cargo:warning=Env file not found, skipping environment variable baking");
+            return;
+        }
+    };
 
     for line in contents.lines() {
         let line = line.trim();
