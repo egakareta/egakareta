@@ -79,6 +79,8 @@ jobs:
   build-web:
     name: Build WebAssembly
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     environment: ${{ github.event_name == 'push' && 'production' || 'preview' }}
     env:
       API_URL: ${{ vars.API_URL }}
@@ -117,6 +119,8 @@ jobs:
             artifact_name: egakareta-macos
             binary_path: target/x86_64-apple-darwin/release/egakareta
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     environment: ${{ github.event_name == 'push' && 'production' || 'preview' }}
     env:
       API_URL: ${{ vars.API_URL }}
