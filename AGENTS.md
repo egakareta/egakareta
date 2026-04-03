@@ -15,7 +15,7 @@ The application compiles to both Native (desktop) and WebAssembly (browser). You
 
 ## 2. Tooling and Commands
 
-All primary scripts are managed via `bun` in the `package.json` file. Please use these standardized commands rather than guessing or running underlying binaries directly.
+All primary scripts are managed via `bun` in the `package.json` file. Use these standardized commands rather than guessing or running underlying binaries directly.
 
 ### Build & Run
 
@@ -34,8 +34,13 @@ All primary scripts are managed via `bun` in the `package.json` file. Please use
 
 - **Run All Tests:** `bun run test` (Uses `cargo nextest run` for significantly faster test execution)
 - **Run Single Test:** `cargo nextest run <test_name>` or `cargo test <test_name>`
+- **Run Tests in a Module:** `cargo nextest run <module_path>` (e.g., `cargo nextest run game::tests`)
 - **Run Ignored/Benchmark Tests:** `bun run benchmark` (`cargo test benchmark_ -- --ignored`)
 - **Test Coverage:** `bun run test:coverage` (Generates `lcov.info` using `cargo llvm-cov nextest`)
+
+### Type Generation
+
+- **Generate Types (Cloudflare + Supabase):** `bun run typegen`
 
 ## 3. Code Architecture & Layout
 
@@ -48,6 +53,12 @@ Understanding the project structure is crucial for idiomatic changes:
 - `src/state/` - Manages the high-level game and editor state.
 - `src/editor_ui/` & `src/editor_domain/` - Egui-based UI components and editor state management.
 - `src/types.rs` - Core data types (like `LevelObject`), serialization details, and default value generators for `serde`.
+- `src/mesh/` - Mesh generation and geometry utilities.
+- `src/audio_service.rs` - Audio playback and management.
+- `src/block_repository.rs` - Block definitions and registry.
+- `src/level_repository.rs` - Level storage and retrieval.
+- `src/import_export_service.rs` - Level import/export functionality.
+- `src/commands.rs` - Command pattern implementation (undo/redo).
 - `assets/` - Static assets, textures, and default data to be embedded or loaded.
 - `shader.wgsl` - The core WebGPU shader for rendering the game world.
 
@@ -57,6 +68,15 @@ Understanding the project structure is crucial for idiomatic changes:
 
 - Use conditional compilation `#[cfg(target_arch = "wasm32")]` and `#[cfg(not(target_arch = "wasm32"))]` as needed to separate platform-specific logic. However, strive to keep the logic as unified as possible and prefer libraries that support both targets seamlessly.
 - Instead of standard library `std::time`, use `web_time` to guarantee compatibility across platforms.
+- The `crate-type` in `Cargo.toml` is `["cdylib", "rlib"]` to support both WASM (cdylib) and native testing (rlib).
+
+### Imports & Module Organization
+
+- Group imports in this order: (1) standard library, (2) external crates, (3) internal `crate::` modules.
+- Use `use crate::` for internal imports, never absolute paths from the crate root.
+- Re-export public items from `lib.rs` using `pub use` to define the crate's public API.
+- Internal modules are declared as `mod` (private) in `lib.rs`; only expose what is needed externally.
+- Use `pub(crate)` for items that should be visible across modules within the crate but not externally.
 
 ### Error Handling
 
@@ -68,6 +88,7 @@ Understanding the project structure is crucial for idiomatic changes:
 
 - Use `glam` for all linear algebra and math structures (e.g., `Vec3`, `Mat4`). Ensure types derive `bytemuck::Pod, bytemuck::Zeroable` when pushed to WebGPU buffers.
 - For serialization, heavily utilize `serde`. Define defaults and skipping logic cleanly as standalone functions (refer to `src/types.rs` for examples like `fn default_spawn_position() -> [f32; 3]`).
+- Use arrays like `[f32; 3]` for positions/colors when serializing to JSON, rather than glam types directly.
 
 ### Naming Conventions
 
@@ -89,7 +110,7 @@ Understanding the project structure is crucial for idiomatic changes:
 3. **Reference Existing Code:** If implementing UI, review existing `egui` implementations in `src/editor_ui/`. For core mechanics, review `src/game/physics.rs`.
 4. **No Unrelated Formatting Changes:** Never format or refactor code outside the immediate scope of the feature or bug fix. Let `bun run format` handle consistency.
 5. **Security & Integrity:** Never commit secrets, local debug paths, or bypassing comments like `#[allow(dead_code)]` unless absolutely unavoidable and well-justified.
-6. **Overwrite Database:** This project has not been released. If you need to make breaking changes to the database schema, do not worry about migration scripts. You can simply update the schema and reset the database as needed during development. Same goes for CURRENT_LEVEL_FORMAT_VERSION, do not worry about backward compatibility for now.
+6. **Overwrite Database:** This project has not been released. If you need to make breaking changes to the database schema, do not worry about migration scripts. You can simply update the schema and reset the database as needed during development. Same goes for `CURRENT_LEVEL_FORMAT_VERSION`, do not worry about backward compatibility for now.
 
 ---
 
