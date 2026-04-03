@@ -2,7 +2,7 @@
     "name": "egakareta",
     "scripts": {
         "benchmark": "cargo test benchmark_ -- --ignored",
-        "build": "wasm-pack build -t web -d dist/pkg && bun dist.js",
+        "build": "wasm-pack build -t web -d dist/pkg && bun dist.ts",
         "format:cargo": "cargo fmt",
         "format:prettier": "prettier --write .",
         "format": "bun run format:cargo && bun run format:prettier",
