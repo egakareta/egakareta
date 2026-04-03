@@ -1211,15 +1211,45 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
             capacity: 1,
         },
         KeybindActionMetadata {
+            group: "General",
+            action: "toggle_editor",
+            label: "Toggle Editor",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "General",
+            action: "game_turn",
+            label: "Turn / Action",
+            capacity: 3,
+        },
+        KeybindActionMetadata {
+            group: "General",
+            action: "menu_prev_level",
+            label: "Previous Level",
+            capacity: 2,
+        },
+        KeybindActionMetadata {
+            group: "General",
+            action: "menu_next_level",
+            label: "Next Level",
+            capacity: 2,
+        },
+        KeybindActionMetadata {
             group: "Timeline",
             action: "toggle_timeline_playback",
             label: "Toggle Timeline Playback",
-            capacity: 1,
+            capacity: 4,
         },
         KeybindActionMetadata {
             group: "Timeline",
             action: "playtest",
             label: "Start Playtest",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Timeline",
+            action: "toggle_tap_timing",
+            label: "Toggle Tap/Timing Mode",
             capacity: 1,
         },
         KeybindActionMetadata {
@@ -1307,6 +1337,24 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
             capacity: 1,
         },
         KeybindActionMetadata {
+            group: "Editor",
+            action: "spawn_set",
+            label: "Set Spawn Position",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "spawn_rotate",
+            label: "Rotate Spawn Direction",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "add_camera_trigger",
+            label: "Add Camera Trigger",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
             group: "Timeline",
             action: "timeline_forward",
             label: "Shift Timeline Forward",
@@ -1329,6 +1377,18 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
             action: "zoom_out",
             label: "Zoom Out",
             capacity: 2,
+        },
+        KeybindActionMetadata {
+            group: "Debug",
+            action: "export_obj",
+            label: "Export Block as OBJ",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Debug",
+            action: "toggle_perf_overlay",
+            label: "Toggle Performance Overlay",
+            capacity: 1,
         },
         KeybindActionMetadata {
             group: "Modes",
@@ -1382,12 +1442,60 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
             chord: KeyChord::new("o", true, false, false),
         },
         KeybindBinding {
+            action: "toggle_editor".to_string(),
+            chord: KeyChord::new("e", false, false, false),
+        },
+        KeybindBinding {
+            action: "game_turn".to_string(),
+            chord: KeyChord::new("w", false, false, false),
+        },
+        KeybindBinding {
+            action: "game_turn".to_string(),
+            chord: KeyChord::new("Space", false, false, false),
+        },
+        KeybindBinding {
+            action: "game_turn".to_string(),
+            chord: KeyChord::new("ArrowUp", false, false, false),
+        },
+        KeybindBinding {
+            action: "menu_prev_level".to_string(),
+            chord: KeyChord::new("a", false, false, false),
+        },
+        KeybindBinding {
+            action: "menu_prev_level".to_string(),
+            chord: KeyChord::new("ArrowLeft", false, false, false),
+        },
+        KeybindBinding {
+            action: "menu_next_level".to_string(),
+            chord: KeyChord::new("d", false, false, false),
+        },
+        KeybindBinding {
+            action: "menu_next_level".to_string(),
+            chord: KeyChord::new("ArrowRight", false, false, false),
+        },
+        KeybindBinding {
             action: "toggle_timeline_playback".to_string(),
             chord: KeyChord::new("Space", false, false, false),
         },
         KeybindBinding {
+            action: "toggle_timeline_playback".to_string(),
+            chord: KeyChord::new("MediaPlayPause", false, false, false),
+        },
+        KeybindBinding {
+            action: "toggle_timeline_playback".to_string(),
+            chord: KeyChord::new("MediaPlay", false, false, false),
+        },
+        KeybindBinding {
+            action: "toggle_timeline_playback".to_string(),
+            chord: KeyChord::new("MediaPause", false, false, false),
+        },
+        KeybindBinding {
             action: "playtest".to_string(),
             chord: KeyChord::new("Enter", false, false, false),
+        },
+        KeybindBinding {
+            action: "toggle_tap_timing".to_string(),
+            chord: KeyChord::new("t", false, false, false),
         },
         KeybindBinding {
             action: "remove_block".to_string(),
@@ -1450,6 +1558,18 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
             chord: KeyChord::new("ArrowRight", false, false, false),
         },
         KeybindBinding {
+            action: "spawn_set".to_string(),
+            chord: KeyChord::new("p", false, false, false),
+        },
+        KeybindBinding {
+            action: "spawn_rotate".to_string(),
+            chord: KeyChord::new("r", false, false, false),
+        },
+        KeybindBinding {
+            action: "add_camera_trigger".to_string(),
+            chord: KeyChord::new("k", false, true, false),
+        },
+        KeybindBinding {
             action: "timeline_forward".to_string(),
             chord: KeyChord::new("ArrowRight", false, false, false),
         },
@@ -1472,6 +1592,14 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
         KeybindBinding {
             action: "zoom_out".to_string(),
             chord: KeyChord::new("_", false, false, false),
+        },
+        KeybindBinding {
+            action: "export_obj".to_string(),
+            chord: KeyChord::new("o", true, true, true),
+        },
+        KeybindBinding {
+            action: "toggle_perf_overlay".to_string(),
+            chord: KeyChord::new("F12", true, true, true),
         },
         KeybindBinding {
             action: "mode_select".to_string(),

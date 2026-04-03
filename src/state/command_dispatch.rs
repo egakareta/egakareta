@@ -300,59 +300,11 @@ impl State {
     /// Pure mapping from key string + modifiers → command.
     /// Returns `Vec<AppCommand>` for keys that have command bindings.
     fn map_key_to_commands(&self, key: &str, just_pressed: bool, pressed: bool) -> Vec<AppCommand> {
-        let mut commands = self.map_keybind_to_commands(key, just_pressed, pressed);
+        let commands = self.map_keybind_to_commands(key, just_pressed, pressed);
 
         match key {
-            "ArrowUp" => {
-                if !self.is_editor() && just_pressed {
-                    commands.push(AppCommand::TurnRight);
-                }
-            }
-            "ArrowDown" => {}
-            "ArrowRight" => {
-                if !self.is_editor() && just_pressed {
-                    commands.push(AppCommand::NextLevel);
-                }
-            }
-            "ArrowLeft" => {
-                if !self.is_editor() && just_pressed {
-                    commands.push(AppCommand::PrevLevel);
-                }
-            }
-            "w" | "W" => {
-                // Editor pan handled above; non-editor falls through here.
-                if !self.is_editor() && just_pressed {
-                    commands.push(AppCommand::TurnRight);
-                }
-            }
-            "s" | "S" => {
-                // Editor pan handled above; nothing else for S.
-            }
-            " " | "Space" => {
-                if just_pressed {
-                    if !self.is_editor() {
-                        commands.push(AppCommand::TurnRight);
-                    }
-                }
-            }
-            "d" | "D" => {
-                if !self.is_editor() && just_pressed {
-                    commands.push(AppCommand::NextLevel);
-                }
-            }
-            "a" | "A" => {
-                // Editor pan handled above; non-editor falls through.
-                if !self.is_editor() && just_pressed {
-                    commands.push(AppCommand::PrevLevel);
-                }
-            }
             "Enter" => {
                 let _ = just_pressed;
-            }
-            "MediaPlayPause" | "MediaPlay" | "MediaPause" => {
-                if just_pressed && self.is_editor() {
-                    commands.push(AppCommand::EditorToggleTimelinePlayback);
-                }
             }
             "Backspace" | "Delete" => {
                 let _ = just_pressed;
@@ -361,54 +313,6 @@ impl State {
                 let _ = just_pressed;
             }
             "q" | "Q" => {}
-            "e" | "E" => {
-                if !self.is_editor() && just_pressed {
-                    commands.push(AppCommand::ToggleEditor);
-                }
-            }
-            "p" | "P" => {
-                if just_pressed {
-                    commands.push(AppCommand::EditorSetSpawnHere);
-                }
-            }
-            "r" | "R" => {
-                if just_pressed {
-                    commands.push(AppCommand::EditorRotateSpawnDirection);
-                }
-            }
-            "t" | "T" => {
-                if just_pressed && self.is_editor() {
-                    if self.editor.ui.mode == EditorMode::Place {
-                        commands.push(AppCommand::EditorToggleTapAtPointer);
-                    } else if self.editor.ui.mode != EditorMode::Timing {
-                        commands.push(AppCommand::EditorSetMode(EditorMode::Timing));
-                    }
-                }
-            }
-            "k" | "K" => {
-                if self.is_editor() && self.editor.ui.shift_held && just_pressed {
-                    commands.push(AppCommand::EditorAddCameraTrigger);
-                }
-            }
-            "o" | "O" => {
-                if self.is_editor()
-                    && self.editor.ui.ctrl_held
-                    && self.editor.ui.shift_held
-                    && self.editor.ui.alt_held
-                    && just_pressed
-                {
-                    commands.push(AppCommand::EditorExportBlockObj);
-                }
-            }
-            "F12" => {
-                if self.editor.ui.ctrl_held
-                    && self.editor.ui.shift_held
-                    && self.editor.ui.alt_held
-                    && just_pressed
-                {
-                    commands.push(AppCommand::EditorTogglePerfOverlay);
-                }
-            }
             "c" | "C" => {
                 let _ = just_pressed;
             }
@@ -584,6 +488,82 @@ impl State {
             "zoom_out" => {
                 if just_pressed {
                     Some(AppCommand::EditorAdjustZoom(-1.0))
+                } else {
+                    None
+                }
+            }
+            "toggle_editor" => {
+                if !self.is_editor() && just_pressed {
+                    Some(AppCommand::ToggleEditor)
+                } else {
+                    None
+                }
+            }
+            "game_turn" => {
+                if !self.is_editor() && just_pressed {
+                    Some(AppCommand::TurnRight)
+                } else {
+                    None
+                }
+            }
+            "menu_prev_level" => {
+                if !self.is_editor() && just_pressed {
+                    Some(AppCommand::PrevLevel)
+                } else {
+                    None
+                }
+            }
+            "menu_next_level" => {
+                if !self.is_editor() && just_pressed {
+                    Some(AppCommand::NextLevel)
+                } else {
+                    None
+                }
+            }
+            "spawn_set" => {
+                if just_pressed {
+                    Some(AppCommand::EditorSetSpawnHere)
+                } else {
+                    None
+                }
+            }
+            "spawn_rotate" => {
+                if just_pressed {
+                    Some(AppCommand::EditorRotateSpawnDirection)
+                } else {
+                    None
+                }
+            }
+            "toggle_tap_timing" => {
+                if just_pressed && self.is_editor() {
+                    if self.editor.ui.mode == EditorMode::Place {
+                        Some(AppCommand::EditorToggleTapAtPointer)
+                    } else if self.editor.ui.mode != EditorMode::Timing {
+                        Some(AppCommand::EditorSetMode(EditorMode::Timing))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            "add_camera_trigger" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorAddCameraTrigger)
+                } else {
+                    None
+                }
+            }
+            "export_obj" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorExportBlockObj)
+                } else {
+                    None
+                }
+            }
+            "toggle_perf_overlay" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorTogglePerfOverlay)
                 } else {
                     None
                 }
