@@ -1,0 +1,32 @@
+{
+    "$schema": "./node_modules/license-check-and-add/config-schema.json",
+    "ignoreFile": ".gitignore",
+    "ignore": [
+        ".wrangler/**",
+        "assets/**",
+        "supabase/**",
+        "**/*.md",
+        "**/*.lock",
+        "**/*.toml",
+        "**/*-env.d.ts",
+        "**/*.yml",
+        ".*"
+    ],
+    "licenseFormats": {
+        "ts|js|rs": {
+            "eachLine": {
+                "prepend": "* "
+            },
+            "prepend": "/*\n",
+            "append": "\n*/"
+        }
+    },
+    "license": "license-header.txt",
+    "defaultFormat": {
+        "eachLine": {
+            "prepend": " * "
+        },
+        "prepend": "/*\n",
+        "append": "\n */"
+    }
+}
