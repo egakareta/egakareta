@@ -390,36 +390,6 @@ impl State {
                     commands.push(AppCommand::EditorAddCameraTrigger);
                 }
             }
-            "1" => {
-                if self.is_editor() && just_pressed && !self.editor.ui.shift_held {
-                    commands.push(AppCommand::EditorSetMode(EditorMode::Select));
-                }
-            }
-            "2" => {
-                if self.is_editor() && just_pressed && !self.editor.ui.shift_held {
-                    commands.push(AppCommand::EditorSetMode(EditorMode::Move));
-                }
-            }
-            "3" => {
-                if self.is_editor() && just_pressed && !self.editor.ui.shift_held {
-                    commands.push(AppCommand::EditorSetMode(EditorMode::Scale));
-                }
-            }
-            "4" => {
-                if self.is_editor() && just_pressed && !self.editor.ui.shift_held {
-                    commands.push(AppCommand::EditorSetMode(EditorMode::Rotate));
-                }
-            }
-            "5" => {
-                if self.is_editor() && just_pressed && !self.editor.ui.shift_held {
-                    commands.push(AppCommand::EditorSetMode(EditorMode::Place));
-                }
-            }
-            "6" => {
-                if self.is_editor() && just_pressed && !self.editor.ui.shift_held {
-                    commands.push(AppCommand::EditorSetMode(EditorMode::Trigger));
-                }
-            }
             "o" | "O" => {
                 if self.is_editor()
                     && self.editor.ui.ctrl_held
@@ -614,6 +584,48 @@ impl State {
             "zoom_out" => {
                 if just_pressed {
                     Some(AppCommand::EditorAdjustZoom(-1.0))
+                } else {
+                    None
+                }
+            }
+            "mode_select" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorSetMode(EditorMode::Select))
+                } else {
+                    None
+                }
+            }
+            "mode_move" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorSetMode(EditorMode::Move))
+                } else {
+                    None
+                }
+            }
+            "mode_scale" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorSetMode(EditorMode::Scale))
+                } else {
+                    None
+                }
+            }
+            "mode_rotate" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorSetMode(EditorMode::Rotate))
+                } else {
+                    None
+                }
+            }
+            "mode_place" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorSetMode(EditorMode::Place))
+                } else {
+                    None
+                }
+            }
+            "mode_trigger" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorSetMode(EditorMode::Trigger))
                 } else {
                     None
                 }

@@ -1081,60 +1081,12 @@ impl Default for AppSettings {
 }
 
 impl AppSettings {
-    pub(crate) fn keybind_for_action(&self, action: &str) -> Option<&KeyChord> {
-        self.keybinds
-            .iter()
-            .find(|binding| binding.action == action)
-            .map(|binding| &binding.chord)
-    }
-
     pub(crate) fn keybinds_for_action(&self, action: &str) -> Vec<&KeyChord> {
         self.keybinds
             .iter()
             .filter(|binding| binding.action == action)
             .map(|binding| &binding.chord)
             .collect()
-    }
-
-    pub(crate) fn set_keybind(&mut self, action: &str, chord: KeyChord) {
-        let normalized = chord.normalized();
-
-        // Prevent duplicate chord for SAME action
-        if self
-            .keybinds
-            .iter()
-            .any(|b| b.action == action && b.chord == normalized)
-        {
-            return;
-        }
-
-        let capacity = essential_keybind_actions()
-            .iter()
-            .find(|m| m.action == action)
-            .map(|m| m.capacity)
-            .unwrap_or(1);
-
-        let existing_indices: Vec<usize> = self
-            .keybinds
-            .iter()
-            .enumerate()
-            .filter(|(_, b)| b.action == action)
-            .map(|(i, _)| i)
-            .collect();
-
-        if capacity == 1 {
-            self.keybinds.retain(|binding| binding.action != action);
-        } else if existing_indices.len() >= capacity {
-            // Replace the first one if at capacity and called through generic setter
-            if let Some(&first_idx) = existing_indices.first() {
-                self.keybinds.remove(first_idx);
-            }
-        }
-
-        self.keybinds.push(KeybindBinding {
-            action: action.to_string(),
-            chord: normalized,
-        });
     }
 
     pub(crate) fn set_keybind_at_slot(&mut self, action: &str, slot: usize, chord: KeyChord) {
@@ -1174,10 +1126,6 @@ impl AppSettings {
         }
     }
 
-    pub(crate) fn clear_keybind(&mut self, action: &str) {
-        self.keybinds.retain(|binding| binding.action != action);
-    }
-
     pub(crate) fn clear_keybind_slot(&mut self, action: &str, slot: usize) {
         let existing_indices: Vec<usize> = self
             .keybinds
@@ -1189,6 +1137,15 @@ impl AppSettings {
 
         if slot < existing_indices.len() {
             self.keybinds.remove(existing_indices[slot]);
+        }
+    }
+
+    pub(crate) fn reset_keybind(&mut self, action: &str) {
+        self.keybinds.retain(|b| b.action != action);
+        for default_binding in default_essential_keybinds() {
+            if default_binding.action == action {
+                self.keybinds.push(default_binding);
+            }
         }
     }
 
@@ -1374,6 +1331,42 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
             capacity: 2,
         },
         KeybindActionMetadata {
+            group: "Modes",
+            action: "mode_select",
+            label: "Select Mode",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Modes",
+            action: "mode_move",
+            label: "Move Mode",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Modes",
+            action: "mode_scale",
+            label: "Scale Mode",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Modes",
+            action: "mode_rotate",
+            label: "Rotate Mode",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Modes",
+            action: "mode_place",
+            label: "Place Mode",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Modes",
+            action: "mode_trigger",
+            label: "Trigger Mode",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
             group: "General",
             action: "escape",
             label: "Context Escape",
@@ -1479,6 +1472,30 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
         KeybindBinding {
             action: "zoom_out".to_string(),
             chord: KeyChord::new("_", false, false, false),
+        },
+        KeybindBinding {
+            action: "mode_select".to_string(),
+            chord: KeyChord::new("1", false, false, false),
+        },
+        KeybindBinding {
+            action: "mode_move".to_string(),
+            chord: KeyChord::new("2", false, false, false),
+        },
+        KeybindBinding {
+            action: "mode_scale".to_string(),
+            chord: KeyChord::new("3", false, false, false),
+        },
+        KeybindBinding {
+            action: "mode_rotate".to_string(),
+            chord: KeyChord::new("4", false, false, false),
+        },
+        KeybindBinding {
+            action: "mode_place".to_string(),
+            chord: KeyChord::new("5", false, false, false),
+        },
+        KeybindBinding {
+            action: "mode_trigger".to_string(),
+            chord: KeyChord::new("6", false, false, false),
         },
         KeybindBinding {
             action: "escape".to_string(),
@@ -1881,7 +1898,7 @@ mod tests {
         let chord3 = super::KeyChord::new("k", true, false, false);
 
         // Clear defaults first to be sure
-        settings.clear_keybind(action);
+        settings.keybinds.retain(|b| b.action != action);
         assert_eq!(settings.keybinds_for_action(action).len(), 0);
 
         // Test multi-slot append
@@ -1907,14 +1924,20 @@ mod tests {
         // Test single-slot replacement
         let single_action = "undo";
         let u_chord = super::KeyChord::new("u", false, false, false);
-        settings.set_keybind(single_action, u_chord.clone());
+        settings.set_keybind_at_slot(single_action, 0, u_chord.clone());
         assert_eq!(settings.keybinds_for_action(single_action).len(), 1);
-        assert_eq!(settings.keybind_for_action(single_action), Some(&u_chord));
+        assert_eq!(
+            settings.keybinds_for_action(single_action).first().copied(),
+            Some(&u_chord)
+        );
 
         let u_chord2 = super::KeyChord::new("z", true, false, false);
-        settings.set_keybind(single_action, u_chord2.clone());
+        settings.set_keybind_at_slot(single_action, 0, u_chord2.clone());
         assert_eq!(settings.keybinds_for_action(single_action).len(), 1);
-        assert_eq!(settings.keybind_for_action(single_action), Some(&u_chord2));
+        assert_eq!(
+            settings.keybinds_for_action(single_action).first().copied(),
+            Some(&u_chord2)
+        );
     }
 
     #[test]
@@ -1924,8 +1947,11 @@ mod tests {
         let custom_chord = super::KeyChord::new("k", true, false, false);
 
         // Change a default keybind
-        settings.set_keybind(action, custom_chord.clone());
-        assert_eq!(settings.keybind_for_action(action), Some(&custom_chord));
+        settings.set_keybind_at_slot(action, 0, custom_chord.clone());
+        assert_eq!(
+            settings.keybinds_for_action(action).first().copied(),
+            Some(&custom_chord)
+        );
 
         // Reset
         settings.reset_essential_keybinds();
@@ -1936,6 +1962,35 @@ mod tests {
             .iter()
             .find(|b| b.action == action)
             .map(|b| &b.chord);
-        assert_eq!(settings.keybind_for_action(action), default_chord);
+        assert_eq!(
+            settings.keybinds_for_action(action).first().copied(),
+            default_chord
+        );
+    }
+
+    #[test]
+    fn test_reset_single_multi_slot_keybind() {
+        let mut settings = super::AppSettings::default();
+        let action = "zoom_in"; // Capacity 2, defaults are = and +
+
+        // Custom bindings
+        settings.set_keybind_at_slot(action, 0, super::KeyChord::new("1", false, false, false));
+        settings.set_keybind_at_slot(action, 1, super::KeyChord::new("2", false, false, false));
+        assert_eq!(settings.keybinds_for_action(action).len(), 2);
+
+        // Reset
+        settings.reset_keybind(action);
+
+        // Should be back to BOTH defaults
+        let chords = settings.keybinds_for_action(action);
+        assert_eq!(chords.len(), 2);
+
+        let defaults = super::default_essential_keybinds();
+        let expected: Vec<_> = defaults
+            .iter()
+            .filter(|b| b.action == action)
+            .map(|b| &b.chord)
+            .collect();
+        assert_eq!(chords, expected);
     }
 }
