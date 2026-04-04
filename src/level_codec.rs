@@ -911,7 +911,9 @@ mod tests {
         bytes.extend_from_slice(&compressed);
 
         let error = match decode_level_metadata_binary(&bytes) {
-            Ok(_) => panic!("should fail"),
+            Ok(_) => panic!(
+                "Expected decode to fail for v1 zstd payload without decompressed-size header"
+            ),
             Err(error) => error,
         };
         assert!(error.contains("missing decompressed-size header"));
@@ -936,7 +938,9 @@ mod tests {
         encoded.extend_from_slice(&payload_bytes);
 
         let error = match decode_level_metadata_binary(&encoded) {
-            Ok(_) => panic!("should fail"),
+            Ok(_) => {
+                panic!("Expected decode to fail for v2 payload with uncompressed size mismatch")
+            }
             Err(error) => error,
         };
         assert!(error.contains("uncompressed payload size mismatch"));
@@ -977,7 +981,7 @@ mod tests {
 
         let bytes = encode_v2_uncompressed_for_test(&payload);
         let error = match decode_level_metadata_binary(&bytes) {
-            Ok(_) => panic!("should fail"),
+            Ok(_) => panic!("Expected decode to fail for payload with palette index out of range"),
             Err(error) => error,
         };
         assert!(error.contains("palette index out of range"));

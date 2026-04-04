@@ -1863,6 +1863,7 @@ mod tests {
     };
     use serde_json::json;
 
+    /// Asserts that two f32 values are approximately equal within 1e-5 epsilon.
     fn assert_approx_eq(actual: f32, expected: f32) {
         assert!(
             (actual - expected).abs() <= 1e-5,
