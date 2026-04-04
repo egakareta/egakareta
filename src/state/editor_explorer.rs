@@ -205,13 +205,14 @@ impl State {
             return;
         }
 
-        let trimmed = new_name.trim();
-        if trimmed.is_empty() {
+        let normalized_new_name =
+            EditorSubsystem::normalized_group_path(std::slice::from_ref(&new_name));
+        if normalized_new_name.len() != 1 {
             return;
         }
 
         let mut replacement_path = target_path[..target_path.len() - 1].to_vec();
-        replacement_path.push(trimmed.to_string());
+        replacement_path.push(normalized_new_name[0].clone());
         if replacement_path == target_path {
             return;
         }

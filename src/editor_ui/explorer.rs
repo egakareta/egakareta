@@ -115,11 +115,24 @@ fn render_object_row(
     }
 
     if is_selected {
-        let mut object_name = view.objects[index].name.clone();
+        let rename_id = ui.make_persistent_id(("explorer_object_rename", index));
+        let mut object_name = ui
+            .data_mut(|data| data.get_persisted::<String>(rename_id))
+            .unwrap_or_else(|| view.objects[index].name.clone());
+
         ui.horizontal(|ui| {
             ui.add_space(14.0);
             ui.label("Name:");
-            if ui.text_edit_singleline(&mut object_name).changed() {
+            let response = ui.text_edit_singleline(&mut object_name);
+            ui.data_mut(|data| data.insert_persisted(rename_id, object_name.clone()));
+
+            let commit_with_enter =
+                response.has_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
+            let commit_on_focus_loss = response.lost_focus();
+
+            if (commit_with_enter || commit_on_focus_loss)
+                && object_name != view.objects[index].name
+            {
                 commands.push(AppCommand::EditorExplorerRenameObject {
                     index,
                     name: object_name,
@@ -153,12 +166,32 @@ fn render_group(
                     .default_open(true)
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            let mut edited_group_name = group_name.clone();
+                            let rename_id = ui.make_persistent_id(format!(
+                                "explorer_group_rename:{}",
+                                group_path.join("/")
+                            ));
+                            let mut edited_group_name = ui
+                                .data_mut(|data| data.get_persisted::<String>(rename_id))
+                                .unwrap_or_else(|| group_name.clone());
+
                             ui.label("Rename:");
-                            if ui.text_edit_singleline(&mut edited_group_name).changed() {
+                            let rename_response = ui.text_edit_singleline(&mut edited_group_name);
+                            ui.data_mut(|data| {
+                                data.insert_persisted(rename_id, edited_group_name.clone())
+                            });
+
+                            let commit_with_enter = rename_response.has_focus()
+                                && ui.input(|input| input.key_pressed(egui::Key::Enter));
+                            let commit_on_focus_loss = rename_response.lost_focus();
+                            if (commit_with_enter || commit_on_focus_loss)
+                                && edited_group_name != group_name
+                            {
                                 commands.push(AppCommand::EditorExplorerRenameGroup {
                                     path: group_path.clone(),
-                                    new_name: edited_group_name,
+                                    new_name: edited_group_name.clone(),
+                                });
+                                ui.data_mut(|data| {
+                                    data.insert_persisted(rename_id, edited_group_name)
                                 });
                             }
 

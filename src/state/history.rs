@@ -181,9 +181,9 @@ impl EditorSubsystem {
             new_indices.push(base_len + new_indices.len());
         }
 
+        self.assign_default_names_for_indices(&new_indices);
         self.ui.selected_block_index = new_indices.first().copied();
         self.ui.selected_block_indices = new_indices;
-        self.assign_default_names_for_indices(&self.ui.selected_block_indices.clone());
         self.sync_primary_selection_from_indices();
         self.ui.hovered_block_index = self.ui.selected_block_index;
         self.invalidate_samples();
@@ -221,9 +221,9 @@ impl EditorSubsystem {
             new_indices.push(base_len + new_indices.len());
         }
 
+        self.assign_default_names_for_indices(&new_indices);
         self.ui.selected_block_index = new_indices.first().copied();
         self.ui.selected_block_indices = new_indices;
-        self.assign_default_names_for_indices(&self.ui.selected_block_indices.clone());
         self.sync_primary_selection_from_indices();
         self.ui.hovered_block_index = self.ui.selected_block_index;
         self.invalidate_samples();
