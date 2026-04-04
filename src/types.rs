@@ -1854,13 +1854,21 @@ pub(crate) struct ColorSpaceUniform {
 #[cfg(test)]
 mod tests {
     use super::{
-        camera_triggers_to_timed_triggers, default_camera_trigger_pitch,
+        apply_timed_triggers_to_objects, camera_triggers_to_timed_triggers,
+        default_camera_trigger_pitch,
         default_camera_trigger_rotation, default_camera_trigger_transition_interval_seconds,
         timed_triggers_to_camera_triggers, CameraTrigger, CameraTriggerMode, EditorStateParams,
-        LevelMetadata, LevelObject, MusicMetadata, SpawnDirection, SpawnMetadata,
+        LevelMetadata, LevelObject, MusicMetadata, SpawnDirection, SpawnMetadata, TimedTrigger,
         TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, Vertex,
     };
     use serde_json::json;
+
+    fn assert_approx_eq(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() <= 1e-5,
+            "expected {expected}, got {actual}"
+        );
+    }
 
     #[test]
     fn level_object_rotation_defaults_when_missing() {
@@ -2067,6 +2075,138 @@ mod tests {
         let resolved = timed_triggers_to_camera_triggers(&metadata.resolved_triggers());
         assert_eq!(resolved.len(), 1);
         assert!((resolved[0].time_seconds - 1.2).abs() <= 1e-6);
+    }
+
+    #[test]
+    fn timed_triggers_apply_easing_sorting_and_scale_clamp() {
+        let base = vec![LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.18,
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        }];
+
+        let triggers = vec![
+            TimedTrigger {
+                time_seconds: 2.0,
+                duration_seconds: 1.0,
+                easing: TimedTriggerEasing::Linear,
+                target: TimedTriggerTarget::Object { object_id: 0 },
+                action: TimedTriggerAction::MoveTo {
+                    position: [10.0, 0.0, 0.0],
+                },
+            },
+            TimedTrigger {
+                time_seconds: 1.0,
+                duration_seconds: 2.0,
+                easing: TimedTriggerEasing::EaseIn,
+                target: TimedTriggerTarget::Object { object_id: 0 },
+                action: TimedTriggerAction::RotateTo {
+                    rotation_degrees: [0.0, 90.0, 0.0],
+                },
+            },
+            TimedTrigger {
+                time_seconds: 1.5,
+                duration_seconds: 1.0,
+                easing: TimedTriggerEasing::EaseOut,
+                target: TimedTriggerTarget::Object { object_id: 0 },
+                action: TimedTriggerAction::ScaleTo {
+                    size: [2.0, 0.0, 3.0],
+                },
+            },
+        ];
+
+        let applied = apply_timed_triggers_to_objects(&base, &triggers, 2.5);
+        let object = &applied[0];
+        assert_approx_eq(object.position[0], 5.0);
+        assert_approx_eq(object.rotation_degrees[1], 50.625);
+        assert_approx_eq(object.size[0], 2.0);
+        assert_approx_eq(object.size[1], 0.01);
+        assert_approx_eq(object.size[2], 3.0);
+    }
+
+    #[test]
+    fn timed_triggers_skip_camera_and_out_of_bounds_targets_and_deduplicate() {
+        let base = vec![
+            LevelObject {
+                position: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                roundness: 0.18,
+                block_id: "core/stone".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            },
+            LevelObject {
+                position: [1.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                roundness: 0.18,
+                block_id: "core/stone".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            },
+            LevelObject {
+                position: [2.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                roundness: 0.18,
+                block_id: "core/stone".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            },
+        ];
+
+        let triggers = vec![
+            TimedTrigger {
+                time_seconds: 0.0,
+                duration_seconds: 0.0,
+                easing: TimedTriggerEasing::Linear,
+                target: TimedTriggerTarget::Objects {
+                    object_ids: vec![2, 2, 9, 1],
+                },
+                action: TimedTriggerAction::MoveTo {
+                    position: [9.0, 9.0, 9.0],
+                },
+            },
+            TimedTrigger {
+                time_seconds: 0.0,
+                duration_seconds: 0.0,
+                easing: TimedTriggerEasing::Linear,
+                target: TimedTriggerTarget::Camera,
+                action: TimedTriggerAction::MoveTo {
+                    position: [5.0, 5.0, 5.0],
+                },
+            },
+        ];
+
+        let applied = apply_timed_triggers_to_objects(&base, &triggers, 0.0);
+        assert_eq!(applied[0].position, [0.0, 0.0, 0.0]);
+        assert_eq!(applied[1].position, [9.0, 9.0, 9.0]);
+        assert_eq!(applied[2].position, [9.0, 9.0, 9.0]);
+    }
+
+    #[test]
+    fn timed_triggers_ignore_non_finite_start_time() {
+        let base = vec![LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.18,
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        }];
+        let triggers = vec![TimedTrigger {
+            time_seconds: f32::NAN,
+            duration_seconds: 0.0,
+            easing: TimedTriggerEasing::Linear,
+            target: TimedTriggerTarget::Object { object_id: 0 },
+            action: TimedTriggerAction::MoveTo {
+                position: [99.0, 0.0, 0.0],
+            },
+        }];
+
+        let applied = apply_timed_triggers_to_objects(&base, &triggers, 10.0);
+        assert_eq!(applied, base);
     }
 
     #[test]
