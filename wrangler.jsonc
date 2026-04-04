@@ -11,16 +11,6 @@
     "pages_build_output_dir": "dist",
     "compatibility_date": "2026-02-24",
     "compatibility_flags": ["nodejs_compat"],
-    "r2_buckets": [
-        {
-            "binding": "BEATMAP_AUDIO",
-            "bucket_name": "beatmap-audio"
-        },
-        {
-            "binding": "BEATMAP_DATA",
-            "bucket_name": "beatmap-data"
-        }
-    ],
     "env": {
         "preview": {
             "vars": {
@@ -46,7 +36,17 @@
                 "I_LOVE_HAMSTERS": "true",
                 "API_URL": "https://ukfpclpcceeqaagyorcb.supabase.co",
                 "PUBLISHABLE_KEY": "sb_publishable_y9pwqwVxUohToosEzERcnQ_z1Fr3NB2"
-            }
+            },
+            "r2_buckets": [
+                {
+                    "binding": "BEATMAP_AUDIO",
+                    "bucket_name": "beatmap-audio"
+                },
+                {
+                    "binding": "BEATMAP_DATA",
+                    "bucket_name": "beatmap-data"
+                }
+            ]
         }
     }
 }
