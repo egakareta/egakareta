@@ -5,6 +5,7 @@ edition = "2021"
 description = "Feel the beat, follow the line."
 repository = "https://github.com/evilbocchi/egakareta"
 license = "MIT"
+default-run = "egakareta"
 
 [lib]
 name = "egakareta_lib"
@@ -90,3 +91,6 @@ egui-winit = { version = "0.33", default-features = false } # default features i
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false
+
+[build-dependencies]
+winres = "0.1"

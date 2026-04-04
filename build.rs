@@ -64,4 +64,13 @@ fn main() {
             .unwrap_or(0);
         println!("cargo:warning=Using {} levels", level_count);
     }
+
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
+
+    if target_os == "windows" && target_arch != "wasm32" {
+        let mut res = winres::WindowsResource::new();
+        res.set_icon("assets/favicon.ico");
+        res.compile().expect("Failed to compile Windows resource");
+    }
 }
