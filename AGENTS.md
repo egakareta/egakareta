@@ -21,8 +21,6 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 
 - **Development Server:** `bun run dev` (Runs a watch process and an HTTP server via `nodemon` and `concurrently`)
 - **Web Build:** `bun run build` (Compiles Rust to WASM using `wasm-pack build --target web`)
-- **Production Build:** `bun run prod` (Builds and runs the bundled JS output)
-- **Watch Mode (Internal):** `bun run watch` (Rebuilds Rust/WGSL on change)
 
 ### Linting & Formatting
 

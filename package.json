@@ -17,9 +17,7 @@
         "license:add": "license-check-and-add add -f license-checker-config.json",
         "license:check": "license-check-and-add check -f license-checker-config.json",
         "watch": "nodemon --exec \"bun run build\"",
-        "serve": "bunx wrangler pages dev",
-        "dev": "concurrently \"bun run watch\" \"bun run serve\" --prefix=none",
-        "prod": "bun run build",
+        "dev": "concurrently \"bun run watch\" \"bunx wrangler pages dev\" --prefix=none",
         "prepare": "lefthook install"
     },
     "dependencies": {
