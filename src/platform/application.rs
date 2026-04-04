@@ -277,6 +277,8 @@ impl ApplicationHandler for App {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
+            use std::sync::Arc;
+
             let icon = {
                 let bytes = include_bytes!("../../assets/favicon.png");
                 let image = image::load_from_memory(bytes).expect("Failed to load icon");
@@ -293,14 +295,17 @@ impl ApplicationHandler for App {
                 .create_window(window_attributes)
                 .expect("Failed to create window");
 
-            let state = pollster::block_on(State::new_native(window));
+            let state = pollster::block_on(State::new_native(Arc::new(window)));
             let runtime = Runtime::new(state);
-            let window = runtime.state.window();
+            let Some(window) = runtime.state.window() else {
+                log::error!("Native runtime missing window handle after initialization");
+                return;
+            };
 
             let egui_state = EguiWinitState::new(
                 runtime.pipeline.ctx().clone(),
                 egui::ViewportId::ROOT,
-                window,
+                window.as_ref(),
                 Some(window.scale_factor() as f32),
                 None,
                 None,
@@ -370,9 +375,13 @@ impl ApplicationHandler for App {
         }
 
         #[cfg(not(target_arch = "wasm32"))]
-        let egui_consumed = egui_state
-            .on_window_event(runtime.state.window(), &event)
-            .consumed;
+        let Some(window) = runtime.state.window().cloned() else {
+            log::warn!("Dropping native window event because no window handle is available");
+            return;
+        };
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let egui_consumed = egui_state.on_window_event(window.as_ref(), &event).consumed;
         #[cfg(target_arch = "wasm32")]
         let egui_consumed = {
             let window = match self.web_window.as_ref() {
@@ -461,12 +470,9 @@ impl ApplicationHandler for App {
             WindowEvent::RedrawRequested => {
                 #[cfg(not(target_arch = "wasm32"))]
                 {
-                    let raw_input = egui_state.take_egui_input(runtime.state.window());
+                    let raw_input = egui_state.take_egui_input(window.as_ref());
                     let full_output = runtime.run_frame(raw_input);
-                    egui_state.handle_platform_output(
-                        runtime.state.window(),
-                        full_output.platform_output,
-                    );
+                    egui_state.handle_platform_output(window.as_ref(), full_output.platform_output);
                 }
 
                 #[cfg(target_arch = "wasm32")]
@@ -493,7 +499,9 @@ impl ApplicationHandler for App {
 
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(runtime) = &self.runtime {
-            runtime.state.window().request_redraw();
+            if let Some(window) = runtime.state.window() {
+                window.request_redraw();
+            }
         }
     }
 }
@@ -502,15 +510,12 @@ impl ApplicationHandler for App {
 mod tests {
     use super::{App, TouchPointEvent};
     use crate::commands::InputEvent;
+    use crate::test_utils::approx_eq;
     use std::collections::HashMap;
     use winit::{dpi::PhysicalPosition, event::TouchPhase};
 
     fn pos(x: f64, y: f64) -> PhysicalPosition<f64> {
         PhysicalPosition::new(x, y)
-    }
-
-    fn approx_eq(a: f32, b: f32, eps: f32) -> bool {
-        (a - b).abs() <= eps
     }
 
     #[test]

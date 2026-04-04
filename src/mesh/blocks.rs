@@ -10,11 +10,9 @@ use crate::block_repository::{
 };
 use crate::mesh::noise::pseudo_random_noise;
 use crate::mesh::obj::{append_obj_mesh, resolve_obj_mesh};
-use crate::mesh::shapes::append_prism_with_layers;
+use crate::mesh::shapes::{append_prism_with_layers, PrismFaceColors, PrismTextureLayers};
 use crate::mesh::transforms::rotate_vertices_around_euler;
 use crate::types::{LevelObject, Vertex};
-
-const MARGIN_PROFILE_TOTAL_INSET: f32 = 0.05;
 
 pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
     build_block_vertices_from_refs(objects.iter())
@@ -59,6 +57,7 @@ where
 
         let mut color_top = block.render.color_top;
         let mut color_side = block.render.color_side;
+        let mut color_bottom = block.render.color_bottom;
         let mut color_fill = block.render.color_fill;
         let mut color_outline = block.render.color_outline;
 
@@ -68,11 +67,13 @@ where
             for i in 0..3 {
                 color_top[i] = (color_top[i] + factor).clamp(0.0, 1.0);
                 color_side[i] = (color_side[i] + factor).clamp(0.0, 1.0);
+                color_bottom[i] = (color_bottom[i] + factor).clamp(0.0, 1.0);
             }
         }
 
         color_top = apply_color_tint(color_top, obj.color_tint);
         color_side = apply_color_tint(color_side, obj.color_tint);
+        color_bottom = apply_color_tint(color_bottom, obj.color_tint);
         color_fill = apply_color_tint(color_fill, obj.color_tint);
         color_outline = apply_color_tint(color_outline, obj.color_tint);
 
@@ -95,16 +96,16 @@ where
             && matches!(block.render.profile, BlockRenderProfile::VoidFrame)
         {
             let t = 0.05;
+            let side_layers = PrismTextureLayers::uniform(texture_layers.side);
+            let outline_colors = PrismFaceColors::uniform(color_outline);
 
             // Fill
             append_prism_with_layers(
                 vertices,
                 [x_min + t, y_min + t, z_min + t],
                 [x_max - t, y_max - t, z_max - t],
-                color_fill,
-                color_fill,
-                texture_layers.side,
-                texture_layers.side,
+                PrismFaceColors::uniform(color_fill),
+                side_layers,
             );
 
             // Bottom edges
@@ -112,37 +113,29 @@ where
                 vertices,
                 [x_min, y_min, z_min],
                 [x_max, y_min + t, z_min + t],
-                color_outline,
-                color_outline,
-                texture_layers.side,
-                texture_layers.side,
+                outline_colors,
+                side_layers,
             );
             append_prism_with_layers(
                 vertices,
                 [x_min, y_max - t, z_min],
                 [x_max, y_max, z_min + t],
-                color_outline,
-                color_outline,
-                texture_layers.side,
-                texture_layers.side,
+                outline_colors,
+                side_layers,
             );
             append_prism_with_layers(
                 vertices,
                 [x_min, y_min + t, z_min],
                 [x_min + t, y_max - t, z_min + t],
-                color_outline,
-                color_outline,
-                texture_layers.side,
-                texture_layers.side,
+                outline_colors,
+                side_layers,
             );
             append_prism_with_layers(
                 vertices,
                 [x_max - t, y_min + t, z_min],
                 [x_max, y_max - t, z_min + t],
-                color_outline,
-                color_outline,
-                texture_layers.side,
-                texture_layers.side,
+                outline_colors,
+                side_layers,
             );
 
             // Top edges
@@ -150,37 +143,29 @@ where
                 vertices,
                 [x_min, y_min, z_max - t],
                 [x_max, y_min + t, z_max],
-                color_outline,
-                color_outline,
-                texture_layers.side,
-                texture_layers.side,
+                outline_colors,
+                side_layers,
             );
             append_prism_with_layers(
                 vertices,
                 [x_min, y_max - t, z_max - t],
                 [x_max, y_max, z_max],
-                color_outline,
-                color_outline,
-                texture_layers.side,
-                texture_layers.side,
+                outline_colors,
+                side_layers,
             );
             append_prism_with_layers(
                 vertices,
                 [x_min, y_min + t, z_max - t],
                 [x_min + t, y_max - t, z_max],
-                color_outline,
-                color_outline,
-                texture_layers.side,
-                texture_layers.side,
+                outline_colors,
+                side_layers,
             );
             append_prism_with_layers(
                 vertices,
                 [x_max - t, y_min + t, z_max - t],
                 [x_max, y_max - t, z_max],
-                color_outline,
-                color_outline,
-                texture_layers.side,
-                texture_layers.side,
+                outline_colors,
+                side_layers,
             );
 
             // Vertical edges
@@ -188,68 +173,41 @@ where
                 vertices,
                 [x_min, y_min, z_min + t],
                 [x_min + t, y_min + t, z_max - t],
-                color_outline,
-                color_outline,
-                texture_layers.side,
-                texture_layers.side,
+                outline_colors,
+                side_layers,
             );
             append_prism_with_layers(
                 vertices,
                 [x_max - t, y_min, z_min + t],
                 [x_max, y_min + t, z_max - t],
-                color_outline,
-                color_outline,
-                texture_layers.side,
-                texture_layers.side,
+                outline_colors,
+                side_layers,
             );
             append_prism_with_layers(
                 vertices,
                 [x_min, y_max - t, z_min + t],
                 [x_min + t, y_max, z_max - t],
-                color_outline,
-                color_outline,
-                texture_layers.side,
-                texture_layers.side,
+                outline_colors,
+                side_layers,
             );
             append_prism_with_layers(
                 vertices,
                 [x_max - t, y_max - t, z_min + t],
                 [x_max, y_max, z_max - t],
-                color_outline,
-                color_outline,
-                texture_layers.side,
-                texture_layers.side,
+                outline_colors,
+                side_layers,
             );
         } else if vertices.is_empty() {
-            let (
-                render_x_min,
-                render_x_max,
-                render_y_min,
-                render_y_max,
-                render_z_min,
-                render_z_max,
-            ) = if matches!(block.render.profile, BlockRenderProfile::Margin) {
-                let x_inset = (obj.size[0] * 0.5).min(MARGIN_PROFILE_TOTAL_INSET * 0.5);
-                let z_inset = (obj.size[2] * 0.5).min(MARGIN_PROFILE_TOTAL_INSET * 0.5);
-                (
-                    x_min + x_inset,
-                    x_max - x_inset,
-                    y_min,
-                    y_max,
-                    z_min + z_inset,
-                    z_max - z_inset,
-                )
-            } else {
-                (x_min, x_max, y_min, y_max, z_min, z_max)
-            };
             append_prism_with_layers(
                 vertices,
-                [render_x_min, render_y_min, render_z_min],
-                [render_x_max, render_y_max, render_z_max],
-                color_top,
-                color_side,
-                texture_layers.top,
-                texture_layers.side,
+                [x_min, y_min, z_min],
+                [x_max, y_max, z_max],
+                PrismFaceColors::new(color_top, color_side, color_bottom),
+                PrismTextureLayers::new(
+                    texture_layers.top,
+                    texture_layers.side,
+                    texture_layers.bottom,
+                ),
             );
         }
 

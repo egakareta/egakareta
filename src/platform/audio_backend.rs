@@ -144,13 +144,10 @@ impl RodioBackendInner {
             if self._output_device.is_none() {
                 let _ = self.ensure_device();
             } else {
-                // TODO
-                // If the device already exists, we might need to resume the AudioContext.
-                // rodio/cpal don't easily expose the context, but we can try to resume it via web-sys
-                // if we can find it. However, just calling ensure_device() is often enough
-                // if it hasn't been called in a user interaction yet.
-                // For now, let's just log that we are attempting to resume.
-                log::trace!("AudioBackend: already initialized, skipping resume for now");
+                // Re-checking the device here keeps resume idempotent and gives browsers
+                // another chance to unlock playback after user interaction policies change.
+                let _ = self.ensure_device();
+                log::trace!("AudioBackend: resume requested on existing output device");
             }
         }
     }

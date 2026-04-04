@@ -6,7 +6,7 @@
         "texture_side": "stone.png"
     },
     "render": {
-        "profile": "margin"
+        "profile": "solid"
     },
     "behavior": {
         "collision": "solid",

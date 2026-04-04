@@ -42,6 +42,10 @@ fn default_color_side() -> [f32; 4] {
     [1.0, 1.0, 1.0, 1.0]
 }
 
+fn default_color_bottom() -> [f32; 4] {
+    [1.0, 1.0, 1.0, 1.0]
+}
+
 fn default_color_fill() -> [f32; 4] {
     [0.0, 0.0, 0.0, 1.0]
 }
@@ -114,6 +118,8 @@ pub(crate) struct BlockAssets {
     pub(crate) texture_top: Option<String>,
     #[serde(default)]
     pub(crate) texture_side: Option<String>,
+    #[serde(default)]
+    pub(crate) texture_bottom: Option<String>,
     #[serde(default)]
     pub(crate) mesh: Option<String>,
     #[serde(default)]
@@ -189,14 +195,22 @@ impl BlockTextureAtlas {
             return Some(*index);
         }
 
-        if !normalized.ends_with(".png") {
+        if !normalized.ends_with(".png") && !normalized.ends_with(".bmp") {
             let with_extension = format!("{normalized}.png");
             if let Some(index) = self.by_key.get(&with_extension) {
+                return Some(*index);
+            }
+            let with_bmp = format!("{normalized}.bmp");
+            if let Some(index) = self.by_key.get(&with_bmp) {
                 return Some(*index);
             }
 
             let with_prefix = format!("assets/blocks/{with_extension}");
             if let Some(index) = self.by_key.get(&with_prefix) {
+                return Some(*index);
+            }
+            let with_bmp_prefix = format!("assets/blocks/{with_bmp}");
+            if let Some(index) = self.by_key.get(&with_bmp_prefix) {
                 return Some(*index);
             }
         }
@@ -214,13 +228,13 @@ impl BlockTextureAtlas {
 pub(crate) struct BlockTextureLayers {
     pub(crate) top: u32,
     pub(crate) side: u32,
+    pub(crate) bottom: u32,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum BlockRenderProfile {
     Solid,
-    Margin,
     VoidFrame,
     SpeedPortal,
     FinishRing,
@@ -234,6 +248,8 @@ pub(crate) struct BlockRender {
     pub(crate) color_top: [f32; 4],
     #[serde(default = "default_color_side")]
     pub(crate) color_side: [f32; 4],
+    #[serde(default = "default_color_bottom")]
+    pub(crate) color_bottom: [f32; 4],
     #[serde(default = "default_color_fill")]
     pub(crate) color_fill: [f32; 4],
     #[serde(default = "default_color_outline")]
@@ -248,6 +264,7 @@ impl Default for BlockRender {
             profile: default_render_profile(),
             color_top: default_color_top(),
             color_side: default_color_side(),
+            color_bottom: default_color_bottom(),
             color_fill: default_color_fill(),
             color_outline: default_color_outline(),
             noise: default_noise(),
@@ -407,14 +424,16 @@ fn normalize_texture_key(value: &str) -> String {
 
 fn collect_builtin_texture_files(dir: &Dir<'_>, files: &mut Vec<(String, Vec<u8>)>) {
     for file in dir.files() {
-        let is_png = file
+        let is_texture = file
             .path()
             .extension()
             .and_then(|extension| extension.to_str())
-            .map(|extension| extension.eq_ignore_ascii_case("png"))
+            .map(|extension| {
+                extension.eq_ignore_ascii_case("png") || extension.eq_ignore_ascii_case("bmp")
+            })
             .unwrap_or(false);
 
-        if !is_png {
+        if !is_texture {
             continue;
         }
 
@@ -436,7 +455,7 @@ pub(crate) fn block_texture_atlas() -> &'static BlockTextureAtlas {
 
         if files.is_empty() {
             log::warn!(
-                "No block PNG textures were discovered in embedded assets; textured blocks will fall back to flat color."
+                "No block textures (PNG/BMP) were discovered in embedded assets; textured blocks will fall back to flat color."
             );
         }
 
@@ -505,10 +524,17 @@ pub(crate) fn resolve_block_texture_layers(block_id: &str) -> BlockTextureLayers
         .texture_side
         .as_deref()
         .or(block.assets.texture.as_deref());
+    let bottom_key = block
+        .assets
+        .texture_bottom
+        .as_deref()
+        .or(block.assets.texture_side.as_deref())
+        .or(block.assets.texture.as_deref());
 
     BlockTextureLayers {
         top: resolve_layer(top_key, "top"),
         side: resolve_layer(side_key, "side"),
+        bottom: resolve_layer(bottom_key, "bottom"),
     }
 }
 
@@ -555,6 +581,16 @@ mod tests {
                 assert_ne!(
                     layers.side, default_layer,
                     "Side texture for block '{}' resolved to the default layer.",
+                    block.id
+                );
+            }
+
+            let bottom_configured =
+                block.assets.texture_bottom.is_some() || block.assets.texture.is_some();
+            if bottom_configured {
+                assert_ne!(
+                    layers.bottom, default_layer,
+                    "Bottom texture for block '{}' resolved to the default layer.",
                     block.id
                 );
             }

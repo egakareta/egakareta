@@ -227,25 +227,4 @@ f 1/1/1 2/2/1 3/3/1
         let vertices = build_block_vertices(&[obj]);
         assert!(vertices.len() >= 168); // 28 segments * (outer + inner + face) triangles
     }
-
-    #[test]
-    fn margin_profile_renders_with_xz_inset() {
-        let obj = LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.0,
-            block_id: "core/grass".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-        };
-
-        let vertices = build_block_vertices(&[obj]);
-        let positions: Vec<[f32; 3]> = vertices.iter().map(|v| v.position).collect();
-        let (min_x, max_x, min_z, max_z) = bounds_xz(&positions);
-
-        assert!((min_x - 0.025).abs() < 1e-5);
-        assert!((max_x - 0.975).abs() < 1e-5);
-        assert!((min_z - 0.025).abs() < 1e-5);
-        assert!((max_z - 0.975).abs() < 1e-5);
-    }
 }

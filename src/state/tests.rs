@@ -11,12 +11,9 @@ use crate::commands::AppCommand;
 use crate::editor_domain::{derive_tap_indicator_positions, derive_timeline_position};
 use crate::game::simulate_timeline_state_with_triggers;
 use crate::platform::audio::runtime_asset_source_key;
+use crate::test_utils::assert_approx_eq as approx_eq;
 use crate::types::{AppPhase, EditorMode, GizmoAxis, GizmoDragKind, LevelObject, SpawnDirection};
 use glam::{Vec2, Vec3};
-
-fn approx_eq(a: f32, b: f32, eps: f32) {
-    assert!((a - b).abs() <= eps, "expected {a} ~= {b}");
-}
 
 #[test]
 fn test_marquee_no_redundant_selections_before_drag_started() {

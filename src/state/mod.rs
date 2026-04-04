@@ -130,7 +130,7 @@ impl State {
 
     /// Returns a reference to the native window (desktop only).
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn window(&self) -> &NativeWindow {
+    pub(crate) fn window(&self) -> Option<&NativeWindow> {
         self.render.gpu.window()
     }
 

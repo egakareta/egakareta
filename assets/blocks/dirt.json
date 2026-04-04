@@ -1,10 +1,11 @@
 {
     "id": "core/dirt",
     "display_name": "Dirt",
+    "assets": {
+        "texture": "dirt.png"
+    },
     "render": {
-        "profile": "solid",
-        "color_top": [0.4, 0.3, 0.2, 1.0],
-        "color_side": [0.35, 0.25, 0.15, 1.0]
+        "profile": "solid"
     },
     "behavior": {
         "collision": "solid",

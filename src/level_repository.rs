@@ -65,22 +65,12 @@ pub(crate) fn parse_level_metadata_json(json: &str) -> Result<LevelMetadata, Str
     Ok(metadata)
 }
 
-/// Parses level metadata from a binary payload.
-pub(crate) fn parse_level_metadata_binary(bytes: &[u8]) -> Result<LevelMetadata, String> {
-    decode_level_metadata_binary(bytes)
-}
-
-/// Serializes level metadata to a binary payload.
-pub(crate) fn serialize_level_metadata_binary(metadata: &LevelMetadata) -> Result<Vec<u8>, String> {
-    encode_level_metadata_binary(metadata)
-}
-
 /// Builds an egz archive containing level metadata and optional audio data.
 pub(crate) fn build_egz_archive(
     metadata: &LevelMetadata,
     audio_file: Option<(&str, &[u8])>,
 ) -> Result<Vec<u8>, String> {
-    let metadata_binary = serialize_level_metadata_binary(metadata)?;
+    let metadata_binary = encode_level_metadata_binary(metadata)?;
 
     let mut buffer = Vec::new();
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buffer));
@@ -118,7 +108,7 @@ pub(crate) fn read_metadata_from_egz(
         .map_err(|error| error.to_string())?;
     drop(metadata_file); // Drop to allow another borrow
 
-    let metadata = parse_level_metadata_binary(&metadata_binary)?;
+    let metadata = decode_level_metadata_binary(&metadata_binary)?;
 
     // Try to read the audio file if it exists
     let audio_bytes = if let Ok(mut audio_file) = archive.by_name(&metadata.music.source) {
@@ -147,7 +137,7 @@ fn collect_builtin_levels(dir: &Dir<'_>, levels: &mut Vec<LevelMetadata>) {
             continue;
         }
 
-        if let Ok(metadata) = parse_level_metadata_binary(file.contents()) {
+        if let Ok(metadata) = decode_level_metadata_binary(file.contents()) {
             levels.push(metadata);
         }
     }
@@ -159,10 +149,8 @@ fn collect_builtin_levels(dir: &Dir<'_>, levels: &mut Vec<LevelMetadata>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        builtin_level_names, load_builtin_level_metadata, parse_level_metadata_binary,
-        serialize_level_metadata_binary,
-    };
+    use super::{builtin_level_names, load_builtin_level_metadata};
+    use crate::level_codec::{decode_level_metadata_binary, encode_level_metadata_binary};
 
     #[test]
     fn discovers_builtin_levels_from_assets_directory() {
@@ -179,8 +167,8 @@ mod tests {
     #[test]
     fn roundtrips_binary_metadata() {
         let metadata = load_builtin_level_metadata("Flowerfield").expect("missing level");
-        let encoded = serialize_level_metadata_binary(&metadata).expect("serialize");
-        let decoded = parse_level_metadata_binary(&encoded).expect("parse");
+        let encoded = encode_level_metadata_binary(&metadata).expect("serialize");
+        let decoded = decode_level_metadata_binary(&encoded).expect("parse");
 
         assert_eq!(decoded.name, metadata.name);
         assert_eq!(decoded.objects.len(), metadata.objects.len());

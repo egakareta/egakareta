@@ -419,7 +419,7 @@ impl EditorSubsystem {
         });
         self.timing
             .timing_points
-            .sort_by(|a, b| a.time_seconds.partial_cmp(&b.time_seconds).unwrap());
+            .sort_by(|a, b| a.time_seconds.total_cmp(&b.time_seconds));
     }
 
     pub(crate) fn remove_timing_point(&mut self, index: usize) {
@@ -434,7 +434,7 @@ impl EditorSubsystem {
         }
         self.timing
             .timing_points
-            .sort_by(|a, b| a.time_seconds.partial_cmp(&b.time_seconds).unwrap());
+            .sort_by(|a, b| a.time_seconds.total_cmp(&b.time_seconds));
     }
 
     pub(crate) fn update_timing_point_bpm(&mut self, index: usize, bpm: f32) {

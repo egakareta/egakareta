@@ -70,8 +70,11 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let texture_layer = i32(round(input.texture_layer));
-    let texture_sample = textureSample(u_block_textures, u_block_sampler, input.uv, texture_layer);
+    var texture_sample = vec4<f32>(1.0, 1.0, 1.0, 1.0);
+    if (input.texture_layer >= 0.0) {
+        let texture_layer = i32(round(input.texture_layer));
+        texture_sample = textureSample(u_block_textures, u_block_sampler, input.uv, texture_layer);
+    }
     var color = (input.color * texture_sample).rgb;
 
     if (u_color_space.flags.x > 0.5) {

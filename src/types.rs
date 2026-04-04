@@ -348,7 +348,7 @@ impl Vertex {
             position,
             color,
             uv: [0.0, 0.0],
-            texture_layer: 0.0,
+            texture_layer: -1.0,
         }
     }
 
@@ -1828,7 +1828,7 @@ mod tests {
         default_camera_trigger_rotation, default_camera_trigger_transition_interval_seconds,
         timed_triggers_to_camera_triggers, CameraTrigger, CameraTriggerMode, EditorStateParams,
         LevelMetadata, LevelObject, MusicMetadata, SpawnDirection, SpawnMetadata,
-        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, Vertex,
     };
     use serde_json::json;
 
@@ -2097,6 +2097,15 @@ mod tests {
         assert_eq!(
             settings.keybinds_for_action(single_action).first().copied(),
             Some(&u_chord2)
+        );
+    }
+
+    #[test]
+    fn untextured_vertex_uses_texture_bypass_layer() {
+        let vertex = Vertex::untextured([1.0, 2.0, 3.0], [0.2, 0.3, 0.4, 0.5]);
+        assert!(
+            vertex.texture_layer < 0.0,
+            "untextured vertices should bypass texture sampling"
         );
     }
 

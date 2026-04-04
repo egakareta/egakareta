@@ -473,10 +473,7 @@ pub(crate) fn show_waveform_panel(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn approx_eq(a: f32, b: f32, eps: f32) {
-        assert!((a - b).abs() <= eps, "expected {a} ~= {b}");
-    }
+    use crate::test_utils::assert_approx_eq as approx_eq;
 
     #[test]
     fn test_timeline_visible_duration() {

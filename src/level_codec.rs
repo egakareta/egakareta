@@ -63,6 +63,21 @@ struct MetadataEntry {
     value_json: String,
 }
 
+fn push_full_object_streams(
+    object: &LevelObject,
+    object_positions: &mut Vec<[f32; 3]>,
+    object_sizes: &mut Vec<[f32; 3]>,
+    object_rotations: &mut Vec<[f32; 3]>,
+    object_roundness: &mut Vec<f32>,
+    object_color_tints: &mut Vec<[f32; 3]>,
+) {
+    object_positions.push(object.position);
+    object_sizes.push(object.size);
+    object_rotations.push(object.rotation_degrees);
+    object_roundness.push(object.roundness);
+    object_color_tints.push(object.color_tint);
+}
+
 pub(crate) fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<Vec<u8>, String> {
     let mut palette = Vec::<String>::new();
     let mut palette_lookup = std::collections::HashMap::<String, u16>::new();
@@ -94,11 +109,14 @@ pub(crate) fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<V
             compact_positions.push(quantized_position);
             set_compact_bit(&mut compact_mask, palette_indices.len() - 1);
         } else {
-            object_positions.push(object.position);
-            object_sizes.push(object.size);
-            object_rotations.push(object.rotation_degrees);
-            object_roundness.push(object.roundness);
-            object_color_tints.push(object.color_tint);
+            push_full_object_streams(
+                object,
+                &mut object_positions,
+                &mut object_sizes,
+                &mut object_rotations,
+                &mut object_roundness,
+                &mut object_color_tints,
+            );
         }
     }
 
@@ -130,11 +148,14 @@ pub(crate) fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<V
                 object_color_tints.clear();
 
                 for object in &metadata.objects {
-                    object_positions.push(object.position);
-                    object_sizes.push(object.size);
-                    object_rotations.push(object.rotation_degrees);
-                    object_roundness.push(object.roundness);
-                    object_color_tints.push(object.color_tint);
+                    push_full_object_streams(
+                        object,
+                        &mut object_positions,
+                        &mut object_sizes,
+                        &mut object_rotations,
+                        &mut object_roundness,
+                        &mut object_color_tints,
+                    );
                 }
             }
 

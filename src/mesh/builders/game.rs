@@ -25,6 +25,8 @@ pub(crate) fn build_trail_vertices_with_alpha(
 fn build_trail_vertices_internal(points: &[[f32; 3]], game_over: bool, alpha: f32) -> Vec<Vertex> {
     let mut trail_vertices = Vec::new();
     let width = 0.8;
+    const GHOST_Y_BIAS_STEP: f32 = 0.0002;
+    const GHOST_Y_BIAS_MAX: f32 = 0.003;
     let alpha = alpha.clamp(0.0, 1.0);
     let c_top = if game_over {
         [1.0, 0.2, 0.2, alpha]
@@ -44,6 +46,11 @@ fn build_trail_vertices_internal(points: &[[f32; 3]], game_over: bool, alpha: f3
     for i in 0..points.len() - 1 {
         let p1 = points[i];
         let p2 = points[i + 1];
+        let y_bias = if alpha < 0.999 {
+            (i as f32 * GHOST_Y_BIAS_STEP).min(GHOST_Y_BIAS_MAX)
+        } else {
+            0.0
+        };
 
         let dx = p2[0] - p1[0];
         let dy = p2[1] - p1[1];
@@ -54,8 +61,8 @@ fn build_trail_vertices_internal(points: &[[f32; 3]], game_over: bool, alpha: f3
             let x_max = p1[0] + width / 2.0;
             let z_min = p1[2] - width / 2.0;
             let z_max = p1[2] + width / 2.0;
-            let y_base = p1[1].min(p2[1]);
-            let y_top = p1[1].max(p2[1]) + width;
+            let y_base = p1[1].min(p2[1]) + y_bias;
+            let y_top = p1[1].max(p2[1]) + width + y_bias;
 
             append_prism(
                 &mut trail_vertices,
@@ -83,7 +90,7 @@ fn build_trail_vertices_internal(points: &[[f32; 3]], game_over: bool, alpha: f3
             )
         };
 
-        let y_offset = p1[1].min(p2[1]);
+        let y_offset = p1[1].min(p2[1]) + y_bias;
         let y_extra = dy.abs() * 0.5;
         let y_min = y_offset;
         let y_max = y_offset + width + y_extra;
@@ -277,4 +284,196 @@ pub(crate) fn build_camera_trigger_marker_vertices(
     }
 
     vertices
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_trail_vertices, build_trail_vertices_with_alpha};
+    use crate::types::Vertex;
+
+    const PRISM_VERTEX_COUNT: usize = 36;
+
+    fn approx_eq(a: f32, b: f32, eps: f32) {
+        assert!(
+            (a - b).abs() <= eps,
+            "expected {a} to be within {eps} of {b} (delta: {})",
+            (a - b).abs()
+        );
+    }
+
+    fn segment_y_bounds(vertices: &[Vertex]) -> Vec<(f32, f32)> {
+        assert_eq!(
+            vertices.len() % PRISM_VERTEX_COUNT,
+            0,
+            "trail should be composed of full prism segments"
+        );
+
+        vertices
+            .chunks(PRISM_VERTEX_COUNT)
+            .map(|segment| {
+                let mut min_y = f32::INFINITY;
+                let mut max_y = f32::NEG_INFINITY;
+                for vertex in segment {
+                    min_y = min_y.min(vertex.position[1]);
+                    max_y = max_y.max(vertex.position[1]);
+                }
+                (min_y, max_y)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn trail_vertices_empty_for_short_paths() {
+        let empty: [[f32; 3]; 0] = [];
+        assert!(build_trail_vertices(&empty, false).is_empty());
+
+        let one = [[0.0, 0.0, 0.0]];
+        assert!(build_trail_vertices(&one, false).is_empty());
+    }
+
+    #[test]
+    fn trail_emits_one_prism_per_segment() {
+        let points = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0],
+            [2.0, 0.0, 1.0],
+        ];
+
+        let opaque = build_trail_vertices(&points, false);
+        let translucent = build_trail_vertices_with_alpha(&points, false, 0.5);
+
+        assert_eq!(opaque.len(), (points.len() - 1) * PRISM_VERTEX_COUNT);
+        assert_eq!(translucent.len(), (points.len() - 1) * PRISM_VERTEX_COUNT);
+    }
+
+    #[test]
+    fn translucent_trail_staggers_segment_heights_through_turns() {
+        let points = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0],
+            [2.0, 0.0, 1.0],
+        ];
+
+        let vertices = build_trail_vertices_with_alpha(&points, false, 0.45);
+        let y_bounds = segment_y_bounds(&vertices);
+
+        assert_eq!(y_bounds.len(), 3);
+        for i in 1..y_bounds.len() {
+            assert!(
+                y_bounds[i].0 > y_bounds[i - 1].0,
+                "segment {} base y ({}) should be above previous segment base y ({})",
+                i,
+                y_bounds[i].0,
+                y_bounds[i - 1].0
+            );
+            assert!(
+                y_bounds[i].1 > y_bounds[i - 1].1,
+                "segment {} top y ({}) should be above previous segment top y ({})",
+                i,
+                y_bounds[i].1,
+                y_bounds[i - 1].1
+            );
+        }
+    }
+
+    #[test]
+    fn opaque_trail_keeps_segments_coplanar() {
+        let points = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0],
+            [2.0, 0.0, 1.0],
+        ];
+
+        let vertices = build_trail_vertices(&points, false);
+        let y_bounds = segment_y_bounds(&vertices);
+        let (first_min_y, first_max_y) = y_bounds[0];
+
+        for (min_y, max_y) in y_bounds.iter().copied().skip(1) {
+            approx_eq(min_y, first_min_y, 1e-6);
+            approx_eq(max_y, first_max_y, 1e-6);
+        }
+    }
+
+    #[test]
+    fn translucent_trail_bias_caps_for_long_paths() {
+        let points: Vec<[f32; 3]> = (0..40).map(|i| [i as f32, 0.0, 0.0]).collect();
+
+        let vertices = build_trail_vertices_with_alpha(&points, false, 0.6);
+        let y_bounds = segment_y_bounds(&vertices);
+        let first_min_y = y_bounds.first().expect("expected first segment").0;
+        let last_min_y = y_bounds.last().expect("expected last segment").0;
+
+        approx_eq(last_min_y - first_min_y, 0.003, 1e-6);
+        for (min_y, _) in y_bounds.iter().copied().skip(16) {
+            approx_eq(min_y, 0.003, 1e-6);
+        }
+    }
+
+    #[test]
+    fn translucent_trail_alpha_is_clamped() {
+        let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
+
+        let low = build_trail_vertices_with_alpha(&points, false, -1.0);
+        assert!(!low.is_empty());
+        assert!(low.iter().all(|v| v.color[3] <= f32::EPSILON));
+
+        let high = build_trail_vertices_with_alpha(&points, false, 5.0);
+        assert!(!high.is_empty());
+        assert!(high
+            .iter()
+            .all(|v| (v.color[3] - 1.0).abs() <= f32::EPSILON));
+    }
+
+    #[test]
+    fn full_alpha_builder_matches_opaque_builder() {
+        let points = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0],
+            [1.0, 1.0, 1.0],
+        ];
+
+        let opaque = build_trail_vertices(&points, false);
+        let full_alpha = build_trail_vertices_with_alpha(&points, false, 1.0);
+
+        assert_eq!(opaque.len(), full_alpha.len());
+        for (a, b) in opaque.iter().zip(full_alpha.iter()) {
+            for i in 0..3 {
+                approx_eq(a.position[i], b.position[i], 1e-6);
+            }
+            for i in 0..4 {
+                approx_eq(a.color[i], b.color[i], 1e-6);
+            }
+        }
+    }
+
+    #[test]
+    fn game_over_trail_uses_red_palette() {
+        let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
+
+        let normal = build_trail_vertices(&points, false);
+        let game_over = build_trail_vertices(&points, true);
+
+        assert!(!normal.is_empty());
+        assert!(!game_over.is_empty());
+
+        let normal_first = normal[0].color;
+        let game_over_first = game_over[0].color;
+
+        assert!(
+            game_over_first[0] > normal_first[0],
+            "game over trail should be redder than normal trail"
+        );
+        assert!(
+            game_over_first[1] < normal_first[1],
+            "game over trail should reduce green channel"
+        );
+        assert!(
+            game_over_first[2] < normal_first[2],
+            "game over trail should reduce blue channel"
+        );
+    }
 }

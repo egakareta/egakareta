@@ -7,11 +7,14 @@
 */
 use crate::types::PhysicalSize;
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::Arc;
+
 #[cfg(target_arch = "wasm32")]
 pub(crate) type WasmCanvas = web_sys::HtmlCanvasElement;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) type NativeWindow = winit::window::Window;
+pub(crate) type NativeWindow = Arc<winit::window::Window>;
 
 pub(crate) type PlatformInstant = web_time::Instant;
 
@@ -58,10 +61,8 @@ impl SurfaceHost {
 
         let instance = wgpu::Instance::default();
         let surface = instance
-            .create_surface(&window)
+            .create_surface(window.clone())
             .expect("Failed to create surface");
-        let surface =
-            unsafe { std::mem::transmute::<wgpu::Surface<'_>, wgpu::Surface<'static>>(surface) };
 
         (SurfaceHost::Window(window), instance, surface, size)
     }

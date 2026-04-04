@@ -5,9 +5,9 @@
 * See LICENSE and COMMERICAL.md for details.
 
 */
+use crate::level_codec::{decode_level_metadata_binary, encode_level_metadata_binary};
 use crate::level_repository::{
-    build_egz_archive, parse_level_metadata_binary, parse_level_metadata_json,
-    read_metadata_from_egz, serialize_level_metadata_binary,
+    build_egz_archive, parse_level_metadata_json, read_metadata_from_egz,
 };
 use crate::types::LevelMetadata;
 
@@ -22,11 +22,11 @@ pub fn build_level_export(
 }
 
 pub fn build_level_binary_export(metadata: &LevelMetadata) -> Result<Vec<u8>, String> {
-    serialize_level_metadata_binary(metadata)
+    encode_level_metadata_binary(metadata)
 }
 
 pub fn parse_level_binary_import(data: &[u8]) -> Result<LevelMetadata, String> {
-    parse_level_metadata_binary(data)
+    decode_level_metadata_binary(data)
 }
 
 /// Converts legacy JSON level metadata into binary metadata bytes.
@@ -34,19 +34,19 @@ pub fn parse_level_binary_import(data: &[u8]) -> Result<LevelMetadata, String> {
 /// This helper is intended for one-time migration tooling.
 pub fn convert_level_json_to_binary(json: &str) -> Result<Vec<u8>, String> {
     let metadata = parse_level_metadata_json(json)?;
-    serialize_level_metadata_binary(&metadata)
+    encode_level_metadata_binary(&metadata)
 }
 
 /// Converts binary level metadata into JSON level metadata.
 pub fn convert_level_binary_to_json(data: &[u8]) -> Result<String, String> {
-    let metadata = parse_level_metadata_binary(data)?;
+    let metadata = decode_level_metadata_binary(data)?;
     serde_json::to_string_pretty(&metadata).map_err(|error| error.to_string())
 }
 
 /// Re-encodes binary level metadata bytes into the current codec format.
 pub fn normalize_level_binary_format(data: &[u8]) -> Result<Vec<u8>, String> {
-    let metadata = parse_level_metadata_binary(data)?;
-    serialize_level_metadata_binary(&metadata)
+    let metadata = decode_level_metadata_binary(data)?;
+    encode_level_metadata_binary(&metadata)
 }
 
 pub fn parse_level_egz_import(data: &[u8]) -> Result<(LevelMetadata, Option<Vec<u8>>), String> {

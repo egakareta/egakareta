@@ -182,10 +182,10 @@ impl GpuContext {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn window(&self) -> &crate::platform::state_host::NativeWindow {
+    pub(crate) fn window(&self) -> Option<&crate::platform::state_host::NativeWindow> {
         match &self.surface_host {
-            Some(SurfaceHost::Window(w)) => w,
-            _ => panic!("No window available in this context"),
+            Some(SurfaceHost::Window(w)) => Some(w),
+            _ => None,
         }
     }
 

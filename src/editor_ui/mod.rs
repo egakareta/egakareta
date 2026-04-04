@@ -1009,6 +1009,7 @@ fn show_view_selector_cube(
 mod tests {
     use super::sort_quad_by_angle;
     use super::VIEW_CUBE_FACES;
+    use crate::test_utils::approx_eq;
     use glam::{Mat3, Vec3};
 
     fn camera_forward_from_orientation(rotation: f32, pitch: f32) -> Vec3 {
@@ -1016,10 +1017,6 @@ mod tests {
         let horizontal = pitch.cos();
         let offset = Mat3::from_rotation_y(rotation) * Vec3::new(0.0, pitch.sin(), -horizontal);
         (-offset).normalize_or_zero()
-    }
-
-    fn approx_eq(a: f32, b: f32, eps: f32) -> bool {
-        (a - b).abs() <= eps
     }
 
     fn is_convex_quad(quad: &[egui::Pos2; 4]) -> bool {

@@ -24,6 +24,8 @@ mod level_repository;
 mod mesh;
 mod platform;
 mod state;
+#[cfg(test)]
+mod test_utils;
 mod types;
 
 pub use editor_ui::{

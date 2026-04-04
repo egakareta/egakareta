@@ -10,14 +10,11 @@ use super::simulation::{
     simulate_timeline_state, simulate_timeline_state_with_triggers, TimelineSimulationRuntime,
 };
 use super::state::GameState;
+use crate::test_utils::assert_approx_eq as approx_eq;
 use crate::types::{
     LevelObject, SpawnDirection, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
     TimedTriggerTarget,
 };
-
-fn approx_eq(a: f32, b: f32, eps: f32) {
-    assert!((a - b).abs() <= eps, "expected {a} ~= {b}");
-}
 
 #[test]
 fn test_ground_detection_normal() {
