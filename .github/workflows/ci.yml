@@ -79,8 +79,6 @@ jobs:
   build-web:
     name: Build WebAssembly
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     environment: ${{ github.event_name == 'push' && 'production' || 'preview' }}
     env:
       API_URL: ${{ vars.API_URL }}
@@ -100,11 +98,10 @@ jobs:
 
       - run: zip -r egakareta-web.zip dist
 
-      - uses: softprops/action-gh-release@v1
-        continue-on-error: true
+      - uses: actions/upload-artifact@v4
         with:
-          files: egakareta-web.zip
-          draft: true
+          name: egakareta-web
+          path: egakareta-web.zip
 
   build-native:
     name: Build Native (${{ matrix.os }})
@@ -125,8 +122,6 @@ jobs:
             artifact_name: egakareta-macos
             binary_path: target/x86_64-apple-darwin/release/egakareta
     runs-on: ${{ matrix.os }}
-    permissions:
-      contents: write
     environment: ${{ github.event_name == 'push' && 'production' || 'preview' }}
     env:
       API_URL: ${{ vars.API_URL }}
@@ -152,8 +147,27 @@ jobs:
       - if: matrix.os != 'windows-latest'
         run: zip -j ${{ matrix.artifact_name }}.zip ${{ matrix.binary_path }}
 
-      - uses: softprops/action-gh-release@v1
-        continue-on-error: true
+      - uses: actions/upload-artifact@v4
         with:
-          files: ${{ matrix.artifact_name }}.zip
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_name }}.zip
+
+  release:
+    name: Create Release
+    needs: [build-web, build-native]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/*.zip
           draft: true
