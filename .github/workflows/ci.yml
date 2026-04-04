@@ -96,9 +96,12 @@ jobs:
       - name: Build WebAssembly
         run: bun run build
 
-      - run: zip -r egakareta-web.zip dist
+      - name: Package WebAssembly
+        if: github.event_name == 'push'
+        run: zip -r egakareta-web.zip dist
 
-      - uses: actions/upload-artifact@v4
+      - if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
         with:
           name: egakareta-web
           path: egakareta-web.zip
@@ -142,12 +145,15 @@ jobs:
       - name: Build ${{ matrix.artifact_name }}
         run: cargo build --release --verbose --target ${{ matrix.target }}
 
-      - if: matrix.os == 'windows-latest'
+      - name: Package ${{ matrix.artifact_name }} (Windows)
+        if: matrix.os == 'windows-latest' && github.event_name == 'push'
         run: Compress-Archive -Path ${{ matrix.binary_path }} -DestinationPath ${{ matrix.artifact_name }}.zip
-      - if: matrix.os != 'windows-latest'
+      - name: Package ${{ matrix.artifact_name }} (Unix)
+        if: matrix.os != 'windows-latest' && github.event_name == 'push'
         run: zip -j ${{ matrix.artifact_name }}.zip ${{ matrix.binary_path }}
 
-      - uses: actions/upload-artifact@v4
+      - if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_name }}.zip
@@ -166,8 +172,14 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: Get current date
+        id: date
+        run: echo "today=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
+          name: Release ${{ steps.date.outputs.today }}
+          tag_name: release-${{ steps.date.outputs.today }}-${{ github.run_number }}
           files: artifacts/*.zip
           draft: true
