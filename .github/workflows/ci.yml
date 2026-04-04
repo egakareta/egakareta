@@ -62,9 +62,10 @@ jobs:
           version: 1.0
       - run: bun install
       - run: bun run test:coverage
-      - uses: codecov/codecov-action@v3
+      - uses: codecov/codecov-action@v5
         with:
-          file: ./lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./lcov.info
 
   test-db:
     name: Test Database
