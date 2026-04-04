@@ -15,30 +15,30 @@
         "SKIP_DEPENDENCY_INSTALL": "true",
         "I_LOVE_HAMSTERS": "true",
         "API_URL": "", // To be set in https://dash.cloudflare.com
-        "PUBLISHABLE_KEY": "", // To be set in https://dash.cloudflare.com
+        "PUBLISHABLE_KEY": "" // To be set in https://dash.cloudflare.com
     },
     "r2_buckets": [
         {
             "binding": "BEATMAP_AUDIO",
-            "bucket_name": "beatmap-audio",
+            "bucket_name": "beatmap-audio"
         },
         {
             "binding": "BEATMAP_DATA",
-            "bucket_name": "beatmap-data",
-        },
+            "bucket_name": "beatmap-data"
+        }
     ],
     "env": {
         "preview": {
             "r2_buckets": [
                 {
                     "binding": "BEATMAP_AUDIO",
-                    "bucket_name": "beatmap-audio-preview",
+                    "bucket_name": "beatmap-audio-preview"
                 },
                 {
                     "binding": "BEATMAP_DATA",
-                    "bucket_name": "beatmap-data-preview",
-                },
-            ],
-        },
-    },
+                    "bucket_name": "beatmap-data-preview"
+                }
+            ]
+        }
+    }
 }
