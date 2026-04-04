@@ -101,6 +101,8 @@ impl EditorSubsystem {
             self.ui.cursor,
             &self.config.selected_block_id,
         ));
+        let new_index = self.objects.len().saturating_sub(1);
+        self.assign_default_names_for_indices(&[new_index]);
         self.ui.selected_block_index = None;
         self.ui.selected_block_indices.clear();
         self.ui.hovered_block_index = None;

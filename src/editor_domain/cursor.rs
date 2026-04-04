@@ -15,6 +15,8 @@ pub(crate) fn create_block_at_cursor(cursor: [f32; 3], block_id: &str) -> LevelO
         roundness: 0.18,
         block_id: block_id.to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        name: String::new(),
+        group_path: Vec::new(),
     }
 }
 

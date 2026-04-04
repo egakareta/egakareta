@@ -243,6 +243,22 @@ fn is_default_level_object_color_tint(value: &[f32; 3]) -> bool {
         .all(|(component, default)| (*component - default).abs() <= 1e-6)
 }
 
+fn default_level_object_name() -> String {
+    String::new()
+}
+
+fn is_default_level_object_name(value: &str) -> bool {
+    value.is_empty()
+}
+
+fn default_level_object_group_path() -> Vec<String> {
+    Vec::new()
+}
+
+fn is_default_level_object_group_path(value: &[String]) -> bool {
+    value.is_empty()
+}
+
 fn default_app_settings_version() -> u32 {
     APP_SETTINGS_VERSION
 }
@@ -1001,11 +1017,30 @@ pub(crate) struct LevelObject {
         skip_serializing_if = "is_default_level_object_color_tint"
     )]
     pub(crate) color_tint: [f32; 3],
+    #[serde(
+        default = "default_level_object_name",
+        skip_serializing_if = "is_default_level_object_name"
+    )]
+    pub(crate) name: String,
+    #[serde(
+        default = "default_level_object_group_path",
+        skip_serializing_if = "is_default_level_object_group_path"
+    )]
+    pub(crate) group_path: Vec<String>,
 }
 
 impl LevelObject {
     pub(crate) fn normalize_block_id(&mut self) {
         self.block_id = normalize_block_id(&self.block_id);
+        self.name = self.name.trim().to_string();
+        self.group_path = self
+            .group_path
+            .iter()
+            .flat_map(|segment| segment.split('/'))
+            .map(str::trim)
+            .filter(|segment| !segment.is_empty())
+            .map(|segment| segment.to_string())
+            .collect();
     }
 }
 
@@ -1018,6 +1053,8 @@ impl Default for LevelObject {
             roundness: default_block_roundness(),
             block_id: default_level_object_block_id(),
             color_tint: default_level_object_color_tint(),
+            name: default_level_object_name(),
+            group_path: default_level_object_group_path(),
         }
     }
 }
@@ -1884,6 +1921,8 @@ mod tests {
         assert_eq!(object.roundness, 0.18);
         assert_eq!(object.block_id, "core/stone");
         assert_eq!(object.color_tint, [1.0, 1.0, 1.0]);
+        assert!(object.name.is_empty());
+        assert!(object.group_path.is_empty());
     }
 
     #[test]
@@ -1913,6 +1952,8 @@ mod tests {
             roundness: 0.18,
             block_id: "core/grass".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            name: String::new(),
+            group_path: Vec::new(),
         };
 
         let value = serde_json::to_value(&object).expect("serialize object");
@@ -1944,6 +1985,8 @@ mod tests {
                 roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                name: String::new(),
+                group_path: Vec::new(),
             }],
         });
 
@@ -1966,6 +2009,26 @@ mod tests {
         assert!(object.get("rotation_degrees").is_none());
         assert!(object.get("roundness").is_none());
         assert!(object.get("block_id").is_none());
+        assert!(object.get("name").is_none());
+        assert!(object.get("group_path").is_none());
+    }
+
+    #[test]
+    fn level_object_serialization_includes_explorer_metadata_when_set() {
+        let object = LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.18,
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+            name: "Spawn Block".to_string(),
+            group_path: vec!["Gameplay".to_string(), "Start".to_string()],
+        };
+
+        let value = serde_json::to_value(&object).expect("serialize object");
+        assert_eq!(value.get("name"), Some(&json!("Spawn Block")));
+        assert_eq!(value.get("group_path"), Some(&json!(["Gameplay", "Start"])));
     }
 
     #[test]

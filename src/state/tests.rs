@@ -33,6 +33,8 @@ fn test_marquee_no_redundant_selections_before_drag_started() {
             roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            name: String::new(),
+            group_path: Vec::new(),
         });
         state.editor.objects.push(LevelObject {
             position: [5.0, 0.0, 0.0],
@@ -41,6 +43,8 @@ fn test_marquee_no_redundant_selections_before_drag_started() {
             roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            name: String::new(),
+            group_path: Vec::new(),
         });
 
         // 1. Just hovering over the first block (no mouse down)
@@ -210,6 +214,8 @@ fn falls_from_elevated_platform() {
         roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        name: String::new(),
+        group_path: Vec::new(),
     }];
     let (position, direction) = derive_timeline_position(
         [0.0, 3.0, 0.0],
@@ -251,6 +257,8 @@ fn configure_trigger_policy_parity_scene(
         roundness: 0.18,
         block_id: "core/speedportal".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        name: String::new(),
+        group_path: Vec::new(),
     }];
     state.editor.spawn.position = [0.0, 0.0, 0.0];
     state.editor.spawn.direction = SpawnDirection::Forward;
@@ -473,6 +481,8 @@ fn multi_selection_clicking_rendered_gizmo_starts_gizmo_drag_not_block_drag() {
                 roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                name: String::new(),
+                group_path: Vec::new(),
             },
             LevelObject {
                 position: [4.0, 0.0, 0.0],
@@ -481,6 +491,8 @@ fn multi_selection_clicking_rendered_gizmo_starts_gizmo_drag_not_block_drag() {
                 roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                name: String::new(),
+                group_path: Vec::new(),
             },
         ];
         state.editor.ui.selected_block_indices = vec![0, 1];
@@ -793,6 +805,8 @@ fn test_handle_primary_click_shift_priority() {
             roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            name: String::new(),
+            group_path: Vec::new(),
         });
         state.editor.ui.selected_block_indices.push(0);
 
@@ -881,6 +895,8 @@ fn editor_null_mode_clears_selection() {
             roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            name: String::new(),
+            group_path: Vec::new(),
         });
         state.editor.ui.selected_block_index = Some(0);
         state.editor.set_mode(EditorMode::Place);
@@ -951,6 +967,8 @@ fn test_gizmo_move_shaft_is_pickable() {
             roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            name: String::new(),
+            group_path: Vec::new(),
         });
         state.editor.ui.selected_block_indices.push(0);
         state.sync_editor_objects();
@@ -1031,6 +1049,8 @@ fn test_gizmo_hover_priority_suppresses_block_outline() {
             roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            name: String::new(),
+            group_path: Vec::new(),
         });
         state.editor.ui.selected_block_indices.push(0);
         state.sync_editor_objects();
@@ -1071,6 +1091,8 @@ fn test_gizmo_hover_priority_suppresses_block_outline() {
             roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            name: String::new(),
+            group_path: Vec::new(),
         });
         state.sync_editor_objects();
 

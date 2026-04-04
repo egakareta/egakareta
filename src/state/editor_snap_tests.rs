@@ -109,6 +109,8 @@ fn test_editor_nudge_respects_ctrl_override() {
             roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            name: String::new(),
+            group_path: Vec::new(),
         });
         state.editor.ui.selected_block_index = Some(0);
 
@@ -160,6 +162,8 @@ fn test_editor_nudge_left_right_screen_direction_regression() {
             roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            name: String::new(),
+            group_path: Vec::new(),
         });
         state.editor.ui.selected_block_index = Some(0);
 

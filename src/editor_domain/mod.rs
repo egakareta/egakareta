@@ -64,6 +64,8 @@ mod tests {
                 roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                name: String::new(),
+                group_path: Vec::new(),
             },
             LevelObject {
                 position: [0.0, 1.0, 0.0],
@@ -72,6 +74,8 @@ mod tests {
                 roundness: 0.18,
                 block_id: "core/grass".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                name: String::new(),
+                group_path: Vec::new(),
             },
         ];
 
@@ -109,6 +113,8 @@ mod tests {
                 roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                name: String::new(),
+                group_path: Vec::new(),
             }],
             extra: serde_json::Map::new(),
         };
@@ -164,6 +170,8 @@ mod tests {
             roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            name: String::new(),
+            group_path: Vec::new(),
         }];
 
         assert!(playtest_return_objects(true, &objects).is_some());
@@ -182,6 +190,8 @@ mod tests {
             roundness: 0.18,
             block_id: "core/speedportal".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            name: String::new(),
+            group_path: Vec::new(),
         }];
 
         // Advance timeline past the portal (e.g., 10 units / BASE_PLAYER_SPEED seconds)
@@ -235,6 +245,8 @@ mod tests {
                 roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                name: String::new(),
+                group_path: Vec::new(),
             }],
             extra: serde_json::Map::new(),
         };

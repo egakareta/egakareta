@@ -10,6 +10,7 @@ mod command_dispatch;
 mod editor_actions;
 mod editor_camera;
 mod editor_config_state;
+mod editor_explorer;
 mod editor_interaction;
 mod editor_scene;
 mod editor_state;
@@ -71,6 +72,7 @@ pub(crate) struct SessionSubsystem {
     pub(crate) editor_show_metadata: bool,
     pub(crate) editor_show_import: bool,
     pub(crate) editor_show_settings: bool,
+    pub(crate) editor_show_explorer: bool,
     pub(crate) editor_settings_section: SettingsSection,
     pub(crate) editor_keybind_capture_action: Option<(String, usize)>,
     pub(crate) editor_import_text: String,

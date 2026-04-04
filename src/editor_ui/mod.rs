@@ -6,11 +6,13 @@
 
 */
 pub(crate) mod components;
+pub(crate) mod explorer;
 pub(crate) mod menu;
 pub(crate) mod modes;
 
 use crate::commands::AppCommand;
 use crate::editor_ui::components::{show_timeline_bar, show_waveform_panel, timeline_metrics};
+use crate::editor_ui::explorer::show_explorer_panel;
 use crate::editor_ui::modes::compose::show_compose_mode_bottom_panel;
 use crate::editor_ui::modes::timing::show_timing_mode_bottom_panel;
 use crate::editor_ui::modes::trigger::show_trigger_mode_bottom_panel;
@@ -359,6 +361,8 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
             });
     }
 
+    show_explorer_panel(ctx, &view, &mut commands);
+
     egui::TopBottomPanel::top("editor_top_bar").show(ctx, |ui| {
         ui.horizontal(|ui| {
             // Top-level tabs: Compose / Timing
@@ -422,6 +426,10 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                 .clicked()
             {
                 commands.push(crate::commands::AppCommand::EditorToggleSettings);
+            }
+
+            if ui.button("Explorer").clicked() {
+                commands.push(crate::commands::AppCommand::EditorToggleExplorer);
             }
         });
     });

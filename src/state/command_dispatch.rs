@@ -138,6 +138,25 @@ impl State {
                 self.set_editor_show_settings(!self.editor_show_settings())
             }
             AppCommand::EditorSetShowSettings(show) => self.set_editor_show_settings(show),
+            AppCommand::EditorToggleExplorer => {
+                self.set_editor_show_explorer(!self.editor_show_explorer())
+            }
+            AppCommand::EditorSetShowExplorer(show) => self.set_editor_show_explorer(show),
+            AppCommand::EditorExplorerSelectObjects { indices, additive } => {
+                self.editor_select_objects_from_explorer(indices, additive)
+            }
+            AppCommand::EditorExplorerRenameObject { index, name } => {
+                self.editor_rename_object_from_explorer(index, name)
+            }
+            AppCommand::EditorExplorerCreateGroupFromSelection => {
+                self.editor_create_group_from_selection()
+            }
+            AppCommand::EditorExplorerRenameGroup { path, new_name } => {
+                self.editor_rename_group(path, new_name)
+            }
+            AppCommand::EditorExplorerMoveSelectedToGroup(path) => {
+                self.editor_move_selected_to_group(path)
+            }
             AppCommand::EditorSetSettingsSection(section) => {
                 self.set_editor_settings_section(section)
             }
@@ -1174,6 +1193,8 @@ mod tests {
                     roundness: 0.18,
                     block_id: "core/stone".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
+                    name: String::new(),
+                    group_path: Vec::new(),
                 },
                 crate::types::LevelObject {
                     position: [2.0, 0.0, 0.0],
@@ -1182,6 +1203,8 @@ mod tests {
                     roundness: 0.18,
                     block_id: "core/stone".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
+                    name: String::new(),
+                    group_path: Vec::new(),
                 },
             ];
 
@@ -1234,6 +1257,8 @@ mod tests {
                 roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                name: String::new(),
+                group_path: Vec::new(),
             }];
 
             // Ensure we are not hovering anything initially
@@ -1435,6 +1460,8 @@ mod tests {
                 roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                name: String::new(),
+                group_path: Vec::new(),
             });
 
             let viewport = Vec2::new(
@@ -1574,6 +1601,87 @@ mod tests {
                 just_pressed: true,
             });
             assert!(!state.editor_show_settings());
+        });
+    }
+
+    #[test]
+    fn test_editor_toggle_explorer_command() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            assert!(state.editor_show_explorer());
+            state.dispatch(AppCommand::EditorToggleExplorer);
+            assert!(!state.editor_show_explorer());
+
+            state.dispatch(AppCommand::EditorSetShowExplorer(true));
+            assert!(state.editor_show_explorer());
+        });
+    }
+
+    #[test]
+    fn test_explorer_group_and_rename_commands() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+            state.phase = AppPhase::Menu;
+            state.dispatch(AppCommand::ToggleEditor);
+
+            state.dispatch(AppCommand::TurnRight);
+            state.dispatch(AppCommand::NextLevel);
+            state.dispatch(AppCommand::TurnRight);
+            assert!(state.editor.objects.len() >= 2);
+            let newest_name = state
+                .editor
+                .objects
+                .last()
+                .map(|object| object.name.clone())
+                .unwrap_or_default();
+            assert!(!newest_name.is_empty());
+
+            state.dispatch(AppCommand::EditorExplorerSelectObjects {
+                indices: vec![0],
+                additive: false,
+            });
+            state.dispatch(AppCommand::EditorExplorerSelectObjects {
+                indices: vec![1],
+                additive: true,
+            });
+            state.dispatch(AppCommand::EditorExplorerCreateGroupFromSelection);
+
+            let created_group_name = state.editor.objects[0].group_path.first().cloned();
+            assert!(created_group_name.is_some());
+            assert_eq!(
+                state.editor.objects[1].group_path.first().cloned(),
+                created_group_name
+            );
+
+            state.dispatch(AppCommand::EditorExplorerRenameObject {
+                index: 0,
+                name: "Spawn Block".to_string(),
+            });
+            assert_eq!(state.editor.objects[0].name, "Spawn Block");
+
+            let old_group_name = created_group_name.unwrap_or_default();
+            state.dispatch(AppCommand::EditorExplorerRenameGroup {
+                path: vec![old_group_name],
+                new_name: "Gameplay".to_string(),
+            });
+            assert_eq!(
+                state.editor.objects[0]
+                    .group_path
+                    .first()
+                    .map(String::as_str),
+                Some("Gameplay")
+            );
+
+            state.dispatch(AppCommand::EditorExplorerMoveSelectedToGroup(None));
+            assert!(state.editor.objects[0].group_path.is_empty());
+            assert!(state.editor.objects[1].group_path.is_empty());
         });
     }
 

@@ -19,6 +19,7 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) show_metadata: bool,
     pub(crate) show_import: bool,
     pub(crate) show_settings: bool,
+    pub(crate) show_explorer: bool,
     pub(crate) settings_section: SettingsSection,
     pub(crate) keybind_capture_action: Option<&'a (String, usize)>,
     pub(crate) import_text: &'a str,
@@ -35,6 +36,8 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) snap_rotation_step_degrees: f32,
     pub(crate) selected_block_id: &'a str,
     pub(crate) selected_block: Option<LevelObject>,
+    pub(crate) objects: &'a [LevelObject],
+    pub(crate) selected_object_indices: Vec<usize>,
     pub(crate) playing: bool,
     pub(crate) timeline_time_seconds: f32,
     pub(crate) timeline_duration_seconds: f32,
@@ -89,6 +92,7 @@ impl State {
         );
         let camera_position = (camera_target + self.editor.camera_offset()).to_array();
         let (camera_preview_position, camera_preview_target) = self.editor_preview_camera_view();
+        let selected_object_indices = self.editor_selected_indices();
 
         EditorUiViewModel {
             mode: self.editor_mode(),
@@ -98,6 +102,7 @@ impl State {
             show_metadata: self.editor_show_metadata(),
             show_import: self.editor_show_import(),
             show_settings: self.editor_show_settings(),
+            show_explorer: self.editor_show_explorer(),
             settings_section: self.editor_settings_section(),
             keybind_capture_action: self.editor_keybind_capture_action(),
             import_text: self.editor_import_text(),
@@ -114,6 +119,8 @@ impl State {
             snap_rotation_step_degrees: self.editor_snap_rotation_step_degrees(),
             selected_block_id: self.editor_selected_block_id(),
             selected_block: self.editor_selected_block(),
+            objects: self.editor_objects(),
+            selected_object_indices,
             playing: self.editor_is_playing(),
             timeline_time_seconds: self.editor_timeline_time_seconds(),
             timeline_duration_seconds: self.editor_timeline_duration_seconds(),

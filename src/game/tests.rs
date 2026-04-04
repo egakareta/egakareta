@@ -26,6 +26,8 @@ fn test_ground_detection_normal() {
         roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        name: String::new(),
+        group_path: Vec::new(),
     });
     game.rebuild_behavior_cache();
 
@@ -45,6 +47,8 @@ fn test_ground_detection_under_overhang() {
         roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        name: String::new(),
+        group_path: Vec::new(),
     });
     // Overhang block at height 3
     game.objects.push(LevelObject {
@@ -54,6 +58,8 @@ fn test_ground_detection_under_overhang() {
         roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        name: String::new(),
+        group_path: Vec::new(),
     });
     game.rebuild_behavior_cache();
 
@@ -93,6 +99,8 @@ fn rotated_object_contains_expected_points() {
         roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        name: String::new(),
+        group_path: Vec::new(),
     };
 
     assert!(object_xz_contains(&obj, 1.0, 0.5));
@@ -108,6 +116,8 @@ fn rotated_overlap_uses_oriented_bounds() {
         roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        name: String::new(),
+        group_path: Vec::new(),
     };
 
     assert!(aabb_overlaps_object_xz(0.9, 1.1, 0.3, 0.5, &obj));
@@ -124,6 +134,8 @@ fn rotated_ground_detection_works() {
         roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        name: String::new(),
+        group_path: Vec::new(),
     });
     game.rebuild_behavior_cache();
 
@@ -146,6 +158,8 @@ fn speed_portal_overlap_removes_portal_and_boosts_speed() {
         roundness: 0.18,
         block_id: "core/speedportal".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        name: String::new(),
+        group_path: Vec::new(),
     });
     game.rebuild_behavior_cache();
     game.update(0.0);
@@ -167,6 +181,8 @@ fn finish_block_overlap_completes_level_after_sink() {
         roundness: 0.18,
         block_id: "core/finish".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        name: String::new(),
+        group_path: Vec::new(),
     });
     game.rebuild_behavior_cache();
 
@@ -250,6 +266,8 @@ fn timeline_trigger_hitbox_mode_does_not_resurrect_consumed_portals() {
         roundness: 0.18,
         block_id: "core/speedportal".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        name: String::new(),
+        group_path: Vec::new(),
     }];
 
     let triggers = vec![TimedTrigger {
@@ -285,6 +303,8 @@ fn timeline_state_with_disabled_trigger_hitboxes_matches_plain_simulation() {
         roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        name: String::new(),
+        group_path: Vec::new(),
     }];
 
     let triggers = vec![TimedTrigger {

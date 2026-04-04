@@ -28,6 +28,8 @@ pub(crate) fn create_menu_scene() -> Vec<LevelObject> {
                 roundness: 0.18,
                 block_id: "core/grass".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                name: String::new(),
+                group_path: Vec::new(),
             });
         }
     }

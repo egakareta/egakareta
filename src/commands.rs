@@ -159,6 +159,20 @@ pub(crate) enum AppCommand {
     EditorToggleSettings,
     /// Open or close the settings sidebar.
     EditorSetShowSettings(bool),
+    /// Toggle the right-side explorer panel visibility.
+    EditorToggleExplorer,
+    /// Open or close the right-side explorer panel.
+    EditorSetShowExplorer(bool),
+    /// Set object selection from explorer rows.
+    EditorExplorerSelectObjects { indices: Vec<usize>, additive: bool },
+    /// Rename a single object from explorer.
+    EditorExplorerRenameObject { index: usize, name: String },
+    /// Create a nested group from the current selection.
+    EditorExplorerCreateGroupFromSelection,
+    /// Rename an explorer group path.
+    EditorExplorerRenameGroup { path: Vec<String>, new_name: String },
+    /// Move selected objects to a group path or root.
+    EditorExplorerMoveSelectedToGroup(Option<Vec<String>>),
     /// Select which settings section is displayed in the sidebar.
     EditorSetSettingsSection(crate::types::SettingsSection),
     /// Set preferred graphics backend for subsequent launches.

@@ -317,6 +317,14 @@ impl State {
         }
     }
 
+    pub(crate) fn editor_show_explorer(&self) -> bool {
+        self.session.editor_show_explorer
+    }
+
+    pub(crate) fn set_editor_show_explorer(&mut self, show: bool) {
+        self.session.editor_show_explorer = show;
+    }
+
     pub(crate) fn editor_settings_section(&self) -> SettingsSection {
         self.session.editor_settings_section
     }

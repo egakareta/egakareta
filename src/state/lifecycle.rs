@@ -643,6 +643,7 @@ impl State {
                 editor_show_metadata: false,
                 editor_show_import: false,
                 editor_show_settings: false,
+                editor_show_explorer: true,
                 editor_settings_section: SettingsSection::Backends,
                 editor_keybind_capture_action: None,
                 editor_import_text: String::new(),

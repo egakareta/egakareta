@@ -49,6 +49,10 @@ struct BinaryLevelPayloadV1 {
     object_rotations: Vec<[f32; 3]>,
     object_roundness: Vec<f32>,
     object_color_tints: Vec<[f32; 3]>,
+    #[serde(default)]
+    object_names: Vec<String>,
+    #[serde(default)]
+    object_group_paths: Vec<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -63,21 +67,6 @@ struct MetadataEntry {
     value_json: String,
 }
 
-fn push_full_object_streams(
-    object: &LevelObject,
-    object_positions: &mut Vec<[f32; 3]>,
-    object_sizes: &mut Vec<[f32; 3]>,
-    object_rotations: &mut Vec<[f32; 3]>,
-    object_roundness: &mut Vec<f32>,
-    object_color_tints: &mut Vec<[f32; 3]>,
-) {
-    object_positions.push(object.position);
-    object_sizes.push(object.size);
-    object_rotations.push(object.rotation_degrees);
-    object_roundness.push(object.roundness);
-    object_color_tints.push(object.color_tint);
-}
-
 pub(crate) fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<Vec<u8>, String> {
     let mut palette = Vec::<String>::new();
     let mut palette_lookup = std::collections::HashMap::<String, u16>::new();
@@ -88,6 +77,8 @@ pub(crate) fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<V
     let mut object_rotations = Vec::with_capacity(metadata.objects.len());
     let mut object_roundness = Vec::with_capacity(metadata.objects.len());
     let mut object_color_tints = Vec::with_capacity(metadata.objects.len());
+    let mut object_names = Vec::with_capacity(metadata.objects.len());
+    let mut object_group_paths = Vec::with_capacity(metadata.objects.len());
 
     let mut compact_positions = Vec::<[i32; 3]>::new();
     let mut compact_mask = vec![0u8; metadata.objects.len().div_ceil(8)];
@@ -109,14 +100,13 @@ pub(crate) fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<V
             compact_positions.push(quantized_position);
             set_compact_bit(&mut compact_mask, palette_indices.len() - 1);
         } else {
-            push_full_object_streams(
-                object,
-                &mut object_positions,
-                &mut object_sizes,
-                &mut object_rotations,
-                &mut object_roundness,
-                &mut object_color_tints,
-            );
+            object_positions.push(object.position);
+            object_sizes.push(object.size);
+            object_rotations.push(object.rotation_degrees);
+            object_roundness.push(object.roundness);
+            object_color_tints.push(object.color_tint);
+            object_names.push(object.name.clone());
+            object_group_paths.push(object.group_path.clone());
         }
     }
 
@@ -146,16 +136,17 @@ pub(crate) fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<V
                 object_rotations.clear();
                 object_roundness.clear();
                 object_color_tints.clear();
+                object_names.clear();
+                object_group_paths.clear();
 
                 for object in &metadata.objects {
-                    push_full_object_streams(
-                        object,
-                        &mut object_positions,
-                        &mut object_sizes,
-                        &mut object_rotations,
-                        &mut object_roundness,
-                        &mut object_color_tints,
-                    );
+                    object_positions.push(object.position);
+                    object_sizes.push(object.size);
+                    object_rotations.push(object.rotation_degrees);
+                    object_roundness.push(object.roundness);
+                    object_color_tints.push(object.color_tint);
+                    object_names.push(object.name.clone());
+                    object_group_paths.push(object.group_path.clone());
                 }
             }
 
@@ -188,6 +179,8 @@ pub(crate) fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<V
         object_rotations,
         object_roundness,
         object_color_tints,
+        object_names,
+        object_group_paths,
     };
 
     let payload_bytes = serde_cbor::to_vec(&payload).map_err(|error| error.to_string())?;
@@ -324,6 +317,12 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
                 roundness: payload.object_roundness[index],
                 block_id: block_id.clone(),
                 color_tint: payload.object_color_tints[index],
+                name: payload.object_names.get(index).cloned().unwrap_or_default(),
+                group_path: payload
+                    .object_group_paths
+                    .get(index)
+                    .cloned()
+                    .unwrap_or_default(),
             };
             object.normalize_block_id();
             objects.push(object);
@@ -372,6 +371,8 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
                     roundness: 0.0,
                     block_id: block_id.clone(),
                     color_tint: [1.0, 1.0, 1.0],
+                    name: String::new(),
+                    group_path: Vec::new(),
                 }
             } else {
                 let object = LevelObject {
@@ -396,6 +397,16 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
                         .object_color_tints
                         .get(full_cursor)
                         .ok_or_else(|| "Full object color cursor overflow".to_string())?,
+                    name: payload
+                        .object_names
+                        .get(full_cursor)
+                        .cloned()
+                        .unwrap_or_default(),
+                    group_path: payload
+                        .object_group_paths
+                        .get(full_cursor)
+                        .cloned()
+                        .unwrap_or_default(),
                 };
                 full_cursor += 1;
                 object
@@ -432,6 +443,8 @@ fn quantize_compact_position(object: &LevelObject) -> Option<[i32; 3]> {
         || object.rotation_degrees != [0.0, 0.0, 0.0]
         || object.roundness != 0.0
         || object.color_tint != [1.0, 1.0, 1.0]
+        || !object.name.is_empty()
+        || !object.group_path.is_empty()
     {
         return None;
     }
@@ -665,6 +678,8 @@ mod tests {
                 rotation_degrees: [0.0, 90.0, 0.0],
                 roundness: 0.25,
                 color_tint: [0.8, 0.7, 0.6],
+                name: "Spawn Platform".to_string(),
+                group_path: vec!["Gameplay".to_string(), "Start".to_string()],
             },
             LevelObject {
                 block_id: "core/stone".to_string(),
@@ -673,6 +688,8 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 roundness: 0.0,
                 color_tint: [1.0, 1.0, 1.0],
+                name: String::new(),
+                group_path: Vec::new(),
             },
             LevelObject {
                 block_id: "core/grass".to_string(),
@@ -681,6 +698,8 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 roundness: 0.0,
                 color_tint: [1.0, 1.0, 1.0],
+                name: String::new(),
+                group_path: Vec::new(),
             },
         ];
 
@@ -704,6 +723,8 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 roundness: 0.0,
                 color_tint: [1.0, 1.0, 1.0],
+                name: String::new(),
+                group_path: Vec::new(),
             },
             LevelObject {
                 block_id: "core/grass".to_string(),
@@ -712,6 +733,8 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 roundness: 0.0,
                 color_tint: [1.0, 1.0, 1.0],
+                name: String::new(),
+                group_path: Vec::new(),
             },
         ];
 
@@ -740,6 +763,8 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             roundness: 0.0,
             color_tint: [1.0, 1.0, 1.0],
+            name: String::new(),
+            group_path: Vec::new(),
         }];
 
         let encoded_v2 = encode_level_metadata_binary(&metadata).expect("encode v2");
@@ -763,6 +788,8 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 roundness: 0.0,
                 color_tint: [1.0, 1.0, 1.0],
+                name: String::new(),
+                group_path: Vec::new(),
             },
             LevelObject {
                 block_id: "core/grass".to_string(),
@@ -771,6 +798,8 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 roundness: 0.0,
                 color_tint: [1.0, 1.0, 1.0],
+                name: String::new(),
+                group_path: Vec::new(),
             },
         ];
 
