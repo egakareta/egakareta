@@ -17,6 +17,7 @@ fn main() {
     println!("cargo:rerun-if-changed=.env.production");
     println!("cargo:rerun-if-env-changed=BUILD_ENV");
     println!("cargo:rerun-if-changed=assets/levels");
+    println!("cargo:rerun-if-changed=assets/blocks");
 
     let build_env = std::env::var("BUILD_ENV").unwrap_or_else(|_| "local".to_string());
 

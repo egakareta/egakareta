@@ -434,6 +434,12 @@ pub(crate) fn block_texture_atlas() -> &'static BlockTextureAtlas {
         collect_builtin_texture_files(&BLOCKS_DIR, &mut files);
         files.sort_unstable_by(|left, right| left.0.cmp(&right.0));
 
+        if files.is_empty() {
+            log::warn!(
+                "No block PNG textures were discovered in embedded assets; textured blocks will fall back to flat color."
+            );
+        }
+
         for (path, bytes) in files {
             let decoded = match image::load_from_memory(&bytes) {
                 Ok(image) => image,
@@ -458,6 +464,11 @@ pub(crate) fn block_texture_atlas() -> &'static BlockTextureAtlas {
 
             atlas.add_layer(&path, resized.into_raw());
         }
+
+        log::info!(
+            "Loaded {} block texture layer(s) from embedded assets.",
+            atlas.layers.len().saturating_sub(1)
+        );
 
         atlas
     })
@@ -514,4 +525,39 @@ pub(crate) fn resolve_block_definition(block_id: &str) -> &'static BlockDefiniti
 /// Normalizes a block ID to its canonical form (e.g., adding "core/" prefix if needed).
 pub(crate) fn normalize_block_id(block_id: &str) -> String {
     block_catalog().resolve_id(block_id).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{all_placeable_blocks, block_texture_atlas, resolve_block_texture_layers};
+
+    #[test]
+    fn configured_texture_assets_resolve_to_non_default_layers() {
+        let atlas = block_texture_atlas();
+        let default_layer = atlas.default_layer();
+
+        for block in all_placeable_blocks() {
+            let layers = resolve_block_texture_layers(&block.id);
+
+            let top_configured =
+                block.assets.texture_top.is_some() || block.assets.texture.is_some();
+            if top_configured {
+                assert_ne!(
+                    layers.top, default_layer,
+                    "Top texture for block '{}' resolved to the default layer.",
+                    block.id
+                );
+            }
+
+            let side_configured =
+                block.assets.texture_side.is_some() || block.assets.texture.is_some();
+            if side_configured {
+                assert_ne!(
+                    layers.side, default_layer,
+                    "Side texture for block '{}' resolved to the default layer.",
+                    block.id
+                );
+            }
+        }
+    }
 }
