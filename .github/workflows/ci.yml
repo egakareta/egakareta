@@ -21,8 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: preview
     env:
-      API_URL: ${{ vars.API_URL }}
-      PUBLISHABLE_KEY: ${{ vars.PUBLISHABLE_KEY }}
+      BUILD_ENV: preview
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
@@ -44,8 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: preview
     env:
-      API_URL: ${{ vars.API_URL }}
-      PUBLISHABLE_KEY: ${{ vars.PUBLISHABLE_KEY }}
+      BUILD_ENV: preview
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
@@ -82,8 +80,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'push' && 'production' || 'preview' }}
     env:
-      API_URL: ${{ vars.API_URL }}
-      PUBLISHABLE_KEY: ${{ vars.PUBLISHABLE_KEY }}
+      BUILD_ENV: ${{ github.event_name == 'push' && 'production' || 'preview' }}
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
@@ -129,8 +126,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     environment: ${{ github.event_name == 'push' && 'production' || 'preview' }}
     env:
-      API_URL: ${{ vars.API_URL }}
-      PUBLISHABLE_KEY: ${{ vars.PUBLISHABLE_KEY }}
+      BUILD_ENV: ${{ github.event_name == 'push' && 'production' || 'preview' }}
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@nightly

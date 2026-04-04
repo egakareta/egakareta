@@ -11,12 +11,6 @@
     "pages_build_output_dir": "dist",
     "compatibility_date": "2026-02-24",
     "compatibility_flags": ["nodejs_compat"],
-    "vars": {
-        "SKIP_DEPENDENCY_INSTALL": "true",
-        "I_LOVE_HAMSTERS": "true",
-        "API_URL": "", // To be set in https://dash.cloudflare.com
-        "PUBLISHABLE_KEY": "" // To be set in https://dash.cloudflare.com
-    },
     "r2_buckets": [
         {
             "binding": "BEATMAP_AUDIO",
@@ -29,6 +23,12 @@
     ],
     "env": {
         "preview": {
+            "vars": {
+                "SKIP_DEPENDENCY_INSTALL": "true",
+                "I_LOVE_HAMSTERS": "true",
+                "API_URL": "https://eqqowxzratebdkjnbqin.supabase.co",
+                "PUBLISHABLE_KEY": "sb_publishable_842oMsTBASkBCovtKi6RrQ_qPWaDN42"
+            },
             "r2_buckets": [
                 {
                     "binding": "BEATMAP_AUDIO",
@@ -39,6 +39,14 @@
                     "bucket_name": "beatmap-data-preview"
                 }
             ]
+        },
+        "production": {
+            "vars": {
+                "SKIP_DEPENDENCY_INSTALL": "true",
+                "I_LOVE_HAMSTERS": "true",
+                "API_URL": "https://ukfpclpcceeqaagyorcb.supabase.co",
+                "PUBLISHABLE_KEY": "sb_publishable_y9pwqwVxUohToosEzERcnQ_z1Fr3NB2"
+            }
         }
     }
 }
