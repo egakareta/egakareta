@@ -76,11 +76,10 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    var texture_sample = vec4<f32>(1.0, 1.0, 1.0, 1.0);
-    if (input.texture_layer >= 0.0) {
-        let texture_layer = i32(round(input.texture_layer));
-        texture_sample = textureSample(u_block_textures, u_block_sampler, input.uv, texture_layer);
-    }
+    let has_texture = input.texture_layer >= 0.0;
+    let texture_layer = max(i32(round(input.texture_layer)), 0);
+    let sampled_texture = textureSample(u_block_textures, u_block_sampler, input.uv, texture_layer);
+    let texture_sample = select(vec4<f32>(1.0, 1.0, 1.0, 1.0), sampled_texture, has_texture);
     var color = (input.color * texture_sample).rgb;
 
     let face_size = input.uv_norm;

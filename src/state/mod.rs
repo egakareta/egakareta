@@ -29,6 +29,8 @@ mod view_model;
 #[cfg(test)]
 mod editor_snap_tests;
 #[cfg(test)]
+mod shader_tests;
+#[cfg(test)]
 mod tests;
 
 pub(crate) use audio_state::{AudioState, AudioSubsystem};
