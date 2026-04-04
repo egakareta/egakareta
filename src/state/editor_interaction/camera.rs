@@ -198,3 +198,118 @@ impl State {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::super::State;
+    use crate::test_utils::assert_approx_eq as approx_eq;
+    use crate::types::AppPhase;
+    use glam::{Vec2, Vec3};
+
+    #[test]
+    fn camera_axes_follow_editor_rotation() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.editor.camera.editor_rotation = 0.0;
+            let (right, up) = state.editor.camera_axes_xy();
+            approx_eq(right.x, 1.0, 1e-6);
+            approx_eq(right.y, 0.0, 1e-6);
+            approx_eq(up.x, 0.0, 1e-6);
+            approx_eq(up.y, 1.0, 1e-6);
+
+            state.editor.camera.editor_rotation = std::f32::consts::FRAC_PI_2;
+            let (right, up) = state.editor.camera_axes_xy();
+            approx_eq(right.x, 0.0, 1e-5);
+            approx_eq(right.y, -1.0, 1e-5);
+            approx_eq(up.x, 1.0, 1e-5);
+            approx_eq(up.y, 0.0, 1e-5);
+        });
+    }
+
+    #[test]
+    fn camera_offset_clamps_pitch_and_world_projection_handles_visibility() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.editor.camera.editor_rotation = 0.0;
+            state.editor.camera.editor_pitch = 10.0;
+            let offset_clamped_high = state.editor.camera_offset();
+
+            state.editor.camera.editor_pitch = 89.9f32.to_radians();
+            let offset_at_limit = state.editor.camera_offset();
+
+            approx_eq(offset_clamped_high.x, offset_at_limit.x, 1e-4);
+            approx_eq(offset_clamped_high.y, offset_at_limit.y, 1e-4);
+            approx_eq(offset_clamped_high.z, offset_at_limit.z, 1e-4);
+
+            let viewport = Vec2::new(1280.0, 720.0);
+            let target = Vec3::new(
+                state.editor.camera.editor_pan[0],
+                state.editor.camera.editor_target_z,
+                state.editor.camera.editor_pan[1],
+            );
+
+            let on_screen = state.editor.world_to_screen_v(target, viewport);
+            assert!(on_screen.is_some());
+
+            let behind_camera = target + state.editor.camera_offset() * 2.0;
+            let off_screen = state.editor.world_to_screen_v(behind_camera, viewport);
+            assert!(off_screen.is_none());
+        });
+    }
+
+    #[test]
+    fn camera_orientation_transition_wraps_and_interpolates() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.phase = AppPhase::Editor;
+            state.editor.camera.editor_rotation = 3.0;
+            state.editor.camera.editor_pitch = 0.2;
+
+            state
+                .editor
+                .set_editor_camera_orientation(-3.0, 0.6, Some(1.0));
+            let transition = state.editor.camera.transition.as_ref().expect("transition");
+            assert!(transition.target_rotation > transition.start_rotation);
+            approx_eq(transition.target_pitch, 0.6, 1e-6);
+
+            assert!(state.editor.update_camera_transition(0.5));
+            assert!(state.editor.camera.transition.is_some());
+
+            assert!(state.editor.update_camera_transition(0.6));
+            assert!(state.editor.camera.transition.is_none());
+            approx_eq(state.editor.camera.editor_pitch, 0.6, 1e-3);
+        });
+    }
+
+    #[test]
+    fn state_camera_orientation_api_only_applies_in_editor_phase() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            let baseline_rotation = state.editor.camera.editor_rotation;
+            state.phase = AppPhase::Menu;
+            state.set_editor_camera_orientation(1.2, 0.3, None);
+            approx_eq(state.editor.camera.editor_rotation, baseline_rotation, 1e-6);
+
+            state.phase = AppPhase::Editor;
+            state.set_editor_camera_orientation(1.2, 0.3, None);
+            approx_eq(state.editor.camera.editor_rotation, 1.2, 1e-6);
+            approx_eq(state.editor.camera.editor_pitch, 0.3, 1e-6);
+        });
+    }
+}

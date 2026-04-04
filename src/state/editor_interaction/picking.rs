@@ -262,3 +262,117 @@ impl EditorSubsystem {
         Some((t_hit, normal))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::super::State;
+    use crate::test_utils::assert_approx_eq as approx_eq;
+    use crate::types::LevelObject;
+    use glam::{Vec2, Vec3};
+
+    fn sample_block(rotation_degrees: [f32; 3]) -> LevelObject {
+        LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees,
+            roundness: 0.18,
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        }
+    }
+
+    #[test]
+    fn ray_intersect_sphere_returns_expected_distance() {
+        pollster::block_on(async {
+            let state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            let t = state
+                .editor
+                .ray_intersect_sphere(Vec3::new(0.0, 0.0, -5.0), Vec3::Z, Vec3::ZERO, 1.0)
+                .expect("expected sphere hit");
+            approx_eq(t, 4.0, 1e-5);
+
+            let miss = state.editor.ray_intersect_sphere(
+                Vec3::new(5.0, 0.0, -5.0),
+                Vec3::Z,
+                Vec3::ZERO,
+                1.0,
+            );
+            assert!(miss.is_none());
+        });
+    }
+
+    #[test]
+    fn ray_intersect_rotated_block_hits_and_misses() {
+        pollster::block_on(async {
+            let state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+            let block = sample_block([0.0, 45.0, 0.0]);
+
+            let hit = state.editor.ray_intersect_rotated_block(
+                Vec3::new(0.5, 0.5, -5.0),
+                Vec3::Z,
+                &block,
+            );
+            assert!(hit.is_some());
+
+            let miss = state.editor.ray_intersect_rotated_block(
+                Vec3::new(5.0, 5.0, -5.0),
+                Vec3::Z,
+                &block,
+            );
+            assert!(miss.is_none());
+        });
+    }
+
+    #[test]
+    fn pick_from_screen_rejects_invalid_viewport() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            let pick = state
+                .editor
+                .pick_from_screen(0.0, 0.0, Vec2::new(0.0, 720.0));
+            assert!(pick.is_none());
+
+            let pick = state
+                .editor
+                .pick_from_screen(0.0, 0.0, Vec2::new(1280.0, 0.0));
+            assert!(pick.is_none());
+        });
+    }
+
+    #[test]
+    fn pick_from_screen_center_prefers_block_hit() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.editor.objects.clear();
+            state.editor.objects.push(sample_block([0.0, 0.0, 0.0]));
+
+            let viewport = Vec2::new(1280.0, 720.0);
+            let pick = state
+                .editor
+                .pick_from_screen(
+                    (viewport.x * 0.5) as f64,
+                    (viewport.y * 0.5) as f64,
+                    viewport,
+                )
+                .expect("expected pick result");
+
+            assert!(pick.hit_trigger_index.is_none());
+            assert!(pick.cursor[1] >= 0.0);
+        });
+    }
+}

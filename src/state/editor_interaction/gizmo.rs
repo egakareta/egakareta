@@ -621,3 +621,173 @@ impl State {
             .gizmo_axis_width_world(center, target_pixels, viewport_size)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::super::{EditorDragBlockStart, EditorGizmoDrag, State};
+    use crate::test_utils::assert_approx_eq as approx_eq;
+    use crate::types::{EditorMode, GizmoAxis, GizmoDragKind, LevelObject};
+    use glam::{Vec2, Vec3};
+
+    fn test_block() -> LevelObject {
+        LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.18,
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        }
+    }
+
+    fn start_block_for_index(index: usize, block: &LevelObject) -> EditorDragBlockStart {
+        EditorDragBlockStart {
+            index,
+            position: block.position,
+            size: block.size,
+            rotation_degrees: block.rotation_degrees,
+        }
+    }
+
+    #[test]
+    fn pick_gizmo_handle_returns_none_when_mode_has_no_gizmo() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.editor.ui.mode = EditorMode::Place;
+            state.editor.objects = vec![test_block()];
+            state.editor.ui.selected_block_index = Some(0);
+
+            let viewport = Vec2::new(1280.0, 720.0);
+            let hit = state.editor.pick_gizmo_handle(640.0, 360.0, viewport);
+            assert!(hit.is_none());
+        });
+    }
+
+    #[test]
+    fn drag_gizmo_move_updates_object_position_along_axis() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.editor.config.snap_to_grid = false;
+            state.editor.objects = vec![test_block()];
+
+            let viewport = Vec2::new(1280.0, 720.0);
+            let center = Vec3::new(0.5, 0.5, 0.5);
+            let origin_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center projects");
+            let axis_screen = state
+                .editor
+                .world_to_screen_v(center + Vec3::X, viewport)
+                .expect("axis projects");
+            let axis_dir = (axis_screen - origin_screen).normalize();
+            let target = origin_screen + axis_dir * 40.0;
+
+            let block = state.editor.objects[0].clone();
+            state.editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+                axis: GizmoAxis::X,
+                kind: GizmoDragKind::Move,
+                start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
+                start_center_screen: [origin_screen.x, origin_screen.y],
+                start_center_world: center.to_array(),
+                start_blocks: vec![start_block_for_index(0, &block)],
+            });
+
+            assert!(state
+                .editor
+                .drag_gizmo(target.x as f64, target.y as f64, viewport));
+            assert!(state.editor.objects[0].position[0] > 0.0);
+            approx_eq(state.editor.objects[0].position[1], 0.0, 1e-4);
+            approx_eq(state.editor.objects[0].position[2], 0.0, 1e-4);
+        });
+    }
+
+    #[test]
+    fn drag_gizmo_resize_negative_axis_preserves_opposite_edge() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.editor.config.snap_to_grid = false;
+            state.editor.objects = vec![test_block()];
+
+            let viewport = Vec2::new(1280.0, 720.0);
+            let center = Vec3::new(0.5, 0.5, 0.5);
+            let origin_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center projects");
+            let axis_screen = state
+                .editor
+                .world_to_screen_v(center + Vec3::X, viewport)
+                .expect("axis projects");
+            let axis_dir = (axis_screen - origin_screen).normalize();
+            let target = origin_screen + axis_dir * 20.0;
+
+            let block = state.editor.objects[0].clone();
+            state.editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+                axis: GizmoAxis::XNeg,
+                kind: GizmoDragKind::Resize,
+                start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
+                start_center_screen: [origin_screen.x, origin_screen.y],
+                start_center_world: center.to_array(),
+                start_blocks: vec![start_block_for_index(0, &block)],
+            });
+
+            assert!(state
+                .editor
+                .drag_gizmo(target.x as f64, target.y as f64, viewport));
+
+            let object = &state.editor.objects[0];
+            assert!(object.size[0] >= 0.25);
+            approx_eq(object.position[0] + object.size[0], 1.0, 1e-3);
+        });
+    }
+
+    #[test]
+    fn drag_gizmo_rotate_changes_selected_block_rotation() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.editor.config.snap_rotation = false;
+            state.editor.objects = vec![test_block()];
+
+            let viewport = Vec2::new(1280.0, 720.0);
+            let center = Vec3::new(0.5, 0.5, 0.5);
+            let origin_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center projects");
+            let start = origin_screen + Vec2::new(30.0, 0.0);
+            let target = origin_screen + Vec2::new(0.0, 30.0);
+
+            let block = state.editor.objects[0].clone();
+            state.editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+                axis: GizmoAxis::Y,
+                kind: GizmoDragKind::Rotate,
+                start_mouse: [start.x as f64, start.y as f64],
+                start_center_screen: [origin_screen.x, origin_screen.y],
+                start_center_world: center.to_array(),
+                start_blocks: vec![start_block_for_index(0, &block)],
+            });
+
+            assert!(state
+                .editor
+                .drag_gizmo(target.x as f64, target.y as f64, viewport));
+            assert!(state.editor.objects[0].rotation_degrees[1].abs() > 1.0);
+        });
+    }
+}

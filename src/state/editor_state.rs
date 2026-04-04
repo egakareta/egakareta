@@ -1214,3 +1214,223 @@ impl State {
         self.editor.bpm_tap_reset();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::State;
+    use crate::game::TimelineSimulationRuntime;
+    use crate::test_utils::assert_approx_eq as approx_eq;
+    use crate::types::{EditorMode, GizmoAxis, GizmoDragKind, LevelObject, SpawnDirection};
+
+    #[test]
+    fn editor_mode_switch_clears_selection_and_drag_state_when_mode_cannot_select() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0, 1];
+            state.editor.ui.hovered_block_index = Some(1);
+            state.editor.ui.marquee_start_screen = Some([10.0, 20.0]);
+            state.editor.ui.marquee_current_screen = Some([30.0, 40.0]);
+            state.editor.runtime.interaction.gizmo_drag = Some(super::super::EditorGizmoDrag {
+                axis: GizmoAxis::X,
+                kind: GizmoDragKind::Move,
+                start_mouse: [0.0, 0.0],
+                start_center_screen: [0.0, 0.0],
+                start_center_world: [0.0, 0.0, 0.0],
+                start_blocks: Vec::new(),
+            });
+            state.editor.runtime.interaction.block_drag = Some(super::super::EditorBlockDrag {
+                start_mouse: [0.0, 0.0],
+                start_center_screen: [0.0, 0.0],
+                start_center_world: [0.0, 0.0, 0.0],
+                start_blocks: Vec::new(),
+            });
+
+            state.editor.set_mode(EditorMode::Null);
+
+            assert_eq!(state.editor.mode(), EditorMode::Null);
+            assert!(state.editor.runtime.interaction.gizmo_drag.is_none());
+            assert!(state.editor.runtime.interaction.block_drag.is_none());
+            assert!(state.editor.ui.selected_block_index.is_none());
+            assert!(state.editor.ui.selected_block_indices.is_empty());
+            assert!(state.editor.ui.hovered_block_index.is_none());
+            assert!(state.editor.ui.marquee_start_screen.is_none());
+            assert!(state.editor.ui.marquee_current_screen.is_none());
+        });
+    }
+
+    #[test]
+    fn selected_block_mutators_apply_snap_and_clamp_rules() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.editor.objects.push(LevelObject {
+                position: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                roundness: 0.18,
+                block_id: "core/stone".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            });
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.config.snap_to_grid = true;
+            state.editor.config.snap_step = 0.5;
+            state.editor.config.snap_rotation = true;
+            state.editor.config.snap_rotation_step_degrees = 15.0;
+            state.editor.ui.ctrl_held = false;
+
+            state.editor.set_selected_block_position([1.24, -1.0, 2.26]);
+            assert_eq!(state.editor.objects[0].position, [1.0, 0.0, 2.5]);
+            assert_eq!(state.editor.ui.cursor, [1.0, 0.0, 2.5]);
+
+            state.editor.set_selected_block_size([0.1, 0.4, 0.62]);
+            assert_eq!(state.editor.objects[0].size, [0.5, 0.5, 0.5]);
+
+            state.editor.set_selected_block_rotation([7.0, 22.0, 44.0]);
+            assert_eq!(state.editor.objects[0].rotation_degrees, [0.0, 15.0, 45.0]);
+
+            state.editor.set_selected_block_roundness(-3.0);
+            assert_eq!(state.editor.objects[0].roundness, 0.0);
+
+            state.editor.set_selected_block_color_tint([-1.0, 0.4, 2.0]);
+            assert_eq!(state.editor.objects[0].color_tint, [0.0, 0.4, 1.0]);
+
+            state.editor.set_selected_block_id("stone".to_string());
+            assert_eq!(state.editor.objects[0].block_id, "core/stone");
+        });
+    }
+
+    #[test]
+    fn timeline_clamp_and_cache_invalidation_helpers_work() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.editor.timeline.clock.duration_seconds = 2.0;
+            assert!(state.editor.set_timeline_time_seconds(5.0));
+            assert_eq!(state.editor.timeline.clock.time_seconds, 2.0);
+            assert!(!state.editor.set_timeline_time_seconds(2.0));
+
+            state.editor.timeline.clock.time_seconds = 10.0;
+            state.editor.set_timeline_duration_seconds(0.01);
+            assert_eq!(state.editor.timeline.clock.duration_seconds, 0.1);
+            assert_eq!(state.editor.timeline.clock.time_seconds, 0.1);
+
+            let mut runtime =
+                TimelineSimulationRuntime::new([0.0, 0.0, 0.0], SpawnDirection::Forward, &[], &[]);
+            runtime.advance_to(1.5);
+            state.editor.timeline.snapshot_cache_step_seconds = 0.5;
+            state.editor.timeline.snapshot_cache = vec![
+                crate::state::editor_timeline::EditorTimelineSnapshot {
+                    position: [0.0, 0.0, 0.0],
+                    direction: SpawnDirection::Forward,
+                },
+                crate::state::editor_timeline::EditorTimelineSnapshot {
+                    position: [0.5, 0.0, 0.0],
+                    direction: SpawnDirection::Forward,
+                },
+                crate::state::editor_timeline::EditorTimelineSnapshot {
+                    position: [1.0, 0.0, 0.0],
+                    direction: SpawnDirection::Forward,
+                },
+                crate::state::editor_timeline::EditorTimelineSnapshot {
+                    position: [1.5, 0.0, 0.0],
+                    direction: SpawnDirection::Right,
+                },
+            ];
+            state.editor.timeline.snapshot_cache_revision = 123;
+            state.editor.timeline.scrub_runtime = Some(runtime);
+            state.editor.timeline.scrub_runtime_revision = 55;
+
+            state.editor.invalidate_samples_from(1.0);
+            assert_eq!(state.editor.timeline.snapshot_cache.len(), 2);
+            assert_eq!(state.editor.timeline.snapshot_cache_revision, 0);
+            assert!(state.editor.timeline.scrub_runtime.is_none());
+            assert_eq!(state.editor.timeline.scrub_runtime_revision, 0);
+
+            state.editor.invalidate_samples();
+            assert!(state.editor.timeline.snapshot_cache.is_empty());
+            assert_eq!(state.editor.timeline.snapshot_cache_revision, 0);
+            assert!(state.editor.timeline.scrub_runtime.is_none());
+            assert_eq!(state.editor.timeline.scrub_runtime_revision, 0);
+        });
+    }
+
+    #[test]
+    fn bpm_tap_estimates_tempo_and_reset_clears_state() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.editor.bpm_tap(1.0);
+            assert!(state.editor.bpm_tap_result().is_none());
+
+            state.editor.bpm_tap(1.5);
+            state.editor.bpm_tap(2.0);
+
+            let bpm = state.editor.bpm_tap_result().expect("bpm should exist");
+            approx_eq(bpm, 120.0, 1e-3);
+
+            state.editor.bpm_tap_reset();
+            assert!(state.editor.bpm_tap_result().is_none());
+            assert!(state.editor.timing.bpm_tap_times.is_empty());
+        });
+    }
+
+    #[test]
+    fn state_wrappers_update_timeline_taps_and_simulate_hitbox_flag() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.phase = crate::types::AppPhase::Editor;
+            state.editor.timeline.preview.position = [3.5, 0.0, 4.5];
+
+            state.set_editor_timeline_duration_seconds(6.0);
+            assert_eq!(state.editor_timeline_duration_seconds(), 6.0);
+
+            state.set_editor_timeline_time_seconds(3.0);
+            assert_eq!(state.editor_timeline_time_seconds(), 3.0);
+
+            state.editor_add_tap();
+            assert_eq!(state.editor_tap_times().len(), 1);
+
+            state.editor_remove_tap();
+            assert_eq!(state.editor_tap_times().len(), 0);
+
+            state.editor_add_tap();
+            state.editor.timeline.preview.position = [4.5, 0.0, 4.5];
+            state.set_editor_timeline_time_seconds(4.0);
+            state.editor_add_tap();
+            assert_eq!(state.editor_tap_times().len(), 2);
+
+            state.editor_clear_taps();
+            assert!(state.editor_tap_times().is_empty());
+
+            assert!(!state.editor_simulate_trigger_hitboxes());
+            state.set_editor_simulate_trigger_hitboxes(true);
+            assert!(state.editor_simulate_trigger_hitboxes());
+
+            state.set_editor_playback_speed(4.0);
+            assert_eq!(state.editor_playback_speed(), 2.0);
+
+            state.set_editor_waveform_zoom(25.0);
+            state.set_editor_waveform_scroll(2.5);
+            assert_eq!(state.editor_waveform_zoom(), 10.0);
+            assert_eq!(state.editor_waveform_scroll(), 2.5);
+        });
+    }
+}

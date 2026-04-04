@@ -149,7 +149,12 @@ fn collect_builtin_levels(dir: &Dir<'_>, levels: &mut Vec<LevelMetadata>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{builtin_level_names, load_builtin_level_metadata};
+    use std::io::Write as _;
+
+    use super::{
+        build_egz_archive, builtin_level_names, get_builtin_audio, load_builtin_level_metadata,
+        parse_level_metadata_json, read_metadata_from_egz,
+    };
     use crate::level_codec::{decode_level_metadata_binary, encode_level_metadata_binary};
 
     #[test]
@@ -172,5 +177,80 @@ mod tests {
 
         assert_eq!(decoded.name, metadata.name);
         assert_eq!(decoded.objects.len(), metadata.objects.len());
+    }
+
+    #[test]
+    fn parses_json_metadata_and_normalizes_legacy_block_kind() {
+        let json = r#"{
+            "name": "Legacy",
+            "music": { "source": "audio.mp3" },
+            "objects": [
+                {
+                    "position": [0.0, 0.0, 0.0],
+                    "size": [1.0, 1.0, 1.0],
+                    "kind": "stone"
+                }
+            ]
+        }"#;
+
+        let parsed = parse_level_metadata_json(json).expect("parse json");
+        assert_eq!(parsed.objects.len(), 1);
+        assert_eq!(parsed.objects[0].block_id, "core/stone");
+    }
+
+    #[test]
+    fn builds_and_reads_egz_archive_without_audio() {
+        let metadata = load_builtin_level_metadata("Flowerfield").expect("missing level");
+
+        let archive_bytes = build_egz_archive(&metadata, None).expect("build egz");
+        let (decoded, audio) = read_metadata_from_egz(&archive_bytes).expect("read egz");
+
+        assert_eq!(decoded.name, metadata.name);
+        assert_eq!(decoded.objects.len(), metadata.objects.len());
+        assert!(audio.is_none());
+    }
+
+    #[test]
+    fn builds_and_reads_egz_archive_with_audio() {
+        let mut metadata = load_builtin_level_metadata("Flowerfield").expect("missing level");
+        metadata.music.source = "custom.mp3".to_string();
+        let audio = vec![8_u8, 6, 7, 5, 3, 0, 9];
+
+        let archive_bytes =
+            build_egz_archive(&metadata, Some(("custom.mp3", audio.as_slice()))).expect("build");
+        let (decoded, decoded_audio) = read_metadata_from_egz(&archive_bytes).expect("read");
+
+        assert_eq!(decoded.name, metadata.name);
+        assert_eq!(decoded.music.source, "custom.mp3");
+        assert_eq!(decoded_audio, Some(audio));
+    }
+
+    #[test]
+    fn reads_builtin_audio_and_handles_missing_audio() {
+        let metadata = load_builtin_level_metadata("Flowerfield").expect("missing level");
+
+        let bytes = get_builtin_audio("Flowerfield", &metadata.music.source)
+            .expect("expected built-in audio bytes");
+        assert!(!bytes.is_empty());
+
+        assert!(get_builtin_audio("Flowerfield", "missing.mp3").is_none());
+        assert!(get_builtin_audio("UnknownLevel", "audio.mp3").is_none());
+    }
+
+    #[test]
+    fn read_metadata_from_egz_fails_when_metadata_file_missing() {
+        let mut buffer = Vec::new();
+        {
+            let cursor = std::io::Cursor::new(&mut buffer);
+            let mut zip = zip::ZipWriter::new(cursor);
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            zip.start_file("payload.bin", options)
+                .expect("start payload file");
+            zip.write_all(b"not metadata").expect("write payload");
+            zip.finish().expect("finalize zip");
+        }
+
+        assert!(read_metadata_from_egz(&buffer).is_err());
     }
 }

@@ -740,3 +740,152 @@ impl State {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::State;
+    use crate::game::TimelineSimulationRuntime;
+    use crate::types::{
+        AppPhase, LevelObject, SpawnDirection, TimedTrigger, TimedTriggerAction,
+        TimedTriggerEasing, TimedTriggerTarget,
+    };
+
+    fn sample_object() -> LevelObject {
+        LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.18,
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        }
+    }
+
+    fn instant_move_trigger() -> TimedTrigger {
+        TimedTrigger {
+            time_seconds: 0.0,
+            duration_seconds: 0.0,
+            easing: TimedTriggerEasing::Linear,
+            target: TimedTriggerTarget::Object { object_id: 0 },
+            action: TimedTriggerAction::MoveTo {
+                position: [2.0, 0.0, 0.0],
+            },
+        }
+    }
+
+    #[test]
+    fn target_playing_time_respects_started_and_game_over_state() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.gameplay.state.elapsed_seconds = 1.25;
+            state.gameplay.state.started = false;
+            assert_eq!(state.target_playing_time(0.2), 1.25);
+
+            state.gameplay.state.started = true;
+            state.gameplay.state.game_over = false;
+            assert_eq!(state.target_playing_time(0.2), 1.45);
+
+            state.gameplay.state.game_over = true;
+            assert_eq!(state.target_playing_time(0.2), 1.25);
+        });
+    }
+
+    #[test]
+    fn playing_object_triggers_transform_objects_and_optionally_hitboxes() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.phase = AppPhase::Playing;
+            state.gameplay.state.objects = vec![sample_object()];
+            state.gameplay.state.rebuild_behavior_cache();
+            state.editor.set_triggers(vec![instant_move_trigger()]);
+
+            state.session.playing_trigger_hitboxes = false;
+            let transformed = state
+                .playing_trigger_objects_at_time(0.5)
+                .expect("expected transformed objects");
+            assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
+            assert_eq!(state.gameplay.state.objects[0].position, [0.0, 0.0, 0.0]);
+
+            state.session.playing_trigger_hitboxes = true;
+            let transformed = state
+                .apply_playing_object_triggers(0.5)
+                .expect("expected transformed objects");
+            assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
+            assert_eq!(state.gameplay.state.objects[0].position, [2.0, 0.0, 0.0]);
+        });
+    }
+
+    #[test]
+    fn advance_playing_state_to_time_updates_elapsed_and_returns_render_objects() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.phase = AppPhase::Playing;
+            state.gameplay.state.started = true;
+            state.gameplay.state.objects = vec![sample_object()];
+            state.gameplay.state.rebuild_behavior_cache();
+            state.editor.set_triggers(vec![instant_move_trigger()]);
+
+            let transformed = state
+                .advance_playing_state_to_time(0.2, 1.0 / 120.0)
+                .expect("expected trigger render objects");
+
+            assert!(state.gameplay.state.elapsed_seconds <= 0.2 + 1e-6);
+            assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
+        });
+    }
+
+    #[test]
+    fn playback_trail_vertices_include_airborne_head_segment() {
+        let grounded_runtime =
+            TimelineSimulationRuntime::new([0.0, 0.0, 0.0], SpawnDirection::Forward, &[], &[]);
+        assert!(grounded_runtime.is_grounded());
+        let grounded_vertices = State::build_editor_playback_trail_vertices(&grounded_runtime);
+
+        let support = [LevelObject {
+            position: [0.0, 2.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.18,
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        }];
+        let mut airborne_runtime =
+            TimelineSimulationRuntime::new([0.0, 3.0, 0.0], SpawnDirection::Forward, &support, &[]);
+        airborne_runtime.advance_to(1.0 / crate::game::BASE_PLAYER_SPEED + 0.01);
+        assert!(!airborne_runtime.is_grounded());
+        let airborne_vertices = State::build_editor_playback_trail_vertices(&airborne_runtime);
+
+        assert!(grounded_vertices.is_empty());
+        assert!(!airborne_vertices.is_empty());
+    }
+
+    #[test]
+    fn perf_overlay_toggle_controls_visibility() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            assert!(!state.editor_perf_overlay_enabled());
+            assert!(state.editor_perf_overlay_lines().is_empty());
+            assert!(state.editor_perf_overlay_entries().is_empty());
+
+            state.toggle_editor_perf_overlay();
+            assert!(state.editor_perf_overlay_enabled());
+            assert!(!state.editor_perf_overlay_lines().is_empty());
+        });
+    }
+}

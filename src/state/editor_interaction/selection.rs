@@ -658,3 +658,132 @@ impl State {
             .begin_selected_block_drag_ext(x, y, viewport_size, self.phase)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::super::State;
+    use crate::types::{AppPhase, EditorMode, LevelObject};
+    use glam::Vec2;
+
+    fn test_block(position: [f32; 3]) -> LevelObject {
+        LevelObject {
+            position,
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.18,
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        }
+    }
+
+    #[test]
+    fn marquee_threshold_activates_only_after_minimum_drag() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.editor.ui.marquee_start_screen = Some([100.0, 100.0]);
+            state.editor.ui.marquee_current_screen = Some([102.0, 102.0]);
+            let (_, _, active) = state
+                .editor
+                .marquee_selection_rect_screen()
+                .expect("marquee rect");
+            assert!(!active);
+
+            state.editor.ui.marquee_current_screen = Some([120.0, 120.0]);
+            let (_, _, active) = state
+                .editor
+                .marquee_selection_rect_screen()
+                .expect("marquee rect");
+            assert!(active);
+        });
+    }
+
+    #[test]
+    fn begin_marquee_requires_editor_phase_and_supported_mode() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.editor.ui.mode = EditorMode::Timing;
+            assert!(!state
+                .editor
+                .begin_marquee_selection(50.0, 50.0, AppPhase::Editor));
+
+            state.editor.ui.mode = EditorMode::Select;
+            assert!(!state
+                .editor
+                .begin_marquee_selection(50.0, 50.0, AppPhase::Menu));
+
+            assert!(state
+                .editor
+                .begin_marquee_selection(50.0, 50.0, AppPhase::Editor));
+            assert!(state.editor.ui.marquee_start_screen.is_some());
+            assert!(state.editor.ui.marquee_current_screen.is_some());
+        });
+    }
+
+    #[test]
+    fn finish_marquee_clears_state_when_not_dragged_far_enough() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.editor.ui.mode = EditorMode::Select;
+            assert!(state
+                .editor
+                .begin_marquee_selection(100.0, 100.0, AppPhase::Editor));
+            assert!(state
+                .editor
+                .update_marquee_selection(101.0, 101.0, AppPhase::Editor));
+
+            let changed = state.editor.finish_marquee_selection(
+                101.0,
+                101.0,
+                Vec2::new(1280.0, 720.0),
+                AppPhase::Editor,
+            );
+            assert!(!changed);
+            assert!(state.editor.ui.marquee_start_screen.is_none());
+            assert!(state.editor.ui.marquee_current_screen.is_none());
+        });
+    }
+
+    #[test]
+    fn finish_marquee_with_large_rect_selects_visible_block() {
+        pollster::block_on(async {
+            let mut state = match State::new_test().await {
+                Some(s) => s,
+                None => return,
+            };
+
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Select;
+            state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
+
+            assert!(state
+                .editor
+                .begin_marquee_selection(0.0, 0.0, AppPhase::Editor));
+            assert!(state
+                .editor
+                .update_marquee_selection(2000.0, 2000.0, AppPhase::Editor));
+
+            let changed = state.editor.finish_marquee_selection(
+                2000.0,
+                2000.0,
+                Vec2::new(1280.0, 720.0),
+                AppPhase::Editor,
+            );
+
+            assert!(changed);
+            assert!(state.editor.ui.selected_block_indices.contains(&0));
+            assert_eq!(state.editor.ui.selected_block_index, Some(0));
+        });
+    }
+}
