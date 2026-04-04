@@ -552,7 +552,14 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
     }
 
     if !is_timing {
-        show_view_selector_cube(ctx, view.camera_rotation, view.camera_pitch, &mut commands);
+        let scene_rect = ctx.available_rect();
+        show_view_selector_cube(
+            ctx,
+            scene_rect,
+            view.camera_rotation,
+            view.camera_pitch,
+            &mut commands,
+        );
     }
 
     if view.mode.is_selection_mode() || view.mode == EditorMode::Trigger {
@@ -654,6 +661,7 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
 
 fn show_view_selector_cube(
     ctx: &egui::Context,
+    scene_rect: egui::Rect,
     camera_rotation: f32,
     camera_pitch: f32,
     commands: &mut Vec<AppCommand>,
@@ -807,11 +815,14 @@ fn show_view_selector_cube(
         rounded
     }
 
+    let side = 128.0;
+    let margin = egui::vec2(14.0, 14.0);
+    let cube_top_left = view_cube_top_left(scene_rect, side, margin);
+
     egui::Area::new("editor_view_selector_cube".into())
         .order(egui::Order::Foreground)
-        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-14.0, 52.0))
+        .fixed_pos(cube_top_left)
         .show(ctx, |ui| {
-            let side = 128.0;
             let (rect, response) =
                 ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::click_and_drag());
             let painter = ui.painter_at(rect);
@@ -1013,9 +1024,16 @@ fn show_view_selector_cube(
         });
 }
 
+fn view_cube_top_left(scene_rect: egui::Rect, side: f32, margin: egui::Vec2) -> egui::Pos2 {
+    let x = (scene_rect.right() - side - margin.x).max(scene_rect.left() + 4.0);
+    let y = (scene_rect.top() + margin.y).max(scene_rect.top() + 4.0);
+    egui::pos2(x, y)
+}
+
 #[cfg(test)]
 mod tests {
     use super::sort_quad_by_angle;
+    use super::view_cube_top_left;
     use super::VIEW_CUBE_FACES;
     use crate::test_utils::approx_eq;
     use glam::{Mat3, Vec3};
@@ -1084,5 +1102,40 @@ mod tests {
                 dot
             );
         }
+    }
+
+    #[test]
+    fn view_cube_top_left_tracks_scene_rect_right_edge() {
+        let side = 128.0;
+        let margin = egui::vec2(14.0, 14.0);
+        let scene_rect_wide =
+            egui::Rect::from_min_max(egui::pos2(100.0, 60.0), egui::pos2(1100.0, 860.0));
+        let scene_rect_narrow =
+            egui::Rect::from_min_max(egui::pos2(100.0, 60.0), egui::pos2(780.0, 860.0));
+
+        let wide = view_cube_top_left(scene_rect_wide, side, margin);
+        let narrow = view_cube_top_left(scene_rect_narrow, side, margin);
+
+        assert!(approx_eq(wide.y, 74.0, 1e-5));
+        assert!(approx_eq(narrow.y, 74.0, 1e-5));
+
+        let expected_delta = scene_rect_wide.right() - scene_rect_narrow.right();
+        assert!(approx_eq(wide.x - narrow.x, expected_delta, 1e-5));
+    }
+
+    #[test]
+    fn view_cube_top_left_clamps_to_scene_left_padding() {
+        let side = 128.0;
+        let margin = egui::vec2(14.0, 14.0);
+        let tiny_scene_rect =
+            egui::Rect::from_min_max(egui::pos2(220.0, 52.0), egui::pos2(260.0, 300.0));
+
+        let top_left = view_cube_top_left(tiny_scene_rect, side, margin);
+        assert!(approx_eq(top_left.x, tiny_scene_rect.left() + 4.0, 1e-5));
+        assert!(approx_eq(
+            top_left.y,
+            tiny_scene_rect.top() + margin.y,
+            1e-5
+        ));
     }
 }
