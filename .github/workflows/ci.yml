@@ -105,6 +105,7 @@ jobs:
         with:
           name: egakareta-web
           path: egakareta-web.zip
+          retention-days: 1
 
   build-native:
     name: Build Native (${{ matrix.os }})
@@ -157,6 +158,7 @@ jobs:
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_name }}.zip
+          retention-days: 1
 
   release:
     name: Create Release
