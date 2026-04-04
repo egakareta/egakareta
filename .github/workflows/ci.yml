@@ -179,7 +179,7 @@ jobs:
         run: echo "today=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           name: Release ${{ steps.date.outputs.today }}
           tag_name: release-${{ steps.date.outputs.today }}-${{ github.run_number }}
