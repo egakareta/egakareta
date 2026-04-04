@@ -11,6 +11,25 @@ use crate::block_repository::resolve_block_definition;
 use crate::commands::AppCommand;
 use crate::state::EditorUiViewModel;
 
+#[derive(Clone)]
+struct ExplorerDragPayload {
+    object_indices: Vec<usize>,
+}
+
+fn push_reparent_commands(
+    commands: &mut Vec<AppCommand>,
+    payload: &ExplorerDragPayload,
+    target_group_path: Option<Vec<String>>,
+) {
+    commands.push(AppCommand::EditorExplorerSelectObjects {
+        indices: payload.object_indices.clone(),
+        additive: false,
+    });
+    commands.push(AppCommand::EditorExplorerMoveSelectedToGroup(
+        target_group_path,
+    ));
+}
+
 fn collect_child_groups(view: &EditorUiViewModel<'_>, parent_path: &[String]) -> Vec<String> {
     let mut groups = BTreeSet::new();
     for object in view.objects {
@@ -63,18 +82,37 @@ fn render_object_row(
     let label = object_label(view, index);
     let subtitle = view.objects[index].block_id.as_str();
 
-    ui.horizontal(|ui| {
-        let response = ui.selectable_label(is_selected, label);
-        ui.label(egui::RichText::new(subtitle).small().weak());
+    let dragged_indices = if is_selected && !view.selected_object_indices.is_empty() {
+        view.selected_object_indices.clone()
+    } else {
+        vec![index]
+    };
 
-        if response.clicked() {
-            let additive = ui.input(|input| input.modifiers.shift || input.modifiers.ctrl);
-            commands.push(AppCommand::EditorExplorerSelectObjects {
-                indices: vec![index],
-                additive,
-            });
-        }
+    let mut clicked = false;
+    let mut additive = false;
+
+    let source_id = egui::Id::new(("explorer_object_drag_source", index));
+    let payload = ExplorerDragPayload {
+        object_indices: dragged_indices,
+    };
+    ui.dnd_drag_source(source_id, payload, |ui| {
+        ui.horizontal(|ui| {
+            let response = ui.selectable_label(is_selected, label);
+            ui.label(egui::RichText::new(subtitle).small().weak());
+
+            if response.clicked() {
+                clicked = true;
+                additive = ui.input(|input| input.modifiers.shift || input.modifiers.ctrl);
+            }
+        });
     });
+
+    if clicked {
+        commands.push(AppCommand::EditorExplorerSelectObjects {
+            indices: vec![index],
+            additive,
+        });
+    }
 
     if is_selected {
         let mut object_name = view.objects[index].name.clone();
@@ -108,29 +146,36 @@ fn render_group(
         group_path.push(group_name.clone());
 
         let header_text = format!("Folder: {}", group_name);
-        egui::CollapsingHeader::new(header_text)
-            .id_salt(format!("explorer_group:{}", group_path.join("/")))
-            .default_open(true)
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    let mut edited_group_name = group_name.clone();
-                    ui.label("Rename:");
-                    if ui.text_edit_singleline(&mut edited_group_name).changed() {
-                        commands.push(AppCommand::EditorExplorerRenameGroup {
-                            path: group_path.clone(),
-                            new_name: edited_group_name,
+        let (_, dropped_payload) =
+            ui.dnd_drop_zone::<ExplorerDragPayload, _>(egui::Frame::new(), |ui| {
+                egui::CollapsingHeader::new(header_text)
+                    .id_salt(format!("explorer_group:{}", group_path.join("/")))
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            let mut edited_group_name = group_name.clone();
+                            ui.label("Rename:");
+                            if ui.text_edit_singleline(&mut edited_group_name).changed() {
+                                commands.push(AppCommand::EditorExplorerRenameGroup {
+                                    path: group_path.clone(),
+                                    new_name: edited_group_name,
+                                });
+                            }
+
+                            if ui.button("Move Selected Here").clicked() {
+                                commands.push(AppCommand::EditorExplorerMoveSelectedToGroup(Some(
+                                    group_path.clone(),
+                                )));
+                            }
                         });
-                    }
 
-                    if ui.button("Move Selected Here").clicked() {
-                        commands.push(AppCommand::EditorExplorerMoveSelectedToGroup(Some(
-                            group_path.clone(),
-                        )));
-                    }
-                });
-
-                render_group(ui, view, &group_path, commands);
+                        render_group(ui, view, &group_path, commands);
+                    });
             });
+
+        if let Some(payload) = dropped_payload {
+            push_reparent_commands(commands, payload.as_ref(), Some(group_path.clone()));
+        }
     }
 }
 
@@ -170,6 +215,16 @@ pub(crate) fn show_explorer_panel(
                     commands.push(AppCommand::EditorExplorerMoveSelectedToGroup(None));
                 }
             });
+
+            ui.separator();
+
+            let (_, root_drop_payload) =
+                ui.dnd_drop_zone::<ExplorerDragPayload, _>(egui::Frame::new(), |ui| {
+                    ui.label(egui::RichText::new("Drop Here To Reparent To Root").weak());
+                });
+            if let Some(payload) = root_drop_payload {
+                push_reparent_commands(commands, payload.as_ref(), None);
+            }
 
             ui.separator();
 
