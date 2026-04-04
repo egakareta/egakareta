@@ -38,14 +38,18 @@ struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) color: vec4<f32>,
     @location(2) uv: vec2<f32>,
-    @location(3) texture_layer: f32,
+    @location(3) uv_norm: vec2<f32>,
+    @location(4) texture_layer: f32,
+    @location(5) color_outline: vec4<f32>,
 };
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
     @location(1) uv: vec2<f32>,
-    @location(2) texture_layer: f32,
+    @location(2) uv_norm: vec2<f32>,
+    @location(3) texture_layer: f32,
+    @location(4) color_outline: vec4<f32>,
 };
 
 @vertex
@@ -64,7 +68,9 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     out.position = u_camera.view_proj * vec4<f32>(rotated_pos + offset, 1.0);
     out.color = input.color;
     out.uv = input.uv;
+    out.uv_norm = input.uv_norm;
     out.texture_layer = input.texture_layer;
+    out.color_outline = input.color_outline;
     return out;
 }
 
@@ -76,6 +82,16 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         texture_sample = textureSample(u_block_textures, u_block_sampler, input.uv, texture_layer);
     }
     var color = (input.color * texture_sample).rgb;
+
+    let face_size = input.uv_norm;
+    if (face_size.x > 0.0 && face_size.y > 0.0) {
+        let thickness = 0.05;
+        let edge_x = step(input.uv.x, thickness) + step(face_size.x - thickness, input.uv.x);
+        let edge_y = step(input.uv.y, thickness) + step(face_size.y - thickness, input.uv.y);
+        let is_edge = clamp(edge_x + edge_y, 0.0, 1.0);
+
+        color = mix(color, input.color_outline.rgb, is_edge * input.color_outline.a);
+    }
 
     if (u_color_space.flags.x > 0.5) {
         color = linear_to_srgb(color);

@@ -12,15 +12,26 @@ pub(crate) struct PrismFaceColors {
     pub(crate) top: [f32; 4],
     pub(crate) side: [f32; 4],
     pub(crate) bottom: [f32; 4],
+    pub(crate) outline: [f32; 4],
 }
 
 impl PrismFaceColors {
-    pub(crate) fn new(top: [f32; 4], side: [f32; 4], bottom: [f32; 4]) -> Self {
-        Self { top, side, bottom }
+    pub(crate) fn new_with_outline(
+        top: [f32; 4],
+        side: [f32; 4],
+        bottom: [f32; 4],
+        outline: [f32; 4],
+    ) -> Self {
+        Self {
+            top,
+            side,
+            bottom,
+            outline,
+        }
     }
 
-    pub(crate) fn uniform(color: [f32; 4]) -> Self {
-        Self::new(color, color, color)
+    pub(crate) fn uniform_with_outline(color: [f32; 4], outline: [f32; 4]) -> Self {
+        Self::new_with_outline(color, color, color, outline)
     }
 }
 
@@ -34,10 +45,6 @@ pub(crate) struct PrismTextureLayers {
 impl PrismTextureLayers {
     pub(crate) fn new(top: u32, side: u32, bottom: u32) -> Self {
         Self { top, side, bottom }
-    }
-
-    pub(crate) fn uniform(layer: u32) -> Self {
-        Self::new(layer, layer, layer)
     }
 }
 
@@ -134,12 +141,55 @@ pub(crate) fn append_prism_with_layers(
                          texture_layer: u32,
                          u_max: f32,
                          v_max: f32| {
-        vertices.push(Vertex::textured(p0, color, [0.0, v_max], texture_layer));
-        vertices.push(Vertex::textured(p1, color, [0.0, 0.0], texture_layer));
-        vertices.push(Vertex::textured(p2, color, [u_max, 0.0], texture_layer));
-        vertices.push(Vertex::textured(p0, color, [0.0, v_max], texture_layer));
-        vertices.push(Vertex::textured(p2, color, [u_max, 0.0], texture_layer));
-        vertices.push(Vertex::textured(p3, color, [u_max, v_max], texture_layer));
+        let face_size = [u_max, v_max];
+        vertices.push(Vertex::textured_with_outline(
+            p0,
+            color,
+            [0.0, v_max],
+            face_size,
+            texture_layer,
+            colors.outline,
+        ));
+        vertices.push(Vertex::textured_with_outline(
+            p1,
+            color,
+            [0.0, 0.0],
+            face_size,
+            texture_layer,
+            colors.outline,
+        ));
+        vertices.push(Vertex::textured_with_outline(
+            p2,
+            color,
+            [u_max, 0.0],
+            face_size,
+            texture_layer,
+            colors.outline,
+        ));
+        vertices.push(Vertex::textured_with_outline(
+            p0,
+            color,
+            [0.0, v_max],
+            face_size,
+            texture_layer,
+            colors.outline,
+        ));
+        vertices.push(Vertex::textured_with_outline(
+            p2,
+            color,
+            [u_max, 0.0],
+            face_size,
+            texture_layer,
+            colors.outline,
+        ));
+        vertices.push(Vertex::textured_with_outline(
+            p3,
+            color,
+            [u_max, v_max],
+            face_size,
+            texture_layer,
+            colors.outline,
+        ));
     };
 
     let dx = (x_max - x_min).abs();
@@ -253,7 +303,7 @@ mod tests {
             &mut vertices,
             min,
             max,
-            PrismFaceColors::uniform(color),
+            PrismFaceColors::uniform_with_outline(color, [0.0, 0.0, 0.0, 0.0]),
             PrismTextureLayers::new(1, 2, 3),
         );
 
@@ -328,7 +378,7 @@ mod tests {
             &mut tiled_vertices,
             [0.0, 0.0, 0.0],
             [2.0, 1.0, 3.0], // Resized: DX=2, DY=1, DZ=3
-            PrismFaceColors::uniform(color),
+            PrismFaceColors::uniform_with_outline(color, [0.0, 0.0, 0.0, 0.0]),
             PrismTextureLayers::new(1, 2, 3),
         );
 
@@ -389,5 +439,63 @@ mod tests {
             [2.0, 1.0],
             "Tiled +Z Bottom-Right",
         );
+    }
+
+    #[test]
+    fn test_prism_outline_metadata() {
+        let mut vertices = Vec::new();
+        let min = [0.0, 0.0, 0.0];
+        let max = [2.5, 1.0, 3.5];
+        let color = [1.0, 1.0, 1.0, 1.0];
+        let outline_color = [0.1, 0.2, 0.3, 0.4];
+
+        append_prism_with_layers(
+            &mut vertices,
+            min,
+            max,
+            PrismFaceColors::new_with_outline(color, color, color, outline_color),
+            PrismTextureLayers::new(1, 2, 3),
+        );
+
+        // A single prism has 6 faces * 6 vertices = 36 vertices.
+        assert_eq!(vertices.len(), 36);
+
+        // Check metadata on all vertices
+        for v in &vertices {
+            assert_eq!(v.color_outline, outline_color);
+        }
+
+        // Specifically check uv_norm for each vertex group (6 vertices per face)
+        // Order: Top (+Y), +X, -X, +Z, -Z, Bottom (-Y)
+
+        // Top (+Y) face: Size should be [2.5, 3.5] (DX, DZ)
+        for i in 0..6 {
+            assert_eq!(vertices[i].uv_norm, [2.5, 3.5]);
+        }
+
+        // +X face: Size should be [3.5, 1.0] (DZ, DY)
+        for i in 6..12 {
+            assert_eq!(vertices[i].uv_norm, [3.5, 1.0]);
+        }
+
+        // -X face: Size should be [3.5, 1.0] (DZ, DY)
+        for i in 12..18 {
+            assert_eq!(vertices[i].uv_norm, [3.5, 1.0]);
+        }
+
+        // +Z face: Size should be [2.5, 1.0] (DX, DY)
+        for i in 18..24 {
+            assert_eq!(vertices[i].uv_norm, [2.5, 1.0]);
+        }
+
+        // -Z face: Size should be [2.5, 1.0] (DX, DY)
+        for i in 24..30 {
+            assert_eq!(vertices[i].uv_norm, [2.5, 1.0]);
+        }
+
+        // Bottom (-Y) face: Size should be [2.5, 3.5] (DX, DZ)
+        for i in 30..36 {
+            assert_eq!(vertices[i].uv_norm, [2.5, 3.5]);
+        }
     }
 }

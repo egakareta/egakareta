@@ -51,7 +51,7 @@ fn default_color_fill() -> [f32; 4] {
 }
 
 fn default_color_outline() -> [f32; 4] {
-    [0.8, 0.8, 0.9, 1.0]
+    [0.0, 0.0, 0.0, 0.0]
 }
 
 fn default_collision() -> BlockCollision {
