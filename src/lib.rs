@@ -46,24 +46,28 @@ pub use state::State;
 
 #[cfg(target_arch = "wasm32")]
 #[unsafe(no_mangle)]
+/// Polyfill for `asinh` in WebAssembly (used by C dependencies).
 pub extern "C" fn asinh(value: f64) -> f64 {
     value.asinh()
 }
 
 #[cfg(target_arch = "wasm32")]
 #[unsafe(no_mangle)]
+/// Polyfill for `asinhf` in WebAssembly (used by C dependencies).
 pub extern "C" fn asinhf(value: f32) -> f32 {
     value.asinh()
 }
 
 #[cfg(target_arch = "wasm32")]
 #[unsafe(no_mangle)]
+/// Polyfill for `acosh` in WebAssembly (used by C dependencies).
 pub extern "C" fn acosh(value: f64) -> f64 {
     value.acosh()
 }
 
 #[cfg(target_arch = "wasm32")]
 #[unsafe(no_mangle)]
+/// Polyfill for `acoshf` in WebAssembly (used by C dependencies).
 pub extern "C" fn acoshf(value: f32) -> f32 {
     value.acosh()
 }
