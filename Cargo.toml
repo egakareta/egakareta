@@ -76,7 +76,7 @@ keyframe = "1.1"
 async-trait = "0.1"
 winit = "0.30"
 getrandom = { version = "0", features = ["wasm_js"] }
-cpal = { version = "0.17", features = ["wasm-bindgen", "audioworklet"] }
+cpal = { version = "0.17", features = ["wasm-bindgen"] }
 rodio = { version = "0.22", features = ["symphonia-all", "wasm-bindgen"] }
 symphonia = { version = "0.5", features = ["all"] }
 
