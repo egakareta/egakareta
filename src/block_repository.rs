@@ -555,7 +555,10 @@ pub(crate) fn normalize_block_id(block_id: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{all_placeable_blocks, block_texture_atlas, resolve_block_texture_layers};
+    use super::{
+        all_placeable_blocks, block_texture_atlas, normalize_block_id, resolve_block_definition,
+        resolve_block_texture_layers, BlockAssets, BlockBehavior, BlockDefinition, BlockRender,
+    };
 
     #[test]
     fn configured_texture_assets_resolve_to_non_default_layers() {
@@ -595,5 +598,65 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn normalize_block_definition_trims_and_falls_back_display_name() {
+        let normalized = BlockDefinition {
+            id: "  CORE/STONE  ".to_string(),
+            display_name: "   ".to_string(),
+            assets: BlockAssets::default(),
+            render: BlockRender::default(),
+            behavior: BlockBehavior::default(),
+            placeable: true,
+        }
+        .normalize()
+        .expect("normalize");
+        assert_eq!(normalized.id, "core/stone");
+        assert_eq!(normalized.display_name, "core/stone");
+
+        let missing_id = BlockDefinition {
+            id: "   ".to_string(),
+            display_name: "name".to_string(),
+            assets: BlockAssets::default(),
+            render: BlockRender::default(),
+            behavior: BlockBehavior::default(),
+            placeable: true,
+        }
+        .normalize();
+        assert!(missing_id.is_none());
+    }
+
+    #[test]
+    fn block_id_resolution_prefers_catalog_and_falls_back_to_default() {
+        let placeable = all_placeable_blocks();
+        assert!(!placeable.is_empty());
+
+        let resolved_known = normalize_block_id("CORE/STONE");
+        assert_eq!(resolved_known, "core/stone");
+
+        let resolved_unknown = normalize_block_id("does/not/exist");
+        assert_eq!(resolved_unknown, "core/stone");
+
+        let unknown_definition = resolve_block_definition("does/not/exist");
+        assert_eq!(unknown_definition.id, "core/stone");
+    }
+
+    #[test]
+    fn texture_atlas_resolve_layer_handles_aliases_and_empty_keys() {
+        let atlas = block_texture_atlas();
+        let default_layer = atlas.default_layer();
+
+        let grass_top = atlas.resolve_layer("grass_top.png").expect("known texture path");
+        assert_ne!(grass_top, default_layer);
+
+        let by_stem = atlas.resolve_layer("grass_top");
+        assert_eq!(by_stem, Some(grass_top));
+
+        let by_filename = atlas.resolve_layer("grass_top.png");
+        assert_eq!(by_filename, Some(grass_top));
+
+        assert_eq!(atlas.resolve_layer(""), None);
+        assert_eq!(atlas.resolve_layer("   "), None);
     }
 }

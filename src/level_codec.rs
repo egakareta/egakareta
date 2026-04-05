@@ -642,9 +642,12 @@ fn rle_decode_palette_indices(runs: &[ObjectRun]) -> Result<Vec<u16>, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        count_compact_bits, decode_level_metadata_binary, encode_level_metadata_binary,
-        BinaryLevelPayloadV1, COMPRESSION_NONE, COMPRESSION_ZSTD, LEVEL_CODEC_V1,
-        LEVEL_CODEC_VERSION, LEVEL_MAGIC,
+        compute_grid_bounds, count_compact_bits, decode_level_metadata_binary, entries_to_map,
+        encode_level_metadata_binary, is_compact_bit_set, linear_index_to_position,
+        map_to_entries, position_to_linear_index, quantize_compact_position,
+        rle_decode_palette_indices, rle_encode_palette_indices, set_compact_bit,
+        BinaryLevelPayloadV1, MetadataEntry, ObjectRun, COMPRESSION_NONE, COMPRESSION_ZSTD,
+        LEVEL_CODEC_V1, LEVEL_CODEC_VERSION, LEVEL_MAGIC,
     };
     use crate::level_repository::load_builtin_level_metadata;
     use crate::types::LevelObject;
@@ -781,6 +784,207 @@ mod tests {
             Err(error) => error,
         };
         assert!(error.contains("Compact object index stream length mismatch"));
+    }
+
+    #[test]
+    fn quantize_compact_position_respects_requirements() {
+        let object = LevelObject {
+            block_id: "core/stone".to_string(),
+            position: [3.0, -2.0, 9.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.0,
+            color_tint: [1.0, 1.0, 1.0],
+        };
+        assert_eq!(quantize_compact_position(&object), Some([3, -2, 9]));
+
+        let mut fractional = object.clone();
+        fractional.position = [3.2, -2.0, 9.0];
+        assert_eq!(quantize_compact_position(&fractional), None);
+
+        let mut non_default_size = object.clone();
+        non_default_size.size = [2.0, 1.0, 1.0];
+        assert_eq!(quantize_compact_position(&non_default_size), None);
+    }
+
+    #[test]
+    fn compact_grid_index_roundtrip_and_bounds_checks() {
+        let positions = [[-2, 5, 9], [4, 8, 15]];
+        let (grid_min, grid_dims) = compute_grid_bounds(&positions).expect("grid bounds");
+        assert_eq!(grid_min, [-2, 5, 9]);
+        assert_eq!(grid_dims, [7, 4, 7]);
+
+        let linear = position_to_linear_index([4, 8, 15], grid_min, grid_dims).expect("index");
+        let restored = linear_index_to_position(linear, grid_min, grid_dims).expect("restore");
+        assert_eq!(restored, [4.0, 8.0, 15.0]);
+
+        let underflow = position_to_linear_index([-3, 5, 9], grid_min, grid_dims);
+        assert!(underflow.is_err());
+        let invalid_dims = linear_index_to_position(0, grid_min, [0, 1, 1]);
+        assert!(invalid_dims.is_err());
+    }
+
+    #[test]
+    fn compact_bit_helpers_track_expected_bits() {
+        let mut mask = vec![0u8; 2];
+        set_compact_bit(&mut mask, 0);
+        set_compact_bit(&mut mask, 9);
+        assert!(is_compact_bit_set(&mask, 0));
+        assert!(is_compact_bit_set(&mask, 9));
+        assert!(!is_compact_bit_set(&mask, 1));
+        assert_eq!(count_compact_bits(&mask, 10), 2);
+    }
+
+    #[test]
+    fn metadata_entries_roundtrip_and_invalid_json_error() {
+        let mut source = serde_json::Map::new();
+        source.insert("foo".to_string(), serde_json::json!({"nested": true}));
+        source.insert("bar".to_string(), serde_json::json!(3.5));
+
+        let entries = map_to_entries(&source).expect("map->entries");
+        let restored = entries_to_map(entries).expect("entries->map");
+        assert_eq!(restored, source);
+
+        let invalid = entries_to_map(vec![MetadataEntry {
+            key: "bad".to_string(),
+            value_json: "{not-valid-json}".to_string(),
+        }]);
+        assert!(invalid.is_err());
+    }
+
+    #[test]
+    fn rle_helpers_roundtrip_and_reject_zero_length_runs() {
+        let palette_indices = [1u16, 1, 1, 2, 2, 7];
+        let encoded_runs = rle_encode_palette_indices(&palette_indices);
+        assert_eq!(encoded_runs.len(), 3);
+        assert_eq!(encoded_runs[0].run_length, 3);
+        assert_eq!(encoded_runs[1].run_length, 2);
+        assert_eq!(encoded_runs[2].run_length, 1);
+
+        let decoded = rle_decode_palette_indices(&encoded_runs).expect("decode runs");
+        assert_eq!(decoded, palette_indices);
+
+        let invalid = rle_decode_palette_indices(&[ObjectRun {
+            palette_index: 0,
+            run_length: 0,
+        }]);
+        assert!(invalid.is_err());
+    }
+
+    #[test]
+    fn rejects_v1_zstd_payload_without_decompressed_size_header() {
+        let payload = BinaryLevelPayloadV1 {
+            format_version: 1,
+            name: "legacy".to_string(),
+            music_source: "music.mp3".to_string(),
+            music_title: None,
+            music_author: None,
+            music_extra_entries: Vec::new(),
+            spawn: crate::types::SpawnMetadata::default(),
+            tap_times: Vec::new(),
+            timing_points: Vec::new(),
+            timeline_time_seconds: 0.0,
+            timeline_duration_seconds: 0.0,
+            triggers: Vec::new(),
+            simulate_trigger_hitboxes: false,
+            level_extra_entries: Vec::new(),
+            palette: Vec::new(),
+            object_runs: Vec::new(),
+            object_compact_mask: Vec::new(),
+            grid_min: [0, 0, 0],
+            grid_dims: [0, 0, 0],
+            object_linear_indices: Vec::new(),
+            object_positions: Vec::new(),
+            object_sizes: Vec::new(),
+            object_rotations: Vec::new(),
+            object_roundness: Vec::new(),
+            object_color_tints: Vec::new(),
+        };
+        let payload_bytes = serde_cbor::to_vec(&payload).expect("serialize");
+        let compressed = zstd::bulk::compress(&payload_bytes, 1).expect("compress");
+
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&LEVEL_MAGIC);
+        bytes.extend_from_slice(&LEVEL_CODEC_V1.to_le_bytes());
+        bytes.push(COMPRESSION_ZSTD);
+        bytes.extend_from_slice(&(compressed.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&compressed);
+
+        let error = match decode_level_metadata_binary(&bytes) {
+            Ok(_) => panic!(
+                "Expected decode to fail for v1 zstd payload without decompressed-size header"
+            ),
+            Err(error) => error,
+        };
+        assert!(error.contains("missing decompressed-size header"));
+    }
+
+    #[test]
+    fn rejects_v2_uncompressed_size_mismatch() {
+        let payload = decode_v2_payload_for_test(
+            &encode_level_metadata_binary(
+                &load_builtin_level_metadata("Flowerfield").expect("missing built-in"),
+            )
+            .expect("encode"),
+        );
+        let payload_bytes = serde_cbor::to_vec(&payload).expect("serialize payload");
+
+        let mut encoded = Vec::new();
+        encoded.extend_from_slice(&LEVEL_MAGIC);
+        encoded.extend_from_slice(&LEVEL_CODEC_VERSION.to_le_bytes());
+        encoded.push(COMPRESSION_NONE);
+        encoded.extend_from_slice(&(payload_bytes.len() as u32).to_le_bytes());
+        encoded.extend_from_slice(&((payload_bytes.len() as u32) + 1).to_le_bytes());
+        encoded.extend_from_slice(&payload_bytes);
+
+        let error = match decode_level_metadata_binary(&encoded) {
+            Ok(_) => {
+                panic!("Expected decode to fail for v2 payload with uncompressed size mismatch")
+            }
+            Err(error) => error,
+        };
+        assert!(error.contains("uncompressed payload size mismatch"));
+    }
+
+    #[test]
+    fn rejects_payload_with_palette_index_out_of_range() {
+        let payload = BinaryLevelPayloadV1 {
+            format_version: 1,
+            name: "bad palette".to_string(),
+            music_source: "music.mp3".to_string(),
+            music_title: None,
+            music_author: None,
+            music_extra_entries: Vec::new(),
+            spawn: crate::types::SpawnMetadata::default(),
+            tap_times: Vec::new(),
+            timing_points: Vec::new(),
+            timeline_time_seconds: 0.0,
+            timeline_duration_seconds: 0.0,
+            triggers: Vec::new(),
+            simulate_trigger_hitboxes: false,
+            level_extra_entries: Vec::new(),
+            palette: Vec::new(),
+            object_runs: vec![ObjectRun {
+                palette_index: 0,
+                run_length: 1,
+            }],
+            object_compact_mask: Vec::new(),
+            grid_min: [0, 0, 0],
+            grid_dims: [0, 0, 0],
+            object_linear_indices: Vec::new(),
+            object_positions: vec![[0.0, 0.0, 0.0]],
+            object_sizes: vec![[1.0, 1.0, 1.0]],
+            object_rotations: vec![[0.0, 0.0, 0.0]],
+            object_roundness: vec![0.0],
+            object_color_tints: vec![[1.0, 1.0, 1.0]],
+        };
+
+        let bytes = encode_v2_uncompressed_for_test(&payload);
+        let error = match decode_level_metadata_binary(&bytes) {
+            Ok(_) => panic!("Expected decode to fail for payload with palette index out of range"),
+            Err(error) => error,
+        };
+        assert!(error.contains("palette index out of range"));
     }
 
     fn decode_v2_payload_for_test(bytes: &[u8]) -> BinaryLevelPayloadV1 {
