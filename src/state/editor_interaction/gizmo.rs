@@ -626,6 +626,7 @@ impl State {
 mod tests {
     use super::super::super::{EditorDragBlockStart, EditorGizmoDrag};
     use crate::test_utils::assert_approx_eq as approx_eq;
+    use crate::test_utils::with_editor_test_state;
     use crate::test_utils::with_test_state;
     use crate::types::{EditorMode, GizmoAxis, GizmoDragKind, LevelObject};
     use glam::{Vec2, Vec3};
@@ -648,6 +649,15 @@ mod tests {
             size: block.size,
             rotation_degrees: block.rotation_degrees,
         }
+    }
+
+    #[test]
+    fn with_editor_test_state_starts_in_editor_mode() {
+        with_editor_test_state(|state| {
+            let before = state.editor.objects.len();
+            state.turn_right();
+            assert_eq!(state.editor.objects.len(), before + 1);
+        });
     }
 
     #[test]

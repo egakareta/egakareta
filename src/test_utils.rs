@@ -24,3 +24,15 @@ pub(crate) fn with_test_state(mut test: impl FnMut(&mut State)) {
         test(&mut state);
     });
 }
+
+pub(crate) fn with_editor_test_state(mut test: impl FnMut(&mut State)) {
+    with_test_state(|state| {
+        if state.is_splash() {
+            state.turn_right();
+        }
+        if state.is_menu() {
+            state.toggle_editor();
+        }
+        test(state);
+    });
+}
