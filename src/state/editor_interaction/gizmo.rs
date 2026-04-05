@@ -624,8 +624,9 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::{EditorDragBlockStart, EditorGizmoDrag, State};
+    use super::super::super::{EditorDragBlockStart, EditorGizmoDrag};
     use crate::test_utils::assert_approx_eq as approx_eq;
+    use crate::test_utils::with_test_state;
     use crate::types::{EditorMode, GizmoAxis, GizmoDragKind, LevelObject};
     use glam::{Vec2, Vec3};
 
@@ -651,12 +652,7 @@ mod tests {
 
     #[test]
     fn pick_gizmo_handle_returns_none_when_mode_has_no_gizmo() {
-        pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
-
+        with_test_state(|state| {
             state.editor.ui.mode = EditorMode::Place;
             state.editor.objects = vec![test_block()];
             state.editor.ui.selected_block_index = Some(0);
@@ -669,12 +665,7 @@ mod tests {
 
     #[test]
     fn drag_gizmo_move_updates_object_position_along_axis() {
-        pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
-
+        with_test_state(|state| {
             state.editor.config.snap_to_grid = false;
             state.editor.objects = vec![test_block()];
 
@@ -712,12 +703,7 @@ mod tests {
 
     #[test]
     fn drag_gizmo_resize_negative_axis_preserves_opposite_edge() {
-        pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
-
+        with_test_state(|state| {
             state.editor.config.snap_to_grid = false;
             state.editor.objects = vec![test_block()];
 
@@ -756,12 +742,7 @@ mod tests {
 
     #[test]
     fn drag_gizmo_rotate_changes_selected_block_rotation() {
-        pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
-
+        with_test_state(|state| {
             state.editor.config.snap_rotation = false;
             state.editor.objects = vec![test_block()];
 
