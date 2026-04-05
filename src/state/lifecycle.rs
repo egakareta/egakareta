@@ -73,18 +73,33 @@ impl State {
     }
 
     #[cfg(test)]
-    pub(crate) async fn new_test() -> State {
+    pub(crate) async fn try_new_test() -> Option<State> {
+        let backends = if cfg!(target_os = "linux") {
+            wgpu::Backends::VULKAN
+        } else {
+            wgpu::Backends::all()
+        };
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
+            backends,
             ..Default::default()
         });
-        let size = PhysicalSize {
-            width: 800,
-            height: 600,
-        };
-        Self::new_common(instance, None, None, size)
-            .await
-            .expect("Requires wgpu instance")
+        Self::new_common(
+            instance,
+            None,
+            None,
+            PhysicalSize {
+                width: 800,
+                height: 600,
+            },
+        )
+        .await
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn new_test() -> State {
+        Self::try_new_test()
+        .await
+        .expect("No suitable wgpu adapter found for tests. Ensure Vulkan software driver is installed in CI.")
     }
 
     pub(crate) async fn new_common(
