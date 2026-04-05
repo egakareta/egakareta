@@ -60,10 +60,11 @@ jobs:
           version: 1.0
       - run: bun install
       - run: bun run test:coverage
-      - uses: codecov/codecov-action@v5
+      - uses: actions/upload-artifact@v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./lcov.info
+          name: coverage-report
+          path: ./lcov.info
+          retention-days: 1
 
   test-db:
     name: Test Database

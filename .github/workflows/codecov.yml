@@ -1,0 +1,25 @@
+name: Codecov Upload
+
+on:
+  workflow_run:
+    workflows: ["CI/CD"]
+    types:
+      - completed
+
+jobs:
+  upload-coverage:
+    name: Upload to Codecov
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download coverage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./lcov.info
