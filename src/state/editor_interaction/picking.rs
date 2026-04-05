@@ -284,10 +284,7 @@ mod tests {
     #[test]
     fn ray_intersect_sphere_returns_expected_distance() {
         pollster::block_on(async {
-            let state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let state = State::new_test().await;
 
             let t = state
                 .editor
@@ -308,10 +305,7 @@ mod tests {
     #[test]
     fn ray_intersect_rotated_block_hits_and_misses() {
         pollster::block_on(async {
-            let state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let state = State::new_test().await;
             let block = sample_block([0.0, 45.0, 0.0]);
 
             let hit = state.editor.ray_intersect_rotated_block(
@@ -333,10 +327,7 @@ mod tests {
     #[test]
     fn pick_from_screen_rejects_invalid_viewport() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             let pick = state
                 .editor
@@ -353,10 +344,7 @@ mod tests {
     #[test]
     fn pick_from_screen_center_prefers_block_hit() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             state.editor.objects.clear();
             state.editor.objects.push(sample_block([0.0, 0.0, 0.0]));

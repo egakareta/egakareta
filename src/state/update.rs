@@ -776,10 +776,7 @@ mod tests {
     #[test]
     fn target_playing_time_respects_started_and_game_over_state() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             state.gameplay.state.elapsed_seconds = 1.25;
             state.gameplay.state.started = false;
@@ -797,10 +794,7 @@ mod tests {
     #[test]
     fn playing_object_triggers_transform_objects_and_optionally_hitboxes() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             state.phase = AppPhase::Playing;
             state.gameplay.state.objects = vec![sample_object()];
@@ -826,10 +820,7 @@ mod tests {
     #[test]
     fn advance_playing_state_to_time_updates_elapsed_and_returns_render_objects() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             state.phase = AppPhase::Playing;
             state.gameplay.state.started = true;
@@ -874,10 +865,7 @@ mod tests {
     #[test]
     fn perf_overlay_toggle_controls_visibility() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             assert!(!state.editor_perf_overlay_enabled());
             assert!(state.editor_perf_overlay_lines().is_empty());

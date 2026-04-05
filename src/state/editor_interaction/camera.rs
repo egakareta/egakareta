@@ -209,10 +209,7 @@ mod tests {
     #[test]
     fn camera_axes_follow_editor_rotation() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             state.editor.camera.editor_rotation = 0.0;
             let (right, up) = state.editor.camera_axes_xy();
@@ -233,10 +230,7 @@ mod tests {
     #[test]
     fn camera_offset_clamps_pitch_and_world_projection_handles_visibility() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             state.editor.camera.editor_rotation = 0.0;
             state.editor.camera.editor_pitch = 10.0;
@@ -268,10 +262,7 @@ mod tests {
     #[test]
     fn camera_orientation_transition_wraps_and_interpolates() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             state.phase = AppPhase::Editor;
             state.editor.camera.editor_rotation = 3.0;
@@ -296,10 +287,7 @@ mod tests {
     #[test]
     fn state_camera_orientation_api_only_applies_in_editor_phase() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             let baseline_rotation = state.editor.camera.editor_rotation;
             state.phase = AppPhase::Menu;

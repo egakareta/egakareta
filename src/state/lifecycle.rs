@@ -73,7 +73,7 @@ impl State {
     }
 
     #[cfg(test)]
-    pub(crate) async fn new_test() -> Option<State> {
+    pub(crate) async fn new_test() -> State {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
@@ -82,7 +82,9 @@ impl State {
             width: 800,
             height: 600,
         };
-        Self::new_common(instance, None, None, size).await
+        Self::new_common(instance, None, None, size)
+            .await
+            .expect("Requires wgpu instance")
     }
 
     pub(crate) async fn new_common(
@@ -714,10 +716,7 @@ mod tests {
     #[test]
     fn test_lifecycle_transitions() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             // Start level 0 (should be Flowerfield)
             state.start_level(0);
@@ -744,10 +743,7 @@ mod tests {
     #[test]
     fn test_lifecycle_audio_side_effects() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             state.start_editor(0);
             state.editor.timeline.playback.playing = true;
@@ -779,10 +775,7 @@ mod tests {
     #[test]
     fn test_phase_transition_clipboard_clearing() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
 
             // 1. Setup: Enter editor and copy a block
@@ -806,10 +799,7 @@ mod tests {
     #[test]
     fn test_editor_load_level_resets_history_and_clipboard() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
 
             state.dispatch(AppCommand::ToggleEditor);
