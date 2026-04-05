@@ -43,3 +43,27 @@ pub use platform::input_mapping::{
     key_str_from_winit, mouse_button_index_from_winit, zoom_delta_from_winit,
 };
 pub use state::State;
+
+#[cfg(target_arch = "wasm32")]
+#[unsafe(no_mangle)]
+pub extern "C" fn asinh(value: f64) -> f64 {
+    value.asinh()
+}
+
+#[cfg(target_arch = "wasm32")]
+#[unsafe(no_mangle)]
+pub extern "C" fn asinhf(value: f32) -> f32 {
+    value.asinh()
+}
+
+#[cfg(target_arch = "wasm32")]
+#[unsafe(no_mangle)]
+pub extern "C" fn acosh(value: f64) -> f64 {
+    value.acosh()
+}
+
+#[cfg(target_arch = "wasm32")]
+#[unsafe(no_mangle)]
+pub extern "C" fn acoshf(value: f32) -> f32 {
+    value.acosh()
+}
