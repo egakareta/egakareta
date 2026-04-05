@@ -642,8 +642,8 @@ fn rle_decode_palette_indices(runs: &[ObjectRun]) -> Result<Vec<u16>, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        compute_grid_bounds, count_compact_bits, decode_level_metadata_binary, entries_to_map,
-        encode_level_metadata_binary, is_compact_bit_set, linear_index_to_position,
+        compute_grid_bounds, count_compact_bits, decode_level_metadata_binary,
+        encode_level_metadata_binary, entries_to_map, is_compact_bit_set, linear_index_to_position,
         map_to_entries, position_to_linear_index, quantize_compact_position,
         rle_decode_palette_indices, rle_encode_palette_indices, set_compact_bit,
         BinaryLevelPayloadV1, MetadataEntry, ObjectRun, COMPRESSION_NONE, COMPRESSION_ZSTD,

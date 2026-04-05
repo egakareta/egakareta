@@ -1855,11 +1855,11 @@ pub(crate) struct ColorSpaceUniform {
 mod tests {
     use super::{
         apply_timed_triggers_to_objects, camera_triggers_to_timed_triggers,
-        default_camera_trigger_pitch,
-        default_camera_trigger_rotation, default_camera_trigger_transition_interval_seconds,
-        timed_triggers_to_camera_triggers, CameraTrigger, CameraTriggerMode, EditorStateParams,
-        LevelMetadata, LevelObject, MusicMetadata, SpawnDirection, SpawnMetadata, TimedTrigger,
-        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, Vertex,
+        default_camera_trigger_pitch, default_camera_trigger_rotation,
+        default_camera_trigger_transition_interval_seconds, timed_triggers_to_camera_triggers,
+        CameraTrigger, CameraTriggerMode, EditorStateParams, LevelMetadata, LevelObject,
+        MusicMetadata, SpawnDirection, SpawnMetadata, TimedTrigger, TimedTriggerAction,
+        TimedTriggerEasing, TimedTriggerTarget, Vertex,
     };
     use serde_json::json;
 

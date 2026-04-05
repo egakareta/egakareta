@@ -647,7 +647,9 @@ mod tests {
         let atlas = block_texture_atlas();
         let default_layer = atlas.default_layer();
 
-        let grass_top = atlas.resolve_layer("grass_top.png").expect("known texture path");
+        let grass_top = atlas
+            .resolve_layer("grass_top.png")
+            .expect("known texture path");
         assert_ne!(grass_top, default_layer);
 
         let by_stem = atlas.resolve_layer("grass_top");
