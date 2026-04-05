@@ -26,26 +26,12 @@ fn parse_host_id_by_label(label: &str) -> Option<cpal::HostId> {
         return Some(host_id);
     }
 
-    #[cfg(target_arch = "wasm32")]
-    {
-        if host_label(cpal::HostId::AudioWorklet).eq_ignore_ascii_case(trimmed) {
-            return Some(cpal::HostId::AudioWorklet);
-        }
-    }
-
     None
 }
 
 fn select_host(preferred_host: Option<cpal::HostId>) -> cpal::Host {
     if let Some(host_id) = preferred_host {
         if let Ok(host) = cpal::host_from_id(host_id) {
-            return host;
-        }
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        if let Ok(host) = cpal::host_from_id(cpal::HostId::AudioWorklet) {
             return host;
         }
     }
@@ -58,16 +44,6 @@ fn available_host_labels() -> Vec<String> {
 
     for host_id in cpal::available_hosts() {
         labels.push(host_label(host_id));
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        if cpal::host_from_id(cpal::HostId::AudioWorklet).is_ok() {
-            let worklet = host_label(cpal::HostId::AudioWorklet);
-            if !labels.iter().any(|entry| entry == &worklet) {
-                labels.push(worklet);
-            }
-        }
     }
 
     labels.sort();
