@@ -73,16 +73,42 @@ impl State {
     }
 
     #[cfg(test)]
-    pub(crate) async fn new_test() -> Option<State> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
-            ..Default::default()
-        });
-        let size = PhysicalSize {
-            width: 800,
-            height: 600,
+    pub(crate) async fn try_new_test() -> Option<State> {
+        let backends_to_try = if cfg!(target_os = "linux") {
+            vec![wgpu::Backends::VULKAN, wgpu::Backends::all()]
+        } else {
+            vec![wgpu::Backends::all()]
         };
-        Self::new_common(instance, None, None, size).await
+
+        for backends in backends_to_try {
+            let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+                backends,
+                ..Default::default()
+            });
+            if let Some(state) = Self::new_common(
+                instance,
+                None,
+                None,
+                PhysicalSize {
+                    width: 800,
+                    height: 600,
+                },
+            )
+            .await
+            {
+                return Some(state);
+            }
+        }
+        None
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn new_test() -> State {
+        Self::try_new_test()
+            .await
+            .expect(
+                "No suitable wgpu adapter found for tests. Install Vulkan-capable drivers (or a Vulkan software driver on Linux/headless environments), or use try_new_test() when running in an environment without GPU support.",
+            )
     }
 
     pub(crate) async fn new_common(
@@ -714,10 +740,7 @@ mod tests {
     #[test]
     fn test_lifecycle_transitions() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             // Start level 0 (should be Flowerfield)
             state.start_level(0);
@@ -744,10 +767,7 @@ mod tests {
     #[test]
     fn test_lifecycle_audio_side_effects() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             state.start_editor(0);
             state.editor.timeline.playback.playing = true;
@@ -779,10 +799,7 @@ mod tests {
     #[test]
     fn test_phase_transition_clipboard_clearing() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
 
             // 1. Setup: Enter editor and copy a block
@@ -806,10 +823,7 @@ mod tests {
     #[test]
     fn test_editor_load_level_resets_history_and_clipboard() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
 
             state.dispatch(AppCommand::ToggleEditor);

@@ -93,6 +93,7 @@ impl RodioBackendInner {
         if self._output_device.is_some() {
             return self._output_device.as_ref();
         }
+
         #[cfg(not(target_arch = "wasm32"))]
         if self.device_tried {
             return None;
@@ -181,6 +182,9 @@ impl RodioBackendInner {
         }
 
         player.set_speed(self.playback_speed);
+        if cfg!(test) {
+            player.set_volume(0.0);
+        }
         if autoplay {
             player.play();
             self.playback_started_at = Some(web_time::Instant::now());
@@ -477,6 +481,9 @@ impl AudioBackend {
         if let Ok(decoded) = rodio::Decoder::new(Cursor::new(asset_bytes)) {
             if let Some(device) = inner.ensure_device() {
                 let (player, output) = rodio::Player::new();
+                if cfg!(test) {
+                    player.set_volume(0.0);
+                }
                 device.mixer().add(output);
                 player.append(decoded);
                 player.play();

@@ -679,10 +679,7 @@ mod tests {
     #[test]
     fn marquee_threshold_activates_only_after_minimum_drag() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             state.editor.ui.marquee_start_screen = Some([100.0, 100.0]);
             state.editor.ui.marquee_current_screen = Some([102.0, 102.0]);
@@ -704,10 +701,7 @@ mod tests {
     #[test]
     fn begin_marquee_requires_editor_phase_and_supported_mode() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             state.editor.ui.mode = EditorMode::Timing;
             assert!(!state
@@ -730,10 +724,7 @@ mod tests {
     #[test]
     fn finish_marquee_clears_state_when_not_dragged_far_enough() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             state.editor.ui.mode = EditorMode::Select;
             assert!(state
@@ -758,10 +749,7 @@ mod tests {
     #[test]
     fn finish_marquee_with_large_rect_selects_visible_block() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             state.phase = AppPhase::Editor;
             state.editor.ui.mode = EditorMode::Select;

@@ -681,10 +681,7 @@ mod tests {
     #[test]
     fn test_command_routing_navigation() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
 
             // Initial state should be Menu
@@ -699,10 +696,7 @@ mod tests {
     #[test]
     fn test_command_routing_editor_modes() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
 
@@ -732,10 +726,7 @@ mod tests {
     #[test]
     fn test_resize_routing() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             let new_width = 1280;
             let new_height = 720;
@@ -753,10 +744,7 @@ mod tests {
     #[test]
     fn test_command_routing_editor_ops() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
 
@@ -774,10 +762,7 @@ mod tests {
     #[test]
     fn test_timeline_shift_updates_preview() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
 
@@ -804,10 +789,7 @@ mod tests {
     fn test_input_event_interaction_state() {
         pollster::block_on(async {
             use crate::commands::InputEvent;
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
 
@@ -835,10 +817,7 @@ mod tests {
     fn test_input_event_zoom_and_resize() {
         pollster::block_on(async {
             use crate::commands::InputEvent;
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
 
@@ -862,10 +841,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
 
@@ -905,10 +881,7 @@ mod tests {
             use crate::commands::InputEvent;
 
             for key in [" ", "Space"] {
-                let mut state = match State::new_test().await {
-                    Some(s) => s,
-                    None => return,
-                };
+                let mut state = State::new_test().await;
                 state.phase = AppPhase::Menu;
 
                 state.process_input_event(InputEvent::Key {
@@ -927,10 +900,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
 
@@ -955,10 +925,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
 
@@ -1011,10 +978,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Scale));
@@ -1040,17 +1004,11 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut native_style = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut native_style = State::new_test().await;
             native_style.phase = AppPhase::Menu;
             native_style.dispatch(AppCommand::ToggleEditor);
 
-            let mut web_style = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut web_style = State::new_test().await;
             web_style.phase = AppPhase::Menu;
             web_style.dispatch(AppCommand::ToggleEditor);
 
@@ -1093,17 +1051,11 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut native_style = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut native_style = State::new_test().await;
             native_style.phase = AppPhase::Menu;
             native_style.dispatch(AppCommand::ToggleEditor);
 
-            let mut web_style = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut web_style = State::new_test().await;
             web_style.phase = AppPhase::Menu;
             web_style.dispatch(AppCommand::ToggleEditor);
 
@@ -1157,10 +1109,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
@@ -1218,10 +1167,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
@@ -1296,10 +1242,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
@@ -1355,10 +1298,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
@@ -1420,10 +1360,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Trigger));
@@ -1468,10 +1405,7 @@ mod tests {
     #[test]
     fn test_command_chain_undo_redo() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
 
             // 1. Enter Editor
@@ -1496,10 +1430,7 @@ mod tests {
     #[test]
     fn test_complex_command_sequence() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
 
@@ -1547,10 +1478,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
 
@@ -1582,10 +1510,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
             state.dispatch(AppCommand::ToggleEditor);
             state.dispatch(AppCommand::TurnRight);
