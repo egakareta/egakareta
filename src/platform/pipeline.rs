@@ -115,3 +115,43 @@ impl FramePipeline {
         &self.egui_ctx
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::FramePipeline;
+    use crate::State;
+
+    #[test]
+    fn run_frame_executes_without_surface_and_returns_output() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let egui_ctx = egui::Context::default();
+            let renderer = state.create_egui_renderer();
+            let mut pipeline = FramePipeline::new(egui_ctx, renderer, None);
+
+            let output = pipeline.run_frame(&mut state, egui::RawInput::default());
+
+            assert!(output.pixels_per_point > 0.0);
+            let _ctx = pipeline.ctx();
+        });
+    }
+
+    #[test]
+    fn run_frame_executes_wordmark_ui_branch_when_texture_is_present() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let egui_ctx = egui::Context::default();
+            let renderer = state.create_egui_renderer();
+            let wordmark = egui_ctx.load_texture(
+                "test-wordmark",
+                egui::ColorImage::new([2, 2], vec![egui::Color32::WHITE; 4]),
+                egui::TextureOptions::LINEAR,
+            );
+            let mut pipeline = FramePipeline::new(egui_ctx, renderer, Some(wordmark));
+
+            let output = pipeline.run_frame(&mut state, egui::RawInput::default());
+
+            assert!(output.pixels_per_point > 0.0);
+        });
+    }
+}

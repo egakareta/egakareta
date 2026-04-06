@@ -355,8 +355,13 @@ fn scale_channel(value: u8, factor: f32) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use super::{atlas_average_color, scale_rgb};
-    use crate::block_repository::block_texture_atlas;
+    use super::{
+        atlas_average_color, block_preview_colors, scale_channel, scale_rgb,
+        show_block_preview_button, FALLBACK_SIDE_COLOR, FALLBACK_TOP_COLOR, TOP_LIGHTEN_FACTOR,
+    };
+    use crate::block_repository::{
+        all_placeable_blocks, block_texture_atlas, resolve_block_texture_layers,
+    };
 
     #[test]
     fn atlas_average_color_returns_some_for_known_default_layer() {
@@ -377,5 +382,61 @@ mod tests {
         assert_eq!(darkened.r(), 0);
         assert_eq!(darkened.g(), 0);
         assert_eq!(darkened.b(), 0);
+    }
+
+    #[test]
+    fn atlas_average_color_returns_none_for_out_of_bounds_layer() {
+        let atlas = block_texture_atlas();
+        let color = atlas_average_color(atlas, u32::MAX);
+        assert!(color.is_none());
+    }
+
+    #[test]
+    fn scale_channel_clamps_low_and_high_bounds() {
+        assert_eq!(scale_channel(100, -2.0), 0);
+        assert_eq!(scale_channel(200, 2.0), 255);
+    }
+
+    #[test]
+    fn block_preview_colors_match_texture_layer_sampling_for_placeable_block() {
+        let block = all_placeable_blocks()
+            .iter()
+            .find(|block| block.placeable)
+            .expect("expected at least one placeable block");
+        let atlas = block_texture_atlas();
+        let layers = resolve_block_texture_layers(block.id.as_str());
+
+        let expected_top = scale_rgb(
+            atlas_average_color(atlas, layers.top).unwrap_or(FALLBACK_TOP_COLOR),
+            TOP_LIGHTEN_FACTOR,
+        );
+        let expected_side = atlas_average_color(atlas, layers.side).unwrap_or(FALLBACK_SIDE_COLOR);
+
+        assert_eq!(
+            block_preview_colors(block.id.as_str()),
+            (expected_top, expected_side)
+        );
+    }
+
+    #[test]
+    fn show_block_preview_button_handles_texture_and_fallback_paths() {
+        let block = all_placeable_blocks()
+            .iter()
+            .find(|block| block.placeable)
+            .expect("expected at least one placeable block");
+        let ctx = egui::Context::default();
+        let mut clicked_without_texture = true;
+        let mut clicked_with_texture = true;
+
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                clicked_without_texture = show_block_preview_button(ui, block, false, None);
+                clicked_with_texture =
+                    show_block_preview_button(ui, block, true, Some(egui::TextureId::Managed(1)));
+            });
+        });
+
+        assert!(!clicked_without_texture);
+        assert!(!clicked_with_texture);
     }
 }
