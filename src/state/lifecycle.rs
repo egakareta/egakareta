@@ -802,6 +802,7 @@ mod tests {
             let mut state = State::new_test().await;
 
             state.start_level(0);
+            // Gameplay audio starts on first input while in Playing phase.
             state.turn_right();
 
             assert!(
