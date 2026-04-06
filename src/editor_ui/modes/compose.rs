@@ -224,8 +224,7 @@ fn show_block_preview_button(
         rect.min + egui::vec2(PREVIEW_PADDING_X, PREVIEW_PADDING_Y),
         egui::vec2(rect.width() - PREVIEW_PADDING_X * 2.0, PREVIEW_HEIGHT),
     );
-    if should_use_cached_icon(icon_texture_id) {
-        let texture_id = icon_texture_id.unwrap_or(egui::TextureId::Managed(0));
+    if let Some(texture_id) = icon_texture_id {
         let image_rect = preview_rect.shrink2(egui::vec2(2.0, 2.0));
         ui.painter().image(
             texture_id,
@@ -247,10 +246,6 @@ fn show_block_preview_button(
     );
 
     response.clicked()
-}
-
-fn should_use_cached_icon(icon_texture_id: Option<egui::TextureId>) -> bool {
-    icon_texture_id.is_some()
 }
 
 fn draw_block_preview_cube(painter: &egui::Painter, rect: egui::Rect, block_id: &str) {
@@ -350,7 +345,7 @@ fn scale_channel(value: u8, factor: f32) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use super::{atlas_average_color, scale_rgb, should_use_cached_icon};
+    use super::{atlas_average_color, scale_rgb};
     use crate::block_repository::block_texture_atlas;
 
     #[test]
@@ -372,11 +367,5 @@ mod tests {
         assert_eq!(darkened.r(), 0);
         assert_eq!(darkened.g(), 0);
         assert_eq!(darkened.b(), 0);
-    }
-
-    #[test]
-    fn fallback_preview_is_used_when_icon_is_missing() {
-        assert!(!should_use_cached_icon(None));
-        assert!(should_use_cached_icon(Some(egui::TextureId::Managed(1))));
     }
 }
