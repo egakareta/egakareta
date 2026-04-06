@@ -51,6 +51,27 @@ fn discover_graphics_backends() -> Vec<String> {
     }
 }
 
+fn editor_ghost_trail_primitive_state() -> wgpu::PrimitiveState {
+    wgpu::PrimitiveState {
+        // Ghost trail uses `append_prism` (untextured) winding, which is opposite
+        // of the textured block/icon geometry. Keep CCW here to avoid showing the
+        // floor-facing bottom face (causes z-fighting on the leading segment).
+        front_face: wgpu::FrontFace::Ccw,
+        cull_mode: Some(wgpu::Face::Back),
+        ..wgpu::PrimitiveState::default()
+    }
+}
+
+fn editor_ghost_trail_depth_stencil_state() -> wgpu::DepthStencilState {
+    wgpu::DepthStencilState {
+        format: DEPTH_FORMAT,
+        depth_write_enabled: false,
+        depth_compare: wgpu::CompareFunction::Less,
+        stencil: wgpu::StencilState::default(),
+        bias: wgpu::DepthBiasState::default(),
+    }
+}
+
 impl State {
     #[cfg(target_arch = "wasm32")]
     pub(crate) async fn new(canvas: WasmCanvas) -> Self {
@@ -542,18 +563,8 @@ impl State {
                     })],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                 }),
-                primitive: wgpu::PrimitiveState {
-                    front_face: wgpu::FrontFace::Cw,
-                    cull_mode: Some(wgpu::Face::Back),
-                    ..wgpu::PrimitiveState::default()
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: DEPTH_FORMAT,
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::Less,
-                    stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState::default(),
-                }),
+                primitive: editor_ghost_trail_primitive_state(),
+                depth_stencil: Some(editor_ghost_trail_depth_stencil_state()),
                 multisample: wgpu::MultisampleState::default(),
                 multiview: None,
                 cache: None,
@@ -772,8 +783,36 @@ mod tests {
     use crate::game::TimelineSimulationRuntime;
     use crate::types::SpawnDirection;
 
-    use super::State;
+    use super::{
+        editor_ghost_trail_depth_stencil_state, editor_ghost_trail_primitive_state, State,
+    };
     use crate::types::AppPhase;
+
+    #[test]
+    fn editor_ghost_trail_pipeline_state_prevents_floor_z_fighting() {
+        let primitive = editor_ghost_trail_primitive_state();
+        assert_eq!(
+            primitive.front_face,
+            wgpu::FrontFace::Ccw,
+            "ghost trail must keep CCW front-face culling so floor-facing bottoms stay culled"
+        );
+        assert_eq!(
+            primitive.cull_mode,
+            Some(wgpu::Face::Back),
+            "ghost trail should cull back faces"
+        );
+
+        let depth = editor_ghost_trail_depth_stencil_state();
+        assert_eq!(
+            depth.depth_compare,
+            wgpu::CompareFunction::Less,
+            "ghost trail depth compare should remain Less"
+        );
+        assert!(
+            !depth.depth_write_enabled,
+            "ghost trail should not write to depth to preserve translucent blending order"
+        );
+    }
 
     #[test]
     fn test_lifecycle_transitions() {
