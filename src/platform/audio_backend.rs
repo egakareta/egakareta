@@ -164,6 +164,17 @@ impl RodioBackendInner {
         use web_time::Duration;
 
         let Some(device) = self.ensure_device() else {
+            #[cfg(test)]
+            {
+                self.current_audio_source = Some(source_key);
+                if autoplay {
+                    self.playback_started_at = Some(web_time::Instant::now());
+                    self.playback_start_offset_seconds = start_seconds;
+                } else {
+                    self.playback_started_at = None;
+                    self.playback_start_offset_seconds = 0.0;
+                }
+            }
             return;
         };
 
@@ -305,6 +316,10 @@ impl AudioBackend {
                 inner.playback_started_at = Some(web_time::Instant::now());
                 inner.playback_start_offset_seconds = start_seconds;
                 true
+            } else if cfg!(test) && inner.current_audio_source.is_some() {
+                inner.playback_started_at = Some(web_time::Instant::now());
+                inner.playback_start_offset_seconds = start_seconds;
+                true
             } else {
                 false
             }
@@ -440,8 +455,11 @@ impl AudioBackend {
 
     pub(crate) fn playback_time_seconds(&self) -> Option<f32> {
         let inner = self.inner.borrow();
-        let player = inner.current_player.as_ref()?;
-        if player.empty() {
+        if let Some(player) = inner.current_player.as_ref() {
+            if player.empty() {
+                return None;
+            }
+        } else if !cfg!(test) {
             return None;
         }
 
@@ -453,12 +471,14 @@ impl AudioBackend {
     }
 
     pub(crate) fn is_playing(&self) -> bool {
-        self.inner
-            .borrow()
-            .current_player
-            .as_ref()
-            .map(|player| !player.empty())
-            .unwrap_or(false)
+        let inner = self.inner.borrow();
+        if let Some(player) = inner.current_player.as_ref() {
+            !player.empty()
+        } else if cfg!(test) {
+            inner.playback_started_at.is_some()
+        } else {
+            false
+        }
     }
 
     pub(crate) fn set_speed(&mut self, speed: f32) {

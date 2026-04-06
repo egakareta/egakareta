@@ -797,6 +797,25 @@ mod tests {
     }
 
     #[test]
+    fn test_lifecycle_audio_start_marks_playing_in_tests() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.start_level(0);
+            state.turn_right();
+
+            assert!(
+                state.audio.state.runtime.is_playing(),
+                "Starting a level should mark runtime audio as playing in tests"
+            );
+            assert!(
+                state.audio.state.runtime.playback_time_seconds().is_some(),
+                "Starting a level should produce a runtime playback clock in tests"
+            );
+        });
+    }
+
+    #[test]
     fn test_phase_transition_clipboard_clearing() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
