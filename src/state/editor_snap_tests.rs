@@ -13,10 +13,7 @@ use glam::{Vec2, Vec3};
 #[test]
 fn test_editor_snap_override_with_ctrl() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
 
         // 1. Initially enabled
@@ -73,10 +70,7 @@ fn test_editor_snap_override_with_ctrl() {
 #[test]
 fn test_editor_cursor_snapping_respects_ctrl_override() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
         state.editor.config.snap_to_grid = true;
         state.editor.config.snap_step = 1.0;
@@ -93,10 +87,7 @@ fn test_editor_cursor_snapping_respects_ctrl_override() {
 #[test]
 fn test_editor_nudge_respects_ctrl_override() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
         state.editor.config.snap_to_grid = true;
         state.editor.config.snap_step = 2.0; // Big snap step
@@ -145,10 +136,7 @@ fn test_editor_nudge_respects_ctrl_override() {
 #[test]
 fn test_editor_nudge_left_right_screen_direction_regression() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
         state.editor.config.snap_to_grid = true;
         state.editor.config.snap_step = 1.0;
