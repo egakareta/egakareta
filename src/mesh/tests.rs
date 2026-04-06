@@ -118,6 +118,11 @@ mod tests {
             // The shaft (prism) has 36 vertices. Some might be from the cone (tip),
             // but the shaft is generated before the cone in the builder.
             // The shaft's far end (p_max_x) is what we want.
+            assert!(
+                shaft_verts.len() >= 36,
+                "expected at least 36 shaft vertices for gizmo shaft, got {}",
+                shaft_verts.len()
+            );
             shaft_verts[0..36]
                 .iter()
                 .map(|v| v.position[0])
