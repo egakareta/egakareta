@@ -506,7 +506,7 @@ impl State {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState {
-                front_face: wgpu::FrontFace::Ccw,
+                front_face: wgpu::FrontFace::Cw,
                 cull_mode: Some(wgpu::Face::Back),
                 ..wgpu::PrimitiveState::default()
             },
@@ -543,7 +543,7 @@ impl State {
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                 }),
                 primitive: wgpu::PrimitiveState {
-                    front_face: wgpu::FrontFace::Ccw,
+                    front_face: wgpu::FrontFace::Cw,
                     cull_mode: Some(wgpu::Face::Back),
                     ..wgpu::PrimitiveState::default()
                 },

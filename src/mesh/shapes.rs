@@ -210,10 +210,10 @@ pub(crate) fn append_prism_with_layers(
 
     // +X
     push_face(
-        [x_max, y_min, z_min],
-        [x_max, y_max, z_min],
-        [x_max, y_max, z_max],
         [x_max, y_min, z_max],
+        [x_max, y_max, z_max],
+        [x_max, y_max, z_min],
+        [x_max, y_min, z_min],
         colors.side,
         texture_layers.side,
         dz,
@@ -222,10 +222,10 @@ pub(crate) fn append_prism_with_layers(
 
     // -X
     push_face(
-        [x_min, y_min, z_max],
-        [x_min, y_max, z_max],
-        [x_min, y_max, z_min],
         [x_min, y_min, z_min],
+        [x_min, y_max, z_min],
+        [x_min, y_max, z_max],
+        [x_min, y_min, z_max],
         colors.side,
         texture_layers.side,
         dz,
@@ -341,28 +341,28 @@ mod tests {
 
         // Side faces (+Z, -Z, +X, -X) should have V=0 at top (Y=1) and V=1 at bottom (Y=0)
         // +Z face (front)
-        check_uv([0.0, 1.0, 1.0], [0.0, 0.0], "+Z Top-Left");
-        check_uv([1.0, 1.0, 1.0], [1.0, 0.0], "+Z Top-Right");
-        check_uv([0.0, 0.0, 1.0], [0.0, 1.0], "+Z Bottom-Left");
-        check_uv([1.0, 0.0, 1.0], [1.0, 1.0], "+Z Bottom-Right");
+        check_uv([1.0, 1.0, 1.0], [0.0, 0.0], "+Z Top-Left");
+        check_uv([0.0, 1.0, 1.0], [1.0, 0.0], "+Z Top-Right");
+        check_uv([1.0, 0.0, 1.0], [0.0, 1.0], "+Z Bottom-Left");
+        check_uv([0.0, 0.0, 1.0], [1.0, 1.0], "+Z Bottom-Right");
 
         // -Z face (back)
-        check_uv([1.0, 1.0, 0.0], [0.0, 0.0], "-Z Top-Left");
-        check_uv([0.0, 1.0, 0.0], [1.0, 0.0], "-Z Top-Right");
-        check_uv([1.0, 0.0, 0.0], [0.0, 1.0], "-Z Bottom-Left");
-        check_uv([0.0, 0.0, 0.0], [1.0, 1.0], "-Z Bottom-Right");
+        check_uv([0.0, 1.0, 0.0], [0.0, 0.0], "-Z Top-Left");
+        check_uv([1.0, 1.0, 0.0], [1.0, 0.0], "-Z Top-Right");
+        check_uv([0.0, 0.0, 0.0], [0.0, 1.0], "-Z Bottom-Left");
+        check_uv([1.0, 0.0, 0.0], [1.0, 1.0], "-Z Bottom-Right");
 
         // +X face (right)
-        check_uv([1.0, 1.0, 0.0], [0.0, 0.0], "+X Top-Left");
-        check_uv([1.0, 1.0, 1.0], [1.0, 0.0], "+X Top-Right");
-        check_uv([1.0, 0.0, 0.0], [0.0, 1.0], "+X Bottom-Left");
-        check_uv([1.0, 0.0, 1.0], [1.0, 1.0], "+X Bottom-Right");
+        check_uv([1.0, 1.0, 1.0], [0.0, 0.0], "+X Top-Left");
+        check_uv([1.0, 1.0, 0.0], [1.0, 0.0], "+X Top-Right");
+        check_uv([1.0, 0.0, 1.0], [0.0, 1.0], "+X Bottom-Left");
+        check_uv([1.0, 0.0, 0.0], [1.0, 1.0], "+X Bottom-Right");
 
         // -X face (left)
-        check_uv([0.0, 1.0, 1.0], [0.0, 0.0], "-X Top-Left");
-        check_uv([0.0, 1.0, 0.0], [1.0, 0.0], "-X Top-Right");
-        check_uv([0.0, 0.0, 1.0], [0.0, 1.0], "-X Bottom-Left");
-        check_uv([0.0, 0.0, 0.0], [1.0, 1.0], "-X Bottom-Right");
+        check_uv([0.0, 1.0, 0.0], [0.0, 0.0], "-X Top-Left");
+        check_uv([0.0, 1.0, 1.0], [1.0, 0.0], "-X Top-Right");
+        check_uv([0.0, 0.0, 0.0], [0.0, 1.0], "-X Bottom-Left");
+        check_uv([0.0, 0.0, 1.0], [1.0, 1.0], "-X Bottom-Right");
 
         // Top face (+Y)
         // [x_min, y_max, z_max] -> [0, 1, 1] is Bottom-Left in push_face order
@@ -427,17 +427,19 @@ mod tests {
         );
 
         // Side face (+Z): DX=2, DY=1
+        // We're looking from +Z to -Z.
+        // Left is -X (x=0), Right is +X (x=2).
         check_tiled_uv(
             &tiled_vertices,
-            [2.0, 1.0, 3.0],
-            [2.0, 0.0],
-            "Tiled +Z Top-Right",
+            [0.0, 1.0, 3.0],
+            [0.0, 0.0], // x=0 is Left, so U=0
+            "Tiled +Z Top-Left",
         );
         check_tiled_uv(
             &tiled_vertices,
-            [2.0, 0.0, 3.0],
-            [2.0, 1.0],
-            "Tiled +Z Bottom-Right",
+            [2.0, 1.0, 3.0],
+            [2.0, 0.0], // x=2 is Right, so U=2
+            "Tiled +Z Top-Right",
         );
     }
 
@@ -496,6 +498,58 @@ mod tests {
         // Bottom (-Y) face: Size should be [2.5, 3.5] (DX, DZ)
         for i in 30..36 {
             assert_eq!(vertices[i].uv_norm, [2.5, 3.5]);
+        }
+    }
+
+    #[test]
+    fn test_prism_winding_order() {
+        use glam::Vec3;
+
+        let mut vertices = Vec::new();
+        let min = [0.0, 0.0, 0.0];
+        let max = [2.0, 2.0, 2.0];
+        let color = [1.0, 1.0, 1.0, 1.0];
+
+        append_prism_with_layers(
+            &mut vertices,
+            min,
+            max,
+            PrismFaceColors::uniform_with_outline(color, [0.0, 0.0, 0.0, 0.0]),
+            PrismTextureLayers::new(1, 2, 3),
+        );
+
+        assert_eq!(vertices.len(), 36);
+
+        let expected_outward_normals = [
+            Vec3::new(0.0, 1.0, 0.0),  // Top (+Y)
+            Vec3::new(1.0, 0.0, 0.0),  // Right (+X)
+            Vec3::new(-1.0, 0.0, 0.0), // Left (-X)
+            Vec3::new(0.0, 0.0, 1.0),  // Front (+Z)
+            Vec3::new(0.0, 0.0, -1.0), // Back (-Z)
+            Vec3::new(0.0, -1.0, 0.0), // Bottom (-Y)
+        ];
+
+        for (face_index, expected_outward_normal) in expected_outward_normals.iter().enumerate() {
+            let start_idx = face_index * 6;
+
+            // First triangle of the face (indices 0, 1, 2)
+            let p0 = Vec3::from(vertices[start_idx].position);
+            let p1 = Vec3::from(vertices[start_idx + 1].position);
+            let p2 = Vec3::from(vertices[start_idx + 2].position);
+
+            let u = p1 - p0;
+            let v = p2 - p0;
+            let normal = u.cross(v).normalize();
+
+            // In a Right-Handed system, if vertices are given in CW order when viewed from outside,
+            // the computed geometric normal (u x v) will point exactly opposite to the outward normal.
+            // i.e., normal dot expected_outward_normal should be -1.0
+            let dot = normal.dot(*expected_outward_normal);
+            assert!(
+                dot < -0.99,
+                "Face {} is not clockwise. Expected inward normal (opposite of outward), but got dot product {}", 
+                face_index, dot
+            );
         }
     }
 }
