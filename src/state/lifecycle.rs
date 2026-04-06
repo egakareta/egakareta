@@ -807,11 +807,11 @@ mod tests {
 
             assert!(
                 state.audio.state.runtime.is_playing(),
-                "Starting a level should mark runtime audio as playing in tests"
+                "First gameplay input after starting a level should mark runtime audio as playing in tests"
             );
             assert!(
                 state.audio.state.runtime.playback_time_seconds().is_some(),
-                "Starting a level should produce a runtime playback clock in tests"
+                "First gameplay input after starting a level should produce a runtime playback clock in tests"
             );
         });
     }
