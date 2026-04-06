@@ -5,7 +5,9 @@
 * See LICENSE and COMMERICAL.md for details.
 
 */
-use crate::block_repository::all_placeable_blocks;
+use crate::block_repository::{
+    all_placeable_blocks, block_texture_atlas, resolve_block_texture_layers,
+};
 use crate::commands::AppCommand;
 use crate::editor_ui::components::{MAX_TIMELINE_DURATION_SECONDS, MIN_TIMELINE_DURATION_SECONDS};
 use crate::editor_ui::modes::shared::{show_mode_and_snap_controls, show_player_camera_status_row};
@@ -22,7 +24,7 @@ pub(crate) fn show_compose_mode_bottom_panel(
 
     match view.mode {
         EditorMode::Place => {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label("Block:");
 
                 let current = view.selected_block_id;
@@ -30,10 +32,7 @@ pub(crate) fn show_compose_mode_bottom_panel(
                     if !block.placeable {
                         continue;
                     }
-                    if ui
-                        .selectable_label(current == block.id, &block.display_name)
-                        .clicked()
-                    {
+                    if show_block_preview_button(ui, block, current == block.id) {
                         commands.push(AppCommand::EditorSetBlockId(block.id.clone()));
                     }
                 }
@@ -178,4 +177,169 @@ pub(crate) fn show_compose_mode_bottom_panel(
     });
 
     show_player_camera_status_row(ui, view);
+}
+
+fn show_block_preview_button(
+    ui: &mut egui::Ui,
+    block: &crate::block_repository::BlockDefinition,
+    selected: bool,
+) -> bool {
+    let button_size = egui::vec2(72.0, 88.0);
+    let (rect, response) = ui.allocate_exact_size(button_size, egui::Sense::click());
+
+    let visuals = ui.style().interact_selectable(&response, selected);
+    ui.painter().rect(
+        rect,
+        4.0,
+        visuals.bg_fill,
+        visuals.bg_stroke,
+        egui::StrokeKind::Outside,
+    );
+
+    let preview_rect = egui::Rect::from_min_size(
+        rect.min + egui::vec2(8.0, 6.0),
+        egui::vec2(rect.width() - 16.0, 54.0),
+    );
+    draw_block_preview_cube(ui.painter(), preview_rect, block.id.as_str());
+
+    let text_pos = egui::pos2(rect.center().x, rect.max.y - 13.0);
+    ui.painter().text(
+        text_pos,
+        egui::Align2::CENTER_CENTER,
+        block.display_name.as_str(),
+        egui::TextStyle::Small.resolve(ui.style()),
+        visuals.text_color(),
+    );
+
+    response.clicked()
+}
+
+fn draw_block_preview_cube(painter: &egui::Painter, rect: egui::Rect, block_id: &str) {
+    let (top_color, side_color) = block_preview_colors(block_id);
+    let left_side_color = darken_color(side_color, 0.8);
+    let edge_stroke = egui::Stroke::new(1.0, egui::Color32::from_black_alpha(90));
+
+    let cx = rect.center().x;
+    let top_y = rect.top() + 2.0;
+    let half_w = rect.width() * 0.30;
+    let half_h = rect.height() * 0.22;
+    let depth = rect.height() * 0.34;
+
+    let top = [
+        egui::pos2(cx, top_y),
+        egui::pos2(cx + half_w, top_y + half_h),
+        egui::pos2(cx, top_y + half_h * 2.0),
+        egui::pos2(cx - half_w, top_y + half_h),
+    ];
+    let right = [
+        top[1],
+        top[2],
+        egui::pos2(top[2].x, top[2].y + depth),
+        egui::pos2(top[1].x, top[1].y + depth),
+    ];
+    let left = [
+        top[3],
+        top[2],
+        egui::pos2(top[2].x, top[2].y + depth),
+        egui::pos2(top[3].x, top[3].y + depth),
+    ];
+
+    painter.add(egui::Shape::convex_polygon(
+        left.to_vec(),
+        left_side_color,
+        edge_stroke,
+    ));
+    painter.add(egui::Shape::convex_polygon(
+        right.to_vec(),
+        side_color,
+        edge_stroke,
+    ));
+    painter.add(egui::Shape::convex_polygon(
+        top.to_vec(),
+        top_color,
+        edge_stroke,
+    ));
+}
+
+fn block_preview_colors(block_id: &str) -> (egui::Color32, egui::Color32) {
+    let atlas = block_texture_atlas();
+    let layers = resolve_block_texture_layers(block_id);
+    let top =
+        atlas_average_color(atlas, layers.top).unwrap_or(egui::Color32::from_rgb(170, 170, 170));
+    let side =
+        atlas_average_color(atlas, layers.side).unwrap_or(egui::Color32::from_rgb(140, 140, 140));
+    (lighten_color(top, 1.05), side)
+}
+
+fn atlas_average_color(
+    atlas: &crate::block_repository::BlockTextureAtlas,
+    layer: u32,
+) -> Option<egui::Color32> {
+    let rgba = atlas.layers.get(layer as usize)?.rgba.as_slice();
+    if rgba.is_empty() {
+        return None;
+    }
+
+    let mut sum_r: u64 = 0;
+    let mut sum_g: u64 = 0;
+    let mut sum_b: u64 = 0;
+    let mut count: u64 = 0;
+    for pixel in rgba.chunks_exact(4) {
+        sum_r += pixel[0] as u64;
+        sum_g += pixel[1] as u64;
+        sum_b += pixel[2] as u64;
+        count += 1;
+    }
+    if count == 0 {
+        return None;
+    }
+
+    Some(egui::Color32::from_rgb(
+        (sum_r / count) as u8,
+        (sum_g / count) as u8,
+        (sum_b / count) as u8,
+    ))
+}
+
+fn lighten_color(color: egui::Color32, factor: f32) -> egui::Color32 {
+    scale_rgb(color, factor)
+}
+
+fn darken_color(color: egui::Color32, factor: f32) -> egui::Color32 {
+    scale_rgb(color, factor)
+}
+
+fn scale_rgb(color: egui::Color32, factor: f32) -> egui::Color32 {
+    let scale = factor.max(0.0);
+    let r = ((color.r() as f32) * scale).clamp(0.0, 255.0) as u8;
+    let g = ((color.g() as f32) * scale).clamp(0.0, 255.0) as u8;
+    let b = ((color.b() as f32) * scale).clamp(0.0, 255.0) as u8;
+    egui::Color32::from_rgb(r, g, b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{atlas_average_color, scale_rgb};
+    use crate::block_repository::block_texture_atlas;
+
+    #[test]
+    fn atlas_average_color_returns_some_for_known_default_layer() {
+        let atlas = block_texture_atlas();
+        let color = atlas_average_color(atlas, atlas.default_layer());
+        assert!(color.is_some());
+    }
+
+    #[test]
+    fn scale_rgb_clamps_to_channel_bounds() {
+        let color = egui::Color32::from_rgb(240, 120, 60);
+        let brightened = scale_rgb(color, 2.0);
+        assert_eq!(brightened.r(), 255);
+        assert_eq!(brightened.g(), 240);
+        assert_eq!(brightened.b(), 120);
+
+        let darkened = scale_rgb(color, 0.0);
+        assert_eq!(darkened.r(), 0);
+        assert_eq!(darkened.g(), 0);
+        assert_eq!(darkened.b(), 0);
+    }
 }
