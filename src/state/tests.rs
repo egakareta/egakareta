@@ -50,7 +50,7 @@ fn test_marquee_no_redundant_selections_before_drag_started() {
             .editor_hover_outline
             .draw_data()
             .map(|(_, c)| c)
-            .unwrap_or(0);
+            .expect("hover outline mesh should exist after rebuilding vertices");
         // One block outline = 12 prisms * 36 vertices/prism = 432 vertices
         assert_eq!(
             count, 432,
@@ -75,7 +75,7 @@ fn test_marquee_no_redundant_selections_before_drag_started() {
             .editor_hover_outline
             .draw_data()
             .map(|(_, c)| c)
-            .unwrap_or(0);
+            .expect("hover outline mesh should still exist before marquee drag activates");
         assert_eq!(
             count, 432,
             "Should still only have one block outlined if marquee drag hasn't started"
@@ -366,7 +366,7 @@ fn editor_scrub_draws_ghost_trail_without_preview_head_mesh() {
             .trail
             .draw_data()
             .map(|(_, count)| count)
-            .unwrap_or(0);
+            .expect("trail mesh should exist after editor scrub update");
         assert!(
             trail_count > 0,
             "editor scrub should draw ghost trail vertices when timeline time is non-zero"
@@ -401,7 +401,7 @@ fn editor_playback_draws_ghost_trail_without_preview_head_mesh() {
             .trail
             .draw_data()
             .map(|(_, count)| count)
-            .unwrap_or(0);
+            .expect("trail mesh should exist during editor playback update");
         assert!(
             trail_count > 0,
             "editor playback should draw ghost trail vertices"
@@ -564,13 +564,12 @@ fn editor_playtest_stores_precomputed_audio_start_seconds() {
         state.editor_playtest();
 
         assert_eq!(state.phase, AppPhase::Playing);
-        let stored = state.session.playtest_audio_start_seconds;
+        let stored = state
+            .session
+            .playtest_audio_start_seconds
+            .expect("playtest should store precomputed audio start");
         assert!(
-            stored.is_some(),
-            "playtest should store precomputed audio start"
-        );
-        assert!(
-            (stored.unwrap_or_default() - expected_elapsed).abs() < 0.02,
+            (stored - expected_elapsed).abs() < 0.02,
             "stored playtest audio start seconds should match precomputed timeline elapsed"
         );
         assert!(
@@ -605,7 +604,7 @@ fn editor_playtest_nonzero_timeline_handoff_stays_synced_after_first_input() {
         let stored = state
             .session
             .playtest_audio_start_seconds
-            .unwrap_or_default();
+            .expect("playtest should store audio start seconds for non-zero timeline handoff");
         assert!(
             (stored - expected_elapsed).abs() < 0.02,
             "playtest should store the non-zero timeline elapsed seconds"
@@ -653,12 +652,9 @@ fn editor_playtest_warms_audio_before_first_input() {
             .state
             .runtime_preload
             .last_warmup_request
-            .clone();
-        assert!(
-            warmup.is_some(),
-            "playtest should warm up runtime audio before first input"
-        );
-        let (source_key, warmup_seconds) = warmup.unwrap_or_default();
+            .clone()
+            .expect("playtest should warm up runtime audio before first input");
+        let (source_key, warmup_seconds) = warmup;
         assert_eq!(
             source_key,
             runtime_asset_source_key(&level_name, &music_source),
