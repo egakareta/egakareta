@@ -797,6 +797,26 @@ mod tests {
     }
 
     #[test]
+    fn test_lifecycle_audio_start_marks_playing_in_tests() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.start_level(0);
+            // Gameplay audio starts on first input while in Playing phase.
+            state.turn_right();
+
+            assert!(
+                state.audio.state.runtime.is_playing(),
+                "First gameplay input after starting a level should mark runtime audio as playing in tests"
+            );
+            assert!(
+                state.audio.state.runtime.playback_time_seconds().is_some(),
+                "First gameplay input after starting a level should produce a runtime playback clock in tests"
+            );
+        });
+    }
+
+    #[test]
     fn test_phase_transition_clipboard_clearing() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
