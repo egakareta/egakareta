@@ -14,6 +14,21 @@ use crate::editor_ui::modes::shared::{show_mode_and_snap_controls, show_player_c
 use crate::state::EditorUiViewModel;
 use crate::types::EditorMode;
 
+const PREVIEW_BUTTON_WIDTH: f32 = 72.0;
+const PREVIEW_BUTTON_HEIGHT: f32 = 88.0;
+const PREVIEW_PADDING_X: f32 = 8.0;
+const PREVIEW_PADDING_Y: f32 = 6.0;
+const PREVIEW_HEIGHT: f32 = 54.0;
+const PREVIEW_TEXT_Y_OFFSET: f32 = 13.0;
+const CUBE_EDGE_WIDTH: f32 = 1.0;
+const CUBE_EDGE_ALPHA: u8 = 90;
+const CUBE_HALF_WIDTH_RATIO: f32 = 0.30;
+const CUBE_HALF_HEIGHT_RATIO: f32 = 0.22;
+const CUBE_DEPTH_RATIO: f32 = 0.34;
+const FALLBACK_TOP_COLOR: egui::Color32 = egui::Color32::from_rgb(170, 170, 170);
+const FALLBACK_SIDE_COLOR: egui::Color32 = egui::Color32::from_rgb(140, 140, 140);
+const TOP_LIGHTEN_FACTOR: f32 = 1.05;
+
 pub(crate) fn show_compose_mode_bottom_panel(
     ui: &mut egui::Ui,
     view: &EditorUiViewModel<'_>,
@@ -184,7 +199,7 @@ fn show_block_preview_button(
     block: &crate::block_repository::BlockDefinition,
     selected: bool,
 ) -> bool {
-    let button_size = egui::vec2(72.0, 88.0);
+    let button_size = egui::vec2(PREVIEW_BUTTON_WIDTH, PREVIEW_BUTTON_HEIGHT);
     let (rect, response) = ui.allocate_exact_size(button_size, egui::Sense::click());
 
     let visuals = ui.style().interact_selectable(&response, selected);
@@ -197,12 +212,12 @@ fn show_block_preview_button(
     );
 
     let preview_rect = egui::Rect::from_min_size(
-        rect.min + egui::vec2(8.0, 6.0),
-        egui::vec2(rect.width() - 16.0, 54.0),
+        rect.min + egui::vec2(PREVIEW_PADDING_X, PREVIEW_PADDING_Y),
+        egui::vec2(rect.width() - PREVIEW_PADDING_X * 2.0, PREVIEW_HEIGHT),
     );
     draw_block_preview_cube(ui.painter(), preview_rect, block.id.as_str());
 
-    let text_pos = egui::pos2(rect.center().x, rect.max.y - 13.0);
+    let text_pos = egui::pos2(rect.center().x, rect.max.y - PREVIEW_TEXT_Y_OFFSET);
     ui.painter().text(
         text_pos,
         egui::Align2::CENTER_CENTER,
@@ -216,14 +231,17 @@ fn show_block_preview_button(
 
 fn draw_block_preview_cube(painter: &egui::Painter, rect: egui::Rect, block_id: &str) {
     let (top_color, side_color) = block_preview_colors(block_id);
-    let left_side_color = darken_color(side_color, 0.8);
-    let edge_stroke = egui::Stroke::new(1.0, egui::Color32::from_black_alpha(90));
+    let left_side_color = scale_rgb(side_color, 0.8);
+    let edge_stroke = egui::Stroke::new(
+        CUBE_EDGE_WIDTH,
+        egui::Color32::from_black_alpha(CUBE_EDGE_ALPHA),
+    );
 
     let cx = rect.center().x;
     let top_y = rect.top() + 2.0;
-    let half_w = rect.width() * 0.30;
-    let half_h = rect.height() * 0.22;
-    let depth = rect.height() * 0.34;
+    let half_w = rect.width() * CUBE_HALF_WIDTH_RATIO;
+    let half_h = rect.height() * CUBE_HALF_HEIGHT_RATIO;
+    let depth = rect.height() * CUBE_DEPTH_RATIO;
 
     let top = [
         egui::pos2(cx, top_y),
@@ -264,11 +282,9 @@ fn draw_block_preview_cube(painter: &egui::Painter, rect: egui::Rect, block_id: 
 fn block_preview_colors(block_id: &str) -> (egui::Color32, egui::Color32) {
     let atlas = block_texture_atlas();
     let layers = resolve_block_texture_layers(block_id);
-    let top =
-        atlas_average_color(atlas, layers.top).unwrap_or(egui::Color32::from_rgb(170, 170, 170));
-    let side =
-        atlas_average_color(atlas, layers.side).unwrap_or(egui::Color32::from_rgb(140, 140, 140));
-    (lighten_color(top, 1.05), side)
+    let top = atlas_average_color(atlas, layers.top).unwrap_or(FALLBACK_TOP_COLOR);
+    let side = atlas_average_color(atlas, layers.side).unwrap_or(FALLBACK_SIDE_COLOR);
+    (scale_rgb(top, TOP_LIGHTEN_FACTOR), side)
 }
 
 fn atlas_average_color(
@@ -280,20 +296,15 @@ fn atlas_average_color(
         return None;
     }
 
+    let count = rgba.chunks_exact(4).len() as u64;
     let mut sum_r: u64 = 0;
     let mut sum_g: u64 = 0;
     let mut sum_b: u64 = 0;
-    let mut count: u64 = 0;
     for pixel in rgba.chunks_exact(4) {
         sum_r += pixel[0] as u64;
         sum_g += pixel[1] as u64;
         sum_b += pixel[2] as u64;
-        count += 1;
     }
-    if count == 0 {
-        return None;
-    }
-
     Some(egui::Color32::from_rgb(
         (sum_r / count) as u8,
         (sum_g / count) as u8,
@@ -301,20 +312,16 @@ fn atlas_average_color(
     ))
 }
 
-fn lighten_color(color: egui::Color32, factor: f32) -> egui::Color32 {
-    scale_rgb(color, factor)
-}
-
-fn darken_color(color: egui::Color32, factor: f32) -> egui::Color32 {
-    scale_rgb(color, factor)
-}
-
 fn scale_rgb(color: egui::Color32, factor: f32) -> egui::Color32 {
     let scale = factor.max(0.0);
-    let r = ((color.r() as f32) * scale).clamp(0.0, 255.0) as u8;
-    let g = ((color.g() as f32) * scale).clamp(0.0, 255.0) as u8;
-    let b = ((color.b() as f32) * scale).clamp(0.0, 255.0) as u8;
+    let r = scale_channel(color.r(), scale);
+    let g = scale_channel(color.g(), scale);
+    let b = scale_channel(color.b(), scale);
     egui::Color32::from_rgb(r, g, b)
+}
+
+fn scale_channel(value: u8, factor: f32) -> u8 {
+    ((value as f32) * factor).clamp(0.0, 255.0) as u8
 }
 
 #[cfg(test)]
