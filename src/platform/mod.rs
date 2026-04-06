@@ -8,6 +8,7 @@
 pub(crate) mod application;
 pub(crate) mod audio;
 pub(crate) mod audio_backend;
+pub(crate) mod block_icon_cache;
 pub(crate) mod input_mapping;
 pub(crate) mod input_routing;
 pub(crate) mod io;

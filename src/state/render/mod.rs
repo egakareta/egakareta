@@ -5,6 +5,7 @@
 * See LICENSE and COMMERICAL.md for details.
 
 */
+pub(crate) mod block_icon;
 pub(crate) mod draw;
 
 use crate::platform::state_host::SurfaceHost;
@@ -161,11 +162,13 @@ pub(crate) struct GpuContext {
     pub(crate) depth_texture: wgpu::Texture,
     pub(crate) depth_view: wgpu::TextureView,
     pub(crate) render_pipeline: wgpu::RenderPipeline,
+    pub(crate) block_icon_pipeline: wgpu::RenderPipeline,
     pub(crate) editor_ghost_trail_pipeline: wgpu::RenderPipeline,
     pub(crate) gizmo_overlay_pipeline: wgpu::RenderPipeline,
     pub(crate) line_uniform_buffer: wgpu::Buffer,
     pub(crate) zero_line_bind_group: wgpu::BindGroup,
     pub(crate) camera_uniform_buffer: wgpu::Buffer,
+    pub(crate) camera_bind_group_layout: wgpu::BindGroupLayout,
     pub(crate) camera_bind_group: wgpu::BindGroup,
     pub(crate) color_space_bind_group: wgpu::BindGroup,
     pub(crate) block_texture_bind_group: wgpu::BindGroup,
