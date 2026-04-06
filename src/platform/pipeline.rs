@@ -55,7 +55,8 @@ impl FramePipeline {
     ///
     /// Returns the full egui output for further processing.
     pub fn run_frame(&mut self, state: &mut State, raw_input: egui::RawInput) -> egui::FullOutput {
-        self.block_icon_cache.sync(state, &mut self.egui_renderer);
+        self.block_icon_cache
+            .refresh_icons(state, &mut self.egui_renderer);
         let block_icon_texture_ids = self.block_icon_cache.texture_ids();
 
         let full_output = self.egui_ctx.run(raw_input, |ctx| {

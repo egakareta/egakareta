@@ -35,7 +35,7 @@ impl BlockIconCache {
         }
     }
 
-    pub(crate) fn sync(&mut self, state: &State, egui_renderer: &mut EguiRenderer) {
+    pub(crate) fn refresh_icons(&mut self, state: &State, egui_renderer: &mut EguiRenderer) {
         let mut seen_ids = HashSet::new();
 
         for block in all_placeable_blocks()
@@ -62,31 +62,7 @@ impl BlockIconCache {
                 continue;
             };
 
-            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-            if let Some(existing) = self.entries.get_mut(block.id.as_str()) {
-                egui_renderer.update_egui_texture_from_wgpu_texture(
-                    state.device(),
-                    &view,
-                    wgpu::FilterMode::Linear,
-                    existing.texture_id,
-                );
-                existing.texture = texture;
-                existing.signature = signature;
-            } else {
-                let texture_id = egui_renderer.register_native_texture(
-                    state.device(),
-                    &view,
-                    wgpu::FilterMode::Linear,
-                );
-                self.entries.insert(
-                    block.id.clone(),
-                    CachedBlockIcon {
-                        texture,
-                        texture_id,
-                        signature,
-                    },
-                );
-            }
+            self.upsert_block_icon(state, egui_renderer, block.id.as_str(), texture, signature);
         }
 
         let stale_ids: Vec<String> = self
@@ -107,6 +83,39 @@ impl BlockIconCache {
             .iter()
             .map(|(id, cached)| (id.clone(), cached.texture_id))
             .collect()
+    }
+
+    fn upsert_block_icon(
+        &mut self,
+        state: &State,
+        egui_renderer: &mut EguiRenderer,
+        block_id: &str,
+        texture: wgpu::Texture,
+        signature: u64,
+    ) {
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        if let Some(existing) = self.entries.get_mut(block_id) {
+            egui_renderer.update_egui_texture_from_wgpu_texture(
+                state.device(),
+                &view,
+                wgpu::FilterMode::Linear,
+                existing.texture_id,
+            );
+            existing.texture = texture;
+            existing.signature = signature;
+            return;
+        }
+
+        let texture_id =
+            egui_renderer.register_native_texture(state.device(), &view, wgpu::FilterMode::Linear);
+        self.entries.insert(
+            block_id.to_string(),
+            CachedBlockIcon {
+                texture,
+                texture_id,
+                signature,
+            },
+        );
     }
 }
 

@@ -13,6 +13,8 @@ use crate::types::{CameraUniform, LevelObject};
 
 use super::super::State;
 
+const ICON_FOV_DEGREES: f32 = 35.0;
+
 impl State {
     /// Renders a single block to an offscreen texture for use as an editor icon.
     pub(crate) fn render_block_icon_snapshot(
@@ -85,7 +87,7 @@ impl State {
         let target = Vec3::new(0.5, 0.5, 0.5);
         let up = Vec3::Y;
         let view = Mat4::look_at_rh(eye, target, up);
-        let proj = Mat4::perspective_rh_gl(35f32.to_radians(), 1.0, 0.1, 100.0);
+        let proj = Mat4::perspective_rh_gl(ICON_FOV_DEGREES.to_radians(), 1.0, 0.1, 100.0);
         let view_proj = proj * view;
         let camera_uniform = CameraUniform {
             view_proj: view_proj.to_cols_array_2d(),

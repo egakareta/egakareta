@@ -30,6 +30,7 @@ const CUBE_DEPTH_RATIO: f32 = 0.34;
 const FALLBACK_TOP_COLOR: egui::Color32 = egui::Color32::from_rgb(170, 170, 170);
 const FALLBACK_SIDE_COLOR: egui::Color32 = egui::Color32::from_rgb(140, 140, 140);
 const TOP_LIGHTEN_FACTOR: f32 = 1.05;
+const ATLAS_AVERAGE_MAX_SAMPLES: usize = 1024;
 
 pub(crate) fn show_compose_mode_bottom_panel(
     ui: &mut egui::Ui,
@@ -315,14 +316,23 @@ fn atlas_average_color(
         return None;
     }
 
-    let count = rgba.chunks_exact(4).len() as u64;
+    let total_pixels = rgba.len() / 4;
+    if total_pixels == 0 {
+        return None;
+    }
+    let step = (total_pixels / ATLAS_AVERAGE_MAX_SAMPLES.max(1)).max(1);
     let mut sum_r: u64 = 0;
     let mut sum_g: u64 = 0;
     let mut sum_b: u64 = 0;
-    for pixel in rgba.chunks_exact(4) {
+    let mut count: u64 = 0;
+    for pixel in rgba.chunks_exact(4).step_by(step) {
         sum_r += pixel[0] as u64;
         sum_g += pixel[1] as u64;
         sum_b += pixel[2] as u64;
+        count += 1;
+    }
+    if count == 0 {
+        return None;
     }
     Some(egui::Color32::from_rgb(
         (sum_r / count) as u8,
