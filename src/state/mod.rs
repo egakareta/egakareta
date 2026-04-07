@@ -62,6 +62,7 @@ use crate::types::{
 use glam::{Mat4, Vec3, Vec4};
 
 fn ray_intersect_aabb(ray_origin: Vec3, ray_dir: Vec3, min: Vec3, max: Vec3) -> Option<f32> {
+    const RAY_TOLERANCE: f32 = 1e-6;
     let mut t_min = f32::NEG_INFINITY;
     let mut t_max = f32::INFINITY;
 
@@ -71,7 +72,7 @@ fn ray_intersect_aabb(ray_origin: Vec3, ray_dir: Vec3, min: Vec3, max: Vec3) -> 
         let min_bound = min[axis];
         let max_bound = max[axis];
 
-        if direction.abs() <= f32::EPSILON {
+        if direction.abs() <= RAY_TOLERANCE {
             if origin < min_bound || origin > max_bound {
                 return None;
             }
@@ -427,7 +428,7 @@ impl State {
 
         let mut near_world = inv_view_proj * Vec4::new(ndc_x, ndc_y, -1.0, 1.0);
         let mut far_world = inv_view_proj * Vec4::new(ndc_x, ndc_y, 1.0, 1.0);
-        if near_world.w.abs() <= f32::EPSILON || far_world.w.abs() <= f32::EPSILON {
+        if near_world.w.abs() <= 1e-6 || far_world.w.abs() <= 1e-6 {
             return None;
         }
         near_world /= near_world.w;
