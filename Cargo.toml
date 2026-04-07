@@ -1,9 +1,12 @@
+# Copyright (c) egakareta <team@egakareta.com>.
+# Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+# See LICENSE and COMMERICAL.md for details.
 [package]
 name = "egakareta"
 version = "0.1.0"
 edition = "2021"
 description = "Feel the beat, follow the line."
-repository = "https://github.com/evilbocchi/egakareta"
+repository = "https://github.com/egakareta/egakareta"
 license = "MIT"
 default-run = "egakareta"
 

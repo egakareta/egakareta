@@ -329,17 +329,6 @@ impl State {
         self.frame_runtime.editor.accumulator =
             (self.frame_runtime.editor.accumulator + frame_dt).min(0.25);
 
-        if self.phase == AppPhase::Splash {
-            let splash_duration = 2.8;
-            let elapsed = (now - self.frame_runtime.splash.start_time).as_secs_f32();
-            self.frame_runtime.splash.progress = (elapsed / splash_duration).min(1.0);
-
-            if self.frame_runtime.splash.progress >= 1.0 {
-                self.phase = AppPhase::Menu;
-            }
-            return;
-        }
-
         if self.phase == AppPhase::Menu {
             self.frame_runtime.editor.accumulator = 0.0;
             self.update_menu_camera();

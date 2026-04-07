@@ -28,9 +28,7 @@ mod state;
 mod test_utils;
 mod types;
 
-pub use editor_ui::{
-    load_menu_wordmark_texture, show_editor_ui, show_menu_wordmark_ui, show_splash_screen_ui,
-};
+pub use editor_ui::{load_menu_wordmark_texture, show_editor_ui, show_menu_wordmark_ui};
 pub use import_export_service::convert_level_binary_to_json;
 pub use import_export_service::convert_level_json_to_binary;
 pub use import_export_service::normalize_level_binary_format;

@@ -22,7 +22,7 @@ use crate::types::{essential_keybind_actions, format_key_chord, EditorMode, Sett
 use crate::State;
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
 use glam::{Mat3, Vec3};
-pub use menu::{load_menu_wordmark_texture, show_menu_wordmark_ui, show_splash_screen_ui};
+pub use menu::{load_menu_wordmark_texture, show_menu_wordmark_ui};
 
 #[derive(Clone, Copy)]
 struct ViewCubeFace {
