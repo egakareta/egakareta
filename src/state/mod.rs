@@ -207,11 +207,7 @@ impl State {
                 self.phase = AppPhase::Menu;
             }
             AppPhase::Menu => {
-                if self.menu.state.screen == MenuScreen::LevelSelect {
-                    self.start_level(self.menu.state.selected_level);
-                } else {
-                    self.activate_menu_action(MenuAction::LevelSelect);
-                }
+                self.start_level(self.menu.state.selected_level);
             }
             AppPhase::Playing => {
                 if !self.gameplay.state.started {
