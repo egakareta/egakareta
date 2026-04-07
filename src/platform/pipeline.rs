@@ -10,6 +10,7 @@
 //! The `FramePipeline` manages the rendering loop, integrating egui UI with the game state.
 //! It handles UI updates, tessellation, texture management, and delegates rendering to the state.
 
+use crate::platform::block_icon_cache::BlockIconCache;
 use crate::{show_editor_ui, show_menu_wordmark_ui, show_splash_screen_ui, State};
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 use wgpu::SurfaceError;
@@ -23,6 +24,7 @@ pub struct FramePipeline {
     egui_ctx: egui::Context,
     egui_renderer: EguiRenderer,
     menu_wordmark: Option<egui::TextureHandle>,
+    block_icon_cache: BlockIconCache,
 }
 
 impl FramePipeline {
@@ -36,6 +38,7 @@ impl FramePipeline {
             egui_ctx,
             egui_renderer,
             menu_wordmark,
+            block_icon_cache: BlockIconCache::new(),
         }
     }
 
@@ -52,8 +55,12 @@ impl FramePipeline {
     ///
     /// Returns the full egui output for further processing.
     pub fn run_frame(&mut self, state: &mut State, raw_input: egui::RawInput) -> egui::FullOutput {
+        self.block_icon_cache
+            .refresh_icons(state, &mut self.egui_renderer);
+        let block_icon_texture_ids = self.block_icon_cache.texture_ids();
+
         let full_output = self.egui_ctx.run(raw_input, |ctx| {
-            show_editor_ui(ctx, state);
+            show_editor_ui(ctx, state, &block_icon_texture_ids);
             if let Some(wordmark) = &self.menu_wordmark {
                 show_splash_screen_ui(ctx, state, wordmark);
                 show_menu_wordmark_ui(ctx, state, wordmark);
@@ -106,5 +113,45 @@ impl FramePipeline {
     /// Returns a reference to the egui context for UI interactions.
     pub fn ctx(&self) -> &egui::Context {
         &self.egui_ctx
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FramePipeline;
+    use crate::State;
+
+    #[test]
+    fn run_frame_executes_without_surface_and_returns_output() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let egui_ctx = egui::Context::default();
+            let renderer = state.create_egui_renderer();
+            let mut pipeline = FramePipeline::new(egui_ctx, renderer, None);
+
+            let output = pipeline.run_frame(&mut state, egui::RawInput::default());
+
+            assert!(output.pixels_per_point > 0.0);
+            let _ctx = pipeline.ctx();
+        });
+    }
+
+    #[test]
+    fn run_frame_executes_wordmark_ui_branch_when_texture_is_present() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let egui_ctx = egui::Context::default();
+            let renderer = state.create_egui_renderer();
+            let wordmark = egui_ctx.load_texture(
+                "test-wordmark",
+                egui::ColorImage::new([2, 2], vec![egui::Color32::WHITE; 4]),
+                egui::TextureOptions::LINEAR,
+            );
+            let mut pipeline = FramePipeline::new(egui_ctx, renderer, Some(wordmark));
+
+            let output = pipeline.run_frame(&mut state, egui::RawInput::default());
+
+            assert!(output.pixels_per_point > 0.0);
+        });
     }
 }
