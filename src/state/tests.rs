@@ -97,6 +97,8 @@ fn state_new_test_reuses_shared_gpu_context() {
         let _ = State::new_test().await;
         let init_count_after_second = State::shared_test_gpu_context_init_count();
 
+        // This test may run after other tests that already initialized the shared
+        // context, so we validate monotonic behavior and no additional init.
         assert!(
             init_count_after_first >= init_count_before,
             "shared test gpu context init count should be monotonic"

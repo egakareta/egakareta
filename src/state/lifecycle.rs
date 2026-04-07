@@ -202,7 +202,11 @@ impl State {
     }
 
     /// Requests an adapter/device pair for the given instance and optional surface.
-    /// Tries the default adapter first, then retries with fallback adapter enabled.
+    ///
+    /// This is the low-level GPU bootstrap used by both `new_common` and test-only
+    /// initialization paths. It first tries a normal adapter request, then retries
+    /// with fallback adapter enabled when needed. Returns `None` if either adapter
+    /// selection or device creation fails.
     async fn request_gpu_context(
         instance: &wgpu::Instance,
         surface: Option<&wgpu::Surface<'static>>,
@@ -246,8 +250,14 @@ impl State {
         Some((adapter, adapter_info, device, queue))
     }
 
-    /// Completes State initialization using already-obtained GPU resources.
-    /// Handles surface configuration and render/editor subsystem setup.
+    /// Completes `State` initialization using already-obtained GPU resources.
+    ///
+    /// `adapter` is optional because headless test states do not create a surface
+    /// and therefore do not need surface capability negotiation. When a surface is
+    /// present, `adapter` must be `Some(_)` so surface configuration can be derived.
+    ///
+    /// Returns `None` only if downstream async setup fails; otherwise returns a
+    /// fully initialized `State` with render, editor, audio, and runtime subsystems.
     async fn new_common_from_gpu(
         surface_host: Option<SurfaceHost>,
         surface: Option<wgpu::Surface<'static>>,
