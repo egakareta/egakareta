@@ -7,7 +7,7 @@
 */
 use super::{EditorSubsystem, State};
 use crate::game::GameState;
-use crate::types::{AppPhase, EditorMode};
+use crate::types::{AppPhase, EditorMode, MenuScreen};
 
 impl EditorSubsystem {
     pub(crate) fn clear_pan_keys(&mut self) {
@@ -164,6 +164,9 @@ impl State {
         self.session.playing_level_name = None;
         self.editor.ui.right_dragging = false;
         self.clear_editor_pan_keys();
+        self.menu.state.screen = MenuScreen::Main;
+        self.menu.state.hovered_action = None;
+        self.menu.state.active_action = None;
         self.phase = AppPhase::Menu;
     }
 }

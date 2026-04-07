@@ -49,13 +49,57 @@ pub(crate) use render::RenderSubsystem;
 pub(crate) use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
 pub(crate) use view_model::EditorUiViewModel;
 
-use crate::game::GameState;
+use crate::game::{
+    GameState, MENU_CHARACTER_CUSTOMIZATION_BLOCK_INDEX, MENU_EDITOR_BLOCK_INDEX,
+    MENU_LEVEL_SELECT_BLOCK_INDEX,
+};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::platform::state_host::NativeWindow;
 use crate::types::{
-    AppPhase, AppSettings, EditorMode, EditorState, LevelObject, MenuState, MusicMetadata,
-    PhysicalSize, SettingsSection, SpawnMetadata,
+    AppPhase, AppSettings, EditorMode, EditorState, LevelObject, MenuAction, MenuScreen, MenuState,
+    MusicMetadata, PhysicalSize, SettingsSection, SpawnMetadata,
 };
+use glam::{Mat4, Vec3, Vec4};
+
+fn ray_intersect_aabb(ray_origin: Vec3, ray_dir: Vec3, min: Vec3, max: Vec3) -> Option<f32> {
+    let mut t_min = f32::NEG_INFINITY;
+    let mut t_max = f32::INFINITY;
+
+    for axis in 0..3 {
+        let origin = ray_origin[axis];
+        let direction = ray_dir[axis];
+        let min_bound = min[axis];
+        let max_bound = max[axis];
+
+        if direction.abs() <= f32::EPSILON {
+            if origin < min_bound || origin > max_bound {
+                return None;
+            }
+            continue;
+        }
+
+        let mut t0 = (min_bound - origin) / direction;
+        let mut t1 = (max_bound - origin) / direction;
+        if t0 > t1 {
+            std::mem::swap(&mut t0, &mut t1);
+        }
+        t_min = t_min.max(t0);
+        t_max = t_max.min(t1);
+        if t_min > t_max {
+            return None;
+        }
+    }
+
+    if t_max < 0.0 {
+        return None;
+    }
+
+    if t_min >= 0.0 {
+        Some(t_min)
+    } else {
+        Some(t_max)
+    }
+}
 
 /// Bundles all gameplay-related state into a single subsystem.
 /// Separates gameplay concern from the top-level application state.
@@ -163,7 +207,11 @@ impl State {
                 self.phase = AppPhase::Menu;
             }
             AppPhase::Menu => {
-                self.start_level(self.menu.state.selected_level);
+                if self.menu.state.screen == MenuScreen::LevelSelect {
+                    self.start_level(self.menu.state.selected_level);
+                } else {
+                    self.activate_menu_action(MenuAction::LevelSelect);
+                }
             }
             AppPhase::Playing => {
                 if !self.gameplay.state.started {
@@ -209,7 +257,7 @@ impl State {
     /// - In Menu: Selects the next level in the list (wraps around)
     /// - In Editor: Moves the cursor one unit to the right
     pub(crate) fn next_level(&mut self) {
-        if self.phase == AppPhase::Menu {
+        if self.phase == AppPhase::Menu && self.menu.state.screen == MenuScreen::LevelSelect {
             self.menu.state.selected_level =
                 (self.menu.state.selected_level + 1) % self.menu.state.levels.len();
         } else if self.phase == AppPhase::Editor {
@@ -222,7 +270,7 @@ impl State {
     /// - In Menu: Selects the previous level in the list (wraps around)
     /// - In Editor: Moves the cursor one unit to the left
     pub(crate) fn prev_level(&mut self) {
-        if self.phase == AppPhase::Menu {
+        if self.phase == AppPhase::Menu && self.menu.state.screen == MenuScreen::LevelSelect {
             if self.menu.state.selected_level == 0 {
                 self.menu.state.selected_level = self.menu.state.levels.len() - 1;
             } else {
@@ -261,6 +309,35 @@ impl State {
         self.phase == AppPhase::Menu
     }
 
+    pub(crate) fn is_menu_level_select(&self) -> bool {
+        self.menu.state.screen == MenuScreen::LevelSelect
+    }
+
+    pub(crate) fn menu_selected_level_index(&self) -> usize {
+        self.menu.state.selected_level
+    }
+
+    pub(crate) fn menu_select_level_index(&mut self, index: usize) {
+        if index < self.menu.state.levels.len() {
+            self.menu.state.selected_level = index;
+        }
+    }
+
+    pub(crate) fn open_main_menu_screen(&mut self) {
+        self.menu.state.screen = MenuScreen::Main;
+        self.menu.state.hovered_action = None;
+        self.menu.state.active_action = None;
+        self.refresh_menu_scene_visuals();
+    }
+
+    pub(crate) fn start_selected_level_from_menu(&mut self) {
+        self.start_level(self.menu.state.selected_level);
+    }
+
+    pub(crate) fn start_selected_editor_from_menu(&mut self) {
+        self.start_editor(self.menu.state.selected_level);
+    }
+
     /// Returns true if the application is currently in splash mode.
     pub fn is_splash(&self) -> bool {
         self.phase == AppPhase::Splash
@@ -269,6 +346,125 @@ impl State {
     /// Returns the progress of the splash screen animation (0.0 to 1.0).
     pub(crate) fn splash_progress(&self) -> f32 {
         self.frame_runtime.splash.progress
+    }
+
+    fn menu_action_for_block_index(index: usize) -> Option<MenuAction> {
+        match index {
+            MENU_LEVEL_SELECT_BLOCK_INDEX => Some(MenuAction::LevelSelect),
+            MENU_EDITOR_BLOCK_INDEX => Some(MenuAction::Editor),
+            MENU_CHARACTER_CUSTOMIZATION_BLOCK_INDEX => Some(MenuAction::CharacterCustomization),
+            _ => None,
+        }
+    }
+
+    fn refresh_menu_scene_visuals(&mut self) {
+        let active_action = self.menu.state.active_action;
+        let hovered_action = self.menu.state.hovered_action;
+        let mut changed = false;
+        for (index, object) in self.gameplay.state.objects.iter_mut().enumerate() {
+            if let Some(action) = Self::menu_action_for_block_index(index) {
+                let next_tint = if active_action == Some(action) {
+                    [0.65, 0.95, 0.65]
+                } else if hovered_action == Some(action) {
+                    [0.94, 0.86, 0.62]
+                } else {
+                    [0.82, 0.82, 0.86]
+                };
+                if object.color_tint != next_tint {
+                    object.color_tint = next_tint;
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            self.rebuild_block_vertices();
+        }
+    }
+
+    fn update_menu_hover_from_screen(&mut self, x: f64, y: f64) {
+        if self.menu.state.screen != MenuScreen::Main {
+            return;
+        }
+        let hovered_action = self
+            .pick_menu_block_index(x, y)
+            .and_then(Self::menu_action_for_block_index);
+        if self.menu.state.hovered_action != hovered_action {
+            self.menu.state.hovered_action = hovered_action;
+            self.refresh_menu_scene_visuals();
+        }
+    }
+
+    fn activate_menu_action(&mut self, action: MenuAction) {
+        self.menu.state.active_action = Some(action);
+        self.refresh_menu_scene_visuals();
+
+        match action {
+            MenuAction::LevelSelect => {
+                self.menu.state.screen = MenuScreen::LevelSelect;
+                self.menu.state.hovered_action = None;
+                self.menu.state.active_action = None;
+                self.refresh_menu_scene_visuals();
+            }
+            MenuAction::Editor => self.start_editor(self.menu.state.selected_level),
+            MenuAction::CharacterCustomization => {}
+        }
+    }
+
+    fn pick_menu_block_index(&self, x: f64, y: f64) -> Option<usize> {
+        if self.render.gpu.config.width == 0 || self.render.gpu.config.height == 0 {
+            return None;
+        }
+        if self.menu.state.screen != MenuScreen::Main {
+            return None;
+        }
+
+        let viewport_width = self.render.gpu.config.width as f32;
+        let viewport_height = self.render.gpu.config.height as f32;
+        let aspect = viewport_width / viewport_height;
+        let ndc_x = (2.0 * x as f32 / viewport_width) - 1.0;
+        let ndc_y = 1.0 - (2.0 * y as f32 / viewport_height);
+
+        let (eye, target) = self.menu_camera_view();
+        let view = Mat4::look_at_rh(eye, target, Vec3::Y);
+        let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
+        let inv_view_proj = (proj * view).inverse();
+
+        let mut near_world = inv_view_proj * Vec4::new(ndc_x, ndc_y, -1.0, 1.0);
+        let mut far_world = inv_view_proj * Vec4::new(ndc_x, ndc_y, 1.0, 1.0);
+        if near_world.w.abs() <= f32::EPSILON || far_world.w.abs() <= f32::EPSILON {
+            return None;
+        }
+        near_world /= near_world.w;
+        far_world /= far_world.w;
+        let ray_origin = near_world.truncate();
+        let ray_dir = (far_world.truncate() - ray_origin).normalize_or_zero();
+        if ray_dir.length_squared() <= f32::EPSILON {
+            return None;
+        }
+
+        let mut nearest_t = f32::INFINITY;
+        let mut nearest_index = None;
+
+        for (index, object) in self.gameplay.state.objects.iter().enumerate() {
+            if Self::menu_action_for_block_index(index).is_none() {
+                continue;
+            }
+
+            let min = Vec3::from_array(object.position);
+            let max = Vec3::new(
+                object.position[0] + object.size[0],
+                object.position[1] + object.size[1],
+                object.position[2] + object.size[2],
+            );
+            if let Some(t) = ray_intersect_aabb(ray_origin, ray_dir, min, max) {
+                if t < nearest_t {
+                    nearest_t = t;
+                    nearest_index = Some(index);
+                }
+            }
+        }
+
+        nearest_index
     }
 
     /// Sets whether the right mouse button is currently being dragged in the editor.
@@ -317,6 +513,17 @@ impl State {
     /// editor mode (Place or Select), potentially starting block placement, gizmo drag,
     /// or selection operations.
     pub(crate) fn handle_primary_click(&mut self, x: f64, y: f64) {
+        if self.phase == AppPhase::Menu {
+            if let Some(action) = self
+                .pick_menu_block_index(x, y)
+                .and_then(Self::menu_action_for_block_index)
+            {
+                self.activate_menu_action(action);
+                self.editor.set_pointer_screen(Some([x, y]));
+                return;
+            }
+        }
+
         self.editor.set_pointer_screen(Some([x, y]));
         self.editor.set_left_mouse_down(true);
         self.mark_editor_dirty(EditorDirtyFlags {
@@ -371,6 +578,10 @@ impl State {
             }
 
             self.update_editor_cursor_from_screen(x, y);
+        }
+
+        if self.phase == AppPhase::Menu {
+            self.update_menu_hover_from_screen(x, y);
         }
         self.editor.set_pointer_screen(Some([x, y]));
     }

@@ -1701,6 +1701,22 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
 pub(crate) struct MenuState {
     pub(crate) selected_level: usize,
     pub(crate) levels: Vec<String>,
+    pub(crate) screen: MenuScreen,
+    pub(crate) hovered_action: Option<MenuAction>,
+    pub(crate) active_action: Option<MenuAction>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MenuScreen {
+    Main,
+    LevelSelect,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MenuAction {
+    LevelSelect,
+    Editor,
+    CharacterCustomization,
 }
 
 /// State for the level editor.

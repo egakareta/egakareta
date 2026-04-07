@@ -690,12 +690,17 @@ impl State {
         }
     }
 
-    fn update_menu_camera(&mut self) {
-        let aspect = self.render.gpu.config.width as f32 / self.render.gpu.config.height as f32;
+    pub(super) fn menu_camera_view(&self) -> (Vec3, Vec3) {
         let radius = 25.0;
         let angle = -25.0f32.to_radians();
         let eye = Vec3::new(radius * angle.cos(), 15.0, radius * angle.sin());
         let target = Vec3::new(0.0, 0.0, 0.0);
+        (eye, target)
+    }
+
+    fn update_menu_camera(&mut self) {
+        let aspect = self.render.gpu.config.width as f32 / self.render.gpu.config.height as f32;
+        let (eye, target) = self.menu_camera_view();
         let up = Vec3::new(0.0, 1.0, 0.0);
         let view = Mat4::look_at_rh(eye, target, up);
         let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);

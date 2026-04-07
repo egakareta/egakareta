@@ -7,6 +7,7 @@
 */
 use crate::State;
 use keyframe::{ease, functions::*};
+use web_time::{SystemTime, UNIX_EPOCH};
 
 const MENU_WORDMARK_PNG: &[u8] = include_bytes!("../../assets/wordmark.png");
 
@@ -105,4 +106,91 @@ pub fn show_menu_wordmark_ui(ctx: &egui::Context, state: &State, wordmark: &egui
         .show(ctx, |ui| {
             ui.add(egui::Image::new((wordmark.id(), display_size)));
         });
+}
+
+fn current_time_label() -> String {
+    let seconds_since_midnight = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs() % 86_400)
+        .unwrap_or(0);
+    let hours = seconds_since_midnight / 3_600;
+    let minutes = (seconds_since_midnight % 3_600) / 60;
+    let seconds = seconds_since_midnight % 60;
+    format!("{hours:02}:{minutes:02}:{seconds:02} UTC")
+}
+
+/// Shows the main menu overlay UI, including topbar clock and level select screen.
+pub fn show_menu_ui(ctx: &egui::Context, state: &mut State) {
+    if !state.is_menu() {
+        return;
+    }
+
+    egui::TopBottomPanel::top("menu_topbar").show(ctx, |ui| {
+        ui.horizontal(|ui| {
+            if state.is_menu_level_select() {
+                if ui.button("← Main Menu").clicked() {
+                    state.open_main_menu_screen();
+                }
+                ui.label("Level Select");
+            } else {
+                ui.label("Main Menu");
+            }
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(current_time_label());
+            });
+        });
+    });
+
+    if state.is_menu_level_select() {
+        let levels = state.available_levels().to_vec();
+        let mut selected_index = state.menu_selected_level_index();
+        let mut start_selected = false;
+        let mut open_editor = false;
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.vertical_centered(|ui| {
+                ui.heading("Choose a level");
+                ui.label("Simple list for now, designed to be expanded with metadata and filters.");
+            });
+            ui.add_space(12.0);
+
+            egui::ScrollArea::vertical()
+                .id_salt("menu_level_select_list")
+                .show(ui, |ui| {
+                    for (index, level) in levels.iter().enumerate() {
+                        if ui
+                            .selectable_label(selected_index == index, level)
+                            .clicked()
+                        {
+                            selected_index = index;
+                        }
+                    }
+                });
+
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                start_selected = ui.button("Start Level").clicked();
+                open_editor = ui.button("Open in Editor").clicked();
+            });
+        });
+
+        state.menu_select_level_index(selected_index);
+        if start_selected {
+            state.start_selected_level_from_menu();
+        } else if open_editor {
+            state.start_selected_editor_from_menu();
+        }
+    } else {
+        egui::Area::new("menu_main_hint".into())
+            .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -32.0))
+            .show(ctx, |ui| {
+                egui::Frame::window(ui.style()).show(ui, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.label("Click the stone blocks:");
+                        ui.label("Level Select · Editor · Character Customization");
+                    });
+                });
+            });
+    }
 }

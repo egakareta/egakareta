@@ -29,8 +29,8 @@ use crate::platform::state_host::NativeWindow;
 use crate::platform::state_host::WasmCanvas;
 use crate::platform::state_host::{PlatformInstant, SurfaceHost};
 use crate::types::{
-    AppPhase, CameraUniform, ColorSpaceUniform, EditorState, LineUniform, MenuState, MusicMetadata,
-    PhysicalSize, SettingsSection, SpawnMetadata, Vertex,
+    AppPhase, CameraUniform, ColorSpaceUniform, EditorState, LineUniform, MenuScreen, MenuState,
+    MusicMetadata, PhysicalSize, SettingsSection, SpawnMetadata, Vertex,
 };
 
 fn discover_graphics_backends() -> Vec<String> {
@@ -615,6 +615,9 @@ impl State {
         let menu = MenuState {
             selected_level: 0,
             levels: builtin_level_names(),
+            screen: MenuScreen::Main,
+            hovered_action: None,
+            active_action: None,
         };
 
         let mut game = GameState::new();

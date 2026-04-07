@@ -12,7 +12,10 @@ use crate::editor_domain::{derive_tap_indicator_positions, derive_timeline_posit
 use crate::game::simulate_timeline_state_with_triggers;
 use crate::platform::audio::runtime_asset_source_key;
 use crate::test_utils::assert_approx_eq as approx_eq;
-use crate::types::{AppPhase, EditorMode, GizmoAxis, GizmoDragKind, LevelObject, SpawnDirection};
+use crate::types::{
+    AppPhase, EditorMode, GizmoAxis, GizmoDragKind, LevelObject, MenuAction, MenuScreen,
+    SpawnDirection,
+};
 use glam::{Vec2, Vec3};
 
 #[test]
@@ -230,6 +233,50 @@ fn test_state_phase_integrity() {
 
         state.toggle_editor(); // Should go back to menu from editor
         assert_eq!(state.phase, crate::types::AppPhase::Menu);
+    });
+}
+
+#[test]
+fn menu_visual_feedback_updates_option_block_tints() {
+    pollster::block_on(async {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Menu;
+        state.menu.state.screen = MenuScreen::Main;
+        state.menu.state.hovered_action = Some(MenuAction::LevelSelect);
+        state.menu.state.active_action = None;
+        state.refresh_menu_scene_visuals();
+
+        assert_eq!(state.gameplay.state.objects.len(), 3);
+        assert_eq!(
+            state.gameplay.state.objects[0].color_tint,
+            [0.94, 0.86, 0.62]
+        );
+        assert_eq!(
+            state.gameplay.state.objects[1].color_tint,
+            [0.82, 0.82, 0.86]
+        );
+
+        state.menu.state.active_action = Some(MenuAction::CharacterCustomization);
+        state.refresh_menu_scene_visuals();
+        assert_eq!(
+            state.gameplay.state.objects[2].color_tint,
+            [0.65, 0.95, 0.65]
+        );
+    });
+}
+
+#[test]
+fn menu_level_select_action_switches_screen() {
+    pollster::block_on(async {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Menu;
+        state.menu.state.screen = MenuScreen::Main;
+
+        state.activate_menu_action(MenuAction::LevelSelect);
+
+        assert_eq!(state.menu.state.screen, MenuScreen::LevelSelect);
+        assert_eq!(state.menu.state.hovered_action, None);
+        assert_eq!(state.menu.state.active_action, None);
     });
 }
 

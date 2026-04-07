@@ -7,30 +7,48 @@
 */
 use crate::types::LevelObject;
 
+pub(crate) const MENU_LEVEL_SELECT_BLOCK_INDEX: usize = 0;
+pub(crate) const MENU_EDITOR_BLOCK_INDEX: usize = 1;
+pub(crate) const MENU_CHARACTER_CUSTOMIZATION_BLOCK_INDEX: usize = 2;
+
 pub(crate) fn create_menu_scene() -> Vec<LevelObject> {
-    let mut objects = Vec::new();
+    vec![
+        LevelObject {
+            position: [-8.0, 0.0, -2.0],
+            size: [4.0, 4.0, 4.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.14,
+            block_id: "core/stone".to_string(),
+            color_tint: [0.82, 0.82, 0.86],
+        },
+        LevelObject {
+            position: [-2.0, 0.0, -2.0],
+            size: [4.0, 4.0, 4.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.14,
+            block_id: "core/stone".to_string(),
+            color_tint: [0.82, 0.82, 0.86],
+        },
+        LevelObject {
+            position: [4.0, 0.0, -2.0],
+            size: [4.0, 4.0, 4.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.14,
+            block_id: "core/stone".to_string(),
+            color_tint: [0.82, 0.82, 0.86],
+        },
+    ]
+}
 
-    // Create a base platform
-    for x in -5..6 {
-        for z in -5..6 {
-            let height = if (x * x + z * z) < 8 {
-                0.0
-            } else if (x + z) % 2 == 0 {
-                -1.0
-            } else {
-                -2.0
-            };
+#[cfg(test)]
+mod tests {
+    use super::create_menu_scene;
 
-            objects.push(LevelObject {
-                position: [x as f32 * 2.0, height, z as f32 * 2.0],
-                size: [2.0, 2.0, 2.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
-                block_id: "core/grass".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-            });
-        }
+    #[test]
+    fn menu_scene_uses_three_stone_option_blocks() {
+        let objects = create_menu_scene();
+
+        assert_eq!(objects.len(), 3);
+        assert!(objects.iter().all(|object| object.block_id == "core/stone"));
     }
-
-    objects
 }
