@@ -57,7 +57,7 @@ web-sys = { version = "0.3", features = [
 js-sys = "0.3"
 web-time = "1.1"
 gloo-console = "0.3"
-gloo-events = "0.2"
+gloo-events = "0.3"
 gloo-file = "0.3"
 gloo-net = "0.7"
 gloo-render = "0.2"
