@@ -7,9 +7,7 @@
         "supabase/**",
         "**/*.md",
         "**/*.lock",
-        "**/*.toml",
         "**/*-env.d.ts",
-        "**/*.yml",
         ".*"
     ],
     "licenseFormats": {
@@ -19,6 +17,16 @@
             },
             "prepend": "/*\n",
             "append": "\n*/"
+        },
+        "toml": {
+            "eachLine": {
+                "prepend": "# "
+            }
+        },
+        "yml": {
+            "eachLine": {
+                "prepend": "# "
+            }
         }
     },
     "license": "license-header.txt",
