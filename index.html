@@ -48,6 +48,18 @@ See LICENSE and COMMERICAL.md for details.
                 z-index: 1000;
             }
 
+            #splash {
+                position: fixed;
+                inset: 0;
+                display: none;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                background: #020202;
+                z-index: 2000;
+                color: white;
+            }
+
             .progress-bar {
                 width: 300px;
                 height: 10px;
@@ -113,6 +125,15 @@ See LICENSE and COMMERICAL.md for details.
     </head>
 
     <body>
+        <div id="splash">
+            <img
+                width="100"
+                class="splash-logo"
+                src="assets/favicon.png"
+                alt="egakareta Logo"
+            />
+            <p>click anywhere to start</p>
+        </div>
         <div id="loading">
             <div id="loading-text">loading...</div>
             <div class="progress-bar">
@@ -128,6 +149,10 @@ See LICENSE and COMMERICAL.md for details.
             const loadingText = document.getElementById("loading-text");
             const progressBar = document.querySelector(".progress-fill");
             const errorDiv = document.getElementById("error");
+            const splash = document.getElementById("splash");
+            const splashStart = document.getElementById("splash");
+
+            let run_game_fn = null;
 
             const fetchMultipleWithProgress = async (urls) => {
                 const responses = await Promise.all(
@@ -177,34 +202,56 @@ See LICENSE and COMMERICAL.md for details.
                 return streams;
             };
 
-            try {
-                console.log("importing js");
-                const { default: init, run_game } =
-                    await import("./pkg/egakareta_lib.js");
+            const init_wasm = async () => {
+                try {
+                    console.log("importing js");
+                    const { default: init, run_game } =
+                        await import("./pkg/egakareta_lib.js");
+                    run_game_fn = run_game;
 
-                console.log("fetching wasm");
-                const [wasmResponse] = await fetchMultipleWithProgress([
-                    "./pkg/egakareta_lib_bg.wasm",
-                ]);
+                    console.log("fetching wasm");
+                    const [wasmResponse] = await fetchMultipleWithProgress([
+                        "./pkg/egakareta_lib_bg.wasm",
+                    ]);
 
-                // Initialize WebAssembly
-                console.log("initializing wasm");
-                await init(wasmResponse);
+                    // Initialize WebAssembly
+                    console.log("initializing wasm");
+                    await init(wasmResponse);
 
-                console.log("isolated:", self.crossOriginIsolated);
-                console.log("starting game");
+                    console.log("isolated:", self.crossOriginIsolated);
 
-                // Run the game
-                await run_game("gameCanvas");
+                    // Show splash and hide loading
+                    loading.style.display = "none";
+                    if (splash) {
+                        splash.style.display = "flex";
+                    }
+                } catch (error) {
+                    console.error("Failed to load:", error);
+                    loading.style.display = "none";
+                    errorDiv.style.display = "block";
+                    errorDiv.textContent = `error: ${error.message}`;
+                }
+            };
 
-                // Hide loading and start the game
-                loading.style.display = "none";
-            } catch (error) {
-                console.error("Failed to load:", error);
-                loading.style.display = "none";
-                errorDiv.style.display = "block";
-                errorDiv.textContent = `error: ${error.message}`;
-            }
+            splashStart?.addEventListener(
+                "click",
+                async (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (splash) {
+                        splash.style.display = "none";
+                    }
+
+                    if (run_game_fn) {
+                        console.log("starting game");
+                        await run_game_fn("gameCanvas");
+                    }
+                },
+                { once: true },
+            );
+
+            // Start loading immediately
+            init_wasm();
         </script>
     </body>
 </html>
