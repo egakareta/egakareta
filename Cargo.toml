@@ -18,7 +18,7 @@ crate-type = ["cdylib", "rlib"]
 console_error_panic_hook = "0.1"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
-wgpu = { version = "27", features = ["webgpu", "webgl"] }
+wgpu = { version = "29", features = ["webgpu", "webgl"] }
 pollster = "0.4"
 env_logger = "0.11"
 log = "0.4"
@@ -57,8 +57,8 @@ web-sys = { version = "0.3", features = [
 js-sys = "0.3"
 web-time = "1.1"
 gloo-console = "0.3"
-gloo-events = "0.2"
-gloo-file = "0.3"
+gloo-events = "0.3"
+gloo-file = "0.4"
 gloo-net = "0.7"
 gloo-render = "0.2"
 gloo-utils = "0.2"
@@ -69,9 +69,9 @@ zstd = "0.13"
 include_dir = "0.7"
 zip = { version = "8.5", default-features = false, features = ["deflate"] }
 base64 = "0.22"
-egui = "0.33"
-egui-wgpu = "0.33"
-egui-phosphor = "0.11.0"
+egui = "0.34"
+egui-wgpu = "0.34"
+egui-phosphor = "0.12.0"
 rfd = "0.17"
 wgpu-profiler = "0.27"
 image = { version = "0.25", default-features = false, features = ["png"] }
