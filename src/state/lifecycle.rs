@@ -5,6 +5,11 @@
 * See LICENSE and COMMERICAL.md for details.
 
 */
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(test)]
+use std::sync::OnceLock;
+
 use super::render::{GpuContext, MeshSlot, RenderSubsystem, SceneMeshes, DEPTH_FORMAT};
 use super::runtime::{
     EditorDirtyFlags, EditorFrameState, EditorGizmoState, EditorRuntimeState, FrameRuntimeState,
@@ -32,6 +37,20 @@ use crate::types::{
     AppPhase, CameraUniform, ColorSpaceUniform, EditorState, LineUniform, MenuState, MusicMetadata,
     PhysicalSize, SettingsSection, SpawnMetadata, Vertex,
 };
+
+#[cfg(test)]
+#[derive(Clone)]
+struct SharedTestGpuContext {
+    adapter: wgpu::Adapter,
+    adapter_info: wgpu::AdapterInfo,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+}
+
+#[cfg(test)]
+static SHARED_TEST_GPU_CONTEXT: OnceLock<SharedTestGpuContext> = OnceLock::new();
+#[cfg(test)]
+static SHARED_TEST_GPU_CONTEXT_INIT_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 fn discover_graphics_backends() -> Vec<String> {
     #[cfg(target_arch = "wasm32")]
@@ -95,6 +114,23 @@ impl State {
 
     #[cfg(test)]
     pub(crate) async fn try_new_test() -> Option<State> {
+        let test_size = PhysicalSize {
+            width: 800,
+            height: 600,
+        };
+        if let Some(shared_context) = SHARED_TEST_GPU_CONTEXT.get() {
+            return Self::new_common_from_gpu(
+                None,
+                None,
+                test_size,
+                shared_context.adapter.clone(),
+                shared_context.adapter_info.clone(),
+                shared_context.device.clone(),
+                shared_context.queue.clone(),
+            )
+            .await;
+        }
+
         let backends_to_try = if cfg!(target_os = "linux") {
             vec![wgpu::Backends::VULKAN, wgpu::Backends::all()]
         } else {
@@ -106,18 +142,28 @@ impl State {
                 backends,
                 ..Default::default()
             });
-            if let Some(state) = Self::new_common(
-                instance,
-                None,
-                None,
-                PhysicalSize {
-                    width: 800,
-                    height: 600,
-                },
-            )
-            .await
+            if let Some((adapter, adapter_info, device, queue)) =
+                Self::request_gpu_context(&instance, None).await
             {
-                return Some(state);
+                let shared_context = SHARED_TEST_GPU_CONTEXT.get_or_init(|| {
+                    SHARED_TEST_GPU_CONTEXT_INIT_COUNT.fetch_add(1, Ordering::Relaxed);
+                    SharedTestGpuContext {
+                        adapter: adapter.clone(),
+                        adapter_info: adapter_info.clone(),
+                        device: device.clone(),
+                        queue: queue.clone(),
+                    }
+                });
+                return Self::new_common_from_gpu(
+                    None,
+                    None,
+                    test_size,
+                    shared_context.adapter.clone(),
+                    shared_context.adapter_info.clone(),
+                    shared_context.device.clone(),
+                    shared_context.queue.clone(),
+                )
+                .await;
             }
         }
         None
@@ -132,16 +178,39 @@ impl State {
             )
     }
 
+    #[cfg(test)]
+    pub(crate) fn shared_test_gpu_context_init_count() -> usize {
+        SHARED_TEST_GPU_CONTEXT_INIT_COUNT.load(Ordering::Relaxed)
+    }
+
     pub(crate) async fn new_common(
         instance: wgpu::Instance,
         surface_host: Option<SurfaceHost>,
         surface: Option<wgpu::Surface<'static>>,
         size: PhysicalSize<u32>,
     ) -> Option<State> {
+        let (adapter, adapter_info, device, queue) =
+            Self::request_gpu_context(&instance, surface.as_ref()).await?;
+        Self::new_common_from_gpu(
+            surface_host,
+            surface,
+            size,
+            adapter,
+            adapter_info,
+            device,
+            queue,
+        )
+        .await
+    }
+
+    async fn request_gpu_context(
+        instance: &wgpu::Instance,
+        surface: Option<&wgpu::Surface<'static>>,
+    ) -> Option<(wgpu::Adapter, wgpu::AdapterInfo, wgpu::Device, wgpu::Queue)> {
         let adapter = match instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
-                compatible_surface: surface.as_ref(),
+                compatible_surface: surface,
                 force_fallback_adapter: false,
             })
             .await
@@ -151,7 +220,7 @@ impl State {
             None => instance
                 .request_adapter(&wgpu::RequestAdapterOptions {
                     power_preference: wgpu::PowerPreference::default(),
-                    compatible_surface: surface.as_ref(),
+                    compatible_surface: surface,
                     force_fallback_adapter: true,
                 })
                 .await
@@ -174,7 +243,18 @@ impl State {
             })
             .await
             .ok()?;
+        Some((adapter, adapter_info, device, queue))
+    }
 
+    async fn new_common_from_gpu(
+        surface_host: Option<SurfaceHost>,
+        surface: Option<wgpu::Surface<'static>>,
+        size: PhysicalSize<u32>,
+        adapter: wgpu::Adapter,
+        adapter_info: wgpu::AdapterInfo,
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+    ) -> Option<State> {
         let surface_capabilities = surface
             .as_ref()
             .map(|s| s.get_capabilities(&adapter))

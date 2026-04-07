@@ -69,4 +69,4 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
 
 RUN rustup component add clippy llvm-tools-preview rustfmt rust-src
-RUN cargo binstall cargo-nextest cargo-llvm-cov -y
+RUN cargo binstall cargo-llvm-cov -y

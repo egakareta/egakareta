@@ -53,7 +53,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-nextest,cargo-llvm-cov
+          tool: cargo-llvm-cov
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
           packages: libasound2-dev libudev-dev pkg-config mesa-vulkan-drivers libvulkan1 vulkan-tools

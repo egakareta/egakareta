@@ -88,6 +88,26 @@ fn test_marquee_no_redundant_selections_before_drag_started() {
     });
 }
 
+#[test]
+fn state_new_test_reuses_shared_gpu_context() {
+    pollster::block_on(async {
+        let init_count_before = State::shared_test_gpu_context_init_count();
+        let _ = State::new_test().await;
+        let init_count_after_first = State::shared_test_gpu_context_init_count();
+        let _ = State::new_test().await;
+        let init_count_after_second = State::shared_test_gpu_context_init_count();
+
+        assert!(
+            init_count_after_first >= init_count_before,
+            "shared test gpu context init count should be monotonic"
+        );
+        assert_eq!(
+            init_count_after_first, init_count_after_second,
+            "new_test should reuse the shared test gpu context after first initialization"
+        );
+    });
+}
+
 // ── EditorDirtyFlags contract tests ─────────────────────────────
 #[test]
 fn dirty_flags_default_is_clean() {
