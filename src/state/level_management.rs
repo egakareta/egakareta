@@ -429,6 +429,15 @@ impl State {
         &self.menu.state.levels
     }
 
+    /// Returns the name of the currently selected level in the menu.
+    pub fn menu_level_name(&self) -> Option<&str> {
+        self.menu
+            .state
+            .levels
+            .get(self.menu.state.selected_level)
+            .map(|s| s.as_str())
+    }
+
     /// Triggers a platform-specific export of the current level as an `.egz` file.
     pub fn trigger_level_export(&self) {
         match self.export_level_egz() {

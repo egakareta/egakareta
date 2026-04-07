@@ -36,9 +36,65 @@ pub fn show_menu_wordmark_ui(ctx: &egui::Context, state: &State, wordmark: &egui
 
     egui::Area::new("menu_wordmark_area".into())
         .order(egui::Order::Foreground)
-        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 28.0))
+        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 48.0))
         .interactable(false)
         .show(ctx, |ui| {
             ui.add(egui::Image::new((wordmark.id(), display_size)));
         });
+}
+
+/// Shows the menu topbar with the current time.
+pub fn show_menu_topbar(ctx: &egui::Context, state: &State) {
+    if !state.is_menu() {
+        return;
+    }
+
+    egui::TopBottomPanel::top("menu_top_bar").show(ctx, |ui| {
+        ui.horizontal(|ui| {
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new(egui_phosphor::regular::GAME_CONTROLLER)
+                    .size(18.0)
+                    .color(ui.visuals().strong_text_color()),
+            );
+            ui.label(egui::RichText::new("egakareta").strong());
+
+            ui.separator();
+
+            let level_name = state.menu_level_name().unwrap_or("No Level Selected");
+
+            ui.label(format!(
+                "{} {}",
+                egui_phosphor::regular::MAP_TRIFOLD,
+                level_name
+            ));
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add_space(8.0);
+                let time_str = get_current_time_str();
+                ui.label(egui::RichText::new(time_str).monospace());
+                ui.label(egui_phosphor::regular::CLOCK);
+                ui.add_space(8.0);
+                ui.separator();
+            });
+        });
+    });
+}
+
+fn get_current_time_str() -> String {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let date = js_sys::Date::new_0();
+        format!("{:02}:{:02}", date.get_hours(), date.get_minutes())
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let hours = (now / 3600) % 24;
+        let minutes = (now / 60) % 60;
+        format!("{:02}:{:02} UTC", hours, minutes)
+    }
 }
