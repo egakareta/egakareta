@@ -159,9 +159,6 @@ impl State {
     /// - In GameOver: Returns to menu
     pub(crate) fn turn_right(&mut self) {
         match self.phase {
-            AppPhase::Splash => {
-                self.phase = AppPhase::Menu;
-            }
             AppPhase::Menu => {
                 self.start_level(self.menu.state.selected_level);
             }
@@ -259,16 +256,6 @@ impl State {
     /// Returns true if the application is currently in menu mode.
     pub fn is_menu(&self) -> bool {
         self.phase == AppPhase::Menu
-    }
-
-    /// Returns true if the application is currently in splash mode.
-    pub fn is_splash(&self) -> bool {
-        self.phase == AppPhase::Splash
-    }
-
-    /// Returns the progress of the splash screen animation (0.0 to 1.0).
-    pub(crate) fn splash_progress(&self) -> f32 {
-        self.frame_runtime.splash.progress
     }
 
     /// Sets whether the right mouse button is currently being dragged in the editor.

@@ -223,7 +223,7 @@ fn falls_from_elevated_platform() {
 fn test_state_phase_integrity() {
     pollster::block_on(async {
         let mut state = State::new_test().await;
-        assert_eq!(state.phase, crate::types::AppPhase::Splash);
+        assert_eq!(state.phase, crate::types::AppPhase::Menu);
 
         state.start_editor(0);
         assert_eq!(state.phase, crate::types::AppPhase::Editor);
@@ -423,11 +423,7 @@ fn test_state_input_routing() {
     pollster::block_on(async {
         let mut state = State::new_test().await;
 
-        // First click exits splash to menu.
-        state.handle_primary_click(0.0, 0.0);
-        assert_eq!(state.phase, crate::types::AppPhase::Menu);
-
-        // Second click in menu starts level.
+        // First click in menu starts level.
         state.handle_primary_click(0.0, 0.0);
         assert_eq!(state.phase, crate::types::AppPhase::Playing);
     });
