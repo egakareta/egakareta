@@ -668,6 +668,51 @@ fn editor_playtest_warms_audio_before_first_input() {
 }
 
 #[test]
+fn editor_load_level_in_timing_mode_reloads_waveform_for_new_level() {
+    pollster::block_on(async {
+        let mut state = State::new_test().await;
+        state.start_editor(0);
+
+        let current_level = state
+            .session
+            .editor_level_name
+            .clone()
+            .expect("editor level should be set after starting editor");
+        let next_level = state
+            .menu
+            .state
+            .levels
+            .iter()
+            .find(|name| *name != &current_level)
+            .cloned()
+            .expect("test requires at least two built-in levels");
+
+        state.editor.ui.mode = EditorMode::Timing;
+        state.editor.timing.waveform_samples = vec![0.25, -0.5, 0.75];
+        state.editor.timing.waveform_sample_rate = 44_100;
+
+        state.dispatch(AppCommand::EditorLoadLevel(next_level.clone()));
+
+        assert!(
+            state.editor.timing.waveform_samples.is_empty(),
+            "switching levels in timing mode should clear stale waveform samples before loading"
+        );
+        assert_eq!(
+            state.editor.timing.waveform_sample_rate, 0,
+            "switching levels in timing mode should reset waveform sample rate before loading"
+        );
+
+        let expected_source_key =
+            runtime_asset_source_key(&next_level, &state.session.editor_music_metadata.source);
+        assert_eq!(
+            state.audio.state.editor.waveform_loading_source,
+            Some(expected_source_key),
+            "switching levels in timing mode should start loading waveform for the new level"
+        );
+    });
+}
+
+#[test]
 fn setting_timeline_duration_does_not_delete_taps() {
     pollster::block_on(async {
         let mut state = State::new_test().await;

@@ -20,7 +20,7 @@ use crate::mesh::build_block_obj;
 use crate::platform::io::{log_platform_error, read_editor_music_bytes};
 use crate::platform::services::trigger_level_export;
 use crate::types::{
-    AppPhase, AppSettings, KeyChord, LevelMetadata, MusicMetadata, SettingsSection,
+    AppPhase, AppSettings, EditorMode, KeyChord, LevelMetadata, MusicMetadata, SettingsSection,
 };
 use base64::Engine as _;
 
@@ -275,6 +275,10 @@ impl State {
             self.editor.runtime.interaction.clipboard = None;
             self.apply_imported_level_metadata(metadata);
             self.session.editor_level_name = Some(name.to_string());
+
+            if self.editor_mode() == EditorMode::Timing {
+                self.load_waveform_for_current_audio();
+            }
         }
     }
 
