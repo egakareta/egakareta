@@ -10,6 +10,8 @@ pub(crate) mod explorer;
 pub(crate) mod menu;
 pub(crate) mod modes;
 
+use std::collections::HashMap;
+
 use crate::commands::AppCommand;
 use crate::editor_ui::components::{show_timeline_bar, show_waveform_panel, timeline_metrics};
 use crate::editor_ui::explorer::show_explorer_panel;
@@ -101,7 +103,11 @@ fn add_face_mesh(painter: &egui::Painter, quad: [egui::Pos2; 4], color: egui::Co
 
 /// Shows the editor UI using egui.
 /// Handles the top bar, bottom panels, and other editor interface elements.
-pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
+pub fn show_editor_ui(
+    ctx: &egui::Context,
+    state: &mut State,
+    block_icon_texture_ids: &HashMap<String, egui::TextureId>,
+) {
     if !state.is_editor() {
         return;
     }
@@ -532,7 +538,13 @@ pub fn show_editor_ui(ctx: &egui::Context, state: &mut State) {
                 } else if view.mode == EditorMode::Trigger {
                     show_trigger_mode_bottom_panel(ui, &view, duration_seconds, &mut commands);
                 } else {
-                    show_compose_mode_bottom_panel(ui, &view, duration_seconds, &mut commands);
+                    show_compose_mode_bottom_panel(
+                        ui,
+                        &view,
+                        block_icon_texture_ids,
+                        duration_seconds,
+                        &mut commands,
+                    );
                 }
 
                 // Shared timeline bar with beat lines

@@ -18,10 +18,7 @@ use glam::{Vec2, Vec3};
 #[test]
 fn test_marquee_no_redundant_selections_before_drag_started() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
         state.editor.ui.mode = EditorMode::Select;
 
@@ -57,7 +54,7 @@ fn test_marquee_no_redundant_selections_before_drag_started() {
             .editor_hover_outline
             .draw_data()
             .map(|(_, c)| c)
-            .unwrap_or(0);
+            .expect("hover outline mesh should exist after rebuilding vertices");
         // One block outline = 12 prisms * 36 vertices/prism = 432 vertices
         assert_eq!(
             count, 432,
@@ -82,7 +79,7 @@ fn test_marquee_no_redundant_selections_before_drag_started() {
             .editor_hover_outline
             .draw_data()
             .map(|(_, c)| c)
-            .unwrap_or(0);
+            .expect("hover outline mesh should still exist before marquee drag activates");
         assert_eq!(
             count, 432,
             "Should still only have one block outlined if marquee drag hasn't started"
@@ -231,10 +228,7 @@ fn falls_from_elevated_platform() {
 #[test]
 fn test_state_phase_integrity() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
         assert_eq!(state.phase, crate::types::AppPhase::Splash);
 
         state.start_editor(0);
@@ -279,10 +273,7 @@ fn configure_trigger_policy_parity_scene(
 #[test]
 fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_disabled() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
 
         state.start_editor(0);
         let timeline_time_seconds = 0.35;
@@ -325,10 +316,7 @@ fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_disabled(
 #[test]
 fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_enabled() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
 
         state.start_editor(0);
         let timeline_time_seconds = 0.35;
@@ -372,10 +360,7 @@ fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_enabled()
 #[test]
 fn editor_scrub_draws_ghost_trail_without_preview_head_mesh() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
 
         state.start_editor(0);
         state.editor.set_mode(EditorMode::Place);
@@ -389,7 +374,7 @@ fn editor_scrub_draws_ghost_trail_without_preview_head_mesh() {
             .trail
             .draw_data()
             .map(|(_, count)| count)
-            .unwrap_or(0);
+            .expect("trail mesh should exist after editor scrub update");
         assert!(
             trail_count > 0,
             "editor scrub should draw ghost trail vertices when timeline time is non-zero"
@@ -409,10 +394,7 @@ fn editor_scrub_draws_ghost_trail_without_preview_head_mesh() {
 #[test]
 fn editor_playback_draws_ghost_trail_without_preview_head_mesh() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
 
         state.start_editor(0);
         state.editor.set_mode(EditorMode::Place);
@@ -427,7 +409,7 @@ fn editor_playback_draws_ghost_trail_without_preview_head_mesh() {
             .trail
             .draw_data()
             .map(|(_, count)| count)
-            .unwrap_or(0);
+            .expect("trail mesh should exist during editor playback update");
         assert!(
             trail_count > 0,
             "editor playback should draw ghost trail vertices"
@@ -447,10 +429,7 @@ fn editor_playback_draws_ghost_trail_without_preview_head_mesh() {
 #[test]
 fn test_state_input_routing() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
 
         // First click exits splash to menu.
         state.handle_primary_click(0.0, 0.0);
@@ -465,10 +444,7 @@ fn test_state_input_routing() {
 #[test]
 fn multi_selection_clicking_rendered_gizmo_starts_gizmo_drag_not_block_drag() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
 
         state.start_editor(0);
         state.editor.ui.mode = EditorMode::Move;
@@ -535,10 +511,7 @@ fn multi_selection_clicking_rendered_gizmo_starts_gizmo_drag_not_block_drag() {
 #[test]
 fn timeline_seek_uses_interpolated_snapshot_cache_and_supports_backward_seek() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
 
         state.phase = AppPhase::Editor;
         state.editor.objects.clear();
@@ -587,10 +560,7 @@ fn timeline_seek_uses_interpolated_snapshot_cache_and_supports_backward_seek() {
 #[test]
 fn editor_playtest_stores_precomputed_audio_start_seconds() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
 
         state.phase = AppPhase::Menu;
         state.dispatch(AppCommand::ToggleEditor);
@@ -606,13 +576,12 @@ fn editor_playtest_stores_precomputed_audio_start_seconds() {
         state.editor_playtest();
 
         assert_eq!(state.phase, AppPhase::Playing);
-        let stored = state.session.playtest_audio_start_seconds;
+        let stored = state
+            .session
+            .playtest_audio_start_seconds
+            .expect("playtest should store precomputed audio start");
         assert!(
-            stored.is_some(),
-            "playtest should store precomputed audio start"
-        );
-        assert!(
-            (stored.unwrap_or_default() - expected_elapsed).abs() < 0.02,
+            (stored - expected_elapsed).abs() < 0.02,
             "stored playtest audio start seconds should match precomputed timeline elapsed"
         );
         assert!(
@@ -625,10 +594,7 @@ fn editor_playtest_stores_precomputed_audio_start_seconds() {
 #[test]
 fn editor_playtest_nonzero_timeline_handoff_stays_synced_after_first_input() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
 
         state.phase = AppPhase::Menu;
         state.dispatch(AppCommand::ToggleEditor);
@@ -650,7 +616,7 @@ fn editor_playtest_nonzero_timeline_handoff_stays_synced_after_first_input() {
         let stored = state
             .session
             .playtest_audio_start_seconds
-            .unwrap_or_default();
+            .expect("playtest should store audio start seconds for non-zero timeline handoff");
         assert!(
             (stored - expected_elapsed).abs() < 0.02,
             "playtest should store the non-zero timeline elapsed seconds"
@@ -675,10 +641,7 @@ fn editor_playtest_nonzero_timeline_handoff_stays_synced_after_first_input() {
 #[test]
 fn editor_playtest_warms_audio_before_first_input() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
 
         state.phase = AppPhase::Menu;
         state.dispatch(AppCommand::ToggleEditor);
@@ -701,12 +664,9 @@ fn editor_playtest_warms_audio_before_first_input() {
             .state
             .runtime_preload
             .last_warmup_request
-            .clone();
-        assert!(
-            warmup.is_some(),
-            "playtest should warm up runtime audio before first input"
-        );
-        let (source_key, warmup_seconds) = warmup.unwrap_or_default();
+            .clone()
+            .expect("playtest should warm up runtime audio before first input");
+        let (source_key, warmup_seconds) = warmup;
         assert_eq!(
             source_key,
             runtime_asset_source_key(&level_name, &music_source),
@@ -726,10 +686,7 @@ fn editor_playtest_warms_audio_before_first_input() {
 #[test]
 fn setting_timeline_duration_does_not_delete_taps() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
 
         state.phase = AppPhase::Menu;
         state.dispatch(AppCommand::ToggleEditor);
@@ -750,10 +707,7 @@ fn setting_timeline_duration_does_not_delete_taps() {
 #[test]
 fn setting_spawn_recomputes_tap_indicator_positions() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
 
         state.phase = AppPhase::Menu;
         state.dispatch(AppCommand::ToggleEditor);
@@ -786,10 +740,7 @@ fn setting_spawn_recomputes_tap_indicator_positions() {
 #[test]
 fn test_handle_primary_click_shift_priority() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
 
         state.phase = AppPhase::Editor;
         state.editor.ui.mode = EditorMode::Select;
@@ -856,10 +807,7 @@ fn editor_mode_selection_constraints() {
 #[test]
 fn editor_playback_mode_switching() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
         state.editor.set_mode(EditorMode::Place);
 
@@ -883,10 +831,7 @@ fn editor_playback_mode_switching() {
 #[test]
 fn editor_null_mode_clears_selection() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
         state.editor.objects.push(LevelObject {
             position: [0.0, 0.0, 0.0],
@@ -911,10 +856,7 @@ fn editor_null_mode_clears_selection() {
 #[test]
 fn test_timing_mode_persistence_during_playback() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
 
         // 1. Enter Timing Mode
@@ -952,10 +894,7 @@ fn test_timing_mode_persistence_during_playback() {
 #[test]
 fn test_gizmo_move_shaft_is_pickable() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
 
         state.phase = AppPhase::Editor;
         state.editor.set_mode(EditorMode::Move);
@@ -1033,10 +972,7 @@ fn test_gizmo_move_shaft_is_pickable() {
 #[test]
 fn test_gizmo_hover_priority_suppresses_block_outline() {
     pollster::block_on(async {
-        let mut state = match State::new_test().await {
-            Some(s) => s,
-            None => return,
-        };
+        let mut state = State::new_test().await;
 
         state.phase = AppPhase::Editor;
         state.editor.set_mode(EditorMode::Move);

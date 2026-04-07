@@ -51,6 +51,27 @@ fn discover_graphics_backends() -> Vec<String> {
     }
 }
 
+fn editor_ghost_trail_primitive_state() -> wgpu::PrimitiveState {
+    wgpu::PrimitiveState {
+        // Ghost trail uses `append_prism` (untextured) winding, which is opposite
+        // of the textured block/icon geometry. Keep CCW here to avoid showing the
+        // floor-facing bottom face (causes z-fighting on the leading segment).
+        front_face: wgpu::FrontFace::Ccw,
+        cull_mode: Some(wgpu::Face::Back),
+        ..wgpu::PrimitiveState::default()
+    }
+}
+
+fn editor_ghost_trail_depth_stencil_state() -> wgpu::DepthStencilState {
+    wgpu::DepthStencilState {
+        format: DEPTH_FORMAT,
+        depth_write_enabled: false,
+        depth_compare: wgpu::CompareFunction::Less,
+        stencil: wgpu::StencilState::default(),
+        bias: wgpu::DepthBiasState::default(),
+    }
+}
+
 impl State {
     #[cfg(target_arch = "wasm32")]
     pub(crate) async fn new(canvas: WasmCanvas) -> Self {
@@ -73,16 +94,42 @@ impl State {
     }
 
     #[cfg(test)]
-    pub(crate) async fn new_test() -> Option<State> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
-            ..Default::default()
-        });
-        let size = PhysicalSize {
-            width: 800,
-            height: 600,
+    pub(crate) async fn try_new_test() -> Option<State> {
+        let backends_to_try = if cfg!(target_os = "linux") {
+            vec![wgpu::Backends::VULKAN, wgpu::Backends::all()]
+        } else {
+            vec![wgpu::Backends::all()]
         };
-        Self::new_common(instance, None, None, size).await
+
+        for backends in backends_to_try {
+            let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+                backends,
+                ..Default::default()
+            });
+            if let Some(state) = Self::new_common(
+                instance,
+                None,
+                None,
+                PhysicalSize {
+                    width: 800,
+                    height: 600,
+                },
+            )
+            .await
+            {
+                return Some(state);
+            }
+        }
+        None
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn new_test() -> State {
+        Self::try_new_test()
+            .await
+            .expect(
+                "No suitable wgpu adapter found for tests. Install Vulkan-capable drivers (or a Vulkan software driver on Linux/headless environments), or use try_new_test() when running in an environment without GPU support.",
+            )
     }
 
     pub(crate) async fn new_common(
@@ -460,6 +507,42 @@ impl State {
             cache: None,
         });
 
+        let block_icon_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Block Icon Pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[Vertex::desc()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                front_face: wgpu::FrontFace::Cw,
+                cull_mode: Some(wgpu::Face::Back),
+                ..wgpu::PrimitiveState::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
         let editor_ghost_trail_pipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("Editor Ghost Trail Pipeline"),
@@ -480,18 +563,8 @@ impl State {
                     })],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                 }),
-                primitive: wgpu::PrimitiveState {
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: Some(wgpu::Face::Back),
-                    ..wgpu::PrimitiveState::default()
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: DEPTH_FORMAT,
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::Less,
-                    stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState::default(),
-                }),
+                primitive: editor_ghost_trail_primitive_state(),
+                depth_stencil: Some(editor_ghost_trail_depth_stencil_state()),
                 multisample: wgpu::MultisampleState::default(),
                 multiview: None,
                 cache: None,
@@ -590,11 +663,13 @@ impl State {
                     depth_texture,
                     depth_view,
                     render_pipeline,
+                    block_icon_pipeline,
                     editor_ghost_trail_pipeline,
                     gizmo_overlay_pipeline,
                     line_uniform_buffer,
                     zero_line_bind_group,
                     camera_uniform_buffer,
+                    camera_bind_group_layout,
                     camera_bind_group,
                     color_space_bind_group,
                     block_texture_bind_group,
@@ -709,16 +784,41 @@ mod tests {
     use crate::game::TimelineSimulationRuntime;
     use crate::types::SpawnDirection;
 
-    use super::State;
+    use super::{
+        editor_ghost_trail_depth_stencil_state, editor_ghost_trail_primitive_state, State,
+    };
     use crate::types::AppPhase;
+
+    #[test]
+    fn editor_ghost_trail_pipeline_state_prevents_floor_z_fighting() {
+        let primitive = editor_ghost_trail_primitive_state();
+        assert_eq!(
+            primitive.front_face,
+            wgpu::FrontFace::Ccw,
+            "ghost trail must keep CCW front-face culling so floor-facing bottoms stay culled"
+        );
+        assert_eq!(
+            primitive.cull_mode,
+            Some(wgpu::Face::Back),
+            "ghost trail should cull back faces"
+        );
+
+        let depth = editor_ghost_trail_depth_stencil_state();
+        assert_eq!(
+            depth.depth_compare,
+            wgpu::CompareFunction::Less,
+            "ghost trail depth compare should remain Less"
+        );
+        assert!(
+            !depth.depth_write_enabled,
+            "ghost trail should not write to depth to preserve translucent blending order"
+        );
+    }
 
     #[test]
     fn test_lifecycle_transitions() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             // Start level 0 (should be Flowerfield)
             state.start_level(0);
@@ -745,10 +845,7 @@ mod tests {
     #[test]
     fn test_lifecycle_audio_side_effects() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             state.start_editor(0);
             state.editor.timeline.playback.playing = true;
@@ -778,12 +875,29 @@ mod tests {
     }
 
     #[test]
+    fn test_lifecycle_audio_start_marks_playing_in_tests() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.start_level(0);
+            // Gameplay audio starts on first input while in Playing phase.
+            state.turn_right();
+
+            assert!(
+                state.audio.state.runtime.is_playing(),
+                "First gameplay input after starting a level should mark runtime audio as playing in tests"
+            );
+            assert!(
+                state.audio.state.runtime.playback_time_seconds().is_some(),
+                "First gameplay input after starting a level should produce a runtime playback clock in tests"
+            );
+        });
+    }
+
+    #[test]
     fn test_phase_transition_clipboard_clearing() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
 
             // 1. Setup: Enter editor and copy a block
@@ -807,10 +921,7 @@ mod tests {
     #[test]
     fn test_editor_load_level_resets_history_and_clipboard() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
 
             state.dispatch(AppCommand::ToggleEditor);

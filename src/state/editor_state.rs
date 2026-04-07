@@ -1225,10 +1225,7 @@ mod tests {
     #[test]
     fn editor_mode_switch_clears_selection_and_drag_state_when_mode_cannot_select() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             state.editor.ui.selected_block_index = Some(0);
             state.editor.ui.selected_block_indices = vec![0, 1];
@@ -1266,10 +1263,7 @@ mod tests {
     #[test]
     fn selected_block_mutators_apply_snap_and_clamp_rules() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             state.editor.objects.push(LevelObject {
                 position: [0.0, 0.0, 0.0],
@@ -1310,10 +1304,7 @@ mod tests {
     #[test]
     fn timeline_clamp_and_cache_invalidation_helpers_work() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             state.editor.timeline.clock.duration_seconds = 2.0;
             assert!(state.editor.set_timeline_time_seconds(5.0));
@@ -1368,10 +1359,7 @@ mod tests {
     #[test]
     fn bpm_tap_estimates_tempo_and_reset_clears_state() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             state.editor.bpm_tap(1.0);
             assert!(state.editor.bpm_tap_result().is_none());
@@ -1391,10 +1379,7 @@ mod tests {
     #[test]
     fn state_wrappers_update_timeline_taps_and_simulate_hitbox_flag() {
         pollster::block_on(async {
-            let mut state = match State::new_test().await {
-                Some(s) => s,
-                None => return,
-            };
+            let mut state = State::new_test().await;
 
             state.phase = crate::types::AppPhase::Editor;
             state.editor.timeline.preview.position = [3.5, 0.0, 4.5];

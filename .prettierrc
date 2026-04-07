@@ -1,4 +1,5 @@
 {
+    "plugins": ["prettier-plugin-toml"],
     "semi": true,
     "singleQuote": false,
     "useTabs": false,
