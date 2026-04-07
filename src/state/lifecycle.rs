@@ -41,7 +41,6 @@ use crate::types::{
 #[cfg(test)]
 #[derive(Clone)]
 struct SharedTestGpuContext {
-    adapter: wgpu::Adapter,
     adapter_info: wgpu::AdapterInfo,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -123,7 +122,7 @@ impl State {
                 None,
                 None,
                 test_size,
-                shared_context.adapter.clone(),
+                None,
                 shared_context.adapter_info.clone(),
                 shared_context.device.clone(),
                 shared_context.queue.clone(),
@@ -142,13 +141,12 @@ impl State {
                 backends,
                 ..Default::default()
             });
-            if let Some((adapter, adapter_info, device, queue)) =
+            if let Some((_, adapter_info, device, queue)) =
                 Self::request_gpu_context(&instance, None).await
             {
                 let shared_context = SHARED_TEST_GPU_CONTEXT.get_or_init(|| {
                     SHARED_TEST_GPU_CONTEXT_INIT_COUNT.fetch_add(1, Ordering::Relaxed);
                     SharedTestGpuContext {
-                        adapter: adapter.clone(),
                         adapter_info: adapter_info.clone(),
                         device: device.clone(),
                         queue: queue.clone(),
@@ -158,7 +156,7 @@ impl State {
                     None,
                     None,
                     test_size,
-                    shared_context.adapter.clone(),
+                    None,
                     shared_context.adapter_info.clone(),
                     shared_context.device.clone(),
                     shared_context.queue.clone(),
@@ -195,7 +193,7 @@ impl State {
             surface_host,
             surface,
             size,
-            adapter,
+            Some(adapter),
             adapter_info,
             device,
             queue,
@@ -203,6 +201,8 @@ impl State {
         .await
     }
 
+    /// Requests an adapter/device pair for the given instance and optional surface.
+    /// Tries the default adapter first, then retries with fallback adapter enabled.
     async fn request_gpu_context(
         instance: &wgpu::Instance,
         surface: Option<&wgpu::Surface<'static>>,
@@ -246,19 +246,21 @@ impl State {
         Some((adapter, adapter_info, device, queue))
     }
 
+    /// Completes State initialization using already-obtained GPU resources.
+    /// Handles surface configuration and render/editor subsystem setup.
     async fn new_common_from_gpu(
         surface_host: Option<SurfaceHost>,
         surface: Option<wgpu::Surface<'static>>,
         size: PhysicalSize<u32>,
-        adapter: wgpu::Adapter,
+        adapter: Option<wgpu::Adapter>,
         adapter_info: wgpu::AdapterInfo,
         device: wgpu::Device,
         queue: wgpu::Queue,
     ) -> Option<State> {
-        let surface_capabilities = surface
-            .as_ref()
-            .map(|s| s.get_capabilities(&adapter))
-            .unwrap_or_default();
+        let surface_capabilities = match (surface.as_ref(), adapter.as_ref()) {
+            (Some(surface), Some(adapter)) => surface.get_capabilities(adapter),
+            _ => wgpu::SurfaceCapabilities::default(),
+        };
         let surface_format = surface_capabilities
             .formats
             .iter()
