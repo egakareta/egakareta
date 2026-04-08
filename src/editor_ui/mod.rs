@@ -76,6 +76,17 @@ const VIEW_CUBE_FACES: [ViewCubeFace; 6] = [
     },
 ];
 
+const COMPACT_EDITOR_UI_BREAKPOINT: f32 = 720.0;
+
+fn is_compact_editor_ui(viewport_width: f32) -> bool {
+    viewport_width <= COMPACT_EDITOR_UI_BREAKPOINT
+}
+
+fn settings_sidebar_default_width(viewport_width: f32) -> f32 {
+    let max_width = (viewport_width - 24.0).max(180.0);
+    (viewport_width * 0.78).clamp(180.0, max_width)
+}
+
 fn sort_quad_by_angle(center: egui::Pos2, quad: [egui::Pos2; 4]) -> [egui::Pos2; 4] {
     let mut points = quad.to_vec();
     points.sort_by(|a, b| {
@@ -118,11 +129,13 @@ pub fn show_editor_ui(
     let is_timing = mode == EditorMode::Timing
         || (mode == EditorMode::Null && last_mode == Some(EditorMode::Timing));
     let is_compose = mode.is_compose_mode() && !is_timing;
+    let viewport_width = ctx.content_rect().width();
+    let is_compact_ui = is_compact_editor_ui(viewport_width);
 
     if view.show_settings {
         egui::SidePanel::left("editor_settings_sidebar")
             .resizable(true)
-            .default_width(320.0)
+            .default_width(settings_sidebar_default_width(viewport_width))
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.heading(format!("{} Settings", egui_phosphor::regular::GEAR));
@@ -366,7 +379,7 @@ pub fn show_editor_ui(
     }
 
     egui::TopBottomPanel::top("editor_top_bar").show(ctx, |ui| {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             // Top-level tabs: Compose / Timing
             if ui.selectable_label(is_compose, "Compose").clicked() && !is_compose {
                 commands.push(crate::commands::AppCommand::EditorSetMode(
@@ -555,7 +568,7 @@ pub fn show_editor_ui(
             });
     }
 
-    if !is_timing {
+    if !is_timing && !is_compact_ui {
         show_view_selector_cube(ctx, view.camera_rotation, view.camera_pitch, &mut commands);
     }
 
@@ -1019,8 +1032,9 @@ fn show_view_selector_cube(
 
 #[cfg(test)]
 mod tests {
-    use super::sort_quad_by_angle;
-    use super::VIEW_CUBE_FACES;
+    use super::{
+        is_compact_editor_ui, settings_sidebar_default_width, sort_quad_by_angle, VIEW_CUBE_FACES,
+    };
     use crate::test_utils::approx_eq;
     use glam::{Mat3, Vec3};
 
@@ -1088,5 +1102,31 @@ mod tests {
                 dot
             );
         }
+    }
+
+    #[test]
+    fn compact_editor_ui_detects_small_viewports() {
+        assert!(is_compact_editor_ui(720.0));
+        assert!(is_compact_editor_ui(480.0));
+        assert!(!is_compact_editor_ui(960.0));
+    }
+
+    #[test]
+    fn settings_sidebar_width_scales_for_small_screens() {
+        assert!(approx_eq(
+            settings_sidebar_default_width(320.0),
+            249.6,
+            0.01
+        ));
+        assert!(approx_eq(
+            settings_sidebar_default_width(1200.0),
+            936.0,
+            0.01
+        ));
+        assert!(approx_eq(
+            settings_sidebar_default_width(180.0),
+            180.0,
+            0.01
+        ));
     }
 }

@@ -173,7 +173,7 @@ pub(crate) fn show_compose_mode_bottom_panel(
 
     ui.separator();
 
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         let mut duration = view.timeline_duration_seconds;
         ui.label("Duration (s):");
         if ui
