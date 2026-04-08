@@ -83,6 +83,8 @@ fn is_compact_editor_ui(viewport_width: f32) -> bool {
 }
 
 fn settings_sidebar_default_width(viewport_width: f32) -> f32 {
+    // Keep a comfortable 78% default on small screens while leaving ~12px padding per side,
+    // and never shrink the panel below a usable minimum width.
     let max_width = (viewport_width - 24.0).max(180.0);
     (viewport_width * 0.78).clamp(180.0, max_width)
 }
@@ -1108,6 +1110,7 @@ mod tests {
     fn compact_editor_ui_detects_small_viewports() {
         assert!(is_compact_editor_ui(720.0));
         assert!(is_compact_editor_ui(480.0));
+        assert!(!is_compact_editor_ui(720.1));
         assert!(!is_compact_editor_ui(960.0));
     }
 
