@@ -50,7 +50,7 @@ pub fn show_menu_topbar(ctx: &egui::Context, state: &State) {
     }
 
     egui::TopBottomPanel::top("menu_top_bar").show(ctx, |ui| {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.add_space(4.0);
             ui.label(
                 egui::RichText::new(egui_phosphor::regular::GAME_CONTROLLER)
@@ -69,14 +69,9 @@ pub fn show_menu_topbar(ctx: &egui::Context, state: &State) {
                 level_name
             ));
 
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.add_space(8.0);
-                let time_str = get_current_time_str();
-                ui.label(egui::RichText::new(time_str).monospace());
-                ui.label(egui_phosphor::regular::CLOCK);
-                ui.add_space(8.0);
-                ui.separator();
-            });
+            ui.separator();
+            ui.label(egui_phosphor::regular::CLOCK);
+            ui.label(egui::RichText::new(get_current_time_str()).monospace());
         });
     });
 }
