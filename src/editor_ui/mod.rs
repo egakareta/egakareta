@@ -77,19 +77,22 @@ const VIEW_CUBE_FACES: [ViewCubeFace; 6] = [
 ];
 
 const COMPACT_EDITOR_UI_BREAKPOINT: f32 = 720.0;
+const SETTINGS_SIDEBAR_TOTAL_PADDING: f32 = 24.0;
+const SETTINGS_SIDEBAR_MIN_WIDTH: f32 = 180.0;
+const SETTINGS_SIDEBAR_WIDTH_SCALE: f32 = 0.78;
 
 fn is_compact_editor_ui(viewport_width: f32) -> bool {
     viewport_width <= COMPACT_EDITOR_UI_BREAKPOINT
 }
 
 fn settings_sidebar_default_width(viewport_width: f32) -> f32 {
-    // Keep a comfortable 78% default on small screens while leaving ~12px padding per side,
-    // and use a 180px minimum only when it still fits inside the viewport.
-    let max_width = (viewport_width - 24.0).max(0.0);
-    if max_width <= 180.0 {
+    // Keep a comfortable 78% default on small screens while leaving 24px total padding
+    // (12px per side), and use a 180px minimum only when it still fits inside the viewport.
+    let max_width = (viewport_width - SETTINGS_SIDEBAR_TOTAL_PADDING).max(0.0);
+    if max_width <= SETTINGS_SIDEBAR_MIN_WIDTH {
         return max_width;
     }
-    (viewport_width * 0.78).clamp(180.0, max_width)
+    (viewport_width * SETTINGS_SIDEBAR_WIDTH_SCALE).clamp(SETTINGS_SIDEBAR_MIN_WIDTH, max_width)
 }
 
 fn sort_quad_by_angle(center: egui::Pos2, quad: [egui::Pos2; 4]) -> [egui::Pos2; 4] {
