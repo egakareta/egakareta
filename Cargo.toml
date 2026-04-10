@@ -60,7 +60,7 @@ gloo-console = "0.3"
 gloo-events = "0.2"
 gloo-file = "0.3"
 gloo-net = "0.7"
-gloo-render = "0.2"
+gloo-render = "0.3"
 gloo-utils = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
