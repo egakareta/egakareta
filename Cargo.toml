@@ -101,3 +101,4 @@ winres = "0.1"
 
 [dev-dependencies]
 naga = { version = "29", features = ["wgsl-in"] }
+tempfile = "3"

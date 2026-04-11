@@ -29,17 +29,17 @@ fn usage() -> String {
         "egb - level metadata conversion helper",
         "",
         "Usage:",
-        "  egb decode --input <path/to/metadata.egb>",
+        "  egb decode --input <path/to/metadata.egb> [--output <path/to/metadata.json>]",
         "  egb encode --output <path/to/metadata.egb> [--input <path/to/metadata.json>]",
         "  cat metadata.json | egb encode --output <path/to/metadata.egb>",
         "",
         "Commands:",
-        "  decode                     Read .egb and print JSON to stdout",
+        "  decode                     Read .egb and print JSON to stdout or file",
         "  encode                     Read JSON (stdin or --input) and write .egb to --output",
         "",
         "Options:",
-        "  --input <path>             Input path (required for decode; optional for encode)",
-        "  --output <path>            Output path (required for encode)",
+        "  --input, -i <path>         Input path (required for decode; optional for encode)",
+        "  --output, -o <path>        Output path (optional for decode; required for encode)",
         "  --help, -h                 Show this message",
     ]
     .join("\n")
@@ -61,13 +61,13 @@ fn parse_cli(mut args: impl Iterator<Item = String>) -> Result<CliOptions, Strin
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--input" => {
+            "--input" | "-i" => {
                 let value = args
                     .next()
                     .ok_or_else(|| "--input requires a file path".to_string())?;
                 input_path = Some(PathBuf::from(value));
             }
-            "--output" => {
+            "--output" | "-o" => {
                 let value = args
                     .next()
                     .ok_or_else(|| "--output requires a file path".to_string())?;
@@ -133,7 +133,16 @@ fn run() -> Result<(), String> {
                 )
             })?;
             let json = convert_level_binary_to_json(&bytes)?;
-            println!("{json}");
+            if let Some(output_path) = options.output_path {
+                fs::write(&output_path, json).map_err(|error| {
+                    format!(
+                        "Failed to write output file {}: {error}",
+                        output_path.display()
+                    )
+                })?;
+            } else {
+                println!("{json}");
+            }
         }
         Mode::Encode => {
             let output_path = options
