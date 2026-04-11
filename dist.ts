@@ -4,7 +4,7 @@
 
 * Copyright (c) egakareta <team@egakareta.com>.
 * Licensed under the GNU AGPLv3 or a proprietary Commercial License.
-* See LICENSE and COMMERICAL.md for details.
+* See LICENSE and COMMERCIAL.md for details.
 
 */
 import fs from "fs";

@@ -1,11 +1,3 @@
-/\*
-
-- Copyright (c) egakareta <team@egakareta.com>.
-- Licensed under the GNU AGPLv3 or a proprietary Commercial License.
-- See LICENSE and COMMERICAL.md for details.
-
-\*/
-
 # Commercial Licensing
 
 egakareta is dual-licensed under the GNU AGPLv3 and a proprietary Commercial License.
