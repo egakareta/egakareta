@@ -39,11 +39,13 @@ pub(crate) fn build_block_vertices_with_phase_from_refs<'a, I>(
 where
     I: IntoIterator<Item = &'a LevelObject>,
 {
+    const LIQUID_PROFILE_TAG: f32 = 1.0;
     let mut all_vertices = Vec::new();
 
     for obj in objects {
         let mut object_vertices = Vec::new();
         let vertices = &mut object_vertices;
+        let object_vertex_start = vertices.len();
 
         let x_min = obj.position[0];
         let x_max = obj.position[0] + obj.size[0];
@@ -115,6 +117,12 @@ where
                     texture_layers.bottom,
                 ),
             );
+        }
+
+        if matches!(block.render.profile, BlockRenderProfile::Liquid) {
+            for vertex in vertices.iter_mut().skip(object_vertex_start) {
+                vertex.set_render_profile(LIQUID_PROFILE_TAG);
+            }
         }
 
         let center = [

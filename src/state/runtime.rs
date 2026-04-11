@@ -79,4 +79,5 @@ pub(crate) struct PlayerRenderState {
 pub(crate) struct FrameRuntimeState {
     pub(crate) editor: EditorFrameState,
     pub(crate) player_render: PlayerRenderState,
+    pub(crate) global_time_seconds: f32,
 }

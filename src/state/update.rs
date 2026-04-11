@@ -15,7 +15,9 @@ use crate::mesh::{
     build_block_vertices_with_phase, build_trail_vertices, build_trail_vertices_with_alpha,
 };
 use crate::platform::state_host::PlatformInstant;
-use crate::types::{AppPhase, CameraUniform, Direction, EditorMode, LevelObject};
+use crate::types::{
+    AppPhase, CameraUniform, ColorSpaceUniform, Direction, EditorMode, LevelObject,
+};
 
 impl State {
     fn playing_trigger_objects_at_time(&mut self, time_seconds: f32) -> Option<Vec<LevelObject>> {
@@ -328,6 +330,22 @@ impl State {
         }
         self.frame_runtime.editor.accumulator =
             (self.frame_runtime.editor.accumulator + frame_dt).min(0.25);
+        self.frame_runtime.global_time_seconds += frame_dt.max(0.0);
+
+        let color_space_uniform = ColorSpaceUniform {
+            apply_gamma_correction: if self.render.gpu.apply_gamma_correction {
+                1.0
+            } else {
+                0.0
+            },
+            time_seconds: self.frame_runtime.global_time_seconds,
+            _pad: [0.0; 2],
+        };
+        self.render.gpu.queue.write_buffer(
+            &self.render.gpu.color_space_uniform_buffer,
+            0,
+            bytemuck::bytes_of(&color_space_uniform),
+        );
 
         if self.phase == AppPhase::Menu {
             self.frame_runtime.editor.accumulator = 0.0;

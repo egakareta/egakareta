@@ -41,6 +41,7 @@ struct VertexInput {
     @location(3) uv_norm: vec2<f32>,
     @location(4) texture_layer: f32,
     @location(5) color_outline: vec4<f32>,
+    @location(6) render_profile: f32,
 };
 
 struct VertexOutput {
@@ -50,6 +51,7 @@ struct VertexOutput {
     @location(2) uv_norm: vec2<f32>,
     @location(3) texture_layer: f32,
     @location(4) color_outline: vec4<f32>,
+    @location(5) render_profile: f32,
 };
 
 @vertex
@@ -71,6 +73,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     out.uv_norm = input.uv_norm;
     out.texture_layer = input.texture_layer;
     out.color_outline = input.color_outline;
+    out.render_profile = input.render_profile;
     return out;
 }
 
@@ -78,9 +81,22 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let has_texture = input.texture_layer >= 0.0;
     let texture_layer = max(i32(round(input.texture_layer)), 0);
-    let sampled_texture = textureSample(u_block_textures, u_block_sampler, input.uv, texture_layer);
+    let liquid_profile = step(0.5, input.render_profile);
+    let wave_a = sin((input.uv.x * 8.0 + input.uv.y * 11.0) + u_color_space.flags.y * 2.8);
+    let wave_b = cos((input.uv.x * 13.0 - input.uv.y * 7.0) - u_color_space.flags.y * 3.6);
+    let liquid_uv_offset = vec2<f32>(wave_a, wave_b) * (0.017 * liquid_profile);
+    let sampled_texture = textureSample(
+        u_block_textures,
+        u_block_sampler,
+        input.uv + liquid_uv_offset,
+        texture_layer
+    );
     let texture_sample = select(vec4<f32>(1.0, 1.0, 1.0, 1.0), sampled_texture, has_texture);
     var color = (input.color * texture_sample).rgb;
+
+    let molten_glow = (wave_a * 0.5 + 0.5) * 0.6 + (wave_b * 0.5 + 0.5) * 0.4;
+    let glow_rgb = vec3<f32>(1.0, 0.42, 0.08) * molten_glow * 0.38;
+    color = mix(color, color * 0.78 + glow_rgb, liquid_profile * 0.68);
 
     let face_size = input.uv_norm;
     if (face_size.x > 0.0 && face_size.y > 0.0) {

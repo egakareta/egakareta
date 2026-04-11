@@ -267,14 +267,15 @@ impl State {
             } else {
                 0.0
             },
-            _pad: [0.0; 3],
+            time_seconds: 0.0,
+            _pad: [0.0; 2],
         };
 
         let color_space_uniform_buffer =
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Color Space Uniform Buffer"),
                 contents: bytemuck::bytes_of(&color_space_uniform),
-                usage: wgpu::BufferUsages::UNIFORM,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
 
         let line_bind_group_layout =
@@ -671,6 +672,7 @@ impl State {
                     camera_uniform_buffer,
                     camera_bind_group_layout,
                     camera_bind_group,
+                    color_space_uniform_buffer,
                     color_space_bind_group,
                     block_texture_bind_group,
                     apply_gamma_correction: should_apply_gamma_correction,
@@ -701,6 +703,7 @@ impl State {
                     accumulator: 0.0,
                 },
                 player_render: PlayerRenderState { line_uniform },
+                global_time_seconds: 0.0,
             },
             audio: AudioSubsystem { state: audio_state },
             session: SessionSubsystem {

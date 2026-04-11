@@ -235,6 +235,7 @@ pub(crate) struct BlockTextureLayers {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum BlockRenderProfile {
     Solid,
+    Liquid,
     VoidFrame,
     SpeedPortal,
     FinishRing,

@@ -150,9 +150,10 @@ fn block_icon_signature(block: &BlockDefinition) -> u64 {
 fn render_profile_tag(profile: &BlockRenderProfile) -> u8 {
     match profile {
         BlockRenderProfile::Solid => 0,
-        BlockRenderProfile::VoidFrame => 1,
-        BlockRenderProfile::SpeedPortal => 2,
-        BlockRenderProfile::FinishRing => 3,
+        BlockRenderProfile::Liquid => 1,
+        BlockRenderProfile::VoidFrame => 2,
+        BlockRenderProfile::SpeedPortal => 3,
+        BlockRenderProfile::FinishRing => 4,
     }
 }
 
@@ -215,9 +216,10 @@ mod tests {
     #[test]
     fn render_profile_tag_maps_all_profiles() {
         assert_eq!(render_profile_tag(&BlockRenderProfile::Solid), 0);
-        assert_eq!(render_profile_tag(&BlockRenderProfile::VoidFrame), 1);
-        assert_eq!(render_profile_tag(&BlockRenderProfile::SpeedPortal), 2);
-        assert_eq!(render_profile_tag(&BlockRenderProfile::FinishRing), 3);
+        assert_eq!(render_profile_tag(&BlockRenderProfile::Liquid), 1);
+        assert_eq!(render_profile_tag(&BlockRenderProfile::VoidFrame), 2);
+        assert_eq!(render_profile_tag(&BlockRenderProfile::SpeedPortal), 3);
+        assert_eq!(render_profile_tag(&BlockRenderProfile::FinishRing), 4);
     }
 
     #[test]

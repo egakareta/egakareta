@@ -342,6 +342,7 @@ pub(crate) struct Vertex {
     pub(crate) uv_norm: [f32; 2],
     pub(crate) texture_layer: f32,
     pub(crate) color_outline: [f32; 4],
+    pub(crate) render_profile: f32,
 }
 
 impl Vertex {
@@ -353,6 +354,7 @@ impl Vertex {
             uv_norm: [0.0, 0.0],
             texture_layer: -1.0,
             color_outline: [0.0, 0.0, 0.0, 0.0],
+            render_profile: 0.0,
         }
     }
 
@@ -369,6 +371,7 @@ impl Vertex {
             uv_norm: [0.0, 0.0],
             texture_layer: texture_layer as f32,
             color_outline: [0.0, 0.0, 0.0, 0.0],
+            render_profile: 0.0,
         }
     }
 
@@ -387,17 +390,23 @@ impl Vertex {
             uv_norm,
             texture_layer: texture_layer as f32,
             color_outline,
+            render_profile: 0.0,
         }
     }
 
+    pub(crate) fn set_render_profile(&mut self, render_profile: f32) {
+        self.render_profile = render_profile;
+    }
+
     pub(crate) fn desc() -> wgpu::VertexBufferLayout<'static> {
-        const ATTRS: [wgpu::VertexAttribute; 6] = wgpu::vertex_attr_array![
+        const ATTRS: [wgpu::VertexAttribute; 7] = wgpu::vertex_attr_array![
             0 => Float32x3,
             1 => Float32x4,
             2 => Float32x2,
             3 => Float32x2,
             4 => Float32,
-            5 => Float32x4
+            5 => Float32x4,
+            6 => Float32
         ];
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as u64,
@@ -1847,7 +1856,8 @@ pub(crate) struct CameraUniform {
 /// Controls gamma correction application in the shader.
 pub(crate) struct ColorSpaceUniform {
     pub(crate) apply_gamma_correction: f32,
-    pub(crate) _pad: [f32; 3],
+    pub(crate) time_seconds: f32,
+    pub(crate) _pad: [f32; 2],
 }
 
 #[cfg(test)]

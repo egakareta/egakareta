@@ -338,7 +338,7 @@ impl GameState {
         self.objects.iter().any(|obj| {
             matches!(
                 resolve_block_definition(&obj.block_id).render.profile,
-                BlockRenderProfile::FinishRing
+                BlockRenderProfile::FinishRing | BlockRenderProfile::Liquid
             )
         })
     }
