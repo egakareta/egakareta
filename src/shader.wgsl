@@ -57,7 +57,7 @@ struct VertexOutput {
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    
+
     let c = cos(u_line.rotation);
     let s = sin(u_line.rotation);
     let rotated_pos = vec3<f32>(
@@ -65,7 +65,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
         input.position.y,
         input.position.x * s + input.position.z * c
     );
-    
+
     let offset = vec3<f32>(u_line.offset.x, 0.0, u_line.offset.y);
     out.position = u_camera.view_proj * vec4<f32>(rotated_pos + offset, 1.0);
     out.color = input.color;
@@ -99,16 +99,22 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     color = mix(color, color * 0.78 + glow_rgb, liquid_profile * 0.68);
 
     let face_size = input.uv_norm;
-    if (face_size.x > 0.0 && face_size.y > 0.0) {
-        let thickness = 0.05;
+    if face_size.x > 0.0 && face_size.y > 0.0 {
+        let base_thickness = 0.05;
+        let liquid_thickness = 0.05;
+        let thickness = min(
+            mix(base_thickness, liquid_thickness, liquid_profile),
+            min(face_size.x, face_size.y) * 0.45
+        );
         let edge_x = step(input.uv.x, thickness) + step(face_size.x - thickness, input.uv.x);
         let edge_y = step(input.uv.y, thickness) + step(face_size.y - thickness, input.uv.y);
         let is_edge = clamp(edge_x + edge_y, 0.0, 1.0);
+        let outline_alpha = clamp(input.color_outline.a * mix(1.0, 3.0, liquid_profile), 0.0, 1.0);
 
-        color = mix(color, input.color_outline.rgb, is_edge * input.color_outline.a);
+        color = mix(color, input.color_outline.rgb, is_edge * outline_alpha);
     }
 
-    if (u_color_space.flags.x > 0.5) {
+    if u_color_space.flags.x > 0.5 {
         color = linear_to_srgb(color);
     }
 
