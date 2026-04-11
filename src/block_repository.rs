@@ -236,7 +236,6 @@ pub(crate) struct BlockTextureLayers {
 pub(crate) enum BlockRenderProfile {
     Solid,
     Liquid,
-    VoidFrame,
     SpeedPortal,
     FinishRing,
 }

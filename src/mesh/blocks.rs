@@ -60,7 +60,6 @@ where
         let mut color_top = block.render.color_top;
         let mut color_side = block.render.color_side;
         let mut color_bottom = block.render.color_bottom;
-        let mut color_fill = block.render.color_fill;
         let mut color_outline = block.render.color_outline;
 
         if block.render.noise.abs() > f32::EPSILON {
@@ -76,7 +75,6 @@ where
         color_top = apply_color_tint(color_top, obj.color_tint);
         color_side = apply_color_tint(color_side, obj.color_tint);
         color_bottom = apply_color_tint(color_bottom, obj.color_tint);
-        color_fill = apply_color_tint(color_fill, obj.color_tint);
         color_outline = apply_color_tint(color_outline, obj.color_tint);
 
         if let Some(mesh_path) = block.assets.mesh.as_deref() {
@@ -95,16 +93,12 @@ where
                 texture_layers.side,
             );
         } else if vertices.is_empty() {
-            let prism_colors = if matches!(block.render.profile, BlockRenderProfile::VoidFrame) {
-                PrismFaceColors::uniform_with_outline(color_fill, color_outline)
-            } else {
-                PrismFaceColors::new_with_outline(
-                    color_top,
-                    color_side,
-                    color_bottom,
-                    color_outline,
-                )
-            };
+            let prism_colors = PrismFaceColors::new_with_outline(
+                color_top,
+                color_side,
+                color_bottom,
+                color_outline,
+            );
 
             append_prism_with_layers(
                 vertices,

@@ -151,7 +151,6 @@ fn render_profile_tag(profile: &BlockRenderProfile) -> u8 {
     match profile {
         BlockRenderProfile::Solid => 0,
         BlockRenderProfile::Liquid => 1,
-        BlockRenderProfile::VoidFrame => 2,
         BlockRenderProfile::SpeedPortal => 3,
         BlockRenderProfile::FinishRing => 4,
     }
@@ -195,11 +194,7 @@ mod tests {
             .expect("expected at least one placeable block")
             .clone();
 
-        let mut with_profile_change = block.clone();
-        with_profile_change.render.profile = match block.render.profile {
-            BlockRenderProfile::Solid => BlockRenderProfile::VoidFrame,
-            _ => BlockRenderProfile::Solid,
-        };
+        let with_profile_change = block.clone();
         assert_ne!(
             block_icon_signature(&block),
             block_icon_signature(&with_profile_change)
@@ -217,7 +212,6 @@ mod tests {
     fn render_profile_tag_maps_all_profiles() {
         assert_eq!(render_profile_tag(&BlockRenderProfile::Solid), 0);
         assert_eq!(render_profile_tag(&BlockRenderProfile::Liquid), 1);
-        assert_eq!(render_profile_tag(&BlockRenderProfile::VoidFrame), 2);
         assert_eq!(render_profile_tag(&BlockRenderProfile::SpeedPortal), 3);
         assert_eq!(render_profile_tag(&BlockRenderProfile::FinishRing), 4);
     }

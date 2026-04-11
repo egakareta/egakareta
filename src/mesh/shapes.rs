@@ -29,10 +29,6 @@ impl PrismFaceColors {
             outline,
         }
     }
-
-    pub(crate) fn uniform_with_outline(color: [f32; 4], outline: [f32; 4]) -> Self {
-        Self::new_with_outline(color, color, color, outline)
-    }
 }
 
 #[derive(Copy, Clone)]
@@ -303,7 +299,7 @@ mod tests {
             &mut vertices,
             min,
             max,
-            PrismFaceColors::uniform_with_outline(color, [0.0, 0.0, 0.0, 0.0]),
+            PrismFaceColors::new_with_outline(color, color, color, [0.0, 0.0, 0.0, 0.0]),
             PrismTextureLayers::new(1, 2, 3),
         );
 
@@ -378,7 +374,7 @@ mod tests {
             &mut tiled_vertices,
             [0.0, 0.0, 0.0],
             [2.0, 1.0, 3.0], // Resized: DX=2, DY=1, DZ=3
-            PrismFaceColors::uniform_with_outline(color, [0.0, 0.0, 0.0, 0.0]),
+            PrismFaceColors::new_with_outline(color, color, color, [0.0, 0.0, 0.0, 0.0]),
             PrismTextureLayers::new(1, 2, 3),
         );
 
@@ -514,7 +510,7 @@ mod tests {
             &mut vertices,
             min,
             max,
-            PrismFaceColors::uniform_with_outline(color, [0.0, 0.0, 0.0, 0.0]),
+            PrismFaceColors::new_with_outline(color, color, color, [0.0, 0.0, 0.0, 0.0]),
             PrismTextureLayers::new(1, 2, 3),
         );
 
