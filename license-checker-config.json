@@ -18,12 +18,7 @@
             "prepend": "/*\n",
             "append": "\n*/"
         },
-        "toml": {
-            "eachLine": {
-                "prepend": "# "
-            }
-        },
-        "yml": {
+        "toml|yml|^Dockerfile": {
             "eachLine": {
                 "prepend": "# "
             }
