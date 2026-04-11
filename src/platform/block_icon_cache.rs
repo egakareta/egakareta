@@ -194,7 +194,11 @@ mod tests {
             .expect("expected at least one placeable block")
             .clone();
 
-        let with_profile_change = block.clone();
+        let mut with_profile_change = block.clone();
+        with_profile_change.render.profile = match block.render.profile {
+            BlockRenderProfile::Solid => BlockRenderProfile::Liquid,
+            _ => BlockRenderProfile::Solid,
+        };
         assert_ne!(
             block_icon_signature(&block),
             block_icon_signature(&with_profile_change)
