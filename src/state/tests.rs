@@ -12,7 +12,10 @@ use crate::editor_domain::{derive_tap_indicator_positions, derive_timeline_posit
 use crate::game::simulate_timeline_state_with_triggers;
 use crate::platform::audio::runtime_asset_source_key;
 use crate::test_utils::assert_approx_eq as approx_eq;
-use crate::types::{AppPhase, EditorMode, GizmoAxis, GizmoDragKind, LevelObject, SpawnDirection};
+use crate::types::{
+    AppPhase, EditorMode, GizmoAxis, GizmoDragKind, LevelObject, SpawnDirection, TimedTrigger,
+    TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+};
 use glam::{Vec2, Vec3};
 
 #[test]
@@ -1075,5 +1078,73 @@ fn test_gizmo_hover_priority_suppresses_block_outline() {
             state.editor.ui.hovered_block_index.is_none(),
             "expected block hover to be suppressed while gizmo handle is hovered, even though a block is behind it"
         );
+    });
+}
+
+#[test]
+fn timing_mode_timeline_scrub_skips_simulation_and_mesh_dirty() {
+    pollster::block_on(async {
+        let mut state = State::new_test().await;
+
+        state.phase = AppPhase::Editor;
+        state.editor.set_mode(EditorMode::Timing);
+
+        // Add an object transform trigger to ensure that in Compose it WOULD mark dirty
+        state.editor.set_triggers(vec![TimedTrigger {
+            time_seconds: 1.0,
+            duration_seconds: 1.0,
+            easing: TimedTriggerEasing::Linear,
+            target: TimedTriggerTarget::Object { object_id: 0 },
+            action: TimedTriggerAction::MoveTo {
+                position: [10.0, 0.0, 0.0],
+            },
+        }]);
+
+        // Clear any initial dirty flags
+        state.editor.runtime.dirty = EditorDirtyFlags::default();
+        state.editor.timeline.snapshot_cache.clear();
+        state.editor.timeline.snapshot_cache_revision = 0;
+
+        // Scrub
+        state.set_editor_timeline_time_seconds(0.5);
+
+        // Verify:
+        // 1. rebuild_block_mesh is NOT dirty
+        assert!(!state.editor.runtime.dirty.rebuild_block_mesh);
+        // 2. Snapshot cache is still empty (simulation was not run)
+        assert!(state.editor.timeline.snapshot_cache.is_empty());
+    });
+}
+
+#[test]
+fn compose_mode_timeline_scrub_runs_simulation_and_mesh_dirty() {
+    pollster::block_on(async {
+        let mut state = State::new_test().await;
+
+        state.phase = AppPhase::Editor;
+        state.editor.set_mode(EditorMode::Place);
+
+        // Add an object transform trigger
+        state.editor.set_triggers(vec![TimedTrigger {
+            time_seconds: 1.0,
+            duration_seconds: 1.0,
+            easing: TimedTriggerEasing::Linear,
+            target: TimedTriggerTarget::Object { object_id: 0 },
+            action: TimedTriggerAction::MoveTo {
+                position: [10.0, 0.0, 0.0],
+            },
+        }]);
+
+        // Clear any initial dirty flags
+        state.editor.runtime.dirty = EditorDirtyFlags::default();
+
+        // Scrub
+        state.set_editor_timeline_time_seconds(0.5);
+
+        // Verify:
+        // 1. rebuild_block_mesh IS dirty because of triggers
+        assert!(state.editor.runtime.dirty.rebuild_block_mesh);
+        // 2. Snapshot cache is NOT empty (simulation was run for preview)
+        assert!(!state.editor.timeline.snapshot_cache.is_empty());
     });
 }

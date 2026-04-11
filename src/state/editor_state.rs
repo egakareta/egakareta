@@ -764,10 +764,13 @@ impl State {
     /// and synchronizes audio playback if necessary.
     pub fn set_editor_timeline_time_seconds(&mut self, time_seconds: f32) {
         let changed = self.editor.set_timeline_time_seconds(time_seconds);
-        if self.phase == AppPhase::Editor {
+        if self.phase == AppPhase::Editor && self.editor.ui.mode != EditorMode::Timing {
             self.apply_editor_timeline_preview_from_cache();
         }
-        if changed && self.phase == AppPhase::Editor && self.editor.has_object_transform_triggers()
+        if changed
+            && self.phase == AppPhase::Editor
+            && self.editor.ui.mode != EditorMode::Timing
+            && self.editor.has_object_transform_triggers()
         {
             self.mark_editor_dirty(EditorDirtyFlags {
                 rebuild_block_mesh: true,

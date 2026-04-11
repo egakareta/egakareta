@@ -389,7 +389,7 @@ impl State {
                     let old_time = self.editor.timeline.clock.time_seconds;
                     self.editor.timeline.clock.time_seconds = clamped_time;
 
-                    if self.editor.has_object_transform_triggers() {
+                    if simulate_preview && self.editor.has_object_transform_triggers() {
                         self.mark_editor_dirty(super::EditorDirtyFlags {
                             rebuild_block_mesh: true,
                             ..super::EditorDirtyFlags::default()
@@ -473,7 +473,7 @@ impl State {
                 {
                     self.editor.timeline.playback.playing = false;
                     self.editor.timeline.playback.runtime = None;
-                    if self.editor.has_object_transform_triggers() {
+                    if simulate_preview && self.editor.has_object_transform_triggers() {
                         self.mark_editor_dirty(super::EditorDirtyFlags {
                             rebuild_block_mesh: true,
                             ..super::EditorDirtyFlags::default()
