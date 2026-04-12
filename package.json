@@ -12,7 +12,6 @@
         "typegen": "bun cf-typegen && bun sb-ts-typegen",
         "test": "cargo test -- -Zunstable-options --report-time",
         "test:coverage": "cargo llvm-cov --lcov --output-path lcov.info -- -Zunstable-options --report-time",
-        "test:e2e": "cargo test --test native_launch_smoke -- --ignored --nocapture",
         "test:db": "supabase test db",
         "license:add": "license-check-and-add add -f license-checker-config.json",
         "license:check": "license-check-and-add check -f license-checker-config.json",
