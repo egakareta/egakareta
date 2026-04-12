@@ -478,6 +478,22 @@ impl EditorSubsystem {
 }
 
 impl State {
+    pub(super) fn editor_effective_mode_for_playback(&self) -> EditorMode {
+        if self.editor.timeline.playback.playing && self.editor.ui.mode == EditorMode::Null {
+            self.editor
+                .runtime
+                .interaction
+                .last_mode
+                .unwrap_or(self.editor.ui.mode)
+        } else {
+            self.editor.ui.mode
+        }
+    }
+
+    pub(super) fn editor_is_effectively_timing_mode(&self) -> bool {
+        self.editor_effective_mode_for_playback() == EditorMode::Timing
+    }
+
     pub(crate) fn set_editor_pan_up_held(&mut self, held: bool) {
         if self.phase == AppPhase::Editor {
             self.editor.set_pan_up_held(held);
@@ -763,23 +779,40 @@ impl State {
     /// This updates the visual state of the level to reflect the new time
     /// and synchronizes audio playback if necessary.
     pub fn set_editor_timeline_time_seconds(&mut self, time_seconds: f32) {
+        let seek_started_at = PlatformInstant::now();
+        let is_effectively_timing = self.editor_is_effectively_timing_mode();
         let changed = self.editor.set_timeline_time_seconds(time_seconds);
-        if self.phase == AppPhase::Editor && self.editor.ui.mode != EditorMode::Timing {
+        if self.phase == AppPhase::Editor && !is_effectively_timing {
+            let preview_started_at = PlatformInstant::now();
             self.apply_editor_timeline_preview_from_cache();
+            self.perf_record(PerfStage::TimelineSeekPreview, preview_started_at);
         }
         if changed
             && self.phase == AppPhase::Editor
-            && self.editor.ui.mode != EditorMode::Timing
+            && !is_effectively_timing
             && self.editor.has_object_transform_triggers()
         {
+            let dirty_started_at = PlatformInstant::now();
             self.mark_editor_dirty(EditorDirtyFlags {
                 rebuild_block_mesh: true,
                 ..EditorDirtyFlags::default()
             });
+            self.perf_record(PerfStage::TimelineSeekDirtyBlockMesh, dirty_started_at);
         }
         if changed {
-            self.resync_editor_timeline_playback_audio();
+            if self.phase == AppPhase::Editor && self.editor.timeline.playback.playing {
+                const PLAYBACK_SEEK_RESYNC_DEBOUNCE_SECONDS: f32 = 0.12;
+                self.editor.timeline.playback.pending_seek_time_seconds =
+                    Some(self.editor.timeline.clock.time_seconds);
+                self.editor.timeline.playback.seek_resync_cooldown_seconds =
+                    PLAYBACK_SEEK_RESYNC_DEBOUNCE_SECONDS;
+            } else {
+                let audio_resync_started_at = PlatformInstant::now();
+                self.resync_editor_timeline_playback_audio();
+                self.perf_record(PerfStage::TimelineSeekAudioResync, audio_resync_started_at);
+            }
         }
+        self.perf_record(PerfStage::TimelineSeek, seek_started_at);
     }
 
     fn apply_editor_timeline_preview_from_cache(&mut self) {

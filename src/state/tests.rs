@@ -919,6 +919,68 @@ fn test_timing_mode_persistence_during_playback() {
         assert!(state.editor.runtime.interaction.last_mode.is_none());
     });
 }
+
+#[test]
+fn timing_origin_playback_seek_resync_keeps_runtime_disabled() {
+    pollster::block_on(async {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+        state.editor.set_mode(EditorMode::Timing);
+
+        state.editor.set_triggers(vec![TimedTrigger {
+            time_seconds: 0.5,
+            duration_seconds: 1.0,
+            easing: TimedTriggerEasing::Linear,
+            target: TimedTriggerTarget::Object { object_id: 0 },
+            action: TimedTriggerAction::MoveTo {
+                position: [3.0, 0.0, 0.0],
+            },
+        }]);
+
+        state.toggle_editor_timeline_playback();
+        assert!(state.editor.timeline.playback.playing);
+        assert_eq!(state.editor.ui.mode, EditorMode::Null);
+        assert_eq!(
+            state.editor.runtime.interaction.last_mode,
+            Some(EditorMode::Timing)
+        );
+
+        state.editor.runtime.dirty = EditorDirtyFlags::default();
+        state.set_editor_timeline_time_seconds(1.0);
+
+        assert!(
+            !state.editor.runtime.dirty.rebuild_block_mesh,
+            "timing-origin playback seek should not mark block mesh dirty"
+        );
+
+        state.resync_editor_timeline_playback_audio();
+        assert!(
+            state.editor.timeline.playback.runtime.is_none(),
+            "timing-origin playback seek resync should not build simulation runtime"
+        );
+    });
+}
+
+#[test]
+fn playback_seek_queues_debounced_audio_resync() {
+    pollster::block_on(async {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+        state.editor.set_mode(EditorMode::Timing);
+
+        state.toggle_editor_timeline_playback();
+        assert!(state.editor.timeline.playback.playing);
+
+        state.set_editor_timeline_time_seconds(0.75);
+
+        assert_eq!(
+            state.editor.timeline.playback.pending_seek_time_seconds,
+            Some(0.75)
+        );
+        assert!(state.editor.timeline.playback.seek_resync_cooldown_seconds > 0.0);
+    });
+}
+
 #[test]
 fn test_gizmo_move_shaft_is_pickable() {
     pollster::block_on(async {

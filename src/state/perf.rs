@@ -39,9 +39,16 @@ pub(crate) enum PerfStage {
     BlockMeshSelectedOnlyUpload,
     TTapToggleTotal,
     TTapSolve,
+    TimelineSeek,
+    TimelineSeekPreview,
+    TimelineSeekDirtyBlockMesh,
+    TimelineSeekAudioResync,
+    TimelineSeekAudioStop,
+    TimelineSeekRuntimeBuild,
+    TimelineSeekAudioStart,
 }
 
-pub(crate) const PERF_STAGE_COUNT: usize = 32;
+pub(crate) const PERF_STAGE_COUNT: usize = 39;
 
 #[derive(Clone)]
 pub(crate) struct PerfOverlayEntry {
@@ -62,6 +69,7 @@ impl PerfStage {
         &[
             Self::FrameTotal,
             Self::TimelinePlayback,
+            Self::TimelineSeek,
             Self::DragSelection,
             Self::SelectionClick,
             Self::GizmoRebuild,
@@ -105,6 +113,16 @@ impl PerfStage {
                 Self::BlockMeshSelectedOnlyUpload,
             ],
             Self::TTapToggleTotal => &[Self::TTapSolve],
+            Self::TimelineSeek => &[
+                Self::TimelineSeekPreview,
+                Self::TimelineSeekDirtyBlockMesh,
+                Self::TimelineSeekAudioResync,
+            ],
+            Self::TimelineSeekAudioResync => &[
+                Self::TimelineSeekAudioStop,
+                Self::TimelineSeekRuntimeBuild,
+                Self::TimelineSeekAudioStart,
+            ],
             _ => &[],
         }
     }
@@ -143,6 +161,13 @@ impl PerfStage {
             Self::BlockMeshSelectedOnlyUpload => "SelectedOnlyUpload",
             Self::TTapToggleTotal => "TKeyToggle",
             Self::TTapSolve => "TKeySolve",
+            Self::TimelineSeek => "TimelineSeek",
+            Self::TimelineSeekPreview => "SeekPreview",
+            Self::TimelineSeekDirtyBlockMesh => "SeekDirtyBlockMesh",
+            Self::TimelineSeekAudioResync => "SeekAudioResync",
+            Self::TimelineSeekAudioStop => "SeekAudioStop",
+            Self::TimelineSeekRuntimeBuild => "SeekRuntimeBuild",
+            Self::TimelineSeekAudioStart => "SeekAudioStart",
         }
     }
 }
@@ -233,6 +258,7 @@ impl EditorPerfProfiler {
     pub(crate) fn dominant_stage_this_frame(&self) -> Option<PerfStage> {
         let stages = [
             PerfStage::TimelinePlayback,
+            PerfStage::TimelineSeek,
             PerfStage::DragSelection,
             PerfStage::SelectionClick,
             PerfStage::GizmoRebuild,

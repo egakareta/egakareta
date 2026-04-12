@@ -20,6 +20,31 @@ use crate::types::{
 };
 
 impl State {
+    fn maybe_resync_editor_playback_from_pending_seek(&mut self, frame_dt: f32) {
+        if self.phase != AppPhase::Editor || !self.editor.timeline.playback.playing {
+            return;
+        }
+
+        let Some(target_time) = self.editor.timeline.playback.pending_seek_time_seconds else {
+            self.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
+            return;
+        };
+
+        let cooldown =
+            (self.editor.timeline.playback.seek_resync_cooldown_seconds - frame_dt).max(0.0);
+        self.editor.timeline.playback.seek_resync_cooldown_seconds = cooldown;
+        if cooldown > 0.0 {
+            return;
+        };
+
+        self.editor.timeline.playback.pending_seek_time_seconds = None;
+        self.editor.timeline.clock.time_seconds = target_time;
+        let audio_resync_started_at = PlatformInstant::now();
+        self.resync_editor_timeline_playback_audio();
+        self.perf_record(PerfStage::TimelineSeekAudioResync, audio_resync_started_at);
+        self.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
+    }
+
     fn playing_trigger_objects_at_time(&mut self, time_seconds: f32) -> Option<Vec<LevelObject>> {
         if self.phase != AppPhase::Playing || !self.editor.has_object_transform_triggers() {
             return None;
@@ -371,6 +396,7 @@ impl State {
             self.render.meshes.trail.clear();
 
             if self.editor.timeline.playback.playing {
+                self.maybe_resync_editor_playback_from_pending_seek(frame_dt);
                 let timeline_playback_started_at = PlatformInstant::now();
                 let audio_time = self
                     .audio
@@ -378,8 +404,15 @@ impl State {
                     .runtime
                     .playback_time_seconds()
                     .unwrap_or(self.editor.timeline.clock.time_seconds);
-                let clamped_time = audio_time.min(self.editor.timeline.clock.duration_seconds);
-                let simulate_preview = self.editor.ui.mode != EditorMode::Timing;
+                let timeline_time_source = self
+                    .editor
+                    .timeline
+                    .playback
+                    .pending_seek_time_seconds
+                    .unwrap_or(audio_time);
+                let clamped_time =
+                    timeline_time_source.min(self.editor.timeline.clock.duration_seconds);
+                let simulate_preview = !self.editor_is_effectively_timing_mode();
 
                 if !simulate_preview {
                     self.editor.timeline.playback.runtime = None;
@@ -473,6 +506,8 @@ impl State {
                 {
                     self.editor.timeline.playback.playing = false;
                     self.editor.timeline.playback.runtime = None;
+                    self.editor.timeline.playback.pending_seek_time_seconds = None;
+                    self.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
                     if simulate_preview && self.editor.has_object_transform_triggers() {
                         self.mark_editor_dirty(super::EditorDirtyFlags {
                             rebuild_block_mesh: true,

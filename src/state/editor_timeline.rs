@@ -16,6 +16,8 @@ pub(crate) struct EditorTimelineSnapshot {
 pub(crate) struct EditorTimelinePlaybackState {
     pub(crate) playing: bool,
     pub(crate) runtime: Option<TimelineSimulationRuntime>,
+    pub(crate) pending_seek_time_seconds: Option<f32>,
+    pub(crate) seek_resync_cooldown_seconds: f32,
 }
 
 pub(crate) struct EditorTimelinePreviewState {
@@ -64,6 +66,8 @@ impl EditorTimelineState {
             playback: EditorTimelinePlaybackState {
                 playing: false,
                 runtime: None,
+                pending_seek_time_seconds: None,
+                seek_resync_cooldown_seconds: 0.0,
             },
             simulation_revision: 1,
             snapshot_cache_revision: 0,

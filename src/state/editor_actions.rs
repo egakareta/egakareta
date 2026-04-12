@@ -246,8 +246,12 @@ impl State {
             return;
         }
 
+        let stop_audio_started_at = PlatformInstant::now();
         self.stop_audio();
-        if self.editor.ui.mode == EditorMode::Timing {
+        self.perf_record(PerfStage::TimelineSeekAudioStop, stop_audio_started_at);
+
+        let runtime_build_started_at = PlatformInstant::now();
+        if self.editor_is_effectively_timing_mode() {
             self.editor.timeline.playback.runtime = None;
         } else {
             self.editor.timeline.playback.runtime =
@@ -263,6 +267,10 @@ impl State {
                 runtime.advance_to(self.editor.timeline.clock.time_seconds);
             }
         }
+        self.perf_record(
+            PerfStage::TimelineSeekRuntimeBuild,
+            runtime_build_started_at,
+        );
 
         let metadata = self.current_editor_metadata();
         let level_name = self
@@ -272,7 +280,10 @@ impl State {
             .unwrap_or_else(|| "Untitled".to_string());
         let start_seconds =
             self.editor_timeline_elapsed_seconds(self.editor.timeline.clock.time_seconds);
+
+        let start_audio_started_at = PlatformInstant::now();
         self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
+        self.perf_record(PerfStage::TimelineSeekAudioStart, start_audio_started_at);
     }
 
     pub(super) fn editor_shift_timeline_time(&mut self, delta_seconds: f32) {
@@ -353,6 +364,8 @@ impl State {
             let last_mode = self.editor.ui.mode;
             self.editor.runtime.interaction.last_mode = Some(last_mode);
             self.editor.set_mode(EditorMode::Null);
+            self.editor.timeline.playback.pending_seek_time_seconds = None;
+            self.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
 
             if self.editor.has_object_transform_triggers() {
                 self.mark_editor_dirty(EditorDirtyFlags {
@@ -390,6 +403,8 @@ impl State {
         }
 
         self.editor.timeline.playback.runtime = None;
+        self.editor.timeline.playback.pending_seek_time_seconds = None;
+        self.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
         if let Some(last_mode) = self.editor.runtime.interaction.last_mode.take() {
             self.editor.set_mode(last_mode);
         } else {

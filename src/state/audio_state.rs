@@ -120,27 +120,26 @@ impl State {
         start_seconds: f32,
     ) {
         let source_key = runtime_asset_source_key(level_name, &metadata.music.source);
-        let editor_bytes =
-            if self.phase == crate::types::AppPhase::Editor || self.session.playtesting_editor {
-                self.audio
-                    .state
-                    .editor
-                    .local_audio_cache
-                    .get(&metadata.music.source)
-                    .cloned()
-            } else {
-                None
-            };
-
         self.update_runtime_audio_preloads();
 
-        if let Some(bytes) = editor_bytes {
-            self.audio.state.runtime.start_with_bytes_at(
-                &metadata.music.source,
-                &bytes,
-                start_seconds,
-            );
-        } else if let Some(bytes) = self
+        if self.phase == crate::types::AppPhase::Editor || self.session.playtesting_editor {
+            if let Some(bytes) = self
+                .audio
+                .state
+                .editor
+                .local_audio_cache
+                .get(&metadata.music.source)
+            {
+                self.audio.state.runtime.start_with_bytes_at(
+                    &metadata.music.source,
+                    bytes,
+                    start_seconds,
+                );
+                return;
+            }
+        }
+
+        if let Some(bytes) = self
             .audio
             .state
             .runtime_preload
@@ -169,27 +168,31 @@ impl State {
     ) {
         let source_key = runtime_asset_source_key(level_name, &metadata.music.source);
 
-        let editor_bytes =
-            if self.phase == crate::types::AppPhase::Editor || self.session.playtesting_editor {
-                self.audio
-                    .state
-                    .editor
-                    .local_audio_cache
-                    .get(&metadata.music.source)
-                    .cloned()
-            } else {
-                None
-            };
-
         self.update_runtime_audio_preloads();
 
-        if let Some(bytes) = editor_bytes {
-            self.audio.state.runtime.warmup_with_bytes_at(
-                &metadata.music.source,
-                &bytes,
-                start_seconds,
-            );
-        } else if let Some(bytes) = self
+        if self.phase == crate::types::AppPhase::Editor || self.session.playtesting_editor {
+            if let Some(bytes) = self
+                .audio
+                .state
+                .editor
+                .local_audio_cache
+                .get(&metadata.music.source)
+            {
+                self.audio.state.runtime.warmup_with_bytes_at(
+                    &metadata.music.source,
+                    bytes,
+                    start_seconds,
+                );
+                #[cfg(test)]
+                {
+                    self.audio.state.runtime_preload.last_warmup_request =
+                        Some((source_key, start_seconds.max(0.0)));
+                }
+                return;
+            }
+        }
+
+        if let Some(bytes) = self
             .audio
             .state
             .runtime_preload
