@@ -1,13 +1,18 @@
-<center><img src="assets/wordmark.png" width="800" /></center>
+<h3 align="center">
+    <img src="assets/favicon.png" alt="egakareta icon" width="128" />
+    <br />
+    egakareta
+</h2>
 
-# egakareta
+> <p align="center"><br>🎨 Draw your line to the beat.<br><br></p>
 
-[![Deploy status](https://github.com/egakareta/egakareta/actions/workflows/ci.yml/badge.svg?branch=main&event=push)](https://github.com/egakareta/egakareta/actions/workflows/ci.yml)
-[![GitHub release](https://img.shields.io/github/release/egakareta/egakareta.svg)](https://github.com/egakareta/egakareta/releases/latest)
-[![codecov](https://codecov.io/github/egakareta/egakareta/graph/badge.svg?token=86ZO5GAVGY)](https://codecov.io/github/egakareta/egakareta)
-[![Discord](https://discordapp.com/api/guilds/1474435746336215052/widget.png?style=shield)](https://discord.com/invite/3YrnHxrxKK)
+<div align="center">
 
-Draw your line to the beat.
+[![Deploy status](https://img.shields.io/github/actions/workflow/status/egakareta/egakareta/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=d9e0ee&label=deploy&labelColor=302d41&color=f0c6c6)](https://github.com/egakareta/egakareta/actions/workflows/ci.yml)
+[![codecov](https://img.shields.io/codecov/c/github/egakareta/egakareta?style=for-the-badge&logo=codecov&logoColor=d9e0ee&label=coverage&labelColor=302d41&color=aee8d6)](https://codecov.io/github/egakareta/egakareta)
+[![Discord](https://img.shields.io/discord/1474435746336215052?style=for-the-badge&logo=discord&logoColor=d9e0ee&label=chat&labelColor=302d41&color=b7bdf6)](https://discord.invite/3YrnHxrxKK)
+
+</div>
 
 ## Status
 

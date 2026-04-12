@@ -11,6 +11,7 @@ We are committed to providing a friendly, safe, and welcoming environment for al
 - **Reporting Bugs:** Open an issue with a clear description and steps to reproduce.
 - **Suggesting Enhancements:** Open an issue describing the feature and its value.
 - **Code Contributions:** Fix bugs or implement features from the issue tracker.
+- **Localization:** We plan to support localization in the future.
 - **Questions?** Contact us at [team@egakareta.com](mailto:team@egakareta.com).
 
 ## Development Environment Setup
