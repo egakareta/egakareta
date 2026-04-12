@@ -1,7 +1,6 @@
 {
     "name": "egakareta",
     "scripts": {
-        "benchmark": "cargo test benchmark_ -- --ignored",
         "build": "wasm-pack build -t web -d dist/pkg && bun dist.ts",
         "format:cargo": "cargo fmt",
         "format:prettier": "prettier --write .",
@@ -11,9 +10,9 @@
         "cf-typegen": "wrangler types --env-interface CloudflareEnv functions/cloudflare-env.d.ts",
         "sb-ts-typegen": "supabase gen types typescript --local > functions/_supabase_types.ts",
         "typegen": "bun cf-typegen && bun sb-ts-typegen",
-        "test": "cargo nextest run",
+        "test": "cargo test -- -Zunstable-options --report-time",
+        "test:coverage": "cargo llvm-cov --lcov --output-path lcov.info -- -Zunstable-options --report-time",
         "test:db": "supabase test db",
-        "test:coverage": "cargo llvm-cov nextest --lcov --output-path lcov.info",
         "license:add": "license-check-and-add add -f license-checker-config.json",
         "license:check": "license-check-and-add check -f license-checker-config.json",
         "watch": "nodemon --exec \"bun run build\"",

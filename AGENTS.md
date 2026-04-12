@@ -30,11 +30,9 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 
 ### Testing
 
-- **Run All Tests:** `bun run test` (Uses `cargo nextest run` for significantly faster test execution)
-- **Run Single Test:** `cargo nextest run <test_name>` or `cargo test <test_name>`
-- **Run Tests in a Module:** `cargo nextest run <module_path>` (e.g., `cargo nextest run game::tests`)
-- **Run Ignored/Benchmark Tests:** `bun run benchmark` (`cargo test benchmark_ -- --ignored`)
-- **Test Coverage:** `bun run test:coverage` (Generates `lcov.info` using `cargo llvm-cov nextest`)
+- **Run Tests:** `bun run test` (`cargo test -- -Zunstable-options --report-time`)
+- **Run Single Test:** `bun run test <test_name>`
+- **Run Coverage:** `cargo llvm-cov -- -Zunstable-options --report-time`
 
 ### Type Generation
 
