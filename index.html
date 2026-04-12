@@ -145,6 +145,9 @@ See LICENSE and COMMERCIAL.md for details.
 
         <script type="module">
             console.log("modulescript loaded");
+            window.__EGAKARETA_LAUNCH_READY = false;
+            window.__EGAKARETA_LAUNCH_ERROR = null;
+
             const loading = document.getElementById("loading");
             const loadingText = document.getElementById("loading-text");
             const progressBar = document.querySelector(".progress-fill");
@@ -227,6 +230,8 @@ See LICENSE and COMMERCIAL.md for details.
                     }
                 } catch (error) {
                     console.error("Failed to load:", error);
+                    window.__EGAKARETA_LAUNCH_ERROR =
+                        error?.message ?? String(error);
                     loading.style.display = "none";
                     errorDiv.style.display = "block";
                     errorDiv.textContent = `error: ${error.message}`;
@@ -244,7 +249,15 @@ See LICENSE and COMMERCIAL.md for details.
 
                     if (run_game_fn) {
                         console.log("starting game");
-                        await run_game_fn("gameCanvas");
+                        try {
+                            await run_game_fn("gameCanvas");
+                        } catch (error) {
+                            console.error("Failed to run game:", error);
+                            window.__EGAKARETA_LAUNCH_ERROR =
+                                error?.message ?? String(error);
+                            errorDiv.style.display = "block";
+                            errorDiv.textContent = `error: ${window.__EGAKARETA_LAUNCH_ERROR}`;
+                        }
                     }
                 },
                 { once: true },
