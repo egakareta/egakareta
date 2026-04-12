@@ -676,6 +676,339 @@ mod tests {
         assert_eq!(primary_touch_id, None);
         assert_eq!(last_cursor_pos, None);
     }
+
+    #[test]
+    fn primary_touch_move_emits_pointer_and_drag() {
+        let mut touch_points = HashMap::new();
+        let mut pinch_last_distance = None;
+        let mut primary_touch_id = None;
+        let mut last_cursor_pos = None;
+
+        // 1. Start touch
+        let _ = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            false,
+            TouchPointEvent {
+                id: 1,
+                location: pos(10.0, 10.0),
+                phase: TouchPhase::Started,
+            },
+        );
+
+        // 2. Move touch
+        let move_events = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            false,
+            TouchPointEvent {
+                id: 1,
+                location: pos(15.0, 25.0),
+                phase: TouchPhase::Moved,
+            },
+        );
+
+        assert_eq!(move_events.len(), 2);
+        assert!(matches!(
+            move_events[0],
+            InputEvent::PointerMoved { x: 15.0, y: 25.0 }
+        ));
+        assert!(matches!(
+            move_events[1],
+            InputEvent::CameraDrag { dx: 5.0, dy: 15.0 }
+        ));
+        assert_eq!(last_cursor_pos, Some(pos(15.0, 25.0)));
+    }
+
+    #[test]
+    fn touch_cancelled_behaves_like_ended() {
+        let mut touch_points = HashMap::new();
+        let mut pinch_last_distance = None;
+        let mut primary_touch_id = None;
+        let mut last_cursor_pos = None;
+
+        let _ = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            false,
+            TouchPointEvent {
+                id: 1,
+                location: pos(10.0, 10.0),
+                phase: TouchPhase::Started,
+            },
+        );
+
+        let cancel_events = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            false,
+            TouchPointEvent {
+                id: 1,
+                location: pos(10.0, 10.0),
+                phase: TouchPhase::Cancelled,
+            },
+        );
+
+        assert_eq!(cancel_events.len(), 1);
+        assert!(matches!(
+            cancel_events[0],
+            InputEvent::MouseButton {
+                button: 0,
+                pressed: false
+            }
+        ));
+        assert!(touch_points.is_empty());
+        assert_eq!(primary_touch_id, None);
+    }
+
+    #[test]
+    fn third_finger_clears_pinch_distance() {
+        let mut touch_points = HashMap::new();
+        let mut pinch_last_distance = Some(100.0);
+        let mut primary_touch_id = None;
+        let mut last_cursor_pos = None;
+
+        touch_points.insert(1, pos(0.0, 0.0));
+        touch_points.insert(2, pos(0.0, 100.0));
+
+        let _ = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            false,
+            TouchPointEvent {
+                id: 3,
+                location: pos(50.0, 50.0),
+                phase: TouchPhase::Started,
+            },
+        );
+
+        assert_eq!(touch_points.len(), 3);
+        assert_eq!(pinch_last_distance, None);
+    }
+
+    #[test]
+    fn move_ignored_when_egui_consumed() {
+        let mut touch_points = HashMap::new();
+        let mut pinch_last_distance = None;
+        let mut primary_touch_id = Some(1);
+        let mut last_cursor_pos = Some(pos(10.0, 10.0));
+        touch_points.insert(1, pos(10.0, 10.0));
+
+        let events = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            true, // egui consumed
+            TouchPointEvent {
+                id: 1,
+                location: pos(20.0, 20.0),
+                phase: TouchPhase::Moved,
+            },
+        );
+
+        assert!(events.is_empty());
+        assert_eq!(touch_points.get(&1), Some(&pos(20.0, 20.0)));
+        // last_cursor_pos should NOT be updated because it's part of the routing block
+        assert_eq!(last_cursor_pos, Some(pos(10.0, 10.0)));
+    }
+
+    #[test]
+    fn single_touch_full_lifecycle() {
+        let mut touch_points = HashMap::new();
+        let mut pinch_last_distance = None;
+        let mut primary_touch_id = None;
+        let mut last_cursor_pos = None;
+
+        // 1. Start
+        let start_events = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            false,
+            TouchPointEvent {
+                id: 10,
+                location: pos(100.0, 100.0),
+                phase: TouchPhase::Started,
+            },
+        );
+        assert_eq!(start_events.len(), 2);
+        assert!(matches!(
+            start_events[1],
+            InputEvent::MouseButton { pressed: true, .. }
+        ));
+        assert_eq!(primary_touch_id, Some(10));
+
+        // 2. Move
+        let move_events = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            false,
+            TouchPointEvent {
+                id: 10,
+                location: pos(110.0, 120.0),
+                phase: TouchPhase::Moved,
+            },
+        );
+        assert_eq!(move_events.len(), 2);
+        assert!(matches!(
+            move_events[1],
+            InputEvent::CameraDrag { dx: 10.0, dy: 20.0 }
+        ));
+
+        // 3. End
+        let end_events = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            false,
+            TouchPointEvent {
+                id: 10,
+                location: pos(110.0, 120.0),
+                phase: TouchPhase::Ended,
+            },
+        );
+        assert_eq!(end_events.len(), 1);
+        assert!(matches!(
+            end_events[0],
+            InputEvent::MouseButton { pressed: false, .. }
+        ));
+        assert_eq!(primary_touch_id, None);
+        assert!(touch_points.is_empty());
+    }
+
+    #[test]
+    fn zoom_lifecycle_with_primary_cancellation() {
+        let mut touch_points = HashMap::new();
+        let mut pinch_last_distance = None;
+        let mut primary_touch_id = None;
+        let mut last_cursor_pos = None;
+
+        // 1. First finger down
+        let _ = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            false,
+            TouchPointEvent {
+                id: 1,
+                location: pos(0.0, 0.0),
+                phase: TouchPhase::Started,
+            },
+        );
+
+        // 2. Second finger down -> cancels primary
+        let cancel_events = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            false,
+            TouchPointEvent {
+                id: 2,
+                location: pos(0.0, 100.0),
+                phase: TouchPhase::Started,
+            },
+        );
+        assert!(matches!(
+            cancel_events[0],
+            InputEvent::MouseButton { pressed: false, .. }
+        ));
+        assert_eq!(primary_touch_id, None);
+
+        // 3. Move finger 1 -> zoom
+        let zoom_events = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            false,
+            TouchPointEvent {
+                id: 1,
+                location: pos(0.0, -20.0),
+                phase: TouchPhase::Moved,
+            },
+        );
+        // Distance was 100, now 120. Delta = +20. Zoom = 20 * 0.04 = 0.8
+        assert_eq!(zoom_events.len(), 1);
+        assert!(matches!(zoom_events[0], InputEvent::Zoom(z) if (z - 0.8).abs() < 0.001));
+
+        // 4. Lift finger 1 -> current_count becomes 1, pinch_last_distance cleared
+        let lift_events = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            false,
+            TouchPointEvent {
+                id: 1,
+                location: pos(0.0, -20.0),
+                phase: TouchPhase::Ended,
+            },
+        );
+        assert!(lift_events.is_empty());
+        assert_eq!(pinch_last_distance, None);
+        assert_eq!(touch_points.len(), 1);
+
+        // 5. Lift finger 2 -> all gone
+        let final_events = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            false,
+            TouchPointEvent {
+                id: 2,
+                location: pos(0.0, 100.0),
+                phase: TouchPhase::Ended,
+            },
+        );
+        assert!(final_events.is_empty());
+        assert!(touch_points.is_empty());
+    }
+
+    #[test]
+    fn third_finger_move_is_ignored() {
+        let mut touch_points = HashMap::new();
+        let mut pinch_last_distance = None;
+        let mut primary_touch_id = None;
+        let mut last_cursor_pos = None;
+
+        touch_points.insert(1, pos(0.0, 0.0));
+        touch_points.insert(2, pos(0.0, 100.0));
+        touch_points.insert(3, pos(50.0, 50.0));
+
+        let events = App::collect_touch_input_events(
+            &mut touch_points,
+            &mut pinch_last_distance,
+            &mut primary_touch_id,
+            &mut last_cursor_pos,
+            false,
+            TouchPointEvent {
+                id: 3,
+                location: pos(60.0, 60.0),
+                phase: TouchPhase::Moved,
+            },
+        );
+
+        assert!(events.is_empty());
+        assert_eq!(pinch_last_distance, None);
+    }
 }
 
 fn log_envs() {
