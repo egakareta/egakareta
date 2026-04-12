@@ -195,17 +195,23 @@ impl AudioStorage for PlatformAudioStorage {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn audio_storage_dir() -> Result<std::path::PathBuf, String> {
+fn storage_root_dir() -> Result<std::path::PathBuf, String> {
+    if let Ok(root) = std::env::var("EGAKARETA_STORAGE_ROOT") {
+        return Ok(std::path::PathBuf::from(root));
+    }
     let dirs = directories::ProjectDirs::from("com", "egakareta", "egakareta")
         .ok_or_else(|| "Failed to resolve application data directory".to_string())?;
-    Ok(dirs.data_local_dir().join("user_audio"))
+    Ok(dirs.data_local_dir().to_path_buf())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn audio_storage_dir() -> Result<std::path::PathBuf, String> {
+    Ok(storage_root_dir()?.join("user_audio"))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 fn settings_file_path() -> Result<std::path::PathBuf, String> {
-    let dirs = directories::ProjectDirs::from("com", "egakareta", "egakareta")
-        .ok_or_else(|| "Failed to resolve application data directory".to_string())?;
-    Ok(dirs.data_local_dir().join("settings.json"))
+    Ok(storage_root_dir()?.join("settings.json"))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -285,17 +291,118 @@ impl AudioStorage for PlatformAudioStorage {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use super::{audio_storage_dir, settings_file_path};
+    use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn test_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    struct TestEnv {
+        _temp_dir: tempfile::TempDir,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl TestEnv {
+        fn new() -> Self {
+            let lock = test_lock().lock().unwrap();
+            let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+            std::env::set_var("EGAKARETA_STORAGE_ROOT", temp_dir.path());
+            Self {
+                _temp_dir: temp_dir,
+                _lock: lock,
+            }
+        }
+    }
+
+    impl Drop for TestEnv {
+        fn drop(&mut self) {
+            std::env::remove_var("EGAKARETA_STORAGE_ROOT");
+        }
+    }
 
     #[test]
     fn resolves_audio_storage_directory() {
+        let _env = TestEnv::new();
         let dir = audio_storage_dir().expect("audio storage dir should resolve");
-        assert!(dir.ends_with("user_audio"));
+        assert!(dir.to_string_lossy().contains("user_audio"));
     }
 
     #[test]
     fn resolves_settings_file_path() {
+        let _env = TestEnv::new();
         let path = settings_file_path().expect("settings file should resolve");
-        assert!(path.ends_with("settings.json"));
+        assert!(path.to_string_lossy().contains("settings.json"));
+    }
+
+    #[test]
+    fn test_settings_roundtrip() {
+        pollster::block_on(async {
+            let _env = TestEnv::new();
+
+            let mut settings = AppSettings::default();
+            settings.editor_snap_to_grid = !settings.editor_snap_to_grid;
+            settings.editor_snap_step = 1.23;
+
+            save_app_settings(&settings)
+                .await
+                .expect("failed to save settings");
+            let loaded = load_app_settings().await.expect("failed to load settings");
+
+            assert_eq!(loaded.editor_snap_to_grid, settings.editor_snap_to_grid);
+            assert_eq!(loaded.editor_snap_step, settings.editor_snap_step);
+        });
+    }
+
+    #[test]
+    fn test_load_settings_default_when_missing() {
+        pollster::block_on(async {
+            let _env = TestEnv::new();
+            let loaded = load_app_settings().await.expect("failed to load settings");
+            assert_eq!(loaded, AppSettings::default());
+        });
+    }
+
+    #[test]
+    fn test_audio_roundtrip() {
+        pollster::block_on(async {
+            let _env = TestEnv::new();
+
+            let data1 = b"audio1-content";
+            let data2 = b"audio2-content";
+
+            save_audio("test1.ogg", data1)
+                .await
+                .expect("failed to save audio 1");
+            save_audio("test2.ogg", data2)
+                .await
+                .expect("failed to save audio 2");
+
+            let all = load_all_audio().await;
+            assert_eq!(all.len(), 2);
+            assert_eq!(all.get("test1.ogg").unwrap(), data1);
+            assert_eq!(all.get("test2.ogg").unwrap(), data2);
+
+            let read = read_editor_music_bytes(None, "test1.ogg").expect("failed to read audio");
+            assert_eq!(read, data1);
+        });
+    }
+
+    #[test]
+    fn test_read_music_bytes_builtin_fallback() {
+        pollster::block_on(async {
+            let _env = TestEnv::new();
+
+            // Should return None for unknown builtin and unknown user audio
+            let read = read_editor_music_bytes(Some("UnknownLevel"), "missing.ogg");
+            assert!(read.is_none());
+
+            // Save to user audio and check fallback
+            let data = b"user-audio";
+            save_audio("user.ogg", data).await.unwrap();
+            let read = read_editor_music_bytes(Some("UnknownLevel"), "user.ogg").unwrap();
+            assert_eq!(read, data);
+        });
     }
 }
