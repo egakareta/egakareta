@@ -473,7 +473,82 @@ pub(crate) fn show_waveform_panel(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::EditorUiViewModel;
     use crate::test_utils::assert_approx_eq as approx_eq;
+    use crate::types::{
+        AppSettings, EditorMode, MusicMetadata, SettingsSection, SpawnDirection, TimedTrigger,
+        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, TimingPoint,
+    };
+
+    fn make_view<'a>(
+        app_settings: &'a AppSettings,
+        music_metadata: &'a MusicMetadata,
+        timing_points: &'a [TimingPoint],
+        triggers: &'a [TimedTrigger],
+        tap_times: &'a [f32],
+        waveform_samples: &'a [f32],
+        timeline_time_seconds: f32,
+        timeline_duration_seconds: f32,
+        waveform_zoom: f32,
+        waveform_scroll: f32,
+        playing: bool,
+        trigger_selected_index: Option<usize>,
+    ) -> EditorUiViewModel<'a> {
+        EditorUiViewModel {
+            mode: EditorMode::Timing,
+            last_mode: Some(EditorMode::Timing),
+            available_levels: &[],
+            level_name: Some("Test Level"),
+            show_metadata: false,
+            show_import: false,
+            show_settings: false,
+            settings_section: SettingsSection::Backends,
+            keybind_capture_action: None,
+            import_text: "",
+            music_metadata,
+            app_settings,
+            configured_graphics_backend: "Auto",
+            configured_audio_backend: "Default",
+            graphics_backend_options: &[],
+            audio_backend_options: &[],
+            settings_restart_required: false,
+            snap_to_grid: true,
+            snap_step: 1.0,
+            snap_rotation: true,
+            snap_rotation_step_degrees: 15.0,
+            selected_block_id: "core/stone",
+            selected_block: None,
+            playing,
+            timeline_time_seconds,
+            timeline_duration_seconds,
+            tap_times,
+            timeline_preview_position: [0.0, 0.0, 0.0],
+            timeline_preview_direction: SpawnDirection::Forward,
+            timing_points,
+            playback_speed: 1.0,
+            timing_selected_index: None,
+            waveform_zoom,
+            waveform_scroll,
+            waveform_samples,
+            waveform_sample_rate: 44_100,
+            bpm_tap_result: None,
+            triggers,
+            trigger_selected_index,
+            simulate_trigger_hitboxes: false,
+            camera_position: [0.0, 0.0, 0.0],
+            camera_preview_position: [0.0, 0.0, 0.0],
+            camera_preview_target: [0.0, 0.0, 0.0],
+            camera_rotation: 0.0,
+            camera_pitch: 0.0,
+            fps: 120.0,
+            graphics_backend: "WGPU".to_string(),
+            audio_backend: "Default".to_string(),
+            perf_overlay_enabled: false,
+            perf_overlay_lines: Vec::new(),
+            perf_overlay_entries: Vec::new(),
+            marquee_selection_rect_screen: None,
+        }
+    }
 
     #[test]
     fn test_timeline_visible_duration() {
@@ -551,5 +626,207 @@ mod tests {
         let tick_x_at_sample_time =
             rect_left + (sample_time - view_start) / visible_duration * rect_width;
         approx_eq(waveform_x, tick_x_at_sample_time, 0.001);
+    }
+
+    #[test]
+    fn show_timeline_bar_emits_recentering_scroll_command() {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let timing_points = vec![TimingPoint {
+            time_seconds: 0.0,
+            bpm: 120.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        }];
+        let view = make_view(
+            &app_settings,
+            &music_metadata,
+            &timing_points,
+            &[],
+            &[],
+            &[],
+            30.0,
+            60.0,
+            1.0,
+            0.0,
+            false,
+            None,
+        );
+
+        let mut commands = Vec::<AppCommand>::new();
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                show_timeline_bar(ui, &view, 60.0, &mut commands);
+            });
+        });
+
+        assert_eq!(commands.len(), 1);
+        match &commands[0] {
+            AppCommand::EditorSetWaveformScroll(value) => approx_eq(*value, 20.0, 0.001),
+            other => panic!("expected scroll recenter command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn show_timeline_bar_with_centered_scroll_and_trigger_variants_has_no_commands() {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let timing_points = vec![TimingPoint {
+            time_seconds: 0.0,
+            bpm: 120.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        }];
+        let triggers = vec![
+            TimedTrigger {
+                time_seconds: 1.0,
+                duration_seconds: 0.0,
+                easing: TimedTriggerEasing::Linear,
+                target: TimedTriggerTarget::Camera,
+                action: TimedTriggerAction::CameraFollow {
+                    transition_interval_seconds: 1.0,
+                    use_full_segment_transition: false,
+                },
+            },
+            TimedTrigger {
+                time_seconds: 2.0,
+                duration_seconds: 0.0,
+                easing: TimedTriggerEasing::Linear,
+                target: TimedTriggerTarget::Camera,
+                action: TimedTriggerAction::CameraPose {
+                    transition_interval_seconds: 1.0,
+                    use_full_segment_transition: false,
+                    target_position: [0.0, 0.0, 0.0],
+                    rotation: 0.0,
+                    pitch: 0.0,
+                },
+            },
+            TimedTrigger {
+                time_seconds: 3.0,
+                duration_seconds: 0.0,
+                easing: TimedTriggerEasing::Linear,
+                target: TimedTriggerTarget::Object { object_id: 0 },
+                action: TimedTriggerAction::MoveTo {
+                    position: [1.0, 2.0, 3.0],
+                },
+            },
+        ];
+        let view = make_view(
+            &app_settings,
+            &music_metadata,
+            &timing_points,
+            &triggers,
+            &[0.5, 2.5, 4.5],
+            &[],
+            5.0,
+            20.0,
+            1.0,
+            -5.0,
+            true,
+            Some(1),
+        );
+
+        let mut commands = Vec::<AppCommand>::new();
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                show_timeline_bar(ui, &view, 20.0, &mut commands);
+            });
+        });
+
+        assert!(commands.is_empty());
+    }
+
+    #[test]
+    fn show_waveform_panel_handles_empty_waveform_without_commands() {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let timing_points = vec![TimingPoint {
+            time_seconds: 0.0,
+            bpm: 120.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        }];
+        let view = make_view(
+            &app_settings,
+            &music_metadata,
+            &timing_points,
+            &[],
+            &[],
+            &[],
+            10.0,
+            32.0,
+            1.0,
+            0.0,
+            false,
+            None,
+        );
+
+        let mut commands = Vec::<AppCommand>::new();
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                show_waveform_panel(ui, &view, &mut commands);
+            });
+        });
+
+        assert!(commands.is_empty());
+    }
+
+    #[test]
+    fn show_waveform_panel_renders_waveform_and_beat_grid_without_commands() {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let timing_points = vec![
+            TimingPoint {
+                time_seconds: 0.0,
+                bpm: 128.0,
+                time_signature_numerator: 4,
+                time_signature_denominator: 4,
+            },
+            TimingPoint {
+                time_seconds: 8.0,
+                bpm: 0.0,
+                time_signature_numerator: 4,
+                time_signature_denominator: 4,
+            },
+            TimingPoint {
+                time_seconds: 12.0,
+                bpm: 96.0,
+                time_signature_numerator: 3,
+                time_signature_denominator: 4,
+            },
+        ];
+        let waveform_samples: Vec<f32> = (0..4096)
+            .map(|idx| {
+                let phase = idx as f32 * 0.01;
+                ((phase.sin() + 1.0) * 0.5).clamp(0.0, 1.0)
+            })
+            .collect();
+        let view = make_view(
+            &app_settings,
+            &music_metadata,
+            &timing_points,
+            &[],
+            &[],
+            &waveform_samples,
+            10.0,
+            60.0,
+            1.0,
+            0.0,
+            false,
+            None,
+        );
+
+        let mut commands = Vec::<AppCommand>::new();
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                show_waveform_panel(ui, &view, &mut commands);
+            });
+        });
+
+        assert!(commands.is_empty());
     }
 }

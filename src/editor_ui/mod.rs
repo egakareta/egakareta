@@ -1041,9 +1041,12 @@ fn show_view_selector_cube(
 #[cfg(test)]
 mod tests {
     use super::{
-        is_compact_editor_ui, settings_sidebar_default_width, sort_quad_by_angle, VIEW_CUBE_FACES,
+        is_compact_editor_ui, settings_sidebar_default_width, show_editor_ui, sort_quad_by_angle,
+        VIEW_CUBE_FACES,
     };
+    use crate::commands::AppCommand;
     use crate::test_utils::approx_eq;
+    use crate::types::{EditorMode, SettingsSection};
     use glam::{Mat3, Vec3};
 
     fn camera_forward_from_orientation(rotation: f32, pitch: f32) -> Vec3 {
@@ -1070,6 +1073,14 @@ mod tests {
             }
         }
         sign != 0.0
+    }
+
+    fn run_editor_ui_once(state: &mut crate::State) {
+        let ctx = egui::Context::default();
+        let block_icon_texture_ids = std::collections::HashMap::new();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            show_editor_ui(ctx, state, &block_icon_texture_ids);
+        });
     }
 
     #[test]
@@ -1142,5 +1153,62 @@ mod tests {
             156.0,
             0.01
         ));
+    }
+
+    #[test]
+    fn show_editor_ui_returns_early_when_not_in_editor() {
+        pollster::block_on(async {
+            let Some(mut state) = crate::State::try_new_test().await else {
+                return;
+            };
+
+            assert!(state.is_menu());
+            run_editor_ui_once(&mut state);
+            assert!(state.is_menu());
+        });
+    }
+
+    #[test]
+    fn show_editor_ui_composes_timing_compose_and_trigger_modes() {
+        pollster::block_on(async {
+            let Some(mut state) = crate::State::try_new_test().await else {
+                return;
+            };
+
+            state.toggle_editor();
+            assert!(state.is_editor());
+
+            state.dispatch(AppCommand::EditorSetMode(EditorMode::Timing));
+            state.dispatch(AppCommand::EditorSetShowSettings(true));
+            state.dispatch(AppCommand::EditorSetSettingsSection(
+                SettingsSection::Backends,
+            ));
+            state.dispatch(AppCommand::EditorSetShowMetadata(true));
+            state.dispatch(AppCommand::EditorSetShowImport(true));
+            state.dispatch(AppCommand::EditorTogglePerfOverlay);
+            run_editor_ui_once(&mut state);
+
+            assert_eq!(state.editor_mode(), EditorMode::Timing);
+            assert!(state.editor_show_settings());
+            assert_eq!(state.editor_settings_section(), SettingsSection::Backends);
+            assert!(state.editor_show_metadata());
+            assert!(state.editor_show_import());
+            assert!(state.editor_perf_overlay_enabled());
+
+            state.dispatch(AppCommand::EditorSetMode(EditorMode::Place));
+            state.dispatch(AppCommand::EditorSetSettingsSection(
+                SettingsSection::Keybinds,
+            ));
+            run_editor_ui_once(&mut state);
+
+            assert_eq!(state.editor_mode(), EditorMode::Place);
+            assert_eq!(state.editor_settings_section(), SettingsSection::Keybinds);
+
+            state.dispatch(AppCommand::EditorSetMode(EditorMode::Trigger));
+            run_editor_ui_once(&mut state);
+
+            assert_eq!(state.editor_mode(), EditorMode::Trigger);
+            assert!(state.is_editor());
+        });
     }
 }
