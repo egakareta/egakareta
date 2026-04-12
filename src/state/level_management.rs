@@ -527,3 +527,114 @@ impl State {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::State;
+    use crate::types::{LevelObject, MusicMetadata};
+
+    fn test_object(position: [f32; 3], block_id: &str) -> LevelObject {
+        LevelObject {
+            position,
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.18,
+            block_id: block_id.to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        }
+    }
+
+    #[test]
+    fn level_binary_export_import_roundtrip_restores_editor_state() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.start_editor(0);
+
+            state.set_editor_level_name("RoundtripSource".to_string());
+            state.set_editor_music_metadata(MusicMetadata {
+                source: "roundtrip.mp3".to_string(),
+                ..MusicMetadata::default()
+            });
+            state.editor.objects = vec![test_object([2.0, 1.0, 3.0], "core/grass")];
+            state.editor.spawn.position = [3.0, 0.0, 4.0];
+            state.editor.timeline.taps.tap_times = vec![0.25, 0.5];
+            state.editor.timeline.clock.time_seconds = 0.5;
+            state.editor.timeline.clock.duration_seconds = 12.0;
+
+            let expected = state.current_editor_metadata();
+            let exported = state
+                .export_level()
+                .expect("export should produce binary payload");
+
+            state.editor.objects.clear();
+            state.editor.spawn.position = [99.0, 0.0, 99.0];
+            state.set_editor_level_name("Mutated".to_string());
+
+            state
+                .import_level(&exported)
+                .expect("import should restore metadata from binary payload");
+
+            let actual = state.current_editor_metadata();
+            assert_eq!(actual.name, expected.name);
+            assert_eq!(actual.music.source, expected.music.source);
+            assert_eq!(actual.spawn.position, expected.spawn.position);
+            assert_eq!(actual.tap_times, expected.tap_times);
+            assert_eq!(actual.timeline_time_seconds, expected.timeline_time_seconds);
+            assert_eq!(
+                actual.timeline_duration_seconds,
+                expected.timeline_duration_seconds
+            );
+            assert_eq!(actual.objects.len(), expected.objects.len());
+            assert_eq!(actual.objects[0].block_id, expected.objects[0].block_id);
+        });
+    }
+
+    #[test]
+    fn apply_metadata_supports_create_update_and_delete_like_replacement() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.start_editor(0);
+
+            let mut created = state.current_editor_metadata();
+            created.name = "CrudCreate".to_string();
+            created.music.source = "crud.mp3".to_string();
+            created.objects = vec![test_object([1.0, 0.0, 1.0], "core/stone")];
+            created.tap_times = vec![0.75];
+            state.apply_imported_level_metadata(created);
+
+            assert_eq!(state.editor_level_name().as_deref(), Some("CrudCreate"));
+            assert_eq!(state.current_editor_metadata().music.source, "crud.mp3");
+            assert_eq!(state.editor.objects.len(), 1);
+
+            state.set_editor_level_name("CrudUpdate".to_string());
+            assert_eq!(state.editor_level_name().as_deref(), Some("CrudUpdate"));
+
+            let mut deleted = state.current_editor_metadata();
+            deleted.objects.clear();
+            deleted.tap_times.clear();
+            state.apply_imported_level_metadata(deleted);
+
+            assert!(state.editor.objects.is_empty());
+            assert!(state.editor.timeline.taps.tap_times.is_empty());
+        });
+    }
+
+    #[test]
+    fn loading_unknown_builtin_level_is_noop() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.start_editor(0);
+
+            let before_name = state.editor_level_name();
+            let before_objects = state.editor.objects.clone();
+            let before_spawn = state.editor.spawn.clone();
+
+            state.load_builtin_level_into_editor("__missing_builtin_level__");
+
+            assert_eq!(state.editor_level_name(), before_name);
+            assert_eq!(state.editor.objects, before_objects);
+            assert_eq!(state.editor.spawn.position, before_spawn.position);
+            assert_eq!(state.editor.spawn.direction, before_spawn.direction);
+        });
+    }
+}

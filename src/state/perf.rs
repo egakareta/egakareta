@@ -296,3 +296,89 @@ impl EditorPerfState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{EditorPerfProfiler, PerfStage, PerfStat};
+
+    fn approx_eq(left: f32, right: f32, eps: f32) {
+        assert!((left - right).abs() <= eps, "left={left}, right={right}");
+    }
+
+    #[test]
+    fn perf_stat_observe_tracks_last_ema_max_and_calls() {
+        let mut stat = PerfStat::zero();
+        stat.observe(10.0);
+
+        approx_eq(stat.last_ms, 10.0, 1e-6);
+        approx_eq(stat.ema_ms, 10.0, 1e-6);
+        approx_eq(stat.max_ms, 10.0, 1e-6);
+        assert_eq!(stat.calls, 1);
+
+        stat.observe(20.0);
+        approx_eq(stat.last_ms, 20.0, 1e-6);
+        approx_eq(stat.ema_ms, 11.0, 1e-6);
+        approx_eq(stat.max_ms, 20.0, 1e-6);
+        assert_eq!(stat.calls, 2);
+    }
+
+    #[test]
+    fn profiler_tracks_frame_and_dominant_stage() {
+        let mut profiler = EditorPerfProfiler::new();
+
+        profiler.observe(PerfStage::TimelinePlayback, 3.0);
+        profiler.observe(PerfStage::TimelineSeek, 1.25);
+        profiler.observe(PerfStage::TimelinePlayback, 2.0);
+
+        approx_eq(
+            profiler.frame_stage_ms[PerfStage::TimelinePlayback.as_index()],
+            5.0,
+            1e-6,
+        );
+        approx_eq(
+            profiler.frame_stage_ms[PerfStage::TimelineSeek.as_index()],
+            1.25,
+            1e-6,
+        );
+        assert!(matches!(
+            profiler.dominant_stage_this_frame(),
+            Some(PerfStage::TimelinePlayback)
+        ));
+
+        profiler.begin_frame();
+        approx_eq(
+            profiler.frame_stage_ms[PerfStage::TimelinePlayback.as_index()],
+            0.0,
+            1e-6,
+        );
+        approx_eq(
+            profiler.frame_stage_ms[PerfStage::TimelineSeek.as_index()],
+            0.0,
+            1e-6,
+        );
+    }
+
+    #[test]
+    fn profiler_overlay_includes_nested_children() {
+        let mut profiler = EditorPerfProfiler::new();
+        profiler.observe(PerfStage::SelectionClick, 4.0);
+        profiler.observe(PerfStage::SelectionPick, 1.5);
+
+        let entries = profiler.overlay_entries();
+        let click = entries
+            .iter()
+            .find(|entry| entry.name == "SelectClick")
+            .expect("SelectClick root entry should exist");
+
+        assert_eq!(click.calls, 1);
+        approx_eq(click.last_ms, 4.0, 1e-6);
+
+        let pick = click
+            .children
+            .iter()
+            .find(|entry| entry.name == "SelectPick")
+            .expect("SelectPick child entry should exist");
+        assert_eq!(pick.calls, 1);
+        approx_eq(pick.last_ms, 1.5, 1e-6);
+    }
+}

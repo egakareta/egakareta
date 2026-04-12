@@ -197,3 +197,125 @@ pub(crate) fn show_timing_mode_bottom_panel(
         });
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::show_timing_mode_bottom_panel;
+    use crate::commands::AppCommand;
+    use crate::state::EditorUiViewModel;
+    use crate::types::{
+        AppSettings, EditorMode, MusicMetadata, SettingsSection, SpawnDirection, TimedTrigger,
+        TimingPoint,
+    };
+
+    fn make_view<'a>(
+        app_settings: &'a AppSettings,
+        music_metadata: &'a MusicMetadata,
+        timing_points: &'a [TimingPoint],
+        triggers: &'a [TimedTrigger],
+        timing_selected_index: Option<usize>,
+        bpm_tap_result: Option<f32>,
+    ) -> EditorUiViewModel<'a> {
+        EditorUiViewModel {
+            mode: EditorMode::Timing,
+            last_mode: Some(EditorMode::Timing),
+            available_levels: &[],
+            level_name: Some("Test Level"),
+            show_metadata: false,
+            show_import: false,
+            show_settings: false,
+            settings_section: SettingsSection::Backends,
+            keybind_capture_action: None,
+            import_text: "",
+            music_metadata,
+            app_settings,
+            configured_graphics_backend: "Auto",
+            configured_audio_backend: "Default",
+            graphics_backend_options: &[],
+            audio_backend_options: &[],
+            settings_restart_required: false,
+            snap_to_grid: true,
+            snap_step: 1.0,
+            snap_rotation: true,
+            snap_rotation_step_degrees: 15.0,
+            selected_block_id: "core/stone",
+            selected_block: None,
+            playing: false,
+            timeline_time_seconds: 2.5,
+            timeline_duration_seconds: 16.0,
+            tap_times: &[],
+            timeline_preview_position: [1.0, 2.0, 3.0],
+            timeline_preview_direction: SpawnDirection::Forward,
+            timing_points,
+            playback_speed: 1.0,
+            timing_selected_index,
+            waveform_zoom: 1.0,
+            waveform_scroll: 0.0,
+            waveform_samples: &[],
+            waveform_sample_rate: 0,
+            bpm_tap_result,
+            triggers,
+            trigger_selected_index: None,
+            simulate_trigger_hitboxes: false,
+            camera_position: [0.0, 0.0, 0.0],
+            camera_preview_position: [0.0, 1.0, 2.0],
+            camera_preview_target: [0.0, 0.0, 0.0],
+            camera_rotation: 0.0,
+            camera_pitch: 0.0,
+            fps: 120.0,
+            graphics_backend: "WGPU".to_string(),
+            audio_backend: "Default".to_string(),
+            perf_overlay_enabled: false,
+            perf_overlay_lines: Vec::new(),
+            perf_overlay_entries: Vec::new(),
+            marquee_selection_rect_screen: None,
+        }
+    }
+
+    #[test]
+    fn show_timing_mode_bottom_panel_handles_selected_timing_point_state() {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let timing_points = vec![TimingPoint {
+            time_seconds: 1.0,
+            bpm: 128.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        }];
+        let view = make_view(
+            &app_settings,
+            &music_metadata,
+            &timing_points,
+            &[],
+            Some(0),
+            Some(127.5),
+        );
+        let mut commands = Vec::<AppCommand>::new();
+
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                show_timing_mode_bottom_panel(ui, &view, 16.0, &mut commands);
+            });
+        });
+
+        assert!(commands.is_empty());
+    }
+
+    #[test]
+    fn show_timing_mode_bottom_panel_handles_empty_state() {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let view = make_view(&app_settings, &music_metadata, &[], &[], None, None);
+        let mut commands = Vec::<AppCommand>::new();
+
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                show_timing_mode_bottom_panel(ui, &view, 8.0, &mut commands);
+            });
+        });
+
+        assert!(commands.is_empty());
+    }
+}

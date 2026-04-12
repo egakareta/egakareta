@@ -232,4 +232,98 @@ f 1/1/1 2/2/1 3/3/1
         let vertices = build_block_vertices(&[obj]);
         assert!(vertices.len() >= 168); // 28 segments * (outer + inner + face) triangles
     }
+
+    #[test]
+    fn gizmo_rotate_hover_expands_tube_more_than_dragged() {
+        let params = GizmoParams {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            axis_lengths: [8.0, 8.0, 8.0],
+            axis_width: 0.5,
+            resize_radius: 0.15,
+            resize_offsets: [0.2, 0.2, 0.2],
+            show_move_handles: false,
+            show_scale_handles: false,
+            show_rotate_handles: true,
+            hovered_part: None,
+            dragged_part: None,
+        };
+
+        let hovered = build_editor_gizmo_vertices(GizmoParams {
+            hovered_part: Some(GizmoPart::RotateX),
+            ..params
+        });
+        let dragged = build_editor_gizmo_vertices(GizmoParams {
+            dragged_part: Some(GizmoPart::RotateX),
+            ..params
+        });
+
+        let active_red = |vertex: &Vertex| {
+            (vertex.color[0] - 1.0).abs() < 0.01
+                && vertex.color[1].abs() < 0.01
+                && vertex.color[2].abs() < 0.01
+                && (vertex.color[3] - 1.0).abs() < 0.01
+        };
+
+        let x_span = |vertices: &[Vertex]| {
+            let mut min_x = f32::INFINITY;
+            let mut max_x = f32::NEG_INFINITY;
+            let mut count = 0usize;
+            for vertex in vertices {
+                if active_red(vertex) {
+                    min_x = min_x.min(vertex.position[0]);
+                    max_x = max_x.max(vertex.position[0]);
+                    count += 1;
+                }
+            }
+            assert!(count > 0, "expected active rotate-x vertices");
+            max_x - min_x
+        };
+
+        let hovered_span = x_span(&hovered);
+        let dragged_span = x_span(&dragged);
+        assert!(
+            hovered_span > dragged_span + 0.01,
+            "hovered rotate ring should be thicker than dragged ring"
+        );
+    }
+
+    #[test]
+    fn gizmo_resize_drag_sets_active_color_state() {
+        let params = GizmoParams {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            axis_lengths: [4.0, 4.0, 4.0],
+            axis_width: 0.2,
+            resize_radius: 0.2,
+            resize_offsets: [0.3, 0.3, 0.3],
+            show_move_handles: false,
+            show_scale_handles: true,
+            show_rotate_handles: false,
+            hovered_part: None,
+            dragged_part: None,
+        };
+
+        let normal = build_editor_gizmo_vertices(GizmoParams { ..params });
+        let dragged = build_editor_gizmo_vertices(GizmoParams {
+            dragged_part: Some(GizmoPart::ResizeX),
+            ..params
+        });
+
+        let max_alpha = |vertices: &[Vertex]| {
+            vertices
+                .iter()
+                .map(|vertex| vertex.color[3])
+                .fold(f32::NEG_INFINITY, f32::max)
+        };
+
+        let normal_max_alpha = max_alpha(&normal);
+        let dragged_max_alpha = max_alpha(&dragged);
+        assert!(
+            dragged_max_alpha > normal_max_alpha + 0.2,
+            "dragging resize handle should promote alpha from normal to active"
+        );
+    }
 }

@@ -550,3 +550,93 @@ impl State {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::State;
+    use crate::editor_domain::derive_tap_indicator_positions;
+    use crate::types::{AppPhase, LevelObject, SpawnDirection};
+
+    fn test_block(position: [f32; 3]) -> LevelObject {
+        LevelObject {
+            position,
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.18,
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        }
+    }
+
+    #[test]
+    fn remove_block_undo_redo_sequence_restores_and_reapplies() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.objects = vec![test_block([0.0, 0.0, 0.0]), test_block([2.0, 0.0, 0.0])];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+
+            state.editor_remove_block();
+            assert_eq!(state.editor.objects.len(), 1);
+            assert_eq!(state.editor.objects[0].position, [2.0, 0.0, 0.0]);
+
+            state.editor_undo();
+            assert_eq!(state.editor.objects.len(), 2);
+            assert_eq!(state.editor.objects[0].position, [0.0, 0.0, 0.0]);
+            assert_eq!(state.editor.objects[1].position, [2.0, 0.0, 0.0]);
+
+            state.editor_redo();
+            assert_eq!(state.editor.objects.len(), 1);
+            assert_eq!(state.editor.objects[0].position, [2.0, 0.0, 0.0]);
+        });
+    }
+
+    #[test]
+    fn spawn_set_and_rotate_support_two_step_undo_redo() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.objects.clear();
+            state.editor.spawn.position = [0.0, 0.0, 0.0];
+            state.editor.spawn.direction = SpawnDirection::Forward;
+            state.editor.timeline.taps.tap_times = vec![1.0 / crate::game::BASE_PLAYER_SPEED];
+            state.editor.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
+                state.editor.spawn.position,
+                state.editor.spawn.direction,
+                &state.editor.timeline.taps.tap_times,
+                &state.editor.objects,
+            );
+            state.editor.ui.cursor = [4.0, 1.0, 3.0];
+
+            state.editor_set_spawn_here();
+            assert_eq!(state.editor.spawn.position, [4.0, 1.0, 3.0]);
+            state.editor_rotate_spawn_direction();
+            assert_eq!(state.editor.spawn.direction, SpawnDirection::Right);
+
+            state.editor_undo();
+            assert_eq!(state.editor.spawn.direction, SpawnDirection::Forward);
+            assert_eq!(state.editor.spawn.position, [4.0, 1.0, 3.0]);
+
+            state.editor_undo();
+            assert_eq!(state.editor.spawn.direction, SpawnDirection::Forward);
+            assert_eq!(state.editor.spawn.position, [0.0, 0.0, 0.0]);
+
+            state.editor_redo();
+            assert_eq!(state.editor.spawn.position, [4.0, 1.0, 3.0]);
+            state.editor_redo();
+            assert_eq!(state.editor.spawn.direction, SpawnDirection::Right);
+
+            let expected_indicators = derive_tap_indicator_positions(
+                state.editor.spawn.position,
+                state.editor.spawn.direction,
+                &state.editor.timeline.taps.tap_times,
+                &state.editor.objects,
+            );
+            assert_eq!(
+                state.editor.timeline.taps.tap_indicator_positions,
+                expected_indicators
+            );
+        });
+    }
+}

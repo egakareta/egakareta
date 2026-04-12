@@ -354,3 +354,78 @@ impl State {
         self.resize_surface(size);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use egui_wgpu::ScreenDescriptor;
+
+    use super::linear_to_srgb;
+    use crate::state::State;
+
+    fn approx_eq(a: f32, b: f32, eps: f32) {
+        assert!(
+            (a - b).abs() <= eps,
+            "expected {a} to be within {eps} of {b}"
+        );
+    }
+
+    #[test]
+    fn linear_to_srgb_uses_linear_segment_at_or_below_threshold() {
+        let below = 0.002;
+        let at_threshold = 0.0031308;
+
+        approx_eq(linear_to_srgb(below), below * 12.92, 1e-7);
+        approx_eq(linear_to_srgb(at_threshold), at_threshold * 12.92, 1e-7);
+    }
+
+    #[test]
+    fn linear_to_srgb_uses_gamma_segment_above_threshold() {
+        let mid_gray_linear = 0.18;
+        let expected = 0.461_356_1;
+
+        approx_eq(linear_to_srgb(mid_gray_linear), expected, 1e-6);
+    }
+
+    #[test]
+    fn render_paths_are_safe_when_surface_is_absent() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            assert!(state.render().is_ok());
+
+            let overlay_called = Cell::new(false);
+            let render_result = state.render_with_overlay(|_, _, _, _| {
+                overlay_called.set(true);
+            });
+
+            assert!(render_result.is_ok());
+            assert!(
+                !overlay_called.get(),
+                "overlay should not run when there is no surface"
+            );
+
+            let before = (state.surface_width(), state.surface_height());
+            state.recreate_surface();
+            let after = (state.surface_width(), state.surface_height());
+            assert_eq!(before, after);
+        });
+    }
+
+    #[test]
+    fn render_egui_returns_ok_when_surface_is_absent() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let mut renderer = state.create_egui_renderer();
+            let paint_jobs: Vec<egui::ClippedPrimitive> = Vec::new();
+            let screen_descriptor = ScreenDescriptor {
+                size_in_pixels: [state.surface_width(), state.surface_height()],
+                pixels_per_point: 1.0,
+            };
+
+            let result = state.render_egui(&mut renderer, &paint_jobs, &screen_descriptor);
+            assert!(result.is_ok());
+        });
+    }
+}

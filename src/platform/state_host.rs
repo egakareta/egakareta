@@ -9,6 +9,8 @@ use crate::types::PhysicalSize;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+use std::sync::Mutex;
 
 #[cfg(target_arch = "wasm32")]
 pub(crate) type WasmCanvas = web_sys::HtmlCanvasElement;
@@ -23,6 +25,8 @@ pub(crate) enum SurfaceHost {
     Canvas(WasmCanvas),
     #[cfg(not(target_arch = "wasm32"))]
     Window(NativeWindow),
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    TestSize(Mutex<PhysicalSize<u32>>),
 }
 
 impl SurfaceHost {
@@ -99,7 +103,40 @@ impl SurfaceHost {
                     let size = window.inner_size();
                     PhysicalSize::new(size.width, size.height)
                 }
+                #[cfg(all(test, not(target_arch = "wasm32")))]
+                SurfaceHost::TestSize(size) => {
+                    let guard = size.lock().unwrap_or_else(|error| error.into_inner());
+                    *guard
+                }
             }
         }
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use std::sync::Mutex;
+
+    use super::{PhysicalSize, SurfaceHost};
+
+    #[test]
+    fn current_size_returns_configured_size_for_test_host() {
+        let host = SurfaceHost::TestSize(Mutex::new(PhysicalSize::new(1280, 720)));
+
+        let size = host.current_size();
+
+        assert_eq!(size.width, 1280);
+        assert_eq!(size.height, 720);
+    }
+
+    #[test]
+    fn prepare_resize_is_noop_for_native_surface_host() {
+        let host = SurfaceHost::TestSize(Mutex::new(PhysicalSize::new(640, 360)));
+
+        host.prepare_resize(PhysicalSize::new(1920, 1080));
+
+        let size_after_prepare = host.current_size();
+        assert_eq!(size_after_prepare.width, 640);
+        assert_eq!(size_after_prepare.height, 360);
     }
 }
