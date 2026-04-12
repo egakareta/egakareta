@@ -8,10 +8,17 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 fn get_egb_path() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_egb"))
+}
+
+fn run_egb(args: &[&str]) -> std::process::Output {
+    Command::new(get_egb_path())
+        .args(args)
+        .output()
+        .expect("Failed to execute egb")
 }
 
 #[test]
@@ -254,4 +261,97 @@ fn test_egb_missing_input() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("Failed to read input file"));
+}
+
+#[test]
+fn test_egb_unknown_command_fails_with_usage() {
+    let output = run_egb(&["unknown"]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Unknown command: unknown"));
+    assert!(stderr.contains("Usage:"));
+}
+
+#[test]
+fn test_egb_encode_requires_output_path() {
+    let output = run_egb(&["encode"]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("encode requires --output <path/to/metadata.egb>"));
+}
+
+#[test]
+fn test_egb_decode_requires_input_path() {
+    let output = run_egb(&["decode"]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("decode requires --input <path/to/metadata.egb>"));
+}
+
+#[test]
+fn test_egb_encode_empty_stdin_fails() {
+    let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let egb_path = temp_dir.path().join("empty_stdin.egb");
+
+    let mut child = Command::new(get_egb_path())
+        .arg("encode")
+        .arg("--output")
+        .arg(&egb_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn egb encode");
+
+    let stdin = child.stdin.take().expect("Failed to take child stdin");
+    drop(stdin);
+
+    let output = child.wait_with_output().expect("Failed waiting for egb");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("No JSON input provided on stdin"));
+    assert!(!egb_path.exists());
+}
+
+#[test]
+fn test_egb_encode_invalid_json_input_file_fails() {
+    let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let json_path = temp_dir.path().join("invalid.json");
+    let egb_path = temp_dir.path().join("invalid.egb");
+    fs::write(&json_path, "{\"name\":").expect("Failed to write invalid json");
+
+    let output = Command::new(get_egb_path())
+        .arg("encode")
+        .arg("--input")
+        .arg(&json_path)
+        .arg("--output")
+        .arg(&egb_path)
+        .output()
+        .expect("Failed to execute egb encode");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("egb failed:"));
+    assert!(!egb_path.exists());
+}
+
+#[test]
+fn test_egb_decode_invalid_binary_fails() {
+    let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let input_path = temp_dir.path().join("invalid.egb");
+    fs::write(&input_path, [0x00, 0x01, 0x02, 0x03]).expect("Failed to write invalid egb data");
+
+    let output = Command::new(get_egb_path())
+        .arg("decode")
+        .arg("--input")
+        .arg(&input_path)
+        .output()
+        .expect("Failed to execute egb decode");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("egb failed:"));
 }

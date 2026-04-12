@@ -178,3 +178,93 @@ fn main() {
         std::process::exit(1);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_cli, Mode};
+
+    fn parse_error(values: &[&str]) -> String {
+        match parse_cli(values.iter().map(|value| value.to_string())) {
+            Ok(_) => panic!("expected parse_cli to fail"),
+            Err(error) => error,
+        }
+    }
+
+    #[test]
+    fn parse_cli_rejects_unknown_command() {
+        let error = parse_error(&["unknown"]);
+        assert!(error.contains("Unknown command: unknown"));
+        assert!(error.contains("Usage:"));
+    }
+
+    #[test]
+    fn parse_cli_rejects_unknown_argument() {
+        let error = parse_error(&["decode", "--input", "level.egb", "--bad"]);
+        assert!(error.contains("Unknown argument: --bad"));
+        assert!(error.contains("Usage:"));
+    }
+
+    #[test]
+    fn parse_cli_requires_decode_input() {
+        let error = parse_error(&["decode"]);
+        assert_eq!(error, "decode requires --input <path/to/metadata.egb>");
+    }
+
+    #[test]
+    fn parse_cli_requires_encode_output() {
+        let error = parse_error(&["encode"]);
+        assert_eq!(error, "encode requires --output <path/to/metadata.egb>");
+    }
+
+    #[test]
+    fn parse_cli_requires_input_value() {
+        let error = parse_error(&["decode", "--input"]);
+        assert_eq!(error, "--input requires a file path");
+    }
+
+    #[test]
+    fn parse_cli_requires_output_value() {
+        let error = parse_error(&["encode", "--output"]);
+        assert_eq!(error, "--output requires a file path");
+    }
+
+    #[test]
+    fn parse_cli_accepts_decode_with_optional_output() {
+        let options = parse_cli(
+            ["decode", "--input", "level.egb", "--output", "level.json"]
+                .into_iter()
+                .map(|value| value.to_string()),
+        )
+        .expect("valid decode args should parse");
+
+        assert!(matches!(options.mode, Mode::Decode));
+        assert_eq!(
+            options.input_path.as_deref(),
+            Some(std::path::Path::new("level.egb"))
+        );
+        assert_eq!(
+            options.output_path.as_deref(),
+            Some(std::path::Path::new("level.json"))
+        );
+    }
+
+    #[test]
+    fn parse_cli_accepts_encode_with_input_and_output() {
+        let options = parse_cli(
+            ["encode", "-i", "level.json", "-o", "level.egb"]
+                .into_iter()
+                .map(|value| value.to_string()),
+        )
+        .expect("valid encode args should parse");
+
+        assert!(matches!(options.mode, Mode::Encode));
+        assert_eq!(
+            options.input_path.as_deref(),
+            Some(std::path::Path::new("level.json"))
+        );
+        assert_eq!(
+            options.output_path.as_deref(),
+            Some(std::path::Path::new("level.egb"))
+        );
+    }
+}
