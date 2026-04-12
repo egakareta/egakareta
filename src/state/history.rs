@@ -279,3 +279,251 @@ impl State {
         }
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{
+        AppPhase, LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerTarget,
+    };
+
+    fn test_block(position: [f32; 3]) -> LevelObject {
+        LevelObject {
+            position,
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.18,
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        }
+    }
+
+    #[test]
+    fn test_history_max_limit() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+
+            // Record more than 256 times
+            for i in 0..300 {
+                state.editor.ui.cursor[0] = i as f32;
+                state.record_editor_history_state();
+            }
+
+            assert_eq!(state.editor.runtime.history.undo.len(), 256);
+            // The first one should be i=44 (300 - 256)
+            assert_eq!(state.editor.runtime.history.undo[0].cursor[0], 44.0);
+        });
+    }
+
+    #[test]
+    fn test_undo_redo_clears_redo_on_record() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+
+            state.record_editor_history_state();
+            state.editor_undo();
+            assert_eq!(state.editor.runtime.history.redo.len(), 1);
+
+            state.record_editor_history_state();
+            assert_eq!(state.editor.runtime.history.redo.len(), 0);
+        });
+    }
+
+    #[test]
+    fn test_apply_snapshot_constraints() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+
+            let mut snapshot = state.editor.history_snapshot();
+            snapshot.timeline_time_seconds = -10.0;
+            snapshot.timeline_duration_seconds = 0.0; // Should be clamped to 0.1
+            snapshot.tap_times = vec![5.0, -1.0, f32::NAN, 2.0];
+            snapshot.triggers = vec![
+                TimedTrigger {
+                    time_seconds: 5.0,
+                    target: TimedTriggerTarget::Camera,
+                    action: TimedTriggerAction::MoveTo {
+                        position: [0.0, 0.0, 0.0],
+                    },
+                    easing: Default::default(),
+                    duration_seconds: 0.0,
+                },
+                TimedTrigger {
+                    time_seconds: f32::NAN,
+                    target: TimedTriggerTarget::Camera,
+                    action: TimedTriggerAction::MoveTo {
+                        position: [0.0, 0.0, 0.0],
+                    },
+                    easing: Default::default(),
+                    duration_seconds: 0.0,
+                },
+                TimedTrigger {
+                    time_seconds: 1.0,
+                    target: TimedTriggerTarget::Camera,
+                    action: TimedTriggerAction::MoveTo {
+                        position: [0.0, 0.0, 0.0],
+                    },
+                    easing: Default::default(),
+                    duration_seconds: 0.0,
+                },
+            ];
+
+            state.editor.apply_history_snapshot(snapshot);
+
+            assert_eq!(state.editor.timeline.clock.time_seconds, 0.0);
+            assert_eq!(state.editor.timeline.clock.duration_seconds, 0.1);
+
+            // Tap times: -1.0 and NAN removed, 5.0 clamped by duration 0.1, 2.0 clamped by duration 0.1
+            // Wait, duration is 0.1, so all tap times > 0.1 are removed by retain(|tap| *tap <= duration)
+            assert_eq!(state.editor.timeline.taps.tap_times.len(), 0);
+
+            // Triggers: NAN removed, others sorted
+            assert_eq!(state.editor.triggers.items.len(), 2);
+            assert_eq!(state.editor.triggers.items[0].time_seconds, 1.0);
+            assert_eq!(state.editor.triggers.items[1].time_seconds, 5.0);
+        });
+    }
+
+    #[test]
+    fn test_copy_paste_multiple_blocks() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+
+            state.editor.objects =
+                vec![test_block([10.0, 0.0, 10.0]), test_block([12.0, 1.0, 12.0])];
+            state.editor.ui.selected_block_indices = vec![0, 1];
+            state.editor.ui.selected_block_index = Some(0); // Anchor
+
+            state.editor_copy_block();
+
+            state.editor.ui.cursor = [20.0, 5.0, 20.0];
+            state.editor_paste_block();
+
+            assert_eq!(state.editor.objects.len(), 4);
+            // Pasted blocks should be relative to anchor [10, 0, 10]
+            // Block 0 at [10, 0, 10] -> [20 + (10-10), 5 + (0-0), 20 + (10-10)] = [20, 5, 20]
+            // Block 1 at [12, 1, 12] -> [20 + (12-10), 5 + (1-0), 20 + (12-10)] = [22, 6, 22]
+            assert_eq!(state.editor.objects[2].position, [20.0, 5.0, 20.0]);
+            assert_eq!(state.editor.objects[3].position, [22.0, 6.0, 22.0]);
+
+            // Selection should be the two new blocks
+            assert_eq!(state.editor.ui.selected_block_indices, vec![2, 3]);
+        });
+    }
+
+    #[test]
+    fn test_copy_topmost_at_cursor() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+
+            state.editor.objects = vec![test_block([10.0, 0.0, 10.0])];
+            state.editor.ui.selected_block_indices.clear();
+            state.editor.ui.selected_block_index = None;
+            state.editor.ui.cursor = [10.0, 0.0, 10.0];
+
+            state.editor_copy_block();
+            assert!(state.editor.runtime.interaction.clipboard.is_some());
+
+            state.editor.ui.cursor = [30.0, 0.0, 30.0];
+            state.editor_paste_block();
+            assert_eq!(state.editor.objects.len(), 2);
+            assert_eq!(state.editor.objects[1].position, [30.0, 0.0, 30.0]);
+        });
+    }
+
+    #[test]
+    fn test_duplicate_selected_multiple() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+
+            state.editor.objects =
+                vec![test_block([10.0, 0.0, 10.0]), test_block([12.0, 1.0, 12.0])];
+            state.editor.ui.selected_block_indices = vec![0, 1];
+            state.editor.ui.selected_block_index = Some(1); // Anchor
+
+            state.editor_duplicate_selected_block_in_place();
+
+            assert_eq!(state.editor.objects.len(), 4);
+            assert_eq!(state.editor.objects[2].position, [10.0, 0.0, 10.0]);
+            assert_eq!(state.editor.objects[3].position, [12.0, 1.0, 12.0]);
+
+            // Selection should be the two new blocks
+            assert_eq!(state.editor.ui.selected_block_indices, vec![2, 3]);
+        });
+    }
+
+    #[test]
+    fn test_empty_clipboard_paste() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.runtime.interaction.clipboard = None;
+            assert!(!state.editor.paste_from_clipboard());
+
+            state.editor.runtime.interaction.clipboard = Some(EditorClipboard {
+                objects: vec![],
+                anchor: [0.0, 0.0, 0.0],
+            });
+            assert!(!state.editor.paste_from_clipboard());
+        });
+    }
+
+    #[test]
+    fn test_undo_redo_empty_stacks() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.runtime.history.undo.clear();
+            state.editor.runtime.history.redo.clear();
+
+            assert!(!state.editor.undo());
+            assert!(!state.editor.redo());
+        });
+    }
+
+    #[test]
+    fn test_duplicate_empty_selection() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.ui.selected_block_indices.clear();
+            assert!(!state.editor.duplicate_selected());
+        });
+    }
+
+    #[test]
+    fn test_apply_snapshot_selection_filtering() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+
+            state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
+            let mut snapshot = state.editor.history_snapshot();
+            snapshot.selected_block_index = Some(10); // Out of bounds
+            snapshot.selected_block_indices = vec![0, 10]; // 10 is out of bounds
+            snapshot.selected_trigger_index = Some(5); // Out of bounds
+
+            state.editor.apply_history_snapshot(snapshot);
+
+            assert_eq!(state.editor.ui.selected_block_index, Some(0));
+            assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
+            assert!(state.editor.triggers.selected_index.is_none());
+        });
+    }
+
+    #[test]
+    fn test_record_history_not_in_editor() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Menu;
+            let initial_undo = state.editor.runtime.history.undo.len();
+            state.record_editor_history_state();
+            assert_eq!(state.editor.runtime.history.undo.len(), initial_undo);
+        });
+    }
+}
