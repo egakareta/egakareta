@@ -427,9 +427,92 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    use super::{eased_alpha, interpolate_camera_samples, CameraViewSample};
-    use crate::types::{CameraTrigger, CameraTriggerMode, TimedTriggerEasing};
+    use super::{
+        eased_alpha, editor_camera_offset_for_pose, interpolate_camera_samples,
+        playing_camera_offset_for_angles, CameraViewSample, State, DEFAULT_PLAY_CAMERA_PITCH,
+        DEFAULT_PLAY_CAMERA_ROTATION, MAX_EDITOR_PITCH, MIN_PLAYING_PITCH,
+    };
+    use crate::types::AppPhase;
+    use crate::types::{
+        CameraTrigger, CameraTriggerMode, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
+        TimedTriggerTarget,
+    };
     use glam::Vec3;
+
+    fn assert_vec3_close(actual: Vec3, expected: Vec3) {
+        assert!(
+            (actual.x - expected.x).abs() <= 1e-5,
+            "x mismatch: {actual:?} vs {expected:?}"
+        );
+        assert!(
+            (actual.y - expected.y).abs() <= 1e-5,
+            "y mismatch: {actual:?} vs {expected:?}"
+        );
+        assert!(
+            (actual.z - expected.z).abs() <= 1e-5,
+            "z mismatch: {actual:?} vs {expected:?}"
+        );
+    }
+
+    fn pose_trigger(
+        time_seconds: f32,
+        target_position: [f32; 3],
+        rotation: f32,
+        pitch: f32,
+        transition_interval_seconds: f32,
+        use_full_segment_transition: bool,
+        easing: TimedTriggerEasing,
+    ) -> TimedTrigger {
+        TimedTrigger {
+            time_seconds,
+            duration_seconds: 0.0,
+            easing,
+            target: TimedTriggerTarget::Camera,
+            action: TimedTriggerAction::CameraPose {
+                transition_interval_seconds,
+                use_full_segment_transition,
+                target_position,
+                rotation,
+                pitch,
+            },
+        }
+    }
+
+    fn follow_trigger(
+        time_seconds: f32,
+        transition_interval_seconds: f32,
+        use_full_segment_transition: bool,
+    ) -> TimedTrigger {
+        TimedTrigger {
+            time_seconds,
+            duration_seconds: 0.0,
+            easing: TimedTriggerEasing::Linear,
+            target: TimedTriggerTarget::Camera,
+            action: TimedTriggerAction::CameraFollow {
+                transition_interval_seconds,
+                use_full_segment_transition,
+            },
+        }
+    }
+
+    async fn new_editor_state() -> State {
+        let mut state = State::new_test().await;
+        state.enter_editor_phase("Test Level".to_string());
+        state
+    }
+
+    #[test]
+    fn eased_alpha_clamps_bounds_for_all_curves() {
+        for easing in [
+            TimedTriggerEasing::Linear,
+            TimedTriggerEasing::EaseIn,
+            TimedTriggerEasing::EaseOut,
+            TimedTriggerEasing::EaseInOut,
+        ] {
+            assert_eq!(eased_alpha(easing, -1.0), 0.0);
+            assert_eq!(eased_alpha(easing, 2.0), 1.0);
+        }
+    }
 
     #[test]
     fn ease_in_out_alpha_is_symmetric() {
@@ -471,5 +554,299 @@ mod tests {
         };
 
         assert_ne!(follow.mode, static_trigger.mode);
+    }
+
+    #[test]
+    fn resolve_live_follow_sample_uses_default_angles_when_game_is_active() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.camera.playing_rotation = 1.2;
+            state.editor.camera.playing_pitch = -0.8;
+
+            let target = Vec3::new(2.0, 3.0, 4.0);
+            let sample = state.editor.resolve_live_follow_sample(target, true);
+            let expected_eye = target
+                + playing_camera_offset_for_angles(
+                    DEFAULT_PLAY_CAMERA_ROTATION,
+                    DEFAULT_PLAY_CAMERA_PITCH,
+                );
+
+            assert_vec3_close(sample.target, target);
+            assert_vec3_close(sample.eye, expected_eye);
+        });
+    }
+
+    #[test]
+    fn resolve_live_follow_sample_clamps_pitch_when_not_active() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.camera.playing_rotation = 0.35;
+            state.editor.camera.playing_pitch = -5.0;
+
+            let target = Vec3::new(1.0, 0.5, -2.0);
+            let sample = state.editor.resolve_live_follow_sample(target, false);
+            let expected_eye = target
+                + playing_camera_offset_for_angles(
+                    state.editor.camera.playing_rotation,
+                    MIN_PLAYING_PITCH,
+                );
+
+            assert_vec3_close(sample.target, target);
+            assert_vec3_close(sample.eye, expected_eye);
+        });
+    }
+
+    #[test]
+    fn evaluate_camera_track_without_triggers_returns_live_follow() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.triggers.items.clear();
+            state.editor.camera.playing_rotation = 0.6;
+            state.editor.camera.playing_pitch = 0.4;
+
+            let target = Vec3::new(2.5, 1.0, -0.5);
+            let expected = state.editor.resolve_live_follow_sample(target, false);
+            let sample = state.evaluate_camera_track(3.0, target, false);
+
+            assert_vec3_close(sample.eye, expected.eye);
+            assert_vec3_close(sample.target, expected.target);
+        });
+    }
+
+    #[test]
+    fn evaluate_camera_track_interpolates_into_first_trigger_window() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.triggers.items = vec![pose_trigger(
+                5.0,
+                [10.0, 1.0, -2.0],
+                0.8,
+                0.3,
+                2.0,
+                false,
+                TimedTriggerEasing::Linear,
+            )];
+
+            let live_target = Vec3::new(0.0, 0.0, 0.0);
+            let live = state.editor.resolve_live_follow_sample(live_target, false);
+            let trigger_target = Vec3::new(10.0, 1.0, -2.0);
+            let end = CameraViewSample {
+                eye: trigger_target + editor_camera_offset_for_pose(0.8, 0.3),
+                target: trigger_target,
+            };
+            let expected = interpolate_camera_samples(live, end, 0.5);
+
+            let sample = state.evaluate_camera_track(4.0, live_target, false);
+            assert_vec3_close(sample.eye, expected.eye);
+            assert_vec3_close(sample.target, expected.target);
+        });
+    }
+
+    #[test]
+    fn evaluate_camera_track_between_follow_segments_stays_live() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.triggers.items = vec![
+                follow_trigger(2.0, 1.0, false),
+                follow_trigger(4.0, 1.0, false),
+            ];
+
+            let target = Vec3::new(1.0, 2.0, 3.0);
+            let expected = state.editor.resolve_live_follow_sample(target, false);
+            let sample = state.evaluate_camera_track(3.0, target, false);
+
+            assert_vec3_close(sample.eye, expected.eye);
+            assert_vec3_close(sample.target, expected.target);
+        });
+    }
+
+    #[test]
+    fn evaluate_camera_track_between_static_triggers_handles_pre_and_active_transition() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.triggers.items = vec![
+                pose_trigger(
+                    2.0,
+                    [0.0, 0.0, 0.0],
+                    0.0,
+                    0.2,
+                    0.0,
+                    false,
+                    TimedTriggerEasing::Linear,
+                ),
+                pose_trigger(
+                    6.0,
+                    [6.0, 1.0, -3.0],
+                    1.0,
+                    0.4,
+                    1.0,
+                    false,
+                    TimedTriggerEasing::EaseIn,
+                ),
+            ];
+
+            let live_target = Vec3::new(3.0, 0.0, 2.0);
+            let previous_sample = CameraViewSample {
+                eye: Vec3::new(0.0, 0.0, 0.0) + editor_camera_offset_for_pose(0.0, 0.2),
+                target: Vec3::new(0.0, 0.0, 0.0),
+            };
+            let next_sample = CameraViewSample {
+                eye: Vec3::new(6.0, 1.0, -3.0) + editor_camera_offset_for_pose(1.0, 0.4),
+                target: Vec3::new(6.0, 1.0, -3.0),
+            };
+
+            let pre_transition = state.evaluate_camera_track(4.0, live_target, false);
+            assert_vec3_close(pre_transition.eye, previous_sample.eye);
+            assert_vec3_close(pre_transition.target, previous_sample.target);
+
+            let active = state.evaluate_camera_track(5.5, live_target, false);
+            let expected = interpolate_camera_samples(
+                previous_sample,
+                next_sample,
+                eased_alpha(TimedTriggerEasing::EaseIn, 0.5),
+            );
+            assert_vec3_close(active.eye, expected.eye);
+            assert_vec3_close(active.target, expected.target);
+        });
+    }
+
+    #[test]
+    fn evaluate_camera_track_after_last_trigger_uses_last_sample() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.triggers.items = vec![pose_trigger(
+                1.0,
+                [4.0, 2.0, 1.0],
+                0.3,
+                0.5,
+                0.5,
+                false,
+                TimedTriggerEasing::Linear,
+            )];
+
+            let sample = state.evaluate_camera_track(50.0, Vec3::ZERO, false);
+            let expected_target = Vec3::new(4.0, 2.0, 1.0);
+            let expected_eye = expected_target + editor_camera_offset_for_pose(0.3, 0.5);
+
+            assert_vec3_close(sample.eye, expected_eye);
+            assert_vec3_close(sample.target, expected_target);
+        });
+    }
+
+    #[test]
+    fn capture_current_camera_trigger_uses_editor_pose() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.camera.editor_pan = [12.0, -7.0];
+            state.editor.camera.editor_target_z = 4.5;
+            state.editor.camera.editor_rotation = 0.9;
+            state.editor.camera.editor_pitch = 0.3;
+
+            let trigger = state.editor.capture_current_camera_trigger(8.0);
+            assert_eq!(trigger.time_seconds, 8.0);
+
+            match trigger.action {
+                TimedTriggerAction::CameraPose {
+                    target_position,
+                    rotation,
+                    pitch,
+                    transition_interval_seconds,
+                    use_full_segment_transition,
+                } => {
+                    assert_eq!(target_position, [12.0, 4.5, -7.0]);
+                    assert_eq!(rotation, 0.9);
+                    assert_eq!(pitch, 0.3);
+                    assert_eq!(transition_interval_seconds, 1.0);
+                    assert!(!use_full_segment_transition);
+                }
+                _ => panic!("expected camera pose trigger"),
+            }
+        });
+    }
+
+    #[test]
+    fn apply_selected_camera_trigger_clamps_and_applies_pose() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.triggers.items = vec![pose_trigger(
+                1.0,
+                [3.0, 9.0, -2.0],
+                0.77,
+                10.0,
+                1.0,
+                false,
+                TimedTriggerEasing::Linear,
+            )];
+            state.editor.triggers.selected_index = Some(0);
+
+            assert!(state
+                .editor
+                .apply_selected_camera_trigger_to_editor_camera());
+            assert_eq!(state.editor.camera.editor_pan, [3.0, -2.0]);
+            assert_eq!(state.editor.camera.editor_target_z, 9.0);
+            assert_eq!(state.editor.camera.editor_rotation, 0.77);
+            assert_eq!(state.editor.camera.editor_pitch, MAX_EDITOR_PITCH);
+        });
+    }
+
+    #[test]
+    fn apply_selected_camera_trigger_returns_false_for_invalid_or_non_camera_selection() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+
+            state.editor.triggers.selected_index = None;
+            assert!(!state
+                .editor
+                .apply_selected_camera_trigger_to_editor_camera());
+
+            state.editor.triggers.items = vec![TimedTrigger {
+                time_seconds: 1.0,
+                duration_seconds: 0.0,
+                easing: TimedTriggerEasing::Linear,
+                target: TimedTriggerTarget::Object { object_id: 0 },
+                action: TimedTriggerAction::MoveTo {
+                    position: [1.0, 2.0, 3.0],
+                },
+            }];
+            state.editor.triggers.selected_index = Some(0);
+            assert!(!state
+                .editor
+                .apply_selected_camera_trigger_to_editor_camera());
+
+            state.editor.triggers.selected_index = Some(9);
+            assert!(!state
+                .editor
+                .apply_selected_camera_trigger_to_editor_camera());
+        });
+    }
+
+    #[test]
+    fn state_camera_orientation_api_only_applies_in_editor_phase() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let original_pan = state.editor.camera.editor_pan;
+            let original_target_z = state.editor.camera.editor_target_z;
+
+            state.phase = AppPhase::Menu;
+            state.adjust_editor_zoom(3.0);
+            state.pan_editor_camera_by_input(2.0, -1.0);
+
+            assert_eq!(state.editor.camera.editor_pan, original_pan);
+            assert_eq!(state.editor.camera.editor_target_z, original_target_z);
+
+            state.enter_editor_phase("Test Level".to_string());
+            let before_pan = state.editor.camera.editor_pan;
+            let before_target_z = state.editor.camera.editor_target_z;
+            state.pan_editor_camera_by_input(2.0, -1.0);
+
+            assert_ne!(state.editor.camera.editor_pan, before_pan);
+            assert_eq!(state.editor.camera.editor_target_z, before_target_z);
+
+            let before_zoom_pan = state.editor.camera.editor_pan;
+            let before_zoom_target_z = state.editor.camera.editor_target_z;
+            state.adjust_editor_zoom(2.0);
+            assert_ne!(state.editor.camera.editor_pan, before_zoom_pan);
+            assert_ne!(state.editor.camera.editor_target_z, before_zoom_target_z);
+        });
     }
 }

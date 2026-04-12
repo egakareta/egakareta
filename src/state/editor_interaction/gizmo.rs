@@ -624,9 +624,9 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::{EditorDragBlockStart, EditorGizmoDrag, State};
+    use super::super::super::{EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag, State};
     use crate::test_utils::assert_approx_eq as approx_eq;
-    use crate::types::{EditorMode, GizmoAxis, GizmoDragKind, LevelObject};
+    use crate::types::{AppPhase, EditorMode, GizmoAxis, GizmoDragKind, LevelObject};
     use glam::{Vec2, Vec3};
 
     fn test_block() -> LevelObject {
@@ -776,6 +776,215 @@ mod tests {
                 .editor
                 .drag_gizmo(target.x as f64, target.y as f64, viewport));
             assert!(state.editor.objects[0].rotation_degrees[1].abs() > 1.0);
+        });
+    }
+
+    #[test]
+    fn helper_conversions_handle_valid_and_invalid_viewports() {
+        pollster::block_on(async {
+            let state = State::new_test().await;
+            let center = Vec3::new(0.5, 0.5, 0.5);
+
+            let valid = state.editor.pixels_to_world_along_axis(
+                center,
+                Vec3::X,
+                64.0,
+                Vec2::new(1280.0, 720.0),
+            );
+            assert!(valid.is_some());
+            assert!(valid.unwrap_or_default() > 0.0);
+
+            let invalid = state.editor.pixels_to_world_along_axis(
+                center,
+                Vec3::X,
+                64.0,
+                Vec2::new(0.0, 720.0),
+            );
+            let _ = invalid;
+
+            let fallback_width =
+                state
+                    .editor
+                    .gizmo_axis_width_world(center, 100.0, Vec2::new(0.0, 0.0));
+            let _ = fallback_width;
+        });
+    }
+
+    #[test]
+    fn pick_and_begin_gizmo_drag_cover_move_scale_rotate_paths() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.editor.objects = vec![test_block()];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+
+            let viewport = Vec2::new(1280.0, 720.0);
+            let center = Vec3::new(0.5, 0.5, 0.5);
+
+            state.editor.ui.mode = EditorMode::Move;
+            let center_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center projects");
+            let move_hit = state.editor.pick_gizmo_handle(
+                center_screen.x as f64,
+                center_screen.y as f64,
+                viewport,
+            );
+            assert!(matches!(move_hit, Some((GizmoDragKind::Move, _))));
+            assert!(state.editor.begin_gizmo_drag(
+                center_screen.x as f64,
+                center_screen.y as f64,
+                viewport
+            ));
+
+            state.editor.runtime.interaction.gizmo_drag = None;
+            state.editor.ui.mode = EditorMode::Scale;
+            let scale_lengths = state.editor.gizmo_axis_lengths_world(center, 9.0, viewport);
+            let scale_world = Vec3::new(1.0 + scale_lengths[0], center.y, center.z);
+            let scale_screen = state
+                .editor
+                .world_to_screen_v(scale_world, viewport)
+                .expect("scale handle projects");
+            let scale_hit = state.editor.pick_gizmo_handle(
+                scale_screen.x as f64,
+                scale_screen.y as f64,
+                viewport,
+            );
+            assert!(matches!(scale_hit, Some((GizmoDragKind::Resize, _))));
+
+            state.editor.ui.mode = EditorMode::Rotate;
+            let ring_radius = state
+                .editor
+                .gizmo_axis_lengths_world(center, 100.0, viewport)[0]
+                * 0.78;
+            let rotate_world = center + Vec3::new(ring_radius, 0.0, 0.0);
+            let rotate_screen = state
+                .editor
+                .world_to_screen_v(rotate_world, viewport)
+                .expect("rotate ring projects");
+            let rotate_hit = state.editor.pick_gizmo_handle(
+                rotate_screen.x as f64,
+                rotate_screen.y as f64,
+                viewport,
+            );
+            assert!(matches!(rotate_hit, Some((GizmoDragKind::Rotate, _))));
+        });
+    }
+
+    #[test]
+    fn drag_gizmo_from_screen_respects_phase_and_move_dirty_flag() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.editor.config.snap_to_grid = false;
+            state.editor.objects = vec![test_block()];
+
+            let viewport = Vec2::new(1280.0, 720.0);
+            let center = Vec3::new(0.5, 0.5, 0.5);
+            let origin_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center projects");
+            let axis_screen = state
+                .editor
+                .world_to_screen_v(center + Vec3::X, viewport)
+                .expect("axis projects");
+            let axis_dir = (axis_screen - origin_screen).normalize();
+            let target = origin_screen + axis_dir * 24.0;
+
+            let block = state.editor.objects[0].clone();
+            state.editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+                axis: GizmoAxis::X,
+                kind: GizmoDragKind::Move,
+                start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
+                start_center_screen: [origin_screen.x, origin_screen.y],
+                start_center_world: center.to_array(),
+                start_blocks: vec![start_block_for_index(0, &block)],
+            });
+
+            state.editor.runtime.dirty = EditorDirtyFlags::default();
+            assert!(!state.editor.drag_gizmo_from_screen(
+                target.x as f64,
+                target.y as f64,
+                viewport,
+                AppPhase::Menu,
+            ));
+
+            assert!(state.editor.drag_gizmo_from_screen(
+                target.x as f64,
+                target.y as f64,
+                viewport,
+                AppPhase::Editor,
+            ));
+            assert!(state.editor.runtime.dirty.rebuild_cursor);
+
+            state.editor.runtime.dirty = EditorDirtyFlags::default();
+            let block = state.editor.objects[0].clone();
+            state.editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+                axis: GizmoAxis::X,
+                kind: GizmoDragKind::Resize,
+                start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
+                start_center_screen: [origin_screen.x, origin_screen.y],
+                start_center_world: center.to_array(),
+                start_blocks: vec![start_block_for_index(0, &block)],
+            });
+            assert!(state.editor.drag_gizmo_from_screen(
+                target.x as f64,
+                target.y as f64,
+                viewport,
+                AppPhase::Editor,
+            ));
+            assert!(!state.editor.runtime.dirty.rebuild_cursor);
+        });
+    }
+
+    #[test]
+    fn begin_gizmo_drag_ext_and_state_wrappers_follow_phase_guards() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.editor.objects = vec![test_block()];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+            state.editor.ui.mode = EditorMode::Move;
+
+            let viewport = Vec2::new(1280.0, 720.0);
+            let center_screen = state
+                .editor
+                .world_to_screen_v(Vec3::new(0.5, 0.5, 0.5), viewport)
+                .expect("center projects");
+
+            assert!(!state.editor.begin_gizmo_drag_ext(
+                center_screen.x as f64,
+                center_screen.y as f64,
+                viewport,
+                AppPhase::Menu,
+            ));
+
+            let history_before = state.editor.runtime.history.undo.len();
+            assert!(state.editor.begin_gizmo_drag_ext(
+                center_screen.x as f64,
+                center_screen.y as f64,
+                viewport,
+                AppPhase::Editor,
+            ));
+            assert_eq!(state.editor.runtime.history.undo.len(), history_before + 1);
+
+            state.phase = AppPhase::Menu;
+            assert!(!state.begin_editor_gizmo_drag(center_screen.x as f64, center_screen.y as f64));
+
+            state.phase = AppPhase::Editor;
+            let _ = state.begin_editor_gizmo_drag(center_screen.x as f64, center_screen.y as f64);
+            assert!(state.drag_editor_gizmo_from_screen(
+                center_screen.x as f64 + 8.0,
+                center_screen.y as f64
+            ));
+
+            let lengths = state.editor_gizmo_axis_lengths_world(Vec3::new(0.5, 0.5, 0.5), 100.0);
+            assert!(lengths[0] > 0.0 && lengths[1] > 0.0 && lengths[2] > 0.0);
+            assert!(state.editor_gizmo_axis_width_world(Vec3::new(0.5, 0.5, 0.5), 100.0) > 0.0);
         });
     }
 }

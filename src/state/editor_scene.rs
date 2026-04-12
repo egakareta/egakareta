@@ -768,3 +768,282 @@ impl State {
         self.render.meshes.editor_preview_player.clear();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::State;
+    use crate::types::{
+        AppPhase, EditorMode, LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
+        TimedTriggerTarget,
+    };
+
+    fn block(position: [f32; 3], size: [f32; 3]) -> LevelObject {
+        LevelObject {
+            position,
+            size,
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.18,
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        }
+    }
+
+    fn object_move_trigger() -> TimedTrigger {
+        TimedTrigger {
+            time_seconds: 0.0,
+            duration_seconds: 0.0,
+            easing: TimedTriggerEasing::Linear,
+            target: TimedTriggerTarget::Object { object_id: 0 },
+            action: TimedTriggerAction::MoveTo {
+                position: [2.0, 0.0, 0.0],
+            },
+        }
+    }
+
+    fn camera_trigger() -> TimedTrigger {
+        TimedTrigger {
+            time_seconds: 0.0,
+            duration_seconds: 0.0,
+            easing: TimedTriggerEasing::Linear,
+            target: TimedTriggerTarget::Camera,
+            action: TimedTriggerAction::CameraPose {
+                transition_interval_seconds: 1.0,
+                use_full_segment_transition: false,
+                target_position: [0.0, 0.0, 0.0],
+                rotation: 0.0,
+                pitch: 0.0,
+            },
+        }
+    }
+
+    #[test]
+    fn topmost_block_index_at_cursor_prefers_highest_overlapping_block() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.objects = vec![
+                block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+                block([0.0, 1.0, 0.0], [1.0, 2.0, 1.0]),
+                block([2.0, 0.0, 2.0], [1.0, 1.0, 1.0]),
+            ];
+
+            assert_eq!(
+                state.editor.topmost_block_index_at_cursor([0.0, 0.0, 0.0]),
+                Some(1)
+            );
+            assert_eq!(
+                state.editor.topmost_block_index_at_cursor([4.0, 0.0, 4.0]),
+                None
+            );
+        });
+    }
+
+    #[test]
+    fn sync_objects_filters_invalid_selection_and_marks_full_dirty() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.objects = vec![block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])];
+            state.editor.ui.selected_block_index = Some(99);
+            state.editor.ui.selected_block_indices = vec![0, 99];
+            state.editor.ui.hovered_block_index = Some(42);
+            state.editor.selected_mask_cache = Some(vec![true]);
+
+            state.editor.sync_objects();
+
+            assert_eq!(state.editor.ui.selected_block_index, Some(0));
+            assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
+            assert_eq!(state.editor.ui.hovered_block_index, None);
+            assert!(state.editor.runtime.dirty.sync_game_objects);
+            assert!(state.editor.runtime.dirty.rebuild_block_mesh);
+            assert!(state.editor.runtime.dirty.rebuild_selection_overlays);
+            assert!(state.editor.runtime.dirty.rebuild_tap_indicators);
+            assert!(state.editor.runtime.dirty.rebuild_preview_player);
+            assert!(state.editor.runtime.dirty.rebuild_cursor);
+            assert!(state.editor.selected_mask_cache.is_none());
+        });
+    }
+
+    #[test]
+    fn sync_objects_for_drag_and_after_release_set_expected_dirty_flags() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.objects = vec![block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])];
+            state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
+
+            state.editor.sync_objects_for_drag();
+            assert!(state.editor.runtime.dirty.sync_game_objects);
+            assert!(state.editor.runtime.dirty.rebuild_block_mesh);
+            assert!(state.editor.runtime.dirty.rebuild_selection_overlays);
+            assert!(!state.editor.runtime.dirty.rebuild_tap_indicators);
+            assert!(!state.editor.runtime.dirty.rebuild_preview_player);
+            assert!(!state.editor.runtime.dirty.rebuild_cursor);
+
+            state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
+            state.editor.sync_objects_after_drag_release();
+            assert!(state.editor.runtime.dirty.sync_game_objects);
+            assert!(!state.editor.runtime.dirty.rebuild_block_mesh);
+            assert!(state.editor.runtime.dirty.rebuild_selection_overlays);
+            assert!(!state.editor.runtime.dirty.rebuild_tap_indicators);
+            assert!(state.editor.runtime.dirty.rebuild_preview_player);
+            assert!(state.editor.runtime.dirty.rebuild_cursor);
+        });
+    }
+
+    #[test]
+    fn editor_runtime_objects_for_render_requires_editor_playback_and_transform_triggers() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.objects = vec![block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])];
+            state.editor.set_triggers(vec![object_move_trigger()]);
+
+            state.phase = AppPhase::Menu;
+            assert!(state.editor_runtime_objects_for_render().is_none());
+
+            state.phase = AppPhase::Editor;
+            state.editor.timeline.playback.playing = false;
+            assert!(state.editor_runtime_objects_for_render().is_none());
+
+            state.editor.timeline.playback.playing = true;
+            state.editor.ui.mode = EditorMode::Timing;
+            assert!(state.editor_runtime_objects_for_render().is_none());
+
+            state.editor.ui.mode = EditorMode::Place;
+            let transformed = state
+                .editor_runtime_objects_for_render()
+                .expect("expected transformed render objects");
+            assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
+        });
+    }
+
+    #[test]
+    fn process_editor_dirty_handles_idle_drag_and_full_rebuild_paths() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.objects = vec![block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])];
+
+            state.editor.runtime.drag_heavy_rebuild_accumulator = 3.0;
+            state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
+            state.process_editor_dirty(0.01);
+            assert_eq!(state.editor.runtime.drag_heavy_rebuild_accumulator, 0.0);
+
+            state.editor.runtime.interaction.block_drag = Some(super::super::EditorBlockDrag {
+                start_mouse: [0.0, 0.0],
+                start_center_screen: [0.0, 0.0],
+                start_center_world: [0.0, 0.0, 0.0],
+                start_blocks: Vec::new(),
+            });
+            state.editor.runtime.dirty = crate::state::EditorDirtyFlags::from_object_sync();
+            state.process_editor_dirty(0.001);
+            assert!(state.editor.runtime.dirty.sync_game_objects);
+            assert!(state.editor.runtime.dirty.rebuild_block_mesh);
+            assert!(!state.editor.runtime.dirty.rebuild_selection_overlays);
+            assert!(!state.editor.runtime.dirty.rebuild_tap_indicators);
+            assert!(!state.editor.runtime.dirty.rebuild_preview_player);
+            assert!(!state.editor.runtime.dirty.rebuild_cursor);
+
+            state.editor.runtime.interaction.block_drag = None;
+            state.editor.runtime.dirty = crate::state::EditorDirtyFlags::from_object_sync();
+            state.process_editor_dirty(0.02);
+            assert!(!state.editor.runtime.dirty.any());
+        });
+    }
+
+    #[test]
+    fn camera_trigger_and_tap_indicator_meshes_clear_or_build_by_phase_and_data() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.phase = AppPhase::Menu;
+            state.rebuild_camera_trigger_marker_vertices();
+            assert!(state
+                .render
+                .meshes
+                .camera_trigger_markers
+                .draw_data()
+                .is_none());
+
+            state.phase = AppPhase::Editor;
+            state.editor.set_triggers(Vec::new());
+            state.rebuild_camera_trigger_marker_vertices();
+            assert!(state
+                .render
+                .meshes
+                .camera_trigger_markers
+                .draw_data()
+                .is_none());
+
+            state.editor.set_triggers(vec![camera_trigger()]);
+            state.rebuild_camera_trigger_marker_vertices();
+            assert!(state
+                .render
+                .meshes
+                .camera_trigger_markers
+                .draw_data()
+                .is_some());
+
+            state.phase = AppPhase::Menu;
+            state.rebuild_tap_indicator_vertices();
+            assert!(state.render.meshes.tap_indicators.draw_data().is_none());
+
+            state.phase = AppPhase::Editor;
+            state.editor.timeline.taps.tap_indicator_positions =
+                vec![[1.0, 0.0, 1.0], [1.0, 0.0, 1.0]];
+            state.rebuild_tap_indicator_vertices();
+            assert!(state.render.meshes.tap_indicators.draw_data().is_some());
+        });
+    }
+
+    #[test]
+    fn rebuild_block_vertices_switches_between_editor_split_and_playing_mesh() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.objects = vec![
+                block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+                block([2.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+            ];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+
+            state.phase = AppPhase::Editor;
+            state.rebuild_block_vertices();
+            assert!(state.render.meshes.blocks.draw_data().is_none());
+            assert!(state.render.meshes.blocks_selected.draw_data().is_some());
+            assert!(state.render.meshes.blocks_static.draw_data().is_some());
+
+            state.phase = AppPhase::Playing;
+            state.gameplay.state.objects = state.editor.objects.clone();
+            state.rebuild_block_vertices();
+            assert!(state.render.meshes.blocks.draw_data().is_some());
+            assert!(state.render.meshes.blocks_selected.draw_data().is_none());
+            assert!(state.render.meshes.blocks_static.draw_data().is_none());
+        });
+    }
+
+    #[test]
+    fn apply_editor_timeline_preview_state_updates_cursor_only_when_not_playing() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.ui.cursor = [0.0, 0.0, 0.0];
+
+            state.editor.timeline.playback.playing = false;
+            state.apply_editor_timeline_preview_state(
+                [1.2, 2.1, 3.8],
+                crate::types::SpawnDirection::Right,
+            );
+            assert_eq!(state.editor.ui.cursor, [1.0, 2.0, 4.0]);
+            assert_eq!(state.editor.camera.editor_pan, [1.7, 4.3]);
+            assert_eq!(state.editor.camera.editor_target_z, 2.1);
+
+            state.editor.timeline.playback.playing = true;
+            state.editor.ui.cursor = [9.0, 9.0, 9.0];
+            state.apply_editor_timeline_preview_state(
+                [4.2, 1.0, 2.2],
+                crate::types::SpawnDirection::Forward,
+            );
+            assert_eq!(state.editor.ui.cursor, [9.0, 9.0, 9.0]);
+            assert_eq!(state.editor.camera.editor_pan, [4.7, 2.7]);
+            assert_eq!(state.editor.camera.editor_target_z, 1.0);
+        });
+    }
+}

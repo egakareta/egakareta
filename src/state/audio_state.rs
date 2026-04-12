@@ -376,7 +376,14 @@ impl State {
 mod tests {
     use super::AudioState;
     use crate::platform::audio::runtime_asset_source_key;
+    use crate::state::State;
     use std::collections::HashMap;
+
+    async fn new_editor_state() -> State {
+        let mut state = State::new_test().await;
+        state.enter_editor_phase("Test Level".to_string());
+        state
+    }
 
     #[test]
     fn queues_runtime_audio_preload_by_level_and_source() {
@@ -387,5 +394,329 @@ mod tests {
             .runtime_preload
             .preloading_source_keys
             .contains(&runtime_asset_source_key("Flowerfield", "music.mp3")));
+    }
+
+    #[test]
+    fn preload_runtime_audio_deduplicates_and_skips_preloaded_entries() {
+        let mut state = AudioState::new(HashMap::new());
+        let preload_key = runtime_asset_source_key("Flowerfield", "music.mp3");
+        state.preload_runtime_audio("Flowerfield", "music.mp3");
+        state.preload_runtime_audio("Flowerfield", "music.mp3");
+
+        assert_eq!(state.runtime_preload.preloading_source_keys.len(), 1);
+        assert!(state
+            .runtime_preload
+            .preloading_source_keys
+            .contains(&preload_key));
+
+        let already_loaded = runtime_asset_source_key("Golden Haze", "audio.mp3");
+        state
+            .runtime_preload
+            .preloaded_audio
+            .insert(already_loaded.clone(), vec![1, 2, 3]);
+        state.preload_runtime_audio("Golden Haze", "audio.mp3");
+        assert!(!state
+            .runtime_preload
+            .preloading_source_keys
+            .contains(&already_loaded));
+    }
+
+    #[test]
+    fn update_runtime_audio_preloads_moves_channel_results_into_cache() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            let loaded_key = runtime_asset_source_key("Flowerfield", "audio.mp3");
+            let missing_key = runtime_asset_source_key("Flowerfield", "missing.mp3");
+
+            state
+                .audio
+                .state
+                .runtime_preload
+                .preloading_source_keys
+                .insert(loaded_key.clone());
+            state
+                .audio
+                .state
+                .runtime_preload
+                .preloading_source_keys
+                .insert(missing_key.clone());
+
+            state
+                .audio
+                .state
+                .runtime_preload
+                .preload_channel
+                .0
+                .send((loaded_key.clone(), Some(vec![9, 8, 7])))
+                .expect("loaded preload send should succeed");
+            state
+                .audio
+                .state
+                .runtime_preload
+                .preload_channel
+                .0
+                .send((missing_key.clone(), None))
+                .expect("missing preload send should succeed");
+
+            state.update_runtime_audio_preloads();
+
+            assert!(state
+                .audio
+                .state
+                .runtime_preload
+                .preloaded_audio
+                .contains_key(&loaded_key));
+            assert!(!state
+                .audio
+                .state
+                .runtime_preload
+                .preloaded_audio
+                .contains_key(&missing_key));
+            assert!(!state
+                .audio
+                .state
+                .runtime_preload
+                .preloading_source_keys
+                .contains(&loaded_key));
+            assert!(!state
+                .audio
+                .state
+                .runtime_preload
+                .preloading_source_keys
+                .contains(&missing_key));
+        });
+    }
+
+    #[test]
+    fn update_waveform_loading_applies_current_source_and_caches_bytes() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.session.editor_level_name = Some("Test Level".to_string());
+            state.session.editor_music_metadata.source = "song.mp3".to_string();
+
+            let source_key = runtime_asset_source_key("Test Level", "song.mp3");
+            state.audio.state.editor.waveform_loading_source = Some(source_key.clone());
+
+            state
+                .audio
+                .state
+                .editor
+                .waveform_load_channel
+                .0
+                .send((
+                    "song.mp3".to_string(),
+                    "Test Level".to_string(),
+                    Some((vec![0.25, 0.75], 44_100)),
+                    Some(vec![4, 5, 6]),
+                ))
+                .expect("waveform send should succeed");
+
+            state.update_waveform_loading();
+
+            assert_eq!(state.editor.timing.waveform_samples, vec![0.25, 0.75]);
+            assert_eq!(state.editor.timing.waveform_sample_rate, 44_100);
+            assert_eq!(state.audio.state.editor.waveform_loading_source, None);
+
+            let cached = state
+                .audio
+                .state
+                .editor
+                .waveform_cache
+                .get(&source_key)
+                .expect("decoded waveform should be cached");
+            assert_eq!(cached.0, vec![0.25, 0.75]);
+            assert_eq!(cached.1, 44_100);
+
+            assert_eq!(
+                state
+                    .audio
+                    .state
+                    .runtime_preload
+                    .preloaded_audio
+                    .get(&source_key),
+                Some(&vec![4, 5, 6])
+            );
+        });
+    }
+
+    #[test]
+    fn update_waveform_loading_keeps_timing_for_stale_source_but_still_caches() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.session.editor_level_name = Some("Test Level".to_string());
+            state.session.editor_music_metadata.source = "current.mp3".to_string();
+            state.editor.timing.waveform_samples = vec![1.0];
+            state.editor.timing.waveform_sample_rate = 22_050;
+
+            let stale_key = runtime_asset_source_key("Test Level", "stale.mp3");
+            state.audio.state.editor.waveform_loading_source = Some(stale_key.clone());
+
+            state
+                .audio
+                .state
+                .editor
+                .waveform_load_channel
+                .0
+                .send((
+                    "stale.mp3".to_string(),
+                    "Test Level".to_string(),
+                    Some((vec![0.1, 0.2], 48_000)),
+                    None,
+                ))
+                .expect("stale waveform send should succeed");
+
+            state.update_waveform_loading();
+
+            assert_eq!(state.editor.timing.waveform_samples, vec![1.0]);
+            assert_eq!(state.editor.timing.waveform_sample_rate, 22_050);
+            assert!(state
+                .audio
+                .state
+                .editor
+                .waveform_cache
+                .contains_key(&stale_key));
+            assert_eq!(
+                state.audio.state.editor.waveform_loading_source,
+                Some(stale_key)
+            );
+        });
+    }
+
+    #[test]
+    fn update_waveform_loading_clears_timing_when_current_decode_fails() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.session.editor_level_name = Some("Test Level".to_string());
+            state.session.editor_music_metadata.source = "broken.mp3".to_string();
+            state.editor.timing.waveform_samples = vec![0.5, 0.6];
+            state.editor.timing.waveform_sample_rate = 44_100;
+
+            let key = runtime_asset_source_key("Test Level", "broken.mp3");
+            state.audio.state.editor.waveform_loading_source = Some(key.clone());
+
+            state
+                .audio
+                .state
+                .editor
+                .waveform_load_channel
+                .0
+                .send((
+                    "broken.mp3".to_string(),
+                    "Test Level".to_string(),
+                    None,
+                    None,
+                ))
+                .expect("failed waveform send should succeed");
+
+            state.update_waveform_loading();
+
+            assert!(state.editor.timing.waveform_samples.is_empty());
+            assert_eq!(state.editor.timing.waveform_sample_rate, 0);
+            assert_eq!(state.audio.state.editor.waveform_loading_source, None);
+        });
+    }
+
+    #[test]
+    fn load_waveform_for_current_audio_prefers_cache_and_short_circuits_inflight_requests() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.session.editor_level_name = Some("Test Level".to_string());
+            state.session.editor_music_metadata.source = "song.mp3".to_string();
+            let source_key = runtime_asset_source_key("Test Level", "song.mp3");
+
+            state
+                .audio
+                .state
+                .editor
+                .waveform_cache
+                .insert(source_key.clone(), (vec![0.3, 0.9], 32_000));
+            state.audio.state.editor.waveform_loading_source = Some("other:key".to_string());
+            state.load_waveform_for_current_audio();
+            assert_eq!(state.editor.timing.waveform_samples, vec![0.3, 0.9]);
+            assert_eq!(state.editor.timing.waveform_sample_rate, 32_000);
+            assert_eq!(state.audio.state.editor.waveform_loading_source, None);
+
+            state.audio.state.editor.waveform_cache.remove(&source_key);
+            state.editor.timing.waveform_samples = vec![7.0];
+            state.editor.timing.waveform_sample_rate = 7;
+            state.audio.state.editor.waveform_loading_source = Some(source_key.clone());
+            state.load_waveform_for_current_audio();
+            assert_eq!(state.editor.timing.waveform_samples, vec![7.0]);
+            assert_eq!(state.editor.timing.waveform_sample_rate, 7);
+        });
+    }
+
+    #[test]
+    fn load_waveform_for_current_audio_marks_loading_and_clears_timing_when_uncached() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.session.editor_level_name = Some("Test Level".to_string());
+            state.session.editor_music_metadata.source = "uncached.mp3".to_string();
+
+            let source_key = runtime_asset_source_key("Test Level", "uncached.mp3");
+            state.editor.timing.waveform_samples = vec![1.0, 2.0];
+            state.editor.timing.waveform_sample_rate = 11_025;
+            state.audio.state.editor.waveform_loading_source = None;
+
+            state.load_waveform_for_current_audio();
+
+            assert!(state.editor.timing.waveform_samples.is_empty());
+            assert_eq!(state.editor.timing.waveform_sample_rate, 0);
+            assert_eq!(
+                state.audio.state.editor.waveform_loading_source,
+                Some(source_key)
+            );
+        });
+    }
+
+    #[test]
+    fn update_audio_imports_updates_source_cache_and_invalidates_waveform_cache() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.session.editor_level_name = Some("Test Level".to_string());
+            state.session.editor_music_metadata.source = "old.mp3".to_string();
+
+            let imported_name = "imported.mp3".to_string();
+            let source_key = runtime_asset_source_key("Test Level", &imported_name);
+            state
+                .audio
+                .state
+                .editor
+                .waveform_cache
+                .insert(source_key.clone(), (vec![0.5], 8_000));
+            state.audio.state.editor.waveform_loading_source = Some("some:old:key".to_string());
+
+            state
+                .audio
+                .state
+                .editor
+                .audio_import_channel
+                .0
+                .send((imported_name.clone(), vec![1, 2, 3, 4]))
+                .expect("audio import send should succeed");
+
+            state.update_audio_imports();
+
+            assert_eq!(state.session.editor_music_metadata.source, imported_name);
+            assert_eq!(
+                state
+                    .audio
+                    .state
+                    .editor
+                    .local_audio_cache
+                    .get("imported.mp3"),
+                Some(&vec![1, 2, 3, 4])
+            );
+            assert!(!state
+                .audio
+                .state
+                .editor
+                .waveform_cache
+                .contains_key(&source_key));
+            assert_eq!(
+                state.audio.state.editor.waveform_loading_source,
+                Some(source_key)
+            );
+        });
     }
 }

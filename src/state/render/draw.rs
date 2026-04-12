@@ -358,13 +358,14 @@ mod tests {
     use egui_wgpu::ScreenDescriptor;
     use wgpu::Color;
 
+    use super::super::MeshSlot;
     use super::{
         apply_gamma_correction_if_enabled, clear_color_for_phase, linear_to_srgb,
         should_draw_editor_cursor, should_draw_editor_overlays, should_draw_floor_and_grid,
         should_skip_world,
     };
     use crate::state::State;
-    use crate::types::{AppPhase, EditorMode};
+    use crate::types::{AppPhase, EditorMode, Vertex};
 
     fn approx_eq(a: f32, b: f32, eps: f32) {
         assert!(
@@ -599,6 +600,104 @@ mod tests {
             state.render.gpu.apply_gamma_correction = true;
             state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
 
+            state.queue().submit(std::iter::once(encoder.finish()));
+        });
+    }
+
+    #[test]
+    fn render_to_view_draws_populated_mesh_slots_across_phases() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let size = 96;
+            state.resize_surface(crate::types::PhysicalSize {
+                width: size,
+                height: size,
+            });
+
+            let texture = state.device().create_texture(&wgpu::TextureDescriptor {
+                label: Some("Branch Coverage Render Texture"),
+                size: wgpu::Extent3d {
+                    width: size,
+                    height: size,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: state.render.gpu.config.format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let mut encoder =
+                state
+                    .device()
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("Branch Coverage Encoder"),
+                    });
+
+            let tri = vec![
+                Vertex::untextured([0.0, 0.0, 0.0], [1.0, 0.2, 0.2, 1.0]),
+                Vertex::untextured([0.2, 0.0, 0.0], [0.2, 1.0, 0.2, 1.0]),
+                Vertex::untextured([0.0, 0.2, 0.0], [0.2, 0.2, 1.0, 1.0]),
+            ];
+
+            state.render.meshes.floor = MeshSlot::from_vertices(state.device(), "floor", &tri);
+            state.render.meshes.grid = MeshSlot::from_vertices(state.device(), "grid", &tri);
+            state.render.meshes.trail = MeshSlot::from_vertices(state.device(), "trail", &tri);
+            state.render.meshes.blocks = MeshSlot::from_vertices(state.device(), "blocks", &tri);
+            state.render.meshes.blocks_static =
+                MeshSlot::from_vertices(state.device(), "blocks_static", &tri);
+            state.render.meshes.blocks_selected =
+                MeshSlot::from_vertices(state.device(), "blocks_selected", &tri);
+            state.render.meshes.editor_cursor =
+                MeshSlot::from_vertices(state.device(), "cursor", &tri);
+            state.render.meshes.editor_hover_outline =
+                MeshSlot::from_vertices(state.device(), "hover", &tri);
+            state.render.meshes.editor_selection_outline =
+                MeshSlot::from_vertices(state.device(), "selection", &tri);
+            state.render.meshes.editor_gizmo =
+                MeshSlot::from_vertices(state.device(), "gizmo", &tri);
+            state.render.meshes.tap_indicators =
+                MeshSlot::from_vertices(state.device(), "taps", &tri);
+            state.render.meshes.spawn_marker =
+                MeshSlot::from_vertices(state.device(), "spawn", &tri);
+            state.render.meshes.camera_trigger_markers =
+                MeshSlot::from_vertices(state.device(), "camera_markers", &tri);
+
+            let overlay_calls = Cell::new(0_u32);
+
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Place;
+            state.render_to_view(&view, &mut encoder, |_, _, _, _| {
+                overlay_calls.set(overlay_calls.get() + 1);
+            });
+
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Timing;
+            state.render_to_view(&view, &mut encoder, |_, _, _, _| {
+                overlay_calls.set(overlay_calls.get() + 1);
+            });
+
+            state.phase = AppPhase::Playing;
+            state.gameplay.state.game_over = false;
+            state.render_to_view(&view, &mut encoder, |_, _, _, _| {
+                overlay_calls.set(overlay_calls.get() + 1);
+            });
+
+            state.phase = AppPhase::GameOver;
+            state.gameplay.state.game_over = true;
+            state.render_to_view(&view, &mut encoder, |_, _, _, _| {
+                overlay_calls.set(overlay_calls.get() + 1);
+            });
+
+            state.phase = AppPhase::Menu;
+            state.editor.ui.mode = EditorMode::Select;
+            state.render_to_view(&view, &mut encoder, |_, _, _, _| {
+                overlay_calls.set(overlay_calls.get() + 1);
+            });
+
+            assert_eq!(overlay_calls.get(), 5);
             state.queue().submit(std::iter::once(encoder.finish()));
         });
     }

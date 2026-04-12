@@ -530,8 +530,32 @@ impl State {
 
 #[cfg(test)]
 mod tests {
+    use base64::Engine as _;
+    use std::fs;
+
     use super::State;
-    use crate::types::{LevelObject, MusicMetadata};
+    use crate::types::{AppPhase, KeyChord, LevelObject, MusicMetadata, SettingsSection};
+
+    struct ArtifactCleanup {
+        paths: Vec<String>,
+    }
+
+    impl ArtifactCleanup {
+        fn new(paths: Vec<String>) -> Self {
+            for path in &paths {
+                let _ = fs::remove_file(path);
+            }
+            Self { paths }
+        }
+    }
+
+    impl Drop for ArtifactCleanup {
+        fn drop(&mut self) {
+            for path in &self.paths {
+                let _ = fs::remove_file(path);
+            }
+        }
+    }
 
     fn test_object(position: [f32; 3], block_id: &str) -> LevelObject {
         LevelObject {
@@ -635,6 +659,309 @@ mod tests {
             assert_eq!(state.editor.objects, before_objects);
             assert_eq!(state.editor.spawn.position, before_spawn.position);
             assert_eq!(state.editor.spawn.direction, before_spawn.direction);
+        });
+    }
+
+    #[test]
+    fn settings_and_editor_visibility_accessors_roundtrip() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.set_editor_show_import(true);
+            assert!(state.editor_show_import());
+
+            state.set_editor_import_text("encoded-level".to_string());
+            assert_eq!(state.editor_import_text(), "encoded-level");
+
+            state.set_editor_show_metadata(true);
+            assert!(state.editor_show_metadata());
+
+            state.set_editor_show_settings(true);
+            assert!(state.editor_show_settings());
+
+            state.set_editor_settings_section(SettingsSection::Keybinds);
+            assert_eq!(state.editor_settings_section(), SettingsSection::Keybinds);
+
+            state.set_editor_keybind_capture_action(Some(("editor.copy".to_string(), 0)));
+            assert_eq!(
+                state.editor_keybind_capture_action(),
+                Some(&("editor.copy".to_string(), 0))
+            );
+
+            state.set_editor_show_settings(false);
+            assert!(!state.editor_show_settings());
+            assert_eq!(state.editor_keybind_capture_action(), None);
+        });
+    }
+
+    #[test]
+    fn graphics_and_keybind_preference_mutations_update_state() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            let original_graphics = state.app_settings().graphics_backend.clone();
+            let original_restart_required = state.settings_restart_required();
+
+            state.set_preferred_graphics_backend(original_graphics.clone());
+            assert_eq!(state.app_settings().graphics_backend, original_graphics);
+            assert_eq!(state.settings_restart_required(), original_restart_required);
+
+            state.set_preferred_graphics_backend("ManualTestBackend".to_string());
+            assert_eq!(state.app_settings().graphics_backend, "ManualTestBackend");
+            assert!(state.settings_restart_required());
+
+            let before_keybinds = state
+                .app_settings()
+                .keybinds_for_action("editor.copy")
+                .len();
+            state.set_keybind_for_action(
+                "editor.copy".to_string(),
+                0,
+                KeyChord::new("K", true, false, false),
+            );
+            let after_set = state
+                .app_settings()
+                .keybinds_for_action("editor.copy")
+                .len();
+            assert!(after_set >= 1);
+
+            state.clear_keybind_slot_for_action("editor.copy", 0);
+            let after_clear = state
+                .app_settings()
+                .keybinds_for_action("editor.copy")
+                .len();
+            assert!(after_clear <= after_set);
+
+            state.reset_keybind_for_action("editor.copy");
+            let after_reset = state
+                .app_settings()
+                .keybinds_for_action("editor.copy")
+                .len();
+            assert!(after_reset >= 1 || before_keybinds == 0);
+        });
+    }
+
+    #[test]
+    fn available_levels_menu_name_and_phase_guarded_obj_export_paths_are_safe() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            assert!(!state.available_levels().is_empty());
+            assert!(state.menu_level_name().is_some());
+
+            state.phase = AppPhase::Menu;
+            state.trigger_selected_block_obj_export();
+
+            state.start_editor(0);
+            state.editor.ui.selected_block_index = None;
+            state.trigger_selected_block_obj_export();
+        });
+    }
+
+    #[test]
+    fn complete_import_handles_invalid_and_valid_binary_payloads() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.start_editor(0);
+
+            state.set_editor_show_import(true);
+            state.set_editor_import_text("%%%not-base64%%%".to_string());
+            state.complete_import();
+            assert!(state.editor_show_import());
+            assert_eq!(state.editor_import_text(), "%%%not-base64%%%");
+
+            let payload = state
+                .export_level()
+                .expect("binary export should succeed for import test");
+            let encoded = base64::engine::general_purpose::STANDARD.encode(payload);
+
+            state.set_editor_show_import(true);
+            state.set_editor_import_text(encoded);
+            state.complete_import();
+            assert!(!state.editor_show_import());
+            assert_eq!(state.editor_import_text(), "");
+        });
+    }
+
+    #[test]
+    fn start_level_and_restart_level_initialize_playing_session_state() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.start_level(0);
+            assert_eq!(state.phase, AppPhase::Playing);
+            assert!(state.session.playing_level_name.is_some());
+            assert!(!state.gameplay.state.objects.is_empty());
+            assert!(state.session.playing_trigger_base_objects.is_some());
+
+            state.gameplay.state.started = true;
+            state.gameplay.state.elapsed_seconds = 12.0;
+            state.restart_level();
+
+            assert_eq!(state.phase, AppPhase::Playing);
+            assert!(!state.gameplay.state.started);
+            assert!(state.gameplay.state.elapsed_seconds >= 0.0);
+            assert!(!state.gameplay.state.objects.is_empty());
+        });
+    }
+
+    #[test]
+    fn start_editor_loads_builtin_metadata_into_editor_session() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.start_editor(0);
+
+            assert_eq!(state.phase, AppPhase::Editor);
+            assert!(state.editor_level_name().is_some());
+            assert!(state.editor.timeline.clock.duration_seconds > 0.0);
+            assert!(!state.editor.objects.is_empty());
+            assert_eq!(
+                state.editor.timeline.taps.tap_times.len(),
+                state.editor.timeline.taps.tap_indicator_positions.len()
+            );
+            assert_eq!(state.editor.timing.timing_selected_index, None);
+            assert_eq!(state.editor.selected_trigger_index(), None);
+        });
+    }
+
+    #[test]
+    fn egz_export_import_roundtrip_preserves_metadata_and_embedded_audio() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.start_editor(0);
+
+            state.set_editor_level_name("EgzRoundtrip".to_string());
+            state.set_editor_music_metadata(MusicMetadata {
+                source: "unit-test-audio.mp3".to_string(),
+                ..MusicMetadata::default()
+            });
+            state
+                .audio
+                .state
+                .editor
+                .local_audio_cache
+                .insert("unit-test-audio.mp3".to_string(), vec![1, 2, 3, 4, 5, 6]);
+
+            let expected = state.current_editor_metadata();
+            let exported = state
+                .export_level_egz()
+                .expect("egz export should succeed when metadata is valid");
+
+            state.editor.objects.clear();
+            state
+                .audio
+                .state
+                .editor
+                .local_audio_cache
+                .remove("unit-test-audio.mp3");
+
+            state
+                .import_level_egz(&exported)
+                .expect("egz import should restore metadata and embedded audio");
+
+            let actual = state.current_editor_metadata();
+            assert_eq!(actual.name, expected.name);
+            assert_eq!(actual.music.source, expected.music.source);
+            assert_eq!(actual.spawn.position, expected.spawn.position);
+            assert!(!state.editor.objects.is_empty());
+            assert!(state
+                .audio
+                .state
+                .editor
+                .local_audio_cache
+                .contains_key("unit-test-audio.mp3"));
+        });
+    }
+
+    #[test]
+    fn method_pointer_paths_cover_level_management_runtime_branches() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.start_editor(0);
+
+            let level_export_filename = format!(
+                "{}.egz",
+                state
+                    .editor_level_name()
+                    .unwrap_or_else(|| "level".to_string())
+            );
+            let obj_export_filename = "core_stone_selected.obj".to_string();
+            let _artifact_cleanup =
+                ArtifactCleanup::new(vec![level_export_filename, obj_export_filename]);
+
+            let set_capture: fn(&mut State, Option<(String, usize)>) =
+                State::set_editor_keybind_capture_action;
+            set_capture(&mut state, Some(("editor.copy".to_string(), 1)));
+            assert_eq!(
+                state.editor_keybind_capture_action(),
+                Some(&("editor.copy".to_string(), 1))
+            );
+
+            let set_import_text: fn(&mut State, String) = State::set_editor_import_text;
+            set_import_text(&mut state, "invalid-base64".to_string());
+
+            let restart: fn(&mut State) = State::restart_level;
+            state.phase = AppPhase::Playing;
+            state.session.playtesting_editor = false;
+            state.session.playing_level_name = state.menu.state.levels.first().cloned();
+            state.gameplay.state.started = true;
+            restart(&mut state);
+            assert!(!state.gameplay.state.started);
+
+            let set_graphics_backend: fn(&mut State, String) =
+                State::set_preferred_graphics_backend;
+            let baseline_graphics = state.app_settings().graphics_backend.clone();
+            set_graphics_backend(&mut state, baseline_graphics.clone());
+            set_graphics_backend(&mut state, "CoverageBackend".to_string());
+            assert_eq!(state.app_settings().graphics_backend, "CoverageBackend");
+
+            let set_audio_backend: fn(&mut State, String) = State::set_preferred_audio_backend;
+            set_audio_backend(&mut state, "definitely-invalid-backend".to_string());
+            if let Some(backend) = state.available_audio_backends().first().cloned() {
+                set_audio_backend(&mut state, backend);
+            }
+
+            let clear_keybind: fn(&mut State, &str, usize) = State::clear_keybind_slot_for_action;
+            let reset_keybind: fn(&mut State, &str) = State::reset_keybind_for_action;
+            let reset_essential: fn(&mut State) = State::reset_essential_keybinds;
+            clear_keybind(&mut state, "editor.copy", 0);
+            reset_keybind(&mut state, "editor.copy");
+            reset_essential(&mut state);
+
+            let export_egz: fn(&State) -> Result<Vec<u8>, String> = State::export_level_egz;
+            let import_egz: fn(&mut State, &[u8]) -> Result<(), String> = State::import_level_egz;
+            let egz_bytes = export_egz(&state).expect("egz export should succeed");
+            import_egz(&mut state, &egz_bytes).expect("egz import should succeed");
+
+            let trigger_export: fn(&State) = State::trigger_level_export;
+            trigger_export(&state);
+
+            let trigger_obj_export: fn(&State) = State::trigger_selected_block_obj_export;
+            state.phase = AppPhase::Menu;
+            trigger_obj_export(&state);
+
+            state.phase = AppPhase::Editor;
+            state.editor.ui.selected_block_index = None;
+            trigger_obj_export(&state);
+
+            state.editor.objects = vec![test_object([0.0, 0.0, 0.0], "core/stone")];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+            trigger_obj_export(&state);
+
+            let complete_import: fn(&mut State) = State::complete_import;
+            set_import_text(&mut state, "%%%".to_string());
+            state.set_editor_show_import(true);
+            complete_import(&mut state);
+            assert!(state.editor_show_import());
+
+            let encoded = base64::engine::general_purpose::STANDARD.encode(egz_bytes);
+            set_import_text(&mut state, encoded);
+            state.set_editor_show_import(true);
+            complete_import(&mut state);
+            assert!(!state.editor_show_import());
+            assert_eq!(state.editor_import_text(), "");
         });
     }
 }

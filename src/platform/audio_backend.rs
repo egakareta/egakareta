@@ -532,3 +532,152 @@ impl AudioBackend {
         self.inner.borrow().backend_name.clone()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        available_host_labels, host_label, parse_host_id_by_label, select_host, AudioBackend,
+    };
+
+    fn tiny_wav_bytes() -> Vec<u8> {
+        // Minimal PCM WAV: mono, 16-bit, 44.1kHz, one zero sample.
+        vec![
+            b'R', b'I', b'F', b'F', 38, 0, 0, 0, b'W', b'A', b'V', b'E', b'f', b'm', b't', b' ',
+            16, 0, 0, 0, 1, 0, 1, 0, 68, 172, 0, 0, 136, 88, 1, 0, 2, 0, 16, 0, b'd', b'a', b't',
+            b'a', 2, 0, 0, 0, 0, 0,
+        ]
+    }
+
+    #[test]
+    fn parse_host_id_by_label_handles_default_and_case_insensitive_labels() {
+        assert_eq!(parse_host_id_by_label(""), None);
+        assert_eq!(parse_host_id_by_label("   "), None);
+        assert_eq!(parse_host_id_by_label("Default"), None);
+        assert_eq!(parse_host_id_by_label("default"), None);
+
+        if let Some(host_id) = cpal::available_hosts().into_iter().next() {
+            let lower = host_label(host_id).to_lowercase();
+            assert_eq!(parse_host_id_by_label(&lower), Some(host_id));
+        }
+    }
+
+    #[test]
+    fn select_host_returns_default_or_requested_available_host() {
+        let selected_default = select_host(None).id();
+        assert_eq!(selected_default, cpal::default_host().id());
+
+        if let Some(host_id) = cpal::available_hosts().into_iter().next() {
+            let selected = select_host(Some(host_id)).id();
+            assert_eq!(selected, host_id);
+        }
+    }
+
+    #[test]
+    fn available_host_labels_are_sorted_unique_and_include_default() {
+        let labels = available_host_labels();
+        assert!(labels.iter().any(|label| label == "Default"));
+
+        let mut expected = labels.clone();
+        expected.sort();
+        expected.dedup();
+        assert_eq!(labels, expected);
+    }
+
+    #[test]
+    fn set_preferred_backend_name_rejects_unknown_label() {
+        let mut backend = AudioBackend::new();
+        let before = backend.backend_name();
+
+        assert!(!backend.set_preferred_backend_name("definitely-not-a-real-backend"));
+        assert_eq!(backend.backend_name(), before);
+    }
+
+    #[test]
+    fn set_preferred_backend_name_default_resets_runtime_state() {
+        let mut backend = AudioBackend::new();
+        let Some(host_id) = cpal::available_hosts().into_iter().next() else {
+            return;
+        };
+
+        {
+            let mut inner = backend.inner.borrow_mut();
+            inner.current_audio_source = Some("bytes:test".to_string());
+            inner.playback_started_at = Some(web_time::Instant::now());
+            inner.playback_start_offset_seconds = 4.0;
+            inner.device_tried = true;
+        }
+
+        assert!(backend.set_preferred_backend_name(&host_label(host_id)));
+
+        let inner = backend.inner.borrow();
+        assert_eq!(inner.current_audio_source, None);
+        assert_eq!(inner.playback_started_at, None);
+        assert_eq!(inner.playback_start_offset_seconds, 0.0);
+        assert!(!inner.device_tried);
+        assert_eq!(inner.backend_name, host_label(host_id));
+    }
+
+    #[test]
+    fn replace_with_bytes_invalid_payload_does_not_mark_source_reusable() {
+        let mut backend = AudioBackend::new();
+        backend.replace_with_bytes("bytes:bad".to_string(), "bad.bin", &[1, 2, 3], 0.0);
+
+        assert!(!backend.can_reuse_source("bytes:bad"));
+        assert!(!backend.is_playing());
+    }
+
+    #[test]
+    fn replace_and_warmup_with_valid_bytes_update_test_playback_state() {
+        let mut backend = AudioBackend::new();
+        let wav = tiny_wav_bytes();
+
+        backend.replace_with_bytes("bytes:play".to_string(), "tone.wav", &wav, 1.25);
+        assert!(backend.can_reuse_source("bytes:play"));
+        assert!(backend.is_playing());
+        assert!(backend.playback_time_seconds().is_some());
+
+        backend.warmup_with_bytes("bytes:warm".to_string(), "tone.wav", &wav, 0.5);
+        assert!(backend.can_reuse_source("bytes:warm"));
+        assert_eq!(backend.playback_time_seconds(), None);
+    }
+
+    #[test]
+    fn seek_and_play_uses_test_fallback_without_active_player() {
+        let mut backend = AudioBackend::new();
+        {
+            let mut inner = backend.inner.borrow_mut();
+            inner.current_audio_source = Some("bytes:reuse".to_string());
+            inner.current_player = None;
+        }
+
+        assert!(backend.seek_and_play(2.5));
+        assert!(backend.is_playing());
+        let playback_time = backend.playback_time_seconds().unwrap_or(0.0);
+        assert!(playback_time >= 2.5);
+    }
+
+    #[test]
+    fn stop_and_set_speed_manage_playback_tracking() {
+        use web_time::Duration;
+
+        let mut backend = AudioBackend::new();
+        {
+            let mut inner = backend.inner.borrow_mut();
+            inner.current_audio_source = Some("bytes:speed".to_string());
+            inner.playback_started_at = Some(web_time::Instant::now() - Duration::from_millis(10));
+            inner.playback_start_offset_seconds = 1.0;
+            inner.playback_speed = 2.0;
+        }
+
+        backend.set_speed(0.5);
+        {
+            let inner = backend.inner.borrow();
+            assert_eq!(inner.playback_speed, 0.5);
+            assert!(inner.playback_start_offset_seconds >= 1.0);
+        }
+
+        backend.stop();
+        assert!(!backend.is_playing());
+        assert_eq!(backend.playback_time_seconds(), None);
+    }
+}

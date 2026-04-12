@@ -555,7 +555,7 @@ impl State {
 mod tests {
     use super::State;
     use crate::editor_domain::derive_tap_indicator_positions;
-    use crate::types::{AppPhase, LevelObject, SpawnDirection};
+    use crate::types::{AppPhase, EditorMode, LevelObject, SpawnDirection};
 
     fn test_block(position: [f32; 3]) -> LevelObject {
         LevelObject {
@@ -637,6 +637,137 @@ mod tests {
                 state.editor.timeline.taps.tap_indicator_positions,
                 expected_indicators
             );
+        });
+    }
+
+    #[test]
+    fn toggle_tap_at_cursor_adds_then_removes_indicator() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.timeline.clock.duration_seconds = 8.0;
+            state.editor.timeline.clock.time_seconds = 2.0;
+            state.editor.ui.cursor = [1.0, 0.0, 2.0];
+            state.editor.timeline.preview.position = [1.5, 0.0, 2.5];
+
+            let (added_time, added) = state.editor.toggle_tap_at_cursor();
+            assert!(added);
+            assert!(added_time.is_some());
+            assert_eq!(state.editor.timeline.taps.tap_times.len(), 1);
+            assert_eq!(state.editor.timeline.taps.tap_indicator_positions.len(), 1);
+
+            let (removed_time, added_again) = state.editor.toggle_tap_at_cursor();
+            assert!(!added_again);
+            assert!(removed_time.is_some());
+            assert!(state.editor.timeline.taps.tap_times.is_empty());
+            assert!(state
+                .editor
+                .timeline
+                .taps
+                .tap_indicator_positions
+                .is_empty());
+        });
+    }
+
+    #[test]
+    fn nudge_and_remove_selected_cover_selected_and_cursor_fallback_paths() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.objects = vec![test_block([0.0, 0.0, 0.0]), test_block([3.0, 0.0, 3.0])];
+            state.editor.ui.selected_block_indices = vec![0, 1];
+            state.editor.ui.selected_block_index = Some(0);
+
+            assert!(state.editor.nudge_selected(2.0, -1.0));
+            assert_eq!(state.editor.objects[0].position, [2.0, 0.0, -1.0]);
+            assert_eq!(state.editor.objects[1].position, [5.0, 0.0, 2.0]);
+
+            state.editor.ui.selected_block_indices.clear();
+            state.editor.ui.selected_block_index = None;
+            assert!(!state.editor.nudge_selected(1.0, 1.0));
+
+            state.editor.ui.cursor = [2.0, 0.0, -1.0];
+            assert!(state.editor.remove_selected());
+            assert_eq!(state.editor.objects.len(), 1);
+
+            state.editor.ui.cursor = [999.0, 0.0, 999.0];
+            assert!(!state.editor.remove_selected());
+        });
+    }
+
+    #[test]
+    fn move_cursor_uses_snap_configuration() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.ui.cursor = [0.0, 0.0, 0.0];
+
+            state.editor.config.snap_to_grid = true;
+            state.editor.config.snap_step = 0.25;
+            state.editor.move_cursor(2, -1);
+            assert_eq!(state.editor.ui.cursor, [0.5, 0.0, -0.25]);
+
+            state.editor.config.snap_to_grid = false;
+            state.editor.move_cursor(1, 1);
+            assert_eq!(state.editor.ui.cursor, [1.5, 0.0, 0.75]);
+        });
+    }
+
+    #[test]
+    fn editor_shift_timeline_time_clamps_and_ignores_non_editor_phase() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.timeline.clock.time_seconds = 1.0;
+            state.editor.timeline.clock.duration_seconds = 2.0;
+
+            state.phase = AppPhase::Menu;
+            state.editor_shift_timeline_time(0.75);
+            assert_eq!(state.editor.timeline.clock.time_seconds, 1.0);
+
+            state.phase = AppPhase::Editor;
+            state.editor_shift_timeline_time(5.0);
+            assert_eq!(state.editor.timeline.clock.time_seconds, 2.0);
+            state.editor_shift_timeline_time(-10.0);
+            assert_eq!(state.editor.timeline.clock.time_seconds, 0.0);
+        });
+    }
+
+    #[test]
+    fn toggle_timeline_playback_switches_modes_and_restores_previous_mode() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.start_editor(0);
+            state.editor.set_mode(EditorMode::Place);
+            state.editor.timeline.playback.playing = false;
+
+            state.toggle_editor_timeline_playback();
+            assert!(state.editor.timeline.playback.playing);
+            assert_eq!(state.editor.ui.mode, EditorMode::Null);
+
+            state.toggle_editor_timeline_playback();
+            assert!(!state.editor.timeline.playback.playing);
+            assert_eq!(state.editor.ui.mode, EditorMode::Place);
+        });
+    }
+
+    #[test]
+    fn editor_nudge_selected_blocks_honors_guards_and_moves_when_possible() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
+            state.editor.ui.selected_block_indices = vec![0];
+            state.editor.ui.selected_block_index = Some(0);
+
+            state.phase = AppPhase::Menu;
+            assert!(!state.editor_nudge_selected_blocks(1, 0));
+
+            state.phase = AppPhase::Editor;
+            assert!(!state.editor_nudge_selected_blocks(0, 0));
+
+            let before = state.editor.objects[0].position;
+            assert!(state.editor_nudge_selected_blocks(1, 0));
+            let after = state.editor.objects[0].position;
+            assert_ne!(before, after);
         });
     }
 }

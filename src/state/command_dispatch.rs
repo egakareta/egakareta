@@ -673,8 +673,9 @@ mod tests {
     use super::State;
     use crate::commands::AppCommand;
     use crate::types::{
-        camera_triggers_to_timed_triggers, AppPhase, CameraTrigger, CameraTriggerMode,
-        TimedTriggerEasing,
+        camera_triggers_to_timed_triggers, AppPhase, CameraTrigger, CameraTriggerMode, EditorMode,
+        KeyChord, LevelObject, MusicMetadata, SettingsSection, TimedTrigger, TimedTriggerAction,
+        TimedTriggerEasing, TimedTriggerTarget,
     };
     use glam::Vec2;
 
@@ -1505,6 +1506,507 @@ mod tests {
                 just_pressed: true,
             });
             assert!(state.editor.runtime.interaction.clipboard.is_none());
+        });
+    }
+
+    #[test]
+    fn test_mapping_helpers_cover_editor_menu_and_selection_gates() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+
+            assert_eq!(
+                state.map_modifier_key_to_command("ShiftLeft", true),
+                Some(AppCommand::EditorSetShiftHeld(true))
+            );
+            assert_eq!(
+                state.map_modifier_key_to_command("ControlRight", false),
+                Some(AppCommand::EditorSetCtrlHeld(false))
+            );
+            assert_eq!(
+                state.map_modifier_key_to_command("Alt", true),
+                Some(AppCommand::EditorSetAltHeld(true))
+            );
+            assert_eq!(state.map_modifier_key_to_command("m", true), None);
+
+            assert!(State::is_modifier_key("Control"));
+            assert!(State::is_modifier_key("AltLeft"));
+            assert!(!State::is_modifier_key("m"));
+
+            assert!(!state.has_block_selection());
+            state.editor.ui.selected_block_index = Some(0);
+            assert!(state.has_block_selection());
+            state.editor.ui.selected_block_index = None;
+            state.editor.ui.selected_block_indices.clear();
+
+            state.phase = AppPhase::Menu;
+            assert!(state.map_pan_key_to_commands("w", true).is_empty());
+
+            state.phase = AppPhase::Editor;
+            state.editor.ui.ctrl_held = false;
+            state.editor.ui.alt_held = false;
+            assert_eq!(
+                state.map_pan_key_to_commands("w", true),
+                vec![AppCommand::EditorSetPanUpHeld(true)]
+            );
+
+            state.editor.ui.ctrl_held = true;
+            assert!(state.map_pan_key_to_commands("w", true).is_empty());
+
+            let released_pan = state.map_pan_key_to_commands("w", false);
+            assert_eq!(released_pan, vec![AppCommand::EditorSetPanUpHeld(false)]);
+
+            state.phase = AppPhase::Editor;
+            assert_eq!(
+                state.command_for_keybind_action("toggle_settings", true),
+                Some(AppCommand::EditorToggleSettings)
+            );
+            assert_eq!(
+                state.command_for_keybind_action("toggle_settings", false),
+                None
+            );
+
+            assert_eq!(
+                state.command_for_keybind_action("toggle_timeline_playback", true),
+                Some(AppCommand::EditorToggleTimelinePlayback)
+            );
+            assert_eq!(
+                state.command_for_keybind_action("playtest", true),
+                Some(AppCommand::EditorPlaytest)
+            );
+            assert_eq!(
+                state.command_for_keybind_action("remove_block", true),
+                Some(AppCommand::EditorRemoveBlock)
+            );
+            assert_eq!(
+                state.command_for_keybind_action("copy", true),
+                Some(AppCommand::EditorCopyBlock)
+            );
+            assert_eq!(
+                state.command_for_keybind_action("paste", true),
+                Some(AppCommand::EditorPasteBlock)
+            );
+            assert_eq!(
+                state.command_for_keybind_action("duplicate", true),
+                Some(AppCommand::EditorDuplicateBlock)
+            );
+            assert_eq!(
+                state.command_for_keybind_action("undo", true),
+                Some(AppCommand::EditorUndo)
+            );
+            assert_eq!(
+                state.command_for_keybind_action("redo", true),
+                Some(AppCommand::EditorRedo)
+            );
+
+            assert_eq!(state.command_for_keybind_action("nudge_up", true), None);
+            state.editor.ui.selected_block_index = Some(0);
+            assert_eq!(
+                state.command_for_keybind_action("nudge_up", true),
+                Some(AppCommand::EditorNudgeSelected { dx: 0, dy: 1 })
+            );
+            assert_eq!(
+                state.command_for_keybind_action("nudge_down", true),
+                Some(AppCommand::EditorNudgeSelected { dx: 0, dy: -1 })
+            );
+            assert_eq!(
+                state.command_for_keybind_action("nudge_left", true),
+                Some(AppCommand::EditorNudgeSelected { dx: -1, dy: 0 })
+            );
+            assert_eq!(
+                state.command_for_keybind_action("nudge_right", true),
+                Some(AppCommand::EditorNudgeSelected { dx: 1, dy: 0 })
+            );
+            assert_eq!(
+                state.command_for_keybind_action("timeline_forward", true),
+                None
+            );
+            state.editor.ui.selected_block_index = None;
+            assert_eq!(
+                state.command_for_keybind_action("timeline_forward", true),
+                Some(AppCommand::EditorShiftTimeline(0.1))
+            );
+            assert_eq!(
+                state.command_for_keybind_action("timeline_backward", true),
+                Some(AppCommand::EditorShiftTimeline(-0.1))
+            );
+
+            assert_eq!(
+                state.command_for_keybind_action("escape", true),
+                Some(AppCommand::EditorEscape)
+            );
+            assert_eq!(state.command_for_keybind_action("escape", false), None);
+            assert_eq!(
+                state.command_for_keybind_action("zoom_in", true),
+                Some(AppCommand::EditorAdjustZoom(1.0))
+            );
+            assert_eq!(
+                state.command_for_keybind_action("zoom_out", true),
+                Some(AppCommand::EditorAdjustZoom(-1.0))
+            );
+
+            state.phase = AppPhase::Menu;
+            assert_eq!(
+                state.command_for_keybind_action("toggle_editor", true),
+                Some(AppCommand::ToggleEditor)
+            );
+            assert_eq!(
+                state.command_for_keybind_action("game_turn", true),
+                Some(AppCommand::TurnRight)
+            );
+            assert_eq!(
+                state.command_for_keybind_action("menu_prev_level", true),
+                Some(AppCommand::PrevLevel)
+            );
+            assert_eq!(
+                state.command_for_keybind_action("menu_next_level", true),
+                Some(AppCommand::NextLevel)
+            );
+
+            state.phase = AppPhase::Editor;
+            assert_eq!(
+                state.command_for_keybind_action("spawn_set", true),
+                Some(AppCommand::EditorSetSpawnHere)
+            );
+            assert_eq!(
+                state.command_for_keybind_action("spawn_rotate", true),
+                Some(AppCommand::EditorRotateSpawnDirection)
+            );
+
+            state.editor.ui.mode = EditorMode::Place;
+            assert_eq!(
+                state.command_for_keybind_action("toggle_tap_timing", true),
+                Some(AppCommand::EditorToggleTapAtPointer)
+            );
+            state.editor.ui.mode = EditorMode::Select;
+            assert_eq!(
+                state.command_for_keybind_action("toggle_tap_timing", true),
+                Some(AppCommand::EditorSetMode(EditorMode::Timing))
+            );
+            state.editor.ui.mode = EditorMode::Timing;
+            assert_eq!(
+                state.command_for_keybind_action("toggle_tap_timing", true),
+                None
+            );
+
+            assert_eq!(
+                state.command_for_keybind_action("add_camera_trigger", true),
+                Some(AppCommand::EditorAddCameraTrigger)
+            );
+            assert_eq!(
+                state.command_for_keybind_action("export_obj", true),
+                Some(AppCommand::EditorExportBlockObj)
+            );
+            assert_eq!(
+                state.command_for_keybind_action("toggle_perf_overlay", true),
+                Some(AppCommand::EditorTogglePerfOverlay)
+            );
+
+            assert_eq!(
+                state.command_for_keybind_action("mode_select", true),
+                Some(AppCommand::EditorSetMode(EditorMode::Select))
+            );
+            assert_eq!(
+                state.command_for_keybind_action("mode_move", true),
+                Some(AppCommand::EditorSetMode(EditorMode::Move))
+            );
+            assert_eq!(
+                state.command_for_keybind_action("mode_scale", true),
+                Some(AppCommand::EditorSetMode(EditorMode::Scale))
+            );
+            assert_eq!(
+                state.command_for_keybind_action("mode_rotate", true),
+                Some(AppCommand::EditorSetMode(EditorMode::Rotate))
+            );
+            assert_eq!(
+                state.command_for_keybind_action("mode_place", true),
+                Some(AppCommand::EditorSetMode(EditorMode::Place))
+            );
+            assert_eq!(
+                state.command_for_keybind_action("mode_trigger", true),
+                Some(AppCommand::EditorSetMode(EditorMode::Trigger))
+            );
+
+            assert_eq!(
+                state.command_for_keybind_action("does_not_exist", true),
+                None
+            );
+        });
+    }
+
+    #[test]
+    fn test_keyboard_capture_branch_handles_non_just_pressed_and_modifier_keys() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+
+            state.dispatch(AppCommand::EditorSetKeybindCapture(Some((
+                "copy".to_string(),
+                0,
+            ))));
+
+            state.process_keyboard_input("k", true, false);
+            assert!(state.editor_keybind_capture_action().is_some());
+
+            state.process_keyboard_input("Shift", true, true);
+            assert!(state.editor_keybind_capture_action().is_some());
+
+            state.process_keyboard_input("m", true, true);
+            assert!(state.editor_keybind_capture_action().is_none());
+            assert!(
+                state
+                    .app_settings()
+                    .keybinds_for_action("copy")
+                    .iter()
+                    .any(|chord| chord.key == "m"),
+                "captured key should be persisted as a new mapping"
+            );
+        });
+    }
+
+    #[test]
+    fn test_dispatch_block_timeline_timing_and_spawn_commands() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+
+            state.dispatch(AppCommand::EditorSetSnapToGrid(true));
+            state.dispatch(AppCommand::EditorSetSnapStep(0.5));
+            state.dispatch(AppCommand::EditorSetSnapRotation(true));
+            state.dispatch(AppCommand::EditorSetSnapRotationStep(30.0));
+            assert!(state.editor.config.snap_to_grid);
+            assert_eq!(state.editor.config.snap_step, 0.5);
+            assert!(state.editor.config.snap_rotation);
+            assert_eq!(state.editor.config.snap_rotation_step_degrees, 30.0);
+
+            state.dispatch(AppCommand::TurnRight);
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+
+            let updated = LevelObject {
+                position: [2.0, 1.0, 3.0],
+                size: [1.5, 1.0, 0.5],
+                rotation_degrees: [5.0, 10.0, 15.0],
+                roundness: 0.3,
+                block_id: "core/lava".to_string(),
+                color_tint: [0.2, 0.4, 0.8],
+            };
+            state.dispatch(AppCommand::EditorUpdateSelectedBlock(updated.clone()));
+            assert_eq!(state.editor.objects[0].position, updated.position);
+            assert_eq!(state.editor.objects[0].size, updated.size);
+            assert_eq!(state.editor.objects[0].roundness, updated.roundness);
+            assert_eq!(state.editor.objects[0].block_id, updated.block_id);
+
+            state.dispatch(AppCommand::EditorCopyBlock);
+            assert!(state.editor.runtime.interaction.clipboard.is_some());
+
+            let before_paste = state.editor.objects.len();
+            state.dispatch(AppCommand::EditorPasteBlock);
+            assert!(state.editor.objects.len() >= before_paste);
+
+            let before_duplicate = state.editor.objects.len();
+            state.dispatch(AppCommand::EditorDuplicateBlock);
+            assert!(state.editor.objects.len() >= before_duplicate);
+
+            state.dispatch(AppCommand::EditorNudgeSelected { dx: 1, dy: 0 });
+            assert!(!state.editor.objects.is_empty());
+
+            state.dispatch(AppCommand::EditorToggleTimelinePlayback);
+            state.dispatch(AppCommand::EditorToggleTimelinePlayback);
+
+            state.dispatch(AppCommand::EditorSetTimelineDuration(4.0));
+            state.dispatch(AppCommand::EditorSetTimelineTime(1.0));
+            state.dispatch(AppCommand::EditorAddTap);
+            assert!(!state.editor.timeline.taps.tap_times.is_empty());
+            state.dispatch(AppCommand::EditorRemoveTap);
+            state.dispatch(AppCommand::EditorClearTaps);
+            assert!(state.editor.timeline.taps.tap_times.is_empty());
+
+            state.dispatch(AppCommand::EditorAddTimingPoint {
+                time_seconds: 0.5,
+                bpm: 120.0,
+            });
+            assert!(!state.editor.timing.timing_points.is_empty());
+            state.dispatch(AppCommand::EditorSetTimingPointTime(0, 0.75));
+            state.dispatch(AppCommand::EditorSetTimingPointBpm(0, 140.0));
+            state.dispatch(AppCommand::EditorSetTimingPointTimeSignature(0, 3, 4));
+            state.dispatch(AppCommand::EditorSetTimingSelected(Some(0)));
+            assert_eq!(state.editor.timing.timing_selected_index, Some(0));
+            state.dispatch(AppCommand::EditorRemoveTimingPoint(0));
+
+            state.dispatch(AppCommand::EditorBpmTap);
+            state.dispatch(AppCommand::EditorBpmTapReset);
+
+            state.editor.ui.cursor = [7.0, 0.0, 9.0];
+            state.dispatch(AppCommand::EditorSetSpawnHere);
+            assert_eq!(state.editor.spawn.position, [7.0, 0.0, 9.0]);
+            let old_dir = state.editor.spawn.direction;
+            state.dispatch(AppCommand::EditorRotateSpawnDirection);
+            assert_ne!(state.editor.spawn.direction, old_dir);
+
+            state.dispatch(AppCommand::EditorRemoveBlock);
+        });
+    }
+
+    #[test]
+    fn test_dispatch_additional_command_variants_update_editor_state() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+
+            state.dispatch(AppCommand::EditorSetShowMetadata(true));
+            assert!(state.editor_show_metadata());
+
+            state.dispatch(AppCommand::EditorSetShowImport(true));
+            assert!(state.editor_show_import());
+            state.dispatch(AppCommand::EditorSetImportText("abc".to_string()));
+            assert_eq!(state.editor_import_text(), "abc");
+
+            state.dispatch(AppCommand::EditorSetShowSettings(true));
+            assert!(state.editor_show_settings());
+            state.dispatch(AppCommand::EditorSetSettingsSection(
+                SettingsSection::Keybinds,
+            ));
+            assert_eq!(state.editor_settings_section(), SettingsSection::Keybinds);
+
+            state.dispatch(AppCommand::EditorRenameLevel(
+                "CmdDispatchLevel".to_string(),
+            ));
+            assert_eq!(
+                state.editor_level_name().as_deref(),
+                Some("CmdDispatchLevel")
+            );
+
+            state.dispatch(AppCommand::EditorUpdateMusic(MusicMetadata {
+                source: "dispatch.mp3".to_string(),
+                ..MusicMetadata::default()
+            }));
+            assert_eq!(state.editor_music_metadata().source, "dispatch.mp3");
+
+            state.dispatch(AppCommand::EditorSetTimelineDuration(5.0));
+            state.dispatch(AppCommand::EditorSetTimelineTime(1.25));
+            assert_eq!(state.editor_timeline_duration_seconds(), 5.0);
+            assert_eq!(state.editor_timeline_time_seconds(), 1.25);
+
+            state.dispatch(AppCommand::EditorSetPlaybackSpeed(1.5));
+            assert_eq!(state.editor_playback_speed(), 1.5);
+            state.dispatch(AppCommand::EditorSetWaveformZoom(3.5));
+            state.dispatch(AppCommand::EditorSetWaveformScroll(1.25));
+            assert_eq!(state.editor_waveform_zoom(), 3.5);
+            assert_eq!(state.editor_waveform_scroll(), 1.25);
+
+            state.dispatch(AppCommand::EditorSetShiftHeld(true));
+            state.dispatch(AppCommand::EditorSetCtrlHeld(true));
+            state.dispatch(AppCommand::EditorSetAltHeld(true));
+            state.dispatch(AppCommand::EditorSetPanUpHeld(true));
+            state.dispatch(AppCommand::EditorSetPanDownHeld(true));
+            state.dispatch(AppCommand::EditorSetPanLeftHeld(true));
+            state.dispatch(AppCommand::EditorSetPanRightHeld(true));
+            assert!(state.editor.ui.shift_held);
+            assert!(state.editor.ui.ctrl_held);
+            assert!(state.editor.ui.alt_held);
+            assert!(state.editor.ui.pan_up_held);
+            assert!(state.editor.ui.pan_down_held);
+            assert!(state.editor.ui.pan_left_held);
+            assert!(state.editor.ui.pan_right_held);
+
+            state.dispatch(AppCommand::ResizeSurface {
+                width: 1024,
+                height: 576,
+            });
+            assert_eq!(state.render.gpu.config.width, 1024);
+            assert_eq!(state.render.gpu.config.height, 576);
+
+            let trigger = TimedTrigger {
+                time_seconds: 0.5,
+                duration_seconds: 0.0,
+                easing: TimedTriggerEasing::Linear,
+                target: TimedTriggerTarget::Object { object_id: 0 },
+                action: TimedTriggerAction::MoveTo {
+                    position: [1.0, 0.0, 0.0],
+                },
+            };
+            state.dispatch(AppCommand::EditorAddTrigger(trigger.clone()));
+            assert_eq!(state.editor_triggers().len(), 1);
+
+            state.dispatch(AppCommand::EditorUpdateTrigger(
+                0,
+                TimedTrigger {
+                    time_seconds: 0.75,
+                    ..trigger
+                },
+            ));
+            assert_eq!(state.editor_triggers()[0].time_seconds, 0.75);
+
+            state.dispatch(AppCommand::EditorSetTriggerSelected(Some(0)));
+            assert_eq!(state.editor_selected_trigger_index(), Some(0));
+            state.dispatch(AppCommand::EditorRemoveTrigger(0));
+            assert!(state.editor_triggers().is_empty());
+
+            state.dispatch(AppCommand::EditorSetSimulateTriggerHitboxes(true));
+            assert!(state.editor_simulate_trigger_hitboxes());
+
+            state.dispatch(AppCommand::EditorSetMode(EditorMode::Timing));
+            assert_eq!(state.editor_mode(), EditorMode::Timing);
+            state.dispatch(AppCommand::EditorSetMode(EditorMode::Place));
+            assert_eq!(state.editor_mode(), EditorMode::Place);
+
+            state.dispatch(AppCommand::EditorSetKeybindCapture(Some((
+                "copy".to_string(),
+                0,
+            ))));
+            assert!(state.editor_keybind_capture_action().is_some());
+
+            state.dispatch(AppCommand::EditorSetKeybind {
+                action: "copy".to_string(),
+                slot: 0,
+                chord: KeyChord::new("x", true, false, false),
+            });
+            assert!(!state.app_settings().keybinds_for_action("copy").is_empty());
+
+            state.dispatch(AppCommand::EditorClearKeybindSlot {
+                action: "copy".to_string(),
+                slot: 0,
+            });
+            state.dispatch(AppCommand::EditorResetKeybind("copy".to_string()));
+            state.dispatch(AppCommand::EditorResetKeybinds);
+        });
+    }
+
+    #[test]
+    fn test_keyboard_keybind_capture_sets_or_cancels_capture() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = new_editor_state().await;
+
+            state.dispatch(AppCommand::EditorSetKeybindCapture(Some((
+                "copy".to_string(),
+                0,
+            ))));
+            state.process_input_event(InputEvent::Key {
+                key: "Control".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            state.process_input_event(InputEvent::Key {
+                key: "k".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert!(state.editor_keybind_capture_action().is_none());
+            assert!(state
+                .app_settings()
+                .keybinds_for_action("copy")
+                .iter()
+                .any(|chord| chord.key == "k" && chord.ctrl));
+
+            state.dispatch(AppCommand::EditorSetKeybindCapture(Some((
+                "paste".to_string(),
+                0,
+            ))));
+            state.process_input_event(InputEvent::Key {
+                key: "Escape".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert!(state.editor_keybind_capture_action().is_none());
         });
     }
 }

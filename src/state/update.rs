@@ -788,8 +788,8 @@ mod tests {
     use super::State;
     use crate::game::TimelineSimulationRuntime;
     use crate::types::{
-        AppPhase, LevelObject, SpawnDirection, TimedTrigger, TimedTriggerAction,
-        TimedTriggerEasing, TimedTriggerTarget,
+        AppPhase, EditorMode, LevelObject, SpawnDirection, TimedTrigger, TimedTriggerAction,
+        TimedTriggerEasing, TimedTriggerTarget, TimingPoint,
     };
 
     fn sample_object() -> LevelObject {
@@ -830,6 +830,27 @@ mod tests {
 
             state.gameplay.state.game_over = true;
             assert_eq!(state.target_playing_time(0.2), 1.25);
+
+            state.gameplay.state.game_over = false;
+            assert_eq!(state.target_playing_time(10.0), 1.5);
+            assert_eq!(state.target_playing_time(-1.0), 1.25);
+        });
+    }
+
+    #[test]
+    fn pending_seek_without_target_resets_cooldown_in_editor_playback() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.timeline.playback.playing = true;
+            state.editor.timeline.playback.pending_seek_time_seconds = None;
+            state.editor.timeline.playback.seek_resync_cooldown_seconds = 0.75;
+
+            state.maybe_resync_editor_playback_from_pending_seek(0.1);
+            assert_eq!(
+                state.editor.timeline.playback.seek_resync_cooldown_seconds,
+                0.0
+            );
         });
     }
 
@@ -916,6 +937,290 @@ mod tests {
             state.toggle_editor_perf_overlay();
             assert!(state.editor_perf_overlay_enabled());
             assert!(!state.editor_perf_overlay_lines().is_empty());
+        });
+    }
+
+    #[test]
+    fn pending_seek_resync_waits_for_cooldown_then_applies_target_time() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.set_mode(EditorMode::Timing);
+            state.editor.timeline.playback.playing = true;
+            state.editor.timeline.clock.time_seconds = 0.5;
+            state.editor.timeline.playback.pending_seek_time_seconds = Some(2.0);
+            state.editor.timeline.playback.seek_resync_cooldown_seconds = 0.2;
+
+            state.maybe_resync_editor_playback_from_pending_seek(0.05);
+            assert_eq!(
+                state.editor.timeline.playback.pending_seek_time_seconds,
+                Some(2.0)
+            );
+            assert!(state.editor.timeline.playback.seek_resync_cooldown_seconds > 0.0);
+            assert_eq!(state.editor.timeline.clock.time_seconds, 0.5);
+
+            state.maybe_resync_editor_playback_from_pending_seek(1.0);
+            assert_eq!(
+                state.editor.timeline.playback.pending_seek_time_seconds,
+                None
+            );
+            assert_eq!(
+                state.editor.timeline.playback.seek_resync_cooldown_seconds,
+                0.0
+            );
+            assert_eq!(state.editor.timeline.clock.time_seconds, 2.0);
+        });
+    }
+
+    #[test]
+    fn pending_seek_resync_early_returns_when_not_editor_or_not_playing() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.timeline.playback.pending_seek_time_seconds = Some(3.0);
+            state.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
+
+            state.phase = AppPhase::Menu;
+            state.editor.timeline.playback.playing = true;
+            state.maybe_resync_editor_playback_from_pending_seek(1.0);
+            assert_eq!(
+                state.editor.timeline.playback.pending_seek_time_seconds,
+                Some(3.0)
+            );
+
+            state.phase = AppPhase::Editor;
+            state.editor.timeline.playback.playing = false;
+            state.maybe_resync_editor_playback_from_pending_seek(1.0);
+            assert_eq!(
+                state.editor.timeline.playback.pending_seek_time_seconds,
+                Some(3.0)
+            );
+        });
+    }
+
+    #[test]
+    fn playing_trigger_objects_at_time_requires_playing_phase_and_transform_triggers() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.gameplay.state.objects = vec![sample_object()];
+            state.gameplay.state.rebuild_behavior_cache();
+
+            state.phase = AppPhase::Menu;
+            state.editor.set_triggers(vec![instant_move_trigger()]);
+            assert!(state.playing_trigger_objects_at_time(0.2).is_none());
+
+            state.phase = AppPhase::Playing;
+            state.editor.set_triggers(Vec::new());
+            assert!(state.playing_trigger_objects_at_time(0.2).is_none());
+
+            state.editor.set_triggers(vec![instant_move_trigger()]);
+            let transformed = state
+                .playing_trigger_objects_at_time(0.2)
+                .expect("expected transformed objects");
+            assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
+
+            state.session.playing_trigger_hitboxes = false;
+            state.session.playing_trigger_base_objects =
+                Some(vec![sample_object(), sample_object()]);
+            let transformed = state
+                .playing_trigger_objects_at_time(0.2)
+                .expect("expected transformed objects");
+            assert_eq!(transformed.len(), 1);
+            assert_eq!(
+                state
+                    .session
+                    .playing_trigger_base_objects
+                    .as_ref()
+                    .map(|objects| objects.len()),
+                Some(1)
+            );
+        });
+    }
+
+    #[test]
+    fn update_editor_scrub_trail_mesh_creates_and_resets_runtime_when_needed() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.editor.timeline.clock.duration_seconds = 8.0;
+            state.editor.timeline.clock.time_seconds = 3.0;
+            state.editor.timeline.scrub_runtime = None;
+            state.editor.timeline.simulation_revision = 2;
+
+            state.update_editor_scrub_trail_mesh();
+            assert!(state.editor.timeline.scrub_runtime.is_some());
+            assert_eq!(state.editor.timeline.scrub_runtime_revision, 2);
+
+            let mut runtime = TimelineSimulationRuntime::new_with_triggers(
+                state.editor.spawn.position,
+                state.editor.spawn.direction,
+                &state.editor.objects,
+                &state.editor.timeline.taps.tap_times,
+                state.editor.triggers(),
+                state.editor.simulate_trigger_hitboxes(),
+            );
+            runtime.advance_to(6.0);
+            state.editor.timeline.scrub_runtime = Some(runtime);
+            state.editor.timeline.scrub_runtime_revision =
+                state.editor.timeline.simulation_revision;
+            state.editor.timeline.clock.time_seconds = 2.0;
+
+            state.update_editor_scrub_trail_mesh();
+            let elapsed = state
+                .editor
+                .timeline
+                .scrub_runtime
+                .as_ref()
+                .map(|runtime| runtime.elapsed_seconds())
+                .unwrap_or_default();
+            assert!(elapsed <= 2.000_1);
+        });
+    }
+
+    #[test]
+    fn update_menu_branch_resets_accumulator_and_records_frame() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Menu;
+            state.frame_runtime.editor.accumulator = 0.2;
+
+            state.update();
+
+            assert_eq!(state.frame_runtime.editor.accumulator, 0.0);
+            assert!(
+                state.editor.perf.profiler.stats[crate::state::PerfStage::FrameTotal.as_index()]
+                    .calls
+                    > 0
+            );
+        });
+    }
+
+    #[test]
+    fn update_editor_playback_in_timing_mode_keeps_runtime_none_and_handles_pending_seek() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Timing;
+            state.editor.timeline.clock.duration_seconds = 4.0;
+            state.editor.timeline.clock.time_seconds = 0.5;
+            state.editor.timeline.playback.playing = true;
+            state.editor.timeline.playback.pending_seek_time_seconds = Some(1.5);
+            state.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
+
+            state.update();
+
+            assert!(state.editor.timeline.playback.runtime.is_none());
+            assert!(state.editor.timeline.clock.time_seconds >= 0.5);
+        });
+    }
+
+    #[test]
+    fn update_editor_playback_stops_when_audio_not_playing() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Place;
+            state.editor.timeline.clock.duration_seconds = 10.0;
+            state.editor.timeline.clock.time_seconds = 2.0;
+            state.editor.timeline.playback.playing = true;
+            state.editor.timeline.playback.runtime =
+                Some(TimelineSimulationRuntime::new_with_triggers(
+                    state.editor.spawn.position,
+                    state.editor.spawn.direction,
+                    &state.editor.objects,
+                    &state.editor.timeline.taps.tap_times,
+                    state.editor.triggers(),
+                    state.editor.simulate_trigger_hitboxes(),
+                ));
+
+            // In tests, no active playback source means runtime reports not playing.
+            state.update();
+
+            assert!(!state.editor.timeline.playback.playing);
+            assert!(state.editor.timeline.playback.runtime.is_none());
+            assert!(state
+                .editor
+                .timeline
+                .playback
+                .pending_seek_time_seconds
+                .is_none());
+        });
+    }
+
+    #[test]
+    fn update_playing_phase_level_complete_returns_to_menu() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Playing;
+            state.gameplay.state.level_complete = true;
+            state.gameplay.state.completion_hold_seconds = 0.0;
+
+            state.update();
+
+            assert_eq!(state.phase, AppPhase::Menu);
+        });
+    }
+
+    #[test]
+    fn update_playing_phase_game_over_keeps_phase_and_stops_audio_path() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Playing;
+            state.gameplay.state.started = true;
+            state.gameplay.state.game_over = true;
+            state.gameplay.state.objects = vec![sample_object()];
+            state.gameplay.state.rebuild_behavior_cache();
+
+            state.update();
+
+            assert_eq!(state.phase, AppPhase::Playing);
+            assert!(state.gameplay.state.game_over);
+        });
+    }
+
+    #[test]
+    fn update_playing_phase_builds_trail_and_line_uniform_for_right_direction() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Playing;
+            state.gameplay.state.started = false;
+            state.gameplay.state.direction = crate::types::Direction::Right;
+            state.gameplay.state.position = [0.0, 0.0, 0.0];
+            state.gameplay.state.is_grounded = false;
+            state.gameplay.state.trail_segments =
+                vec![vec![[900.0, 0.0, 900.0]], vec![[0.0, 0.0, 0.0]]];
+
+            state.update();
+
+            assert_eq!(
+                state.frame_runtime.player_render.line_uniform.rotation,
+                -std::f32::consts::FRAC_PI_2
+            );
+            assert!(state.render.meshes.trail.draw_data().is_some());
+        });
+    }
+
+    #[test]
+    fn update_editor_timing_playback_advances_with_pending_seek_and_timing_points() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Timing;
+            state.editor.timeline.playback.playing = true;
+            state.editor.timeline.clock.time_seconds = 0.1;
+            state.editor.timeline.clock.duration_seconds = 8.0;
+            state.editor.timeline.playback.pending_seek_time_seconds = Some(1.1);
+            state.editor.timeline.playback.seek_resync_cooldown_seconds = 1.0;
+            state.editor.timing.timing_points = vec![TimingPoint {
+                time_seconds: 0.0,
+                bpm: 120.0,
+                time_signature_numerator: 4,
+                time_signature_denominator: 4,
+            }];
+
+            state.update();
+
+            assert!(state.editor.timeline.clock.time_seconds >= 1.0);
+            assert!(!state.editor.timeline.playback.playing);
         });
     }
 }

@@ -662,8 +662,9 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::super::super::State;
-    use crate::types::{AppPhase, EditorMode, LevelObject};
-    use glam::Vec2;
+    use super::super::super::{EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart};
+    use crate::types::{AppPhase, EditorInteractionChange, EditorMode, LevelObject};
+    use glam::{Vec2, Vec3};
 
     fn test_block(position: [f32; 3]) -> LevelObject {
         LevelObject {
@@ -674,6 +675,10 @@ mod tests {
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         }
+    }
+
+    fn default_viewport() -> Vec2 {
+        Vec2::new(1280.0, 720.0)
     }
 
     #[test]
@@ -772,6 +777,239 @@ mod tests {
             assert!(changed);
             assert!(state.editor.ui.selected_block_indices.contains(&0));
             assert_eq!(state.editor.ui.selected_block_index, Some(0));
+        });
+    }
+
+    #[test]
+    fn update_marquee_requires_existing_start_and_valid_phase() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.editor.ui.mode = EditorMode::Select;
+            assert!(!state
+                .editor
+                .update_marquee_selection(10.0, 10.0, AppPhase::Editor));
+
+            state.editor.ui.marquee_start_screen = Some([0.0, 0.0]);
+            state.editor.ui.right_dragging = true;
+            assert!(!state
+                .editor
+                .update_marquee_selection(10.0, 10.0, AppPhase::Editor));
+
+            state.editor.ui.right_dragging = false;
+            assert!(!state
+                .editor
+                .update_marquee_selection(10.0, 10.0, AppPhase::Menu));
+
+            assert!(state
+                .editor
+                .update_marquee_selection(10.0, 10.0, AppPhase::Editor));
+            assert_eq!(state.editor.ui.marquee_current_screen, Some([10.0, 10.0]));
+        });
+    }
+
+    #[test]
+    fn begin_block_drag_and_extended_drag_record_history_on_success() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let viewport = default_viewport();
+            let block_center = Vec3::new(0.5, 0.5, 0.5);
+
+            state.editor.ui.mode = EditorMode::Select;
+            state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
+            state.editor.ui.selected_block_indices = vec![0];
+            state.editor.ui.selected_block_index = Some(0);
+
+            let click = state
+                .editor
+                .world_to_screen_v(block_center, viewport)
+                .expect("block center should project to screen");
+
+            assert!(state
+                .editor
+                .begin_block_drag(click.x as f64, click.y as f64, viewport));
+            let drag = state
+                .editor
+                .runtime
+                .interaction
+                .block_drag
+                .as_ref()
+                .expect("block drag should be initialized");
+            assert_eq!(drag.start_blocks.len(), 1);
+            assert_eq!(drag.start_blocks[0].index, 0);
+
+            let history_before = state.editor.runtime.history.undo.len();
+            state.editor.runtime.interaction.block_drag = None;
+            assert!(state.editor.begin_selected_block_drag_ext(
+                click.x as f64,
+                click.y as f64,
+                viewport,
+                AppPhase::Editor,
+            ));
+            assert_eq!(
+                state.editor.runtime.history.undo.len(),
+                history_before + 1,
+                "begin_selected_block_drag_ext should capture undo history"
+            );
+            assert!(!state.editor.begin_selected_block_drag_ext(
+                click.x as f64,
+                click.y as f64,
+                viewport,
+                AppPhase::Menu,
+            ));
+        });
+    }
+
+    #[test]
+    fn drag_selection_handles_missing_drag_and_zero_delta() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let viewport = default_viewport();
+
+            state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
+            assert!(!state.editor.drag_selection(10.0, 20.0, viewport));
+
+            state.editor.runtime.interaction.block_drag = Some(EditorBlockDrag {
+                start_mouse: [10.0, 20.0],
+                start_center_screen: [100.0, 120.0],
+                start_center_world: [0.5, 0.5, 0.5],
+                start_blocks: vec![EditorDragBlockStart {
+                    index: 0,
+                    position: state.editor.objects[0].position,
+                    size: state.editor.objects[0].size,
+                    rotation_degrees: state.editor.objects[0].rotation_degrees,
+                }],
+            });
+
+            let before = state.editor.objects[0].position;
+            assert!(state.editor.drag_selection(10.0, 20.0, viewport));
+            assert_eq!(before, state.editor.objects[0].position);
+        });
+    }
+
+    #[test]
+    fn drag_selection_from_screen_updates_objects_and_marks_cursor_dirty() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let viewport = default_viewport();
+
+            state.editor.ui.mode = EditorMode::Select;
+            state.editor.config.snap_to_grid = false;
+            state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
+
+            let center = Vec3::new(0.5, 0.5, 0.5);
+            let origin_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center should project to screen");
+
+            state.editor.runtime.interaction.block_drag = Some(EditorBlockDrag {
+                start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
+                start_center_screen: [origin_screen.x, origin_screen.y],
+                start_center_world: [center.x, center.y, center.z],
+                start_blocks: vec![EditorDragBlockStart {
+                    index: 0,
+                    position: state.editor.objects[0].position,
+                    size: state.editor.objects[0].size,
+                    rotation_degrees: state.editor.objects[0].rotation_degrees,
+                }],
+            });
+
+            state.editor.runtime.dirty = EditorDirtyFlags::default();
+            let before = state.editor.objects[0].position;
+
+            assert!(state.editor.drag_selection_from_screen(
+                origin_screen.x as f64 + 40.0,
+                origin_screen.y as f64,
+                viewport,
+                AppPhase::Editor,
+            ));
+            assert_ne!(before, state.editor.objects[0].position);
+            assert!(state.editor.runtime.dirty.rebuild_cursor);
+
+            assert!(!state.editor.drag_selection_from_screen(
+                origin_screen.x as f64,
+                origin_screen.y as f64,
+                viewport,
+                AppPhase::Menu,
+            ));
+
+            state.editor.ui.right_dragging = true;
+            assert!(!state.editor.drag_selection_from_screen(
+                origin_screen.x as f64,
+                origin_screen.y as f64,
+                viewport,
+                AppPhase::Editor,
+            ));
+        });
+    }
+
+    #[test]
+    fn select_block_from_screen_handles_pick_miss_and_additive_toggle() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let viewport = default_viewport();
+            let block_center = Vec3::new(0.5, 0.5, 0.5);
+
+            state.editor.ui.mode = EditorMode::Select;
+            state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
+
+            let click = state
+                .editor
+                .world_to_screen_v(block_center, viewport)
+                .expect("block center should project to screen");
+
+            let select_result = state.editor.select_block_from_screen(
+                click.x as f64,
+                click.y as f64,
+                viewport,
+                AppPhase::Editor,
+            );
+            assert_eq!(select_result, EditorInteractionChange::Cursor);
+            assert_eq!(state.editor.ui.selected_block_index, Some(0));
+
+            state.editor.ui.shift_held = true;
+            let toggle_result = state.editor.select_block_from_screen(
+                click.x as f64,
+                click.y as f64,
+                viewport,
+                AppPhase::Editor,
+            );
+            assert!(
+                matches!(
+                    toggle_result,
+                    EditorInteractionChange::Hover | EditorInteractionChange::Cursor
+                ),
+                "expected a visible interaction change when toggling additive selection"
+            );
+            assert!(state.editor.ui.selected_block_indices.is_empty());
+            assert_eq!(state.editor.ui.selected_block_index, None);
+
+            state.editor.ui.selected_block_indices = vec![0];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.shift_held = false;
+            let miss_result = state.editor.select_block_from_screen(
+                10.0,
+                10.0,
+                Vec2::new(0.0, viewport.y),
+                AppPhase::Editor,
+            );
+            assert_eq!(miss_result, EditorInteractionChange::None);
+            assert!(state.editor.ui.selected_block_indices.is_empty());
+            assert_eq!(state.editor.ui.selected_block_index, None);
+
+            state.editor.ui.selected_block_indices = vec![0];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.shift_held = true;
+            let additive_miss_result = state.editor.select_block_from_screen(
+                10.0,
+                10.0,
+                Vec2::new(0.0, viewport.y),
+                AppPhase::Editor,
+            );
+            assert_eq!(additive_miss_result, EditorInteractionChange::None);
+            assert_eq!(state.editor.ui.selected_block_index, Some(0));
+            assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
         });
     }
 }

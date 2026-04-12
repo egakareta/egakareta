@@ -1256,7 +1256,9 @@ mod tests {
     use super::State;
     use crate::game::TimelineSimulationRuntime;
     use crate::test_utils::assert_approx_eq as approx_eq;
-    use crate::types::{EditorMode, GizmoAxis, GizmoDragKind, LevelObject, SpawnDirection};
+    use crate::types::{
+        AppPhase, EditorMode, GizmoAxis, GizmoDragKind, LevelObject, SpawnDirection,
+    };
 
     #[test]
     fn editor_mode_switch_clears_selection_and_drag_state_when_mode_cannot_select() {
@@ -1452,6 +1454,150 @@ mod tests {
             state.set_editor_waveform_scroll(2.5);
             assert_eq!(state.editor_waveform_zoom(), 10.0);
             assert_eq!(state.editor_waveform_scroll(), 2.5);
+        });
+    }
+
+    #[test]
+    fn phase_gated_editor_input_state_wrappers_only_apply_in_editor() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Menu;
+
+            state.set_editor_pan_up_held(true);
+            state.set_editor_pan_down_held(true);
+            state.set_editor_pan_left_held(true);
+            state.set_editor_pan_right_held(true);
+            state.set_editor_shift_held(true);
+            state.set_editor_ctrl_held(true);
+            state.set_editor_alt_held(true);
+
+            assert!(!state.editor.ui.pan_up_held);
+            assert!(!state.editor.ui.pan_down_held);
+            assert!(!state.editor.ui.pan_left_held);
+            assert!(!state.editor.ui.pan_right_held);
+            assert!(!state.editor.ui.shift_held);
+            assert!(!state.editor.ui.ctrl_held);
+            assert!(!state.editor.ui.alt_held);
+
+            state.phase = AppPhase::Editor;
+            state.set_editor_pan_up_held(true);
+            state.set_editor_pan_down_held(true);
+            state.set_editor_pan_left_held(true);
+            state.set_editor_pan_right_held(true);
+            state.set_editor_shift_held(true);
+            state.set_editor_ctrl_held(true);
+            state.set_editor_alt_held(true);
+
+            assert!(state.editor.ui.pan_up_held);
+            assert!(state.editor.ui.pan_down_held);
+            assert!(state.editor.ui.pan_left_held);
+            assert!(state.editor.ui.pan_right_held);
+            assert!(state.editor.ui.shift_held);
+            assert!(state.editor.ui.ctrl_held);
+            assert!(state.editor.ui.alt_held);
+        });
+    }
+
+    #[test]
+    fn editor_effective_mode_for_playback_uses_last_mode_when_ui_is_null() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.editor.timeline.playback.playing = true;
+            state.editor.ui.mode = EditorMode::Null;
+            state.editor.runtime.interaction.last_mode = Some(EditorMode::Timing);
+            assert_eq!(
+                state.editor_effective_mode_for_playback(),
+                EditorMode::Timing
+            );
+            assert!(state.editor_is_effectively_timing_mode());
+
+            state.editor.runtime.interaction.last_mode = None;
+            assert_eq!(state.editor_effective_mode_for_playback(), EditorMode::Null);
+            assert!(!state.editor_is_effectively_timing_mode());
+
+            state.editor.timeline.playback.playing = false;
+            state.editor.ui.mode = EditorMode::Place;
+            assert_eq!(
+                state.editor_effective_mode_for_playback(),
+                EditorMode::Place
+            );
+        });
+    }
+
+    #[test]
+    fn editor_wrapper_setters_and_getters_cover_timing_and_waveform_state() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+
+            state.editor_add_timing_point(2.0, 130.0);
+            state.editor_add_timing_point(1.0, 120.0);
+            assert_eq!(state.editor_timing_points().len(), 2);
+            assert!(
+                state.editor_timing_points()[0].time_seconds
+                    <= state.editor_timing_points()[1].time_seconds
+            );
+
+            state.set_editor_timing_selected_index(Some(1));
+            assert_eq!(state.editor_timing_selected_index(), Some(1));
+            state.editor_update_timing_point_time(1, -5.0);
+            assert!(state.editor_timing_points()[0].time_seconds >= 0.0);
+            state.editor_update_timing_point_bpm(0, 0.2);
+            assert!(state.editor_timing_points()[0].bpm >= 1.0);
+            state.editor_update_timing_point_time_signature(0, 0, 0);
+            assert!(state.editor_timing_points()[0].time_signature_numerator >= 1);
+            assert!(state.editor_timing_points()[0].time_signature_denominator >= 1);
+            state.editor_remove_timing_point(5);
+            state.editor_remove_timing_point(0);
+            assert!(state.editor_timing_points().len() <= 1);
+
+            state.set_editor_waveform_zoom(0.01);
+            state.set_editor_waveform_scroll(3.25);
+            assert_eq!(state.editor_waveform_zoom(), 0.1);
+            assert_eq!(state.editor_waveform_scroll(), 3.25);
+
+            state.editor.timing.waveform_samples = vec![0.1, 0.2, 0.3];
+            state.editor.timing.waveform_sample_rate = 44_100;
+            assert_eq!(state.editor_waveform_samples(), &[0.1, 0.2, 0.3]);
+            assert_eq!(state.editor_waveform_sample_rate(), 44_100);
+        });
+    }
+
+    #[test]
+    fn set_editor_block_id_and_snap_settings_update_app_settings() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+
+            state.editor.objects.push(LevelObject {
+                position: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                roundness: 0.18,
+                block_id: "core/stone".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            });
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+
+            state.set_editor_block_id("core/lava".to_string());
+            assert_eq!(state.editor_selected_block_id(), "core/lava");
+            assert_eq!(state.app_settings().editor_selected_block_id, "core/lava");
+
+            state.set_editor_snap_to_grid(true);
+            state.set_editor_snap_step(0.2);
+            state.set_editor_snap_rotation(true);
+            state.set_editor_snap_rotation_step(7.5);
+
+            assert!(state.editor_snap_to_grid());
+            assert_eq!(state.editor_snap_step(), 0.2);
+            assert!(state.editor_snap_rotation());
+            assert_eq!(state.editor_snap_rotation_step_degrees(), 7.5);
+            assert!(state.app_settings().editor_snap_to_grid);
+            assert_eq!(state.app_settings().editor_snap_step, 0.2);
+            assert!(state.app_settings().editor_rotation_snap);
+            assert_eq!(state.app_settings().editor_rotation_snap_step, 7.5);
         });
     }
 }

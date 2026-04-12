@@ -13,8 +13,8 @@ use crate::game::simulate_timeline_state_with_triggers;
 use crate::platform::audio::runtime_asset_source_key;
 use crate::test_utils::assert_approx_eq as approx_eq;
 use crate::types::{
-    AppPhase, EditorMode, GizmoAxis, GizmoDragKind, LevelObject, SpawnDirection, TimedTrigger,
-    TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+    AppPhase, EditorMode, GizmoAxis, GizmoDragKind, LevelObject, PhysicalSize, SpawnDirection,
+    TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
 };
 use glam::{Vec2, Vec3};
 
@@ -1253,5 +1253,148 @@ fn compose_mode_timeline_scrub_runs_simulation_and_mesh_dirty() {
         assert!(state.editor.runtime.dirty.rebuild_block_mesh);
         // 2. Snapshot cache is NOT empty (simulation was run for preview)
         assert!(!state.editor.timeline.snapshot_cache.is_empty());
+    });
+}
+
+#[test]
+fn state_navigation_resize_and_phase_queries_cover_core_branches() {
+    pollster::block_on(async {
+        let mut state = State::new_test().await;
+
+        assert!(state.is_menu());
+        assert!(!state.is_editor());
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = state.window();
+        }
+
+        let initial_size = PhysicalSize::new(
+            state.render.gpu.config.width,
+            state.render.gpu.config.height,
+        );
+        state.resize_surface(PhysicalSize::new(0, initial_size.height));
+        assert_eq!(state.render.gpu.config.width, initial_size.width);
+        assert_eq!(state.render.gpu.config.height, initial_size.height);
+
+        let level_count = state.menu.state.levels.len();
+        state.menu.state.selected_level = level_count - 1;
+        state.next_level();
+        assert_eq!(state.menu.state.selected_level, 0);
+
+        state.prev_level();
+        assert_eq!(state.menu.state.selected_level, level_count - 1);
+
+        state.menu.state.selected_level = 1;
+        state.prev_level();
+        assert_eq!(state.menu.state.selected_level, 0);
+
+        state.enter_editor_phase("Navigation Branches".to_string());
+        state.editor.ui.cursor = [0.0, 2.0, 0.0];
+        state.next_level();
+        assert_eq!(state.editor.ui.cursor, [1.0, 2.0, 0.0]);
+        state.prev_level();
+        assert_eq!(state.editor.ui.cursor, [0.0, 2.0, 0.0]);
+
+        assert!(state.is_editor());
+        assert!(!state.is_menu());
+    });
+}
+
+#[test]
+fn turn_right_covers_menu_playing_editor_and_game_over_paths() {
+    pollster::block_on(async {
+        let mut state = State::new_test().await;
+
+        state.turn_right();
+        assert_eq!(state.phase, AppPhase::Playing);
+
+        let first_level = state
+            .menu
+            .state
+            .levels
+            .first()
+            .cloned()
+            .expect("expected at least one built-in level");
+
+        state.phase = AppPhase::Playing;
+        state.session.playtesting_editor = false;
+        state.session.playing_level_name = Some(first_level);
+        state.gameplay.state.started = false;
+        state.gameplay.state.game_over = false;
+        state.turn_right();
+        assert!(state.gameplay.state.started);
+
+        state.gameplay.state.started = true;
+        state.gameplay.state.game_over = true;
+        state.turn_right();
+        assert!(!state.gameplay.state.started);
+
+        state.phase = AppPhase::Editor;
+        state.editor.set_mode(EditorMode::Place);
+        state.editor.ui.cursor = [2.0, 0.0, 2.0];
+        let before = state.editor.objects.len();
+        state.turn_right();
+        assert_eq!(state.editor.objects.len(), before + 1);
+
+        state.phase = AppPhase::GameOver;
+        state.turn_right();
+        assert_eq!(state.phase, AppPhase::Menu);
+    });
+}
+
+#[test]
+fn toggle_editor_and_mouse_paths_cover_playtest_and_release_guards() {
+    pollster::block_on(async {
+        let mut state = State::new_test().await;
+
+        state.phase = AppPhase::Menu;
+        state.toggle_editor();
+        assert_eq!(state.phase, AppPhase::Editor);
+
+        state.phase = AppPhase::Playing;
+        state.session.playtesting_editor = true;
+        state.toggle_editor();
+        assert_eq!(state.phase, AppPhase::Editor);
+
+        state.phase = AppPhase::Playing;
+        state.session.playtesting_editor = false;
+        state.toggle_editor();
+        assert_eq!(state.phase, AppPhase::Playing);
+
+        state.phase = AppPhase::Editor;
+        state.editor.ui.marquee_start_screen = Some([32.0, 64.0]);
+        state.editor.ui.marquee_current_screen = Some([48.0, 80.0]);
+        state.handle_mouse_button(0, false);
+        assert!(state.editor.ui.marquee_start_screen.is_none());
+        assert!(state.editor.ui.marquee_current_screen.is_none());
+
+        state.handle_mouse_button(2, true);
+        assert!(state.editor.ui.right_dragging);
+        state.handle_mouse_button(2, false);
+        assert!(!state.editor.ui.right_dragging);
+
+        state.phase = AppPhase::Menu;
+        state.handle_mouse_button(0, true);
+        assert_eq!(state.phase, AppPhase::Playing);
+    });
+}
+
+#[test]
+fn handle_primary_click_covers_trigger_and_timing_mode_paths() {
+    pollster::block_on(async {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+
+        state.editor.set_mode(EditorMode::Timing);
+        state.handle_primary_click(220.0, 180.0);
+        assert_eq!(state.editor.ui.pointer_screen, Some([220.0, 180.0]));
+        assert!(state.editor.ui.left_mouse_down);
+        assert!(state.editor.ui.marquee_start_screen.is_none());
+
+        state.editor.set_left_mouse_down(false);
+        state.editor.set_mode(EditorMode::Trigger);
+        state.handle_primary_click(320.0, 240.0);
+        assert!(state.editor.ui.marquee_start_screen.is_some());
     });
 }
