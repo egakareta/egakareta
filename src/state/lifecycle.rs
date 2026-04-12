@@ -17,6 +17,8 @@ use super::{
     State,
 };
 use glam::Mat4;
+#[cfg(test)]
+use std::sync::OnceLock;
 use wgpu::util::DeviceExt;
 
 use crate::block_repository::block_texture_atlas;
@@ -72,6 +74,89 @@ fn editor_ghost_trail_depth_stencil_state() -> wgpu::DepthStencilState {
     }
 }
 
+fn default_line_uniform() -> LineUniform {
+    LineUniform {
+        offset: [0.0, 0.0],
+        rotation: 0.0,
+        _pad: 0.0,
+    }
+}
+
+fn default_camera_uniform() -> CameraUniform {
+    CameraUniform {
+        view_proj: Mat4::IDENTITY.to_cols_array_2d(),
+    }
+}
+
+fn default_color_space_uniform(apply_gamma_correction: bool) -> ColorSpaceUniform {
+    ColorSpaceUniform {
+        apply_gamma_correction: if apply_gamma_correction { 1.0 } else { 0.0 },
+        time_seconds: 0.0,
+        _pad: [0.0; 2],
+    }
+}
+
+#[cfg(test)]
+struct TestGpuFixture {
+    adapter_info: wgpu::AdapterInfo,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    config: wgpu::SurfaceConfiguration,
+    size: PhysicalSize<u32>,
+    render_pipeline: wgpu::RenderPipeline,
+    block_icon_pipeline: wgpu::RenderPipeline,
+    editor_ghost_trail_pipeline: wgpu::RenderPipeline,
+    gizmo_overlay_pipeline: wgpu::RenderPipeline,
+    line_bind_group_layout: wgpu::BindGroupLayout,
+    zero_line_bind_group: wgpu::BindGroup,
+    camera_bind_group_layout: wgpu::BindGroupLayout,
+    color_space_bind_group_layout: wgpu::BindGroupLayout,
+    block_texture_bind_group: wgpu::BindGroup,
+    apply_gamma_correction: bool,
+}
+
+#[cfg(test)]
+impl From<GpuContext> for TestGpuFixture {
+    fn from(gpu: GpuContext) -> Self {
+        let GpuContext {
+            adapter_info,
+            device,
+            queue,
+            config,
+            size,
+            render_pipeline,
+            block_icon_pipeline,
+            editor_ghost_trail_pipeline,
+            gizmo_overlay_pipeline,
+            line_bind_group_layout,
+            zero_line_bind_group,
+            camera_bind_group_layout,
+            color_space_bind_group_layout,
+            block_texture_bind_group,
+            apply_gamma_correction,
+            ..
+        } = gpu;
+
+        Self {
+            adapter_info,
+            device,
+            queue,
+            config,
+            size,
+            render_pipeline,
+            block_icon_pipeline,
+            editor_ghost_trail_pipeline,
+            gizmo_overlay_pipeline,
+            line_bind_group_layout,
+            zero_line_bind_group,
+            camera_bind_group_layout,
+            color_space_bind_group_layout,
+            block_texture_bind_group,
+            apply_gamma_correction,
+        }
+    }
+}
+
 impl State {
     #[cfg(target_arch = "wasm32")]
     pub(crate) async fn new(canvas: WasmCanvas) -> Self {
@@ -95,32 +180,8 @@ impl State {
 
     #[cfg(test)]
     pub(crate) async fn try_new_test() -> Option<State> {
-        let backends_to_try = if cfg!(target_os = "linux") {
-            vec![wgpu::Backends::VULKAN, wgpu::Backends::all()]
-        } else {
-            vec![wgpu::Backends::all()]
-        };
-
-        for backends in backends_to_try {
-            let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-                backends,
-                ..Default::default()
-            });
-            if let Some(state) = Self::new_common(
-                instance,
-                None,
-                None,
-                PhysicalSize {
-                    width: 800,
-                    height: 600,
-                },
-            )
-            .await
-            {
-                return Some(state);
-            }
-        }
-        None
+        let fixture = Self::shared_test_gpu_fixture()?;
+        Some(Self::new_state_from_test_gpu_fixture(fixture))
     }
 
     #[cfg(test)]
@@ -130,6 +191,265 @@ impl State {
             .expect(
                 "No suitable wgpu adapter found for tests. Install Vulkan-capable drivers (or a Vulkan software driver on Linux/headless environments), or use try_new_test() when running in an environment without GPU support.",
             )
+    }
+
+    #[cfg(test)]
+    fn shared_test_gpu_fixture() -> Option<&'static TestGpuFixture> {
+        static FIXTURE: OnceLock<Option<TestGpuFixture>> = OnceLock::new();
+
+        FIXTURE
+            .get_or_init(|| {
+                pollster::block_on(async {
+                    let backends_to_try = if cfg!(target_os = "linux") {
+                        vec![wgpu::Backends::VULKAN, wgpu::Backends::all()]
+                    } else {
+                        vec![wgpu::Backends::all()]
+                    };
+
+                    for backends in backends_to_try {
+                        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+                            backends,
+                            ..Default::default()
+                        });
+
+                        if let Some(state) = Self::new_common(
+                            instance,
+                            None,
+                            None,
+                            PhysicalSize {
+                                width: 800,
+                                height: 600,
+                            },
+                        )
+                        .await
+                        {
+                            return Some(TestGpuFixture::from(state.render.gpu));
+                        }
+                    }
+
+                    None
+                })
+            })
+            .as_ref()
+    }
+
+    #[cfg(test)]
+    fn new_state_from_test_gpu_fixture(fixture: &TestGpuFixture) -> State {
+        let line_uniform = default_line_uniform();
+        let line_uniform_buffer =
+            fixture
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Line Uniform Buffer"),
+                    contents: bytemuck::bytes_of(&line_uniform),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+
+        let camera_uniform = default_camera_uniform();
+        let camera_uniform_buffer =
+            fixture
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Camera Uniform Buffer"),
+                    contents: bytemuck::bytes_of(&camera_uniform),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+        let camera_bind_group = fixture
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Camera Bind Group"),
+                layout: &fixture.camera_bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: camera_uniform_buffer.as_entire_binding(),
+                }],
+            });
+
+        let color_space_uniform = default_color_space_uniform(fixture.apply_gamma_correction);
+        let color_space_uniform_buffer =
+            fixture
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Color Space Uniform Buffer"),
+                    contents: bytemuck::bytes_of(&color_space_uniform),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+        let color_space_bind_group = fixture
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Color Space Bind Group"),
+                layout: &fixture.color_space_bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: color_space_uniform_buffer.as_entire_binding(),
+                }],
+            });
+
+        let (depth_texture, depth_view) =
+            GpuContext::create_depth_texture(&fixture.device, &fixture.config);
+
+        let floor_vertices = build_floor_vertices();
+        let grid_vertices = build_grid_vertices();
+
+        let floor_mesh =
+            MeshSlot::from_vertices(&fixture.device, "Floor Vertex Buffer", &floor_vertices);
+
+        let grid_mesh =
+            MeshSlot::from_vertices(&fixture.device, "Grid Vertex Buffer", &grid_vertices);
+
+        let trail_mesh = MeshSlot::streaming(&fixture.device, "Trail Vertex Buffer", 36 * 20000);
+
+        let menu = MenuState {
+            selected_level: 0,
+            levels: builtin_level_names(),
+        };
+
+        let mut game = GameState::new();
+        game.objects = create_menu_scene();
+        game.rebuild_behavior_cache();
+
+        let mut app_settings = crate::types::AppSettings::default();
+        app_settings.editor_selected_block_id =
+            crate::block_repository::normalize_block_id(&app_settings.editor_selected_block_id);
+
+        let local_audio_cache = std::collections::HashMap::new();
+        let available_graphics_backends = discover_graphics_backends();
+        let available_audio_backends = crate::platform::audio::available_backend_names();
+        let mut audio_state = AudioState::new(local_audio_cache);
+        let _ = audio_state
+            .runtime
+            .set_preferred_backend_name(&app_settings.audio_backend);
+
+        let block_vertices = build_block_vertices(&game.objects);
+        let block_mesh =
+            MeshSlot::from_vertices(&fixture.device, "Block Vertex Buffer", &block_vertices);
+
+        let now = PlatformInstant::now();
+
+        Self {
+            render: RenderSubsystem {
+                gpu: GpuContext {
+                    surface_host: None,
+                    surface: None,
+                    adapter_info: fixture.adapter_info.clone(),
+                    device: fixture.device.clone(),
+                    queue: fixture.queue.clone(),
+                    config: fixture.config.clone(),
+                    size: fixture.size,
+                    depth_texture,
+                    depth_view,
+                    render_pipeline: fixture.render_pipeline.clone(),
+                    block_icon_pipeline: fixture.block_icon_pipeline.clone(),
+                    editor_ghost_trail_pipeline: fixture.editor_ghost_trail_pipeline.clone(),
+                    gizmo_overlay_pipeline: fixture.gizmo_overlay_pipeline.clone(),
+                    line_bind_group_layout: fixture.line_bind_group_layout.clone(),
+                    line_uniform_buffer,
+                    zero_line_bind_group: fixture.zero_line_bind_group.clone(),
+                    camera_uniform_buffer,
+                    camera_bind_group_layout: fixture.camera_bind_group_layout.clone(),
+                    camera_bind_group,
+                    color_space_bind_group_layout: fixture.color_space_bind_group_layout.clone(),
+                    color_space_uniform_buffer,
+                    color_space_bind_group,
+                    block_texture_bind_group: fixture.block_texture_bind_group.clone(),
+                    apply_gamma_correction: fixture.apply_gamma_correction,
+                },
+                meshes: SceneMeshes {
+                    floor: floor_mesh,
+                    grid: grid_mesh,
+                    trail: trail_mesh,
+                    blocks: block_mesh,
+                    blocks_static: MeshSlot::Empty,
+                    blocks_selected: MeshSlot::Empty,
+                    editor_cursor: MeshSlot::Empty,
+                    editor_hover_outline: MeshSlot::Empty,
+                    editor_selection_outline: MeshSlot::Empty,
+                    editor_gizmo: MeshSlot::Empty,
+                    tap_indicators: MeshSlot::Empty,
+                    spawn_marker: MeshSlot::Empty,
+                    camera_trigger_markers: MeshSlot::Empty,
+                    editor_preview_player: MeshSlot::Empty,
+                },
+            },
+            gameplay: GameplaySubsystem { state: game },
+            phase: AppPhase::Menu,
+            menu: MenuSubsystem { state: menu },
+            frame_runtime: FrameRuntimeState {
+                editor: EditorFrameState {
+                    last_frame: now,
+                    accumulator: 0.0,
+                },
+                player_render: PlayerRenderState { line_uniform },
+                global_time_seconds: 0.0,
+            },
+            audio: AudioSubsystem { state: audio_state },
+            session: SessionSubsystem {
+                editor_level_name: None,
+                editor_music_metadata: MusicMetadata {
+                    source: "music.mp3".to_string(),
+                    title: None,
+                    author: None,
+                    extra: serde_json::Map::new(),
+                },
+                editor_show_metadata: false,
+                editor_show_import: false,
+                editor_show_settings: false,
+                editor_settings_section: SettingsSection::Backends,
+                editor_keybind_capture_action: None,
+                editor_import_text: String::new(),
+                settings_restart_required: false,
+                available_graphics_backends,
+                available_audio_backends,
+                app_settings: app_settings.clone(),
+                playing_level_name: None,
+                playtesting_editor: false,
+                playtest_audio_start_seconds: None,
+                playing_trigger_hitboxes: false,
+                playing_trigger_base_objects: None,
+            },
+            editor: EditorSubsystem {
+                ui: EditorState::new(),
+                config: EditorConfigState {
+                    selected_block_id: app_settings.editor_selected_block_id.clone(),
+                    snap_to_grid: app_settings.editor_snap_to_grid,
+                    snap_step: app_settings.editor_snap_step.max(0.05),
+                    snap_rotation: app_settings.editor_rotation_snap,
+                    snap_rotation_step_degrees: app_settings.editor_rotation_snap_step.max(1.0),
+                },
+                objects: Vec::new(),
+                spawn: SpawnMetadata::default(),
+                camera: EditorCameraState {
+                    editor_pan: [0.0, 0.0],
+                    editor_target_z: 0.0,
+                    editor_rotation: 45.0f32.to_radians(),
+                    editor_pitch: 45.0f32.to_radians(),
+                    playing_rotation: 45.0f32.to_radians(),
+                    playing_pitch: 45.0f32.to_radians(),
+                    transition: None,
+                },
+                triggers: EditorTriggerState::new(),
+                timeline: EditorTimelineState::new(),
+                runtime: EditorRuntimeState {
+                    dirty: EditorDirtyFlags::from_object_sync(),
+                    gizmo: EditorGizmoState {
+                        rebuild_accumulator: 0.0,
+                        last_pan: [0.0, 0.0],
+                        last_target_z: 0.0,
+                        last_rotation: 0.0,
+                        last_pitch: 0.0,
+                    },
+                    drag_heavy_rebuild_accumulator: 0.0,
+                    interaction: EditorInteractionState::new(),
+                    history: EditorHistoryState {
+                        undo: Vec::new(),
+                        redo: Vec::new(),
+                    },
+                },
+                perf: EditorPerfState::new(),
+                timing: EditorTimingState::new(),
+                selected_mask_cache: None,
+            },
+        }
     }
 
     pub(crate) async fn new_common(
@@ -236,11 +556,7 @@ impl State {
             source: wgpu::ShaderSource::Wgsl(include_str!("../shader.wgsl").into()),
         });
 
-        let line_uniform = LineUniform {
-            offset: [0.0, 0.0],
-            rotation: 0.0,
-            _pad: 0.0,
-        };
+        let line_uniform = default_line_uniform();
 
         let line_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Line Uniform Buffer"),
@@ -248,9 +564,7 @@ impl State {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let camera_uniform = CameraUniform {
-            view_proj: Mat4::IDENTITY.to_cols_array_2d(),
-        };
+        let camera_uniform = default_camera_uniform();
 
         let camera_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera Uniform Buffer"),
@@ -261,15 +575,7 @@ impl State {
         let should_apply_gamma_correction =
             !surface_format.is_srgb() && adapter_info.backend == wgpu::Backend::BrowserWebGpu;
 
-        let color_space_uniform = ColorSpaceUniform {
-            apply_gamma_correction: if should_apply_gamma_correction {
-                1.0
-            } else {
-                0.0
-            },
-            time_seconds: 0.0,
-            _pad: [0.0; 2],
-        };
+        let color_space_uniform = default_color_space_uniform(should_apply_gamma_correction);
 
         let color_space_uniform_buffer =
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -638,7 +944,11 @@ impl State {
         app_settings.editor_selected_block_id =
             crate::block_repository::normalize_block_id(&app_settings.editor_selected_block_id);
 
-        let local_audio_cache = crate::platform::io::load_all_local_audio().await;
+        let local_audio_cache = if cfg!(test) {
+            std::collections::HashMap::new()
+        } else {
+            crate::platform::io::load_all_local_audio().await
+        };
         let available_graphics_backends = discover_graphics_backends();
         let available_audio_backends = crate::platform::audio::available_backend_names();
         let mut audio_state = AudioState::new(local_audio_cache);
@@ -667,11 +977,13 @@ impl State {
                     block_icon_pipeline,
                     editor_ghost_trail_pipeline,
                     gizmo_overlay_pipeline,
+                    line_bind_group_layout,
                     line_uniform_buffer,
                     zero_line_bind_group,
                     camera_uniform_buffer,
                     camera_bind_group_layout,
                     camera_bind_group,
+                    color_space_bind_group_layout,
                     color_space_uniform_buffer,
                     color_space_bind_group,
                     block_texture_bind_group,

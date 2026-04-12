@@ -165,11 +165,15 @@ pub(crate) struct GpuContext {
     pub(crate) block_icon_pipeline: wgpu::RenderPipeline,
     pub(crate) editor_ghost_trail_pipeline: wgpu::RenderPipeline,
     pub(crate) gizmo_overlay_pipeline: wgpu::RenderPipeline,
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) line_bind_group_layout: wgpu::BindGroupLayout,
     pub(crate) line_uniform_buffer: wgpu::Buffer,
     pub(crate) zero_line_bind_group: wgpu::BindGroup,
     pub(crate) camera_uniform_buffer: wgpu::Buffer,
     pub(crate) camera_bind_group_layout: wgpu::BindGroupLayout,
     pub(crate) camera_bind_group: wgpu::BindGroup,
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) color_space_bind_group_layout: wgpu::BindGroupLayout,
     pub(crate) color_space_uniform_buffer: wgpu::Buffer,
     pub(crate) color_space_bind_group: wgpu::BindGroup,
     pub(crate) block_texture_bind_group: wgpu::BindGroup,
