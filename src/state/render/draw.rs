@@ -154,177 +154,97 @@ impl State {
                     label: Some("Render Encoder"),
                 });
 
-        {
-            let editor_mode = self.editor.ui.mode;
-            let clear_color = apply_gamma_correction_if_enabled(
-                clear_color_for_phase(self.phase, self.gameplay.state.game_over),
-                self.render.gpu.apply_gamma_correction,
-            );
+        self.render_to_view(&view, &mut encoder, overlay);
 
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(clear_color),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.render.gpu.depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
+        self.render.gpu.queue.submit(iter::once(encoder.finish()));
+        output.present();
+        Ok(())
+    }
+
+    pub(crate) fn render_to_view<F>(
+        &mut self,
+        view: &wgpu::TextureView,
+        encoder: &mut wgpu::CommandEncoder,
+        overlay: F,
+    ) where
+        F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
+    {
+        let editor_mode = self.editor.ui.mode;
+        let clear_color = apply_gamma_correction_if_enabled(
+            clear_color_for_phase(self.phase, self.gameplay.state.game_over),
+            self.render.gpu.apply_gamma_correction,
+        );
+
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(clear_color),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.render.gpu.depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
                 }),
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
+                stencil_ops: None,
+            }),
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
 
-            render_pass.set_pipeline(&self.render.gpu.render_pipeline);
-            render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-            render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
-            render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+        render_pass.set_pipeline(&self.render.gpu.render_pipeline);
+        render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
+        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+        render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+        render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
 
-            if should_draw_floor_and_grid(self.phase, editor_mode) {
-                if let Some((buffer, count)) = self.render.meshes.floor.draw_data() {
-                    render_pass.set_vertex_buffer(0, buffer.slice(..));
-                    render_pass.draw(0..count, 0..1);
-                }
-
-                if let Some((buffer, count)) = self.render.meshes.grid.draw_data() {
-                    render_pass.set_vertex_buffer(0, buffer.slice(..));
-                    render_pass.draw(0..count, 0..1);
-                }
+        if should_draw_floor_and_grid(self.phase, editor_mode) {
+            if let Some((buffer, count)) = self.render.meshes.floor.draw_data() {
+                render_pass.set_vertex_buffer(0, buffer.slice(..));
+                render_pass.draw(0..count, 0..1);
             }
 
-            if self.phase == AppPhase::Playing
-                || self.phase == AppPhase::GameOver
-                || self.phase == AppPhase::Editor
-                || self.phase == AppPhase::Menu
-            {
-                let skip_world = should_skip_world(self.phase, editor_mode);
+            if let Some((buffer, count)) = self.render.meshes.grid.draw_data() {
+                render_pass.set_vertex_buffer(0, buffer.slice(..));
+                render_pass.draw(0..count, 0..1);
+            }
+        }
 
-                if !skip_world {
-                    if self.phase == AppPhase::Editor {
-                        if let Some((buffer, count)) = self.render.meshes.blocks_static.draw_data()
-                        {
-                            render_pass.set_vertex_buffer(0, buffer.slice(..));
-                            render_pass.set_bind_group(
-                                1,
-                                &self.render.gpu.zero_line_bind_group,
-                                &[],
-                            );
-                            render_pass.draw(0..count, 0..1);
-                        }
+        if self.phase == AppPhase::Playing
+            || self.phase == AppPhase::GameOver
+            || self.phase == AppPhase::Editor
+            || self.phase == AppPhase::Menu
+        {
+            let skip_world = should_skip_world(self.phase, editor_mode);
 
-                        if let Some((buffer, count)) =
-                            self.render.meshes.blocks_selected.draw_data()
-                        {
-                            render_pass.set_vertex_buffer(0, buffer.slice(..));
-                            render_pass.set_bind_group(
-                                1,
-                                &self.render.gpu.zero_line_bind_group,
-                                &[],
-                            );
-                            render_pass.draw(0..count, 0..1);
-                        }
-                    } else if let Some((buffer, count)) = self.render.meshes.blocks.draw_data() {
+            if !skip_world {
+                if self.phase == AppPhase::Editor {
+                    if let Some((buffer, count)) = self.render.meshes.blocks_static.draw_data() {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         render_pass.draw(0..count, 0..1);
                     }
 
-                    if let Some((buffer, count)) = self.render.meshes.trail.draw_data() {
-                        if self.phase == AppPhase::Editor {
-                            render_pass.set_pipeline(&self.render.gpu.editor_ghost_trail_pipeline);
-                            render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-                            render_pass.set_bind_group(
-                                1,
-                                &self.render.gpu.zero_line_bind_group,
-                                &[],
-                            );
-                            render_pass.set_bind_group(
-                                2,
-                                &self.render.gpu.color_space_bind_group,
-                                &[],
-                            );
-                            render_pass.set_bind_group(
-                                3,
-                                &self.render.gpu.block_texture_bind_group,
-                                &[],
-                            );
-                        }
-
+                    if let Some((buffer, count)) = self.render.meshes.blocks_selected.draw_data() {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         render_pass.draw(0..count, 0..1);
-
-                        if self.phase == AppPhase::Editor {
-                            render_pass.set_pipeline(&self.render.gpu.render_pipeline);
-                            render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-                            render_pass.set_bind_group(
-                                1,
-                                &self.render.gpu.zero_line_bind_group,
-                                &[],
-                            );
-                            render_pass.set_bind_group(
-                                2,
-                                &self.render.gpu.color_space_bind_group,
-                                &[],
-                            );
-                            render_pass.set_bind_group(
-                                3,
-                                &self.render.gpu.block_texture_bind_group,
-                                &[],
-                            );
-                        }
                     }
+                } else if let Some((buffer, count)) = self.render.meshes.blocks.draw_data() {
+                    render_pass.set_vertex_buffer(0, buffer.slice(..));
+                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.draw(0..count, 0..1);
                 }
 
-                if should_draw_editor_overlays(self.phase, skip_world) {
-                    if let Some((buffer, count)) = self.render.meshes.spawn_marker.draw_data() {
-                        render_pass.set_vertex_buffer(0, buffer.slice(..));
-                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                        render_pass.draw(0..count, 0..1);
-                    }
-
-                    if let Some((buffer, count)) =
-                        self.render.meshes.camera_trigger_markers.draw_data()
-                    {
-                        render_pass.set_vertex_buffer(0, buffer.slice(..));
-                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                        render_pass.draw(0..count, 0..1);
-                    }
-
-                    if let Some((buffer, count)) = self.render.meshes.tap_indicators.draw_data() {
-                        render_pass.set_vertex_buffer(0, buffer.slice(..));
-                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                        render_pass.draw(0..count, 0..1);
-                    }
-
-                    if let Some((buffer, count)) =
-                        self.render.meshes.editor_selection_outline.draw_data()
-                    {
-                        render_pass.set_vertex_buffer(0, buffer.slice(..));
-                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                        render_pass.draw(0..count, 0..1);
-                    }
-
-                    if let Some((buffer, count)) =
-                        self.render.meshes.editor_hover_outline.draw_data()
-                    {
-                        render_pass.set_vertex_buffer(0, buffer.slice(..));
-                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                        render_pass.draw(0..count, 0..1);
-                    }
-
-                    if let Some((buffer, count)) = self.render.meshes.editor_gizmo.draw_data() {
-                        render_pass.set_pipeline(&self.render.gpu.gizmo_overlay_pipeline);
+                if let Some((buffer, count)) = self.render.meshes.trail.draw_data() {
+                    if self.phase == AppPhase::Editor {
+                        render_pass.set_pipeline(&self.render.gpu.editor_ghost_trail_pipeline);
                         render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
@@ -333,10 +253,13 @@ impl State {
                             &self.render.gpu.block_texture_bind_group,
                             &[],
                         );
-                        render_pass.set_vertex_buffer(0, buffer.slice(..));
-                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                        render_pass.draw(0..count, 0..1);
+                    }
 
+                    render_pass.set_vertex_buffer(0, buffer.slice(..));
+                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.draw(0..count, 0..1);
+
+                    if self.phase == AppPhase::Editor {
                         render_pass.set_pipeline(&self.render.gpu.render_pipeline);
                         render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
@@ -347,33 +270,78 @@ impl State {
                             &[],
                         );
                     }
+                }
+            }
 
-                    if should_draw_editor_cursor(editor_mode) {
-                        if let Some((buffer, count)) = self.render.meshes.editor_cursor.draw_data()
-                        {
-                            render_pass.set_vertex_buffer(0, buffer.slice(..));
-                            render_pass.set_bind_group(
-                                1,
-                                &self.render.gpu.zero_line_bind_group,
-                                &[],
-                            );
-                            render_pass.draw(0..count, 0..1);
-                        }
+            if should_draw_editor_overlays(self.phase, skip_world) {
+                if let Some((buffer, count)) = self.render.meshes.spawn_marker.draw_data() {
+                    render_pass.set_vertex_buffer(0, buffer.slice(..));
+                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.draw(0..count, 0..1);
+                }
+
+                if let Some((buffer, count)) = self.render.meshes.camera_trigger_markers.draw_data()
+                {
+                    render_pass.set_vertex_buffer(0, buffer.slice(..));
+                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.draw(0..count, 0..1);
+                }
+
+                if let Some((buffer, count)) = self.render.meshes.tap_indicators.draw_data() {
+                    render_pass.set_vertex_buffer(0, buffer.slice(..));
+                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.draw(0..count, 0..1);
+                }
+
+                if let Some((buffer, count)) =
+                    self.render.meshes.editor_selection_outline.draw_data()
+                {
+                    render_pass.set_vertex_buffer(0, buffer.slice(..));
+                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.draw(0..count, 0..1);
+                }
+
+                if let Some((buffer, count)) = self.render.meshes.editor_hover_outline.draw_data() {
+                    render_pass.set_vertex_buffer(0, buffer.slice(..));
+                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.draw(0..count, 0..1);
+                }
+
+                if let Some((buffer, count)) = self.render.meshes.editor_gizmo.draw_data() {
+                    render_pass.set_pipeline(&self.render.gpu.gizmo_overlay_pipeline);
+                    render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
+                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                    render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+                    render_pass.set_vertex_buffer(0, buffer.slice(..));
+                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.draw(0..count, 0..1);
+
+                    render_pass.set_pipeline(&self.render.gpu.render_pipeline);
+                    render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
+                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                    render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+                }
+
+                if should_draw_editor_cursor(editor_mode) {
+                    if let Some((buffer, count)) = self.render.meshes.editor_cursor.draw_data() {
+                        render_pass.set_vertex_buffer(0, buffer.slice(..));
+                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                        render_pass.draw(0..count, 0..1);
                     }
                 }
             }
         }
 
+        drop(render_pass);
+
         overlay(
             &self.render.gpu.device,
             &self.render.gpu.queue,
-            &view,
-            &mut encoder,
+            view,
+            encoder,
         );
-
-        self.render.gpu.queue.submit(iter::once(encoder.finish()));
-        output.present();
-        Ok(())
     }
 
     /// Recreates the window surface following a resize or other configuration change.
@@ -456,6 +424,16 @@ mod tests {
 
         assert_eq!(
             clear_color_for_phase(AppPhase::Menu, false),
+            Color {
+                r: 0.05,
+                g: 0.05,
+                b: 0.08,
+                a: 1.0,
+            }
+        );
+
+        assert_eq!(
+            clear_color_for_phase(AppPhase::GameOver, false),
             Color {
                 r: 0.05,
                 g: 0.05,
@@ -555,6 +533,73 @@ mod tests {
 
             let result = state.render_egui(&mut renderer, &paint_jobs, &screen_descriptor);
             assert!(result.is_ok());
+        });
+    }
+
+    #[test]
+    fn test_render_to_view_exercises_full_pipeline() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let size = 64;
+            state.resize_surface(crate::types::PhysicalSize {
+                width: size,
+                height: size,
+            });
+
+            let texture = state.device().create_texture(&wgpu::TextureDescriptor {
+                label: Some("Test Render Texture"),
+                size: wgpu::Extent3d {
+                    width: size,
+                    height: size,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: state.render.gpu.config.format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let mut encoder =
+                state
+                    .device()
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("Test Encoder"),
+                    });
+
+            // 1. Test Editor Phase + Place Mode
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Place;
+
+            // Populate some meshes
+            state.editor.objects.push(crate::types::LevelObject {
+                block_id: "core/stone".to_string(),
+                ..Default::default()
+            });
+            state.editor.ui.selected_block_indices = vec![0];
+            state.sync_editor_objects();
+            state.rebuild_editor_cursor_vertices();
+            state.rebuild_spawn_marker_vertices();
+
+            state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
+
+            // 2. Test Playing Phase + GameOver
+            state.phase = AppPhase::Playing;
+            state.gameplay.state.game_over = true;
+            state.editor.timeline.playback.playing = true; // For trail
+            state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
+
+            // 3. Test Timing Mode (skip world)
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Timing;
+            state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
+
+            // 4. Test with gamma correction enabled
+            state.render.gpu.apply_gamma_correction = true;
+            state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
+
+            state.queue().submit(std::iter::once(encoder.finish()));
         });
     }
 }
