@@ -18,6 +18,12 @@ use crate::types::{
 };
 use glam::{Vec2, Vec3};
 
+async fn new_editor_state() -> State {
+    let mut state = State::new_test().await;
+    state.enter_editor_phase("Test Level".to_string());
+    state
+}
+
 #[test]
 fn test_marquee_no_redundant_selections_before_drag_started() {
     pollster::block_on(async {
@@ -228,11 +234,52 @@ fn test_state_phase_integrity() {
         let mut state = State::new_test().await;
         assert_eq!(state.phase, crate::types::AppPhase::Menu);
 
-        state.start_editor(0);
+        state.enter_editor_phase("Test Level".to_string());
         assert_eq!(state.phase, crate::types::AppPhase::Editor);
 
         state.toggle_editor(); // Should go back to menu from editor
         assert_eq!(state.phase, crate::types::AppPhase::Menu);
+    });
+}
+
+#[test]
+fn focused_init_path_start_editor_loads_builtin_state() {
+    pollster::block_on(async {
+        let mut state = State::new_test().await;
+
+        let expected_level_name = state.menu.state.levels[0].clone();
+        state.start_editor(0);
+
+        assert_eq!(state.phase, AppPhase::Editor);
+        assert_eq!(state.session.editor_level_name, Some(expected_level_name));
+        assert!(!state.editor.objects.is_empty());
+        assert_eq!(
+            state.editor.timeline.taps.tap_indicator_positions.len(),
+            state.editor.timeline.taps.tap_times.len(),
+            "tap indicators should be derived from loaded tap times"
+        );
+        assert_eq!(
+            state.editor.camera.editor_target_z, state.editor.ui.cursor[1],
+            "start_editor should sync camera target Z with loaded cursor"
+        );
+    });
+}
+
+#[test]
+fn focused_init_path_toggle_editor_uses_selected_builtin_level() {
+    pollster::block_on(async {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Menu;
+
+        let selected_level_index = usize::from(state.menu.state.levels.len() > 1);
+        state.menu.state.selected_level = selected_level_index;
+        let expected_level_name = state.menu.state.levels[selected_level_index].clone();
+
+        state.toggle_editor();
+
+        assert_eq!(state.phase, AppPhase::Editor);
+        assert_eq!(state.session.editor_level_name, Some(expected_level_name));
+        assert!(!state.editor.objects.is_empty());
     });
 }
 
@@ -268,9 +315,7 @@ fn configure_trigger_policy_parity_scene(
 #[test]
 fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_disabled() {
     pollster::block_on(async {
-        let mut state = State::new_test().await;
-
-        state.start_editor(0);
+        let mut state = new_editor_state().await;
         let timeline_time_seconds = 0.35;
         configure_trigger_policy_parity_scene(&mut state, false, timeline_time_seconds);
 
@@ -311,9 +356,7 @@ fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_disabled(
 #[test]
 fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_enabled() {
     pollster::block_on(async {
-        let mut state = State::new_test().await;
-
-        state.start_editor(0);
+        let mut state = new_editor_state().await;
         let timeline_time_seconds = 0.35;
         configure_trigger_policy_parity_scene(&mut state, true, timeline_time_seconds);
 
@@ -355,9 +398,7 @@ fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_enabled()
 #[test]
 fn editor_scrub_draws_ghost_trail_without_preview_head_mesh() {
     pollster::block_on(async {
-        let mut state = State::new_test().await;
-
-        state.start_editor(0);
+        let mut state = new_editor_state().await;
         state.editor.set_mode(EditorMode::Place);
         state.set_editor_timeline_time_seconds(0.65);
 
@@ -389,9 +430,7 @@ fn editor_scrub_draws_ghost_trail_without_preview_head_mesh() {
 #[test]
 fn editor_playback_draws_ghost_trail_without_preview_head_mesh() {
     pollster::block_on(async {
-        let mut state = State::new_test().await;
-
-        state.start_editor(0);
+        let mut state = new_editor_state().await;
         state.editor.set_mode(EditorMode::Place);
         state.set_editor_timeline_time_seconds(0.65);
         state.toggle_editor_timeline_playback();
@@ -435,9 +474,7 @@ fn test_state_input_routing() {
 #[test]
 fn multi_selection_clicking_rendered_gizmo_starts_gizmo_drag_not_block_drag() {
     pollster::block_on(async {
-        let mut state = State::new_test().await;
-
-        state.start_editor(0);
+        let mut state = new_editor_state().await;
         state.editor.ui.mode = EditorMode::Move;
 
         state.editor.objects = vec![
@@ -547,10 +584,7 @@ fn timeline_seek_uses_interpolated_snapshot_cache_and_supports_backward_seek() {
 #[test]
 fn editor_playtest_stores_precomputed_audio_start_seconds() {
     pollster::block_on(async {
-        let mut state = State::new_test().await;
-
-        state.phase = AppPhase::Menu;
-        state.dispatch(AppCommand::ToggleEditor);
+        let mut state = new_editor_state().await;
         state.editor.objects.clear();
         state.editor.timeline.taps.tap_times.clear();
         state.editor.spawn.position = [0.0, 0.0, 0.0];
@@ -581,10 +615,7 @@ fn editor_playtest_stores_precomputed_audio_start_seconds() {
 #[test]
 fn editor_playtest_nonzero_timeline_handoff_stays_synced_after_first_input() {
     pollster::block_on(async {
-        let mut state = State::new_test().await;
-
-        state.phase = AppPhase::Menu;
-        state.dispatch(AppCommand::ToggleEditor);
+        let mut state = new_editor_state().await;
         state.editor.objects.clear();
         state.editor.timeline.taps.tap_times = vec![0.35, 0.7, 1.1];
         state.editor.spawn.position = [0.0, 0.0, 0.0];
@@ -628,10 +659,7 @@ fn editor_playtest_nonzero_timeline_handoff_stays_synced_after_first_input() {
 #[test]
 fn editor_playtest_warms_audio_before_first_input() {
     pollster::block_on(async {
-        let mut state = State::new_test().await;
-
-        state.phase = AppPhase::Menu;
-        state.dispatch(AppCommand::ToggleEditor);
+        let mut state = new_editor_state().await;
 
         let level_name = state
             .session
@@ -673,14 +701,15 @@ fn editor_playtest_warms_audio_before_first_input() {
 #[test]
 fn editor_load_level_in_timing_mode_reloads_waveform_for_new_level() {
     pollster::block_on(async {
-        let mut state = State::new_test().await;
-        state.start_editor(0);
+        let mut state = new_editor_state().await;
 
         let current_level = state
-            .session
-            .editor_level_name
-            .clone()
-            .expect("editor level should be set after starting editor");
+            .menu
+            .state
+            .levels
+            .first()
+            .cloned()
+            .expect("test requires at least one built-in level");
         let next_level = state
             .menu
             .state
@@ -718,10 +747,7 @@ fn editor_load_level_in_timing_mode_reloads_waveform_for_new_level() {
 #[test]
 fn setting_timeline_duration_does_not_delete_taps() {
     pollster::block_on(async {
-        let mut state = State::new_test().await;
-
-        state.phase = AppPhase::Menu;
-        state.dispatch(AppCommand::ToggleEditor);
+        let mut state = new_editor_state().await;
 
         // Add some taps beyond 0 duration
         state.editor.timeline.taps.tap_times = vec![1.0, 2.0, 3.0];
@@ -739,10 +765,7 @@ fn setting_timeline_duration_does_not_delete_taps() {
 #[test]
 fn setting_spawn_recomputes_tap_indicator_positions() {
     pollster::block_on(async {
-        let mut state = State::new_test().await;
-
-        state.phase = AppPhase::Menu;
-        state.dispatch(AppCommand::ToggleEditor);
+        let mut state = new_editor_state().await;
         state.editor.objects.clear();
         state.editor.spawn.position = [0.0, 0.0, 0.0];
         state.editor.spawn.direction = SpawnDirection::Forward;

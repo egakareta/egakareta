@@ -678,6 +678,12 @@ mod tests {
     };
     use glam::Vec2;
 
+    async fn new_editor_state() -> State {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+        state
+    }
+
     #[test]
     fn test_command_routing_navigation() {
         pollster::block_on(async {
@@ -696,9 +702,7 @@ mod tests {
     #[test]
     fn test_command_routing_editor_modes() {
         pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
-            state.dispatch(AppCommand::ToggleEditor);
+            let mut state = new_editor_state().await;
 
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Select);
@@ -744,9 +748,7 @@ mod tests {
     #[test]
     fn test_command_routing_editor_ops() {
         pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
-            state.dispatch(AppCommand::ToggleEditor);
+            let mut state = new_editor_state().await;
 
             let initial_z = state.editor.camera.editor_target_z;
             state.dispatch(AppCommand::EditorAdjustZoom(0.5));
@@ -762,9 +764,7 @@ mod tests {
     #[test]
     fn test_timeline_shift_updates_preview() {
         pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
-            state.dispatch(AppCommand::ToggleEditor);
+            let mut state = new_editor_state().await;
 
             let (pos_before, _) = state.editor_timeline_preview();
 
@@ -789,9 +789,7 @@ mod tests {
     fn test_input_event_interaction_state() {
         pollster::block_on(async {
             use crate::commands::InputEvent;
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
-            state.dispatch(AppCommand::ToggleEditor);
+            let mut state = new_editor_state().await;
 
             // 1. Pointer move updates screen coordinates
             state.process_input_event(InputEvent::PointerMoved { x: 100.0, y: 200.0 });
@@ -817,9 +815,7 @@ mod tests {
     fn test_input_event_zoom_and_resize() {
         pollster::block_on(async {
             use crate::commands::InputEvent;
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
-            state.dispatch(AppCommand::ToggleEditor);
+            let mut state = new_editor_state().await;
 
             // Zoom
             let initial_z = state.editor.camera.editor_target_z;
@@ -841,9 +837,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
-            state.dispatch(AppCommand::ToggleEditor);
+            let mut state = new_editor_state().await;
 
             state.process_input_event(InputEvent::Key {
                 key: "Control".to_string(),
@@ -900,9 +894,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
-            state.dispatch(AppCommand::ToggleEditor);
+            let mut state = new_editor_state().await;
 
             state.process_input_event(InputEvent::Key {
                 key: "w".to_string(),
@@ -925,9 +917,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
-            state.dispatch(AppCommand::ToggleEditor);
+            let mut state = new_editor_state().await;
 
             state.process_input_event(InputEvent::Key {
                 key: "1".to_string(),
@@ -978,9 +968,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
-            state.dispatch(AppCommand::ToggleEditor);
+            let mut state = new_editor_state().await;
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Scale));
 
             state.process_input_event(InputEvent::Key {
@@ -1004,13 +992,9 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut native_style = State::new_test().await;
-            native_style.phase = AppPhase::Menu;
-            native_style.dispatch(AppCommand::ToggleEditor);
+            let mut native_style = new_editor_state().await;
 
-            let mut web_style = State::new_test().await;
-            web_style.phase = AppPhase::Menu;
-            web_style.dispatch(AppCommand::ToggleEditor);
+            let mut web_style = new_editor_state().await;
 
             // Native path: pointer move then left mouse button press.
             native_style.process_input_event(InputEvent::PointerMoved { x: 120.0, y: 240.0 });
@@ -1051,13 +1035,9 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut native_style = State::new_test().await;
-            native_style.phase = AppPhase::Menu;
-            native_style.dispatch(AppCommand::ToggleEditor);
+            let mut native_style = new_editor_state().await;
 
-            let mut web_style = State::new_test().await;
-            web_style.phase = AppPhase::Menu;
-            web_style.dispatch(AppCommand::ToggleEditor);
+            let mut web_style = new_editor_state().await;
 
             // Native-like order around right-drag camera movement.
             native_style.process_input_event(InputEvent::MouseButton {
@@ -1109,9 +1089,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
-            state.dispatch(AppCommand::ToggleEditor);
+            let mut state = new_editor_state().await;
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
 
             state.editor.camera.editor_pan = [0.0, 0.0];
@@ -1167,9 +1145,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
-            state.dispatch(AppCommand::ToggleEditor);
+            let mut state = new_editor_state().await;
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
 
             state.editor.camera.editor_pan = [0.0, 0.0];
@@ -1242,9 +1218,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
-            state.dispatch(AppCommand::ToggleEditor);
+            let mut state = new_editor_state().await;
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
 
             let camera_offset = state.editor.camera_offset();
@@ -1298,9 +1272,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
-            state.dispatch(AppCommand::ToggleEditor);
+            let mut state = new_editor_state().await;
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
 
             let camera_offset = state.editor.camera_offset();
@@ -1360,9 +1332,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
-            state.dispatch(AppCommand::ToggleEditor);
+            let mut state = new_editor_state().await;
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Trigger));
 
             state.editor.objects.push(crate::types::LevelObject {
@@ -1405,11 +1375,9 @@ mod tests {
     #[test]
     fn test_command_chain_undo_redo() {
         pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
+            let mut state = new_editor_state().await;
 
             // 1. Enter Editor
-            state.dispatch(AppCommand::ToggleEditor);
             assert_eq!(state.phase, crate::types::AppPhase::Editor);
 
             // 2. Place a block
@@ -1430,9 +1398,7 @@ mod tests {
     #[test]
     fn test_complex_command_sequence() {
         pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
-            state.dispatch(AppCommand::ToggleEditor);
+            let mut state = new_editor_state().await;
 
             let initial_count = state.editor.objects.len();
 
@@ -1478,9 +1444,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
-            state.dispatch(AppCommand::ToggleEditor);
+            let mut state = new_editor_state().await;
 
             assert!(!state.editor_show_settings());
 
@@ -1510,9 +1474,7 @@ mod tests {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
-            state.dispatch(AppCommand::ToggleEditor);
+            let mut state = new_editor_state().await;
             state.dispatch(AppCommand::TurnRight);
             state.editor.ui.selected_block_index = Some(0);
             state.editor.ui.selected_block_indices = vec![0];

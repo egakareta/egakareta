@@ -1157,7 +1157,7 @@ mod tests {
         pollster::block_on(async {
             let mut state = State::new_test().await;
 
-            state.start_editor(0);
+            state.enter_editor_phase("Test Level".to_string());
             state.editor.timeline.playback.playing = true;
             state.editor.timeline.playback.runtime = Some(TimelineSimulationRuntime::new(
                 [0.0, 0.0, 0.0],
@@ -1208,10 +1208,9 @@ mod tests {
     fn test_phase_transition_clipboard_clearing() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
+            state.enter_editor_phase("Test Level".to_string());
 
             // 1. Setup: Enter editor and copy a block
-            state.dispatch(AppCommand::ToggleEditor);
             state.dispatch(AppCommand::TurnRight); // Place block
             state.editor.ui.selected_block_index = Some(0);
             state.editor.ui.selected_block_indices = vec![0];
@@ -1232,9 +1231,8 @@ mod tests {
     fn test_editor_load_level_resets_history_and_clipboard() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
+            state.enter_editor_phase("Test Level".to_string());
 
-            state.dispatch(AppCommand::ToggleEditor);
             state.dispatch(AppCommand::TurnRight); // Place block -> adds to undo history
             state.editor.ui.selected_block_index = Some(0);
             state.editor.ui.selected_block_indices = vec![0];

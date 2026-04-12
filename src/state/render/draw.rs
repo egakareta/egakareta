@@ -21,6 +21,61 @@ fn linear_to_srgb(linear: f32) -> f32 {
     }
 }
 
+fn clear_color_for_phase(phase: AppPhase, game_over: bool) -> wgpu::Color {
+    match phase {
+        AppPhase::Playing if game_over => wgpu::Color {
+            r: 0.15,
+            g: 0.05,
+            b: 0.05,
+            a: 1.0,
+        },
+        AppPhase::Editor => wgpu::Color {
+            r: 0.04,
+            g: 0.07,
+            b: 0.09,
+            a: 1.0,
+        },
+        _ => wgpu::Color {
+            r: 0.05,
+            g: 0.05,
+            b: 0.08,
+            a: 1.0,
+        },
+    }
+}
+
+fn apply_gamma_correction_if_enabled(
+    color: wgpu::Color,
+    apply_gamma_correction: bool,
+) -> wgpu::Color {
+    if apply_gamma_correction {
+        wgpu::Color {
+            r: linear_to_srgb(color.r as f32) as f64,
+            g: linear_to_srgb(color.g as f32) as f64,
+            b: linear_to_srgb(color.b as f32) as f64,
+            a: color.a,
+        }
+    } else {
+        color
+    }
+}
+
+fn should_draw_floor_and_grid(phase: AppPhase, mode: EditorMode) -> bool {
+    phase != AppPhase::Menu && mode != EditorMode::Timing
+}
+
+fn should_skip_world(phase: AppPhase, mode: EditorMode) -> bool {
+    phase == AppPhase::Editor && mode == EditorMode::Timing
+}
+
+fn should_draw_editor_overlays(phase: AppPhase, skip_world: bool) -> bool {
+    phase == AppPhase::Editor && !skip_world
+}
+
+fn should_draw_editor_cursor(mode: EditorMode) -> bool {
+    mode == EditorMode::Place
+}
+
 impl State {
     /// Renders the `egui` user interface over the current frame.
     ///
@@ -100,37 +155,11 @@ impl State {
                 });
 
         {
-            let clear_color = match self.phase {
-                AppPhase::Playing if self.gameplay.state.game_over => wgpu::Color {
-                    r: 0.15,
-                    g: 0.05,
-                    b: 0.05,
-                    a: 1.0,
-                },
-                AppPhase::Editor => wgpu::Color {
-                    r: 0.04,
-                    g: 0.07,
-                    b: 0.09,
-                    a: 1.0,
-                },
-                _ => wgpu::Color {
-                    r: 0.05,
-                    g: 0.05,
-                    b: 0.08,
-                    a: 1.0,
-                },
-            };
-
-            let clear_color = if self.render.gpu.apply_gamma_correction {
-                wgpu::Color {
-                    r: linear_to_srgb(clear_color.r as f32) as f64,
-                    g: linear_to_srgb(clear_color.g as f32) as f64,
-                    b: linear_to_srgb(clear_color.b as f32) as f64,
-                    a: clear_color.a,
-                }
-            } else {
-                clear_color
-            };
+            let editor_mode = self.editor.ui.mode;
+            let clear_color = apply_gamma_correction_if_enabled(
+                clear_color_for_phase(self.phase, self.gameplay.state.game_over),
+                self.render.gpu.apply_gamma_correction,
+            );
 
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -161,7 +190,7 @@ impl State {
             render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
             render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
 
-            if self.phase != AppPhase::Menu && self.editor.ui.mode != EditorMode::Timing {
+            if should_draw_floor_and_grid(self.phase, editor_mode) {
                 if let Some((buffer, count)) = self.render.meshes.floor.draw_data() {
                     render_pass.set_vertex_buffer(0, buffer.slice(..));
                     render_pass.draw(0..count, 0..1);
@@ -178,8 +207,7 @@ impl State {
                 || self.phase == AppPhase::Editor
                 || self.phase == AppPhase::Menu
             {
-                let skip_world =
-                    self.phase == AppPhase::Editor && self.editor.ui.mode == EditorMode::Timing;
+                let skip_world = should_skip_world(self.phase, editor_mode);
 
                 if !skip_world {
                     if self.phase == AppPhase::Editor {
@@ -258,7 +286,7 @@ impl State {
                     }
                 }
 
-                if self.phase == AppPhase::Editor && !skip_world {
+                if should_draw_editor_overlays(self.phase, skip_world) {
                     if let Some((buffer, count)) = self.render.meshes.spawn_marker.draw_data() {
                         render_pass.set_vertex_buffer(0, buffer.slice(..));
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
@@ -320,7 +348,7 @@ impl State {
                         );
                     }
 
-                    if self.editor.ui.mode == EditorMode::Place {
+                    if should_draw_editor_cursor(editor_mode) {
                         if let Some((buffer, count)) = self.render.meshes.editor_cursor.draw_data()
                         {
                             render_pass.set_vertex_buffer(0, buffer.slice(..));
@@ -360,9 +388,15 @@ mod tests {
     use std::cell::Cell;
 
     use egui_wgpu::ScreenDescriptor;
+    use wgpu::Color;
 
-    use super::linear_to_srgb;
+    use super::{
+        apply_gamma_correction_if_enabled, clear_color_for_phase, linear_to_srgb,
+        should_draw_editor_cursor, should_draw_editor_overlays, should_draw_floor_and_grid,
+        should_skip_world,
+    };
     use crate::state::State;
+    use crate::types::{AppPhase, EditorMode};
 
     fn approx_eq(a: f32, b: f32, eps: f32) {
         assert!(
@@ -386,6 +420,101 @@ mod tests {
         let expected = 0.461_356_1;
 
         approx_eq(linear_to_srgb(mid_gray_linear), expected, 1e-6);
+    }
+
+    #[test]
+    fn clear_color_for_phase_matches_expected_palette() {
+        assert_eq!(
+            clear_color_for_phase(AppPhase::Playing, true),
+            Color {
+                r: 0.15,
+                g: 0.05,
+                b: 0.05,
+                a: 1.0,
+            }
+        );
+
+        assert_eq!(
+            clear_color_for_phase(AppPhase::Editor, false),
+            Color {
+                r: 0.04,
+                g: 0.07,
+                b: 0.09,
+                a: 1.0,
+            }
+        );
+
+        assert_eq!(
+            clear_color_for_phase(AppPhase::Playing, false),
+            Color {
+                r: 0.05,
+                g: 0.05,
+                b: 0.08,
+                a: 1.0,
+            }
+        );
+
+        assert_eq!(
+            clear_color_for_phase(AppPhase::Menu, false),
+            Color {
+                r: 0.05,
+                g: 0.05,
+                b: 0.08,
+                a: 1.0,
+            }
+        );
+    }
+
+    #[test]
+    fn apply_gamma_correction_if_enabled_only_changes_rgb() {
+        let linear = Color {
+            r: 0.18,
+            g: 0.04,
+            b: 0.01,
+            a: 0.5,
+        };
+
+        let unchanged = apply_gamma_correction_if_enabled(linear, false);
+        assert_eq!(unchanged, linear);
+
+        let corrected = apply_gamma_correction_if_enabled(linear, true);
+        approx_eq(corrected.r as f32, linear_to_srgb(linear.r as f32), 1e-7);
+        approx_eq(corrected.g as f32, linear_to_srgb(linear.g as f32), 1e-7);
+        approx_eq(corrected.b as f32, linear_to_srgb(linear.b as f32), 1e-7);
+        approx_eq(corrected.a as f32, linear.a as f32, 1e-7);
+    }
+
+    #[test]
+    fn render_gate_helpers_match_phase_and_mode_rules() {
+        assert!(!should_draw_floor_and_grid(
+            AppPhase::Menu,
+            EditorMode::Place
+        ));
+        assert!(!should_draw_floor_and_grid(
+            AppPhase::Editor,
+            EditorMode::Timing
+        ));
+        assert!(should_draw_floor_and_grid(
+            AppPhase::Playing,
+            EditorMode::Place
+        ));
+        assert!(should_draw_floor_and_grid(
+            AppPhase::GameOver,
+            EditorMode::Trigger
+        ));
+
+        assert!(should_skip_world(AppPhase::Editor, EditorMode::Timing));
+        assert!(!should_skip_world(AppPhase::Editor, EditorMode::Place));
+        assert!(!should_skip_world(AppPhase::Playing, EditorMode::Timing));
+
+        assert!(should_draw_editor_overlays(AppPhase::Editor, false));
+        assert!(!should_draw_editor_overlays(AppPhase::Editor, true));
+        assert!(!should_draw_editor_overlays(AppPhase::Menu, false));
+
+        assert!(should_draw_editor_cursor(EditorMode::Place));
+        assert!(!should_draw_editor_cursor(EditorMode::Select));
+        assert!(!should_draw_editor_cursor(EditorMode::Trigger));
+        assert!(!should_draw_editor_cursor(EditorMode::Timing));
     }
 
     #[test]
