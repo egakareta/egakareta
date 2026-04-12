@@ -127,17 +127,6 @@ impl EditorSubsystem {
         (Some(derived_time), true)
     }
 
-    pub(crate) fn shift_timeline_time(&mut self, delta_seconds: f32) -> bool {
-        let next_time = (self.timeline.clock.time_seconds + delta_seconds)
-            .clamp(0.0, self.timeline.clock.duration_seconds);
-        if (next_time - self.timeline.clock.time_seconds).abs() > f32::EPSILON {
-            self.timeline.clock.time_seconds = next_time;
-            true
-        } else {
-            false
-        }
-    }
-
     pub(crate) fn nudge_selected(&mut self, world_dx: f32, world_dz: f32) -> bool {
         let selected_indices = self.selected_indices_normalized();
         if selected_indices.is_empty() {
@@ -287,9 +276,13 @@ impl State {
     }
 
     pub(super) fn editor_shift_timeline_time(&mut self, delta_seconds: f32) {
-        if self.phase == AppPhase::Editor && self.editor.shift_timeline_time(delta_seconds) {
-            let next_time = self.editor.timeline.clock.time_seconds;
-            self.set_editor_timeline_time_seconds(next_time);
+        if self.phase == AppPhase::Editor {
+            let current_time = self.editor.timeline.clock.time_seconds;
+            let next_time = (current_time + delta_seconds)
+                .clamp(0.0, self.editor.timeline.clock.duration_seconds);
+            if (next_time - current_time).abs() > f32::EPSILON {
+                self.set_editor_timeline_time_seconds(next_time);
+            }
         }
     }
 

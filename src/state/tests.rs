@@ -982,6 +982,28 @@ fn playback_seek_queues_debounced_audio_resync() {
 }
 
 #[test]
+fn playback_shift_timeline_command_queues_debounced_audio_resync() {
+    pollster::block_on(async {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+        state.editor.set_mode(EditorMode::Timing);
+        state.editor.timeline.clock.time_seconds = 0.5;
+
+        state.toggle_editor_timeline_playback();
+        assert!(state.editor.timeline.playback.playing);
+
+        state.dispatch(AppCommand::EditorShiftTimeline(0.1));
+
+        assert!((state.editor.timeline.clock.time_seconds - 0.6).abs() < 1e-5);
+        assert_eq!(
+            state.editor.timeline.playback.pending_seek_time_seconds,
+            Some(0.6)
+        );
+        assert!(state.editor.timeline.playback.seek_resync_cooldown_seconds > 0.0);
+    });
+}
+
+#[test]
 fn test_gizmo_move_shaft_is_pickable() {
     pollster::block_on(async {
         let mut state = State::new_test().await;
