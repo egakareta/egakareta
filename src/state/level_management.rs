@@ -572,7 +572,7 @@ mod tests {
     fn level_binary_export_import_roundtrip_restores_editor_state() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
-            state.start_editor(0);
+            state.enter_editor_phase("RoundtripSource".to_string());
 
             state.set_editor_level_name("RoundtripSource".to_string());
             state.set_editor_music_metadata(MusicMetadata {
@@ -617,7 +617,7 @@ mod tests {
     fn apply_metadata_supports_create_update_and_delete_like_replacement() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
-            state.start_editor(0);
+            state.enter_editor_phase("CrudSeed".to_string());
 
             let mut created = state.current_editor_metadata();
             created.name = "CrudCreate".to_string();
@@ -647,7 +647,10 @@ mod tests {
     fn loading_unknown_builtin_level_is_noop() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
-            state.start_editor(0);
+            state.enter_editor_phase("KnownLevel".to_string());
+            state.editor.objects = vec![test_object([1.0, 0.0, 1.0], "core/stone")];
+            state.editor.spawn.position = [3.0, 0.0, 2.0];
+            state.editor.spawn.direction = crate::types::SpawnDirection::Right;
 
             let before_name = state.editor_level_name();
             let before_objects = state.editor.objects.clone();
@@ -752,7 +755,7 @@ mod tests {
             state.phase = AppPhase::Menu;
             state.trigger_selected_block_obj_export();
 
-            state.start_editor(0);
+            state.enter_editor_phase("ObjExportGuards".to_string());
             state.editor.ui.selected_block_index = None;
             state.trigger_selected_block_obj_export();
         });
@@ -762,7 +765,7 @@ mod tests {
     fn complete_import_handles_invalid_and_valid_binary_payloads() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
-            state.start_editor(0);
+            state.enter_editor_phase("ImportFlow".to_string());
 
             state.set_editor_show_import(true);
             state.set_editor_import_text("%%%not-base64%%%".to_string());
@@ -829,7 +832,8 @@ mod tests {
     fn egz_export_import_roundtrip_preserves_metadata_and_embedded_audio() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
-            state.start_editor(0);
+            state.enter_editor_phase("EgzRoundtripSeed".to_string());
+            state.editor.objects = vec![test_object([2.0, 0.0, 2.0], "core/grass")];
 
             state.set_editor_level_name("EgzRoundtrip".to_string());
             state.set_editor_music_metadata(MusicMetadata {
@@ -878,7 +882,18 @@ mod tests {
     fn method_pointer_paths_cover_level_management_runtime_branches() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
-            state.start_editor(0);
+            state.enter_editor_phase("MethodPointer".to_string());
+            state.editor.objects = vec![test_object([0.0, 0.0, 0.0], "core/stone")];
+            state.set_editor_music_metadata(MusicMetadata {
+                source: "method-pointer-audio.mp3".to_string(),
+                ..MusicMetadata::default()
+            });
+            state
+                .audio
+                .state
+                .editor
+                .local_audio_cache
+                .insert("method-pointer-audio.mp3".to_string(), vec![7, 8, 9, 10]);
 
             let level_export_filename = format!(
                 "{}.egz",

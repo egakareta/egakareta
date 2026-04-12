@@ -736,7 +736,7 @@ mod tests {
     fn toggle_timeline_playback_switches_modes_and_restores_previous_mode() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
-            state.start_editor(0);
+            state.enter_editor_phase("PlaybackModeToggle".to_string());
             state.editor.set_mode(EditorMode::Place);
             state.editor.timeline.playback.playing = false;
 

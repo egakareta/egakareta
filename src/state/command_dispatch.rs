@@ -690,6 +690,8 @@ mod tests {
         pollster::block_on(async {
             let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
+            state.menu.state.levels = vec!["__unit_test_level__".to_string()];
+            state.menu.state.selected_level = 0;
 
             // Initial state should be Menu
             assert_eq!(state.phase, AppPhase::Menu);
