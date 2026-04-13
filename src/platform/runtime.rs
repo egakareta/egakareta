@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use crate::load_menu_wordmark_texture;
+use crate::load_menu_favicon_texture;
 use crate::platform::pipeline::FramePipeline;
 use crate::State;
 
@@ -40,8 +40,8 @@ impl Runtime {
         egui_ctx.set_fonts(fonts);
 
         let egui_renderer = state.create_egui_renderer();
-        let menu_wordmark = load_menu_wordmark_texture(&egui_ctx);
-        let pipeline = FramePipeline::new(egui_ctx, egui_renderer, menu_wordmark);
+        let menu_favicon = load_menu_favicon_texture(&egui_ctx);
+        let pipeline = FramePipeline::new(egui_ctx, egui_renderer, menu_favicon);
 
         Self { state, pipeline }
     }

@@ -11,19 +11,19 @@
 //! It handles UI updates, tessellation, texture management, and delegates rendering to the state.
 
 use crate::platform::block_icon_cache::BlockIconCache;
-use crate::{show_editor_ui, show_menu_topbar, show_menu_wordmark_ui, State};
+use crate::{show_editor_ui, show_menu_favicon_ui, show_menu_topbar, State};
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 use wgpu::SurfaceError;
 
 /// The main frame pipeline that orchestrates UI rendering and game updates.
 ///
-/// This struct holds the egui context, renderer, and menu wordmark texture.
+/// This struct holds the egui context, renderer, and menu favicon texture.
 /// It runs each frame by updating the UI, tessellating shapes, updating textures,
 /// running game logic, and rendering everything to the surface.
 pub struct FramePipeline {
     egui_ctx: egui::Context,
     egui_renderer: EguiRenderer,
-    menu_wordmark: Option<egui::TextureHandle>,
+    menu_favicon: Option<egui::TextureHandle>,
     block_icon_cache: BlockIconCache,
 }
 
@@ -32,12 +32,12 @@ impl FramePipeline {
     pub fn new(
         egui_ctx: egui::Context,
         egui_renderer: EguiRenderer,
-        menu_wordmark: Option<egui::TextureHandle>,
+        menu_favicon: Option<egui::TextureHandle>,
     ) -> Self {
         Self {
             egui_ctx,
             egui_renderer,
-            menu_wordmark,
+            menu_favicon,
             block_icon_cache: BlockIconCache::new(),
         }
     }
@@ -62,8 +62,8 @@ impl FramePipeline {
         let full_output = self.egui_ctx.run(raw_input, |ctx| {
             show_editor_ui(ctx, state, &block_icon_texture_ids);
             show_menu_topbar(ctx, state);
-            if let Some(wordmark) = &self.menu_wordmark {
-                show_menu_wordmark_ui(ctx, state, wordmark);
+            if let Some(favicon) = &self.menu_favicon {
+                show_menu_favicon_ui(ctx, state, favicon);
             }
         });
 
@@ -137,17 +137,17 @@ mod tests {
     }
 
     #[test]
-    fn run_frame_executes_wordmark_ui_branch_when_texture_is_present() {
+    fn run_frame_executes_favicon_ui_branch_when_texture_is_present() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
             let egui_ctx = egui::Context::default();
             let renderer = state.create_egui_renderer();
-            let wordmark = egui_ctx.load_texture(
-                "test-wordmark",
+            let favicon = egui_ctx.load_texture(
+                "test-favicon",
                 egui::ColorImage::new([2, 2], vec![egui::Color32::WHITE; 4]),
                 egui::TextureOptions::LINEAR,
             );
-            let mut pipeline = FramePipeline::new(egui_ctx, renderer, Some(wordmark));
+            let mut pipeline = FramePipeline::new(egui_ctx, renderer, Some(favicon));
 
             let output = pipeline.run_frame(&mut state, egui::RawInput::default());
 

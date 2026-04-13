@@ -7,25 +7,25 @@
 */
 use crate::State;
 
-const MENU_WORDMARK_PNG: &[u8] = include_bytes!("../../assets/wordmark.png");
+const MENU_FAVICON_PNG: &[u8] = include_bytes!("../../assets/favicon.png");
 
-/// Loads the menu wordmark texture from embedded PNG data.
-pub fn load_menu_wordmark_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
-    let decoded = image::load_from_memory(MENU_WORDMARK_PNG).ok()?;
+/// Loads the menu favicon texture from embedded PNG data.
+pub fn load_menu_favicon_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    let decoded = image::load_from_memory(MENU_FAVICON_PNG).ok()?;
     let rgba = decoded.to_rgba8();
     let size = [rgba.width() as usize, rgba.height() as usize];
     let color_image = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
 
-    Some(ctx.load_texture("menu_wordmark", color_image, egui::TextureOptions::LINEAR))
+    Some(ctx.load_texture("menu_favicon", color_image, egui::TextureOptions::LINEAR))
 }
 
-/// Shows the menu wordmark UI overlay.
-pub fn show_menu_wordmark_ui(ctx: &egui::Context, state: &State, wordmark: &egui::TextureHandle) {
+/// Shows the menu favicon UI overlay.
+pub fn show_menu_favicon_ui(ctx: &egui::Context, state: &State, favicon: &egui::TextureHandle) {
     if !state.is_menu() {
         return;
     }
 
-    let texture_size = wordmark.size_vec2();
+    let texture_size = favicon.size_vec2();
     if texture_size.x <= 0.0 || texture_size.y <= 0.0 {
         return;
     }
@@ -34,12 +34,12 @@ pub fn show_menu_wordmark_ui(ctx: &egui::Context, state: &State, wordmark: &egui
     let scale = (max_width / texture_size.x).min(1.0) * 0.8;
     let display_size = texture_size * scale;
 
-    egui::Area::new("menu_wordmark_area".into())
+    egui::Area::new("menu_favicon_area".into())
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 48.0))
         .interactable(false)
         .show(ctx, |ui| {
-            ui.add(egui::Image::new((wordmark.id(), display_size)));
+            ui.add(egui::Image::new((favicon.id(), display_size)));
         });
 }
 
