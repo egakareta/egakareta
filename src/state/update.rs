@@ -20,6 +20,35 @@ use crate::types::{
 };
 
 impl State {
+    fn recent_trail_segments<'a>(
+        trail_segments: &'a [Vec<[f32; 3]>],
+        max_points: usize,
+    ) -> Vec<(usize, &'a [[f32; 3]])> {
+        if max_points == 0 || trail_segments.is_empty() {
+            return Vec::new();
+        }
+
+        let mut remaining = max_points;
+        let mut selected: Vec<(usize, &'a [[f32; 3]])> = Vec::new();
+
+        for (index, segment) in trail_segments.iter().enumerate().rev() {
+            if segment.is_empty() {
+                continue;
+            }
+            if remaining == 0 {
+                break;
+            }
+
+            let take = segment.len().min(remaining);
+            let start = segment.len() - take;
+            selected.push((index, &segment[start..]));
+            remaining -= take;
+        }
+
+        selected.reverse();
+        selected
+    }
+
     fn maybe_resync_editor_playback_from_pending_seek(&mut self, frame_dt: f32) {
         if self.phase != AppPhase::Editor || !self.editor.timeline.playback.playing {
             return;
@@ -156,14 +185,17 @@ impl State {
     ) -> Vec<crate::types::Vertex> {
         const EDITOR_PLAYBACK_TRAIL_ALPHA: f32 = 0.45;
         const POSITION_EPSILON: f32 = 0.001;
+        const MAX_RENDERED_EDITOR_TRAIL_POINTS: usize = 1024;
 
         let mut trail_vertices = Vec::new();
         let player_pos = runtime.position();
         let is_grounded = runtime.is_grounded();
         let is_game_over = runtime.game_over();
         let trail_segments = runtime.trail_segments();
+        let recent_segments =
+            Self::recent_trail_segments(trail_segments, MAX_RENDERED_EDITOR_TRAIL_POINTS);
 
-        for (segment_index, segment) in trail_segments.iter().enumerate() {
+        for (segment_index, segment) in recent_segments {
             if segment.is_empty() {
                 continue;
             }
@@ -632,6 +664,7 @@ impl State {
         let player_pos = self.gameplay.state.position;
         // Cull segments that are too far from the player to save on vertices.
         const CULL_DISTANCE_SQ: f32 = 120.0 * 120.0;
+        const MAX_RENDERED_PLAYING_TRAIL_POINTS_PER_SEGMENT: usize = 1024;
 
         for (segment_index, segment) in self.gameplay.state.trail_segments.iter().enumerate() {
             if segment.is_empty() {
@@ -652,11 +685,20 @@ impl State {
             }
 
             if is_last_segment && self.gameplay.state.is_grounded {
-                let mut points = segment.clone();
+                let start = segment
+                    .len()
+                    .saturating_sub(MAX_RENDERED_PLAYING_TRAIL_POINTS_PER_SEGMENT);
+                let mut points = segment[start..].to_vec();
                 points.push(self.gameplay.state.position);
                 trail_vertices.extend(build_trail_vertices(&points, self.gameplay.state.game_over));
             } else {
-                trail_vertices.extend(build_trail_vertices(segment, self.gameplay.state.game_over));
+                let start = segment
+                    .len()
+                    .saturating_sub(MAX_RENDERED_PLAYING_TRAIL_POINTS_PER_SEGMENT);
+                trail_vertices.extend(build_trail_vertices(
+                    &segment[start..],
+                    self.gameplay.state.game_over,
+                ));
             }
         }
 
@@ -923,6 +965,28 @@ mod tests {
 
         assert!(grounded_vertices.is_empty());
         assert!(!airborne_vertices.is_empty());
+    }
+
+    #[test]
+    fn recent_trail_segments_keeps_latest_points_with_bound() {
+        let segments = vec![
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+            vec![[3.0, 0.0, 0.0], [4.0, 0.0, 0.0]],
+            vec![[5.0, 0.0, 0.0], [6.0, 0.0, 0.0], [7.0, 0.0, 0.0]],
+        ];
+
+        let selected = State::recent_trail_segments(&segments, 4);
+        let total_points: usize = selected.iter().map(|(_, points)| points.len()).sum();
+
+        assert_eq!(total_points, 4);
+        assert_eq!(selected.len(), 2);
+        assert_eq!(selected[0].0, 1);
+        assert_eq!(selected[1].0, 2);
+        assert_eq!(selected[0].1, &[[4.0, 0.0, 0.0]]);
+        assert_eq!(
+            selected[1].1,
+            &[[5.0, 0.0, 0.0], [6.0, 0.0, 0.0], [7.0, 0.0, 0.0]]
+        );
     }
 
     #[test]
