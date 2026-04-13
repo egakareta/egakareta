@@ -29,7 +29,8 @@ mod test_utils;
 mod types;
 
 pub use editor_ui::{
-    load_menu_favicon_texture, show_editor_ui, show_menu_favicon_ui, show_menu_topbar,
+    load_menu_favicon_texture, show_editor_ui, show_menu_favicon_ui, show_menu_play_ui,
+    show_menu_topbar,
 };
 pub use import_export_service::convert_level_binary_to_json;
 pub use import_export_service::convert_level_json_to_binary;

@@ -287,7 +287,7 @@ impl State {
                     if had_drag {
                         self.sync_editor_objects_after_drag_release();
                     }
-                } else {
+                } else if self.phase != AppPhase::Menu {
                     self.turn_right();
                 }
             }
@@ -331,7 +331,9 @@ impl State {
             return;
         }
 
-        self.turn_right();
+        if self.phase != AppPhase::Menu {
+            self.turn_right();
+        }
     }
 
     /// Handles pointer movement to the given screen coordinates.

@@ -11,7 +11,7 @@
 //! It handles UI updates, tessellation, texture management, and delegates rendering to the state.
 
 use crate::platform::block_icon_cache::BlockIconCache;
-use crate::{show_editor_ui, show_menu_favicon_ui, show_menu_topbar, State};
+use crate::{show_editor_ui, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar, State};
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 use wgpu::SurfaceError;
 
@@ -62,6 +62,7 @@ impl FramePipeline {
         let full_output = self.egui_ctx.run(raw_input, |ctx| {
             show_editor_ui(ctx, state, &block_icon_texture_ids);
             show_menu_topbar(ctx, state);
+            show_menu_play_ui(ctx, state);
             if let Some(favicon) = &self.menu_favicon {
                 show_menu_favicon_ui(ctx, state, favicon);
             }

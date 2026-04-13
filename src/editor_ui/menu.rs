@@ -76,6 +76,37 @@ pub fn show_menu_topbar(ctx: &egui::Context, state: &State) {
     });
 }
 
+/// Shows the menu play button UI overlay.
+pub fn show_menu_play_ui(ctx: &egui::Context, state: &mut State) {
+    if !state.is_menu() {
+        return;
+    }
+
+    egui::Area::new("menu_play_area".into())
+        .order(egui::Order::Foreground)
+        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 40.0))
+        .show(ctx, |ui| {
+            ui.spacing_mut().button_padding = egui::vec2(24.0, 16.0);
+
+            let play_text = egui::RichText::new(egui_phosphor::regular::PLAY)
+                .size(48.0)
+                .strong();
+
+            let button = egui::Button::new(play_text)
+                .corner_radius(16.0)
+                .stroke(egui::Stroke::new(2.0, ui.visuals().strong_text_color()))
+                .fill(ui.visuals().window_fill());
+
+            if ui
+                .add(button)
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+            {
+                state.turn_right();
+            }
+        });
+}
+
 fn get_current_time_str() -> String {
     #[cfg(target_arch = "wasm32")]
     {
