@@ -56,14 +56,12 @@ impl FramePipeline {
     ///
     /// Returns the full egui output for further processing.
     pub fn run_frame(&mut self, state: &mut State, raw_input: egui::RawInput) -> egui::FullOutput {
-        let viewport_size = raw_input
-            .screen_rect
-            .map(|rect| rect.size())
-            .unwrap_or_else(|| {
-                egui::vec2(state.surface_width() as f32, state.surface_height() as f32)
-            });
+        // Use physical dimensions for responsive scaling calculation to avoid feedback loops.
+        // Screen points (raw_input.screen_rect) depend on the current zoom factor,
+        // which would cause the UI size to oscillate every frame.
+        let physical_size = egui::vec2(state.surface_width() as f32, state.surface_height() as f32);
         let ui_scale_factor = combined_ui_scale_factor(
-            viewport_size,
+            physical_size,
             state.app_settings().normalized_ui_scale_multiplier(),
         );
         self.egui_ctx.set_zoom_factor(ui_scale_factor);
