@@ -270,7 +270,7 @@ pub fn show_editor_ui(
                         }
 
                         ui.separator();
-                        ui.label(format!("{} UI scale", egui_phosphor::regular::GEAR));
+                        ui.label(format!("{} UI Scale", egui_phosphor::regular::GEAR));
                         let mut ui_scale_multiplier = view.app_settings.normalized_ui_scale_multiplier();
                         if ui
                             .add(
