@@ -1236,6 +1236,11 @@ mod tests {
             1.0,
             0.001
         ));
+        assert!(approx_eq(
+            combined_ui_scale_factor(egui::vec2(3840.0, 2160.0), 3.0),
+            4.0,
+            0.001
+        ));
     }
 
     #[test]
