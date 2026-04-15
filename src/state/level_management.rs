@@ -377,6 +377,15 @@ impl State {
         self.persist_app_settings();
     }
 
+    pub(crate) fn set_ui_scale_multiplier(&mut self, multiplier: f32) {
+        let clamped = AppSettings::clamp_ui_scale_multiplier(multiplier);
+        if (self.session.app_settings.ui_scale_multiplier - clamped).abs() <= 1e-6 {
+            return;
+        }
+        self.session.app_settings.ui_scale_multiplier = clamped;
+        self.persist_app_settings();
+    }
+
     pub(crate) fn set_keybind_for_action(&mut self, action: String, slot: usize, chord: KeyChord) {
         self.session
             .app_settings
@@ -712,6 +721,13 @@ mod tests {
             state.set_preferred_graphics_backend("ManualTestBackend".to_string());
             assert_eq!(state.app_settings().graphics_backend, "ManualTestBackend");
             assert!(state.settings_restart_required());
+
+            state.set_ui_scale_multiplier(0.1);
+            assert!((state.app_settings().ui_scale_multiplier - 0.5).abs() <= 1e-6);
+            state.set_ui_scale_multiplier(8.0);
+            assert!((state.app_settings().ui_scale_multiplier - 3.0).abs() <= 1e-6);
+            state.set_ui_scale_multiplier(1.25);
+            assert!((state.app_settings().ui_scale_multiplier - 1.25).abs() <= 1e-6);
 
             let before_keybinds = state
                 .app_settings()

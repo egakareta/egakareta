@@ -82,6 +82,10 @@ const COMPACT_EDITOR_UI_BREAKPOINT: f32 = 720.0;
 const SETTINGS_SIDEBAR_TOTAL_PADDING: f32 = 24.0;
 const SETTINGS_SIDEBAR_MIN_WIDTH: f32 = 180.0;
 const SETTINGS_SIDEBAR_WIDTH_SCALE: f32 = 0.78;
+const RESPONSIVE_UI_SCALE_MIN: f32 = 0.8;
+const RESPONSIVE_UI_SCALE_MAX: f32 = 1.35;
+const UI_SCALE_BASE_WIDTH: f32 = 1280.0;
+const UI_SCALE_BASE_HEIGHT: f32 = 720.0;
 
 fn is_compact_editor_ui(viewport_width: f32) -> bool {
     viewport_width <= COMPACT_EDITOR_UI_BREAKPOINT
@@ -95,6 +99,28 @@ fn settings_sidebar_default_width(viewport_width: f32) -> f32 {
         return max_width;
     }
     (viewport_width * SETTINGS_SIDEBAR_WIDTH_SCALE).clamp(SETTINGS_SIDEBAR_MIN_WIDTH, max_width)
+}
+
+pub(crate) fn responsive_ui_scale_multiplier(viewport_size: egui::Vec2) -> f32 {
+    if !viewport_size.x.is_finite()
+        || !viewport_size.y.is_finite()
+        || viewport_size.x <= 0.0
+        || viewport_size.y <= 0.0
+    {
+        return 1.0;
+    }
+
+    let width_scale = viewport_size.x / UI_SCALE_BASE_WIDTH;
+    let height_scale = viewport_size.y / UI_SCALE_BASE_HEIGHT;
+    width_scale
+        .min(height_scale)
+        .clamp(RESPONSIVE_UI_SCALE_MIN, RESPONSIVE_UI_SCALE_MAX)
+}
+
+pub(crate) fn combined_ui_scale_factor(viewport_size: egui::Vec2, user_multiplier: f32) -> f32 {
+    let responsive = responsive_ui_scale_multiplier(viewport_size);
+    let user = crate::types::AppSettings::clamp_ui_scale_multiplier(user_multiplier);
+    (responsive * user).clamp(0.5, 4.0)
 }
 
 fn sort_quad_by_angle(center: egui::Pos2, quad: [egui::Pos2; 4]) -> [egui::Pos2; 4] {
@@ -240,6 +266,23 @@ pub fn show_editor_ui(
                         if audio_choice != view.configured_audio_backend {
                             commands.push(crate::commands::AppCommand::EditorSetAudioBackend(
                                 audio_choice,
+                            ));
+                        }
+
+                        ui.separator();
+                        ui.label(format!("{} UI scale", egui_phosphor::regular::GEAR));
+                        let mut ui_scale_multiplier = view.app_settings.normalized_ui_scale_multiplier();
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut ui_scale_multiplier)
+                                    .speed(0.05)
+                                    .range(0.5..=3.0)
+                                    .suffix("x"),
+                            )
+                            .changed()
+                        {
+                            commands.push(crate::commands::AppCommand::EditorSetUiScaleMultiplier(
+                                ui_scale_multiplier,
                             ));
                         }
                     }
@@ -1043,8 +1086,8 @@ fn show_view_selector_cube(
 #[cfg(test)]
 mod tests {
     use super::{
-        is_compact_editor_ui, settings_sidebar_default_width, show_editor_ui, sort_quad_by_angle,
-        VIEW_CUBE_FACES,
+        combined_ui_scale_factor, is_compact_editor_ui, responsive_ui_scale_multiplier,
+        settings_sidebar_default_width, show_editor_ui, sort_quad_by_angle, VIEW_CUBE_FACES,
     };
     use crate::commands::AppCommand;
     use crate::test_utils::approx_eq;
@@ -1154,6 +1197,44 @@ mod tests {
             settings_sidebar_default_width(180.0),
             156.0,
             0.01
+        ));
+    }
+
+    #[test]
+    fn responsive_ui_scale_multiplier_tracks_screen_size() {
+        assert!(approx_eq(
+            responsive_ui_scale_multiplier(egui::vec2(1280.0, 720.0)),
+            1.0,
+            0.001
+        ));
+        assert!(approx_eq(
+            responsive_ui_scale_multiplier(egui::vec2(320.0, 240.0)),
+            0.8,
+            0.001
+        ));
+        assert!(approx_eq(
+            responsive_ui_scale_multiplier(egui::vec2(3840.0, 2160.0)),
+            1.35,
+            0.001
+        ));
+    }
+
+    #[test]
+    fn combined_ui_scale_factor_applies_user_multiplier_with_clamping() {
+        assert!(approx_eq(
+            combined_ui_scale_factor(egui::vec2(1280.0, 720.0), 1.25),
+            1.25,
+            0.001
+        ));
+        assert!(approx_eq(
+            combined_ui_scale_factor(egui::vec2(1280.0, 720.0), 99.0),
+            3.0,
+            0.001
+        ));
+        assert!(approx_eq(
+            combined_ui_scale_factor(egui::vec2(1280.0, 720.0), f32::NAN),
+            1.0,
+            0.001
         ));
     }
 
