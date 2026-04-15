@@ -465,9 +465,9 @@ fn test_state_input_routing() {
     pollster::block_on(async {
         let mut state = State::new_test().await;
 
-        // First click in menu starts level.
+        // Menu clicks no longer start level directly; the play button handles that.
         state.handle_primary_click(0.0, 0.0);
-        assert_eq!(state.phase, crate::types::AppPhase::Playing);
+        assert_eq!(state.phase, crate::types::AppPhase::Menu);
     });
 }
 
@@ -1376,7 +1376,7 @@ fn toggle_editor_and_mouse_paths_cover_playtest_and_release_guards() {
 
         state.phase = AppPhase::Menu;
         state.handle_mouse_button(0, true);
-        assert_eq!(state.phase, AppPhase::Playing);
+        assert_eq!(state.phase, AppPhase::Menu);
     });
 }
 
