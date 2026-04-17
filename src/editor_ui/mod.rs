@@ -438,11 +438,13 @@ pub fn show_editor_ui(
                 commands.push(crate::commands::AppCommand::EditorSetMode(
                     EditorMode::Place,
                 ));
+                ui.ctx().request_discard("editor top tab changed");
             }
             if ui.selectable_label(is_timing, "Timing").clicked() && !is_timing {
                 commands.push(crate::commands::AppCommand::EditorSetMode(
                     EditorMode::Timing,
                 ));
+                ui.ctx().request_discard("editor top tab changed");
             }
 
             ui.separator();

@@ -13,10 +13,10 @@ pub(crate) fn show_mode_and_snap_controls(
     ui: &mut egui::Ui,
     view: &EditorUiViewModel<'_>,
     commands: &mut Vec<AppCommand>,
-) {
+) -> EditorMode {
     ui.horizontal(|ui| {
         ui.label("Mode:");
-        let mode = view.mode;
+        let mut mode = view.mode;
         if ui
             .selectable_label(
                 mode == EditorMode::Select,
@@ -24,6 +24,7 @@ pub(crate) fn show_mode_and_snap_controls(
             )
             .clicked()
         {
+            mode = EditorMode::Select;
             commands.push(AppCommand::EditorSetMode(EditorMode::Select));
         }
         if ui
@@ -33,6 +34,7 @@ pub(crate) fn show_mode_and_snap_controls(
             )
             .clicked()
         {
+            mode = EditorMode::Move;
             commands.push(AppCommand::EditorSetMode(EditorMode::Move));
         }
         if ui
@@ -42,6 +44,7 @@ pub(crate) fn show_mode_and_snap_controls(
             )
             .clicked()
         {
+            mode = EditorMode::Scale;
             commands.push(AppCommand::EditorSetMode(EditorMode::Scale));
         }
         if ui
@@ -51,6 +54,7 @@ pub(crate) fn show_mode_and_snap_controls(
             )
             .clicked()
         {
+            mode = EditorMode::Rotate;
             commands.push(AppCommand::EditorSetMode(EditorMode::Rotate));
         }
         if ui
@@ -60,6 +64,7 @@ pub(crate) fn show_mode_and_snap_controls(
             )
             .clicked()
         {
+            mode = EditorMode::Place;
             commands.push(AppCommand::EditorSetMode(EditorMode::Place));
         }
         if ui
@@ -69,6 +74,7 @@ pub(crate) fn show_mode_and_snap_controls(
             )
             .clicked()
         {
+            mode = EditorMode::Trigger;
             commands.push(AppCommand::EditorSetMode(EditorMode::Trigger));
         }
 
@@ -116,7 +122,16 @@ pub(crate) fn show_mode_and_snap_controls(
         {
             commands.push(AppCommand::EditorSetSnapRotationStep(snap_rotation_step));
         }
-    });
+
+        // Ask egui for an immediate second pass when mode changes so panel sizing
+        // responds in-frame instead of showing one-frame stale geometry.
+        if mode != view.mode {
+            ui.ctx().request_discard("editor mode changed");
+        }
+
+        mode
+    })
+    .inner
 }
 
 pub(crate) fn show_player_camera_status_row(ui: &mut egui::Ui, view: &EditorUiViewModel<'_>) {
