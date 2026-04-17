@@ -145,6 +145,9 @@ impl State {
                 self.set_preferred_graphics_backend(backend)
             }
             AppCommand::EditorSetAudioBackend(backend) => self.set_preferred_audio_backend(backend),
+            AppCommand::EditorSetUiScaleMultiplier(multiplier) => {
+                self.set_ui_scale_multiplier(multiplier)
+            }
             AppCommand::EditorSetKeybindCapture(action) => {
                 self.set_editor_keybind_capture_action(action)
             }

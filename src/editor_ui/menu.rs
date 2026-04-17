@@ -30,8 +30,9 @@ pub fn show_menu_favicon_ui(ctx: &egui::Context, state: &State, favicon: &egui::
         return;
     }
 
-    let max_width = (ctx.content_rect().width() * 0.68).max(240.0);
-    let scale = (max_width / texture_size.x).min(1.0) * 0.8;
+    let ui_scale = ctx.pixels_per_point();
+    let display_height = ctx.content_rect().height() * 0.2 * ui_scale;
+    let scale = display_height / texture_size.y;
     let display_size = texture_size * scale;
 
     egui::Area::new("menu_favicon_area".into())
@@ -82,14 +83,20 @@ pub fn show_menu_play_ui(ctx: &egui::Context, state: &mut State) {
         return;
     }
 
+    let ui_scale = ctx.pixels_per_point();
+    let screen_height = ctx.content_rect().height();
+    let icon_size = screen_height * 0.07 * ui_scale;
+    let padding = egui::vec2(24.0, 16.0);
+    let offset_y = 40.0;
+
     egui::Area::new("menu_play_area".into())
         .order(egui::Order::Foreground)
-        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 40.0))
+        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, offset_y))
         .show(ctx, |ui| {
-            ui.spacing_mut().button_padding = egui::vec2(24.0, 16.0);
+            ui.spacing_mut().button_padding = padding;
 
             let play_text = egui::RichText::new(egui_phosphor::regular::PLAY)
-                .size(48.0)
+                .size(icon_size)
                 .strong();
 
             let button = egui::Button::new(play_text)

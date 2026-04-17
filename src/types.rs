@@ -315,6 +315,14 @@ fn is_default_audio_backend_setting(value: &String) -> bool {
     value == "Default"
 }
 
+fn default_ui_scale_multiplier_setting() -> f32 {
+    1.0
+}
+
+fn is_default_ui_scale_multiplier_setting(value: &f32) -> bool {
+    (*value - 1.0).abs() <= 1e-6
+}
+
 fn default_app_keybinds() -> Vec<KeybindBinding> {
     default_essential_keybinds()
 }
@@ -1128,6 +1136,11 @@ pub(crate) struct AppSettings {
     )]
     pub(crate) audio_backend: String,
     #[serde(
+        default = "default_ui_scale_multiplier_setting",
+        skip_serializing_if = "is_default_ui_scale_multiplier_setting"
+    )]
+    pub(crate) ui_scale_multiplier: f32,
+    #[serde(
         default = "default_app_keybinds",
         skip_serializing_if = "is_default_app_keybinds"
     )]
@@ -1145,12 +1158,24 @@ impl Default for AppSettings {
             editor_rotation_snap_step: default_editor_rotation_snap_step_setting(),
             graphics_backend: default_graphics_backend_setting(),
             audio_backend: default_audio_backend_setting(),
+            ui_scale_multiplier: default_ui_scale_multiplier_setting(),
             keybinds: default_app_keybinds(),
         }
     }
 }
 
 impl AppSettings {
+    pub(crate) fn clamp_ui_scale_multiplier(value: f32) -> f32 {
+        if !value.is_finite() {
+            return default_ui_scale_multiplier_setting();
+        }
+        value.clamp(0.5, 3.0)
+    }
+
+    pub(crate) fn normalized_ui_scale_multiplier(&self) -> f32 {
+        Self::clamp_ui_scale_multiplier(self.ui_scale_multiplier)
+    }
+
     pub(crate) fn keybinds_for_action(&self, action: &str) -> Vec<&KeyChord> {
         self.keybinds
             .iter()
@@ -2341,5 +2366,13 @@ mod tests {
             .map(|b| &b.chord)
             .collect();
         assert_eq!(chords, expected);
+    }
+
+    #[test]
+    fn app_settings_ui_scale_multiplier_is_clamped() {
+        assert!((super::AppSettings::clamp_ui_scale_multiplier(1.0) - 1.0).abs() <= 1e-6);
+        assert!((super::AppSettings::clamp_ui_scale_multiplier(0.1) - 0.5).abs() <= 1e-6);
+        assert!((super::AppSettings::clamp_ui_scale_multiplier(6.0) - 3.0).abs() <= 1e-6);
+        assert!((super::AppSettings::clamp_ui_scale_multiplier(f32::NAN) - 1.0).abs() <= 1e-6);
     }
 }

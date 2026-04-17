@@ -165,6 +165,8 @@ pub(crate) enum AppCommand {
     EditorSetGraphicsBackend(String),
     /// Set preferred audio backend and apply immediately when possible.
     EditorSetAudioBackend(String),
+    /// Set UI scale multiplier used with responsive UI scaling.
+    EditorSetUiScaleMultiplier(f32),
     /// Start or cancel keybind capture for an action slot.
     EditorSetKeybindCapture(Option<(String, usize)>),
     /// Set a keybind mapping for an action at a specific slot.

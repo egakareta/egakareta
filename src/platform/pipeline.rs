@@ -10,6 +10,7 @@
 //! The `FramePipeline` manages the rendering loop, integrating egui UI with the game state.
 //! It handles UI updates, tessellation, texture management, and delegates rendering to the state.
 
+use crate::editor_ui::combined_ui_scale_factor;
 use crate::platform::block_icon_cache::BlockIconCache;
 use crate::{show_editor_ui, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar, State};
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
@@ -55,6 +56,16 @@ impl FramePipeline {
     ///
     /// Returns the full egui output for further processing.
     pub fn run_frame(&mut self, state: &mut State, raw_input: egui::RawInput) -> egui::FullOutput {
+        // Use physical dimensions for responsive scaling calculation to avoid feedback loops.
+        // Screen points (raw_input.screen_rect) depend on the current zoom factor,
+        // which would cause the UI size to oscillate every frame.
+        let physical_size = egui::vec2(state.surface_width() as f32, state.surface_height() as f32);
+        let ui_scale_factor = combined_ui_scale_factor(
+            physical_size,
+            state.app_settings().normalized_ui_scale_multiplier(),
+        );
+        self.egui_ctx.set_zoom_factor(ui_scale_factor);
+
         self.block_icon_cache
             .refresh_icons(state, &mut self.egui_renderer);
         let block_icon_texture_ids = self.block_icon_cache.texture_ids();
