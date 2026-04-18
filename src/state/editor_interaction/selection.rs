@@ -184,20 +184,9 @@ impl EditorSubsystem {
             let hits = self.marquee_overlapping_blocks(viewport);
 
             if additive {
-                let mut selected_mask = vec![false; self.objects.len()];
-                for index in self.ui.selected_block_indices.iter().copied() {
-                    if index < selected_mask.len() {
-                        selected_mask[index] = true;
-                    }
-                }
-                if let Some(index) = self.ui.selected_block_index {
-                    if index < selected_mask.len() {
-                        selected_mask[index] = true;
-                    }
-                }
+                let selected_mask = self.selected_mask_for_len(self.objects.len());
                 for hit in hits {
                     if hit < selected_mask.len() && !selected_mask[hit] {
-                        selected_mask[hit] = true;
                         self.ui.selected_block_indices.push(hit);
                     }
                 }

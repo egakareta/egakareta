@@ -355,17 +355,7 @@ impl State {
         }
 
         let object_count = self.editor.objects.len();
-        let mut selected_mask = vec![false; object_count];
-        for index in self.editor.ui.selected_block_indices.iter().copied() {
-            if index < object_count {
-                selected_mask[index] = true;
-            }
-        }
-        if let Some(index) = self.editor.ui.selected_block_index {
-            if index < object_count {
-                selected_mask[index] = true;
-            }
-        }
+        let selected_mask = self.editor.selected_mask_for_len(object_count);
 
         let mut indices_to_outline = Vec::new();
         let mut outline_mask = vec![false; object_count];
