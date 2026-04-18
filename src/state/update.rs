@@ -7,7 +7,7 @@
 */
 use glam::{Mat4, Vec3};
 
-use super::{PerfFrameContributor, PerfFrameSnapshot, PerfFrameStageEntry, PerfStage, State};
+use super::{PerfFrameRangeSummary, PerfFrameSnapshot, PerfFrameStageEntry, PerfStage, State};
 use crate::game::{
     advance_simulation_time, trigger_transformed_objects_at_time, TimelineSimulationRuntime,
 };
@@ -324,12 +324,54 @@ impl State {
         self.editor.perf.profiler.clear_selection();
     }
 
+    pub(crate) fn select_editor_perf_history_range(&mut self, start: usize, end: usize) {
+        self.editor
+            .perf
+            .profiler
+            .set_selected_history_range(start, end);
+    }
+
     pub(crate) fn select_editor_perf_history_index(&mut self, index: usize) {
         self.editor.perf.profiler.set_selected_history_index(index);
     }
 
+    pub(crate) fn set_editor_perf_histogram_zoom(&mut self, zoom: f32) {
+        self.editor.perf.profiler.set_histogram_zoom(zoom);
+    }
+
+    pub(crate) fn pan_editor_perf_histogram(&mut self, delta: i32) {
+        self.editor.perf.profiler.pan_histogram(delta);
+    }
+
+    pub(crate) fn focus_editor_perf_histogram_index(&mut self, index: usize) {
+        self.editor.perf.profiler.focus_histogram_index(index);
+    }
+
+    pub(crate) fn set_editor_perf_follow_latest(&mut self, follow_latest: bool) {
+        self.editor
+            .perf
+            .profiler
+            .set_histogram_follow_latest(follow_latest);
+    }
+
     pub(crate) fn editor_perf_selected_history_index(&self) -> Option<usize> {
         self.editor.perf.profiler.selected_history_index()
+    }
+
+    pub(crate) fn editor_perf_selected_history_range(&self) -> Option<(usize, usize)> {
+        self.editor.perf.profiler.selected_history_range_indices()
+    }
+
+    pub(crate) fn editor_perf_histogram_zoom(&self) -> f32 {
+        self.editor.perf.profiler.histogram_zoom()
+    }
+
+    pub(crate) fn editor_perf_histogram_follow_latest(&self) -> bool {
+        self.editor.perf.profiler.histogram_follow_latest()
+    }
+
+    pub(crate) fn editor_perf_histogram_focus_index(&self) -> Option<usize> {
+        self.editor.perf.profiler.histogram_focus_history_index()
     }
 
     pub(crate) fn editor_perf_frame_history(&self) -> Vec<PerfFrameSnapshot> {
@@ -348,26 +390,28 @@ impl State {
         self.editor.perf.profiler.selected_or_latest_frame()
     }
 
-    pub(crate) fn editor_perf_selected_top_contributors(
-        &self,
-        limit: usize,
-    ) -> Vec<PerfFrameContributor> {
-        if !self.editor.perf.profiler.enabled {
-            return Vec::new();
-        }
-
-        self.editor
-            .perf
-            .profiler
-            .selected_frame_top_contributors(limit)
-    }
-
     pub(crate) fn editor_perf_selected_stage_tree(&self) -> Vec<PerfFrameStageEntry> {
         if !self.editor.perf.profiler.enabled {
             return Vec::new();
         }
 
         self.editor.perf.profiler.selected_frame_tree()
+    }
+
+    pub(crate) fn editor_perf_active_range_summary(&self) -> Option<PerfFrameRangeSummary> {
+        if !self.editor.perf.profiler.enabled {
+            return None;
+        }
+
+        self.editor.perf.profiler.active_range_summary()
+    }
+
+    pub(crate) fn editor_perf_active_range_stage_tree(&self) -> Vec<PerfFrameStageEntry> {
+        if !self.editor.perf.profiler.enabled {
+            return Vec::new();
+        }
+
+        self.editor.perf.profiler.active_range_tree()
     }
 
     pub(crate) fn editor_perf_overlay_enabled(&self) -> bool {

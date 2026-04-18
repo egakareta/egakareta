@@ -45,7 +45,8 @@ pub(crate) use editor_timing::EditorTimingState;
 pub(crate) use editor_triggers::EditorTriggerState;
 pub(crate) use history::EditorHistoryState;
 pub(crate) use perf::{
-    EditorPerfState, PerfFrameContributor, PerfFrameSnapshot, PerfFrameStageEntry, PerfStage,
+    EditorPerfState, PerfFrameRangeSummary, PerfFrameSnapshot, PerfFrameStageEntry, PerfStage,
+    PERF_HISTOGRAM_ZOOM_MAX, PERF_HISTOGRAM_ZOOM_MIN,
 };
 pub(crate) use render::RenderSubsystem;
 pub(crate) use runtime::{

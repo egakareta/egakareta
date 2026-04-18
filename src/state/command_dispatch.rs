@@ -127,8 +127,21 @@ impl State {
             // ── Editor – misc ───────────────────────────────────────
             AppCommand::EditorTogglePerfOverlay => self.toggle_editor_perf_overlay(),
             AppCommand::EditorTogglePerfProfilerPause => self.toggle_editor_perf_pause(),
+            AppCommand::EditorSelectPerfHistoryRange { start, end } => {
+                self.select_editor_perf_history_range(start, end)
+            }
             AppCommand::EditorSelectPerfHistoryIndex(index) => {
                 self.select_editor_perf_history_index(index)
+            }
+            AppCommand::EditorSetPerfHistogramZoom(zoom) => {
+                self.set_editor_perf_histogram_zoom(zoom)
+            }
+            AppCommand::EditorPanPerfHistogram(delta) => self.pan_editor_perf_histogram(delta),
+            AppCommand::EditorFocusPerfHistogramIndex(index) => {
+                self.focus_editor_perf_histogram_index(index)
+            }
+            AppCommand::EditorSetPerfFollowLatest(follow_latest) => {
+                self.set_editor_perf_follow_latest(follow_latest)
             }
             AppCommand::EditorClearPerfSelection => self.clear_editor_perf_selection(),
             AppCommand::EditorExportBlockObj => self.trigger_selected_block_obj_export(),

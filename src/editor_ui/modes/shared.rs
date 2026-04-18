@@ -237,11 +237,16 @@ mod tests {
             perf_spike_count: 0,
             perf_last_spike_stage: "none",
             perf_paused: false,
+            perf_histogram_zoom: 1.0,
+            perf_histogram_follow_latest: true,
+            perf_histogram_focus_index: None,
             perf_selected_history_index: None,
+            perf_selected_history_range: None,
             perf_frame_history: Vec::new(),
             perf_selected_frame: None,
-            perf_selected_top_contributors: Vec::new(),
             perf_selected_stage_tree: Vec::new(),
+            perf_active_range_summary: None,
+            perf_active_range_stage_tree: Vec::new(),
             marquee_selection_rect_screen: None,
         }
     }
