@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::{PerfOverlayEntry, State};
+use super::{PerfFrameContributor, PerfFrameSnapshot, PerfFrameStageEntry, State};
 use crate::types::{
     AppSettings, EditorMode, LevelObject, MusicMetadata, SettingsSection, SpawnDirection,
     TimedTrigger, TimingPoint,
@@ -61,8 +61,14 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) graphics_backend: String,
     pub(crate) audio_backend: String,
     pub(crate) perf_overlay_enabled: bool,
-    pub(crate) perf_overlay_lines: Vec<String>,
-    pub(crate) perf_overlay_entries: Vec<PerfOverlayEntry>,
+    pub(crate) perf_spike_count: u64,
+    pub(crate) perf_last_spike_stage: &'static str,
+    pub(crate) perf_paused: bool,
+    pub(crate) perf_selected_history_index: Option<usize>,
+    pub(crate) perf_frame_history: Vec<PerfFrameSnapshot>,
+    pub(crate) perf_selected_frame: Option<PerfFrameSnapshot>,
+    pub(crate) perf_selected_top_contributors: Vec<PerfFrameContributor>,
+    pub(crate) perf_selected_stage_tree: Vec<PerfFrameStageEntry>,
     pub(crate) marquee_selection_rect_screen: Option<([f64; 2], [f64; 2], bool)>,
 }
 
@@ -71,13 +77,23 @@ impl State {
         let (timeline_preview_position, timeline_preview_direction) =
             self.editor_timeline_preview();
         let perf_overlay_enabled = self.editor_perf_overlay_enabled();
-        let perf_overlay_lines = if perf_overlay_enabled {
-            self.editor_perf_overlay_lines()
+        let perf_frame_history = if perf_overlay_enabled {
+            self.editor_perf_frame_history()
         } else {
             Vec::new()
         };
-        let perf_overlay_entries = if perf_overlay_enabled {
-            self.editor_perf_overlay_entries()
+        let perf_selected_frame = if perf_overlay_enabled {
+            self.editor_perf_selected_frame()
+        } else {
+            None
+        };
+        let perf_selected_top_contributors = if perf_overlay_enabled {
+            self.editor_perf_selected_top_contributors(6)
+        } else {
+            Vec::new()
+        };
+        let perf_selected_stage_tree = if perf_overlay_enabled {
+            self.editor_perf_selected_stage_tree()
         } else {
             Vec::new()
         };
@@ -140,8 +156,14 @@ impl State {
             graphics_backend: format!("{:?}", self.render.gpu.adapter_info.backend),
             audio_backend: self.audio.state.runtime.backend_name(),
             perf_overlay_enabled,
-            perf_overlay_lines,
-            perf_overlay_entries,
+            perf_spike_count: self.editor_perf_spike_count(),
+            perf_last_spike_stage: self.editor_perf_last_spike_stage_name(),
+            perf_paused: self.editor_perf_paused(),
+            perf_selected_history_index: self.editor_perf_selected_history_index(),
+            perf_frame_history,
+            perf_selected_frame,
+            perf_selected_top_contributors,
+            perf_selected_stage_tree,
             marquee_selection_rect_screen: self.editor_marquee_selection_rect_screen(),
         }
     }

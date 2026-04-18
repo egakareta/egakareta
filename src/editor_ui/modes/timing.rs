@@ -266,8 +266,14 @@ mod tests {
             graphics_backend: "WGPU".to_string(),
             audio_backend: "Default".to_string(),
             perf_overlay_enabled: false,
-            perf_overlay_lines: Vec::new(),
-            perf_overlay_entries: Vec::new(),
+            perf_spike_count: 0,
+            perf_last_spike_stage: "none",
+            perf_paused: false,
+            perf_selected_history_index: None,
+            perf_frame_history: Vec::new(),
+            perf_selected_frame: None,
+            perf_selected_top_contributors: Vec::new(),
+            perf_selected_stage_tree: Vec::new(),
             marquee_selection_rect_screen: None,
         }
     }

@@ -126,6 +126,11 @@ impl State {
 
             // ── Editor – misc ───────────────────────────────────────
             AppCommand::EditorTogglePerfOverlay => self.toggle_editor_perf_overlay(),
+            AppCommand::EditorTogglePerfProfilerPause => self.toggle_editor_perf_pause(),
+            AppCommand::EditorSelectPerfHistoryIndex(index) => {
+                self.select_editor_perf_history_index(index)
+            }
+            AppCommand::EditorClearPerfSelection => self.clear_editor_perf_selection(),
             AppCommand::EditorExportBlockObj => self.trigger_selected_block_obj_export(),
 
             // ── Editor – UI / Session ───────────────────────────────

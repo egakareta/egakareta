@@ -141,6 +141,12 @@ pub(crate) enum AppCommand {
     // ── Editor – misc ───────────────────────────────────────────────
     /// Toggle the performance overlay.
     EditorTogglePerfOverlay,
+    /// Pause or resume profiler frame-history capture.
+    EditorTogglePerfProfilerPause,
+    /// Select a profiler frame by history index.
+    EditorSelectPerfHistoryIndex(usize),
+    /// Clear profiler frame selection.
+    EditorClearPerfSelection,
     /// Export the selected block as OBJ.
     EditorExportBlockObj,
 
