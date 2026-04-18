@@ -146,6 +146,16 @@ fn add_face_mesh(painter: &egui::Painter, quad: [egui::Pos2; 4], color: egui::Co
     painter.add(egui::Shape::mesh(mesh));
 }
 
+fn marquee_screen_pos_to_egui_pos(screen_pos: [f64; 2], pixels_per_point: f32) -> egui::Pos2 {
+    let scale = if pixels_per_point.is_finite() && pixels_per_point > 0.0 {
+        pixels_per_point
+    } else {
+        1.0
+    };
+
+    egui::pos2(screen_pos[0] as f32 / scale, screen_pos[1] as f32 / scale)
+}
+
 /// Shows the editor UI using egui.
 /// Handles the top bar, bottom panels, and other editor interface elements.
 pub fn show_editor_ui(
@@ -628,9 +638,10 @@ pub fn show_editor_ui(
     if view.mode.is_selection_mode() || view.mode == EditorMode::Trigger {
         if let Some((start, current, is_active_drag)) = view.marquee_selection_rect_screen {
             if is_active_drag {
+                let pixels_per_point = ctx.pixels_per_point();
                 let rect = egui::Rect::from_two_pos(
-                    egui::pos2(start[0] as f32, start[1] as f32),
-                    egui::pos2(current[0] as f32, current[1] as f32),
+                    marquee_screen_pos_to_egui_pos(start, pixels_per_point),
+                    marquee_screen_pos_to_egui_pos(current, pixels_per_point),
                 );
                 let stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(25, 153, 255));
                 let layer = egui::LayerId::new(
@@ -1086,8 +1097,9 @@ fn show_view_selector_cube(
 #[cfg(test)]
 mod tests {
     use super::{
-        combined_ui_scale_factor, is_compact_editor_ui, responsive_ui_scale_multiplier,
-        settings_sidebar_default_width, show_editor_ui, sort_quad_by_angle, VIEW_CUBE_FACES,
+        combined_ui_scale_factor, is_compact_editor_ui, marquee_screen_pos_to_egui_pos,
+        responsive_ui_scale_multiplier, settings_sidebar_default_width, show_editor_ui,
+        sort_quad_by_angle, VIEW_CUBE_FACES,
     };
     use crate::commands::AppCommand;
     use crate::test_utils::approx_eq;
@@ -1241,6 +1253,20 @@ mod tests {
             4.0,
             0.001
         ));
+    }
+
+    #[test]
+    fn marquee_screen_pos_to_egui_pos_scales_by_pixels_per_point() {
+        let p = marquee_screen_pos_to_egui_pos([300.0, 180.0], 1.5);
+        assert!(approx_eq(p.x, 200.0, 0.001));
+        assert!(approx_eq(p.y, 120.0, 0.001));
+    }
+
+    #[test]
+    fn marquee_screen_pos_to_egui_pos_handles_invalid_scale() {
+        let p = marquee_screen_pos_to_egui_pos([300.0, 180.0], f32::NAN);
+        assert!(approx_eq(p.x, 300.0, 0.001));
+        assert!(approx_eq(p.y, 180.0, 0.001));
     }
 
     #[test]
