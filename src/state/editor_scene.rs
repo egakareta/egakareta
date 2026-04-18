@@ -354,7 +354,21 @@ impl State {
             return;
         }
 
+        let object_count = self.editor.objects.len();
+        let mut selected_mask = vec![false; object_count];
+        for index in self.editor.ui.selected_block_indices.iter().copied() {
+            if index < object_count {
+                selected_mask[index] = true;
+            }
+        }
+        if let Some(index) = self.editor.ui.selected_block_index {
+            if index < object_count {
+                selected_mask[index] = true;
+            }
+        }
+
         let mut indices_to_outline = Vec::new();
+        let mut outline_mask = vec![false; object_count];
 
         if let Some(index) = self
             .editor
@@ -362,7 +376,8 @@ impl State {
             .hovered_block_index
             .filter(|index| *index < self.editor.objects.len())
         {
-            if !self.selection_contains(index) {
+            if !selected_mask[index] {
+                outline_mask[index] = true;
                 indices_to_outline.push(index);
             }
         }
@@ -373,7 +388,8 @@ impl State {
                 self.render.gpu.config.height as f32,
             );
             for hit in self.editor.marquee_overlapping_blocks(viewport) {
-                if !self.selection_contains(hit) && !indices_to_outline.contains(&hit) {
+                if !selected_mask[hit] && !outline_mask[hit] {
+                    outline_mask[hit] = true;
                     indices_to_outline.push(hit);
                 }
             }

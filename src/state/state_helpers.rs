@@ -93,10 +93,6 @@ impl State {
         self.editor.sync_primary_selection_from_indices();
     }
 
-    pub(super) fn selection_contains(&self, index: usize) -> bool {
-        self.editor.selection_contains(index)
-    }
-
     pub(super) fn selected_group_bounds(&self) -> Option<([f32; 3], [f32; 3])> {
         self.editor.selected_group_bounds()
     }
