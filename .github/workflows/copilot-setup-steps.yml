@@ -15,8 +15,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: nightly-2026-03-12
           components: clippy, llvm-tools-preview, rustfmt, rust-src
       - uses: taiki-e/install-action@v2
         with:
