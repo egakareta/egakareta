@@ -17,11 +17,10 @@ use crate::state::EditorUiViewModel;
 use crate::types::EditorMode;
 
 const PREVIEW_BUTTON_WIDTH: f32 = 72.0;
-const PREVIEW_BUTTON_HEIGHT: f32 = 88.0;
-const PREVIEW_PADDING_X: f32 = 8.0;
-const PREVIEW_PADDING_Y: f32 = 6.0;
-const PREVIEW_HEIGHT: f32 = 54.0;
-const PREVIEW_TEXT_Y_OFFSET: f32 = 13.0;
+const PREVIEW_BUTTON_HEIGHT: f32 = 72.0;
+const PREVIEW_PADDING_X: f32 = 4.0;
+const PREVIEW_PADDING_Y: f32 = 4.0;
+const PREVIEW_HEIGHT: f32 = 64.0;
 const CUBE_EDGE_WIDTH: f32 = 1.0;
 const CUBE_EDGE_ALPHA: u8 = 90;
 const CUBE_HALF_WIDTH_RATIO: f32 = 0.30;
@@ -44,8 +43,6 @@ pub(crate) fn show_compose_mode_bottom_panel(
     match view.mode {
         EditorMode::Place => {
             ui.horizontal_wrapped(|ui| {
-                ui.label("Block:");
-
                 let current = view.selected_block_id;
                 for block in all_placeable_blocks() {
                     if !block.placeable {
@@ -237,16 +234,9 @@ fn show_block_preview_button(
         draw_block_preview_cube(ui.painter(), preview_rect, block.id.as_str());
     }
 
-    let text_pos = egui::pos2(rect.center().x, rect.max.y - PREVIEW_TEXT_Y_OFFSET);
-    ui.painter().text(
-        text_pos,
-        egui::Align2::CENTER_CENTER,
-        block.display_name.as_str(),
-        egui::TextStyle::Small.resolve(ui.style()),
-        visuals.text_color(),
-    );
-
-    response.clicked()
+    let clicked = response.clicked();
+    response.on_hover_text_at_pointer(block.display_name.clone());
+    clicked
 }
 
 fn draw_block_preview_cube(painter: &egui::Painter, rect: egui::Rect, block_id: &str) {
