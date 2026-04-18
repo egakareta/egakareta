@@ -10,6 +10,53 @@ use super::history::EditorHistoryState;
 use crate::platform::state_host::PlatformInstant;
 use crate::types::LineUniform;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BlockMeshOperation {
+    FullRebuild,
+    AppendObject,
+    RemoveObjects,
+    UpdateObjects,
+    SelectionPartitionOnly,
+    SelectedOnly,
+}
+
+#[derive(Default)]
+pub(crate) struct EditorMeshOperationState {
+    pub(crate) pending: Option<BlockMeshOperation>,
+    pub(crate) changed_indices: Vec<usize>,
+}
+
+impl EditorMeshOperationState {
+    pub(crate) fn request(&mut self, operation: BlockMeshOperation, changed_indices: &[usize]) {
+        self.pending = Some(match (self.pending, operation) {
+            (_, BlockMeshOperation::FullRebuild) => BlockMeshOperation::FullRebuild,
+            (None, next) => next,
+            (Some(BlockMeshOperation::FullRebuild), _) => BlockMeshOperation::FullRebuild,
+            (Some(current), next) if current == next => current,
+            _ => BlockMeshOperation::FullRebuild,
+        });
+
+        if self.pending == Some(BlockMeshOperation::FullRebuild) {
+            self.changed_indices.clear();
+        } else {
+            self.changed_indices.extend(changed_indices.iter().copied());
+        }
+    }
+
+    pub(crate) fn take(&mut self) -> Option<(BlockMeshOperation, Vec<usize>)> {
+        let operation = self.pending.take()?;
+        let mut changed_indices = std::mem::take(&mut self.changed_indices);
+        changed_indices.sort_unstable();
+        changed_indices.dedup();
+        Some((operation, changed_indices))
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.pending = None;
+        self.changed_indices.clear();
+    }
+}
+
 #[derive(Clone, Copy, Default, Debug)]
 pub(crate) struct EditorDirtyFlags {
     pub(crate) sync_game_objects: bool,
@@ -61,6 +108,8 @@ pub(crate) struct EditorGizmoState {
 
 pub(crate) struct EditorRuntimeState {
     pub(crate) dirty: EditorDirtyFlags,
+    pub(crate) block_mesh_operation: EditorMeshOperationState,
+    pub(crate) static_chunk_keys: Vec<[i32; 3]>,
     pub(crate) gizmo: EditorGizmoState,
     pub(crate) drag_heavy_rebuild_accumulator: f32,
     pub(crate) interaction: EditorInteractionState,

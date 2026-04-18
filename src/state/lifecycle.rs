@@ -360,6 +360,7 @@ impl State {
                     trail: trail_mesh,
                     blocks: block_mesh,
                     blocks_static: MeshSlot::Empty,
+                    blocks_static_chunks: Vec::new(),
                     blocks_selected: MeshSlot::Empty,
                     editor_cursor: MeshSlot::Empty,
                     editor_hover_outline: MeshSlot::Empty,
@@ -431,6 +432,8 @@ impl State {
                 timeline: EditorTimelineState::new(),
                 runtime: EditorRuntimeState {
                     dirty: EditorDirtyFlags::from_object_sync(),
+                    block_mesh_operation: Default::default(),
+                    static_chunk_keys: Vec::new(),
                     gizmo: EditorGizmoState {
                         rebuild_accumulator: 0.0,
                         last_pan: [0.0, 0.0],
@@ -995,6 +998,7 @@ impl State {
                     trail: trail_mesh,
                     blocks: block_mesh,
                     blocks_static: MeshSlot::Empty,
+                    blocks_static_chunks: Vec::new(),
                     blocks_selected: MeshSlot::Empty,
                     editor_cursor: MeshSlot::Empty,
                     editor_hover_outline: MeshSlot::Empty,
@@ -1066,6 +1070,8 @@ impl State {
                 timeline: EditorTimelineState::new(),
                 runtime: EditorRuntimeState {
                     dirty: EditorDirtyFlags::from_object_sync(),
+                    block_mesh_operation: Default::default(),
+                    static_chunk_keys: Vec::new(),
                     gizmo: EditorGizmoState {
                         rebuild_accumulator: 0.0,
                         last_pan: [0.0, 0.0],

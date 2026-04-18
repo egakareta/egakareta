@@ -113,6 +113,72 @@ impl MeshSlot {
         }
     }
 
+    pub(crate) fn write_streaming_vertices_with_growth(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        label: &'static str,
+        vertices: &[Vertex],
+    ) {
+        if vertices.is_empty() {
+            self.clear();
+            return;
+        }
+
+        let required_vertices = vertices.len() as u32;
+        let requires_realloc = !matches!(
+            self,
+            Self::Streaming {
+                capacity_vertices,
+                ..
+            } if *capacity_vertices >= required_vertices
+        );
+
+        if requires_realloc {
+            let capacity_vertices = required_vertices.max(512).next_power_of_two();
+            *self = Self::streaming(device, label, capacity_vertices);
+        }
+
+        self.write_streaming_vertices(queue, vertices);
+    }
+
+    pub(crate) fn append_streaming_vertices_with_growth(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        label: &'static str,
+        vertices: &[Vertex],
+    ) -> bool {
+        if vertices.is_empty() {
+            return true;
+        }
+
+        if matches!(self, Self::Empty) {
+            let capacity_vertices = (vertices.len() as u32).max(512).next_power_of_two();
+            *self = Self::streaming(device, label, capacity_vertices);
+        }
+
+        let Self::Streaming {
+            buffer,
+            count,
+            capacity_vertices,
+        } = self
+        else {
+            return false;
+        };
+
+        let append_count = vertices.len() as u32;
+        let next_count = count.saturating_add(append_count);
+        if next_count > *capacity_vertices {
+            return false;
+        }
+
+        let offset_bytes = (*count as usize * std::mem::size_of::<Vertex>()) as u64;
+        queue.write_buffer(buffer, offset_bytes, bytemuck::cast_slice(vertices));
+        *count = next_count;
+        true
+    }
+
     pub(crate) fn clear(&mut self) {
         match self {
             Self::Empty => {}
@@ -140,6 +206,7 @@ pub(crate) struct SceneMeshes {
     pub(crate) trail: MeshSlot,
     pub(crate) blocks: MeshSlot,
     pub(crate) blocks_static: MeshSlot,
+    pub(crate) blocks_static_chunks: Vec<MeshSlot>,
     pub(crate) blocks_selected: MeshSlot,
     pub(crate) editor_cursor: MeshSlot,
     pub(crate) editor_hover_outline: MeshSlot,

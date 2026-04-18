@@ -32,6 +32,9 @@ pub(crate) enum PerfStage {
     BlockMeshMaskBuild,
     BlockMeshSplitStatic,
     BlockMeshSplitSelected,
+    BlockMeshChunkBuild,
+    BlockMeshChunkUpload,
+    BlockMeshIncrementalAppend,
     BlockMeshUploadStatic,
     BlockMeshUploadSelected,
     BlockMeshSelectedOnly,
@@ -48,7 +51,7 @@ pub(crate) enum PerfStage {
     TimelineSeekAudioStart,
 }
 
-pub(crate) const PERF_STAGE_COUNT: usize = 39;
+pub(crate) const PERF_STAGE_COUNT: usize = 42;
 
 #[derive(Clone)]
 pub(crate) struct PerfOverlayEntry {
@@ -104,6 +107,9 @@ impl PerfStage {
                 Self::BlockMeshMaskBuild,
                 Self::BlockMeshSplitStatic,
                 Self::BlockMeshSplitSelected,
+                Self::BlockMeshChunkBuild,
+                Self::BlockMeshChunkUpload,
+                Self::BlockMeshIncrementalAppend,
                 Self::BlockMeshUploadStatic,
                 Self::BlockMeshUploadSelected,
                 Self::BlockMeshSelectedOnly,
@@ -154,6 +160,9 @@ impl PerfStage {
             Self::BlockMeshMaskBuild => "BlockMaskBuild",
             Self::BlockMeshSplitStatic => "BlockMeshSplitStatic",
             Self::BlockMeshSplitSelected => "BlockMeshSplitSelected",
+            Self::BlockMeshChunkBuild => "BlockMeshChunkBuild",
+            Self::BlockMeshChunkUpload => "BlockMeshChunkUpload",
+            Self::BlockMeshIncrementalAppend => "BlockMeshIncrementalAppend",
             Self::BlockMeshUploadStatic => "BlockMeshUploadStatic",
             Self::BlockMeshUploadSelected => "BlockMeshUploadSelected",
             Self::BlockMeshSelectedOnly => "BlockMeshSelectedOnly",

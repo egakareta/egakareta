@@ -225,10 +225,29 @@ impl State {
 
             if !skip_world {
                 if self.phase == AppPhase::Editor {
-                    if let Some((buffer, count)) = self.render.meshes.blocks_static.draw_data() {
-                        render_pass.set_vertex_buffer(0, buffer.slice(..));
-                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                        render_pass.draw(0..count, 0..1);
+                    if self.render.meshes.blocks_static_chunks.is_empty() {
+                        if let Some((buffer, count)) = self.render.meshes.blocks_static.draw_data()
+                        {
+                            render_pass.set_vertex_buffer(0, buffer.slice(..));
+                            render_pass.set_bind_group(
+                                1,
+                                &self.render.gpu.zero_line_bind_group,
+                                &[],
+                            );
+                            render_pass.draw(0..count, 0..1);
+                        }
+                    } else {
+                        for chunk in &self.render.meshes.blocks_static_chunks {
+                            if let Some((buffer, count)) = chunk.draw_data() {
+                                render_pass.set_vertex_buffer(0, buffer.slice(..));
+                                render_pass.set_bind_group(
+                                    1,
+                                    &self.render.gpu.zero_line_bind_group,
+                                    &[],
+                                );
+                                render_pass.draw(0..count, 0..1);
+                            }
+                        }
                     }
 
                     if let Some((buffer, count)) = self.render.meshes.blocks_selected.draw_data() {
@@ -648,6 +667,11 @@ mod tests {
             state.render.meshes.blocks = MeshSlot::from_vertices(state.device(), "blocks", &tri);
             state.render.meshes.blocks_static =
                 MeshSlot::from_vertices(state.device(), "blocks_static", &tri);
+            state.render.meshes.blocks_static_chunks = vec![MeshSlot::from_vertices(
+                state.device(),
+                "blocks_static_chunk_0",
+                &tri,
+            )];
             state.render.meshes.blocks_selected =
                 MeshSlot::from_vertices(state.device(), "blocks_selected", &tri);
             state.render.meshes.editor_cursor =

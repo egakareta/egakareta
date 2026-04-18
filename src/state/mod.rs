@@ -46,7 +46,9 @@ pub(crate) use editor_triggers::EditorTriggerState;
 pub(crate) use history::EditorHistoryState;
 pub(crate) use perf::{EditorPerfState, PerfOverlayEntry, PerfStage};
 pub(crate) use render::RenderSubsystem;
-pub(crate) use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
+pub(crate) use runtime::{
+    BlockMeshOperation, EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState,
+};
 pub(crate) use view_model::EditorUiViewModel;
 
 use crate::game::GameState;

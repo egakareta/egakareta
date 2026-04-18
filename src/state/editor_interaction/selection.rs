@@ -6,7 +6,8 @@
 
 */
 use super::super::{
-    EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart, EditorSubsystem, PerfStage, State,
+    BlockMeshOperation, EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart, EditorSubsystem,
+    PerfStage, State,
 };
 use crate::platform::state_host::PlatformInstant;
 use crate::types::{AppPhase, EditorInteractionChange, EditorMode};
@@ -220,6 +221,7 @@ impl EditorSubsystem {
             }
         }
 
+        self.request_block_mesh_operation(BlockMeshOperation::SelectionPartitionOnly, &[]);
         self.mark_dirty(EditorDirtyFlags {
             rebuild_block_mesh: true,
             rebuild_selection_overlays: true,
@@ -489,6 +491,7 @@ impl EditorSubsystem {
             self.perf_record(PerfStage::SelectionApply, apply_started_at);
 
             let mark_dirty_started_at = PlatformInstant::now();
+            self.request_block_mesh_operation(BlockMeshOperation::SelectionPartitionOnly, &[]);
             self.mark_dirty(EditorDirtyFlags {
                 rebuild_block_mesh: true,
                 rebuild_selection_overlays: true,
@@ -578,6 +581,7 @@ impl EditorSubsystem {
         self.perf_record(PerfStage::SelectionApply, apply_started_at);
 
         let mark_dirty_started_at = PlatformInstant::now();
+        self.request_block_mesh_operation(BlockMeshOperation::SelectionPartitionOnly, &[]);
         self.mark_dirty(EditorDirtyFlags {
             rebuild_block_mesh: true,
             rebuild_selection_overlays: true,
