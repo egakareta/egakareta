@@ -244,11 +244,11 @@ pub(crate) struct EditorPerfProfiler {
     pub(crate) paused: bool,
     frame_history: VecDeque<PerfFrameSnapshot>,
     next_frame_index: u64,
-    selected_frame_id: Option<u64>,
-    selected_range_frame_ids: Option<(u64, u64)>,
+    selected_history_index: Option<usize>,
+    selected_history_range: Option<(usize, usize)>,
     histogram_zoom: f32,
     histogram_follow_latest: bool,
-    histogram_focus_frame_id: Option<u64>,
+    histogram_focus_index: Option<usize>,
 }
 
 impl EditorPerfProfiler {
@@ -262,11 +262,11 @@ impl EditorPerfProfiler {
             paused: false,
             frame_history: VecDeque::with_capacity(PERF_FRAME_HISTORY_CAPACITY),
             next_frame_index: 0,
-            selected_frame_id: None,
-            selected_range_frame_ids: None,
+            selected_history_index: None,
+            selected_history_range: None,
             histogram_zoom: 1.0,
             histogram_follow_latest: true,
-            histogram_focus_frame_id: None,
+            histogram_focus_index: None,
         }
     }
 
@@ -302,26 +302,24 @@ impl EditorPerfProfiler {
         };
         self.next_frame_index = self.next_frame_index.saturating_add(1);
 
-        if self.frame_history.len() >= PERF_FRAME_HISTORY_CAPACITY {
-            let dropped = self.frame_history.pop_front();
-            if let Some(dropped_snapshot) = dropped {
-                if self.selected_frame_id == Some(dropped_snapshot.frame_index) {
-                    self.selected_frame_id = None;
-                }
+        if self.frame_history.len() >= PERF_FRAME_HISTORY_CAPACITY
+            && self.frame_history.pop_front().is_some()
+        {
+            self.selected_history_index = self
+                .selected_history_index
+                .and_then(|index| index.checked_sub(1));
 
-                if let Some((start_id, end_id)) = self.selected_range_frame_ids {
-                    if dropped_snapshot.frame_index >= start_id
-                        && dropped_snapshot.frame_index <= end_id
-                    {
-                        self.selected_range_frame_ids = None;
-                    }
-                }
-
-                if self.histogram_focus_frame_id == Some(dropped_snapshot.frame_index) {
-                    self.histogram_focus_frame_id =
-                        self.frame_history.front().map(|f| f.frame_index);
+            if let Some((start, end)) = self.selected_history_range {
+                if end == 0 {
+                    self.selected_history_range = None;
+                } else {
+                    self.selected_history_range = Some((start.saturating_sub(1), end - 1));
                 }
             }
+
+            self.histogram_focus_index = self
+                .histogram_focus_index
+                .map(|index| index.saturating_sub(1));
         }
         self.frame_history.push_back(snapshot);
     }
@@ -334,10 +332,10 @@ impl EditorPerfProfiler {
     }
 
     pub(crate) fn clear_selection(&mut self) {
-        self.selected_frame_id = None;
-        self.selected_range_frame_ids = None;
+        self.selected_history_index = None;
+        self.selected_history_range = None;
         self.histogram_follow_latest = true;
-        self.histogram_focus_frame_id = None;
+        self.histogram_focus_index = None;
     }
 
     pub(crate) fn frame_history(&self) -> Vec<PerfFrameSnapshot> {
@@ -345,24 +343,23 @@ impl EditorPerfProfiler {
     }
 
     pub(crate) fn selected_history_index(&self) -> Option<usize> {
-        let selected_id = self.selected_frame_id?;
-        self.frame_history
-            .iter()
-            .position(|snapshot| snapshot.frame_index == selected_id)
+        self.selected_history_index
+            .filter(|index| *index < self.frame_history.len())
     }
 
     pub(crate) fn selected_history_range_indices(&self) -> Option<(usize, usize)> {
-        if self.selected_frame_id.is_some() {
+        if self.selected_history_index().is_some() {
             return None;
         }
 
-        if let Some((start_id, end_id)) = self.selected_range_frame_ids {
-            if let (Some(start), Some(end)) = (
-                self.history_index_for_frame_id(start_id),
-                self.history_index_for_frame_id(end_id),
-            ) {
-                return Some((start.min(end), start.max(end)));
-            }
+        if let Some((start, end)) = self.selected_history_range {
+            let last_index = self.frame_history.len().checked_sub(1)?;
+            let clamped_start = start.min(last_index);
+            let clamped_end = end.min(last_index);
+            return Some((
+                clamped_start.min(clamped_end),
+                clamped_start.max(clamped_end),
+            ));
         }
 
         let current_index = self.histogram_focus_history_index()?;
@@ -377,25 +374,33 @@ impl EditorPerfProfiler {
     }
 
     pub(crate) fn set_selected_history_index(&mut self, index: usize) {
-        let selected = self.frame_history.get(index).map(|s| s.frame_index);
-        self.selected_frame_id = selected;
-        self.selected_range_frame_ids = None;
+        if index >= self.frame_history.len() {
+            self.selected_history_index = None;
+            self.selected_history_range = None;
+            return;
+        }
+
+        self.selected_history_index = Some(index);
+        self.selected_history_range = None;
         self.histogram_follow_latest = false;
-        self.histogram_focus_frame_id = selected;
+        self.histogram_focus_index = Some(index);
     }
 
     pub(crate) fn set_selected_history_range(&mut self, start: usize, end: usize) {
+        let Some(last_index) = self.frame_history.len().checked_sub(1) else {
+            return;
+        };
+
         let lo = start.min(end);
         let hi = start.max(end);
-        let start_id = self.frame_history.get(lo).map(|s| s.frame_index);
-        let end_id = self.frame_history.get(hi).map(|s| s.frame_index);
-        if let (Some(start_id), Some(end_id)) = (start_id, end_id) {
-            self.selected_range_frame_ids = Some((start_id, end_id));
-            self.selected_frame_id = None;
-            self.histogram_follow_latest = false;
-            let center = lo + (hi - lo) / 2;
-            self.histogram_focus_frame_id = self.frame_history.get(center).map(|s| s.frame_index);
-        }
+        let clamped_lo = lo.min(last_index);
+        let clamped_hi = hi.min(last_index);
+
+        self.selected_history_range = Some((clamped_lo, clamped_hi));
+        self.selected_history_index = None;
+        self.histogram_follow_latest = false;
+        let center = clamped_lo + (clamped_hi - clamped_lo) / 2;
+        self.histogram_focus_index = Some(center);
     }
 
     pub(crate) fn histogram_zoom(&self) -> f32 {
@@ -418,17 +423,19 @@ impl EditorPerfProfiler {
     pub(crate) fn set_histogram_follow_latest(&mut self, follow_latest: bool) {
         self.histogram_follow_latest = follow_latest;
         if follow_latest {
-            self.histogram_focus_frame_id = None;
-        } else if self.histogram_focus_frame_id.is_none() {
-            self.histogram_focus_frame_id = self.frame_history.back().map(|f| f.frame_index);
+            self.histogram_focus_index = None;
+        } else if self.histogram_focus_index.is_none() {
+            self.histogram_focus_index = self.frame_history.len().checked_sub(1);
         }
     }
 
     pub(crate) fn focus_histogram_index(&mut self, index: usize) {
-        if let Some(frame) = self.frame_history.get(index) {
-            self.histogram_follow_latest = false;
-            self.histogram_focus_frame_id = Some(frame.frame_index);
-        }
+        let Some(last_index) = self.frame_history.len().checked_sub(1) else {
+            return;
+        };
+
+        self.histogram_follow_latest = false;
+        self.histogram_focus_index = Some(index.min(last_index));
     }
 
     pub(crate) fn pan_histogram(&mut self, delta: i32) {
@@ -440,8 +447,8 @@ impl EditorPerfProfiler {
         };
 
         // Clear explicit selection so the synthetic chunk tracks the new focus
-        self.selected_frame_id = None;
-        self.selected_range_frame_ids = None;
+        self.selected_history_index = None;
+        self.selected_history_range = None;
 
         let next_index = (current_index as i64 + delta as i64).clamp(0, last_index as i64) as usize;
         self.focus_histogram_index(next_index);
@@ -453,17 +460,14 @@ impl EditorPerfProfiler {
             return Some(last_index);
         }
 
-        self.histogram_focus_frame_id
-            .and_then(|frame_id| self.history_index_for_frame_id(frame_id))
+        self.histogram_focus_index
+            .map(|index| index.min(last_index))
             .or(Some(last_index))
     }
 
     pub(crate) fn selected_frame(&self) -> Option<PerfFrameSnapshot> {
-        let selected_id = self.selected_frame_id?;
-        self.frame_history
-            .iter()
-            .find(|snapshot| snapshot.frame_index == selected_id)
-            .cloned()
+        let selected_index = self.selected_history_index()?;
+        self.frame_history.get(selected_index).cloned()
     }
 
     pub(crate) fn latest_frame(&self) -> Option<PerfFrameSnapshot> {
@@ -621,12 +625,6 @@ impl EditorPerfProfiler {
         })
     }
 
-    fn history_index_for_frame_id(&self, frame_id: u64) -> Option<usize> {
-        self.frame_history
-            .iter()
-            .position(|snapshot| snapshot.frame_index == frame_id)
-    }
-
     fn active_history_range_indices(&self) -> Option<(usize, usize)> {
         if let Some((start, end)) = self.selected_history_range_indices() {
             return Some((start, end));
@@ -661,7 +659,7 @@ impl EditorPerfState {
 mod tests {
     use super::{
         EditorPerfProfiler, PerfStage, PerfStat, PERF_FRAME_BUDGET_60_FPS_MS,
-        PERF_HISTOGRAM_ZOOM_MAX, PERF_HISTOGRAM_ZOOM_MIN,
+        PERF_FRAME_HISTORY_CAPACITY, PERF_HISTOGRAM_ZOOM_MAX, PERF_HISTOGRAM_ZOOM_MIN,
     };
 
     fn approx_eq(left: f32, right: f32, eps: f32) {
@@ -814,6 +812,39 @@ mod tests {
 
         profiler.clear_selection();
         assert_eq!(profiler.selected_history_index(), None);
+    }
+
+    #[test]
+    fn history_rotation_rebases_selection_and_focus_indices() {
+        let mut profiler = EditorPerfProfiler::new();
+        for frame in 0..PERF_FRAME_HISTORY_CAPACITY {
+            profiler.begin_frame();
+            profiler.observe(PerfStage::TimelinePlayback, frame as f32 + 1.0);
+            profiler.finish_frame(10.0);
+        }
+
+        profiler.set_selected_history_index(100);
+        profiler.focus_histogram_index(120);
+
+        profiler.begin_frame();
+        profiler.observe(PerfStage::TimelinePlayback, 1.0);
+        profiler.finish_frame(10.0);
+
+        assert_eq!(profiler.selected_history_index(), Some(99));
+        assert_eq!(profiler.histogram_focus_history_index(), Some(119));
+        let selected = profiler
+            .selected_frame()
+            .expect("selected frame should be preserved after history rotation");
+        assert_eq!(selected.frame_index, 100);
+
+        profiler.clear_selection();
+        profiler.set_selected_history_range(100, 110);
+
+        profiler.begin_frame();
+        profiler.observe(PerfStage::TimelinePlayback, 1.0);
+        profiler.finish_frame(10.0);
+
+        assert_eq!(profiler.selected_history_range_indices(), Some((99, 109)));
     }
 
     #[test]

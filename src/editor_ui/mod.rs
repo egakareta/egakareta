@@ -220,28 +220,29 @@ fn perf_visible_history_range(
     visible_bars: usize,
     follow_latest: bool,
     focus_index: Option<usize>,
-) -> (usize, usize) {
+) -> (isize, isize) {
     if history_len == 0 {
         return (0, 0);
     }
 
-    let visible = visible_bars.max(1).min(history_len);
-    let latest = history_len - 1;
+    let visible = visible_bars.max(1) as isize;
+    let latest = history_len.saturating_sub(1) as isize;
     let center = if follow_latest {
         latest
     } else {
-        focus_index.unwrap_or(latest).min(latest)
+        focus_index.unwrap_or(latest as usize).min(latest as usize) as isize
     };
 
-    let start = center.saturating_sub(visible / 2);
-    let end = (start + visible).min(history_len);
+    let start = center - (visible / 2);
+    let end = start + visible;
     (start, end)
 }
 
 fn perf_history_index_from_pointer(
     rect: egui::Rect,
-    view_start: usize,
-    view_end: usize,
+    view_start: isize,
+    visible_bars: usize,
+    history_len: usize,
     pointer: egui::Pos2,
     bar_step: f32,
 ) -> Option<usize> {
@@ -254,9 +255,18 @@ fn perf_history_index_from_pointer(
         return None;
     }
 
-    let slot = (offset_x / bar_step).floor() as usize;
+    let slot = (offset_x / bar_step).floor() as isize;
+    if slot < 0 || slot >= visible_bars as isize {
+        return None;
+    }
+
     let index = view_start + slot;
-    if index < view_end {
+    if index < 0 {
+        return None;
+    }
+
+    let index = index as usize;
+    if index < history_len {
         Some(index)
     } else {
         None
@@ -303,7 +313,9 @@ fn show_perf_microprofiler_overlay(
                             } else {
                                 (viewport.height() * 0.085).clamp(40.0, 90.0)
                             };
-                            let graph_width = ui.available_width().max(180.0);
+                            // Keep histogram width tied to the actual viewport to avoid
+                            // unconstrained UI width growth pushing bars off-screen.
+                            let graph_width = viewport.width().max(180.0);
                             let (rect, response) = ui.allocate_exact_size(
                                 egui::vec2(graph_width, graph_height),
                                 egui::Sense::click_and_drag(),
@@ -320,198 +332,220 @@ fn show_perf_microprofiler_overlay(
                                     egui::Color32::from_gray(185),
                                 );
                             } else {
-                        let (bar_step, bar_width) =
-                            perf_histogram_bar_dimensions(view.perf_histogram_zoom);
-                        let visible_bars = ((rect.width() / bar_step).floor() as usize)
-                            .max(1)
-                            .min(history.len());
-                        let (view_start, view_end) = perf_visible_history_range(
-                            history.len(),
-                            visible_bars,
-                            view.perf_histogram_follow_latest,
-                            view.perf_histogram_focus_index,
-                        );
-                        let visible = &history[view_start..view_end];
-
-                        let max_ms = 33.33f32;
-
-                        for guide_ms in [16.67, 33.33] {
-                            if guide_ms > max_ms {
-                                continue;
-                            }
-
-                            let ratio = (guide_ms / max_ms).clamp(0.0, 1.0);
-                            let y = egui::lerp(rect.bottom()..=rect.top(), ratio);
-                            painter.line_segment(
-                                [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
-                                egui::Stroke::new(1.0, egui::Color32::from_gray(90)),
-                            );
-                            painter.text(
-                                egui::pos2(rect.left() + 4.0, y - 1.0),
-                                egui::Align2::LEFT_BOTTOM,
-                                format!("{guide_ms:.1}ms"),
-                                egui::FontId::monospace(9.0),
-                                egui::Color32::from_gray(145),
-                            );
-                        }
-
-                        for (slot, frame) in visible.iter().enumerate() {
-                            let x_min = rect.left() + slot as f32 * bar_step;
-                            let x_max = (x_min + bar_width).min(rect.right() - 1.0);
-                            if x_max <= x_min {
-                                continue;
-                            }
-
-                            let ratio = (frame.frame_time_ms / max_ms).clamp(0.0, 1.0);
-                            let y_min = egui::lerp(rect.bottom()..=rect.top(), ratio);
-                            let bar_rect = egui::Rect::from_min_max(
-                                egui::pos2(x_min, y_min),
-                                egui::pos2(x_max, rect.bottom() - 1.0),
-                            );
-                            painter.rect_filled(
-                                bar_rect,
-                                0.0,
-                                perf_frame_bar_color(frame.frame_time_ms),
-                            );
-                        }
-
-                        if let Some((range_start, range_end)) = view.perf_selected_history_range {
-                            let visible_start = range_start.max(view_start);
-                            let visible_end = range_end.min(view_end.saturating_sub(1));
-
-                            if visible_start <= visible_end {
-                                let slot_start = visible_start.saturating_sub(view_start);
-                                let slot_end = visible_end.saturating_sub(view_start);
-
-                                let x_min = rect.left() + slot_start as f32 * bar_step;
-                                let x_max = (rect.left() + slot_end as f32 * bar_step + bar_width)
-                                    .min(rect.right() - 1.0);
-
-                                let selection_rect = egui::Rect::from_min_max(
-                                    egui::pos2(x_min, rect.top() + 1.0),
-                                    egui::pos2(x_max, rect.bottom() - 1.0),
+                                let (bar_step, bar_width) =
+                                    perf_histogram_bar_dimensions(view.perf_histogram_zoom);
+                                let visible_bars = ((rect.width() / bar_step).floor() as usize)
+                                    .max(1);
+                                let (view_start, view_end) = perf_visible_history_range(
+                                    history.len(),
+                                    visible_bars,
+                                    view.perf_histogram_follow_latest,
+                                    view.perf_histogram_focus_index,
                                 );
+                                let visible_start = view_start.max(0) as usize;
+                                let visible_end = view_end
+                                    .min(history.len() as isize)
+                                    .max(view_start.max(0)) as usize;
+                                let visible = &history[visible_start..visible_end];
 
-                                painter.rect_filled(
-                                    selection_rect,
-                                    0.0,
-                                    egui::Color32::from_rgba_unmultiplied(255, 220, 115, 30),
-                                );
-                            }
-                        }
+                                let max_ms = 33.33f32;
 
-                        if let Some(single_index) = view.perf_selected_history_index {
-                            if single_index >= view_start && single_index < view_end {
-                                let slot = single_index.saturating_sub(view_start);
-                                let x_min = rect.left() + slot as f32 * bar_step;
-                                let x_max = (x_min + bar_width).min(rect.right() - 1.0);
+                                for guide_ms in [16.67, 33.33] {
+                                    if guide_ms > max_ms {
+                                        continue;
+                                    }
 
-                                let selection_rect = egui::Rect::from_min_max(
-                                    egui::pos2(x_min, rect.top() + 1.0),
-                                    egui::pos2(x_max, rect.bottom() - 1.0),
-                                );
+                                    let ratio = (guide_ms / max_ms).clamp(0.0, 1.0);
+                                    let y = egui::lerp(rect.bottom()..=rect.top(), ratio);
+                                    painter.line_segment(
+                                        [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
+                                        egui::Stroke::new(1.0, egui::Color32::from_gray(90)),
+                                    );
+                                    painter.text(
+                                        egui::pos2(rect.left() + 4.0, y - 1.0),
+                                        egui::Align2::LEFT_BOTTOM,
+                                        format!("{guide_ms:.1}ms"),
+                                        egui::FontId::monospace(9.0),
+                                        egui::Color32::from_gray(145),
+                                    );
+                                }
 
-                                painter.rect_filled(
-                                    selection_rect,
-                                    0.0,
-                                    egui::Color32::from_rgba_unmultiplied(214, 231, 255, 30),
-                                );
-                            }
-                        }
+                                for (offset, frame) in visible.iter().enumerate() {
+                                    let history_index = visible_start + offset;
+                                    let slot = (history_index as isize - view_start) as usize;
+                                    let x_min = rect.left() + slot as f32 * bar_step;
+                                    let x_max = (x_min + bar_width).min(rect.right() - 1.0);
+                                    if x_max <= x_min {
+                                        continue;
+                                    }
 
-                        if response.hovered() {
-                            let scroll_y = ui.input(|input| input.raw_scroll_delta.y);
-                            if scroll_y.abs() > 0.0 {
-                                let zoom_factor = 1.0 + scroll_y * 0.0025;
-                                let next_zoom = (view.perf_histogram_zoom * zoom_factor).clamp(
-                                    crate::state::PERF_HISTOGRAM_ZOOM_MIN,
-                                    crate::state::PERF_HISTOGRAM_ZOOM_MAX,
-                                );
-                                if (next_zoom - view.perf_histogram_zoom).abs() > 1e-4 {
-                                    commands
-                                        .push(AppCommand::EditorSetPerfHistogramZoom(next_zoom));
+                                    let ratio = (frame.frame_time_ms / max_ms).clamp(0.0, 1.0);
+                                    let y_min = egui::lerp(rect.bottom()..=rect.top(), ratio);
+                                    let bar_rect = egui::Rect::from_min_max(
+                                        egui::pos2(x_min, y_min),
+                                        egui::pos2(x_max, rect.bottom() - 1.0),
+                                    );
+                                    painter.rect_filled(
+                                        bar_rect,
+                                        0.0,
+                                        perf_frame_bar_color(frame.frame_time_ms),
+                                    );
+                                }
 
-                                    if let Some(pointer) = response.hover_pos() {
-                                        if let Some(anchor_index) = perf_history_index_from_pointer(
-                                            rect, view_start, view_end, pointer, bar_step,
-                                        ) {
-                                            let (new_step, _) =
-                                                perf_histogram_bar_dimensions(next_zoom);
-                                            let new_visible = ((rect.width() / new_step).floor()
-                                                as usize)
-                                                .max(1)
-                                                .min(history.len());
-                                            let anchor_ratio = ((pointer.x - rect.left())
-                                                / rect.width())
-                                            .clamp(0.0, 0.999_999);
-                                            let unclamped_start = anchor_index as isize
-                                                - (anchor_ratio * new_visible as f32).floor()
-                                                    as isize;
-                                            let max_start =
-                                                history.len().saturating_sub(new_visible) as isize;
-                                            let new_start =
-                                                unclamped_start.clamp(0, max_start) as usize;
-                                            let new_center = new_start + (new_visible / 2);
-                                            commands
-                                                .push(AppCommand::EditorSetPerfFollowLatest(false));
-                                            commands.push(
-                                                AppCommand::EditorFocusPerfHistogramIndex(
-                                                    new_center,
-                                                ),
+                                if let Some((range_start, range_end)) = view.perf_selected_history_range {
+                                    let in_view_start = range_start.max(visible_start);
+                                    let in_view_end = range_end.min(visible_end.saturating_sub(1));
+
+                                    if visible_end > visible_start && in_view_start <= in_view_end {
+                                        let slot_start =
+                                            (in_view_start as isize - view_start) as usize;
+                                        let slot_end = (in_view_end as isize - view_start) as usize;
+
+                                        let x_min = rect.left() + slot_start as f32 * bar_step;
+                                        let x_max =
+                                            (rect.left() + slot_end as f32 * bar_step + bar_width)
+                                                .min(rect.right() - 1.0);
+
+                                        let selection_rect = egui::Rect::from_min_max(
+                                            egui::pos2(x_min, rect.top() + 1.0),
+                                            egui::pos2(x_max, rect.bottom() - 1.0),
+                                        );
+
+                                        painter.rect_filled(
+                                            selection_rect,
+                                            0.0,
+                                            egui::Color32::from_rgba_unmultiplied(
+                                                255, 220, 115, 30,
+                                            ),
+                                        );
+                                    }
+                                }
+
+                                if let Some(single_index) = view.perf_selected_history_index {
+                                    if single_index >= visible_start && single_index < visible_end {
+                                        let slot = (single_index as isize - view_start) as usize;
+                                        let x_min = rect.left() + slot as f32 * bar_step;
+                                        let x_max = (x_min + bar_width).min(rect.right() - 1.0);
+
+                                        let selection_rect = egui::Rect::from_min_max(
+                                            egui::pos2(x_min, rect.top() + 1.0),
+                                            egui::pos2(x_max, rect.bottom() - 1.0),
+                                        );
+
+                                        painter.rect_filled(
+                                            selection_rect,
+                                            0.0,
+                                            egui::Color32::from_rgba_unmultiplied(
+                                                214, 231, 255, 30,
+                                            ),
+                                        );
+                                    }
+                                }
+
+                                if response.hovered() {
+                                    let scroll_y = ui.input(|input| input.raw_scroll_delta.y);
+                                    if scroll_y.abs() > 0.0 {
+                                        let zoom_factor = 1.0 + scroll_y * 0.0025;
+                                        let next_zoom =
+                                            (view.perf_histogram_zoom * zoom_factor).clamp(
+                                                crate::state::PERF_HISTOGRAM_ZOOM_MIN,
+                                                crate::state::PERF_HISTOGRAM_ZOOM_MAX,
                                             );
+                                        if (next_zoom - view.perf_histogram_zoom).abs() > 1e-4 {
+                                            commands.push(AppCommand::EditorSetPerfHistogramZoom(
+                                                next_zoom,
+                                            ));
+
+                                            if let Some(pointer) = response.hover_pos() {
+                                                if let Some(anchor_index) = perf_history_index_from_pointer(
+                                                    rect,
+                                                    view_start,
+                                                    visible_bars,
+                                                    history.len(),
+                                                    pointer,
+                                                    bar_step,
+                                                ) {
+                                                    let (new_step, _) =
+                                                        perf_histogram_bar_dimensions(next_zoom);
+                                                    let new_visible =
+                                                        ((rect.width() / new_step).floor()
+                                                            as usize)
+                                                            .max(1);
+                                                    let anchor_ratio = ((pointer.x - rect.left())
+                                                        / rect.width())
+                                                    .clamp(0.0, 0.999_999);
+                                                    let anchor_slot =
+                                                        (anchor_ratio * new_visible as f32).floor()
+                                                            as isize;
+                                                    let new_start =
+                                                        anchor_index as isize - anchor_slot;
+                                                    let new_center =
+                                                        new_start + (new_visible as isize / 2);
+                                                    let max_center =
+                                                        history.len().saturating_sub(1) as isize;
+                                                    let clamped_center =
+                                                        new_center.clamp(0, max_center) as usize;
+
+                                                    commands.push(
+                                                        AppCommand::EditorSetPerfFollowLatest(
+                                                            false,
+                                                        ),
+                                                    );
+                                                    commands.push(
+                                                        AppCommand::EditorFocusPerfHistogramIndex(
+                                                            clamped_center,
+                                                        ),
+                                                    );
+                                                }
+                                            }
                                         }
                                     }
                                 }
-                            }
-                        }
 
-                        if response.dragged() {
-                            let delta_x = response.drag_delta().x;
-                            if delta_x.abs() > 0.0 {
-                                let accum_id = ui.id().with("perf_pan_accum");
-                                let mut accum =
-                                    ui.data_mut(|d| d.get_temp::<f32>(accum_id).unwrap_or(0.0));
-                                accum += delta_x;
-                                let frames_to_pan = (-accum / bar_step).trunc() as i32;
-                                if frames_to_pan != 0 {
-                                    accum += frames_to_pan as f32 * bar_step;
-                                    commands.push(AppCommand::EditorSetPerfFollowLatest(false));
-                                    commands
-                                        .push(AppCommand::EditorPanPerfHistogram(frames_to_pan));
-                                }
-                                ui.data_mut(|d| d.insert_temp(accum_id, accum));
-                            }
-                        }
-
-                        if response.clicked() {
-                            if let Some(pointer) = response.interact_pointer_pos() {
-                                if let Some(clicked_index) = perf_history_index_from_pointer(
-                                    rect, view_start, view_end, pointer, bar_step,
-                                ) {
-                                    let alt_held = ui.input(|input| input.modifiers.alt);
-                                    if alt_held {
-                                        commands.push(AppCommand::EditorSelectPerfHistoryIndex(
-                                            clicked_index,
-                                        ));
-                                    } else {
-                                        let chunk_size = 16.min(history.len()).max(1);
-                                        let mut start =
-                                            clicked_index.saturating_sub(chunk_size / 2);
-                                        if start + chunk_size > history.len() {
-                                            start = history.len().saturating_sub(chunk_size);
-                                        }
-                                        let end = start + chunk_size.saturating_sub(1);
-
+                                if response.dragged() {
+                                    let delta_x = ui.input(|input| input.pointer.delta().x);
+                                    let frames_to_pan = (-delta_x / bar_step).trunc() as i32;
+                                    if frames_to_pan != 0 {
                                         commands.push(AppCommand::EditorSetPerfFollowLatest(false));
-                                        commands.push(AppCommand::EditorSelectPerfHistoryRange {
-                                            start,
-                                            end,
-                                        });
+                                        commands
+                                            .push(AppCommand::EditorPanPerfHistogram(frames_to_pan));
+                                    }
+                                }
+
+                                if response.clicked() {
+                                    if let Some(pointer) = response.interact_pointer_pos() {
+                                        if let Some(clicked_index) = perf_history_index_from_pointer(
+                                            rect,
+                                            view_start,
+                                            visible_bars,
+                                            history.len(),
+                                            pointer,
+                                            bar_step,
+                                        ) {
+                                            let alt_held = ui.input(|input| input.modifiers.alt);
+                                            if alt_held {
+                                                commands.push(AppCommand::EditorSelectPerfHistoryIndex(
+                                                    clicked_index,
+                                                ));
+                                            } else {
+                                                let chunk_size = 16.min(history.len()).max(1);
+                                                let mut start =
+                                                    clicked_index.saturating_sub(chunk_size / 2);
+                                                if start + chunk_size > history.len() {
+                                                    start = history.len().saturating_sub(chunk_size);
+                                                }
+                                                let end = start + chunk_size.saturating_sub(1);
+
+                                                commands.push(AppCommand::EditorSetPerfFollowLatest(false));
+                                                commands.push(AppCommand::EditorSelectPerfHistoryRange {
+                                                    start,
+                                                    end,
+                                                });
+                                            }
+                                        }
                                     }
                                 }
                             }
-                        }
-                    }
                 });
 
                     egui::Frame::default()
@@ -1491,6 +1525,7 @@ fn show_view_selector_cube(
 mod tests {
     use super::{
         combined_ui_scale_factor, is_compact_editor_ui, marquee_screen_pos_to_egui_pos,
+        perf_history_index_from_pointer, perf_visible_history_range,
         responsive_ui_scale_multiplier, settings_sidebar_default_width, show_editor_ui,
         sort_quad_by_angle, view_cube_top_offset_y, VIEW_CUBE_FACES,
     };
@@ -1660,6 +1695,49 @@ mod tests {
         let p = marquee_screen_pos_to_egui_pos([300.0, 180.0], f32::NAN);
         assert!(approx_eq(p.x, 300.0, 0.001));
         assert!(approx_eq(p.y, 180.0, 0.001));
+    }
+
+    #[test]
+    fn perf_follow_latest_keeps_latest_slot_centered() {
+        let visible_bars = 120;
+        let expected_slot = (visible_bars / 2) as isize;
+
+        for history_len in [1usize, 2, 16, 120, 500] {
+            let (view_start, _) = perf_visible_history_range(history_len, visible_bars, true, None);
+            let latest_slot = (history_len as isize - 1) - view_start;
+            assert_eq!(latest_slot, expected_slot);
+        }
+    }
+
+    #[test]
+    fn perf_pointer_mapping_handles_virtual_window_offsets() {
+        let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 20.0));
+        let bar_step = 2.0;
+        let visible_bars = 100;
+        let history_len = 10;
+        let (view_start, _) = perf_visible_history_range(history_len, visible_bars, true, None);
+
+        let pointer_at_latest = egui::pos2((visible_bars as f32 / 2.0) * bar_step + 0.1, 10.0);
+        let latest_index = perf_history_index_from_pointer(
+            rect,
+            view_start,
+            visible_bars,
+            history_len,
+            pointer_at_latest,
+            bar_step,
+        );
+        assert_eq!(latest_index, Some(history_len - 1));
+
+        let pointer_in_future_slot = egui::pos2((visible_bars as f32 - 1.0) * bar_step, 10.0);
+        let future_index = perf_history_index_from_pointer(
+            rect,
+            view_start,
+            visible_bars,
+            history_len,
+            pointer_in_future_slot,
+            bar_step,
+        );
+        assert_eq!(future_index, None);
     }
 
     #[test]
