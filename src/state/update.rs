@@ -7,7 +7,7 @@
 */
 use glam::{Mat4, Vec3};
 
-use super::{PerfFrameRangeSummary, PerfFrameSnapshot, PerfFrameStageEntry, PerfStage, State};
+use super::{PerfFrameRangeSummary, PerfFrameSnapshot, PerfStage, State};
 use crate::game::{
     advance_simulation_time, trigger_transformed_objects_at_time, TimelineSimulationRuntime,
 };
@@ -390,28 +390,12 @@ impl State {
         self.editor.perf.profiler.selected_or_latest_frame()
     }
 
-    pub(crate) fn editor_perf_selected_stage_tree(&self) -> Vec<PerfFrameStageEntry> {
-        if !self.editor.perf.profiler.enabled {
-            return Vec::new();
-        }
-
-        self.editor.perf.profiler.selected_frame_tree()
-    }
-
     pub(crate) fn editor_perf_active_range_summary(&self) -> Option<PerfFrameRangeSummary> {
         if !self.editor.perf.profiler.enabled {
             return None;
         }
 
         self.editor.perf.profiler.active_range_summary()
-    }
-
-    pub(crate) fn editor_perf_active_range_stage_tree(&self) -> Vec<PerfFrameStageEntry> {
-        if !self.editor.perf.profiler.enabled {
-            return Vec::new();
-        }
-
-        self.editor.perf.profiler.active_range_tree()
     }
 
     pub(crate) fn editor_perf_overlay_enabled(&self) -> bool {

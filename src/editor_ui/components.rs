@@ -602,9 +602,7 @@ mod tests {
             perf_selected_history_range: None,
             perf_frame_history: Vec::new(),
             perf_selected_frame: None,
-            perf_selected_stage_tree: Vec::new(),
             perf_active_range_summary: None,
-            perf_active_range_stage_tree: Vec::new(),
             marquee_selection_rect_screen: None,
         }
     }

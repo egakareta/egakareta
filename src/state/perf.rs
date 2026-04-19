@@ -7,8 +7,10 @@
 */
 use std::collections::VecDeque;
 
+use crate::platform::state_host::PlatformInstant;
+
 pub(crate) const PERF_FRAME_BUDGET_60_FPS_MS: f32 = 16.7;
-const PERF_FRAME_HISTORY_CAPACITY: usize = 3600;
+const PERF_FRAME_HISTORY_CAPACITY: usize = 10_000;
 pub(crate) const PERF_HISTOGRAM_ZOOM_MIN: f32 = 0.2;
 pub(crate) const PERF_HISTOGRAM_ZOOM_MAX: f32 = 12.0;
 
@@ -66,6 +68,15 @@ pub(crate) struct PerfFrameSnapshot {
     pub(crate) frame_time_ms: f32,
     pub(crate) stage_ms: [f32; PERF_STAGE_COUNT],
     pub(crate) dominant_stage: Option<PerfStage>,
+    pub(crate) span_events: Vec<PerfFrameSpanEvent>,
+}
+
+#[derive(Clone)]
+pub(crate) struct PerfFrameSpanEvent {
+    pub(crate) stage: PerfStage,
+    pub(crate) start_ms: f32,
+    pub(crate) duration_ms: f32,
+    pub(crate) end_ms: f32,
 }
 
 #[derive(Clone)]
@@ -106,55 +117,6 @@ impl PerfStage {
             Self::BlockMeshRebuild,
             Self::TTapToggleTotal,
         ]
-    }
-
-    pub(crate) const fn children(self) -> &'static [PerfStage] {
-        match self {
-            Self::SelectionClick => &[
-                Self::SelectionPick,
-                Self::SelectionApply,
-                Self::SelectionMarkDirty,
-            ],
-            Self::SelectionPick => &[Self::PickUnproject, Self::PickRaycast],
-            Self::DirtyProcess => &[
-                Self::DirtySyncGameObjects,
-                Self::DirtyRebuildBlockMesh,
-                Self::DirtyRebuildSelectionOverlays,
-                Self::DirtyRebuildTapIndicators,
-                Self::DirtyRebuildPreviewPlayer,
-                Self::DirtyRebuildCursor,
-            ],
-            Self::DirtyRebuildPreviewPlayer => {
-                &[Self::PreviewSolveTimeline, Self::PreviewMeshBuild]
-            }
-            Self::BlockMeshRebuild => &[
-                Self::BlockMeshMaskBuild,
-                Self::BlockMeshSplitStatic,
-                Self::BlockMeshSplitSelected,
-                Self::BlockMeshChunkBuild,
-                Self::BlockMeshChunkUpload,
-                Self::BlockMeshIncrementalAppend,
-                Self::BlockMeshUploadStatic,
-                Self::BlockMeshUploadSelected,
-                Self::BlockMeshSelectedOnly,
-            ],
-            Self::BlockMeshSelectedOnly => &[
-                Self::BlockMeshSelectedOnlyBuild,
-                Self::BlockMeshSelectedOnlyUpload,
-            ],
-            Self::TTapToggleTotal => &[Self::TTapSolve],
-            Self::TimelineSeek => &[
-                Self::TimelineSeekPreview,
-                Self::TimelineSeekDirtyBlockMesh,
-                Self::TimelineSeekAudioResync,
-            ],
-            Self::TimelineSeekAudioResync => &[
-                Self::TimelineSeekAudioStop,
-                Self::TimelineSeekRuntimeBuild,
-                Self::TimelineSeekAudioStart,
-            ],
-            _ => &[],
-        }
     }
 
     pub(crate) const fn name(self) -> &'static str {
@@ -243,6 +205,8 @@ pub(crate) struct EditorPerfProfiler {
     pub(crate) last_spike_stage: Option<PerfStage>,
     pub(crate) paused: bool,
     frame_history: VecDeque<PerfFrameSnapshot>,
+    frame_started_at: Option<PlatformInstant>,
+    frame_span_events: Vec<PerfFrameSpanEvent>,
     next_frame_index: u64,
     selected_history_index: Option<usize>,
     selected_history_range: Option<(usize, usize)>,
@@ -261,6 +225,8 @@ impl EditorPerfProfiler {
             last_spike_stage: None,
             paused: false,
             frame_history: VecDeque::with_capacity(PERF_FRAME_HISTORY_CAPACITY),
+            frame_started_at: None,
+            frame_span_events: Vec::with_capacity(256),
             next_frame_index: 0,
             selected_history_index: None,
             selected_history_range: None,
@@ -275,8 +241,45 @@ impl EditorPerfProfiler {
         self.frame_stage_ms[stage.as_index()] += ms;
     }
 
+    pub(crate) fn observe_span(
+        &mut self,
+        stage: PerfStage,
+        started_at: PlatformInstant,
+        ended_at: PlatformInstant,
+    ) {
+        let duration_ms = ended_at
+            .checked_duration_since(started_at)
+            .map(|duration| duration.as_secs_f32() * 1000.0)
+            .unwrap_or(0.0);
+        self.observe(stage, duration_ms);
+
+        let Some(frame_started_at) = self.frame_started_at else {
+            return;
+        };
+
+        let start_ms = started_at
+            .checked_duration_since(frame_started_at)
+            .map(|duration| duration.as_secs_f32() * 1000.0)
+            .unwrap_or(0.0)
+            .max(0.0);
+        let end_ms = ended_at
+            .checked_duration_since(frame_started_at)
+            .map(|duration| duration.as_secs_f32() * 1000.0)
+            .unwrap_or(start_ms)
+            .max(start_ms);
+
+        self.frame_span_events.push(PerfFrameSpanEvent {
+            stage,
+            start_ms,
+            duration_ms: duration_ms.max(0.0),
+            end_ms,
+        });
+    }
+
     pub(crate) fn begin_frame(&mut self) {
         self.frame_stage_ms = [0.0; PERF_STAGE_COUNT];
+        self.frame_started_at = Some(PlatformInstant::now());
+        self.frame_span_events.clear();
     }
 
     pub(crate) fn finish_frame(&mut self, frame_time_ms: f32) {
@@ -293,13 +296,22 @@ impl EditorPerfProfiler {
             return;
         }
 
+        self.frame_span_events.push(PerfFrameSpanEvent {
+            stage: PerfStage::FrameTotal,
+            start_ms: 0.0,
+            duration_ms: frame_time_ms.max(0.0),
+            end_ms: frame_time_ms.max(0.0),
+        });
+
         let dominant_stage = self.dominant_stage_this_frame();
         let snapshot = PerfFrameSnapshot {
             frame_index: self.next_frame_index,
             frame_time_ms,
             stage_ms: self.frame_stage_ms,
             dominant_stage,
+            span_events: std::mem::take(&mut self.frame_span_events),
         };
+        self.frame_started_at = None;
         self.next_frame_index = self.next_frame_index.saturating_add(1);
 
         if self.frame_history.len() >= PERF_FRAME_HISTORY_CAPACITY
@@ -544,87 +556,6 @@ impl EditorPerfProfiler {
         dominant.map(|(stage, _)| stage)
     }
 
-    pub(crate) fn frame_tree_for_snapshot(
-        &self,
-        snapshot: &PerfFrameSnapshot,
-    ) -> Vec<PerfFrameStageEntry> {
-        PerfStage::roots_without_frame_total()
-            .iter()
-            .filter_map(|stage| {
-                Self::frame_tree_entry(*stage, snapshot.frame_time_ms, &snapshot.stage_ms)
-            })
-            .collect()
-    }
-
-    pub(crate) fn selected_frame_tree(&self) -> Vec<PerfFrameStageEntry> {
-        self.selected_or_latest_frame()
-            .map(|snapshot| self.frame_tree_for_snapshot(&snapshot))
-            .unwrap_or_default()
-    }
-
-    pub(crate) fn active_range_tree(&self) -> Vec<PerfFrameStageEntry> {
-        let Some((start, end)) = self.active_history_range_indices() else {
-            return Vec::new();
-        };
-
-        let mut frame_count = 0usize;
-        let mut total_frame_time_ms = 0.0f32;
-        let mut stage_totals = [0.0f32; PERF_STAGE_COUNT];
-        for frame in self.frame_history.range(start..=end) {
-            frame_count += 1;
-            total_frame_time_ms += frame.frame_time_ms;
-            for (stage_index, value) in frame.stage_ms.iter().enumerate() {
-                stage_totals[stage_index] += *value;
-            }
-        }
-
-        if frame_count == 0 {
-            return Vec::new();
-        }
-
-        let average_frame_time_ms = total_frame_time_ms / frame_count as f32;
-        let mut stage_avg = [0.0f32; PERF_STAGE_COUNT];
-        for (stage_index, value) in stage_totals.iter().enumerate() {
-            stage_avg[stage_index] = *value / frame_count as f32;
-        }
-
-        PerfStage::roots_without_frame_total()
-            .iter()
-            .filter_map(|stage| Self::frame_tree_entry(*stage, average_frame_time_ms, &stage_avg))
-            .collect()
-    }
-
-    fn frame_tree_entry(
-        stage: PerfStage,
-        frame_time_ms: f32,
-        stage_ms: &[f32; PERF_STAGE_COUNT],
-    ) -> Option<PerfFrameStageEntry> {
-        let children: Vec<_> = stage
-            .children()
-            .iter()
-            .filter_map(|child| Self::frame_tree_entry(*child, frame_time_ms, stage_ms))
-            .collect();
-        let ms = stage_ms[stage.as_index()];
-
-        if ms <= 0.01 && children.is_empty() {
-            return None;
-        }
-
-        let percent_of_frame = if frame_time_ms > 1e-4 {
-            (ms / frame_time_ms) * 100.0
-        } else {
-            0.0
-        };
-
-        Some(PerfFrameStageEntry {
-            stage,
-            name: stage.name(),
-            ms,
-            percent_of_frame,
-            children,
-        })
-    }
-
     fn active_history_range_indices(&self) -> Option<(usize, usize)> {
         if let Some((start, end)) = self.selected_history_range_indices() {
             return Some((start, end));
@@ -657,6 +588,10 @@ impl EditorPerfState {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use crate::platform::state_host::PlatformInstant;
+
     use super::{
         EditorPerfProfiler, PerfStage, PerfStat, PERF_FRAME_BUDGET_60_FPS_MS,
         PERF_FRAME_HISTORY_CAPACITY, PERF_HISTOGRAM_ZOOM_MAX, PERF_HISTOGRAM_ZOOM_MIN,
@@ -744,6 +679,38 @@ mod tests {
             history[0].dominant_stage,
             Some(PerfStage::BlockMeshRebuild)
         ));
+    }
+
+    #[test]
+    fn observe_span_captures_frame_event_offsets() {
+        let mut profiler = EditorPerfProfiler::new();
+        profiler.begin_frame();
+
+        let started_at = PlatformInstant::now();
+        let ended_at = started_at + Duration::from_millis(2);
+        profiler.observe_span(PerfStage::TimelineSeek, started_at, ended_at);
+        profiler.finish_frame(12.0);
+
+        let history = profiler.frame_history();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].span_events.len(), 2);
+
+        let seek_event = history[0]
+            .span_events
+            .iter()
+            .find(|event| event.stage == PerfStage::TimelineSeek)
+            .expect("timeline seek span event should be recorded");
+        assert!(seek_event.duration_ms >= 1.95);
+        assert!(seek_event.end_ms >= seek_event.start_ms);
+
+        let frame_total_event = history[0]
+            .span_events
+            .iter()
+            .find(|event| event.stage == PerfStage::FrameTotal)
+            .expect("frame total span event should be recorded");
+        approx_eq(frame_total_event.start_ms, 0.0, 1e-6);
+        approx_eq(frame_total_event.duration_ms, 12.0, 1e-6);
+        approx_eq(frame_total_event.end_ms, 12.0, 1e-6);
     }
 
     #[test]

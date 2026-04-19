@@ -6,6 +6,7 @@
 
 */
 pub(crate) mod components;
+pub(crate) mod flame_graph;
 pub(crate) mod menu;
 pub(crate) mod modes;
 
@@ -15,6 +16,7 @@ use crate::commands::AppCommand;
 use crate::editor_ui::components::{
     show_perf_profiler_header, show_timeline_bar, show_waveform_panel, timeline_metrics,
 };
+use crate::editor_ui::flame_graph::show_perf_flame_graph_panel;
 use crate::editor_ui::modes::compose::show_compose_mode_bottom_panel;
 use crate::editor_ui::modes::timing::show_timing_mode_bottom_panel;
 use crate::editor_ui::modes::trigger::show_trigger_mode_bottom_panel;
@@ -161,42 +163,6 @@ fn marquee_screen_pos_to_egui_pos(screen_pos: [f64; 2], pixels_per_point: f32) -
     };
 
     egui::pos2(screen_pos[0] as f32 / scale, screen_pos[1] as f32 / scale)
-}
-
-fn perf_stage_color(stage: crate::state::PerfStage) -> egui::Color32 {
-    match stage {
-        crate::state::PerfStage::DirtyProcess | crate::state::PerfStage::BlockMeshRebuild => {
-            egui::Color32::from_rgb(255, 215, 120)
-        }
-        crate::state::PerfStage::TimelinePlayback | crate::state::PerfStage::TimelineSeek => {
-            egui::Color32::from_rgb(129, 206, 255)
-        }
-        _ => egui::Color32::from_gray(220),
-    }
-}
-
-fn show_perf_stage_entry(ui: &mut egui::Ui, entry: &crate::state::PerfFrameStageEntry) {
-    let color = perf_stage_color(entry.stage);
-    let label = format!(
-        "{:<22} {:>6.2}ms | {:>5.1}%",
-        entry.name, entry.ms, entry.percent_of_frame
-    );
-
-    if entry.children.is_empty() {
-        ui.colored_label(color, egui::RichText::new(label).monospace());
-        return;
-    }
-
-    egui::CollapsingHeader::new(label)
-        .default_open(matches!(
-            entry.name,
-            "DirtyProcess" | "BlockMeshRebuild" | "SelectClick" | "TimelineSeek"
-        ))
-        .show(ui, |ui| {
-            for child in &entry.children {
-                show_perf_stage_entry(ui, child);
-            }
-        });
 }
 
 fn perf_frame_bar_color(frame_ms: f32) -> egui::Color32 {
@@ -602,35 +568,15 @@ fn show_perf_microprofiler_overlay(
                                                     .unwrap_or("none")
                                             ));
                                         }
-
-                                        if !view.perf_selected_stage_tree.is_empty() {
-                                            ui.separator();
-                                            ui.label("Stage Breakdown");
-                                            for entry in &view.perf_selected_stage_tree {
-                                                show_perf_stage_entry(ui, entry);
-                                            }
-                                        }
                                     });
                             }
 
-                            ui.columns(2, |columns| {
-                                let (left_columns, right_columns) = columns.split_at_mut(1);
-                                let _left = &mut left_columns[0];
-                                let right = &mut right_columns[0];
-
-                                right.label("Stage Breakdown");
-                                egui::ScrollArea::vertical()
-                                    .max_height((viewport.height() * 0.34).max(120.0))
-                                    .show(right, |ui| {
-                                        if view.perf_active_range_stage_tree.is_empty() {
-                                            ui.monospace("No stage data in current selection.");
-                                        } else {
-                                            for entry in &view.perf_active_range_stage_tree {
-                                                show_perf_stage_entry(ui, entry);
-                                            }
-                                        }
-                                    });
-                            });
+                            show_perf_flame_graph_panel(
+                                ui,
+                                view,
+                                viewport.width(),
+                                viewport.height(),
+                            );
                         });
                 });
         });

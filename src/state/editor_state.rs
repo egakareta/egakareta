@@ -15,8 +15,8 @@ use crate::types::{AppPhase, EditorMode, LevelObject, SpawnDirection, TimedTrigg
 
 impl EditorSubsystem {
     pub(crate) fn perf_record(&mut self, stage: PerfStage, started_at: PlatformInstant) {
-        let elapsed_ms = started_at.elapsed().as_secs_f32() * 1000.0;
-        self.perf.profiler.observe(stage, elapsed_ms);
+        let ended_at = PlatformInstant::now();
+        self.perf.profiler.observe_span(stage, started_at, ended_at);
     }
 
     pub(crate) fn set_pan_up_held(&mut self, held: bool) {

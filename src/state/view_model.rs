@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::{PerfFrameRangeSummary, PerfFrameSnapshot, PerfFrameStageEntry, State};
+use super::{PerfFrameRangeSummary, PerfFrameSnapshot, State};
 use crate::types::{
     AppSettings, EditorMode, LevelObject, MusicMetadata, SettingsSection, SpawnDirection,
     TimedTrigger, TimingPoint,
@@ -71,9 +71,7 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) perf_selected_history_range: Option<(usize, usize)>,
     pub(crate) perf_frame_history: Vec<PerfFrameSnapshot>,
     pub(crate) perf_selected_frame: Option<PerfFrameSnapshot>,
-    pub(crate) perf_selected_stage_tree: Vec<PerfFrameStageEntry>,
     pub(crate) perf_active_range_summary: Option<PerfFrameRangeSummary>,
-    pub(crate) perf_active_range_stage_tree: Vec<PerfFrameStageEntry>,
     pub(crate) marquee_selection_rect_screen: Option<([f64; 2], [f64; 2], bool)>,
 }
 
@@ -92,22 +90,11 @@ impl State {
         } else {
             None
         };
-        let perf_selected_stage_tree = if perf_overlay_enabled {
-            self.editor_perf_selected_stage_tree()
-        } else {
-            Vec::new()
-        };
         let perf_active_range_summary = if perf_overlay_enabled {
             self.editor_perf_active_range_summary()
         } else {
             None
         };
-        let perf_active_range_stage_tree = if perf_overlay_enabled {
-            self.editor_perf_active_range_stage_tree()
-        } else {
-            Vec::new()
-        };
-
         let camera_target = glam::Vec3::new(
             self.editor.camera.editor_pan[0],
             self.editor.camera.editor_target_z,
@@ -176,9 +163,7 @@ impl State {
             perf_selected_history_range: self.editor_perf_selected_history_range(),
             perf_frame_history,
             perf_selected_frame,
-            perf_selected_stage_tree,
             perf_active_range_summary,
-            perf_active_range_stage_tree,
             marquee_selection_rect_screen: self.editor_marquee_selection_rect_screen(),
         }
     }
