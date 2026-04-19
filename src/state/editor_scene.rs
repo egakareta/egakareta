@@ -355,33 +355,29 @@ impl State {
         }
 
         let object_count = self.editor.objects.len();
-        let selected_mask = self.editor.selected_mask_for_len(object_count);
-
         let mut indices_to_outline = Vec::new();
-        let mut outline_mask = vec![false; object_count];
-
-        if let Some(index) = self
+        let hovered_outlined = self
             .editor
             .ui
             .hovered_block_index
             .filter(|index| *index < self.editor.objects.len())
-        {
-            if !selected_mask[index] {
-                outline_mask[index] = true;
-                indices_to_outline.push(index);
-            }
+            .filter(|index| !self.editor.selection_contains(*index));
+
+        if let Some(index) = hovered_outlined {
+            indices_to_outline.push(index);
         }
 
         if let Some((_, _, true)) = self.editor.marquee_selection_rect_screen() {
+            let selected_mask = self.editor.selected_mask_for_len(object_count);
             let viewport = glam::Vec2::new(
                 self.render.gpu.config.width as f32,
                 self.render.gpu.config.height as f32,
             );
             for hit in self.editor.marquee_overlapping_blocks(viewport) {
-                if !selected_mask[hit] && !outline_mask[hit] {
-                    outline_mask[hit] = true;
-                    indices_to_outline.push(hit);
+                if selected_mask[hit] || Some(hit) == hovered_outlined {
+                    continue;
                 }
+                indices_to_outline.push(hit);
             }
         }
 
