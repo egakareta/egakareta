@@ -168,7 +168,6 @@ See LICENSE and COMMERCIAL.md for details.
             const progressBar = document.querySelector(".progress-fill");
             const errorDiv = document.getElementById("error");
             const splash = document.getElementById("splash");
-            const splashStart = document.getElementById("splash");
             const firefoxWarning = document.getElementById("firefox-warning");
 
             const userAgent = navigator.userAgent || "";
@@ -295,7 +294,7 @@ See LICENSE and COMMERCIAL.md for details.
                 }
             };
 
-            splashStart?.addEventListener(
+            splash?.addEventListener(
                 "click",
                 async (event) => {
                     event.preventDefault();
