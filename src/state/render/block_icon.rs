@@ -8,10 +8,12 @@
 use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
 
-use crate::block_repository::{resolve_block_definition, resolve_block_texture_layers};
+use crate::block_repository::{
+    resolve_block_definition, resolve_block_texture_layers, BlockRenderProfile,
+};
 use crate::mesh::build_block_vertices;
 use crate::mesh::shapes::{append_prism_with_layers, PrismFaceColors, PrismTextureLayers};
-use crate::types::{CameraUniform, LevelObject, Vertex};
+use crate::types::{CameraUniform, ColorSpaceUniform, LevelObject, Vertex};
 
 use super::super::State;
 
@@ -30,6 +32,8 @@ fn uses_dimetric_icon_projection(block_id: &str) -> bool {
 }
 
 fn build_block_icon_vertices(block_id: &str, dimetric: bool) -> Vec<Vertex> {
+    const LIQUID_PROFILE_TAG: f32 = 1.0;
+
     if !dimetric {
         let block = LevelObject {
             block_id: block_id.to_string(),
@@ -55,6 +59,12 @@ fn build_block_icon_vertices(block_id: &str, dimetric: bool) -> Vec<Vertex> {
         colors,
         PrismTextureLayers::new(layers.top, layers.side, layers.bottom),
     );
+    if matches!(block.render.profile, BlockRenderProfile::Liquid) {
+        for vertex in &mut vertices {
+            vertex.set_render_profile(LIQUID_PROFILE_TAG);
+        }
+    }
+
     vertices
 }
 
@@ -177,6 +187,36 @@ impl State {
                         resource: camera_uniform_buffer.as_entire_binding(),
                     }],
                 });
+        let icon_color_space_uniform = ColorSpaceUniform {
+            apply_gamma_correction: if self.render.gpu.apply_gamma_correction {
+                1.0
+            } else {
+                0.0
+            },
+            time_seconds: 0.0,
+            _pad: [0.0; 2],
+        };
+        let icon_color_space_uniform_buffer =
+            self.render
+                .gpu
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Block Icon Color Space Uniform Buffer"),
+                    contents: bytemuck::bytes_of(&icon_color_space_uniform),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
+        let icon_color_space_bind_group =
+            self.render
+                .gpu
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("Block Icon Color Space Bind Group"),
+                    layout: &self.render.gpu.color_space_bind_group_layout,
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: icon_color_space_uniform_buffer.as_entire_binding(),
+                    }],
+                });
 
         let mut encoder =
             self.render
@@ -217,7 +257,7 @@ impl State {
             pass.set_pipeline(&self.render.gpu.block_icon_pipeline);
             pass.set_bind_group(0, &camera_bind_group, &[]);
             pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-            pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+            pass.set_bind_group(2, &icon_color_space_bind_group, &[]);
             pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
             pass.set_vertex_buffer(0, vertex_buffer.slice(..));
             pass.draw(0..vertices.len() as u32, 0..1);
@@ -235,7 +275,7 @@ impl State {
 mod tests {
     use crate::State;
 
-    use super::uses_dimetric_icon_projection;
+    use super::{build_block_icon_vertices, uses_dimetric_icon_projection};
 
     #[test]
     fn render_block_icon_snapshot_returns_texture_for_known_block() {
@@ -268,5 +308,28 @@ mod tests {
         assert!(uses_dimetric_icon_projection("core/stone"));
         assert!(!uses_dimetric_icon_projection("core/finish"));
         assert!(!uses_dimetric_icon_projection("core/speedportal"));
+    }
+
+    #[test]
+    fn dimetric_liquid_block_icons_mark_vertices_as_liquid_profile() {
+        let liquid_vertices = build_block_icon_vertices("core/lava", true);
+        assert!(
+            !liquid_vertices.is_empty(),
+            "expected liquid block icon vertices"
+        );
+        assert!(
+            liquid_vertices
+                .iter()
+                .all(|vertex| (vertex.render_profile - 1.0).abs() <= f32::EPSILON),
+            "expected dimetric liquid icon vertices to use the liquid render profile tag"
+        );
+
+        let solid_vertices = build_block_icon_vertices("core/stone", true);
+        assert!(
+            solid_vertices
+                .iter()
+                .all(|vertex| vertex.render_profile.abs() <= f32::EPSILON),
+            "expected non-liquid dimetric icon vertices to keep the default render profile"
+        );
     }
 }
