@@ -25,7 +25,7 @@ impl State {
 
     pub(crate) fn handle_surface_lost(&mut self) {
         let size = self.render.gpu.current_size();
-        self.render.gpu.apply_resize(size);
+        self.resize_surface(size);
     }
 }
 
@@ -205,6 +205,10 @@ impl GpuContext {
     }
 
     pub(crate) fn apply_resize(&mut self, new_size: PhysicalSize<u32>) {
+        if new_size.width == 0 || new_size.height == 0 {
+            return;
+        }
+
         self.size = new_size;
         self.config.width = new_size.width;
         self.config.height = new_size.height;
