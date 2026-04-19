@@ -249,3 +249,50 @@ pub(crate) struct RenderSubsystem {
     pub(crate) gpu: GpuContext,
     pub(crate) meshes: SceneMeshes,
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::state::State;
+    use crate::types::PhysicalSize;
+
+    #[test]
+    fn test_apply_resize_zero_size() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            // Save old size and config
+            let old_size = state.render.gpu.size;
+            let old_config_width = state.render.gpu.config.width;
+            let old_config_height = state.render.gpu.config.height;
+
+            // Apply 0 size width
+            state.render.gpu.apply_resize(PhysicalSize {
+                width: 0,
+                height: 100,
+            });
+
+            // Assert it returned early and didn't change size
+            assert_eq!(state.render.gpu.size.width, old_size.width);
+            assert_eq!(state.render.gpu.config.width, old_config_width);
+
+            // Apply 0 size height
+            state.render.gpu.apply_resize(PhysicalSize {
+                width: 100,
+                height: 0,
+            });
+
+            // Assert it returned early and didn't change size
+            assert_eq!(state.render.gpu.size.height, old_size.height);
+            assert_eq!(state.render.gpu.config.height, old_config_height);
+
+            // Apply non-zero resize
+            state.render.gpu.apply_resize(PhysicalSize {
+                width: 800,
+                height: 600,
+            });
+
+            assert_eq!(state.render.gpu.size.width, 800);
+            assert_eq!(state.render.gpu.config.width, 800);
+        });
+    }
+}
