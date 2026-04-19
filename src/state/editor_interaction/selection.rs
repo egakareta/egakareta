@@ -184,8 +184,9 @@ impl EditorSubsystem {
             let hits = self.marquee_overlapping_blocks(viewport);
 
             if additive {
+                let selected_mask = self.selected_mask_for_len(self.objects.len());
                 for hit in hits {
-                    if !self.ui.selected_block_indices.contains(&hit) {
+                    if hit < selected_mask.len() && !selected_mask[hit] {
                         self.ui.selected_block_indices.push(hit);
                     }
                 }
@@ -776,6 +777,38 @@ mod tests {
 
             assert!(changed);
             assert!(state.editor.ui.selected_block_indices.contains(&0));
+            assert_eq!(state.editor.ui.selected_block_index, Some(0));
+        });
+    }
+
+    #[test]
+    fn finish_marquee_additive_selection_avoids_duplicate_indices() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Select;
+            state.editor.ui.shift_held = true;
+            state.editor.objects = vec![test_block([0.0, 0.0, 0.0]), test_block([2.0, 0.0, 0.0])];
+            state.editor.ui.selected_block_indices = vec![0];
+            state.editor.ui.selected_block_index = Some(0);
+
+            assert!(state
+                .editor
+                .begin_marquee_selection(0.0, 0.0, AppPhase::Editor));
+            assert!(state
+                .editor
+                .update_marquee_selection(2000.0, 2000.0, AppPhase::Editor));
+
+            let changed = state.editor.finish_marquee_selection(
+                2000.0,
+                2000.0,
+                Vec2::new(1280.0, 720.0),
+                AppPhase::Editor,
+            );
+
+            assert!(changed);
+            assert_eq!(state.editor.ui.selected_block_indices, vec![0, 1]);
             assert_eq!(state.editor.ui.selected_block_index, Some(0));
         });
     }
