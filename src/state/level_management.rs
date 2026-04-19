@@ -18,7 +18,7 @@ use crate::import_export_service::{
 use crate::level_repository::load_builtin_level_metadata;
 use crate::mesh::build_block_obj;
 use crate::platform::io::{log_platform_error, read_editor_music_bytes};
-use crate::platform::services::trigger_level_export;
+use crate::platform::services::{trigger_level_export, trigger_level_import};
 use crate::types::{
     AppPhase, AppSettings, EditorMode, KeyChord, LevelMetadata, MusicMetadata, SettingsSection,
 };
@@ -299,16 +299,6 @@ impl State {
         self.session.editor_music_metadata = metadata;
     }
 
-    /// Indicates whether the level import UI is currently visible.
-    pub fn editor_show_import(&self) -> bool {
-        self.session.editor_show_import
-    }
-
-    /// Toggles the visibility of the level import UI.
-    pub fn set_editor_show_import(&mut self, show: bool) {
-        self.session.editor_show_import = show;
-    }
-
     pub(crate) fn editor_show_settings(&self) -> bool {
         self.session.editor_show_settings
     }
@@ -418,16 +408,6 @@ impl State {
         });
     }
 
-    /// Returns the raw text content currently held in the editor's import buffer.
-    pub fn editor_import_text(&self) -> &str {
-        &self.session.editor_import_text
-    }
-
-    /// Sets the raw text content for the editor's import buffer.
-    pub fn set_editor_import_text(&mut self, text: String) {
-        self.session.editor_import_text = text;
-    }
-
     pub(crate) fn editor_show_metadata(&self) -> bool {
         self.session.editor_show_metadata
     }
@@ -505,11 +485,21 @@ impl State {
         trigger_level_export(&filename, obj.as_bytes());
     }
 
+    pub(crate) fn update_level_imports(&mut self) {
+        while let Ok(bytes) = self.session.editor_level_import_channel.1.try_recv() {
+            if self.import_level_egz(&bytes).is_ok() {
+                continue;
+            }
+
+            if let Err(error) = self.import_level(&bytes) {
+                log_platform_error(&format!("Binary import failed: {}", error));
+            }
+        }
+    }
+
     /// Triggers the level import file picker and starts async import when a file is selected.
     pub fn complete_import(&mut self) {
-        self.trigger_level_import();
-        self.session.editor_show_import = false;
-        self.session.editor_import_text.clear();
+        trigger_level_import(self.session.editor_level_import_channel.0.clone());
     }
 }
 
@@ -654,12 +644,6 @@ mod tests {
         pollster::block_on(async {
             let mut state = State::new_test().await;
 
-            state.set_editor_show_import(true);
-            assert!(state.editor_show_import());
-
-            state.set_editor_import_text("encoded-level".to_string());
-            assert_eq!(state.editor_import_text(), "encoded-level");
-
             state.set_editor_show_metadata(true);
             assert!(state.editor_show_metadata());
 
@@ -753,16 +737,11 @@ mod tests {
     }
 
     #[test]
-    fn complete_import_closes_import_dialog_and_clears_text() {
+    fn complete_import_triggers_picker_path_without_panicking() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
             state.enter_editor_phase("ImportFlow".to_string());
-
-            state.set_editor_show_import(true);
-            state.set_editor_import_text("%%%not-base64%%%".to_string());
             state.complete_import();
-            assert!(!state.editor_show_import());
-            assert_eq!(state.editor_import_text(), "");
         });
     }
 
@@ -893,9 +872,6 @@ mod tests {
                 Some(&("editor.copy".to_string(), 1))
             );
 
-            let set_import_text: fn(&mut State, String) = State::set_editor_import_text;
-            set_import_text(&mut state, "invalid-base64".to_string());
-
             let restart: fn(&mut State) = State::restart_level;
             state.phase = AppPhase::Playing;
             state.session.playtesting_editor = false;
@@ -946,11 +922,7 @@ mod tests {
             trigger_obj_export(&state);
 
             let complete_import: fn(&mut State) = State::complete_import;
-            set_import_text(&mut state, "%%%".to_string());
-            state.set_editor_show_import(true);
             complete_import(&mut state);
-            assert!(!state.editor_show_import());
-            assert_eq!(state.editor_import_text(), "");
         });
     }
 }

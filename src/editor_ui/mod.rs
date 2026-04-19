@@ -168,7 +168,6 @@ pub fn show_editor_ui(
     }
 
     let view = state.editor_ui_view_model();
-    let _ = (view.show_import, view.import_text);
     let mut commands = Vec::<AppCommand>::new();
 
     let mode = view.mode;
@@ -1311,7 +1310,6 @@ mod tests {
                 SettingsSection::Backends,
             ));
             state.dispatch(AppCommand::EditorSetShowMetadata(true));
-            state.set_editor_show_import(true);
             state.dispatch(AppCommand::EditorTogglePerfOverlay);
             run_editor_ui_once(&mut state);
 
@@ -1319,7 +1317,6 @@ mod tests {
             assert!(state.editor_show_settings());
             assert_eq!(state.editor_settings_section(), SettingsSection::Backends);
             assert!(state.editor_show_metadata());
-            assert!(state.editor_show_import());
             assert!(state.editor_perf_overlay_enabled());
 
             state.dispatch(AppCommand::EditorSetMode(EditorMode::Place));

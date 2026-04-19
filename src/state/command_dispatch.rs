@@ -1856,11 +1856,6 @@ mod tests {
             state.dispatch(AppCommand::EditorSetShowMetadata(true));
             assert!(state.editor_show_metadata());
 
-            state.set_editor_show_import(true);
-            assert!(state.editor_show_import());
-            state.set_editor_import_text("abc".to_string());
-            assert_eq!(state.editor_import_text(), "abc");
-
             state.dispatch(AppCommand::EditorSetShowSettings(true));
             assert!(state.editor_show_settings());
             state.dispatch(AppCommand::EditorSetSettingsSection(
