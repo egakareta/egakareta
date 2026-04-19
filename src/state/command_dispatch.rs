@@ -133,7 +133,6 @@ impl State {
             AppCommand::EditorRenameLevel(name) => self.set_editor_level_name(name),
             AppCommand::EditorExportLevel => self.trigger_level_export(),
             AppCommand::EditorSetShowMetadata(show) => self.set_editor_show_metadata(show),
-            AppCommand::EditorSetShowImport(show) => self.set_editor_show_import(show),
             AppCommand::EditorToggleSettings => {
                 self.set_editor_show_settings(!self.editor_show_settings())
             }
@@ -161,7 +160,6 @@ impl State {
             }
             AppCommand::EditorResetKeybind(action) => self.reset_keybind_for_action(&action),
             AppCommand::EditorResetKeybinds => self.reset_essential_keybinds(),
-            AppCommand::EditorSetImportText(text) => self.set_editor_import_text(text),
             AppCommand::EditorCompleteImport => self.complete_import(),
             AppCommand::EditorUpdateMusic(metadata) => self.set_editor_music_metadata(metadata),
             AppCommand::EditorTriggerAudioImport => self.trigger_audio_import(),
@@ -1858,9 +1856,9 @@ mod tests {
             state.dispatch(AppCommand::EditorSetShowMetadata(true));
             assert!(state.editor_show_metadata());
 
-            state.dispatch(AppCommand::EditorSetShowImport(true));
+            state.set_editor_show_import(true);
             assert!(state.editor_show_import());
-            state.dispatch(AppCommand::EditorSetImportText("abc".to_string()));
+            state.set_editor_import_text("abc".to_string());
             assert_eq!(state.editor_import_text(), "abc");
 
             state.dispatch(AppCommand::EditorSetShowSettings(true));

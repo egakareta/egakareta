@@ -1311,7 +1311,7 @@ mod tests {
                 SettingsSection::Backends,
             ));
             state.dispatch(AppCommand::EditorSetShowMetadata(true));
-            state.dispatch(AppCommand::EditorSetShowImport(true));
+            state.set_editor_show_import(true);
             state.dispatch(AppCommand::EditorTogglePerfOverlay);
             run_editor_ui_once(&mut state);
 
