@@ -11,13 +11,20 @@ use super::{EditorDirtyFlags, EditorSubsystem, PerfStage, State};
 use crate::editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds_with_triggers};
 use crate::game::trigger_transformed_objects_at_time;
 use crate::mesh::{
-    build_block_vertices, build_block_vertices_from_refs, build_camera_trigger_marker_vertices,
-    build_editor_cursor_vertices, build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
+    append_editor_hover_outline_vertices, append_editor_hover_proxy_vertices, build_block_vertices,
+    build_block_vertices_from_refs, build_camera_trigger_marker_vertices,
+    build_editor_cursor_vertices, build_editor_gizmo_vertices,
     build_editor_selection_outline_vertices, build_spawn_marker_vertices,
-    build_tap_indicator_vertices, GizmoParams,
+    build_tap_indicator_vertices, GizmoParams, FAST_HOVER_VERTICES_PER_BLOCK,
+    OUTLINE_VERTICES_PER_BLOCK,
 };
 use crate::platform::state_host::PlatformInstant;
 use crate::types::{AppPhase, EditorMode, GizmoPart, LevelObject, SpawnDirection};
+
+const HOVER_DETAIL_BUDGET_MIN_BLOCKS: usize = 8;
+const HOVER_DETAIL_BUDGET_MAX_BLOCKS: usize = 96;
+const HOVER_DETAIL_BUDGET_STEP_BLOCKS: usize = 8;
+const HOVER_DETAIL_TARGET_MS: f32 = 1.4;
 
 impl EditorSubsystem {
     pub(crate) fn mark_dirty(&mut self, dirty: EditorDirtyFlags) {
@@ -42,6 +49,7 @@ impl EditorSubsystem {
         }
         self.invalidate_samples();
         self.selected_mask_cache = None;
+        self.invalidate_marquee_projection_cache();
         self.mark_dirty(EditorDirtyFlags::from_object_sync());
     }
 
@@ -61,6 +69,7 @@ impl EditorSubsystem {
                 self.ui.hovered_block_index = None;
             }
         }
+        self.invalidate_marquee_projection_cache();
         self.mark_dirty(EditorDirtyFlags {
             sync_game_objects: true,
             rebuild_block_mesh: true,
@@ -86,6 +95,7 @@ impl EditorSubsystem {
             }
         }
         self.invalidate_samples();
+        self.invalidate_marquee_projection_cache();
         self.mark_dirty(EditorDirtyFlags {
             sync_game_objects: true,
             rebuild_selection_overlays: true,
@@ -226,24 +236,33 @@ impl State {
         }
 
         if dirty.rebuild_selection_overlays {
+            let overlays_started_at = PlatformInstant::now();
             let gizmo_started_at = PlatformInstant::now();
             self.rebuild_editor_gizmo_vertices();
-            self.perf_record(PerfStage::DirtyRebuildSelectionOverlays, gizmo_started_at);
+            self.perf_record(PerfStage::DirtySelectionOverlayGizmo, gizmo_started_at);
 
             let camera_triggers_started_at = PlatformInstant::now();
             self.rebuild_camera_trigger_marker_vertices();
             self.perf_record(
-                PerfStage::DirtyRebuildSelectionOverlays,
+                PerfStage::DirtySelectionOverlayCameraTriggers,
                 camera_triggers_started_at,
             );
 
             let hover_started_at = PlatformInstant::now();
             self.rebuild_editor_hover_outline_vertices();
-            self.perf_record(PerfStage::DirtyRebuildSelectionOverlays, hover_started_at);
+            self.perf_record(PerfStage::DirtySelectionOverlayHover, hover_started_at);
 
             let outline_started_at = PlatformInstant::now();
             self.rebuild_editor_selection_outline_vertices();
-            self.perf_record(PerfStage::DirtyRebuildSelectionOverlays, outline_started_at);
+            self.perf_record(
+                PerfStage::DirtySelectionOverlaySelection,
+                outline_started_at,
+            );
+
+            self.perf_record(
+                PerfStage::DirtyRebuildSelectionOverlays,
+                overlays_started_at,
+            );
         }
 
         if dirty.rebuild_tap_indicators {
@@ -349,8 +368,10 @@ impl State {
     }
 
     pub(super) fn rebuild_editor_hover_outline_vertices(&mut self) {
+        let total_started_at = PlatformInstant::now();
         if self.phase != AppPhase::Editor || !self.editor.ui.mode.is_selection_mode() {
             self.render.meshes.editor_hover_outline.clear();
+            self.perf_record(PerfStage::HoverOutlineTotal, total_started_at);
             return;
         }
 
@@ -367,7 +388,13 @@ impl State {
             indices_to_outline.push(index);
         }
 
-        if let Some((_, _, true)) = self.editor.marquee_selection_rect_screen() {
+        let marquee_active = self
+            .editor
+            .marquee_selection_rect_screen()
+            .is_some_and(|(_, _, active)| active);
+
+        if marquee_active {
+            let marquee_hits_started_at = PlatformInstant::now();
             let selected_mask = self.editor.selected_mask_for_len(object_count);
             let viewport = glam::Vec2::new(
                 self.render.gpu.config.width as f32,
@@ -379,42 +406,136 @@ impl State {
                 }
                 indices_to_outline.push(hit);
             }
+            self.perf_record(PerfStage::HoverOutlineMarqueeHits, marquee_hits_started_at);
         }
 
         if indices_to_outline.is_empty() {
             self.render.meshes.editor_hover_outline.clear();
+            self.perf_record(PerfStage::HoverOutlineTotal, total_started_at);
             return;
         }
 
-        let mut all_vertices = Vec::new();
-        for index in indices_to_outline {
-            let obj = &self.editor.objects[index];
-            let center = glam::Vec3::new(
-                obj.position[0] + obj.size[0] * 0.5,
-                obj.position[1] + obj.size[1] * 0.5,
-                obj.position[2] + obj.size[2] * 0.5,
-            );
-            let target_pixels = if self.editor.ui.left_mouse_down {
-                6.0
-            } else {
-                3.0
-            };
-            let line_width = self.editor_gizmo_axis_width_world(center, target_pixels);
-            all_vertices.append(&mut build_editor_hover_outline_vertices(
-                obj.position,
-                obj.size,
-                line_width,
-            ));
+        let target_pixels = if self.editor.ui.left_mouse_down {
+            6.0
+        } else {
+            3.0
+        };
+        let line_width = indices_to_outline
+            .first()
+            .and_then(|index| self.editor.objects.get(*index))
+            .map(|obj| {
+                let center = glam::Vec3::new(
+                    obj.position[0] + obj.size[0] * 0.5,
+                    obj.position[1] + obj.size[1] * 0.5,
+                    obj.position[2] + obj.size[2] * 0.5,
+                );
+                self.editor_gizmo_axis_width_world(center, target_pixels)
+            })
+            .unwrap_or(0.06);
+
+        if marquee_active {
+            let last_hover_ms =
+                self.editor.perf.profiler.stats[PerfStage::HoverOutlineTotal.as_index()].last_ms;
+            let budget = &mut self.editor.runtime.interaction.hover_detail_budget_blocks;
+            if last_hover_ms > HOVER_DETAIL_TARGET_MS {
+                *budget = budget
+                    .saturating_sub(HOVER_DETAIL_BUDGET_STEP_BLOCKS)
+                    .max(HOVER_DETAIL_BUDGET_MIN_BLOCKS);
+            } else if last_hover_ms < HOVER_DETAIL_TARGET_MS * 0.55 {
+                *budget =
+                    (*budget + HOVER_DETAIL_BUDGET_STEP_BLOCKS).min(HOVER_DETAIL_BUDGET_MAX_BLOCKS);
+            }
         }
 
+        let detail_budget = if marquee_active {
+            self.editor
+                .runtime
+                .interaction
+                .hover_detail_budget_blocks
+                .min(indices_to_outline.len())
+        } else {
+            indices_to_outline.len()
+        };
+
+        let vertex_build_started_at = PlatformInstant::now();
+        let mut all_vertices = if marquee_active {
+            Vec::with_capacity(
+                indices_to_outline
+                    .len()
+                    .saturating_mul(FAST_HOVER_VERTICES_PER_BLOCK)
+                    .saturating_add(detail_budget.saturating_mul(OUTLINE_VERTICES_PER_BLOCK)),
+            )
+        } else {
+            Vec::with_capacity(
+                indices_to_outline
+                    .len()
+                    .saturating_mul(OUTLINE_VERTICES_PER_BLOCK),
+            )
+        };
+
+        if marquee_active {
+            for &index in &indices_to_outline {
+                let obj = &self.editor.objects[index];
+                append_editor_hover_proxy_vertices(
+                    &mut all_vertices,
+                    obj.position,
+                    obj.size,
+                    line_width,
+                );
+            }
+
+            let mut cursor =
+                self.editor.runtime.interaction.hover_detail_cursor % indices_to_outline.len();
+            let mut hovered_in_detail = false;
+            for _ in 0..detail_budget {
+                let index = indices_to_outline[cursor];
+                let obj = &self.editor.objects[index];
+                append_editor_hover_outline_vertices(
+                    &mut all_vertices,
+                    obj.position,
+                    obj.size,
+                    line_width,
+                );
+                hovered_in_detail |= Some(index) == hovered_outlined;
+                cursor += 1;
+                if cursor >= indices_to_outline.len() {
+                    cursor = 0;
+                }
+            }
+
+            if let Some(index) = hovered_outlined.filter(|_| !hovered_in_detail) {
+                if let Some(obj) = self.editor.objects.get(index) {
+                    append_editor_hover_outline_vertices(
+                        &mut all_vertices,
+                        obj.position,
+                        obj.size,
+                        line_width,
+                    );
+                }
+            }
+
+            self.editor.runtime.interaction.hover_detail_cursor = cursor;
+        } else {
+            self.editor.runtime.interaction.hover_detail_cursor = 0;
+            for index in indices_to_outline {
+                let obj = &self.editor.objects[index];
+                append_editor_hover_outline_vertices(
+                    &mut all_vertices,
+                    obj.position,
+                    obj.size,
+                    line_width,
+                );
+            }
+        }
+        self.perf_record(PerfStage::HoverOutlineVertexBuild, vertex_build_started_at);
+
+        let upload_started_at = PlatformInstant::now();
         self.render
             .meshes
             .editor_hover_outline
-            .replace_with_vertices(
-                &self.render.gpu.device,
-                "Editor Hover Outline Vertex Buffer",
-                &all_vertices,
-            );
+            .write_streaming_vertices(&self.render.gpu.queue, &all_vertices);
+        self.perf_record(PerfStage::HoverOutlineUpload, upload_started_at);
+        self.perf_record(PerfStage::HoverOutlineTotal, total_started_at);
     }
 
     pub(super) fn rebuild_editor_gizmo_vertices(&mut self) {
@@ -484,26 +605,39 @@ impl State {
     }
 
     pub(super) fn rebuild_editor_selection_outline_vertices(&mut self) {
+        let total_started_at = PlatformInstant::now();
         if self.phase != AppPhase::Editor || !self.editor.ui.mode.is_selection_mode() {
             self.render.meshes.editor_selection_outline.clear();
+            self.perf_record(PerfStage::SelectionOutlineTotal, total_started_at);
             return;
         }
 
+        let indices_started_at = PlatformInstant::now();
         let selected_indices = self.selected_block_indices_normalized();
+        self.perf_record(PerfStage::SelectionOutlineIndices, indices_started_at);
         if selected_indices.is_empty() {
             self.render.meshes.editor_selection_outline.clear();
+            self.perf_record(PerfStage::SelectionOutlineTotal, total_started_at);
             return;
         }
 
-        let mut vertices = Vec::new();
-        for index in selected_indices {
-            if let Some(obj) = self.editor.objects.get(index) {
+        let line_width = selected_indices
+            .first()
+            .and_then(|index| self.editor.objects.get(*index))
+            .map(|obj| {
                 let center = glam::Vec3::new(
                     obj.position[0] + obj.size[0] * 0.5,
                     obj.position[1] + obj.size[1] * 0.5,
                     obj.position[2] + obj.size[2] * 0.5,
                 );
-                let line_width = self.editor_gizmo_axis_width_world(center, 2.0);
+                self.editor_gizmo_axis_width_world(center, 2.0)
+            })
+            .unwrap_or(0.06);
+
+        let vertex_build_started_at = PlatformInstant::now();
+        let mut vertices = Vec::new();
+        for index in selected_indices {
+            if let Some(obj) = self.editor.objects.get(index) {
                 vertices.extend(build_editor_selection_outline_vertices(
                     obj.position,
                     obj.size,
@@ -511,6 +645,12 @@ impl State {
                 ));
             }
         }
+        self.perf_record(
+            PerfStage::SelectionOutlineVertexBuild,
+            vertex_build_started_at,
+        );
+
+        let upload_started_at = PlatformInstant::now();
         self.render
             .meshes
             .editor_selection_outline
@@ -519,6 +659,8 @@ impl State {
                 "Editor Selection Outline Vertex Buffer",
                 &vertices,
             );
+        self.perf_record(PerfStage::SelectionOutlineUpload, upload_started_at);
+        self.perf_record(PerfStage::SelectionOutlineTotal, total_started_at);
     }
 
     pub(super) fn rebuild_spawn_marker_vertices(&mut self) {

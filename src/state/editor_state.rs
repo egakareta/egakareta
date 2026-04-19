@@ -62,6 +62,10 @@ impl EditorSubsystem {
     pub(crate) fn clear_interaction_drags(&mut self) {
         self.runtime.interaction.gizmo_drag = None;
         self.runtime.interaction.block_drag = None;
+        self.runtime
+            .interaction
+            .marquee_projection_cache
+            .invalidate();
     }
 
     pub(crate) fn left_mouse_down(&self) -> bool {
@@ -92,6 +96,10 @@ impl EditorSubsystem {
         self.ui.mode = mode;
         self.runtime.interaction.gizmo_drag = None;
         self.runtime.interaction.block_drag = None;
+        self.runtime
+            .interaction
+            .marquee_projection_cache
+            .invalidate();
         self.ui.marquee_start_screen = None;
         self.ui.marquee_current_screen = None;
         if !mode.can_select() {

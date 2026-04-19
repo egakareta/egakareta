@@ -362,7 +362,11 @@ impl State {
                     blocks_static: MeshSlot::Empty,
                     blocks_selected: MeshSlot::Empty,
                     editor_cursor: MeshSlot::Empty,
-                    editor_hover_outline: MeshSlot::Empty,
+                    editor_hover_outline: MeshSlot::streaming(
+                        &fixture.device,
+                        "Editor Hover Outline Vertex Buffer",
+                        262_144,
+                    ),
                     editor_selection_outline: MeshSlot::Empty,
                     editor_gizmo: MeshSlot::Empty,
                     tap_indicators: MeshSlot::Empty,
@@ -958,6 +962,8 @@ impl State {
 
         let block_vertices = build_block_vertices(&game.objects);
         let block_mesh = MeshSlot::from_vertices(&device, "Block Vertex Buffer", &block_vertices);
+        let editor_hover_outline_mesh =
+            MeshSlot::streaming(&device, "Editor Hover Outline Vertex Buffer", 262_144);
 
         let now = PlatformInstant::now();
 
@@ -997,7 +1003,7 @@ impl State {
                     blocks_static: MeshSlot::Empty,
                     blocks_selected: MeshSlot::Empty,
                     editor_cursor: MeshSlot::Empty,
-                    editor_hover_outline: MeshSlot::Empty,
+                    editor_hover_outline: editor_hover_outline_mesh,
                     editor_selection_outline: MeshSlot::Empty,
                     editor_gizmo: MeshSlot::Empty,
                     tap_indicators: MeshSlot::Empty,

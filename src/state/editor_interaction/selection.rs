@@ -8,14 +8,22 @@
 use super::super::{
     EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart, EditorSubsystem, PerfStage, State,
 };
+use super::MarqueeScreenBounds;
 use crate::platform::state_host::PlatformInstant;
 use crate::types::{AppPhase, EditorInteractionChange, EditorMode};
-use glam::{EulerRot, Mat3, Vec2, Vec3};
+use glam::{EulerRot, Mat3, Mat4, Vec2, Vec3};
 
 const MARQUEE_DRAG_THRESHOLD_PX: f64 = 4.0;
 const CAMERA_TRIGGER_MARQUEE_RADIUS_PX: f32 = 16.0;
 
 impl EditorSubsystem {
+    pub(crate) fn invalidate_marquee_projection_cache(&mut self) {
+        self.runtime
+            .interaction
+            .marquee_projection_cache
+            .invalidate();
+    }
+
     fn marquee_has_dragged_far_enough(&self) -> bool {
         let Some(start) = self.ui.marquee_start_screen else {
             return false;
@@ -38,6 +46,8 @@ impl EditorSubsystem {
         if phase != AppPhase::Editor || self.ui.right_dragging || !allows_marquee {
             return false;
         }
+        self.invalidate_marquee_projection_cache();
+        self.runtime.interaction.hover_detail_cursor = 0;
         self.ui.marquee_start_screen = Some([x, y]);
         self.ui.marquee_current_screen = Some([x, y]);
         true
@@ -56,93 +66,206 @@ impl EditorSubsystem {
         true
     }
 
-    pub(crate) fn marquee_overlapping_blocks(&self, viewport: Vec2) -> Vec<usize> {
-        let Some(start) = self.ui.marquee_start_screen else {
+    pub(crate) fn marquee_overlapping_blocks(&mut self, viewport: Vec2) -> Vec<usize> {
+        self.marquee_overlapping_blocks_cached(viewport, None)
+    }
+
+    fn marquee_overlapping_blocks_cached(
+        &mut self,
+        viewport: Vec2,
+        limit: Option<usize>,
+    ) -> Vec<usize> {
+        let Some((rect_min, rect_max)) = self.marquee_rect_bounds() else {
             return Vec::new();
         };
-        let current = self.ui.marquee_current_screen.unwrap_or(start);
+        self.ensure_marquee_projection_cache(viewport);
 
-        let rect_min = Vec2::new(
-            start[0].min(current[0]) as f32,
-            start[1].min(current[1]) as f32,
-        );
-        let rect_max = Vec2::new(
-            start[0].max(current[0]) as f32,
-            start[1].max(current[1]) as f32,
-        );
+        let cache = &self.runtime.interaction.marquee_projection_cache;
+        let rect_min_x = rect_min[0];
+        let rect_min_y = rect_min[1];
+        let rect_max_x = rect_max[0];
+        let rect_max_y = rect_max[1];
 
         let mut hits = Vec::new();
-        for index in 0..self.objects.len() {
-            let Some((obj_min, obj_max)) = self.rotated_block_screen_bounds(index, viewport) else {
+        for (index, bounds) in cache.bounds.iter().enumerate() {
+            let Some(bounds) = bounds else {
                 continue;
             };
-            let overlaps = obj_max.x >= rect_min.x
-                && obj_min.x <= rect_max.x
-                && obj_max.y >= rect_min.y
-                && obj_min.y <= rect_max.y;
+            let overlaps = bounds.max[0] >= rect_min_x
+                && bounds.min[0] <= rect_max_x
+                && bounds.max[1] >= rect_min_y
+                && bounds.min[1] <= rect_max_y;
             if overlaps {
                 hits.push(index);
+                if limit.is_some_and(|max_hits| hits.len() >= max_hits) {
+                    break;
+                }
             }
         }
         hits
     }
 
-    fn rotated_block_screen_bounds(&self, index: usize, viewport: Vec2) -> Option<(Vec2, Vec2)> {
-        let obj = self.objects.get(index)?;
+    fn marquee_rect_bounds(&self) -> Option<([f32; 2], [f32; 2])> {
+        let start = self.ui.marquee_start_screen?;
+        let current = self.ui.marquee_current_screen.unwrap_or(start);
+        Some((
+            [
+                start[0].min(current[0]) as f32,
+                start[1].min(current[1]) as f32,
+            ],
+            [
+                start[0].max(current[0]) as f32,
+                start[1].max(current[1]) as f32,
+            ],
+        ))
+    }
 
+    fn ensure_marquee_projection_cache(&mut self, viewport: Vec2) {
+        let viewport_signature = [
+            viewport.x.round().max(1.0) as u32,
+            viewport.y.round().max(1.0) as u32,
+        ];
+        let pan_bits = [
+            self.camera.editor_pan[0].to_bits(),
+            self.camera.editor_pan[1].to_bits(),
+        ];
+        let target_z_bits = self.camera.editor_target_z.to_bits();
+        let rotation_bits = self.camera.editor_rotation.to_bits();
+        let pitch_bits = self.camera.editor_pitch.to_bits();
+        let object_count = self.objects.len();
+
+        let cache = &self.runtime.interaction.marquee_projection_cache;
+        let is_cache_valid = cache.valid
+            && cache.viewport == viewport_signature
+            && cache.camera_pan_bits == pan_bits
+            && cache.camera_target_z_bits == target_z_bits
+            && cache.camera_rotation_bits == rotation_bits
+            && cache.camera_pitch_bits == pitch_bits
+            && cache.object_count == object_count;
+
+        if is_cache_valid {
+            return;
+        }
+
+        let view_proj = self.view_proj(viewport);
+        let mut bounds = Vec::with_capacity(object_count);
+        for obj in &self.objects {
+            let projected = self
+                .rotated_block_screen_bounds_for_obj(obj, viewport, view_proj)
+                .map(|(min, max)| MarqueeScreenBounds {
+                    min: [min.x, min.y],
+                    max: [max.x, max.y],
+                });
+            bounds.push(projected);
+        }
+
+        let cache = &mut self.runtime.interaction.marquee_projection_cache;
+        cache.valid = true;
+        cache.viewport = viewport_signature;
+        cache.camera_pan_bits = pan_bits;
+        cache.camera_target_z_bits = target_z_bits;
+        cache.camera_rotation_bits = rotation_bits;
+        cache.camera_pitch_bits = pitch_bits;
+        cache.object_count = object_count;
+        cache.bounds = bounds;
+    }
+
+    fn rotated_block_screen_bounds_for_obj(
+        &self,
+        obj: &crate::types::LevelObject,
+        viewport: Vec2,
+        view_proj: Mat4,
+    ) -> Option<(Vec2, Vec2)> {
         let center = Vec3::new(
             obj.position[0] + obj.size[0] * 0.5,
             obj.position[1] + obj.size[1] * 0.5,
             obj.position[2] + obj.size[2] * 0.5,
         );
         let half = Vec3::new(obj.size[0] * 0.5, obj.size[1] * 0.5, obj.size[2] * 0.5);
-        let rotation = Mat3::from_euler(
-            EulerRot::XYZ,
-            obj.rotation_degrees[0].to_radians(),
-            obj.rotation_degrees[1].to_radians(),
-            obj.rotation_degrees[2].to_radians(),
-        );
+        let has_rotation = obj
+            .rotation_degrees
+            .iter()
+            .any(|degrees| degrees.abs() > f32::EPSILON);
+        let rotation = has_rotation.then(|| {
+            Mat3::from_euler(
+                EulerRot::XYZ,
+                obj.rotation_degrees[0].to_radians(),
+                obj.rotation_degrees[1].to_radians(),
+                obj.rotation_degrees[2].to_radians(),
+            )
+        });
 
-        let mut points = Vec::with_capacity(10);
+        let mut min: Option<Vec2> = None;
+        let mut max: Option<Vec2> = None;
         for sx in [-1.0, 1.0] {
             for sy in [-1.0, 1.0] {
                 for sz in [-1.0, 1.0] {
                     let local = Vec3::new(half.x * sx, half.y * sy, half.z * sz);
-                    let world = center + rotation * local;
-                    if let Some(screen) = self.world_to_screen_v(world, viewport) {
-                        points.push(screen);
+                    let world = if let Some(rotation) = rotation {
+                        center + rotation * local
+                    } else {
+                        center + local
+                    };
+                    if let Some(screen) =
+                        self.world_to_screen_with_view_proj(world, viewport, view_proj)
+                    {
+                        match (min, max) {
+                            (Some(mut current_min), Some(mut current_max)) => {
+                                current_min.x = current_min.x.min(screen.x);
+                                current_min.y = current_min.y.min(screen.y);
+                                current_max.x = current_max.x.max(screen.x);
+                                current_max.y = current_max.y.max(screen.y);
+                                min = Some(current_min);
+                                max = Some(current_max);
+                            }
+                            _ => {
+                                min = Some(screen);
+                                max = Some(screen);
+                            }
+                        }
                     }
                 }
             }
         }
 
-        if let Some(center_screen) = self.world_to_screen_v(center, viewport) {
-            points.push(center_screen);
+        if let Some(center_screen) =
+            self.world_to_screen_with_view_proj(center, viewport, view_proj)
+        {
+            match (min, max) {
+                (Some(mut current_min), Some(mut current_max)) => {
+                    current_min.x = current_min.x.min(center_screen.x);
+                    current_min.y = current_min.y.min(center_screen.y);
+                    current_max.x = current_max.x.max(center_screen.x);
+                    current_max.y = current_max.y.max(center_screen.y);
+                    min = Some(current_min);
+                    max = Some(current_max);
+                }
+                _ => {
+                    min = Some(center_screen);
+                    max = Some(center_screen);
+                }
+            }
         }
 
-        if points.is_empty() {
-            return None;
+        match (min, max) {
+            (Some(min), Some(max)) => Some((min, max)),
+            _ => None,
         }
-
-        let mut min = points[0];
-        let mut max = points[0];
-        for p in points.into_iter().skip(1) {
-            min.x = min.x.min(p.x);
-            min.y = min.y.min(p.y);
-            max.x = max.x.max(p.x);
-            max.y = max.y.max(p.y);
-        }
-
-        Some((min, max))
     }
 
-    fn marquee_trigger_hit(&self, rect_min: Vec2, rect_max: Vec2, viewport: Vec2) -> Option<usize> {
+    fn marquee_trigger_hit(
+        &self,
+        rect_min: Vec2,
+        rect_max: Vec2,
+        viewport: Vec2,
+        view_proj: Mat4,
+    ) -> Option<usize> {
         let rect_center = (rect_min + rect_max) * 0.5;
         let mut best_hit: Option<(usize, f32)> = None;
 
         for (trigger_index, camera_trigger) in self.camera_trigger_markers() {
             let eye = self.camera_trigger_marker_eye(&camera_trigger);
-            let Some(screen) = self.world_to_screen_v(eye, viewport) else {
+            let Some(screen) = self.world_to_screen_with_view_proj(eye, viewport, view_proj) else {
                 continue;
             };
 
@@ -169,6 +292,7 @@ impl EditorSubsystem {
         let Some(start) = self.ui.marquee_start_screen else {
             return;
         };
+        let total_started_at = PlatformInstant::now();
         let current = self.ui.marquee_current_screen.unwrap_or(start);
 
         let rect_min = Vec2::new(
@@ -179,10 +303,14 @@ impl EditorSubsystem {
             start[0].max(current[0]) as f32,
             start[1].max(current[1]) as f32,
         );
+        let view_proj = self.view_proj(viewport);
 
         if self.ui.mode.is_selection_mode() {
+            let hits_started_at = PlatformInstant::now();
             let hits = self.marquee_overlapping_blocks(viewport);
+            self.perf_record(PerfStage::MarqueeBlockHits, hits_started_at);
 
+            let apply_started_at = PlatformInstant::now();
             if additive {
                 let selected_mask = self.selected_mask_for_len(self.objects.len());
                 for hit in hits {
@@ -193,13 +321,14 @@ impl EditorSubsystem {
             } else {
                 self.ui.selected_block_indices = hits;
             }
+            self.perf_record(PerfStage::MarqueeApplyBlocks, apply_started_at);
         } else {
             self.ui.selected_block_indices.clear();
             self.ui.selected_block_index = None;
             self.ui.hovered_block_index = None;
         }
 
-        let trigger_hit = self.marquee_trigger_hit(rect_min, rect_max, viewport);
+        let trigger_hit = self.marquee_trigger_hit(rect_min, rect_max, viewport, view_proj);
         if additive {
             if let Some(index) = trigger_hit {
                 self.set_trigger_selected(Some(index));
@@ -227,6 +356,7 @@ impl EditorSubsystem {
             rebuild_cursor: self.ui.selected_block_index.is_some(),
             ..EditorDirtyFlags::default()
         });
+        self.perf_record(PerfStage::MarqueeSelectionTotal, total_started_at);
     }
 
     pub(crate) fn finish_marquee_selection(
@@ -256,11 +386,13 @@ impl EditorSubsystem {
             self.apply_marquee_selection(viewport, additive);
             self.ui.marquee_start_screen = None;
             self.ui.marquee_current_screen = None;
+            self.invalidate_marquee_projection_cache();
             return true;
         }
 
         self.ui.marquee_start_screen = None;
         self.ui.marquee_current_screen = None;
+        self.invalidate_marquee_projection_cache();
         false
     }
 

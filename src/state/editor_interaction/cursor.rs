@@ -32,6 +32,7 @@ impl EditorSubsystem {
                 None
             } else {
                 pick.hit_block_index
+                    .filter(|index| !self.selection_contains(*index))
             };
 
             if self.ui.hovered_block_index != next_hover {
@@ -78,5 +79,57 @@ impl State {
             EditorInteractionChange::Cursor => self.rebuild_editor_cursor_vertices(),
             EditorInteractionChange::None => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::super::State;
+    use crate::types::{EditorInteractionChange, EditorMode, LevelObject};
+    use glam::{Vec2, Vec3};
+
+    fn test_block(position: [f32; 3]) -> LevelObject {
+        LevelObject {
+            position,
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.18,
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        }
+    }
+
+    #[test]
+    fn selected_block_hover_is_cleared_and_stays_stable() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.ui.mode = EditorMode::Select;
+            state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+            state.editor.ui.hovered_block_index = Some(0);
+
+            let viewport = Vec2::new(1280.0, 720.0);
+            let center_screen = state
+                .editor
+                .world_to_screen_v(Vec3::new(0.5, 0.5, 0.5), viewport)
+                .expect("block center should project to screen");
+
+            let first = state.editor.update_cursor_from_screen(
+                center_screen.x as f64,
+                center_screen.y as f64,
+                viewport,
+            );
+            assert!(matches!(first, EditorInteractionChange::Hover));
+            assert_eq!(state.editor.ui.hovered_block_index, None);
+
+            let second = state.editor.update_cursor_from_screen(
+                center_screen.x as f64,
+                center_screen.y as f64,
+                viewport,
+            );
+            assert!(matches!(second, EditorInteractionChange::None));
+            assert_eq!(state.editor.ui.hovered_block_index, None);
+        });
     }
 }

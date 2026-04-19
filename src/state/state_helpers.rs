@@ -149,6 +149,11 @@ impl State {
         self.editor.ui.marquee_current_screen = None;
         self.editor.runtime.interaction.gizmo_drag = None;
         self.editor.runtime.interaction.block_drag = None;
+        self.editor
+            .runtime
+            .interaction
+            .marquee_projection_cache
+            .invalidate();
         self.editor.runtime.history.undo.clear();
         self.editor.runtime.history.redo.clear();
         self.clear_editor_pan_keys();
@@ -172,6 +177,11 @@ impl State {
         self.editor.ui.marquee_current_screen = None;
         self.editor.runtime.interaction.gizmo_drag = None;
         self.editor.runtime.interaction.block_drag = None;
+        self.editor
+            .runtime
+            .interaction
+            .marquee_projection_cache
+            .invalidate();
         self.session.playing_level_name = None;
         self.editor.ui.right_dragging = false;
         self.clear_editor_pan_keys();

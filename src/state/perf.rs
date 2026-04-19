@@ -21,6 +21,10 @@ pub(crate) enum PerfStage {
     DirtySyncGameObjects,
     DirtyRebuildBlockMesh,
     DirtyRebuildSelectionOverlays,
+    DirtySelectionOverlayGizmo,
+    DirtySelectionOverlayCameraTriggers,
+    DirtySelectionOverlayHover,
+    DirtySelectionOverlaySelection,
     DirtyRebuildTapIndicators,
     DirtyRebuildPreviewPlayer,
     PreviewSolveTimeline,
@@ -46,9 +50,20 @@ pub(crate) enum PerfStage {
     TimelineSeekAudioStop,
     TimelineSeekRuntimeBuild,
     TimelineSeekAudioStart,
+    MarqueeSelectionTotal,
+    MarqueeBlockHits,
+    MarqueeApplyBlocks,
+    HoverOutlineTotal,
+    HoverOutlineMarqueeHits,
+    HoverOutlineVertexBuild,
+    HoverOutlineUpload,
+    SelectionOutlineTotal,
+    SelectionOutlineIndices,
+    SelectionOutlineVertexBuild,
+    SelectionOutlineUpload,
 }
 
-pub(crate) const PERF_STAGE_COUNT: usize = 39;
+pub(crate) const PERF_STAGE_COUNT: usize = PerfStage::SelectionOutlineUpload as usize + 1;
 
 #[derive(Clone)]
 pub(crate) struct PerfOverlayEntry {
@@ -72,6 +87,9 @@ impl PerfStage {
             Self::TimelineSeek,
             Self::DragSelection,
             Self::SelectionClick,
+            Self::MarqueeSelectionTotal,
+            Self::HoverOutlineTotal,
+            Self::SelectionOutlineTotal,
             Self::GizmoRebuild,
             Self::DirtyProcess,
             Self::TimelineSampleRebuild,
@@ -96,6 +114,12 @@ impl PerfStage {
                 Self::DirtyRebuildTapIndicators,
                 Self::DirtyRebuildPreviewPlayer,
                 Self::DirtyRebuildCursor,
+            ],
+            Self::DirtyRebuildSelectionOverlays => &[
+                Self::DirtySelectionOverlayGizmo,
+                Self::DirtySelectionOverlayCameraTriggers,
+                Self::DirtySelectionOverlayHover,
+                Self::DirtySelectionOverlaySelection,
             ],
             Self::DirtyRebuildPreviewPlayer => {
                 &[Self::PreviewSolveTimeline, Self::PreviewMeshBuild]
@@ -123,6 +147,17 @@ impl PerfStage {
                 Self::TimelineSeekRuntimeBuild,
                 Self::TimelineSeekAudioStart,
             ],
+            Self::MarqueeSelectionTotal => &[Self::MarqueeBlockHits, Self::MarqueeApplyBlocks],
+            Self::HoverOutlineTotal => &[
+                Self::HoverOutlineMarqueeHits,
+                Self::HoverOutlineVertexBuild,
+                Self::HoverOutlineUpload,
+            ],
+            Self::SelectionOutlineTotal => &[
+                Self::SelectionOutlineIndices,
+                Self::SelectionOutlineVertexBuild,
+                Self::SelectionOutlineUpload,
+            ],
             _ => &[],
         }
     }
@@ -143,6 +178,10 @@ impl PerfStage {
             Self::DirtySyncGameObjects => "DirtySyncObjects",
             Self::DirtyRebuildBlockMesh => "DirtyBlockMesh",
             Self::DirtyRebuildSelectionOverlays => "DirtySelectionOverlays",
+            Self::DirtySelectionOverlayGizmo => "OverlayGizmo",
+            Self::DirtySelectionOverlayCameraTriggers => "OverlayCamTriggers",
+            Self::DirtySelectionOverlayHover => "OverlayHover",
+            Self::DirtySelectionOverlaySelection => "OverlaySelection",
             Self::DirtyRebuildTapIndicators => "DirtyTapIndicators",
             Self::DirtyRebuildPreviewPlayer => "DirtyPreviewPlayer",
             Self::PreviewSolveTimeline => "PreviewSolveTimeline",
@@ -168,6 +207,17 @@ impl PerfStage {
             Self::TimelineSeekAudioStop => "SeekAudioStop",
             Self::TimelineSeekRuntimeBuild => "SeekRuntimeBuild",
             Self::TimelineSeekAudioStart => "SeekAudioStart",
+            Self::MarqueeSelectionTotal => "MarqueeSelect",
+            Self::MarqueeBlockHits => "MarqueeHits",
+            Self::MarqueeApplyBlocks => "MarqueeApply",
+            Self::HoverOutlineTotal => "HoverOutline",
+            Self::HoverOutlineMarqueeHits => "HoverMarqueeHits",
+            Self::HoverOutlineVertexBuild => "HoverVertexBuild",
+            Self::HoverOutlineUpload => "HoverUpload",
+            Self::SelectionOutlineTotal => "SelectionOutline",
+            Self::SelectionOutlineIndices => "SelectionIndices",
+            Self::SelectionOutlineVertexBuild => "SelectionVertexBuild",
+            Self::SelectionOutlineUpload => "SelectionUpload",
         }
     }
 }
@@ -261,6 +311,9 @@ impl EditorPerfProfiler {
             PerfStage::TimelineSeek,
             PerfStage::DragSelection,
             PerfStage::SelectionClick,
+            PerfStage::MarqueeSelectionTotal,
+            PerfStage::HoverOutlineTotal,
+            PerfStage::SelectionOutlineTotal,
             PerfStage::GizmoRebuild,
             PerfStage::DirtyProcess,
             PerfStage::TimelineSampleRebuild,

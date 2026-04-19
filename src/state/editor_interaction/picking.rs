@@ -65,6 +65,24 @@ impl EditorSubsystem {
         }
 
         for (index, obj) in self.objects.iter().enumerate() {
+            let center = Vec3::new(
+                obj.position[0] + obj.size[0] * 0.5,
+                obj.position[1] + obj.size[1] * 0.5,
+                obj.position[2] + obj.size[2] * 0.5,
+            );
+            let half = Vec3::new(obj.size[0] * 0.5, obj.size[1] * 0.5, obj.size[2] * 0.5);
+            let bounds_radius = half.length();
+
+            let Some(bounds_t) =
+                self.ray_intersect_sphere(ray_origin, ray_dir, center, bounds_radius)
+            else {
+                continue;
+            };
+
+            if bounds_t >= min_t {
+                continue;
+            }
+
             if let Some((t, normal)) = self.ray_intersect_rotated_block(ray_origin, ray_dir, obj) {
                 if t < min_t {
                     min_t = t;

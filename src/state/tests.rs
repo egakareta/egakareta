@@ -10,6 +10,7 @@ use super::State;
 use crate::commands::AppCommand;
 use crate::editor_domain::{derive_tap_indicator_positions, derive_timeline_position};
 use crate::game::simulate_timeline_state_with_triggers;
+use crate::mesh::FAST_HOVER_VERTICES_PER_BLOCK;
 use crate::platform::audio::runtime_asset_source_key;
 use crate::test_utils::assert_approx_eq as approx_eq;
 use crate::types::{
@@ -94,6 +95,46 @@ fn test_marquee_no_redundant_selections_before_drag_started() {
         state.editor.ui.marquee_current_screen = Some([200.0, 200.0]);
         let (_, _, is_active) = state.editor.marquee_selection_rect_screen().unwrap();
         assert!(is_active, "Marquee SHOULD be active now");
+    });
+}
+
+#[test]
+fn marquee_hover_preview_keeps_all_overlapped_blocks_visible() {
+    pollster::block_on(async {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+        state.editor.ui.mode = EditorMode::Select;
+        state.editor.ui.left_mouse_down = true;
+        state.editor.ui.marquee_start_screen = Some([0.0, 0.0]);
+        state.editor.ui.marquee_current_screen = Some([4000.0, 4000.0]);
+
+        // Stack many blocks in the same visible region so marquee overlap would otherwise
+        // produce a very large hover-outline mesh every pointer update.
+        for height in 0..80 {
+            state.editor.objects.push(LevelObject {
+                position: [0.0, height as f32 * 0.02, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                roundness: 0.18,
+                block_id: "core/stone".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            });
+        }
+
+        state.rebuild_editor_hover_outline_vertices();
+        let count = state
+            .render
+            .meshes
+            .editor_hover_outline
+            .draw_data()
+            .map(|(_, c)| c)
+            .expect("hover outline mesh should exist during marquee drag");
+
+        let minimum_expected = 80 * FAST_HOVER_VERTICES_PER_BLOCK as u32;
+        assert!(
+            count >= minimum_expected,
+            "expected at least {minimum_expected} hover vertices, got {count}"
+        );
     });
 }
 

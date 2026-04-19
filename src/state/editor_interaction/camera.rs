@@ -53,6 +53,15 @@ impl EditorSubsystem {
 
     pub(crate) fn world_to_screen_v(&self, world: Vec3, viewport: Vec2) -> Option<Vec2> {
         let view_proj = self.view_proj(viewport);
+        self.world_to_screen_with_view_proj(world, viewport, view_proj)
+    }
+
+    pub(crate) fn world_to_screen_with_view_proj(
+        &self,
+        world: Vec3,
+        viewport: Vec2,
+        view_proj: Mat4,
+    ) -> Option<Vec2> {
         let clip = view_proj * world.extend(1.0);
         if clip.w.abs() <= f32::EPSILON {
             return None;
