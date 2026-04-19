@@ -8,9 +8,7 @@
 use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
 
-use crate::block_repository::{
-    resolve_block_definition, resolve_block_texture_layers, BlockRenderProfile,
-};
+use crate::block_repository::{resolve_block_definition, resolve_block_texture_layers};
 use crate::mesh::build_block_vertices;
 use crate::mesh::shapes::{append_prism_with_layers, PrismFaceColors, PrismTextureLayers};
 use crate::types::{CameraUniform, LevelObject, Vertex};
@@ -22,15 +20,13 @@ const ICON_DIMETRIC_PITCH_DEGREES: f32 = 30.0;
 const ICON_CAMERA_DISTANCE: f32 = 4.0;
 const ICON_ORTHO_HALF_EXTENT: f32 = 0.9;
 const ICON_PERSPECTIVE_FOV_DEGREES: f32 = 35.0;
-const ICON_NEAR_PLANE: f32 = 0.1;
-const ICON_FAR_PLANE: f32 = 16.0;
+const ICON_ORTHO_NEAR_PLANE: f32 = 0.1;
+const ICON_ORTHO_FAR_PLANE: f32 = 16.0;
 
 fn uses_dimetric_icon_projection(block_id: &str) -> bool {
-    let block = resolve_block_definition(block_id);
-    !matches!(
-        block.render.profile,
-        BlockRenderProfile::FinishRing | BlockRenderProfile::SpeedPortal
-    ) && block.assets.mesh.is_none()
+    resolve_block_definition(block_id)
+        .render
+        .icon_dimetric_projection
 }
 
 fn build_block_icon_vertices(block_id: &str, dimetric: bool) -> Vec<Vertex> {
@@ -145,8 +141,8 @@ impl State {
                     ICON_ORTHO_HALF_EXTENT,
                     -ICON_ORTHO_HALF_EXTENT,
                     ICON_ORTHO_HALF_EXTENT,
-                    ICON_NEAR_PLANE,
-                    ICON_FAR_PLANE,
+                    ICON_ORTHO_NEAR_PLANE,
+                    ICON_ORTHO_FAR_PLANE,
                 ),
             )
         } else {
@@ -268,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn dimetric_projection_is_used_for_cube_blocks_and_skipped_for_non_cube_blocks() {
+    fn dimetric_projection_configuration_is_read_from_block_render_json() {
         assert!(uses_dimetric_icon_projection("core/stone"));
         assert!(!uses_dimetric_icon_projection("core/finish"));
         assert!(!uses_dimetric_icon_projection("core/speedportal"));

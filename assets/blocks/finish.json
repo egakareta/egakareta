@@ -3,6 +3,7 @@
     "display_name": "Finish",
     "render": {
         "profile": "finish_ring",
+        "icon_dimetric_projection": false,
         "color_top": [0.45, 0.95, 1.0, 1.0],
         "color_outline": [0.95, 1.0, 1.0, 0.9]
     },

@@ -235,7 +235,7 @@ fn show_block_preview_button(
     }
 
     let clicked = response.clicked();
-    response.on_hover_text_at_pointer(block.display_name.clone());
+    response.on_hover_text_at_pointer(block.display_name.as_str());
     clicked
 }
 
