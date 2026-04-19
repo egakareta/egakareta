@@ -64,14 +64,13 @@ See LICENSE and COMMERCIAL.md for details.
                 width: 300px;
                 height: 10px;
                 background: rgba(255, 255, 255, 0.2);
-                border-radius: 5px;
                 overflow: hidden;
             }
 
             .progress-fill {
                 width: 0%;
                 height: 100%;
-                background: #00f2ff;
+                background: #ffffff;
                 transition: width 0.1s;
             }
 
@@ -163,11 +162,15 @@ See LICENSE and COMMERCIAL.md for details.
                 );
                 let total = 0;
                 let loaded = 0;
+                const startTime = performance.now();
 
                 responses.forEach((res) => {
-                    const contentLength = res.headers.get("Content-Length");
-                    if (contentLength) {
-                        total += parseInt(contentLength, 10);
+                    const contentLength =
+                        res.headers.get("x-wasm-content-length") ||
+                        res.headers.get("Content-Length");
+                    const parsedLength = Number(contentLength);
+                    if (Number.isFinite(parsedLength) && parsedLength > 0) {
+                        total += parsedLength;
                     }
                 });
 
@@ -185,7 +188,38 @@ See LICENSE and COMMERCIAL.md for details.
                                         Math.round((loaded / total) * 100),
                                     );
                                     progressBar.style.width = `${percent}%`;
-                                    loadingText.textContent = `loading... ${percent}%`;
+
+                                    const loadedMB = (
+                                        loaded /
+                                        (1024 * 1024)
+                                    ).toFixed(1);
+                                    const totalMB = (
+                                        total /
+                                        (1024 * 1024)
+                                    ).toFixed(1);
+                                    const elapsed =
+                                        (performance.now() - startTime) / 1000;
+                                    let timeText = "";
+                                    if (elapsed > 0.5 && loaded > 0) {
+                                        const speed = loaded / elapsed;
+                                        const remaining = Math.max(
+                                            0,
+                                            (total - loaded) / speed,
+                                        );
+                                        if (
+                                            Number.isFinite(remaining) &&
+                                            remaining > 0
+                                        ) {
+                                            timeText = ` (${Math.ceil(remaining)}s left)`;
+                                        }
+                                    }
+                                    loadingText.textContent = `loading... ${loadedMB}/${totalMB} MB${timeText}`;
+                                } else {
+                                    const loadedMB = (
+                                        loaded /
+                                        (1024 * 1024)
+                                    ).toFixed(1);
+                                    loadingText.textContent = `loading... ${loadedMB} MB`;
                                 }
                                 controller.enqueue(value);
                             }
