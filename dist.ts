@@ -39,11 +39,20 @@ fs.cpSync(assetsSrcPath, assetsDestPath, { recursive: true });
 fs.writeFileSync(path.join(distPath, ".nojekyll"), "");
 
 // Add _headers file to dist
+let wasmSize = 0;
+const wasmPath = path.join(distPath, "pkg", "egakareta_lib_bg.wasm");
+if (fs.existsSync(wasmPath)) {
+    wasmSize = fs.statSync(wasmPath).size;
+}
+
 const headersContent = `
 /*
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: require-corp
   Cross-Origin-Resource-Policy: same-site
+
+/pkg/egakareta_lib_bg.wasm
+  x-wasm-content-length: ${wasmSize}
 `;
 fs.writeFileSync(path.join(distPath, "_headers"), headersContent.trim());
 
