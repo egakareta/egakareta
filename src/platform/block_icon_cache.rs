@@ -128,6 +128,7 @@ fn block_icon_signature(block: &BlockDefinition) -> u64 {
     block.assets.mesh.hash(&mut hasher);
     block.assets.icon.hash(&mut hasher);
     render_profile_tag(&block.render.profile).hash(&mut hasher);
+    block.render.icon_dimetric_projection.hash(&mut hasher);
     for value in block.render.color_top {
         value.to_bits().hash(&mut hasher);
     }
@@ -209,6 +210,14 @@ mod tests {
         assert_ne!(
             block_icon_signature(&block),
             block_icon_signature(&with_mesh_change)
+        );
+
+        let mut with_projection_change = block.clone();
+        with_projection_change.render.icon_dimetric_projection =
+            !block.render.icon_dimetric_projection;
+        assert_ne!(
+            block_icon_signature(&block),
+            block_icon_signature(&with_projection_change)
         );
     }
 

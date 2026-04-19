@@ -6,6 +6,7 @@
     },
     "render": {
         "profile": "speed_portal",
+        "icon_dimetric_projection": false,
         "color_top": [1.0, 1.0, 0.0, 1.0]
     },
     "behavior": {

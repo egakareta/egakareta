@@ -1690,6 +1690,36 @@ mod tests {
     }
 
     #[test]
+    fn show_editor_ui_renders_marquee_selection() {
+        pollster::block_on(async {
+            let Some(mut state) = crate::State::try_new_test().await else {
+                return;
+            };
+
+            state.toggle_editor();
+            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
+
+            // Inject a marquee drag large enough to be considered active.
+            state.process_input_event(crate::commands::InputEvent::MouseButton {
+                button: 1, // Left click
+                pressed: true,
+            });
+            state.process_input_event(crate::commands::InputEvent::PointerMoved {
+                x: 10.0,
+                y: 10.0,
+            });
+            state.process_input_event(crate::commands::InputEvent::PointerMoved {
+                x: 100.0,
+                y: 100.0,
+            });
+
+            run_editor_ui_once(&mut state);
+
+            // If we successfully run the UI loop without panicking, the marquee rendering path is covered.
+        });
+    }
+
+    #[test]
     fn show_editor_ui_composes_timing_compose_and_trigger_modes() {
         pollster::block_on(async {
             let Some(mut state) = crate::State::try_new_test().await else {
