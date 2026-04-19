@@ -8,7 +8,7 @@
 use std::sync::mpsc::Sender;
 
 use crate::platform::io::{
-    log_platform_error, pick_audio_file, save_audio_to_storage, save_level_export,
+    log_platform_error, pick_audio_file, pick_level_file, save_audio_to_storage, save_level_export,
 };
 use crate::platform::task::spawn_background;
 
@@ -30,11 +30,28 @@ async fn save_audio_to_storage_for_import(filename: &str, bytes: &[u8]) -> Resul
     save_audio_to_storage(filename, bytes).await
 }
 
+async fn pick_level_file_for_import() -> Option<Vec<u8>> {
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    if let Some(result) = test_hooks::pick_level_result() {
+        return result;
+    }
+
+    pick_level_file().await
+}
+
 pub fn trigger_audio_import(sender: Sender<(String, Vec<u8>)>) {
     spawn_background(async move {
         if let Some((filename, bytes)) = pick_audio_file_for_import().await {
             let _ = save_audio_to_storage_for_import(&filename, &bytes).await;
             let _ = sender.send((filename, bytes));
+        }
+    });
+}
+
+pub fn trigger_level_import(sender: Sender<Vec<u8>>) {
+    spawn_background(async move {
+        if let Some(bytes) = pick_level_file_for_import().await {
+            let _ = sender.send(bytes);
         }
     });
 }
@@ -52,6 +69,7 @@ mod test_hooks {
     #[derive(Clone, Default)]
     pub(crate) struct ServiceHooks {
         pub(crate) pick_audio_result: Option<Option<(String, Vec<u8>)>>,
+        pub(crate) pick_level_result: Option<Option<Vec<u8>>>,
         pub(crate) save_audio_result: Option<Result<(), String>>,
     }
 
@@ -78,6 +96,10 @@ mod test_hooks {
     pub(crate) fn save_audio_result() -> Option<Result<(), String>> {
         with_hooks_mut(|hooks| hooks.save_audio_result.clone())
     }
+
+    pub(crate) fn pick_level_result() -> Option<Option<Vec<u8>>> {
+        with_hooks_mut(|hooks| hooks.pick_level_result.clone())
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -88,7 +110,7 @@ mod tests {
 
     use web_time::Duration;
 
-    use super::{test_hooks, trigger_audio_import, trigger_level_export};
+    use super::{test_hooks, trigger_audio_import, trigger_level_export, trigger_level_import};
 
     fn shared_test_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -146,6 +168,46 @@ mod tests {
 
         let (sender, receiver) = mpsc::channel();
         trigger_audio_import(sender);
+
+        let received = receiver.recv_timeout(Duration::from_millis(150));
+        assert!(
+            received.is_err(),
+            "no selection should produce no import event"
+        );
+    }
+
+    #[test]
+    fn trigger_level_import_forwards_selected_level_bytes() {
+        let _lock = shared_test_lock()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let _reset_guard = HookResetGuard::new();
+        let expected_bytes = vec![0xEE, 0x47, 0x5A];
+        test_hooks::with_hooks_mut(|hooks| {
+            hooks.pick_level_result = Some(Some(expected_bytes.clone()));
+        });
+
+        let (sender, receiver) = mpsc::channel();
+        trigger_level_import(sender);
+
+        let received = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("import should send selected level bytes");
+        assert_eq!(received, expected_bytes);
+    }
+
+    #[test]
+    fn trigger_level_import_sends_nothing_when_picker_returns_none() {
+        let _lock = shared_test_lock()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let _reset_guard = HookResetGuard::new();
+        test_hooks::with_hooks_mut(|hooks| {
+            hooks.pick_level_result = Some(None);
+        });
+
+        let (sender, receiver) = mpsc::channel();
+        trigger_level_import(sender);
 
         let received = receiver.recv_timeout(Duration::from_millis(150));
         assert!(

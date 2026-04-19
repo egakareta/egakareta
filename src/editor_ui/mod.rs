@@ -489,7 +489,7 @@ pub fn show_editor_ui(
                 ))
                 .clicked()
             {
-                commands.push(crate::commands::AppCommand::EditorSetShowImport(true));
+                commands.push(crate::commands::AppCommand::EditorCompleteImport);
             }
 
             if ui
@@ -567,32 +567,6 @@ pub fn show_editor_ui(
                 }
             },
         );
-    }
-
-    if view.show_import {
-        egui::Window::new("Import Level").show(ctx, |ui| {
-            ui.label("Paste level JSON or Base64 egz below:");
-            let mut text = view.import_text.to_string();
-            if ui
-                .add(
-                    egui::TextEdit::multiline(&mut text)
-                        .desired_width(f32::INFINITY)
-                        .font(egui::TextStyle::Monospace),
-                )
-                .changed()
-            {
-                commands.push(crate::commands::AppCommand::EditorSetImportText(text));
-            }
-
-            ui.horizontal(|ui| {
-                if ui.button("Import").clicked() {
-                    commands.push(crate::commands::AppCommand::EditorCompleteImport);
-                }
-                if ui.button("Cancel").clicked() {
-                    commands.push(crate::commands::AppCommand::EditorSetShowImport(false));
-                }
-            });
-        });
     }
 
     egui::TopBottomPanel::bottom("block_selection_bar")
@@ -1336,7 +1310,6 @@ mod tests {
                 SettingsSection::Backends,
             ));
             state.dispatch(AppCommand::EditorSetShowMetadata(true));
-            state.dispatch(AppCommand::EditorSetShowImport(true));
             state.dispatch(AppCommand::EditorTogglePerfOverlay);
             run_editor_ui_once(&mut state);
 
@@ -1344,7 +1317,6 @@ mod tests {
             assert!(state.editor_show_settings());
             assert_eq!(state.editor_settings_section(), SettingsSection::Backends);
             assert!(state.editor_show_metadata());
-            assert!(state.editor_show_import());
             assert!(state.editor_perf_overlay_enabled());
 
             state.dispatch(AppCommand::EditorSetMode(EditorMode::Place));
