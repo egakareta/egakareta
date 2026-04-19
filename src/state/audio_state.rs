@@ -10,10 +10,12 @@ use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{Receiver, Sender};
 
 use super::State;
-use crate::platform::services::trigger_audio_import;
+use crate::platform::io::log_platform_error;
+use crate::platform::services::{trigger_audio_import, trigger_level_import};
 use crate::types::LevelMetadata;
 
 pub(crate) type AudioImportData = (String, Vec<u8>);
+pub(crate) type LevelImportData = Vec<u8>;
 pub(crate) type RuntimeAudioPreloadData = crate::audio_service::AudioPreloadResult;
 pub(crate) type WaveformLoadData = crate::audio_service::WaveformResult;
 
@@ -31,6 +33,7 @@ pub(crate) struct RuntimeAudioPreloadState {
 pub(crate) struct EditorAudioState {
     pub(crate) local_audio_cache: HashMap<String, Vec<u8>>,
     pub(crate) audio_import_channel: (Sender<AudioImportData>, Receiver<AudioImportData>),
+    pub(crate) level_import_channel: (Sender<LevelImportData>, Receiver<LevelImportData>),
     pub(crate) waveform_load_channel: (Sender<WaveformLoadData>, Receiver<WaveformLoadData>),
     pub(crate) waveform_cache: HashMap<String, (Vec<f32>, u32)>,
     pub(crate) waveform_loading_source: Option<String>,
@@ -60,6 +63,7 @@ impl AudioState {
             editor: EditorAudioState {
                 local_audio_cache,
                 audio_import_channel: std::sync::mpsc::channel(),
+                level_import_channel: std::sync::mpsc::channel(),
                 waveform_load_channel: std::sync::mpsc::channel(),
                 waveform_cache: HashMap::new(),
                 waveform_loading_source: None,
@@ -223,6 +227,10 @@ impl State {
         trigger_audio_import(self.audio.state.editor.audio_import_channel.0.clone());
     }
 
+    pub(crate) fn trigger_level_import(&self) {
+        trigger_level_import(self.audio.state.editor.level_import_channel.0.clone());
+    }
+
     pub(crate) fn update_audio_imports(&mut self) {
         while let Ok((filename, bytes)) = self.audio.state.editor.audio_import_channel.1.try_recv()
         {
@@ -242,6 +250,23 @@ impl State {
             self.audio.state.editor.waveform_cache.remove(&source_key);
             self.audio.state.editor.waveform_loading_source = None;
             self.load_waveform_for_current_audio();
+        }
+    }
+
+    pub(crate) fn update_level_imports(&mut self) {
+        while let Ok(bytes) = self.audio.state.editor.level_import_channel.1.try_recv() {
+            if self.import_level_egz(&bytes).is_ok() {
+                self.session.editor_show_import = false;
+                self.session.editor_import_text.clear();
+                continue;
+            }
+
+            if let Err(error) = self.import_level(&bytes) {
+                log_platform_error(&format!("Binary import failed: {}", error));
+            } else {
+                self.session.editor_show_import = false;
+                self.session.editor_import_text.clear();
+            }
         }
     }
 

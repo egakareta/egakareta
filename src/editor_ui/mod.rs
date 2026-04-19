@@ -168,6 +168,7 @@ pub fn show_editor_ui(
     }
 
     let view = state.editor_ui_view_model();
+    let _ = (view.show_import, view.import_text);
     let mut commands = Vec::<AppCommand>::new();
 
     let mode = view.mode;
@@ -489,7 +490,7 @@ pub fn show_editor_ui(
                 ))
                 .clicked()
             {
-                commands.push(crate::commands::AppCommand::EditorSetShowImport(true));
+                commands.push(crate::commands::AppCommand::EditorCompleteImport);
             }
 
             if ui
@@ -567,32 +568,6 @@ pub fn show_editor_ui(
                 }
             },
         );
-    }
-
-    if view.show_import {
-        egui::Window::new("Import Level").show(ctx, |ui| {
-            ui.label("Paste level JSON or Base64 egz below:");
-            let mut text = view.import_text.to_string();
-            if ui
-                .add(
-                    egui::TextEdit::multiline(&mut text)
-                        .desired_width(f32::INFINITY)
-                        .font(egui::TextStyle::Monospace),
-                )
-                .changed()
-            {
-                commands.push(crate::commands::AppCommand::EditorSetImportText(text));
-            }
-
-            ui.horizontal(|ui| {
-                if ui.button("Import").clicked() {
-                    commands.push(crate::commands::AppCommand::EditorCompleteImport);
-                }
-                if ui.button("Cancel").clicked() {
-                    commands.push(crate::commands::AppCommand::EditorSetShowImport(false));
-                }
-            });
-        });
     }
 
     egui::TopBottomPanel::bottom("block_selection_bar")

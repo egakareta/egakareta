@@ -371,6 +371,7 @@ impl State {
     pub fn update(&mut self) {
         self.editor.perf.profiler.begin_frame();
         self.update_audio_imports();
+        self.update_level_imports();
         self.update_runtime_audio_preloads();
         self.update_waveform_loading();
         const FIXED_DT: f32 = 1.0 / 120.0;

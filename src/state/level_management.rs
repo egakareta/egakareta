@@ -22,7 +22,6 @@ use crate::platform::services::trigger_level_export;
 use crate::types::{
     AppPhase, AppSettings, EditorMode, KeyChord, LevelMetadata, MusicMetadata, SettingsSection,
 };
-use base64::Engine as _;
 
 impl State {
     pub(super) fn start_level(&mut self, index: usize) {
@@ -506,40 +505,16 @@ impl State {
         trigger_level_export(&filename, obj.as_bytes());
     }
 
-    /// Finalizes the level import process by decoding and parsing the current import text.
-    ///
-    /// The input text is expected to be Base64-encoded `.egz` or binary metadata bytes.
+    /// Triggers the level import file picker and starts async import when a file is selected.
     pub fn complete_import(&mut self) {
-        let text = self.session.editor_import_text.clone();
-        let data = match base64::engine::general_purpose::STANDARD.decode(text.trim()) {
-            Ok(data) => data,
-            Err(error) => {
-                log_platform_error(&format!(
-                    "Binary import expects Base64 input (.egz or binary metadata): {}",
-                    error
-                ));
-                return;
-            }
-        };
-
-        if self.import_level_egz(&data).is_ok() {
-            self.session.editor_show_import = false;
-            self.session.editor_import_text.clear();
-            return;
-        }
-
-        if let Err(error) = self.import_level(&data) {
-            log_platform_error(&format!("Binary import failed: {}", error));
-        } else {
-            self.session.editor_show_import = false;
-            self.session.editor_import_text.clear();
-        }
+        self.trigger_level_import();
+        self.session.editor_show_import = false;
+        self.session.editor_import_text.clear();
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use base64::Engine as _;
     use std::fs;
 
     use super::State;
@@ -778,24 +753,13 @@ mod tests {
     }
 
     #[test]
-    fn complete_import_handles_invalid_and_valid_binary_payloads() {
+    fn complete_import_closes_import_dialog_and_clears_text() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
             state.enter_editor_phase("ImportFlow".to_string());
 
             state.set_editor_show_import(true);
             state.set_editor_import_text("%%%not-base64%%%".to_string());
-            state.complete_import();
-            assert!(state.editor_show_import());
-            assert_eq!(state.editor_import_text(), "%%%not-base64%%%");
-
-            let payload = state
-                .export_level()
-                .expect("binary export should succeed for import test");
-            let encoded = base64::engine::general_purpose::STANDARD.encode(payload);
-
-            state.set_editor_show_import(true);
-            state.set_editor_import_text(encoded);
             state.complete_import();
             assert!(!state.editor_show_import());
             assert_eq!(state.editor_import_text(), "");
@@ -983,12 +947,6 @@ mod tests {
 
             let complete_import: fn(&mut State) = State::complete_import;
             set_import_text(&mut state, "%%%".to_string());
-            state.set_editor_show_import(true);
-            complete_import(&mut state);
-            assert!(state.editor_show_import());
-
-            let encoded = base64::engine::general_purpose::STANDARD.encode(egz_bytes);
-            set_import_text(&mut state, encoded);
             state.set_editor_show_import(true);
             complete_import(&mut state);
             assert!(!state.editor_show_import());
