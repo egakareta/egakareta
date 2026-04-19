@@ -1267,6 +1267,14 @@ mod tests {
         let p = marquee_screen_pos_to_egui_pos([300.0, 180.0], f32::NAN);
         assert!(approx_eq(p.x, 300.0, 0.001));
         assert!(approx_eq(p.y, 180.0, 0.001));
+
+        let p = marquee_screen_pos_to_egui_pos([300.0, 180.0], 0.0);
+        assert!(approx_eq(p.x, 300.0, 0.001));
+        assert!(approx_eq(p.y, 180.0, 0.001));
+
+        let p = marquee_screen_pos_to_egui_pos([300.0, 180.0], -2.0);
+        assert!(approx_eq(p.x, 300.0, 0.001));
+        assert!(approx_eq(p.y, 180.0, 0.001));
     }
 
     #[test]
