@@ -487,12 +487,15 @@ impl State {
 
     pub(crate) fn update_level_imports(&mut self) {
         while let Ok(bytes) = self.session.editor_level_import_channel.1.try_recv() {
-            if self.import_level_egz(&bytes).is_ok() {
-                continue;
-            }
-
-            if let Err(error) = self.import_level(&bytes) {
-                log_platform_error(&format!("Binary import failed: {}", error));
+            match self.import_level_egz(&bytes) {
+                Ok(()) => continue,
+                Err(egz_error) => {
+                    if let Err(binary_error) = self.import_level(&bytes) {
+                        log_platform_error(&format!(
+                            "Level import failed (.egz parse error: {egz_error}; binary parse error: {binary_error})"
+                        ));
+                    }
+                }
             }
         }
     }
@@ -737,15 +740,6 @@ mod tests {
     }
 
     #[test]
-    fn complete_import_triggers_picker_path_without_panicking() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.enter_editor_phase("ImportFlow".to_string());
-            state.complete_import();
-        });
-    }
-
-    #[test]
     fn start_level_and_restart_level_initialize_playing_session_state() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
@@ -920,9 +914,33 @@ mod tests {
             state.editor.ui.selected_block_index = Some(0);
             state.editor.ui.selected_block_indices = vec![0];
             trigger_obj_export(&state);
+        });
+    }
 
-            let complete_import: fn(&mut State) = State::complete_import;
-            complete_import(&mut state);
+    #[test]
+    fn update_level_imports_applies_egz_payload_from_channel() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.enter_editor_phase("QueuedImport".to_string());
+            state.set_editor_level_name("QueuedImportSource".to_string());
+
+            let bytes = state
+                .export_level_egz()
+                .expect("egz export should succeed for queued import");
+            state.set_editor_level_name("MutatedAfterQueue".to_string());
+            state
+                .session
+                .editor_level_import_channel
+                .0
+                .send(bytes)
+                .expect("channel send should succeed");
+
+            state.update_level_imports();
+
+            assert_eq!(
+                state.editor_level_name().as_deref(),
+                Some("QueuedImportSource")
+            );
         });
     }
 }
