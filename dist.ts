@@ -43,6 +43,8 @@ let wasmSize = 0;
 const wasmPath = path.join(distPath, "pkg", "egakareta_lib_bg.wasm");
 if (fs.existsSync(wasmPath)) {
     wasmSize = fs.statSync(wasmPath).size;
+} else {
+    console.warn(`Missing WASM artifact at ${wasmPath}`);
 }
 
 const headersContent = `

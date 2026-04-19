@@ -168,8 +168,9 @@ See LICENSE and COMMERCIAL.md for details.
                     const contentLength =
                         res.headers.get("x-wasm-content-length") ||
                         res.headers.get("Content-Length");
-                    if (contentLength) {
-                        total += parseInt(contentLength, 10);
+                    const parsedLength = Number(contentLength);
+                    if (Number.isFinite(parsedLength) && parsedLength > 0) {
+                        total += parsedLength;
                     }
                 });
 
@@ -187,7 +188,6 @@ See LICENSE and COMMERCIAL.md for details.
                                         Math.round((loaded / total) * 100),
                                     );
                                     progressBar.style.width = `${percent}%`;
-                                    loadingText.textContent = `loading... ${percent}%`;
 
                                     const loadedMB = (
                                         loaded /
@@ -202,9 +202,16 @@ See LICENSE and COMMERCIAL.md for details.
                                     let timeText = "";
                                     if (elapsed > 0.5 && loaded > 0) {
                                         const speed = loaded / elapsed;
-                                        const remaining =
-                                            (total - loaded) / speed;
-                                        timeText = ` (${Math.ceil(remaining)}s left)`;
+                                        const remaining = Math.max(
+                                            0,
+                                            (total - loaded) / speed,
+                                        );
+                                        if (
+                                            Number.isFinite(remaining) &&
+                                            remaining > 0
+                                        ) {
+                                            timeText = ` (${Math.ceil(remaining)}s left)`;
+                                        }
                                     }
                                     loadingText.textContent = `loading... ${loadedMB}/${totalMB} MB${timeText}`;
                                 } else {
