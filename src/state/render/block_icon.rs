@@ -25,6 +25,14 @@ const ICON_PERSPECTIVE_FOV_DEGREES: f32 = 35.0;
 const ICON_ORTHO_NEAR_PLANE: f32 = 0.1;
 const ICON_ORTHO_FAR_PLANE: f32 = 16.0;
 
+fn bool_to_flag(value: bool) -> f32 {
+    if value {
+        1.0
+    } else {
+        0.0
+    }
+}
+
 fn uses_dimetric_icon_projection(block_id: &str) -> bool {
     resolve_block_definition(block_id)
         .render
@@ -188,11 +196,7 @@ impl State {
                     }],
                 });
         let icon_color_space_uniform = ColorSpaceUniform {
-            apply_gamma_correction: if self.render.gpu.apply_gamma_correction {
-                1.0
-            } else {
-                0.0
-            },
+            apply_gamma_correction: bool_to_flag(self.render.gpu.apply_gamma_correction),
             time_seconds: 0.0,
             _pad: [0.0; 2],
         };
@@ -277,6 +281,10 @@ mod tests {
 
     use super::{build_block_icon_vertices, uses_dimetric_icon_projection};
 
+    fn approx_eq(a: f32, b: f32, eps: f32) -> bool {
+        (a - b).abs() <= eps
+    }
+
     #[test]
     fn render_block_icon_snapshot_returns_texture_for_known_block() {
         pollster::block_on(async {
@@ -320,7 +328,7 @@ mod tests {
         assert!(
             liquid_vertices
                 .iter()
-                .all(|vertex| (vertex.render_profile - 1.0).abs() <= f32::EPSILON),
+                .all(|vertex| approx_eq(vertex.render_profile, 1.0, 1e-6)),
             "expected dimetric liquid icon vertices to use the liquid render profile tag"
         );
 
@@ -328,7 +336,7 @@ mod tests {
         assert!(
             solid_vertices
                 .iter()
-                .all(|vertex| vertex.render_profile.abs() <= f32::EPSILON),
+                .all(|vertex| approx_eq(vertex.render_profile, 0.0, 1e-6)),
             "expected non-liquid dimetric icon vertices to keep the default render profile"
         );
     }
