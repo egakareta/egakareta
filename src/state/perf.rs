@@ -8,7 +8,7 @@
 use std::collections::VecDeque;
 
 pub(crate) const PERF_FRAME_BUDGET_60_FPS_MS: f32 = 16.7;
-const PERF_FRAME_HISTORY_CAPACITY: usize = 1200;
+const PERF_FRAME_HISTORY_CAPACITY: usize = 3600;
 pub(crate) const PERF_HISTOGRAM_ZOOM_MIN: f32 = 0.2;
 pub(crate) const PERF_HISTOGRAM_ZOOM_MAX: f32 = 12.0;
 
