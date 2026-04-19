@@ -54,6 +54,21 @@ impl EditorSubsystem {
             || self.ui.selected_block_index == Some(index)
     }
 
+    pub(crate) fn selected_mask_for_len(&self, len: usize) -> Vec<bool> {
+        let mut selected_mask = vec![false; len];
+        for index in self.ui.selected_block_indices.iter().copied() {
+            if index < len {
+                selected_mask[index] = true;
+            }
+        }
+        if let Some(index) = self.ui.selected_block_index {
+            if index < len {
+                selected_mask[index] = true;
+            }
+        }
+        selected_mask
+    }
+
     pub(crate) fn selected_group_bounds(&self) -> Option<([f32; 3], [f32; 3])> {
         let indices = self.selected_indices_normalized();
         let first = *indices.first()?;
@@ -91,10 +106,6 @@ impl State {
 
     pub(super) fn sync_primary_selection_from_indices(&mut self) {
         self.editor.sync_primary_selection_from_indices();
-    }
-
-    pub(super) fn selection_contains(&self, index: usize) -> bool {
-        self.editor.selection_contains(index)
     }
 
     pub(super) fn selected_group_bounds(&self) -> Option<([f32; 3], [f32; 3])> {
