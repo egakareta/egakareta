@@ -8,12 +8,55 @@
 use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
 
+use crate::block_repository::{resolve_block_definition, resolve_block_texture_layers};
 use crate::mesh::build_block_vertices;
-use crate::types::{CameraUniform, LevelObject};
+use crate::mesh::shapes::{append_prism_with_layers, PrismFaceColors, PrismTextureLayers};
+use crate::types::{CameraUniform, LevelObject, Vertex};
 
 use super::super::State;
 
-const ICON_FOV_DEGREES: f32 = 35.0;
+const ICON_DIMETRIC_YAW_DEGREES: f32 = 45.0;
+const ICON_DIMETRIC_PITCH_DEGREES: f32 = 30.0;
+const ICON_CAMERA_DISTANCE: f32 = 4.0;
+const ICON_ORTHO_HALF_EXTENT: f32 = 0.9;
+const ICON_PERSPECTIVE_FOV_DEGREES: f32 = 35.0;
+const ICON_ORTHO_NEAR_PLANE: f32 = 0.1;
+const ICON_ORTHO_FAR_PLANE: f32 = 16.0;
+
+fn uses_dimetric_icon_projection(block_id: &str) -> bool {
+    resolve_block_definition(block_id)
+        .render
+        .icon_dimetric_projection
+}
+
+fn build_block_icon_vertices(block_id: &str, dimetric: bool) -> Vec<Vertex> {
+    if !dimetric {
+        let block = LevelObject {
+            block_id: block_id.to_string(),
+            ..LevelObject::default()
+        };
+        return build_block_vertices(std::slice::from_ref(&block));
+    }
+
+    let block = resolve_block_definition(block_id);
+    let layers = resolve_block_texture_layers(block_id);
+    let colors = PrismFaceColors::new_with_outline(
+        block.render.color_top,
+        block.render.color_side,
+        block.render.color_bottom,
+        block.render.color_outline,
+    );
+
+    let mut vertices = Vec::with_capacity(36);
+    append_prism_with_layers(
+        &mut vertices,
+        [0.0, 0.0, 0.0],
+        [1.0, 1.0, 1.0],
+        colors,
+        PrismTextureLayers::new(layers.top, layers.side, layers.bottom),
+    );
+    vertices
+}
 
 impl State {
     /// Renders a single block to an offscreen texture for use as an editor icon.
@@ -23,11 +66,8 @@ impl State {
         size: u32,
     ) -> Option<wgpu::Texture> {
         let safe_size = size.max(1);
-        let block = LevelObject {
-            block_id: block_id.to_string(),
-            ..LevelObject::default()
-        };
-        let vertices = build_block_vertices(std::slice::from_ref(&block));
+        let dimetric = uses_dimetric_icon_projection(block_id);
+        let vertices = build_block_icon_vertices(block_id, dimetric);
         if vertices.is_empty() {
             return None;
         }
@@ -83,11 +123,35 @@ impl State {
             });
         let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let eye = Vec3::new(2.0, 2.0, 2.0);
         let target = Vec3::new(0.5, 0.5, 0.5);
         let up = Vec3::Y;
+        let (eye, proj) = if dimetric {
+            let yaw = ICON_DIMETRIC_YAW_DEGREES.to_radians();
+            let pitch = ICON_DIMETRIC_PITCH_DEGREES.to_radians();
+            let camera_direction = Vec3::new(
+                pitch.cos() * yaw.cos(),
+                pitch.sin(),
+                pitch.cos() * yaw.sin(),
+            )
+            .normalize();
+            (
+                target + (camera_direction * ICON_CAMERA_DISTANCE),
+                Mat4::orthographic_rh(
+                    -ICON_ORTHO_HALF_EXTENT,
+                    ICON_ORTHO_HALF_EXTENT,
+                    -ICON_ORTHO_HALF_EXTENT,
+                    ICON_ORTHO_HALF_EXTENT,
+                    ICON_ORTHO_NEAR_PLANE,
+                    ICON_ORTHO_FAR_PLANE,
+                ),
+            )
+        } else {
+            (
+                Vec3::new(2.0, 2.0, 2.0),
+                Mat4::perspective_rh_gl(ICON_PERSPECTIVE_FOV_DEGREES.to_radians(), 1.0, 0.1, 100.0),
+            )
+        };
         let view = Mat4::look_at_rh(eye, target, up);
-        let proj = Mat4::perspective_rh_gl(ICON_FOV_DEGREES.to_radians(), 1.0, 0.1, 100.0);
         let view_proj = proj * view;
         let camera_uniform = CameraUniform {
             view_proj: view_proj.to_cols_array_2d(),
@@ -171,6 +235,8 @@ impl State {
 mod tests {
     use crate::State;
 
+    use super::uses_dimetric_icon_projection;
+
     #[test]
     fn render_block_icon_snapshot_returns_texture_for_known_block() {
         pollster::block_on(async {
@@ -195,5 +261,12 @@ mod tests {
             assert_eq!(size.width, 1);
             assert_eq!(size.height, 1);
         });
+    }
+
+    #[test]
+    fn dimetric_projection_configuration_is_read_from_block_render_json() {
+        assert!(uses_dimetric_icon_projection("core/stone"));
+        assert!(!uses_dimetric_icon_projection("core/finish"));
+        assert!(!uses_dimetric_icon_projection("core/speedportal"));
     }
 }

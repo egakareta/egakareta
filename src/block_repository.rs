@@ -78,6 +78,10 @@ fn default_noise() -> f32 {
     0.0
 }
 
+fn default_icon_dimetric_projection() -> bool {
+    true
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct BlockDefinition {
     pub(crate) id: String,
@@ -244,6 +248,8 @@ pub(crate) enum BlockRenderProfile {
 pub(crate) struct BlockRender {
     #[serde(default = "default_render_profile")]
     pub(crate) profile: BlockRenderProfile,
+    #[serde(default = "default_icon_dimetric_projection")]
+    pub(crate) icon_dimetric_projection: bool,
     #[serde(default = "default_color_top")]
     pub(crate) color_top: [f32; 4],
     #[serde(default = "default_color_side")]
@@ -262,6 +268,7 @@ impl Default for BlockRender {
     fn default() -> Self {
         Self {
             profile: default_render_profile(),
+            icon_dimetric_projection: default_icon_dimetric_projection(),
             color_top: default_color_top(),
             color_side: default_color_side(),
             color_bottom: default_color_bottom(),
