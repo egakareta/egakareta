@@ -14,6 +14,16 @@ use crate::mesh::shapes::{append_prism_with_layers, PrismFaceColors, PrismTextur
 use crate::mesh::transforms::rotate_vertices_around_euler;
 use crate::types::{LevelObject, Vertex};
 
+const TORCH_BLOCK_ID: &str = "core/torch";
+const TORCH_LIGHT_RADIUS: f32 = 3.25;
+const TORCH_GLOW_STRENGTH: f32 = 0.48;
+const TORCH_FLICKER_BASE: f32 = 0.85;
+const TORCH_FLICKER_AMPLITUDE: f32 = 0.15;
+const TORCH_FLICKER_FREQUENCY: f32 = 9.0;
+const TORCH_PHASE_OFFSET_X: f32 = 1.37;
+const TORCH_PHASE_OFFSET_Z: f32 = 0.91;
+const TORCH_WARMTH_RGB: [f32; 3] = [1.0, 0.78, 0.42];
+
 pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
     build_block_vertices_from_refs(objects.iter())
 }
@@ -40,9 +50,6 @@ where
     I: IntoIterator<Item = &'a LevelObject>,
 {
     const LIQUID_PROFILE_TAG: f32 = 1.0;
-    const TORCH_BLOCK_ID: &str = "core/torch";
-    const TORCH_LIGHT_RADIUS: f32 = 3.25;
-    const TORCH_GLOW_STRENGTH: f32 = 0.48;
     let mut all_vertices = Vec::new();
     let objects: Vec<&LevelObject> = objects.into_iter().collect();
     let torch_emitters: Vec<([f32; 3], f32)> = objects
@@ -57,8 +64,10 @@ where
                 obj.position[1] + obj.size[1] * 0.5,
                 obj.position[2] + obj.size[2] * 0.5,
             ];
-            let phase_offset = center[0] * 1.37 + center[2] * 0.91;
-            let flicker = 0.85 + 0.15 * (pulse_phase_seconds * 9.0 + phase_offset).sin();
+            let phase_offset = center[0] * TORCH_PHASE_OFFSET_X + center[2] * TORCH_PHASE_OFFSET_Z;
+            let flicker = TORCH_FLICKER_BASE
+                + TORCH_FLICKER_AMPLITUDE
+                    * (pulse_phase_seconds * TORCH_FLICKER_FREQUENCY + phase_offset).sin();
             Some((center, flicker.max(0.0)))
         })
         .collect();
@@ -109,8 +118,9 @@ where
                 let dx = center[0] - torch_center[0];
                 let dy = center[1] - torch_center[1];
                 let dz = center[2] - torch_center[2];
-                let distance = (dx * dx + dy * dy + dz * dz).sqrt();
-                let falloff = (1.0 - distance / TORCH_LIGHT_RADIUS).max(0.0);
+                let distance_sq = dx * dx + dy * dy + dz * dz;
+                let radius_sq = TORCH_LIGHT_RADIUS * TORCH_LIGHT_RADIUS;
+                let falloff = (1.0 - distance_sq / radius_sq).max(0.0);
                 falloff * falloff * *flicker
             })
             .fold(0.0_f32, f32::max);
@@ -171,11 +181,10 @@ where
 }
 
 fn apply_torch_light(color: [f32; 4], strength: f32) -> [f32; 4] {
-    let warmth = [1.0, 0.78, 0.42];
     [
-        (color[0] + warmth[0] * strength).clamp(0.0, 1.0),
-        (color[1] + warmth[1] * strength).clamp(0.0, 1.0),
-        (color[2] + warmth[2] * strength).clamp(0.0, 1.0),
+        (color[0] + TORCH_WARMTH_RGB[0] * strength).clamp(0.0, 1.0),
+        (color[1] + TORCH_WARMTH_RGB[1] * strength).clamp(0.0, 1.0),
+        (color[2] + TORCH_WARMTH_RGB[2] * strength).clamp(0.0, 1.0),
         color[3],
     ]
 }
