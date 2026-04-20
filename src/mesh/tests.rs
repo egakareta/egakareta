@@ -234,6 +234,43 @@ f 1/1/1 2/2/1 3/3/1
     }
 
     #[test]
+    fn torch_lights_up_nearby_block_vertices() {
+        let shadow_block = LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.0,
+            block_id: "core/void".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        };
+        let torch = LevelObject {
+            position: [1.1, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.0,
+            block_id: "core/torch".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        };
+
+        let unlit = build_block_vertices(std::slice::from_ref(&shadow_block));
+        let lit = build_block_vertices(&[shadow_block, torch]);
+        let unlit_block = &unlit[..36];
+        let lit_block = &lit[..36];
+
+        let max_channel = |vertices: &[Vertex]| {
+            vertices
+                .iter()
+                .map(|vertex| vertex.color[0].max(vertex.color[1]).max(vertex.color[2]))
+                .fold(0.0_f32, f32::max)
+        };
+
+        assert!(
+            max_channel(lit_block) > max_channel(unlit_block) + 0.05,
+            "expected torch to brighten nearby block vertex colors"
+        );
+    }
+
+    #[test]
     fn gizmo_rotate_hover_expands_tube_more_than_dragged() {
         let params = GizmoParams {
             position: [0.0, 0.0, 0.0],
