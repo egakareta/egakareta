@@ -33,6 +33,7 @@ pub(crate) enum PerfStage {
     DirtyRebuildTapIndicators,
     DirtyRebuildPreviewPlayer,
     PreviewSolveTimeline,
+    #[allow(dead_code)]
     PreviewMeshBuild,
     DirtyRebuildCursor,
     TimelineSampleRebuild,
@@ -41,7 +42,9 @@ pub(crate) enum PerfStage {
     BlockMeshMaskBuild,
     BlockMeshSplitStatic,
     BlockMeshSplitSelected,
+    #[allow(dead_code)]
     BlockMeshChunkBuild,
+    #[allow(dead_code)]
     BlockMeshChunkUpload,
     BlockMeshIncrementalAppend,
     BlockMeshUploadStatic,
@@ -79,6 +82,7 @@ pub(crate) struct PerfFrameSpanEvent {
     pub(crate) end_ms: f32,
 }
 
+#[allow(dead_code)]
 #[derive(Clone)]
 pub(crate) struct PerfFrameStageEntry {
     pub(crate) stage: PerfStage,

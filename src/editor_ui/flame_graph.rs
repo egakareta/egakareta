@@ -21,18 +21,17 @@ struct FlameSpanLayout {
 }
 
 fn flame_stage_color(stage: crate::state::PerfStage) -> egui::Color32 {
-    match stage {
-        crate::state::PerfStage::DirtyProcess | crate::state::PerfStage::BlockMeshRebuild => {
-            egui::Color32::from_rgb(255, 174, 92)
-        }
-        crate::state::PerfStage::TimelinePlayback | crate::state::PerfStage::TimelineSeek => {
-            egui::Color32::from_rgb(109, 198, 255)
-        }
-        crate::state::PerfStage::SelectionClick
-        | crate::state::PerfStage::SelectionPick
-        | crate::state::PerfStage::SelectionApply => egui::Color32::from_rgb(158, 138, 255),
-        _ => egui::Color32::from_rgb(134, 162, 178),
+    let name = stage.name();
+    let mut hash = 0u64;
+    for b in name.as_bytes() {
+        hash = hash.wrapping_mul(31).wrapping_add(*b as u64);
     }
+
+    let h = (hash % 360) as f32 / 360.0;
+    let s = 0.45 + (hash % 50) as f32 / 250.0; // 0.45 - 0.65
+    let v = 0.65 + (hash % 50) as f32 / 250.0; // 0.65 - 0.85
+
+    egui::ecolor::Hsva::new(h, s, v, 1.0).into()
 }
 
 fn flame_span_label(
