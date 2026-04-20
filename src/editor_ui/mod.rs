@@ -298,8 +298,7 @@ fn show_perf_microprofiler_overlay(
                                     egui::Color32::from_gray(185),
                                 );
                             } else {
-                                let (bar_step, bar_width) =
-                                    perf_histogram_bar_dimensions(view.perf_histogram_zoom);
+                                let (bar_step, bar_width) = perf_histogram_bar_dimensions(1.0);
                                 let visible_bars = ((rect.width() / bar_step).floor() as usize)
                                     .max(1);
                                 let (view_start, view_end) = perf_visible_history_range(
@@ -411,58 +410,105 @@ fn show_perf_microprofiler_overlay(
                                 if response.hovered() {
                                     let scroll_y = ui.input(|input| input.raw_scroll_delta.y);
                                     if scroll_y.abs() > 0.0 {
-                                        let zoom_factor = 1.0 + scroll_y * 0.0025;
-                                        let next_zoom =
-                                            (view.perf_histogram_zoom * zoom_factor).clamp(
-                                                crate::state::PERF_HISTOGRAM_ZOOM_MIN,
-                                                crate::state::PERF_HISTOGRAM_ZOOM_MAX,
-                                            );
-                                        if (next_zoom - view.perf_histogram_zoom).abs() > 1e-4 {
-                                            commands.push(AppCommand::EditorSetPerfHistogramZoom(
-                                                next_zoom,
-                                            ));
+                                        let history_len = history.len();
+                                        if history_len > 0 {
+                                            let last = history_len - 1;
 
-                                            if let Some(pointer) = response.hover_pos() {
-                                                if let Some(anchor_index) = perf_history_index_from_pointer(
-                                                    rect,
-                                                    view_start,
-                                                    visible_bars,
-                                                    history.len(),
-                                                    pointer,
-                                                    bar_step,
-                                                ) {
-                                                    let (new_step, _) =
-                                                        perf_histogram_bar_dimensions(next_zoom);
-                                                    let new_visible =
-                                                        ((rect.width() / new_step).floor()
-                                                            as usize)
-                                                            .max(1);
-                                                    let anchor_ratio = ((pointer.x - rect.left())
-                                                        / rect.width())
-                                                    .clamp(0.0, 0.999_999);
-                                                    let anchor_slot =
-                                                        (anchor_ratio * new_visible as f32).floor()
-                                                            as isize;
-                                                    let new_start =
-                                                        anchor_index as isize - anchor_slot;
-                                                    let new_center =
-                                                        new_start + (new_visible as isize / 2);
-                                                    let max_center =
-                                                        history.len().saturating_sub(1) as isize;
-                                                    let clamped_center =
-                                                        new_center.clamp(0, max_center) as usize;
+                                            // Determine current range
+                                            let (current_start, current_end) = if let Some(range) =
+                                                view.perf_selected_history_range
+                                            {
+                                                (range.0.min(last), range.1.min(last))
+                                            } else if let Some(index) = view.perf_selected_history_index
+                                            {
+                                                let clamped = index.min(last);
+                                                (clamped, clamped)
+                                            } else {
+                                                let center = if view.perf_histogram_follow_latest {
+                                                    last
+                                                } else {
+                                                    view.perf_histogram_focus_index
+                                                        .unwrap_or(last)
+                                                        .min(last)
+                                                };
+                                                let chunk_size = 16.min(history_len).max(1);
+                                                let start = center.saturating_sub(chunk_size / 2);
+                                                let end =
+                                                    (start + chunk_size).saturating_sub(1).min(last);
+                                                (start, end)
+                                            };
 
-                                                    commands.push(
-                                                        AppCommand::EditorSetPerfFollowLatest(
-                                                            false,
-                                                        ),
-                                                    );
-                                                    commands.push(
-                                                        AppCommand::EditorFocusPerfHistogramIndex(
-                                                            clamped_center,
-                                                        ),
-                                                    );
+                                            let current_width =
+                                                current_end.saturating_sub(current_start) + 1;
+
+                                            // Keep one stable anchor frame for zoom operations.
+                                            // This prevents cumulative left/right drift when toggling zoom levels.
+                                            let anchor_index = if let Some(index) =
+                                                view.perf_selected_history_index
+                                            {
+                                                index.min(last)
+                                            } else if let Some(index) =
+                                                view.perf_histogram_focus_index
+                                            {
+                                                index.min(last)
+                                            } else {
+                                                (current_start + current_end) / 2
+                                            };
+
+                                            // Adjust width based on scroll
+                                            // Up (pos) -> smaller width -> Zoom IN
+                                            let zoom_factor = if scroll_y > 0.0 {
+                                                1.0 + scroll_y * 0.005
+                                            } else {
+                                                1.0 / (1.0 - scroll_y * 0.005)
+                                            };
+                                            let next_width =
+                                                (current_width as f32 / zoom_factor)
+                                                    .clamp(1.0, 1024.0);
+                                            let next_width_i = if scroll_y > 0.0 {
+                                                next_width.floor() as usize
+                                            } else {
+                                                next_width.ceil() as usize
+                                            }
+                                            .clamp(1, 1024);
+
+                                            if next_width_i != current_width {
+                                                let left_count = (next_width_i - 1) / 2;
+                                                let right_count = next_width_i - 1 - left_count;
+
+                                                let mut clamped_start =
+                                                    anchor_index.saturating_sub(left_count);
+                                                let mut clamped_end =
+                                                    anchor_index.saturating_add(right_count).min(last);
+
+                                                let clamped_width =
+                                                    clamped_end.saturating_sub(clamped_start) + 1;
+                                                if clamped_width < next_width_i {
+                                                    if clamped_start == 0 {
+                                                        clamped_end = (next_width_i - 1).min(last);
+                                                    } else {
+                                                        clamped_start =
+                                                            last.saturating_add(1).saturating_sub(next_width_i);
+                                                        clamped_end = last;
+                                                    }
                                                 }
+
+                                                commands.push(
+                                                    AppCommand::EditorSetPerfFollowLatest(false),
+                                                );
+                                                commands.push(
+                                                    AppCommand::EditorSelectPerfHistoryRange {
+                                                        start: clamped_start,
+                                                        end: clamped_end,
+                                                    },
+                                                );
+
+                                                // Keep viewport centered on the same stable anchor.
+                                                commands.push(
+                                                    AppCommand::EditorFocusPerfHistogramIndex(
+                                                        anchor_index,
+                                                    ),
+                                                );
                                             }
                                         }
                                     }

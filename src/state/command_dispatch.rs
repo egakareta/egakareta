@@ -133,9 +133,6 @@ impl State {
             AppCommand::EditorSelectPerfHistoryIndex(index) => {
                 self.select_editor_perf_history_index(index)
             }
-            AppCommand::EditorSetPerfHistogramZoom(zoom) => {
-                self.set_editor_perf_histogram_zoom(zoom)
-            }
             AppCommand::EditorPanPerfHistogram(delta) => self.pan_editor_perf_histogram(delta),
             AppCommand::EditorFocusPerfHistogramIndex(index) => {
                 self.focus_editor_perf_histogram_index(index)

@@ -11,8 +11,6 @@ use crate::platform::state_host::PlatformInstant;
 
 pub(crate) const PERF_FRAME_BUDGET_60_FPS_MS: f32 = 16.7;
 const PERF_FRAME_HISTORY_CAPACITY: usize = 10_000;
-pub(crate) const PERF_HISTOGRAM_ZOOM_MIN: f32 = 0.2;
-pub(crate) const PERF_HISTOGRAM_ZOOM_MAX: f32 = 12.0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PerfStage {
@@ -214,7 +212,6 @@ pub(crate) struct EditorPerfProfiler {
     next_frame_index: u64,
     selected_history_index: Option<usize>,
     selected_history_range: Option<(usize, usize)>,
-    histogram_zoom: f32,
     histogram_follow_latest: bool,
     histogram_focus_index: Option<usize>,
 }
@@ -234,7 +231,6 @@ impl EditorPerfProfiler {
             next_frame_index: 0,
             selected_history_index: None,
             selected_history_range: None,
-            histogram_zoom: 1.0,
             histogram_follow_latest: true,
             histogram_focus_index: None,
         }
@@ -419,19 +415,6 @@ impl EditorPerfProfiler {
         self.histogram_focus_index = Some(center);
     }
 
-    pub(crate) fn histogram_zoom(&self) -> f32 {
-        self.histogram_zoom
-    }
-
-    pub(crate) fn set_histogram_zoom(&mut self, zoom: f32) {
-        let next_zoom = if zoom.is_finite() {
-            zoom.clamp(PERF_HISTOGRAM_ZOOM_MIN, PERF_HISTOGRAM_ZOOM_MAX)
-        } else {
-            1.0
-        };
-        self.histogram_zoom = next_zoom;
-    }
-
     pub(crate) fn histogram_follow_latest(&self) -> bool {
         self.histogram_follow_latest
     }
@@ -598,7 +581,7 @@ mod tests {
 
     use super::{
         EditorPerfProfiler, PerfStage, PerfStat, PERF_FRAME_BUDGET_60_FPS_MS,
-        PERF_FRAME_HISTORY_CAPACITY, PERF_HISTOGRAM_ZOOM_MAX, PERF_HISTOGRAM_ZOOM_MIN,
+        PERF_FRAME_HISTORY_CAPACITY,
     };
 
     fn approx_eq(left: f32, right: f32, eps: f32) {
@@ -842,19 +825,13 @@ mod tests {
     }
 
     #[test]
-    fn histogram_zoom_and_pan_are_clamped_and_follow_latest_can_be_disabled() {
+    fn histogram_pan_and_follow_latest_can_be_disabled() {
         let mut profiler = EditorPerfProfiler::new();
         for frame in 0..5 {
             profiler.begin_frame();
             profiler.observe(PerfStage::TimelinePlayback, frame as f32 + 1.0);
             profiler.finish_frame(10.0);
         }
-
-        profiler.set_histogram_zoom(1000.0);
-        approx_eq(profiler.histogram_zoom(), PERF_HISTOGRAM_ZOOM_MAX, 1e-6);
-
-        profiler.set_histogram_zoom(0.001);
-        approx_eq(profiler.histogram_zoom(), PERF_HISTOGRAM_ZOOM_MIN, 1e-6);
 
         assert!(profiler.histogram_follow_latest());
         profiler.pan_histogram(-2);

@@ -335,10 +335,6 @@ impl State {
         self.editor.perf.profiler.set_selected_history_index(index);
     }
 
-    pub(crate) fn set_editor_perf_histogram_zoom(&mut self, zoom: f32) {
-        self.editor.perf.profiler.set_histogram_zoom(zoom);
-    }
-
     pub(crate) fn pan_editor_perf_histogram(&mut self, delta: i32) {
         self.editor.perf.profiler.pan_histogram(delta);
     }
@@ -360,10 +356,6 @@ impl State {
 
     pub(crate) fn editor_perf_selected_history_range(&self) -> Option<(usize, usize)> {
         self.editor.perf.profiler.selected_history_range_indices()
-    }
-
-    pub(crate) fn editor_perf_histogram_zoom(&self) -> f32 {
-        self.editor.perf.profiler.histogram_zoom()
     }
 
     pub(crate) fn editor_perf_histogram_follow_latest(&self) -> bool {

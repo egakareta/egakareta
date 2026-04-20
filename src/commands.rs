@@ -147,8 +147,6 @@ pub(crate) enum AppCommand {
     EditorSelectPerfHistoryRange { start: usize, end: usize },
     /// Select a profiler frame by history index.
     EditorSelectPerfHistoryIndex(usize),
-    /// Set histogram zoom level for profiler frame browsing.
-    EditorSetPerfHistogramZoom(f32),
     /// Pan histogram focus by a signed frame delta.
     EditorPanPerfHistogram(i32),
     /// Focus histogram navigation on a specific history index.

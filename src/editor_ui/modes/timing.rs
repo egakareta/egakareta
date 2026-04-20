@@ -269,7 +269,6 @@ mod tests {
             perf_spike_count: 0,
             perf_last_spike_stage: "none",
             perf_paused: false,
-            perf_histogram_zoom: 1.0,
             perf_histogram_follow_latest: true,
             perf_histogram_focus_index: None,
             perf_selected_history_index: None,
