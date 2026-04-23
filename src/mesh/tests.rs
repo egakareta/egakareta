@@ -254,8 +254,12 @@ f 1/1/1 2/2/1 3/3/1
 
         let unlit = build_block_vertices(std::slice::from_ref(&shadow_block));
         let lit = build_block_vertices(&[shadow_block, torch]);
-        let unlit_block = &unlit[..36];
-        let lit_block = &lit[..36];
+        assert!(
+            lit.len() >= unlit.len(),
+            "expected lit mesh to include at least the shadow block vertices"
+        );
+        let unlit_block = &unlit[..];
+        let lit_block = &lit[..unlit.len()];
 
         let max_channel = |vertices: &[Vertex]| {
             vertices

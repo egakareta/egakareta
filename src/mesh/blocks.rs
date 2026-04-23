@@ -25,38 +25,30 @@ const TORCH_PHASE_OFFSET_Z: f32 = 0.91;
 const TORCH_WARMTH_RGB: [f32; 3] = [1.0, 0.78, 0.42];
 
 pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
-    build_block_vertices_from_refs(objects.iter())
+    build_block_vertices_with_phase_impl(objects.iter(), 0.0)
 }
 
-pub(crate) fn build_block_vertices_from_refs<'a, I>(objects: I) -> Vec<Vertex>
-where
-    I: IntoIterator<Item = &'a LevelObject>,
-{
-    build_block_vertices_with_phase_from_refs(objects, 0.0)
+pub(crate) fn build_block_vertices_from_refs(objects: &[&LevelObject]) -> Vec<Vertex> {
+    build_block_vertices_with_phase_impl(objects.iter().copied(), 0.0)
 }
 
 pub(crate) fn build_block_vertices_with_phase(
     objects: &[LevelObject],
     pulse_phase_seconds: f32,
 ) -> Vec<Vertex> {
-    build_block_vertices_with_phase_from_refs(objects.iter(), pulse_phase_seconds)
+    build_block_vertices_with_phase_impl(objects.iter(), pulse_phase_seconds)
 }
 
-pub(crate) fn build_block_vertices_with_phase_from_refs<'a, I>(
-    objects: I,
-    pulse_phase_seconds: f32,
-) -> Vec<Vertex>
+fn build_block_vertices_with_phase_impl<'a, I>(objects: I, pulse_phase_seconds: f32) -> Vec<Vertex>
 where
-    I: IntoIterator<Item = &'a LevelObject>,
+    I: Iterator<Item = &'a LevelObject> + Clone,
 {
     const LIQUID_PROFILE_TAG: f32 = 1.0;
     let mut all_vertices = Vec::new();
-    let objects: Vec<&LevelObject> = objects.into_iter().collect();
     let torch_emitters: Vec<([f32; 3], f32)> = objects
-        .iter()
+        .clone()
         .filter_map(|obj| {
-            let block = resolve_block_definition(&obj.block_id);
-            if block.id != TORCH_BLOCK_ID {
+            if !is_torch_block_id(&obj.block_id) {
                 return None;
             }
             let center = [
@@ -124,7 +116,7 @@ where
                 falloff * falloff * *flicker
             })
             .fold(0.0_f32, f32::max);
-        if torch_light_factor > f32::EPSILON {
+        if block.id != TORCH_BLOCK_ID && torch_light_factor > f32::EPSILON {
             color_top = apply_torch_light(color_top, torch_light_factor * TORCH_GLOW_STRENGTH);
             color_side = apply_torch_light(color_side, torch_light_factor * TORCH_GLOW_STRENGTH);
             color_bottom =
@@ -178,6 +170,10 @@ where
     }
 
     all_vertices
+}
+
+fn is_torch_block_id(block_id: &str) -> bool {
+    block_id.trim().eq_ignore_ascii_case(TORCH_BLOCK_ID)
 }
 
 fn apply_torch_light(color: [f32; 4], strength: f32) -> [f32; 4] {
