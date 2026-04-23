@@ -48,7 +48,7 @@ where
     let torch_emitters: Vec<([f32; 3], f32)> = objects
         .clone()
         .filter_map(|obj| {
-            if !is_torch_block_id(&obj.block_id) {
+            if obj.block_id != TORCH_BLOCK_ID {
                 return None;
             }
             let center = [
@@ -170,10 +170,6 @@ where
     }
 
     all_vertices
-}
-
-fn is_torch_block_id(block_id: &str) -> bool {
-    block_id == TORCH_BLOCK_ID
 }
 
 fn apply_torch_light(color: [f32; 4], strength: f32) -> [f32; 4] {
