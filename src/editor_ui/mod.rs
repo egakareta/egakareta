@@ -6,13 +6,17 @@
 
 */
 pub(crate) mod components;
+pub(crate) mod flame_graph;
 pub(crate) mod menu;
 pub(crate) mod modes;
 
 use std::collections::HashMap;
 
 use crate::commands::AppCommand;
-use crate::editor_ui::components::{show_timeline_bar, show_waveform_panel, timeline_metrics};
+use crate::editor_ui::components::{
+    show_perf_profiler_header, show_timeline_bar, show_waveform_panel, timeline_metrics,
+};
+use crate::editor_ui::flame_graph::show_perf_flame_graph_panel;
 use crate::editor_ui::modes::compose::show_compose_mode_bottom_panel;
 use crate::editor_ui::modes::timing::show_timing_mode_bottom_panel;
 use crate::editor_ui::modes::trigger::show_trigger_mode_bottom_panel;
@@ -86,6 +90,7 @@ const RESPONSIVE_UI_SCALE_MIN: f32 = 0.8;
 const RESPONSIVE_UI_SCALE_MAX: f32 = 1.35;
 const UI_SCALE_BASE_WIDTH: f32 = 1280.0;
 const UI_SCALE_BASE_HEIGHT: f32 = 720.0;
+const VIEW_CUBE_TOP_MARGIN: f32 = 12.0;
 
 fn is_compact_editor_ui(viewport_width: f32) -> bool {
     viewport_width <= COMPACT_EDITOR_UI_BREAKPOINT
@@ -123,6 +128,10 @@ pub(crate) fn combined_ui_scale_factor(viewport_size: egui::Vec2, user_multiplie
     (responsive * user).clamp(0.5, 4.0)
 }
 
+fn view_cube_top_offset_y(top_panel_height: f32) -> f32 {
+    top_panel_height + VIEW_CUBE_TOP_MARGIN
+}
+
 fn sort_quad_by_angle(center: egui::Pos2, quad: [egui::Pos2; 4]) -> [egui::Pos2; 4] {
     let mut points = quad.to_vec();
     points.sort_by(|a, b| {
@@ -156,6 +165,469 @@ fn marquee_screen_pos_to_egui_pos(screen_pos: [f64; 2], pixels_per_point: f32) -
     egui::pos2(screen_pos[0] as f32 / scale, screen_pos[1] as f32 / scale)
 }
 
+fn perf_frame_bar_color(frame_ms: f32) -> egui::Color32 {
+    if frame_ms <= 16.7 {
+        egui::Color32::from_rgb(56, 173, 95)
+    } else if frame_ms <= 33.3 {
+        egui::Color32::from_rgb(219, 173, 68)
+    } else {
+        egui::Color32::from_rgb(214, 84, 84)
+    }
+}
+
+fn perf_histogram_bar_dimensions(zoom: f32) -> (f32, f32) {
+    let step = (4.0 * zoom).clamp(1.0, 22.0);
+    let width = (step - 1.0).clamp(1.0, 18.0);
+    (step, width)
+}
+
+fn perf_visible_history_range(
+    history_len: usize,
+    visible_bars: usize,
+    follow_latest: bool,
+    focus_index: Option<usize>,
+) -> (isize, isize) {
+    if history_len == 0 {
+        return (0, 0);
+    }
+
+    let visible = visible_bars.max(1) as isize;
+    let latest = history_len.saturating_sub(1) as isize;
+    let center = if follow_latest {
+        latest
+    } else {
+        focus_index.unwrap_or(latest as usize).min(latest as usize) as isize
+    };
+
+    let start = center - (visible / 2);
+    let end = start + visible;
+    (start, end)
+}
+
+fn perf_history_index_from_pointer(
+    rect: egui::Rect,
+    view_start: isize,
+    visible_bars: usize,
+    history_len: usize,
+    pointer: egui::Pos2,
+    bar_step: f32,
+) -> Option<usize> {
+    if rect.width() <= 0.0 || bar_step <= 0.0 {
+        return None;
+    }
+
+    let offset_x = pointer.x - rect.left();
+    if offset_x < 0.0 {
+        return None;
+    }
+
+    let slot = (offset_x / bar_step).floor() as isize;
+    if slot < 0 || slot >= visible_bars as isize {
+        return None;
+    }
+
+    let index = view_start + slot;
+    if index < 0 {
+        return None;
+    }
+
+    let index = index as usize;
+    if index < history_len {
+        Some(index)
+    } else {
+        None
+    }
+}
+
+fn show_perf_microprofiler_overlay(
+    ctx: &egui::Context,
+    view: &crate::state::EditorUiViewModel<'_>,
+    is_compact_ui: bool,
+    commands: &mut Vec<AppCommand>,
+) {
+    let viewport = ctx.content_rect();
+    if viewport.width() <= 1.0 || viewport.height() <= 1.0 {
+        return;
+    }
+
+    egui::Area::new("editor_perf_microprofiler_overlay".into())
+        .order(egui::Order::Foreground)
+        .interactable(true)
+        .fixed_pos(viewport.min)
+        .show(ctx, |ui| {
+            ui.set_min_size(viewport.size());
+            egui::Frame::new()
+                .fill(egui::Color32::from_rgba_unmultiplied(8, 12, 16, 234))
+                .inner_margin(egui::Margin::ZERO)
+                .show(ui, |ui| {
+                    ui.set_min_size(viewport.size());
+
+                    show_perf_profiler_header(ui, view, commands);
+
+                    let content_margin = if is_compact_ui { 8 } else { 12 };
+                    egui::Frame::default()
+                        .inner_margin(egui::Margin {
+                            left: 0,
+                            right: 0,
+                            top: 0,
+                            bottom: content_margin,
+                        })
+                        .show(ui, |ui| {
+                            let history = &view.perf_frame_history;
+                            let graph_height = if is_compact_ui {
+                                (viewport.height() * 0.065).clamp(30.0, 60.0)
+                            } else {
+                                (viewport.height() * 0.085).clamp(40.0, 90.0)
+                            };
+                            // Keep histogram width tied to the actual viewport to avoid
+                            // unconstrained UI width growth pushing bars off-screen.
+                            let graph_width = viewport.width().max(180.0);
+                            let (rect, response) = ui.allocate_exact_size(
+                                egui::vec2(graph_width, graph_height),
+                                egui::Sense::click_and_drag(),
+                            );
+                            let painter = ui.painter_at(rect);
+                            painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(18, 24, 30));
+
+                            if history.is_empty() {
+                                painter.text(
+                                    rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    "No frames captured yet",
+                                    egui::FontId::monospace(12.0),
+                                    egui::Color32::from_gray(185),
+                                );
+                            } else {
+                                let (bar_step, bar_width) = perf_histogram_bar_dimensions(1.0);
+                                let visible_bars = ((rect.width() / bar_step).floor() as usize)
+                                    .max(1);
+                                let (view_start, view_end) = perf_visible_history_range(
+                                    history.len(),
+                                    visible_bars,
+                                    view.perf_histogram_follow_latest,
+                                    view.perf_histogram_focus_index,
+                                );
+                                let visible_start = view_start.max(0) as usize;
+                                let visible_end = view_end
+                                    .min(history.len() as isize)
+                                    .max(view_start.max(0)) as usize;
+                                let visible = &history[visible_start..visible_end];
+
+                                let max_ms = 33.33f32;
+
+                                for guide_ms in [16.67, 33.33] {
+                                    if guide_ms > max_ms {
+                                        continue;
+                                    }
+
+                                    let ratio = (guide_ms / max_ms).clamp(0.0, 1.0);
+                                    let y = egui::lerp(rect.bottom()..=rect.top(), ratio);
+                                    painter.line_segment(
+                                        [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
+                                        egui::Stroke::new(1.0, egui::Color32::from_gray(90)),
+                                    );
+                                    painter.text(
+                                        egui::pos2(rect.left() + 4.0, y - 1.0),
+                                        egui::Align2::LEFT_BOTTOM,
+                                        format!("{guide_ms:.1}ms"),
+                                        egui::FontId::monospace(9.0),
+                                        egui::Color32::from_gray(145),
+                                    );
+                                }
+
+                                for (offset, frame) in visible.iter().enumerate() {
+                                    let history_index = visible_start + offset;
+                                    let slot = (history_index as isize - view_start) as usize;
+                                    let x_min = rect.left() + slot as f32 * bar_step;
+                                    let x_max = (x_min + bar_width).min(rect.right() - 1.0);
+                                    if x_max <= x_min {
+                                        continue;
+                                    }
+
+                                    let ratio = (frame.frame_time_ms / max_ms).clamp(0.0, 1.0);
+                                    let y_min = egui::lerp(rect.bottom()..=rect.top(), ratio);
+                                    let bar_rect = egui::Rect::from_min_max(
+                                        egui::pos2(x_min, y_min),
+                                        egui::pos2(x_max, rect.bottom() - 1.0),
+                                    );
+                                    painter.rect_filled(
+                                        bar_rect,
+                                        0.0,
+                                        perf_frame_bar_color(frame.frame_time_ms),
+                                    );
+                                }
+
+                                if let Some((range_start, range_end)) = view.perf_selected_history_range {
+                                    let in_view_start = range_start.max(visible_start);
+                                    let in_view_end = range_end.min(visible_end.saturating_sub(1));
+
+                                    if visible_end > visible_start && in_view_start <= in_view_end {
+                                        let slot_start =
+                                            (in_view_start as isize - view_start) as usize;
+                                        let slot_end = (in_view_end as isize - view_start) as usize;
+
+                                        let x_min = rect.left() + slot_start as f32 * bar_step;
+                                        let x_max =
+                                            (rect.left() + slot_end as f32 * bar_step + bar_width)
+                                                .min(rect.right() - 1.0);
+
+                                        let selection_rect = egui::Rect::from_min_max(
+                                            egui::pos2(x_min, rect.top() + 1.0),
+                                            egui::pos2(x_max, rect.bottom() - 1.0),
+                                        );
+
+                                        painter.rect_filled(
+                                            selection_rect,
+                                            0.0,
+                                            egui::Color32::from_rgba_unmultiplied(
+                                                255, 220, 115, 30,
+                                            ),
+                                        );
+                                    }
+                                }
+
+                                if let Some(single_index) = view.perf_selected_history_index {
+                                    if single_index >= visible_start && single_index < visible_end {
+                                        let slot = (single_index as isize - view_start) as usize;
+                                        let x_min = rect.left() + slot as f32 * bar_step;
+                                        let x_max = (x_min + bar_width).min(rect.right() - 1.0);
+
+                                        let selection_rect = egui::Rect::from_min_max(
+                                            egui::pos2(x_min, rect.top() + 1.0),
+                                            egui::pos2(x_max, rect.bottom() - 1.0),
+                                        );
+
+                                        painter.rect_filled(
+                                            selection_rect,
+                                            0.0,
+                                            egui::Color32::from_rgba_unmultiplied(
+                                                214, 231, 255, 30,
+                                            ),
+                                        );
+                                    }
+                                }
+
+                                if response.hovered() {
+                                    let scroll_y = ui.input(|input| input.raw_scroll_delta.y);
+                                    if scroll_y.abs() > 0.0 {
+                                        let history_len = history.len();
+                                        if history_len > 0 {
+                                            let last = history_len - 1;
+
+                                            // Determine current range
+                                            let (current_start, current_end) = if let Some(range) =
+                                                view.perf_selected_history_range
+                                            {
+                                                (range.0.min(last), range.1.min(last))
+                                            } else if let Some(index) = view.perf_selected_history_index
+                                            {
+                                                let clamped = index.min(last);
+                                                (clamped, clamped)
+                                            } else {
+                                                let center = if view.perf_histogram_follow_latest {
+                                                    last
+                                                } else {
+                                                    view.perf_histogram_focus_index
+                                                        .unwrap_or(last)
+                                                        .min(last)
+                                                };
+                                                let chunk_size = 16.min(history_len).max(1);
+                                                let start = center.saturating_sub(chunk_size / 2);
+                                                let end =
+                                                    (start + chunk_size).saturating_sub(1).min(last);
+                                                (start, end)
+                                            };
+
+                                            let current_width =
+                                                current_end.saturating_sub(current_start) + 1;
+
+                                            // Keep one stable anchor frame for zoom operations.
+                                            // This prevents cumulative left/right drift when toggling zoom levels.
+                                            let anchor_index = if let Some(index) =
+                                                view.perf_selected_history_index
+                                            {
+                                                index.min(last)
+                                            } else if let Some(index) =
+                                                view.perf_histogram_focus_index
+                                            {
+                                                index.min(last)
+                                            } else {
+                                                (current_start + current_end) / 2
+                                            };
+
+                                            // Adjust width based on scroll
+                                            // Up (pos) -> smaller width -> Zoom IN
+                                            let zoom_factor = if scroll_y > 0.0 {
+                                                1.0 + scroll_y * 0.005
+                                            } else {
+                                                1.0 / (1.0 - scroll_y * 0.005)
+                                            };
+                                            let next_width =
+                                                (current_width as f32 / zoom_factor)
+                                                    .clamp(1.0, 1024.0);
+                                            let next_width_i = if scroll_y > 0.0 {
+                                                next_width.floor() as usize
+                                            } else {
+                                                next_width.ceil() as usize
+                                            }
+                                            .clamp(1, 1024);
+
+                                            if next_width_i != current_width {
+                                                let left_count = (next_width_i - 1) / 2;
+                                                let right_count = next_width_i - 1 - left_count;
+
+                                                let mut clamped_start =
+                                                    anchor_index.saturating_sub(left_count);
+                                                let mut clamped_end =
+                                                    anchor_index.saturating_add(right_count).min(last);
+
+                                                let clamped_width =
+                                                    clamped_end.saturating_sub(clamped_start) + 1;
+                                                if clamped_width < next_width_i {
+                                                    if clamped_start == 0 {
+                                                        clamped_end = (next_width_i - 1).min(last);
+                                                    } else {
+                                                        clamped_start =
+                                                            last.saturating_add(1).saturating_sub(next_width_i);
+                                                        clamped_end = last;
+                                                    }
+                                                }
+
+                                                commands.push(
+                                                    AppCommand::EditorSetPerfFollowLatest(false),
+                                                );
+                                                commands.push(
+                                                    AppCommand::EditorSelectPerfHistoryRange {
+                                                        start: clamped_start,
+                                                        end: clamped_end,
+                                                    },
+                                                );
+
+                                                // Keep viewport centered on the same stable anchor.
+                                                commands.push(
+                                                    AppCommand::EditorFocusPerfHistogramIndex(
+                                                        anchor_index,
+                                                    ),
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if response.dragged() {
+                                    let delta_x = ui.input(|input| input.pointer.delta().x);
+                                    let frames_to_pan = (-delta_x / bar_step).trunc() as i32;
+                                    if frames_to_pan != 0 {
+                                        commands.push(AppCommand::EditorSetPerfFollowLatest(false));
+                                        commands
+                                            .push(AppCommand::EditorPanPerfHistogram(frames_to_pan));
+                                    }
+                                }
+
+                                if response.clicked() {
+                                    if let Some(pointer) = response.interact_pointer_pos() {
+                                        if let Some(clicked_index) = perf_history_index_from_pointer(
+                                            rect,
+                                            view_start,
+                                            visible_bars,
+                                            history.len(),
+                                            pointer,
+                                            bar_step,
+                                        ) {
+                                            let alt_held = ui.input(|input| input.modifiers.alt);
+                                            if alt_held {
+                                                commands.push(AppCommand::EditorSelectPerfHistoryIndex(
+                                                    clicked_index,
+                                                ));
+                                            } else {
+                                                let chunk_size = 16.min(history.len()).max(1);
+                                                let mut start =
+                                                    clicked_index.saturating_sub(chunk_size / 2);
+                                                if start + chunk_size > history.len() {
+                                                    start = history.len().saturating_sub(chunk_size);
+                                                }
+                                                let end = start + chunk_size.saturating_sub(1);
+
+                                                commands.push(AppCommand::EditorSetPerfFollowLatest(false));
+                                                commands.push(AppCommand::EditorSelectPerfHistoryRange {
+                                                    start,
+                                                    end,
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                });
+
+                    egui::Frame::default()
+                        .inner_margin(egui::Margin::symmetric(content_margin, 0))
+                        .show(ui, |ui| {
+                            ui.separator();
+
+                            if let Some(summary) = &view.perf_active_range_summary {
+                                let label = if summary.frame_count > 1 {
+                                    "Chunk"
+                                } else {
+                                    "Frame"
+                                };
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.monospace(format!(
+                                        "{} #{}..#{} | {} frames",
+                                        label,
+                                        summary.start_frame_index,
+                                        summary.end_frame_index,
+                                        summary.frame_count,
+                                    ));
+                                    ui.separator();
+                                    ui.monospace(format!(
+                                        "Avg {:.2}ms ({:.1} FPS) | Worst {:.2}ms",
+                                        summary.average_frame_time_ms,
+                                        summary.average_fps,
+                                        summary.worst_frame_time_ms
+                                    ));
+                                    ui.separator();
+                                    ui.monospace(format!(
+                                        "Dominant: {}",
+                                        summary
+                                            .dominant_stage
+                                            .map(|stage| stage.name())
+                                            .unwrap_or("none")
+                                    ));
+                                });
+                            }
+
+                            if view.perf_selected_history_index.is_some() {
+                                ui.separator();
+                                egui::CollapsingHeader::new("Selected Frame Drilldown")
+                                    .default_open(false)
+                                    .show(ui, |ui| {
+                                        if let Some(frame) = &view.perf_selected_frame {
+                                            ui.monospace(format!(
+                                                "Frame #{} | {:.2}ms ({:.1} FPS) | Dominant: {}",
+                                                frame.frame_index,
+                                                frame.frame_time_ms,
+                                                1000.0 / frame.frame_time_ms.max(0.001),
+                                                frame
+                                                    .dominant_stage
+                                                    .map(|stage| stage.name())
+                                                    .unwrap_or("none")
+                                            ));
+                                        }
+                                    });
+                            }
+
+                            show_perf_flame_graph_panel(
+                                ui,
+                                view,
+                                viewport.width(),
+                                viewport.height(),
+                            );
+                        });
+                });
+        });
+}
+
 /// Shows the editor UI using egui.
 /// Handles the top bar, bottom panels, and other editor interface elements.
 pub fn show_editor_ui(
@@ -177,6 +649,7 @@ pub fn show_editor_ui(
     let is_compose = mode.is_compose_mode() && !is_timing;
     let viewport_width = ctx.content_rect().width();
     let is_compact_ui = is_compact_editor_ui(viewport_width);
+    let mut top_panel_height = 0.0;
 
     if view.show_settings {
         egui::SidePanel::left("editor_settings_sidebar")
@@ -441,18 +914,20 @@ pub fn show_editor_ui(
             });
     }
 
-    egui::TopBottomPanel::top("editor_top_bar").show(ctx, |ui| {
+    let editor_top_panel = egui::TopBottomPanel::top("editor_top_bar").show(ctx, |ui| {
         ui.horizontal_wrapped(|ui| {
             // Top-level tabs: Compose / Timing
             if ui.selectable_label(is_compose, "Compose").clicked() && !is_compose {
                 commands.push(crate::commands::AppCommand::EditorSetMode(
                     EditorMode::Place,
                 ));
+                ui.ctx().request_discard("editor top tab changed");
             }
             if ui.selectable_label(is_timing, "Timing").clicked() && !is_timing {
                 commands.push(crate::commands::AppCommand::EditorSetMode(
                     EditorMode::Timing,
                 ));
+                ui.ctx().request_discard("editor top tab changed");
             }
 
             ui.separator();
@@ -507,6 +982,7 @@ pub fn show_editor_ui(
             }
         });
     });
+    top_panel_height += editor_top_panel.response.rect.height();
 
     if view.show_metadata {
         egui::Window::new(format!("{} Level Metadata", egui_phosphor::regular::INFO)).show(
@@ -605,8 +1081,18 @@ pub fn show_editor_ui(
             });
     }
 
-    if !is_timing && !is_compact_ui {
-        show_view_selector_cube(ctx, view.camera_rotation, view.camera_pitch, &mut commands);
+    if !view.perf_overlay_enabled && !is_timing && !is_compact_ui {
+        show_view_selector_cube(
+            ctx,
+            view.camera_rotation,
+            view.camera_pitch,
+            view_cube_top_offset_y(top_panel_height),
+            &mut commands,
+        );
+    }
+
+    if view.perf_overlay_enabled {
+        show_perf_microprofiler_overlay(ctx, &view, is_compact_ui, &mut commands);
     }
 
     if view.mode.is_selection_mode() || view.mode == EditorMode::Trigger {
@@ -633,74 +1119,6 @@ pub fn show_editor_ui(
         }
     }
 
-    if view.perf_overlay_enabled {
-        fn perf_stat_label(
-            name: &str,
-            last_ms: f32,
-            avg_ms: f32,
-            max_ms: f32,
-            calls: u64,
-        ) -> String {
-            format!(
-                "{:<22} last {:>6.2}ms | avg {:>6.2}ms | max {:>6.2}ms | n {}",
-                name, last_ms, avg_ms, max_ms, calls
-            )
-        }
-
-        fn show_perf_entry(ui: &mut egui::Ui, entry: &crate::state::PerfOverlayEntry) {
-            if entry.children.is_empty() {
-                ui.monospace(perf_stat_label(
-                    entry.name,
-                    entry.last_ms,
-                    entry.avg_ms,
-                    entry.max_ms,
-                    entry.calls,
-                ));
-                return;
-            }
-
-            let header_text = perf_stat_label(
-                entry.name,
-                entry.last_ms,
-                entry.avg_ms,
-                entry.max_ms,
-                entry.calls,
-            );
-            egui::CollapsingHeader::new(header_text)
-                .default_open(matches!(
-                    entry.name,
-                    "DirtyProcess" | "BlockMeshRebuild" | "SelectClick"
-                ))
-                .show(ui, |ui| {
-                    for child in &entry.children {
-                        show_perf_entry(ui, child);
-                    }
-                });
-        }
-
-        egui::Area::new("editor_perf_overlay".into())
-            .order(egui::Order::Foreground)
-            .anchor(egui::Align2::LEFT_TOP, egui::vec2(12.0, 12.0))
-            .show(ctx, |ui| {
-                egui::Frame::window(ui.style())
-                    .fill(egui::Color32::from_black_alpha(210))
-                    .show(ui, |ui| {
-                        ui.monospace("Perf Overlay (Ctrl+Shift+Alt+F12)");
-                        ui.monospace(format!(
-                            "{} | {} | FPS {:.1}",
-                            view.graphics_backend, view.audio_backend, view.fps
-                        ));
-                        for line in view.perf_overlay_lines.iter().take(1) {
-                            ui.monospace(line);
-                        }
-                        ui.separator();
-                        for entry in &view.perf_overlay_entries {
-                            show_perf_entry(ui, entry);
-                        }
-                    });
-            });
-    }
-
     drop(view);
     for command in commands {
         state.dispatch(command);
@@ -711,6 +1129,7 @@ fn show_view_selector_cube(
     ctx: &egui::Context,
     camera_rotation: f32,
     camera_pitch: f32,
+    top_offset_y: f32,
     commands: &mut Vec<AppCommand>,
 ) {
     const ROTATE_SPEED: f32 = 0.004;
@@ -864,7 +1283,7 @@ fn show_view_selector_cube(
 
     egui::Area::new("editor_view_selector_cube".into())
         .order(egui::Order::Foreground)
-        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-14.0, 52.0))
+        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-14.0, top_offset_y))
         .show(ctx, |ui| {
             let side = 128.0;
             let (rect, response) =
@@ -1072,8 +1491,9 @@ fn show_view_selector_cube(
 mod tests {
     use super::{
         combined_ui_scale_factor, is_compact_editor_ui, marquee_screen_pos_to_egui_pos,
+        perf_history_index_from_pointer, perf_visible_history_range,
         responsive_ui_scale_multiplier, settings_sidebar_default_width, show_editor_ui,
-        sort_quad_by_angle, VIEW_CUBE_FACES,
+        sort_quad_by_angle, view_cube_top_offset_y, VIEW_CUBE_FACES,
     };
     use crate::commands::AppCommand;
     use crate::test_utils::approx_eq;
@@ -1237,18 +1657,67 @@ mod tests {
     }
 
     #[test]
-    fn marquee_screen_pos_to_egui_pos_handles_invalid_or_non_positive_scale() {
+    fn marquee_screen_pos_to_egui_pos_handles_invalid_scale() {
         let p = marquee_screen_pos_to_egui_pos([300.0, 180.0], f32::NAN);
         assert!(approx_eq(p.x, 300.0, 0.001));
         assert!(approx_eq(p.y, 180.0, 0.001));
+    }
 
-        let p = marquee_screen_pos_to_egui_pos([300.0, 180.0], 0.0);
-        assert!(approx_eq(p.x, 300.0, 0.001));
-        assert!(approx_eq(p.y, 180.0, 0.001));
+    #[test]
+    fn perf_follow_latest_keeps_latest_slot_centered() {
+        let visible_bars = 120;
+        let expected_slot = (visible_bars / 2) as isize;
 
-        let p = marquee_screen_pos_to_egui_pos([300.0, 180.0], -2.0);
-        assert!(approx_eq(p.x, 300.0, 0.001));
-        assert!(approx_eq(p.y, 180.0, 0.001));
+        for history_len in [1usize, 2, 16, 120, 500] {
+            let (view_start, _) = perf_visible_history_range(history_len, visible_bars, true, None);
+            let latest_slot = (history_len as isize - 1) - view_start;
+            assert_eq!(latest_slot, expected_slot);
+        }
+    }
+
+    #[test]
+    fn perf_pointer_mapping_handles_virtual_window_offsets() {
+        let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 20.0));
+        let bar_step = 2.0;
+        let visible_bars = 100;
+        let history_len = 10;
+        let (view_start, _) = perf_visible_history_range(history_len, visible_bars, true, None);
+
+        let pointer_at_latest = egui::pos2((visible_bars as f32 / 2.0) * bar_step + 0.1, 10.0);
+        let latest_index = perf_history_index_from_pointer(
+            rect,
+            view_start,
+            visible_bars,
+            history_len,
+            pointer_at_latest,
+            bar_step,
+        );
+        assert_eq!(latest_index, Some(history_len - 1));
+
+        let pointer_in_future_slot = egui::pos2((visible_bars as f32 - 1.0) * bar_step, 10.0);
+        let future_index = perf_history_index_from_pointer(
+            rect,
+            view_start,
+            visible_bars,
+            history_len,
+            pointer_in_future_slot,
+            bar_step,
+        );
+        assert_eq!(future_index, None);
+    }
+
+    #[test]
+    fn view_cube_top_offset_tracks_top_panel_stack_height() {
+        let offset_without_profiler = view_cube_top_offset_y(36.0);
+        let offset_with_profiler = view_cube_top_offset_y(36.0 + 112.0);
+
+        assert!(approx_eq(offset_without_profiler, 48.0, 0.001));
+        assert!(approx_eq(offset_with_profiler, 160.0, 0.001));
+        assert!(approx_eq(
+            offset_with_profiler - offset_without_profiler,
+            112.0,
+            0.001
+        ));
     }
 
     #[test]

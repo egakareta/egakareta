@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::{EditorClipboard, EditorHistorySnapshot, EditorSubsystem, State};
+use super::{BlockMeshOperation, EditorClipboard, EditorHistorySnapshot, EditorSubsystem, State};
 use crate::editor_domain::derive_tap_indicator_positions;
 use crate::types::{AppPhase, LevelObject};
 
@@ -267,14 +267,22 @@ impl State {
 
     pub(super) fn editor_paste_block(&mut self) {
         if self.phase == AppPhase::Editor && self.editor.paste_from_clipboard() {
-            self.sync_editor_objects();
+            let changed_indices = self.editor.selected_indices_normalized();
+            self.sync_editor_objects_with_mesh_operation(
+                BlockMeshOperation::AppendObject,
+                &changed_indices,
+            );
             self.rebuild_editor_cursor_vertices();
         }
     }
 
     pub(super) fn editor_duplicate_selected_block_in_place(&mut self) {
         if self.phase == AppPhase::Editor && self.editor.duplicate_selected() {
-            self.sync_editor_objects();
+            let changed_indices = self.editor.selected_indices_normalized();
+            self.sync_editor_objects_with_mesh_operation(
+                BlockMeshOperation::AppendObject,
+                &changed_indices,
+            );
             self.rebuild_editor_cursor_vertices();
         }
     }

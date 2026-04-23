@@ -7,7 +7,7 @@
 */
 use glam::{Mat4, Vec3};
 
-use super::{PerfOverlayEntry, PerfStage, State};
+use super::{PerfFrameRangeSummary, PerfFrameSnapshot, PerfStage, State};
 use crate::game::{
     advance_simulation_time, trigger_transformed_objects_at_time, TimelineSimulationRuntime,
 };
@@ -312,48 +312,99 @@ impl State {
         self.editor.perf.profiler.enabled = !self.editor.perf.profiler.enabled;
     }
 
+    pub(crate) fn toggle_editor_perf_pause(&mut self) {
+        self.editor.perf.profiler.toggle_pause();
+    }
+
+    pub(crate) fn editor_perf_paused(&self) -> bool {
+        self.editor.perf.profiler.paused
+    }
+
+    pub(crate) fn clear_editor_perf_selection(&mut self) {
+        self.editor.perf.profiler.clear_selection();
+    }
+
+    pub(crate) fn select_editor_perf_history_range(&mut self, start: usize, end: usize) {
+        self.editor
+            .perf
+            .profiler
+            .set_selected_history_range(start, end);
+    }
+
+    pub(crate) fn select_editor_perf_history_index(&mut self, index: usize) {
+        self.editor.perf.profiler.set_selected_history_index(index);
+    }
+
+    pub(crate) fn pan_editor_perf_histogram(&mut self, delta: i32) {
+        self.editor.perf.profiler.pan_histogram(delta);
+    }
+
+    pub(crate) fn focus_editor_perf_histogram_index(&mut self, index: usize) {
+        self.editor.perf.profiler.focus_histogram_index(index);
+    }
+
+    pub(crate) fn set_editor_perf_follow_latest(&mut self, follow_latest: bool) {
+        self.editor
+            .perf
+            .profiler
+            .set_histogram_follow_latest(follow_latest);
+    }
+
+    pub(crate) fn editor_perf_selected_history_index(&self) -> Option<usize> {
+        self.editor.perf.profiler.selected_history_index()
+    }
+
+    pub(crate) fn editor_perf_selected_history_range(&self) -> Option<(usize, usize)> {
+        self.editor.perf.profiler.selected_history_range_indices()
+    }
+
+    pub(crate) fn editor_perf_histogram_follow_latest(&self) -> bool {
+        self.editor.perf.profiler.histogram_follow_latest()
+    }
+
+    pub(crate) fn editor_perf_histogram_focus_index(&self) -> Option<usize> {
+        self.editor.perf.profiler.histogram_focus_history_index()
+    }
+
+    pub(crate) fn editor_perf_frame_history(&self) -> Vec<PerfFrameSnapshot> {
+        if !self.editor.perf.profiler.enabled {
+            return Vec::new();
+        }
+
+        self.editor.perf.profiler.frame_history()
+    }
+
+    pub(crate) fn editor_perf_selected_frame(&self) -> Option<PerfFrameSnapshot> {
+        if !self.editor.perf.profiler.enabled {
+            return None;
+        }
+
+        self.editor.perf.profiler.selected_or_latest_frame()
+    }
+
+    pub(crate) fn editor_perf_active_range_summary(&self) -> Option<PerfFrameRangeSummary> {
+        if !self.editor.perf.profiler.enabled {
+            return None;
+        }
+
+        self.editor.perf.profiler.active_range_summary()
+    }
+
     pub(crate) fn editor_perf_overlay_enabled(&self) -> bool {
         self.editor.perf.profiler.enabled
     }
 
-    pub(crate) fn editor_perf_overlay_lines(&self) -> Vec<String> {
-        if !self.editor.perf.profiler.enabled {
-            return Vec::new();
-        }
-
-        let mut lines = Vec::new();
-        lines.push(format!(
-            "Spikes(>16.7ms): {} | Last Spike: {}",
-            self.editor.perf.profiler.frame_spike_count,
-            self.editor
-                .perf
-                .profiler
-                .last_spike_stage
-                .map(|stage| stage.name())
-                .unwrap_or("none")
-        ));
-
-        for stage in PerfStage::roots() {
-            let stat = self.editor.perf.profiler.stats[stage.as_index()];
-            lines.push(format!(
-                "{:<18} last {:>6.2}ms | avg {:>6.2}ms | max {:>6.2}ms | n {}",
-                stage.name(),
-                stat.last_ms,
-                stat.ema_ms,
-                stat.max_ms,
-                stat.calls
-            ));
-        }
-
-        lines
+    pub(crate) fn editor_perf_spike_count(&self) -> u64 {
+        self.editor.perf.profiler.frame_spike_count
     }
 
-    pub(crate) fn editor_perf_overlay_entries(&self) -> Vec<PerfOverlayEntry> {
-        if !self.editor.perf.profiler.enabled {
-            return Vec::new();
-        }
-
-        self.editor.perf.profiler.overlay_entries()
+    pub(crate) fn editor_perf_last_spike_stage_name(&self) -> &'static str {
+        self.editor
+            .perf
+            .profiler
+            .last_spike_stage
+            .map(|stage| stage.name())
+            .unwrap_or("none")
     }
 
     pub(super) fn perf_record(&mut self, stage: PerfStage, started_at: PlatformInstant) {
@@ -410,19 +461,7 @@ impl State {
         if self.phase == AppPhase::Menu {
             self.frame_runtime.editor.accumulator = 0.0;
             self.update_menu_camera();
-            self.editor
-                .perf
-                .profiler
-                .observe(PerfStage::FrameTotal, frame_dt_ms);
-            if frame_dt_ms > 16.7 {
-                self.editor.perf.profiler.frame_spike_count += 1;
-                self.editor.perf.profiler.last_spike_stage = self
-                    .editor
-                    .perf
-                    .profiler
-                    .dominant_stage_this_frame()
-                    .or(Some(PerfStage::FrameTotal));
-            }
+            self.editor.perf.profiler.finish_frame(frame_dt_ms);
             return;
         }
 
@@ -618,19 +657,7 @@ impl State {
             self.perf_record(PerfStage::DirtyProcess, dirty_started_at);
             self.update_editor_camera();
 
-            self.editor
-                .perf
-                .profiler
-                .observe(PerfStage::FrameTotal, frame_dt_ms);
-            if frame_dt_ms > 16.7 {
-                self.editor.perf.profiler.frame_spike_count += 1;
-                self.editor.perf.profiler.last_spike_stage = self
-                    .editor
-                    .perf
-                    .profiler
-                    .dominant_stage_this_frame()
-                    .or(Some(PerfStage::FrameTotal));
-            }
+            self.editor.perf.profiler.finish_frame(frame_dt_ms);
             return;
         }
 
@@ -761,19 +788,7 @@ impl State {
         );
 
         if self.phase == AppPhase::Playing {
-            self.editor
-                .perf
-                .profiler
-                .observe(PerfStage::FrameTotal, frame_dt_ms);
-            if frame_dt_ms > 16.7 {
-                self.editor.perf.profiler.frame_spike_count += 1;
-                self.editor.perf.profiler.last_spike_stage = self
-                    .editor
-                    .perf
-                    .profiler
-                    .dominant_stage_this_frame()
-                    .or(Some(PerfStage::FrameTotal));
-            }
+            self.editor.perf.profiler.finish_frame(frame_dt_ms);
         }
     }
 
@@ -998,12 +1013,13 @@ mod tests {
             let mut state = State::new_test().await;
 
             assert!(!state.editor_perf_overlay_enabled());
-            assert!(state.editor_perf_overlay_lines().is_empty());
-            assert!(state.editor_perf_overlay_entries().is_empty());
+            assert!(state.editor_perf_frame_history().is_empty());
+            assert!(state.editor_perf_selected_frame().is_none());
 
             state.toggle_editor_perf_overlay();
             assert!(state.editor_perf_overlay_enabled());
-            assert!(!state.editor_perf_overlay_lines().is_empty());
+            assert_eq!(state.editor_perf_spike_count(), 0);
+            assert_eq!(state.editor_perf_last_spike_stage_name(), "none");
         });
     }
 

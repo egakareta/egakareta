@@ -8,7 +8,9 @@
 use crate::commands::AppCommand;
 use crate::editor_ui::modes::shared::{show_mode_and_snap_controls, show_player_camera_status_row};
 use crate::state::EditorUiViewModel;
-use crate::types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
+use crate::types::{
+    EditorMode, TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+};
 
 fn make_trigger(
     view: &EditorUiViewModel<'_>,
@@ -295,7 +297,10 @@ pub(crate) fn show_trigger_mode_bottom_panel(
     _duration_seconds: f32,
     commands: &mut Vec<AppCommand>,
 ) {
-    show_mode_and_snap_controls(ui, view, commands);
+    let mode = show_mode_and_snap_controls(ui, view, commands);
+    if mode != EditorMode::Trigger {
+        return;
+    }
 
     ui.horizontal(|ui| {
         let mut simulate_hitboxes = view.simulate_trigger_hitboxes;
@@ -609,8 +614,16 @@ mod tests {
             graphics_backend: "WGPU".to_string(),
             audio_backend: "Default".to_string(),
             perf_overlay_enabled: false,
-            perf_overlay_lines: Vec::new(),
-            perf_overlay_entries: Vec::new(),
+            perf_spike_count: 0,
+            perf_last_spike_stage: "none",
+            perf_paused: false,
+            perf_histogram_follow_latest: true,
+            perf_histogram_focus_index: None,
+            perf_selected_history_index: None,
+            perf_selected_history_range: None,
+            perf_frame_history: Vec::new(),
+            perf_selected_frame: None,
+            perf_active_range_summary: None,
             marquee_selection_rect_screen: None,
         }
     }

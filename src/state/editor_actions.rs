@@ -7,7 +7,7 @@
 */
 use glam::Vec2;
 
-use super::{EditorDirtyFlags, EditorSubsystem, PerfStage, State};
+use super::{BlockMeshOperation, EditorDirtyFlags, EditorSubsystem, PerfStage, State};
 use crate::editor_domain::{
     add_tap_with_indicator, build_editor_playtest_transition, derive_tap_indicator_positions,
     derive_timeline_time_for_world_target_near_time, playtest_return_objects,
@@ -334,11 +334,15 @@ impl State {
         };
 
         self.record_editor_history_state();
+        let changed_indices = self.editor.selected_indices_normalized();
         if self
             .editor
             .nudge_selected(world_dx as f32 * nudge_step, world_dy as f32 * nudge_step)
         {
-            self.sync_editor_objects();
+            self.sync_editor_objects_with_mesh_operation(
+                BlockMeshOperation::UpdateObjects,
+                &changed_indices,
+            );
             self.rebuild_editor_cursor_vertices();
             return true;
         }
@@ -422,7 +426,10 @@ impl State {
         if self.phase == AppPhase::Editor {
             self.record_editor_history_state();
             if self.editor.remove_selected() {
-                self.sync_editor_objects();
+                self.sync_editor_objects_with_mesh_operation(
+                    BlockMeshOperation::RemoveObjects,
+                    &[],
+                );
                 self.rebuild_editor_cursor_vertices();
             }
         }

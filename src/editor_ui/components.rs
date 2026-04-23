@@ -470,6 +470,54 @@ pub(crate) fn show_waveform_panel(
         }
     }
 }
+
+pub(crate) fn show_perf_profiler_header(
+    ui: &mut egui::Ui,
+    view: &EditorUiViewModel<'_>,
+    commands: &mut Vec<AppCommand>,
+) {
+    let width = ui.available_width();
+    egui::Frame::new()
+        .fill(egui::Color32::from_rgb(28, 35, 42))
+        .inner_margin(egui::Margin::symmetric(14, 10))
+        .corner_radius(0)
+        .show(ui, |ui| {
+            ui.set_width(width);
+            ui.horizontal_wrapped(|ui| {
+                ui.monospace("Microprofiler");
+                ui.separator();
+                ui.monospace(format!(
+                    "{} | {}",
+                    view.graphics_backend, view.audio_backend
+                ));
+                ui.separator();
+                ui.monospace(format!(
+                    "Spikes / Last: {} / {}",
+                    view.perf_spike_count, view.perf_last_spike_stage
+                ));
+
+                let pause_label = if view.perf_paused { "Resume" } else { "Pause" };
+                if ui
+                    .button(format!("{} {}", egui_phosphor::regular::PAUSE, pause_label))
+                    .clicked()
+                {
+                    commands.push(AppCommand::EditorTogglePerfProfilerPause);
+                }
+
+                if !view.perf_histogram_follow_latest && ui.button("Follow Latest").clicked() {
+                    commands.push(AppCommand::EditorClearPerfSelection);
+                }
+
+                if ui
+                    .button(format!("{} Close", egui_phosphor::regular::X))
+                    .clicked()
+                {
+                    commands.push(AppCommand::EditorTogglePerfOverlay);
+                }
+            });
+        });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -542,8 +590,16 @@ mod tests {
             graphics_backend: "WGPU".to_string(),
             audio_backend: "Default".to_string(),
             perf_overlay_enabled: false,
-            perf_overlay_lines: Vec::new(),
-            perf_overlay_entries: Vec::new(),
+            perf_spike_count: 0,
+            perf_last_spike_stage: "none",
+            perf_paused: false,
+            perf_histogram_follow_latest: true,
+            perf_histogram_focus_index: None,
+            perf_selected_history_index: None,
+            perf_selected_history_range: None,
+            perf_frame_history: Vec::new(),
+            perf_selected_frame: None,
+            perf_active_range_summary: None,
             marquee_selection_rect_screen: None,
         }
     }

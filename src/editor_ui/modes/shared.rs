@@ -13,10 +13,10 @@ pub(crate) fn show_mode_and_snap_controls(
     ui: &mut egui::Ui,
     view: &EditorUiViewModel<'_>,
     commands: &mut Vec<AppCommand>,
-) {
+) -> EditorMode {
     ui.horizontal(|ui| {
         ui.label("Mode:");
-        let mode = view.mode;
+        let mut mode = view.mode;
         if ui
             .selectable_label(
                 mode == EditorMode::Select,
@@ -24,6 +24,7 @@ pub(crate) fn show_mode_and_snap_controls(
             )
             .clicked()
         {
+            mode = EditorMode::Select;
             commands.push(AppCommand::EditorSetMode(EditorMode::Select));
         }
         if ui
@@ -33,6 +34,7 @@ pub(crate) fn show_mode_and_snap_controls(
             )
             .clicked()
         {
+            mode = EditorMode::Move;
             commands.push(AppCommand::EditorSetMode(EditorMode::Move));
         }
         if ui
@@ -42,6 +44,7 @@ pub(crate) fn show_mode_and_snap_controls(
             )
             .clicked()
         {
+            mode = EditorMode::Scale;
             commands.push(AppCommand::EditorSetMode(EditorMode::Scale));
         }
         if ui
@@ -51,6 +54,7 @@ pub(crate) fn show_mode_and_snap_controls(
             )
             .clicked()
         {
+            mode = EditorMode::Rotate;
             commands.push(AppCommand::EditorSetMode(EditorMode::Rotate));
         }
         if ui
@@ -60,6 +64,7 @@ pub(crate) fn show_mode_and_snap_controls(
             )
             .clicked()
         {
+            mode = EditorMode::Place;
             commands.push(AppCommand::EditorSetMode(EditorMode::Place));
         }
         if ui
@@ -69,6 +74,7 @@ pub(crate) fn show_mode_and_snap_controls(
             )
             .clicked()
         {
+            mode = EditorMode::Trigger;
             commands.push(AppCommand::EditorSetMode(EditorMode::Trigger));
         }
 
@@ -116,7 +122,16 @@ pub(crate) fn show_mode_and_snap_controls(
         {
             commands.push(AppCommand::EditorSetSnapRotationStep(snap_rotation_step));
         }
-    });
+
+        // Ask egui for an immediate second pass when mode changes so panel sizing
+        // responds in-frame instead of showing one-frame stale geometry.
+        if mode != view.mode {
+            ui.ctx().request_discard("editor mode changed");
+        }
+
+        mode
+    })
+    .inner
 }
 
 pub(crate) fn show_player_camera_status_row(ui: &mut egui::Ui, view: &EditorUiViewModel<'_>) {
@@ -217,8 +232,16 @@ mod tests {
             graphics_backend: "WGPU".to_string(),
             audio_backend: "Default".to_string(),
             perf_overlay_enabled: false,
-            perf_overlay_lines: Vec::new(),
-            perf_overlay_entries: Vec::new(),
+            perf_spike_count: 0,
+            perf_last_spike_stage: "none",
+            perf_paused: false,
+            perf_histogram_follow_latest: true,
+            perf_histogram_focus_index: None,
+            perf_selected_history_index: None,
+            perf_selected_history_range: None,
+            perf_frame_history: Vec::new(),
+            perf_selected_frame: None,
+            perf_active_range_summary: None,
             marquee_selection_rect_screen: None,
         }
     }

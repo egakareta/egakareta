@@ -132,6 +132,11 @@ where
 }
 
 fn apply_color_tint(color: [f32; 4], tint_rgb: [f32; 3]) -> [f32; 4] {
+    // Most placed blocks use neutral tints, so skip HSV conversion for grayscale tint values.
+    if (tint_rgb[0] - tint_rgb[1]).abs() <= 1e-4 && (tint_rgb[1] - tint_rgb[2]).abs() <= 1e-4 {
+        return color;
+    }
+
     let (tint_hue, tint_sat, _) = rgb_to_hsv(tint_rgb[0], tint_rgb[1], tint_rgb[2]);
     if tint_sat <= 1e-4 {
         return color;

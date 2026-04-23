@@ -38,9 +38,9 @@ pub(crate) fn show_compose_mode_bottom_panel(
     _duration_seconds: f32,
     commands: &mut Vec<AppCommand>,
 ) {
-    show_mode_and_snap_controls(ui, view, commands);
+    let mode = show_mode_and_snap_controls(ui, view, commands);
 
-    match view.mode {
+    match mode {
         EditorMode::Place => {
             ui.horizontal_wrapped(|ui| {
                 let current = view.selected_block_id;

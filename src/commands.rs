@@ -141,6 +141,20 @@ pub(crate) enum AppCommand {
     // ── Editor – misc ───────────────────────────────────────────────
     /// Toggle the performance overlay.
     EditorTogglePerfOverlay,
+    /// Pause or resume profiler frame-history capture.
+    EditorTogglePerfProfilerPause,
+    /// Select a profiler frame chunk by inclusive history bounds.
+    EditorSelectPerfHistoryRange { start: usize, end: usize },
+    /// Select a profiler frame by history index.
+    EditorSelectPerfHistoryIndex(usize),
+    /// Pan histogram focus by a signed frame delta.
+    EditorPanPerfHistogram(i32),
+    /// Focus histogram navigation on a specific history index.
+    EditorFocusPerfHistogramIndex(usize),
+    /// Toggle whether histogram tracking follows newest frames.
+    EditorSetPerfFollowLatest(bool),
+    /// Clear profiler frame selection.
+    EditorClearPerfSelection,
     /// Export the selected block as OBJ.
     EditorExportBlockObj,
 

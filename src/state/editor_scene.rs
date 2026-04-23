@@ -7,7 +7,7 @@
 */
 use glam::Vec3;
 
-use super::{EditorDirtyFlags, EditorSubsystem, PerfStage, State};
+use super::{BlockMeshOperation, EditorDirtyFlags, EditorSubsystem, PerfStage, State};
 use crate::editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds_with_triggers};
 use crate::game::trigger_transformed_objects_at_time;
 use crate::mesh::{
@@ -24,7 +24,25 @@ impl EditorSubsystem {
         self.runtime.dirty.merge(dirty);
     }
 
+    pub(crate) fn request_block_mesh_operation(
+        &mut self,
+        operation: BlockMeshOperation,
+        changed_indices: &[usize],
+    ) {
+        self.runtime
+            .block_mesh_operation
+            .request(operation, changed_indices);
+    }
+
     pub(crate) fn sync_objects(&mut self) {
+        self.sync_objects_with_mesh_operation(BlockMeshOperation::FullRebuild, &[]);
+    }
+
+    pub(crate) fn sync_objects_with_mesh_operation(
+        &mut self,
+        operation: BlockMeshOperation,
+        changed_indices: &[usize],
+    ) {
         self.sync_primary_selection_from_indices();
         if let Some(index) = self.ui.selected_block_index {
             if index >= self.objects.len() {
@@ -42,6 +60,7 @@ impl EditorSubsystem {
         }
         self.invalidate_samples();
         self.selected_mask_cache = None;
+        self.request_block_mesh_operation(operation, changed_indices);
         self.mark_dirty(EditorDirtyFlags::from_object_sync());
     }
 
@@ -61,6 +80,8 @@ impl EditorSubsystem {
                 self.ui.hovered_block_index = None;
             }
         }
+        let selected = self.selected_indices_normalized();
+        self.request_block_mesh_operation(BlockMeshOperation::SelectedOnly, &selected);
         self.mark_dirty(EditorDirtyFlags {
             sync_game_objects: true,
             rebuild_block_mesh: true,
@@ -86,6 +107,7 @@ impl EditorSubsystem {
             }
         }
         self.invalidate_samples();
+        self.runtime.block_mesh_operation.clear();
         self.mark_dirty(EditorDirtyFlags {
             sync_game_objects: true,
             rebuild_selection_overlays: true,
@@ -97,6 +119,7 @@ impl EditorSubsystem {
 
     pub(crate) fn add_block_at_cursor(&mut self) {
         self.record_history_state();
+        let inserted_index = self.objects.len();
         self.objects.push(create_block_at_cursor(
             self.ui.cursor,
             &self.config.selected_block_id,
@@ -104,7 +127,7 @@ impl EditorSubsystem {
         self.ui.selected_block_index = None;
         self.ui.selected_block_indices.clear();
         self.ui.hovered_block_index = None;
-        self.sync_objects();
+        self.sync_objects_with_mesh_operation(BlockMeshOperation::AppendObject, &[inserted_index]);
     }
 
     pub(crate) fn timeline_elapsed_seconds(&self, time_seconds: f32) -> f32 {
@@ -195,6 +218,16 @@ impl State {
             return;
         }
 
+        let pending_mesh_operation = if dirty.rebuild_block_mesh {
+            self.editor
+                .runtime
+                .block_mesh_operation
+                .take()
+                .or(Some((BlockMeshOperation::FullRebuild, Vec::new())))
+        } else {
+            None
+        };
+
         if dirty.sync_game_objects {
             self.editor.runtime.dirty.sync_game_objects = false;
             self.perf_record(PerfStage::DirtySyncGameObjects, PlatformInstant::now());
@@ -220,7 +253,9 @@ impl State {
             if self.phase == AppPhase::Editor && is_dragging {
                 self.rebuild_editor_selected_block_vertices();
             } else {
-                self.rebuild_block_vertices();
+                let (operation, changed_indices) =
+                    pending_mesh_operation.unwrap_or((BlockMeshOperation::FullRebuild, Vec::new()));
+                self.rebuild_block_vertices_with_operation(operation, &changed_indices);
             }
             self.perf_record(PerfStage::DirtyRebuildBlockMesh, block_mesh_started_at);
         }
@@ -279,6 +314,15 @@ impl State {
 
     pub(super) fn sync_editor_objects(&mut self) {
         self.editor.sync_objects();
+    }
+
+    pub(super) fn sync_editor_objects_with_mesh_operation(
+        &mut self,
+        operation: BlockMeshOperation,
+        changed_indices: &[usize],
+    ) {
+        self.editor
+            .sync_objects_with_mesh_operation(operation, changed_indices);
     }
 
     pub(super) fn sync_editor_objects_after_drag_release(&mut self) {
@@ -587,9 +631,17 @@ impl State {
     }
 
     pub(super) fn rebuild_block_vertices(&mut self) {
+        self.rebuild_block_vertices_with_operation(BlockMeshOperation::FullRebuild, &[]);
+    }
+
+    fn rebuild_block_vertices_with_operation(
+        &mut self,
+        operation: BlockMeshOperation,
+        changed_indices: &[usize],
+    ) {
         let perf_started_at = PlatformInstant::now();
         if self.phase == AppPhase::Editor {
-            self.rebuild_editor_block_vertices_split();
+            self.rebuild_editor_block_vertices_split(operation, changed_indices);
         } else {
             let vertices = build_block_vertices(&self.gameplay.state.objects);
             self.render.meshes.blocks.replace_with_vertices(
@@ -598,42 +650,163 @@ impl State {
                 &vertices,
             );
             self.render.meshes.blocks_static.clear();
+            for chunk in &mut self.render.meshes.blocks_static_chunks {
+                chunk.clear();
+            }
             self.render.meshes.blocks_selected.clear();
+            self.editor.runtime.static_chunk_keys.clear();
         }
         self.perf_record(PerfStage::BlockMeshRebuild, perf_started_at);
     }
 
-    fn rebuild_editor_block_vertices_split(&mut self) {
-        let object_source = self
-            .editor_runtime_objects_for_render()
-            .unwrap_or_else(|| self.editor.objects.clone());
+    fn rebuild_editor_static_chunks_full(
+        &mut self,
+        object_source: &[LevelObject],
+        selected_mask: Option<&[bool]>,
+    ) {
+        let static_objects = object_source
+            .iter()
+            .enumerate()
+            .filter_map(|(index, object)| {
+                if selected_mask
+                    .as_ref()
+                    .is_some_and(|mask| mask.get(index).copied().unwrap_or(false))
+                {
+                    None
+                } else {
+                    Some(object)
+                }
+            });
 
-        let mask_build_started_at = PlatformInstant::now();
-        let selected_indices = self.selected_block_indices_normalized();
-        let mut selected_mask = vec![false; object_source.len()];
-        for index in selected_indices {
-            if index < selected_mask.len() {
-                selected_mask[index] = true;
+        let static_vertices = build_block_vertices_from_refs(static_objects);
+        self.render
+            .meshes
+            .blocks_static
+            .write_streaming_vertices_with_growth(
+                &self.render.gpu.device,
+                &self.render.gpu.queue,
+                "Block Static Vertex Buffer",
+                &static_vertices,
+            );
+
+        self.editor.runtime.static_chunk_keys.clear();
+        for chunk in &mut self.render.meshes.blocks_static_chunks {
+            chunk.clear();
+        }
+    }
+
+    fn rebuild_editor_static_chunks_incremental_append(
+        &mut self,
+        appended_objects: &[LevelObject],
+    ) -> bool {
+        if appended_objects.is_empty() {
+            return false;
+        }
+
+        for object in appended_objects {
+            let object_vertices = build_block_vertices_from_refs(std::iter::once(object));
+            let appended = self
+                .render
+                .meshes
+                .blocks_static
+                .append_streaming_vertices_with_growth(
+                    &self.render.gpu.device,
+                    &self.render.gpu.queue,
+                    "Block Static Vertex Buffer",
+                    &object_vertices,
+                );
+            if !appended {
+                return false;
             }
         }
-        self.perf_record(PerfStage::BlockMeshMaskBuild, mask_build_started_at);
 
-        let static_mesh_started_at = PlatformInstant::now();
-        let static_vertices = {
-            let mut static_objects = Vec::new();
-            for (index, object) in object_source.iter().enumerate() {
-                if !selected_mask[index] {
-                    static_objects.push(object);
+        self.editor.runtime.static_chunk_keys.clear();
+        for chunk in &mut self.render.meshes.blocks_static_chunks {
+            chunk.clear();
+        }
+        true
+    }
+
+    fn rebuild_editor_block_vertices_split(
+        &mut self,
+        operation: BlockMeshOperation,
+        changed_indices: &[usize],
+    ) {
+        let selected_indices = self.selected_block_indices_normalized();
+        let has_selection = !selected_indices.is_empty();
+        let runtime_objects = self.editor_runtime_objects_for_render();
+        let has_runtime_objects = runtime_objects.is_some();
+
+        let selected_only_operation = matches!(operation, BlockMeshOperation::SelectedOnly)
+            || (matches!(operation, BlockMeshOperation::UpdateObjects)
+                && !changed_indices.is_empty()
+                && changed_indices
+                    .iter()
+                    .all(|index| selected_indices.contains(index)));
+
+        if selected_only_operation {
+            self.rebuild_editor_selected_block_vertices();
+            return;
+        }
+
+        let supports_incremental_append = matches!(operation, BlockMeshOperation::AppendObject)
+            && !has_runtime_objects
+            && !changed_indices.is_empty()
+            && !has_selection
+            && changed_indices
+                .iter()
+                .all(|index| *index < self.editor.objects.len());
+
+        if supports_incremental_append {
+            let appended_objects: Vec<LevelObject> = changed_indices
+                .iter()
+                .filter_map(|index| self.editor.objects.get(*index).cloned())
+                .collect();
+            if appended_objects.len() == changed_indices.len() {
+                let static_mesh_started_at = PlatformInstant::now();
+                let upload_static_started_at = PlatformInstant::now();
+                let incremental_started_at = PlatformInstant::now();
+                if self.rebuild_editor_static_chunks_incremental_append(&appended_objects) {
+                    self.perf_record(
+                        PerfStage::BlockMeshIncrementalAppend,
+                        incremental_started_at,
+                    );
+                    self.perf_record(PerfStage::BlockMeshSplitStatic, static_mesh_started_at);
+                    self.perf_record(PerfStage::BlockMeshUploadStatic, upload_static_started_at);
+                    self.render.meshes.blocks_selected.clear();
+                    self.render.meshes.blocks.clear();
+                    return;
                 }
             }
-            build_block_vertices_from_refs(static_objects)
+        }
+
+        let object_source: Vec<LevelObject> =
+            runtime_objects.unwrap_or_else(|| self.editor.objects.clone());
+        let selected_mask: Option<Vec<bool>> = if selected_indices.is_empty() {
+            None
+        } else {
+            let mask_build_started_at = PlatformInstant::now();
+            let mut mask = vec![false; object_source.len()];
+            for index in selected_indices {
+                if index < mask.len() {
+                    mask[index] = true;
+                }
+            }
+            self.perf_record(PerfStage::BlockMeshMaskBuild, mask_build_started_at);
+            Some(mask)
         };
+
+        let static_mesh_started_at = PlatformInstant::now();
+        self.rebuild_editor_static_chunks_full(&object_source, selected_mask.as_deref());
 
         let selected_mesh_started_at = PlatformInstant::now();
         let selected_vertices = {
             let mut selected_objects = Vec::new();
             for (index, object) in object_source.iter().enumerate() {
-                if selected_mask[index] {
+                if selected_mask
+                    .as_ref()
+                    .is_some_and(|mask| mask.get(index).copied().unwrap_or(false))
+                {
                     selected_objects.push(object);
                 }
             }
@@ -644,19 +817,19 @@ impl State {
         self.perf_record(PerfStage::BlockMeshSplitSelected, selected_mesh_started_at);
 
         let upload_static_started_at = PlatformInstant::now();
-        self.render.meshes.blocks_static.replace_with_vertices(
-            &self.render.gpu.device,
-            "Block Static Vertex Buffer",
-            &static_vertices,
-        );
+        // Static chunk uploads happen inside rebuild_editor_static_chunks_full.
         self.perf_record(PerfStage::BlockMeshUploadStatic, upload_static_started_at);
 
         let upload_selected_started_at = PlatformInstant::now();
-        self.render.meshes.blocks_selected.replace_with_vertices(
-            &self.render.gpu.device,
-            "Block Selected Vertex Buffer",
-            &selected_vertices,
-        );
+        self.render
+            .meshes
+            .blocks_selected
+            .write_streaming_vertices_with_growth(
+                &self.render.gpu.device,
+                &self.render.gpu.queue,
+                "Block Selected Vertex Buffer",
+                &selected_vertices,
+            );
         self.perf_record(
             PerfStage::BlockMeshUploadSelected,
             upload_selected_started_at,
@@ -665,9 +838,10 @@ impl State {
     }
 
     fn rebuild_editor_selected_block_vertices(&mut self) {
-        let object_source = self
-            .editor_runtime_objects_for_render()
-            .unwrap_or_else(|| self.editor.objects.clone());
+        let runtime_objects = self.editor_runtime_objects_for_render();
+        let object_source: &[LevelObject] = runtime_objects
+            .as_deref()
+            .unwrap_or(self.editor.objects.as_slice());
 
         let selected_only_started_at = PlatformInstant::now();
         if self
@@ -709,11 +883,15 @@ impl State {
         );
 
         let selected_upload_started_at = PlatformInstant::now();
-        self.render.meshes.blocks_selected.replace_with_vertices(
-            &self.render.gpu.device,
-            "Block Selected Vertex Buffer",
-            &selected_vertices,
-        );
+        self.render
+            .meshes
+            .blocks_selected
+            .write_streaming_vertices_with_growth(
+                &self.render.gpu.device,
+                &self.render.gpu.queue,
+                "Block Selected Vertex Buffer",
+                &selected_vertices,
+            );
         self.perf_record(
             PerfStage::BlockMeshSelectedOnlyUpload,
             selected_upload_started_at,
@@ -1014,7 +1192,14 @@ mod tests {
             state.rebuild_block_vertices();
             assert!(state.render.meshes.blocks.draw_data().is_none());
             assert!(state.render.meshes.blocks_selected.draw_data().is_some());
-            assert!(state.render.meshes.blocks_static.draw_data().is_some());
+            let has_static_world_mesh = state.render.meshes.blocks_static.draw_data().is_some()
+                || state
+                    .render
+                    .meshes
+                    .blocks_static_chunks
+                    .iter()
+                    .any(|chunk| chunk.draw_data().is_some());
+            assert!(has_static_world_mesh);
 
             state.phase = AppPhase::Playing;
             state.gameplay.state.objects = state.editor.objects.clone();
@@ -1022,6 +1207,12 @@ mod tests {
             assert!(state.render.meshes.blocks.draw_data().is_some());
             assert!(state.render.meshes.blocks_selected.draw_data().is_none());
             assert!(state.render.meshes.blocks_static.draw_data().is_none());
+            assert!(state
+                .render
+                .meshes
+                .blocks_static_chunks
+                .iter()
+                .all(|chunk| chunk.draw_data().is_none()));
         });
     }
 
