@@ -173,7 +173,7 @@ where
 }
 
 fn is_torch_block_id(block_id: &str) -> bool {
-    block_id.trim().eq_ignore_ascii_case(TORCH_BLOCK_ID)
+    block_id == TORCH_BLOCK_ID
 }
 
 fn apply_torch_light(color: [f32; 4], strength: f32) -> [f32; 4] {
