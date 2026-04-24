@@ -57,11 +57,11 @@ web-sys = { version = "0.3", features = [
 js-sys = "0.3"
 web-time = "1.1"
 gloo-console = "0.4"
-gloo-events = "0.2"
+gloo-events = "0.3"
 gloo-file = "0.4"
 gloo-net = "0.7"
 gloo-render = "0.3"
-gloo-utils = "0.2"
+gloo-utils = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_cbor = "0.11"
