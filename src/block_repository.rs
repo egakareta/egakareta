@@ -564,7 +564,8 @@ pub(crate) fn normalize_block_id(block_id: &str) -> String {
 mod tests {
     use super::{
         all_placeable_blocks, block_texture_atlas, normalize_block_id, resolve_block_definition,
-        resolve_block_texture_layers, BlockAssets, BlockBehavior, BlockDefinition, BlockRender,
+        resolve_block_texture_layers, BlockAssets, BlockBehavior, BlockCollision, BlockDefinition,
+        BlockRender, BlockRenderProfile,
     };
 
     #[test]
@@ -667,5 +668,17 @@ mod tests {
 
         assert_eq!(atlas.resolve_layer(""), None);
         assert_eq!(atlas.resolve_layer("   "), None);
+    }
+
+    #[test]
+    fn torch_block_definition_is_passthrough_and_glowing() {
+        let torch = resolve_block_definition("core/torch");
+        assert_eq!(torch.id, "core/torch");
+        assert!(matches!(
+            torch.behavior.collision,
+            BlockCollision::PassThrough
+        ));
+        assert!(!torch.behavior.support_surface);
+        assert!(matches!(torch.render.profile, BlockRenderProfile::Liquid));
     }
 }

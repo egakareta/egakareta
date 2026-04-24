@@ -14,33 +14,55 @@ use crate::mesh::shapes::{append_prism_with_layers, PrismFaceColors, PrismTextur
 use crate::mesh::transforms::rotate_vertices_around_euler;
 use crate::types::{LevelObject, Vertex};
 
+const TORCH_BLOCK_ID: &str = "core/torch";
+const TORCH_LIGHT_RADIUS: f32 = 3.25;
+const TORCH_GLOW_STRENGTH: f32 = 0.48;
+const TORCH_FLICKER_BASE: f32 = 0.85;
+const TORCH_FLICKER_AMPLITUDE: f32 = 0.15;
+const TORCH_FLICKER_FREQUENCY: f32 = 9.0;
+const TORCH_PHASE_OFFSET_X: f32 = 1.37;
+const TORCH_PHASE_OFFSET_Z: f32 = 0.91;
+const TORCH_WARMTH_RGB: [f32; 3] = [1.0, 0.78, 0.42];
+
 pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
-    build_block_vertices_from_refs(objects.iter())
+    build_block_vertices_with_phase_impl(objects.iter(), 0.0)
 }
 
-pub(crate) fn build_block_vertices_from_refs<'a, I>(objects: I) -> Vec<Vertex>
-where
-    I: IntoIterator<Item = &'a LevelObject>,
-{
-    build_block_vertices_with_phase_from_refs(objects, 0.0)
+pub(crate) fn build_block_vertices_from_refs(objects: &[&LevelObject]) -> Vec<Vertex> {
+    build_block_vertices_with_phase_impl(objects.iter().copied(), 0.0)
 }
 
 pub(crate) fn build_block_vertices_with_phase(
     objects: &[LevelObject],
     pulse_phase_seconds: f32,
 ) -> Vec<Vertex> {
-    build_block_vertices_with_phase_from_refs(objects.iter(), pulse_phase_seconds)
+    build_block_vertices_with_phase_impl(objects.iter(), pulse_phase_seconds)
 }
 
-pub(crate) fn build_block_vertices_with_phase_from_refs<'a, I>(
-    objects: I,
-    pulse_phase_seconds: f32,
-) -> Vec<Vertex>
+fn build_block_vertices_with_phase_impl<'a, I>(objects: I, pulse_phase_seconds: f32) -> Vec<Vertex>
 where
-    I: IntoIterator<Item = &'a LevelObject>,
+    I: Iterator<Item = &'a LevelObject> + Clone,
 {
     const LIQUID_PROFILE_TAG: f32 = 1.0;
     let mut all_vertices = Vec::new();
+    let torch_emitters: Vec<([f32; 3], f32)> = objects
+        .clone()
+        .filter_map(|obj| {
+            if obj.block_id != TORCH_BLOCK_ID {
+                return None;
+            }
+            let center = [
+                obj.position[0] + obj.size[0] * 0.5,
+                obj.position[1] + obj.size[1] * 0.5,
+                obj.position[2] + obj.size[2] * 0.5,
+            ];
+            let phase_offset = center[0] * TORCH_PHASE_OFFSET_X + center[2] * TORCH_PHASE_OFFSET_Z;
+            let flicker = TORCH_FLICKER_BASE
+                + TORCH_FLICKER_AMPLITUDE
+                    * (pulse_phase_seconds * TORCH_FLICKER_FREQUENCY + phase_offset).sin();
+            Some((center, flicker.max(0.0)))
+        })
+        .collect();
 
     for obj in objects {
         let mut object_vertices = Vec::new();
@@ -76,6 +98,30 @@ where
         color_side = apply_color_tint(color_side, obj.color_tint);
         color_bottom = apply_color_tint(color_bottom, obj.color_tint);
         color_outline = apply_color_tint(color_outline, obj.color_tint);
+
+        let center = [
+            obj.position[0] + obj.size[0] * 0.5,
+            obj.position[1] + obj.size[1] * 0.5,
+            obj.position[2] + obj.size[2] * 0.5,
+        ];
+        let torch_light_factor = torch_emitters
+            .iter()
+            .map(|(torch_center, flicker)| {
+                let dx = center[0] - torch_center[0];
+                let dy = center[1] - torch_center[1];
+                let dz = center[2] - torch_center[2];
+                let distance_sq = dx * dx + dy * dy + dz * dz;
+                let radius_sq = TORCH_LIGHT_RADIUS * TORCH_LIGHT_RADIUS;
+                let falloff = (1.0 - distance_sq / radius_sq).max(0.0);
+                falloff * falloff * *flicker
+            })
+            .fold(0.0_f32, f32::max);
+        if block.id != TORCH_BLOCK_ID && torch_light_factor > f32::EPSILON {
+            color_top = apply_torch_light(color_top, torch_light_factor * TORCH_GLOW_STRENGTH);
+            color_side = apply_torch_light(color_side, torch_light_factor * TORCH_GLOW_STRENGTH);
+            color_bottom =
+                apply_torch_light(color_bottom, torch_light_factor * TORCH_GLOW_STRENGTH);
+        }
 
         if let Some(mesh_path) = block.assets.mesh.as_deref() {
             if let Some(mesh) = resolve_obj_mesh(mesh_path) {
@@ -119,16 +165,20 @@ where
             }
         }
 
-        let center = [
-            obj.position[0] + obj.size[0] * 0.5,
-            obj.position[1] + obj.size[1] * 0.5,
-            obj.position[2] + obj.size[2] * 0.5,
-        ];
         rotate_vertices_around_euler(&mut object_vertices, center, obj.rotation_degrees);
         all_vertices.extend(object_vertices);
     }
 
     all_vertices
+}
+
+fn apply_torch_light(color: [f32; 4], strength: f32) -> [f32; 4] {
+    [
+        (color[0] + TORCH_WARMTH_RGB[0] * strength).clamp(0.0, 1.0),
+        (color[1] + TORCH_WARMTH_RGB[1] * strength).clamp(0.0, 1.0),
+        (color[2] + TORCH_WARMTH_RGB[2] * strength).clamp(0.0, 1.0),
+        color[3],
+    ]
 }
 
 fn apply_color_tint(color: [f32; 4], tint_rgb: [f32; 3]) -> [f32; 4] {
