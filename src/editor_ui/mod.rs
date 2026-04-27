@@ -562,6 +562,26 @@ pub fn show_editor_ui(
                     commands.push(crate::commands::AppCommand::EditorUpdateMusic(music));
                 }
 
+                ui.separator();
+                ui.heading(format!(
+                    "{} Menu Preview Camera",
+                    egui_phosphor::regular::CAMERA
+                ));
+                ui.horizontal_wrapped(|ui| {
+                    if ui
+                        .button(format!(
+                            "{} Capture Current Camera",
+                            egui_phosphor::regular::CAMERA
+                        ))
+                        .clicked()
+                    {
+                        commands.push(crate::commands::AppCommand::EditorCaptureMenuPreviewCamera);
+                    }
+                    if ui.button("Use Auto from Spawn").clicked() {
+                        commands.push(crate::commands::AppCommand::EditorUseAutoMenuPreviewCamera);
+                    }
+                });
+
                 if ui.button("Close").clicked() {
                     commands.push(crate::commands::AppCommand::EditorSetShowMetadata(false));
                 }

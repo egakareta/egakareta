@@ -185,6 +185,10 @@ pub(crate) enum AppCommand {
     EditorUpdateMusic(crate::types::MusicMetadata),
     /// Trigger the platform audio import dialog.
     EditorTriggerAudioImport,
+    /// Store the current editor camera as menu preview camera metadata.
+    EditorCaptureMenuPreviewCamera,
+    /// Remove manual menu preview camera metadata and use automatic camera.
+    EditorUseAutoMenuPreviewCamera,
 
     // ── Editor – keyboard state routing ───────────────────────────
     /// Track Shift held state for editor shortcuts.

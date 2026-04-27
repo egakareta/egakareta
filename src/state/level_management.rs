@@ -20,8 +20,11 @@ use crate::mesh::build_block_obj;
 use crate::platform::io::{log_platform_error, read_editor_music_bytes};
 use crate::platform::services::{trigger_level_export, trigger_level_import};
 use crate::types::{
-    AppPhase, AppSettings, EditorMode, KeyChord, LevelMetadata, MusicMetadata, SettingsSection,
+    AppPhase, AppSettings, EditorMode, KeyChord, LevelMetadata, LevelPreviewCameraMetadata,
+    MusicMetadata, SettingsSection, SpawnDirection, DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
+    DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
 };
+use glam::Vec3;
 
 impl State {
     pub(super) fn start_level(&mut self, index: usize) {
@@ -127,6 +130,7 @@ impl State {
         self.editor.set_trigger_selected(None);
         self.editor
             .set_simulate_trigger_hitboxes(init.simulate_trigger_hitboxes);
+        self.session.editor_menu_preview_camera = init.menu_preview_camera;
         self.editor.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
             self.editor.spawn.position,
             self.editor.spawn.direction,
@@ -216,6 +220,7 @@ impl State {
             timeline_duration_seconds: self.editor.timeline.clock.duration_seconds,
             triggers: self.editor.triggers().to_vec(),
             simulate_trigger_hitboxes: self.editor.simulate_trigger_hitboxes(),
+            menu_preview_camera: self.session.editor_menu_preview_camera.clone(),
             objects: self.editor.objects.clone(),
         })
     }
@@ -240,6 +245,7 @@ impl State {
         self.editor.set_trigger_selected(None);
         self.editor
             .set_simulate_trigger_hitboxes(init.simulate_trigger_hitboxes);
+        self.session.editor_menu_preview_camera = init.menu_preview_camera;
         self.editor.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
             self.editor.spawn.position,
             self.editor.spawn.direction,
@@ -297,6 +303,67 @@ impl State {
 
     pub(crate) fn set_editor_music_metadata(&mut self, metadata: MusicMetadata) {
         self.session.editor_music_metadata = metadata;
+    }
+
+    pub(crate) fn editor_capture_menu_preview_camera(&mut self) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        let target = Vec3::new(
+            self.editor.camera.editor_pan[0],
+            self.editor.camera.editor_target_z,
+            self.editor.camera.editor_pan[1],
+        );
+        let position = (target + self.editor_camera_offset()).to_array();
+        self.session.editor_menu_preview_camera = Some(LevelPreviewCameraMetadata {
+            position,
+            target: target.to_array(),
+        });
+    }
+
+    pub(crate) fn editor_use_auto_menu_preview_camera(&mut self) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+        self.session.editor_menu_preview_camera = None;
+    }
+
+    pub(super) fn refresh_menu_level_preview_if_needed(&mut self) {
+        if self.phase != AppPhase::Menu {
+            return;
+        }
+
+        if self.menu.state.preview_level_index == Some(self.menu.state.selected_level) {
+            return;
+        }
+
+        self.menu.state.preview_level_index = Some(self.menu.state.selected_level);
+
+        let Some(level_name) = self.menu.state.levels.get(self.menu.state.selected_level) else {
+            self.reset_menu_preview_to_default_scene();
+            return;
+        };
+
+        let Some(metadata) = self.load_level_metadata(level_name) else {
+            self.reset_menu_preview_to_default_scene();
+            return;
+        };
+
+        let (position, target) = menu_preview_camera_for_metadata(&metadata);
+        self.gameplay.state.objects = metadata.objects;
+        self.gameplay.state.rebuild_behavior_cache();
+        self.menu.state.preview_camera_position = position;
+        self.menu.state.preview_camera_target = target;
+        self.rebuild_block_vertices();
+    }
+
+    fn reset_menu_preview_to_default_scene(&mut self) {
+        self.gameplay.state.objects = crate::game::create_menu_scene();
+        self.gameplay.state.rebuild_behavior_cache();
+        self.menu.state.preview_camera_position = DEFAULT_MENU_PREVIEW_CAMERA_POSITION;
+        self.menu.state.preview_camera_target = DEFAULT_MENU_PREVIEW_CAMERA_TARGET;
+        self.rebuild_block_vertices();
     }
 
     pub(crate) fn editor_show_settings(&self) -> bool {
@@ -506,11 +573,33 @@ impl State {
     }
 }
 
+fn menu_preview_camera_for_metadata(metadata: &LevelMetadata) -> ([f32; 3], [f32; 3]) {
+    metadata
+        .menu_preview_camera
+        .as_ref()
+        .map(|preview| (preview.position, preview.target))
+        .unwrap_or_else(|| auto_menu_preview_camera_from_spawn(&metadata.spawn))
+}
+
+fn auto_menu_preview_camera_from_spawn(
+    spawn: &crate::types::SpawnMetadata,
+) -> ([f32; 3], [f32; 3]) {
+    let spawn_position = Vec3::from_array(spawn.position);
+    let forward = match spawn.direction {
+        SpawnDirection::Forward => Vec3::new(0.0, 0.0, 1.0),
+        SpawnDirection::Right => Vec3::new(1.0, 0.0, 0.0),
+    };
+    let side = Vec3::new(forward.z, 0.0, -forward.x);
+    let target = spawn_position + forward * 10.0 + Vec3::new(0.0, 1.0, 0.0);
+    let eye = spawn_position - forward * 20.0 + side * 12.0 + Vec3::new(0.0, 14.0, 0.0);
+    (eye.to_array(), target.to_array())
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
 
-    use super::State;
+    use super::{auto_menu_preview_camera_from_spawn, menu_preview_camera_for_metadata, State};
     use crate::types::{AppPhase, KeyChord, LevelObject, MusicMetadata, SettingsSection};
 
     struct ArtifactCleanup {
@@ -737,6 +826,85 @@ mod tests {
             state.editor.ui.selected_block_index = None;
             state.trigger_selected_block_obj_export();
         });
+    }
+
+    #[test]
+    fn menu_preview_refresh_uses_selected_level_scene_and_camera() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Menu;
+            state.menu.state.selected_level = 0;
+            state.menu.state.preview_level_index = None;
+
+            let level_name = state.menu.state.levels[0].clone();
+            let metadata = state
+                .load_level_metadata(&level_name)
+                .expect("selected level metadata should exist");
+
+            state.refresh_menu_level_preview_if_needed();
+
+            assert_eq!(state.menu.state.preview_level_index, Some(0));
+            assert_eq!(state.gameplay.state.objects, metadata.objects);
+
+            let expected_camera = metadata
+                .menu_preview_camera
+                .as_ref()
+                .map(|preview| (preview.position, preview.target))
+                .unwrap_or_else(|| auto_menu_preview_camera_from_spawn(&metadata.spawn));
+            assert_eq!(state.menu.state.preview_camera_position, expected_camera.0);
+            assert_eq!(state.menu.state.preview_camera_target, expected_camera.1);
+
+            state.refresh_menu_level_preview_if_needed();
+            assert_eq!(state.menu.state.preview_level_index, Some(0));
+        });
+    }
+
+    #[test]
+    fn capture_and_clear_menu_preview_camera_updates_editor_metadata() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.enter_editor_phase("PreviewCamera".to_string());
+            state.editor.camera.editor_pan = [5.0, -3.0];
+            state.editor.camera.editor_target_z = 2.0;
+            state.editor.camera.editor_rotation = 30.0f32.to_radians();
+            state.editor.camera.editor_pitch = 40.0f32.to_radians();
+
+            state.editor_capture_menu_preview_camera();
+            let captured = state.current_editor_metadata().menu_preview_camera;
+            assert!(captured.is_some());
+
+            let manual_camera = captured.expect("manual camera should be captured");
+            assert_eq!(manual_camera.target, [5.0, 2.0, -3.0]);
+
+            state.editor_use_auto_menu_preview_camera();
+            assert!(state
+                .current_editor_metadata()
+                .menu_preview_camera
+                .is_none());
+
+            let expected = menu_preview_camera_for_metadata(&state.current_editor_metadata());
+            let auto = auto_menu_preview_camera_from_spawn(&state.editor.spawn);
+            assert_eq!(expected, auto);
+        });
+    }
+
+    #[test]
+    fn auto_menu_preview_camera_positions_follow_spawn_direction() {
+        let (forward_eye, forward_target) =
+            auto_menu_preview_camera_from_spawn(&crate::types::SpawnMetadata {
+                position: [2.0, 3.0, 4.0],
+                direction: crate::types::SpawnDirection::Forward,
+            });
+        assert_eq!(forward_eye, [14.0, 17.0, -16.0]);
+        assert_eq!(forward_target, [2.0, 4.0, 14.0]);
+
+        let (right_eye, right_target) =
+            auto_menu_preview_camera_from_spawn(&crate::types::SpawnMetadata {
+                position: [2.0, 3.0, 4.0],
+                direction: crate::types::SpawnDirection::Right,
+            });
+        assert_eq!(right_eye, [-18.0, 17.0, -8.0]);
+        assert_eq!(right_target, [12.0, 4.0, 4.0]);
     }
 
     #[test]

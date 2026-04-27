@@ -102,6 +102,7 @@ mod tests {
             timeline_duration_seconds: 16.0,
             triggers: Vec::new(),
             simulate_trigger_hitboxes: false,
+            menu_preview_camera: None,
             objects: vec![LevelObject {
                 position: [4.0, 6.0, 0.0],
                 size: [1.0, 1.0, 1.0],
@@ -228,6 +229,7 @@ mod tests {
             timeline_duration_seconds: 16.0,
             triggers: Vec::new(),
             simulate_trigger_hitboxes: false,
+            menu_preview_camera: None,
             objects: vec![LevelObject {
                 position: [1.0, 2.0, 0.0],
                 size: [1.0, 1.0, 1.0],
