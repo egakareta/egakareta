@@ -83,6 +83,7 @@ mod tests {
             timeline_duration_seconds: 12.0,
             triggers: Vec::new(),
             simulate_trigger_hitboxes: true,
+            menu_preview_camera: None,
             objects: vec![LevelObject {
                 position: [4.0, 0.0, 2.0],
                 size: [1.0, 1.0, 1.0],

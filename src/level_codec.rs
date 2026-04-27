@@ -8,7 +8,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::types::{
-    LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata, TimedTrigger, TimingPoint,
+    LevelMetadata, LevelObject, LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata,
+    TimedTrigger, TimingPoint,
 };
 
 const LEVEL_MAGIC: [u8; 4] = *b"EGB1";
@@ -33,6 +34,8 @@ struct BinaryLevelPayloadV1 {
     timeline_duration_seconds: f32,
     triggers: Vec<TimedTrigger>,
     simulate_trigger_hitboxes: bool,
+    #[serde(default)]
+    menu_preview_camera: Option<LevelPreviewCameraMetadata>,
     level_extra_entries: Vec<MetadataEntry>,
     palette: Vec<String>,
     object_runs: Vec<ObjectRun>,
@@ -176,6 +179,7 @@ pub(crate) fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<V
         timeline_duration_seconds: metadata.timeline_duration_seconds,
         triggers: metadata.triggers.clone(),
         simulate_trigger_hitboxes: metadata.simulate_trigger_hitboxes,
+        menu_preview_camera: metadata.menu_preview_camera.clone(),
         level_extra_entries: map_to_entries(&metadata.extra)?,
         palette,
         object_runs: rle_encode_palette_indices(&palette_indices),
@@ -422,6 +426,7 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
         timeline_duration_seconds: payload.timeline_duration_seconds,
         triggers: payload.triggers,
         simulate_trigger_hitboxes: payload.simulate_trigger_hitboxes,
+        menu_preview_camera: payload.menu_preview_camera,
         objects,
         extra: entries_to_map(payload.level_extra_entries)?,
     })
@@ -887,6 +892,7 @@ mod tests {
             timeline_duration_seconds: 0.0,
             triggers: Vec::new(),
             simulate_trigger_hitboxes: false,
+            menu_preview_camera: None,
             level_extra_entries: Vec::new(),
             palette: Vec::new(),
             object_runs: Vec::new(),
@@ -962,6 +968,7 @@ mod tests {
             timeline_duration_seconds: 0.0,
             triggers: Vec::new(),
             simulate_trigger_hitboxes: false,
+            menu_preview_camera: None,
             level_extra_entries: Vec::new(),
             palette: Vec::new(),
             object_runs: vec![ObjectRun {

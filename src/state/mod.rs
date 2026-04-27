@@ -53,8 +53,8 @@ use crate::game::GameState;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::platform::state_host::NativeWindow;
 use crate::types::{
-    AppPhase, AppSettings, EditorMode, EditorState, LevelObject, MenuState, MusicMetadata,
-    PhysicalSize, SettingsSection, SpawnMetadata,
+    AppPhase, AppSettings, EditorMode, EditorState, LevelObject, LevelPreviewCameraMetadata,
+    MenuState, MusicMetadata, PhysicalSize, SettingsSection, SpawnMetadata,
 };
 
 /// Bundles all gameplay-related state into a single subsystem.
@@ -68,6 +68,7 @@ pub(crate) struct GameplaySubsystem {
 pub(crate) struct SessionSubsystem {
     pub(crate) editor_level_name: Option<String>,
     pub(crate) editor_music_metadata: MusicMetadata,
+    pub(crate) editor_menu_preview_camera: Option<LevelPreviewCameraMetadata>,
     pub(crate) editor_show_metadata: bool,
     pub(crate) editor_show_settings: bool,
     pub(crate) editor_settings_section: SettingsSection,

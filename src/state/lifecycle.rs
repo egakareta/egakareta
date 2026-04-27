@@ -302,6 +302,9 @@ impl State {
         let menu = MenuState {
             selected_level: 0,
             levels: builtin_level_names(),
+            preview_level_index: None,
+            preview_camera_position: [22.657694, 15.0, -10.565456],
+            preview_camera_target: [0.0, 0.0, 0.0],
         };
 
         let mut game = GameState::new();
@@ -391,6 +394,7 @@ impl State {
                     author: None,
                     extra: serde_json::Map::new(),
                 },
+                editor_menu_preview_camera: None,
                 editor_show_metadata: false,
                 editor_show_settings: false,
                 editor_settings_section: SettingsSection::Backends,
@@ -921,6 +925,9 @@ impl State {
         let menu = MenuState {
             selected_level: 0,
             levels: builtin_level_names(),
+            preview_level_index: None,
+            preview_camera_position: [22.657694, 15.0, -10.565456],
+            preview_camera_target: [0.0, 0.0, 0.0],
         };
 
         let mut game = GameState::new();
@@ -1025,6 +1032,7 @@ impl State {
                     author: None,
                     extra: serde_json::Map::new(),
                 },
+                editor_menu_preview_camera: None,
                 editor_show_metadata: false,
                 editor_show_settings: false,
                 editor_settings_section: SettingsSection::Backends,
