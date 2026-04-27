@@ -32,7 +32,8 @@ use crate::platform::state_host::WasmCanvas;
 use crate::platform::state_host::{PlatformInstant, SurfaceHost};
 use crate::types::{
     AppPhase, CameraUniform, ColorSpaceUniform, EditorState, LineUniform, MenuState, MusicMetadata,
-    PhysicalSize, SettingsSection, SpawnMetadata, Vertex,
+    PhysicalSize, SettingsSection, SpawnMetadata, Vertex, DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
+    DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
 };
 
 fn discover_graphics_backends() -> Vec<String> {
@@ -303,8 +304,8 @@ impl State {
             selected_level: 0,
             levels: builtin_level_names(),
             preview_level_index: None,
-            preview_camera_position: [22.657694, 15.0, -10.565456],
-            preview_camera_target: [0.0, 0.0, 0.0],
+            preview_camera_position: DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
+            preview_camera_target: DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
         };
 
         let mut game = GameState::new();
@@ -926,8 +927,8 @@ impl State {
             selected_level: 0,
             levels: builtin_level_names(),
             preview_level_index: None,
-            preview_camera_position: [22.657694, 15.0, -10.565456],
-            preview_camera_target: [0.0, 0.0, 0.0],
+            preview_camera_position: DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
+            preview_camera_target: DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
         };
 
         let mut game = GameState::new();

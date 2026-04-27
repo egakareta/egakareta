@@ -85,6 +85,8 @@ impl GizmoPart {
 pub(crate) const CURRENT_LEVEL_FORMAT_VERSION: u32 = 2;
 
 pub(crate) const APP_SETTINGS_VERSION: u32 = 1;
+pub(crate) const DEFAULT_MENU_PREVIEW_CAMERA_POSITION: [f32; 3] = [22.657694, 15.0, -10.565456];
+pub(crate) const DEFAULT_MENU_PREVIEW_CAMERA_TARGET: [f32; 3] = [0.0, 0.0, 0.0];
 
 fn default_level_format_version() -> u32 {
     CURRENT_LEVEL_FORMAT_VERSION
@@ -106,12 +108,28 @@ fn default_spawn_position() -> [f32; 3] {
     [0.0, 0.0, 0.0]
 }
 
-fn is_default_spawn_position(value: &[f32; 3]) -> bool {
+fn default_preview_camera_position_zero() -> [f32; 3] {
+    [0.0, 0.0, 0.0]
+}
+
+fn default_preview_camera_target_zero() -> [f32; 3] {
+    [0.0, 0.0, 0.0]
+}
+
+fn is_zero_position(value: &[f32; 3]) -> bool {
     value.iter().all(|component| component.abs() <= 1e-6)
 }
 
+fn is_default_spawn_position(value: &[f32; 3]) -> bool {
+    is_zero_position(value)
+}
+
 fn is_default_preview_camera_position(value: &[f32; 3]) -> bool {
-    value.iter().all(|component| component.abs() <= 1e-6)
+    is_zero_position(value)
+}
+
+fn is_default_preview_camera_target(value: &[f32; 3]) -> bool {
+    is_zero_position(value)
 }
 
 fn default_timeline_time_seconds() -> f32 {
@@ -893,13 +911,13 @@ pub(crate) struct LevelMetadata {
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub(crate) struct LevelPreviewCameraMetadata {
     #[serde(
-        default = "default_spawn_position",
+        default = "default_preview_camera_position_zero",
         skip_serializing_if = "is_default_preview_camera_position"
     )]
     pub(crate) position: [f32; 3],
     #[serde(
-        default = "default_spawn_position",
-        skip_serializing_if = "is_default_preview_camera_position"
+        default = "default_preview_camera_target_zero",
+        skip_serializing_if = "is_default_preview_camera_target"
     )]
     pub(crate) target: [f32; 3],
 }

@@ -21,12 +21,10 @@ use crate::platform::io::{log_platform_error, read_editor_music_bytes};
 use crate::platform::services::{trigger_level_export, trigger_level_import};
 use crate::types::{
     AppPhase, AppSettings, EditorMode, KeyChord, LevelMetadata, LevelPreviewCameraMetadata,
-    MusicMetadata, SettingsSection, SpawnDirection,
+    MusicMetadata, SettingsSection, SpawnDirection, DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
+    DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
 };
 use glam::Vec3;
-
-const DEFAULT_MENU_PREVIEW_CAMERA_POSITION: [f32; 3] = [22.657694, 15.0, -10.565456];
-const DEFAULT_MENU_PREVIEW_CAMERA_TARGET: [f32; 3] = [0.0, 0.0, 0.0];
 
 impl State {
     pub(super) fn start_level(&mut self, index: usize) {
@@ -343,20 +341,12 @@ impl State {
         self.menu.state.preview_level_index = Some(self.menu.state.selected_level);
 
         let Some(level_name) = self.menu.state.levels.get(self.menu.state.selected_level) else {
-            self.gameplay.state.objects = crate::game::create_menu_scene();
-            self.gameplay.state.rebuild_behavior_cache();
-            self.menu.state.preview_camera_position = DEFAULT_MENU_PREVIEW_CAMERA_POSITION;
-            self.menu.state.preview_camera_target = DEFAULT_MENU_PREVIEW_CAMERA_TARGET;
-            self.rebuild_block_vertices();
+            self.reset_menu_preview_to_default_scene();
             return;
         };
 
         let Some(metadata) = self.load_level_metadata(level_name) else {
-            self.gameplay.state.objects = crate::game::create_menu_scene();
-            self.gameplay.state.rebuild_behavior_cache();
-            self.menu.state.preview_camera_position = DEFAULT_MENU_PREVIEW_CAMERA_POSITION;
-            self.menu.state.preview_camera_target = DEFAULT_MENU_PREVIEW_CAMERA_TARGET;
-            self.rebuild_block_vertices();
+            self.reset_menu_preview_to_default_scene();
             return;
         };
 
@@ -365,6 +355,14 @@ impl State {
         self.gameplay.state.rebuild_behavior_cache();
         self.menu.state.preview_camera_position = position;
         self.menu.state.preview_camera_target = target;
+        self.rebuild_block_vertices();
+    }
+
+    fn reset_menu_preview_to_default_scene(&mut self) {
+        self.gameplay.state.objects = crate::game::create_menu_scene();
+        self.gameplay.state.rebuild_behavior_cache();
+        self.menu.state.preview_camera_position = DEFAULT_MENU_PREVIEW_CAMERA_POSITION;
+        self.menu.state.preview_camera_target = DEFAULT_MENU_PREVIEW_CAMERA_TARGET;
         self.rebuild_block_vertices();
     }
 
@@ -888,6 +886,25 @@ mod tests {
             let auto = auto_menu_preview_camera_from_spawn(&state.editor.spawn);
             assert_eq!(expected, auto);
         });
+    }
+
+    #[test]
+    fn auto_menu_preview_camera_positions_follow_spawn_direction() {
+        let (forward_eye, forward_target) =
+            auto_menu_preview_camera_from_spawn(&crate::types::SpawnMetadata {
+                position: [2.0, 3.0, 4.0],
+                direction: crate::types::SpawnDirection::Forward,
+            });
+        assert_eq!(forward_eye, [14.0, 17.0, -16.0]);
+        assert_eq!(forward_target, [2.0, 4.0, 14.0]);
+
+        let (right_eye, right_target) =
+            auto_menu_preview_camera_from_spawn(&crate::types::SpawnMetadata {
+                position: [2.0, 3.0, 4.0],
+                direction: crate::types::SpawnDirection::Right,
+            });
+        assert_eq!(right_eye, [-18.0, 17.0, -8.0]);
+        assert_eq!(right_target, [12.0, 4.0, 4.0]);
     }
 
     #[test]
