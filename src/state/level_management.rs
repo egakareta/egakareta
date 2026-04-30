@@ -584,14 +584,27 @@ fn menu_preview_camera_for_metadata(metadata: &LevelMetadata) -> ([f32; 3], [f32
 fn auto_menu_preview_camera_from_spawn(
     spawn: &crate::types::SpawnMetadata,
 ) -> ([f32; 3], [f32; 3]) {
+    // Tuned to keep a broad, readable menu composition:
+    // - target a little ahead/above the spawn so the route direction is visible
+    // - place camera behind and to the side with elevated height for coverage
+    const PREVIEW_TARGET_FORWARD_DISTANCE: f32 = 10.0;
+    const PREVIEW_TARGET_HEIGHT_OFFSET: f32 = 1.0;
+    const PREVIEW_CAMERA_BACK_DISTANCE: f32 = 20.0;
+    const PREVIEW_CAMERA_SIDE_OFFSET: f32 = 12.0;
+    const PREVIEW_CAMERA_HEIGHT_OFFSET: f32 = 14.0;
+
     let spawn_position = Vec3::from_array(spawn.position);
     let forward = match spawn.direction {
         SpawnDirection::Forward => Vec3::new(0.0, 0.0, 1.0),
         SpawnDirection::Right => Vec3::new(1.0, 0.0, 0.0),
     };
     let side = Vec3::new(forward.z, 0.0, -forward.x);
-    let target = spawn_position + forward * 10.0 + Vec3::new(0.0, 1.0, 0.0);
-    let eye = spawn_position - forward * 20.0 + side * 12.0 + Vec3::new(0.0, 14.0, 0.0);
+    let target = spawn_position
+        + forward * PREVIEW_TARGET_FORWARD_DISTANCE
+        + Vec3::new(0.0, PREVIEW_TARGET_HEIGHT_OFFSET, 0.0);
+    let eye = spawn_position - forward * PREVIEW_CAMERA_BACK_DISTANCE
+        + side * PREVIEW_CAMERA_SIDE_OFFSET
+        + Vec3::new(0.0, PREVIEW_CAMERA_HEIGHT_OFFSET, 0.0);
     (eye.to_array(), target.to_array())
 }
 

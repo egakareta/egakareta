@@ -662,6 +662,10 @@ mod tests {
         let mut metadata =
             load_builtin_level_metadata("Flowerfield").expect("missing built-in level");
         metadata.name = "Binary Roundtrip".to_string();
+        metadata.menu_preview_camera = Some(crate::types::LevelPreviewCameraMetadata {
+            position: [12.0, 18.0, -6.0],
+            target: [3.0, 2.0, 9.0],
+        });
         metadata.objects = vec![
             LevelObject {
                 block_id: "core/stone".to_string(),
@@ -694,6 +698,7 @@ mod tests {
 
         assert_eq!(decoded.name, metadata.name);
         assert_eq!(decoded.objects, metadata.objects);
+        assert_eq!(decoded.menu_preview_camera, metadata.menu_preview_camera);
     }
 
     #[test]
