@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::{PerfFrameRangeSummary, PerfFrameSnapshot, State};
+use super::{PerfFrameHistoryRef, PerfFrameRangeSummary, PerfFrameSnapshot, State};
 use crate::types::{
     AppSettings, EditorMode, LevelObject, MusicMetadata, SettingsSection, SpawnDirection,
     TimedTrigger, TimingPoint,
@@ -66,7 +66,7 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) perf_histogram_focus_index: Option<usize>,
     pub(crate) perf_selected_history_index: Option<usize>,
     pub(crate) perf_selected_history_range: Option<(usize, usize)>,
-    pub(crate) perf_frame_history: Vec<PerfFrameSnapshot>,
+    pub(crate) perf_frame_history: PerfFrameHistoryRef<'a>,
     pub(crate) perf_selected_frame: Option<PerfFrameSnapshot>,
     pub(crate) perf_active_range_summary: Option<PerfFrameRangeSummary>,
     pub(crate) marquee_selection_rect_screen: Option<([f64; 2], [f64; 2], bool)>,
@@ -80,7 +80,7 @@ impl State {
         let perf_frame_history = if perf_overlay_enabled {
             self.editor_perf_frame_history()
         } else {
-            Vec::new()
+            PerfFrameHistoryRef::empty()
         };
         let perf_selected_frame = if perf_overlay_enabled {
             self.editor_perf_selected_frame()

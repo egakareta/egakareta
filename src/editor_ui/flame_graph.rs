@@ -100,10 +100,11 @@ fn selected_zoom_range(view: &EditorUiViewModel<'_>, history_len: usize) -> Opti
     Some((start, end))
 }
 
-fn build_timeline_span_layout(
-    selected_frames: &[crate::state::PerfFrameSnapshot],
+fn build_timeline_span_layout<'a>(
+    selected_frames: impl Iterator<Item = &'a crate::state::PerfFrameSnapshot>,
+    selected_frame_count: usize,
 ) -> (Vec<FlameSpanLayout>, usize, Vec<(f32, u64)>, f32) {
-    let mut frame_boundaries = Vec::with_capacity(selected_frames.len().saturating_add(1));
+    let mut frame_boundaries = Vec::with_capacity(selected_frame_count.saturating_add(1));
     let mut absolute_events: Vec<(crate::state::PerfStage, f32, f32)> = Vec::new();
 
     let mut timeline_cursor_ms = 0.0f32;
@@ -177,9 +178,9 @@ pub(crate) fn show_perf_flame_graph_panel(
     let history_len = history.len();
 
     if let Some((start, end)) = selected_zoom_range(view, history_len) {
-        let selected_frames = &history[start..=end];
+        let selected_frame_count = end.saturating_sub(start) + 1;
         let (span_layout, lane_count, frame_boundaries, total_selected_time_ms) =
-            build_timeline_span_layout(selected_frames);
+            build_timeline_span_layout(history.range(start..=end), selected_frame_count);
         let chart_height =
             lane_count as f32 * (LANE_HEIGHT + LANE_SPACING) + FRAME_ROW_PADDING * 2.0;
 
@@ -200,7 +201,7 @@ pub(crate) fn show_perf_flame_graph_panel(
                 for (boundary_ms, _frame_index) in frame_boundaries
                     .iter()
                     .skip(1)
-                    .take(selected_frames.len().saturating_sub(1))
+                    .take(selected_frame_count.saturating_sub(1))
                 {
                     let ratio = (*boundary_ms / total_selected_time_ms).clamp(0.0, 1.0);
                     let x = egui::lerp(flame_rect.left()..=flame_rect.right(), ratio);

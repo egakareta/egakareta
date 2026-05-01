@@ -225,7 +225,14 @@ impl State {
 
             if !skip_world {
                 if self.phase == AppPhase::Editor {
-                    if self.render.meshes.blocks_static_chunks.is_empty() {
+                    let has_static_chunk_draw_data = self
+                        .render
+                        .meshes
+                        .blocks_static_chunks
+                        .iter()
+                        .any(|chunk| chunk.has_draw_data());
+
+                    if !has_static_chunk_draw_data {
                         if let Some((buffer, count)) = self.render.meshes.blocks_static.draw_data()
                         {
                             render_pass.set_vertex_buffer(0, buffer.slice(..));

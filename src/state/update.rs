@@ -7,7 +7,7 @@
 */
 use glam::{Mat4, Vec3};
 
-use super::{PerfFrameRangeSummary, PerfFrameSnapshot, PerfStage, State};
+use super::{PerfFrameHistoryRef, PerfFrameRangeSummary, PerfFrameSnapshot, PerfStage, State};
 use crate::game::{
     advance_simulation_time, trigger_transformed_objects_at_time, TimelineSimulationRuntime,
 };
@@ -366,12 +366,12 @@ impl State {
         self.editor.perf.profiler.histogram_focus_history_index()
     }
 
-    pub(crate) fn editor_perf_frame_history(&self) -> Vec<PerfFrameSnapshot> {
+    pub(crate) fn editor_perf_frame_history(&self) -> PerfFrameHistoryRef<'_> {
         if !self.editor.perf.profiler.enabled {
-            return Vec::new();
+            return PerfFrameHistoryRef::empty();
         }
 
-        self.editor.perf.profiler.frame_history()
+        self.editor.perf.profiler.frame_history_ref()
     }
 
     pub(crate) fn editor_perf_selected_frame(&self) -> Option<PerfFrameSnapshot> {

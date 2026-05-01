@@ -5,7 +5,10 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use std::collections::VecDeque;
+use std::{
+    collections::{vec_deque, VecDeque},
+    ops::RangeInclusive,
+};
 
 use crate::platform::state_host::PlatformInstant;
 
@@ -70,6 +73,52 @@ pub(crate) struct PerfFrameSnapshot {
     pub(crate) stage_ms: [f32; PERF_STAGE_COUNT],
     pub(crate) dominant_stage: Option<PerfStage>,
     pub(crate) span_events: Vec<PerfFrameSpanEvent>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum PerfFrameHistoryRef<'a> {
+    Empty,
+    Frames(&'a VecDeque<PerfFrameSnapshot>),
+}
+
+impl<'a> PerfFrameHistoryRef<'a> {
+    pub(crate) const fn empty() -> Self {
+        Self::Empty
+    }
+
+    pub(crate) fn len(self) -> usize {
+        match self {
+            Self::Empty => 0,
+            Self::Frames(history) => history.len(),
+        }
+    }
+
+    pub(crate) fn is_empty(self) -> bool {
+        self.len() == 0
+    }
+
+    pub(crate) fn range(self, range: RangeInclusive<usize>) -> PerfFrameHistoryRange<'a> {
+        match self {
+            Self::Empty => PerfFrameHistoryRange::Empty,
+            Self::Frames(history) => PerfFrameHistoryRange::Frames(history.range(range)),
+        }
+    }
+}
+
+pub(crate) enum PerfFrameHistoryRange<'a> {
+    Empty,
+    Frames(vec_deque::Iter<'a, PerfFrameSnapshot>),
+}
+
+impl<'a> Iterator for PerfFrameHistoryRange<'a> {
+    type Item = &'a PerfFrameSnapshot;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Empty => None,
+            Self::Frames(iter) => iter.next(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -253,6 +302,10 @@ impl EditorPerfProfiler {
             .unwrap_or(0.0);
         self.observe(stage, duration_ms);
 
+        if !self.enabled {
+            return;
+        }
+
         let Some(frame_started_at) = self.frame_started_at else {
             return;
         };
@@ -278,8 +331,8 @@ impl EditorPerfProfiler {
 
     pub(crate) fn begin_frame(&mut self) {
         self.frame_stage_ms = [0.0; PERF_STAGE_COUNT];
-        self.frame_started_at = Some(PlatformInstant::now());
         self.frame_span_events.clear();
+        self.frame_started_at = self.enabled.then(PlatformInstant::now);
     }
 
     pub(crate) fn finish_frame(&mut self, frame_time_ms: f32) {
@@ -292,7 +345,9 @@ impl EditorPerfProfiler {
                 .or(Some(PerfStage::FrameTotal));
         }
 
-        if self.paused {
+        if !self.enabled || self.paused {
+            self.frame_started_at = None;
+            self.frame_span_events.clear();
             return;
         }
 
@@ -350,8 +405,13 @@ impl EditorPerfProfiler {
         self.histogram_focus_index = None;
     }
 
+    #[cfg(test)]
     pub(crate) fn frame_history(&self) -> Vec<PerfFrameSnapshot> {
         self.frame_history.iter().cloned().collect()
+    }
+
+    pub(crate) fn frame_history_ref(&self) -> PerfFrameHistoryRef<'_> {
+        PerfFrameHistoryRef::Frames(&self.frame_history)
     }
 
     pub(crate) fn selected_history_index(&self) -> Option<usize> {
@@ -591,6 +651,12 @@ mod tests {
         assert!((left - right).abs() <= eps, "left={left}, right={right}");
     }
 
+    fn enabled_profiler() -> EditorPerfProfiler {
+        let mut profiler = EditorPerfProfiler::new();
+        profiler.enabled = true;
+        profiler
+    }
+
     #[test]
     fn perf_stat_observe_tracks_last_ema_max_and_calls() {
         let mut stat = PerfStat::zero();
@@ -646,7 +712,7 @@ mod tests {
 
     #[test]
     fn profiler_finish_frame_records_snapshot_and_spike() {
-        let mut profiler = EditorPerfProfiler::new();
+        let mut profiler = enabled_profiler();
         profiler.begin_frame();
         profiler.observe(PerfStage::DirtyProcess, 8.0);
         profiler.observe(PerfStage::BlockMeshRebuild, 10.0);
@@ -673,7 +739,7 @@ mod tests {
 
     #[test]
     fn observe_span_captures_frame_event_offsets() {
-        let mut profiler = EditorPerfProfiler::new();
+        let mut profiler = enabled_profiler();
         profiler.begin_frame();
 
         let started_at = PlatformInstant::now();
@@ -705,7 +771,7 @@ mod tests {
 
     #[test]
     fn pause_freezes_history_but_keeps_cumulative_stats() {
-        let mut profiler = EditorPerfProfiler::new();
+        let mut profiler = enabled_profiler();
 
         profiler.begin_frame();
         profiler.observe(PerfStage::TimelinePlayback, 2.0);
@@ -731,7 +797,7 @@ mod tests {
 
     #[test]
     fn resuming_from_pause_follows_latest_and_clears_selection() {
-        let mut profiler = EditorPerfProfiler::new();
+        let mut profiler = enabled_profiler();
         profiler.begin_frame();
         profiler.finish_frame(10.0);
         profiler.begin_frame();
@@ -752,7 +818,7 @@ mod tests {
 
     #[test]
     fn selected_history_index_round_trips() {
-        let mut profiler = EditorPerfProfiler::new();
+        let mut profiler = enabled_profiler();
         for frame in 0..4 {
             profiler.begin_frame();
             profiler.observe(PerfStage::TimelinePlayback, frame as f32 + 1.0);
@@ -773,7 +839,7 @@ mod tests {
 
     #[test]
     fn history_rotation_rebases_selection_and_focus_indices() {
-        let mut profiler = EditorPerfProfiler::new();
+        let mut profiler = enabled_profiler();
         for frame in 0..PERF_FRAME_HISTORY_CAPACITY {
             profiler.begin_frame();
             profiler.observe(PerfStage::TimelinePlayback, frame as f32 + 1.0);
@@ -806,7 +872,7 @@ mod tests {
 
     #[test]
     fn selected_history_range_and_chunk_summary_work() {
-        let mut profiler = EditorPerfProfiler::new();
+        let mut profiler = enabled_profiler();
         for frame in 0..6 {
             profiler.begin_frame();
             profiler.observe(PerfStage::TimelinePlayback, frame as f32 + 2.0);
@@ -829,7 +895,7 @@ mod tests {
 
     #[test]
     fn histogram_pan_and_follow_latest_can_be_disabled() {
-        let mut profiler = EditorPerfProfiler::new();
+        let mut profiler = enabled_profiler();
         for frame in 0..5 {
             profiler.begin_frame();
             profiler.observe(PerfStage::TimelinePlayback, frame as f32 + 1.0);
@@ -845,5 +911,26 @@ mod tests {
         assert_eq!(profiler.histogram_focus_history_index(), Some(0));
         profiler.pan_histogram(500);
         assert_eq!(profiler.histogram_focus_history_index(), Some(4));
+    }
+
+    #[test]
+    fn disabled_profiler_keeps_stats_without_capturing_history_or_spans() {
+        let mut profiler = EditorPerfProfiler::new();
+
+        profiler.begin_frame();
+        let started_at = PlatformInstant::now();
+        profiler.observe_span(
+            PerfStage::TimelineSeek,
+            started_at,
+            started_at + Duration::from_millis(3),
+        );
+        profiler.finish_frame(PERF_FRAME_BUDGET_60_FPS_MS + 2.0);
+
+        assert!(profiler.frame_history().is_empty());
+        assert!(profiler.frame_span_events.is_empty());
+        assert_eq!(profiler.frame_started_at, None);
+        assert_eq!(profiler.frame_spike_count, 1);
+        assert_eq!(profiler.stats[PerfStage::TimelineSeek.as_index()].calls, 1);
+        assert_eq!(profiler.stats[PerfStage::FrameTotal.as_index()].calls, 1);
     }
 }

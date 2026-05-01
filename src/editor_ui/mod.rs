@@ -311,8 +311,6 @@ fn show_perf_microprofiler_overlay(
                                 let visible_end = view_end
                                     .min(history.len() as isize)
                                     .max(view_start.max(0)) as usize;
-                                let visible = &history[visible_start..visible_end];
-
                                 let max_ms = 33.33f32;
 
                                 for guide_ms in [16.67, 33.33] {
@@ -335,26 +333,31 @@ fn show_perf_microprofiler_overlay(
                                     );
                                 }
 
-                                for (offset, frame) in visible.iter().enumerate() {
-                                    let history_index = visible_start + offset;
-                                    let slot = (history_index as isize - view_start) as usize;
-                                    let x_min = rect.left() + slot as f32 * bar_step;
-                                    let x_max = (x_min + bar_width).min(rect.right() - 1.0);
-                                    if x_max <= x_min {
-                                        continue;
-                                    }
+                                if visible_end > visible_start {
+                                    for (offset, frame) in history
+                                        .range(visible_start..=visible_end - 1)
+                                        .enumerate()
+                                    {
+                                        let history_index = visible_start + offset;
+                                        let slot = (history_index as isize - view_start) as usize;
+                                        let x_min = rect.left() + slot as f32 * bar_step;
+                                        let x_max = (x_min + bar_width).min(rect.right() - 1.0);
+                                        if x_max <= x_min {
+                                            continue;
+                                        }
 
-                                    let ratio = (frame.frame_time_ms / max_ms).clamp(0.0, 1.0);
-                                    let y_min = egui::lerp(rect.bottom()..=rect.top(), ratio);
-                                    let bar_rect = egui::Rect::from_min_max(
-                                        egui::pos2(x_min, y_min),
-                                        egui::pos2(x_max, rect.bottom() - 1.0),
-                                    );
-                                    painter.rect_filled(
-                                        bar_rect,
-                                        0.0,
-                                        perf_frame_bar_color(frame.frame_time_ms),
-                                    );
+                                        let ratio = (frame.frame_time_ms / max_ms).clamp(0.0, 1.0);
+                                        let y_min = egui::lerp(rect.bottom()..=rect.top(), ratio);
+                                        let bar_rect = egui::Rect::from_min_max(
+                                            egui::pos2(x_min, y_min),
+                                            egui::pos2(x_max, rect.bottom() - 1.0),
+                                        );
+                                        painter.rect_filled(
+                                            bar_rect,
+                                            0.0,
+                                            perf_frame_bar_color(frame.frame_time_ms),
+                                        );
+                                    }
                                 }
 
                                 if let Some((range_start, range_end)) = view.perf_selected_history_range {

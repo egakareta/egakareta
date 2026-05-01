@@ -198,6 +198,10 @@ impl MeshSlot {
             _ => None,
         }
     }
+
+    pub(crate) fn has_draw_data(&self) -> bool {
+        self.draw_data().is_some()
+    }
 }
 
 pub(crate) struct SceneMeshes {

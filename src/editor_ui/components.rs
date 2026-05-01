@@ -598,7 +598,7 @@ mod tests {
             perf_histogram_focus_index: None,
             perf_selected_history_index: None,
             perf_selected_history_range: None,
-            perf_frame_history: Vec::new(),
+            perf_frame_history: crate::state::PerfFrameHistoryRef::empty(),
             perf_selected_frame: None,
             perf_active_range_summary: None,
             marquee_selection_rect_screen: None,
