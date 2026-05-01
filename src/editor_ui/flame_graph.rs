@@ -23,6 +23,25 @@ struct FlameSpanLayout {
     start_ms: f32,
     end_ms: f32,
     lane: usize,
+    frame_index: u64,
+    frame_time_ms: f32,
+    frame_dominant_stage: Option<PerfStage>,
+    frame_stage_total_ms: f32,
+    local_start_ms: f32,
+    local_end_ms: f32,
+}
+
+#[derive(Clone, Copy)]
+struct PendingFlameSpanLayout {
+    stage: PerfStage,
+    start_ms: f32,
+    end_ms: f32,
+    frame_index: u64,
+    frame_time_ms: f32,
+    frame_dominant_stage: Option<PerfStage>,
+    frame_stage_total_ms: f32,
+    local_start_ms: f32,
+    local_end_ms: f32,
 }
 
 fn lerp_channel(start: u8, end: u8, t: f32) -> u8 {
@@ -71,6 +90,49 @@ fn flame_span_label(
                 None
             }
         }
+    }
+}
+
+fn show_flame_span_tooltip(
+    ui: &mut egui::Ui,
+    span: FlameSpanLayout,
+    selected_frame_count: usize,
+    total_selected_time_ms: f32,
+) {
+    let duration_ms = (span.end_ms - span.start_ms).max(0.0);
+    let selection_share = duration_ms / total_selected_time_ms.max(0.001) * 100.0;
+    let frame_share = duration_ms / span.frame_time_ms.max(0.001) * 100.0;
+    let stage_frame_share = span.frame_stage_total_ms / span.frame_time_ms.max(0.001) * 100.0;
+
+    ui.monospace(span.stage.name());
+    ui.separator();
+    ui.monospace(format!("Frame #{}", span.frame_index));
+    ui.monospace(format!("Duration: {:.3}ms", duration_ms));
+    ui.monospace(format!("Frame share: {:.1}%", frame_share));
+
+    if selected_frame_count > 1 {
+        ui.separator();
+        ui.monospace(format!(
+            "Selection time: {:.3}ms .. {:.3}ms",
+            span.start_ms, span.end_ms
+        ));
+        ui.monospace(format!("Selection share: {:.1}%", selection_share));
+    }
+
+    ui.separator();
+    ui.monospace(format!(
+        "Frame local: {:.3}ms .. {:.3}ms",
+        span.local_start_ms, span.local_end_ms
+    ));
+    ui.monospace(format!("Frame time: {:.3}ms", span.frame_time_ms));
+    ui.monospace(format!(
+        "Stage total in frame: {:.3}ms ({:.1}%)",
+        span.frame_stage_total_ms, stage_frame_share
+    ));
+    ui.monospace(format!("Lane: {}", span.lane + 1));
+
+    if let Some(dominant_stage) = span.frame_dominant_stage {
+        ui.monospace(format!("Frame dominant: {}", dominant_stage.name()));
     }
 }
 
@@ -187,7 +249,7 @@ fn build_timeline_span_layout<'a>(
     selected_frame_count: usize,
 ) -> (Vec<FlameSpanLayout>, usize, Vec<(f32, u64)>, f32) {
     let mut frame_boundaries = Vec::with_capacity(selected_frame_count.saturating_add(1));
-    let mut absolute_events: Vec<(crate::state::PerfStage, f32, f32)> = Vec::new();
+    let mut absolute_events: Vec<PendingFlameSpanLayout> = Vec::new();
 
     let mut timeline_cursor_ms = 0.0f32;
     for snapshot in selected_frames {
@@ -200,7 +262,17 @@ fn build_timeline_span_layout<'a>(
         {
             let start_ms = (timeline_cursor_ms + event.start_ms).max(timeline_cursor_ms);
             let end_ms = (timeline_cursor_ms + event.end_ms).max(start_ms + 0.001);
-            absolute_events.push((event.stage, start_ms, end_ms));
+            absolute_events.push(PendingFlameSpanLayout {
+                stage: event.stage,
+                start_ms,
+                end_ms,
+                frame_index: snapshot.frame_index,
+                frame_time_ms: snapshot.frame_time_ms,
+                frame_dominant_stage: snapshot.dominant_stage,
+                frame_stage_total_ms: snapshot.stage_ms[event.stage.as_index()],
+                local_start_ms: event.start_ms,
+                local_end_ms: event.end_ms,
+            });
         }
 
         timeline_cursor_ms += snapshot.frame_time_ms.max(0.01);
@@ -208,29 +280,35 @@ fn build_timeline_span_layout<'a>(
     frame_boundaries.push((timeline_cursor_ms, 0));
 
     absolute_events.sort_by(|left, right| {
-        left.1
-            .total_cmp(&right.1)
-            .then_with(|| (right.2 - right.1).total_cmp(&(left.2 - left.1)))
-            .then_with(|| left.2.total_cmp(&right.2))
+        left.start_ms
+            .total_cmp(&right.start_ms)
+            .then_with(|| (right.end_ms - right.start_ms).total_cmp(&(left.end_ms - left.start_ms)))
+            .then_with(|| left.end_ms.total_cmp(&right.end_ms))
     });
 
     let mut lane_ends: Vec<f32> = Vec::new();
     let mut spans = Vec::with_capacity(absolute_events.len());
-    for (stage, start_ms, end_ms) in absolute_events {
+    for event in absolute_events {
         let lane = lane_ends
             .iter()
-            .position(|lane_end| start_ms >= *lane_end)
+            .position(|lane_end| event.start_ms >= *lane_end)
             .unwrap_or_else(|| {
                 lane_ends.push(0.0);
                 lane_ends.len() - 1
             });
 
-        lane_ends[lane] = end_ms;
+        lane_ends[lane] = event.end_ms;
         spans.push(FlameSpanLayout {
-            stage,
-            start_ms,
-            end_ms,
+            stage: event.stage,
+            start_ms: event.start_ms,
+            end_ms: event.end_ms,
             lane,
+            frame_index: event.frame_index,
+            frame_time_ms: event.frame_time_ms,
+            frame_dominant_stage: event.frame_dominant_stage,
+            frame_stage_total_ms: event.frame_stage_total_ms,
+            local_start_ms: event.local_start_ms,
+            local_end_ms: event.local_end_ms,
         });
     }
 
@@ -336,6 +414,32 @@ pub(crate) fn show_perf_flame_graph_panel(
                         flame_stage_color(span.stage)
                     };
                     chart_painter.rect_filled(span_rect, 1.0, color);
+
+                    let tooltip_id = ui.id().with((
+                        "perf_flame_span",
+                        span.frame_index,
+                        span.stage.as_index(),
+                        span.start_ms.to_bits(),
+                        span.end_ms.to_bits(),
+                    ));
+                    let span_response = ui.interact(span_rect, tooltip_id, egui::Sense::hover());
+                    if span_response.hovered() {
+                        egui::Tooltip::always_open(
+                            ui.ctx().clone(),
+                            ui.layer_id(),
+                            tooltip_id,
+                            egui::PopupAnchor::Pointer,
+                        )
+                        .gap(12.0)
+                        .show(|ui| {
+                            show_flame_span_tooltip(
+                                ui,
+                                span,
+                                selected_frame_count,
+                                total_selected_time_ms,
+                            );
+                        });
+                    }
 
                     if let Some(label) =
                         flame_span_label(span.stage, duration_ms, span_rect.width())
