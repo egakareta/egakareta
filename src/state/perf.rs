@@ -504,12 +504,36 @@ impl EditorPerfProfiler {
         let Some(last_index) = self.frame_history.len().checked_sub(1) else {
             return;
         };
-
-        // Clear explicit selection so the synthetic chunk tracks the new focus
-        self.selected_history_index = None;
-        self.selected_history_range = None;
-
         let next_index = (current_index as i64 + delta as i64).clamp(0, last_index as i64) as usize;
+
+        // Preserve explicit range width while panning so zoom level does not snap back
+        // to the synthetic default window size.
+        if let Some((start, end)) = self.selected_history_range_indices() {
+            let width = end.saturating_sub(start) + 1;
+            let left_count = (width - 1) / 2;
+            let right_count = width - 1 - left_count;
+
+            let mut next_start = next_index.saturating_sub(left_count);
+            let mut next_end = next_index.saturating_add(right_count).min(last_index);
+
+            let clamped_width = next_end.saturating_sub(next_start) + 1;
+            if clamped_width < width {
+                if next_start == 0 {
+                    next_end = (width - 1).min(last_index);
+                } else {
+                    next_start = last_index.saturating_add(1).saturating_sub(width);
+                    next_end = last_index;
+                }
+            }
+
+            self.selected_history_index = None;
+            self.selected_history_range = Some((next_start, next_end));
+        } else {
+            // No explicit range: keep old behavior and allow synthetic window tracking.
+            self.selected_history_index = None;
+            self.selected_history_range = None;
+        }
+
         self.focus_histogram_index(next_index);
     }
 
