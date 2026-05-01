@@ -167,8 +167,6 @@ pub(crate) enum AppCommand {
     EditorExportLevel,
     /// Open or close the metadata editing window.
     EditorSetShowMetadata(bool),
-    /// Open or close the import/export raw data window.
-    EditorSetShowImport(bool),
     /// Toggle the settings sidebar visibility.
     EditorToggleSettings,
     /// Open or close the settings sidebar.
@@ -195,9 +193,7 @@ pub(crate) enum AppCommand {
     EditorResetKeybind(String),
     /// Reset all keybinds to defaults.
     EditorResetKeybinds,
-    /// Update the text in the raw import field.
-    EditorSetImportText(String),
-    /// Parse and apply the raw import text.
+    /// Trigger level import via platform file picker.
     EditorCompleteImport,
     /// Update music information for the level.
     EditorUpdateMusic(crate::types::MusicMetadata),

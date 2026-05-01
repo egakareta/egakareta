@@ -810,7 +810,7 @@ impl State {
                     selected_objects.push(object);
                 }
             }
-            build_block_vertices_from_refs(selected_objects)
+            build_block_vertices_from_refs(&selected_objects)
         };
 
         self.perf_record(PerfStage::BlockMeshSplitStatic, static_mesh_started_at);
@@ -875,7 +875,7 @@ impl State {
                 }
             }
 
-            build_block_vertices_from_refs(selected_objects)
+            build_block_vertices_from_refs(&selected_objects)
         };
         self.perf_record(
             PerfStage::BlockMeshSelectedOnlyBuild,

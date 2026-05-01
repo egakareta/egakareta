@@ -60,6 +60,18 @@ See LICENSE and COMMERCIAL.md for details.
                 color: white;
             }
 
+            #firefox-warning {
+                display: none;
+                margin-top: 8px;
+                padding: 10px 14px;
+                max-width: min(90vw, 620px);
+                border: 1px solid rgba(255, 255, 255, 0.35);
+                background: rgba(255, 66, 66, 0.2);
+                color: #ffd9d9;
+                text-align: center;
+                font-size: 14px;
+            }
+
             .progress-bar {
                 width: 300px;
                 height: 10px;
@@ -132,6 +144,10 @@ See LICENSE and COMMERCIAL.md for details.
                 alt="egakareta Logo"
             />
             <p>click anywhere to start</p>
+            <div id="firefox-warning">
+                firefox is not recommended due to performance issues :( please
+                use chrome or edge for the best experience
+            </div>
         </div>
         <div id="loading">
             <div id="loading-text">loading...</div>
@@ -152,7 +168,13 @@ See LICENSE and COMMERCIAL.md for details.
             const progressBar = document.querySelector(".progress-fill");
             const errorDiv = document.getElementById("error");
             const splash = document.getElementById("splash");
-            const splashStart = document.getElementById("splash");
+            const firefoxWarning = document.getElementById("firefox-warning");
+
+            const userAgent = navigator.userAgent || "";
+            const isFirefox = /firefox/i.test(userAgent);
+            if (isFirefox && firefoxWarning) {
+                firefoxWarning.style.display = "block";
+            }
 
             let run_game_fn = null;
 
@@ -272,7 +294,7 @@ See LICENSE and COMMERCIAL.md for details.
                 }
             };
 
-            splashStart?.addEventListener(
+            splash?.addEventListener(
                 "click",
                 async (event) => {
                     event.preventDefault();

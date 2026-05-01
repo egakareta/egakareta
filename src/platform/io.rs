@@ -59,6 +59,20 @@ pub(crate) async fn pick_audio_file() -> Option<(String, Vec<u8>)> {
     Some((filename, data))
 }
 
+/// Opens a platform-native file picker for level imports.
+///
+/// Supports `.egz` archives and `.egb` binary metadata files.
+/// Returns `None` when the user cancels the dialog; otherwise returns full file bytes.
+pub(crate) async fn pick_level_file() -> Option<Vec<u8>> {
+    let file = rfd::AsyncFileDialog::new()
+        .add_filter("Level Archive", &["egz"])
+        .add_filter("Level Binary", &["egb"])
+        .pick_file()
+        .await?;
+
+    Some(file.read().await)
+}
+
 pub(crate) async fn save_audio_to_storage(filename: &str, data: &[u8]) -> Result<(), String> {
     #[cfg(all(test, not(target_arch = "wasm32")))]
     if let Some(result) = test_hooks::save_audio_result() {
