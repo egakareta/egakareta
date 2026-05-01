@@ -5,22 +5,36 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use crate::state::EditorUiViewModel;
+use crate::state::{EditorUiViewModel, PerfStage};
 
 const LANE_HEIGHT: f32 = 11.0;
 const LANE_SPACING: f32 = 2.0;
 const FRAME_ROW_PADDING: f32 = 6.0;
 const AXIS_HEIGHT: f32 = 20.0;
+const PERF_FRAME_BUDGET_60_FPS_MS: f32 = 16.7;
 
 #[derive(Clone, Copy)]
 struct FlameSpanLayout {
-    stage: crate::state::PerfStage,
+    stage: PerfStage,
     start_ms: f32,
     end_ms: f32,
     lane: usize,
 }
 
-fn flame_stage_color(stage: crate::state::PerfStage) -> egui::Color32 {
+fn lerp_channel(start: u8, end: u8, t: f32) -> u8 {
+    (start as f32 + (end as f32 - start as f32) * t).round() as u8
+}
+
+fn frame_total_color(frame_time_ms: f32) -> egui::Color32 {
+    let ratio = (frame_time_ms / PERF_FRAME_BUDGET_60_FPS_MS).clamp(0.0, 1.0);
+    egui::Color32::from_rgb(
+        lerp_channel(255, 214, ratio),
+        lerp_channel(210, 84, ratio),
+        lerp_channel(90, 84, ratio),
+    )
+}
+
+fn flame_stage_color(stage: PerfStage) -> egui::Color32 {
     let name = stage.name();
     let mut hash = 0u64;
     for b in name.as_bytes() {
@@ -205,6 +219,7 @@ pub(crate) fn show_perf_flame_graph_panel(
                     let x_min = egui::lerp(flame_rect.left()..=flame_rect.right(), start_ratio);
                     let x_max = egui::lerp(flame_rect.left()..=flame_rect.right(), end_ratio)
                         .max(x_min + 1.0);
+                    let duration_ms = (span.end_ms - span.start_ms).max(0.0);
                     let y_min = flame_rect.top()
                         + FRAME_ROW_PADDING
                         + span.lane as f32 * (LANE_HEIGHT + LANE_SPACING);
@@ -217,9 +232,13 @@ pub(crate) fn show_perf_flame_graph_panel(
                         egui::pos2(x_min, y_min),
                         egui::pos2(x_max, y_max),
                     );
-                    chart_painter.rect_filled(span_rect, 1.0, flame_stage_color(span.stage));
+                    let color = if span.stage == PerfStage::FrameTotal {
+                        frame_total_color(duration_ms)
+                    } else {
+                        flame_stage_color(span.stage)
+                    };
+                    chart_painter.rect_filled(span_rect, 1.0, color);
 
-                    let duration_ms = (span.end_ms - span.start_ms).max(0.0);
                     if let Some(label) =
                         flame_span_label(span.stage, duration_ms, span_rect.width())
                     {
@@ -233,5 +252,26 @@ pub(crate) fn show_perf_flame_graph_panel(
                     }
                 }
             });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frame_total_color_moves_from_yellow_to_red_as_frame_time_increases() {
+        assert_eq!(
+            frame_total_color(0.0),
+            egui::Color32::from_rgb(255, 210, 90)
+        );
+        assert_eq!(
+            frame_total_color(PERF_FRAME_BUDGET_60_FPS_MS),
+            egui::Color32::from_rgb(214, 84, 84)
+        );
+        assert_eq!(
+            frame_total_color(PERF_FRAME_BUDGET_60_FPS_MS * 2.0),
+            egui::Color32::from_rgb(214, 84, 84)
+        );
     }
 }
