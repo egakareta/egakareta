@@ -505,6 +505,7 @@ pub(crate) fn show_perf_profiler_header(
                 }
 
                 if !view.perf_histogram_follow_latest && ui.button("Follow Latest").clicked() {
+                    commands.push(AppCommand::EditorSetPerfFollowLatest(true));
                     commands.push(AppCommand::EditorClearPerfSelection);
                 }
 

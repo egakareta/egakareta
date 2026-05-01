@@ -650,9 +650,7 @@ impl State {
                 &vertices,
             );
             self.render.meshes.blocks_static.clear();
-            for chunk in &mut self.render.meshes.blocks_static_chunks {
-                chunk.clear();
-            }
+            self.render.meshes.blocks_static_chunks.clear();
             self.render.meshes.blocks_selected.clear();
             self.editor.runtime.static_chunk_keys.clear();
         }
@@ -664,7 +662,7 @@ impl State {
         object_source: &[LevelObject],
         selected_mask: Option<&[bool]>,
     ) {
-        let static_objects = object_source
+        let static_objects: Vec<&LevelObject> = object_source
             .iter()
             .enumerate()
             .filter_map(|(index, object)| {
@@ -676,9 +674,10 @@ impl State {
                 } else {
                     Some(object)
                 }
-            });
+            })
+            .collect();
 
-        let static_vertices = build_block_vertices_from_refs(static_objects);
+        let static_vertices = build_block_vertices_from_refs(&static_objects);
         self.render
             .meshes
             .blocks_static
@@ -704,7 +703,7 @@ impl State {
         }
 
         for object in appended_objects {
-            let object_vertices = build_block_vertices_from_refs(std::iter::once(object));
+            let object_vertices = build_block_vertices_from_refs(&[object]);
             let appended = self
                 .render
                 .meshes

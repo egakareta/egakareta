@@ -533,6 +533,9 @@ impl EditorPerfProfiler {
         let mut dominant: Option<(PerfStage, f32)> = None;
         for stage in stages {
             let value = stage_ms[stage.as_index()];
+            if value <= f32::EPSILON {
+                continue;
+            }
             dominant = match dominant {
                 None => Some((*stage, value)),
                 Some((_, best)) if value > best => Some((*stage, value)),
@@ -575,7 +578,7 @@ impl EditorPerfState {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use web_time::Duration;
 
     use crate::platform::state_host::PlatformInstant;
 

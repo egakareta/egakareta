@@ -123,12 +123,6 @@ pub(crate) fn show_mode_and_snap_controls(
             commands.push(AppCommand::EditorSetSnapRotationStep(snap_rotation_step));
         }
 
-        // Ask egui for an immediate second pass when mode changes so panel sizing
-        // responds in-frame instead of showing one-frame stale geometry.
-        if mode != view.mode {
-            ui.ctx().request_discard("editor mode changed");
-        }
-
         mode
     })
     .inner
