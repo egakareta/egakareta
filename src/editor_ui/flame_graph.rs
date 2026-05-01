@@ -5,13 +5,17 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use crate::state::{EditorUiViewModel, PerfStage};
+use crate::{
+    commands::AppCommand,
+    state::{EditorUiViewModel, PerfStage},
+};
 
 const LANE_HEIGHT: f32 = 11.0;
 const LANE_SPACING: f32 = 2.0;
 const FRAME_ROW_PADDING: f32 = 6.0;
 const AXIS_HEIGHT: f32 = 20.0;
 const PERF_FRAME_BUDGET_60_FPS_MS: f32 = 16.7;
+const FLAME_GRAPH_DRAG_FRAME_STEP_PX: f32 = 4.0;
 
 #[derive(Clone, Copy)]
 struct FlameSpanLayout {
@@ -100,6 +104,84 @@ fn selected_zoom_range(view: &EditorUiViewModel<'_>, history_len: usize) -> Opti
     Some((start, end))
 }
 
+fn push_flame_graph_zoom_commands(
+    view: &EditorUiViewModel<'_>,
+    history_len: usize,
+    scroll_y: f32,
+    commands: &mut Vec<AppCommand>,
+) {
+    if history_len == 0 || scroll_y.abs() <= 0.0 {
+        return;
+    }
+
+    let last = history_len - 1;
+    let (current_start, current_end) = if let Some(range) = view.perf_selected_history_range {
+        (range.0.min(last), range.1.min(last))
+    } else if let Some(index) = view.perf_selected_history_index {
+        let clamped = index.min(last);
+        (clamped, clamped)
+    } else {
+        let center = if view.perf_histogram_follow_latest {
+            last
+        } else {
+            view.perf_histogram_focus_index.unwrap_or(last).min(last)
+        };
+        let chunk_size = 16.min(history_len).max(1);
+        let start = center.saturating_sub(chunk_size / 2);
+        let end = (start + chunk_size).saturating_sub(1).min(last);
+        (start, end)
+    };
+
+    let current_width = current_end.saturating_sub(current_start) + 1;
+    let anchor_index = if let Some(index) = view.perf_selected_history_index {
+        index.min(last)
+    } else if let Some(index) = view.perf_histogram_focus_index {
+        index.min(last)
+    } else {
+        (current_start + current_end) / 2
+    };
+
+    let zoom_factor = if scroll_y > 0.0 {
+        1.0 + scroll_y * 0.005
+    } else {
+        1.0 / (1.0 - scroll_y * 0.005)
+    };
+    let next_width = (current_width as f32 / zoom_factor).clamp(1.0, 1024.0);
+    let next_width_i = if scroll_y > 0.0 {
+        next_width.floor() as usize
+    } else {
+        next_width.ceil() as usize
+    }
+    .clamp(1, 1024);
+
+    if next_width_i == current_width {
+        return;
+    }
+
+    let left_count = (next_width_i - 1) / 2;
+    let right_count = next_width_i - 1 - left_count;
+
+    let mut clamped_start = anchor_index.saturating_sub(left_count);
+    let mut clamped_end = anchor_index.saturating_add(right_count).min(last);
+
+    let clamped_width = clamped_end.saturating_sub(clamped_start) + 1;
+    if clamped_width < next_width_i {
+        if clamped_start == 0 {
+            clamped_end = (next_width_i - 1).min(last);
+        } else {
+            clamped_start = last.saturating_add(1).saturating_sub(next_width_i);
+            clamped_end = last;
+        }
+    }
+
+    commands.push(AppCommand::EditorSetPerfFollowLatest(false));
+    commands.push(AppCommand::EditorSelectPerfHistoryRange {
+        start: clamped_start,
+        end: clamped_end,
+    });
+    commands.push(AppCommand::EditorFocusPerfHistogramIndex(anchor_index));
+}
+
 fn build_timeline_span_layout<'a>(
     selected_frames: impl Iterator<Item = &'a crate::state::PerfFrameSnapshot>,
     selected_frame_count: usize,
@@ -165,6 +247,7 @@ pub(crate) fn show_perf_flame_graph_panel(
     view: &EditorUiViewModel<'_>,
     viewport_width: f32,
     viewport_height: f32,
+    commands: &mut Vec<AppCommand>,
 ) {
     let history = &view.perf_frame_history;
 
@@ -187,9 +270,9 @@ pub(crate) fn show_perf_flame_graph_panel(
         egui::ScrollArea::vertical()
             .max_height((viewport_height * 0.34).max(180.0))
             .show(ui, |ui| {
-                let (chart_rect, _) = ui.allocate_exact_size(
+                let (chart_rect, response) = ui.allocate_exact_size(
                     egui::vec2(viewport_width.max(280.0), chart_height.max(88.0)),
-                    egui::Sense::hover(),
+                    egui::Sense::click_and_drag(),
                 );
                 let chart_painter = ui.painter_at(chart_rect);
 
@@ -197,6 +280,20 @@ pub(crate) fn show_perf_flame_graph_panel(
                     egui::pos2(chart_rect.left() + 4.0, chart_rect.top() + 2.0),
                     egui::pos2(chart_rect.right() - 4.0, chart_rect.bottom() - AXIS_HEIGHT),
                 );
+
+                if response.dragged() {
+                    let delta_x = ui.input(|input| input.pointer.delta().x);
+                    let frames_to_pan = (-delta_x / FLAME_GRAPH_DRAG_FRAME_STEP_PX).trunc() as i32;
+                    if frames_to_pan != 0 {
+                        commands.push(AppCommand::EditorSetPerfFollowLatest(false));
+                        commands.push(AppCommand::EditorPanPerfHistogram(frames_to_pan));
+                    }
+                }
+
+                if response.hovered() {
+                    let scroll_y = ui.input(|input| input.raw_scroll_delta.y);
+                    push_flame_graph_zoom_commands(view, history_len, scroll_y, commands);
+                }
 
                 for (boundary_ms, _frame_index) in frame_boundaries
                     .iter()

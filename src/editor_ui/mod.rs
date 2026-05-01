@@ -625,6 +625,7 @@ fn show_perf_microprofiler_overlay(
                                 view,
                                 viewport.width(),
                                 viewport.height(),
+                                commands,
                             );
                         });
                 });
