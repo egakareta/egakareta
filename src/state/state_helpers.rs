@@ -140,6 +140,7 @@ impl State {
         self.session.playtest_audio_start_seconds = None;
         self.session.playing_trigger_hitboxes = false;
         self.session.playing_trigger_base_objects = None;
+        self.session.editor_menu_preview_camera = None;
         self.editor.ui.right_dragging = false;
         self.editor.ui.mode = EditorMode::Place;
         self.editor.ui.selected_block_index = None;
@@ -175,6 +176,7 @@ impl State {
         self.session.playing_level_name = None;
         self.editor.ui.right_dragging = false;
         self.clear_editor_pan_keys();
+        self.menu.state.preview_level_index = None;
         self.phase = AppPhase::Menu;
     }
 }

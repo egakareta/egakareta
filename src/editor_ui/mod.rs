@@ -562,6 +562,28 @@ pub fn show_editor_ui(
                     commands.push(crate::commands::AppCommand::EditorUpdateMusic(music));
                 }
 
+                ui.separator();
+                ui.heading(format!(
+                    "{} Menu Preview Camera",
+                    egui_phosphor::regular::CAMERA
+                ));
+                ui.horizontal_wrapped(|ui| {
+                    push_command_when_clicked(
+                        &mut commands,
+                        ui.button(format!(
+                            "{} Capture Current Camera",
+                            egui_phosphor::regular::CAMERA
+                        ))
+                        .clicked(),
+                        crate::commands::AppCommand::EditorCaptureMenuPreviewCamera,
+                    );
+                    push_command_when_clicked(
+                        &mut commands,
+                        ui.button("Use Auto from Spawn").clicked(),
+                        crate::commands::AppCommand::EditorUseAutoMenuPreviewCamera,
+                    );
+                });
+
                 if ui.button("Close").clicked() {
                     commands.push(crate::commands::AppCommand::EditorSetShowMetadata(false));
                 }
@@ -704,6 +726,16 @@ pub fn show_editor_ui(
     drop(view);
     for command in commands {
         state.dispatch(command);
+    }
+}
+
+fn push_command_when_clicked(
+    commands: &mut Vec<crate::commands::AppCommand>,
+    clicked: bool,
+    command: crate::commands::AppCommand,
+) {
+    if clicked {
+        commands.push(command);
     }
 }
 
@@ -1072,8 +1104,8 @@ fn show_view_selector_cube(
 mod tests {
     use super::{
         combined_ui_scale_factor, is_compact_editor_ui, marquee_screen_pos_to_egui_pos,
-        responsive_ui_scale_multiplier, settings_sidebar_default_width, show_editor_ui,
-        sort_quad_by_angle, VIEW_CUBE_FACES,
+        push_command_when_clicked, responsive_ui_scale_multiplier, settings_sidebar_default_width,
+        show_editor_ui, sort_quad_by_angle, VIEW_CUBE_FACES,
     };
     use crate::commands::AppCommand;
     use crate::test_utils::approx_eq;
@@ -1112,6 +1144,25 @@ mod tests {
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
             show_editor_ui(ctx, state, &block_icon_texture_ids);
         });
+    }
+
+    #[test]
+    fn push_command_when_clicked_only_pushes_on_click() {
+        let mut commands = Vec::new();
+
+        push_command_when_clicked(
+            &mut commands,
+            false,
+            AppCommand::EditorCaptureMenuPreviewCamera,
+        );
+        assert!(commands.is_empty());
+
+        push_command_when_clicked(
+            &mut commands,
+            true,
+            AppCommand::EditorUseAutoMenuPreviewCamera,
+        );
+        assert_eq!(commands, vec![AppCommand::EditorUseAutoMenuPreviewCamera]);
     }
 
     #[test]

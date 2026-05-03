@@ -32,7 +32,8 @@ use crate::platform::state_host::WasmCanvas;
 use crate::platform::state_host::{PlatformInstant, SurfaceHost};
 use crate::types::{
     AppPhase, CameraUniform, ColorSpaceUniform, EditorState, LineUniform, MenuState, MusicMetadata,
-    PhysicalSize, SettingsSection, SpawnMetadata, Vertex,
+    PhysicalSize, SettingsSection, SpawnMetadata, Vertex, DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
+    DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
 };
 
 fn discover_graphics_backends() -> Vec<String> {
@@ -302,6 +303,9 @@ impl State {
         let menu = MenuState {
             selected_level: 0,
             levels: builtin_level_names(),
+            preview_level_index: None,
+            preview_camera_position: DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
+            preview_camera_target: DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
         };
 
         let mut game = GameState::new();
@@ -391,6 +395,7 @@ impl State {
                     author: None,
                     extra: serde_json::Map::new(),
                 },
+                editor_menu_preview_camera: None,
                 editor_show_metadata: false,
                 editor_show_settings: false,
                 editor_settings_section: SettingsSection::Backends,
@@ -921,6 +926,9 @@ impl State {
         let menu = MenuState {
             selected_level: 0,
             levels: builtin_level_names(),
+            preview_level_index: None,
+            preview_camera_position: DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
+            preview_camera_target: DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
         };
 
         let mut game = GameState::new();
@@ -1025,6 +1033,7 @@ impl State {
                     author: None,
                     extra: serde_json::Map::new(),
                 },
+                editor_menu_preview_camera: None,
                 editor_show_metadata: false,
                 editor_show_settings: false,
                 editor_settings_section: SettingsSection::Backends,
