@@ -613,7 +613,12 @@ mod tests {
     use std::fs;
 
     use super::{auto_menu_preview_camera_from_spawn, menu_preview_camera_for_metadata, State};
-    use crate::types::{AppPhase, KeyChord, LevelObject, MusicMetadata, SettingsSection};
+    use crate::commands::AppCommand;
+    use crate::types::{
+        AppPhase, EditorStateParams, KeyChord, LevelMetadata, LevelObject,
+        LevelPreviewCameraMetadata, MusicMetadata, SettingsSection, SpawnMetadata,
+        DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
+    };
 
     struct ArtifactCleanup {
         paths: Vec<String>,
@@ -869,6 +874,125 @@ mod tests {
 
             state.refresh_menu_level_preview_if_needed();
             assert_eq!(state.menu.state.preview_level_index, Some(0));
+        });
+    }
+
+    #[test]
+    fn menu_preview_refresh_uses_default_scene_for_unavailable_levels() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.enter_editor_phase("PreviewGuard".to_string());
+            state.menu.state.preview_level_index = None;
+
+            state.refresh_menu_level_preview_if_needed();
+            assert_eq!(state.menu.state.preview_level_index, None);
+
+            state.phase = AppPhase::Menu;
+            state.menu.state.selected_level = state.menu.state.levels.len();
+
+            state.refresh_menu_level_preview_if_needed();
+            assert_eq!(
+                state.menu.state.preview_level_index,
+                Some(state.menu.state.selected_level)
+            );
+            assert_eq!(
+                state.menu.state.preview_camera_position,
+                DEFAULT_MENU_PREVIEW_CAMERA_POSITION
+            );
+            assert_eq!(
+                state.menu.state.preview_camera_target,
+                DEFAULT_MENU_PREVIEW_CAMERA_TARGET
+            );
+            assert_eq!(
+                state.gameplay.state.objects,
+                crate::game::create_menu_scene()
+            );
+
+            state.menu.state.levels = vec!["__missing_preview_level__".to_string()];
+            state.menu.state.selected_level = 0;
+            state.menu.state.preview_level_index = None;
+            state.gameplay.state.objects.clear();
+
+            state.refresh_menu_level_preview_if_needed();
+            assert_eq!(state.menu.state.preview_level_index, Some(0));
+            assert_eq!(
+                state.gameplay.state.objects,
+                crate::game::create_menu_scene()
+            );
+            assert_eq!(
+                state.menu.state.preview_camera_position,
+                DEFAULT_MENU_PREVIEW_CAMERA_POSITION
+            );
+            assert_eq!(
+                state.menu.state.preview_camera_target,
+                DEFAULT_MENU_PREVIEW_CAMERA_TARGET
+            );
+        });
+    }
+
+    #[test]
+    fn menu_preview_camera_for_metadata_prefers_manual_camera() {
+        let metadata = LevelMetadata::from_editor_state(EditorStateParams {
+            name: "ManualPreview".to_string(),
+            music: MusicMetadata::default(),
+            spawn: SpawnMetadata::default(),
+            tap_times: Vec::new(),
+            timing_points: Vec::new(),
+            timeline_time_seconds: 0.0,
+            timeline_duration_seconds: 16.0,
+            triggers: Vec::new(),
+            simulate_trigger_hitboxes: false,
+            menu_preview_camera: Some(LevelPreviewCameraMetadata {
+                position: [1.0, 2.0, 3.0],
+                target: [4.0, 5.0, 6.0],
+            }),
+            objects: Vec::new(),
+        });
+
+        assert_eq!(
+            menu_preview_camera_for_metadata(&metadata),
+            ([1.0, 2.0, 3.0], [4.0, 5.0, 6.0])
+        );
+    }
+
+    #[test]
+    fn menu_preview_camera_commands_are_phase_guarded_and_dispatchable() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Menu;
+
+            state.dispatch(AppCommand::EditorCaptureMenuPreviewCamera);
+            assert!(state
+                .current_editor_metadata()
+                .menu_preview_camera
+                .is_none());
+
+            state.session.editor_menu_preview_camera = Some(LevelPreviewCameraMetadata {
+                position: [9.0, 8.0, 7.0],
+                target: [6.0, 5.0, 4.0],
+            });
+            state.dispatch(AppCommand::EditorUseAutoMenuPreviewCamera);
+            assert!(state
+                .current_editor_metadata()
+                .menu_preview_camera
+                .is_some());
+
+            state.enter_editor_phase("DispatchPreviewCamera".to_string());
+            state.editor.camera.editor_pan = [2.0, -4.0];
+            state.editor.camera.editor_target_z = 3.0;
+
+            state.dispatch(AppCommand::EditorCaptureMenuPreviewCamera);
+            let captured = state.current_editor_metadata().menu_preview_camera;
+            assert_eq!(
+                captured.as_ref().map(|camera| camera.target),
+                Some([2.0, 3.0, -4.0])
+            );
+
+            state.dispatch(AppCommand::EditorUseAutoMenuPreviewCamera);
+            assert!(state
+                .current_editor_metadata()
+                .menu_preview_camera
+                .is_none());
         });
     }
 

@@ -2097,6 +2097,17 @@ mod tests {
     }
 
     #[test]
+    fn level_preview_camera_metadata_defaults_missing_vectors_and_omits_zero_vectors() {
+        let camera: LevelPreviewCameraMetadata =
+            serde_json::from_value(json!({})).expect("deserialize default preview camera");
+        assert_eq!(camera.position, [0.0, 0.0, 0.0]);
+        assert_eq!(camera.target, [0.0, 0.0, 0.0]);
+
+        let value = serde_json::to_value(&camera).expect("serialize default preview camera");
+        assert_eq!(value, json!({}));
+    }
+
+    #[test]
     fn camera_trigger_serialization_omits_default_pose_fields() {
         let camera_trigger = CameraTrigger {
             time_seconds: 2.5,
