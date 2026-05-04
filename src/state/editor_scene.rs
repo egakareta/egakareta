@@ -8,6 +8,7 @@
 use glam::Vec3;
 
 use super::{EditorDirtyFlags, EditorSubsystem, PerfStage, State};
+use super::render::MeshSlot;
 use crate::editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds_with_triggers};
 use crate::game::trigger_transformed_objects_at_time;
 use crate::mesh::{
@@ -355,7 +356,19 @@ impl State {
         }
 
         let object_count = self.editor.objects.len();
-        let selected_mask = self.editor.selected_mask_for_len(object_count);
+
+        // Reuse the cached selected mask to avoid a Vec allocation on every mouse event.
+        // The cache is invalidated whenever the selection actually changes.
+        if self
+            .editor
+            .selected_mask_cache
+            .as_ref()
+            .is_none_or(|cache| cache.len() != object_count)
+        {
+            let mask = self.editor.selected_mask_for_len(object_count);
+            self.editor.selected_mask_cache = Some(mask);
+        }
+        let selected_mask = self.editor.selected_mask_cache.as_ref().unwrap();
 
         let mut indices_to_outline = Vec::new();
         let mut outline_mask = vec![false; object_count];
@@ -411,14 +424,28 @@ impl State {
             ));
         }
 
+        // Each block outline uses 12 prism calls × 36 vertices each = 432 vertices.
+        // Use a persistent streaming buffer to avoid creating/destroying a GPU buffer on
+        // every mouse-move event (which is the dominant source of lag during marquee drag).
+        const VERTICES_PER_BLOCK_OUTLINE: u32 = 432;
+        let required_capacity = object_count as u32 * VERTICES_PER_BLOCK_OUTLINE;
+        let needs_init = match &self.render.meshes.editor_hover_outline {
+            MeshSlot::Streaming {
+                capacity_vertices, ..
+            } => *capacity_vertices < required_capacity,
+            _ => true,
+        };
+        if needs_init {
+            self.render.meshes.editor_hover_outline = MeshSlot::streaming(
+                &self.render.gpu.device,
+                "Editor Hover Outline Vertex Buffer",
+                required_capacity,
+            );
+        }
         self.render
             .meshes
             .editor_hover_outline
-            .replace_with_vertices(
-                &self.render.gpu.device,
-                "Editor Hover Outline Vertex Buffer",
-                &all_vertices,
-            );
+            .write_streaming_vertices(&self.render.gpu.queue, &all_vertices);
     }
 
     pub(super) fn rebuild_editor_gizmo_vertices(&mut self) {
