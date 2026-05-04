@@ -355,7 +355,19 @@ impl State {
         }
 
         let object_count = self.editor.objects.len();
-        let selected_mask = self.editor.selected_mask_for_len(object_count);
+        if self
+            .editor
+            .selected_mask_cache
+            .as_ref()
+            .is_none_or(|cache| cache.len() != object_count)
+        {
+            self.editor.selected_mask_cache = Some(self.editor.selected_mask_for_len(object_count));
+        }
+
+        let Some(selected_mask) = self.editor.selected_mask_cache.as_ref() else {
+            self.render.meshes.editor_hover_outline.clear();
+            return;
+        };
 
         let mut indices_to_outline = Vec::new();
         let mut outline_mask = vec![false; object_count];
