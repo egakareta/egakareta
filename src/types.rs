@@ -85,6 +85,8 @@ impl GizmoPart {
 pub(crate) const CURRENT_LEVEL_FORMAT_VERSION: u32 = 2;
 
 pub(crate) const APP_SETTINGS_VERSION: u32 = 1;
+pub(crate) const DEFAULT_MENU_PREVIEW_CAMERA_POSITION: [f32; 3] = [22.657694, 15.0, -10.565456];
+pub(crate) const DEFAULT_MENU_PREVIEW_CAMERA_TARGET: [f32; 3] = [0.0, 0.0, 0.0];
 
 fn default_level_format_version() -> u32 {
     CURRENT_LEVEL_FORMAT_VERSION
@@ -106,8 +108,28 @@ fn default_spawn_position() -> [f32; 3] {
     [0.0, 0.0, 0.0]
 }
 
-fn is_default_spawn_position(value: &[f32; 3]) -> bool {
+fn default_preview_camera_position_zero() -> [f32; 3] {
+    [0.0, 0.0, 0.0]
+}
+
+fn default_preview_camera_target_zero() -> [f32; 3] {
+    [0.0, 0.0, 0.0]
+}
+
+fn is_zero_position(value: &[f32; 3]) -> bool {
     value.iter().all(|component| component.abs() <= 1e-6)
+}
+
+fn is_default_spawn_position(value: &[f32; 3]) -> bool {
+    is_zero_position(value)
+}
+
+fn is_default_preview_camera_position(value: &[f32; 3]) -> bool {
+    is_zero_position(value)
+}
+
+fn is_default_preview_camera_target(value: &[f32; 3]) -> bool {
+    is_zero_position(value)
 }
 
 fn default_timeline_time_seconds() -> f32 {
@@ -878,10 +900,26 @@ pub(crate) struct LevelMetadata {
         skip_serializing_if = "is_default_simulate_trigger_hitboxes"
     )]
     pub(crate) simulate_trigger_hitboxes: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) menu_preview_camera: Option<LevelPreviewCameraMetadata>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) objects: Vec<LevelObject>,
     #[serde(flatten)]
     pub(crate) extra: serde_json::Map<String, serde_json::Value>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+pub(crate) struct LevelPreviewCameraMetadata {
+    #[serde(
+        default = "default_preview_camera_position_zero",
+        skip_serializing_if = "is_default_preview_camera_position"
+    )]
+    pub(crate) position: [f32; 3],
+    #[serde(
+        default = "default_preview_camera_target_zero",
+        skip_serializing_if = "is_default_preview_camera_target"
+    )]
+    pub(crate) target: [f32; 3],
 }
 
 pub(crate) struct EditorStateParams {
@@ -894,6 +932,7 @@ pub(crate) struct EditorStateParams {
     pub timeline_duration_seconds: f32,
     pub triggers: Vec<TimedTrigger>,
     pub simulate_trigger_hitboxes: bool,
+    pub menu_preview_camera: Option<LevelPreviewCameraMetadata>,
     pub objects: Vec<LevelObject>,
 }
 
@@ -909,6 +948,7 @@ impl LevelMetadata {
             timeline_duration_seconds,
             triggers,
             simulate_trigger_hitboxes,
+            menu_preview_camera,
             objects,
         }: EditorStateParams,
     ) -> Self {
@@ -923,6 +963,7 @@ impl LevelMetadata {
             timeline_duration_seconds,
             triggers,
             simulate_trigger_hitboxes,
+            menu_preview_camera,
             objects,
             extra: serde_json::Map::new(),
         }
@@ -1734,6 +1775,9 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
 pub(crate) struct MenuState {
     pub(crate) selected_level: usize,
     pub(crate) levels: Vec<String>,
+    pub(crate) preview_level_index: Option<usize>,
+    pub(crate) preview_camera_position: [f32; 3],
+    pub(crate) preview_camera_target: [f32; 3],
 }
 
 /// State for the level editor.
@@ -1892,8 +1936,8 @@ mod tests {
         default_camera_trigger_pitch, default_camera_trigger_rotation,
         default_camera_trigger_transition_interval_seconds, timed_triggers_to_camera_triggers,
         CameraTrigger, CameraTriggerMode, EditorStateParams, LevelMetadata, LevelObject,
-        MusicMetadata, SpawnDirection, SpawnMetadata, TimedTrigger, TimedTriggerAction,
-        TimedTriggerEasing, TimedTriggerTarget, Vertex,
+        LevelPreviewCameraMetadata, MusicMetadata, SpawnDirection, SpawnMetadata, TimedTrigger,
+        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, Vertex,
     };
     use serde_json::json;
 
@@ -1971,6 +2015,7 @@ mod tests {
             timeline_duration_seconds: 16.0,
             triggers: Vec::new(),
             simulate_trigger_hitboxes: false,
+            menu_preview_camera: None,
             objects: vec![LevelObject {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
@@ -2014,11 +2059,52 @@ mod tests {
             timeline_duration_seconds: 16.0,
             triggers: Vec::new(),
             simulate_trigger_hitboxes: true,
+            menu_preview_camera: None,
             objects: Vec::new(),
         });
 
         let value = serde_json::to_value(&metadata).expect("serialize metadata");
         assert_eq!(value.get("simulate_trigger_hitboxes"), Some(&json!(true)));
+    }
+
+    #[test]
+    fn level_metadata_serialization_includes_menu_preview_camera_when_present() {
+        let metadata = LevelMetadata::from_editor_state(EditorStateParams {
+            name: "MenuPreview".to_string(),
+            music: MusicMetadata::default(),
+            spawn: SpawnMetadata::default(),
+            tap_times: Vec::new(),
+            timing_points: Vec::new(),
+            timeline_time_seconds: 0.0,
+            timeline_duration_seconds: 16.0,
+            triggers: Vec::new(),
+            simulate_trigger_hitboxes: false,
+            menu_preview_camera: Some(LevelPreviewCameraMetadata {
+                position: [4.0, 8.0, -3.0],
+                target: [0.0, 1.0, 0.0],
+            }),
+            objects: Vec::new(),
+        });
+
+        let value = serde_json::to_value(&metadata).expect("serialize metadata");
+        assert_eq!(
+            value.get("menu_preview_camera"),
+            Some(&json!({
+                "position": [4.0, 8.0, -3.0],
+                "target": [0.0, 1.0, 0.0]
+            }))
+        );
+    }
+
+    #[test]
+    fn level_preview_camera_metadata_defaults_missing_vectors_and_omits_zero_vectors() {
+        let camera: LevelPreviewCameraMetadata =
+            serde_json::from_value(json!({})).expect("deserialize default preview camera");
+        assert_eq!(camera.position, [0.0, 0.0, 0.0]);
+        assert_eq!(camera.target, [0.0, 0.0, 0.0]);
+
+        let value = serde_json::to_value(&camera).expect("serialize default preview camera");
+        assert_eq!(value, json!({}));
     }
 
     #[test]
@@ -2103,6 +2189,7 @@ mod tests {
                 pitch: 0.6,
             }]),
             simulate_trigger_hitboxes: false,
+            menu_preview_camera: None,
             objects: Vec::new(),
             extra: serde_json::Map::new(),
         };

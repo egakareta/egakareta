@@ -163,6 +163,10 @@ impl State {
             AppCommand::EditorCompleteImport => self.complete_import(),
             AppCommand::EditorUpdateMusic(metadata) => self.set_editor_music_metadata(metadata),
             AppCommand::EditorTriggerAudioImport => self.trigger_audio_import(),
+            AppCommand::EditorCaptureMenuPreviewCamera => self.editor_capture_menu_preview_camera(),
+            AppCommand::EditorUseAutoMenuPreviewCamera => {
+                self.editor_use_auto_menu_preview_camera()
+            }
 
             // ── Editor – keyboard state routing ───────────────────
             AppCommand::EditorSetShiftHeld(held) => self.set_editor_shift_held(held),

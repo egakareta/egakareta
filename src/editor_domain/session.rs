@@ -6,7 +6,8 @@
 
 */
 use crate::types::{
-    LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata, TimedTrigger, TimingPoint,
+    LevelMetadata, LevelObject, LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata,
+    TimedTrigger, TimingPoint,
 };
 
 pub(crate) struct EditorSessionInit {
@@ -19,6 +20,7 @@ pub(crate) struct EditorSessionInit {
     pub(crate) timeline_duration_seconds: f32,
     pub(crate) triggers: Vec<TimedTrigger>,
     pub(crate) simulate_trigger_hitboxes: bool,
+    pub(crate) menu_preview_camera: Option<LevelPreviewCameraMetadata>,
     pub(crate) cursor: [f32; 3],
     pub(crate) camera_pan: [f32; 2],
 }
@@ -36,6 +38,7 @@ pub(crate) fn editor_session_init_from_metadata(
         timeline_duration_seconds,
         mut triggers,
         simulate_trigger_hitboxes,
+        menu_preview_camera,
     ) = if let Some(metadata) = metadata {
         let triggers = metadata.resolved_triggers();
         (
@@ -48,6 +51,7 @@ pub(crate) fn editor_session_init_from_metadata(
             metadata.timeline_duration_seconds,
             triggers,
             metadata.simulate_trigger_hitboxes,
+            metadata.menu_preview_camera,
         )
     } else {
         (
@@ -60,6 +64,7 @@ pub(crate) fn editor_session_init_from_metadata(
             16.0,
             Vec::new(),
             false,
+            None,
         )
     };
 
@@ -82,6 +87,7 @@ pub(crate) fn editor_session_init_from_metadata(
         timeline_duration_seconds: timeline_duration_seconds.max(0.1),
         triggers,
         simulate_trigger_hitboxes,
+        menu_preview_camera,
         cursor,
         camera_pan,
     }

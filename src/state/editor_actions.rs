@@ -13,7 +13,7 @@ use crate::editor_domain::{
     derive_timeline_time_for_world_target_near_time, playtest_return_objects,
     remove_topmost_block_at_cursor, toggle_spawn_direction, TimelineNearSearch,
 };
-use crate::game::{create_menu_scene, GameState, TimelineSimulationRuntime};
+use crate::game::{GameState, TimelineSimulationRuntime};
 use crate::platform::state_host::PlatformInstant;
 use crate::types::{AppPhase, EditorMode};
 
@@ -537,9 +537,7 @@ impl State {
         self.enter_menu_phase();
 
         self.gameplay.state = GameState::new();
-        self.gameplay.state.objects = create_menu_scene();
-        self.gameplay.state.rebuild_behavior_cache();
-        self.rebuild_block_vertices();
+        self.refresh_menu_level_preview_if_needed();
         self.render.meshes.trail.clear();
     }
 
