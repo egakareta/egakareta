@@ -1191,6 +1191,9 @@ mod tests {
             });
             state.process_input_event(InputEvent::PointerMoved { x: end_x, y: end_y });
 
+            // Process dirty flags to trigger the deferred hover outline rebuild
+            state.process_editor_dirty(1.0 / 60.0);
+
             // Now the hover outline should be populated because the marquee is active and covers the block
             assert!(
                 state
@@ -1207,6 +1210,9 @@ mod tests {
                 button: 0,
                 pressed: false,
             });
+
+            // Process dirty flags to update the hover outline after release
+            state.process_editor_dirty(1.0 / 60.0);
 
             // After release, the block is selected, so it shouldn't have a hover outline
             assert!(
