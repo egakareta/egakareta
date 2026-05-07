@@ -217,7 +217,10 @@ impl State {
 
         if dirty.rebuild_block_mesh {
             let block_mesh_started_at = PlatformInstant::now();
-            if self.phase == AppPhase::Editor && is_dragging {
+            if self.phase == AppPhase::Editor
+                && is_dragging
+                && self.editor.selected_mask_cache.is_some()
+            {
                 self.rebuild_editor_selected_block_vertices();
             } else {
                 self.rebuild_block_vertices();
@@ -639,6 +642,8 @@ impl State {
             }
             build_block_vertices_from_refs(&selected_objects)
         };
+
+        self.editor.selected_mask_cache = Some(selected_mask);
 
         self.perf_record(PerfStage::BlockMeshSplitStatic, static_mesh_started_at);
         self.perf_record(PerfStage::BlockMeshSplitSelected, selected_mesh_started_at);
