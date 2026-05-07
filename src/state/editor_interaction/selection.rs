@@ -103,37 +103,24 @@ impl EditorSubsystem {
             obj.rotation_degrees[2].to_radians(),
         );
 
-        let mut points = Vec::with_capacity(10);
+        let mut bounds: Option<(Vec2, Vec2)> = None;
         for sx in [-1.0, 1.0] {
             for sy in [-1.0, 1.0] {
                 for sz in [-1.0, 1.0] {
                     let local = Vec3::new(half.x * sx, half.y * sy, half.z * sz);
                     let world = center + rotation * local;
                     if let Some(screen) = self.world_to_screen_v(world, viewport) {
-                        points.push(screen);
+                        grow_screen_bounds(&mut bounds, screen);
                     }
                 }
             }
         }
 
         if let Some(center_screen) = self.world_to_screen_v(center, viewport) {
-            points.push(center_screen);
+            grow_screen_bounds(&mut bounds, center_screen);
         }
 
-        if points.is_empty() {
-            return None;
-        }
-
-        let mut min = points[0];
-        let mut max = points[0];
-        for p in points.into_iter().skip(1) {
-            min.x = min.x.min(p.x);
-            min.y = min.y.min(p.y);
-            max.x = max.x.max(p.x);
-            max.y = max.y.max(p.y);
-        }
-
-        Some((min, max))
+        bounds
     }
 
     fn marquee_trigger_hit(&self, rect_min: Vec2, rect_max: Vec2, viewport: Vec2) -> Option<usize> {
@@ -222,7 +209,6 @@ impl EditorSubsystem {
         }
 
         self.mark_dirty(EditorDirtyFlags {
-            rebuild_block_mesh: true,
             rebuild_selection_overlays: true,
             rebuild_cursor: self.ui.selected_block_index.is_some(),
             ..EditorDirtyFlags::default()
@@ -491,7 +477,6 @@ impl EditorSubsystem {
 
             let mark_dirty_started_at = PlatformInstant::now();
             self.mark_dirty(EditorDirtyFlags {
-                rebuild_block_mesh: true,
                 rebuild_selection_overlays: true,
                 ..EditorDirtyFlags::default()
             });
@@ -580,7 +565,6 @@ impl EditorSubsystem {
 
         let mark_dirty_started_at = PlatformInstant::now();
         self.mark_dirty(EditorDirtyFlags {
-            rebuild_block_mesh: true,
             rebuild_selection_overlays: true,
             rebuild_cursor: matches!(changed, EditorInteractionChange::Cursor),
             ..EditorDirtyFlags::default()
@@ -596,7 +580,10 @@ impl State {
     pub(crate) fn begin_editor_marquee_selection(&mut self, x: f64, y: f64) -> bool {
         let handled = self.editor.begin_marquee_selection(x, y, self.phase);
         if handled {
-            self.rebuild_editor_hover_outline_vertices();
+            self.editor.mark_dirty(EditorDirtyFlags {
+                rebuild_selection_overlays: true,
+                ..EditorDirtyFlags::default()
+            });
         }
         handled
     }
@@ -604,7 +591,10 @@ impl State {
     pub(crate) fn update_editor_marquee_selection(&mut self, x: f64, y: f64) -> bool {
         let handled = self.editor.update_marquee_selection(x, y, self.phase);
         if handled {
-            self.rebuild_editor_hover_outline_vertices();
+            self.editor.mark_dirty(EditorDirtyFlags {
+                rebuild_selection_overlays: true,
+                ..EditorDirtyFlags::default()
+            });
         }
         handled
     }
@@ -623,11 +613,13 @@ impl State {
             self.editor
                 .finish_marquee_selection(x, y, viewport_size, self.phase);
         if marquee_consumed {
-            self.rebuild_editor_hover_outline_vertices();
             return true;
         }
 
-        self.rebuild_editor_hover_outline_vertices();
+        self.editor.mark_dirty(EditorDirtyFlags {
+            rebuild_selection_overlays: true,
+            ..EditorDirtyFlags::default()
+        });
 
         let mode = self.editor.mode();
         if self.phase == AppPhase::Editor
@@ -657,6 +649,18 @@ impl State {
         );
         self.editor
             .begin_selected_block_drag_ext(x, y, viewport_size, self.phase)
+    }
+}
+
+fn grow_screen_bounds(bounds: &mut Option<(Vec2, Vec2)>, point: Vec2) {
+    match bounds {
+        Some((min, max)) => {
+            min.x = min.x.min(point.x);
+            min.y = min.y.min(point.y);
+            max.x = max.x.max(point.x);
+            max.y = max.y.max(point.y);
+        }
+        None => *bounds = Some((point, point)),
     }
 }
 
@@ -810,6 +814,45 @@ mod tests {
             assert!(changed);
             assert_eq!(state.editor.ui.selected_block_indices, vec![0, 1]);
             assert_eq!(state.editor.ui.selected_block_index, Some(0));
+        });
+    }
+
+    #[test]
+    fn marquee_updates_only_mark_overlay_dirty_until_frame_processing() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Select;
+            state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
+            state.render.meshes.editor_hover_outline.clear();
+
+            assert!(state.begin_editor_marquee_selection(0.0, 0.0));
+            state.editor.runtime.dirty = EditorDirtyFlags::default();
+
+            for [x, y] in [[2000.0, 2000.0], [20.0, 20.0], [2000.0, 2000.0]] {
+                assert!(state.update_editor_marquee_selection(x, y));
+                assert!(state.editor.runtime.dirty.rebuild_selection_overlays);
+                assert!(state
+                    .render
+                    .meshes
+                    .editor_hover_outline
+                    .draw_data()
+                    .is_none());
+                state.editor.runtime.dirty = EditorDirtyFlags::default();
+            }
+
+            state.editor.mark_dirty(EditorDirtyFlags {
+                rebuild_selection_overlays: true,
+                ..EditorDirtyFlags::default()
+            });
+            state.process_editor_dirty(1.0 / 60.0);
+            assert!(state
+                .render
+                .meshes
+                .editor_hover_outline
+                .draw_data()
+                .is_some());
         });
     }
 
@@ -986,6 +1029,7 @@ mod tests {
 
             state.editor.ui.mode = EditorMode::Select;
             state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
+            state.editor.runtime.dirty = EditorDirtyFlags::default();
 
             let click = state
                 .editor
@@ -1000,6 +1044,9 @@ mod tests {
             );
             assert_eq!(select_result, EditorInteractionChange::Cursor);
             assert_eq!(state.editor.ui.selected_block_index, Some(0));
+            assert!(!state.editor.runtime.dirty.rebuild_block_mesh);
+            assert!(state.editor.runtime.dirty.rebuild_selection_overlays);
+            assert!(state.editor.runtime.dirty.rebuild_cursor);
 
             state.editor.ui.shift_held = true;
             let toggle_result = state.editor.select_block_from_screen(

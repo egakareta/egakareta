@@ -65,6 +65,10 @@ impl EditorSubsystem {
         }
 
         for (index, obj) in self.objects.iter().enumerate() {
+            if !Self::ray_may_hit_block_bounds(ray_origin, ray_dir, obj, min_t) {
+                continue;
+            }
+
             if let Some((t, normal)) = self.ray_intersect_rotated_block(ray_origin, ray_dir, obj) {
                 if t < min_t {
                     min_t = t;
@@ -137,6 +141,38 @@ impl EditorSubsystem {
             hit_block_index,
             hit_trigger_index,
         })
+    }
+
+    fn ray_may_hit_block_bounds(
+        ray_origin: Vec3,
+        ray_dir: Vec3,
+        obj: &crate::types::LevelObject,
+        max_t: f32,
+    ) -> bool {
+        let center = Vec3::new(
+            obj.position[0] + obj.size[0] * 0.5,
+            obj.position[1] + obj.size[1] * 0.5,
+            obj.position[2] + obj.size[2] * 0.5,
+        );
+        let half = Vec3::new(obj.size[0] * 0.5, obj.size[1] * 0.5, obj.size[2] * 0.5);
+        let radius = half.length();
+        if radius <= f32::EPSILON {
+            return false;
+        }
+
+        let to_center = center - ray_origin;
+        let center_t = to_center.dot(ray_dir);
+        if center_t + radius < 0.0 {
+            return false;
+        }
+
+        let nearest_possible_t = (center_t - radius).max(0.0);
+        if nearest_possible_t > max_t {
+            return false;
+        }
+
+        let closest_distance_sq = (to_center.length_squared() - center_t * center_t).max(0.0);
+        closest_distance_sq <= radius * radius
     }
 
     fn ray_intersect_sphere(
