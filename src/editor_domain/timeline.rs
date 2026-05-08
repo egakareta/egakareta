@@ -203,8 +203,24 @@ pub(crate) fn derive_timeline_time_for_world_target_near_time(
         return 0.0;
     }
 
-    let range_start = (search.seed_time - search.window_seconds.max(0.01)).clamp(0.0, duration);
-    let range_end = (search.seed_time + search.window_seconds.max(0.01)).clamp(0.0, duration);
+    const COARSE_SIMULATION_DT: f32 = 1.0 / 90.0;
+    const FINE_SIMULATION_DT: f32 = 1.0 / 240.0;
+
+    let requested_seed_time = search.seed_time.clamp(0.0, duration);
+    let seed_time = {
+        let mut runtime = TimelineSimulationRuntime::new_with_dt(
+            spawn,
+            direction,
+            objects,
+            tap_times,
+            FINE_SIMULATION_DT,
+        );
+        runtime.advance_to(requested_seed_time);
+        runtime.elapsed_seconds().clamp(0.0, duration)
+    };
+    let search_window = search.window_seconds.max(0.01);
+    let range_start = (seed_time - search_window).clamp(0.0, duration);
+    let range_end = (seed_time + search_window).clamp(0.0, duration);
     if range_end <= range_start {
         return range_start;
     }
@@ -258,9 +274,6 @@ pub(crate) fn derive_timeline_time_for_world_target_near_time(
         Some((closest_time, distance_sq(closest_position, target)))
     }
 
-    const COARSE_SIMULATION_DT: f32 = 1.0 / 90.0;
-    const FINE_SIMULATION_DT: f32 = 1.0 / 240.0;
-
     let sample_best_time =
         |start_time: f32, end_time: f32, samples: usize, simulation_dt: f32| -> (f32, f32) {
             let mut runtime = TimelineSimulationRuntime::new_with_dt(
@@ -276,6 +289,13 @@ pub(crate) fn derive_timeline_time_for_world_target_near_time(
 
             let mut best_time = start_time;
             let mut best_distance_sq = distance_sq(previous_snapshot.position, target);
+            if runtime.game_over() {
+                return (
+                    runtime.elapsed_seconds().clamp(0.0, duration),
+                    best_distance_sq,
+                );
+            }
+
             let step = if samples == 0 {
                 0.0
             } else {
@@ -286,6 +306,10 @@ pub(crate) fn derive_timeline_time_for_world_target_near_time(
                 let sample_time = (start_time + step * index as f32).clamp(start_time, end_time);
                 runtime.advance_to(sample_time);
                 let snapshot = runtime.snapshot();
+                if runtime.game_over() {
+                    break;
+                }
+
                 if previous_snapshot.direction == snapshot.direction
                     && (previous_snapshot.speed - snapshot.speed).abs() <= 1e-4
                 {

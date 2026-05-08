@@ -420,6 +420,41 @@ mod tests {
     }
 
     #[test]
+    fn near_solver_with_post_death_seed_uses_reachable_time() {
+        let objects = vec![LevelObject {
+            position: [0.0, 0.0, 4.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.18,
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        }];
+        let target = [0.5, 0.0, 3.5];
+        let time = derive_timeline_time_for_world_target_near_time(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[],
+            8.0,
+            &objects,
+            target,
+            TimelineNearSearch {
+                seed_time: 3.0,
+                window_seconds: 1.5,
+            },
+        );
+
+        assert!((time - 0.375).abs() < 0.02, "unexpected time: {time}");
+        let (position, _) = derive_timeline_position(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[],
+            time,
+            &objects,
+        );
+        assert!((position[2] - target[2]).abs() < 0.03);
+    }
+
+    #[test]
     fn near_solver_stays_within_requested_window() {
         let seed = 2.2;
         let window = 0.35;

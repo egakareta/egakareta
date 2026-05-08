@@ -85,9 +85,7 @@ impl EditorSubsystem {
 
         let duration_seconds = self.timeline.clock.duration_seconds.max(0.0);
         let seed_time = self
-            .timeline
-            .clock
-            .time_seconds
+            .timeline_elapsed_seconds(self.timeline.clock.time_seconds)
             .clamp(0.0, duration_seconds);
         let target_world = [
             indicator_cell[0] + 0.5,
@@ -549,6 +547,7 @@ impl State {
 mod tests {
     use super::State;
     use crate::editor_domain::derive_tap_indicator_positions;
+    use crate::game::TimelineSimulationRuntime;
     use crate::types::{AppPhase, EditorMode, LevelObject, SpawnDirection};
 
     fn test_block(position: [f32; 3]) -> LevelObject {
@@ -660,6 +659,40 @@ mod tests {
                 .taps
                 .tap_indicator_positions
                 .is_empty());
+        });
+    }
+
+    #[test]
+    fn toggle_tap_after_death_uses_reachable_timeline_time() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.timeline.clock.duration_seconds = 8.0;
+            state.editor.timeline.clock.time_seconds = 3.0;
+            state.editor.objects = vec![test_block([0.0, 0.0, 4.0])];
+            state.editor.ui.cursor = [0.0, 0.0, 3.0];
+
+            let mut runtime = TimelineSimulationRuntime::new(
+                state.editor.spawn.position,
+                state.editor.spawn.direction,
+                &state.editor.objects,
+                &[],
+            );
+            runtime.advance_to(state.editor.timeline.clock.time_seconds);
+            state.editor.timeline.preview.position = runtime.position();
+
+            let (added_time, added) = state.editor.toggle_tap_at_cursor();
+
+            assert!(added);
+            let added_time = added_time.expect("tap should be added");
+            assert!(
+                (added_time - 0.375).abs() < 0.03,
+                "expected tap near reachable target time, got {added_time}"
+            );
+            assert!(
+                added_time < 1.0,
+                "tap should not inherit the post-death editor clock time"
+            );
         });
     }
 
