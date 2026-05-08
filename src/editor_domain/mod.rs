@@ -22,6 +22,41 @@ mod tests {
     use super::*;
     use crate::types::{LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata};
 
+    fn assert_near_solver_hits_target(
+        spawn: [f32; 3],
+        direction: crate::types::SpawnDirection,
+        tap_times: &[f32],
+        target: [f32; 3],
+        seed_time: f32,
+        window_seconds: f32,
+        tolerance: f32,
+    ) -> f32 {
+        let time = derive_timeline_time_for_world_target_near_time(
+            spawn,
+            direction,
+            tap_times,
+            8.0,
+            &[],
+            target,
+            TimelineNearSearch {
+                seed_time,
+                window_seconds,
+            },
+        );
+        let (position, _) = derive_timeline_position(spawn, direction, tap_times, time, &[]);
+        let delta_x = position[0] - target[0];
+        let delta_y = position[1] - target[1];
+        let delta_z = position[2] - target[2];
+        let distance = (delta_x * delta_x + delta_y * delta_y + delta_z * delta_z).sqrt();
+
+        assert!(
+            distance <= tolerance,
+            "expected near solver to land within {tolerance} units of {target:?}, got {position:?} at {time}s ({distance} units away)"
+        );
+
+        time
+    }
+
     #[test]
     fn keeps_tap_indicators_in_sync_with_tap_time_edits() {
         let mut taps = Vec::new();
@@ -350,6 +385,38 @@ mod tests {
             (time - 0.5).abs() < 0.08,
             "unexpected near-search time: {time}"
         );
+    }
+
+    #[test]
+    fn near_solver_hits_forward_target_cell_center() {
+        let target = [0.5, 0.0, 4.5];
+        let time = assert_near_solver_hits_target(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[],
+            target,
+            0.67,
+            1.0,
+            0.015,
+        );
+
+        assert!((time - 0.5).abs() < 0.01, "unexpected time: {time}");
+    }
+
+    #[test]
+    fn near_solver_hits_turned_target_cell_center() {
+        let target = [2.5, 0.0, 0.5];
+        let time = assert_near_solver_hits_target(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[0.0],
+            target,
+            0.35,
+            0.7,
+            0.015,
+        );
+
+        assert!((time - 0.25).abs() < 0.01, "unexpected time: {time}");
     }
 
     #[test]

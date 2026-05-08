@@ -216,8 +216,50 @@ pub(crate) fn derive_timeline_time_for_world_target_near_time(
         dx * dx + dy * dy + dz * dz
     }
 
+    fn segment_closest_time(
+        previous_time: f32,
+        previous_position: [f32; 3],
+        current_time: f32,
+        current_position: [f32; 3],
+        target: [f32; 3],
+    ) -> Option<(f32, f32)> {
+        if current_time <= previous_time {
+            return None;
+        }
+
+        let segment = [
+            current_position[0] - previous_position[0],
+            current_position[1] - previous_position[1],
+            current_position[2] - previous_position[2],
+        ];
+        let segment_length_sq =
+            segment[0] * segment[0] + segment[1] * segment[1] + segment[2] * segment[2];
+        if segment_length_sq <= 1e-8 {
+            return None;
+        }
+
+        let target_offset = [
+            target[0] - previous_position[0],
+            target[1] - previous_position[1],
+            target[2] - previous_position[2],
+        ];
+        let projected_fraction = ((target_offset[0] * segment[0]
+            + target_offset[1] * segment[1]
+            + target_offset[2] * segment[2])
+            / segment_length_sq)
+            .clamp(0.0, 1.0);
+        let closest_position = [
+            previous_position[0] + segment[0] * projected_fraction,
+            previous_position[1] + segment[1] * projected_fraction,
+            previous_position[2] + segment[2] * projected_fraction,
+        ];
+        let closest_time = previous_time + (current_time - previous_time) * projected_fraction;
+
+        Some((closest_time, distance_sq(closest_position, target)))
+    }
+
     const COARSE_SIMULATION_DT: f32 = 1.0 / 90.0;
-    const FINE_SIMULATION_DT: f32 = 1.0 / 150.0;
+    const FINE_SIMULATION_DT: f32 = 1.0 / 240.0;
 
     let sample_best_time =
         |start_time: f32, end_time: f32, samples: usize, simulation_dt: f32| -> (f32, f32) {
@@ -229,26 +271,49 @@ pub(crate) fn derive_timeline_time_for_world_target_near_time(
                 simulation_dt,
             );
             runtime.advance_to(start_time);
+            let mut previous_time = start_time;
+            let mut previous_snapshot = runtime.snapshot();
 
             let mut best_time = start_time;
-            let mut best_distance_sq = f32::INFINITY;
+            let mut best_distance_sq = distance_sq(previous_snapshot.position, target);
             let step = if samples == 0 {
                 0.0
             } else {
                 (end_time - start_time) / samples as f32
             };
 
-            for index in 0..=samples {
-                let t = (start_time + step * index as f32).clamp(start_time, end_time);
-                runtime.advance_to(t);
+            for index in 1..=samples {
+                let sample_time = (start_time + step * index as f32).clamp(start_time, end_time);
+                runtime.advance_to(sample_time);
                 let snapshot = runtime.snapshot();
+                if previous_snapshot.direction == snapshot.direction
+                    && (previous_snapshot.speed - snapshot.speed).abs() <= 1e-4
+                {
+                    if let Some((candidate_time, candidate_distance_sq)) = segment_closest_time(
+                        previous_time,
+                        previous_snapshot.position,
+                        sample_time,
+                        snapshot.position,
+                        target,
+                    ) {
+                        if candidate_distance_sq < best_distance_sq {
+                            best_distance_sq = candidate_distance_sq;
+                            best_time = candidate_time;
+                        }
+                    }
+                }
+
                 let current_distance_sq = distance_sq(snapshot.position, target);
                 if current_distance_sq < best_distance_sq {
                     best_distance_sq = current_distance_sq;
-                    best_time = t;
-                    if best_distance_sq <= 1e-6 {
-                        break;
-                    }
+                    best_time = sample_time;
+                }
+
+                previous_time = sample_time;
+                previous_snapshot = snapshot;
+
+                if best_distance_sq <= 1e-6 {
+                    break;
                 }
             }
 
@@ -260,13 +325,8 @@ pub(crate) fn derive_timeline_time_for_world_target_near_time(
     let (mut refined_time, best_distance_sq) =
         sample_best_time(range_start, range_end, coarse_samples, COARSE_SIMULATION_DT);
 
-    const CLOSE_ENOUGH_DISTANCE_SQ: f32 = 0.20 * 0.20;
-    if best_distance_sq <= CLOSE_ENOUGH_DISTANCE_SQ {
-        return refined_time.clamp(range_start, range_end);
-    }
-
     let refinement_window = (range_width * 0.16).clamp(0.08, 0.28);
-    let refinement_samples = ((range_width * 36.0).clamp(28.0, 84.0)) as usize;
+    let refinement_samples = ((range_width * 64.0).clamp(48.0, 128.0)) as usize;
     if best_distance_sq > 1e-6 {
         let start_time = (refined_time - refinement_window).max(range_start);
         let end_time = (refined_time + refinement_window).min(range_end);
