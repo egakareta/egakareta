@@ -64,6 +64,7 @@ impl State {
             AppCommand::EditorToggleTapAtPointer => self.editor_add_tap_at_pointer_position(),
             AppCommand::EditorAddTap => self.editor_add_tap(),
             AppCommand::EditorRemoveTap => self.editor_remove_tap(),
+            AppCommand::EditorRemoveTapAt(time) => self.editor_remove_tap_at(time),
             AppCommand::EditorClearTaps => self.editor_clear_taps(),
             AppCommand::EditorSetPlaybackSpeed(speed) => self.set_editor_playback_speed(speed),
             AppCommand::EditorSetWaveformZoom(zoom) => self.set_editor_waveform_zoom(zoom),
@@ -1828,6 +1829,10 @@ mod tests {
             state.dispatch(AppCommand::EditorSetTimelineTime(1.0));
             state.dispatch(AppCommand::EditorAddTap);
             assert!(!state.editor.timeline.taps.tap_times.is_empty());
+            state.dispatch(AppCommand::EditorAddTap);
+            state.dispatch(AppCommand::EditorRemoveTapAt(1.0));
+            assert!(state.editor.timeline.taps.tap_times.is_empty());
+            state.dispatch(AppCommand::EditorAddTap);
             state.dispatch(AppCommand::EditorRemoveTap);
             state.dispatch(AppCommand::EditorClearTaps);
             assert!(state.editor.timeline.taps.tap_times.is_empty());

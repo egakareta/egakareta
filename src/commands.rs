@@ -69,6 +69,8 @@ pub(crate) enum AppCommand {
     EditorAddTap,
     /// Remove a tap at the current timeline position.
     EditorRemoveTap,
+    /// Remove a tap at a specific timeline position.
+    EditorRemoveTapAt(f32),
     /// Remove all taps from the level.
     EditorClearTaps,
     /// Update the playback speed multiplier.

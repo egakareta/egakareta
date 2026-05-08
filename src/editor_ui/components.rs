@@ -11,6 +11,7 @@ use crate::state::EditorUiViewModel;
 pub(crate) const MIN_TIMELINE_DURATION_SECONDS: f32 = 0.1;
 pub(crate) const MAX_TIMELINE_DURATION_SECONDS: f32 = 600.0;
 pub(crate) const DEFAULT_TIMELINE_WINDOW_SECONDS: f32 = 20.0;
+const TIMELINE_TAP_HIT_RADIUS_PIXELS: f32 = 8.0;
 
 fn timeline_visible_duration(duration_seconds: f32, zoom: f32) -> f32 {
     let duration = duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS);
@@ -20,6 +21,34 @@ fn timeline_visible_duration(duration_seconds: f32, zoom: f32) -> f32 {
 
 pub(crate) fn timeline_metrics(duration_seconds: f32) -> f32 {
     duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS)
+}
+
+fn timeline_bar_nearest_tap_index(
+    tap_times: &[f32],
+    pointer_x: f32,
+    rect: egui::Rect,
+    view_start: f32,
+    visible_duration: f32,
+) -> Option<usize> {
+    tap_times
+        .iter()
+        .enumerate()
+        .filter_map(|(index, tap_time)| {
+            if !tap_time.is_finite()
+                || *tap_time < view_start
+                || *tap_time > view_start + visible_duration
+            {
+                return None;
+            }
+
+            let x = rect.left() + (*tap_time - view_start) / visible_duration * rect.width();
+            let distance = (x - pointer_x).abs();
+            (distance <= TIMELINE_TAP_HIT_RADIUS_PIXELS).then_some((index, distance))
+        })
+        .min_by(|(_, left_distance), (_, right_distance)| {
+            f32::total_cmp(left_distance, right_distance)
+        })
+        .map(|(index, _)| index)
 }
 
 pub(crate) fn show_timeline_bar(
@@ -236,6 +265,20 @@ pub(crate) fn show_timeline_bar(
                 let zoom_factor = 1.0 + scroll_delta.y * 0.002;
                 let new_zoom = (timeline_zoom * zoom_factor).clamp(0.1, 10.0);
                 commands.push(AppCommand::EditorSetWaveformZoom(new_zoom));
+            }
+        }
+
+        if response.clicked_by(egui::PointerButton::Secondary) {
+            if let Some(pointer) = response.interact_pointer_pos() {
+                if let Some(index) = timeline_bar_nearest_tap_index(
+                    view.tap_times,
+                    pointer.x,
+                    rect,
+                    view_start,
+                    visible_duration,
+                ) {
+                    commands.push(AppCommand::EditorRemoveTapAt(view.tap_times[index]));
+                }
             }
         }
 
@@ -624,6 +667,21 @@ mod tests {
         let tick_x_at_sample_time =
             rect_left + (sample_time - view_start) / visible_duration * rect_width;
         approx_eq(waveform_x, tick_x_at_sample_time, 0.001);
+    }
+
+    #[test]
+    fn timeline_bar_nearest_tap_index_finds_nearest_visible_tap() {
+        let rect = egui::Rect::from_min_size(egui::pos2(100.0, 0.0), egui::vec2(200.0, 20.0));
+        let tap_times = [1.0, 5.0, 5.2, 12.0];
+
+        assert_eq!(
+            timeline_bar_nearest_tap_index(&tap_times, 198.0, rect, 0.0, 10.0),
+            Some(1)
+        );
+        assert_eq!(
+            timeline_bar_nearest_tap_index(&tap_times, 304.0, rect, 0.0, 10.0),
+            None
+        );
     }
 
     #[test]

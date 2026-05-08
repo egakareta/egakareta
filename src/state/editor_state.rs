@@ -307,6 +307,15 @@ impl EditorSubsystem {
         self.timeline.clock.time_seconds
     }
 
+    pub(crate) fn remove_tap_at(&mut self, time_seconds: f32) -> f32 {
+        remove_tap_with_indicator(
+            &mut self.timeline.taps.tap_times,
+            &mut self.timeline.taps.tap_indicator_positions,
+            time_seconds,
+        );
+        time_seconds
+    }
+
     pub(crate) fn clear_taps(&mut self) {
         clear_taps_with_indicators(
             &mut self.timeline.taps.tap_times,
@@ -975,6 +984,19 @@ impl State {
         });
     }
 
+    /// Removes the tap event nearest to the given timestamp, if one exists.
+    ///
+    /// This operation is recorded in history and invalidates simulation samples from the removed tap's time.
+    pub fn editor_remove_tap_at(&mut self, time_seconds: f32) {
+        self.record_editor_history_state();
+        let tap_time = self.editor.remove_tap_at(time_seconds);
+        self.editor.invalidate_samples_from(tap_time);
+        self.mark_editor_dirty(EditorDirtyFlags {
+            rebuild_tap_indicators: true,
+            ..EditorDirtyFlags::default()
+        });
+    }
+
     /// Clears all tap events from the editor's timeline.
     ///
     /// This operation is recorded in history and invalidates all simulation samples.
@@ -1427,6 +1449,12 @@ mod tests {
 
             state.set_editor_timeline_time_seconds(3.0);
             assert_eq!(state.editor_timeline_time_seconds(), 3.0);
+
+            state.editor_add_tap();
+            assert_eq!(state.editor_tap_times().len(), 1);
+
+            state.editor_remove_tap_at(3.0);
+            assert_eq!(state.editor_tap_times().len(), 0);
 
             state.editor_add_tap();
             assert_eq!(state.editor_tap_times().len(), 1);
