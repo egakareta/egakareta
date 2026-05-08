@@ -5,8 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::super::{EditorSubsystem, PerfStage};
-use crate::platform::state_host::PlatformInstant;
+use super::super::EditorSubsystem;
 use crate::types::EditorPickResult;
 use glam::{EulerRot, Mat3, Vec2, Vec3, Vec4};
 
@@ -25,28 +24,30 @@ impl EditorSubsystem {
             return None;
         }
 
-        let unproject_started_at = PlatformInstant::now();
-        let view_proj = self.view_proj(viewport_size);
-        let inv_view_proj = view_proj.inverse();
+        let (ray_origin, ray_dir) = {
+            puffin::profile_scope!("PickUnproject");
+            let view_proj = self.view_proj(viewport_size);
+            let inv_view_proj = view_proj.inverse();
 
-        let ndc_x = (2.0 * x as f32 / viewport_size.x) - 1.0;
-        let ndc_y = 1.0 - (2.0 * y as f32 / viewport_size.y);
+            let ndc_x = (2.0 * x as f32 / viewport_size.x) - 1.0;
+            let ndc_y = 1.0 - (2.0 * y as f32 / viewport_size.y);
 
-        let near_clip = Vec4::new(ndc_x, ndc_y, -1.0, 1.0);
-        let far_clip = Vec4::new(ndc_x, ndc_y, 1.0, 1.0);
-        let mut near_world = inv_view_proj * near_clip;
-        let mut far_world = inv_view_proj * far_clip;
+            let near_clip = Vec4::new(ndc_x, ndc_y, -1.0, 1.0);
+            let far_clip = Vec4::new(ndc_x, ndc_y, 1.0, 1.0);
+            let mut near_world = inv_view_proj * near_clip;
+            let mut far_world = inv_view_proj * far_clip;
 
-        if near_world.w.abs() <= f32::EPSILON || far_world.w.abs() <= f32::EPSILON {
-            return None;
-        }
+            if near_world.w.abs() <= f32::EPSILON || far_world.w.abs() <= f32::EPSILON {
+                return None;
+            }
 
-        near_world /= near_world.w;
-        far_world /= far_world.w;
+            near_world /= near_world.w;
+            far_world /= far_world.w;
 
-        let ray_origin = near_world.truncate();
-        let ray_dir = (far_world.truncate() - ray_origin).normalize();
-        self.perf_record(PerfStage::PickUnproject, unproject_started_at);
+            let ray_origin = near_world.truncate();
+            let ray_dir = (far_world.truncate() - ray_origin).normalize();
+            (ray_origin, ray_dir)
+        };
 
         let mut min_t = f32::INFINITY;
         let mut best_hit_normal = Vec3::Y;
@@ -54,69 +55,70 @@ impl EditorSubsystem {
         let mut hit_block_index: Option<usize> = None;
         let mut hit_trigger_index: Option<usize> = None;
 
-        let raycast_started_at = PlatformInstant::now();
+        {
+            puffin::profile_scope!("PickRaycast");
 
-        if ray_dir.y.abs() > f32::EPSILON {
-            let t = -ray_origin.y / ray_dir.y;
-            if t >= 0.0 {
-                min_t = t;
-                hit_found = true;
-            }
-        }
-
-        for (index, obj) in self.objects.iter().enumerate() {
-            if !Self::ray_may_hit_block_bounds(ray_origin, ray_dir, obj, min_t) {
-                continue;
-            }
-
-            if let Some((t, normal)) = self.ray_intersect_rotated_block(ray_origin, ray_dir, obj) {
-                if t < min_t {
+            if ray_dir.y.abs() > f32::EPSILON {
+                let t = -ray_origin.y / ray_dir.y;
+                if t >= 0.0 {
                     min_t = t;
                     hit_found = true;
-                    hit_block_index = Some(index);
-                    hit_trigger_index = None;
-                    best_hit_normal = normal;
                 }
             }
-        }
 
-        for (trigger_index, camera_trigger) in self.camera_trigger_markers() {
-            let marker_eye = self.camera_trigger_marker_eye(&camera_trigger);
-            let marker_forward = self.camera_trigger_marker_forward(&camera_trigger);
+            for (index, obj) in self.objects.iter().enumerate() {
+                if !Self::ray_may_hit_block_bounds(ray_origin, ray_dir, obj, min_t) {
+                    continue;
+                }
 
-            let mut marker_t = self.ray_intersect_sphere(
-                ray_origin,
-                ray_dir,
-                marker_eye,
-                CAMERA_TRIGGER_BALL_PICK_RADIUS,
-            );
-
-            let arrow_center = marker_eye + marker_forward * CAMERA_TRIGGER_ARROW_PICK_OFFSET;
-            if let Some(arrow_t) = self.ray_intersect_sphere(
-                ray_origin,
-                ray_dir,
-                arrow_center,
-                CAMERA_TRIGGER_ARROW_PICK_RADIUS,
-            ) {
-                marker_t = Some(marker_t.map_or(arrow_t, |best| best.min(arrow_t)));
+                if let Some((t, normal)) =
+                    self.ray_intersect_rotated_block(ray_origin, ray_dir, obj)
+                {
+                    if t < min_t {
+                        min_t = t;
+                        hit_found = true;
+                        hit_block_index = Some(index);
+                        hit_trigger_index = None;
+                        best_hit_normal = normal;
+                    }
+                }
             }
 
-            if let Some(t) = marker_t {
-                if t < min_t {
-                    min_t = t;
-                    hit_found = true;
-                    hit_block_index = None;
-                    hit_trigger_index = Some(trigger_index);
+            for (trigger_index, camera_trigger) in self.camera_trigger_markers() {
+                let marker_eye = self.camera_trigger_marker_eye(&camera_trigger);
+                let marker_forward = self.camera_trigger_marker_forward(&camera_trigger);
+
+                let mut marker_t = self.ray_intersect_sphere(
+                    ray_origin,
+                    ray_dir,
+                    marker_eye,
+                    CAMERA_TRIGGER_BALL_PICK_RADIUS,
+                );
+
+                let arrow_center = marker_eye + marker_forward * CAMERA_TRIGGER_ARROW_PICK_OFFSET;
+                if let Some(arrow_t) = self.ray_intersect_sphere(
+                    ray_origin,
+                    ray_dir,
+                    arrow_center,
+                    CAMERA_TRIGGER_ARROW_PICK_RADIUS,
+                ) {
+                    marker_t = Some(marker_t.map_or(arrow_t, |best| best.min(arrow_t)));
+                }
+
+                if let Some(t) = marker_t {
+                    if t < min_t {
+                        min_t = t;
+                        hit_found = true;
+                        hit_block_index = None;
+                        hit_trigger_index = Some(trigger_index);
+                    }
                 }
             }
         }
 
         if !hit_found {
-            self.perf_record(PerfStage::PickRaycast, raycast_started_at);
             return None;
         }
-
-        self.perf_record(PerfStage::PickRaycast, raycast_started_at);
 
         let hit = ray_origin + ray_dir * min_t;
         let target = hit + best_hit_normal * 0.01;

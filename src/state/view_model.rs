@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::{PerfOverlayEntry, State};
+use super::State;
 use crate::types::{
     AppSettings, EditorMode, LevelObject, MusicMetadata, SettingsSection, SpawnDirection,
     TimedTrigger, TimingPoint,
@@ -59,8 +59,6 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) graphics_backend: String,
     pub(crate) audio_backend: String,
     pub(crate) perf_overlay_enabled: bool,
-    pub(crate) perf_overlay_lines: Vec<String>,
-    pub(crate) perf_overlay_entries: Vec<PerfOverlayEntry>,
     pub(crate) marquee_selection_rect_screen: Option<([f64; 2], [f64; 2], bool)>,
 }
 
@@ -69,16 +67,6 @@ impl State {
         let (timeline_preview_position, timeline_preview_direction) =
             self.editor_timeline_preview();
         let perf_overlay_enabled = self.editor_perf_overlay_enabled();
-        let perf_overlay_lines = if perf_overlay_enabled {
-            self.editor_perf_overlay_lines()
-        } else {
-            Vec::new()
-        };
-        let perf_overlay_entries = if perf_overlay_enabled {
-            self.editor_perf_overlay_entries()
-        } else {
-            Vec::new()
-        };
 
         let camera_target = glam::Vec3::new(
             self.editor.camera.editor_pan[0],
@@ -136,8 +124,6 @@ impl State {
             graphics_backend: format!("{:?}", self.render.gpu.adapter_info.backend),
             audio_backend: self.audio.state.runtime.backend_name(),
             perf_overlay_enabled,
-            perf_overlay_lines,
-            perf_overlay_entries,
             marquee_selection_rect_screen: self.editor_marquee_selection_rect_screen(),
         }
     }

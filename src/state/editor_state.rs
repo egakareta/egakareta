@@ -5,20 +5,14 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::{EditorDirtyFlags, EditorSubsystem, PerfStage, State};
+use super::{EditorDirtyFlags, EditorSubsystem, State};
 use crate::editor_domain::{
     add_tap_with_indicator, clear_taps_with_indicators, remove_tap_with_indicator,
 };
 use crate::game::TimelineSimulationRuntime;
-use crate::platform::state_host::PlatformInstant;
 use crate::types::{AppPhase, EditorMode, LevelObject, SpawnDirection, TimedTrigger, TimingPoint};
 
 impl EditorSubsystem {
-    pub(crate) fn perf_record(&mut self, stage: PerfStage, started_at: PlatformInstant) {
-        let elapsed_ms = started_at.elapsed().as_secs_f32() * 1000.0;
-        self.perf.profiler.observe(stage, elapsed_ms);
-    }
-
     pub(crate) fn set_pan_up_held(&mut self, held: bool) {
         self.ui.pan_up_held = held;
     }
@@ -788,25 +782,23 @@ impl State {
     /// This updates the visual state of the level to reflect the new time
     /// and synchronizes audio playback if necessary.
     pub fn set_editor_timeline_time_seconds(&mut self, time_seconds: f32) {
-        let seek_started_at = PlatformInstant::now();
+        puffin::profile_scope!("TimelineSeek");
         let is_effectively_timing = self.editor_is_effectively_timing_mode();
         let changed = self.editor.set_timeline_time_seconds(time_seconds);
         if self.phase == AppPhase::Editor && !is_effectively_timing {
-            let preview_started_at = PlatformInstant::now();
+            puffin::profile_scope!("SeekPreview");
             self.apply_editor_timeline_preview_from_cache();
-            self.perf_record(PerfStage::TimelineSeekPreview, preview_started_at);
         }
         if changed
             && self.phase == AppPhase::Editor
             && !is_effectively_timing
             && self.editor.has_object_transform_triggers()
         {
-            let dirty_started_at = PlatformInstant::now();
+            puffin::profile_scope!("SeekDirtyBlockMesh");
             self.mark_editor_dirty(EditorDirtyFlags {
                 rebuild_block_mesh: true,
                 ..EditorDirtyFlags::default()
             });
-            self.perf_record(PerfStage::TimelineSeekDirtyBlockMesh, dirty_started_at);
         }
         if changed {
             if self.phase == AppPhase::Editor && self.editor.timeline.playback.playing {
@@ -816,12 +808,10 @@ impl State {
                 self.editor.timeline.playback.seek_resync_cooldown_seconds =
                     PLAYBACK_SEEK_RESYNC_DEBOUNCE_SECONDS;
             } else {
-                let audio_resync_started_at = PlatformInstant::now();
+                puffin::profile_scope!("SeekAudioResync");
                 self.resync_editor_timeline_playback_audio();
-                self.perf_record(PerfStage::TimelineSeekAudioResync, audio_resync_started_at);
             }
         }
-        self.perf_record(PerfStage::TimelineSeek, seek_started_at);
     }
 
     fn apply_editor_timeline_preview_from_cache(&mut self) {
@@ -829,7 +819,7 @@ impl State {
             return;
         }
 
-        let solve_started_at = PlatformInstant::now();
+        puffin::profile_scope!("PreviewSolveTimeline");
         self.rebuild_editor_timeline_snapshot_cache_if_needed();
 
         let duration_seconds = self.editor.timeline.clock.duration_seconds;
@@ -840,7 +830,6 @@ impl State {
             .max(1.0 / 480.0);
         let cache_len = self.editor.timeline.snapshot_cache.len();
         if cache_len == 0 {
-            self.perf_record(PerfStage::PreviewSolveTimeline, solve_started_at);
             return;
         }
 
@@ -871,7 +860,6 @@ impl State {
         };
 
         self.apply_editor_timeline_preview_state(position, direction);
-        self.perf_record(PerfStage::PreviewSolveTimeline, solve_started_at);
     }
 
     fn rebuild_editor_timeline_snapshot_cache_if_needed(&mut self) {
@@ -881,7 +869,7 @@ impl State {
             return;
         }
 
-        let rebuild_started_at = PlatformInstant::now();
+        puffin::profile_scope!("TimelineSamples");
         let duration_seconds = self.editor.timeline.clock.duration_seconds.max(0.0);
         let step_seconds = self
             .editor
@@ -936,8 +924,6 @@ impl State {
         self.editor.timeline.snapshot_cache_revision = self.editor.timeline.simulation_revision;
         self.editor.timeline.scrub_runtime = None;
         self.editor.timeline.scrub_runtime_revision = 0;
-
-        self.perf_record(PerfStage::TimelineSampleRebuild, rebuild_started_at);
     }
 
     /// Sets the total duration of the editor timeline.

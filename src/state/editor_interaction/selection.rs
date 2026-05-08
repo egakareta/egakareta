@@ -6,9 +6,8 @@
 
 */
 use super::super::{
-    EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart, EditorSubsystem, PerfStage, State,
+    EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart, EditorSubsystem, State,
 };
-use crate::platform::state_host::PlatformInstant;
 use crate::types::{AppPhase, EditorInteractionChange, EditorMode};
 use glam::{EulerRot, Mat3, Vec2, Vec3};
 
@@ -453,124 +452,125 @@ impl EditorSubsystem {
         viewport: Vec2,
         phase: AppPhase,
     ) -> EditorInteractionChange {
-        let selection_total_started_at = PlatformInstant::now();
+        puffin::profile_scope!("SelectClick");
         if phase != AppPhase::Editor || self.ui.right_dragging {
-            self.perf_record(PerfStage::SelectionClick, selection_total_started_at);
             return EditorInteractionChange::None;
         }
 
         let additive = self.ui.shift_held;
 
-        let pick_started_at = PlatformInstant::now();
-        let Some(pick) = self.pick_from_screen(x, y, viewport) else {
-            self.perf_record(PerfStage::SelectionPick, pick_started_at);
-            let apply_started_at = PlatformInstant::now();
-            if !additive {
-                self.ui.selected_block_indices.clear();
-                self.ui.selected_block_index = None;
-                self.ui.hovered_block_index = None;
-                self.set_trigger_selected(None);
+        let pick = {
+            puffin::profile_scope!("SelectPick");
+            self.pick_from_screen(x, y, viewport)
+        };
+        let Some(pick) = pick else {
+            {
+                puffin::profile_scope!("SelectApply");
+                if !additive {
+                    self.ui.selected_block_indices.clear();
+                    self.ui.selected_block_index = None;
+                    self.ui.hovered_block_index = None;
+                    self.set_trigger_selected(None);
+                }
+                self.runtime.interaction.gizmo_drag = None;
+                self.runtime.interaction.block_drag = None;
             }
-            self.runtime.interaction.gizmo_drag = None;
-            self.runtime.interaction.block_drag = None;
-            self.perf_record(PerfStage::SelectionApply, apply_started_at);
 
-            let mark_dirty_started_at = PlatformInstant::now();
-            self.mark_dirty(EditorDirtyFlags {
-                rebuild_selection_overlays: true,
-                ..EditorDirtyFlags::default()
-            });
-            self.perf_record(PerfStage::SelectionMarkDirty, mark_dirty_started_at);
-            self.perf_record(PerfStage::SelectionClick, selection_total_started_at);
+            {
+                puffin::profile_scope!("SelectMarkDirty");
+                self.mark_dirty(EditorDirtyFlags {
+                    rebuild_selection_overlays: true,
+                    ..EditorDirtyFlags::default()
+                });
+            }
             return EditorInteractionChange::None;
         };
-        self.perf_record(PerfStage::SelectionPick, pick_started_at);
 
         let trigger_mode = self.ui.mode == EditorMode::Trigger;
         let mut changed = EditorInteractionChange::None;
-        let apply_started_at = PlatformInstant::now();
 
-        if let Some(hit_trigger_index) = pick.hit_trigger_index {
-            if additive && self.selected_trigger_index() == Some(hit_trigger_index) {
-                self.set_trigger_selected(None);
-            } else {
-                self.set_trigger_selected(Some(hit_trigger_index));
-            }
-
-            if !additive || trigger_mode {
-                self.ui.selected_block_indices.clear();
-                self.ui.selected_block_index = None;
-            }
-            self.ui.hovered_block_index = None;
-            changed = EditorInteractionChange::Hover;
-        } else if let Some(hit_index) = pick.hit_block_index {
-            if trigger_mode {
-                if !additive {
+        {
+            puffin::profile_scope!("SelectApply");
+            if let Some(hit_trigger_index) = pick.hit_trigger_index {
+                if additive && self.selected_trigger_index() == Some(hit_trigger_index) {
                     self.set_trigger_selected(None);
+                } else {
+                    self.set_trigger_selected(Some(hit_trigger_index));
                 }
+
+                if !additive || trigger_mode {
+                    self.ui.selected_block_indices.clear();
+                    self.ui.selected_block_index = None;
+                }
+                self.ui.hovered_block_index = None;
+                changed = EditorInteractionChange::Hover;
+            } else if let Some(hit_index) = pick.hit_block_index {
+                if trigger_mode {
+                    if !additive {
+                        self.set_trigger_selected(None);
+                    }
+                    self.ui.selected_block_indices.clear();
+                    self.ui.selected_block_index = None;
+                    self.ui.hovered_block_index = None;
+                    changed = EditorInteractionChange::Hover;
+                } else {
+                    if !additive {
+                        self.set_trigger_selected(None);
+                    }
+                    if additive {
+                        if let Some(existing) = self
+                            .ui
+                            .selected_block_indices
+                            .iter()
+                            .position(|idx| *idx == hit_index)
+                        {
+                            self.ui.selected_block_indices.remove(existing);
+                            if self.ui.selected_block_indices.is_empty() {
+                                self.ui.selected_block_index = None;
+                                self.ui.hovered_block_index = None;
+                            }
+                        } else {
+                            self.ui.selected_block_indices.push(hit_index);
+                        }
+                    } else {
+                        self.ui.selected_block_indices.clear();
+                        self.ui.selected_block_indices.push(hit_index);
+                    }
+                    self.ui.hovered_block_index = Some(hit_index);
+                    changed = EditorInteractionChange::Hover;
+                }
+            } else if !additive {
                 self.ui.selected_block_indices.clear();
                 self.ui.selected_block_index = None;
                 self.ui.hovered_block_index = None;
-                changed = EditorInteractionChange::Hover;
-            } else {
-                if !additive {
-                    self.set_trigger_selected(None);
-                }
-                if additive {
-                    if let Some(existing) = self
-                        .ui
-                        .selected_block_indices
-                        .iter()
-                        .position(|idx| *idx == hit_index)
-                    {
-                        self.ui.selected_block_indices.remove(existing);
-                        if self.ui.selected_block_indices.is_empty() {
-                            self.ui.selected_block_index = None;
-                            self.ui.hovered_block_index = None;
-                        }
-                    } else {
-                        self.ui.selected_block_indices.push(hit_index);
-                    }
-                } else {
-                    self.ui.selected_block_indices.clear();
-                    self.ui.selected_block_indices.push(hit_index);
-                }
-                self.ui.hovered_block_index = Some(hit_index);
+                self.set_trigger_selected(None);
                 changed = EditorInteractionChange::Hover;
             }
-        } else if !additive {
-            self.ui.selected_block_indices.clear();
-            self.ui.selected_block_index = None;
-            self.ui.hovered_block_index = None;
-            self.set_trigger_selected(None);
-            changed = EditorInteractionChange::Hover;
-        }
 
-        self.sync_primary_selection_from_indices();
-        self.selected_mask_cache = None;
-        self.runtime.interaction.gizmo_drag = None;
-        self.runtime.interaction.block_drag = None;
+            self.sync_primary_selection_from_indices();
+            self.selected_mask_cache = None;
+            self.runtime.interaction.gizmo_drag = None;
+            self.runtime.interaction.block_drag = None;
 
-        if let Some(index) = self.ui.selected_block_index {
-            if let Some(obj) = self.objects.get(index) {
-                self.ui.cursor = [obj.position[0], obj.position[1], obj.position[2]];
+            if let Some(index) = self.ui.selected_block_index {
+                if let Some(obj) = self.objects.get(index) {
+                    self.ui.cursor = [obj.position[0], obj.position[1], obj.position[2]];
+                    changed = EditorInteractionChange::Cursor;
+                }
+            } else if pick.cursor != self.ui.cursor {
+                self.ui.cursor = pick.cursor;
                 changed = EditorInteractionChange::Cursor;
             }
-        } else if pick.cursor != self.ui.cursor {
-            self.ui.cursor = pick.cursor;
-            changed = EditorInteractionChange::Cursor;
         }
 
-        self.perf_record(PerfStage::SelectionApply, apply_started_at);
-
-        let mark_dirty_started_at = PlatformInstant::now();
-        self.mark_dirty(EditorDirtyFlags {
-            rebuild_selection_overlays: true,
-            rebuild_cursor: matches!(changed, EditorInteractionChange::Cursor),
-            ..EditorDirtyFlags::default()
-        });
-        self.perf_record(PerfStage::SelectionMarkDirty, mark_dirty_started_at);
-        self.perf_record(PerfStage::SelectionClick, selection_total_started_at);
+        {
+            puffin::profile_scope!("SelectMarkDirty");
+            self.mark_dirty(EditorDirtyFlags {
+                rebuild_selection_overlays: true,
+                rebuild_cursor: matches!(changed, EditorInteractionChange::Cursor),
+                ..EditorDirtyFlags::default()
+            });
+        }
 
         changed
     }

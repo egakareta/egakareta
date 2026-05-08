@@ -609,8 +609,6 @@ mod tests {
             graphics_backend: "WGPU".to_string(),
             audio_backend: "Default".to_string(),
             perf_overlay_enabled: false,
-            perf_overlay_lines: Vec::new(),
-            perf_overlay_entries: Vec::new(),
             marquee_selection_rect_screen: None,
         }
     }
