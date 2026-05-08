@@ -7,7 +7,7 @@
 */
 use glam::Vec3;
 
-use super::{EditorDirtyFlags, EditorSubsystem, PerfStage, State};
+use super::{EditorDirtyFlags, EditorSubsystem, State};
 use crate::editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds_with_triggers};
 use crate::game::trigger_transformed_objects_at_time;
 use crate::mesh::{
@@ -16,7 +16,6 @@ use crate::mesh::{
     build_editor_selection_outline_vertices, build_spawn_marker_vertices,
     build_tap_indicator_vertices, GizmoParams,
 };
-use crate::platform::state_host::PlatformInstant;
 use crate::types::{AppPhase, EditorMode, GizmoPart, LevelObject, SpawnDirection};
 
 impl EditorSubsystem {
@@ -196,8 +195,8 @@ impl State {
         }
 
         if dirty.sync_game_objects {
+            puffin::profile_scope!("DirtySyncObjects");
             self.editor.runtime.dirty.sync_game_objects = false;
-            self.perf_record(PerfStage::DirtySyncGameObjects, PlatformInstant::now());
         }
         if dirty.rebuild_block_mesh {
             self.editor.runtime.dirty.rebuild_block_mesh = false;
@@ -216,7 +215,7 @@ impl State {
         }
 
         if dirty.rebuild_block_mesh {
-            let block_mesh_started_at = PlatformInstant::now();
+            puffin::profile_scope!("DirtyBlockMesh");
             if self.phase == AppPhase::Editor
                 && is_dragging
                 && self.editor.selected_mask_cache.is_some()
@@ -225,49 +224,43 @@ impl State {
             } else {
                 self.rebuild_block_vertices();
             }
-            self.perf_record(PerfStage::DirtyRebuildBlockMesh, block_mesh_started_at);
         }
 
         if dirty.rebuild_selection_overlays {
-            let gizmo_started_at = PlatformInstant::now();
-            self.rebuild_editor_gizmo_vertices();
-            self.perf_record(PerfStage::DirtyRebuildSelectionOverlays, gizmo_started_at);
+            {
+                puffin::profile_scope!("DirtySelectionGizmo");
+                self.rebuild_editor_gizmo_vertices();
+            }
 
-            let camera_triggers_started_at = PlatformInstant::now();
-            self.rebuild_camera_trigger_marker_vertices();
-            self.perf_record(
-                PerfStage::DirtyRebuildSelectionOverlays,
-                camera_triggers_started_at,
-            );
+            {
+                puffin::profile_scope!("DirtyCameraTriggerMarkers");
+                self.rebuild_camera_trigger_marker_vertices();
+            }
 
-            let hover_started_at = PlatformInstant::now();
-            self.rebuild_editor_hover_outline_vertices();
-            self.perf_record(PerfStage::DirtyRebuildSelectionOverlays, hover_started_at);
+            {
+                puffin::profile_scope!("DirtyHoverOutline");
+                self.rebuild_editor_hover_outline_vertices();
+            }
 
-            let outline_started_at = PlatformInstant::now();
-            self.rebuild_editor_selection_outline_vertices();
-            self.perf_record(PerfStage::DirtyRebuildSelectionOverlays, outline_started_at);
+            {
+                puffin::profile_scope!("DirtySelectionOutline");
+                self.rebuild_editor_selection_outline_vertices();
+            }
         }
 
         if dirty.rebuild_tap_indicators {
-            let tap_indicators_started_at = PlatformInstant::now();
+            puffin::profile_scope!("DirtyTapIndicators");
             self.rebuild_tap_indicator_vertices();
-            self.perf_record(
-                PerfStage::DirtyRebuildTapIndicators,
-                tap_indicators_started_at,
-            );
         }
 
         if dirty.rebuild_preview_player {
-            let preview_started_at = PlatformInstant::now();
+            puffin::profile_scope!("DirtyPreviewPlayer");
             self.rebuild_editor_preview_player_vertices();
-            self.perf_record(PerfStage::DirtyRebuildPreviewPlayer, preview_started_at);
         }
 
         if dirty.rebuild_cursor {
-            let cursor_started_at = PlatformInstant::now();
+            puffin::profile_scope!("DirtyCursor");
             self.rebuild_editor_cursor_vertices();
-            self.perf_record(PerfStage::DirtyRebuildCursor, cursor_started_at);
         }
 
         if dirty.sync_game_objects || dirty.rebuild_block_mesh {
@@ -590,7 +583,7 @@ impl State {
     }
 
     pub(super) fn rebuild_block_vertices(&mut self) {
-        let perf_started_at = PlatformInstant::now();
+        puffin::profile_scope!("BlockMeshRebuild");
         if self.phase == AppPhase::Editor {
             self.rebuild_editor_block_vertices_split();
         } else {
@@ -603,7 +596,6 @@ impl State {
             self.render.meshes.blocks_static.clear();
             self.render.meshes.blocks_selected.clear();
         }
-        self.perf_record(PerfStage::BlockMeshRebuild, perf_started_at);
     }
 
     fn rebuild_editor_block_vertices_split(&mut self) {
@@ -611,18 +603,20 @@ impl State {
             .editor_runtime_objects_for_render()
             .unwrap_or_else(|| self.editor.objects.clone());
 
-        let mask_build_started_at = PlatformInstant::now();
-        let selected_indices = self.selected_block_indices_normalized();
-        let mut selected_mask = vec![false; object_source.len()];
-        for index in selected_indices {
-            if index < selected_mask.len() {
-                selected_mask[index] = true;
+        let selected_mask = {
+            puffin::profile_scope!("BlockMaskBuild");
+            let selected_indices = self.selected_block_indices_normalized();
+            let mut selected_mask = vec![false; object_source.len()];
+            for index in selected_indices {
+                if index < selected_mask.len() {
+                    selected_mask[index] = true;
+                }
             }
-        }
-        self.perf_record(PerfStage::BlockMeshMaskBuild, mask_build_started_at);
+            selected_mask
+        };
 
-        let static_mesh_started_at = PlatformInstant::now();
         let static_vertices = {
+            puffin::profile_scope!("BlockMeshSplitStatic");
             let mut static_objects = Vec::new();
             for (index, object) in object_source.iter().enumerate() {
                 if !selected_mask[index] {
@@ -632,8 +626,8 @@ impl State {
             build_block_vertices_from_refs(&static_objects)
         };
 
-        let selected_mesh_started_at = PlatformInstant::now();
         let selected_vertices = {
+            puffin::profile_scope!("BlockMeshSplitSelected");
             let mut selected_objects = Vec::new();
             for (index, object) in object_source.iter().enumerate() {
                 if selected_mask[index] {
@@ -645,36 +639,32 @@ impl State {
 
         self.editor.selected_mask_cache = Some(selected_mask);
 
-        self.perf_record(PerfStage::BlockMeshSplitStatic, static_mesh_started_at);
-        self.perf_record(PerfStage::BlockMeshSplitSelected, selected_mesh_started_at);
+        {
+            puffin::profile_scope!("BlockMeshUploadStatic");
+            self.render.meshes.blocks_static.replace_with_vertices(
+                &self.render.gpu.device,
+                "Block Static Vertex Buffer",
+                &static_vertices,
+            );
+        }
 
-        let upload_static_started_at = PlatformInstant::now();
-        self.render.meshes.blocks_static.replace_with_vertices(
-            &self.render.gpu.device,
-            "Block Static Vertex Buffer",
-            &static_vertices,
-        );
-        self.perf_record(PerfStage::BlockMeshUploadStatic, upload_static_started_at);
-
-        let upload_selected_started_at = PlatformInstant::now();
-        self.render.meshes.blocks_selected.replace_with_vertices(
-            &self.render.gpu.device,
-            "Block Selected Vertex Buffer",
-            &selected_vertices,
-        );
-        self.perf_record(
-            PerfStage::BlockMeshUploadSelected,
-            upload_selected_started_at,
-        );
+        {
+            puffin::profile_scope!("BlockMeshUploadSelected");
+            self.render.meshes.blocks_selected.replace_with_vertices(
+                &self.render.gpu.device,
+                "Block Selected Vertex Buffer",
+                &selected_vertices,
+            );
+        }
         self.render.meshes.blocks.clear();
     }
 
     fn rebuild_editor_selected_block_vertices(&mut self) {
+        puffin::profile_scope!("BlockMeshSelectedOnly");
         let object_source = self
             .editor_runtime_objects_for_render()
             .unwrap_or_else(|| self.editor.objects.clone());
 
-        let selected_only_started_at = PlatformInstant::now();
         if self
             .editor
             .selected_mask_cache
@@ -693,12 +683,11 @@ impl State {
 
         let Some(selected_mask) = self.editor.selected_mask_cache.as_ref() else {
             self.render.meshes.blocks_selected.clear();
-            self.perf_record(PerfStage::BlockMeshSelectedOnly, selected_only_started_at);
             return;
         };
 
-        let selected_build_started_at = PlatformInstant::now();
         let selected_vertices = {
+            puffin::profile_scope!("SelectedOnlyBuild");
             let mut selected_objects = Vec::new();
             for (index, object) in object_source.iter().enumerate() {
                 if selected_mask[index] {
@@ -708,30 +697,22 @@ impl State {
 
             build_block_vertices_from_refs(&selected_objects)
         };
-        self.perf_record(
-            PerfStage::BlockMeshSelectedOnlyBuild,
-            selected_build_started_at,
-        );
 
-        let selected_upload_started_at = PlatformInstant::now();
-        self.render.meshes.blocks_selected.replace_with_vertices(
-            &self.render.gpu.device,
-            "Block Selected Vertex Buffer",
-            &selected_vertices,
-        );
-        self.perf_record(
-            PerfStage::BlockMeshSelectedOnlyUpload,
-            selected_upload_started_at,
-        );
+        {
+            puffin::profile_scope!("SelectedOnlyUpload");
+            self.render.meshes.blocks_selected.replace_with_vertices(
+                &self.render.gpu.device,
+                "Block Selected Vertex Buffer",
+                &selected_vertices,
+            );
+        }
         self.render.meshes.blocks.clear();
-        self.perf_record(PerfStage::BlockMeshSelectedOnly, selected_only_started_at);
     }
 
     pub(super) fn rebuild_tap_indicator_vertices(&mut self) {
-        let perf_started_at = PlatformInstant::now();
+        puffin::profile_scope!("TapIndicatorMesh");
         if self.phase != AppPhase::Editor {
             self.render.meshes.tap_indicators.clear();
-            self.perf_record(PerfStage::TapIndicatorMeshRebuild, perf_started_at);
             return;
         }
 
@@ -752,7 +733,6 @@ impl State {
 
         if unique_positions.is_empty() {
             self.render.meshes.tap_indicators.clear();
-            self.perf_record(PerfStage::TapIndicatorMeshRebuild, perf_started_at);
             return;
         }
 
@@ -762,7 +742,6 @@ impl State {
             "Tap Indicator Vertex Buffer",
             &vertices,
         );
-        self.perf_record(PerfStage::TapIndicatorMeshRebuild, perf_started_at);
     }
 
     pub(super) fn rebuild_editor_preview_player_vertices(&mut self) {

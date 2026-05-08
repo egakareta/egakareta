@@ -7,7 +7,7 @@
 */
 use glam::{Mat4, Vec3};
 
-use super::{PerfOverlayEntry, PerfStage, State};
+use super::State;
 use crate::game::{
     advance_simulation_time, trigger_transformed_objects_at_time, TimelineSimulationRuntime,
 };
@@ -68,9 +68,8 @@ impl State {
 
         self.editor.timeline.playback.pending_seek_time_seconds = None;
         self.editor.timeline.clock.time_seconds = target_time;
-        let audio_resync_started_at = PlatformInstant::now();
+        puffin::profile_scope!("SeekAudioResync");
         self.resync_editor_timeline_playback_audio();
-        self.perf_record(PerfStage::TimelineSeekAudioResync, audio_resync_started_at);
         self.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
     }
 
@@ -309,55 +308,12 @@ impl State {
     }
 
     pub(crate) fn toggle_editor_perf_overlay(&mut self) {
-        self.editor.perf.profiler.enabled = !self.editor.perf.profiler.enabled;
+        self.editor.perf.overlay_enabled = !self.editor.perf.overlay_enabled;
+        puffin::set_scopes_on(self.editor.perf.overlay_enabled);
     }
 
     pub(crate) fn editor_perf_overlay_enabled(&self) -> bool {
-        self.editor.perf.profiler.enabled
-    }
-
-    pub(crate) fn editor_perf_overlay_lines(&self) -> Vec<String> {
-        if !self.editor.perf.profiler.enabled {
-            return Vec::new();
-        }
-
-        let mut lines = Vec::new();
-        lines.push(format!(
-            "Spikes(>16.7ms): {} | Last Spike: {}",
-            self.editor.perf.profiler.frame_spike_count,
-            self.editor
-                .perf
-                .profiler
-                .last_spike_stage
-                .map(|stage| stage.name())
-                .unwrap_or("none")
-        ));
-
-        for stage in PerfStage::roots() {
-            let stat = self.editor.perf.profiler.stats[stage.as_index()];
-            lines.push(format!(
-                "{:<18} last {:>6.2}ms | avg {:>6.2}ms | max {:>6.2}ms | n {}",
-                stage.name(),
-                stat.last_ms,
-                stat.ema_ms,
-                stat.max_ms,
-                stat.calls
-            ));
-        }
-
-        lines
-    }
-
-    pub(crate) fn editor_perf_overlay_entries(&self) -> Vec<PerfOverlayEntry> {
-        if !self.editor.perf.profiler.enabled {
-            return Vec::new();
-        }
-
-        self.editor.perf.profiler.overlay_entries()
-    }
-
-    pub(super) fn perf_record(&mut self, stage: PerfStage, started_at: PlatformInstant) {
-        self.editor.perf_record(stage, started_at);
+        self.editor.perf.overlay_enabled
     }
 
     /// Advances the application state by one frame.
@@ -369,7 +325,8 @@ impl State {
     /// - Updating the active subsystem (Menu, Editor, or Gameplay) logic.
     /// - Managing input-driven camera movements.
     pub fn update(&mut self) {
-        self.editor.perf.profiler.begin_frame();
+        puffin::GlobalProfiler::lock().new_frame();
+        puffin::profile_scope!("FrameTotal");
         self.update_audio_imports();
         if self.phase == AppPhase::Editor {
             self.update_level_imports();
@@ -381,7 +338,6 @@ impl State {
         let now = PlatformInstant::now();
         let frame_dt = (now - self.frame_runtime.editor.last_frame).as_secs_f32();
         self.frame_runtime.editor.last_frame = now;
-        let frame_dt_ms = frame_dt * 1000.0;
         let instant_fps = 1.0 / frame_dt.max(1e-4);
         if self.editor.perf.fps_smoothed <= 0.0 {
             self.editor.perf.fps_smoothed = instant_fps;
@@ -411,19 +367,6 @@ impl State {
             self.frame_runtime.editor.accumulator = 0.0;
             self.refresh_menu_level_preview_if_needed();
             self.update_menu_camera();
-            self.editor
-                .perf
-                .profiler
-                .observe(PerfStage::FrameTotal, frame_dt_ms);
-            if frame_dt_ms > 16.7 {
-                self.editor.perf.profiler.frame_spike_count += 1;
-                self.editor.perf.profiler.last_spike_stage = self
-                    .editor
-                    .perf
-                    .profiler
-                    .dominant_stage_this_frame()
-                    .or(Some(PerfStage::FrameTotal));
-            }
             return;
         }
 
@@ -433,7 +376,7 @@ impl State {
 
             if self.editor.timeline.playback.playing {
                 self.maybe_resync_editor_playback_from_pending_seek(frame_dt);
-                let timeline_playback_started_at = PlatformInstant::now();
+                puffin::profile_scope!("TimelinePlayback");
                 let audio_time = self
                     .audio
                     .state
@@ -552,7 +495,6 @@ impl State {
                     }
                     self.stop_audio();
                 }
-                self.perf_record(PerfStage::TimelinePlayback, timeline_playback_started_at);
             } else if self.editor.ui.mode != EditorMode::Timing {
                 self.update_editor_scrub_trail_mesh();
             }
@@ -563,9 +505,8 @@ impl State {
                 || self.editor.runtime.interaction.block_drag.is_some()
             {
                 if let Some(pointer) = self.editor.ui.pointer_screen {
-                    let drag_started_at = PlatformInstant::now();
+                    puffin::profile_scope!("DragSelection");
                     self.drag_editor_selection_from_screen(pointer[0], pointer[1]);
-                    self.perf_record(PerfStage::DragSelection, drag_started_at);
                 }
             }
 
@@ -591,16 +532,14 @@ impl State {
 
             if has_selection && self.editor.ui.mode.shows_gizmo() {
                 if is_dragging {
-                    let gizmo_started_at = PlatformInstant::now();
+                    puffin::profile_scope!("GizmoRebuild");
                     self.rebuild_editor_gizmo_vertices();
-                    self.perf_record(PerfStage::GizmoRebuild, gizmo_started_at);
                     self.editor.runtime.gizmo.rebuild_accumulator = 0.0;
                 } else if camera_changed {
                     self.editor.runtime.gizmo.rebuild_accumulator += frame_dt;
                     if self.editor.runtime.gizmo.rebuild_accumulator >= (1.0 / 24.0) {
-                        let gizmo_started_at = PlatformInstant::now();
+                        puffin::profile_scope!("GizmoRebuild");
                         self.rebuild_editor_gizmo_vertices();
-                        self.perf_record(PerfStage::GizmoRebuild, gizmo_started_at);
                         self.editor.runtime.gizmo.rebuild_accumulator = 0.0;
                     }
                 } else {
@@ -614,24 +553,11 @@ impl State {
             self.editor.runtime.gizmo.last_target_z = self.editor.camera.editor_target_z;
             self.editor.runtime.gizmo.last_rotation = self.editor.camera.editor_rotation;
             self.editor.runtime.gizmo.last_pitch = self.editor.camera.editor_pitch;
-            let dirty_started_at = PlatformInstant::now();
-            self.process_editor_dirty(frame_dt);
-            self.perf_record(PerfStage::DirtyProcess, dirty_started_at);
-            self.update_editor_camera();
-
-            self.editor
-                .perf
-                .profiler
-                .observe(PerfStage::FrameTotal, frame_dt_ms);
-            if frame_dt_ms > 16.7 {
-                self.editor.perf.profiler.frame_spike_count += 1;
-                self.editor.perf.profiler.last_spike_stage = self
-                    .editor
-                    .perf
-                    .profiler
-                    .dominant_stage_this_frame()
-                    .or(Some(PerfStage::FrameTotal));
+            {
+                puffin::profile_scope!("DirtyProcess");
+                self.process_editor_dirty(frame_dt);
             }
+            self.update_editor_camera();
             return;
         }
 
@@ -760,22 +686,6 @@ impl State {
             0,
             bytemuck::bytes_of(&camera_uniform),
         );
-
-        if self.phase == AppPhase::Playing {
-            self.editor
-                .perf
-                .profiler
-                .observe(PerfStage::FrameTotal, frame_dt_ms);
-            if frame_dt_ms > 16.7 {
-                self.editor.perf.profiler.frame_spike_count += 1;
-                self.editor.perf.profiler.last_spike_stage = self
-                    .editor
-                    .perf
-                    .profiler
-                    .dominant_stage_this_frame()
-                    .or(Some(PerfStage::FrameTotal));
-            }
-        }
     }
 
     fn update_menu_camera(&mut self) {
@@ -997,12 +907,12 @@ mod tests {
             let mut state = State::new_test().await;
 
             assert!(!state.editor_perf_overlay_enabled());
-            assert!(state.editor_perf_overlay_lines().is_empty());
-            assert!(state.editor_perf_overlay_entries().is_empty());
 
             state.toggle_editor_perf_overlay();
             assert!(state.editor_perf_overlay_enabled());
-            assert!(!state.editor_perf_overlay_lines().is_empty());
+
+            state.toggle_editor_perf_overlay();
+            assert!(!state.editor_perf_overlay_enabled());
         });
     }
 
@@ -1143,7 +1053,7 @@ mod tests {
     }
 
     #[test]
-    fn update_menu_branch_resets_accumulator_and_records_frame() {
+    fn update_menu_branch_resets_accumulator() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
@@ -1152,11 +1062,6 @@ mod tests {
             state.update();
 
             assert_eq!(state.frame_runtime.editor.accumulator, 0.0);
-            assert!(
-                state.editor.perf.profiler.stats[crate::state::PerfStage::FrameTotal.as_index()]
-                    .calls
-                    > 0
-            );
         });
     }
 

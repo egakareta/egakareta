@@ -7,14 +7,13 @@
 */
 use glam::Vec2;
 
-use super::{EditorDirtyFlags, EditorSubsystem, PerfStage, State};
+use super::{EditorDirtyFlags, EditorSubsystem, State};
 use crate::editor_domain::{
     add_tap_with_indicator, build_editor_playtest_transition, derive_tap_indicator_positions,
     derive_timeline_time_for_world_target_near_time, playtest_return_objects,
     remove_topmost_block_at_cursor, toggle_spawn_direction, TimelineNearSearch,
 };
 use crate::game::{GameState, TimelineSimulationRuntime};
-use crate::platform::state_host::PlatformInstant;
 use crate::types::{AppPhase, EditorMode};
 
 impl EditorSubsystem {
@@ -203,7 +202,7 @@ impl EditorSubsystem {
 
 impl State {
     pub(super) fn editor_add_tap_at_pointer_position(&mut self) {
-        let total_started_at = PlatformInstant::now();
+        puffin::profile_scope!("TKeyToggle");
         if self.phase != AppPhase::Editor || self.editor.ui.mode != EditorMode::Place {
             return;
         }
@@ -212,13 +211,12 @@ impl State {
             self.update_editor_cursor_from_screen(pointer[0], pointer[1]);
         }
 
-        let solve_started_at = PlatformInstant::now();
         self.record_editor_history_state();
 
-        let (time, added) = self.editor.toggle_tap_at_cursor();
-        if added {
-            self.perf_record(PerfStage::TTapSolve, solve_started_at);
-        }
+        let (time, _added) = {
+            puffin::profile_scope!("TKeySolve");
+            self.editor.toggle_tap_at_cursor()
+        };
 
         if time.is_some() {
             self.mark_editor_dirty(EditorDirtyFlags {
@@ -226,8 +224,6 @@ impl State {
                 ..EditorDirtyFlags::default()
             });
         }
-
-        self.perf_record(PerfStage::TTapToggleTotal, total_started_at);
     }
 
     pub(super) fn resync_editor_timeline_playback_audio(&mut self) {
@@ -235,31 +231,30 @@ impl State {
             return;
         }
 
-        let stop_audio_started_at = PlatformInstant::now();
-        self.stop_audio();
-        self.perf_record(PerfStage::TimelineSeekAudioStop, stop_audio_started_at);
+        {
+            puffin::profile_scope!("SeekAudioStop");
+            self.stop_audio();
+        }
 
-        let runtime_build_started_at = PlatformInstant::now();
-        if self.editor_is_effectively_timing_mode() {
-            self.editor.timeline.playback.runtime = None;
-        } else {
-            self.editor.timeline.playback.runtime =
-                Some(TimelineSimulationRuntime::new_with_triggers(
-                    self.editor.spawn.position,
-                    self.editor.spawn.direction,
-                    &self.editor.objects,
-                    &self.editor.timeline.taps.tap_times,
-                    self.editor.triggers(),
-                    self.editor.simulate_trigger_hitboxes(),
-                ));
-            if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
-                runtime.advance_to(self.editor.timeline.clock.time_seconds);
+        {
+            puffin::profile_scope!("SeekRuntimeBuild");
+            if self.editor_is_effectively_timing_mode() {
+                self.editor.timeline.playback.runtime = None;
+            } else {
+                self.editor.timeline.playback.runtime =
+                    Some(TimelineSimulationRuntime::new_with_triggers(
+                        self.editor.spawn.position,
+                        self.editor.spawn.direction,
+                        &self.editor.objects,
+                        &self.editor.timeline.taps.tap_times,
+                        self.editor.triggers(),
+                        self.editor.simulate_trigger_hitboxes(),
+                    ));
+                if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
+                    runtime.advance_to(self.editor.timeline.clock.time_seconds);
+                }
             }
         }
-        self.perf_record(
-            PerfStage::TimelineSeekRuntimeBuild,
-            runtime_build_started_at,
-        );
 
         let metadata = self.current_editor_metadata();
         let level_name = self
@@ -270,9 +265,10 @@ impl State {
         let start_seconds =
             self.editor_timeline_elapsed_seconds(self.editor.timeline.clock.time_seconds);
 
-        let start_audio_started_at = PlatformInstant::now();
-        self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
-        self.perf_record(PerfStage::TimelineSeekAudioStart, start_audio_started_at);
+        {
+            puffin::profile_scope!("SeekAudioStart");
+            self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
+        }
     }
 
     pub(super) fn editor_shift_timeline_time(&mut self, delta_seconds: f32) {
