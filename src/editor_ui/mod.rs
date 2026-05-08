@@ -476,17 +476,14 @@ pub fn show_editor_ui(
             ui.separator();
 
             if ui
-                .button(format!("{} Export .egz", egui_phosphor::regular::DOWNLOAD))
+                .button(format!("{} Export", egui_phosphor::regular::DOWNLOAD))
                 .clicked()
             {
                 commands.push(crate::commands::AppCommand::EditorExportLevel);
             }
 
             if ui
-                .button(format!(
-                    "{} Import .egz/Binary",
-                    egui_phosphor::regular::UPLOAD
-                ))
+                .button(format!("{} Import", egui_phosphor::regular::UPLOAD))
                 .clicked()
             {
                 commands.push(crate::commands::AppCommand::EditorCompleteImport);
