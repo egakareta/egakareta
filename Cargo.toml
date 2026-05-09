@@ -18,7 +18,7 @@ crate-type = ["cdylib", "rlib"]
 console_error_panic_hook = "0.1"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
-wgpu = { version = "27", features = ["webgpu", "webgl"] }
+wgpu = { version = "29.0.3", features = ["webgpu", "webgl"] }
 pollster = "0.4"
 env_logger = "0.11"
 log = "0.4"
@@ -69,8 +69,8 @@ zstd = "0.13"
 include_dir = "0.7"
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
 base64 = "0.22"
-egui = "0.33"
-egui-wgpu = "0.33"
+egui = "0.34.2"
+egui-wgpu = "0.34.2"
 egui-phosphor = "0.11.0"
 puffin = "0.20"
 puffin_egui = "0.30"
@@ -86,13 +86,13 @@ symphonia = { version = "0.5", features = ["all"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 directories = "6.0"
-egui-winit = "0.33"
+egui-winit = "0.34.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_log = "1.0.0"
 puffin = { version = "0.20", features = ["web"] }
 rexie = "0.6"
-egui-winit = { version = "0.33", default-features = false } # default features include arboard, which doesnt have wasm support yet https://github.com/1Password/arboard/pull/160
+egui-winit = { version = "0.34.2", default-features = false } # default features include arboard, which doesnt have wasm support yet https://github.com/1Password/arboard/pull/160
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false
