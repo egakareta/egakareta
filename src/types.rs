@@ -1343,7 +1343,7 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
         KeybindActionMetadata {
             group: "General",
             action: "toggle_settings",
-            label: "Toggle Settings Sidebar",
+            label: "Toggle Settings",
             capacity: 1,
         },
         KeybindActionMetadata {

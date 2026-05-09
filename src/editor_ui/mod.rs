@@ -187,13 +187,24 @@ pub fn show_editor_ui(
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.heading(format!("{} Settings", egui_phosphor::regular::GEAR));
-                    if ui.button(egui_phosphor::regular::X).clicked() {
-                        commands.push(crate::commands::AppCommand::EditorSetShowSettings(false));
-                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let close_button_size = egui::vec2(
+                            ui.spacing().interact_size.y,
+                            ui.spacing().interact_size.y,
+                        );
+                        if ui
+                            .add_sized(
+                                close_button_size,
+                                egui::Button::new(egui_phosphor::regular::X).frame(false),
+                            )
+                            .on_hover_text("Close settings")
+                            .clicked()
+                        {
+                            commands
+                                .push(crate::commands::AppCommand::EditorSetShowSettings(false));
+                        }
+                    });
                 });
-
-                ui.separator();
-
                 ui.horizontal(|ui| {
                     if ui
                         .selectable_label(
