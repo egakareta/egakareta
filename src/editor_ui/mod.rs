@@ -493,7 +493,9 @@ pub fn show_editor_ui(
                 .button(format!("{} Metadata", egui_phosphor::regular::INFO))
                 .clicked()
             {
-                commands.push(crate::commands::AppCommand::EditorSetShowMetadata(true));
+                commands.push(crate::commands::AppCommand::EditorSetShowMetadata(
+                    !view.show_metadata,
+                ));
             }
 
             if ui
