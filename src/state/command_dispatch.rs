@@ -126,7 +126,7 @@ impl State {
             }
 
             // ── Editor – misc ───────────────────────────────────────
-            AppCommand::EditorTogglePerfOverlay => self.toggle_editor_perf_overlay(),
+            AppCommand::EditorTogglePerfOverlay => self.toggle_perf_overlay(),
             AppCommand::EditorExportBlockObj => self.trigger_selected_block_obj_export(),
 
             // ── Editor – UI / Session ───────────────────────────────
@@ -574,7 +574,7 @@ impl State {
                 }
             }
             "toggle_perf_overlay" => {
-                if self.is_editor() && just_pressed {
+                if just_pressed {
                     Some(AppCommand::EditorTogglePerfOverlay)
                 } else {
                     None
@@ -1481,6 +1481,27 @@ mod tests {
                 just_pressed: true,
             });
             assert!(!state.editor_show_settings());
+        });
+    }
+
+    #[test]
+    fn test_perf_overlay_shortcut_works_in_menu() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = State::new_test().await;
+            assert!(state.is_menu());
+            assert!(!state.perf_overlay_enabled());
+
+            for key in ["Control", "Shift", "Alt", "F12"] {
+                state.process_input_event(InputEvent::Key {
+                    key: key.to_string(),
+                    pressed: true,
+                    just_pressed: true,
+                });
+            }
+
+            assert!(state.perf_overlay_enabled());
         });
     }
 

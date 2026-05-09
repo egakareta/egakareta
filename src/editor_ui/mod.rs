@@ -654,27 +654,37 @@ pub fn show_editor_ui(
         }
     }
 
-    if view.perf_overlay_enabled {
-        let mut profiler_open = true;
-        egui::Window::new("Profiler")
-            .default_size([1024.0, 600.0])
-            .open(&mut profiler_open)
-            .show(ctx, |ui| {
-                ui.monospace(format!(
-                    "{} | {} | FPS {:.1}",
-                    view.graphics_backend, view.audio_backend, view.fps
-                ));
-                ui.separator();
-                puffin_egui::profiler_ui(ui);
-            });
-        if !profiler_open {
-            commands.push(AppCommand::EditorTogglePerfOverlay);
-        }
-    }
-
     drop(view);
     for command in commands {
         state.dispatch(command);
+    }
+}
+
+/// Shows the app-wide profiler window when the performance overlay is enabled.
+pub fn show_perf_overlay(ctx: &egui::Context, state: &mut State) {
+    if !state.perf_overlay_enabled() {
+        return;
+    }
+
+    let graphics_backend = state.perf_graphics_backend();
+    let audio_backend = state.perf_audio_backend();
+    let fps = state.perf_fps();
+    let mut profiler_open = true;
+
+    egui::Window::new("Profiler")
+        .default_size([1024.0, 600.0])
+        .open(&mut profiler_open)
+        .show(ctx, |ui| {
+            ui.monospace(format!(
+                "{} | {} | FPS {:.1}",
+                graphics_backend, audio_backend, fps
+            ));
+            ui.separator();
+            puffin_egui::profiler_ui(ui);
+        });
+
+    if !profiler_open {
+        state.dispatch(AppCommand::EditorTogglePerfOverlay);
     }
 }
 
@@ -1054,7 +1064,7 @@ mod tests {
     use super::{
         combined_ui_scale_factor, is_compact_editor_ui, marquee_screen_pos_to_egui_pos,
         push_command_when_clicked, responsive_ui_scale_multiplier, settings_sidebar_default_width,
-        show_editor_ui, sort_quad_by_angle, VIEW_CUBE_FACES,
+        show_editor_ui, show_perf_overlay, sort_quad_by_angle, VIEW_CUBE_FACES,
     };
     use crate::commands::AppCommand;
     use crate::test_utils::approx_eq;
@@ -1265,6 +1275,25 @@ mod tests {
     }
 
     #[test]
+    fn show_perf_overlay_renders_outside_editor() {
+        pollster::block_on(async {
+            let Some(mut state) = crate::State::try_new_test().await else {
+                return;
+            };
+
+            assert!(state.is_menu());
+            state.dispatch(AppCommand::EditorTogglePerfOverlay);
+
+            let ctx = egui::Context::default();
+            let _ = ctx.run(egui::RawInput::default(), |ctx| {
+                show_perf_overlay(ctx, &mut state);
+            });
+
+            assert!(state.perf_overlay_enabled());
+        });
+    }
+
+    #[test]
     fn show_editor_ui_renders_marquee_selection() {
         pollster::block_on(async {
             let Some(mut state) = crate::State::try_new_test().await else {
@@ -1317,7 +1346,7 @@ mod tests {
             assert!(state.editor_show_settings());
             assert_eq!(state.editor_settings_section(), SettingsSection::Backends);
             assert!(state.editor_show_metadata());
-            assert!(state.editor_perf_overlay_enabled());
+            assert!(state.perf_overlay_enabled());
 
             state.dispatch(AppCommand::EditorSetMode(EditorMode::Place));
             state.dispatch(AppCommand::EditorSetSettingsSection(

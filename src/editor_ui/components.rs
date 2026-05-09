@@ -582,9 +582,6 @@ mod tests {
             camera_rotation: 0.0,
             camera_pitch: 0.0,
             fps: 120.0,
-            graphics_backend: "WGPU".to_string(),
-            audio_backend: "Default".to_string(),
-            perf_overlay_enabled: false,
             marquee_selection_rect_screen: None,
         }
     }

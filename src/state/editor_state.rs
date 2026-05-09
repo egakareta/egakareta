@@ -522,21 +522,15 @@ impl State {
     }
 
     pub(crate) fn set_editor_shift_held(&mut self, held: bool) {
-        if self.phase == AppPhase::Editor {
-            self.editor.set_shift_held(held);
-        }
+        self.editor.set_shift_held(held);
     }
 
     pub(crate) fn set_editor_ctrl_held(&mut self, held: bool) {
-        if self.phase == AppPhase::Editor {
-            self.editor.set_ctrl_held(held);
-        }
+        self.editor.set_ctrl_held(held);
     }
 
     pub(crate) fn set_editor_alt_held(&mut self, held: bool) {
-        if self.phase == AppPhase::Editor {
-            self.editor.set_alt_held(held);
-        }
+        self.editor.set_alt_held(held);
     }
 
     pub(crate) fn set_editor_block_id(&mut self, block_id: String) {
@@ -1472,7 +1466,7 @@ mod tests {
     }
 
     #[test]
-    fn phase_gated_editor_input_state_wrappers_only_apply_in_editor() {
+    fn pan_input_wrappers_are_phase_gated_but_modifiers_are_global() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
@@ -1489,9 +1483,13 @@ mod tests {
             assert!(!state.editor.ui.pan_down_held);
             assert!(!state.editor.ui.pan_left_held);
             assert!(!state.editor.ui.pan_right_held);
-            assert!(!state.editor.ui.shift_held);
-            assert!(!state.editor.ui.ctrl_held);
-            assert!(!state.editor.ui.alt_held);
+            assert!(state.editor.ui.shift_held);
+            assert!(state.editor.ui.ctrl_held);
+            assert!(state.editor.ui.alt_held);
+
+            state.set_editor_shift_held(false);
+            state.set_editor_ctrl_held(false);
+            state.set_editor_alt_held(false);
 
             state.phase = AppPhase::Editor;
             state.set_editor_pan_up_held(true);

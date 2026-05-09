@@ -307,15 +307,6 @@ impl State {
             .write_streaming_vertices(&self.render.gpu.queue, &trail_vertices);
     }
 
-    pub(crate) fn toggle_editor_perf_overlay(&mut self) {
-        self.editor.perf.overlay_enabled = !self.editor.perf.overlay_enabled;
-        puffin::set_scopes_on(self.editor.perf.overlay_enabled);
-    }
-
-    pub(crate) fn editor_perf_overlay_enabled(&self) -> bool {
-        self.editor.perf.overlay_enabled
-    }
-
     /// Advances the application state by one frame.
     ///
     /// This method handles:
@@ -906,13 +897,13 @@ mod tests {
         pollster::block_on(async {
             let mut state = State::new_test().await;
 
-            assert!(!state.editor_perf_overlay_enabled());
+            assert!(!state.perf_overlay_enabled());
 
-            state.toggle_editor_perf_overlay();
-            assert!(state.editor_perf_overlay_enabled());
+            state.toggle_perf_overlay();
+            assert!(state.perf_overlay_enabled());
 
-            state.toggle_editor_perf_overlay();
-            assert!(!state.editor_perf_overlay_enabled());
+            state.toggle_perf_overlay();
+            assert!(!state.perf_overlay_enabled());
         });
     }
 
