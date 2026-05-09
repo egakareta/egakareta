@@ -671,7 +671,7 @@ mod tests {
     }
 
     #[test]
-    fn torch_block_definition_is_passthrough_and_glowing() {
+    fn torch_block_definition_is_passthrough_and_liquid() {
         let torch = resolve_block_definition("core/torch");
         assert_eq!(torch.id, "core/torch");
         assert!(matches!(

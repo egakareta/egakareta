@@ -10,6 +10,7 @@ use glam::{EulerRot, Mat3, Vec2, Vec3};
 
 pub(crate) const BASE_PLAYER_SPEED: f32 = 8.0;
 
+#[cfg(test)]
 pub(crate) fn object_xz_contains(obj: &LevelObject, x: f32, z: f32) -> bool {
     let polygon = object_projected_xz_polygon(obj);
     if polygon.len() < 3 {
@@ -90,7 +91,15 @@ fn object_projected_xz_polygon(obj: &LevelObject) -> Vec<Vec2> {
     convex_hull(points)
 }
 
+#[cfg(test)]
 fn point_in_polygon(point: Vec2, polygon: &[Vec2]) -> bool {
+    for edge_start_index in 0..polygon.len() {
+        let edge_end_index = (edge_start_index + 1) % polygon.len();
+        if point_on_segment(point, polygon[edge_start_index], polygon[edge_end_index]) {
+            return true;
+        }
+    }
+
     let mut inside = false;
     let mut j = polygon.len() - 1;
     for i in 0..polygon.len() {
@@ -105,6 +114,24 @@ fn point_in_polygon(point: Vec2, polygon: &[Vec2]) -> bool {
         j = i;
     }
     inside
+}
+
+#[cfg(test)]
+fn point_on_segment(point: Vec2, start: Vec2, end: Vec2) -> bool {
+    const EPSILON: f32 = 1e-5;
+
+    let segment = end - start;
+    let to_point = point - start;
+    if cross(segment, to_point).abs() > EPSILON {
+        return false;
+    }
+
+    let dot = to_point.dot(segment);
+    if dot < -EPSILON {
+        return false;
+    }
+
+    dot <= segment.length_squared() + EPSILON
 }
 
 fn convex_hull(mut points: Vec<Vec2>) -> Vec<Vec2> {

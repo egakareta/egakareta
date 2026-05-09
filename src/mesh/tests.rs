@@ -7,10 +7,7 @@
 */
 #[cfg(test)]
 mod tests {
-    use crate::mesh::blocks::{
-        build_block_vertices, build_block_vertices_for_object_with_lighting,
-        build_block_vertices_with_phase,
-    };
+    use crate::mesh::blocks::{build_block_vertices, build_block_vertices_with_phase};
     use crate::mesh::builders::{
         build_editor_gizmo_vertices, build_editor_hover_outline_vertices, GizmoParams,
     };
@@ -258,78 +255,6 @@ f 1/1/1 2/2/1 3/3/1
 
         let vertices = build_block_vertices(&[obj]);
         assert!(vertices.len() >= 168); // 28 segments * (outer + inner + face) triangles
-    }
-
-    #[test]
-    fn torch_lights_up_nearby_block_vertices() {
-        let shadow_block = LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.0,
-            block_id: "core/void".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-        };
-        let torch = LevelObject {
-            position: [1.1, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.0,
-            block_id: "core/torch".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-        };
-
-        let unlit = build_block_vertices(std::slice::from_ref(&shadow_block));
-        let lit = build_block_vertices(&[shadow_block, torch]);
-        assert!(
-            lit.len() >= unlit.len(),
-            "expected lit mesh to include at least the shadow block vertices"
-        );
-        let unlit_block = &unlit[..];
-        let lit_block = &lit[..unlit.len()];
-
-        let max_channel = |vertices: &[Vertex]| {
-            vertices
-                .iter()
-                .map(|vertex| vertex.color[0].max(vertex.color[1]).max(vertex.color[2]))
-                .fold(0.0_f32, f32::max)
-        };
-
-        assert!(
-            max_channel(lit_block) > max_channel(unlit_block) + 0.05,
-            "expected torch to brighten nearby block vertex colors"
-        );
-    }
-
-    #[test]
-    fn single_object_mesh_uses_existing_torch_lighting_context() {
-        let shadow_block = LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.0,
-            block_id: "core/void".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-        };
-        let torch = LevelObject {
-            position: [1.1, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.0,
-            block_id: "core/torch".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-        };
-        let objects = vec![shadow_block.clone(), torch];
-
-        let full = build_block_vertices(&objects);
-        let single = build_block_vertices_for_object_with_lighting(&shadow_block, &objects);
-
-        assert_eq!(single.len(), 36);
-        for (single_vertex, full_vertex) in single.iter().zip(full.iter()) {
-            assert_eq!(single_vertex.position, full_vertex.position);
-            assert_eq!(single_vertex.color, full_vertex.color);
-            assert_eq!(single_vertex.texture_layer, full_vertex.texture_layer);
-        }
     }
 
     #[test]

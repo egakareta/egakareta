@@ -11,8 +11,7 @@ use super::{EditorDirtyFlags, EditorSubsystem, State};
 use crate::editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds_with_triggers};
 use crate::game::trigger_transformed_objects_at_time;
 use crate::mesh::{
-    block_affects_existing_lighting, build_block_vertices,
-    build_block_vertices_for_object_with_lighting, build_block_vertices_from_refs,
+    build_block_vertices, build_block_vertices_for_object, build_block_vertices_from_refs,
     build_camera_trigger_marker_vertices, build_editor_cursor_vertices,
     build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
     build_editor_selection_outline_vertices, build_spawn_marker_vertices,
@@ -107,7 +106,7 @@ impl EditorSubsystem {
 
     pub(crate) fn add_block_at_cursor(&mut self) {
         let new_block = create_block_at_cursor(self.ui.cursor, &self.config.selected_block_id);
-        let can_append_mesh = self.can_append_block_mesh_after_placement(&new_block);
+        let can_append_mesh = self.can_append_block_mesh_after_placement();
 
         self.record_history_state();
         let placed_index = self.objects.len();
@@ -128,12 +127,11 @@ impl EditorSubsystem {
         }
     }
 
-    fn can_append_block_mesh_after_placement(&self, block: &LevelObject) -> bool {
+    fn can_append_block_mesh_after_placement(&self) -> bool {
         self.ui.selected_block_index.is_none()
             && self.ui.selected_block_indices.is_empty()
             && self.block_static_vertex_cache_complete_len == Some(self.objects.len())
             && !(self.timeline.playback.playing && self.has_object_transform_triggers())
-            && !block_affects_existing_lighting(&block.block_id)
     }
 
     pub(crate) fn timeline_elapsed_seconds(&self, time_seconds: f32) -> f32 {
@@ -736,12 +734,7 @@ impl State {
         }
 
         let object = &self.editor.objects[index];
-        if block_affects_existing_lighting(&object.block_id) {
-            return false;
-        }
-
-        let appended_vertices =
-            build_block_vertices_for_object_with_lighting(object, &self.editor.objects);
+        let appended_vertices = build_block_vertices_for_object(object);
         let previous_vertex_count = self.editor.block_static_vertex_cache.len();
         let appended = self.render.meshes.blocks_static.append_streaming_vertices(
             &self.render.gpu.queue,
@@ -1174,25 +1167,6 @@ mod tests {
             assert!(after_count > before_count);
             assert_eq!(state.editor.block_static_vertex_cache_complete_len, Some(2));
             assert!(!state.editor.runtime.dirty.any());
-        });
-    }
-
-    #[test]
-    fn placing_torch_uses_full_rebuild_because_lighting_changes_existing_blocks() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Editor;
-            state.editor.objects = vec![block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])];
-            state.editor.ui.cursor = [2.0, 0.0, 0.0];
-            state.editor.config.selected_block_id = "core/torch".to_string();
-
-            state.rebuild_block_vertices();
-            state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
-            state.editor.add_block_at_cursor();
-
-            assert!(state.editor.runtime.dirty.rebuild_block_mesh);
-            assert!(!state.editor.runtime.dirty.append_block_mesh);
-            assert!(state.editor.runtime.pending_block_mesh_appends.is_empty());
         });
     }
 
