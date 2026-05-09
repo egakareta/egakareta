@@ -14,7 +14,7 @@ use crate::editor_ui::combined_ui_scale_factor;
 use crate::platform::block_icon_cache::BlockIconCache;
 use crate::{show_editor_ui, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar, State};
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
-use wgpu::SurfaceError;
+use wgpu::CurrentSurfaceTexture;
 
 /// The main frame pipeline that orchestrates UI rendering and game updates.
 ///
@@ -70,7 +70,8 @@ impl FramePipeline {
             .refresh_icons(state, &mut self.egui_renderer);
         let block_icon_texture_ids = self.block_icon_cache.texture_ids();
 
-        let full_output = self.egui_ctx.run(raw_input, |ctx| {
+        let full_output = self.egui_ctx.run_ui(raw_input, |ui| {
+            let ctx = ui.ctx();
             show_editor_ui(ctx, state, &block_icon_texture_ids);
             show_menu_topbar(ctx, state);
             show_menu_play_ui(ctx, state);
@@ -98,14 +99,8 @@ impl FramePipeline {
 
         match state.render_egui(&mut self.egui_renderer, &paint_jobs, &screen_descriptor) {
             Ok(_) => {}
-            Err(SurfaceError::Lost) | Err(SurfaceError::Outdated) => {
+            Err(CurrentSurfaceTexture::Lost) | Err(CurrentSurfaceTexture::Outdated) => {
                 state.handle_surface_lost();
-            }
-            Err(SurfaceError::OutOfMemory) => {
-                #[cfg(not(target_arch = "wasm32"))]
-                eprintln!("OutOfMemory error in render pipeline");
-                #[cfg(target_arch = "wasm32")]
-                gloo_console::error!("OutOfMemory error in render pipeline");
             }
             Err(err) => {
                 #[cfg(not(target_arch = "wasm32"))]

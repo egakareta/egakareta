@@ -68,8 +68,8 @@ fn editor_ghost_trail_primitive_state() -> wgpu::PrimitiveState {
 fn editor_ghost_trail_depth_stencil_state() -> wgpu::DepthStencilState {
     wgpu::DepthStencilState {
         format: DEPTH_FORMAT,
-        depth_write_enabled: false,
-        depth_compare: wgpu::CompareFunction::Less,
+        depth_write_enabled: Some(false),
+        depth_compare: Some(wgpu::CompareFunction::Less),
         stencil: wgpu::StencilState::default(),
         bias: wgpu::DepthBiasState::default(),
     }
@@ -208,9 +208,9 @@ impl State {
                     };
 
                     for backends in backends_to_try {
-                        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+                        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
                             backends,
-                            ..Default::default()
+                            ..wgpu::InstanceDescriptor::new_without_display_handle()
                         });
 
                         if let Some(state) = Self::new_common(
@@ -718,7 +718,7 @@ impl State {
             address_mode_w: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
 
@@ -778,12 +778,12 @@ impl State {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Pipeline Layout"),
             bind_group_layouts: &[
-                &camera_bind_group_layout,
-                &line_bind_group_layout,
-                &color_space_bind_group_layout,
-                &block_texture_bind_group_layout,
+                Some(&camera_bind_group_layout),
+                Some(&line_bind_group_layout),
+                Some(&color_space_bind_group_layout),
+                Some(&block_texture_bind_group_layout),
             ],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -808,13 +808,13 @@ impl State {
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -844,13 +844,13 @@ impl State {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -877,7 +877,7 @@ impl State {
                 primitive: editor_ghost_trail_primitive_state(),
                 depth_stencil: Some(editor_ghost_trail_depth_stencil_state()),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
 
@@ -904,13 +904,13 @@ impl State {
                 primitive: wgpu::PrimitiveState::default(),
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::Always,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::Always),
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
 
@@ -1123,11 +1123,11 @@ mod tests {
         let depth = editor_ghost_trail_depth_stencil_state();
         assert_eq!(
             depth.depth_compare,
-            wgpu::CompareFunction::Less,
+            Some(wgpu::CompareFunction::Less),
             "ghost trail depth compare should remain Less"
         );
         assert!(
-            !depth.depth_write_enabled,
+            !depth.depth_write_enabled.unwrap_or_default(),
             "ghost trail should not write to depth to preserve translucent blending order"
         );
     }

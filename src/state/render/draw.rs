@@ -8,7 +8,7 @@
 use std::iter;
 
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
-use wgpu::{SurfaceError, TextureViewDescriptor};
+use wgpu::{CurrentSurfaceTexture, TextureViewDescriptor};
 
 use super::super::State;
 use crate::types::{AppPhase, EditorMode};
@@ -87,7 +87,7 @@ impl State {
         renderer: &mut EguiRenderer,
         paint_jobs: &[egui::ClippedPrimitive],
         screen_descriptor: &ScreenDescriptor,
-    ) -> Result<(), SurfaceError> {
+    ) -> Result<(), CurrentSurfaceTexture> {
         self.render_with_overlay(|device, queue, view, encoder| {
             renderer.update_buffers(device, queue, encoder, paint_jobs, screen_descriptor);
 
@@ -106,6 +106,7 @@ impl State {
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 })
                 .forget_lifetime();
 
@@ -125,7 +126,7 @@ impl State {
     /// Performs a full render of the current application state.
     ///
     /// This method clears the surface and draws the active scene (Menu, Editor, or Gameplay).
-    pub fn render(&mut self) -> Result<(), SurfaceError> {
+    pub fn render(&mut self) -> Result<(), CurrentSurfaceTexture> {
         self.render_with_overlay(|_, _, _, _| {})
     }
 
@@ -133,7 +134,7 @@ impl State {
     ///
     /// The `overlay` closure is provided with the GPU device, queue, current texture view,
     /// and a command encoder to perform additional drawing operations.
-    pub fn render_with_overlay<F>(&mut self, overlay: F) -> Result<(), SurfaceError>
+    pub fn render_with_overlay<F>(&mut self, overlay: F) -> Result<(), CurrentSurfaceTexture>
     where
         F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
     {
@@ -141,7 +142,15 @@ impl State {
             Some(s) => s,
             None => return Ok(()),
         };
-        let output = surface.get_current_texture()?;
+        let output = match surface.get_current_texture() {
+            CurrentSurfaceTexture::Success(output) | CurrentSurfaceTexture::Suboptimal(output) => {
+                output
+            }
+            CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => return Ok(()),
+            CurrentSurfaceTexture::Outdated => return Err(CurrentSurfaceTexture::Outdated),
+            CurrentSurfaceTexture::Lost => return Err(CurrentSurfaceTexture::Lost),
+            CurrentSurfaceTexture::Validation => return Err(CurrentSurfaceTexture::Validation),
+        };
         let view = output
             .texture
             .create_view(&TextureViewDescriptor::default());
@@ -196,6 +205,7 @@ impl State {
             }),
             occlusion_query_set: None,
             timestamp_writes: None,
+            multiview_mask: None,
         });
 
         render_pass.set_pipeline(&self.render.gpu.render_pipeline);

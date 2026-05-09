@@ -45,12 +45,13 @@ pub fn show_menu_favicon_ui(ctx: &egui::Context, state: &State, favicon: &egui::
 }
 
 /// Shows the menu topbar with the current time.
+#[allow(deprecated)]
 pub fn show_menu_topbar(ctx: &egui::Context, state: &State) {
     if !state.is_menu() {
         return;
     }
 
-    egui::TopBottomPanel::top("menu_top_bar").show(ctx, |ui| {
+    egui::Panel::top("menu_top_bar").show(ctx, |ui| {
         ui.horizontal_wrapped(|ui| {
             ui.add_space(4.0);
             ui.label(

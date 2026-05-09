@@ -439,7 +439,7 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput { event, .. } => {
                 if !should_route_keyboard_input(
                     egui_consumed,
-                    runtime.pipeline.ctx().wants_keyboard_input(),
+                    runtime.pipeline.ctx().egui_wants_keyboard_input(),
                 ) {
                     return;
                 }
