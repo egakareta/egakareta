@@ -653,20 +653,21 @@ pub fn show_editor_ui(
     }
 
     if view.perf_overlay_enabled {
-        egui::Area::new("editor_perf_status".into())
-            .order(egui::Order::Foreground)
-            .anchor(egui::Align2::LEFT_TOP, egui::vec2(12.0, 12.0))
+        let mut profiler_open = true;
+        egui::Window::new("Profiler")
+            .default_size([1024.0, 600.0])
+            .open(&mut profiler_open)
             .show(ctx, |ui| {
-                egui::Frame::window(ui.style())
-                    .fill(egui::Color32::from_black_alpha(210))
-                    .show(ui, |ui| {
-                        ui.monospace(format!(
-                            "{} | {} | FPS {:.1}",
-                            view.graphics_backend, view.audio_backend, view.fps
-                        ));
-                    });
+                ui.monospace(format!(
+                    "{} | {} | FPS {:.1}",
+                    view.graphics_backend, view.audio_backend, view.fps
+                ));
+                ui.separator();
+                puffin_egui::profiler_ui(ui);
             });
-        puffin_egui::profiler_window(ctx);
+        if !profiler_open {
+            commands.push(AppCommand::EditorTogglePerfOverlay);
+        }
     }
 
     drop(view);
