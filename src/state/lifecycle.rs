@@ -783,6 +783,8 @@ impl State {
                 Some(&color_space_bind_group_layout),
                 Some(&block_texture_bind_group_layout),
             ],
+            // wgpu 29 replaces push constants in this descriptor with immediate shader bytes.
+            // We don't use immediates in our shaders, so this remains disabled.
             immediate_size: 0,
         });
 

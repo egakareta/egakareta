@@ -12,9 +12,9 @@
 
 use crate::editor_ui::combined_ui_scale_factor;
 use crate::platform::block_icon_cache::BlockIconCache;
+use crate::state::RenderSurfaceError;
 use crate::{show_editor_ui, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar, State};
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
-use wgpu::CurrentSurfaceTexture;
 
 /// The main frame pipeline that orchestrates UI rendering and game updates.
 ///
@@ -70,8 +70,8 @@ impl FramePipeline {
             .refresh_icons(state, &mut self.egui_renderer);
         let block_icon_texture_ids = self.block_icon_cache.texture_ids();
 
-        let full_output = self.egui_ctx.run_ui(raw_input, |ui| {
-            let ctx = ui.ctx();
+        let full_output = self.egui_ctx.run_ui(raw_input, |root_ui| {
+            let ctx = root_ui.ctx();
             show_editor_ui(ctx, state, &block_icon_texture_ids);
             show_menu_topbar(ctx, state);
             show_menu_play_ui(ctx, state);
@@ -99,7 +99,7 @@ impl FramePipeline {
 
         match state.render_egui(&mut self.egui_renderer, &paint_jobs, &screen_descriptor) {
             Ok(_) => {}
-            Err(CurrentSurfaceTexture::Lost) | Err(CurrentSurfaceTexture::Outdated) => {
+            Err(RenderSurfaceError::Lost) | Err(RenderSurfaceError::Outdated) => {
                 state.handle_surface_lost();
             }
             Err(err) => {

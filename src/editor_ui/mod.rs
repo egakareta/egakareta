@@ -158,6 +158,8 @@ fn marquee_screen_pos_to_egui_pos(screen_pos: [f64; 2], pixels_per_point: f32) -
 
 /// Shows the editor UI using egui.
 /// Handles the top bar, bottom panels, and other editor interface elements.
+// egui 0.34 deprecates top-level Panel::show in favor of show_inside;
+// this function still renders top-level panels directly from Context.
 #[allow(deprecated)]
 pub fn show_editor_ui(
     ctx: &egui::Context,
@@ -665,6 +667,7 @@ pub fn show_editor_ui(
                     view.graphics_backend, view.audio_backend, view.fps
                 ));
                 ui.separator();
+                // TODO: Restore flamegraph profiler once a puffin_egui release supports egui 0.34.
                 ui.label(
                     "Detailed flamegraph view is unavailable with current egui compatibility.",
                 );

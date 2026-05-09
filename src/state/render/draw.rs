@@ -76,6 +76,13 @@ fn should_draw_editor_cursor(mode: EditorMode) -> bool {
     mode == EditorMode::Place
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderSurfaceError {
+    Outdated,
+    Lost,
+    Validation,
+}
+
 impl State {
     /// Renders the `egui` user interface over the current frame.
     ///
@@ -87,7 +94,7 @@ impl State {
         renderer: &mut EguiRenderer,
         paint_jobs: &[egui::ClippedPrimitive],
         screen_descriptor: &ScreenDescriptor,
-    ) -> Result<(), CurrentSurfaceTexture> {
+    ) -> Result<(), RenderSurfaceError> {
         self.render_with_overlay(|device, queue, view, encoder| {
             renderer.update_buffers(device, queue, encoder, paint_jobs, screen_descriptor);
 
@@ -126,7 +133,7 @@ impl State {
     /// Performs a full render of the current application state.
     ///
     /// This method clears the surface and draws the active scene (Menu, Editor, or Gameplay).
-    pub fn render(&mut self) -> Result<(), CurrentSurfaceTexture> {
+    pub fn render(&mut self) -> Result<(), RenderSurfaceError> {
         self.render_with_overlay(|_, _, _, _| {})
     }
 
@@ -134,7 +141,7 @@ impl State {
     ///
     /// The `overlay` closure is provided with the GPU device, queue, current texture view,
     /// and a command encoder to perform additional drawing operations.
-    pub fn render_with_overlay<F>(&mut self, overlay: F) -> Result<(), CurrentSurfaceTexture>
+    pub fn render_with_overlay<F>(&mut self, overlay: F) -> Result<(), RenderSurfaceError>
     where
         F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
     {
@@ -147,9 +154,9 @@ impl State {
                 output
             }
             CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => return Ok(()),
-            CurrentSurfaceTexture::Outdated => return Err(CurrentSurfaceTexture::Outdated),
-            CurrentSurfaceTexture::Lost => return Err(CurrentSurfaceTexture::Lost),
-            CurrentSurfaceTexture::Validation => return Err(CurrentSurfaceTexture::Validation),
+            CurrentSurfaceTexture::Outdated => return Err(RenderSurfaceError::Outdated),
+            CurrentSurfaceTexture::Lost => return Err(RenderSurfaceError::Lost),
+            CurrentSurfaceTexture::Validation => return Err(RenderSurfaceError::Validation),
         };
         let view = output
             .texture
