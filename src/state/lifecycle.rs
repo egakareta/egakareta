@@ -435,6 +435,7 @@ impl State {
                 timeline: EditorTimelineState::new(),
                 runtime: EditorRuntimeState {
                     dirty: EditorDirtyFlags::from_object_sync(),
+                    pending_block_mesh_appends: Vec::new(),
                     gizmo: EditorGizmoState {
                         rebuild_accumulator: 0.0,
                         last_pan: [0.0, 0.0],
@@ -452,6 +453,8 @@ impl State {
                 perf: EditorPerfState::new(),
                 timing: EditorTimingState::new(),
                 selected_mask_cache: None,
+                block_static_vertex_cache: Vec::new(),
+                block_static_vertex_cache_complete_len: None,
             },
         }
     }
@@ -1073,6 +1076,7 @@ impl State {
                 timeline: EditorTimelineState::new(),
                 runtime: EditorRuntimeState {
                     dirty: EditorDirtyFlags::from_object_sync(),
+                    pending_block_mesh_appends: Vec::new(),
                     gizmo: EditorGizmoState {
                         rebuild_accumulator: 0.0,
                         last_pan: [0.0, 0.0],
@@ -1090,6 +1094,8 @@ impl State {
                 perf: EditorPerfState::new(),
                 timing: EditorTimingState::new(),
                 selected_mask_cache: None,
+                block_static_vertex_cache: Vec::new(),
+                block_static_vertex_cache_complete_len: None,
             },
         })
     }

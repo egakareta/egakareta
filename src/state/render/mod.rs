@@ -85,6 +85,50 @@ impl MeshSlot {
         }
     }
 
+    pub(crate) fn streaming_from_vertices(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        label: &'static str,
+        vertices: &[Vertex],
+        capacity_vertices: u32,
+    ) -> Self {
+        if vertices.is_empty() {
+            return Self::Empty;
+        }
+
+        let capacity_vertices = capacity_vertices.max(vertices.len() as u32);
+        if capacity_vertices == vertices.len() as u32 {
+            let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents: bytemuck::cast_slice(vertices),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            });
+
+            return Self::Streaming {
+                buffer,
+                count: vertices.len() as u32,
+                capacity_vertices,
+            };
+        }
+
+        let padded = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: (std::mem::size_of::<Vertex>() * capacity_vertices as usize) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        // Keep the upload path uniform for buffers with spare capacity.
+        let slot = Self::Streaming {
+            buffer: padded,
+            count: vertices.len() as u32,
+            capacity_vertices,
+        };
+        if let Self::Streaming { buffer, .. } = &slot {
+            queue.write_buffer(buffer, 0, bytemuck::cast_slice(vertices));
+        }
+        slot
+    }
+
     pub(crate) fn replace_with_vertices(
         &mut self,
         device: &wgpu::Device,
@@ -92,6 +136,50 @@ impl MeshSlot {
         vertices: &[Vertex],
     ) {
         *self = Self::from_vertices(device, label, vertices);
+    }
+
+    pub(crate) fn replace_with_streaming_vertices(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        label: &'static str,
+        vertices: &[Vertex],
+        spare_capacity_vertices: u32,
+    ) {
+        let capacity = vertices
+            .len()
+            .saturating_add(spare_capacity_vertices as usize)
+            .max(vertices.len()) as u32;
+        *self = Self::streaming_from_vertices(device, queue, label, vertices, capacity);
+    }
+
+    pub(crate) fn append_streaming_vertices(
+        &mut self,
+        queue: &wgpu::Queue,
+        start_vertex: usize,
+        vertices: &[Vertex],
+    ) -> bool {
+        let Self::Streaming {
+            buffer,
+            count,
+            capacity_vertices,
+        } = self
+        else {
+            return false;
+        };
+
+        if *count as usize != start_vertex
+            || start_vertex.saturating_add(vertices.len()) > *capacity_vertices as usize
+        {
+            return false;
+        }
+
+        if !vertices.is_empty() {
+            let offset = (std::mem::size_of::<Vertex>() * start_vertex) as u64;
+            queue.write_buffer(buffer, offset, bytemuck::cast_slice(vertices));
+        }
+        *count = start_vertex.saturating_add(vertices.len()) as u32;
+        true
     }
 
     pub(crate) fn write_streaming_vertices(&mut self, queue: &wgpu::Queue, vertices: &[Vertex]) {

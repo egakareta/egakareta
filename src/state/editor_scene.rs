@@ -11,12 +11,20 @@ use super::{EditorDirtyFlags, EditorSubsystem, State};
 use crate::editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds_with_triggers};
 use crate::game::trigger_transformed_objects_at_time;
 use crate::mesh::{
-    build_block_vertices, build_block_vertices_from_refs, build_camera_trigger_marker_vertices,
-    build_editor_cursor_vertices, build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
+    block_affects_existing_lighting, build_block_vertices,
+    build_block_vertices_for_object_with_lighting, build_block_vertices_from_refs,
+    build_camera_trigger_marker_vertices, build_editor_cursor_vertices,
+    build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
     build_editor_selection_outline_vertices, build_spawn_marker_vertices,
     build_tap_indicator_vertices, GizmoParams,
 };
 use crate::types::{AppPhase, EditorMode, GizmoPart, LevelObject, SpawnDirection};
+
+fn editor_static_mesh_spare_capacity(vertex_count: usize, object_count: usize) -> u32 {
+    let growth_room = vertex_count / 8;
+    let object_room = object_count.min(512).saturating_mul(36);
+    growth_room.max(object_room).max(4096) as u32
+}
 
 impl EditorSubsystem {
     pub(crate) fn mark_dirty(&mut self, dirty: EditorDirtyFlags) {
@@ -41,6 +49,9 @@ impl EditorSubsystem {
         }
         self.invalidate_samples();
         self.selected_mask_cache = None;
+        self.block_static_vertex_cache.clear();
+        self.block_static_vertex_cache_complete_len = None;
+        self.runtime.pending_block_mesh_appends.clear();
         self.mark_dirty(EditorDirtyFlags::from_object_sync());
     }
 
@@ -95,15 +106,34 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn add_block_at_cursor(&mut self) {
+        let new_block = create_block_at_cursor(self.ui.cursor, &self.config.selected_block_id);
+        let can_append_mesh = self.can_append_block_mesh_after_placement(&new_block);
+
         self.record_history_state();
-        self.objects.push(create_block_at_cursor(
-            self.ui.cursor,
-            &self.config.selected_block_id,
-        ));
+        let placed_index = self.objects.len();
+        self.objects.push(new_block);
         self.ui.selected_block_index = None;
         self.ui.selected_block_indices.clear();
         self.ui.hovered_block_index = None;
-        self.sync_objects();
+        if can_append_mesh {
+            self.invalidate_samples();
+            self.runtime.pending_block_mesh_appends.push(placed_index);
+            self.mark_dirty(EditorDirtyFlags {
+                sync_game_objects: true,
+                append_block_mesh: true,
+                ..EditorDirtyFlags::default()
+            });
+        } else {
+            self.sync_objects();
+        }
+    }
+
+    fn can_append_block_mesh_after_placement(&self, block: &LevelObject) -> bool {
+        self.ui.selected_block_index.is_none()
+            && self.ui.selected_block_indices.is_empty()
+            && self.block_static_vertex_cache_complete_len == Some(self.objects.len())
+            && !(self.timeline.playback.playing && self.has_object_transform_triggers())
+            && !block_affects_existing_lighting(&block.block_id)
     }
 
     pub(crate) fn timeline_elapsed_seconds(&self, time_seconds: f32) -> f32 {
@@ -201,6 +231,9 @@ impl State {
         if dirty.rebuild_block_mesh {
             self.editor.runtime.dirty.rebuild_block_mesh = false;
         }
+        if dirty.append_block_mesh {
+            self.editor.runtime.dirty.append_block_mesh = false;
+        }
         if dirty.rebuild_selection_overlays {
             self.editor.runtime.dirty.rebuild_selection_overlays = false;
         }
@@ -216,6 +249,7 @@ impl State {
 
         if dirty.rebuild_block_mesh {
             puffin::profile_scope!("DirtyBlockMesh");
+            self.editor.runtime.pending_block_mesh_appends.clear();
             if self.phase == AppPhase::Editor
                 && is_dragging
                 && self.editor.selected_mask_cache.is_some()
@@ -223,6 +257,16 @@ impl State {
                 self.rebuild_editor_selected_block_vertices();
             } else {
                 self.rebuild_block_vertices();
+            }
+        } else if dirty.append_block_mesh {
+            puffin::profile_scope!("DirtyBlockMeshAppend");
+            let pending_appends =
+                std::mem::take(&mut self.editor.runtime.pending_block_mesh_appends);
+            for index in pending_appends {
+                if !self.append_editor_static_block_vertices(index) {
+                    self.rebuild_block_vertices();
+                    break;
+                }
             }
         }
 
@@ -595,13 +639,15 @@ impl State {
             );
             self.render.meshes.blocks_static.clear();
             self.render.meshes.blocks_selected.clear();
+            self.editor.block_static_vertex_cache.clear();
+            self.editor.block_static_vertex_cache_complete_len = None;
         }
     }
 
     fn rebuild_editor_block_vertices_split(&mut self) {
-        let object_source = self
-            .editor_runtime_objects_for_render()
-            .unwrap_or_else(|| self.editor.objects.clone());
+        let runtime_objects = self.editor_runtime_objects_for_render();
+        let uses_runtime_objects = runtime_objects.is_some();
+        let object_source = runtime_objects.unwrap_or_else(|| self.editor.objects.clone());
 
         let selected_mask = {
             puffin::profile_scope!("BlockMaskBuild");
@@ -637,10 +683,32 @@ impl State {
             build_block_vertices_from_refs(&selected_objects)
         };
 
+        let has_selected_blocks = selected_mask.iter().any(|selected| *selected);
+
         self.editor.selected_mask_cache = Some(selected_mask);
 
-        {
+        if !uses_runtime_objects && !has_selected_blocks {
             puffin::profile_scope!("BlockMeshUploadStatic");
+            self.editor.block_static_vertex_cache = static_vertices;
+            self.editor.block_static_vertex_cache_complete_len = Some(object_source.len());
+            let spare_capacity = editor_static_mesh_spare_capacity(
+                self.editor.block_static_vertex_cache.len(),
+                object_source.len(),
+            );
+            self.render
+                .meshes
+                .blocks_static
+                .replace_with_streaming_vertices(
+                    &self.render.gpu.device,
+                    &self.render.gpu.queue,
+                    "Block Static Vertex Buffer",
+                    &self.editor.block_static_vertex_cache,
+                    spare_capacity,
+                );
+        } else {
+            puffin::profile_scope!("BlockMeshUploadStatic");
+            self.editor.block_static_vertex_cache.clear();
+            self.editor.block_static_vertex_cache_complete_len = None;
             self.render.meshes.blocks_static.replace_with_vertices(
                 &self.render.gpu.device,
                 "Block Static Vertex Buffer",
@@ -657,6 +725,64 @@ impl State {
             );
         }
         self.render.meshes.blocks.clear();
+    }
+
+    fn append_editor_static_block_vertices(&mut self, index: usize) -> bool {
+        if self.phase != AppPhase::Editor
+            || self.editor.block_static_vertex_cache_complete_len != Some(index)
+            || index >= self.editor.objects.len()
+        {
+            return false;
+        }
+
+        let object = &self.editor.objects[index];
+        if block_affects_existing_lighting(&object.block_id) {
+            return false;
+        }
+
+        let appended_vertices =
+            build_block_vertices_for_object_with_lighting(object, &self.editor.objects);
+        let previous_vertex_count = self.editor.block_static_vertex_cache.len();
+        let appended = self.render.meshes.blocks_static.append_streaming_vertices(
+            &self.render.gpu.queue,
+            previous_vertex_count,
+            &appended_vertices,
+        );
+
+        self.editor
+            .block_static_vertex_cache
+            .extend(appended_vertices.iter().copied());
+
+        if !appended {
+            let spare_capacity = editor_static_mesh_spare_capacity(
+                self.editor.block_static_vertex_cache.len(),
+                self.editor.objects.len(),
+            );
+            self.render
+                .meshes
+                .blocks_static
+                .replace_with_streaming_vertices(
+                    &self.render.gpu.device,
+                    &self.render.gpu.queue,
+                    "Block Static Vertex Buffer",
+                    &self.editor.block_static_vertex_cache,
+                    spare_capacity,
+                );
+        }
+
+        self.editor.block_static_vertex_cache_complete_len = Some(index + 1);
+        if let Some(selected_mask) = self.editor.selected_mask_cache.as_mut() {
+            if selected_mask.len() == index {
+                selected_mask.push(false);
+            } else {
+                self.editor.selected_mask_cache = Some(vec![false; self.editor.objects.len()]);
+            }
+        } else {
+            self.editor.selected_mask_cache = Some(vec![false; self.editor.objects.len()]);
+        }
+        self.render.meshes.blocks_selected.clear();
+        self.render.meshes.blocks.clear();
+        true
     }
 
     fn rebuild_editor_selected_block_vertices(&mut self) {
@@ -1006,6 +1132,67 @@ mod tests {
             assert!(state.render.meshes.blocks.draw_data().is_some());
             assert!(state.render.meshes.blocks_selected.draw_data().is_none());
             assert!(state.render.meshes.blocks_static.draw_data().is_none());
+        });
+    }
+
+    #[test]
+    fn placing_plain_block_appends_static_mesh_after_complete_rebuild() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.objects = vec![block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])];
+            state.editor.ui.cursor = [2.0, 0.0, 0.0];
+
+            state.rebuild_block_vertices();
+            let before_count = state
+                .render
+                .meshes
+                .blocks_static
+                .draw_data()
+                .map(|(_, count)| count)
+                .unwrap_or_default();
+            assert_eq!(state.editor.block_static_vertex_cache_complete_len, Some(1));
+
+            state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
+            state.editor.add_block_at_cursor();
+
+            assert!(state.editor.runtime.dirty.sync_game_objects);
+            assert!(state.editor.runtime.dirty.append_block_mesh);
+            assert!(!state.editor.runtime.dirty.rebuild_block_mesh);
+            assert!(!state.editor.runtime.dirty.rebuild_tap_indicators);
+            assert!(!state.editor.runtime.dirty.rebuild_preview_player);
+
+            state.process_editor_dirty(0.02);
+
+            let after_count = state
+                .render
+                .meshes
+                .blocks_static
+                .draw_data()
+                .map(|(_, count)| count)
+                .unwrap_or_default();
+            assert!(after_count > before_count);
+            assert_eq!(state.editor.block_static_vertex_cache_complete_len, Some(2));
+            assert!(!state.editor.runtime.dirty.any());
+        });
+    }
+
+    #[test]
+    fn placing_torch_uses_full_rebuild_because_lighting_changes_existing_blocks() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.objects = vec![block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])];
+            state.editor.ui.cursor = [2.0, 0.0, 0.0];
+            state.editor.config.selected_block_id = "core/torch".to_string();
+
+            state.rebuild_block_vertices();
+            state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
+            state.editor.add_block_at_cursor();
+
+            assert!(state.editor.runtime.dirty.rebuild_block_mesh);
+            assert!(!state.editor.runtime.dirty.append_block_mesh);
+            assert!(state.editor.runtime.pending_block_mesh_appends.is_empty());
         });
     }
 

@@ -54,7 +54,7 @@ use crate::game::GameState;
 use crate::platform::state_host::NativeWindow;
 use crate::types::{
     AppPhase, AppSettings, EditorMode, EditorState, LevelObject, LevelPreviewCameraMetadata,
-    MenuState, MusicMetadata, PhysicalSize, SettingsSection, SpawnMetadata,
+    MenuState, MusicMetadata, PhysicalSize, SettingsSection, SpawnMetadata, Vertex,
 };
 
 /// Bundles all gameplay-related state into a single subsystem.
@@ -102,6 +102,8 @@ pub(crate) struct EditorSubsystem {
     pub(crate) perf: EditorPerfState,
     pub(crate) timing: EditorTimingState,
     pub(crate) selected_mask_cache: Option<Vec<bool>>,
+    pub(crate) block_static_vertex_cache: Vec<Vertex>,
+    pub(crate) block_static_vertex_cache_complete_len: Option<usize>,
 }
 
 pub(crate) struct MenuSubsystem {

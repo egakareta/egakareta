@@ -7,7 +7,10 @@
 */
 #[cfg(test)]
 mod tests {
-    use crate::mesh::blocks::{build_block_vertices, build_block_vertices_with_phase};
+    use crate::mesh::blocks::{
+        build_block_vertices, build_block_vertices_for_object_with_lighting,
+        build_block_vertices_with_phase,
+    };
     use crate::mesh::builders::{
         build_editor_gizmo_vertices, build_editor_hover_outline_vertices, GizmoParams,
     };
@@ -296,6 +299,37 @@ f 1/1/1 2/2/1 3/3/1
             max_channel(lit_block) > max_channel(unlit_block) + 0.05,
             "expected torch to brighten nearby block vertex colors"
         );
+    }
+
+    #[test]
+    fn single_object_mesh_uses_existing_torch_lighting_context() {
+        let shadow_block = LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.0,
+            block_id: "core/void".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        };
+        let torch = LevelObject {
+            position: [1.1, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.0,
+            block_id: "core/torch".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        };
+        let objects = vec![shadow_block.clone(), torch];
+
+        let full = build_block_vertices(&objects);
+        let single = build_block_vertices_for_object_with_lighting(&shadow_block, &objects);
+
+        assert_eq!(single.len(), 36);
+        for (single_vertex, full_vertex) in single.iter().zip(full.iter()) {
+            assert_eq!(single_vertex.position, full_vertex.position);
+            assert_eq!(single_vertex.color, full_vertex.color);
+            assert_eq!(single_vertex.texture_layer, full_vertex.texture_layer);
+        }
     }
 
     #[test]
