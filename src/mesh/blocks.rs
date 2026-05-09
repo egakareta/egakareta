@@ -23,6 +23,8 @@ const TORCH_FLICKER_FREQUENCY: f32 = 9.0;
 const TORCH_PHASE_OFFSET_X: f32 = 1.37;
 const TORCH_PHASE_OFFSET_Z: f32 = 0.91;
 const TORCH_WARMTH_RGB: [f32; 3] = [1.0, 0.78, 0.42];
+const LIQUID_PROFILE_TAG: f32 = 1.0;
+const FINISH_RING_PROFILE_TAG: f32 = 2.0;
 
 pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
     build_block_vertices_with_phase_impl(objects.iter(), 0.0)
@@ -43,7 +45,6 @@ fn build_block_vertices_with_phase_impl<'a, I>(objects: I, pulse_phase_seconds: 
 where
     I: Iterator<Item = &'a LevelObject> + Clone,
 {
-    const LIQUID_PROFILE_TAG: f32 = 1.0;
     let mut all_vertices = Vec::new();
     let torch_emitters: Vec<([f32; 3], f32)> = objects
         .clone()
@@ -104,18 +105,31 @@ where
             obj.position[1] + obj.size[1] * 0.5,
             obj.position[2] + obj.size[2] * 0.5,
         ];
-        let torch_light_factor = torch_emitters
-            .iter()
-            .map(|(torch_center, flicker)| {
-                let dx = center[0] - torch_center[0];
-                let dy = center[1] - torch_center[1];
-                let dz = center[2] - torch_center[2];
-                let distance_sq = dx * dx + dy * dy + dz * dz;
-                let radius_sq = TORCH_LIGHT_RADIUS * TORCH_LIGHT_RADIUS;
-                let falloff = (1.0 - distance_sq / radius_sq).max(0.0);
-                falloff * falloff * *flicker
-            })
-            .fold(0.0_f32, f32::max);
+        let torch_light_factor = if torch_emitters.is_empty() {
+            0.0
+        } else {
+            torch_emitters
+                .iter()
+                .map(|(torch_center, flicker)| {
+                    let dx = center[0] - torch_center[0];
+                    let dy = center[1] - torch_center[1];
+                    let dz = center[2] - torch_center[2];
+                    if dx.abs() > TORCH_LIGHT_RADIUS
+                        || dy.abs() > TORCH_LIGHT_RADIUS
+                        || dz.abs() > TORCH_LIGHT_RADIUS
+                    {
+                        return 0.0;
+                    }
+                    let distance_sq = dx * dx + dy * dy + dz * dz;
+                    let radius_sq = TORCH_LIGHT_RADIUS * TORCH_LIGHT_RADIUS;
+                    if distance_sq >= radius_sq {
+                        return 0.0;
+                    }
+                    let falloff = (1.0 - distance_sq / radius_sq).max(0.0);
+                    falloff * falloff * *flicker
+                })
+                .fold(0.0_f32, f32::max)
+        };
         if block.id != TORCH_BLOCK_ID && torch_light_factor > f32::EPSILON {
             color_top = apply_torch_light(color_top, torch_light_factor * TORCH_GLOW_STRENGTH);
             color_side = apply_torch_light(color_side, torch_light_factor * TORCH_GLOW_STRENGTH);
@@ -130,14 +144,7 @@ where
         }
 
         if vertices.is_empty() && matches!(block.render.profile, BlockRenderProfile::FinishRing) {
-            append_finish_ring(
-                vertices,
-                obj,
-                color_top,
-                color_outline,
-                pulse_phase_seconds,
-                texture_layers.side,
-            );
+            append_finish_ring(vertices, obj, color_top, color_outline, texture_layers.side);
         } else if vertices.is_empty() {
             let prism_colors = PrismFaceColors::new_with_outline(
                 color_top,
@@ -235,10 +242,10 @@ fn append_finish_ring(
     obj: &LevelObject,
     color_outer: [f32; 4],
     color_inner: [f32; 4],
-    pulse_phase_seconds: f32,
     texture_layer: u32,
 ) {
     const SEGMENTS: usize = 28;
+    let vertex_start = vertices.len();
     let center = [
         obj.position[0] + obj.size[0] * 0.5,
         obj.position[1] + obj.size[1] * 0.5,
@@ -246,10 +253,9 @@ fn append_finish_ring(
     ];
 
     let phase_offset = (obj.position[0] * 0.37 + obj.position[2] * 0.21) * std::f32::consts::PI;
-    let pulse = 1.0 + 0.14 * (pulse_phase_seconds * 5.0 + phase_offset).sin();
 
     let base_radius = (obj.size[0].min(obj.size[2]) * 0.5 * 0.85).max(0.15);
-    let outer_radius = base_radius * pulse;
+    let outer_radius = base_radius;
     let inner_radius = (outer_radius * 0.56).max(0.08);
     let half_thickness = (obj.size[1] * 0.16).clamp(0.03, 0.14);
     let y_top = center[1] + half_thickness;
@@ -392,6 +398,12 @@ fn append_finish_ring(
                 texture_layer,
             );
         }
+    }
+
+    let pulse_metadata = [center[0], center[2], phase_offset, 0.0];
+    for vertex in vertices.iter_mut().skip(vertex_start) {
+        vertex.set_render_profile(FINISH_RING_PROFILE_TAG);
+        vertex.color_outline = pulse_metadata;
     }
 }
 

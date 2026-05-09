@@ -7,7 +7,7 @@
 */
 use super::physics::{aabb_overlaps_object_xz, object_xz_contains, BASE_PLAYER_SPEED};
 use super::spatial::SpatialGrid;
-use crate::block_repository::{resolve_block_definition, BlockCollision, BlockRenderProfile};
+use crate::block_repository::{resolve_block_definition, BlockCollision};
 use crate::types::{Direction, LevelObject, SpawnDirection};
 
 /// Pre-resolved block behavior cached alongside each object to avoid
@@ -335,12 +335,7 @@ impl GameState {
     }
 
     pub(crate) fn has_animated_blocks(&self) -> bool {
-        self.objects.iter().any(|obj| {
-            matches!(
-                resolve_block_definition(&obj.block_id).render.profile,
-                BlockRenderProfile::FinishRing | BlockRenderProfile::Liquid
-            )
-        })
+        false
     }
 
     pub(crate) fn block_animation_phase_seconds(&self) -> f32 {

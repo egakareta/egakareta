@@ -57,6 +57,7 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) camera_pitch: f32,
     pub(crate) fps: f32,
     pub(crate) marquee_selection_rect_screen: Option<([f64; 2], [f64; 2], bool)>,
+    pub(crate) object_count: usize,
 }
 
 impl State {
@@ -118,6 +119,7 @@ impl State {
             camera_pitch: self.editor.camera.editor_pitch,
             fps: self.editor_fps(),
             marquee_selection_rect_screen: self.editor_marquee_selection_rect_screen(),
+            object_count: self.editor.objects.len(),
         }
     }
 }

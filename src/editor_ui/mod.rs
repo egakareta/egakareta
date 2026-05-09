@@ -518,7 +518,6 @@ pub fn show_editor_ui(
                 }
 
                 ui.separator();
-                ui.heading(format!("{} Music", egui_phosphor::regular::MUSIC_NOTE));
 
                 let mut music = view.music_metadata.clone();
                 let mut changed = false;
@@ -582,6 +581,14 @@ pub fn show_editor_ui(
                         crate::commands::AppCommand::EditorUseAutoMenuPreviewCamera,
                     );
                 });
+
+                ui.separator();
+
+                ui.label(format!(
+                    "{} Objects: {}",
+                    egui_phosphor::regular::CUBE,
+                    view.object_count
+                ));
 
                 if ui.button("Close").clicked() {
                     commands.push(crate::commands::AppCommand::EditorSetShowMetadata(false));

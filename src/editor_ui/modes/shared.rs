@@ -215,6 +215,7 @@ mod tests {
             camera_pitch: 0.0,
             fps: 90.0,
             marquee_selection_rect_screen: None,
+            object_count: 0,
         }
     }
 

@@ -7,7 +7,7 @@
 */
 #[cfg(test)]
 mod tests {
-    use crate::mesh::blocks::build_block_vertices;
+    use crate::mesh::blocks::{build_block_vertices, build_block_vertices_with_phase};
     use crate::mesh::builders::{
         build_editor_gizmo_vertices, build_editor_hover_outline_vertices, GizmoParams,
     };
@@ -46,6 +46,30 @@ mod tests {
         assert!((max_x - 1.5).abs() < 1e-5);
         assert!((min_z - -0.5).abs() < 1e-5);
         assert!((max_z - 1.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn finish_ring_vertices_use_shader_pulse_metadata() {
+        let obj = LevelObject {
+            position: [2.0, 0.0, 3.0],
+            size: [4.0, 1.0, 2.0],
+            block_id: "core/finish".to_string(),
+            ..LevelObject::default()
+        };
+        let vertices = build_block_vertices(std::slice::from_ref(&obj));
+        let phase_vertices = build_block_vertices_with_phase(std::slice::from_ref(&obj), 42.0);
+        let expected_phase_offset =
+            (obj.position[0] * 0.37 + obj.position[2] * 0.21) * std::f32::consts::PI;
+
+        assert!(!vertices.is_empty());
+        assert_eq!(vertices.len(), phase_vertices.len());
+        for (vertex, phase_vertex) in vertices.iter().zip(phase_vertices.iter()) {
+            assert_eq!(vertex.position, phase_vertex.position);
+            assert_eq!(vertex.render_profile, 2.0);
+            assert_eq!(vertex.color_outline[0], 4.0);
+            assert_eq!(vertex.color_outline[1], 4.0);
+            assert!((vertex.color_outline[2] - expected_phase_offset).abs() < 1e-5);
+        }
     }
 
     #[test]
