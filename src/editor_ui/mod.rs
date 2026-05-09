@@ -672,6 +672,7 @@ pub fn show_perf_overlay(ctx: &egui::Context, state: &mut State) {
     let mut profiler_open = true;
 
     egui::Window::new("Profiler")
+        .order(egui::Order::Debug)
         .default_size([1024.0, 600.0])
         .open(&mut profiler_open)
         .show(ctx, |ui| {
