@@ -81,7 +81,8 @@ const VIEW_CUBE_FACES: [ViewCubeFace; 6] = [
 const COMPACT_EDITOR_UI_BREAKPOINT: f32 = 720.0;
 const SETTINGS_SIDEBAR_TOTAL_PADDING: f32 = 24.0;
 const SETTINGS_SIDEBAR_MIN_WIDTH: f32 = 180.0;
-const SETTINGS_SIDEBAR_WIDTH_SCALE: f32 = 0.78;
+const SETTINGS_SIDEBAR_DEFAULT_WIDTH: f32 = 320.0;
+const SETTINGS_SIDEBAR_COMPACT_WIDTH_SCALE: f32 = 0.78;
 const RESPONSIVE_UI_SCALE_MIN: f32 = 0.8;
 const RESPONSIVE_UI_SCALE_MAX: f32 = 1.35;
 const UI_SCALE_BASE_WIDTH: f32 = 1280.0;
@@ -92,13 +93,14 @@ fn is_compact_editor_ui(viewport_width: f32) -> bool {
 }
 
 fn settings_sidebar_default_width(viewport_width: f32) -> f32 {
-    // Keep a comfortable 78% default on small screens while leaving 24px total padding
-    // (12px per side), and use a 180px minimum only when it still fits inside the viewport.
     let max_width = (viewport_width - SETTINGS_SIDEBAR_TOTAL_PADDING).max(0.0);
     if max_width <= SETTINGS_SIDEBAR_MIN_WIDTH {
         return max_width;
     }
-    (viewport_width * SETTINGS_SIDEBAR_WIDTH_SCALE).clamp(SETTINGS_SIDEBAR_MIN_WIDTH, max_width)
+
+    (viewport_width * SETTINGS_SIDEBAR_COMPACT_WIDTH_SCALE)
+        .min(SETTINGS_SIDEBAR_DEFAULT_WIDTH)
+        .clamp(SETTINGS_SIDEBAR_MIN_WIDTH, max_width)
 }
 
 pub(crate) fn responsive_ui_scale_multiplier(viewport_size: egui::Vec2) -> f32 {
@@ -508,9 +510,11 @@ pub fn show_editor_ui(
     });
 
     if view.show_metadata {
-        egui::Window::new(format!("{} Level Metadata", egui_phosphor::regular::INFO)).show(
-            ctx,
-            |ui| {
+        let mut metadata_open = true;
+
+        egui::Window::new(format!("{} Level Metadata", egui_phosphor::regular::INFO))
+            .open(&mut metadata_open)
+            .show(ctx, |ui| {
                 ui.label(format!("{} Level Name:", egui_phosphor::regular::PENCIL));
                 let mut name = view.level_name.unwrap_or("Untitled").to_string();
                 if ui.text_edit_singleline(&mut name).changed() {
@@ -589,12 +593,11 @@ pub fn show_editor_ui(
                     egui_phosphor::regular::CUBE,
                     view.object_count
                 ));
+            });
 
-                if ui.button("Close").clicked() {
-                    commands.push(crate::commands::AppCommand::EditorSetShowMetadata(false));
-                }
-            },
-        );
+        if !metadata_open {
+            commands.push(crate::commands::AppCommand::EditorSetShowMetadata(false));
+        }
     }
 
     egui::TopBottomPanel::bottom("block_selection_bar")
@@ -1181,7 +1184,7 @@ mod tests {
     }
 
     #[test]
-    fn settings_sidebar_width_scales_for_small_screens() {
+    fn settings_sidebar_width_uses_compact_fit_and_desktop_default() {
         assert!(approx_eq(
             settings_sidebar_default_width(320.0),
             249.6,
@@ -1194,7 +1197,7 @@ mod tests {
         ));
         assert!(approx_eq(
             settings_sidebar_default_width(1200.0),
-            936.0,
+            320.0,
             0.01
         ));
         assert!(approx_eq(
