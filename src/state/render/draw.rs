@@ -13,6 +13,9 @@ use wgpu::{SurfaceError, TextureViewDescriptor};
 use super::super::State;
 use crate::types::{AppPhase, EditorMode};
 
+const SELECTION_STENCIL_REF: u32 = 1;
+const HOVER_STENCIL_REF: u32 = 2;
+
 fn linear_to_srgb(linear: f32) -> f32 {
     if linear <= 0.0031308 {
         linear * 12.92
@@ -192,7 +195,10 @@ impl State {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: wgpu::StoreOp::Store,
                 }),
-                stencil_ops: None,
+                stencil_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(0),
+                    store: wgpu::StoreOp::Store,
+                }),
             }),
             occlusion_query_set: None,
             timestamp_writes: None,
@@ -293,19 +299,56 @@ impl State {
                     render_pass.draw(0..count, 0..1);
                 }
 
-                if let Some((buffer, count)) =
-                    self.render.meshes.editor_selection_outline.draw_data()
-                {
-                    render_pass.set_vertex_buffer(0, buffer.slice(..));
+                if let (Some((mask_buffer, mask_count)), Some((outline_buffer, outline_count))) = (
+                    self.render.meshes.editor_selection_stencil.draw_data(),
+                    self.render.meshes.editor_selection_outline.draw_data(),
+                ) {
+                    render_pass.set_stencil_reference(SELECTION_STENCIL_REF);
+                    render_pass.set_pipeline(&self.render.gpu.editor_outline_mask_pipeline);
+                    render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                    render_pass.draw(0..count, 0..1);
+                    render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                    render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+                    render_pass.set_vertex_buffer(0, mask_buffer.slice(..));
+                    render_pass.draw(0..mask_count, 0..1);
+
+                    render_pass.set_pipeline(&self.render.gpu.editor_outline_pipeline);
+                    render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
+                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                    render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+                    render_pass.set_vertex_buffer(0, outline_buffer.slice(..));
+                    render_pass.draw(0..outline_count, 0..1);
                 }
 
-                if let Some((buffer, count)) = self.render.meshes.editor_hover_outline.draw_data() {
-                    render_pass.set_vertex_buffer(0, buffer.slice(..));
+                if let (Some((mask_buffer, mask_count)), Some((outline_buffer, outline_count))) = (
+                    self.render.meshes.editor_hover_stencil.draw_data(),
+                    self.render.meshes.editor_hover_outline.draw_data(),
+                ) {
+                    render_pass.set_stencil_reference(HOVER_STENCIL_REF);
+                    render_pass.set_pipeline(&self.render.gpu.editor_outline_mask_pipeline);
+                    render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                    render_pass.draw(0..count, 0..1);
+                    render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                    render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+                    render_pass.set_vertex_buffer(0, mask_buffer.slice(..));
+                    render_pass.draw(0..mask_count, 0..1);
+
+                    render_pass.set_pipeline(&self.render.gpu.editor_outline_pipeline);
+                    render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
+                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                    render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+                    render_pass.set_vertex_buffer(0, outline_buffer.slice(..));
+                    render_pass.draw(0..outline_count, 0..1);
                 }
+
+                render_pass.set_stencil_reference(0);
+                render_pass.set_pipeline(&self.render.gpu.render_pipeline);
+                render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
+                render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
 
                 if let Some((buffer, count)) = self.render.meshes.editor_gizmo.draw_data() {
                     render_pass.set_pipeline(&self.render.gpu.gizmo_overlay_pipeline);
@@ -652,8 +695,12 @@ mod tests {
                 MeshSlot::from_vertices(state.device(), "blocks_selected", &tri);
             state.render.meshes.editor_cursor =
                 MeshSlot::from_vertices(state.device(), "cursor", &tri);
+            state.render.meshes.editor_hover_stencil =
+                MeshSlot::from_vertices(state.device(), "hover_stencil", &tri);
             state.render.meshes.editor_hover_outline =
                 MeshSlot::from_vertices(state.device(), "hover", &tri);
+            state.render.meshes.editor_selection_stencil =
+                MeshSlot::from_vertices(state.device(), "selection_stencil", &tri);
             state.render.meshes.editor_selection_outline =
                 MeshSlot::from_vertices(state.device(), "selection", &tri);
             state.render.meshes.editor_gizmo =

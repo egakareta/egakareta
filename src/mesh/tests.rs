@@ -215,7 +215,12 @@ mod tests {
 
     #[test]
     fn hover_outline_vertices_are_translucent() {
-        let vertices = build_editor_hover_outline_vertices([0.0, 0.0, 0.0], [1.0, 1.0, 1.0], 0.03);
+        let vertices = build_editor_hover_outline_vertices(
+            [0.0, 0.0, 0.0],
+            [1.0, 1.0, 1.0],
+            [0.0, 0.0, 0.0],
+            0.03,
+        );
         assert!(!vertices.is_empty());
         assert!(vertices.iter().any(|v| v.color[3] < 1.0));
     }

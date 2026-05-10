@@ -6,111 +6,73 @@
 
 */
 use crate::mesh::shapes::append_prism;
+use crate::mesh::transforms::rotate_vertices_around_euler;
 use crate::types::Vertex;
+
+fn build_editor_stencil_outline_vertices(
+    position: [f32; 3],
+    size: [f32; 3],
+    rotation_degrees: [f32; 3],
+    line_width: f32,
+    color_top: [f32; 4],
+    color_side: [f32; 4],
+) -> Vec<Vertex> {
+    let mut vertices = Vec::new();
+    let expansion = (line_width * 1.35).max(0.018);
+
+    append_prism(
+        &mut vertices,
+        [
+            position[0] - expansion,
+            position[1] - expansion,
+            position[2] - expansion,
+        ],
+        [
+            position[0] + size[0] + expansion,
+            position[1] + size[1] + expansion,
+            position[2] + size[2] + expansion,
+        ],
+        color_top,
+        color_side,
+    );
+
+    let center = [
+        position[0] + size[0] * 0.5,
+        position[1] + size[1] * 0.5,
+        position[2] + size[2] * 0.5,
+    ];
+    rotate_vertices_around_euler(&mut vertices, center, rotation_degrees);
+    vertices
+}
 
 pub(crate) fn build_editor_selection_outline_vertices(
     position: [f32; 3],
     size: [f32; 3],
+    rotation_degrees: [f32; 3],
     line_width: f32,
 ) -> Vec<Vertex> {
-    let mut vertices = Vec::new();
-
-    let offset = line_width / 6.0;
-    let x0 = position[0] - offset;
-    let x1 = position[0] + size[0] + offset;
-    let y0 = position[1] - offset;
-    let y1 = position[1] + size[1] + offset;
-    let z0 = position[2] - offset;
-    let z1 = position[2] + size[2] + offset;
-
-    let thickness = line_width * 0.5;
-    let color_top = [0.098, 0.6, 1.0, 0.8];
-    let color_side = [0.078, 0.48, 0.8, 0.8];
-
-    // Edges along X
-    for (y, z) in [(y0, z0), (y1, z0), (y0, z1), (y1, z1)] {
-        append_prism(
-            &mut vertices,
-            [x0 - thickness, y - thickness, z - thickness],
-            [x1 + thickness, y + thickness, z + thickness],
-            color_top,
-            color_side,
-        );
-    }
-
-    // Edges along Y
-    for (x, z) in [(x0, z0), (x1, z0), (x0, z1), (x1, z1)] {
-        append_prism(
-            &mut vertices,
-            [x - thickness, y0 + thickness, z - thickness],
-            [x + thickness, y1 - thickness, z + thickness],
-            color_top,
-            color_side,
-        );
-    }
-
-    // Edges along Z
-    for (x, y) in [(x0, y0), (x1, y0), (x0, y1), (x1, y1)] {
-        append_prism(
-            &mut vertices,
-            [x - thickness, y - thickness, z0 + thickness],
-            [x + thickness, y + thickness, z1 - thickness],
-            color_top,
-            color_side,
-        );
-    }
-
-    vertices
+    build_editor_stencil_outline_vertices(
+        position,
+        size,
+        rotation_degrees,
+        line_width,
+        [0.06, 0.72, 1.0, 0.72],
+        [0.02, 0.34, 0.92, 0.52],
+    )
 }
 
 pub(crate) fn build_editor_hover_outline_vertices(
     position: [f32; 3],
     size: [f32; 3],
+    rotation_degrees: [f32; 3],
     line_width: f32,
 ) -> Vec<Vertex> {
-    let mut vertices = Vec::new();
-
-    let offset = line_width / 6.0;
-    let x0 = position[0] - offset;
-    let x1 = position[0] + size[0] + offset;
-    let y0 = position[1] - offset;
-    let y1 = position[1] + size[1] + offset;
-    let z0 = position[2] - offset;
-    let z1 = position[2] + size[2] + offset;
-
-    let thickness = line_width * 0.5;
-    let color_top = [0.698, 0.898, 1.0, 1.0];
-    let color_side = [0.698, 0.898, 1.0, 1.0];
-
-    for (y, z) in [(y0, z0), (y1, z0), (y0, z1), (y1, z1)] {
-        append_prism(
-            &mut vertices,
-            [x0 - thickness, y - thickness, z - thickness],
-            [x1 + thickness, y + thickness, z + thickness],
-            color_top,
-            color_side,
-        );
-    }
-
-    for (x, z) in [(x0, z0), (x1, z0), (x0, z1), (x1, z1)] {
-        append_prism(
-            &mut vertices,
-            [x - thickness, y0 + thickness, z - thickness],
-            [x + thickness, y1 - thickness, z + thickness],
-            color_top,
-            color_side,
-        );
-    }
-
-    for (x, y) in [(x0, y0), (x1, y0), (x0, y1), (x1, y1)] {
-        append_prism(
-            &mut vertices,
-            [x - thickness, y - thickness, z0 + thickness],
-            [x + thickness, y + thickness, z1 - thickness],
-            color_top,
-            color_side,
-        );
-    }
-
-    vertices
+    build_editor_stencil_outline_vertices(
+        position,
+        size,
+        rotation_degrees,
+        line_width,
+        [1.0, 0.82, 0.28, 0.58],
+        [0.9, 0.5, 0.12, 0.42],
+    )
 }
