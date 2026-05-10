@@ -410,19 +410,6 @@ impl State {
             }
         }
 
-        if let Some((_, _, true)) = self.editor.marquee_selection_rect_screen() {
-            let viewport = glam::Vec2::new(
-                self.render.gpu.config.width as f32,
-                self.render.gpu.config.height as f32,
-            );
-            for hit in self.editor.marquee_overlapping_blocks(viewport) {
-                if !selected_mask[hit] && !outline_mask[hit] {
-                    outline_mask[hit] = true;
-                    indices_to_outline.push(hit);
-                }
-            }
-        }
-
         if indices_to_outline.is_empty() {
             self.render.meshes.editor_hover_outline.clear();
             return;
@@ -436,12 +423,7 @@ impl State {
                 obj.position[1] + obj.size[1] * 0.5,
                 obj.position[2] + obj.size[2] * 0.5,
             );
-            let target_pixels = if self.editor.ui.left_mouse_down {
-                6.0
-            } else {
-                3.0
-            };
-            let line_width = self.editor_gizmo_axis_width_world(center, target_pixels);
+            let line_width = self.editor_gizmo_axis_width_world(center, 3.0);
             all_vertices.append(&mut build_editor_hover_outline_vertices(
                 obj.position,
                 obj.size,

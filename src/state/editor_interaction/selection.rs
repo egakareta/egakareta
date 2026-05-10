@@ -591,6 +591,14 @@ impl State {
     pub(crate) fn update_editor_marquee_selection(&mut self, x: f64, y: f64) -> bool {
         let handled = self.editor.update_marquee_selection(x, y, self.phase);
         if handled {
+            if self.editor.marquee_has_dragged_far_enough() {
+                let viewport_size = Vec2::new(
+                    self.render.gpu.config.width as f32,
+                    self.render.gpu.config.height as f32,
+                );
+                let additive = self.editor.ui.shift_held;
+                self.editor.apply_marquee_selection(viewport_size, additive);
+            }
             self.editor.mark_dirty(EditorDirtyFlags {
                 rebuild_selection_overlays: true,
                 ..EditorDirtyFlags::default()
@@ -818,7 +826,7 @@ mod tests {
     }
 
     #[test]
-    fn marquee_updates_only_mark_overlay_dirty_until_frame_processing() {
+    fn marquee_updates_select_immediately_and_defer_mesh_rebuilds() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
 
@@ -852,7 +860,31 @@ mod tests {
                 .meshes
                 .editor_hover_outline
                 .draw_data()
+                .is_none());
+            assert!(state
+                .render
+                .meshes
+                .editor_selection_outline
+                .draw_data()
                 .is_some());
+        });
+    }
+
+    #[test]
+    fn active_marquee_update_selects_visible_block_immediately() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Select;
+            state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
+
+            assert!(state.begin_editor_marquee_selection(0.0, 0.0));
+            assert!(state.update_editor_marquee_selection(2000.0, 2000.0));
+
+            assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
+            assert_eq!(state.editor.ui.selected_block_index, Some(0));
+            assert_eq!(state.editor.ui.hovered_block_index, Some(0));
         });
     }
 
