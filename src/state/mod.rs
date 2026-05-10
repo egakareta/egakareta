@@ -337,7 +337,7 @@ impl State {
                     .is_some_and(|pick| {
                         pick.hit_block_index.is_some() || pick.hit_trigger_index.is_some()
                     });
-                if hit_selectable {
+                if !self.editor.ui.shift_held && hit_selectable {
                     self.editor
                         .select_block_from_screen(x, y, viewport_size, self.phase);
                     return;
