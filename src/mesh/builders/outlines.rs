@@ -79,8 +79,8 @@ pub(crate) fn build_editor_hover_outline_vertices(
     let z1 = position[2] + size[2] + offset;
 
     let thickness = line_width * 0.5;
-    let color_top = [0.62, 0.9, 1.0, 0.45];
-    let color_side = [0.45, 0.82, 0.95, 0.38];
+    let color_top = [0.698, 0.898, 1.0, 1.0];
+    let color_side = [0.698, 0.898, 1.0, 1.0];
 
     for (y, z) in [(y0, z0), (y1, z0), (y0, z1), (y1, z1)] {
         append_prism(
