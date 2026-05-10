@@ -1,5 +1,5 @@
 {
-    "$schema": "./node_modules/license-check-and-add/config-schema.json",
+    "$schema": "../../node_modules/license-check-and-add/config-schema.json",
     "ignoreFile": ".gitignore",
     "ignore": [
         ".wrangler/**",
@@ -24,7 +24,7 @@
             }
         }
     },
-    "license": "license-header.txt",
+    "license": ".github/license/header.txt",
     "defaultFormat": {
         "eachLine": {
             "prepend": " * "

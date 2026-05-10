@@ -13,8 +13,8 @@
         "test": "cargo test -- -Zunstable-options --report-time",
         "test:coverage": "cargo llvm-cov --lcov --output-path lcov.info -- -Zunstable-options --report-time",
         "test:db": "supabase test db",
-        "license:add": "license-check-and-add add -f license-checker-config.json",
-        "license:check": "license-check-and-add check -f license-checker-config.json",
+        "license:add": "license-check-and-add add -f .github/license/config.json",
+        "license:check": "license-check-and-add check -f .github/license/config.json",
         "watch": "nodemon --exec \"bun run build\"",
         "dev": "concurrently \"bun run watch\" \"bunx wrangler pages dev\" --prefix=none",
         "prepare": "lefthook install"
