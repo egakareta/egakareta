@@ -8,6 +8,7 @@
         "**/*.md",
         "**/*.lock",
         "**/*-env.d.ts",
+        "**/*_types.ts",
         ".*"
     ],
     "licenseFormats": {

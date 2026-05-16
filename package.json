@@ -15,23 +15,24 @@
         "test:db": "supabase test db",
         "license:add": "license-check-and-add add -f .github/license/config.json",
         "license:check": "license-check-and-add check -f .github/license/config.json",
-        "watch": "nodemon --exec \"bun run build\"",
-        "dev": "concurrently \"bun run watch\" \"bunx wrangler pages dev\" --prefix=none",
+        "dev:build": "nodemon --exec \"bun run build\"",
+        "dev:wrangler": "wrangler pages dev --live-reload",
+        "dev": "concurrently \"bun dev:build\" \"bun dev:wrangler\" --prefix=none",
         "prepare": "lefthook install"
     },
     "dependencies": {
-        "@supabase/supabase-js": "^2.101.1",
+        "@supabase/supabase-js": "^2.105.4",
         "prettier-plugin-toml": "^2.0.6"
     },
     "devDependencies": {
-        "@types/bun": "^1.3.11",
+        "@types/bun": "^1.3.14",
         "concurrently": "^9.2.1",
-        "lefthook": "^2.1.4",
+        "lefthook": "^2.1.6",
         "license-check-and-add": "^4.0.5",
         "nodemon": "^3.1.14",
-        "prettier": "^3.8.1",
+        "prettier": "^3.8.3",
         "supabase": "^2.84.6",
-        "wasm-pack": "^0.14.0",
-        "wrangler": "^4.79.0"
+        "wasm-pack": "^0.15.0",
+        "wrangler": "^4.92.0"
     }
 }
