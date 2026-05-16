@@ -15,8 +15,9 @@
         "test:db": "supabase test db",
         "license:add": "license-check-and-add add -f .github/license/config.json",
         "license:check": "license-check-and-add check -f .github/license/config.json",
-        "watch": "nodemon --exec \"bun run build\"",
-        "dev": "concurrently \"bun run watch\" \"bunx wrangler pages dev\" --prefix=none",
+        "dev:build": "nodemon --exec \"bun run build\"",
+        "dev:wrangler": "wrangler pages dev --live-reload",
+        "dev": "concurrently \"bun dev:build\" \"bun dev:wrangler\" --prefix=none",
         "prepare": "lefthook install"
     },
     "dependencies": {
@@ -30,7 +31,7 @@
         "license-check-and-add": "^4.0.5",
         "nodemon": "^3.1.14",
         "prettier": "^3.8.3",
-        "supabase": "^2.98.2",
+        "supabase": "^2.84.6",
         "wasm-pack": "^0.15.0",
         "wrangler": "^4.92.0"
     }
