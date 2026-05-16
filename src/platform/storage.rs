@@ -7,7 +7,7 @@
 */
 use std::collections::HashMap;
 
-use crate::types::AppSettings;
+use crate::types::{AppSettings, AuthSession};
 
 #[cfg(target_arch = "wasm32")]
 const AUDIO_DB_NAME: &str = "egakareta-audio";
@@ -19,6 +19,8 @@ const SETTINGS_DB_NAME: &str = "egakareta-settings";
 const SETTINGS_STORE_NAME: &str = "settings";
 #[cfg(target_arch = "wasm32")]
 const SETTINGS_KEY: &str = "app";
+#[cfg(target_arch = "wasm32")]
+const AUTH_SESSION_KEY: &str = "auth_session";
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
@@ -55,6 +57,18 @@ pub(crate) async fn load_app_settings() -> Result<AppSettings, String> {
 
 pub(crate) async fn save_app_settings(settings: &AppSettings) -> Result<(), String> {
     save_platform_app_settings(settings).await
+}
+
+pub(crate) async fn load_auth_session() -> Result<Option<AuthSession>, String> {
+    load_platform_auth_session().await
+}
+
+pub(crate) async fn save_auth_session(session: &AuthSession) -> Result<(), String> {
+    save_platform_auth_session(session).await
+}
+
+pub(crate) async fn clear_auth_session() -> Result<(), String> {
+    clear_platform_auth_session().await
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -153,6 +167,95 @@ async fn save_platform_app_settings(settings: &AppSettings) -> Result<(), String
 }
 
 #[cfg(target_arch = "wasm32")]
+async fn load_platform_auth_session() -> Result<Option<AuthSession>, String> {
+    use rexie::TransactionMode;
+    use wasm_bindgen::JsValue;
+
+    let db = open_settings_db().await?;
+    let tx = db
+        .transaction(&[SETTINGS_STORE_NAME], TransactionMode::ReadOnly)
+        .map_err(|err| format!("IndexedDB auth transaction failed: {:?}", err))?;
+    let store = tx
+        .store(SETTINGS_STORE_NAME)
+        .map_err(|err| format!("IndexedDB auth store open failed: {:?}", err))?;
+    let value = store
+        .get(JsValue::from_str(AUTH_SESSION_KEY))
+        .await
+        .map_err(|err| format!("IndexedDB auth read failed: {:?}", err))?;
+
+    tx.done()
+        .await
+        .map_err(|err| format!("IndexedDB auth transaction completion failed: {:?}", err))?;
+
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    if value.is_undefined() || value.is_null() {
+        return Ok(None);
+    }
+
+    let Some(session_json) = value.as_string() else {
+        return Ok(None);
+    };
+
+    serde_json::from_str(&session_json)
+        .map(Some)
+        .map_err(|err| format!("Auth session JSON parse failed: {err}"))
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn save_platform_auth_session(session: &AuthSession) -> Result<(), String> {
+    use rexie::TransactionMode;
+    use wasm_bindgen::JsValue;
+
+    let session_json = serde_json::to_string_pretty(session)
+        .map_err(|err| format!("Auth session JSON encode failed: {err}"))?;
+    let db = open_settings_db().await?;
+    let tx = db
+        .transaction(&[SETTINGS_STORE_NAME], TransactionMode::ReadWrite)
+        .map_err(|err| format!("IndexedDB auth transaction failed: {:?}", err))?;
+    let store = tx
+        .store(SETTINGS_STORE_NAME)
+        .map_err(|err| format!("IndexedDB auth store open failed: {:?}", err))?;
+
+    store
+        .put(
+            &JsValue::from_str(&session_json),
+            Some(&JsValue::from_str(AUTH_SESSION_KEY)),
+        )
+        .await
+        .map_err(|err| format!("IndexedDB auth write failed: {:?}", err))?;
+    tx.done()
+        .await
+        .map_err(|err| format!("IndexedDB auth commit failed: {:?}", err))?;
+
+    Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn clear_platform_auth_session() -> Result<(), String> {
+    use rexie::TransactionMode;
+    use wasm_bindgen::JsValue;
+
+    let db = open_settings_db().await?;
+    let tx = db
+        .transaction(&[SETTINGS_STORE_NAME], TransactionMode::ReadWrite)
+        .map_err(|err| format!("IndexedDB auth transaction failed: {:?}", err))?;
+    let store = tx
+        .store(SETTINGS_STORE_NAME)
+        .map_err(|err| format!("IndexedDB auth store open failed: {:?}", err))?;
+    store
+        .delete(JsValue::from_str(AUTH_SESSION_KEY))
+        .await
+        .map_err(|err| format!("IndexedDB auth delete failed: {:?}", err))?;
+    tx.done()
+        .await
+        .map_err(|err| format!("IndexedDB auth commit failed: {:?}", err))?;
+
+    Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl AudioStorage for PlatformAudioStorage {
@@ -215,6 +318,11 @@ fn settings_file_path() -> Result<std::path::PathBuf, String> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+fn auth_session_file_path() -> Result<std::path::PathBuf, String> {
+    Ok(storage_root_dir()?.join("auth_session.json"))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 async fn load_platform_app_settings() -> Result<AppSettings, String> {
     let path = settings_file_path()?;
     if !path.exists() {
@@ -235,6 +343,40 @@ async fn save_platform_app_settings(settings: &AppSettings) -> Result<(), String
     let settings_json = serde_json::to_string_pretty(settings)
         .map_err(|err| format!("Settings JSON encode failed: {err}"))?;
     std::fs::write(path, settings_json).map_err(|err| err.to_string())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn load_platform_auth_session() -> Result<Option<AuthSession>, String> {
+    let path = auth_session_file_path()?;
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let session_json = std::fs::read_to_string(path).map_err(|err| err.to_string())?;
+    serde_json::from_str(&session_json)
+        .map(Some)
+        .map_err(|err| format!("Auth session JSON parse failed: {err}"))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn save_platform_auth_session(session: &AuthSession) -> Result<(), String> {
+    let path = auth_session_file_path()?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+
+    let session_json = serde_json::to_string_pretty(session)
+        .map_err(|err| format!("Auth session JSON encode failed: {err}"))?;
+    std::fs::write(path, session_json).map_err(|err| err.to_string())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn clear_platform_auth_session() -> Result<(), String> {
+    let path = auth_session_file_path()?;
+    if path.exists() {
+        std::fs::remove_file(path).map_err(|err| err.to_string())?;
+    }
+    Ok(())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -337,6 +479,13 @@ mod tests {
     }
 
     #[test]
+    fn resolves_auth_session_file_path() {
+        let _env = TestEnv::new();
+        let path = auth_session_file_path().expect("auth session file should resolve");
+        assert!(path.to_string_lossy().contains("auth_session.json"));
+    }
+
+    #[test]
     fn test_settings_roundtrip() {
         pollster::block_on(async {
             let _env = TestEnv::new();
@@ -361,6 +510,47 @@ mod tests {
             let _env = TestEnv::new();
             let loaded = load_app_settings().await.expect("failed to load settings");
             assert_eq!(loaded, AppSettings::default());
+        });
+    }
+
+    #[test]
+    fn test_auth_session_roundtrip() {
+        pollster::block_on(async {
+            let _env = TestEnv::new();
+            let session = AuthSession {
+                session: crate::types::AuthSessionTokens {
+                    access_token: "access".to_string(),
+                    refresh_token: "refresh".to_string(),
+                    expires_at: Some(123),
+                    token_type: "bearer".to_string(),
+                },
+                user: crate::types::AuthUser {
+                    id: "user-id".to_string(),
+                    email: Some("player@example.com".to_string()),
+                },
+                profile: Some(crate::types::AuthProfile {
+                    id: "user-id".to_string(),
+                    username: Some("player".to_string()),
+                    avatar_url: None,
+                    country: "UN".to_string(),
+                }),
+            };
+
+            save_auth_session(&session)
+                .await
+                .expect("failed to save auth session");
+            let loaded = load_auth_session()
+                .await
+                .expect("failed to load auth session");
+            assert_eq!(loaded, Some(session));
+
+            clear_auth_session()
+                .await
+                .expect("failed to clear auth session");
+            let cleared = load_auth_session()
+                .await
+                .expect("failed to load cleared auth session");
+            assert_eq!(cleared, None);
         });
     }
 

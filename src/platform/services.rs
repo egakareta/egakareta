@@ -11,6 +11,14 @@ use crate::platform::io::{
     log_platform_error, pick_audio_file, pick_level_file, save_audio_to_storage, save_level_export,
 };
 use crate::platform::task::spawn_background;
+use crate::types::AuthSession;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum AuthServiceMessage {
+    SignedIn(Result<AuthSession, String>),
+    Refreshed(Result<AuthSession, String>),
+    SignedOut(Result<(), String>),
+}
 
 async fn pick_audio_file_for_import() -> Option<(String, Vec<u8>)> {
     #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -62,15 +70,73 @@ pub fn trigger_level_export(filename: &str, data: &[u8]) {
     }
 }
 
+pub(crate) fn trigger_auth_sign_in(
+    identifier: String,
+    password: String,
+    sender: Sender<AuthServiceMessage>,
+) {
+    spawn_background(async move {
+        #[cfg(all(test, not(target_arch = "wasm32")))]
+        if let Some(result) = test_hooks::auth_sign_in_result() {
+            let _ = sender.send(AuthServiceMessage::SignedIn(result));
+            return;
+        }
+
+        let result = crate::platform::auth::sign_in(&identifier, &password).await;
+        if let Ok(session) = &result {
+            let _ = crate::platform::storage::save_auth_session(session).await;
+        }
+        let _ = sender.send(AuthServiceMessage::SignedIn(result));
+    });
+}
+
+pub(crate) fn trigger_auth_refresh(refresh_token: String, sender: Sender<AuthServiceMessage>) {
+    spawn_background(async move {
+        #[cfg(all(test, not(target_arch = "wasm32")))]
+        if let Some(result) = test_hooks::auth_refresh_result() {
+            let _ = sender.send(AuthServiceMessage::Refreshed(result));
+            return;
+        }
+
+        let result = crate::platform::auth::refresh_session(&refresh_token).await;
+        if let Ok(session) = &result {
+            let _ = crate::platform::storage::save_auth_session(session).await;
+        }
+        let _ = sender.send(AuthServiceMessage::Refreshed(result));
+    });
+}
+
+pub(crate) fn trigger_auth_sign_out(
+    access_token: Option<String>,
+    sender: Sender<AuthServiceMessage>,
+) {
+    spawn_background(async move {
+        #[cfg(all(test, not(target_arch = "wasm32")))]
+        if let Some(result) = test_hooks::auth_sign_out_result() {
+            let _ = sender.send(AuthServiceMessage::SignedOut(result));
+            return;
+        }
+
+        let result = crate::platform::auth::sign_out(access_token.as_deref()).await;
+        let _ = crate::platform::storage::clear_auth_session().await;
+        let _ = sender.send(AuthServiceMessage::SignedOut(result));
+    });
+}
+
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod test_hooks {
     use std::sync::{Mutex, OnceLock};
+
+    use crate::types::AuthSession;
 
     #[derive(Clone, Default)]
     pub(crate) struct ServiceHooks {
         pub(crate) pick_audio_result: Option<Option<(String, Vec<u8>)>>,
         pub(crate) pick_level_result: Option<Option<Vec<u8>>>,
         pub(crate) save_audio_result: Option<Result<(), String>>,
+        pub(crate) auth_sign_in_result: Option<Result<AuthSession, String>>,
+        pub(crate) auth_refresh_result: Option<Result<AuthSession, String>>,
+        pub(crate) auth_sign_out_result: Option<Result<(), String>>,
     }
 
     fn hooks_state() -> &'static Mutex<ServiceHooks> {
@@ -99,6 +165,18 @@ mod test_hooks {
 
     pub(crate) fn pick_level_result() -> Option<Option<Vec<u8>>> {
         with_hooks_mut(|hooks| hooks.pick_level_result.clone())
+    }
+
+    pub(crate) fn auth_sign_in_result() -> Option<Result<AuthSession, String>> {
+        with_hooks_mut(|hooks| hooks.auth_sign_in_result.clone())
+    }
+
+    pub(crate) fn auth_refresh_result() -> Option<Result<AuthSession, String>> {
+        with_hooks_mut(|hooks| hooks.auth_refresh_result.clone())
+    }
+
+    pub(crate) fn auth_sign_out_result() -> Option<Result<(), String>> {
+        with_hooks_mut(|hooks| hooks.auth_sign_out_result.clone())
     }
 }
 

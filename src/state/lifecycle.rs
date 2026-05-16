@@ -11,10 +11,10 @@ use super::runtime::{
     PlayerRenderState,
 };
 use super::{
-    AudioState, AudioSubsystem, EditorCameraState, EditorConfigState, EditorHistoryState,
-    EditorInteractionState, EditorPerfState, EditorSubsystem, EditorTimelineState,
-    EditorTimingState, EditorTriggerState, GameplaySubsystem, MenuSubsystem, SessionSubsystem,
-    State,
+    AudioState, AudioSubsystem, AuthSubsystem, EditorCameraState, EditorConfigState,
+    EditorHistoryState, EditorInteractionState, EditorPerfState, EditorSubsystem,
+    EditorTimelineState, EditorTimingState, EditorTriggerState, GameplaySubsystem, MenuSubsystem,
+    SessionSubsystem, State,
 };
 use glam::Mat4;
 #[cfg(test)]
@@ -315,6 +315,7 @@ impl State {
         let mut app_settings = crate::types::AppSettings::default();
         app_settings.editor_selected_block_id =
             crate::block_repository::normalize_block_id(&app_settings.editor_selected_block_id);
+        let auth_session = None;
 
         let local_audio_cache = std::collections::HashMap::new();
         let available_graphics_backends = discover_graphics_backends();
@@ -374,6 +375,16 @@ impl State {
                     camera_trigger_markers: MeshSlot::Empty,
                     editor_preview_player: MeshSlot::Empty,
                 },
+            },
+            auth: AuthSubsystem {
+                session: auth_session,
+                dialog_open: false,
+                identifier: String::new(),
+                password: String::new(),
+                pending: false,
+                message: None,
+                refresh_started: false,
+                channel: std::sync::mpsc::channel(),
             },
             gameplay: GameplaySubsystem { state: game },
             phase: AppPhase::Menu,
@@ -954,6 +965,20 @@ impl State {
         app_settings.editor_selected_block_id =
             crate::block_repository::normalize_block_id(&app_settings.editor_selected_block_id);
 
+        let auth_session = if cfg!(test) {
+            None
+        } else {
+            match crate::platform::storage::load_auth_session().await {
+                Ok(session) => session,
+                Err(error) => {
+                    crate::platform::io::log_platform_error(&format!(
+                        "Failed to load auth session: {error}"
+                    ));
+                    None
+                }
+            }
+        };
+
         let local_audio_cache = if cfg!(test) {
             std::collections::HashMap::new()
         } else {
@@ -1015,6 +1040,16 @@ impl State {
                     camera_trigger_markers: MeshSlot::Empty,
                     editor_preview_player: MeshSlot::Empty,
                 },
+            },
+            auth: AuthSubsystem {
+                session: auth_session,
+                dialog_open: false,
+                identifier: String::new(),
+                password: String::new(),
+                pending: false,
+                message: None,
+                refresh_started: false,
+                channel: std::sync::mpsc::channel(),
             },
             gameplay: GameplaySubsystem { state: game },
             phase: AppPhase::Menu,

@@ -24,6 +24,20 @@ pub(crate) enum AppCommand {
     /// Toggle between editor and menu/playing.
     ToggleEditor,
 
+    // ── Auth ───────────────────────────────────────────────────────
+    /// Open or close the sign-in dialog.
+    AuthSetDialogOpen(bool),
+    /// Update the sign-in identifier field.
+    AuthSetIdentifier(String),
+    /// Update the sign-in password field.
+    AuthSetPassword(String),
+    /// Submit the sign-in form.
+    AuthSubmitSignIn,
+    /// Sign out of the current account.
+    AuthSignOut,
+    /// Open the web signup page.
+    AuthOpenSignup,
+
     // ── Editor – mode switching ─────────────────────────────────────
     /// Switch the editor mode.
     EditorSetMode(crate::types::EditorMode),
