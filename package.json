@@ -11,6 +11,7 @@
         "sb-ts-typegen": "supabase gen types typescript --local > functions/_supabase_types.ts",
         "typegen": "bun cf-typegen && bun sb-ts-typegen",
         "test": "cargo test -- -Zunstable-options --report-time",
+        "test:functions": "vitest run",
         "test:coverage": "cargo llvm-cov --lcov --output-path lcov.info -- -Zunstable-options --report-time",
         "test:db": "supabase test db",
         "license:add": "license-check-and-add add -f .github/license/config.json",
@@ -25,6 +26,7 @@
         "prettier-plugin-toml": "^2.0.6"
     },
     "devDependencies": {
+        "@cloudflare/vitest-pool-workers": "^0.16.6",
         "@types/bun": "^1.3.14",
         "concurrently": "^9.2.1",
         "lefthook": "^2.1.6",
@@ -32,6 +34,7 @@
         "nodemon": "^3.1.14",
         "prettier": "^3.8.3",
         "supabase": "^2.98.2",
+        "vitest": "^4.1.6",
         "wasm-pack": "^0.15.0",
         "wrangler": "^4.92.0"
     }
