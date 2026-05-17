@@ -82,7 +82,7 @@ export function jsonResponse(body: unknown, init?: ResponseInit) {
         ...init,
         headers: {
             "Content-Type": "application/json",
-            ...(init?.headers ?? {}),
+            ...init?.headers,
         },
     });
 }

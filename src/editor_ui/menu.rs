@@ -153,6 +153,7 @@ pub fn show_menu_auth_ui(ctx: &egui::Context, state: &mut State) {
     if state.auth_dialog_open() {
         let mut open = true;
         egui::Window::new("Sign in")
+            .order(egui::Order::Tooltip)
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)

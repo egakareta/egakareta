@@ -27,10 +27,12 @@ function turnstileToken(body: Record<string, unknown>) {
     return typeof token === "string" ? token.trim() : "";
 }
 
-function page(message = "", isError = false, turnstileSiteKey = "") {
+function page(message = "", isError = false, env: Cloudflare.Env) {
     const statusClass = isError ? "error" : "success";
     const safeMessage = escapeHtml(message);
-    const safeSiteKey = escapeHtml(turnstileSiteKey);
+    const safeSiteKey = escapeHtml(
+        env.TURNSTILE_SITE_KEY ?? "1x00000000000000000000AA",
+    );
     return `<!doctype html>
 <html lang="en">
     <head>
@@ -112,7 +114,7 @@ function htmlResponse(body: string, status = 200) {
 }
 
 export const onRequestGet: PagesFunction<Cloudflare.Env> = async ({ env }) => {
-    return htmlResponse(page("", false, env.TURNSTILE_SITE_KEY));
+    return htmlResponse(page("", false, env));
 };
 
 export const onRequestPost: PagesFunction<Cloudflare.Env> = async ({
@@ -134,10 +136,7 @@ export const onRequestPost: PagesFunction<Cloudflare.Env> = async ({
     if ("error" in validated) {
         return wantsJson
             ? badRequest(validated.error)
-            : htmlResponse(
-                  page(validated.error, true, env.TURNSTILE_SITE_KEY),
-                  400,
-              );
+            : htmlResponse(page(validated.error, true, env), 400);
     }
 
     if (env.TURNSTILE_SITE_KEY && !captchaToken) {
@@ -145,7 +144,7 @@ export const onRequestPost: PagesFunction<Cloudflare.Env> = async ({
             "Complete the verification challenge before signing up.";
         return wantsJson
             ? badRequest(message)
-            : htmlResponse(page(message, true, env.TURNSTILE_SITE_KEY), 400);
+            : htmlResponse(page(message, true, env), 400);
     }
 
     const supabase = createSupabaseClient(env, request);
@@ -159,17 +158,14 @@ export const onRequestPost: PagesFunction<Cloudflare.Env> = async ({
     if (usernameError) {
         return wantsJson
             ? serverError(usernameError.message)
-            : htmlResponse(
-                  page(usernameError.message, true, env.TURNSTILE_SITE_KEY),
-                  500,
-              );
+            : htmlResponse(page(usernameError.message, true, env), 500);
     }
 
     if (usernameTaken) {
         const message = "That username is already taken.";
         return wantsJson
             ? badRequest(message)
-            : htmlResponse(page(message, true, env.TURNSTILE_SITE_KEY), 400);
+            : htmlResponse(page(message, true, env), 400);
     }
 
     const { data: emailExists, error: emailError } = await supabase.rpc(
@@ -180,17 +176,14 @@ export const onRequestPost: PagesFunction<Cloudflare.Env> = async ({
     if (emailError) {
         return wantsJson
             ? serverError(emailError.message)
-            : htmlResponse(
-                  page(emailError.message, true, env.TURNSTILE_SITE_KEY),
-                  500,
-              );
+            : htmlResponse(page(emailError.message, true, env), 500);
     }
 
     if (emailExists) {
         const message = "An account already exists for that email.";
         return wantsJson
             ? badRequest(message)
-            : htmlResponse(page(message, true, env.TURNSTILE_SITE_KEY), 400);
+            : htmlResponse(page(message, true, env), 400);
     }
 
     const { error } = await supabase.auth.signUp({
@@ -205,15 +198,12 @@ export const onRequestPost: PagesFunction<Cloudflare.Env> = async ({
     if (error) {
         return wantsJson
             ? badRequest(error.message)
-            : htmlResponse(
-                  page(error.message, true, env.TURNSTILE_SITE_KEY),
-                  400,
-              );
+            : htmlResponse(page(error.message, true, env), 400);
     }
 
     const message =
         "Account created. Check your email to confirm it before signing in.";
     return wantsJson
         ? jsonResponse({ ok: true, message })
-        : htmlResponse(page(message, false, env.TURNSTILE_SITE_KEY));
+        : htmlResponse(page(message, false, env));
 };
