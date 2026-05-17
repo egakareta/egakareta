@@ -7,12 +7,14 @@
 */
 import {
     buildAuthPayload,
+    type AuthPayload,
     isUnconfirmedEmailError,
     normalizeIdentifier,
     readRequestBody,
     resolveIdentifierToEmail,
 } from "./_auth";
 import { createSupabaseAdminClient, createSupabaseClient } from "./_supabase";
+import type { Session, User } from "@supabase/supabase-js";
 
 const UUID_PATTERN =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -53,6 +55,15 @@ function htmlResponse(body: string, status = 200) {
         status,
         headers: { "Content-Type": "text/html; charset=utf-8" },
     });
+}
+
+function signInErrorResponse(
+    message: string,
+    env: Cloudflare.Env,
+    handoffId: string,
+    status: number,
+) {
+    return htmlResponse(page(message, true, env, handoffId), status);
 }
 
 function page(
@@ -264,6 +275,170 @@ async function validateHandoff(env: Cloudflare.Env, handoffId: string) {
     return null;
 }
 
+type SignInForm = {
+    identifier: string;
+    password: string;
+    captchaToken: string;
+    handoffId: string;
+};
+
+type SupabaseRequestClient = ReturnType<typeof createSupabaseClient>;
+
+function readSignInForm(body: Record<string, unknown>): SignInForm {
+    return {
+        identifier: normalizeIdentifier(body.identifier),
+        password: typeof body.password === "string" ? body.password : "",
+        captchaToken: turnstileToken(body),
+        handoffId: typeof body.handoff_id === "string" ? body.handoff_id : "",
+    };
+}
+
+function validateSignInForm(
+    form: SignInForm,
+    env: Cloudflare.Env,
+): Response | null {
+    if (!form.identifier || !form.password) {
+        return signInErrorResponse(
+            "Enter your username or email and password.",
+            env,
+            form.handoffId,
+            400,
+        );
+    }
+
+    if (env.TURNSTILE_SITE_KEY && !form.captchaToken) {
+        return signInErrorResponse(
+            "Complete the verification challenge before signing in.",
+            env,
+            form.handoffId,
+            400,
+        );
+    }
+
+    return null;
+}
+
+async function validatePostedHandoff(
+    env: Cloudflare.Env,
+    handoffId: string,
+): Promise<Response | null> {
+    if (!handoffId) {
+        return null;
+    }
+
+    const handoffError = await validateHandoff(env, handoffId);
+    return handoffError
+        ? signInErrorResponse(handoffError, env, "", 400)
+        : null;
+}
+
+async function resolveSignInEmail(
+    supabase: SupabaseRequestClient,
+    identifier: string,
+    env: Cloudflare.Env,
+    handoffId: string,
+): Promise<string | Response> {
+    try {
+        const email = await resolveIdentifierToEmail(supabase, identifier);
+        return (
+            email ??
+            signInErrorResponse(
+                "No account was found for that username or email.",
+                env,
+                handoffId,
+                401,
+            )
+        );
+    } catch (error) {
+        const message =
+            error instanceof Error ? error.message : "Login lookup failed.";
+        return signInErrorResponse(message, env, handoffId, 500);
+    }
+}
+
+function signInFailureMessage(message: string) {
+    return isUnconfirmedEmailError(message)
+        ? "Check your email to confirm this account before signing in."
+        : message;
+}
+
+async function signInWithEmail(
+    supabase: SupabaseRequestClient,
+    form: SignInForm,
+    email: string,
+    env: Cloudflare.Env,
+): Promise<{ session: Session; user: User } | Response> {
+    const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password: form.password,
+        options: {
+            captchaToken: form.captchaToken || undefined,
+        },
+    });
+
+    if (error) {
+        return signInErrorResponse(
+            signInFailureMessage(error.message),
+            env,
+            form.handoffId,
+            401,
+        );
+    }
+
+    if (!data.session || !data.user) {
+        return signInErrorResponse(
+            "Sign-in did not return a usable session.",
+            env,
+            form.handoffId,
+            401,
+        );
+    }
+
+    return { session: data.session, user: data.user };
+}
+
+async function buildSignInPayload(
+    supabase: SupabaseRequestClient,
+    user: User,
+    session: Session,
+    env: Cloudflare.Env,
+    handoffId: string,
+): Promise<AuthPayload | Response> {
+    try {
+        return await buildAuthPayload(supabase, user, session);
+    } catch (error) {
+        const message =
+            error instanceof Error ? error.message : "Profile lookup failed.";
+        return signInErrorResponse(message, env, handoffId, 500);
+    }
+}
+
+async function completeNativeHandoff(
+    env: Cloudflare.Env,
+    handoffId: string,
+    payload: AuthPayload,
+) {
+    const admin = createSupabaseAdminClient(env);
+    const { error } = await admin
+        .from("auth_handoffs")
+        .update({ auth_payload: payload, profile_id: payload.user.id })
+        .eq("id", handoffId)
+        .is("claimed_at", null)
+        .gt("expires_at", new Date().toISOString());
+
+    return error
+        ? htmlResponse(page(error.message, true, env), 500)
+        : htmlResponse(nativeCompletionPage());
+}
+
+function completeBrowserSignIn(payload: AuthPayload) {
+    return htmlResponse(browserCompletionPage(payload));
+}
+
+function isResponse(value: unknown): value is Response {
+    return value instanceof Response;
+}
+
 export const onRequestGet: PagesFunction<Cloudflare.Env> = async ({
     request,
     env,
@@ -284,116 +459,35 @@ export const onRequestPost: PagesFunction<Cloudflare.Env> = async ({
     request,
     env,
 }) => {
-    const body = await readRequestBody(request);
-    const identifier = normalizeIdentifier(body.identifier);
-    const password = typeof body.password === "string" ? body.password : "";
-    const captchaToken = turnstileToken(body);
-    const handoffId =
-        typeof body.handoff_id === "string" ? body.handoff_id : "";
+    const form = readSignInForm(await readRequestBody(request));
+    const formError = validateSignInForm(form, env);
+    if (formError) return formError;
 
-    if (!identifier || !password) {
-        return htmlResponse(
-            page(
-                "Enter your username or email and password.",
-                true,
-                env,
-                handoffId,
-            ),
-            400,
-        );
-    }
-    if (env.TURNSTILE_SITE_KEY && !captchaToken) {
-        return htmlResponse(
-            page(
-                "Complete the verification challenge before signing in.",
-                true,
-                env,
-                handoffId,
-            ),
-            400,
-        );
-    }
-    if (handoffId) {
-        const handoffError = await validateHandoff(env, handoffId);
-        if (handoffError) {
-            return htmlResponse(page(handoffError, true, env), 400);
-        }
-    }
+    const handoffError = await validatePostedHandoff(env, form.handoffId);
+    if (handoffError) return handoffError;
 
     const supabase = createSupabaseClient(env, request);
-    let email: string | null;
+    const email = await resolveSignInEmail(
+        supabase,
+        form.identifier,
+        env,
+        form.handoffId,
+    );
+    if (isResponse(email)) return email;
 
-    try {
-        email = await resolveIdentifierToEmail(supabase, identifier);
-    } catch (error) {
-        const message =
-            error instanceof Error ? error.message : "Login lookup failed.";
-        return htmlResponse(page(message, true, env, handoffId), 500);
-    }
+    const signIn = await signInWithEmail(supabase, form, email, env);
+    if (isResponse(signIn)) return signIn;
 
-    if (!email) {
-        return htmlResponse(
-            page(
-                "No account was found for that username or email.",
-                true,
-                env,
-                handoffId,
-            ),
-            401,
-        );
-    }
+    const payload = await buildSignInPayload(
+        supabase,
+        signIn.user,
+        signIn.session,
+        env,
+        form.handoffId,
+    );
+    if (isResponse(payload)) return payload;
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-        options: {
-            captchaToken: captchaToken || undefined,
-        },
-    });
-
-    if (error) {
-        const message = isUnconfirmedEmailError(error.message)
-            ? "Check your email to confirm this account before signing in."
-            : error.message;
-        return htmlResponse(page(message, true, env, handoffId), 401);
-    }
-
-    if (!data.session || !data.user) {
-        return htmlResponse(
-            page(
-                "Sign-in did not return a usable session.",
-                true,
-                env,
-                handoffId,
-            ),
-            401,
-        );
-    }
-
-    let payload: Awaited<ReturnType<typeof buildAuthPayload>>;
-    try {
-        payload = await buildAuthPayload(supabase, data.user, data.session);
-    } catch (error) {
-        const message =
-            error instanceof Error ? error.message : "Profile lookup failed.";
-        return htmlResponse(page(message, true, env, handoffId), 500);
-    }
-
-    if (handoffId) {
-        const admin = createSupabaseAdminClient(env);
-        const { error: updateError } = await admin
-            .from("auth_handoffs")
-            .update({ auth_payload: payload, profile_id: payload.user.id })
-            .eq("id", handoffId)
-            .is("claimed_at", null)
-            .gt("expires_at", new Date().toISOString());
-
-        if (updateError) {
-            return htmlResponse(page(updateError.message, true, env), 500);
-        }
-
-        return htmlResponse(nativeCompletionPage());
-    }
-
-    return htmlResponse(browserCompletionPage(payload));
+    return form.handoffId
+        ? completeNativeHandoff(env, form.handoffId, payload)
+        : completeBrowserSignIn(payload);
 };

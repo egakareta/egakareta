@@ -240,6 +240,92 @@ where
     parse_response(status, &text)
 }
 
+#[cfg(test)]
+mod tests {
+    use std::sync::{Mutex, OnceLock};
+
+    use serde::Deserialize;
+
+    use super::{endpoint_url, parse_response, signup_url};
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    struct AuthBaseUrlEnv {
+        previous: Option<String>,
+    }
+
+    impl AuthBaseUrlEnv {
+        fn set(value: &str) -> Self {
+            let previous = std::env::var("EGAKARETA_AUTH_BASE_URL").ok();
+            std::env::set_var("EGAKARETA_AUTH_BASE_URL", value);
+            Self { previous }
+        }
+    }
+
+    impl Drop for AuthBaseUrlEnv {
+        fn drop(&mut self) {
+            if let Some(previous) = &self.previous {
+                std::env::set_var("EGAKARETA_AUTH_BASE_URL", previous);
+            } else {
+                std::env::remove_var("EGAKARETA_AUTH_BASE_URL");
+            }
+        }
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct ParsedPayload {
+        value: u32,
+    }
+
+    #[test]
+    fn endpoint_url_normalizes_paths_and_trims_custom_base() {
+        let _lock = env_lock().lock().unwrap_or_else(|error| error.into_inner());
+        let _env = AuthBaseUrlEnv::set("https://auth.example.test/root/");
+
+        assert_eq!(
+            endpoint_url("api/auth/refresh"),
+            "https://auth.example.test/root/api/auth/refresh"
+        );
+        assert_eq!(signup_url(), "https://auth.example.test/root/signup");
+    }
+
+    #[test]
+    fn parse_response_decodes_successful_json() {
+        let parsed: ParsedPayload =
+            parse_response(200, r#"{"value":7}"#).expect("successful auth response should parse");
+
+        assert_eq!(parsed, ParsedPayload { value: 7 });
+    }
+
+    #[test]
+    fn parse_response_reports_success_json_parse_errors() {
+        let error = parse_response::<ParsedPayload>(200, "not-json")
+            .expect_err("invalid success body should be rejected");
+
+        assert!(error.starts_with("Auth response parse failed:"));
+    }
+
+    #[test]
+    fn parse_response_prefers_api_error_message() {
+        let error =
+            parse_response::<ParsedPayload>(401, r#"{"error":"session expired","code":"401"}"#)
+                .expect_err("auth error payload should be returned");
+
+        assert_eq!(error, "session expired");
+    }
+
+    #[test]
+    fn parse_response_falls_back_to_http_status() {
+        let error = parse_response::<ParsedPayload>(503, "temporarily unavailable")
+            .expect_err("plain error body should include status");
+
+        assert_eq!(error, "Auth request failed with HTTP 503");
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 async fn post_json_platform<T, R>(
     path: &str,

@@ -184,7 +184,28 @@ mod tests {
 
     use web_time::Duration;
 
-    use super::{test_hooks, trigger_audio_import, trigger_level_export, trigger_level_import};
+    use crate::types::{AuthSession, AuthSessionTokens, AuthUser};
+
+    use super::{
+        test_hooks, trigger_audio_import, trigger_auth_refresh, trigger_auth_sign_in,
+        trigger_auth_sign_out, trigger_level_export, trigger_level_import, AuthServiceMessage,
+    };
+
+    fn test_auth_session(access_token: &str, refresh_token: &str) -> AuthSession {
+        AuthSession {
+            session: AuthSessionTokens {
+                access_token: access_token.to_string(),
+                refresh_token: refresh_token.to_string(),
+                expires_at: Some(123),
+                token_type: "bearer".to_string(),
+            },
+            user: AuthUser {
+                id: "user-id".to_string(),
+                email: Some("player@example.com".to_string()),
+            },
+            profile: None,
+        }
+    }
 
     fn shared_test_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -300,5 +321,66 @@ mod tests {
 
         let loaded = fs::read(&export_path).expect("exported file should exist");
         assert_eq!(loaded, payload);
+    }
+
+    #[test]
+    fn trigger_auth_sign_in_forwards_hooked_session() {
+        let _lock = shared_test_lock()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let _reset_guard = HookResetGuard::new();
+        let expected = test_auth_session("access", "refresh");
+        test_hooks::with_hooks_mut(|hooks| {
+            hooks.auth_sign_in_result = Some(Ok(expected.clone()));
+        });
+
+        let (sender, receiver) = mpsc::channel();
+        trigger_auth_sign_in(sender);
+
+        let received = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("sign-in result should be sent");
+        assert_eq!(received, AuthServiceMessage::SignedIn(Ok(expected)));
+    }
+
+    #[test]
+    fn trigger_auth_refresh_forwards_hooked_error() {
+        let _lock = shared_test_lock()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let _reset_guard = HookResetGuard::new();
+        test_hooks::with_hooks_mut(|hooks| {
+            hooks.auth_refresh_result = Some(Err("refresh failed".to_string()));
+        });
+
+        let (sender, receiver) = mpsc::channel();
+        trigger_auth_refresh("refresh-token".to_string(), sender);
+
+        let received = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("refresh result should be sent");
+        assert_eq!(
+            received,
+            AuthServiceMessage::Refreshed(Err("refresh failed".to_string()))
+        );
+    }
+
+    #[test]
+    fn trigger_auth_sign_out_forwards_hooked_result() {
+        let _lock = shared_test_lock()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let _reset_guard = HookResetGuard::new();
+        test_hooks::with_hooks_mut(|hooks| {
+            hooks.auth_sign_out_result = Some(Ok(()));
+        });
+
+        let (sender, receiver) = mpsc::channel();
+        trigger_auth_sign_out(Some("access-token".to_string()), sender);
+
+        let received = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("sign-out result should be sent");
+        assert_eq!(received, AuthServiceMessage::SignedOut(Ok(())));
     }
 }

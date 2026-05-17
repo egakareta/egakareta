@@ -137,3 +137,195 @@ impl State {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{AuthProfile, AuthSessionTokens, AuthUser};
+
+    fn test_auth_session(username: Option<&str>, email: Option<&str>) -> AuthSession {
+        AuthSession {
+            session: AuthSessionTokens {
+                access_token: "access-token".to_string(),
+                refresh_token: "refresh-token".to_string(),
+                expires_at: Some(123),
+                token_type: "bearer".to_string(),
+            },
+            user: AuthUser {
+                id: "user-id".to_string(),
+                email: email.map(str::to_string),
+            },
+            profile: username.map(|name| AuthProfile {
+                id: "user-id".to_string(),
+                username: Some(name.to_string()),
+                avatar_url: None,
+                country: "UN".to_string(),
+            }),
+        }
+    }
+
+    fn new_state() -> State {
+        pollster::block_on(State::new_test())
+    }
+
+    #[test]
+    fn auth_display_name_prefers_profile_username_then_email() {
+        let mut state = new_state();
+        assert_eq!(state.auth_display_name(), None);
+
+        state.auth.session = Some(test_auth_session(
+            Some("player"),
+            Some("player@example.com"),
+        ));
+        assert_eq!(state.auth_display_name(), Some("player"));
+
+        state.auth.session = Some(test_auth_session(None, Some("player@example.com")));
+        assert_eq!(state.auth_display_name(), Some("player@example.com"));
+
+        state.auth.session = Some(test_auth_session(None, None));
+        assert_eq!(state.auth_display_name(), None);
+    }
+
+    #[test]
+    fn auth_actions_ignore_pending_or_missing_session_guards() {
+        let mut state = new_state();
+
+        state.auth.pending = true;
+        state.submit_auth_sign_in();
+        assert!(state.auth.pending);
+        assert_eq!(state.auth.message, None);
+
+        state.auth.pending = false;
+        state.refresh_auth_session();
+        assert!(!state.auth.refresh_started);
+
+        state.auth.session = Some(test_auth_session(
+            Some("player"),
+            Some("player@example.com"),
+        ));
+        state.auth.pending = true;
+        state.refresh_auth_session();
+        assert!(!state.auth.refresh_started);
+
+        state.auth.pending = false;
+        state.auth.refresh_started = true;
+        state.refresh_auth_session();
+        assert!(state.auth.refresh_started);
+
+        state.auth.pending = true;
+        state.auth.message = Some("keep me".to_string());
+        state.sign_out_auth_session();
+        assert_eq!(state.auth.message.as_deref(), Some("keep me"));
+    }
+
+    #[test]
+    fn update_auth_results_applies_sign_in_success_and_failure() {
+        let mut state = new_state();
+        let session = test_auth_session(Some("player"), Some("player@example.com"));
+
+        state.auth.pending = true;
+        state
+            .auth
+            .channel
+            .0
+            .send(AuthServiceMessage::SignedIn(Ok(session.clone())))
+            .expect("message should send");
+        state.update_auth_results();
+
+        assert!(!state.auth.pending);
+        assert_eq!(state.auth.session, Some(session));
+        assert!(state.auth.refresh_started);
+        assert_eq!(state.auth.message, None);
+
+        state.auth.pending = true;
+        state
+            .auth
+            .channel
+            .0
+            .send(AuthServiceMessage::SignedIn(Err(
+                "sign-in failed".to_string()
+            )))
+            .expect("message should send");
+        state.update_auth_results();
+
+        assert!(!state.auth.pending);
+        assert_eq!(state.auth.message.as_deref(), Some("sign-in failed"));
+    }
+
+    #[test]
+    fn update_auth_results_applies_refresh_success_and_failure() {
+        let mut state = new_state();
+        let original = test_auth_session(Some("old"), Some("old@example.com"));
+        let refreshed = test_auth_session(Some("new"), Some("new@example.com"));
+
+        state.auth.session = Some(original);
+        state.auth.refresh_started = true;
+        state
+            .auth
+            .channel
+            .0
+            .send(AuthServiceMessage::Refreshed(Ok(refreshed.clone())))
+            .expect("message should send");
+        state.update_auth_results();
+
+        assert_eq!(state.auth.session, Some(refreshed));
+        assert!(state.auth.refresh_started);
+        assert_eq!(state.auth.message, None);
+
+        state
+            .auth
+            .channel
+            .0
+            .send(AuthServiceMessage::Refreshed(Err(
+                "refresh failed".to_string()
+            )))
+            .expect("message should send");
+        state.update_auth_results();
+
+        assert_eq!(state.auth.session, None);
+        assert!(!state.auth.refresh_started);
+        assert_eq!(state.auth.message.as_deref(), Some("refresh failed"));
+    }
+
+    #[test]
+    fn update_auth_results_applies_sign_out_success_and_failure() {
+        let mut state = new_state();
+
+        state.auth.session = Some(test_auth_session(
+            Some("player"),
+            Some("player@example.com"),
+        ));
+        state.auth.pending = true;
+        state.auth.refresh_started = true;
+        state
+            .auth
+            .channel
+            .0
+            .send(AuthServiceMessage::SignedOut(Ok(())))
+            .expect("message should send");
+        state.update_auth_results();
+
+        assert!(!state.auth.pending);
+        assert!(!state.auth.refresh_started);
+        assert_eq!(state.auth.session, None);
+        assert_eq!(state.auth.message, None);
+
+        state.auth.session = Some(test_auth_session(None, Some("player@example.com")));
+        state.auth.pending = true;
+        state.auth.refresh_started = true;
+        state
+            .auth
+            .channel
+            .0
+            .send(AuthServiceMessage::SignedOut(Err(
+                "sign-out failed".to_string()
+            )))
+            .expect("message should send");
+        state.update_auth_results();
+
+        assert!(!state.auth.pending);
+        assert!(!state.auth.refresh_started);
+        assert_eq!(state.auth.session, None);
+        assert_eq!(state.auth.message.as_deref(), Some("sign-out failed"));
+    }
+}

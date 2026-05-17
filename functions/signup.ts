@@ -9,6 +9,14 @@ import { jsonResponse, readRequestBody, validateSignupInput } from "./_auth";
 import { createSupabaseClient } from "./_supabase";
 import { badRequest, serverError } from "./_utils";
 
+type SignupInput = {
+    username: string;
+    email: string;
+    password: string;
+};
+
+type SupabaseRequestClient = ReturnType<typeof createSupabaseClient>;
+
 function escapeHtml(value: string) {
     return value.replace(
         /[&<>"]/g,
@@ -113,6 +121,136 @@ function htmlResponse(body: string, status = 200) {
     });
 }
 
+function wantsJsonResponse(request: Request) {
+    return request.headers.get("Accept")?.includes("application/json") ?? false;
+}
+
+function signupErrorResponse(
+    message: string,
+    status: number,
+    wantsJson: boolean,
+    env: Cloudflare.Env,
+) {
+    if (wantsJson) {
+        return status >= 500 ? serverError(message) : badRequest(message);
+    }
+
+    return htmlResponse(page(message, true, env), status);
+}
+
+function signupSuccessResponse(
+    message: string,
+    wantsJson: boolean,
+    env: Cloudflare.Env,
+) {
+    return wantsJson
+        ? jsonResponse({ ok: true, message })
+        : htmlResponse(page(message, false, env));
+}
+
+function validateSignupRequest(
+    body: Record<string, unknown>,
+    captchaToken: string,
+    wantsJson: boolean,
+    env: Cloudflare.Env,
+): SignupInput | Response {
+    const validated = validateSignupInput({
+        username: body.username,
+        email: body.email,
+        password: body.password,
+    });
+
+    if ("error" in validated) {
+        return signupErrorResponse(validated.error, 400, wantsJson, env);
+    }
+
+    if (env.TURNSTILE_SITE_KEY && !captchaToken) {
+        return signupErrorResponse(
+            "Complete the verification challenge before signing up.",
+            400,
+            wantsJson,
+            env,
+        );
+    }
+
+    return validated;
+}
+
+async function ensureUsernameAvailable(
+    supabase: SupabaseRequestClient,
+    username: string,
+    wantsJson: boolean,
+    env: Cloudflare.Env,
+): Promise<Response | null> {
+    const { data, error } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("username", username)
+        .maybeSingle();
+
+    if (error) {
+        return signupErrorResponse(error.message, 500, wantsJson, env);
+    }
+
+    return data
+        ? signupErrorResponse(
+              "That username is already taken.",
+              400,
+              wantsJson,
+              env,
+          )
+        : null;
+}
+
+async function ensureEmailAvailable(
+    supabase: SupabaseRequestClient,
+    email: string,
+    wantsJson: boolean,
+    env: Cloudflare.Env,
+): Promise<Response | null> {
+    const { data, error } = await supabase.rpc("check_if_email_exists", {
+        email_to_check: email,
+    });
+
+    if (error) {
+        return signupErrorResponse(error.message, 500, wantsJson, env);
+    }
+
+    return data
+        ? signupErrorResponse(
+              "An account already exists for that email.",
+              400,
+              wantsJson,
+              env,
+          )
+        : null;
+}
+
+async function createSignupAccount(
+    supabase: SupabaseRequestClient,
+    input: SignupInput,
+    captchaToken: string,
+    wantsJson: boolean,
+    env: Cloudflare.Env,
+): Promise<Response | null> {
+    const { error } = await supabase.auth.signUp({
+        email: input.email,
+        password: input.password,
+        options: {
+            captchaToken: captchaToken || undefined,
+            data: { username: input.username },
+        },
+    });
+
+    return error
+        ? signupErrorResponse(error.message, 400, wantsJson, env)
+        : null;
+}
+
+function isResponse(value: unknown): value is Response {
+    return value instanceof Response;
+}
+
 export const onRequestGet: PagesFunction<Cloudflare.Env> = async ({ env }) => {
     return htmlResponse(page("", false, env));
 };
@@ -123,87 +261,37 @@ export const onRequestPost: PagesFunction<Cloudflare.Env> = async ({
 }) => {
     const body = await readRequestBody(request);
     const captchaToken = turnstileToken(body);
-    const validated = validateSignupInput({
-        username: body.username,
-        email: body.email,
-        password: body.password,
-    });
-
-    const wantsJson = request.headers
-        .get("Accept")
-        ?.includes("application/json");
-
-    if ("error" in validated) {
-        return wantsJson
-            ? badRequest(validated.error)
-            : htmlResponse(page(validated.error, true, env), 400);
-    }
-
-    if (env.TURNSTILE_SITE_KEY && !captchaToken) {
-        const message =
-            "Complete the verification challenge before signing up.";
-        return wantsJson
-            ? badRequest(message)
-            : htmlResponse(page(message, true, env), 400);
-    }
+    const wantsJson = wantsJsonResponse(request);
+    const input = validateSignupRequest(body, captchaToken, wantsJson, env);
+    if (isResponse(input)) return input;
 
     const supabase = createSupabaseClient(env, request);
-
-    const { data: usernameTaken, error: usernameError } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("username", validated.username)
-        .maybeSingle();
-
-    if (usernameError) {
-        return wantsJson
-            ? serverError(usernameError.message)
-            : htmlResponse(page(usernameError.message, true, env), 500);
-    }
-
-    if (usernameTaken) {
-        const message = "That username is already taken.";
-        return wantsJson
-            ? badRequest(message)
-            : htmlResponse(page(message, true, env), 400);
-    }
-
-    const { data: emailExists, error: emailError } = await supabase.rpc(
-        "check_if_email_exists",
-        { email_to_check: validated.email },
+    const usernameError = await ensureUsernameAvailable(
+        supabase,
+        input.username,
+        wantsJson,
+        env,
     );
+    if (usernameError) return usernameError;
 
-    if (emailError) {
-        return wantsJson
-            ? serverError(emailError.message)
-            : htmlResponse(page(emailError.message, true, env), 500);
-    }
+    const emailError = await ensureEmailAvailable(
+        supabase,
+        input.email,
+        wantsJson,
+        env,
+    );
+    if (emailError) return emailError;
 
-    if (emailExists) {
-        const message = "An account already exists for that email.";
-        return wantsJson
-            ? badRequest(message)
-            : htmlResponse(page(message, true, env), 400);
-    }
-
-    const { error } = await supabase.auth.signUp({
-        email: validated.email,
-        password: validated.password,
-        options: {
-            captchaToken: captchaToken || undefined,
-            data: { username: validated.username },
-        },
-    });
-
-    if (error) {
-        return wantsJson
-            ? badRequest(error.message)
-            : htmlResponse(page(error.message, true, env), 400);
-    }
+    const signupError = await createSignupAccount(
+        supabase,
+        input,
+        captchaToken,
+        wantsJson,
+        env,
+    );
+    if (signupError) return signupError;
 
     const message =
         "Account created. Check your email to confirm it before signing in.";
-    return wantsJson
-        ? jsonResponse({ ok: true, message })
-        : htmlResponse(page(message, false, env));
+    return signupSuccessResponse(message, wantsJson, env);
 };

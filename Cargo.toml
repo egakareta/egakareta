@@ -56,11 +56,17 @@ symphonia = { version = "0.5", default-features = false, features = [
 directories = "6.0"
 egui-winit = "0.33"
 env_logger = "0.11"
+reqwest = { version = "0.12", default-features = false, features = [
+    "blocking",
+    "json",
+    "rustls-tls",
+] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1"
 console_log = "1.0.0"
 egui-winit = { version = "0.33", default-features = false } # default features include arboard, which doesnt have wasm support yet https://github.com/1Password/arboard/pull/160
+gloo-net = "0.6"
 gloo-console = "0.4"
 gloo-file = "0.4"
 gloo-utils = "0.3"
