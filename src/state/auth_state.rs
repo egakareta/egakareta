@@ -34,6 +34,18 @@ impl State {
         self.auth.message.as_deref()
     }
 
+    #[cfg(test)]
+    pub(crate) fn set_auth_state_for_test(
+        &mut self,
+        session: Option<AuthSession>,
+        pending: bool,
+        message: Option<String>,
+    ) {
+        self.auth.session = session;
+        self.auth.pending = pending;
+        self.auth.message = message;
+    }
+
     pub(crate) fn submit_auth_sign_in(&mut self) {
         if self.auth.pending {
             return;

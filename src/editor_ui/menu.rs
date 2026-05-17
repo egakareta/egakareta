@@ -196,3 +196,75 @@ fn get_current_time_str() -> String {
         format!("{:02}:{:02} UTC", hours, minutes)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{show_menu_auth_ui, show_menu_topbar};
+    use crate::types::{AuthProfile, AuthSession, AuthSessionTokens, AuthUser};
+
+    fn test_auth_session(username: Option<&str>) -> AuthSession {
+        AuthSession {
+            session: AuthSessionTokens {
+                access_token: "access-token".to_string(),
+                refresh_token: "refresh-token".to_string(),
+                expires_at: Some(123),
+                token_type: "bearer".to_string(),
+            },
+            user: AuthUser {
+                id: "user-id".to_string(),
+                email: Some("player@example.com".to_string()),
+            },
+            profile: username.map(|name| AuthProfile {
+                id: "user-id".to_string(),
+                username: Some(name.to_string()),
+                avatar_url: None,
+                country: "UN".to_string(),
+            }),
+        }
+    }
+
+    fn run_menu_auth_ui_once(state: &mut crate::State) {
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            show_menu_auth_ui(ctx, state);
+        });
+    }
+
+    #[test]
+    fn menu_topbar_and_auth_ui_render_guest_state() {
+        pollster::block_on(async {
+            let mut state = crate::State::new_test().await;
+            let ctx = egui::Context::default();
+
+            let _ = ctx.run(egui::RawInput::default(), |ctx| {
+                show_menu_topbar(ctx, &state);
+            });
+            run_menu_auth_ui_once(&mut state);
+
+            assert_eq!(state.auth_display_name(), None);
+        });
+    }
+
+    #[test]
+    fn menu_auth_ui_renders_pending_message_and_signed_in_state() {
+        pollster::block_on(async {
+            let mut state = crate::State::new_test().await;
+
+            state.set_auth_state_for_test(
+                None,
+                true,
+                Some("Complete sign-in in your browser.".to_string()),
+            );
+            run_menu_auth_ui_once(&mut state);
+            assert!(state.auth_pending());
+            assert_eq!(
+                state.auth_message(),
+                Some("Complete sign-in in your browser.")
+            );
+
+            state.set_auth_state_for_test(Some(test_auth_session(Some("player"))), false, None);
+            run_menu_auth_ui_once(&mut state);
+            assert_eq!(state.auth_display_name(), Some("player"));
+        });
+    }
+}
