@@ -26,18 +26,6 @@ impl State {
             })
     }
 
-    pub(crate) fn auth_dialog_open(&self) -> bool {
-        self.auth.dialog_open
-    }
-
-    pub(crate) fn auth_identifier(&self) -> &str {
-        &self.auth.identifier
-    }
-
-    pub(crate) fn auth_password(&self) -> &str {
-        &self.auth.password
-    }
-
     pub(crate) fn auth_pending(&self) -> bool {
         self.auth.pending
     }
@@ -46,38 +34,14 @@ impl State {
         self.auth.message.as_deref()
     }
 
-    pub(crate) fn set_auth_dialog_open(&mut self, open: bool) {
-        self.auth.dialog_open = open;
-        if open {
-            self.auth.message = None;
-        } else if !self.auth.pending {
-            self.auth.password.clear();
-        }
-    }
-
-    pub(crate) fn set_auth_identifier(&mut self, identifier: String) {
-        self.auth.identifier = identifier;
-    }
-
-    pub(crate) fn set_auth_password(&mut self, password: String) {
-        self.auth.password = password;
-    }
-
     pub(crate) fn submit_auth_sign_in(&mut self) {
-        let identifier = self.auth.identifier.trim().to_string();
-        let password = self.auth.password.clone();
-
         if self.auth.pending {
-            return;
-        }
-        if identifier.is_empty() || password.is_empty() {
-            self.auth.message = Some("Enter your username or email and password.".to_string());
             return;
         }
 
         self.auth.pending = true;
-        self.auth.message = None;
-        trigger_auth_sign_in(identifier, password, self.auth.channel.0.clone());
+        self.auth.message = Some("Complete sign-in in your browser.".to_string());
+        trigger_auth_sign_in(self.auth.channel.0.clone());
     }
 
     pub(crate) fn refresh_auth_session(&mut self) {
@@ -137,8 +101,6 @@ impl State {
             Ok(session) => {
                 self.auth.session = Some(session);
                 self.auth.refresh_started = true;
-                self.auth.dialog_open = false;
-                self.auth.password.clear();
                 self.auth.message = None;
             }
             Err(error) => {
@@ -165,7 +127,6 @@ impl State {
         self.auth.pending = false;
         self.auth.refresh_started = false;
         self.auth.session = None;
-        self.auth.password.clear();
         match result {
             Ok(()) => {
                 self.auth.message = None;

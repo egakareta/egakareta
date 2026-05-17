@@ -137,92 +137,41 @@ pub fn show_menu_auth_ui(ctx: &egui::Context, state: &mut State) {
                     {
                         commands.push(AppCommand::AuthSignOut);
                     }
-                } else if ui
-                    .add_enabled(
-                        !state.auth_pending(),
-                        egui::Button::new(format!("{} Sign in", egui_phosphor::regular::SIGN_IN)),
-                    )
-                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .clicked()
-                {
-                    commands.push(AppCommand::AuthSetDialogOpen(true));
-                }
-            });
-        });
-
-    if state.auth_dialog_open() {
-        let mut open = true;
-        egui::Window::new("Sign in")
-            .order(egui::Order::Tooltip)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-            .open(&mut open)
-            .show(ctx, |ui| {
-                ui.set_min_width(320.0);
-
-                let mut identifier = state.auth_identifier().to_string();
-                let mut password = state.auth_password().to_string();
-                let pending = state.auth_pending();
-
-                ui.add_enabled_ui(!pending, |ui| {
-                    ui.label("Username or email");
-                    let identifier_response = ui.text_edit_singleline(&mut identifier);
-                    ui.add_space(8.0);
-                    ui.label("Password");
-                    let password_response = ui.add(
-                        egui::TextEdit::singleline(&mut password)
-                            .password(true)
-                            .desired_width(f32::INFINITY),
-                    );
-
-                    if identifier != state.auth_identifier() {
-                        commands.push(AppCommand::AuthSetIdentifier(identifier.clone()));
-                    }
-                    if password != state.auth_password() {
-                        commands.push(AppCommand::AuthSetPassword(password.clone()));
-                    }
-
-                    if (identifier_response.lost_focus() || password_response.lost_focus())
-                        && ui.input(|input| input.key_pressed(egui::Key::Enter))
-                    {
-                        commands.push(AppCommand::AuthSubmitSignIn);
-                    }
-                });
-
-                if let Some(message) = state.auth_message() {
-                    ui.add_space(8.0);
-                    ui.colored_label(ui.visuals().warn_fg_color, message);
-                }
-
-                ui.add_space(12.0);
-                ui.horizontal(|ui| {
+                } else {
                     if ui
-                        .add_enabled(!pending, egui::Button::new("Sign in"))
+                        .add_enabled(
+                            !state.auth_pending(),
+                            egui::Button::new(format!(
+                                "{} Sign in",
+                                egui_phosphor::regular::SIGN_IN
+                            )),
+                        )
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
                     {
                         commands.push(AppCommand::AuthSubmitSignIn);
                     }
-
                     if ui
-                        .add_enabled(!pending, egui::Button::new("Create account"))
+                        .add_enabled(!state.auth_pending(), egui::Button::new("Create account"))
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
                     {
                         commands.push(AppCommand::AuthOpenSignup);
                     }
-                });
-
-                if pending {
-                    ui.add_space(8.0);
-                    ui.spinner();
+                    if state.auth_pending() {
+                        ui.spinner();
+                    }
                 }
             });
+        });
 
-        if !open {
-            commands.push(AppCommand::AuthSetDialogOpen(false));
-        }
+    if let Some(message) = state.auth_message() {
+        egui::Area::new("menu_auth_message_area".into())
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 42.0))
+            .show(ctx, |ui| {
+                ui.colored_label(ui.visuals().warn_fg_color, message);
+            });
     }
 
     for command in commands {

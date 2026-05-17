@@ -167,6 +167,16 @@ create table if not exists public.user_webauthn_credentials (
     transports text [] not null default '{}',
     created_at timestamp with time zone default now()
 );
+-- Short-lived browser-to-native authentication handoffs.
+create table if not exists public.auth_handoffs (
+    id uuid default gen_random_uuid() primary key,
+    secret_hash text not null,
+    auth_payload jsonb,
+    profile_id uuid references public.profiles(id) on delete set null,
+    created_at timestamp with time zone default timezone('utc', now()) not null,
+    expires_at timestamp with time zone default timezone('utc', now()) + interval '10 minutes' not null,
+    claimed_at timestamp with time zone
+);
 -- Enforce security at the database level.
 alter table profiles enable row level security;
 alter table public.profile_stats enable row level security;
@@ -178,6 +188,7 @@ alter table public.comment_votes ENABLE row level security;
 alter table public.profile_rank_pp_snapshots enable row level security;
 alter table public.user_2fa_config enable row level security;
 alter table public.user_webauthn_credentials enable row level security;
+alter table public.auth_handoffs enable row level security;
 -- Policies.
 -- profiles
 create policy "Public profiles are viewable by everyone." on profiles for
@@ -378,3 +389,5 @@ create policy "Users can manage their own WebAuthn credentials." on public.user_
         select auth.uid()
     ) = user_id
 );
+-- auth_handoffs are created and claimed only by trusted Pages Functions.
+create policy "Service role can manage auth handoffs." on public.auth_handoffs for all to service_role using (true) with check (true);

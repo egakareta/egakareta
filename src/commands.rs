@@ -25,13 +25,7 @@ pub(crate) enum AppCommand {
     ToggleEditor,
 
     // ── Auth ───────────────────────────────────────────────────────
-    /// Open or close the sign-in dialog.
-    AuthSetDialogOpen(bool),
-    /// Update the sign-in identifier field.
-    AuthSetIdentifier(String),
-    /// Update the sign-in password field.
-    AuthSetPassword(String),
-    /// Submit the sign-in form.
+    /// Start the browser sign-in flow.
     AuthSubmitSignIn,
     /// Sign out of the current account.
     AuthSignOut,

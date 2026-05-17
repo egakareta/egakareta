@@ -68,9 +68,6 @@ pub(crate) struct GameplaySubsystem {
 
 pub(crate) struct AuthSubsystem {
     pub(crate) session: Option<AuthSession>,
-    pub(crate) dialog_open: bool,
-    pub(crate) identifier: String,
-    pub(crate) password: String,
     pub(crate) pending: bool,
     pub(crate) message: Option<String>,
     pub(crate) refresh_started: bool,

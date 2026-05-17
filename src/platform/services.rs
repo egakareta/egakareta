@@ -70,11 +70,7 @@ pub fn trigger_level_export(filename: &str, data: &[u8]) {
     }
 }
 
-pub(crate) fn trigger_auth_sign_in(
-    identifier: String,
-    password: String,
-    sender: Sender<AuthServiceMessage>,
-) {
+pub(crate) fn trigger_auth_sign_in(sender: Sender<AuthServiceMessage>) {
     spawn_background(async move {
         #[cfg(all(test, not(target_arch = "wasm32")))]
         if let Some(result) = test_hooks::auth_sign_in_result() {
@@ -82,7 +78,7 @@ pub(crate) fn trigger_auth_sign_in(
             return;
         }
 
-        let result = crate::platform::auth::sign_in(&identifier, &password).await;
+        let result = crate::platform::auth::sign_in().await;
         if let Ok(session) = &result {
             let _ = crate::platform::storage::save_auth_session(session).await;
         }

@@ -22,9 +22,6 @@ impl State {
             AppCommand::ToggleEditor => self.toggle_editor(),
 
             // ── Auth ────────────────────────────────────────────────
-            AppCommand::AuthSetDialogOpen(open) => self.set_auth_dialog_open(open),
-            AppCommand::AuthSetIdentifier(identifier) => self.set_auth_identifier(identifier),
-            AppCommand::AuthSetPassword(password) => self.set_auth_password(password),
             AppCommand::AuthSubmitSignIn => self.submit_auth_sign_in(),
             AppCommand::AuthSignOut => self.sign_out_auth_session(),
             AppCommand::AuthOpenSignup => self.open_auth_signup_page(),

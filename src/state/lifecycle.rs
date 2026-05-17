@@ -378,9 +378,6 @@ impl State {
             },
             auth: AuthSubsystem {
                 session: auth_session,
-                dialog_open: false,
-                identifier: String::new(),
-                password: String::new(),
                 pending: false,
                 message: None,
                 refresh_started: false,
@@ -1043,9 +1040,6 @@ impl State {
             },
             auth: AuthSubsystem {
                 session: auth_session,
-                dialog_open: false,
-                identifier: String::new(),
-                password: String::new(),
                 pending: false,
                 message: None,
                 refresh_started: false,
