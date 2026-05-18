@@ -667,10 +667,7 @@ pub fn show_editor_ui(
                     view.graphics_backend, view.audio_backend, view.fps
                 ));
                 ui.separator();
-                // TODO: Restore flamegraph profiler once a puffin_egui release supports egui 0.34.
-                ui.label(
-                    "Detailed flamegraph view is unavailable with current egui compatibility.",
-                );
+                puffin_egui::profiler_ui(ui);
             });
         if !profiler_open {
             commands.push(AppCommand::EditorTogglePerfOverlay);
