@@ -167,6 +167,67 @@ create table if not exists public.user_webauthn_credentials (
     transports text [] not null default '{}',
     created_at timestamp with time zone default now()
 );
+-- Short-lived browser-to-native authentication handoffs.
+create table if not exists public.auth_handoffs (
+    id uuid default gen_random_uuid() primary key,
+    secret_hash text not null,
+    auth_payload jsonb,
+    profile_id uuid references public.profiles(id) on delete set null,
+    created_at timestamp with time zone default timezone('utc', now()) not null,
+    expires_at timestamp with time zone default timezone('utc', now()) + interval '10 minutes' not null,
+    claimed_at timestamp with time zone
+);
+
+create or replace function public.claim_auth_handoff(
+    claim_id uuid,
+    claim_secret_hash text
+) returns jsonb language plpgsql security definer
+set search_path = public as $$
+declare
+    payload jsonb;
+begin
+    select auth_payload into payload
+    from public.auth_handoffs
+    where id = claim_id
+        and secret_hash = claim_secret_hash
+        and claimed_at is null
+        and expires_at > timezone('utc', now())
+        and auth_payload is not null
+    for update;
+
+    if payload is null then
+        return null;
+    end if;
+
+    update public.auth_handoffs
+    set claimed_at = timezone('utc', now()),
+        auth_payload = null
+    where id = claim_id
+        and claimed_at is null
+        and auth_payload is not null;
+
+    if not found then
+        return null;
+    end if;
+
+    return payload;
+end;
+$$;
+
+create or replace function public.cleanup_auth_handoffs()
+returns integer language plpgsql security definer
+set search_path = public as $$
+declare
+    deleted_count integer;
+begin
+    delete from public.auth_handoffs
+    where claimed_at is not null
+        or expires_at <= timezone('utc', now());
+
+    get diagnostics deleted_count = row_count;
+    return deleted_count;
+end;
+$$;
 -- Enforce security at the database level.
 alter table profiles enable row level security;
 alter table public.profile_stats enable row level security;
@@ -178,6 +239,7 @@ alter table public.comment_votes ENABLE row level security;
 alter table public.profile_rank_pp_snapshots enable row level security;
 alter table public.user_2fa_config enable row level security;
 alter table public.user_webauthn_credentials enable row level security;
+alter table public.auth_handoffs enable row level security;
 -- Policies.
 -- profiles
 create policy "Public profiles are viewable by everyone." on profiles for
@@ -378,3 +440,9 @@ create policy "Users can manage their own WebAuthn credentials." on public.user_
         select auth.uid()
     ) = user_id
 );
+-- auth_handoffs are created and claimed only by trusted Pages Functions.
+create policy "Service role can manage auth handoffs." on public.auth_handoffs for all to service_role using (true) with check (true);
+revoke all on function public.claim_auth_handoff(uuid, text) from public;
+grant execute on function public.claim_auth_handoff(uuid, text) to service_role;
+revoke all on function public.cleanup_auth_handoffs() from public;
+grant execute on function public.cleanup_auth_handoffs() to service_role;

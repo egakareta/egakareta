@@ -21,6 +21,11 @@ impl State {
             AppCommand::PrevLevel => self.prev_level(),
             AppCommand::ToggleEditor => self.toggle_editor(),
 
+            // ── Auth ────────────────────────────────────────────────
+            AppCommand::AuthSubmitSignIn => self.submit_auth_sign_in(),
+            AppCommand::AuthSignOut => self.sign_out_auth_session(),
+            AppCommand::AuthOpenSignup => self.open_auth_signup_page(),
+
             // ── Editor – mode switching ─────────────────────────────
             AppCommand::EditorSetMode(mode) => {
                 let old_mode = self.editor_mode();

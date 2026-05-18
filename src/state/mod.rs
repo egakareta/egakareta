@@ -6,6 +6,7 @@
 
 */
 mod audio_state;
+mod auth_state;
 mod command_dispatch;
 mod editor_actions;
 mod editor_camera;
@@ -50,17 +51,30 @@ pub(crate) use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState
 pub(crate) use view_model::EditorUiViewModel;
 
 use crate::game::GameState;
+use crate::platform::services::AuthServiceMessage;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::platform::state_host::NativeWindow;
 use crate::types::{
-    AppPhase, AppSettings, EditorMode, EditorState, LevelObject, LevelPreviewCameraMetadata,
-    MenuState, MusicMetadata, PhysicalSize, SettingsSection, SpawnMetadata, Vertex,
+    AppPhase, AppSettings, AuthSession, EditorMode, EditorState, LevelObject,
+    LevelPreviewCameraMetadata, MenuState, MusicMetadata, PhysicalSize, SettingsSection,
+    SpawnMetadata, Vertex,
 };
 
 /// Bundles all gameplay-related state into a single subsystem.
 /// Separates gameplay concern from the top-level application state.
 pub(crate) struct GameplaySubsystem {
     pub(crate) state: GameState,
+}
+
+pub(crate) struct AuthSubsystem {
+    pub(crate) session: Option<AuthSession>,
+    pub(crate) pending: bool,
+    pub(crate) message: Option<String>,
+    pub(crate) refresh_started: bool,
+    pub(crate) channel: (
+        std::sync::mpsc::Sender<AuthServiceMessage>,
+        std::sync::mpsc::Receiver<AuthServiceMessage>,
+    ),
 }
 
 /// Bundles all session-related state into a single subsystem.
@@ -115,6 +129,7 @@ pub(crate) struct MenuSubsystem {
 /// and handles the overall application phase and frame runtime.
 pub struct State {
     render: RenderSubsystem,
+    auth: AuthSubsystem,
     gameplay: GameplaySubsystem,
     editor: EditorSubsystem,
     audio: AudioSubsystem,

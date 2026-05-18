@@ -9,3 +9,8 @@ user = "resend"
 pass = "env(RESEND_API_KEY)"
 admin_email = "team@egakareta.com"
 sender_name = "egakareta"
+
+[auth.captcha]
+enabled = true
+provider = "turnstile"
+secret = "env(TURNSTILE_SECRET_KEY)"

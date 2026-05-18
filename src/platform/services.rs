@@ -11,6 +11,14 @@ use crate::platform::io::{
     log_platform_error, pick_audio_file, pick_level_file, save_audio_to_storage, save_level_export,
 };
 use crate::platform::task::spawn_background;
+use crate::types::AuthSession;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum AuthServiceMessage {
+    SignedIn(Result<AuthSession, String>),
+    Refreshed(Result<AuthSession, String>),
+    SignedOut(Result<(), String>),
+}
 
 async fn pick_audio_file_for_import() -> Option<(String, Vec<u8>)> {
     #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -62,15 +70,76 @@ pub fn trigger_level_export(filename: &str, data: &[u8]) {
     }
 }
 
+pub(crate) fn trigger_auth_sign_in(sender: Sender<AuthServiceMessage>) {
+    spawn_background(async move {
+        #[cfg(all(test, not(target_arch = "wasm32")))]
+        if let Some(result) = test_hooks::auth_sign_in_result() {
+            let _ = sender.send(AuthServiceMessage::SignedIn(result));
+            return;
+        }
+
+        let result = persist_auth_session_result(crate::platform::auth::sign_in().await).await;
+        let _ = sender.send(AuthServiceMessage::SignedIn(result));
+    });
+}
+
+pub(crate) fn trigger_auth_refresh(refresh_token: String, sender: Sender<AuthServiceMessage>) {
+    spawn_background(async move {
+        #[cfg(all(test, not(target_arch = "wasm32")))]
+        if let Some(result) = test_hooks::auth_refresh_result() {
+            let _ = sender.send(AuthServiceMessage::Refreshed(result));
+            return;
+        }
+
+        let result = persist_auth_session_result(
+            crate::platform::auth::refresh_session(&refresh_token).await,
+        )
+        .await;
+        let _ = sender.send(AuthServiceMessage::Refreshed(result));
+    });
+}
+
+async fn persist_auth_session_result(
+    result: Result<AuthSession, String>,
+) -> Result<AuthSession, String> {
+    let session = result?;
+    crate::platform::storage::save_auth_session(&session)
+        .await
+        .map_err(|error| format!("Session could not be saved: {error}"))?;
+    Ok(session)
+}
+
+pub(crate) fn trigger_auth_sign_out(
+    access_token: Option<String>,
+    sender: Sender<AuthServiceMessage>,
+) {
+    spawn_background(async move {
+        #[cfg(all(test, not(target_arch = "wasm32")))]
+        if let Some(result) = test_hooks::auth_sign_out_result() {
+            let _ = sender.send(AuthServiceMessage::SignedOut(result));
+            return;
+        }
+
+        let result = crate::platform::auth::sign_out(access_token.as_deref()).await;
+        let _ = crate::platform::storage::clear_auth_session().await;
+        let _ = sender.send(AuthServiceMessage::SignedOut(result));
+    });
+}
+
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod test_hooks {
     use std::sync::{Mutex, OnceLock};
+
+    use crate::types::AuthSession;
 
     #[derive(Clone, Default)]
     pub(crate) struct ServiceHooks {
         pub(crate) pick_audio_result: Option<Option<(String, Vec<u8>)>>,
         pub(crate) pick_level_result: Option<Option<Vec<u8>>>,
         pub(crate) save_audio_result: Option<Result<(), String>>,
+        pub(crate) auth_sign_in_result: Option<Result<AuthSession, String>>,
+        pub(crate) auth_refresh_result: Option<Result<AuthSession, String>>,
+        pub(crate) auth_sign_out_result: Option<Result<(), String>>,
     }
 
     fn hooks_state() -> &'static Mutex<ServiceHooks> {
@@ -100,6 +169,18 @@ mod test_hooks {
     pub(crate) fn pick_level_result() -> Option<Option<Vec<u8>>> {
         with_hooks_mut(|hooks| hooks.pick_level_result.clone())
     }
+
+    pub(crate) fn auth_sign_in_result() -> Option<Result<AuthSession, String>> {
+        with_hooks_mut(|hooks| hooks.auth_sign_in_result.clone())
+    }
+
+    pub(crate) fn auth_refresh_result() -> Option<Result<AuthSession, String>> {
+        with_hooks_mut(|hooks| hooks.auth_refresh_result.clone())
+    }
+
+    pub(crate) fn auth_sign_out_result() -> Option<Result<(), String>> {
+        with_hooks_mut(|hooks| hooks.auth_sign_out_result.clone())
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -110,7 +191,28 @@ mod tests {
 
     use web_time::Duration;
 
-    use super::{test_hooks, trigger_audio_import, trigger_level_export, trigger_level_import};
+    use crate::types::{AuthSession, AuthSessionTokens, AuthUser};
+
+    use super::{
+        test_hooks, trigger_audio_import, trigger_auth_refresh, trigger_auth_sign_in,
+        trigger_auth_sign_out, trigger_level_export, trigger_level_import, AuthServiceMessage,
+    };
+
+    fn test_auth_session(access_token: &str, refresh_token: &str) -> AuthSession {
+        AuthSession {
+            session: AuthSessionTokens {
+                access_token: access_token.to_string(),
+                refresh_token: refresh_token.to_string(),
+                expires_at: Some(123),
+                token_type: "bearer".to_string(),
+            },
+            user: AuthUser {
+                id: "user-id".to_string(),
+                email: Some("player@example.com".to_string()),
+            },
+            profile: None,
+        }
+    }
 
     fn shared_test_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -226,5 +328,66 @@ mod tests {
 
         let loaded = fs::read(&export_path).expect("exported file should exist");
         assert_eq!(loaded, payload);
+    }
+
+    #[test]
+    fn trigger_auth_sign_in_forwards_hooked_session() {
+        let _lock = shared_test_lock()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let _reset_guard = HookResetGuard::new();
+        let expected = test_auth_session("access", "refresh");
+        test_hooks::with_hooks_mut(|hooks| {
+            hooks.auth_sign_in_result = Some(Ok(expected.clone()));
+        });
+
+        let (sender, receiver) = mpsc::channel();
+        trigger_auth_sign_in(sender);
+
+        let received = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("sign-in result should be sent");
+        assert_eq!(received, AuthServiceMessage::SignedIn(Ok(expected)));
+    }
+
+    #[test]
+    fn trigger_auth_refresh_forwards_hooked_error() {
+        let _lock = shared_test_lock()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let _reset_guard = HookResetGuard::new();
+        test_hooks::with_hooks_mut(|hooks| {
+            hooks.auth_refresh_result = Some(Err("refresh failed".to_string()));
+        });
+
+        let (sender, receiver) = mpsc::channel();
+        trigger_auth_refresh("refresh-token".to_string(), sender);
+
+        let received = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("refresh result should be sent");
+        assert_eq!(
+            received,
+            AuthServiceMessage::Refreshed(Err("refresh failed".to_string()))
+        );
+    }
+
+    #[test]
+    fn trigger_auth_sign_out_forwards_hooked_result() {
+        let _lock = shared_test_lock()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let _reset_guard = HookResetGuard::new();
+        test_hooks::with_hooks_mut(|hooks| {
+            hooks.auth_sign_out_result = Some(Ok(()));
+        });
+
+        let (sender, receiver) = mpsc::channel();
+        trigger_auth_sign_out(Some("access-token".to_string()), sender);
+
+        let received = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("sign-out result should be sent");
+        assert_eq!(received, AuthServiceMessage::SignedOut(Ok(())));
     }
 }

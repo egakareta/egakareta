@@ -93,7 +93,7 @@ fn strip_jsonc_comments(input: &str) -> String {
 }
 
 // Whitelist of keys to bake into the binary
-const BAKE_KEYS: &[&str] = &["API_URL", "PUBLISHABLE_KEY"];
+const BAKE_KEYS: &[&str] = &["API_URL", "PUBLISHABLE_KEY", "AUTH_BASE_URL"];
 
 fn main() {
     println!("cargo:rerun-if-changed=.env.local");

@@ -34,6 +34,44 @@ export type Database = {
     };
     public: {
         Tables: {
+            auth_handoffs: {
+                Row: {
+                    auth_payload: Json | null;
+                    claimed_at: string | null;
+                    created_at: string;
+                    expires_at: string;
+                    id: string;
+                    profile_id: string | null;
+                    secret_hash: string;
+                };
+                Insert: {
+                    auth_payload?: Json | null;
+                    claimed_at?: string | null;
+                    created_at?: string;
+                    expires_at?: string;
+                    id?: string;
+                    profile_id?: string | null;
+                    secret_hash: string;
+                };
+                Update: {
+                    auth_payload?: Json | null;
+                    claimed_at?: string | null;
+                    created_at?: string;
+                    expires_at?: string;
+                    id?: string;
+                    profile_id?: string | null;
+                    secret_hash?: string;
+                };
+                Relationships: [
+                    {
+                        foreignKeyName: "auth_handoffs_profile_id_fkey";
+                        columns: ["profile_id"];
+                        isOneToOne: false;
+                        referencedRelation: "profiles";
+                        referencedColumns: ["id"];
+                    },
+                ];
+            };
             beatmap_scores: {
                 Row: {
                     beatmap_id: number;

@@ -21,7 +21,8 @@ use crate::State;
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
 use glam::{Mat3, Vec3};
 pub use menu::{
-    load_menu_favicon_texture, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar,
+    load_menu_favicon_texture, show_menu_auth_ui, show_menu_favicon_ui, show_menu_play_ui,
+    show_menu_topbar,
 };
 
 #[derive(Clone, Copy)]

@@ -318,6 +318,7 @@ impl State {
     pub fn update(&mut self) {
         puffin::GlobalProfiler::lock().new_frame();
         puffin::profile_scope!("FrameTotal");
+        self.update_auth_results();
         self.update_audio_imports();
         if self.phase == AppPhase::Editor {
             self.update_level_imports();
