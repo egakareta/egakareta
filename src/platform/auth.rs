@@ -472,11 +472,25 @@ mod tests {
     }
 
     #[test]
-    fn endpoint_url_uses_default_base_when_env_is_blank() {
+    fn endpoint_url_uses_configured_or_default_base_when_env_is_blank() {
         let _lock = env_lock().lock().unwrap_or_else(|error| error.into_inner());
         let _env = AuthBaseUrlEnv::set("   ");
 
-        assert_eq!(endpoint_url("signin"), "http://127.0.0.1:8788/signin");
+        let expected_base = option_env!("AUTH_BASE_URL")
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| {
+                #[cfg(debug_assertions)]
+                {
+                    "http://127.0.0.1:8788"
+                }
+
+                #[cfg(not(debug_assertions))]
+                {
+                    "https://egakareta.com"
+                }
+            });
+
+        assert_eq!(endpoint_url("signin"), format!("{expected_base}/signin"));
     }
 
     #[test]

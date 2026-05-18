@@ -7,7 +7,7 @@
         "format": "bun run format:cargo && bun run format:prettier",
         "lint": "cargo clippy -- -D warnings",
         "sync-env": "supabase status -o env > .env.local",
-        "cf-typegen": "wrangler types --env-interface CloudflareEnv functions/cloudflare-env.d.ts",
+        "cf-typegen": "wrangler types --strict-vars=false --env-interface CloudflareEnv functions/cloudflare-env.d.ts",
         "sb-ts-typegen": "supabase gen types typescript --local > functions/_supabase_types.ts",
         "typegen": "bun cf-typegen && bun sb-ts-typegen",
         "test": "cargo test -- -Zunstable-options --report-time",

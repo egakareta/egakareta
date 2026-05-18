@@ -18,8 +18,10 @@
                 "I_LOVE_HAMSTERS": "true",
                 "API_URL": "https://eqqowxzratebdkjnbqin.supabase.co",
                 "PUBLISHABLE_KEY": "sb_publishable_842oMsTBASkBCovtKi6RrQ_qPWaDN42",
-                "AUTH_BASE_URL": "https://supaauth.egakareta.pages.dev",
                 "TURNSTILE_SITE_KEY": "1x00000000000000000000AA"
+            },
+            "secrets": {
+                "required": ["TURNSTILE_SECRET_KEY"]
             },
             "r2_buckets": [
                 {
@@ -38,8 +40,11 @@
                 "I_LOVE_HAMSTERS": "true",
                 "API_URL": "https://ukfpclpcceeqaagyorcb.supabase.co",
                 "PUBLISHABLE_KEY": "sb_publishable_y9pwqwVxUohToosEzERcnQ_z1Fr3NB2",
-                "AUTH_BASE_URL": "https://egakareta.com",
+                "AUTH_BASE_URL": "https://play.egakareta.com",
                 "TURNSTILE_SITE_KEY": "0x4AAAAAACoV5owVmGK94-uO"
+            },
+            "secrets": {
+                "required": ["TURNSTILE_SECRET_KEY"]
             },
             "r2_buckets": [
                 {

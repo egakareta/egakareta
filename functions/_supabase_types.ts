@@ -525,11 +525,6 @@ export type Database = {
             [_ in never]: never;
         };
         Functions: {
-            claim_auth_handoff: {
-                Args: { claim_id: string; claim_secret_hash: string };
-                Returns: Json | null;
-            };
-            cleanup_auth_handoffs: { Args: never; Returns: number };
             apply_profile_restriction: {
                 Args: {
                     restriction_type: string;

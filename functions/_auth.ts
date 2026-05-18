@@ -86,12 +86,14 @@ export function validateSignupInput(input: {
 }
 
 export function jsonResponse(body: unknown, init?: ResponseInit) {
+    const headers = new Headers(init?.headers);
+    if (!headers.has("Content-Type")) {
+        headers.set("Content-Type", "application/json");
+    }
+
     return new Response(JSON.stringify(body), {
         ...init,
-        headers: {
-            "Content-Type": "application/json",
-            ...init?.headers,
-        },
+        headers,
     });
 }
 
@@ -150,10 +152,13 @@ export async function verifyTurnstileToken(
         formData.set("remoteip", ip);
     }
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
     try {
         const response = await fetch(
             "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-            { method: "POST", body: formData },
+            { method: "POST", body: formData, signal: controller.signal },
         );
         const result = (await response.json()) as TurnstileSiteverifyResponse;
         return result.success
@@ -162,6 +167,8 @@ export async function verifyTurnstileToken(
     } catch (error) {
         console.error("turnstile verification failed", error);
         return "Verification is temporarily unavailable. Please try again.";
+    } finally {
+        clearTimeout(timeout);
     }
 }
 
