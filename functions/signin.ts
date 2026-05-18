@@ -12,6 +12,8 @@ import {
     normalizeIdentifier,
     readRequestBody,
     resolveIdentifierToEmail,
+    turnstileToken,
+    verifyTurnstileToken,
 } from "./_auth";
 import { createSupabaseAdminClient, createSupabaseClient } from "./_supabase";
 import type { Session, User } from "@supabase/supabase-js";
@@ -43,11 +45,6 @@ function safeScriptJson(value: unknown) {
                 "&": "\\u0026",
             })[character] ?? character,
     );
-}
-
-function turnstileToken(body: Record<string, unknown>) {
-    const token = body["cf-turnstile-response"] ?? body.turnstileToken;
-    return typeof token === "string" ? token.trim() : "";
 }
 
 function htmlResponse(body: string, status = 200) {
@@ -306,16 +303,32 @@ function validateSignInForm(
         );
     }
 
-    if (env.TURNSTILE_SITE_KEY && !form.captchaToken) {
-        return signInErrorResponse(
-            "Complete the verification challenge before signing in.",
-            env,
-            form.handoffId,
-            400,
-        );
+    return null;
+}
+
+async function validateSignInCaptcha(
+    request: Request,
+    env: Cloudflare.Env,
+    form: SignInForm,
+): Promise<Response | null> {
+    const captchaError = await verifyTurnstileToken(
+        env,
+        form.captchaToken,
+        request,
+    );
+    if (!captchaError) {
+        return null;
     }
 
-    return null;
+    return signInErrorResponse(
+        captchaError ===
+            "Complete the verification challenge before continuing."
+            ? "Complete the verification challenge before signing in."
+            : captchaError,
+        env,
+        form.handoffId,
+        400,
+    );
 }
 
 async function validatePostedHandoff(
@@ -343,7 +356,7 @@ async function resolveSignInEmail(
         return (
             email ??
             signInErrorResponse(
-                "No account was found for that username or email.",
+                "Invalid login credentials.",
                 env,
                 handoffId,
                 401,
@@ -419,16 +432,35 @@ async function completeNativeHandoff(
     payload: AuthPayload,
 ) {
     const admin = createSupabaseAdminClient(env);
-    const { error } = await admin
+    const { data, error } = await admin
         .from("auth_handoffs")
         .update({ auth_payload: payload, profile_id: payload.user.id })
         .eq("id", handoffId)
         .is("claimed_at", null)
-        .gt("expires_at", new Date().toISOString());
+        .gt("expires_at", new Date().toISOString())
+        .select("id")
+        .maybeSingle();
 
-    return error
-        ? htmlResponse(page(error.message, true, env), 500)
-        : htmlResponse(nativeCompletionPage());
+    if (error) {
+        console.error("native handoff completion failed", error);
+        return htmlResponse(
+            page(
+                "Could not complete sign-in right now. Please try again.",
+                true,
+                env,
+            ),
+            500,
+        );
+    }
+
+    if (!data) {
+        return htmlResponse(
+            page("Sign-in handoff has expired.", true, env),
+            400,
+        );
+    }
+
+    return htmlResponse(nativeCompletionPage());
 }
 
 function completeBrowserSignIn(payload: AuthPayload) {
@@ -462,6 +494,9 @@ export const onRequestPost: PagesFunction<Cloudflare.Env> = async ({
     const form = readSignInForm(await readRequestBody(request));
     const formError = validateSignInForm(form, env);
     if (formError) return formError;
+
+    const captchaError = await validateSignInCaptcha(request, env, form);
+    if (captchaError) return captchaError;
 
     const handoffError = await validatePostedHandoff(env, form.handoffId);
     if (handoffError) return handoffError;

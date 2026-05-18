@@ -35,6 +35,14 @@ export type AuthPayload = {
     profile: AuthProfile | null;
 };
 
+type TurnstileSiteverifyResponse = {
+    success?: boolean;
+    "error-codes"?: string[];
+};
+
+const TURNSTILE_TEST_SITE_KEY = "1x00000000000000000000AA";
+const TURNSTILE_TEST_SECRET_KEY = "1x0000000000000000000000000000000AA";
+
 export function isEmail(value: string): boolean {
     return EMAIL_PATTERN.test(value);
 }
@@ -91,15 +99,70 @@ export async function readRequestBody(
     request: Request,
 ): Promise<Record<string, unknown>> {
     const contentType = request.headers.get("Content-Type") ?? "";
-    if (contentType.includes("application/json")) {
-        const body = await request.json();
-        return body && typeof body === "object"
-            ? (body as Record<string, unknown>)
-            : {};
+
+    try {
+        if (contentType.includes("application/json")) {
+            const body = await request.json();
+            return body && typeof body === "object"
+                ? (body as Record<string, unknown>)
+                : {};
+        }
+
+        const formData = await request.formData();
+        return Object.fromEntries(formData.entries());
+    } catch {
+        return {};
+    }
+}
+
+export function turnstileToken(body: Record<string, unknown>) {
+    const token = body["cf-turnstile-response"] ?? body.turnstileToken;
+    return typeof token === "string" ? token.trim() : "";
+}
+
+export async function verifyTurnstileToken(
+    env: Cloudflare.Env,
+    token: string,
+    request: Request,
+): Promise<string | null> {
+    if (!env.TURNSTILE_SITE_KEY) {
+        return null;
     }
 
-    const formData = await request.formData();
-    return Object.fromEntries(formData.entries());
+    if (!token) {
+        return "Complete the verification challenge before continuing.";
+    }
+
+    const secret =
+        env.TURNSTILE_SECRET_KEY ??
+        (env.TURNSTILE_SITE_KEY === TURNSTILE_TEST_SITE_KEY
+            ? TURNSTILE_TEST_SECRET_KEY
+            : "");
+    if (!secret) {
+        return "Verification is not configured. Please try again later.";
+    }
+
+    const formData = new FormData();
+    formData.set("secret", secret);
+    formData.set("response", token);
+    const ip = request.headers.get("CF-Connecting-IP");
+    if (ip) {
+        formData.set("remoteip", ip);
+    }
+
+    try {
+        const response = await fetch(
+            "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+            { method: "POST", body: formData },
+        );
+        const result = (await response.json()) as TurnstileSiteverifyResponse;
+        return result.success
+            ? null
+            : "Complete the verification challenge before continuing.";
+    } catch (error) {
+        console.error("turnstile verification failed", error);
+        return "Verification is temporarily unavailable. Please try again.";
+    }
 }
 
 export async function resolveIdentifierToEmail(

@@ -65,15 +65,24 @@ export const onRequestPost: PagesFunction<Cloudflare.Env> = async ({
         return jsonResponse({ pending: true }, { status: 202 });
     }
 
-    const { error: updateError } = await supabase
-        .from("auth_handoffs")
-        .update({ claimed_at: new Date().toISOString() })
-        .eq("id", handoffId)
-        .is("claimed_at", null);
+    const { data: claimedPayload, error: updateError } = await supabase.rpc(
+        "claim_auth_handoff",
+        {
+            claim_id: handoffId,
+            claim_secret_hash: secretHash,
+        },
+    );
 
     if (updateError) {
         return serverError(updateError.message);
     }
 
-    return jsonResponse(data.auth_payload);
+    if (!claimedPayload) {
+        return jsonResponse(
+            { error: "Sign-in handoff has expired." },
+            { status: 410 },
+        );
+    }
+
+    return jsonResponse(claimedPayload);
 };

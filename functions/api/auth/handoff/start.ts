@@ -40,6 +40,11 @@ export const onRequestPost: PagesFunction<Cloudflare.Env> = async ({
     const handoffSecret = randomSecret();
     const secretHash = await sha256Hex(handoffSecret);
     const supabase = createSupabaseAdminClient(env);
+    const { error: cleanupError } = await supabase.rpc("cleanup_auth_handoffs");
+    if (cleanupError) {
+        return serverError(cleanupError.message);
+    }
+
     const { error } = await supabase.from("auth_handoffs").insert({
         id: handoffId,
         secret_hash: secretHash,

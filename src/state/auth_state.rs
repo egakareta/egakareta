@@ -90,7 +90,9 @@ impl State {
     }
 
     pub(crate) fn open_auth_signup_page(&mut self) {
-        crate::platform::auth::open_signup_page();
+        if let Err(error) = crate::platform::auth::open_signup_page() {
+            self.auth.message = Some(error);
+        }
     }
 
     pub(crate) fn update_auth_results(&mut self) {

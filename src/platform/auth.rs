@@ -10,7 +10,9 @@ use serde::Deserialize;
 use serde::Serialize;
 
 #[cfg(not(target_arch = "wasm32"))]
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(target_arch = "wasm32"))]
+use web_time::Instant as PlatformInstant;
 
 use crate::types::{AuthErrorResponse, AuthSession};
 
@@ -57,13 +59,13 @@ pub(crate) fn signin_url() -> String {
     endpoint_url("/signin")
 }
 
-pub(crate) fn open_signup_page() {
-    open_url(&signup_url());
+pub(crate) fn open_signup_page() -> Result<(), String> {
+    open_url(&signup_url())
 }
 
 #[cfg(target_arch = "wasm32")]
 async fn sign_in_platform() -> Result<AuthSession, String> {
-    open_signin_page();
+    open_signin_page()?;
     Err("Continue signing in on the web page.".to_string())
 }
 
@@ -71,10 +73,10 @@ async fn sign_in_platform() -> Result<AuthSession, String> {
 async fn sign_in_platform() -> Result<AuthSession, String> {
     let start: HandoffStartResponse =
         post_json("/api/auth/handoff/start", None, &serde_json::json!({})).await?;
-    open_url(&start.signin_url);
+    open_url(&start.signin_url)?;
 
-    let deadline = Instant::now() + Duration::from_secs(10 * 60);
-    while Instant::now() < deadline {
+    let deadline = PlatformInstant::now() + Duration::from_secs(10 * 60);
+    while PlatformInstant::now() < deadline {
         if let Some(session) = claim_handoff(&start.handoff_id, &start.handoff_secret).await? {
             return Ok(session);
         }
@@ -85,33 +87,42 @@ async fn sign_in_platform() -> Result<AuthSession, String> {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub(crate) fn open_signin_page() {
-    open_url(&signin_url());
+pub(crate) fn open_signin_page() -> Result<(), String> {
+    open_url(&signin_url())
 }
 
-fn open_url(url: &str) {
+fn open_url(url: &str) -> Result<(), String> {
     #[cfg(test)]
     {
         let _ = url;
+        Ok(())
     }
 
     #[cfg(all(not(test), target_arch = "wasm32"))]
     {
-        if let Some(window) = web_sys::window() {
-            let _ = window.location().set_href(url);
-        }
+        web_sys::window()
+            .ok_or_else(|| "Browser window is not available.".to_string())?
+            .location()
+            .set_href(url)
+            .map_err(|err| format!("Opening browser failed: {err:?}"))
     }
 
     #[cfg(all(not(test), not(target_arch = "wasm32"), target_os = "windows"))]
     {
-        let _ = std::process::Command::new("cmd")
+        std::process::Command::new("cmd")
             .args(["/C", "start", "", url])
-            .spawn();
+            .spawn()
+            .map(|_| ())
+            .map_err(|err| format!("Opening browser failed: {err}"))
     }
 
     #[cfg(all(not(test), not(target_arch = "wasm32"), target_os = "macos"))]
     {
-        let _ = std::process::Command::new("open").arg(url).spawn();
+        std::process::Command::new("open")
+            .arg(url)
+            .spawn()
+            .map(|_| ())
+            .map_err(|err| format!("Opening browser failed: {err}"))
     }
 
     #[cfg(all(
@@ -121,7 +132,11 @@ fn open_url(url: &str) {
         not(target_os = "macos")
     ))]
     {
-        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+        std::process::Command::new("xdg-open")
+            .arg(url)
+            .spawn()
+            .map(|_| ())
+            .map_err(|err| format!("Opening browser failed: {err}"))
     }
 }
 
@@ -130,7 +145,11 @@ async fn claim_handoff(
     handoff_id: &str,
     handoff_secret: &str,
 ) -> Result<Option<AuthSession>, String> {
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|err| format!("Auth client init failed: {err}"))?;
     let response = client
         .post(endpoint_url("/api/auth/handoff/claim"))
         .json(&HandoffClaimRequest {
@@ -190,10 +209,20 @@ fn endpoint_url(path: &str) -> String {
                     .map(str::to_string)
                     .filter(|value| !value.trim().is_empty())
             })
-            .unwrap_or_else(|| "http://127.0.0.1:8788".to_string());
+            .unwrap_or_else(default_auth_base_url);
 
         format!("{}{}", base.trim_end_matches('/'), normalized_path.as_str())
     }
+}
+
+#[cfg(all(not(target_arch = "wasm32"), debug_assertions))]
+fn default_auth_base_url() -> String {
+    "http://127.0.0.1:8788".to_string()
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(debug_assertions)))]
+fn default_auth_base_url() -> String {
+    "https://egakareta.com".to_string()
 }
 
 fn parse_response<R>(status: u16, text: &str) -> Result<R, String>
@@ -667,7 +696,11 @@ where
     T: Serialize + ?Sized,
     R: serde::de::DeserializeOwned,
 {
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|err| format!("Auth client init failed: {err}"))?;
     let mut request = client.post(endpoint_url(path)).json(body);
     if let Some(token) = access_token.filter(|token| !token.is_empty()) {
         request = request.bearer_auth(token);

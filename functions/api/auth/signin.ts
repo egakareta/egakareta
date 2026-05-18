@@ -12,14 +12,11 @@ import {
     normalizeIdentifier,
     readRequestBody,
     resolveIdentifierToEmail,
+    turnstileToken,
+    verifyTurnstileToken,
 } from "../../_auth";
 import { createSupabaseClient } from "../../_supabase";
 import { badRequest, serverError, unauthorized } from "../../_utils";
-
-function turnstileToken(body: Record<string, unknown>) {
-    const token = body["cf-turnstile-response"] ?? body.turnstileToken;
-    return typeof token === "string" ? token.trim() : "";
-}
 
 export const onRequestPost: PagesFunction<Cloudflare.Env> = async ({
     request,
@@ -33,9 +30,13 @@ export const onRequestPost: PagesFunction<Cloudflare.Env> = async ({
     if (!identifier || !password) {
         return badRequest("Enter your username or email and password.");
     }
-    if (env.TURNSTILE_SITE_KEY && !captchaToken) {
+    const captchaError = await verifyTurnstileToken(env, captchaToken, request);
+    if (captchaError) {
         return badRequest(
-            "Complete the verification challenge before signing in.",
+            captchaError ===
+                "Complete the verification challenge before continuing."
+                ? "Complete the verification challenge before signing in."
+                : captchaError,
         );
     }
 
@@ -51,7 +52,7 @@ export const onRequestPost: PagesFunction<Cloudflare.Env> = async ({
     }
 
     if (!email) {
-        return unauthorized("No account was found for that username or email.");
+        return unauthorized("Invalid login credentials.");
     }
 
     const { data, error } = await supabase.auth.signInWithPassword({

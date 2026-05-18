@@ -78,10 +78,7 @@ pub(crate) fn trigger_auth_sign_in(sender: Sender<AuthServiceMessage>) {
             return;
         }
 
-        let result = crate::platform::auth::sign_in().await;
-        if let Ok(session) = &result {
-            let _ = crate::platform::storage::save_auth_session(session).await;
-        }
+        let result = persist_auth_session_result(crate::platform::auth::sign_in().await).await;
         let _ = sender.send(AuthServiceMessage::SignedIn(result));
     });
 }
@@ -94,12 +91,22 @@ pub(crate) fn trigger_auth_refresh(refresh_token: String, sender: Sender<AuthSer
             return;
         }
 
-        let result = crate::platform::auth::refresh_session(&refresh_token).await;
-        if let Ok(session) = &result {
-            let _ = crate::platform::storage::save_auth_session(session).await;
-        }
+        let result = persist_auth_session_result(
+            crate::platform::auth::refresh_session(&refresh_token).await,
+        )
+        .await;
         let _ = sender.send(AuthServiceMessage::Refreshed(result));
     });
+}
+
+async fn persist_auth_session_result(
+    result: Result<AuthSession, String>,
+) -> Result<AuthSession, String> {
+    let session = result?;
+    crate::platform::storage::save_auth_session(&session)
+        .await
+        .map_err(|error| format!("Session could not be saved: {error}"))?;
+    Ok(session)
 }
 
 pub(crate) fn trigger_auth_sign_out(

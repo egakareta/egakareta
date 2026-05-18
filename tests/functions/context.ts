@@ -10,6 +10,7 @@
 type PagesContext = Parameters<PagesFunction<Cloudflare.Env>>[0];
 
 const defaultEnv: Cloudflare.Env = {
+    AUTH_BASE_URL: "https://egakareta.test",
     ANON_KEY: "anon-key",
     API_URL: "http://127.0.0.1:54321",
     DB_URL: "postgres://postgres:postgres@127.0.0.1:54322/postgres",
@@ -27,6 +28,7 @@ const defaultEnv: Cloudflare.Env = {
     SERVICE_ROLE_KEY: "service-role-key",
     STORAGE_S3_URL: "http://127.0.0.1:54321/storage/v1/s3",
     STUDIO_URL: "http://127.0.0.1:54323",
+    TURNSTILE_SITE_KEY: "",
 };
 
 export function makePagesContext(

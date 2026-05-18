@@ -8,13 +8,10 @@
 import { describe, expect, it } from "vitest";
 
 import { onRequest } from "../../functions/hello";
-import { makePagesContext } from "./context";
 
 describe("GET /hello", () => {
     it("returns a hello response", async () => {
-        const response = await onRequest(
-            makePagesContext(new Request("https://egakareta.test/hello")),
-        );
+        const response = await onRequest();
 
         expect(response.status).toBe(200);
         expect(response.headers.get("Content-Type")).toBe("application/json");

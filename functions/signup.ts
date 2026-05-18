@@ -5,7 +5,13 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-import { jsonResponse, readRequestBody, validateSignupInput } from "./_auth";
+import {
+    jsonResponse,
+    readRequestBody,
+    turnstileToken,
+    validateSignupInput,
+    verifyTurnstileToken,
+} from "./_auth";
 import { createSupabaseClient } from "./_supabase";
 import { badRequest, serverError } from "./_utils";
 
@@ -28,11 +34,6 @@ function escapeHtml(value: string) {
                 '"': "&quot;",
             })[character] ?? character,
     );
-}
-
-function turnstileToken(body: Record<string, unknown>) {
-    const token = body["cf-turnstile-response"] ?? body.turnstileToken;
-    return typeof token === "string" ? token.trim() : "";
 }
 
 function page(message = "", isError = false, env: Cloudflare.Env) {
@@ -150,7 +151,6 @@ function signupSuccessResponse(
 
 function validateSignupRequest(
     body: Record<string, unknown>,
-    captchaToken: string,
     wantsJson: boolean,
     env: Cloudflare.Env,
 ): SignupInput | Response {
@@ -164,16 +164,29 @@ function validateSignupRequest(
         return signupErrorResponse(validated.error, 400, wantsJson, env);
     }
 
-    if (env.TURNSTILE_SITE_KEY && !captchaToken) {
-        return signupErrorResponse(
-            "Complete the verification challenge before signing up.",
-            400,
-            wantsJson,
-            env,
-        );
+    return validated;
+}
+
+async function validateSignupCaptcha(
+    request: Request,
+    env: Cloudflare.Env,
+    captchaToken: string,
+    wantsJson: boolean,
+): Promise<Response | null> {
+    const captchaError = await verifyTurnstileToken(env, captchaToken, request);
+    if (!captchaError) {
+        return null;
     }
 
-    return validated;
+    return signupErrorResponse(
+        captchaError ===
+            "Complete the verification challenge before continuing."
+            ? "Complete the verification challenge before signing up."
+            : captchaError,
+        400,
+        wantsJson,
+        env,
+    );
 }
 
 async function ensureUsernameAvailable(
@@ -189,7 +202,13 @@ async function ensureUsernameAvailable(
         .maybeSingle();
 
     if (error) {
-        return signupErrorResponse(error.message, 500, wantsJson, env);
+        console.error("signup username availability check failed", error);
+        return signupErrorResponse(
+            "Sign up is temporarily unavailable. Please try again.",
+            500,
+            wantsJson,
+            env,
+        );
     }
 
     return data
@@ -213,7 +232,13 @@ async function ensureEmailAvailable(
     });
 
     if (error) {
-        return signupErrorResponse(error.message, 500, wantsJson, env);
+        console.error("signup email availability check failed", error);
+        return signupErrorResponse(
+            "Sign up is temporarily unavailable. Please try again.",
+            500,
+            wantsJson,
+            env,
+        );
     }
 
     return data
@@ -262,8 +287,16 @@ export const onRequestPost: PagesFunction<Cloudflare.Env> = async ({
     const body = await readRequestBody(request);
     const captchaToken = turnstileToken(body);
     const wantsJson = wantsJsonResponse(request);
-    const input = validateSignupRequest(body, captchaToken, wantsJson, env);
+    const input = validateSignupRequest(body, wantsJson, env);
     if (isResponse(input)) return input;
+
+    const captchaError = await validateSignupCaptcha(
+        request,
+        env,
+        captchaToken,
+        wantsJson,
+    );
+    if (captchaError) return captchaError;
 
     const supabase = createSupabaseClient(env, request);
     const usernameError = await ensureUsernameAvailable(
