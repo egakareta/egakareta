@@ -5,13 +5,14 @@
 **egakareta** is a high-performance 3D rhythm game engine written in Rust. It utilizes:
 
 - **Rust (2021 Edition)** as the core programming language.
-- **wgpu** for cross-platform, hardware-accelerated 3D rendering.
-- **egui** for the user interface and level editor toolset.
-- **wasm-pack** to target WebAssembly (`wasm32`) for the web version.
+- **wgpu 27** for cross-platform, hardware-accelerated 3D rendering.
+- **egui 0.33** (with `egui-phosphor` icons) for the user interface and level editor toolset.
+- **wasm-pack** to target WebAssembly (`wasm32-unknown-unknown`) for the web version.
 - **Bun** as the package manager and script runner for frontend/tooling.
-- **Supabase** for backend services.
+- **Cloudflare Pages (wrangler)** for the web deployment target and dev server.
+- **Supabase** for backend services (auth, database, storage).
 
-The application compiles to both Native (desktop) and WebAssembly (browser). You **must** ensure changes preserve this dual compatibility. This is the single most important architectural constraint in the repository.
+The application compiles to both Native (desktop) and WebAssembly (browser). You **must** ensure changes preserve this dual compatibility. This is the single most important architectural constraint in the repository. Use `#[cfg(target_arch = "wasm32")]` / `#[cfg(not(target_arch = "wasm32"))]` for platform-specific branches and prefer libraries that support both targets.
 
 ## 2. Tooling and Commands
 
@@ -19,52 +20,75 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 
 ### Build & Run
 
-- **Development Server:** `bun run dev` (Runs a watch process and an HTTP server via `nodemon` and `concurrently`)
-- **Web Build:** `bun run build` (Compiles Rust to WASM using `wasm-pack build --target web`)
+- **Development Server:** `bun run dev` — runs `concurrently` with:
+    - `nodemon` watching `src/`, `assets/`, `index.html`, `dist.ts` for changes → triggers `wasm-pack build -t web -d dist/pkg && bun dist.ts`
+    - `wrangler pages dev` serving from `./dist` on `http://127.0.0.1:8788`
+- **Web Build:** `bun run build` — compiles Rust to WASM via `wasm-pack build -t web -d dist/pkg`, then runs `dist.ts` (copies `index.html` and `assets/` into `dist/`).
+- **CLI Tool:** The `egb` binary (`src/bin/egb.rs`) is a standalone level metadata conversion helper (JSON ↔ binary `.egb`). Build it with `cargo build --bin egb`.
 
 ### Linting & Formatting
 
-- **Lint (Clippy):** `bun run lint` (Executes `cargo clippy -- -D warnings` - do not bypass these warnings!)
-- **Format Code (Rust + JS/JSON/YAML):** `bun run format` (Runs both `cargo fmt` and `prettier --write .`)
-- **Prettier Config:** The `.prettierrc` specifies 4 spaces for most web/tooling files, but 2 spaces for `*.yml`/`*.yaml`. `singleQuote: false` and `semi: true`.
+- **Lint (Clippy):** `bun run lint` — executes `cargo clippy -- -D warnings`. **Never bypass these warnings!** Clippy denials are treated as hard errors in CI.
+- **Format Code:** `bun run format` — runs `cargo fmt` then `prettier --write .`.
+- **Prettier Config:** `.prettierrc` specifies:
+    - 4-space indentation for most files (`*.ts`, `*.json`, `*.rs`, `*.md`, etc.)
+    - 2-space indentation for `*.yml` / `*.yaml`
+    - No trailing commas in `*.jsonc`
+    - `singleQuote: false`, `semi: true`
+- **License Headers:** `bun run license:add` / `bun run license:check` — ensures every source file has the AGPLv3/commercial copyright header. The lefthook pre-commit hook runs `license:check` and `format` in parallel.
 
 ### Testing
 
-- **Run Tests:** `bun run test` (`cargo test -- -Zunstable-options --report-time`)
-- **Run Single Test:** `bun run test <test_name>`
-- **Run Coverage:** `cargo llvm-cov -- -Zunstable-options --report-time`
+- **Run All Tests:** `bun run test` → `cargo test -- -Zunstable-options --report-time`
+- **Run Single Test:** `cargo test <test_name> -- -Zunstable-options --report-time`
+- **Run Coverage:** `bun run test:coverage` → `cargo llvm-cov --lcov --output-path lcov.info -- -Zunstable-options --report-time`
+- **Database Tests:** `bun run test:db` → `supabase test db`
 
 ### Type Generation
 
-- **Generate Types (Cloudflare + Supabase):** `bun run typegen`
+- **Generate Types:** `bun run typegen` — runs both:
+    - `wrangler types --env-interface CloudflareEnv functions/cloudflare-env.d.ts`
+    - `supabase gen types typescript --local > functions/_supabase_types.ts`
 
 ## 3. Code Architecture & Layout
 
-Understanding the project structure is crucial for idiomatic changes:
+- `src/commands.rs`: `AppCommand` is the central action dispatch pattern. Every user intent (keyboard shortcut, UI button, mouse click) becomes an `AppCommand` variant, routed through `State::dispatch()`. This decouples input from execution and enables replay/macro/test harness support.
+- `src/level_codec.rs`: Binary level format (`EGB1` magic, versioned). Handles encoding/decoding `LevelMetadata` ↔ compressed binary (Zstd, CBOR). Supports `ObjectRun` run-length encoding for compact object streams.
+- `src/import_export_service.rs`: Public API for level import/export: JSON ↔ binary conversion, `.egz` archive handling, format normalization.
+- `src/game/`: Core Engine (headless, no I/O). Must remain completely decoupled from rendering and I/O. It only operates on `GameState` and `LevelObject` data. This allows headless simulation in tests and the editor preview.
+- `src/platform/`: Platform Abstraction Layer
+- `src/state/`: Application State & Editor Logic
+- `src/editor_domain/`: Editor Domain Logic
+- `src/editor_ui/`: Egui UI Components
+- `src/mesh/`: Mesh Generation
+- `src/bin/egb.rs`: A standalone CLI tool for level metadata conversion:
+    - `egb decode <input.egb> [output.json]` — binary → JSON
+    - `egb encode <input.json> [output.egb]` — JSON → binary
+    - `tests/egb_tests.rs`: Integration tests.
+- `assets/blocks/`: Block files. Embedded at compile time via `include_dir!`.
+- `assets/levels/`: Built-in level directories. Each contains level metadata and audio files.
 
-- `src/lib.rs` - The primary library entry point exposing core modules.
-- `src/main.rs` - The application binary entry point. Extremely thin wrapper around `egakareta_lib::run_native_app()` (or a no-op on `wasm32`).
-- `src/game/` - Core engine logic, simulation, and physics. This must be completely decoupled from rendering and I/O to allow headless simulation.
-- `src/platform/` - Platform-specific implementations (e.g., `web_runtime.rs` vs `native_runtime.rs`). Contains the abstraction layer over Winit, file storage (`rexie` for indexedDB on Web, `directories` on Native), and audio (`rodio`/`symphonia` vs Web Audio API).
-- `src/state/` - Manages the high-level game and editor state.
-- `src/editor_ui/` & `src/editor_domain/` - Egui-based UI components and editor state management.
-- `src/types.rs` - Core data types (like `LevelObject`), serialization details, and default value generators for `serde`.
-- `src/mesh/` - Mesh generation and geometry utilities.
-- `src/audio_service.rs` - Audio playback and management.
-- `src/block_repository.rs` - Block definitions and registry.
-- `src/level_repository.rs` - Level storage and retrieval.
-- `src/import_export_service.rs` - Level import/export functionality.
-- `src/commands.rs` - Command pattern implementation (undo/redo).
-- `assets/` - Static assets, textures, and default data to be embedded or loaded.
-- `shader.wgsl` - The core WebGPU shader for rendering the game world.
+### Other Files
+
+- `src/shader.wgsl` — The core WebGPU shader. Compiled at build time. Defines vertex/fragment shaders for block rendering with texture arrays, color spaces, and line uniforms.
+- `build.rs` — Build script that bakes `wrangler.jsonc` environment variables into the binary for the configured build environment.
+- `voxel/exec.ts` — A Bun script for executing level generation/transformation scripts.
+- `dist.ts` — Post-build script that copies `index.html` and `assets/` into the `dist/` output directory.
+- `wrangler.jsonc` — Cloudflare Pages configuration with environment-specific vars.
+- `functions/` — Cloudflare Pages Functions (TypeScript serverless backend, Supabase integration).
 
 ## 4. Code Style & Conventions
 
 ### Platform Duality (WASM vs Native)
 
-- Use conditional compilation `#[cfg(target_arch = "wasm32")]` and `#[cfg(not(target_arch = "wasm32"))]` as needed to separate platform-specific logic. However, strive to keep the logic as unified as possible and prefer libraries that support both targets seamlessly.
-- Instead of standard library `std::time`, use `web_time` to guarantee compatibility across platforms.
-- The `crate-type` in `Cargo.toml` is `["cdylib", "rlib"]` to support both WASM (cdylib) and native testing (rlib).
+- Use conditional compilation `#[cfg(target_arch = "wasm32")]` and `#[cfg(not(target_arch = "wasm32"))]` for platform-specific logic. Keep unified code paths where possible.
+- Use `web_time::Instant` (aliased as `PlatformInstant`) instead of `std::time::Instant` everywhere.
+- The `crate-type` in `Cargo.toml` is `["cdylib", "rlib"]` — `cdylib` for WASM, `rlib` for native testing.
+- For any `cfg`-gated struct fields, declare them in **all** branches (use empty tuples or `Option` on the non-applicable target) so the struct layout is consistent.
+- WASM storage uses IndexedDB via `rexie`. Native storage uses `directories` for app data paths.
+- WASM file export triggers a browser download via an anchor element click. Native writes to disk with `std::fs`.
+- WASM logging uses `gloo_console`. Native uses the `log` crate + `env_logger`.
+- WASM panics are routed through `console_error_panic_hook`.
 
 ### Imports & Module Organization
 
@@ -74,11 +98,10 @@ Understanding the project structure is crucial for idiomatic changes:
 - Internal modules are declared as `mod` (private) in `lib.rs`; only expose what is needed externally.
 - Use `pub(crate)` for items that should be visible across modules within the crate but not externally.
 
-### Error Handling
+### Profiling
 
-- The codebase relies heavily on the `Result<T, String>` pattern for broad error handling across boundaries (e.g., `src/platform/io.rs`).
-- Avoid creating deeply nested custom `enum` error types unless a subsystem specifically requires matching against distinct error variants. Use `.map_err(|e| e.to_string())` to propagate third-party errors outwards seamlessly.
-- Do not use `unwrap()` or `expect()` outside of test modules unless a failure is absolutely unrecoverable and indicates a fatal programmer logic error. Prefer bubbling up errors.
+- The project uses `puffin` for frame-level profiling with `puffin_egui` for the in-app profiler UI.
+- Wrap performance-sensitive scopes with `puffin::profile_scope!("name")`.
 
 ### Type Definitions & Math
 
@@ -86,20 +109,39 @@ Understanding the project structure is crucial for idiomatic changes:
 - For serialization, heavily utilize `serde`. Define defaults and skipping logic cleanly as standalone functions (refer to `src/types.rs` for examples like `fn default_spawn_position() -> [f32; 3]`).
 - Use arrays like `[f32; 3]` for positions/colors when serializing to JSON, rather than glam types directly.
 
-### Naming Conventions
+## 5. Testing Style & Conventions
 
-- Rust standard naming: `snake_case` for variables, functions, and modules; `PascalCase` for structs, enums, and traits.
-- Constant values should be `UPPER_SNAKE_CASE` (e.g., `CURRENT_LEVEL_FORMAT_VERSION`).
-- Boolean states or predicate functions should typically start with `is_` or `has_`.
+### Test Organization
 
-### Testing Style
+- Unit tests go in `#[cfg(test)] mod tests { ... }` at the bottom of each source file, or in an adjacent `tests.rs` file (e.g., `src/game/tests.rs`, `src/mesh/tests.rs`).
+- Integration tests for the `egb` binary live in `tests/egb_tests.rs`.
+- Editor snapshot tests live in `src/state/editor_snap_tests.rs`.
+- Shader compilation tests live in `src/state/shader_tests.rs`.
 
-- Put unit tests at the bottom of the module in `#[cfg(test)] mod tests { ... }` or in an adjacent `tests.rs` file (e.g., `src/game/tests.rs`).
-- Do not use strict equality for floating point numbers (`f32`). Write or use custom test helpers like `fn approx_eq(a: f32, b: f32, eps: f32)` as seen in `src/game/tests.rs`.
-- Ensure tests run correctly when compiled for the web (if possible) or strictly target native environments using `#[cfg(not(target_arch = "wasm32"))]` if testing system IO or native-only dependencies.
-- Make tests hermetic. Do not rely on shared global state.
+### Floating Point Assertions
 
-## 5. Development Workflow Guidelines
+- Never use `assert_eq!` for `f32` values. Use `crate::test_utils::approx_eq(a, b, eps)` and `crate::test_utils::assert_approx_eq(a, b, eps)`.
+- Default epsilon varies by test domain; physics tests commonly use `1e-6`.
+
+### Async Tests
+
+- State construction is `async` (e.g., `State::new_test().await`). Use `pollster::block_on(...)` to run async tests synchronously.
+- Editor tests use `enter_editor_phase("name")` with minimal test data when built-in level metadata is not needed. Avoid `start_editor(0)` (which loads full built-in data) unless specifically testing built-in levels — it makes tests multi-second.
+
+### Test Data
+
+- For level export/import tests, set a tiny test music source and populate `local_audio_cache` to avoid expensive built-in audio read/compression.
+
+### Platform-Specific Tests
+
+- Use `#[cfg(not(target_arch = "wasm32"))]` on tests that need filesystem access, native audio, or other platform-specific features.
+- WASM smoke tests may run without a compatible GPU adapter — treat graceful startup failure (no panic/crash) as a valid outcome alongside successful first-frame readiness.
+
+### wgpu Polling API
+
+- wgpu v27 changed `Device::poll` — use `wgpu::PollType::wait_indefinitely()` or `Wait { submission_index, timeout }`. The old `PollType::Wait` unit variant no longer exists.
+
+## 6. Development Workflow Guidelines
 
 1. **Understand First:** Before modifying logic, always read `Cargo.toml` and `package.json` to understand the build chain. Check `src/types.rs` or `src/game/mod.rs` to see how the subsystem fits together.
 2. **Self-Verification:** Before finalizing a task, ensure the code builds (`bun run build`) and passes all strict lints (`bun run lint`). Unverified code will fail the CI.

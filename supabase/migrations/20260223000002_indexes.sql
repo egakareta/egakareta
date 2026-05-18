@@ -13,4 +13,6 @@ create index if not exists beatmaps_mapper_id_idx on public.beatmaps(mapper_id);
 create index if not exists comment_votes_user_id_idx on public.comment_votes(user_id);
 create index if not exists comments_profile_id_idx on public.comments(profile_id);
 create index if not exists user_webauthn_credentials_user_id_idx on public.user_webauthn_credentials(user_id);
+create index if not exists auth_handoffs_expires_at_idx on public.auth_handoffs(expires_at);
+create index if not exists auth_handoffs_profile_id_idx on public.auth_handoffs(profile_id);
 
