@@ -11,18 +11,22 @@ use super::{EditorDirtyFlags, EditorSubsystem, State};
 use crate::editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds_with_triggers};
 use crate::game::trigger_transformed_objects_at_time;
 use crate::mesh::{
-    build_block_vertices, build_block_vertices_for_object, build_block_vertices_from_refs,
+    build_block_geometry, build_block_geometry_for_object, build_block_geometry_from_refs,
     build_camera_trigger_marker_vertices, build_editor_cursor_vertices,
     build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
     build_editor_selection_outline_vertices, build_spawn_marker_vertices,
-    build_tap_indicator_vertices, GizmoParams,
+    build_tap_indicator_vertices, GizmoParams, MeshGeometry,
 };
 use crate::types::{AppPhase, EditorMode, GizmoPart, LevelObject, SpawnDirection};
 
-fn editor_static_mesh_spare_capacity(vertex_count: usize, object_count: usize) -> u32 {
-    let growth_room = vertex_count / 8;
+fn editor_static_mesh_spare_capacity(geometry: &MeshGeometry, object_count: usize) -> (u32, u32) {
     let object_room = object_count.min(512).saturating_mul(36);
-    growth_room.max(object_room).max(4096) as u32
+    let vertex_growth_room = geometry.vertex_count() / 8;
+    let index_growth_room = geometry.draw_count() / 8;
+    (
+        vertex_growth_room.max(object_room).max(4096) as u32,
+        index_growth_room.max(object_room).max(4096) as u32,
+    )
 }
 
 impl EditorSubsystem {
@@ -611,11 +615,11 @@ impl State {
         if self.phase == AppPhase::Editor {
             self.rebuild_editor_block_vertices_split();
         } else {
-            let vertices = build_block_vertices(&self.gameplay.state.objects);
-            self.render.meshes.blocks.replace_with_vertices(
+            let geometry = build_block_geometry(&self.gameplay.state.objects);
+            self.render.meshes.blocks.replace_with_geometry(
                 &self.render.gpu.device,
                 "Block Vertex Buffer",
-                &vertices,
+                &geometry,
             );
             self.render.meshes.blocks_static.clear();
             self.render.meshes.blocks_selected.clear();
@@ -649,7 +653,7 @@ impl State {
                     static_objects.push(object);
                 }
             }
-            build_block_vertices_from_refs(&static_objects)
+            build_block_geometry_from_refs(&static_objects)
         };
 
         let selected_vertices = {
@@ -660,7 +664,7 @@ impl State {
                     selected_objects.push(object);
                 }
             }
-            build_block_vertices_from_refs(&selected_objects)
+            build_block_geometry_from_refs(&selected_objects)
         };
 
         let has_selected_blocks = selected_mask.iter().any(|selected| *selected);
@@ -671,25 +675,26 @@ impl State {
             puffin::profile_scope!("BlockMeshUploadStatic");
             self.editor.block_static_vertex_cache = static_vertices;
             self.editor.block_static_vertex_cache_complete_len = Some(object_source.len());
-            let spare_capacity = editor_static_mesh_spare_capacity(
-                self.editor.block_static_vertex_cache.len(),
+            let (spare_vertices, spare_indices) = editor_static_mesh_spare_capacity(
+                &self.editor.block_static_vertex_cache,
                 object_source.len(),
             );
             self.render
                 .meshes
                 .blocks_static
-                .replace_with_streaming_vertices(
+                .replace_with_streaming_geometry(
                     &self.render.gpu.device,
                     &self.render.gpu.queue,
                     "Block Static Vertex Buffer",
                     &self.editor.block_static_vertex_cache,
-                    spare_capacity,
+                    spare_vertices,
+                    spare_indices,
                 );
         } else {
             puffin::profile_scope!("BlockMeshUploadStatic");
             self.editor.block_static_vertex_cache.clear();
             self.editor.block_static_vertex_cache_complete_len = None;
-            self.render.meshes.blocks_static.replace_with_vertices(
+            self.render.meshes.blocks_static.replace_with_geometry(
                 &self.render.gpu.device,
                 "Block Static Vertex Buffer",
                 &static_vertices,
@@ -698,7 +703,7 @@ impl State {
 
         {
             puffin::profile_scope!("BlockMeshUploadSelected");
-            self.render.meshes.blocks_selected.replace_with_vertices(
+            self.render.meshes.blocks_selected.replace_with_geometry(
                 &self.render.gpu.device,
                 "Block Selected Vertex Buffer",
                 &selected_vertices,
@@ -716,32 +721,34 @@ impl State {
         }
 
         let object = &self.editor.objects[index];
-        let appended_vertices = build_block_vertices_for_object(object);
-        let previous_vertex_count = self.editor.block_static_vertex_cache.len();
-        let appended = self.render.meshes.blocks_static.append_streaming_vertices(
+        let appended_geometry = build_block_geometry_for_object(object);
+        let previous_vertex_count = self.editor.block_static_vertex_cache.vertex_count();
+        let previous_draw_count = self.editor.block_static_vertex_cache.draw_count();
+        let appended = self.render.meshes.blocks_static.append_streaming_geometry(
             &self.render.gpu.queue,
             previous_vertex_count,
-            &appended_vertices,
+            previous_draw_count,
+            &appended_geometry,
         );
-
         self.editor
             .block_static_vertex_cache
-            .extend(appended_vertices.iter().copied());
+            .append_geometry(appended_geometry);
 
         if !appended {
-            let spare_capacity = editor_static_mesh_spare_capacity(
-                self.editor.block_static_vertex_cache.len(),
+            let (spare_vertices, spare_indices) = editor_static_mesh_spare_capacity(
+                &self.editor.block_static_vertex_cache,
                 self.editor.objects.len(),
             );
             self.render
                 .meshes
                 .blocks_static
-                .replace_with_streaming_vertices(
+                .replace_with_streaming_geometry(
                     &self.render.gpu.device,
                     &self.render.gpu.queue,
                     "Block Static Vertex Buffer",
                     &self.editor.block_static_vertex_cache,
-                    spare_capacity,
+                    spare_vertices,
+                    spare_indices,
                 );
         }
 
@@ -796,12 +803,12 @@ impl State {
                 }
             }
 
-            build_block_vertices_from_refs(&selected_objects)
+            build_block_geometry_from_refs(&selected_objects)
         };
 
         {
             puffin::profile_scope!("SelectedOnlyUpload");
-            self.render.meshes.blocks_selected.replace_with_vertices(
+            self.render.meshes.blocks_selected.replace_with_geometry(
                 &self.render.gpu.device,
                 "Block Selected Vertex Buffer",
                 &selected_vertices,
@@ -1124,7 +1131,7 @@ mod tests {
                 .meshes
                 .blocks_static
                 .draw_data()
-                .map(|(_, count)| count)
+                .map(|draw_data| draw_data.count())
                 .unwrap_or_default();
             assert_eq!(state.editor.block_static_vertex_cache_complete_len, Some(1));
 
@@ -1144,7 +1151,7 @@ mod tests {
                 .meshes
                 .blocks_static
                 .draw_data()
-                .map(|(_, count)| count)
+                .map(|draw_data| draw_data.count())
                 .unwrap_or_default();
             assert!(after_count > before_count);
             assert_eq!(state.editor.block_static_vertex_cache_complete_len, Some(2));

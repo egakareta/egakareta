@@ -7,10 +7,11 @@
 */
 #[cfg(test)]
 mod tests {
-    use crate::mesh::blocks::{build_block_vertices, build_block_vertices_with_phase};
+    use crate::mesh::blocks::{build_block_geometry, build_block_vertices};
     use crate::mesh::builders::{
         build_editor_gizmo_vertices, build_editor_hover_outline_vertices, GizmoParams,
     };
+    use crate::mesh::egmesh::resolve_egmesh;
     use crate::mesh::obj::parse_obj_mesh;
     use crate::types::{GizmoPart, LevelObject, Vertex};
 
@@ -57,14 +58,11 @@ mod tests {
             ..LevelObject::default()
         };
         let vertices = build_block_vertices(std::slice::from_ref(&obj));
-        let phase_vertices = build_block_vertices_with_phase(std::slice::from_ref(&obj), 42.0);
         let expected_phase_offset =
             (obj.position[0] * 0.37 + obj.position[2] * 0.21) * std::f32::consts::PI;
 
         assert!(!vertices.is_empty());
-        assert_eq!(vertices.len(), phase_vertices.len());
-        for (vertex, phase_vertex) in vertices.iter().zip(phase_vertices.iter()) {
-            assert_eq!(vertex.position, phase_vertex.position);
+        for vertex in vertices {
             assert_eq!(vertex.render_profile, 2.0);
             assert_eq!(vertex.color_outline[0], 4.0);
             assert_eq!(vertex.color_outline[1], 4.0);
@@ -240,6 +238,24 @@ f 1/1/1 2/2/1 3/3/1
         assert_eq!(mesh.faces.len(), 1);
         assert_eq!(mesh.faces[0][0].texcoord_index, Some(0));
         assert_eq!(mesh.faces[0][0].normal_index, Some(0));
+    }
+
+    #[test]
+    fn generated_speedportal_egmesh_builds_indexed_geometry() {
+        let mesh = resolve_egmesh("speedportal.obj").expect("speedportal egmesh should resolve");
+        assert!(!mesh.vertices.is_empty());
+        assert!(!mesh.indices.is_empty());
+
+        let obj = LevelObject {
+            block_id: "core/speedportal".to_string(),
+            ..LevelObject::default()
+        };
+        let geometry = build_block_geometry(std::slice::from_ref(&obj));
+        assert!(geometry
+            .indices
+            .as_ref()
+            .is_some_and(|indices| !indices.is_empty()));
+        assert_eq!(geometry.to_triangle_vertices().len(), mesh.indices.len());
     }
 
     #[test]

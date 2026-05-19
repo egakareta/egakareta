@@ -51,13 +51,14 @@ pub(crate) use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState
 pub(crate) use view_model::EditorUiViewModel;
 
 use crate::game::GameState;
+use crate::mesh::MeshGeometry;
 use crate::platform::services::AuthServiceMessage;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::platform::state_host::NativeWindow;
 use crate::types::{
     AppPhase, AppSettings, AuthSession, EditorMode, EditorState, LevelObject,
     LevelPreviewCameraMetadata, MenuState, MusicMetadata, PhysicalSize, SettingsSection,
-    SpawnMetadata, Vertex,
+    SpawnMetadata,
 };
 
 /// Bundles all gameplay-related state into a single subsystem.
@@ -116,7 +117,7 @@ pub(crate) struct EditorSubsystem {
     pub(crate) perf: EditorPerfState,
     pub(crate) timing: EditorTimingState,
     pub(crate) selected_mask_cache: Option<Vec<bool>>,
-    pub(crate) block_static_vertex_cache: Vec<Vertex>,
+    pub(crate) block_static_vertex_cache: MeshGeometry,
     pub(crate) block_static_vertex_cache_complete_len: Option<usize>,
 }
 
