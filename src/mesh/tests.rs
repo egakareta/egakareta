@@ -7,10 +7,13 @@
 */
 #[cfg(test)]
 mod tests {
-    use crate::mesh::blocks::{build_block_vertices, build_block_vertices_with_phase};
+    use crate::mesh::blocks::{
+        build_block_geometry, build_block_vertices, build_block_vertices_with_phase,
+    };
     use crate::mesh::builders::{
         build_editor_gizmo_vertices, build_editor_hover_outline_vertices, GizmoParams,
     };
+    use crate::mesh::egmesh::resolve_egmesh;
     use crate::mesh::obj::parse_obj_mesh;
     use crate::types::{GizmoPart, LevelObject, Vertex};
 
@@ -240,6 +243,24 @@ f 1/1/1 2/2/1 3/3/1
         assert_eq!(mesh.faces.len(), 1);
         assert_eq!(mesh.faces[0][0].texcoord_index, Some(0));
         assert_eq!(mesh.faces[0][0].normal_index, Some(0));
+    }
+
+    #[test]
+    fn generated_speedportal_egmesh_builds_indexed_geometry() {
+        let mesh = resolve_egmesh("speedportal.obj").expect("speedportal egmesh should resolve");
+        assert!(!mesh.vertices.is_empty());
+        assert!(!mesh.indices.is_empty());
+
+        let obj = LevelObject {
+            block_id: "core/speedportal".to_string(),
+            ..LevelObject::default()
+        };
+        let geometry = build_block_geometry(std::slice::from_ref(&obj));
+        assert!(geometry
+            .indices
+            .as_ref()
+            .is_some_and(|indices| !indices.is_empty()));
+        assert_eq!(geometry.to_triangle_vertices().len(), mesh.indices.len());
     }
 
     #[test]

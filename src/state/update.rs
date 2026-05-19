@@ -12,7 +12,7 @@ use crate::game::{
     advance_simulation_time, trigger_transformed_objects_at_time, TimelineSimulationRuntime,
 };
 use crate::mesh::{
-    build_block_vertices_with_phase, build_trail_vertices, build_trail_vertices_with_alpha,
+    build_block_geometry_with_phase, build_trail_vertices, build_trail_vertices_with_alpha,
 };
 use crate::platform::state_host::PlatformInstant;
 use crate::types::{
@@ -561,14 +561,14 @@ impl State {
             .as_deref()
             .unwrap_or(&self.gameplay.state.objects);
         if self.gameplay.state.has_animated_blocks() || trigger_render_objects.is_some() {
-            let animated_vertices = build_block_vertices_with_phase(
+            let animated_geometry = build_block_geometry_with_phase(
                 render_objects,
                 self.gameplay.state.block_animation_phase_seconds(),
             );
-            self.render.meshes.blocks.replace_with_vertices(
+            self.render.meshes.blocks.replace_with_geometry(
                 &self.render.gpu.device,
                 "Block Vertex Buffer",
-                &animated_vertices,
+                &animated_geometry,
             );
         }
 

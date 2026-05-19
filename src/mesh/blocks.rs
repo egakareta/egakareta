@@ -8,6 +8,8 @@
 use crate::block_repository::{
     resolve_block_definition, resolve_block_texture_layers, BlockRenderProfile,
 };
+use crate::mesh::egmesh::{append_egmesh_geometry, resolve_egmesh};
+use crate::mesh::geometry::MeshGeometry;
 use crate::mesh::noise::pseudo_random_noise;
 use crate::mesh::obj::{append_obj_mesh, resolve_obj_mesh};
 use crate::mesh::shapes::{append_prism_with_layers, PrismFaceColors, PrismTextureLayers};
@@ -18,43 +20,59 @@ const LIQUID_PROFILE_TAG: f32 = 1.0;
 const FINISH_RING_PROFILE_TAG: f32 = 2.0;
 
 pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
-    build_block_vertices_with_phase_impl(objects.iter(), 0.0)
+    build_block_geometry_with_phase_impl(objects.iter(), 0.0).to_triangle_vertices()
 }
 
-pub(crate) fn build_block_vertices_from_refs(objects: &[&LevelObject]) -> Vec<Vertex> {
-    build_block_vertices_with_phase_impl(objects.iter().copied(), 0.0)
-}
-
-pub(crate) fn build_block_vertices_for_object(object: &LevelObject) -> Vec<Vertex> {
-    let mut vertices = Vec::new();
-    append_block_vertices(&mut vertices, object);
-    vertices
-}
-
+#[cfg(test)]
 pub(crate) fn build_block_vertices_with_phase(
     objects: &[LevelObject],
     pulse_phase_seconds: f32,
 ) -> Vec<Vertex> {
-    build_block_vertices_with_phase_impl(objects.iter(), pulse_phase_seconds)
+    build_block_geometry_with_phase_impl(objects.iter(), pulse_phase_seconds).to_triangle_vertices()
 }
 
-fn build_block_vertices_with_phase_impl<'a, I>(objects: I, _pulse_phase_seconds: f32) -> Vec<Vertex>
+pub(crate) fn build_block_geometry(objects: &[LevelObject]) -> MeshGeometry {
+    build_block_geometry_with_phase_impl(objects.iter(), 0.0)
+}
+
+pub(crate) fn build_block_geometry_from_refs(objects: &[&LevelObject]) -> MeshGeometry {
+    build_block_geometry_with_phase_impl(objects.iter().copied(), 0.0)
+}
+
+pub(crate) fn build_block_geometry_for_object(object: &LevelObject) -> MeshGeometry {
+    let mut geometry = MeshGeometry::default();
+    append_block_geometry(&mut geometry, object);
+    geometry
+}
+
+pub(crate) fn build_block_geometry_with_phase(
+    objects: &[LevelObject],
+    pulse_phase_seconds: f32,
+) -> MeshGeometry {
+    build_block_geometry_with_phase_impl(objects.iter(), pulse_phase_seconds)
+}
+
+fn build_block_geometry_with_phase_impl<'a, I>(
+    objects: I,
+    _pulse_phase_seconds: f32,
+) -> MeshGeometry
 where
     I: Iterator<Item = &'a LevelObject>,
 {
-    let mut all_vertices = Vec::new();
+    let mut all_geometry = MeshGeometry::default();
 
     for obj in objects {
-        append_block_vertices(&mut all_vertices, obj);
+        append_block_geometry(&mut all_geometry, obj);
     }
 
-    all_vertices
+    all_geometry
 }
 
-fn append_block_vertices(all_vertices: &mut Vec<Vertex>, obj: &LevelObject) {
+fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
+    let mut object_geometry = MeshGeometry::default();
     let mut object_vertices = Vec::new();
     let vertices = &mut object_vertices;
-    let object_vertex_start = vertices.len();
+    let object_vertex_start = object_geometry.vertices.len();
 
     let x_min = obj.position[0];
     let x_max = obj.position[0] + obj.size[0];
@@ -92,14 +110,25 @@ fn append_block_vertices(all_vertices: &mut Vec<Vertex>, obj: &LevelObject) {
         obj.position[2] + obj.size[2] * 0.5,
     ];
     if let Some(mesh_path) = block.assets.mesh.as_deref() {
-        if let Some(mesh) = resolve_obj_mesh(mesh_path) {
+        if let Some(mesh) = resolve_egmesh(mesh_path) {
+            append_egmesh_geometry(
+                &mut object_geometry,
+                obj,
+                mesh,
+                color_top,
+                texture_layers.side,
+            );
+        } else if let Some(mesh) = resolve_obj_mesh(mesh_path) {
             append_obj_mesh(vertices, obj, mesh, color_top, texture_layers.side);
         }
     }
 
-    if vertices.is_empty() && matches!(block.render.profile, BlockRenderProfile::FinishRing) {
+    if object_geometry.vertices.is_empty()
+        && vertices.is_empty()
+        && matches!(block.render.profile, BlockRenderProfile::FinishRing)
+    {
         append_finish_ring(vertices, obj, color_top, color_outline, texture_layers.side);
-    } else if vertices.is_empty() {
+    } else if object_geometry.vertices.is_empty() && vertices.is_empty() {
         let prism_colors =
             PrismFaceColors::new_with_outline(color_top, color_side, color_bottom, color_outline);
 
@@ -116,14 +145,22 @@ fn append_block_vertices(all_vertices: &mut Vec<Vertex>, obj: &LevelObject) {
         );
     }
 
+    if !object_vertices.is_empty() {
+        rotate_vertices_around_euler(&mut object_vertices, center, obj.rotation_degrees);
+        object_geometry.append_vertices(object_vertices);
+    }
+
     if matches!(block.render.profile, BlockRenderProfile::Liquid) {
-        for vertex in vertices.iter_mut().skip(object_vertex_start) {
+        for vertex in object_geometry
+            .vertices
+            .iter_mut()
+            .skip(object_vertex_start)
+        {
             vertex.set_render_profile(LIQUID_PROFILE_TAG);
         }
     }
 
-    rotate_vertices_around_euler(&mut object_vertices, center, obj.rotation_degrees);
-    all_vertices.extend(object_vertices);
+    all_geometry.append_geometry(object_geometry);
 }
 
 fn apply_color_tint(color: [f32; 4], tint_rgb: [f32; 3]) -> [f32; 4] {
