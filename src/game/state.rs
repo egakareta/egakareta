@@ -60,7 +60,6 @@ pub(crate) struct GameState {
     finishing: bool,
     finish_target: [f32; 3],
     finish_sink_velocity: f32,
-    animation_phase_seconds: f32,
     consumed_object_indices: Vec<usize>,
 }
 
@@ -92,7 +91,6 @@ impl GameState {
             finishing: false,
             finish_target: [0.0, 0.0, 0.0],
             finish_sink_velocity: 0.0,
-            animation_phase_seconds: 0.0,
             consumed_object_indices: Vec::new(),
         }
     }
@@ -137,7 +135,6 @@ impl GameState {
         self.completion_hold_seconds = 0.0;
         self.finishing = false;
         self.finish_sink_velocity = 0.0;
-        self.animation_phase_seconds = 0.0;
         self.consumed_object_indices.clear();
         self.trail_segments = vec![vec![spawn_position]];
     }
@@ -168,7 +165,6 @@ impl GameState {
 
     pub(crate) fn update(&mut self, dt: f32) {
         self.consumed_object_indices.clear();
-        self.animation_phase_seconds += dt.max(0.0);
 
         if self.level_complete {
             self.completion_hold_seconds = (self.completion_hold_seconds - dt.max(0.0)).max(0.0);
@@ -340,10 +336,6 @@ impl GameState {
 
     pub(crate) fn has_animated_blocks(&self) -> bool {
         false
-    }
-
-    pub(crate) fn block_animation_phase_seconds(&self) -> f32 {
-        self.animation_phase_seconds
     }
 
     pub(crate) fn take_consumed_object_indices(&mut self) -> Vec<usize> {

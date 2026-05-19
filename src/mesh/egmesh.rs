@@ -97,7 +97,15 @@ pub(crate) fn decode_egmesh(bytes: &[u8]) -> Result<EgMesh, String> {
         _ => return Err(format!("Unsupported egmesh compression mode {compression}")),
     };
 
-    serde_cbor::from_slice(&payload_bytes).map_err(|error| error.to_string())
+    let mesh: EgMesh = serde_cbor::from_slice(&payload_bytes).map_err(|error| error.to_string())?;
+    if mesh
+        .indices
+        .iter()
+        .any(|index| *index as usize >= mesh.vertices.len())
+    {
+        return Err("Egmesh index references missing vertex".to_string());
+    }
+    Ok(mesh)
 }
 
 pub(crate) fn resolve_egmesh(mesh_path: &str) -> Option<&'static EgMesh> {
@@ -173,6 +181,25 @@ fn normalize_mesh_key(mesh_path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{decode_egmesh, encode_egmesh, EgMesh, EgMeshVertex};
+    use crate::test_utils::assert_approx_eq;
+
+    fn assert_float_array_approx_eq<const N: usize>(actual: [f32; N], expected: [f32; N]) {
+        for (actual, expected) in actual.into_iter().zip(expected) {
+            assert_approx_eq(actual, expected, 1e-6);
+        }
+    }
+
+    fn assert_mesh_approx_eq(actual: &EgMesh, expected: &EgMesh) {
+        assert_eq!(actual.indices, expected.indices);
+        assert_eq!(actual.vertices.len(), expected.vertices.len());
+        assert_float_array_approx_eq(actual.min, expected.min);
+        assert_float_array_approx_eq(actual.max, expected.max);
+        for (actual, expected) in actual.vertices.iter().zip(&expected.vertices) {
+            assert_float_array_approx_eq(actual.position, expected.position);
+            assert_float_array_approx_eq(actual.uv, expected.uv);
+            assert_approx_eq(actual.normal_tint, expected.normal_tint, 1e-6);
+        }
+    }
 
     #[test]
     fn egmesh_roundtrip_preserves_payload() {
@@ -201,7 +228,25 @@ mod tests {
 
         let encoded = encode_egmesh(&mesh).expect("mesh should encode");
         let decoded = decode_egmesh(&encoded).expect("mesh should decode");
-        assert_eq!(decoded, mesh);
+        assert_mesh_approx_eq(&decoded, &mesh);
+    }
+
+    #[test]
+    fn egmesh_decode_rejects_out_of_range_indices() {
+        let bytes = encode_egmesh(&EgMesh {
+            vertices: vec![EgMeshVertex {
+                position: [0.0, 0.0, 0.0],
+                uv: [0.0, 0.0],
+                normal_tint: 1.0,
+            }],
+            indices: vec![0, 1],
+            min: [0.0; 3],
+            max: [0.0; 3],
+        })
+        .expect("mesh should encode");
+
+        let error = decode_egmesh(&bytes).expect_err("out-of-range index should fail");
+        assert!(error.contains("Egmesh index references missing vertex"));
     }
 
     #[test]

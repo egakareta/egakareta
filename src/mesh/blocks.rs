@@ -20,23 +20,15 @@ const LIQUID_PROFILE_TAG: f32 = 1.0;
 const FINISH_RING_PROFILE_TAG: f32 = 2.0;
 
 pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
-    build_block_geometry_with_phase_impl(objects.iter(), 0.0).to_triangle_vertices()
-}
-
-#[cfg(test)]
-pub(crate) fn build_block_vertices_with_phase(
-    objects: &[LevelObject],
-    pulse_phase_seconds: f32,
-) -> Vec<Vertex> {
-    build_block_geometry_with_phase_impl(objects.iter(), pulse_phase_seconds).to_triangle_vertices()
+    build_block_geometry_impl(objects.iter()).to_triangle_vertices()
 }
 
 pub(crate) fn build_block_geometry(objects: &[LevelObject]) -> MeshGeometry {
-    build_block_geometry_with_phase_impl(objects.iter(), 0.0)
+    build_block_geometry_impl(objects.iter())
 }
 
 pub(crate) fn build_block_geometry_from_refs(objects: &[&LevelObject]) -> MeshGeometry {
-    build_block_geometry_with_phase_impl(objects.iter().copied(), 0.0)
+    build_block_geometry_impl(objects.iter().copied())
 }
 
 pub(crate) fn build_block_geometry_for_object(object: &LevelObject) -> MeshGeometry {
@@ -45,17 +37,7 @@ pub(crate) fn build_block_geometry_for_object(object: &LevelObject) -> MeshGeome
     geometry
 }
 
-pub(crate) fn build_block_geometry_with_phase(
-    objects: &[LevelObject],
-    pulse_phase_seconds: f32,
-) -> MeshGeometry {
-    build_block_geometry_with_phase_impl(objects.iter(), pulse_phase_seconds)
-}
-
-fn build_block_geometry_with_phase_impl<'a, I>(
-    objects: I,
-    _pulse_phase_seconds: f32,
-) -> MeshGeometry
+fn build_block_geometry_impl<'a, I>(objects: I) -> MeshGeometry
 where
     I: Iterator<Item = &'a LevelObject>,
 {

@@ -291,10 +291,15 @@ fn parse_build_obj_mesh(contents: &str) -> Result<BuildObjMesh, String> {
 
     let mut min = [f32::INFINITY; 3];
     let mut max = [f32::NEG_INFINITY; 3];
-    for position in &positions {
-        for axis in 0..3 {
-            min[axis] = min[axis].min(position[axis]);
-            max[axis] = max[axis].max(position[axis]);
+    for face in &faces {
+        for corner in face {
+            let position = positions
+                .get(corner.position_index)
+                .ok_or_else(|| "OBJ face references missing position".to_string())?;
+            for axis in 0..3 {
+                min[axis] = min[axis].min(position[axis]);
+                max[axis] = max[axis].max(position[axis]);
+            }
         }
     }
 
@@ -430,8 +435,16 @@ fn egmesh_aliases(path: &Path) -> Vec<String> {
     let mut aliases = Vec::new();
     aliases.push(normalized.clone());
     aliases.push(format!("assets/blocks/{normalized}"));
+    if let Some(stem) = normalized.strip_suffix(".obj") {
+        aliases.push(format!("{stem}.egmesh"));
+        aliases.push(format!("assets/blocks/{stem}.egmesh"));
+    }
     if let Some(file_name) = path.file_name().and_then(|name| name.to_str()) {
-        aliases.push(file_name.to_ascii_lowercase());
+        let file_name = file_name.to_ascii_lowercase();
+        aliases.push(file_name.clone());
+        if let Some(stem) = file_name.strip_suffix(".obj") {
+            aliases.push(format!("{stem}.egmesh"));
+        }
     }
     aliases.sort();
     aliases.dedup();

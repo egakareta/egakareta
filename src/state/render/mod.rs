@@ -502,6 +502,7 @@ mod tests {
     use crate::state::State;
     use crate::types::{PhysicalSize, Vertex};
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn mesh_slot_draw_data_reports_indexed_geometry() {
         pollster::block_on(async {
@@ -522,6 +523,7 @@ mod tests {
         });
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn streaming_geometry_appends_unindexed_vertices_without_rebuild() {
         pollster::block_on(async {
@@ -551,6 +553,7 @@ mod tests {
         });
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn streaming_geometry_appends_indexed_data_without_rebuild() {
         pollster::block_on(async {
