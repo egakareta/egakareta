@@ -72,7 +72,6 @@ fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
     let mut object_geometry = MeshGeometry::default();
     let mut object_vertices = Vec::new();
     let vertices = &mut object_vertices;
-    let object_vertex_start = object_geometry.vertices.len();
 
     let x_min = obj.position[0];
     let x_max = obj.position[0] + obj.size[0];
@@ -151,11 +150,7 @@ fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
     }
 
     if matches!(block.render.profile, BlockRenderProfile::Liquid) {
-        for vertex in object_geometry
-            .vertices
-            .iter_mut()
-            .skip(object_vertex_start)
-        {
+        for vertex in &mut object_geometry.vertices {
             vertex.set_render_profile(LIQUID_PROFILE_TAG);
         }
     }

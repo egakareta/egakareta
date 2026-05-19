@@ -15,9 +15,19 @@ use crate::mesh::{
     build_camera_trigger_marker_vertices, build_editor_cursor_vertices,
     build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
     build_editor_selection_outline_vertices, build_spawn_marker_vertices,
-    build_tap_indicator_vertices, GizmoParams,
+    build_tap_indicator_vertices, GizmoParams, MeshGeometry,
 };
 use crate::types::{AppPhase, EditorMode, GizmoPart, LevelObject, SpawnDirection};
+
+fn editor_static_mesh_spare_capacity(geometry: &MeshGeometry, object_count: usize) -> (u32, u32) {
+    let object_room = object_count.min(512).saturating_mul(36);
+    let vertex_growth_room = geometry.vertex_count() / 8;
+    let index_growth_room = geometry.draw_count() / 8;
+    (
+        vertex_growth_room.max(object_room).max(4096) as u32,
+        index_growth_room.max(object_room).max(4096) as u32,
+    )
+}
 
 impl EditorSubsystem {
     pub(crate) fn mark_dirty(&mut self, dirty: EditorDirtyFlags) {
@@ -665,11 +675,21 @@ impl State {
             puffin::profile_scope!("BlockMeshUploadStatic");
             self.editor.block_static_vertex_cache = static_vertices;
             self.editor.block_static_vertex_cache_complete_len = Some(object_source.len());
-            self.render.meshes.blocks_static.replace_with_geometry(
-                &self.render.gpu.device,
-                "Block Static Vertex Buffer",
+            let (spare_vertices, spare_indices) = editor_static_mesh_spare_capacity(
                 &self.editor.block_static_vertex_cache,
+                object_source.len(),
             );
+            self.render
+                .meshes
+                .blocks_static
+                .replace_with_streaming_geometry(
+                    &self.render.gpu.device,
+                    &self.render.gpu.queue,
+                    "Block Static Vertex Buffer",
+                    &self.editor.block_static_vertex_cache,
+                    spare_vertices,
+                    spare_indices,
+                );
         } else {
             puffin::profile_scope!("BlockMeshUploadStatic");
             self.editor.block_static_vertex_cache.clear();
@@ -702,14 +722,35 @@ impl State {
 
         let object = &self.editor.objects[index];
         let appended_geometry = build_block_geometry_for_object(object);
+        let previous_vertex_count = self.editor.block_static_vertex_cache.vertex_count();
+        let previous_draw_count = self.editor.block_static_vertex_cache.draw_count();
+        let appended = self.render.meshes.blocks_static.append_streaming_geometry(
+            &self.render.gpu.queue,
+            previous_vertex_count,
+            previous_draw_count,
+            &appended_geometry,
+        );
         self.editor
             .block_static_vertex_cache
             .append_geometry(appended_geometry);
-        self.render.meshes.blocks_static.replace_with_geometry(
-            &self.render.gpu.device,
-            "Block Static Vertex Buffer",
-            &self.editor.block_static_vertex_cache,
-        );
+
+        if !appended {
+            let (spare_vertices, spare_indices) = editor_static_mesh_spare_capacity(
+                &self.editor.block_static_vertex_cache,
+                self.editor.objects.len(),
+            );
+            self.render
+                .meshes
+                .blocks_static
+                .replace_with_streaming_geometry(
+                    &self.render.gpu.device,
+                    &self.render.gpu.queue,
+                    "Block Static Vertex Buffer",
+                    &self.editor.block_static_vertex_cache,
+                    spare_vertices,
+                    spare_indices,
+                );
+        }
 
         self.editor.block_static_vertex_cache_complete_len = Some(index + 1);
         if let Some(selected_mask) = self.editor.selected_mask_cache.as_mut() {

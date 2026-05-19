@@ -34,6 +34,14 @@ impl MeshGeometry {
         self.indices = None;
     }
 
+    pub(crate) fn vertex_count(&self) -> usize {
+        self.vertices.len()
+    }
+
+    pub(crate) fn draw_count(&self) -> usize {
+        self.indices.as_ref().map_or(self.vertices.len(), Vec::len)
+    }
+
     pub(crate) fn append_vertices(&mut self, vertices: Vec<Vertex>) {
         if vertices.is_empty() {
             return;
@@ -84,5 +92,50 @@ impl MeshGeometry {
         if self.indices.is_none() {
             self.indices = Some((0..self.vertices.len() as u32).collect());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MeshGeometry;
+    use crate::types::Vertex;
+
+    fn vertex(x: f32) -> Vertex {
+        Vertex::untextured([x, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0])
+    }
+
+    #[test]
+    fn append_indexed_offsets_indices_by_existing_vertices() {
+        let mut geometry = MeshGeometry::from_vertices(vec![vertex(0.0), vertex(1.0)]);
+
+        geometry.append_indexed(vec![vertex(2.0), vertex(3.0), vertex(4.0)], &[2, 0, 1]);
+
+        assert_eq!(geometry.vertex_count(), 5);
+        assert_eq!(geometry.draw_count(), 5);
+        assert_eq!(geometry.indices, Some(vec![0, 1, 4, 2, 3]));
+    }
+
+    #[test]
+    fn append_geometry_keeps_unindexed_meshes_unindexed() {
+        let mut geometry = MeshGeometry::default();
+        geometry.append_geometry(MeshGeometry::from_vertices(vec![vertex(0.0), vertex(1.0)]));
+
+        assert_eq!(geometry.vertex_count(), 2);
+        assert_eq!(geometry.draw_count(), 2);
+        assert!(geometry.indices.is_none());
+    }
+
+    #[test]
+    fn clear_resets_vertices_and_indices() {
+        let mut geometry = MeshGeometry {
+            vertices: vec![vertex(0.0)],
+            indices: Some(vec![0]),
+        };
+
+        geometry.clear();
+
+        assert!(geometry.is_empty());
+        assert!(geometry.vertices.is_empty());
+        assert!(geometry.indices.is_none());
     }
 }

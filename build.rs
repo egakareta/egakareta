@@ -512,10 +512,12 @@ fn generate_egmesh_manifest() {
     if let Err(error) = fs::write(&manifest_path, manifest) {
         println!("cargo:warning=Failed to write egmesh manifest: {error}");
     }
-    println!(
-        "cargo:warning=Generated {} egmesh asset(s), skipped {}",
-        converted_count, skipped_count
-    );
+    if skipped_count > 0 {
+        println!(
+            "cargo:warning=Generated {} egmesh asset(s), skipped {}",
+            converted_count, skipped_count
+        );
+    }
 }
 
 // Whitelist of keys to bake into the binary
