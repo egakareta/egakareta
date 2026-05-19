@@ -222,7 +222,9 @@ mod tests {
             0.03,
         );
         assert!(!vertices.is_empty());
-        assert!(vertices.iter().any(|v| v.color[3] == 1.0));
+        assert!(vertices
+            .iter()
+            .all(|vertex| vertex.color[3] > 0.0 && vertex.color[3] < 1.0));
     }
 
     #[test]
