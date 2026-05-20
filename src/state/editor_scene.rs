@@ -17,6 +17,7 @@ use crate::mesh::{
     build_editor_selection_outline_vertices, build_spawn_marker_vertices,
     build_tap_indicator_vertices, GizmoParams, MeshGeometry,
 };
+use crate::state::render::EditorOutlineInstance;
 use crate::types::{AppPhase, EditorMode, GizmoPart, LevelObject, SpawnDirection};
 
 fn editor_static_mesh_spare_capacity(geometry: &MeshGeometry, object_count: usize) -> (u32, u32) {
@@ -529,6 +530,10 @@ impl State {
         if self.phase != AppPhase::Editor || !self.editor.ui.mode.is_selection_mode() {
             self.render.meshes.editor_selection_stencil.clear();
             self.render.meshes.editor_selection_outline.clear();
+            self.render
+                .meshes
+                .editor_selection_outline_instances
+                .clear();
             return;
         }
 
@@ -536,35 +541,51 @@ impl State {
         if selected_indices.is_empty() {
             self.render.meshes.editor_selection_stencil.clear();
             self.render.meshes.editor_selection_outline.clear();
+            self.render
+                .meshes
+                .editor_selection_outline_instances
+                .clear();
             return;
         }
 
-        let mut vertices = Vec::new();
-        let mut stencil_geometry = MeshGeometry::default();
+        let mut outline_vertices = Vec::new();
+        let mut mask_vertices = Vec::new();
+        let mut instances = Vec::new();
         for index in selected_indices {
             if let Some(obj) = self.editor.objects.get(index) {
+                let mask_start = mask_vertices.len() as u32;
+                mask_vertices.extend(build_block_geometry_for_object(obj).to_triangle_vertices());
+                let mask_end = mask_vertices.len() as u32;
+
                 let center = glam::Vec3::new(
                     obj.position[0] + obj.size[0] * 0.5,
                     obj.position[1] + obj.size[1] * 0.5,
                     obj.position[2] + obj.size[2] * 0.5,
                 );
                 let line_width = self.editor_gizmo_axis_width_world(center, 2.0);
-                vertices.extend(build_editor_selection_outline_vertices(
+
+                let outline_start = outline_vertices.len() as u32;
+                outline_vertices.extend(build_editor_selection_outline_vertices(
                     obj.position,
                     obj.size,
                     obj.rotation_degrees,
                     line_width,
                 ));
-                stencil_geometry.append_geometry(build_block_geometry_for_object(obj));
+                let outline_end = outline_vertices.len() as u32;
+
+                instances.push(EditorOutlineInstance {
+                    mask_vertices: mask_start..mask_end,
+                    outline_vertices: outline_start..outline_end,
+                });
             }
         }
         self.render
             .meshes
             .editor_selection_stencil
-            .replace_with_geometry(
+            .replace_with_vertices(
                 &self.render.gpu.device,
                 "Editor Selection Stencil Vertex Buffer",
-                &stencil_geometry,
+                &mask_vertices,
             );
         self.render
             .meshes
@@ -572,8 +593,9 @@ impl State {
             .replace_with_vertices(
                 &self.render.gpu.device,
                 "Editor Selection Outline Vertex Buffer",
-                &vertices,
+                &outline_vertices,
             );
+        self.render.meshes.editor_selection_outline_instances = instances;
     }
 
     pub(super) fn rebuild_spawn_marker_vertices(&mut self) {
