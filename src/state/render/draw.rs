@@ -11,6 +11,7 @@ use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 use wgpu::{SurfaceError, TextureViewDescriptor};
 
 use super::super::State;
+use super::MeshDrawData;
 use crate::types::{AppPhase, EditorMode};
 
 const SELECTION_STENCIL_REF: u32 = 1;
@@ -77,6 +78,24 @@ fn should_draw_editor_overlays(phase: AppPhase, skip_world: bool) -> bool {
 
 fn should_draw_editor_cursor(mode: EditorMode) -> bool {
     mode == EditorMode::Place
+}
+
+fn draw_mesh(render_pass: &mut wgpu::RenderPass<'_>, draw_data: MeshDrawData<'_>) {
+    match draw_data {
+        MeshDrawData::Vertices { buffer, count } => {
+            render_pass.set_vertex_buffer(0, buffer.slice(..));
+            render_pass.draw(0..count, 0..1);
+        }
+        MeshDrawData::Indexed {
+            vertex_buffer,
+            index_buffer,
+            count,
+        } => {
+            render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            render_pass.draw_indexed(0..count, 0, 0..1);
+        }
+    }
 }
 
 impl State {
@@ -211,14 +230,12 @@ impl State {
         render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
 
         if should_draw_floor_and_grid(self.phase, editor_mode) {
-            if let Some((buffer, count)) = self.render.meshes.floor.draw_data() {
-                render_pass.set_vertex_buffer(0, buffer.slice(..));
-                render_pass.draw(0..count, 0..1);
+            if let Some(draw_data) = self.render.meshes.floor.draw_data() {
+                draw_mesh(&mut render_pass, draw_data);
             }
 
-            if let Some((buffer, count)) = self.render.meshes.grid.draw_data() {
-                render_pass.set_vertex_buffer(0, buffer.slice(..));
-                render_pass.draw(0..count, 0..1);
+            if let Some(draw_data) = self.render.meshes.grid.draw_data() {
+                draw_mesh(&mut render_pass, draw_data);
             }
         }
 
@@ -231,24 +248,21 @@ impl State {
 
             if !skip_world {
                 if self.phase == AppPhase::Editor {
-                    if let Some((buffer, count)) = self.render.meshes.blocks_static.draw_data() {
-                        render_pass.set_vertex_buffer(0, buffer.slice(..));
+                    if let Some(draw_data) = self.render.meshes.blocks_static.draw_data() {
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                        render_pass.draw(0..count, 0..1);
+                        draw_mesh(&mut render_pass, draw_data);
                     }
 
-                    if let Some((buffer, count)) = self.render.meshes.blocks_selected.draw_data() {
-                        render_pass.set_vertex_buffer(0, buffer.slice(..));
+                    if let Some(draw_data) = self.render.meshes.blocks_selected.draw_data() {
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                        render_pass.draw(0..count, 0..1);
+                        draw_mesh(&mut render_pass, draw_data);
                     }
-                } else if let Some((buffer, count)) = self.render.meshes.blocks.draw_data() {
-                    render_pass.set_vertex_buffer(0, buffer.slice(..));
+                } else if let Some(draw_data) = self.render.meshes.blocks.draw_data() {
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                    render_pass.draw(0..count, 0..1);
+                    draw_mesh(&mut render_pass, draw_data);
                 }
 
-                if let Some((buffer, count)) = self.render.meshes.trail.draw_data() {
+                if let Some(draw_data) = self.render.meshes.trail.draw_data() {
                     if self.phase == AppPhase::Editor {
                         render_pass.set_pipeline(&self.render.gpu.editor_ghost_trail_pipeline);
                         render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
@@ -261,9 +275,8 @@ impl State {
                         );
                     }
 
-                    render_pass.set_vertex_buffer(0, buffer.slice(..));
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                    render_pass.draw(0..count, 0..1);
+                    draw_mesh(&mut render_pass, draw_data);
 
                     if self.phase == AppPhase::Editor {
                         render_pass.set_pipeline(&self.render.gpu.render_pipeline);
@@ -280,26 +293,22 @@ impl State {
             }
 
             if should_draw_editor_overlays(self.phase, skip_world) {
-                if let Some((buffer, count)) = self.render.meshes.spawn_marker.draw_data() {
-                    render_pass.set_vertex_buffer(0, buffer.slice(..));
+                if let Some(draw_data) = self.render.meshes.spawn_marker.draw_data() {
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                    render_pass.draw(0..count, 0..1);
+                    draw_mesh(&mut render_pass, draw_data);
                 }
 
-                if let Some((buffer, count)) = self.render.meshes.camera_trigger_markers.draw_data()
-                {
-                    render_pass.set_vertex_buffer(0, buffer.slice(..));
+                if let Some(draw_data) = self.render.meshes.camera_trigger_markers.draw_data() {
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                    render_pass.draw(0..count, 0..1);
+                    draw_mesh(&mut render_pass, draw_data);
                 }
 
-                if let Some((buffer, count)) = self.render.meshes.tap_indicators.draw_data() {
-                    render_pass.set_vertex_buffer(0, buffer.slice(..));
+                if let Some(draw_data) = self.render.meshes.tap_indicators.draw_data() {
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                    render_pass.draw(0..count, 0..1);
+                    draw_mesh(&mut render_pass, draw_data);
                 }
 
-                if let (Some((mask_buffer, mask_count)), Some((outline_buffer, outline_count))) = (
+                if let (Some(mask_data), Some(outline_data)) = (
                     self.render.meshes.editor_selection_stencil.draw_data(),
                     self.render.meshes.editor_selection_outline.draw_data(),
                 ) {
@@ -309,19 +318,17 @@ impl State {
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                     render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
                     render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
-                    render_pass.set_vertex_buffer(0, mask_buffer.slice(..));
-                    render_pass.draw(0..mask_count, 0..1);
+                    draw_mesh(&mut render_pass, mask_data);
 
                     render_pass.set_pipeline(&self.render.gpu.editor_outline_pipeline);
                     render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                     render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
                     render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
-                    render_pass.set_vertex_buffer(0, outline_buffer.slice(..));
-                    render_pass.draw(0..outline_count, 0..1);
+                    draw_mesh(&mut render_pass, outline_data);
                 }
 
-                if let (Some((mask_buffer, mask_count)), Some((outline_buffer, outline_count))) = (
+                if let (Some(mask_data), Some(outline_data)) = (
                     self.render.meshes.editor_hover_stencil.draw_data(),
                     self.render.meshes.editor_hover_outline.draw_data(),
                 ) {
@@ -331,16 +338,14 @@ impl State {
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                     render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
                     render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
-                    render_pass.set_vertex_buffer(0, mask_buffer.slice(..));
-                    render_pass.draw(0..mask_count, 0..1);
+                    draw_mesh(&mut render_pass, mask_data);
 
                     render_pass.set_pipeline(&self.render.gpu.editor_outline_pipeline);
                     render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                     render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
                     render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
-                    render_pass.set_vertex_buffer(0, outline_buffer.slice(..));
-                    render_pass.draw(0..outline_count, 0..1);
+                    draw_mesh(&mut render_pass, outline_data);
                 }
 
                 render_pass.set_stencil_reference(0);
@@ -350,15 +355,14 @@ impl State {
                 render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
                 render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
 
-                if let Some((buffer, count)) = self.render.meshes.editor_gizmo.draw_data() {
+                if let Some(draw_data) = self.render.meshes.editor_gizmo.draw_data() {
                     render_pass.set_pipeline(&self.render.gpu.gizmo_overlay_pipeline);
                     render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                     render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
                     render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
-                    render_pass.set_vertex_buffer(0, buffer.slice(..));
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                    render_pass.draw(0..count, 0..1);
+                    draw_mesh(&mut render_pass, draw_data);
 
                     render_pass.set_pipeline(&self.render.gpu.render_pipeline);
                     render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
@@ -368,10 +372,9 @@ impl State {
                 }
 
                 if should_draw_editor_cursor(editor_mode) {
-                    if let Some((buffer, count)) = self.render.meshes.editor_cursor.draw_data() {
-                        render_pass.set_vertex_buffer(0, buffer.slice(..));
+                    if let Some(draw_data) = self.render.meshes.editor_cursor.draw_data() {
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                        render_pass.draw(0..count, 0..1);
+                        draw_mesh(&mut render_pass, draw_data);
                     }
                 }
             }

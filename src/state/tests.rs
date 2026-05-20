@@ -58,7 +58,7 @@ fn test_marquee_no_redundant_selections_before_drag_started() {
             .meshes
             .editor_hover_outline
             .draw_data()
-            .map(|(_, c)| c)
+            .map(|draw_data| draw_data.count())
             .expect("hover outline mesh should exist after rebuilding vertices");
         // One stencil outline hull = 1 prism * 36 vertices/prism.
         assert_eq!(
@@ -89,7 +89,7 @@ fn test_marquee_no_redundant_selections_before_drag_started() {
             .meshes
             .editor_hover_outline
             .draw_data()
-            .map(|(_, c)| c)
+            .map(|draw_data| draw_data.count())
             .expect("hover outline mesh should still exist before marquee drag activates");
         assert_eq!(
             count, 36,
@@ -415,7 +415,7 @@ fn editor_scrub_draws_ghost_trail_without_preview_head_mesh() {
             .meshes
             .trail
             .draw_data()
-            .map(|(_, count)| count)
+            .map(|draw_data| draw_data.count())
             .expect("trail mesh should exist after editor scrub update");
         assert!(
             trail_count > 0,
@@ -448,7 +448,7 @@ fn editor_playback_draws_ghost_trail_without_preview_head_mesh() {
             .meshes
             .trail
             .draw_data()
-            .map(|(_, count)| count)
+            .map(|draw_data| draw_data.count())
             .expect("trail mesh should exist during editor playback update");
         assert!(
             trail_count > 0,

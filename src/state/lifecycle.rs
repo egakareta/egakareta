@@ -24,7 +24,7 @@ use wgpu::util::DeviceExt;
 use crate::block_repository::block_texture_atlas;
 use crate::game::{create_menu_scene, GameState};
 use crate::level_repository::builtin_level_names;
-use crate::mesh::{build_block_vertices, build_floor_vertices, build_grid_vertices};
+use crate::mesh::{build_block_geometry, build_floor_vertices, build_grid_vertices, MeshGeometry};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::platform::state_host::NativeWindow;
 #[cfg(target_arch = "wasm32")]
@@ -381,9 +381,9 @@ impl State {
             .runtime
             .set_preferred_backend_name(&app_settings.audio_backend);
 
-        let block_vertices = build_block_vertices(&game.objects);
+        let block_geometry = build_block_geometry(&game.objects);
         let block_mesh =
-            MeshSlot::from_vertices(&fixture.device, "Block Vertex Buffer", &block_vertices);
+            MeshSlot::from_geometry(&fixture.device, "Block Vertex Buffer", &block_geometry);
 
         let now = PlatformInstant::now();
 
@@ -521,7 +521,7 @@ impl State {
                 perf: EditorPerfState::new(),
                 timing: EditorTimingState::new(),
                 selected_mask_cache: None,
-                block_static_vertex_cache: Vec::new(),
+                block_static_vertex_cache: MeshGeometry::default(),
                 block_static_vertex_cache_complete_len: None,
             },
         }
@@ -1102,8 +1102,8 @@ impl State {
             .runtime
             .set_preferred_backend_name(&app_settings.audio_backend);
 
-        let block_vertices = build_block_vertices(&game.objects);
-        let block_mesh = MeshSlot::from_vertices(&device, "Block Vertex Buffer", &block_vertices);
+        let block_geometry = build_block_geometry(&game.objects);
+        let block_mesh = MeshSlot::from_geometry(&device, "Block Vertex Buffer", &block_geometry);
 
         let now = PlatformInstant::now();
 
@@ -1241,7 +1241,7 @@ impl State {
                 perf: EditorPerfState::new(),
                 timing: EditorTimingState::new(),
                 selected_mask_cache: None,
-                block_static_vertex_cache: Vec::new(),
+                block_static_vertex_cache: MeshGeometry::default(),
                 block_static_vertex_cache_complete_len: None,
             },
         })

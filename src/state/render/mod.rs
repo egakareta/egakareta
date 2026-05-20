@@ -8,6 +8,7 @@
 pub(crate) mod block_icon;
 pub(crate) mod draw;
 
+use crate::mesh::MeshGeometry;
 use crate::platform::state_host::SurfaceHost;
 use crate::types::{PhysicalSize, Vertex};
 use wgpu::util::DeviceExt;
@@ -37,11 +38,45 @@ pub(crate) enum MeshSlot {
         buffer: wgpu::Buffer,
         count: u32,
     },
+    IndexedData {
+        vertex_buffer: wgpu::Buffer,
+        index_buffer: wgpu::Buffer,
+        count: u32,
+    },
+    IndexedStreaming {
+        vertex_buffer: wgpu::Buffer,
+        index_buffer: wgpu::Buffer,
+        vertex_count: u32,
+        index_count: u32,
+        capacity_vertices: u32,
+        capacity_indices: u32,
+    },
     Streaming {
         buffer: wgpu::Buffer,
         count: u32,
         capacity_vertices: u32,
     },
+}
+
+pub(crate) enum MeshDrawData<'a> {
+    Vertices {
+        buffer: &'a wgpu::Buffer,
+        count: u32,
+    },
+    Indexed {
+        vertex_buffer: &'a wgpu::Buffer,
+        index_buffer: &'a wgpu::Buffer,
+        count: u32,
+    },
+}
+
+impl MeshDrawData<'_> {
+    #[cfg(test)]
+    pub(crate) fn count(&self) -> u32 {
+        match self {
+            Self::Vertices { count, .. } | Self::Indexed { count, .. } => *count,
+        }
+    }
 }
 
 impl MeshSlot {
@@ -66,6 +101,37 @@ impl MeshSlot {
         }
     }
 
+    pub(crate) fn from_geometry(
+        device: &wgpu::Device,
+        label: &'static str,
+        geometry: &MeshGeometry,
+    ) -> Self {
+        if geometry.is_empty() {
+            return Self::Empty;
+        }
+
+        let Some(indices) = geometry.indices.as_ref() else {
+            return Self::from_vertices(device, label, &geometry.vertices);
+        };
+
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(label),
+            contents: bytemuck::cast_slice(&geometry.vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(label),
+            contents: bytemuck::cast_slice(indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        Self::IndexedData {
+            vertex_buffer,
+            index_buffer,
+            count: indices.len() as u32,
+        }
+    }
+
     pub(crate) fn streaming(
         device: &wgpu::Device,
         label: &'static str,
@@ -85,48 +151,33 @@ impl MeshSlot {
         }
     }
 
-    pub(crate) fn streaming_from_vertices(
+    fn indexed_streaming(
         device: &wgpu::Device,
-        queue: &wgpu::Queue,
         label: &'static str,
-        vertices: &[Vertex],
         capacity_vertices: u32,
+        capacity_indices: u32,
     ) -> Self {
-        if vertices.is_empty() {
-            return Self::Empty;
-        }
-
-        let capacity_vertices = capacity_vertices.max(vertices.len() as u32);
-        if capacity_vertices == vertices.len() as u32 {
-            let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some(label),
-                contents: bytemuck::cast_slice(vertices),
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            });
-
-            return Self::Streaming {
-                buffer,
-                count: vertices.len() as u32,
-                capacity_vertices,
-            };
-        }
-
-        let padded = device.create_buffer(&wgpu::BufferDescriptor {
+        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some(label),
             size: (std::mem::size_of::<Vertex>() * capacity_vertices as usize) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        // Keep the upload path uniform for buffers with spare capacity.
-        let slot = Self::Streaming {
-            buffer: padded,
-            count: vertices.len() as u32,
+        let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: (std::mem::size_of::<u32>() * capacity_indices as usize) as u64,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        Self::IndexedStreaming {
+            vertex_buffer,
+            index_buffer,
+            vertex_count: 0,
+            index_count: 0,
             capacity_vertices,
-        };
-        if let Self::Streaming { buffer, .. } = &slot {
-            queue.write_buffer(buffer, 0, bytemuck::cast_slice(vertices));
+            capacity_indices,
         }
-        slot
     }
 
     pub(crate) fn replace_with_vertices(
@@ -138,48 +189,127 @@ impl MeshSlot {
         *self = Self::from_vertices(device, label, vertices);
     }
 
-    pub(crate) fn replace_with_streaming_vertices(
+    pub(crate) fn replace_with_geometry(
+        &mut self,
+        device: &wgpu::Device,
+        label: &'static str,
+        geometry: &MeshGeometry,
+    ) {
+        *self = Self::from_geometry(device, label, geometry);
+    }
+
+    pub(crate) fn replace_with_streaming_geometry(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         label: &'static str,
-        vertices: &[Vertex],
+        geometry: &MeshGeometry,
         spare_capacity_vertices: u32,
+        spare_capacity_indices: u32,
     ) {
-        let capacity = vertices
-            .len()
+        if geometry.is_empty() {
+            *self = Self::Empty;
+            return;
+        }
+
+        let capacity_vertices = geometry
+            .vertex_count()
             .saturating_add(spare_capacity_vertices as usize)
-            .max(vertices.len()) as u32;
-        *self = Self::streaming_from_vertices(device, queue, label, vertices, capacity);
+            .max(geometry.vertex_count()) as u32;
+        if let Some(indices) = geometry.indices.as_ref() {
+            let capacity_indices = indices
+                .len()
+                .saturating_add(spare_capacity_indices as usize)
+                .max(indices.len()) as u32;
+            *self = Self::indexed_streaming(device, label, capacity_vertices, capacity_indices);
+        } else {
+            *self = Self::streaming(device, label, capacity_vertices);
+        }
+
+        if !self.append_streaming_geometry(queue, 0, 0, geometry) {
+            *self = Self::from_geometry(device, label, geometry);
+        }
     }
 
-    pub(crate) fn append_streaming_vertices(
+    pub(crate) fn append_streaming_geometry(
         &mut self,
         queue: &wgpu::Queue,
         start_vertex: usize,
-        vertices: &[Vertex],
+        start_index: usize,
+        geometry: &MeshGeometry,
     ) -> bool {
-        let Self::Streaming {
-            buffer,
-            count,
-            capacity_vertices,
-        } = self
-        else {
-            return false;
-        };
+        match self {
+            Self::Streaming {
+                buffer,
+                count,
+                capacity_vertices,
+            } => {
+                if geometry.indices.is_some()
+                    || *count as usize != start_vertex
+                    || start_vertex.saturating_add(geometry.vertices.len())
+                        > *capacity_vertices as usize
+                {
+                    return false;
+                }
 
-        if *count as usize != start_vertex
-            || start_vertex.saturating_add(vertices.len()) > *capacity_vertices as usize
-        {
-            return false;
-        }
+                if !geometry.vertices.is_empty() {
+                    let offset = (std::mem::size_of::<Vertex>() * start_vertex) as u64;
+                    queue.write_buffer(buffer, offset, bytemuck::cast_slice(&geometry.vertices));
+                }
+                *count = start_vertex.saturating_add(geometry.vertices.len()) as u32;
+                true
+            }
+            Self::IndexedStreaming {
+                vertex_buffer,
+                index_buffer,
+                vertex_count,
+                index_count,
+                capacity_vertices,
+                capacity_indices,
+            } => {
+                let append_index_count = geometry.draw_count();
+                if *vertex_count as usize != start_vertex
+                    || *index_count as usize != start_index
+                    || start_vertex.saturating_add(geometry.vertices.len())
+                        > *capacity_vertices as usize
+                    || start_index.saturating_add(append_index_count) > *capacity_indices as usize
+                {
+                    return false;
+                }
 
-        if !vertices.is_empty() {
-            let offset = (std::mem::size_of::<Vertex>() * start_vertex) as u64;
-            queue.write_buffer(buffer, offset, bytemuck::cast_slice(vertices));
+                if !geometry.vertices.is_empty() {
+                    let vertex_offset = (std::mem::size_of::<Vertex>() * start_vertex) as u64;
+                    queue.write_buffer(
+                        vertex_buffer,
+                        vertex_offset,
+                        bytemuck::cast_slice(&geometry.vertices),
+                    );
+                }
+
+                let appended_indices = if let Some(indices) = geometry.indices.as_ref() {
+                    indices
+                        .iter()
+                        .map(|index| start_vertex as u32 + *index)
+                        .collect::<Vec<_>>()
+                } else {
+                    let end_vertex = start_vertex.saturating_add(geometry.vertices.len()) as u32;
+                    (start_vertex as u32..end_vertex).collect::<Vec<_>>()
+                };
+                if !appended_indices.is_empty() {
+                    let index_offset = (std::mem::size_of::<u32>() * start_index) as u64;
+                    queue.write_buffer(
+                        index_buffer,
+                        index_offset,
+                        bytemuck::cast_slice(&appended_indices),
+                    );
+                }
+
+                *vertex_count = start_vertex.saturating_add(geometry.vertices.len()) as u32;
+                *index_count = start_index.saturating_add(appended_indices.len()) as u32;
+                true
+            }
+            _ => false,
         }
-        *count = start_vertex.saturating_add(vertices.len()) as u32;
-        true
     }
 
     pub(crate) fn write_streaming_vertices(&mut self, queue: &wgpu::Queue, vertices: &[Vertex]) {
@@ -204,20 +334,47 @@ impl MeshSlot {
     pub(crate) fn clear(&mut self) {
         match self {
             Self::Empty => {}
-            Self::VertexData { .. } => *self = Self::Empty,
+            Self::VertexData { .. } | Self::IndexedData { .. } => *self = Self::Empty,
             Self::Streaming { count, .. } => *count = 0,
+            Self::IndexedStreaming {
+                vertex_count,
+                index_count,
+                ..
+            } => {
+                *vertex_count = 0;
+                *index_count = 0;
+            }
         }
     }
 
-    pub(crate) fn draw_data(&self) -> Option<(&wgpu::Buffer, u32)> {
+    pub(crate) fn draw_data(&self) -> Option<MeshDrawData<'_>> {
         match self {
             Self::Empty => None,
-            Self::VertexData { buffer, count } | Self::Streaming { buffer, count, .. }
-                if *count > 0 =>
-            {
-                Some((buffer, *count))
+            Self::VertexData { buffer, count } | Self::Streaming { buffer, count, .. } => {
+                (*count > 0).then_some(MeshDrawData::Vertices {
+                    buffer,
+                    count: *count,
+                })
             }
-            _ => None,
+            Self::IndexedData {
+                vertex_buffer,
+                index_buffer,
+                count,
+            } => (*count > 0).then_some(MeshDrawData::Indexed {
+                vertex_buffer,
+                index_buffer,
+                count: *count,
+            }),
+            Self::IndexedStreaming {
+                vertex_buffer,
+                index_buffer,
+                index_count,
+                ..
+            } => (*index_count > 0).then_some(MeshDrawData::Indexed {
+                vertex_buffer,
+                index_buffer,
+                count: *index_count,
+            }),
         }
     }
 }
@@ -344,8 +501,99 @@ pub(crate) struct RenderSubsystem {
 
 #[cfg(test)]
 mod tests {
+    use crate::mesh::MeshGeometry;
+    use crate::state::render::{MeshDrawData, MeshSlot};
     use crate::state::State;
-    use crate::types::PhysicalSize;
+    use crate::types::{PhysicalSize, Vertex};
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn mesh_slot_draw_data_reports_indexed_geometry() {
+        pollster::block_on(async {
+            let state = State::new_test().await;
+            let geometry = MeshGeometry {
+                vertices: vec![
+                    Vertex::untextured([0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]),
+                    Vertex::untextured([1.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]),
+                    Vertex::untextured([0.0, 1.0, 0.0], [1.0, 1.0, 1.0, 1.0]),
+                ],
+                indices: Some(vec![0, 1, 2]),
+            };
+
+            let slot = MeshSlot::from_geometry(state.device(), "Indexed Test Mesh", &geometry);
+            let draw_data = slot.draw_data().expect("indexed geometry should draw");
+            assert_eq!(draw_data.count(), 3);
+            assert!(matches!(draw_data, MeshDrawData::Indexed { .. }));
+        });
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn streaming_geometry_appends_unindexed_vertices_without_rebuild() {
+        pollster::block_on(async {
+            let state = State::new_test().await;
+            let first = MeshGeometry::from_vertices(vec![
+                Vertex::untextured([0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]),
+                Vertex::untextured([1.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]),
+            ]);
+            let second = MeshGeometry::from_vertices(vec![Vertex::untextured(
+                [2.0, 0.0, 0.0],
+                [1.0, 1.0, 1.0, 1.0],
+            )]);
+            let mut slot = MeshSlot::Empty;
+
+            slot.replace_with_streaming_geometry(
+                state.device(),
+                &state.render.gpu.queue,
+                "Streaming Test Mesh",
+                &first,
+                4,
+                4,
+            );
+
+            assert!(matches!(slot, MeshSlot::Streaming { .. }));
+            assert!(slot.append_streaming_geometry(&state.render.gpu.queue, 2, 2, &second));
+            assert_eq!(slot.draw_data().map(|draw_data| draw_data.count()), Some(3));
+        });
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn streaming_geometry_appends_indexed_data_without_rebuild() {
+        pollster::block_on(async {
+            let state = State::new_test().await;
+            let first = MeshGeometry {
+                vertices: vec![
+                    Vertex::untextured([0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]),
+                    Vertex::untextured([1.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]),
+                    Vertex::untextured([0.0, 1.0, 0.0], [1.0, 1.0, 1.0, 1.0]),
+                ],
+                indices: Some(vec![0, 1, 2]),
+            };
+            let second = MeshGeometry::from_vertices(vec![Vertex::untextured(
+                [2.0, 0.0, 0.0],
+                [1.0, 1.0, 1.0, 1.0],
+            )]);
+            let mut slot = MeshSlot::Empty;
+
+            slot.replace_with_streaming_geometry(
+                state.device(),
+                &state.render.gpu.queue,
+                "Indexed Streaming Test Mesh",
+                &first,
+                4,
+                4,
+            );
+
+            assert!(matches!(slot, MeshSlot::IndexedStreaming { .. }));
+            assert!(slot.append_streaming_geometry(&state.render.gpu.queue, 3, 3, &second));
+            assert_eq!(slot.draw_data().map(|draw_data| draw_data.count()), Some(4));
+            assert!(matches!(
+                slot.draw_data(),
+                Some(MeshDrawData::Indexed { .. })
+            ));
+        });
+    }
 
     #[test]
     fn test_apply_resize_zero_size() {
