@@ -80,6 +80,30 @@ impl MeshDrawData<'_> {
 }
 
 impl MeshSlot {
+    #[cfg(test)]
+    fn destroy(&mut self) {
+        let slot = std::mem::replace(self, Self::Empty);
+        match slot {
+            Self::Empty => {}
+            Self::VertexData { buffer, .. } | Self::Streaming { buffer, .. } => {
+                buffer.destroy();
+            }
+            Self::IndexedData {
+                vertex_buffer,
+                index_buffer,
+                ..
+            }
+            | Self::IndexedStreaming {
+                vertex_buffer,
+                index_buffer,
+                ..
+            } => {
+                vertex_buffer.destroy();
+                index_buffer.destroy();
+            }
+        }
+    }
+
     pub(crate) fn from_vertices(
         device: &wgpu::Device,
         label: &'static str,
@@ -398,6 +422,28 @@ pub(crate) struct SceneMeshes {
     pub(crate) editor_preview_player: MeshSlot,
 }
 
+#[cfg(test)]
+impl SceneMeshes {
+    fn destroy(&mut self) {
+        self.floor.destroy();
+        self.grid.destroy();
+        self.trail.destroy();
+        self.blocks.destroy();
+        self.blocks_static.destroy();
+        self.blocks_selected.destroy();
+        self.editor_cursor.destroy();
+        self.editor_hover_stencil.destroy();
+        self.editor_hover_outline.destroy();
+        self.editor_selection_stencil.destroy();
+        self.editor_selection_outline.destroy();
+        self.editor_gizmo.destroy();
+        self.tap_indicators.destroy();
+        self.spawn_marker.destroy();
+        self.camera_trigger_markers.destroy();
+        self.editor_preview_player.destroy();
+    }
+}
+
 pub(crate) struct GpuContext {
     pub(crate) surface_host: Option<SurfaceHost>,
     pub(crate) surface: Option<wgpu::Surface<'static>>,
@@ -497,6 +543,17 @@ impl GpuContext {
 pub(crate) struct RenderSubsystem {
     pub(crate) gpu: GpuContext,
     pub(crate) meshes: SceneMeshes,
+}
+
+#[cfg(test)]
+impl Drop for RenderSubsystem {
+    fn drop(&mut self) {
+        self.meshes.destroy();
+        self.gpu.line_uniform_buffer.destroy();
+        self.gpu.camera_uniform_buffer.destroy();
+        self.gpu.color_space_uniform_buffer.destroy();
+        let _ = self.gpu.device.poll(wgpu::PollType::Poll);
+    }
 }
 
 #[cfg(test)]

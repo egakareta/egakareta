@@ -10,7 +10,7 @@
         "cf-typegen": "wrangler types --strict-vars=false --env-interface CloudflareEnv functions/cloudflare-env.d.ts",
         "sb-ts-typegen": "supabase gen types typescript --local > functions/_supabase_types.ts",
         "typegen": "bun cf-typegen && bun sb-ts-typegen",
-        "test": "cargo test -- -Zunstable-options --report-time",
+        "test": "cargo test -- -Zunstable-options --report-time --test-threads=1",
         "test:functions": "vitest run",
         "test:coverage": "cargo llvm-cov --lcov --output-path lcov.info -- -Zunstable-options --report-time",
         "test:db": "supabase test db",

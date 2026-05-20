@@ -161,6 +161,9 @@ fn marquee_screen_pos_to_egui_pos(screen_pos: [f64; 2], pixels_per_point: f32) -
 
 /// Shows the editor UI using egui.
 /// Handles the top bar, bottom panels, and other editor interface elements.
+// egui 0.34 deprecates top-level Panel::show in favor of show_inside;
+// this function still renders top-level panels directly from Context.
+#[allow(deprecated)]
 pub fn show_editor_ui(
     ctx: &egui::Context,
     state: &mut State,
@@ -182,9 +185,9 @@ pub fn show_editor_ui(
     let is_compact_ui = is_compact_editor_ui(viewport_width);
 
     if view.show_settings {
-        egui::SidePanel::left("editor_settings_sidebar")
+        egui::Panel::left("editor_settings_sidebar")
             .resizable(true)
-            .default_width(settings_sidebar_default_width(viewport_width))
+            .default_size(settings_sidebar_default_width(viewport_width))
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.heading(format!("{} Settings", egui_phosphor::regular::GEAR));
@@ -455,7 +458,7 @@ pub fn show_editor_ui(
             });
     }
 
-    egui::TopBottomPanel::top("editor_top_bar").show(ctx, |ui| {
+    egui::Panel::top("editor_top_bar").show(ctx, |ui| {
         ui.horizontal_wrapped(|ui| {
             // Top-level tabs: Compose / Timing
             if ui.selectable_label(is_compose, "Compose").clicked() && !is_compose {
@@ -612,7 +615,7 @@ pub fn show_editor_ui(
         }
     }
 
-    egui::TopBottomPanel::bottom("block_selection_bar")
+    egui::Panel::bottom("block_selection_bar")
         .resizable(false)
         .show(ctx, |ui| {
             ui.vertical(|ui| {
@@ -641,7 +644,8 @@ pub fn show_editor_ui(
     if is_timing {
         egui::CentralPanel::default()
             .frame(
-                egui::Frame::central_panel(&ctx.style()).fill(egui::Color32::from_rgb(15, 20, 28)),
+                egui::Frame::central_panel(&ctx.global_style())
+                    .fill(egui::Color32::from_rgb(15, 20, 28)),
             )
             .show(ctx, |ui| {
                 show_waveform_panel(ui, &view, &mut commands);
