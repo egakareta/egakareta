@@ -9,7 +9,7 @@ use crate::mesh::shapes::append_prism;
 use crate::mesh::transforms::rotate_vertices_around_euler;
 use crate::types::Vertex;
 
-fn build_editor_stencil_outline_vertices(
+fn build_editor_outline_hull_vertices(
     position: [f32; 3],
     size: [f32; 3],
     rotation_degrees: [f32; 3],
@@ -51,7 +51,7 @@ pub(crate) fn build_editor_selection_outline_vertices(
     rotation_degrees: [f32; 3],
     line_width: f32,
 ) -> Vec<Vertex> {
-    build_editor_stencil_outline_vertices(
+    build_editor_outline_hull_vertices(
         position,
         size,
         rotation_degrees,
@@ -67,7 +67,7 @@ pub(crate) fn build_editor_hover_outline_vertices(
     rotation_degrees: [f32; 3],
     line_width: f32,
 ) -> Vec<Vertex> {
-    build_editor_stencil_outline_vertices(
+    build_editor_outline_hull_vertices(
         position,
         size,
         rotation_degrees,

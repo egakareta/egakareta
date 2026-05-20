@@ -937,7 +937,7 @@ impl State {
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: Some("fs_mask"),
+                    entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: config.format,
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -997,7 +997,7 @@ impl State {
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: Some("fs_main"),
+                    entry_point: Some("fs_mask"),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: config.format,
                         blend: None,
