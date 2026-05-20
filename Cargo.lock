@@ -758,7 +758,7 @@ dependencies = [
  "log",
  "naga",
  "pollster",
- "puffin 0.20.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "puffin",
  "puffin_egui",
  "reqwest",
  "rexie",
@@ -2797,21 +2797,6 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 [[package]]
 name = "puffin"
 version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84b514d95a258be801fde8a1ff1c974f4a4841d9750f5d1d6690fc07a5ad4049"
-dependencies = [
- "anyhow",
- "byteorder",
- "cfg-if",
- "itertools",
- "js-sys",
- "parking_lot",
- "web-time",
-]
-
-[[package]]
-name = "puffin"
-version = "0.20.0"
 source = "git+https://github.com/EmbarkStudios/puffin?rev=7e08a533f9debfb7d051547263d2ab84c666314f#7e08a533f9debfb7d051547263d2ab84c666314f"
 dependencies = [
  "anyhow",
@@ -2819,9 +2804,11 @@ dependencies = [
  "byteorder",
  "cfg-if",
  "itertools",
+ "js-sys",
  "lz4_flex",
  "parking_lot",
  "serde",
+ "web-time",
 ]
 
 [[package]]
@@ -2836,7 +2823,7 @@ dependencies = [
  "log-once",
  "natord",
  "parking_lot",
- "puffin 0.20.0 (git+https://github.com/EmbarkStudios/puffin?rev=7e08a533f9debfb7d051547263d2ab84c666314f)",
+ "puffin",
  "time",
  "vec1",
  "web-time",

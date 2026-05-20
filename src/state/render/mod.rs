@@ -552,7 +552,7 @@ impl Drop for RenderSubsystem {
         self.gpu.line_uniform_buffer.destroy();
         self.gpu.camera_uniform_buffer.destroy();
         self.gpu.color_space_uniform_buffer.destroy();
-        let _ = self.gpu.device.poll(wgpu::PollType::wait_indefinitely());
+        let _ = self.gpu.device.poll(wgpu::PollType::Poll);
     }
 }
 

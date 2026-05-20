@@ -163,6 +163,7 @@ struct TestGpuFixture {
     editor_outline_mask_pipeline: wgpu::RenderPipeline,
     editor_outline_pipeline: wgpu::RenderPipeline,
     line_bind_group_layout: wgpu::BindGroupLayout,
+    _zero_line_uniform_buffer: wgpu::Buffer,
     zero_line_bind_group: wgpu::BindGroup,
     camera_bind_group_layout: wgpu::BindGroupLayout,
     color_space_bind_group_layout: wgpu::BindGroupLayout,
@@ -173,6 +174,22 @@ struct TestGpuFixture {
 #[cfg(test)]
 impl From<&GpuContext> for TestGpuFixture {
     fn from(gpu: &GpuContext) -> Self {
+        let zero_line_uniform_buffer =
+            gpu.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Shared Test Line Uniform Buffer"),
+                    contents: bytemuck::bytes_of(&default_line_uniform()),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+        let zero_line_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Shared Test Zero Line Bind Group"),
+            layout: &gpu.line_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: zero_line_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
         Self {
             adapter_info: gpu.adapter_info.clone(),
             device: gpu.device.clone(),
@@ -188,7 +205,8 @@ impl From<&GpuContext> for TestGpuFixture {
             editor_outline_mask_pipeline: gpu.editor_outline_mask_pipeline.clone(),
             editor_outline_pipeline: gpu.editor_outline_pipeline.clone(),
             line_bind_group_layout: gpu.line_bind_group_layout.clone(),
-            zero_line_bind_group: gpu.zero_line_bind_group.clone(),
+            _zero_line_uniform_buffer: zero_line_uniform_buffer,
+            zero_line_bind_group,
             camera_bind_group_layout: gpu.camera_bind_group_layout.clone(),
             color_space_bind_group_layout: gpu.color_space_bind_group_layout.clone(),
             block_texture_bind_group: gpu.block_texture_bind_group.clone(),
@@ -264,7 +282,6 @@ impl State {
                         .await
                         {
                             let fixture = TestGpuFixture::from(&state.render.gpu);
-                            std::mem::forget(state);
                             return Some(fixture);
                         }
                     }

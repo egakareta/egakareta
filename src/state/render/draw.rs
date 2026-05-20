@@ -87,6 +87,20 @@ pub enum RenderSurfaceError {
     Validation,
 }
 
+fn current_surface_output(
+    texture: CurrentSurfaceTexture,
+) -> Result<Option<wgpu::SurfaceTexture>, RenderSurfaceError> {
+    match texture {
+        CurrentSurfaceTexture::Success(output) | CurrentSurfaceTexture::Suboptimal(output) => {
+            Ok(Some(output))
+        }
+        CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => Ok(None),
+        CurrentSurfaceTexture::Outdated => Err(RenderSurfaceError::Outdated),
+        CurrentSurfaceTexture::Lost => Err(RenderSurfaceError::Lost),
+        CurrentSurfaceTexture::Validation => Err(RenderSurfaceError::Validation),
+    }
+}
+
 fn draw_mesh(render_pass: &mut wgpu::RenderPass<'_>, draw_data: MeshDrawData<'_>) {
     match draw_data {
         MeshDrawData::Vertices { buffer, count } => {
@@ -171,14 +185,8 @@ impl State {
             Some(s) => s,
             None => return Ok(()),
         };
-        let output = match surface.get_current_texture() {
-            CurrentSurfaceTexture::Success(output) | CurrentSurfaceTexture::Suboptimal(output) => {
-                output
-            }
-            CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => return Ok(()),
-            CurrentSurfaceTexture::Outdated => return Err(RenderSurfaceError::Outdated),
-            CurrentSurfaceTexture::Lost => return Err(RenderSurfaceError::Lost),
-            CurrentSurfaceTexture::Validation => return Err(RenderSurfaceError::Validation),
+        let Some(output) = current_surface_output(surface.get_current_texture())? else {
+            return Ok(());
         };
         let view = output
             .texture
@@ -423,9 +431,9 @@ mod tests {
 
     use super::super::MeshSlot;
     use super::{
-        apply_gamma_correction_if_enabled, clear_color_for_phase, linear_to_srgb,
-        should_draw_editor_cursor, should_draw_editor_overlays, should_draw_floor_and_grid,
-        should_skip_world,
+        apply_gamma_correction_if_enabled, clear_color_for_phase, current_surface_output,
+        linear_to_srgb, should_draw_editor_cursor, should_draw_editor_overlays,
+        should_draw_floor_and_grid, should_skip_world, RenderSurfaceError,
     };
     use crate::state::State;
     use crate::types::{AppPhase, EditorMode, Vertex};
@@ -557,6 +565,30 @@ mod tests {
         assert!(!should_draw_editor_cursor(EditorMode::Select));
         assert!(!should_draw_editor_cursor(EditorMode::Trigger));
         assert!(!should_draw_editor_cursor(EditorMode::Timing));
+    }
+
+    #[test]
+    fn current_surface_statuses_match_render_policy() {
+        assert!(matches!(
+            current_surface_output(wgpu::CurrentSurfaceTexture::Timeout),
+            Ok(None)
+        ));
+        assert!(matches!(
+            current_surface_output(wgpu::CurrentSurfaceTexture::Occluded),
+            Ok(None)
+        ));
+        assert!(matches!(
+            current_surface_output(wgpu::CurrentSurfaceTexture::Outdated),
+            Err(RenderSurfaceError::Outdated)
+        ));
+        assert!(matches!(
+            current_surface_output(wgpu::CurrentSurfaceTexture::Lost),
+            Err(RenderSurfaceError::Lost)
+        ));
+        assert!(matches!(
+            current_surface_output(wgpu::CurrentSurfaceTexture::Validation),
+            Err(RenderSurfaceError::Validation)
+        ));
     }
 
     #[test]
