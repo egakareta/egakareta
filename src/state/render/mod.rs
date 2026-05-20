@@ -30,7 +30,7 @@ impl State {
     }
 }
 
-pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
 
 pub(crate) enum MeshSlot {
     Empty,
@@ -387,7 +387,9 @@ pub(crate) struct SceneMeshes {
     pub(crate) blocks_static: MeshSlot,
     pub(crate) blocks_selected: MeshSlot,
     pub(crate) editor_cursor: MeshSlot,
+    pub(crate) editor_hover_stencil: MeshSlot,
     pub(crate) editor_hover_outline: MeshSlot,
+    pub(crate) editor_selection_stencil: MeshSlot,
     pub(crate) editor_selection_outline: MeshSlot,
     pub(crate) editor_gizmo: MeshSlot,
     pub(crate) tap_indicators: MeshSlot,
@@ -410,6 +412,8 @@ pub(crate) struct GpuContext {
     pub(crate) block_icon_pipeline: wgpu::RenderPipeline,
     pub(crate) editor_ghost_trail_pipeline: wgpu::RenderPipeline,
     pub(crate) gizmo_overlay_pipeline: wgpu::RenderPipeline,
+    pub(crate) editor_outline_mask_pipeline: wgpu::RenderPipeline,
+    pub(crate) editor_outline_pipeline: wgpu::RenderPipeline,
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) line_bind_group_layout: wgpu::BindGroupLayout,
     pub(crate) line_uniform_buffer: wgpu::Buffer,
@@ -481,7 +485,7 @@ impl GpuContext {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         };
         let texture = device.create_texture(&desc);

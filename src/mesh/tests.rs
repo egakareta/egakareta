@@ -9,7 +9,8 @@
 mod tests {
     use crate::mesh::blocks::{build_block_geometry, build_block_vertices};
     use crate::mesh::builders::{
-        build_editor_gizmo_vertices, build_editor_hover_outline_vertices, GizmoParams,
+        build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
+        build_editor_selection_outline_vertices, GizmoParams,
     };
     use crate::mesh::egmesh::resolve_egmesh;
     use crate::mesh::obj::parse_obj_mesh;
@@ -212,10 +213,31 @@ mod tests {
     }
 
     #[test]
-    fn hover_outline_vertices_are_opaque() {
-        let vertices = build_editor_hover_outline_vertices([0.0, 0.0, 0.0], [1.0, 1.0, 1.0], 0.03);
+    fn hover_outline_vertices_are_opaque_light_blue() {
+        let vertices = build_editor_hover_outline_vertices(
+            [0.0, 0.0, 0.0],
+            [1.0, 1.0, 1.0],
+            [0.0, 0.0, 0.0],
+            0.03,
+        );
         assert!(!vertices.is_empty());
-        assert!(vertices.iter().any(|v| v.color[3] == 1.0));
+        assert!(vertices
+            .iter()
+            .all(|vertex| vertex.color == [0.698, 0.898, 1.0, 1.0]));
+    }
+
+    #[test]
+    fn selection_outline_vertices_are_opaque_uniform_blue() {
+        let vertices = build_editor_selection_outline_vertices(
+            [0.0, 0.0, 0.0],
+            [1.0, 1.0, 1.0],
+            [0.0, 0.0, 0.0],
+            0.03,
+        );
+        assert!(!vertices.is_empty());
+        assert!(vertices
+            .iter()
+            .all(|vertex| vertex.color == [0.098, 0.6, 1.0, 1.0]));
     }
 
     #[test]

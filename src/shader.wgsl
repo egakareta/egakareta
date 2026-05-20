@@ -88,6 +88,11 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 }
 
 @fragment
+fn fs_mask() -> @location(0) vec4<f32> {
+    return vec4<f32>(0.0);
+}
+
+@fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let has_texture = input.texture_layer >= 0.0;
     let texture_layer = max(i32(round(input.texture_layer)), 0);

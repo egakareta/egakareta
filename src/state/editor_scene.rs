@@ -392,6 +392,7 @@ impl State {
 
     pub(super) fn rebuild_editor_hover_outline_vertices(&mut self) {
         if self.phase != AppPhase::Editor || !self.editor.ui.mode.is_selection_mode() {
+            self.render.meshes.editor_hover_stencil.clear();
             self.render.meshes.editor_hover_outline.clear();
             return;
         }
@@ -415,11 +416,13 @@ impl State {
         }
 
         if indices_to_outline.is_empty() {
+            self.render.meshes.editor_hover_stencil.clear();
             self.render.meshes.editor_hover_outline.clear();
             return;
         }
 
         let mut all_vertices = Vec::new();
+        let mut stencil_geometry = MeshGeometry::default();
         for index in indices_to_outline {
             let obj = &self.editor.objects[index];
             let center = glam::Vec3::new(
@@ -431,9 +434,20 @@ impl State {
             all_vertices.append(&mut build_editor_hover_outline_vertices(
                 obj.position,
                 obj.size,
+                obj.rotation_degrees,
                 line_width,
             ));
+            stencil_geometry.append_geometry(build_block_geometry_for_object(obj));
         }
+
+        self.render
+            .meshes
+            .editor_hover_stencil
+            .replace_with_geometry(
+                &self.render.gpu.device,
+                "Editor Hover Stencil Vertex Buffer",
+                &stencil_geometry,
+            );
 
         self.render
             .meshes
@@ -513,17 +527,20 @@ impl State {
 
     pub(super) fn rebuild_editor_selection_outline_vertices(&mut self) {
         if self.phase != AppPhase::Editor || !self.editor.ui.mode.is_selection_mode() {
+            self.render.meshes.editor_selection_stencil.clear();
             self.render.meshes.editor_selection_outline.clear();
             return;
         }
 
         let selected_indices = self.selected_block_indices_normalized();
         if selected_indices.is_empty() {
+            self.render.meshes.editor_selection_stencil.clear();
             self.render.meshes.editor_selection_outline.clear();
             return;
         }
 
         let mut vertices = Vec::new();
+        let mut stencil_geometry = MeshGeometry::default();
         for index in selected_indices {
             if let Some(obj) = self.editor.objects.get(index) {
                 let center = glam::Vec3::new(
@@ -535,10 +552,20 @@ impl State {
                 vertices.extend(build_editor_selection_outline_vertices(
                     obj.position,
                     obj.size,
+                    obj.rotation_degrees,
                     line_width,
                 ));
+                stencil_geometry.append_geometry(build_block_geometry_for_object(obj));
             }
         }
+        self.render
+            .meshes
+            .editor_selection_stencil
+            .replace_with_geometry(
+                &self.render.gpu.device,
+                "Editor Selection Stencil Vertex Buffer",
+                &stencil_geometry,
+            );
         self.render
             .meshes
             .editor_selection_outline
