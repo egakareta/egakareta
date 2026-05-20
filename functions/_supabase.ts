@@ -37,3 +37,19 @@ export function createSupabaseClient(env: Cloudflare.Env, request: Request) {
         },
     });
 }
+
+export function createSupabaseAdminClient(env: Cloudflare.Env) {
+    const supabaseUrl = env.API_URL;
+    const serviceRoleKey = env.SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !serviceRoleKey) {
+        throw new Error("Missing Supabase admin environment variables");
+    }
+
+    return createClient(supabaseUrl, serviceRoleKey, {
+        auth: {
+            autoRefreshToken: false,
+            persistSession: false,
+        },
+    });
+}

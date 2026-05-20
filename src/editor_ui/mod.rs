@@ -21,7 +21,8 @@ use crate::State;
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
 use glam::{Mat3, Vec3};
 pub use menu::{
-    load_menu_favicon_texture, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar,
+    load_menu_favicon_texture, show_menu_auth_ui, show_menu_favicon_ui, show_menu_play_ui,
+    show_menu_topbar,
 };
 
 #[derive(Clone, Copy)]
@@ -81,7 +82,8 @@ const VIEW_CUBE_FACES: [ViewCubeFace; 6] = [
 const COMPACT_EDITOR_UI_BREAKPOINT: f32 = 720.0;
 const SETTINGS_SIDEBAR_TOTAL_PADDING: f32 = 24.0;
 const SETTINGS_SIDEBAR_MIN_WIDTH: f32 = 180.0;
-const SETTINGS_SIDEBAR_WIDTH_SCALE: f32 = 0.78;
+const SETTINGS_SIDEBAR_DEFAULT_WIDTH: f32 = 320.0;
+const SETTINGS_SIDEBAR_COMPACT_WIDTH_SCALE: f32 = 0.78;
 const RESPONSIVE_UI_SCALE_MIN: f32 = 0.8;
 const RESPONSIVE_UI_SCALE_MAX: f32 = 1.35;
 const UI_SCALE_BASE_WIDTH: f32 = 1280.0;
@@ -92,13 +94,14 @@ fn is_compact_editor_ui(viewport_width: f32) -> bool {
 }
 
 fn settings_sidebar_default_width(viewport_width: f32) -> f32 {
-    // Keep a comfortable 78% default on small screens while leaving 24px total padding
-    // (12px per side), and use a 180px minimum only when it still fits inside the viewport.
     let max_width = (viewport_width - SETTINGS_SIDEBAR_TOTAL_PADDING).max(0.0);
     if max_width <= SETTINGS_SIDEBAR_MIN_WIDTH {
         return max_width;
     }
-    (viewport_width * SETTINGS_SIDEBAR_WIDTH_SCALE).clamp(SETTINGS_SIDEBAR_MIN_WIDTH, max_width)
+
+    (viewport_width * SETTINGS_SIDEBAR_COMPACT_WIDTH_SCALE)
+        .min(SETTINGS_SIDEBAR_DEFAULT_WIDTH)
+        .clamp(SETTINGS_SIDEBAR_MIN_WIDTH, max_width)
 }
 
 pub(crate) fn responsive_ui_scale_multiplier(viewport_size: egui::Vec2) -> f32 {
@@ -188,13 +191,24 @@ pub fn show_editor_ui(
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.heading(format!("{} Settings", egui_phosphor::regular::GEAR));
-                    if ui.button(egui_phosphor::regular::X).clicked() {
-                        commands.push(crate::commands::AppCommand::EditorSetShowSettings(false));
-                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let close_button_size = egui::vec2(
+                            ui.spacing().interact_size.y,
+                            ui.spacing().interact_size.y,
+                        );
+                        if ui
+                            .add_sized(
+                                close_button_size,
+                                egui::Button::new(egui_phosphor::regular::X).frame(false),
+                            )
+                            .on_hover_text("Close settings")
+                            .clicked()
+                        {
+                            commands
+                                .push(crate::commands::AppCommand::EditorSetShowSettings(false));
+                        }
+                    });
                 });
-
-                ui.separator();
-
                 ui.horizontal(|ui| {
                     if ui
                         .selectable_label(
@@ -496,7 +510,9 @@ pub fn show_editor_ui(
                 .button(format!("{} Metadata", egui_phosphor::regular::INFO))
                 .clicked()
             {
-                commands.push(crate::commands::AppCommand::EditorSetShowMetadata(true));
+                commands.push(crate::commands::AppCommand::EditorSetShowMetadata(
+                    !view.show_metadata,
+                ));
             }
 
             if ui
@@ -509,9 +525,11 @@ pub fn show_editor_ui(
     });
 
     if view.show_metadata {
-        egui::Window::new(format!("{} Level Metadata", egui_phosphor::regular::INFO)).show(
-            ctx,
-            |ui| {
+        let mut metadata_open = true;
+
+        egui::Window::new(format!("{} Level Metadata", egui_phosphor::regular::INFO))
+            .open(&mut metadata_open)
+            .show(ctx, |ui| {
                 ui.label(format!("{} Level Name:", egui_phosphor::regular::PENCIL));
                 let mut name = view.level_name.unwrap_or("Untitled").to_string();
                 if ui.text_edit_singleline(&mut name).changed() {
@@ -519,7 +537,6 @@ pub fn show_editor_ui(
                 }
 
                 ui.separator();
-                ui.heading(format!("{} Music", egui_phosphor::regular::MUSIC_NOTE));
 
                 let mut music = view.music_metadata.clone();
                 let mut changed = false;
@@ -584,11 +601,18 @@ pub fn show_editor_ui(
                     );
                 });
 
-                if ui.button("Close").clicked() {
-                    commands.push(crate::commands::AppCommand::EditorSetShowMetadata(false));
-                }
-            },
-        );
+                ui.separator();
+
+                ui.label(format!(
+                    "{} Objects: {}",
+                    egui_phosphor::regular::CUBE,
+                    view.object_count
+                ));
+            });
+
+        if !metadata_open {
+            commands.push(crate::commands::AppCommand::EditorSetShowMetadata(false));
+        }
     }
 
     egui::Panel::bottom("block_selection_bar")
@@ -656,27 +680,38 @@ pub fn show_editor_ui(
         }
     }
 
-    if view.perf_overlay_enabled {
-        let mut profiler_open = true;
-        egui::Window::new("Profiler")
-            .default_size([1024.0, 600.0])
-            .open(&mut profiler_open)
-            .show(ctx, |ui| {
-                ui.monospace(format!(
-                    "{} | {} | FPS {:.1}",
-                    view.graphics_backend, view.audio_backend, view.fps
-                ));
-                ui.separator();
-                puffin_egui::profiler_ui(ui);
-            });
-        if !profiler_open {
-            commands.push(AppCommand::EditorTogglePerfOverlay);
-        }
-    }
-
     drop(view);
     for command in commands {
         state.dispatch(command);
+    }
+}
+
+/// Shows the app-wide profiler window when the performance overlay is enabled.
+pub fn show_perf_overlay(ctx: &egui::Context, state: &mut State) {
+    if !state.perf_overlay_enabled() {
+        return;
+    }
+
+    let graphics_backend = state.perf_graphics_backend();
+    let audio_backend = state.perf_audio_backend();
+    let fps = state.perf_fps();
+    let mut profiler_open = true;
+
+    egui::Window::new("Profiler")
+        .order(egui::Order::Debug)
+        .default_size([1024.0, 600.0])
+        .open(&mut profiler_open)
+        .show(ctx, |ui| {
+            ui.monospace(format!(
+                "{} | {} | FPS {:.1}",
+                graphics_backend, audio_backend, fps
+            ));
+            ui.separator();
+            puffin_egui::profiler_ui(ui);
+        });
+
+    if !profiler_open {
+        state.dispatch(AppCommand::EditorTogglePerfOverlay);
     }
 }
 
@@ -1056,7 +1091,7 @@ mod tests {
     use super::{
         combined_ui_scale_factor, is_compact_editor_ui, marquee_screen_pos_to_egui_pos,
         push_command_when_clicked, responsive_ui_scale_multiplier, settings_sidebar_default_width,
-        show_editor_ui, sort_quad_by_angle, VIEW_CUBE_FACES,
+        show_editor_ui, show_perf_overlay, sort_quad_by_angle, VIEW_CUBE_FACES,
     };
     use crate::commands::AppCommand;
     use crate::test_utils::approx_eq;
@@ -1165,7 +1200,7 @@ mod tests {
     }
 
     #[test]
-    fn settings_sidebar_width_scales_for_small_screens() {
+    fn settings_sidebar_width_uses_compact_fit_and_desktop_default() {
         assert!(approx_eq(
             settings_sidebar_default_width(320.0),
             249.6,
@@ -1178,7 +1213,7 @@ mod tests {
         ));
         assert!(approx_eq(
             settings_sidebar_default_width(1200.0),
-            936.0,
+            320.0,
             0.01
         ));
         assert!(approx_eq(
@@ -1267,6 +1302,25 @@ mod tests {
     }
 
     #[test]
+    fn show_perf_overlay_renders_outside_editor() {
+        pollster::block_on(async {
+            let Some(mut state) = crate::State::try_new_test().await else {
+                return;
+            };
+
+            assert!(state.is_menu());
+            state.dispatch(AppCommand::EditorTogglePerfOverlay);
+
+            let ctx = egui::Context::default();
+            let _ = ctx.run(egui::RawInput::default(), |ctx| {
+                show_perf_overlay(ctx, &mut state);
+            });
+
+            assert!(state.perf_overlay_enabled());
+        });
+    }
+
+    #[test]
     fn show_editor_ui_renders_marquee_selection() {
         pollster::block_on(async {
             let Some(mut state) = crate::State::try_new_test().await else {
@@ -1319,7 +1373,7 @@ mod tests {
             assert!(state.editor_show_settings());
             assert_eq!(state.editor_settings_section(), SettingsSection::Backends);
             assert!(state.editor_show_metadata());
-            assert!(state.editor_perf_overlay_enabled());
+            assert!(state.perf_overlay_enabled());
 
             state.dispatch(AppCommand::EditorSetMode(EditorMode::Place));
             state.dispatch(AppCommand::EditorSetSettingsSection(

@@ -6,6 +6,7 @@
 
 */
 mod audio_state;
+mod auth_state;
 mod command_dispatch;
 mod editor_actions;
 mod editor_camera;
@@ -51,17 +52,31 @@ pub(crate) use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState
 pub(crate) use view_model::EditorUiViewModel;
 
 use crate::game::GameState;
+use crate::mesh::MeshGeometry;
+use crate::platform::services::AuthServiceMessage;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::platform::state_host::NativeWindow;
 use crate::types::{
-    AppPhase, AppSettings, EditorMode, EditorState, LevelObject, LevelPreviewCameraMetadata,
-    MenuState, MusicMetadata, PhysicalSize, SettingsSection, SpawnMetadata,
+    AppPhase, AppSettings, AuthSession, EditorMode, EditorState, LevelObject,
+    LevelPreviewCameraMetadata, MenuState, MusicMetadata, PhysicalSize, SettingsSection,
+    SpawnMetadata,
 };
 
 /// Bundles all gameplay-related state into a single subsystem.
 /// Separates gameplay concern from the top-level application state.
 pub(crate) struct GameplaySubsystem {
     pub(crate) state: GameState,
+}
+
+pub(crate) struct AuthSubsystem {
+    pub(crate) session: Option<AuthSession>,
+    pub(crate) pending: bool,
+    pub(crate) message: Option<String>,
+    pub(crate) refresh_started: bool,
+    pub(crate) channel: (
+        std::sync::mpsc::Sender<AuthServiceMessage>,
+        std::sync::mpsc::Receiver<AuthServiceMessage>,
+    ),
 }
 
 /// Bundles all session-related state into a single subsystem.
@@ -103,6 +118,8 @@ pub(crate) struct EditorSubsystem {
     pub(crate) perf: EditorPerfState,
     pub(crate) timing: EditorTimingState,
     pub(crate) selected_mask_cache: Option<Vec<bool>>,
+    pub(crate) block_static_vertex_cache: MeshGeometry,
+    pub(crate) block_static_vertex_cache_complete_len: Option<usize>,
 }
 
 pub(crate) struct MenuSubsystem {
@@ -114,6 +131,7 @@ pub(crate) struct MenuSubsystem {
 /// and handles the overall application phase and frame runtime.
 pub struct State {
     render: RenderSubsystem,
+    auth: AuthSubsystem,
     gameplay: GameplaySubsystem,
     editor: EditorSubsystem,
     audio: AudioSubsystem,
@@ -326,8 +344,36 @@ impl State {
                 if !self.editor.ui.shift_held && self.begin_editor_selected_block_drag(x, y) {
                     return;
                 }
+                let viewport_size = glam::Vec2::new(
+                    self.render.gpu.config.width as f32,
+                    self.render.gpu.config.height as f32,
+                );
+                let hit_selectable = self
+                    .editor
+                    .pick_from_screen(x, y, viewport_size)
+                    .is_some_and(|pick| {
+                        pick.hit_block_index.is_some() || pick.hit_trigger_index.is_some()
+                    });
+                if !self.editor.ui.shift_held && hit_selectable {
+                    self.editor
+                        .select_block_from_screen(x, y, viewport_size, self.phase);
+                    return;
+                }
                 self.begin_editor_marquee_selection(x, y);
             } else if mode == EditorMode::Trigger {
+                let viewport_size = glam::Vec2::new(
+                    self.render.gpu.config.width as f32,
+                    self.render.gpu.config.height as f32,
+                );
+                let hit_trigger = self
+                    .editor
+                    .pick_from_screen(x, y, viewport_size)
+                    .is_some_and(|pick| pick.hit_trigger_index.is_some());
+                if hit_trigger {
+                    self.editor
+                        .select_block_from_screen(x, y, viewport_size, self.phase);
+                    return;
+                }
                 self.begin_editor_marquee_selection(x, y);
             } else if mode == EditorMode::Timing {
                 // Timing mode: clicks handled by egui waveform panel

@@ -21,6 +21,11 @@ impl State {
             AppCommand::PrevLevel => self.prev_level(),
             AppCommand::ToggleEditor => self.toggle_editor(),
 
+            // ── Auth ────────────────────────────────────────────────
+            AppCommand::AuthSubmitSignIn => self.submit_auth_sign_in(),
+            AppCommand::AuthSignOut => self.sign_out_auth_session(),
+            AppCommand::AuthOpenSignup => self.open_auth_signup_page(),
+
             // ── Editor – mode switching ─────────────────────────────
             AppCommand::EditorSetMode(mode) => {
                 let old_mode = self.editor_mode();
@@ -126,7 +131,7 @@ impl State {
             }
 
             // ── Editor – misc ───────────────────────────────────────
-            AppCommand::EditorTogglePerfOverlay => self.toggle_editor_perf_overlay(),
+            AppCommand::EditorTogglePerfOverlay => self.toggle_perf_overlay(),
             AppCommand::EditorExportBlockObj => self.trigger_selected_block_obj_export(),
 
             // ── Editor – UI / Session ───────────────────────────────
@@ -574,7 +579,7 @@ impl State {
                 }
             }
             "toggle_perf_overlay" => {
-                if self.is_editor() && just_pressed {
+                if just_pressed {
                     Some(AppCommand::EditorTogglePerfOverlay)
                 } else {
                     None
@@ -1150,7 +1155,7 @@ mod tests {
     }
 
     #[test]
-    fn test_select_mode_marquee_hover_highlights_blocks_during_drag() {
+    fn test_select_mode_marquee_selects_blocks_during_drag() {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
@@ -1192,18 +1197,27 @@ mod tests {
             });
             state.process_input_event(InputEvent::PointerMoved { x: end_x, y: end_y });
 
-            // Process dirty flags to trigger the deferred hover outline rebuild
+            // Process dirty flags to trigger the deferred selection outline rebuild
             state.process_editor_dirty(1.0 / 60.0);
 
-            // Now the hover outline should be populated because the marquee is active and covers the block
+            assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
             assert!(
                 state
                     .render
                     .meshes
                     .editor_hover_outline
                     .draw_data()
+                    .is_none(),
+                "Hover outline should remain clear during marquee drag"
+            );
+            assert!(
+                state
+                    .render
+                    .meshes
+                    .editor_selection_outline
+                    .draw_data()
                     .is_some(),
-                "Hover outline should be populated during marquee drag"
+                "Selection outline should be populated during marquee drag"
             );
 
             // Finish marquee
@@ -1225,6 +1239,61 @@ mod tests {
                     .is_none(),
                 "Hover outline should be cleared after marquee release"
             );
+        });
+    }
+
+    #[test]
+    fn test_select_mode_click_selects_block_on_mouse_down() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = new_editor_state().await;
+            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
+            state.editor.objects = vec![LevelObject {
+                position: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                roundness: 0.18,
+                block_id: "core/stone".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            }];
+
+            let viewport = Vec2::new(
+                state.render.gpu.config.width as f32,
+                state.render.gpu.config.height as f32,
+            );
+            let block_center = glam::Vec3::new(0.5, 0.5, 0.5);
+            let block_screen = state
+                .editor
+                .world_to_screen_v(block_center, viewport)
+                .expect("block center should project to the screen");
+
+            state.process_input_event(InputEvent::PointerMoved {
+                x: block_screen.x as f64,
+                y: block_screen.y as f64,
+            });
+            state.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: true,
+            });
+
+            assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
+            assert_eq!(state.editor.ui.selected_block_index, Some(0));
+            assert!(state.editor.ui.marquee_start_screen.is_none());
+
+            state.process_editor_dirty(1.0 / 60.0);
+            assert!(state
+                .render
+                .meshes
+                .editor_hover_outline
+                .draw_data()
+                .is_none());
+            assert!(state
+                .render
+                .meshes
+                .editor_selection_outline
+                .draw_data()
+                .is_some());
         });
     }
 
@@ -1481,6 +1550,27 @@ mod tests {
                 just_pressed: true,
             });
             assert!(!state.editor_show_settings());
+        });
+    }
+
+    #[test]
+    fn test_perf_overlay_shortcut_works_in_menu() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = State::new_test().await;
+            assert!(state.is_menu());
+            assert!(!state.perf_overlay_enabled());
+
+            for key in ["Control", "Shift", "Alt", "F12"] {
+                state.process_input_event(InputEvent::Key {
+                    key: key.to_string(),
+                    pressed: true,
+                    just_pressed: true,
+                });
+            }
+
+            assert!(state.perf_overlay_enabled());
         });
     }
 

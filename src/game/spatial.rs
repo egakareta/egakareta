@@ -80,6 +80,7 @@ impl SpatialGrid {
         results
     }
 
+    #[cfg(test)]
     pub(crate) fn query_point(&self, x: f32, z: f32) -> &[usize] {
         let gx = (x / GRID_CELL_SIZE).floor() as i32;
         let gz = (z / GRID_CELL_SIZE).floor() as i32;

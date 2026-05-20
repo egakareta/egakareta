@@ -35,6 +35,49 @@ fn test_ground_detection_normal() {
 }
 
 #[test]
+fn test_ground_detection_includes_block_edges() {
+    let mut game = GameState::new();
+    game.objects.push(LevelObject {
+        position: [0.0, 0.0, 0.0],
+        size: [1.0, 1.0, 1.0],
+        rotation_degrees: [0.0, 0.0, 0.0],
+        roundness: 0.18,
+        block_id: "core/stone".to_string(),
+        color_tint: [1.0, 1.0, 1.0],
+    });
+    game.rebuild_behavior_cache();
+
+    assert_eq!(game.top_surface_y_at(0.0, 0.5, 2.0), Some(1.0));
+    assert_eq!(game.top_surface_y_at(1.0, 0.5, 2.0), Some(1.0));
+    assert_eq!(game.top_surface_y_at(0.5, 0.0, 2.0), Some(1.0));
+    assert_eq!(game.top_surface_y_at(0.5, 1.0, 2.0), Some(1.0));
+}
+
+#[test]
+fn player_stays_grounded_when_footprint_overlaps_platform_edge() {
+    let mut game = GameState::new();
+    game.started = true;
+    game.position = [1.05, 1.0, 0.5];
+    game.objects.push(LevelObject {
+        position: [0.0, 0.0, 0.0],
+        size: [1.0, 1.0, 1.0],
+        rotation_degrees: [0.0, 0.0, 0.0],
+        roundness: 0.18,
+        block_id: "core/stone".to_string(),
+        color_tint: [1.0, 1.0, 1.0],
+    });
+    game.rebuild_behavior_cache();
+
+    for _ in 0..12 {
+        game.update(1.0 / 120.0);
+    }
+
+    assert!(game.is_grounded);
+    assert!(!game.game_over);
+    approx_eq(game.position[1], 1.0, 1e-6);
+}
+
+#[test]
 fn test_ground_detection_under_overhang() {
     let mut game = GameState::new();
     // Ground block

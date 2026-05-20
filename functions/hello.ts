@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-export const onRequest: PagesFunction<Cloudflare.Env> = async () => {
+export const onRequest: PagesFunction<Cloudflare.Env> = async (_context) => {
     return new Response(JSON.stringify({ message: "Hello!" }), {
         headers: { "Content-Type": "application/json" },
     });

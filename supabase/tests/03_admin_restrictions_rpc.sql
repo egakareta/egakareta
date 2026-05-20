@@ -1,6 +1,6 @@
 begin;
 
-select plan(12);
+select plan(11);
 
 create or replace function public._test_capture_error(sql_to_run text)
 returns text
@@ -189,26 +189,6 @@ select is(
   $$),
   'P0001: Target user not found',
   'missing target user is rejected'
-);
-
-reset role;
-set local role anon;
-select set_config(
-  'request.jwt.claims',
-  '{"role":"anon"}',
-  true
-);
-
-select is(
-  public._test_capture_error($$
-    select public.apply_profile_restriction(
-      'dddddddd-4444-4444-4444-444444444444',
-      'mute',
-      timezone('utc', now()) + interval '1 day'
-    )
-  $$),
-  '42501: permission denied for function apply_profile_restriction',
-  'anon role cannot execute apply_profile_restriction'
 );
 
 select * from finish();

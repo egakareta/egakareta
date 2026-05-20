@@ -11,9 +11,9 @@ use wgpu::util::DeviceExt;
 use crate::block_repository::{
     resolve_block_definition, resolve_block_texture_layers, BlockRenderProfile,
 };
-use crate::mesh::build_block_vertices;
 use crate::mesh::shapes::{append_prism_with_layers, PrismFaceColors, PrismTextureLayers};
-use crate::types::{CameraUniform, ColorSpaceUniform, LevelObject, Vertex};
+use crate::mesh::{build_block_geometry, MeshGeometry};
+use crate::types::{CameraUniform, ColorSpaceUniform, LevelObject};
 
 use super::super::State;
 
@@ -31,7 +31,7 @@ fn uses_dimetric_icon_projection(block_id: &str) -> bool {
         .icon_dimetric_projection
 }
 
-fn build_block_icon_vertices(block_id: &str, dimetric: bool) -> Vec<Vertex> {
+fn build_block_icon_geometry(block_id: &str, dimetric: bool) -> MeshGeometry {
     const LIQUID_PROFILE_TAG: f32 = 1.0;
 
     if !dimetric {
@@ -39,7 +39,7 @@ fn build_block_icon_vertices(block_id: &str, dimetric: bool) -> Vec<Vertex> {
             block_id: block_id.to_string(),
             ..LevelObject::default()
         };
-        return build_block_vertices(std::slice::from_ref(&block));
+        return build_block_geometry(std::slice::from_ref(&block));
     }
 
     let block = resolve_block_definition(block_id);
@@ -65,7 +65,12 @@ fn build_block_icon_vertices(block_id: &str, dimetric: bool) -> Vec<Vertex> {
         }
     }
 
-    vertices
+    MeshGeometry::from_vertices(vertices)
+}
+
+#[cfg(test)]
+fn build_block_icon_vertices(block_id: &str, dimetric: bool) -> Vec<crate::types::Vertex> {
+    build_block_icon_geometry(block_id, dimetric).to_triangle_vertices()
 }
 
 impl State {
@@ -77,8 +82,8 @@ impl State {
     ) -> Option<wgpu::Texture> {
         let safe_size = size.max(1);
         let dimetric = uses_dimetric_icon_projection(block_id);
-        let vertices = build_block_icon_vertices(block_id, dimetric);
-        if vertices.is_empty() {
+        let geometry = build_block_icon_geometry(block_id, dimetric);
+        if geometry.is_empty() {
             return None;
         }
 
@@ -88,9 +93,19 @@ impl State {
                 .device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("Block Icon Vertex Buffer"),
-                    contents: bytemuck::cast_slice(vertices.as_slice()),
+                    contents: bytemuck::cast_slice(geometry.vertices.as_slice()),
                     usage: wgpu::BufferUsages::VERTEX,
                 });
+        let index_buffer = geometry.indices.as_ref().map(|indices| {
+            self.render
+                .gpu
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Block Icon Index Buffer"),
+                    contents: bytemuck::cast_slice(indices.as_slice()),
+                    usage: wgpu::BufferUsages::INDEX,
+                })
+        });
 
         let color_texture = self
             .render
@@ -249,7 +264,10 @@ impl State {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
                     }),
-                    stencil_ops: None,
+                    stencil_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(0),
+                        store: wgpu::StoreOp::Store,
+                    }),
                 }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
@@ -261,7 +279,17 @@ impl State {
             pass.set_bind_group(2, &icon_color_space_bind_group, &[]);
             pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
             pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-            pass.draw(0..vertices.len() as u32, 0..1);
+            if let Some(index_buffer) = &index_buffer {
+                pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                let index_count = geometry
+                    .indices
+                    .as_ref()
+                    .map(|indices| indices.len() as u32)
+                    .unwrap_or(0);
+                pass.draw_indexed(0..index_count, 0, 0..1);
+            } else {
+                pass.draw(0..geometry.vertices.len() as u32, 0..1);
+            }
         }
 
         self.render

@@ -5,10 +5,16 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::physics::{aabb_overlaps_object_xz, object_xz_contains, BASE_PLAYER_SPEED};
+#[cfg(test)]
+use super::physics::object_xz_contains;
+use super::physics::{aabb_overlaps_object_xz, BASE_PLAYER_SPEED};
 use super::spatial::SpatialGrid;
-use crate::block_repository::{resolve_block_definition, BlockCollision, BlockRenderProfile};
+use crate::block_repository::{resolve_block_definition, BlockCollision};
 use crate::types::{Direction, LevelObject, SpawnDirection};
+
+const PLAYER_WIDTH: f32 = 0.8;
+const PLAYER_HEIGHT: f32 = 0.8;
+const PLAYER_FOOTPRINT_TOLERANCE: f32 = PLAYER_WIDTH * 0.05;
 
 /// Pre-resolved block behavior cached alongside each object to avoid
 /// repeated HashMap lookups during per-frame collision/support scans.
@@ -54,7 +60,6 @@ pub(crate) struct GameState {
     finishing: bool,
     finish_target: [f32; 3],
     finish_sink_velocity: f32,
-    animation_phase_seconds: f32,
     consumed_object_indices: Vec<usize>,
 }
 
@@ -86,7 +91,6 @@ impl GameState {
             finishing: false,
             finish_target: [0.0, 0.0, 0.0],
             finish_sink_velocity: 0.0,
-            animation_phase_seconds: 0.0,
             consumed_object_indices: Vec::new(),
         }
     }
@@ -131,7 +135,6 @@ impl GameState {
         self.completion_hold_seconds = 0.0;
         self.finishing = false;
         self.finish_sink_velocity = 0.0;
-        self.animation_phase_seconds = 0.0;
         self.consumed_object_indices.clear();
         self.trail_segments = vec![vec![spawn_position]];
     }
@@ -162,7 +165,6 @@ impl GameState {
 
     pub(crate) fn update(&mut self, dt: f32) {
         self.consumed_object_indices.clear();
-        self.animation_phase_seconds += dt.max(0.0);
 
         if self.level_complete {
             self.completion_hold_seconds = (self.completion_hold_seconds - dt.max(0.0)).max(0.0);
@@ -202,20 +204,16 @@ impl GameState {
         let mut hit_portals = Vec::new();
         let mut finish_target: Option<[f32; 3]> = None;
 
-        const SNAKE_WIDTH: f32 = 0.8;
-        const SNAKE_HEIGHT: f32 = 0.8;
-        const TOLERANCE: f32 = SNAKE_WIDTH * 0.05;
-
         let x = self.position[0];
         let y = self.position[1];
         let z = self.position[2];
 
-        let s_min_x = x - SNAKE_WIDTH / 2.0 + TOLERANCE;
-        let s_max_x = x + SNAKE_WIDTH / 2.0 - TOLERANCE;
-        let s_min_z = z - SNAKE_WIDTH / 2.0 + TOLERANCE;
-        let s_max_z = z + SNAKE_WIDTH / 2.0 - TOLERANCE;
-        let s_min_y = y + TOLERANCE;
-        let s_max_y = y + SNAKE_HEIGHT - TOLERANCE;
+        let s_min_x = x - PLAYER_WIDTH / 2.0 + PLAYER_FOOTPRINT_TOLERANCE;
+        let s_max_x = x + PLAYER_WIDTH / 2.0 - PLAYER_FOOTPRINT_TOLERANCE;
+        let s_min_z = z - PLAYER_WIDTH / 2.0 + PLAYER_FOOTPRINT_TOLERANCE;
+        let s_max_z = z + PLAYER_WIDTH / 2.0 - PLAYER_FOOTPRINT_TOLERANCE;
+        let s_min_y = y + PLAYER_FOOTPRINT_TOLERANCE;
+        let s_max_y = y + PLAYER_HEIGHT - PLAYER_FOOTPRINT_TOLERANCE;
 
         let query_indices = self
             .spatial_grid
@@ -298,9 +296,11 @@ impl GameState {
         let was_grounded = self.is_grounded;
         let mut is_grounded = false;
 
-        let support_height = self.top_surface_y_at(
-            self.position[0],
-            self.position[2],
+        let support_height = self.top_surface_y_under_aabb(
+            s_min_x,
+            s_max_x,
+            s_min_z,
+            s_max_z,
             self.position[1] + SNAP_DISTANCE,
         );
 
@@ -335,16 +335,7 @@ impl GameState {
     }
 
     pub(crate) fn has_animated_blocks(&self) -> bool {
-        self.objects.iter().any(|obj| {
-            matches!(
-                resolve_block_definition(&obj.block_id).render.profile,
-                BlockRenderProfile::FinishRing | BlockRenderProfile::Liquid
-            )
-        })
-    }
-
-    pub(crate) fn block_animation_phase_seconds(&self) -> f32 {
-        self.animation_phase_seconds
+        false
     }
 
     pub(crate) fn take_consumed_object_indices(&mut self) -> Vec<usize> {
@@ -409,6 +400,7 @@ impl GameState {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn top_surface_y_at(&self, x: f32, z: f32, max_y: f32) -> Option<f32> {
         let mut top_surface: Option<f32> = Some(0.0);
         let query_indices = self.spatial_grid.query_point(x, z);
@@ -428,6 +420,45 @@ impl GameState {
                 continue;
             }
             if object_xz_contains(obj, x, z) {
+                let top = obj.position[1] + obj.size[1];
+                if top <= max_y {
+                    top_surface = match top_surface {
+                        Some(existing) if existing > top => Some(existing),
+                        _ => Some(top),
+                    };
+                }
+            }
+        }
+
+        top_surface
+    }
+
+    pub(crate) fn top_surface_y_under_aabb(
+        &self,
+        min_x: f32,
+        max_x: f32,
+        min_z: f32,
+        max_z: f32,
+        max_y: f32,
+    ) -> Option<f32> {
+        let mut top_surface: Option<f32> = Some(0.0);
+        let query_indices = self.spatial_grid.query_aabb(min_x, max_x, min_z, max_z);
+
+        for i in query_indices {
+            let obj = &self.objects[i];
+            let is_support = self
+                .cached_behaviors
+                .get(i)
+                .map(|b| b.support_surface)
+                .unwrap_or_else(|| {
+                    resolve_block_definition(&obj.block_id)
+                        .behavior
+                        .support_surface
+                });
+            if !is_support {
+                continue;
+            }
+            if aabb_overlaps_object_xz(min_x, max_x, min_z, max_z, obj) {
                 let top = obj.position[1] + obj.size[1];
                 if top <= max_y {
                     top_surface = match top_surface {

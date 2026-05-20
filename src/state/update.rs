@@ -11,9 +11,7 @@ use super::State;
 use crate::game::{
     advance_simulation_time, trigger_transformed_objects_at_time, TimelineSimulationRuntime,
 };
-use crate::mesh::{
-    build_block_vertices_with_phase, build_trail_vertices, build_trail_vertices_with_alpha,
-};
+use crate::mesh::{build_block_geometry, build_trail_vertices, build_trail_vertices_with_alpha};
 use crate::platform::state_host::PlatformInstant;
 use crate::types::{
     AppPhase, CameraUniform, ColorSpaceUniform, Direction, EditorMode, LevelObject,
@@ -307,15 +305,6 @@ impl State {
             .write_streaming_vertices(&self.render.gpu.queue, &trail_vertices);
     }
 
-    pub(crate) fn toggle_editor_perf_overlay(&mut self) {
-        self.editor.perf.overlay_enabled = !self.editor.perf.overlay_enabled;
-        puffin::set_scopes_on(self.editor.perf.overlay_enabled);
-    }
-
-    pub(crate) fn editor_perf_overlay_enabled(&self) -> bool {
-        self.editor.perf.overlay_enabled
-    }
-
     /// Advances the application state by one frame.
     ///
     /// This method handles:
@@ -327,6 +316,7 @@ impl State {
     pub fn update(&mut self) {
         puffin::GlobalProfiler::lock().new_frame();
         puffin::profile_scope!("FrameTotal");
+        self.update_auth_results();
         self.update_audio_imports();
         if self.phase == AppPhase::Editor {
             self.update_level_imports();
@@ -569,14 +559,11 @@ impl State {
             .as_deref()
             .unwrap_or(&self.gameplay.state.objects);
         if self.gameplay.state.has_animated_blocks() || trigger_render_objects.is_some() {
-            let animated_vertices = build_block_vertices_with_phase(
-                render_objects,
-                self.gameplay.state.block_animation_phase_seconds(),
-            );
-            self.render.meshes.blocks.replace_with_vertices(
+            let animated_geometry = build_block_geometry(render_objects);
+            self.render.meshes.blocks.replace_with_geometry(
                 &self.render.gpu.device,
                 "Block Vertex Buffer",
-                &animated_vertices,
+                &animated_geometry,
             );
         }
 
@@ -906,13 +893,13 @@ mod tests {
         pollster::block_on(async {
             let mut state = State::new_test().await;
 
-            assert!(!state.editor_perf_overlay_enabled());
+            assert!(!state.perf_overlay_enabled());
 
-            state.toggle_editor_perf_overlay();
-            assert!(state.editor_perf_overlay_enabled());
+            state.toggle_perf_overlay();
+            assert!(state.perf_overlay_enabled());
 
-            state.toggle_editor_perf_overlay();
-            assert!(!state.editor_perf_overlay_enabled());
+            state.toggle_perf_overlay();
+            assert!(!state.perf_overlay_enabled());
         });
     }
 

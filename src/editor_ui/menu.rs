@@ -5,6 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use crate::commands::AppCommand;
 use crate::State;
 
 const MENU_FAVICON_PNG: &[u8] = include_bytes!("../../assets/favicon.png");
@@ -115,6 +116,70 @@ pub fn show_menu_play_ui(ctx: &egui::Context, state: &mut State) {
         });
 }
 
+/// Shows the main-menu account status and sign-in dialog.
+pub fn show_menu_auth_ui(ctx: &egui::Context, state: &mut State) {
+    if !state.is_menu() {
+        return;
+    }
+
+    let mut commands = Vec::new();
+
+    egui::Area::new("menu_auth_area".into())
+        .order(egui::Order::Foreground)
+        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 7.0))
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                if let Some(name) = state.auth_display_name() {
+                    ui.label(format!("{} {}", egui_phosphor::regular::USER, name));
+                    if ui
+                        .add_enabled(!state.auth_pending(), egui::Button::new("Sign out"))
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .clicked()
+                    {
+                        commands.push(AppCommand::AuthSignOut);
+                    }
+                } else {
+                    if ui
+                        .add_enabled(
+                            !state.auth_pending(),
+                            egui::Button::new(format!(
+                                "{} Sign in",
+                                egui_phosphor::regular::SIGN_IN
+                            )),
+                        )
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .clicked()
+                    {
+                        commands.push(AppCommand::AuthSubmitSignIn);
+                    }
+                    if ui
+                        .add_enabled(!state.auth_pending(), egui::Button::new("Create account"))
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .clicked()
+                    {
+                        commands.push(AppCommand::AuthOpenSignup);
+                    }
+                    if state.auth_pending() {
+                        ui.spinner();
+                    }
+                }
+            });
+        });
+
+    if let Some(message) = state.auth_message() {
+        egui::Area::new("menu_auth_message_area".into())
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 42.0))
+            .show(ctx, |ui| {
+                ui.colored_label(ui.visuals().warn_fg_color, message);
+            });
+    }
+
+    for command in commands {
+        state.dispatch(command);
+    }
+}
+
 fn get_current_time_str() -> String {
     #[cfg(target_arch = "wasm32")]
     {
@@ -130,5 +195,77 @@ fn get_current_time_str() -> String {
         let hours = (now / 3600) % 24;
         let minutes = (now / 60) % 60;
         format!("{:02}:{:02} UTC", hours, minutes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{show_menu_auth_ui, show_menu_topbar};
+    use crate::types::{AuthProfile, AuthSession, AuthSessionTokens, AuthUser};
+
+    fn test_auth_session(username: Option<&str>) -> AuthSession {
+        AuthSession {
+            session: AuthSessionTokens {
+                access_token: "access-token".to_string(),
+                refresh_token: "refresh-token".to_string(),
+                expires_at: Some(123),
+                token_type: "bearer".to_string(),
+            },
+            user: AuthUser {
+                id: "user-id".to_string(),
+                email: Some("player@example.com".to_string()),
+            },
+            profile: username.map(|name| AuthProfile {
+                id: "user-id".to_string(),
+                username: Some(name.to_string()),
+                avatar_url: None,
+                country: "UN".to_string(),
+            }),
+        }
+    }
+
+    fn run_menu_auth_ui_once(state: &mut crate::State) {
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            show_menu_auth_ui(ctx, state);
+        });
+    }
+
+    #[test]
+    fn menu_topbar_and_auth_ui_render_guest_state() {
+        pollster::block_on(async {
+            let mut state = crate::State::new_test().await;
+            let ctx = egui::Context::default();
+
+            let _ = ctx.run(egui::RawInput::default(), |ctx| {
+                show_menu_topbar(ctx, &state);
+            });
+            run_menu_auth_ui_once(&mut state);
+
+            assert_eq!(state.auth_display_name(), None);
+        });
+    }
+
+    #[test]
+    fn menu_auth_ui_renders_pending_message_and_signed_in_state() {
+        pollster::block_on(async {
+            let mut state = crate::State::new_test().await;
+
+            state.set_auth_state_for_test(
+                None,
+                true,
+                Some("Complete sign-in in your browser.".to_string()),
+            );
+            run_menu_auth_ui_once(&mut state);
+            assert!(state.auth_pending());
+            assert_eq!(
+                state.auth_message(),
+                Some("Complete sign-in in your browser.")
+            );
+
+            state.set_auth_state_for_test(Some(test_auth_session(Some("player"))), false, None);
+            run_menu_auth_ui_once(&mut state);
+            assert_eq!(state.auth_display_name(), Some("player"));
+        });
     }
 }

@@ -14,6 +14,7 @@ use crate::types::LineUniform;
 pub(crate) struct EditorDirtyFlags {
     pub(crate) sync_game_objects: bool,
     pub(crate) rebuild_block_mesh: bool,
+    pub(crate) append_block_mesh: bool,
     pub(crate) rebuild_selection_overlays: bool,
     pub(crate) rebuild_tap_indicators: bool,
     pub(crate) rebuild_preview_player: bool,
@@ -25,6 +26,7 @@ impl EditorDirtyFlags {
         Self {
             sync_game_objects: true,
             rebuild_block_mesh: true,
+            append_block_mesh: false,
             rebuild_selection_overlays: true,
             rebuild_tap_indicators: true,
             rebuild_preview_player: true,
@@ -35,6 +37,7 @@ impl EditorDirtyFlags {
     pub(crate) fn merge(&mut self, other: Self) {
         self.sync_game_objects |= other.sync_game_objects;
         self.rebuild_block_mesh |= other.rebuild_block_mesh;
+        self.append_block_mesh |= other.append_block_mesh;
         self.rebuild_selection_overlays |= other.rebuild_selection_overlays;
         self.rebuild_tap_indicators |= other.rebuild_tap_indicators;
         self.rebuild_preview_player |= other.rebuild_preview_player;
@@ -44,6 +47,7 @@ impl EditorDirtyFlags {
     pub(crate) fn any(self) -> bool {
         self.sync_game_objects
             || self.rebuild_block_mesh
+            || self.append_block_mesh
             || self.rebuild_selection_overlays
             || self.rebuild_tap_indicators
             || self.rebuild_preview_player
@@ -61,6 +65,7 @@ pub(crate) struct EditorGizmoState {
 
 pub(crate) struct EditorRuntimeState {
     pub(crate) dirty: EditorDirtyFlags,
+    pub(crate) pending_block_mesh_appends: Vec<usize>,
     pub(crate) gizmo: EditorGizmoState,
     pub(crate) drag_heavy_rebuild_accumulator: f32,
     pub(crate) interaction: EditorInteractionState,

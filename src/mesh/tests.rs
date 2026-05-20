@@ -7,10 +7,12 @@
 */
 #[cfg(test)]
 mod tests {
-    use crate::mesh::blocks::build_block_vertices;
+    use crate::mesh::blocks::{build_block_geometry, build_block_vertices};
     use crate::mesh::builders::{
-        build_editor_gizmo_vertices, build_editor_hover_outline_vertices, GizmoParams,
+        build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
+        build_editor_selection_outline_vertices, GizmoParams,
     };
+    use crate::mesh::egmesh::resolve_egmesh;
     use crate::mesh::obj::parse_obj_mesh;
     use crate::types::{GizmoPart, LevelObject, Vertex};
 
@@ -46,6 +48,27 @@ mod tests {
         assert!((max_x - 1.5).abs() < 1e-5);
         assert!((min_z - -0.5).abs() < 1e-5);
         assert!((max_z - 1.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn finish_ring_vertices_use_shader_pulse_metadata() {
+        let obj = LevelObject {
+            position: [2.0, 0.0, 3.0],
+            size: [4.0, 1.0, 2.0],
+            block_id: "core/finish".to_string(),
+            ..LevelObject::default()
+        };
+        let vertices = build_block_vertices(std::slice::from_ref(&obj));
+        let expected_phase_offset =
+            (obj.position[0] * 0.37 + obj.position[2] * 0.21) * std::f32::consts::PI;
+
+        assert!(!vertices.is_empty());
+        for vertex in vertices {
+            assert_eq!(vertex.render_profile, 2.0);
+            assert_eq!(vertex.color_outline[0], 4.0);
+            assert_eq!(vertex.color_outline[1], 4.0);
+            assert!((vertex.color_outline[2] - expected_phase_offset).abs() < 1e-5);
+        }
     }
 
     #[test]
@@ -190,10 +213,31 @@ mod tests {
     }
 
     #[test]
-    fn hover_outline_vertices_are_translucent() {
-        let vertices = build_editor_hover_outline_vertices([0.0, 0.0, 0.0], [1.0, 1.0, 1.0], 0.03);
+    fn hover_outline_vertices_are_opaque_light_blue() {
+        let vertices = build_editor_hover_outline_vertices(
+            [0.0, 0.0, 0.0],
+            [1.0, 1.0, 1.0],
+            [0.0, 0.0, 0.0],
+            0.03,
+        );
         assert!(!vertices.is_empty());
-        assert!(vertices.iter().any(|v| v.color[3] < 1.0));
+        assert!(vertices
+            .iter()
+            .all(|vertex| vertex.color == [0.698, 0.898, 1.0, 1.0]));
+    }
+
+    #[test]
+    fn selection_outline_vertices_are_opaque_uniform_blue() {
+        let vertices = build_editor_selection_outline_vertices(
+            [0.0, 0.0, 0.0],
+            [1.0, 1.0, 1.0],
+            [0.0, 0.0, 0.0],
+            0.03,
+        );
+        assert!(!vertices.is_empty());
+        assert!(vertices
+            .iter()
+            .all(|vertex| vertex.color == [0.098, 0.6, 1.0, 1.0]));
     }
 
     #[test]
@@ -219,6 +263,24 @@ f 1/1/1 2/2/1 3/3/1
     }
 
     #[test]
+    fn generated_speedportal_egmesh_builds_indexed_geometry() {
+        let mesh = resolve_egmesh("speedportal.obj").expect("speedportal egmesh should resolve");
+        assert!(!mesh.vertices.is_empty());
+        assert!(!mesh.indices.is_empty());
+
+        let obj = LevelObject {
+            block_id: "core/speedportal".to_string(),
+            ..LevelObject::default()
+        };
+        let geometry = build_block_geometry(std::slice::from_ref(&obj));
+        assert!(geometry
+            .indices
+            .as_ref()
+            .is_some_and(|indices| !indices.is_empty()));
+        assert_eq!(geometry.to_triangle_vertices().len(), mesh.indices.len());
+    }
+
+    #[test]
     fn finish_ring_generates_vertices() {
         let obj = LevelObject {
             position: [0.0, 0.0, 0.0],
@@ -231,47 +293,6 @@ f 1/1/1 2/2/1 3/3/1
 
         let vertices = build_block_vertices(&[obj]);
         assert!(vertices.len() >= 168); // 28 segments * (outer + inner + face) triangles
-    }
-
-    #[test]
-    fn torch_lights_up_nearby_block_vertices() {
-        let shadow_block = LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.0,
-            block_id: "core/void".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-        };
-        let torch = LevelObject {
-            position: [1.1, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.0,
-            block_id: "core/torch".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-        };
-
-        let unlit = build_block_vertices(std::slice::from_ref(&shadow_block));
-        let lit = build_block_vertices(&[shadow_block, torch]);
-        assert!(
-            lit.len() >= unlit.len(),
-            "expected lit mesh to include at least the shadow block vertices"
-        );
-        let unlit_block = &unlit[..];
-        let lit_block = &lit[..unlit.len()];
-
-        let max_channel = |vertices: &[Vertex]| {
-            vertices
-                .iter()
-                .map(|vertex| vertex.color[0].max(vertex.color[1]).max(vertex.color[2]))
-                .fold(0.0_f32, f32::max)
-        };
-
-        assert!(
-            max_channel(lit_block) > max_channel(unlit_block) + 0.05,
-            "expected torch to brighten nearby block vertex colors"
-        );
     }
 
     #[test]

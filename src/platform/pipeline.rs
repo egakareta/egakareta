@@ -13,7 +13,10 @@
 use crate::editor_ui::combined_ui_scale_factor;
 use crate::platform::block_icon_cache::BlockIconCache;
 use crate::state::RenderSurfaceError;
-use crate::{show_editor_ui, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar, State};
+use crate::{
+    show_editor_ui, show_menu_auth_ui, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar,
+    show_perf_overlay, State,
+};
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 
 /// The main frame pipeline that orchestrates UI rendering and game updates.
@@ -74,10 +77,12 @@ impl FramePipeline {
             let ctx = root_ui.ctx();
             show_editor_ui(ctx, state, &block_icon_texture_ids);
             show_menu_topbar(ctx, state);
+            show_menu_auth_ui(ctx, state);
             show_menu_play_ui(ctx, state);
             if let Some(favicon) = &self.menu_favicon {
                 show_menu_favicon_ui(ctx, state, favicon);
             }
+            show_perf_overlay(ctx, state);
         });
 
         let paint_jobs = self

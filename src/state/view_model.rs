@@ -56,17 +56,14 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) camera_rotation: f32,
     pub(crate) camera_pitch: f32,
     pub(crate) fps: f32,
-    pub(crate) graphics_backend: String,
-    pub(crate) audio_backend: String,
-    pub(crate) perf_overlay_enabled: bool,
     pub(crate) marquee_selection_rect_screen: Option<([f64; 2], [f64; 2], bool)>,
+    pub(crate) object_count: usize,
 }
 
 impl State {
     pub(crate) fn editor_ui_view_model(&self) -> EditorUiViewModel<'_> {
         let (timeline_preview_position, timeline_preview_direction) =
             self.editor_timeline_preview();
-        let perf_overlay_enabled = self.editor_perf_overlay_enabled();
 
         let camera_target = glam::Vec3::new(
             self.editor.camera.editor_pan[0],
@@ -121,10 +118,8 @@ impl State {
             camera_rotation: self.editor.camera.editor_rotation,
             camera_pitch: self.editor.camera.editor_pitch,
             fps: self.editor_fps(),
-            graphics_backend: format!("{:?}", self.render.gpu.adapter_info.backend),
-            audio_backend: self.audio.state.runtime.backend_name(),
-            perf_overlay_enabled,
             marquee_selection_rect_screen: self.editor_marquee_selection_rect_screen(),
+            object_count: self.editor.objects.len(),
         }
     }
 }

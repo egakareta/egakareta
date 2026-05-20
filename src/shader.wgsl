@@ -58,12 +58,22 @@ struct VertexOutput {
 fn vs_main(input: VertexInput) -> VertexOutput {
     var out: VertexOutput;
 
+    var world_pos = input.position;
+    let finish_ring_profile = step(1.5, input.render_profile) * (1.0 - step(2.5, input.render_profile));
+    if finish_ring_profile > 0.5 {
+        let center_xz = input.color_outline.xy;
+        let phase_offset = input.color_outline.z;
+        let pulse = 1.0 + 0.14 * sin(u_color_space.flags.y * 5.0 + phase_offset);
+        let pulsed_xz = center_xz + (world_pos.xz - center_xz) * pulse;
+        world_pos = vec3<f32>(pulsed_xz.x, world_pos.y, pulsed_xz.y);
+    }
+
     let c = cos(u_line.rotation);
     let s = sin(u_line.rotation);
     let rotated_pos = vec3<f32>(
-        input.position.x * c - input.position.z * s,
-        input.position.y,
-        input.position.x * s + input.position.z * c
+        world_pos.x * c - world_pos.z * s,
+        world_pos.y,
+        world_pos.x * s + world_pos.z * c
     );
 
     let offset = vec3<f32>(u_line.offset.x, 0.0, u_line.offset.y);
@@ -78,10 +88,15 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 }
 
 @fragment
+fn fs_mask() -> @location(0) vec4<f32> {
+    return vec4<f32>(0.0);
+}
+
+@fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let has_texture = input.texture_layer >= 0.0;
     let texture_layer = max(i32(round(input.texture_layer)), 0);
-    let liquid_profile = step(0.5, input.render_profile);
+    let liquid_profile = step(0.5, input.render_profile) * (1.0 - step(1.5, input.render_profile));
     let wave_a = sin((input.uv.x * 8.0 + input.uv.y * 11.0) + u_color_space.flags.y * 2.8);
     let wave_b = cos((input.uv.x * 13.0 - input.uv.y * 7.0) - u_color_space.flags.y * 3.6);
     let liquid_uv_offset = vec2<f32>(wave_a, wave_b) * (0.017 * liquid_profile);
