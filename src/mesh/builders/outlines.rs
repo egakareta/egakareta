@@ -51,13 +51,14 @@ pub(crate) fn build_editor_selection_outline_vertices(
     rotation_degrees: [f32; 3],
     line_width: f32,
 ) -> Vec<Vertex> {
+    let selection_color = [0.098, 0.6, 1.0, 1.0];
     build_editor_outline_hull_vertices(
         position,
         size,
         rotation_degrees,
         line_width,
-        [0.06, 0.72, 1.0, 0.72],
-        [0.02, 0.34, 0.92, 0.52],
+        selection_color,
+        selection_color,
     )
 }
 
@@ -67,12 +68,13 @@ pub(crate) fn build_editor_hover_outline_vertices(
     rotation_degrees: [f32; 3],
     line_width: f32,
 ) -> Vec<Vertex> {
+    let hover_color = [0.698, 0.898, 1.0, 1.0];
     build_editor_outline_hull_vertices(
         position,
         size,
         rotation_degrees,
         line_width,
-        [1.0, 0.82, 0.28, 0.58],
-        [0.9, 0.5, 0.12, 0.42],
+        hover_color,
+        hover_color,
     )
 }
