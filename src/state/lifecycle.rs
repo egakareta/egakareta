@@ -79,7 +79,7 @@ fn editor_outline_mask_depth_stencil_state() -> wgpu::DepthStencilState {
     wgpu::DepthStencilState {
         format: DEPTH_FORMAT,
         depth_write_enabled: false,
-        depth_compare: wgpu::CompareFunction::LessEqual,
+        depth_compare: wgpu::CompareFunction::Always,
         stencil: wgpu::StencilState {
             front: wgpu::StencilFaceState {
                 compare: wgpu::CompareFunction::Always,
@@ -104,7 +104,7 @@ fn editor_outline_depth_stencil_state() -> wgpu::DepthStencilState {
     wgpu::DepthStencilState {
         format: DEPTH_FORMAT,
         depth_write_enabled: false,
-        depth_compare: wgpu::CompareFunction::LessEqual,
+        depth_compare: wgpu::CompareFunction::Always,
         stencil: wgpu::StencilState {
             front: wgpu::StencilFaceState {
                 compare: wgpu::CompareFunction::NotEqual,
@@ -1255,7 +1255,8 @@ mod tests {
     use crate::types::SpawnDirection;
 
     use super::{
-        editor_ghost_trail_depth_stencil_state, editor_ghost_trail_primitive_state, State,
+        editor_ghost_trail_depth_stencil_state, editor_ghost_trail_primitive_state,
+        editor_outline_depth_stencil_state, editor_outline_mask_depth_stencil_state, State,
     };
     use crate::types::AppPhase;
 
@@ -1283,6 +1284,17 @@ mod tests {
             !depth.depth_write_enabled,
             "ghost trail should not write to depth to preserve translucent blending order"
         );
+    }
+
+    #[test]
+    fn editor_outline_pipeline_states_ignore_scene_depth() {
+        let mask = editor_outline_mask_depth_stencil_state();
+        assert_eq!(mask.depth_compare, wgpu::CompareFunction::Always);
+        assert!(!mask.depth_write_enabled);
+
+        let outline = editor_outline_depth_stencil_state();
+        assert_eq!(outline.depth_compare, wgpu::CompareFunction::Always);
+        assert!(!outline.depth_write_enabled);
     }
 
     #[test]
