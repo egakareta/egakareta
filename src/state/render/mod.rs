@@ -15,6 +15,12 @@ use wgpu::util::DeviceExt;
 
 use super::State;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct EditorOutlineInstance {
+    pub(crate) mask_vertices: std::ops::Range<u32>,
+    pub(crate) outline_vertices: std::ops::Range<u32>,
+}
+
 impl State {
     pub(crate) fn surface_width(&self) -> u32 {
         self.render.gpu.surface_width()
@@ -391,6 +397,7 @@ pub(crate) struct SceneMeshes {
     pub(crate) editor_hover_outline: MeshSlot,
     pub(crate) editor_selection_stencil: MeshSlot,
     pub(crate) editor_selection_outline: MeshSlot,
+    pub(crate) editor_selection_outline_instances: Vec<EditorOutlineInstance>,
     pub(crate) editor_gizmo: MeshSlot,
     pub(crate) tap_indicators: MeshSlot,
     pub(crate) spawn_marker: MeshSlot,
