@@ -694,7 +694,7 @@ pub fn show_perf_overlay(ctx: &egui::Context, state: &mut State) {
     let mut profiler_open = true;
 
     egui::Window::new("Profiler")
-        .order(egui::Order::Debug)
+        .order(perf_overlay_window_order())
         .default_size([1024.0, 600.0])
         .open(&mut profiler_open)
         .show(ctx, |ui| {
@@ -709,6 +709,10 @@ pub fn show_perf_overlay(ctx: &egui::Context, state: &mut State) {
     if !profiler_open {
         state.dispatch(AppCommand::EditorTogglePerfOverlay);
     }
+}
+
+fn perf_overlay_window_order() -> egui::Order {
+    egui::Order::Foreground
 }
 
 fn push_command_when_clicked(
@@ -1086,8 +1090,9 @@ fn show_view_selector_cube(
 mod tests {
     use super::{
         combined_ui_scale_factor, is_compact_editor_ui, marquee_screen_pos_to_egui_pos,
-        push_command_when_clicked, responsive_ui_scale_multiplier, settings_sidebar_default_width,
-        show_editor_ui, show_perf_overlay, sort_quad_by_angle, VIEW_CUBE_FACES,
+        perf_overlay_window_order, push_command_when_clicked, responsive_ui_scale_multiplier,
+        settings_sidebar_default_width, show_editor_ui, show_perf_overlay, sort_quad_by_angle,
+        VIEW_CUBE_FACES,
     };
     use crate::commands::AppCommand;
     use crate::test_utils::approx_eq;
@@ -1314,6 +1319,11 @@ mod tests {
 
             assert!(state.perf_overlay_enabled());
         });
+    }
+
+    #[test]
+    fn perf_overlay_window_stays_below_tooltips() {
+        assert!(perf_overlay_window_order() < egui::Order::Tooltip);
     }
 
     #[test]
