@@ -431,7 +431,7 @@ impl State {
                 obj.position[1] + obj.size[1] * 0.5,
                 obj.position[2] + obj.size[2] * 0.5,
             );
-            let line_width = self.editor_gizmo_axis_width_world(center, 3.0);
+            let line_width = self.editor_gizmo_axis_width_world(center, 2.0);
             all_vertices.append(&mut build_editor_hover_outline_vertices(
                 obj.position,
                 obj.size,
@@ -562,7 +562,7 @@ impl State {
                     obj.position[1] + obj.size[1] * 0.5,
                     obj.position[2] + obj.size[2] * 0.5,
                 );
-                let line_width = self.editor_gizmo_axis_width_world(center, 2.0);
+                let line_width = self.editor_gizmo_axis_width_world(center, 1.0);
 
                 let outline_start = outline_vertices.len() as u32;
                 outline_vertices.extend(build_editor_selection_outline_vertices(
