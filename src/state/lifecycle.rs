@@ -100,11 +100,21 @@ fn editor_outline_mask_depth_stencil_state() -> wgpu::DepthStencilState {
     }
 }
 
+fn editor_outline_occlusion_depth_mask_depth_stencil_state() -> wgpu::DepthStencilState {
+    wgpu::DepthStencilState {
+        format: DEPTH_FORMAT,
+        depth_write_enabled: true,
+        depth_compare: wgpu::CompareFunction::Less,
+        stencil: wgpu::StencilState::default(),
+        bias: wgpu::DepthBiasState::default(),
+    }
+}
+
 fn editor_outline_depth_stencil_state() -> wgpu::DepthStencilState {
     wgpu::DepthStencilState {
         format: DEPTH_FORMAT,
         depth_write_enabled: false,
-        depth_compare: wgpu::CompareFunction::Always,
+        depth_compare: wgpu::CompareFunction::LessEqual,
         stencil: wgpu::StencilState {
             front: wgpu::StencilFaceState {
                 compare: wgpu::CompareFunction::NotEqual,
@@ -121,7 +131,11 @@ fn editor_outline_depth_stencil_state() -> wgpu::DepthStencilState {
             read_mask: 0xff,
             write_mask: 0x00,
         },
-        bias: wgpu::DepthBiasState::default(),
+        bias: wgpu::DepthBiasState {
+            constant: -1,
+            slope_scale: 0.0,
+            clamp: 0.0,
+        },
     }
 }
 
@@ -158,6 +172,7 @@ struct TestGpuFixture {
     block_icon_pipeline: wgpu::RenderPipeline,
     editor_ghost_trail_pipeline: wgpu::RenderPipeline,
     gizmo_overlay_pipeline: wgpu::RenderPipeline,
+    editor_outline_occlusion_depth_pipeline: wgpu::RenderPipeline,
     editor_outline_mask_pipeline: wgpu::RenderPipeline,
     editor_outline_pipeline: wgpu::RenderPipeline,
     line_bind_group_layout: wgpu::BindGroupLayout,
@@ -181,6 +196,7 @@ impl From<GpuContext> for TestGpuFixture {
             block_icon_pipeline,
             editor_ghost_trail_pipeline,
             gizmo_overlay_pipeline,
+            editor_outline_occlusion_depth_pipeline,
             editor_outline_mask_pipeline,
             editor_outline_pipeline,
             line_bind_group_layout,
@@ -202,6 +218,7 @@ impl From<GpuContext> for TestGpuFixture {
             block_icon_pipeline,
             editor_ghost_trail_pipeline,
             gizmo_overlay_pipeline,
+            editor_outline_occlusion_depth_pipeline,
             editor_outline_mask_pipeline,
             editor_outline_pipeline,
             line_bind_group_layout,
@@ -344,6 +361,8 @@ impl State {
 
         let (depth_texture, depth_view) =
             GpuContext::create_depth_texture(&fixture.device, &fixture.config);
+        let (editor_outline_occlusion_depth_texture, editor_outline_occlusion_depth_view) =
+            GpuContext::create_depth_texture(&fixture.device, &fixture.config);
 
         let floor_vertices = build_floor_vertices();
         let grid_vertices = build_grid_vertices();
@@ -399,10 +418,15 @@ impl State {
                     size: fixture.size,
                     depth_texture,
                     depth_view,
+                    editor_outline_occlusion_depth_texture,
+                    editor_outline_occlusion_depth_view,
                     render_pipeline: fixture.render_pipeline.clone(),
                     block_icon_pipeline: fixture.block_icon_pipeline.clone(),
                     editor_ghost_trail_pipeline: fixture.editor_ghost_trail_pipeline.clone(),
                     gizmo_overlay_pipeline: fixture.gizmo_overlay_pipeline.clone(),
+                    editor_outline_occlusion_depth_pipeline: fixture
+                        .editor_outline_occlusion_depth_pipeline
+                        .clone(),
                     editor_outline_mask_pipeline: fixture.editor_outline_mask_pipeline.clone(),
                     editor_outline_pipeline: fixture.editor_outline_pipeline.clone(),
                     line_bind_group_layout: fixture.line_bind_group_layout.clone(),
@@ -626,6 +650,8 @@ impl State {
             view_formats: &[],
         });
         let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let (editor_outline_occlusion_depth_texture, editor_outline_occlusion_depth_view) =
+            GpuContext::create_depth_texture(&device, &config);
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
@@ -986,6 +1012,33 @@ impl State {
                 cache: None,
             });
 
+        let editor_outline_occlusion_depth_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Editor Outline Occlusion Depth Pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[Vertex::desc()],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_mask"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: config.format,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::empty(),
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: Some(editor_outline_occlusion_depth_mask_depth_stencil_state()),
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            });
+
         let editor_outline_mask_pipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("Editor Outline Mask Pipeline"),
@@ -1120,10 +1173,13 @@ impl State {
                     size,
                     depth_texture,
                     depth_view,
+                    editor_outline_occlusion_depth_texture,
+                    editor_outline_occlusion_depth_view,
                     render_pipeline,
                     block_icon_pipeline,
                     editor_ghost_trail_pipeline,
                     gizmo_overlay_pipeline,
+                    editor_outline_occlusion_depth_pipeline,
                     editor_outline_mask_pipeline,
                     editor_outline_pipeline,
                     line_bind_group_layout,
@@ -1258,7 +1314,8 @@ mod tests {
 
     use super::{
         editor_ghost_trail_depth_stencil_state, editor_ghost_trail_primitive_state,
-        editor_outline_depth_stencil_state, editor_outline_mask_depth_stencil_state, State,
+        editor_outline_depth_stencil_state, editor_outline_mask_depth_stencil_state,
+        editor_outline_occlusion_depth_mask_depth_stencil_state, State,
     };
     use crate::types::AppPhase;
 
@@ -1289,14 +1346,19 @@ mod tests {
     }
 
     #[test]
-    fn editor_outline_pipeline_states_ignore_scene_depth() {
+    fn editor_outline_pipeline_state_respects_selected_outline_depth() {
+        let occlusion_depth = editor_outline_occlusion_depth_mask_depth_stencil_state();
+        assert_eq!(occlusion_depth.depth_compare, wgpu::CompareFunction::Less);
+        assert!(occlusion_depth.depth_write_enabled);
+
         let mask = editor_outline_mask_depth_stencil_state();
         assert_eq!(mask.depth_compare, wgpu::CompareFunction::Always);
         assert!(!mask.depth_write_enabled);
 
         let outline = editor_outline_depth_stencil_state();
-        assert_eq!(outline.depth_compare, wgpu::CompareFunction::Always);
+        assert_eq!(outline.depth_compare, wgpu::CompareFunction::LessEqual);
         assert!(!outline.depth_write_enabled);
+        assert_eq!(outline.bias.constant, -1);
     }
 
     #[test]

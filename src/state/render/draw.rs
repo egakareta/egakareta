@@ -310,9 +310,8 @@ impl State {
         drop(render_pass);
 
         if draw_editor_overlays {
-            // Selection outlines are drawn in separate passes so we can clear the stencil buffer
-            // and assign unique stencil references per selection item without being limited to 8-bit
-            // uniqueness across the entire selection.
+            // Selection outlines use a selected-only depth prepass, so each block keeps its own
+            // hollow silhouette while other selected blocks occlude outlines behind them.
             let selection_instances = self
                 .render
                 .meshes
@@ -332,6 +331,52 @@ impl State {
                 if let (Some(selection_mask_buffer), Some(selection_outline_buffer)) =
                     (selection_mask_buffer, selection_outline_buffer)
                 {
+                    {
+                        let mut depth_pass =
+                            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                label: Some("Editor Selection Outline Depth Pass"),
+                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                    view,
+                                    resolve_target: None,
+                                    depth_slice: None,
+                                    ops: wgpu::Operations {
+                                        load: wgpu::LoadOp::Load,
+                                        store: wgpu::StoreOp::Store,
+                                    },
+                                })],
+                                depth_stencil_attachment: Some(
+                                    wgpu::RenderPassDepthStencilAttachment {
+                                        view: &self.render.gpu.editor_outline_occlusion_depth_view,
+                                        depth_ops: Some(wgpu::Operations {
+                                            load: wgpu::LoadOp::Clear(1.0),
+                                            store: wgpu::StoreOp::Store,
+                                        }),
+                                        stencil_ops: Some(wgpu::Operations {
+                                            load: wgpu::LoadOp::Clear(0),
+                                            store: wgpu::StoreOp::Store,
+                                        }),
+                                    },
+                                ),
+                                occlusion_query_set: None,
+                                timestamp_writes: None,
+                            });
+
+                        depth_pass
+                            .set_pipeline(&self.render.gpu.editor_outline_occlusion_depth_pipeline);
+                        depth_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
+                        depth_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                        depth_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                        depth_pass.set_bind_group(
+                            3,
+                            &self.render.gpu.block_texture_bind_group,
+                            &[],
+                        );
+                        depth_pass.set_vertex_buffer(0, selection_mask_buffer.slice(..));
+                        for instance in selection_instances {
+                            depth_pass.draw(instance.mask_vertices.clone(), 0..1);
+                        }
+                    }
+
                     for batch in selection_instances.chunks(255) {
                         let mut outline_pass =
                             encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -347,7 +392,7 @@ impl State {
                                 })],
                                 depth_stencil_attachment: Some(
                                     wgpu::RenderPassDepthStencilAttachment {
-                                        view: &self.render.gpu.depth_view,
+                                        view: &self.render.gpu.editor_outline_occlusion_depth_view,
                                         depth_ops: Some(wgpu::Operations {
                                             load: wgpu::LoadOp::Load,
                                             store: wgpu::StoreOp::Store,
@@ -396,6 +441,48 @@ impl State {
                 self.render.meshes.editor_hover_stencil.draw_data(),
                 self.render.meshes.editor_hover_outline.draw_data(),
             ) {
+                {
+                    let mut depth_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("Editor Hover Outline Depth Pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view,
+                            resolve_target: None,
+                            depth_slice: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                            view: &self.render.gpu.editor_outline_occlusion_depth_view,
+                            depth_ops: Some(wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(1.0),
+                                store: wgpu::StoreOp::Store,
+                            }),
+                            stencil_ops: Some(wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(0),
+                                store: wgpu::StoreOp::Store,
+                            }),
+                        }),
+                        occlusion_query_set: None,
+                        timestamp_writes: None,
+                    });
+
+                    depth_pass
+                        .set_pipeline(&self.render.gpu.editor_outline_occlusion_depth_pipeline);
+                    depth_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
+                    depth_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    depth_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                    depth_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+
+                    if let Some(selection_mask_data) =
+                        self.render.meshes.editor_selection_stencil.draw_data()
+                    {
+                        draw_mesh(&mut depth_pass, selection_mask_data);
+                    }
+                    draw_mesh(&mut depth_pass, mask_data);
+                }
+
                 let mut hover_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Editor Hover Outline Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -408,7 +495,7 @@ impl State {
                         },
                     })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &self.render.gpu.depth_view,
+                        view: &self.render.gpu.editor_outline_occlusion_depth_view,
                         depth_ops: Some(wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
