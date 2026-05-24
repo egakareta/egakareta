@@ -6,7 +6,6 @@
         "format:prettier": "prettier --write .",
         "format": "bun run format:cargo && bun run format:prettier",
         "lint": "cargo clippy -- -D warnings",
-        "sync-env": "supabase status -o env > .env.local",
         "cf-typegen": "wrangler types --strict-vars=false --env-interface CloudflareEnv functions/cloudflare-env.d.ts",
         "sb-ts-typegen": "supabase gen types typescript --local > functions/_supabase_types.ts",
         "typegen": "bun cf-typegen && bun sb-ts-typegen",
@@ -16,8 +15,9 @@
         "test:db": "supabase test db",
         "license:add": "license-check-and-add add -f .github/license/config.json",
         "license:check": "license-check-and-add check -f .github/license/config.json",
+        "dev:setup": "supabase start && supabase status -o env > .env.local && bun typegen",
         "dev:build": "nodemon --exec \"bun run build\"",
-        "dev:wrangler": "wrangler pages dev --live-reload",
+        "dev:wrangler": "wrangler pages dev",
         "dev": "concurrently \"bun dev:build\" \"bun dev:wrangler\" --prefix=none",
         "prepare": "lefthook install"
     },

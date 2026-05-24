@@ -16,12 +16,18 @@ We are committed to providing a friendly, safe, and welcoming environment for al
 
 ## Development Environment Setup
 
-### Prerequisites
+### Via Github Codespaces
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/egakareta/egakareta)
+
+### Via Local Setup
+
+#### Prerequisites
 
 - [Bun](https://bun.sh)
 - [Rustup](https://rustup.rs)
 
-### Initial Setup
+#### Initial Setup
 
 ```bash
 # Clone the repository
@@ -31,17 +37,12 @@ cd egakareta
 # Install dependencies
 bun install
 
+# Set up the local development environment
+bun run dev:setup
+
 # Run the development server at http://localhost:8788
 bun run dev
 ```
-
-## Coding Guidelines
-
-egakareta is designed to run on both Native (desktop) and WebAssembly (browser).
-
-- Use `web_time` instead of `std::time`.
-- Use conditional compilation `#[cfg(target_arch = "wasm32")]` only when necessary.
-- Prefer libraries that support both targets.
 
 ## Pull Request Process
 

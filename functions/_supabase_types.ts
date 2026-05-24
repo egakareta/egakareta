@@ -538,6 +538,11 @@ export type Database = {
                 Args: { email_to_check: string };
                 Returns: boolean;
             };
+            claim_auth_handoff: {
+                Args: { claim_id: string; claim_secret_hash: string };
+                Returns: Json;
+            };
+            cleanup_auth_handoffs: { Args: never; Returns: number };
             increment_beatmap_downloads: {
                 Args: { target_beatmap_id: number };
                 Returns: undefined;

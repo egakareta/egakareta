@@ -7,7 +7,7 @@
     "features": {
         "ghcr.io/devcontainers/features/docker-in-docker:2": {}
     },
-    "runArgs": ["--gpus=all", "--ipc=host", "--device=/dev/snd"],
+    "runArgs": ["--ipc=host", "--device=/dev/snd"],
     "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
     "customizations": {
         "vscode": {
@@ -26,7 +26,8 @@
             ]
         }
     },
-    "postCreateCommand": "bun install && bunx supabase start",
+    "postCreateCommand": "git config --global --add safe.directory /workspaces/${localWorkspaceFolderBasename} && bun install && bun run dev:setup",
+    "postStartCommand": "bun run dev",
     "remoteUser": "root",
     "forwardPorts": [3000, 54324, 54323, 54321]
 }

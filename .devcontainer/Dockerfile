@@ -15,6 +15,7 @@ RUN apt-get update \
     git-lfs \
     pkg-config \
     libssl-dev \
+    clang \
     cmake \
     gnupg \
     wget \
