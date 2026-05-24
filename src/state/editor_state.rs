@@ -10,7 +10,9 @@ use crate::editor_domain::{
     add_tap_with_indicator, clear_taps_with_indicators, remove_tap_with_indicator,
 };
 use crate::game::TimelineSimulationRuntime;
-use crate::types::{AppPhase, EditorMode, LevelObject, SpawnDirection, TimedTrigger, TimingPoint};
+use crate::types::{
+    AppPhase, EditorMode, GameCursor, LevelObject, SpawnDirection, TimedTrigger, TimingPoint,
+};
 
 impl EditorSubsystem {
     pub(crate) fn set_pan_up_held(&mut self, held: bool) {
@@ -549,6 +551,14 @@ impl State {
 
     pub(crate) fn editor_mode(&self) -> EditorMode {
         self.editor.mode()
+    }
+
+    pub(crate) fn game_cursor(&self, pointer_over_egui: bool) -> GameCursor {
+        if self.phase == AppPhase::Playing || pointer_over_egui {
+            return GameCursor::Hidden;
+        }
+
+        GameCursor::Default
     }
 
     pub(crate) fn editor_snap_to_grid(&self) -> bool {
@@ -1259,8 +1269,43 @@ mod tests {
     use crate::game::TimelineSimulationRuntime;
     use crate::test_utils::assert_approx_eq as approx_eq;
     use crate::types::{
-        AppPhase, EditorMode, GizmoAxis, GizmoDragKind, LevelObject, SpawnDirection,
+        AppPhase, EditorMode, GameCursor, GizmoAxis, GizmoDragKind, LevelObject, SpawnDirection,
     };
+
+    #[test]
+    fn game_cursor_is_hidden_while_playing_or_playtesting() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.phase = AppPhase::Playing;
+            state.session.playtesting_editor = false;
+            assert_eq!(state.game_cursor(false), GameCursor::Hidden);
+            assert_eq!(state.game_cursor(true), GameCursor::Hidden);
+
+            state.session.playtesting_editor = true;
+            assert_eq!(state.game_cursor(false), GameCursor::Hidden);
+            assert_eq!(state.game_cursor(true), GameCursor::Hidden);
+        });
+    }
+
+    #[test]
+    fn game_cursor_uses_default_cursor_outside_playing_and_egui() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.phase = AppPhase::Menu;
+            assert_eq!(state.game_cursor(false), GameCursor::Default);
+            assert_eq!(state.game_cursor(true), GameCursor::Hidden);
+
+            state.phase = AppPhase::Editor;
+            assert_eq!(state.game_cursor(false), GameCursor::Default);
+            assert_eq!(state.game_cursor(true), GameCursor::Hidden);
+
+            state.phase = AppPhase::GameOver;
+            assert_eq!(state.game_cursor(false), GameCursor::Default);
+            assert_eq!(state.game_cursor(true), GameCursor::Hidden);
+        });
+    }
 
     #[test]
     fn editor_mode_switch_clears_selection_and_drag_state_when_mode_cannot_select() {

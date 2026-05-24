@@ -17,6 +17,18 @@ pub(crate) enum EditorInteractionChange {
     Cursor,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GameCursor {
+    Default,
+    Hidden,
+}
+
+impl GameCursor {
+    pub(crate) fn hides_system_cursor(self) -> bool {
+        matches!(self, Self::Hidden)
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct EditorPickResult {
     pub(crate) cursor: [f32; 3],
@@ -1971,9 +1983,9 @@ mod tests {
         apply_timed_triggers_to_objects, camera_triggers_to_timed_triggers,
         default_camera_trigger_pitch, default_camera_trigger_rotation,
         default_camera_trigger_transition_interval_seconds, timed_triggers_to_camera_triggers,
-        CameraTrigger, CameraTriggerMode, EditorStateParams, LevelMetadata, LevelObject,
-        LevelPreviewCameraMetadata, MusicMetadata, SpawnDirection, SpawnMetadata, TimedTrigger,
-        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, Vertex,
+        CameraTrigger, CameraTriggerMode, EditorStateParams, GameCursor, LevelMetadata,
+        LevelObject, LevelPreviewCameraMetadata, MusicMetadata, SpawnDirection, SpawnMetadata,
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, Vertex,
     };
     use serde_json::json;
 
@@ -1983,6 +1995,12 @@ mod tests {
             (actual - expected).abs() <= 1e-5,
             "expected {expected}, got {actual}"
         );
+    }
+
+    #[test]
+    fn game_cursor_reports_when_system_cursor_should_be_hidden() {
+        assert!(!GameCursor::Default.hides_system_cursor());
+        assert!(GameCursor::Hidden.hides_system_cursor());
     }
 
     #[test]

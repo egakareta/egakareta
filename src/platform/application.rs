@@ -30,6 +30,7 @@ use crate::platform::input_mapping::{
 };
 use crate::platform::input_routing::{should_route_keyboard_input, should_route_pointer_input};
 use crate::platform::runtime::Runtime;
+use crate::types::GameCursor;
 use crate::State;
 
 struct App {
@@ -127,6 +128,14 @@ impl App {
         ) {
             runtime.state.process_input_event(event);
         }
+    }
+
+    fn system_cursor_visible(cursor: GameCursor) -> bool {
+        !cursor.hides_system_cursor()
+    }
+
+    fn system_cursor_visible_for_frame(state: &State, pointer_over_egui: bool) -> bool {
+        Self::system_cursor_visible(state.game_cursor(pointer_over_egui))
     }
 
     fn collect_touch_input_events(
@@ -491,6 +500,9 @@ impl ApplicationHandler for App {
                     let raw_input = egui_state.take_egui_input(window.as_ref());
                     let full_output = runtime.run_frame(raw_input);
                     egui_state.handle_platform_output(window.as_ref(), full_output.platform_output);
+                    let over_ui = runtime.pipeline.ctx().is_pointer_over_egui();
+                    let visible = Self::system_cursor_visible_for_frame(&runtime.state, over_ui);
+                    window.as_ref().set_cursor_visible(visible);
                 }
 
                 #[cfg(target_arch = "wasm32")]
@@ -503,6 +515,9 @@ impl ApplicationHandler for App {
                     let raw_input = egui_state.take_egui_input(window);
                     let full_output = runtime.run_frame(raw_input);
                     egui_state.handle_platform_output(window, full_output.platform_output);
+                    let over_ui = runtime.pipeline.ctx().is_pointer_over_egui();
+                    let visible = Self::system_cursor_visible_for_frame(&runtime.state, over_ui);
+                    window.set_cursor_visible(visible);
                     window.request_redraw();
                 }
             }
@@ -529,6 +544,8 @@ mod tests {
     use super::{App, TouchPointEvent};
     use crate::commands::InputEvent;
     use crate::test_utils::approx_eq;
+    use crate::types::GameCursor;
+    use crate::State;
     use std::collections::HashMap;
     use winit::{dpi::PhysicalPosition, event::TouchPhase};
 
@@ -542,6 +559,22 @@ mod tests {
             App::web_canvas_physical_size(646.0, 444.0, 1.25),
             (808, 555)
         );
+    }
+
+    #[test]
+    fn system_cursor_visibility_follows_game_cursor() {
+        assert!(App::system_cursor_visible(GameCursor::Default));
+        assert!(!App::system_cursor_visible(GameCursor::Hidden));
+    }
+
+    #[test]
+    fn frame_system_cursor_visibility_follows_default_state_and_ui_hover() {
+        pollster::block_on(async {
+            let state = State::new_test().await;
+
+            assert!(App::system_cursor_visible_for_frame(&state, false));
+            assert!(!App::system_cursor_visible_for_frame(&state, true));
+        });
     }
 
     #[test]
