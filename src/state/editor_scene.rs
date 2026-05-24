@@ -426,17 +426,11 @@ impl State {
         let mut stencil_geometry = MeshGeometry::default();
         for index in indices_to_outline {
             let obj = &self.editor.objects[index];
-            let center = glam::Vec3::new(
-                obj.position[0] + obj.size[0] * 0.5,
-                obj.position[1] + obj.size[1] * 0.5,
-                obj.position[2] + obj.size[2] * 0.5,
-            );
-            let line_width = self.editor_gizmo_axis_width_world(center, 2.0);
             all_vertices.append(&mut build_editor_hover_outline_vertices(
                 obj.position,
                 obj.size,
                 obj.rotation_degrees,
-                line_width,
+                3.0,
             ));
             stencil_geometry.append_geometry(build_block_geometry_for_object(obj));
         }
@@ -557,19 +551,12 @@ impl State {
                 mask_vertices.extend(build_block_geometry_for_object(obj).to_triangle_vertices());
                 let mask_end = mask_vertices.len() as u32;
 
-                let center = glam::Vec3::new(
-                    obj.position[0] + obj.size[0] * 0.5,
-                    obj.position[1] + obj.size[1] * 0.5,
-                    obj.position[2] + obj.size[2] * 0.5,
-                );
-                let line_width = self.editor_gizmo_axis_width_world(center, 1.0);
-
                 let outline_start = outline_vertices.len() as u32;
                 outline_vertices.extend(build_editor_selection_outline_vertices(
                     obj.position,
                     obj.size,
                     obj.rotation_degrees,
-                    line_width,
+                    2.0,
                 ));
                 let outline_end = outline_vertices.len() as u32;
 

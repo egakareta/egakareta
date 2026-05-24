@@ -241,6 +241,33 @@ mod tests {
     }
 
     #[test]
+    fn editor_outline_vertices_use_screen_space_width_metadata() {
+        let vertices = build_editor_selection_outline_vertices(
+            [2.0, 3.0, 4.0],
+            [5.0, 6.0, 7.0],
+            [0.0, 0.0, 0.0],
+            2.0,
+        );
+
+        let min_x = vertices
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::INFINITY, f32::min);
+        let max_x = vertices
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!((min_x - 2.0).abs() <= 1e-6);
+        assert!((max_x - 7.0).abs() <= 1e-6);
+
+        assert!(vertices.iter().all(|vertex| vertex.render_profile == 3.0));
+        assert!(vertices.iter().all(|vertex| {
+            vertex.color_outline[..3] == [4.5, 6.0, 7.5]
+                && (vertex.color_outline[3] - 2.7).abs() <= 1e-6
+        }));
+    }
+
+    #[test]
     fn obj_parser_supports_uvs_and_normals() {
         let obj = r#"
 v 0 0 0

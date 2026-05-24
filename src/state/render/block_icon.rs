@@ -209,7 +209,7 @@ impl State {
                 0.0
             },
             time_seconds: 0.0,
-            _pad: [0.0; 2],
+            viewport_size: [safe_size as f32, safe_size as f32],
         };
         let icon_color_space_uniform_buffer =
             self.render

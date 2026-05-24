@@ -157,7 +157,7 @@ fn default_color_space_uniform(apply_gamma_correction: bool) -> ColorSpaceUnifor
     ColorSpaceUniform {
         apply_gamma_correction: if apply_gamma_correction { 1.0 } else { 0.0 },
         time_seconds: 0.0,
-        _pad: [0.0; 2],
+        viewport_size: [1.0, 1.0],
     }
 }
 

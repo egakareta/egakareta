@@ -13,24 +13,19 @@ fn build_editor_outline_hull_vertices(
     position: [f32; 3],
     size: [f32; 3],
     rotation_degrees: [f32; 3],
-    line_width: f32,
+    line_width_pixels: f32,
     color_top: [f32; 4],
     color_side: [f32; 4],
 ) -> Vec<Vertex> {
     let mut vertices = Vec::new();
-    let expansion = (line_width * 1.35).max(0.018);
 
     append_prism(
         &mut vertices,
+        position,
         [
-            position[0] - expansion,
-            position[1] - expansion,
-            position[2] - expansion,
-        ],
-        [
-            position[0] + size[0] + expansion,
-            position[1] + size[1] + expansion,
-            position[2] + size[2] + expansion,
+            position[0] + size[0],
+            position[1] + size[1],
+            position[2] + size[2],
         ],
         color_top,
         color_side,
@@ -42,6 +37,11 @@ fn build_editor_outline_hull_vertices(
         position[2] + size[2] * 0.5,
     ];
     rotate_vertices_around_euler(&mut vertices, center, rotation_degrees);
+    let outline_width_pixels = (line_width_pixels * 1.35).max(1.0);
+    for vertex in &mut vertices {
+        vertex.color_outline = [center[0], center[1], center[2], outline_width_pixels];
+        vertex.render_profile = 3.0;
+    }
     vertices
 }
 
