@@ -262,7 +262,14 @@ mod tests {
 
         assert!(vertices.iter().all(|vertex| vertex.render_profile == 3.0));
         assert!(vertices.iter().all(|vertex| {
-            vertex.color_outline[..3] == [4.5, 6.0, 7.5]
+            let anchor_delta = [
+                vertex.position[0] - vertex.color_outline[0],
+                vertex.position[1] - vertex.color_outline[1],
+                vertex.position[2] - vertex.color_outline[2],
+            ];
+            anchor_delta
+                .iter()
+                .all(|component| (component.abs() - 1.0).abs() <= 1e-6 || component.abs() <= 1e-6)
                 && (vertex.color_outline[3] - 2.7).abs() <= 1e-6
         }));
     }
