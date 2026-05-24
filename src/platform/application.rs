@@ -91,6 +91,17 @@ impl App {
         }
     }
 
+    #[cfg(any(test, target_arch = "wasm32"))]
+    fn web_canvas_physical_size(
+        inner_width: f64,
+        inner_height: f64,
+        scale_factor: f64,
+    ) -> (u32, u32) {
+        let width = (inner_width * scale_factor).round().max(1.0) as u32;
+        let height = (inner_height * scale_factor).round().max(1.0) as u32;
+        (width, height)
+    }
+
     fn handle_touch_event(
         touch_points: &mut HashMap<u64, PhysicalPosition<f64>>,
         pinch_last_distance: &mut Option<f64>,
@@ -237,18 +248,21 @@ impl App {
             Some(window) => window,
             None => return,
         };
-        let width = browser_window
+        let inner_width = browser_window
             .inner_width()
             .ok()
             .and_then(|value| value.as_f64())
             .unwrap_or(800.0)
-            .max(1.0) as u32;
-        let height = browser_window
+            .max(1.0);
+        let inner_height = browser_window
             .inner_height()
             .ok()
             .and_then(|value| value.as_f64())
             .unwrap_or(600.0)
-            .max(1.0) as u32;
+            .max(1.0);
+        let scale_factor = window.scale_factor();
+        let (width, height) =
+            Self::web_canvas_physical_size(inner_width, inner_height, scale_factor);
 
         let Some(canvas) = window.canvas() else {
             return;
@@ -258,9 +272,13 @@ impl App {
             return;
         }
 
+        canvas.set_width(width);
+        canvas.set_height(height);
         let _ = canvas.set_attribute(
             "style",
-            &format!("display:block;width:{width}px;height:{height}px;touch-action:none;"),
+            &format!(
+                "display:block;width:{inner_width}px;height:{inner_height}px;touch-action:none;"
+            ),
         );
 
         runtime
@@ -516,6 +534,14 @@ mod tests {
 
     fn pos(x: f64, y: f64) -> PhysicalPosition<f64> {
         PhysicalPosition::new(x, y)
+    }
+
+    #[test]
+    fn web_canvas_physical_size_scales_css_pixels_by_device_scale() {
+        assert_eq!(
+            App::web_canvas_physical_size(646.0, 444.0, 1.25),
+            (808, 555)
+        );
     }
 
     #[test]
