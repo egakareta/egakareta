@@ -70,6 +70,23 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./lcov.info
 
+  test-functions:
+    name: Test Functions
+    runs-on: ubuntu-latest
+    environment: preview
+    env:
+      BUILD_ENV: preview
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - run: bun run test:functions --coverage
+      - uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/lcov.info
+          flags: functions
+
   test-db:
     name: Test Database
     runs-on: ubuntu-latest

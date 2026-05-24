@@ -335,9 +335,8 @@ impl State {
         drop(render_pass);
 
         if draw_editor_overlays {
-            // Selection outlines are drawn in separate passes so we can clear the stencil buffer
-            // and assign unique stencil references per selection item without being limited to 8-bit
-            // uniqueness across the entire selection.
+            // Selection outlines use a selected-only depth prepass, so each block keeps its own
+            // hollow silhouette while other selected blocks occlude outlines behind them.
             let selection_instances = self
                 .render
                 .meshes
@@ -357,6 +356,53 @@ impl State {
                 if let (Some(selection_mask_buffer), Some(selection_outline_buffer)) =
                     (selection_mask_buffer, selection_outline_buffer)
                 {
+                    {
+                        let mut depth_pass =
+                            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                label: Some("Editor Selection Outline Depth Pass"),
+                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                    view,
+                                    resolve_target: None,
+                                    depth_slice: None,
+                                    ops: wgpu::Operations {
+                                        load: wgpu::LoadOp::Load,
+                                        store: wgpu::StoreOp::Store,
+                                    },
+                                })],
+                                depth_stencil_attachment: Some(
+                                    wgpu::RenderPassDepthStencilAttachment {
+                                        view: &self.render.gpu.editor_outline_occlusion_depth_view,
+                                        depth_ops: Some(wgpu::Operations {
+                                            load: wgpu::LoadOp::Clear(1.0),
+                                            store: wgpu::StoreOp::Store,
+                                        }),
+                                        stencil_ops: Some(wgpu::Operations {
+                                            load: wgpu::LoadOp::Clear(0),
+                                            store: wgpu::StoreOp::Store,
+                                        }),
+                                    },
+                                ),
+                                occlusion_query_set: None,
+                                timestamp_writes: None,
+                                multiview_mask: None,
+                            });
+
+                        depth_pass
+                            .set_pipeline(&self.render.gpu.editor_outline_occlusion_depth_pipeline);
+                        depth_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
+                        depth_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                        depth_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                        depth_pass.set_bind_group(
+                            3,
+                            &self.render.gpu.block_texture_bind_group,
+                            &[],
+                        );
+                        depth_pass.set_vertex_buffer(0, selection_mask_buffer.slice(..));
+                        for instance in selection_instances {
+                            depth_pass.draw(instance.mask_vertices.clone(), 0..1);
+                        }
+                    }
+
                     for batch in selection_instances.chunks(255) {
                         let mut outline_pass =
                             encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -372,7 +418,7 @@ impl State {
                                 })],
                                 depth_stencil_attachment: Some(
                                     wgpu::RenderPassDepthStencilAttachment {
-                                        view: &self.render.gpu.depth_view,
+                                        view: &self.render.gpu.editor_outline_occlusion_depth_view,
                                         depth_ops: Some(wgpu::Operations {
                                             load: wgpu::LoadOp::Load,
                                             store: wgpu::StoreOp::Store,
@@ -385,6 +431,7 @@ impl State {
                                 ),
                                 occlusion_query_set: None,
                                 timestamp_writes: None,
+                                multiview_mask: None,
                             });
 
                         outline_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
@@ -433,7 +480,7 @@ impl State {
                         },
                     })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &self.render.gpu.depth_view,
+                        view: &self.render.gpu.editor_outline_occlusion_depth_view,
                         depth_ops: Some(wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
@@ -445,6 +492,7 @@ impl State {
                     }),
                     occlusion_query_set: None,
                     timestamp_writes: None,
+                    multiview_mask: None,
                 });
 
                 hover_pass.set_stencil_reference(1);
@@ -455,7 +503,7 @@ impl State {
                 hover_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
                 draw_mesh(&mut hover_pass, mask_data);
 
-                hover_pass.set_pipeline(&self.render.gpu.editor_outline_pipeline);
+                hover_pass.set_pipeline(&self.render.gpu.editor_hover_outline_pipeline);
                 hover_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
                 hover_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                 hover_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
@@ -487,6 +535,7 @@ impl State {
                 }),
                 occlusion_query_set: None,
                 timestamp_writes: None,
+                multiview_mask: None,
             });
 
             gizmo_pass.set_stencil_reference(0);
@@ -538,24 +587,167 @@ impl State {
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
+    use std::sync::mpsc;
 
     use egui_wgpu::ScreenDescriptor;
+    use glam::Mat4;
     use wgpu::Color;
 
-    use super::super::MeshSlot;
+    use super::super::{EditorOutlineInstance, MeshSlot};
     use super::{
         apply_gamma_correction_if_enabled, clear_color_for_phase, current_surface_output,
         linear_to_srgb, should_draw_editor_cursor, should_draw_editor_overlays,
         should_draw_floor_and_grid, should_skip_world, RenderSurfaceError,
     };
     use crate::state::State;
-    use crate::types::{AppPhase, EditorMode, Vertex};
+    use crate::types::{AppPhase, CameraUniform, EditorMode, PhysicalSize, Vertex};
 
     fn approx_eq(a: f32, b: f32, eps: f32) {
         assert!(
             (a - b).abs() <= eps,
             "expected {a} to be within {eps} of {b}"
         );
+    }
+
+    fn fullscreen_triangle(z: f32, color: [f32; 4]) -> Vec<Vertex> {
+        vec![
+            Vertex::untextured([-1.0, -1.0, z], color),
+            Vertex::untextured([3.0, -1.0, z], color),
+            Vertex::untextured([-1.0, 3.0, z], color),
+        ]
+    }
+
+    fn corner_triangle(z: f32, color: [f32; 4]) -> Vec<Vertex> {
+        vec![
+            Vertex::untextured([-0.95, -0.95, z], color),
+            Vertex::untextured([-0.85, -0.95, z], color),
+            Vertex::untextured([-0.95, -0.85, z], color),
+        ]
+    }
+
+    fn rgba_from_surface_format(format: wgpu::TextureFormat, pixel: [u8; 4]) -> [u8; 4] {
+        match format {
+            wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb => {
+                [pixel[2], pixel[1], pixel[0], pixel[3]]
+            }
+            _ => pixel,
+        }
+    }
+
+    fn render_center_pixel(state: &mut State) -> [u8; 4] {
+        let size = 8;
+        state.resize_surface(PhysicalSize {
+            width: size,
+            height: size,
+        });
+        let camera = CameraUniform {
+            view_proj: Mat4::IDENTITY.to_cols_array_2d(),
+        };
+        state.queue().write_buffer(
+            &state.render.gpu.camera_uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[camera]),
+        );
+
+        let texture = state.device().create_texture(&wgpu::TextureDescriptor {
+            label: Some("Outline Occlusion Test Render Texture"),
+            size: wgpu::Extent3d {
+                width: size,
+                height: size,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: state.render.gpu.config.format,
+            usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let readback = state.device().create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Outline Occlusion Test Readback Buffer"),
+            size: 256,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = state
+            .device()
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Outline Occlusion Test Encoder"),
+            });
+
+        state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: size / 2,
+                    y: size / 2,
+                    z: 0,
+                },
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(1),
+                },
+            },
+            wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+        state.queue().submit(std::iter::once(encoder.finish()));
+
+        let buffer_slice = readback.slice(..);
+        let (sender, receiver) = mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            sender.send(result).expect("readback result should send");
+        });
+        state
+            .device()
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("device polling should succeed");
+        receiver
+            .recv()
+            .expect("readback result should be received")
+            .expect("readback mapping should succeed");
+        let data = buffer_slice.get_mapped_range();
+        let pixel = [data[0], data[1], data[2], data[3]];
+        drop(data);
+        readback.unmap();
+        rgba_from_surface_format(state.render.gpu.config.format, pixel)
+    }
+
+    fn prepare_outline_occlusion_test_state(state: &mut State) {
+        state.phase = AppPhase::Editor;
+        state.editor.ui.mode = EditorMode::Select;
+        state.render.meshes.floor = MeshSlot::Empty;
+        state.render.meshes.grid = MeshSlot::Empty;
+        state.render.meshes.trail = MeshSlot::Empty;
+        state.render.meshes.blocks = MeshSlot::Empty;
+        state.render.meshes.blocks_static = MeshSlot::Empty;
+        state.render.meshes.blocks_selected = MeshSlot::Empty;
+        state.render.meshes.editor_cursor = MeshSlot::Empty;
+        state.render.meshes.editor_hover_stencil = MeshSlot::Empty;
+        state.render.meshes.editor_hover_outline = MeshSlot::Empty;
+        state.render.meshes.editor_selection_stencil = MeshSlot::Empty;
+        state.render.meshes.editor_selection_outline = MeshSlot::Empty;
+        state
+            .render
+            .meshes
+            .editor_selection_outline_instances
+            .clear();
+        state.render.meshes.editor_gizmo = MeshSlot::Empty;
+        state.render.meshes.tap_indicators = MeshSlot::Empty;
+        state.render.meshes.spawn_marker = MeshSlot::Empty;
+        state.render.meshes.camera_trigger_markers = MeshSlot::Empty;
+        state.render.meshes.editor_preview_player = MeshSlot::Empty;
     }
 
     #[test]
@@ -742,6 +934,88 @@ mod tests {
 
             let result = state.render_egui(&mut renderer, &paint_jobs, &screen_descriptor);
             assert!(result.is_ok());
+        });
+    }
+
+    #[test]
+    fn selection_outline_ignores_unselected_scene_depth() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            prepare_outline_occlusion_test_state(&mut state);
+
+            let red_front = fullscreen_triangle(0.1, [1.0, 0.0, 0.0, 1.0]);
+            let cyan_outline = fullscreen_triangle(0.2, [0.0, 1.0, 1.0, 1.0]);
+            let corner_mask = corner_triangle(0.2, [1.0, 1.0, 1.0, 1.0]);
+
+            state.render.meshes.blocks_static =
+                MeshSlot::from_vertices(state.device(), "Unselected Front Block", &red_front);
+            state.render.meshes.editor_selection_stencil =
+                MeshSlot::from_vertices(state.device(), "Selection Mask", &corner_mask);
+            state.render.meshes.editor_selection_outline =
+                MeshSlot::from_vertices(state.device(), "Selection Outline", &cyan_outline);
+            state.render.meshes.editor_selection_outline_instances = vec![EditorOutlineInstance {
+                mask_vertices: 0..corner_mask.len() as u32,
+                outline_vertices: 0..cyan_outline.len() as u32,
+            }];
+
+            let pixel = render_center_pixel(&mut state);
+            assert!(
+                pixel[0] < 80 && pixel[1] > 180 && pixel[2] > 180,
+                "selection outline should draw over unselected scene depth; got rgba={pixel:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn hover_outline_ignores_unselected_scene_depth() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            prepare_outline_occlusion_test_state(&mut state);
+
+            let red_front = fullscreen_triangle(0.1, [1.0, 0.0, 0.0, 1.0]);
+            let cyan_outline = fullscreen_triangle(0.2, [0.0, 1.0, 1.0, 1.0]);
+            let corner_mask = corner_triangle(0.2, [1.0, 1.0, 1.0, 1.0]);
+
+            state.render.meshes.blocks_static =
+                MeshSlot::from_vertices(state.device(), "Unselected Front Block", &red_front);
+            state.render.meshes.editor_hover_stencil =
+                MeshSlot::from_vertices(state.device(), "Hover Mask", &corner_mask);
+            state.render.meshes.editor_hover_outline =
+                MeshSlot::from_vertices(state.device(), "Hover Outline", &cyan_outline);
+
+            let pixel = render_center_pixel(&mut state);
+            assert!(
+                pixel[0] < 80 && pixel[1] > 180 && pixel[2] > 180,
+                "hover outline should draw over unselected scene depth; got rgba={pixel:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn hover_outline_draws_over_selected_blocks() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            prepare_outline_occlusion_test_state(&mut state);
+
+            let red_selected = fullscreen_triangle(0.1, [1.0, 0.0, 0.0, 1.0]);
+            let cyan_outline = fullscreen_triangle(0.2, [0.0, 1.0, 1.0, 1.0]);
+            let selected_mask = fullscreen_triangle(0.1, [1.0, 1.0, 1.0, 1.0]);
+            let hover_mask = corner_triangle(0.2, [1.0, 1.0, 1.0, 1.0]);
+
+            state.render.meshes.blocks_selected =
+                MeshSlot::from_vertices(state.device(), "Selected Front Block", &red_selected);
+            state.render.meshes.editor_selection_stencil =
+                MeshSlot::from_vertices(state.device(), "Selected Occlusion Mask", &selected_mask);
+            state.render.meshes.editor_hover_stencil =
+                MeshSlot::from_vertices(state.device(), "Hover Mask", &hover_mask);
+            state.render.meshes.editor_hover_outline =
+                MeshSlot::from_vertices(state.device(), "Hover Outline", &cyan_outline);
+
+            let pixel = render_center_pixel(&mut state);
+            assert!(
+                pixel[0] < 80 && pixel[1] > 180 && pixel[2] > 180,
+                "hover outline should draw over selected block depth; got rgba={pixel:?}"
+            );
         });
     }
 

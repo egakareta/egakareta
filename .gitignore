@@ -7,3 +7,4 @@
 /.wrangler
 lcov.info
 .env*
+/coverage

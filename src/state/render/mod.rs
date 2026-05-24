@@ -64,6 +64,7 @@ pub(crate) enum MeshSlot {
     },
 }
 
+#[derive(Clone, Copy)]
 pub(crate) enum MeshDrawData<'a> {
     Vertices {
         buffer: &'a wgpu::Buffer,
@@ -461,12 +462,16 @@ pub(crate) struct GpuContext {
     pub(crate) size: PhysicalSize<u32>,
     pub(crate) depth_texture: wgpu::Texture,
     pub(crate) depth_view: wgpu::TextureView,
+    pub(crate) editor_outline_occlusion_depth_texture: wgpu::Texture,
+    pub(crate) editor_outline_occlusion_depth_view: wgpu::TextureView,
     pub(crate) render_pipeline: wgpu::RenderPipeline,
     pub(crate) block_icon_pipeline: wgpu::RenderPipeline,
     pub(crate) editor_ghost_trail_pipeline: wgpu::RenderPipeline,
     pub(crate) gizmo_overlay_pipeline: wgpu::RenderPipeline,
+    pub(crate) editor_outline_occlusion_depth_pipeline: wgpu::RenderPipeline,
     pub(crate) editor_outline_mask_pipeline: wgpu::RenderPipeline,
     pub(crate) editor_outline_pipeline: wgpu::RenderPipeline,
+    pub(crate) editor_hover_outline_pipeline: wgpu::RenderPipeline,
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) line_bind_group_layout: wgpu::BindGroupLayout,
     pub(crate) line_uniform_buffer: wgpu::Buffer,
@@ -520,6 +525,10 @@ impl GpuContext {
         let (depth_texture, depth_view) = Self::create_depth_texture(&self.device, &self.config);
         self.depth_texture = depth_texture;
         self.depth_view = depth_view;
+        let (editor_outline_occlusion_depth_texture, editor_outline_occlusion_depth_view) =
+            Self::create_depth_texture(&self.device, &self.config);
+        self.editor_outline_occlusion_depth_texture = editor_outline_occlusion_depth_texture;
+        self.editor_outline_occlusion_depth_view = editor_outline_occlusion_depth_view;
     }
 
     pub(crate) fn create_depth_texture(

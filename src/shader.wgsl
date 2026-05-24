@@ -77,7 +77,40 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     );
 
     let offset = vec3<f32>(u_line.offset.x, 0.0, u_line.offset.y);
-    out.position = u_camera.view_proj * vec4<f32>(rotated_pos + offset, 1.0);
+    var clip_position = u_camera.view_proj * vec4<f32>(rotated_pos + offset, 1.0);
+
+    let editor_outline_profile = step(2.5, input.render_profile)
+        * (1.0 - step(3.5, input.render_profile));
+    if editor_outline_profile > 0.5 {
+        let anchor_world = input.color_outline.xyz;
+        let anchor_rotated = vec3<f32>(
+            anchor_world.x * c - anchor_world.z * s,
+            anchor_world.y,
+            anchor_world.x * s + anchor_world.z * c
+        );
+        let anchor_clip = u_camera.view_proj * vec4<f32>(anchor_rotated + offset, 1.0);
+        let viewport = max(u_color_space.flags.zw, vec2<f32>(1.0, 1.0));
+        let clip_w = clip_position.w;
+        let anchor_w = anchor_clip.w;
+        if abs(clip_w) > 1e-6 && abs(anchor_w) > 1e-6 {
+            let direction_pixels = ((clip_position.xy / clip_w)
+                - (anchor_clip.xy / anchor_w)) * viewport * 0.5;
+            let direction_length = length(direction_pixels);
+            if direction_length > 0.0001 {
+                let pixel_offset = direction_pixels / direction_length * input.color_outline.w;
+                let clip_offset = (pixel_offset
+                    * vec2<f32>(2.0 / viewport.x, 2.0 / viewport.y)) * clip_w;
+                clip_position = vec4<f32>(
+                    clip_position.x + clip_offset.x,
+                    clip_position.y + clip_offset.y,
+                    clip_position.z,
+                    clip_position.w
+                );
+            }
+        }
+    }
+
+    out.position = clip_position;
     out.color = input.color;
     out.uv = input.uv;
     out.uv_norm = input.uv_norm;
