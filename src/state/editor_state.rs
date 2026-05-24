@@ -558,7 +558,7 @@ impl State {
             return GameCursor::Hidden;
         }
 
-        return GameCursor::Default;
+        GameCursor::Default
     }
 
     pub(crate) fn editor_snap_to_grid(&self) -> bool {
@@ -1284,6 +1284,25 @@ mod tests {
 
             state.session.playtesting_editor = true;
             assert_eq!(state.game_cursor(false), GameCursor::Hidden);
+            assert_eq!(state.game_cursor(true), GameCursor::Hidden);
+        });
+    }
+
+    #[test]
+    fn game_cursor_uses_default_cursor_outside_playing_and_egui() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.phase = AppPhase::Menu;
+            assert_eq!(state.game_cursor(false), GameCursor::Default);
+            assert_eq!(state.game_cursor(true), GameCursor::Hidden);
+
+            state.phase = AppPhase::Editor;
+            assert_eq!(state.game_cursor(false), GameCursor::Default);
+            assert_eq!(state.game_cursor(true), GameCursor::Hidden);
+
+            state.phase = AppPhase::GameOver;
+            assert_eq!(state.game_cursor(false), GameCursor::Default);
             assert_eq!(state.game_cursor(true), GameCursor::Hidden);
         });
     }
