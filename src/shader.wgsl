@@ -90,19 +90,23 @@ fn vs_main(input: VertexInput) -> VertexOutput {
         );
         let center_clip = u_camera.view_proj * vec4<f32>(center_rotated + offset, 1.0);
         let viewport = max(u_color_space.flags.zw, vec2<f32>(1.0, 1.0));
-        let direction_pixels = ((clip_position.xy / clip_position.w)
-            - (center_clip.xy / center_clip.w)) * viewport * 0.5;
-        let direction_length = length(direction_pixels);
-        if direction_length > 0.0001 {
-            let pixel_offset = direction_pixels / direction_length * input.color_outline.w;
-            let clip_offset = (pixel_offset
-                * vec2<f32>(2.0 / viewport.x, 2.0 / viewport.y)) * clip_position.w;
-            clip_position = vec4<f32>(
-                clip_position.x + clip_offset.x,
-                clip_position.y + clip_offset.y,
-                clip_position.z,
-                clip_position.w
-            );
+        let clip_w = clip_position.w;
+        let center_w = center_clip.w;
+        if abs(clip_w) > 1e-6 && abs(center_w) > 1e-6 {
+            let direction_pixels = ((clip_position.xy / clip_w)
+                - (center_clip.xy / center_w)) * viewport * 0.5;
+            let direction_length = length(direction_pixels);
+            if direction_length > 0.0001 {
+                let pixel_offset = direction_pixels / direction_length * input.color_outline.w;
+                let clip_offset = (pixel_offset
+                    * vec2<f32>(2.0 / viewport.x, 2.0 / viewport.y)) * clip_w;
+                clip_position = vec4<f32>(
+                    clip_position.x + clip_offset.x,
+                    clip_position.y + clip_offset.y,
+                    clip_position.z,
+                    clip_position.w
+                );
+            }
         }
     }
 
