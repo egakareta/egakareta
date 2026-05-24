@@ -707,8 +707,8 @@ mod tests {
 
         let mut commands = Vec::<AppCommand>::new();
         let ctx = egui::Context::default();
-        let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+            egui::CentralPanel::default().show_inside(root_ui, |ui| {
                 show_timeline_bar(ui, &view, 60.0, &mut commands);
             });
         });
@@ -781,8 +781,8 @@ mod tests {
 
         let mut commands = Vec::<AppCommand>::new();
         let ctx = egui::Context::default();
-        let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+            egui::CentralPanel::default().show_inside(root_ui, |ui| {
                 show_timeline_bar(ui, &view, 20.0, &mut commands);
             });
         });
@@ -817,8 +817,8 @@ mod tests {
 
         let mut commands = Vec::<AppCommand>::new();
         let ctx = egui::Context::default();
-        let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+            egui::CentralPanel::default().show_inside(root_ui, |ui| {
                 show_waveform_panel(ui, &view, &mut commands);
             });
         });
@@ -873,8 +873,8 @@ mod tests {
 
         let mut commands = Vec::<AppCommand>::new();
         let ctx = egui::Context::default();
-        let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+            egui::CentralPanel::default().show_inside(root_ui, |ui| {
                 show_waveform_panel(ui, &view, &mut commands);
             });
         });

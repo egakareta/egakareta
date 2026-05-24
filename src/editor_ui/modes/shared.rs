@@ -234,8 +234,8 @@ mod tests {
         let mut commands = Vec::<AppCommand>::new();
 
         let ctx = egui::Context::default();
-        let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+            egui::CentralPanel::default().show_inside(root_ui, |ui| {
                 show_mode_and_snap_controls(ui, &view, &mut commands);
             });
         });
@@ -265,8 +265,8 @@ mod tests {
         );
 
         let ctx = egui::Context::default();
-        let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+            egui::CentralPanel::default().show_inside(root_ui, |ui| {
                 show_player_camera_status_row(ui, &forward_view);
                 show_player_camera_status_row(ui, &right_view);
             });

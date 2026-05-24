@@ -1132,7 +1132,8 @@ mod tests {
     fn run_editor_ui_once(state: &mut crate::State) {
         let ctx = egui::Context::default();
         let block_icon_texture_ids = std::collections::HashMap::new();
-        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+            let ctx = root_ui.ctx();
             show_editor_ui(ctx, state, &block_icon_texture_ids);
         });
     }
@@ -1317,7 +1318,8 @@ mod tests {
             state.dispatch(AppCommand::EditorTogglePerfOverlay);
 
             let ctx = egui::Context::default();
-            let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+                let ctx = root_ui.ctx();
                 show_perf_overlay(ctx, &mut state);
             });
 
