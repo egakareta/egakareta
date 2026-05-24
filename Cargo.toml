@@ -117,5 +117,5 @@ winres = "0.1"
 zstd = "0.13"
 
 [dev-dependencies]
-naga = { version = "27", features = ["wgsl-in"] }
+naga = { version = "29", features = ["wgsl-in"] }
 tempfile = "3"
