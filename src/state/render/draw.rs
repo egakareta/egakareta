@@ -8,7 +8,7 @@
 use std::iter;
 
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
-use wgpu::{SurfaceError, TextureViewDescriptor};
+use wgpu::{CurrentSurfaceTexture, TextureViewDescriptor};
 
 use super::super::State;
 use super::{MeshDrawData, MeshSlot};
@@ -77,6 +77,27 @@ fn should_draw_editor_cursor(mode: EditorMode) -> bool {
     mode == EditorMode::Place
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderSurfaceError {
+    Outdated,
+    Lost,
+    Validation,
+}
+
+fn current_surface_output(
+    texture: CurrentSurfaceTexture,
+) -> Result<Option<wgpu::SurfaceTexture>, RenderSurfaceError> {
+    match texture {
+        CurrentSurfaceTexture::Success(output) | CurrentSurfaceTexture::Suboptimal(output) => {
+            Ok(Some(output))
+        }
+        CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => Ok(None),
+        CurrentSurfaceTexture::Outdated => Err(RenderSurfaceError::Outdated),
+        CurrentSurfaceTexture::Lost => Err(RenderSurfaceError::Lost),
+        CurrentSurfaceTexture::Validation => Err(RenderSurfaceError::Validation),
+    }
+}
+
 fn draw_mesh(render_pass: &mut wgpu::RenderPass<'_>, draw_data: MeshDrawData<'_>) {
     match draw_data {
         MeshDrawData::Vertices { buffer, count } => {
@@ -106,7 +127,7 @@ impl State {
         renderer: &mut EguiRenderer,
         paint_jobs: &[egui::ClippedPrimitive],
         screen_descriptor: &ScreenDescriptor,
-    ) -> Result<(), SurfaceError> {
+    ) -> Result<(), RenderSurfaceError> {
         self.render_with_overlay(|device, queue, view, encoder| {
             renderer.update_buffers(device, queue, encoder, paint_jobs, screen_descriptor);
 
@@ -125,6 +146,7 @@ impl State {
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 })
                 .forget_lifetime();
 
@@ -144,7 +166,7 @@ impl State {
     /// Performs a full render of the current application state.
     ///
     /// This method clears the surface and draws the active scene (Menu, Editor, or Gameplay).
-    pub fn render(&mut self) -> Result<(), SurfaceError> {
+    pub fn render(&mut self) -> Result<(), RenderSurfaceError> {
         self.render_with_overlay(|_, _, _, _| {})
     }
 
@@ -152,7 +174,7 @@ impl State {
     ///
     /// The `overlay` closure is provided with the GPU device, queue, current texture view,
     /// and a command encoder to perform additional drawing operations.
-    pub fn render_with_overlay<F>(&mut self, overlay: F) -> Result<(), SurfaceError>
+    pub fn render_with_overlay<F>(&mut self, overlay: F) -> Result<(), RenderSurfaceError>
     where
         F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
     {
@@ -160,7 +182,9 @@ impl State {
             Some(s) => s,
             None => return Ok(()),
         };
-        let output = surface.get_current_texture()?;
+        let Some(output) = current_surface_output(surface.get_current_texture())? else {
+            return Ok(());
+        };
         let view = output
             .texture
             .create_view(&TextureViewDescriptor::default());
@@ -220,6 +244,7 @@ impl State {
             }),
             occlusion_query_set: None,
             timestamp_writes: None,
+            multiview_mask: None,
         });
 
         render_pass.set_pipeline(&self.render.gpu.render_pipeline);
@@ -359,6 +384,7 @@ impl State {
                                 ),
                                 occlusion_query_set: None,
                                 timestamp_writes: None,
+                                multiview_mask: None,
                             });
 
                         depth_pass
@@ -405,6 +431,7 @@ impl State {
                                 ),
                                 occlusion_query_set: None,
                                 timestamp_writes: None,
+                                multiview_mask: None,
                             });
 
                         outline_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
@@ -465,6 +492,7 @@ impl State {
                     }),
                     occlusion_query_set: None,
                     timestamp_writes: None,
+                    multiview_mask: None,
                 });
 
                 hover_pass.set_stencil_reference(1);
@@ -507,6 +535,7 @@ impl State {
                 }),
                 occlusion_query_set: None,
                 timestamp_writes: None,
+                multiview_mask: None,
             });
 
             gizmo_pass.set_stencil_reference(0);
@@ -566,9 +595,9 @@ mod tests {
 
     use super::super::{EditorOutlineInstance, MeshSlot};
     use super::{
-        apply_gamma_correction_if_enabled, clear_color_for_phase, linear_to_srgb,
-        should_draw_editor_cursor, should_draw_editor_overlays, should_draw_floor_and_grid,
-        should_skip_world,
+        apply_gamma_correction_if_enabled, clear_color_for_phase, current_surface_output,
+        linear_to_srgb, should_draw_editor_cursor, should_draw_editor_overlays,
+        should_draw_floor_and_grid, should_skip_world, RenderSurfaceError,
     };
     use crate::state::State;
     use crate::types::{AppPhase, CameraUniform, EditorMode, PhysicalSize, Vertex};
@@ -841,6 +870,30 @@ mod tests {
         assert!(!should_draw_editor_cursor(EditorMode::Select));
         assert!(!should_draw_editor_cursor(EditorMode::Trigger));
         assert!(!should_draw_editor_cursor(EditorMode::Timing));
+    }
+
+    #[test]
+    fn current_surface_statuses_match_render_policy() {
+        assert!(matches!(
+            current_surface_output(wgpu::CurrentSurfaceTexture::Timeout),
+            Ok(None)
+        ));
+        assert!(matches!(
+            current_surface_output(wgpu::CurrentSurfaceTexture::Occluded),
+            Ok(None)
+        ));
+        assert!(matches!(
+            current_surface_output(wgpu::CurrentSurfaceTexture::Outdated),
+            Err(RenderSurfaceError::Outdated)
+        ));
+        assert!(matches!(
+            current_surface_output(wgpu::CurrentSurfaceTexture::Lost),
+            Err(RenderSurfaceError::Lost)
+        ));
+        assert!(matches!(
+            current_surface_output(wgpu::CurrentSurfaceTexture::Validation),
+            Err(RenderSurfaceError::Validation)
+        ));
     }
 
     #[test]

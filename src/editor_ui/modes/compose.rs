@@ -418,8 +418,8 @@ mod tests {
         let mut clicked_without_texture = true;
         let mut clicked_with_texture = true;
 
-        let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+            egui::CentralPanel::default().show_inside(root_ui, |ui| {
                 clicked_without_texture = show_block_preview_button(ui, block, false, None);
                 clicked_with_texture =
                     show_block_preview_button(ui, block, true, Some(egui::TextureId::Managed(1)));

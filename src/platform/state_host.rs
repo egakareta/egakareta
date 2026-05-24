@@ -41,9 +41,9 @@ impl SurfaceHost {
     ) {
         let size = PhysicalSize::new(canvas.width(), canvas.height());
 
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
-            ..Default::default()
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
         let surface = instance
             .create_surface(wgpu::SurfaceTarget::Canvas(canvas.clone()))

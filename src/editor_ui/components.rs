@@ -260,7 +260,7 @@ pub(crate) fn show_timeline_bar(
 
         // Mouse wheel over the timeline bar adjusts window width.
         if response.hovered() {
-            let scroll_delta = ui.input(|i| i.raw_scroll_delta);
+            let scroll_delta = ui.input(|i| i.smooth_scroll_delta());
             if scroll_delta.y.abs() > 0.0 {
                 let zoom_factor = 1.0 + scroll_delta.y * 0.002;
                 let new_zoom = (timeline_zoom * zoom_factor).clamp(0.1, 10.0);
@@ -505,7 +505,7 @@ pub(crate) fn show_waveform_panel(
 
     // Scroll with mouse wheel to zoom
     if response.hovered() {
-        let scroll_delta = ui.input(|i| i.raw_scroll_delta);
+        let scroll_delta = ui.input(|i| i.smooth_scroll_delta());
         if scroll_delta.y.abs() > 0.0 {
             let zoom_factor = 1.0 + scroll_delta.y * 0.002;
             let new_zoom = (zoom * zoom_factor).clamp(0.1, 10.0);
@@ -707,8 +707,8 @@ mod tests {
 
         let mut commands = Vec::<AppCommand>::new();
         let ctx = egui::Context::default();
-        let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+            egui::CentralPanel::default().show_inside(root_ui, |ui| {
                 show_timeline_bar(ui, &view, 60.0, &mut commands);
             });
         });
@@ -781,8 +781,8 @@ mod tests {
 
         let mut commands = Vec::<AppCommand>::new();
         let ctx = egui::Context::default();
-        let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+            egui::CentralPanel::default().show_inside(root_ui, |ui| {
                 show_timeline_bar(ui, &view, 20.0, &mut commands);
             });
         });
@@ -817,8 +817,8 @@ mod tests {
 
         let mut commands = Vec::<AppCommand>::new();
         let ctx = egui::Context::default();
-        let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+            egui::CentralPanel::default().show_inside(root_ui, |ui| {
                 show_waveform_panel(ui, &view, &mut commands);
             });
         });
@@ -873,8 +873,8 @@ mod tests {
 
         let mut commands = Vec::<AppCommand>::new();
         let ctx = egui::Context::default();
-        let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+            egui::CentralPanel::default().show_inside(root_ui, |ui| {
                 show_waveform_panel(ui, &view, &mut commands);
             });
         });

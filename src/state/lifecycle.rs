@@ -68,8 +68,8 @@ fn editor_ghost_trail_primitive_state() -> wgpu::PrimitiveState {
 fn editor_ghost_trail_depth_stencil_state() -> wgpu::DepthStencilState {
     wgpu::DepthStencilState {
         format: DEPTH_FORMAT,
-        depth_write_enabled: false,
-        depth_compare: wgpu::CompareFunction::Less,
+        depth_write_enabled: Some(false),
+        depth_compare: Some(wgpu::CompareFunction::Less),
         stencil: wgpu::StencilState::default(),
         bias: wgpu::DepthBiasState::default(),
     }
@@ -78,8 +78,8 @@ fn editor_ghost_trail_depth_stencil_state() -> wgpu::DepthStencilState {
 fn editor_outline_mask_depth_stencil_state() -> wgpu::DepthStencilState {
     wgpu::DepthStencilState {
         format: DEPTH_FORMAT,
-        depth_write_enabled: false,
-        depth_compare: wgpu::CompareFunction::Always,
+        depth_write_enabled: Some(false),
+        depth_compare: Some(wgpu::CompareFunction::Always),
         stencil: wgpu::StencilState {
             front: wgpu::StencilFaceState {
                 compare: wgpu::CompareFunction::Always,
@@ -103,8 +103,8 @@ fn editor_outline_mask_depth_stencil_state() -> wgpu::DepthStencilState {
 fn editor_outline_occlusion_depth_mask_depth_stencil_state() -> wgpu::DepthStencilState {
     wgpu::DepthStencilState {
         format: DEPTH_FORMAT,
-        depth_write_enabled: true,
-        depth_compare: wgpu::CompareFunction::Less,
+        depth_write_enabled: Some(true),
+        depth_compare: Some(wgpu::CompareFunction::Less),
         stencil: wgpu::StencilState::default(),
         bias: wgpu::DepthBiasState::default(),
     }
@@ -113,8 +113,8 @@ fn editor_outline_occlusion_depth_mask_depth_stencil_state() -> wgpu::DepthStenc
 fn editor_outline_depth_stencil_state() -> wgpu::DepthStencilState {
     wgpu::DepthStencilState {
         format: DEPTH_FORMAT,
-        depth_write_enabled: false,
-        depth_compare: wgpu::CompareFunction::LessEqual,
+        depth_write_enabled: Some(false),
+        depth_compare: Some(wgpu::CompareFunction::LessEqual),
         stencil: wgpu::StencilState {
             front: wgpu::StencilFaceState {
                 compare: wgpu::CompareFunction::NotEqual,
@@ -141,7 +141,7 @@ fn editor_outline_depth_stencil_state() -> wgpu::DepthStencilState {
 
 fn editor_hover_outline_depth_stencil_state() -> wgpu::DepthStencilState {
     wgpu::DepthStencilState {
-        depth_compare: wgpu::CompareFunction::Always,
+        depth_compare: Some(wgpu::CompareFunction::Always),
         bias: wgpu::DepthBiasState::default(),
         ..editor_outline_depth_stencil_state()
     }
@@ -176,6 +176,10 @@ struct TestGpuFixture {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: PhysicalSize<u32>,
+    depth_texture: wgpu::Texture,
+    depth_view: wgpu::TextureView,
+    editor_outline_occlusion_depth_texture: wgpu::Texture,
+    editor_outline_occlusion_depth_view: wgpu::TextureView,
     render_pipeline: wgpu::RenderPipeline,
     block_icon_pipeline: wgpu::RenderPipeline,
     editor_ghost_trail_pipeline: wgpu::RenderPipeline,
@@ -185,6 +189,7 @@ struct TestGpuFixture {
     editor_outline_pipeline: wgpu::RenderPipeline,
     editor_hover_outline_pipeline: wgpu::RenderPipeline,
     line_bind_group_layout: wgpu::BindGroupLayout,
+    _zero_line_uniform_buffer: wgpu::Buffer,
     zero_line_bind_group: wgpu::BindGroup,
     camera_bind_group_layout: wgpu::BindGroupLayout,
     color_space_bind_group_layout: wgpu::BindGroupLayout,
@@ -193,51 +198,53 @@ struct TestGpuFixture {
 }
 
 #[cfg(test)]
-impl From<GpuContext> for TestGpuFixture {
-    fn from(gpu: GpuContext) -> Self {
-        let GpuContext {
-            adapter_info,
-            device,
-            queue,
-            config,
-            size,
-            render_pipeline,
-            block_icon_pipeline,
-            editor_ghost_trail_pipeline,
-            gizmo_overlay_pipeline,
-            editor_outline_occlusion_depth_pipeline,
-            editor_outline_mask_pipeline,
-            editor_outline_pipeline,
-            editor_hover_outline_pipeline,
-            line_bind_group_layout,
-            zero_line_bind_group,
-            camera_bind_group_layout,
-            color_space_bind_group_layout,
-            block_texture_bind_group,
-            apply_gamma_correction,
-            ..
-        } = gpu;
+impl From<&GpuContext> for TestGpuFixture {
+    fn from(gpu: &GpuContext) -> Self {
+        let zero_line_uniform_buffer =
+            gpu.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Shared Test Line Uniform Buffer"),
+                    contents: bytemuck::bytes_of(&default_line_uniform()),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+        let zero_line_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Shared Test Zero Line Bind Group"),
+            layout: &gpu.line_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: zero_line_uniform_buffer.as_entire_binding(),
+            }],
+        });
 
         Self {
-            adapter_info,
-            device,
-            queue,
-            config,
-            size,
-            render_pipeline,
-            block_icon_pipeline,
-            editor_ghost_trail_pipeline,
-            gizmo_overlay_pipeline,
-            editor_outline_occlusion_depth_pipeline,
-            editor_outline_mask_pipeline,
-            editor_outline_pipeline,
-            editor_hover_outline_pipeline,
-            line_bind_group_layout,
+            adapter_info: gpu.adapter_info.clone(),
+            device: gpu.device.clone(),
+            queue: gpu.queue.clone(),
+            config: gpu.config.clone(),
+            size: gpu.size,
+            depth_texture: gpu.depth_texture.clone(),
+            depth_view: gpu.depth_view.clone(),
+            editor_outline_occlusion_depth_texture: gpu
+                .editor_outline_occlusion_depth_texture
+                .clone(),
+            editor_outline_occlusion_depth_view: gpu.editor_outline_occlusion_depth_view.clone(),
+            render_pipeline: gpu.render_pipeline.clone(),
+            block_icon_pipeline: gpu.block_icon_pipeline.clone(),
+            editor_ghost_trail_pipeline: gpu.editor_ghost_trail_pipeline.clone(),
+            gizmo_overlay_pipeline: gpu.gizmo_overlay_pipeline.clone(),
+            editor_outline_occlusion_depth_pipeline: gpu
+                .editor_outline_occlusion_depth_pipeline
+                .clone(),
+            editor_outline_mask_pipeline: gpu.editor_outline_mask_pipeline.clone(),
+            editor_outline_pipeline: gpu.editor_outline_pipeline.clone(),
+            editor_hover_outline_pipeline: gpu.editor_hover_outline_pipeline.clone(),
+            line_bind_group_layout: gpu.line_bind_group_layout.clone(),
+            _zero_line_uniform_buffer: zero_line_uniform_buffer,
             zero_line_bind_group,
-            camera_bind_group_layout,
-            color_space_bind_group_layout,
-            block_texture_bind_group,
-            apply_gamma_correction,
+            camera_bind_group_layout: gpu.camera_bind_group_layout.clone(),
+            color_space_bind_group_layout: gpu.color_space_bind_group_layout.clone(),
+            block_texture_bind_group: gpu.block_texture_bind_group.clone(),
+            apply_gamma_correction: gpu.apply_gamma_correction,
         }
     }
 }
@@ -292,9 +299,9 @@ impl State {
                     };
 
                     for backends in backends_to_try {
-                        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+                        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
                             backends,
-                            ..Default::default()
+                            ..wgpu::InstanceDescriptor::new_without_display_handle()
                         });
 
                         if let Some(state) = Self::new_common(
@@ -308,7 +315,8 @@ impl State {
                         )
                         .await
                         {
-                            return Some(TestGpuFixture::from(state.render.gpu));
+                            let fixture = TestGpuFixture::from(&state.render.gpu);
+                            return Some(fixture);
                         }
                     }
 
@@ -370,21 +378,7 @@ impl State {
                 }],
             });
 
-        let (depth_texture, depth_view) =
-            GpuContext::create_depth_texture(&fixture.device, &fixture.config);
-        let (editor_outline_occlusion_depth_texture, editor_outline_occlusion_depth_view) =
-            GpuContext::create_depth_texture(&fixture.device, &fixture.config);
-
-        let floor_vertices = build_floor_vertices();
-        let grid_vertices = build_grid_vertices();
-
-        let floor_mesh =
-            MeshSlot::from_vertices(&fixture.device, "Floor Vertex Buffer", &floor_vertices);
-
-        let grid_mesh =
-            MeshSlot::from_vertices(&fixture.device, "Grid Vertex Buffer", &grid_vertices);
-
-        let trail_mesh = MeshSlot::streaming(&fixture.device, "Trail Vertex Buffer", 36 * 20000);
+        let trail_mesh = MeshSlot::streaming(&fixture.device, "Trail Vertex Buffer", 36 * 1024);
 
         let menu = MenuState {
             selected_level: 0,
@@ -411,10 +405,6 @@ impl State {
             .runtime
             .set_preferred_backend_name(&app_settings.audio_backend);
 
-        let block_geometry = build_block_geometry(&game.objects);
-        let block_mesh =
-            MeshSlot::from_geometry(&fixture.device, "Block Vertex Buffer", &block_geometry);
-
         let now = PlatformInstant::now();
 
         Self {
@@ -427,10 +417,14 @@ impl State {
                     queue: fixture.queue.clone(),
                     config: fixture.config.clone(),
                     size: fixture.size,
-                    depth_texture,
-                    depth_view,
-                    editor_outline_occlusion_depth_texture,
-                    editor_outline_occlusion_depth_view,
+                    depth_texture: fixture.depth_texture.clone(),
+                    depth_view: fixture.depth_view.clone(),
+                    editor_outline_occlusion_depth_texture: fixture
+                        .editor_outline_occlusion_depth_texture
+                        .clone(),
+                    editor_outline_occlusion_depth_view: fixture
+                        .editor_outline_occlusion_depth_view
+                        .clone(),
                     render_pipeline: fixture.render_pipeline.clone(),
                     block_icon_pipeline: fixture.block_icon_pipeline.clone(),
                     editor_ghost_trail_pipeline: fixture.editor_ghost_trail_pipeline.clone(),
@@ -454,10 +448,10 @@ impl State {
                     apply_gamma_correction: fixture.apply_gamma_correction,
                 },
                 meshes: SceneMeshes {
-                    floor: floor_mesh,
-                    grid: grid_mesh,
+                    floor: MeshSlot::Empty,
+                    grid: MeshSlot::Empty,
                     trail: trail_mesh,
-                    blocks: block_mesh,
+                    blocks: MeshSlot::Empty,
                     blocks_static: MeshSlot::Empty,
                     blocks_selected: MeshSlot::Empty,
                     editor_cursor: MeshSlot::Empty,
@@ -828,7 +822,7 @@ impl State {
             address_mode_w: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
 
@@ -888,12 +882,14 @@ impl State {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Pipeline Layout"),
             bind_group_layouts: &[
-                &camera_bind_group_layout,
-                &line_bind_group_layout,
-                &color_space_bind_group_layout,
-                &block_texture_bind_group_layout,
+                Some(&camera_bind_group_layout),
+                Some(&line_bind_group_layout),
+                Some(&color_space_bind_group_layout),
+                Some(&block_texture_bind_group_layout),
             ],
-            push_constant_ranges: &[],
+            // wgpu 29 replaces push constants in this descriptor with immediate shader bytes.
+            // We don't use immediates in our shaders, so this remains disabled.
+            immediate_size: 0,
         });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -918,13 +914,13 @@ impl State {
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -954,13 +950,13 @@ impl State {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -987,7 +983,7 @@ impl State {
                 primitive: editor_ghost_trail_primitive_state(),
                 depth_stencil: Some(editor_ghost_trail_depth_stencil_state()),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
 
@@ -1014,13 +1010,13 @@ impl State {
                 primitive: wgpu::PrimitiveState::default(),
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::Always,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::Always),
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
 
@@ -1047,7 +1043,7 @@ impl State {
                 primitive: wgpu::PrimitiveState::default(),
                 depth_stencil: Some(editor_outline_occlusion_depth_mask_depth_stencil_state()),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
 
@@ -1074,7 +1070,7 @@ impl State {
                 primitive: wgpu::PrimitiveState::default(),
                 depth_stencil: Some(editor_outline_mask_depth_stencil_state()),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
 
@@ -1101,7 +1097,7 @@ impl State {
                 primitive: wgpu::PrimitiveState::default(),
                 depth_stencil: Some(editor_hover_outline_depth_stencil_state()),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
 
@@ -1128,7 +1124,7 @@ impl State {
                 primitive: wgpu::PrimitiveState::default(),
                 depth_stencil: Some(editor_outline_depth_stencil_state()),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
 
@@ -1377,11 +1373,11 @@ mod tests {
         let depth = editor_ghost_trail_depth_stencil_state();
         assert_eq!(
             depth.depth_compare,
-            wgpu::CompareFunction::Less,
+            Some(wgpu::CompareFunction::Less),
             "ghost trail depth compare should remain Less"
         );
         assert!(
-            !depth.depth_write_enabled,
+            !depth.depth_write_enabled.unwrap_or_default(),
             "ghost trail should not write to depth to preserve translucent blending order"
         );
     }
@@ -1389,21 +1385,30 @@ mod tests {
     #[test]
     fn editor_outline_pipeline_state_respects_selected_outline_depth() {
         let occlusion_depth = editor_outline_occlusion_depth_mask_depth_stencil_state();
-        assert_eq!(occlusion_depth.depth_compare, wgpu::CompareFunction::Less);
-        assert!(occlusion_depth.depth_write_enabled);
+        assert_eq!(
+            occlusion_depth.depth_compare,
+            Some(wgpu::CompareFunction::Less)
+        );
+        assert!(occlusion_depth.depth_write_enabled.unwrap_or_default());
 
         let mask = editor_outline_mask_depth_stencil_state();
-        assert_eq!(mask.depth_compare, wgpu::CompareFunction::Always);
-        assert!(!mask.depth_write_enabled);
+        assert_eq!(mask.depth_compare, Some(wgpu::CompareFunction::Always));
+        assert!(!mask.depth_write_enabled.unwrap_or_default());
 
         let outline = editor_outline_depth_stencil_state();
-        assert_eq!(outline.depth_compare, wgpu::CompareFunction::LessEqual);
-        assert!(!outline.depth_write_enabled);
+        assert_eq!(
+            outline.depth_compare,
+            Some(wgpu::CompareFunction::LessEqual)
+        );
+        assert!(!outline.depth_write_enabled.unwrap_or_default());
         assert_eq!(outline.bias.constant, -1);
 
         let hover_outline = editor_hover_outline_depth_stencil_state();
-        assert_eq!(hover_outline.depth_compare, wgpu::CompareFunction::Always);
-        assert!(!hover_outline.depth_write_enabled);
+        assert_eq!(
+            hover_outline.depth_compare,
+            Some(wgpu::CompareFunction::Always)
+        );
+        assert!(!hover_outline.depth_write_enabled.unwrap_or_default());
         assert_eq!(
             hover_outline.stencil.front.compare,
             wgpu::CompareFunction::NotEqual

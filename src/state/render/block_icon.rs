@@ -271,6 +271,7 @@ impl State {
                 }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(&self.render.gpu.block_icon_pipeline);
             pass.set_bind_group(0, &camera_bind_group, &[]);

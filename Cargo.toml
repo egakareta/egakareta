@@ -15,7 +15,7 @@ name = "egakareta_lib"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-wgpu = { version = "27", features = ["webgpu", "webgl"] }
+wgpu = { version = "29.0.3", features = ["webgpu", "webgl"] }
 pollster = "0.4"
 log = "0.4"
 bytemuck = { version = "1.25", features = ["derive"] }
@@ -27,11 +27,11 @@ serde_cbor = "0.11"
 zstd = "0.13"
 include_dir = "0.7"
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
-egui = "0.33"
-egui-wgpu = "0.33"
-egui-phosphor = "0.11.0"
-puffin = "0.20"
-puffin_egui = "0.30"
+egui = "0.34.2"
+egui-wgpu = "0.34.2"
+egui-phosphor = "0.12.0"
+puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "7e08a533f9debfb7d051547263d2ab84c666314f" }
+puffin_egui = { git = "https://github.com/EmbarkStudios/puffin", rev = "7e08a533f9debfb7d051547263d2ab84c666314f" }
 rfd = "0.17"
 image = { version = "0.25", default-features = false, features = ["png"] }
 async-trait = "0.1"
@@ -54,7 +54,7 @@ symphonia = { version = "0.5", default-features = false, features = [
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 directories = "6.0"
-egui-winit = "0.33"
+egui-winit = "0.34.2"
 env_logger = "0.11"
 reqwest = { version = "0.12", default-features = false, features = [
     "blocking",
@@ -65,13 +65,15 @@ reqwest = { version = "0.12", default-features = false, features = [
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1"
 console_log = "1.0.0"
-egui-winit = { version = "0.33", default-features = false } # default features include arboard, which doesnt have wasm support yet https://github.com/1Password/arboard/pull/160
+egui-winit = { version = "0.34.2", default-features = false } # default features include arboard, which doesnt have wasm support yet https://github.com/1Password/arboard/pull/160
 gloo-net = "0.6"
 gloo-console = "0.4"
 gloo-file = "0.4"
 gloo-utils = "0.3"
 js-sys = "0.3"
-puffin = { version = "0.20", features = ["web"] }
+puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "7e08a533f9debfb7d051547263d2ab84c666314f", features = [
+    "web",
+] }
 rexie = "0.6"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
