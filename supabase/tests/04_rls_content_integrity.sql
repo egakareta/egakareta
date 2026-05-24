@@ -1,8 +1,9 @@
 begin;
+set local search_path = public, extensions;
 
 select plan(11);
 
-create or replace function public._test_capture_error(sql_to_run text)
+create or replace function pg_temp._test_capture_error(sql_to_run text)
 returns text
 language plpgsql
 as $$
@@ -56,7 +57,7 @@ select set_config('request.jwt.claim.role', 'authenticated', true);
 select set_config('request.jwt.claim.sub', 'eeeeeeee-5555-5555-5555-555555555555', true);
 
 select ok(
-  public._test_capture_error($$
+  pg_temp._test_capture_error($$
     insert into public.comments (resource_type, resource_id, profile_id, body, votes)
     values ('beatmap', 'security-map', 'eeeeeeee-5555-5555-5555-555555555555', 'forged score', 999)
   $$) like '42501:%',
@@ -84,7 +85,7 @@ select is(
 );
 
 select ok(
-  public._test_capture_error($$
+  pg_temp._test_capture_error($$
     update public.comments
     set votes = 999
     where profile_id = 'eeeeeeee-5555-5555-5555-555555555555'
@@ -117,7 +118,7 @@ select is(
 );
 
 select ok(
-  public._test_capture_error($$
+  pg_temp._test_capture_error($$
     update public.comment_votes
     set comment_id = (
       select id from public.comments where body = 'second comment'
@@ -151,7 +152,7 @@ select is(
 );
 
 select ok(
-  public._test_capture_error($$
+  pg_temp._test_capture_error($$
     insert into public.beatmaps (
       name,
       title,
@@ -186,7 +187,7 @@ select is(
 );
 
 select ok(
-  public._test_capture_error($$
+  pg_temp._test_capture_error($$
     update public.beatmaps
     set downloads = 1000000
     where mapper_id = 'eeeeeeee-5555-5555-5555-555555555555'

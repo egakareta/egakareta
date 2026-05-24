@@ -1,8 +1,9 @@
 begin;
+set local search_path = public, extensions;
 
 select plan(16);
 
-create or replace function public._test_capture_error(sql_to_run text)
+create or replace function pg_temp._test_capture_error(sql_to_run text)
 returns text
 language plpgsql
 as $$
@@ -115,7 +116,7 @@ select is(
 );
 
 select ok(
-  public._test_capture_error($$
+  pg_temp._test_capture_error($$
     update public.profiles
     set is_admin = true
     where id = 'aaaaaaaa-1111-1111-1111-111111111111'
@@ -124,7 +125,7 @@ select ok(
 );
 
 select ok(
-  public._test_capture_error($$
+  pg_temp._test_capture_error($$
     update public.profiles
     set muted_until = timezone('utc', now()) - interval '1 second'
     where id = 'aaaaaaaa-1111-1111-1111-111111111111'
@@ -133,7 +134,7 @@ select ok(
 );
 
 select ok(
-  public._test_capture_error($$
+  pg_temp._test_capture_error($$
     update public.profiles
     set mapper_tier = 'Ranked Mapper'
     where id = 'aaaaaaaa-1111-1111-1111-111111111111'
@@ -164,7 +165,7 @@ select is(
 );
 
 select ok(
-  public._test_capture_error($$
+  pg_temp._test_capture_error($$
     select totp_secret
     from public.user_2fa_config
     where user_id = 'aaaaaaaa-1111-1111-1111-111111111111'
@@ -173,7 +174,7 @@ select ok(
 );
 
 select ok(
-  public._test_capture_error($$
+  pg_temp._test_capture_error($$
     update public.user_2fa_config
     set totp_enabled = false
     where user_id = 'aaaaaaaa-1111-1111-1111-111111111111'
@@ -182,7 +183,7 @@ select ok(
 );
 
 select ok(
-  public._test_capture_error($$
+  pg_temp._test_capture_error($$
     insert into public.user_2fa_config (user_id, totp_enabled)
     values ('bbbbbbbb-2222-2222-2222-222222222222', true)
   $$) like '42501:%',

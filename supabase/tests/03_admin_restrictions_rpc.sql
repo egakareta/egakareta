@@ -1,8 +1,9 @@
 begin;
+set local search_path = public, extensions;
 
 select plan(11);
 
-create or replace function public._test_capture_error(sql_to_run text)
+create or replace function pg_temp._test_capture_error(sql_to_run text)
 returns text
 language plpgsql
 as $$
@@ -86,7 +87,7 @@ select set_config(
 );
 
 select is(
-  public._test_capture_error($$
+  pg_temp._test_capture_error($$
     select public.apply_profile_restriction(
       'dddddddd-4444-4444-4444-444444444444',
       'mute',
@@ -168,7 +169,7 @@ select ok(
 );
 
 select is(
-  public._test_capture_error($$
+  pg_temp._test_capture_error($$
     select public.apply_profile_restriction(
       'dddddddd-4444-4444-4444-444444444444',
       'invalid-restriction',
@@ -180,7 +181,7 @@ select is(
 );
 
 select is(
-  public._test_capture_error($$
+  pg_temp._test_capture_error($$
     select public.apply_profile_restriction(
       'eeeeeeee-5555-5555-5555-555555555555',
       'mute',

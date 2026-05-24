@@ -1,4 +1,5 @@
 begin;
+set local search_path = public, extensions;
 select plan(33);
 select ok(
         exists (
@@ -161,10 +162,13 @@ select ok(
 select ok(
         exists (
             select 1
-            from information_schema.columns
-            where table_schema = 'public'
-                and table_name = 'user_2fa_config'
-                and column_name = 'current_challenge'
+            from pg_attribute a
+                join pg_class c on c.oid = a.attrelid
+                join pg_namespace n on n.oid = c.relnamespace
+            where n.nspname = 'public'
+                and c.relname = 'user_2fa_config'
+                and a.attname = 'current_challenge'
+                and not a.attisdropped
         ),
         'user_2fa_config.current_challenge exists'
     );
