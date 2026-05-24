@@ -30,6 +30,7 @@ use crate::platform::input_mapping::{
 };
 use crate::platform::input_routing::{should_route_keyboard_input, should_route_pointer_input};
 use crate::platform::runtime::Runtime;
+use crate::types::GameCursor;
 use crate::State;
 
 struct App {
@@ -127,6 +128,10 @@ impl App {
         ) {
             runtime.state.process_input_event(event);
         }
+    }
+
+    fn apply_system_cursor(window: &Window, cursor: GameCursor) {
+        window.set_cursor_visible(!cursor.hides_system_cursor());
     }
 
     fn collect_touch_input_events(
@@ -491,6 +496,12 @@ impl ApplicationHandler for App {
                     let raw_input = egui_state.take_egui_input(window.as_ref());
                     let full_output = runtime.run_frame(raw_input);
                     egui_state.handle_platform_output(window.as_ref(), full_output.platform_output);
+                    Self::apply_system_cursor(
+                        window.as_ref(),
+                        runtime
+                            .state
+                            .game_cursor(runtime.pipeline.ctx().is_pointer_over_egui()),
+                    );
                 }
 
                 #[cfg(target_arch = "wasm32")]
@@ -503,6 +514,12 @@ impl ApplicationHandler for App {
                     let raw_input = egui_state.take_egui_input(window);
                     let full_output = runtime.run_frame(raw_input);
                     egui_state.handle_platform_output(window, full_output.platform_output);
+                    Self::apply_system_cursor(
+                        window,
+                        runtime
+                            .state
+                            .game_cursor(runtime.pipeline.ctx().is_pointer_over_egui()),
+                    );
                     window.request_redraw();
                 }
             }

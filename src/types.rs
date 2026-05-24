@@ -17,6 +17,18 @@ pub(crate) enum EditorInteractionChange {
     Cursor,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GameCursor {
+    Default,
+    Hidden,
+}
+
+impl GameCursor {
+    pub(crate) fn hides_system_cursor(self) -> bool {
+        matches!(self, Self::Hidden)
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct EditorPickResult {
     pub(crate) cursor: [f32; 3],
