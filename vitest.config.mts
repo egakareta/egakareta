@@ -15,6 +15,10 @@ export default defineConfig({
         }),
     ],
     test: {
+        coverage: {
+            provider: "istanbul",
+            reporter: ["text", "html", "clover", "json", "lcov"],
+        },
         include: ["tests/functions/**/*.test.ts"],
     },
 });
