@@ -139,6 +139,14 @@ fn editor_outline_depth_stencil_state() -> wgpu::DepthStencilState {
     }
 }
 
+fn editor_hover_outline_depth_stencil_state() -> wgpu::DepthStencilState {
+    wgpu::DepthStencilState {
+        depth_compare: wgpu::CompareFunction::Always,
+        bias: wgpu::DepthBiasState::default(),
+        ..editor_outline_depth_stencil_state()
+    }
+}
+
 fn default_line_uniform() -> LineUniform {
     LineUniform {
         offset: [0.0, 0.0],
@@ -175,6 +183,7 @@ struct TestGpuFixture {
     editor_outline_occlusion_depth_pipeline: wgpu::RenderPipeline,
     editor_outline_mask_pipeline: wgpu::RenderPipeline,
     editor_outline_pipeline: wgpu::RenderPipeline,
+    editor_hover_outline_pipeline: wgpu::RenderPipeline,
     line_bind_group_layout: wgpu::BindGroupLayout,
     zero_line_bind_group: wgpu::BindGroup,
     camera_bind_group_layout: wgpu::BindGroupLayout,
@@ -199,6 +208,7 @@ impl From<GpuContext> for TestGpuFixture {
             editor_outline_occlusion_depth_pipeline,
             editor_outline_mask_pipeline,
             editor_outline_pipeline,
+            editor_hover_outline_pipeline,
             line_bind_group_layout,
             zero_line_bind_group,
             camera_bind_group_layout,
@@ -221,6 +231,7 @@ impl From<GpuContext> for TestGpuFixture {
             editor_outline_occlusion_depth_pipeline,
             editor_outline_mask_pipeline,
             editor_outline_pipeline,
+            editor_hover_outline_pipeline,
             line_bind_group_layout,
             zero_line_bind_group,
             camera_bind_group_layout,
@@ -429,6 +440,7 @@ impl State {
                         .clone(),
                     editor_outline_mask_pipeline: fixture.editor_outline_mask_pipeline.clone(),
                     editor_outline_pipeline: fixture.editor_outline_pipeline.clone(),
+                    editor_hover_outline_pipeline: fixture.editor_hover_outline_pipeline.clone(),
                     line_bind_group_layout: fixture.line_bind_group_layout.clone(),
                     line_uniform_buffer,
                     zero_line_bind_group: fixture.zero_line_bind_group.clone(),
@@ -1066,6 +1078,33 @@ impl State {
                 cache: None,
             });
 
+        let editor_hover_outline_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Editor Hover Outline Pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[Vertex::desc()],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: config.format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: Some(editor_hover_outline_depth_stencil_state()),
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            });
+
         let editor_outline_pipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("Editor Outline Pipeline"),
@@ -1182,6 +1221,7 @@ impl State {
                     editor_outline_occlusion_depth_pipeline,
                     editor_outline_mask_pipeline,
                     editor_outline_pipeline,
+                    editor_hover_outline_pipeline,
                     line_bind_group_layout,
                     line_uniform_buffer,
                     zero_line_bind_group,
@@ -1314,7 +1354,8 @@ mod tests {
 
     use super::{
         editor_ghost_trail_depth_stencil_state, editor_ghost_trail_primitive_state,
-        editor_outline_depth_stencil_state, editor_outline_mask_depth_stencil_state,
+        editor_hover_outline_depth_stencil_state, editor_outline_depth_stencil_state,
+        editor_outline_mask_depth_stencil_state,
         editor_outline_occlusion_depth_mask_depth_stencil_state, State,
     };
     use crate::types::AppPhase;
@@ -1359,6 +1400,14 @@ mod tests {
         assert_eq!(outline.depth_compare, wgpu::CompareFunction::LessEqual);
         assert!(!outline.depth_write_enabled);
         assert_eq!(outline.bias.constant, -1);
+
+        let hover_outline = editor_hover_outline_depth_stencil_state();
+        assert_eq!(hover_outline.depth_compare, wgpu::CompareFunction::Always);
+        assert!(!hover_outline.depth_write_enabled);
+        assert_eq!(
+            hover_outline.stencil.front.compare,
+            wgpu::CompareFunction::NotEqual
+        );
     }
 
     #[test]

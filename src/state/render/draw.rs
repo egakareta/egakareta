@@ -441,48 +441,6 @@ impl State {
                 self.render.meshes.editor_hover_stencil.draw_data(),
                 self.render.meshes.editor_hover_outline.draw_data(),
             ) {
-                {
-                    let mut depth_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("Editor Hover Outline Depth Pass"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view,
-                            resolve_target: None,
-                            depth_slice: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                            view: &self.render.gpu.editor_outline_occlusion_depth_view,
-                            depth_ops: Some(wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(1.0),
-                                store: wgpu::StoreOp::Store,
-                            }),
-                            stencil_ops: Some(wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(0),
-                                store: wgpu::StoreOp::Store,
-                            }),
-                        }),
-                        occlusion_query_set: None,
-                        timestamp_writes: None,
-                    });
-
-                    depth_pass
-                        .set_pipeline(&self.render.gpu.editor_outline_occlusion_depth_pipeline);
-                    depth_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-                    depth_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                    depth_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
-                    depth_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
-
-                    if let Some(selection_mask_data) =
-                        self.render.meshes.editor_selection_stencil.draw_data()
-                    {
-                        draw_mesh(&mut depth_pass, selection_mask_data);
-                    }
-                    draw_mesh(&mut depth_pass, mask_data);
-                }
-
                 let mut hover_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Editor Hover Outline Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -517,7 +475,7 @@ impl State {
                 hover_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
                 draw_mesh(&mut hover_pass, mask_data);
 
-                hover_pass.set_pipeline(&self.render.gpu.editor_outline_pipeline);
+                hover_pass.set_pipeline(&self.render.gpu.editor_hover_outline_pipeline);
                 hover_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
                 hover_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                 hover_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
@@ -981,7 +939,7 @@ mod tests {
     }
 
     #[test]
-    fn selected_blocks_occlude_hover_outline() {
+    fn hover_outline_draws_over_selected_blocks() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
             prepare_outline_occlusion_test_state(&mut state);
@@ -1002,8 +960,8 @@ mod tests {
 
             let pixel = render_center_pixel(&mut state);
             assert!(
-                pixel[0] > 180 && pixel[1] < 80 && pixel[2] < 80,
-                "selected block should occlude hover outline; got rgba={pixel:?}"
+                pixel[0] < 80 && pixel[1] > 180 && pixel[2] > 180,
+                "hover outline should draw over selected block depth; got rgba={pixel:?}"
             );
         });
     }

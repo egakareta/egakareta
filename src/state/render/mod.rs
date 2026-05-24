@@ -425,6 +425,7 @@ pub(crate) struct GpuContext {
     pub(crate) editor_outline_occlusion_depth_pipeline: wgpu::RenderPipeline,
     pub(crate) editor_outline_mask_pipeline: wgpu::RenderPipeline,
     pub(crate) editor_outline_pipeline: wgpu::RenderPipeline,
+    pub(crate) editor_hover_outline_pipeline: wgpu::RenderPipeline,
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) line_bind_group_layout: wgpu::BindGroupLayout,
     pub(crate) line_uniform_buffer: wgpu::Buffer,
