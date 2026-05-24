@@ -27,7 +27,6 @@
         }
     },
     "postCreateCommand": "git config --global --add safe.directory /workspaces/${localWorkspaceFolderBasename} && bun install && bun run dev:setup",
-    "postStartCommand": "bun run dev",
     "remoteUser": "root",
     "forwardPorts": [3000, 54324, 54323, 54321]
 }
