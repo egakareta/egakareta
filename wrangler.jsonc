@@ -21,7 +21,7 @@
                 "TURNSTILE_SITE_KEY": "1x00000000000000000000AA"
             },
             "secrets": {
-                "required": ["TURNSTILE_SECRET_KEY"]
+                "required": ["SECRET_KEY", "TURNSTILE_SECRET_KEY"]
             },
             "r2_buckets": [
                 {
@@ -44,7 +44,7 @@
                 "TURNSTILE_SITE_KEY": "0x4AAAAAACoV5owVmGK94-uO"
             },
             "secrets": {
-                "required": ["TURNSTILE_SECRET_KEY"]
+                "required": ["SECRET_KEY", "TURNSTILE_SECRET_KEY"]
             },
             "r2_buckets": [
                 {

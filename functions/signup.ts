@@ -12,7 +12,7 @@ import {
     validateSignupInput,
     verifyTurnstileToken,
 } from "./_auth";
-import { createSupabaseClient } from "./_supabase";
+import { createSupabaseAdminClient, createSupabaseClient } from "./_supabase";
 import { badRequest, serverError } from "./_utils";
 
 type SignupInput = {
@@ -299,6 +299,7 @@ export const onRequestPost: PagesFunction<Cloudflare.Env> = async ({
     if (captchaError) return captchaError;
 
     const supabase = createSupabaseClient(env, request);
+    const admin = createSupabaseAdminClient(env);
     const usernameError = await ensureUsernameAvailable(
         supabase,
         input.username,
@@ -308,7 +309,7 @@ export const onRequestPost: PagesFunction<Cloudflare.Env> = async ({
     if (usernameError) return usernameError;
 
     const emailError = await ensureEmailAvailable(
-        supabase,
+        admin,
         input.email,
         wantsJson,
         env,

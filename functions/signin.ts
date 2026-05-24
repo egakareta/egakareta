@@ -502,8 +502,9 @@ export const onRequestPost: PagesFunction<Cloudflare.Env> = async ({
     if (handoffError) return handoffError;
 
     const supabase = createSupabaseClient(env, request);
+    const admin = createSupabaseAdminClient(env);
     const email = await resolveSignInEmail(
-        supabase,
+        admin,
         form.identifier,
         env,
         form.handoffId,

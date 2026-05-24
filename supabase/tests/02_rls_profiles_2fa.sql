@@ -1,6 +1,6 @@
 begin;
 
-select plan(12);
+select plan(16);
 
 create or replace function public._test_capture_error(sql_to_run text)
 returns text
@@ -114,14 +114,31 @@ select is(
   'authenticated user can update own profile fields'
 );
 
-select is(
+select ok(
   public._test_capture_error($$
     update public.profiles
     set is_admin = true
     where id = 'aaaaaaaa-1111-1111-1111-111111111111'
-  $$),
-  '42501: new row violates row-level security policy for table "profiles"',
+  $$) like '42501:%',
   'authenticated user cannot self-promote to admin'
+);
+
+select ok(
+  public._test_capture_error($$
+    update public.profiles
+    set muted_until = timezone('utc', now()) - interval '1 second'
+    where id = 'aaaaaaaa-1111-1111-1111-111111111111'
+  $$) like '42501:%',
+  'authenticated user cannot clear or change own mute restriction'
+);
+
+select ok(
+  public._test_capture_error($$
+    update public.profiles
+    set mapper_tier = 'Ranked Mapper'
+    where id = 'aaaaaaaa-1111-1111-1111-111111111111'
+  $$) like '42501:%',
+  'authenticated user cannot self-promote mapper tier'
 );
 
 update public.profiles
@@ -135,23 +152,40 @@ select is(
 );
 
 select is(
-  (select count(*)::int from public.user_2fa_config where user_id = 'aaaaaaaa-1111-1111-1111-111111111111'),
+  (select count(user_id)::int from public.user_2fa_config where user_id = 'aaaaaaaa-1111-1111-1111-111111111111'),
   1,
   'authenticated user can view own 2FA config'
 );
 
 select is(
-  (select count(*)::int from public.user_2fa_config where user_id = 'bbbbbbbb-2222-2222-2222-222222222222'),
+  (select count(user_id)::int from public.user_2fa_config where user_id = 'bbbbbbbb-2222-2222-2222-222222222222'),
   0,
   'authenticated user cannot view another user 2FA config'
 );
 
-select is(
+select ok(
+  public._test_capture_error($$
+    select totp_secret
+    from public.user_2fa_config
+    where user_id = 'aaaaaaaa-1111-1111-1111-111111111111'
+  $$) like '42501:%',
+  'authenticated user cannot read own TOTP secret directly'
+);
+
+select ok(
+  public._test_capture_error($$
+    update public.user_2fa_config
+    set totp_enabled = false
+    where user_id = 'aaaaaaaa-1111-1111-1111-111111111111'
+  $$) like '42501:%',
+  'authenticated user cannot directly disable own 2FA'
+);
+
+select ok(
   public._test_capture_error($$
     insert into public.user_2fa_config (user_id, totp_enabled)
     values ('bbbbbbbb-2222-2222-2222-222222222222', true)
-  $$),
-  '42501: new row violates row-level security policy for table "user_2fa_config"',
+  $$) like '42501:%',
   'authenticated user cannot insert another user 2FA row'
 );
 
@@ -161,8 +195,8 @@ select set_config('request.jwt.claim.role', 'anon', true);
 select set_config('request.jwt.claim.sub', '', true);
 
 select is(
-  (select count(*)::int from public.user_2fa_config),
-  0,
+  has_table_privilege('anon', 'public.user_2fa_config', 'SELECT'),
+  false,
   'anon cannot read user_2fa_config rows'
 );
 

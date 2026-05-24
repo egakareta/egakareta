@@ -268,6 +268,11 @@ update using (
                 )
         )
     );
+revoke insert, update on public.profiles
+from anon,
+    authenticated;
+grant insert (id, username, avatar_url, website, bio, country, favorite_mods) on public.profiles to authenticated;
+grant update (username, avatar_url, website, bio, country, favorite_mods, updated_at) on public.profiles to authenticated;
 -- profile_stats
 create policy "Profile stats are viewable by everyone." on public.profile_stats for
 select using (true);
@@ -289,6 +294,47 @@ update using (
         ) = mapper_id
         and status = 'UNRANKED'
     );
+revoke insert, update on public.beatmaps
+from anon,
+    authenticated;
+grant insert (
+    name,
+    title,
+    artist,
+    mapper_id,
+    description,
+    creator,
+    difficulty,
+    audio_url,
+    data_url,
+    music_source,
+    music_start_seconds,
+    music_unicode_author,
+    music_unicode_title,
+    spawn_position,
+    timeline_duration_seconds,
+    length_seconds,
+    bpm
+) on public.beatmaps to authenticated;
+grant update (
+    name,
+    title,
+    artist,
+    description,
+    creator,
+    difficulty,
+    audio_url,
+    data_url,
+    music_source,
+    music_start_seconds,
+    music_unicode_author,
+    music_unicode_title,
+    spawn_position,
+    timeline_duration_seconds,
+    length_seconds,
+    bpm,
+    updated_at
+) on public.beatmaps to authenticated;
 -- beatmap_tags
 create policy "Beatmap tags are viewable by everyone." on public.beatmap_tags for
 select using (true);
@@ -379,6 +425,11 @@ update using (
                 )
         )
     );
+    revoke insert, update on public.comments
+    from anon,
+        authenticated;
+    grant insert (resource_type, resource_id, parent_id, profile_id, body) on public.comments to authenticated;
+    grant update (body, updated_at) on public.comments to authenticated;
 create policy "Users can delete their own comments, admins delete any." on public.comments for delete using (
     (
         select auth.uid()
@@ -407,6 +458,10 @@ update using (
             select auth.uid()
         ) = user_id
     );
+revoke update on public.comment_votes
+from anon,
+    authenticated;
+grant update (vote) on public.comment_votes to authenticated;
 create policy "Users can delete their own vote." on public.comment_votes for delete using (
     (
         select auth.uid()
@@ -434,6 +489,10 @@ insert with check (
             select auth.uid()
         ) = user_id
     );
+revoke select, insert, update on public.user_2fa_config
+from anon,
+    authenticated;
+grant select (user_id, totp_enabled, webauthn_enabled, created_at, updated_at) on public.user_2fa_config to authenticated;
 -- user_webauthn_credentials
 create policy "Users can manage their own WebAuthn credentials." on public.user_webauthn_credentials for all using (
     (

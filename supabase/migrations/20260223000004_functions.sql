@@ -13,6 +13,11 @@ where p.username = username_to_resolve;
 return resolved_email;
 end;
 $$;
+revoke execute on function public.resolve_username_to_email(text)
+from public,
+    anon,
+    authenticated;
+grant execute on function public.resolve_username_to_email(text) to service_role;
 -- Function to resolve an email address to a user ID.
 -- Marked as 'security definer' to allow access to the 'auth' schema.
 create or replace function public.resolve_email_to_id(email_to_resolve text) returns uuid language plpgsql security definer
@@ -26,6 +31,11 @@ where lower(au.email) = lower(email_to_resolve);
 return resolved_id;
 end;
 $$;
+revoke execute on function public.resolve_email_to_id(text)
+from public,
+    anon,
+    authenticated;
+grant execute on function public.resolve_email_to_id(text) to service_role;
 -- Check if an email already exists in auth.users.
 -- Used by signup and check-email routes.
 create or replace function public.check_if_email_exists(email_to_check text) returns boolean language plpgsql security definer
@@ -41,6 +51,11 @@ select exists(
 return coalesce(email_exists, false);
 end;
 $$;
+revoke execute on function public.check_if_email_exists(text)
+from public,
+    anon,
+    authenticated;
+grant execute on function public.check_if_email_exists(text) to service_role;
 -- Handle new user signups. When a new user is created in the auth.users table, this function will automatically insert a corresponding profile into the profiles table and initialize their 2FA configuration in the user_2fa_config table.
 create or replace function public.handle_new_user() returns trigger language plpgsql security definer
 set search_path = public as $$ begin
@@ -58,6 +73,10 @@ values (new.id);
 return new;
 end;
 $$;
+revoke execute on function public.handle_new_user()
+from public,
+    anon,
+    authenticated;
 -- Whenever a new user is created in the auth.users table, automatically create a corresponding profile and 2FA config.
 create trigger on_auth_user_created
 after
@@ -70,6 +89,10 @@ set last_seen_at = timezone('utc', now())
 where id = auth.uid();
 end;
 $$;
+revoke execute on function public.update_last_seen()
+from public,
+    anon;
+grant execute on function public.update_last_seen() to authenticated;
 -- Admin function to apply a restriction (mute or ban) to a user profile. Only users with admin privileges can execute this function. It updates the `muted_until` or `banned_until` fields in the profiles table based on the restriction type and recalculates ranks if a ban status changes.
 create or replace function public.apply_profile_restriction(
         target_user_id uuid,
@@ -125,13 +148,26 @@ update public.comments
 set votes = votes - OLD.vote
 where id = OLD.comment_id;
 ELSIF (TG_OP = 'UPDATE') then
-update public.comments
-set votes = votes - OLD.vote + NEW.vote
-where id = NEW.comment_id;
+if OLD.comment_id = NEW.comment_id then
+    update public.comments
+    set votes = votes - OLD.vote + NEW.vote
+    where id = NEW.comment_id;
+else
+    update public.comments
+    set votes = votes - OLD.vote
+    where id = OLD.comment_id;
+    update public.comments
+    set votes = votes + NEW.vote
+    where id = NEW.comment_id;
+end if;
 end if;
 return null;
 end;
 $$ LANGUAGE plpgsql security definer set search_path = public;
+revoke execute on function public.update_comment_votes_count()
+from public,
+    anon,
+    authenticated;
 -- Trigger to keep comment vote tallies in sync across insert, update, and delete operations.
 create trigger update_comment_votes_count_trigger
 after
@@ -182,6 +218,11 @@ from (
 where ps.profile_id = t.profile_id;
 end;
 $$;
+revoke execute on function public.recalculate_ranks()
+from public,
+    anon,
+    authenticated;
+grant execute on function public.recalculate_ranks() to service_role;
 create or replace function public.capture_daily_rank_pp_snapshots() returns integer language plpgsql security definer
 set search_path = public as $$
 declare affected_rows integer := 0;
@@ -211,6 +252,11 @@ get diagnostics affected_rows = row_count;
 return affected_rows;
 end;
 $$;
+revoke execute on function public.capture_daily_rank_pp_snapshots()
+from public,
+    anon,
+    authenticated;
+grant execute on function public.capture_daily_rank_pp_snapshots() to service_role;
 do $$ begin if exists (
     select 1
     from cron.job
@@ -238,7 +284,7 @@ end;
 $$;
 
 revoke execute on function public.increment_beatmap_downloads(bigint)
-from public;
-grant execute on function public.increment_beatmap_downloads(bigint) to anon;
-grant execute on function public.increment_beatmap_downloads(bigint) to authenticated;
+from public,
+    anon,
+    authenticated;
 grant execute on function public.increment_beatmap_downloads(bigint) to service_role;

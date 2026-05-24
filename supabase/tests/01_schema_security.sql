@@ -1,5 +1,5 @@
 begin;
-select plan(20);
+select plan(33);
 select ok(
         exists (
             select 1
@@ -213,6 +213,110 @@ select ok(
             limit 1
         ) = 1,
         'apply_profile_restriction invokes recalculate_ranks exactly once'
+    );
+select ok(
+        not has_function_privilege(
+            'anon',
+            'public.resolve_username_to_email(text)',
+            'EXECUTE'
+        ),
+        'anon cannot directly execute username email resolver'
+    );
+select ok(
+        not has_function_privilege(
+            'authenticated',
+            'public.resolve_username_to_email(text)',
+            'EXECUTE'
+        ),
+        'authenticated cannot directly execute username email resolver'
+    );
+select ok(
+        has_function_privilege(
+            'service_role',
+            'public.resolve_username_to_email(text)',
+            'EXECUTE'
+        ),
+        'service_role can execute username email resolver'
+    );
+select ok(
+        not has_function_privilege(
+            'anon',
+            'public.check_if_email_exists(text)',
+            'EXECUTE'
+        ),
+        'anon cannot directly execute email existence checker'
+    );
+select ok(
+        not has_function_privilege(
+            'authenticated',
+            'public.check_if_email_exists(text)',
+            'EXECUTE'
+        ),
+        'authenticated cannot directly execute email existence checker'
+    );
+select ok(
+        has_function_privilege(
+            'service_role',
+            'public.check_if_email_exists(text)',
+            'EXECUTE'
+        ),
+        'service_role can execute email existence checker'
+    );
+select ok(
+        not has_function_privilege(
+            'authenticated',
+            'public.recalculate_ranks()',
+            'EXECUTE'
+        ),
+        'authenticated cannot directly recalculate ranks'
+    );
+select ok(
+        not has_function_privilege(
+            'authenticated',
+            'public.capture_daily_rank_pp_snapshots()',
+            'EXECUTE'
+        ),
+        'authenticated cannot directly capture rank snapshots'
+    );
+select ok(
+        not has_function_privilege(
+            'anon',
+            'public.increment_beatmap_downloads(bigint)',
+            'EXECUTE'
+        ),
+        'anon cannot directly increment beatmap downloads'
+    );
+select ok(
+        not has_function_privilege(
+            'authenticated',
+            'public.increment_beatmap_downloads(bigint)',
+            'EXECUTE'
+        ),
+        'authenticated cannot directly increment beatmap downloads'
+    );
+select ok(
+        has_function_privilege(
+            'service_role',
+            'public.increment_beatmap_downloads(bigint)',
+            'EXECUTE'
+        ),
+        'service_role can increment beatmap downloads'
+    );
+select ok(
+        has_function_privilege(
+            'authenticated',
+            'public.update_last_seen()',
+            'EXECUTE'
+        ),
+        'authenticated can update own last_seen through RPC'
+    );
+select ok(
+        not has_function_privilege(
+            'anon',
+            'public.update_last_seen()',
+            'EXECUTE'
+        ),
+        'anon cannot update last_seen through RPC'
     );
 select *
 from finish();

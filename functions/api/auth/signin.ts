@@ -15,7 +15,10 @@ import {
     turnstileToken,
     verifyTurnstileToken,
 } from "../../_auth";
-import { createSupabaseClient } from "../../_supabase";
+import {
+    createSupabaseAdminClient,
+    createSupabaseClient,
+} from "../../_supabase";
 import { badRequest, serverError, unauthorized } from "../../_utils";
 
 export const onRequestPost: PagesFunction<Cloudflare.Env> = async ({
@@ -41,10 +44,11 @@ export const onRequestPost: PagesFunction<Cloudflare.Env> = async ({
     }
 
     const supabase = createSupabaseClient(env, request);
+    const admin = createSupabaseAdminClient(env);
     let email: string | null;
 
     try {
-        email = await resolveIdentifierToEmail(supabase, identifier);
+        email = await resolveIdentifierToEmail(admin, identifier);
     } catch (error) {
         const message =
             error instanceof Error ? error.message : "Login lookup failed.";

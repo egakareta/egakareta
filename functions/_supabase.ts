@@ -7,6 +7,10 @@
 */
 import { createClient } from "@supabase/supabase-js";
 
+type SupabaseAdminEnv = Cloudflare.Env & {
+    SECRET_KEY?: string;
+};
+
 /**
  * Creates a Supabase client instance for use in Cloudflare Workers.
  * This function reads the Supabase URL and anon key from environment variables,
@@ -38,15 +42,15 @@ export function createSupabaseClient(env: Cloudflare.Env, request: Request) {
     });
 }
 
-export function createSupabaseAdminClient(env: Cloudflare.Env) {
+export function createSupabaseAdminClient(env: SupabaseAdminEnv) {
     const supabaseUrl = env.API_URL;
-    const serviceRoleKey = env.SERVICE_ROLE_KEY;
+    const secretKey = env.SECRET_KEY;
 
-    if (!supabaseUrl || !serviceRoleKey) {
+    if (!supabaseUrl || !secretKey) {
         throw new Error("Missing Supabase admin environment variables");
     }
 
-    return createClient(supabaseUrl, serviceRoleKey, {
+    return createClient(supabaseUrl, secretKey, {
         auth: {
             autoRefreshToken: false,
             persistSession: false,
