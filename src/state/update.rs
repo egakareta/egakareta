@@ -345,7 +345,10 @@ impl State {
                 0.0
             },
             time_seconds: self.frame_runtime.global_time_seconds,
-            _pad: [0.0; 2],
+            viewport_size: [
+                self.render.gpu.config.width.max(1) as f32,
+                self.render.gpu.config.height.max(1) as f32,
+            ],
         };
         self.render.gpu.queue.write_buffer(
             &self.render.gpu.color_space_uniform_buffer,

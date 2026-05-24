@@ -1962,7 +1962,7 @@ pub(crate) struct CameraUniform {
 pub(crate) struct ColorSpaceUniform {
     pub(crate) apply_gamma_correction: f32,
     pub(crate) time_seconds: f32,
-    pub(crate) _pad: [f32; 2],
+    pub(crate) viewport_size: [f32; 2],
 }
 
 #[cfg(test)]
