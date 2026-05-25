@@ -1,5 +1,10 @@
 [auth]
-site_url = "https://egakareta.com"
+site_url = "https://www.egakareta.com"
+additional_redirect_urls = [
+    "https://www.egakareta.com",
+    "https://egakareta.com",
+    "https://play.egakareta.com",
+]
 
 [auth.email.smtp]
 enabled = true
