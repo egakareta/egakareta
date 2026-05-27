@@ -64,7 +64,7 @@ jobs:
           packages: libasound2-dev libudev-dev pkg-config mesa-vulkan-drivers libvulkan1 vulkan-tools
           version: 1.0
       - run: bun install
-      - run: bun run test:coverage
+      - run: cargo llvm-cov --lcov --output-path lcov.info -- -Zunstable-options --report-time
       - uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

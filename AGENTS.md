@@ -39,9 +39,9 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 
 ### Testing
 
-- **Run All Tests:** `bun run test` → `cargo test -- -Zunstable-options --report-time`
-- **Run Single Test:** `cargo test <test_name> -- -Zunstable-options --report-time`
-- **Run Coverage:** `bun run test:coverage` → `cargo llvm-cov --lcov --output-path lcov.info -- -Zunstable-options --report-time`
+- **Run All Tests:** `bun run test` to run Rust tests. Use generously; the entire suite only takes a few seconds and you want to catch regressions early.
+- **Run Single Test:** `cargo test <test_name>`
+- **Run Coverage:** `bun run test:coverage` prints coverage to the terminal.
 - **Database Tests:** `bun run test:db` → `supabase test db`
 
 ### Type Generation
