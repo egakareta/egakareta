@@ -154,6 +154,7 @@ fn render_profile_tag(profile: &BlockRenderProfile) -> u8 {
         BlockRenderProfile::Liquid => 1,
         BlockRenderProfile::SpeedPortal => 3,
         BlockRenderProfile::FinishRing => 4,
+        BlockRenderProfile::Neon => 5,
     }
 }
 

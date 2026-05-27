@@ -131,6 +131,13 @@ fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
         object_geometry.append_vertices(object_vertices);
     }
 
+    if matches!(block.render.profile, BlockRenderProfile::Neon) {
+        // Neon: use raw specified colors, strip any normal_tint lighting from mesh vertices.
+        for vertex in &mut object_geometry.vertices {
+            vertex.color = color_top;
+        }
+    }
+
     if matches!(block.render.profile, BlockRenderProfile::Liquid) {
         for vertex in &mut object_geometry.vertices {
             vertex.set_render_profile(LIQUID_PROFILE_TAG);

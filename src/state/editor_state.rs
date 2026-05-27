@@ -572,6 +572,9 @@ impl State {
         self.session.app_settings.editor_selected_block_id =
             self.editor.config.selected_block_id.clone();
         self.persist_app_settings();
+        if self.phase == AppPhase::Editor {
+            self.rebuild_editor_cursor_vertices();
+        }
     }
 
     pub(crate) fn set_editor_mode(&mut self, mode: EditorMode) {

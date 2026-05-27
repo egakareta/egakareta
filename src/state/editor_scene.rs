@@ -8,6 +8,7 @@
 use glam::Vec3;
 
 use super::{EditorDirtyFlags, EditorSubsystem, State};
+use crate::block_repository::resolve_block_definition;
 use crate::editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds_with_triggers};
 use crate::game::trigger_transformed_objects_at_time;
 use crate::mesh::{
@@ -109,8 +110,16 @@ impl EditorSubsystem {
         });
     }
 
+    pub(crate) fn selected_block_default_size(&self) -> [f32; 3] {
+        resolve_block_definition(&self.config.selected_block_id).default_size()
+    }
+
     pub(crate) fn add_block_at_cursor(&mut self) {
-        let new_block = create_block_at_cursor(self.ui.cursor, &self.config.selected_block_id);
+        let new_block = create_block_at_cursor(
+            self.ui.cursor,
+            &self.config.selected_block_id,
+            self.selected_block_default_size(),
+        );
         let can_append_mesh = self.can_append_block_mesh_after_placement();
 
         self.record_history_state();
@@ -383,7 +392,10 @@ impl State {
     }
 
     pub(super) fn rebuild_editor_cursor_vertices(&mut self) {
-        let vertices = build_editor_cursor_vertices(self.editor.ui.cursor);
+        let vertices = build_editor_cursor_vertices(
+            self.editor.ui.cursor,
+            self.editor.selected_block_default_size(),
+        );
         self.render.meshes.editor_cursor.replace_with_vertices(
             &self.render.gpu.device,
             "Editor Cursor Vertex Buffer",
@@ -1192,6 +1204,23 @@ mod tests {
             assert!(after_count > before_count);
             assert_eq!(state.editor.block_static_vertex_cache_complete_len, Some(2));
             assert!(!state.editor.runtime.dirty.any());
+        });
+    }
+
+    #[test]
+    fn placing_selected_block_uses_block_default_size() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.config.selected_block_id = "core/speedportal".to_string();
+            state.editor.ui.cursor = [2.0, 0.0, 4.0];
+
+            state.editor.add_block_at_cursor();
+
+            assert_eq!(state.editor.objects.len(), 1);
+            assert_eq!(state.editor.objects[0].position, [2.0, 0.0, 4.0]);
+            assert_eq!(state.editor.objects[0].size, [2.0, 0.25, 1.0]);
+            assert_eq!(state.editor.objects[0].block_id, "core/speedportal");
         });
     }
 

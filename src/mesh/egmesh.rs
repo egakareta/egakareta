@@ -128,13 +128,30 @@ pub(crate) fn append_egmesh_geometry(
         obj.position[1] + obj.size[1] * 0.5,
         obj.position[2] + obj.size[2] * 0.5,
     ];
+
+    // Recover the original OBJ aspect ratio from the stored bounds.
+    let aspect = [
+        (mesh.max[0] - mesh.min[0]).max(f32::EPSILON),
+        (mesh.max[1] - mesh.min[1]).max(f32::EPSILON),
+        (mesh.max[2] - mesh.min[2]).max(f32::EPSILON),
+    ];
+    // Uniform scale to contain the mesh within the block bounds (preserving aspect ratio).
+    let scale = (obj.size[0] / aspect[0])
+        .min(obj.size[1] / aspect[1])
+        .min(obj.size[2] / aspect[2]);
+    let offset = [
+        (obj.size[0] - aspect[0] * scale) / 2.0,
+        (obj.size[1] - aspect[1] * scale) / 2.0,
+        (obj.size[2] - aspect[2] * scale) / 2.0,
+    ];
+
     let mut vertices = Vec::with_capacity(mesh.vertices.len());
     for vertex in &mesh.vertices {
         vertices.push(Vertex::textured(
             [
-                obj.position[0] + vertex.position[0] * obj.size[0],
-                obj.position[1] + vertex.position[1] * obj.size[1],
-                obj.position[2] + vertex.position[2] * obj.size[2],
+                obj.position[0] + vertex.position[0] * aspect[0] * scale + offset[0],
+                obj.position[1] + vertex.position[1] * aspect[1] * scale + offset[1],
+                obj.position[2] + vertex.position[2] * aspect[2] * scale + offset[2],
             ],
             [
                 color[0] * vertex.normal_tint,

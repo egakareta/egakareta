@@ -82,6 +82,20 @@ fn default_icon_dimetric_projection() -> bool {
     true
 }
 
+fn default_block_size() -> [f32; 3] {
+    [1.0, 1.0, 1.0]
+}
+
+fn sanitize_block_size(size: [f32; 3]) -> [f32; 3] {
+    size.map(|component| {
+        if component.is_finite() {
+            component.max(0.01)
+        } else {
+            1.0
+        }
+    })
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct BlockDefinition {
     pub(crate) id: String,
@@ -110,7 +124,12 @@ impl BlockDefinition {
         if self.display_name.is_empty() {
             self.display_name = self.id.clone();
         }
+        self.render.default_size = sanitize_block_size(self.render.default_size);
         Some(self)
+    }
+
+    pub(crate) fn default_size(&self) -> [f32; 3] {
+        self.render.default_size
     }
 }
 
@@ -242,6 +261,7 @@ pub(crate) enum BlockRenderProfile {
     Liquid,
     SpeedPortal,
     FinishRing,
+    Neon,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -250,6 +270,8 @@ pub(crate) struct BlockRender {
     pub(crate) profile: BlockRenderProfile,
     #[serde(default = "default_icon_dimetric_projection")]
     pub(crate) icon_dimetric_projection: bool,
+    #[serde(default = "default_block_size")]
+    pub(crate) default_size: [f32; 3],
     #[serde(default = "default_color_top")]
     pub(crate) color_top: [f32; 4],
     #[serde(default = "default_color_side")]
@@ -269,6 +291,7 @@ impl Default for BlockRender {
         Self {
             profile: default_render_profile(),
             icon_dimetric_projection: default_icon_dimetric_projection(),
+            default_size: default_block_size(),
             color_top: default_color_top(),
             color_side: default_color_side(),
             color_bottom: default_color_bottom(),
@@ -680,5 +703,26 @@ mod tests {
         ));
         assert!(!torch.behavior.support_surface);
         assert!(matches!(torch.render.profile, BlockRenderProfile::Liquid));
+    }
+
+    #[test]
+    fn block_default_size_is_loaded_and_sanitized() {
+        let speed_portal = resolve_block_definition("core/speedportal");
+        assert_eq!(speed_portal.default_size(), [2.0, 0.25, 1.0]);
+
+        let normalized = BlockDefinition {
+            id: "debug/flat".to_string(),
+            display_name: "Flat".to_string(),
+            assets: BlockAssets::default(),
+            render: BlockRender {
+                default_size: [f32::NAN, -2.0, 3.0],
+                ..BlockRender::default()
+            },
+            behavior: BlockBehavior::default(),
+            placeable: true,
+        }
+        .normalize()
+        .expect("normalize");
+        assert_eq!(normalized.default_size(), [1.0, 0.01, 3.0]);
     }
 }

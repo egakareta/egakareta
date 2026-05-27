@@ -366,7 +366,10 @@ fn convert_obj_to_egmesh(mesh: &BuildObjMesh) -> Result<BuildEgMesh, String> {
                         let nx = normal[0] / length;
                         let ny = normal[1] / length;
                         let nz = normal[2] / length;
-                        (nx * 0.25 + ny * 0.35 + nz * 0.4).abs().clamp(0.35, 1.0)
+                        // Light direction (0.25, 0.35, 0.4), normalized.
+                        let l_len = 0.58738_f32;
+                        let dot = (nx * 0.25 + ny * 0.35 + nz * 0.4) / l_len;
+                        dot.abs().clamp(0.35, 1.0)
                     }
                 })
                 .unwrap_or(1.0);

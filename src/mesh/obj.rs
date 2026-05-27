@@ -249,6 +249,16 @@ pub(crate) fn append_obj_mesh(
         (mesh.max[2] - mesh.min[2]).max(f32::EPSILON),
     ];
 
+    // Uniform scale to contain the mesh within the block bounds (preserving aspect ratio).
+    let scale = (obj.size[0] / span[0])
+        .min(obj.size[1] / span[1])
+        .min(obj.size[2] / span[2]);
+    let offset = [
+        (obj.size[0] - span[0] * scale) / 2.0,
+        (obj.size[1] - span[1] * scale) / 2.0,
+        (obj.size[2] - span[2] * scale) / 2.0,
+    ];
+
     for face in &mesh.faces {
         for corner in face {
             let Some(raw) = mesh.positions.get(corner.position_index) else {
@@ -280,16 +290,19 @@ pub(crate) fn append_obj_mesh(
                         let nx = normal[0] / length;
                         let ny = normal[1] / length;
                         let nz = normal[2] / length;
-                        (nx * 0.25 + ny * 0.35 + nz * 0.4).abs().clamp(0.35, 1.0)
+                        // Light direction (0.25, 0.35, 0.4), normalized.
+                        let l_len = 0.58738_f32;
+                        let dot = (nx * 0.25 + ny * 0.35 + nz * 0.4) / l_len;
+                        dot.abs().clamp(0.35, 1.0)
                     }
                 })
                 .unwrap_or(1.0);
 
             vertices.push(Vertex::textured(
                 [
-                    obj.position[0] + normalized[0] * obj.size[0],
-                    obj.position[1] + normalized[1] * obj.size[1],
-                    obj.position[2] + normalized[2] * obj.size[2],
+                    obj.position[0] + (raw[0] - mesh.min[0]) * scale + offset[0],
+                    obj.position[1] + (raw[1] - mesh.min[1]) * scale + offset[1],
+                    obj.position[2] + (raw[2] - mesh.min[2]) * scale + offset[2],
                 ],
                 [
                     color[0] * normal_tint,
