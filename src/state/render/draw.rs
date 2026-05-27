@@ -74,7 +74,7 @@ fn should_draw_editor_overlays(phase: AppPhase, skip_world: bool) -> bool {
 }
 
 fn should_draw_editor_cursor(mode: EditorMode) -> bool {
-    mode == EditorMode::Place
+    mode == EditorMode::Place || mode == EditorMode::Tapping
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -899,6 +899,7 @@ mod tests {
         assert!(!should_draw_editor_overlays(AppPhase::Menu, false));
 
         assert!(should_draw_editor_cursor(EditorMode::Place));
+        assert!(should_draw_editor_cursor(EditorMode::Tapping));
         assert!(!should_draw_editor_cursor(EditorMode::Select));
         assert!(!should_draw_editor_cursor(EditorMode::Trigger));
         assert!(!should_draw_editor_cursor(EditorMode::Timing));

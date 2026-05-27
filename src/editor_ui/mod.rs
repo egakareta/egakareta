@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use crate::commands::AppCommand;
 use crate::editor_ui::components::{show_timeline_bar, show_waveform_panel, timeline_metrics};
 use crate::editor_ui::modes::compose::show_compose_mode_bottom_panel;
+use crate::editor_ui::modes::tapping::show_tapping_mode_bottom_panel;
 use crate::editor_ui::modes::timing::show_timing_mode_bottom_panel;
 use crate::editor_ui::modes::trigger::show_trigger_mode_bottom_panel;
 use crate::types::{essential_keybind_actions, format_key_chord, EditorMode, SettingsSection};
@@ -186,7 +187,9 @@ pub fn show_editor_ui(
     let last_mode = view.last_mode;
     let is_timing = mode == EditorMode::Timing
         || (mode == EditorMode::Null && last_mode == Some(EditorMode::Timing));
-    let is_compose = mode.is_compose_mode() && !is_timing;
+    let is_tapping = mode == EditorMode::Tapping
+        || (mode == EditorMode::Null && last_mode == Some(EditorMode::Tapping));
+    let is_compose = mode.is_compose_mode() && !is_timing && !is_tapping;
     let viewport_width = ctx.content_rect().width();
     let is_compact_ui = is_compact_editor_ui(viewport_width);
 
@@ -467,10 +470,15 @@ pub fn show_editor_ui(
 
     let top_bar_response = egui::Panel::top("editor_top_bar").show(ctx, |ui| {
         ui.horizontal_wrapped(|ui| {
-            // Top-level tabs: Compose / Timing
+            // Top-level tabs: Compose / Tapping / Timing
             if ui.selectable_label(is_compose, "Compose").clicked() && !is_compose {
                 commands.push(crate::commands::AppCommand::EditorSetMode(
                     EditorMode::Place,
+                ));
+            }
+            if ui.selectable_label(is_tapping, "Tapping").clicked() && !is_tapping {
+                commands.push(crate::commands::AppCommand::EditorSetMode(
+                    EditorMode::Tapping,
                 ));
             }
             if ui.selectable_label(is_timing, "Timing").clicked() && !is_timing {
@@ -635,6 +643,8 @@ pub fn show_editor_ui(
 
                 if is_timing {
                     show_timing_mode_bottom_panel(ui, &view, duration_seconds, &mut commands);
+                } else if is_tapping {
+                    show_tapping_mode_bottom_panel(ui, &view, &mut commands);
                 } else if view.mode == EditorMode::Trigger {
                     show_trigger_mode_bottom_panel(ui, &view, duration_seconds, &mut commands);
                 } else {
@@ -1382,7 +1392,7 @@ mod tests {
     }
 
     #[test]
-    fn show_editor_ui_composes_timing_compose_and_trigger_modes() {
+    fn show_editor_ui_composes_timing_tapping_compose_and_trigger_modes() {
         pollster::block_on(async {
             let Some(mut state) = crate::State::try_new_test().await else {
                 return;
@@ -1414,6 +1424,11 @@ mod tests {
 
             assert_eq!(state.editor_mode(), EditorMode::Place);
             assert_eq!(state.editor_settings_section(), SettingsSection::Keybinds);
+
+            state.dispatch(AppCommand::EditorSetMode(EditorMode::Tapping));
+            run_editor_ui_once(&mut state);
+
+            assert_eq!(state.editor_mode(), EditorMode::Tapping);
 
             state.dispatch(AppCommand::EditorSetMode(EditorMode::Trigger));
             run_editor_ui_once(&mut state);

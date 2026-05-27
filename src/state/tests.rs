@@ -979,6 +979,7 @@ fn editor_mode_selection_constraints() {
     assert!(EditorMode::Move.can_select());
     assert!(EditorMode::Scale.can_select());
     assert!(EditorMode::Place.can_select());
+    assert!(!EditorMode::Tapping.can_select());
     assert!(!EditorMode::Trigger.can_select());
     assert!(!EditorMode::Timing.can_select());
     assert!(!EditorMode::Null.can_select());
@@ -1508,7 +1509,7 @@ fn toggle_editor_and_mouse_paths_cover_playtest_and_release_guards() {
 }
 
 #[test]
-fn handle_primary_click_covers_trigger_and_timing_mode_paths() {
+fn handle_primary_click_covers_tapping_trigger_and_timing_mode_paths() {
     pollster::block_on(async {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
@@ -1517,6 +1518,12 @@ fn handle_primary_click_covers_trigger_and_timing_mode_paths() {
         state.handle_primary_click(220.0, 180.0);
         assert_eq!(state.editor.ui.pointer_screen, Some([220.0, 180.0]));
         assert!(state.editor.ui.left_mouse_down);
+        assert!(state.editor.ui.marquee_start_screen.is_none());
+
+        state.editor.set_left_mouse_down(false);
+        state.editor.set_mode(EditorMode::Tapping);
+        state.handle_primary_click(260.0, 200.0);
+        assert_eq!(state.editor.ui.pointer_screen, Some([260.0, 200.0]));
         assert!(state.editor.ui.marquee_start_screen.is_none());
 
         state.editor.set_left_mouse_down(false);

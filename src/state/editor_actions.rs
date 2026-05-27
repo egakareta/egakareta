@@ -201,7 +201,7 @@ impl EditorSubsystem {
 impl State {
     pub(super) fn editor_add_tap_at_pointer_position(&mut self) {
         puffin::profile_scope!("TKeyToggle");
-        if self.phase != AppPhase::Editor || self.editor.ui.mode != EditorMode::Place {
+        if self.phase != AppPhase::Editor || self.editor.ui.mode != EditorMode::Tapping {
             return;
         }
 

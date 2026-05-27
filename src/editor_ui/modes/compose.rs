@@ -11,7 +11,6 @@ use crate::block_repository::{
     all_placeable_blocks, block_texture_atlas, resolve_block_texture_layers,
 };
 use crate::commands::AppCommand;
-use crate::editor_ui::components::{MAX_TIMELINE_DURATION_SECONDS, MIN_TIMELINE_DURATION_SECONDS};
 use crate::editor_ui::modes::shared::{show_mode_and_snap_controls, show_player_camera_status_row};
 use crate::state::EditorUiViewModel;
 use crate::types::EditorMode;
@@ -161,42 +160,12 @@ pub(crate) fn show_compose_mode_bottom_panel(
                         ));
                     }
                 });
-            } else {
-                ui.label("Selection mode: click a block to edit it.");
             }
         }
-        EditorMode::Trigger | EditorMode::Timing | EditorMode::Null => {} // handled separately
+        EditorMode::Tapping | EditorMode::Trigger | EditorMode::Timing | EditorMode::Null => {}
     }
 
     ui.separator();
-
-    ui.horizontal_wrapped(|ui| {
-        let mut duration = view.timeline_duration_seconds;
-        ui.label("Duration (s):");
-        if ui
-            .add(
-                egui::DragValue::new(&mut duration)
-                    .speed(0.1)
-                    .range(MIN_TIMELINE_DURATION_SECONDS..=MAX_TIMELINE_DURATION_SECONDS),
-            )
-            .changed()
-        {
-            commands.push(crate::commands::AppCommand::EditorSetTimelineDuration(
-                duration,
-            ));
-        }
-
-        if ui.button("Add tap").clicked() {
-            commands.push(crate::commands::AppCommand::EditorAddTap);
-        }
-        if ui.button("Remove tap").clicked() {
-            commands.push(crate::commands::AppCommand::EditorRemoveTap);
-        }
-        if ui.button("Clear taps").clicked() {
-            commands.push(crate::commands::AppCommand::EditorClearTaps);
-        }
-    });
-
     show_player_camera_status_row(ui, view);
 }
 

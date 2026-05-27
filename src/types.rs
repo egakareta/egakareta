@@ -1433,7 +1433,7 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
         KeybindActionMetadata {
             group: "Timeline",
             action: "toggle_tap_timing",
-            label: "Toggle Tap/Timing Mode",
+            label: "Toggle Tap at Pointer",
             capacity: 1,
         },
         KeybindActionMetadata {
@@ -1608,6 +1608,12 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
             group: "Modes",
             action: "mode_trigger",
             label: "Trigger Mode",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Tabs",
+            action: "tab_tapping",
+            label: "Tapping Tab",
             capacity: 1,
         },
         KeybindActionMetadata {
@@ -1810,6 +1816,10 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
             chord: KeyChord::new("6", false, false, false),
         },
         KeybindBinding {
+            action: "tab_tapping".to_string(),
+            chord: KeyChord::new("3", true, false, false),
+        },
+        KeybindBinding {
             action: "escape".to_string(),
             chord: KeyChord::new("Escape", false, false, false),
         },
@@ -1862,6 +1872,7 @@ pub(crate) enum EditorMode {
     Rotate,
     #[default]
     Place,
+    Tapping,
     Trigger,
     Timing,
     Null,
@@ -1902,7 +1913,7 @@ impl EditorMode {
     }
 
     pub(crate) fn can_select(self) -> bool {
-        self != Self::Null && self != Self::Timing && self != Self::Trigger
+        self != Self::Null && self != Self::Timing && self != Self::Tapping && self != Self::Trigger
     }
 }
 

@@ -558,10 +558,8 @@ impl State {
             }
             "toggle_tap_timing" => {
                 if just_pressed && self.is_editor() {
-                    if self.editor.ui.mode == EditorMode::Place {
+                    if self.editor.ui.mode == EditorMode::Tapping {
                         Some(AppCommand::EditorToggleTapAtPointer)
-                    } else if self.editor.ui.mode != EditorMode::Timing {
-                        Some(AppCommand::EditorSetMode(EditorMode::Timing))
                     } else {
                         None
                     }
@@ -621,6 +619,13 @@ impl State {
             "mode_place" => {
                 if self.is_editor() && just_pressed {
                     Some(AppCommand::EditorSetMode(EditorMode::Place))
+                } else {
+                    None
+                }
+            }
+            "mode_tapping" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorSetMode(EditorMode::Tapping))
                 } else {
                     None
                 }
@@ -740,6 +745,9 @@ mod tests {
 
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Place));
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Place);
+
+            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Tapping));
+            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Tapping);
 
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Trigger));
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Trigger);
@@ -1047,6 +1055,13 @@ mod tests {
 
             state.process_input_event(InputEvent::Key {
                 key: "6".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Tapping);
+
+            state.process_input_event(InputEvent::Key {
+                key: "7".to_string(),
                 pressed: true,
                 just_pressed: true,
             });
@@ -1853,15 +1868,20 @@ mod tests {
                 Some(AppCommand::EditorRotateSpawnDirection)
             );
 
-            state.editor.ui.mode = EditorMode::Place;
+            state.editor.ui.mode = EditorMode::Tapping;
             assert_eq!(
                 state.command_for_keybind_action("toggle_tap_timing", true),
                 Some(AppCommand::EditorToggleTapAtPointer)
             );
+            state.editor.ui.mode = EditorMode::Place;
+            assert_eq!(
+                state.command_for_keybind_action("toggle_tap_timing", true),
+                None
+            );
             state.editor.ui.mode = EditorMode::Select;
             assert_eq!(
                 state.command_for_keybind_action("toggle_tap_timing", true),
-                Some(AppCommand::EditorSetMode(EditorMode::Timing))
+                None
             );
             state.editor.ui.mode = EditorMode::Timing;
             assert_eq!(
@@ -1901,6 +1921,10 @@ mod tests {
             assert_eq!(
                 state.command_for_keybind_action("mode_place", true),
                 Some(AppCommand::EditorSetMode(EditorMode::Place))
+            );
+            assert_eq!(
+                state.command_for_keybind_action("mode_tapping", true),
+                Some(AppCommand::EditorSetMode(EditorMode::Tapping))
             );
             assert_eq!(
                 state.command_for_keybind_action("mode_trigger", true),
