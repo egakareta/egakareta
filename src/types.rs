@@ -1846,6 +1846,8 @@ pub(crate) struct EditorState {
     pub(crate) selected_block_indices: Vec<usize>,
     pub(crate) hovered_block_index: Option<usize>,
     pub(crate) pointer_screen: Option<[f64; 2]>,
+    pub(crate) ui_input_blocking_rects: Vec<[f32; 4]>,
+    pub(crate) ui_input_pixels_per_point: f32,
     pub(crate) marquee_start_screen: Option<[f64; 2]>,
     pub(crate) marquee_current_screen: Option<[f64; 2]>,
 }
@@ -1922,6 +1924,8 @@ impl EditorState {
             selected_block_indices: Vec::new(),
             hovered_block_index: None,
             pointer_screen: None,
+            ui_input_blocking_rects: Vec::new(),
+            ui_input_pixels_per_point: 1.0,
             marquee_start_screen: None,
             marquee_current_screen: None,
         }

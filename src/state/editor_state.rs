@@ -55,6 +55,38 @@ impl EditorSubsystem {
         self.ui.pointer_screen = position;
     }
 
+    pub(crate) fn set_ui_input_blocking_rects(
+        &mut self,
+        rects: Vec<[f32; 4]>,
+        pixels_per_point: f32,
+    ) {
+        self.ui.ui_input_blocking_rects = rects;
+        self.ui.ui_input_pixels_per_point =
+            if pixels_per_point.is_finite() && pixels_per_point > 0.0 {
+                pixels_per_point
+            } else {
+                1.0
+            };
+    }
+
+    pub(crate) fn clear_ui_input_blocking_rects(&mut self) {
+        self.ui.ui_input_blocking_rects.clear();
+        self.ui.ui_input_pixels_per_point = 1.0;
+    }
+
+    pub(crate) fn pointer_over_ui_input(&self, x: f64, y: f64) -> bool {
+        let pixels_per_point = self.ui.ui_input_pixels_per_point as f64;
+        let point_x = x / pixels_per_point;
+        let point_y = y / pixels_per_point;
+
+        self.ui.ui_input_blocking_rects.iter().any(|rect| {
+            point_x >= rect[0] as f64
+                && point_x <= rect[2] as f64
+                && point_y >= rect[1] as f64
+                && point_y <= rect[3] as f64
+        })
+    }
+
     pub(crate) fn clear_interaction_drags(&mut self) {
         self.runtime.interaction.gizmo_drag = None;
         self.runtime.interaction.block_drag = None;
@@ -551,6 +583,23 @@ impl State {
 
     pub(crate) fn editor_mode(&self) -> EditorMode {
         self.editor.mode()
+    }
+
+    pub(crate) fn set_editor_ui_input_blocking_rects(
+        &mut self,
+        rects: Vec<[f32; 4]>,
+        pixels_per_point: f32,
+    ) {
+        self.editor
+            .set_ui_input_blocking_rects(rects, pixels_per_point);
+    }
+
+    pub(crate) fn clear_editor_ui_input_blocking_rects(&mut self) {
+        self.editor.clear_ui_input_blocking_rects();
+    }
+
+    pub(crate) fn editor_pointer_over_ui_input(&self, x: f64, y: f64) -> bool {
+        self.phase == AppPhase::Editor && self.editor.pointer_over_ui_input(x, y)
     }
 
     pub(crate) fn game_cursor(&self, _pointer_over_egui: bool) -> GameCursor {

@@ -426,6 +426,12 @@ impl ApplicationHandler for App {
             egui_state.on_window_event(window, &event).consumed
         };
         let pointer_over_egui = runtime.pipeline.ctx().is_pointer_over_egui();
+        let pointer_over_editor_ui = self.last_cursor_pos.is_some_and(|position| {
+            runtime
+                .state
+                .editor_pointer_over_ui_input(position.x, position.y)
+        });
+        let ui_wants_pointer = pointer_over_egui || pointer_over_editor_ui;
 
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
@@ -441,7 +447,7 @@ impl ApplicationHandler for App {
                 ..
             } => {
                 let pressed = element_state == ElementState::Pressed;
-                if !Self::should_route_mouse_button_input(egui_consumed, pointer_over_egui, pressed)
+                if !Self::should_route_mouse_button_input(egui_consumed, ui_wants_pointer, pressed)
                 {
                     return;
                 }
@@ -454,7 +460,7 @@ impl ApplicationHandler for App {
                 });
             }
             WindowEvent::CursorMoved { position, .. } => {
-                if should_route_pointer_input(egui_consumed, pointer_over_egui) {
+                if should_route_pointer_input(egui_consumed, ui_wants_pointer) {
                     runtime.state.process_input_event(InputEvent::PointerMoved {
                         x: position.x,
                         y: position.y,
@@ -470,7 +476,7 @@ impl ApplicationHandler for App {
                 self.last_cursor_pos = Some(position);
             }
             WindowEvent::MouseWheel { delta, .. }
-                if should_route_pointer_input(egui_consumed, pointer_over_egui) =>
+                if should_route_pointer_input(egui_consumed, ui_wants_pointer) =>
             {
                 let zoom_delta = zoom_delta_from_winit(delta);
                 runtime

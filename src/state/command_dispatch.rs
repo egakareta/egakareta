@@ -826,6 +826,43 @@ mod tests {
     }
 
     #[test]
+    fn primary_click_over_editor_ui_does_not_place_block() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = new_editor_state().await;
+            state.editor.ui.mode = EditorMode::Place;
+            state.set_editor_ui_input_blocking_rects(vec![[10.0, 20.0, 110.0, 120.0]], 2.0);
+
+            state.process_input_event(InputEvent::PrimaryClick { x: 100.0, y: 100.0 });
+
+            assert!(state.editor.objects.is_empty());
+            assert!(state.editor.ui.left_mouse_down);
+
+            state.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: false,
+            });
+            assert!(!state.editor.ui.left_mouse_down);
+        });
+    }
+
+    #[test]
+    fn primary_click_outside_editor_ui_still_places_block() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = new_editor_state().await;
+            state.editor.ui.mode = EditorMode::Place;
+            state.set_editor_ui_input_blocking_rects(vec![[10.0, 20.0, 110.0, 120.0]], 2.0);
+
+            state.process_input_event(InputEvent::PrimaryClick { x: 250.0, y: 250.0 });
+
+            assert_eq!(state.editor.objects.len(), 1);
+        });
+    }
+
+    #[test]
     fn test_input_event_zoom_and_resize() {
         pollster::block_on(async {
             use crate::commands::InputEvent;

@@ -333,6 +333,10 @@ impl State {
             ..EditorDirtyFlags::default()
         });
         if self.phase == AppPhase::Editor {
+            if self.editor_pointer_over_ui_input(x, y) {
+                return;
+            }
+
             let mode = self.editor.mode();
             if mode == EditorMode::Place {
                 self.update_editor_cursor_from_screen(x, y);

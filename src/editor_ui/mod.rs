@@ -159,6 +159,10 @@ fn marquee_screen_pos_to_egui_pos(screen_pos: [f64; 2], pixels_per_point: f32) -
     egui::pos2(screen_pos[0] as f32 / scale, screen_pos[1] as f32 / scale)
 }
 
+fn rect_to_input_bounds(rect: egui::Rect) -> [f32; 4] {
+    [rect.min.x, rect.min.y, rect.max.x, rect.max.y]
+}
+
 /// Shows the editor UI using egui.
 /// Handles the top bar, bottom panels, and other editor interface elements.
 // egui 0.34 deprecates top-level Panel::show in favor of show_inside;
@@ -170,11 +174,13 @@ pub fn show_editor_ui(
     block_icon_texture_ids: &HashMap<String, egui::TextureId>,
 ) {
     if !state.is_editor() {
+        state.clear_editor_ui_input_blocking_rects();
         return;
     }
 
     let view = state.editor_ui_view_model();
     let mut commands = Vec::<AppCommand>::new();
+    let mut ui_input_blocking_rects = Vec::<[f32; 4]>::new();
 
     let mode = view.mode;
     let last_mode = view.last_mode;
@@ -185,7 +191,7 @@ pub fn show_editor_ui(
     let is_compact_ui = is_compact_editor_ui(viewport_width);
 
     if view.show_settings {
-        egui::Panel::left("editor_settings_sidebar")
+        let settings_response = egui::Panel::left("editor_settings_sidebar")
             .resizable(true)
             .default_size(settings_sidebar_default_width(viewport_width))
             .show(ctx, |ui| {
@@ -456,9 +462,10 @@ pub fn show_editor_ui(
                     }
                 }
             });
+        ui_input_blocking_rects.push(rect_to_input_bounds(settings_response.response.rect));
     }
 
-    egui::Panel::top("editor_top_bar").show(ctx, |ui| {
+    let top_bar_response = egui::Panel::top("editor_top_bar").show(ctx, |ui| {
         ui.horizontal_wrapped(|ui| {
             // Top-level tabs: Compose / Timing
             if ui.selectable_label(is_compose, "Compose").clicked() && !is_compose {
@@ -523,99 +530,104 @@ pub fn show_editor_ui(
             }
         });
     });
+    ui_input_blocking_rects.push(rect_to_input_bounds(top_bar_response.response.rect));
 
     if view.show_metadata {
         let mut metadata_open = true;
 
-        egui::Window::new(format!("{} Level Metadata", egui_phosphor::regular::INFO))
-            .open(&mut metadata_open)
-            .show(ctx, |ui| {
-                ui.label(format!("{} Level Name:", egui_phosphor::regular::PENCIL));
-                let mut name = view.level_name.unwrap_or("Untitled").to_string();
-                if ui.text_edit_singleline(&mut name).changed() {
-                    commands.push(crate::commands::AppCommand::EditorRenameLevel(name));
-                }
-
-                ui.separator();
-
-                let mut music = view.music_metadata.clone();
-                let mut changed = false;
-
-                ui.horizontal(|ui| {
-                    ui.label(format!("{} Source:", egui_phosphor::regular::GLOBE));
-                    if ui.text_edit_singleline(&mut music.source).changed() {
-                        changed = true;
+        let metadata_response =
+            egui::Window::new(format!("{} Level Metadata", egui_phosphor::regular::INFO))
+                .open(&mut metadata_open)
+                .show(ctx, |ui| {
+                    ui.label(format!("{} Level Name:", egui_phosphor::regular::PENCIL));
+                    let mut name = view.level_name.unwrap_or("Untitled").to_string();
+                    if ui.text_edit_singleline(&mut name).changed() {
+                        commands.push(crate::commands::AppCommand::EditorRenameLevel(name));
                     }
-                    if ui
-                        .button(format!(
-                            "{} Import External Audio",
-                            egui_phosphor::regular::FILE_AUDIO
-                        ))
-                        .clicked()
-                    {
-                        commands.push(crate::commands::AppCommand::EditorTriggerAudioImport);
+
+                    ui.separator();
+
+                    let mut music = view.music_metadata.clone();
+                    let mut changed = false;
+
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} Source:", egui_phosphor::regular::GLOBE));
+                        if ui.text_edit_singleline(&mut music.source).changed() {
+                            changed = true;
+                        }
+                        if ui
+                            .button(format!(
+                                "{} Import External Audio",
+                                egui_phosphor::regular::FILE_AUDIO
+                            ))
+                            .clicked()
+                        {
+                            commands.push(crate::commands::AppCommand::EditorTriggerAudioImport);
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} Title:", egui_phosphor::regular::TEXT_T));
+                        let mut title = music.title.clone().unwrap_or_default();
+                        if ui.text_edit_singleline(&mut title).changed() {
+                            music.title = Some(title);
+                            changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} Author:", egui_phosphor::regular::USER));
+                        let mut author = music.author.clone().unwrap_or_default();
+                        if ui.text_edit_singleline(&mut author).changed() {
+                            music.author = Some(author);
+                            changed = true;
+                        }
+                    });
+
+                    if changed {
+                        commands.push(crate::commands::AppCommand::EditorUpdateMusic(music));
                     }
+
+                    ui.separator();
+                    ui.heading(format!(
+                        "{} Menu Preview Camera",
+                        egui_phosphor::regular::CAMERA
+                    ));
+                    ui.horizontal_wrapped(|ui| {
+                        push_command_when_clicked(
+                            &mut commands,
+                            ui.button(format!(
+                                "{} Capture Current Camera",
+                                egui_phosphor::regular::CAMERA
+                            ))
+                            .clicked(),
+                            crate::commands::AppCommand::EditorCaptureMenuPreviewCamera,
+                        );
+                        push_command_when_clicked(
+                            &mut commands,
+                            ui.button("Use Auto from Spawn").clicked(),
+                            crate::commands::AppCommand::EditorUseAutoMenuPreviewCamera,
+                        );
+                    });
+
+                    ui.separator();
+
+                    ui.label(format!(
+                        "{} Objects: {}",
+                        egui_phosphor::regular::CUBE,
+                        view.object_count
+                    ));
                 });
-
-                ui.horizontal(|ui| {
-                    ui.label(format!("{} Title:", egui_phosphor::regular::TEXT_T));
-                    let mut title = music.title.clone().unwrap_or_default();
-                    if ui.text_edit_singleline(&mut title).changed() {
-                        music.title = Some(title);
-                        changed = true;
-                    }
-                });
-
-                ui.horizontal(|ui| {
-                    ui.label(format!("{} Author:", egui_phosphor::regular::USER));
-                    let mut author = music.author.clone().unwrap_or_default();
-                    if ui.text_edit_singleline(&mut author).changed() {
-                        music.author = Some(author);
-                        changed = true;
-                    }
-                });
-
-                if changed {
-                    commands.push(crate::commands::AppCommand::EditorUpdateMusic(music));
-                }
-
-                ui.separator();
-                ui.heading(format!(
-                    "{} Menu Preview Camera",
-                    egui_phosphor::regular::CAMERA
-                ));
-                ui.horizontal_wrapped(|ui| {
-                    push_command_when_clicked(
-                        &mut commands,
-                        ui.button(format!(
-                            "{} Capture Current Camera",
-                            egui_phosphor::regular::CAMERA
-                        ))
-                        .clicked(),
-                        crate::commands::AppCommand::EditorCaptureMenuPreviewCamera,
-                    );
-                    push_command_when_clicked(
-                        &mut commands,
-                        ui.button("Use Auto from Spawn").clicked(),
-                        crate::commands::AppCommand::EditorUseAutoMenuPreviewCamera,
-                    );
-                });
-
-                ui.separator();
-
-                ui.label(format!(
-                    "{} Objects: {}",
-                    egui_phosphor::regular::CUBE,
-                    view.object_count
-                ));
-            });
+        if let Some(metadata_response) = metadata_response {
+            ui_input_blocking_rects.push(rect_to_input_bounds(metadata_response.response.rect));
+        }
 
         if !metadata_open {
             commands.push(crate::commands::AppCommand::EditorSetShowMetadata(false));
         }
     }
 
-    egui::Panel::bottom("block_selection_bar")
+    let bottom_bar_response = egui::Panel::bottom("block_selection_bar")
         .resizable(false)
         .show(ctx, |ui| {
             ui.vertical(|ui| {
@@ -639,6 +651,7 @@ pub fn show_editor_ui(
                 show_timeline_bar(ui, &view, duration_seconds, &mut commands);
             });
         });
+    ui_input_blocking_rects.push(rect_to_input_bounds(bottom_bar_response.response.rect));
 
     // Waveform visualization central panel (Timing mode only)
     if is_timing {
@@ -653,7 +666,11 @@ pub fn show_editor_ui(
     }
 
     if !is_timing && !is_compact_ui {
-        show_view_selector_cube(ctx, view.camera_rotation, view.camera_pitch, &mut commands);
+        if let Some(rect) =
+            show_view_selector_cube(ctx, view.camera_rotation, view.camera_pitch, &mut commands)
+        {
+            ui_input_blocking_rects.push(rect_to_input_bounds(rect));
+        }
     }
 
     if view.mode.is_selection_mode() || view.mode == EditorMode::Trigger {
@@ -681,6 +698,7 @@ pub fn show_editor_ui(
     }
 
     drop(view);
+    state.set_editor_ui_input_blocking_rects(ui_input_blocking_rects, ctx.pixels_per_point());
     for command in commands {
         state.dispatch(command);
     }
@@ -734,7 +752,7 @@ fn show_view_selector_cube(
     camera_rotation: f32,
     camera_pitch: f32,
     commands: &mut Vec<AppCommand>,
-) {
+) -> Option<egui::Rect> {
     const ROTATE_SPEED: f32 = 0.004;
     const PITCH_SPEED: f32 = 0.006;
 
@@ -884,7 +902,7 @@ fn show_view_selector_cube(
         rounded
     }
 
-    egui::Area::new("editor_view_selector_cube".into())
+    let response = egui::Area::new("editor_view_selector_cube".into())
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-14.0, 52.0))
         .show(ctx, |ui| {
@@ -1088,6 +1106,7 @@ fn show_view_selector_cube(
                 }
             }
         });
+    Some(response.response.rect)
 }
 
 #[cfg(test)]
