@@ -384,7 +384,7 @@ impl State {
                 self.update_editor_cursor_from_screen(x, y);
                 self.place_editor_block();
             } else if mode == EditorMode::Tapping {
-                self.update_editor_cursor_from_screen(x, y);
+                self.editor_add_tap_at_pointer_position();
             } else if mode.is_selection_mode() {
                 if self.begin_editor_gizmo_drag(x, y) {
                     return;

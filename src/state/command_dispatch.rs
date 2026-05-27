@@ -630,6 +630,20 @@ impl State {
                     None
                 }
             }
+            "tab_compose" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorSetMode(EditorMode::Place))
+                } else {
+                    None
+                }
+            }
+            "tab_timing" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorSetMode(EditorMode::Timing))
+                } else {
+                    None
+                }
+            }
             "tab_tapping" => {
                 if self.is_editor() && just_pressed {
                     Some(AppCommand::EditorSetMode(EditorMode::Tapping))
@@ -1059,6 +1073,43 @@ mod tests {
                 just_pressed: true,
             });
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Trigger);
+        });
+    }
+
+    #[test]
+    fn test_keyboard_tab_hotkeys_switch_editor_tabs() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = new_editor_state().await;
+
+            state.process_input_event(InputEvent::Key {
+                key: "Control".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+
+            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Scale));
+            state.process_input_event(InputEvent::Key {
+                key: "1".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Place);
+
+            state.process_input_event(InputEvent::Key {
+                key: "2".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Timing);
+
+            state.process_input_event(InputEvent::Key {
+                key: "3".to_string(),
+                pressed: true,
+                just_pressed: true,
+            });
+            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Tapping);
         });
     }
 
@@ -1918,6 +1969,14 @@ mod tests {
             assert_eq!(
                 state.command_for_keybind_action("mode_trigger", true),
                 Some(AppCommand::EditorSetMode(EditorMode::Trigger))
+            );
+            assert_eq!(
+                state.command_for_keybind_action("tab_compose", true),
+                Some(AppCommand::EditorSetMode(EditorMode::Place))
+            );
+            assert_eq!(
+                state.command_for_keybind_action("tab_timing", true),
+                Some(AppCommand::EditorSetMode(EditorMode::Timing))
             );
             assert_eq!(
                 state.command_for_keybind_action("tab_tapping", true),

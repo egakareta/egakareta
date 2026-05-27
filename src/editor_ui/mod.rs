@@ -476,14 +476,14 @@ pub fn show_editor_ui(
                     EditorMode::Place,
                 ));
             }
-            if ui.selectable_label(is_tapping, "Tapping").clicked() && !is_tapping {
-                commands.push(crate::commands::AppCommand::EditorSetMode(
-                    EditorMode::Tapping,
-                ));
-            }
             if ui.selectable_label(is_timing, "Timing").clicked() && !is_timing {
                 commands.push(crate::commands::AppCommand::EditorSetMode(
                     EditorMode::Timing,
+                ));
+            }
+            if ui.selectable_label(is_tapping, "Tapping").clicked() && !is_tapping {
+                commands.push(crate::commands::AppCommand::EditorSetMode(
+                    EditorMode::Tapping,
                 ));
             }
 

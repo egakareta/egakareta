@@ -1612,6 +1612,18 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
         },
         KeybindActionMetadata {
             group: "Tabs",
+            action: "tab_compose",
+            label: "Compose Tab",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Tabs",
+            action: "tab_timing",
+            label: "Timing Tab",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Tabs",
             action: "tab_tapping",
             label: "Tapping Tab",
             capacity: 1,
@@ -1814,6 +1826,14 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
         KeybindBinding {
             action: "mode_trigger".to_string(),
             chord: KeyChord::new("6", false, false, false),
+        },
+        KeybindBinding {
+            action: "tab_compose".to_string(),
+            chord: KeyChord::new("1", true, false, false),
+        },
+        KeybindBinding {
+            action: "tab_timing".to_string(),
+            chord: KeyChord::new("2", true, false, false),
         },
         KeybindBinding {
             action: "tab_tapping".to_string(),
@@ -2407,6 +2427,33 @@ mod tests {
         for metadata in actions {
             assert!(!metadata.group.is_empty());
             assert!(!metadata.action.is_empty());
+        }
+    }
+
+    #[test]
+    fn editor_tab_keybinds_are_registered_with_defaults() {
+        let actions = super::essential_keybind_actions();
+        for action in ["tab_compose", "tab_timing", "tab_tapping"] {
+            assert!(
+                actions.iter().any(|metadata| metadata.action == action),
+                "{action} should be shown in keybind settings"
+            );
+        }
+
+        let defaults = super::default_essential_keybinds();
+        let expected = [
+            ("tab_compose", super::KeyChord::new("1", true, false, false)),
+            ("tab_timing", super::KeyChord::new("2", true, false, false)),
+            ("tab_tapping", super::KeyChord::new("3", true, false, false)),
+        ];
+
+        for (action, chord) in expected {
+            assert!(
+                defaults
+                    .iter()
+                    .any(|binding| binding.action == action && binding.chord == chord),
+                "{action} should have the expected default chord"
+            );
         }
     }
 
