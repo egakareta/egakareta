@@ -280,6 +280,41 @@ impl State {
         }
     }
 
+    pub(super) fn set_editor_playback_effective_mode(&mut self, mode: EditorMode) {
+        if self.phase != AppPhase::Editor || !self.editor.timeline.playback.playing {
+            self.set_editor_mode(mode);
+            return;
+        }
+
+        let old_mode = self.editor_effective_mode_for_playback();
+        self.editor.runtime.interaction.last_mode = Some(mode);
+        self.set_editor_mode(EditorMode::Null);
+
+        if mode == EditorMode::Timing {
+            self.editor.timeline.playback.runtime = None;
+        } else if self.editor.timeline.playback.runtime.is_none() {
+            self.editor.timeline.playback.runtime =
+                Some(TimelineSimulationRuntime::new_with_triggers(
+                    self.editor.spawn.position,
+                    self.editor.spawn.direction,
+                    &self.editor.objects,
+                    &self.editor.timeline.taps.tap_times,
+                    self.editor.triggers(),
+                    self.editor.simulate_trigger_hitboxes(),
+                ));
+            if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
+                runtime.advance_to(self.editor.timeline.clock.time_seconds);
+            }
+        }
+
+        if old_mode != mode && self.editor.has_object_transform_triggers() {
+            self.mark_editor_dirty(EditorDirtyFlags {
+                rebuild_block_mesh: true,
+                ..EditorDirtyFlags::default()
+            });
+        }
+    }
+
     pub(super) fn editor_nudge_selected_blocks(&mut self, dx: i32, dy: i32) -> bool {
         if self.phase != AppPhase::Editor || (dx == 0 && dy == 0) {
             return false;

@@ -28,8 +28,12 @@ impl State {
 
             // ── Editor – mode switching ─────────────────────────────
             AppCommand::EditorSetMode(mode) => {
-                let old_mode = self.editor_mode();
-                self.set_editor_mode(mode);
+                let old_mode = self.editor_effective_mode_for_playback();
+                if self.editor.timeline.playback.playing {
+                    self.set_editor_playback_effective_mode(mode);
+                } else {
+                    self.set_editor_mode(mode);
+                }
                 if mode == EditorMode::Timing && old_mode != EditorMode::Timing {
                     self.load_waveform_for_current_audio();
                 }
@@ -738,6 +742,41 @@ mod tests {
 
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Trigger));
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Trigger);
+        });
+    }
+
+    #[test]
+    fn editor_set_mode_during_playback_keeps_null_mode() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+
+            state.dispatch(AppCommand::EditorSetMode(EditorMode::Timing));
+            state.dispatch(AppCommand::EditorToggleTimelinePlayback);
+            assert!(state.editor.timeline.playback.playing);
+            assert_eq!(state.editor.ui.mode, EditorMode::Null);
+            assert_eq!(
+                state.editor.runtime.interaction.last_mode,
+                Some(EditorMode::Timing)
+            );
+
+            state.dispatch(AppCommand::EditorSetMode(EditorMode::Place));
+
+            assert!(state.editor.timeline.playback.playing);
+            assert_eq!(state.editor.ui.mode, EditorMode::Null);
+            assert_eq!(
+                state.editor.runtime.interaction.last_mode,
+                Some(EditorMode::Place)
+            );
+            assert_eq!(
+                state.editor_effective_mode_for_playback(),
+                EditorMode::Place
+            );
+
+            state.dispatch(AppCommand::EditorToggleTimelinePlayback);
+
+            assert!(!state.editor.timeline.playback.playing);
+            assert_eq!(state.editor.ui.mode, EditorMode::Place);
+            assert!(state.editor.runtime.interaction.last_mode.is_none());
         });
     }
 
