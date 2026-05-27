@@ -38,6 +38,37 @@ fs.cpSync(assetsSrcPath, assetsDestPath, { recursive: true });
 // Add .nojekyll file to dist
 fs.writeFileSync(path.join(distPath, ".nojekyll"), "");
 
+// wasm-bindgen-rayon's unbundled helper imports `../../..`, which resolves to
+// `/pkg/` in the browser. Wrangler serves that directory as HTML, so patch the
+// generated helper to import the concrete wasm-bindgen JS module instead.
+const snippetsPath = path.join(distPath, "pkg", "snippets");
+if (fs.existsSync(snippetsPath)) {
+    for (const snippetDir of fs.readdirSync(snippetsPath)) {
+        if (!snippetDir.startsWith("wasm-bindgen-rayon-")) {
+            continue;
+        }
+
+        const workerHelperPath = path.join(
+            snippetsPath,
+            snippetDir,
+            "src",
+            "workerHelpers.js",
+        );
+        if (!fs.existsSync(workerHelperPath)) {
+            continue;
+        }
+
+        const workerHelper = fs.readFileSync(workerHelperPath, "utf8");
+        fs.writeFileSync(
+            workerHelperPath,
+            workerHelper.replace(
+                "await import('../../..')",
+                "await import('../../../egakareta_lib.js')",
+            ),
+        );
+    }
+}
+
 // Add _headers file to dist
 let wasmSize = 0;
 const wasmPath = path.join(distPath, "pkg", "egakareta_lib_bg.wasm");

@@ -43,7 +43,11 @@ pub use platform::application::run_native_app;
 pub use platform::input_mapping::{
     key_str_from_winit, mouse_button_index_from_winit, zoom_delta_from_winit,
 };
+#[cfg(target_arch = "wasm32")]
+pub use platform::parallel::mark_rayon_ready;
 pub use state::State;
+#[cfg(target_arch = "wasm32")]
+pub use wasm_bindgen_rayon::init_thread_pool;
 
 #[cfg(target_arch = "wasm32")]
 #[unsafe(no_mangle)]

@@ -5,6 +5,8 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use rayon::prelude::*;
+
 use crate::block_repository::{
     resolve_block_definition, resolve_block_texture_layers, BlockRenderProfile,
 };
@@ -14,24 +16,36 @@ use crate::mesh::noise::pseudo_random_noise;
 use crate::mesh::obj::{append_obj_mesh, resolve_obj_mesh};
 use crate::mesh::shapes::{append_prism_with_layers, PrismFaceColors, PrismTextureLayers};
 use crate::mesh::transforms::rotate_vertices_around_euler;
+use crate::platform::parallel::rayon_is_ready;
 use crate::types::{LevelObject, Vertex};
 
 const LIQUID_PROFILE_TAG: f32 = 1.0;
 const FINISH_RING_PROFILE_TAG: f32 = 2.0;
+const PARALLEL_GEOMETRY_OBJECT_THRESHOLD: usize = 256;
 
 pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
     puffin::profile_scope!("BuildBlockVertices");
-    build_block_geometry_impl(objects.iter()).to_triangle_vertices()
+    build_block_geometry_from_slice(objects).to_triangle_vertices()
 }
 
 pub(crate) fn build_block_geometry(objects: &[LevelObject]) -> MeshGeometry {
     puffin::profile_scope!("BuildBlockGeometry");
-    build_block_geometry_impl(objects.iter())
+    build_block_geometry_from_slice(objects)
 }
 
 pub(crate) fn build_block_geometry_from_refs(objects: &[&LevelObject]) -> MeshGeometry {
     puffin::profile_scope!("BuildBlockGeometryRefs");
-    build_block_geometry_impl(objects.iter().copied())
+    if should_build_geometry_in_parallel(objects.len()) {
+        puffin::profile_scope!("BuildBlockGeometryRefsParallel");
+        merge_object_geometries(
+            objects
+                .par_iter()
+                .map(|object| build_block_geometry_for_object(object))
+                .collect(),
+        )
+    } else {
+        build_block_geometry_impl(objects.iter().copied())
+    }
 }
 
 pub(crate) fn build_block_geometry_for_object(object: &LevelObject) -> MeshGeometry {
@@ -53,6 +67,32 @@ where
     }
 
     all_geometry
+}
+
+fn build_block_geometry_from_slice(objects: &[LevelObject]) -> MeshGeometry {
+    if should_build_geometry_in_parallel(objects.len()) {
+        puffin::profile_scope!("BuildBlockGeometryParallel");
+        merge_object_geometries(
+            objects
+                .par_iter()
+                .map(build_block_geometry_for_object)
+                .collect(),
+        )
+    } else {
+        build_block_geometry_impl(objects.iter())
+    }
+}
+
+fn merge_object_geometries(object_geometries: Vec<MeshGeometry>) -> MeshGeometry {
+    let mut all_geometry = MeshGeometry::default();
+    for object_geometry in object_geometries {
+        all_geometry.append_geometry(object_geometry);
+    }
+    all_geometry
+}
+
+fn should_build_geometry_in_parallel(object_count: usize) -> bool {
+    rayon_is_ready() && object_count >= PARALLEL_GEOMETRY_OBJECT_THRESHOLD
 }
 
 fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
