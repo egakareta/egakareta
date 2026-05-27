@@ -11,6 +11,7 @@ use crate::types::{CameraTrigger, CameraTriggerMode, Vertex};
 use glam::Vec3;
 
 pub(crate) fn build_trail_vertices(points: &[[f32; 3]], game_over: bool) -> Vec<Vertex> {
+    puffin::profile_scope!("BuildTrailVertices");
     build_trail_vertices_internal(points, game_over, 1.0)
 }
 
@@ -19,10 +20,12 @@ pub(crate) fn build_trail_vertices_with_alpha(
     game_over: bool,
     alpha: f32,
 ) -> Vec<Vertex> {
+    puffin::profile_scope!("BuildTrailVerticesAlpha");
     build_trail_vertices_internal(points, game_over, alpha)
 }
 
 fn build_trail_vertices_internal(points: &[[f32; 3]], game_over: bool, alpha: f32) -> Vec<Vertex> {
+    puffin::profile_scope!("BuildTrailVerticesInternal");
     let mut trail_vertices = Vec::new();
     let width = 0.8;
     const GHOST_Y_BIAS_STEP: f32 = 0.0002;
@@ -108,6 +111,7 @@ fn build_trail_vertices_internal(points: &[[f32; 3]], game_over: bool, alpha: f3
 }
 
 pub(crate) fn build_spawn_marker_vertices(position: [f32; 3], faces_right: bool) -> Vec<Vertex> {
+    puffin::profile_scope!("BuildSpawnMarkerVertices");
     let mut vertices = Vec::new();
     let x = position[0];
     let y = position[1];
@@ -143,6 +147,7 @@ pub(crate) fn build_spawn_marker_vertices(position: [f32; 3], faces_right: bool)
 }
 
 pub(crate) fn build_tap_indicator_vertices(positions: &[[f32; 3]]) -> Vec<Vertex> {
+    puffin::profile_scope!("BuildTapIndicatorVertices");
     let mut vertices = Vec::new();
     let color = [0.0, 0.0, 0.0, 1.0]; // Black
     let thickness = 0.05;
@@ -210,6 +215,7 @@ pub(crate) fn build_camera_trigger_marker_vertices(
     selected_index: Option<usize>,
     current_camera_eye: Option<Vec3>,
 ) -> Vec<Vertex> {
+    puffin::profile_scope!("BuildCameraTriggerMarkerVertices");
     const CAMERA_BASE_DISTANCE: f32 = 24.0;
     const HIDE_DISTANCE_SQUARED: f32 = 0.5 * 0.5;
 

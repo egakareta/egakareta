@@ -14,6 +14,7 @@ impl State {
     /// This is the **only** place that maps intent → mutation,
     /// making it easy to log, replay, or test commands in isolation.
     pub(crate) fn dispatch(&mut self, cmd: AppCommand) {
+        puffin::profile_scope!("CommandDispatch");
         match cmd {
             // ── Navigation / Phase ──────────────────────────────────
             AppCommand::TurnRight => self.turn_right(),

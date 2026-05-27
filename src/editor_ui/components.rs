@@ -57,6 +57,7 @@ pub(crate) fn show_timeline_bar(
     duration_seconds: f32,
     commands: &mut Vec<AppCommand>,
 ) {
+    puffin::profile_scope!("UiTimelineBar");
     let duration_seconds = duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS);
     let timeline_zoom = view.waveform_zoom;
     let visible_duration = timeline_visible_duration(duration_seconds, timeline_zoom);
@@ -143,36 +144,39 @@ pub(crate) fn show_timeline_bar(
 
         // Draw beat lines from timing points
         let timing_points = view.timing_points;
-        for (tp_idx, tp) in timing_points.iter().enumerate() {
-            if tp.bpm <= 0.0 {
-                continue;
-            }
-            let beat_duration = 60.0 / tp.bpm;
-            let end_time = if tp_idx + 1 < timing_points.len() {
-                timing_points[tp_idx + 1].time_seconds
-            } else {
-                duration_seconds
-            };
-
-            let mut beat = 0u32;
-            let mut time = tp.time_seconds;
-            while time <= end_time {
-                if time >= view_start && time <= view_end {
-                    let x = rect.left() + (time - view_start) / visible_duration * rect.width();
-                    let is_downbeat = beat.is_multiple_of(tp.time_signature_numerator);
-                    let (alpha, width) = if is_downbeat { (100, 1.5) } else { (50, 0.5) };
-                    painter.line_segment(
-                        [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-                        egui::Stroke::new(
-                            width,
-                            egui::Color32::from_rgba_premultiplied(180, 180, 255, alpha),
-                        ),
-                    );
+        {
+            puffin::profile_scope!("UiTimelineBeatLines");
+            for (tp_idx, tp) in timing_points.iter().enumerate() {
+                if tp.bpm <= 0.0 {
+                    continue;
                 }
-                beat += 1;
-                time += beat_duration;
-                if beat > 10000 {
-                    break;
+                let beat_duration = 60.0 / tp.bpm;
+                let end_time = if tp_idx + 1 < timing_points.len() {
+                    timing_points[tp_idx + 1].time_seconds
+                } else {
+                    duration_seconds
+                };
+
+                let mut beat = 0u32;
+                let mut time = tp.time_seconds;
+                while time <= end_time {
+                    if time >= view_start && time <= view_end {
+                        let x = rect.left() + (time - view_start) / visible_duration * rect.width();
+                        let is_downbeat = beat.is_multiple_of(tp.time_signature_numerator);
+                        let (alpha, width) = if is_downbeat { (100, 1.5) } else { (50, 0.5) };
+                        painter.line_segment(
+                            [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+                            egui::Stroke::new(
+                                width,
+                                egui::Color32::from_rgba_premultiplied(180, 180, 255, alpha),
+                            ),
+                        );
+                    }
+                    beat += 1;
+                    time += beat_duration;
+                    if beat > 10000 {
+                        break;
+                    }
                 }
             }
         }
@@ -326,6 +330,7 @@ pub(crate) fn show_waveform_panel(
     view: &EditorUiViewModel<'_>,
     commands: &mut Vec<AppCommand>,
 ) {
+    puffin::profile_scope!("UiWaveformPanel");
     let duration_seconds = view
         .timeline_duration_seconds
         .max(MIN_TIMELINE_DURATION_SECONDS);
@@ -346,6 +351,7 @@ pub(crate) fn show_waveform_panel(
     let view_end = view_start + visible_duration;
 
     if !waveform_samples.is_empty() && sample_rate > 0 {
+        puffin::profile_scope!("UiWaveformDrawSamples");
         // Waveform drawing
         const WAVEFORM_WINDOW: usize = 256;
         let samples_per_second = sample_rate as f32 / WAVEFORM_WINDOW as f32;
@@ -396,53 +402,56 @@ pub(crate) fn show_waveform_panel(
 
     // Draw beat grid lines from timing points
     let timing_points = view.timing_points;
-    for (tp_idx, tp) in timing_points.iter().enumerate() {
-        if tp.bpm <= 0.0 {
-            continue;
-        }
-        let beat_duration = 60.0 / tp.bpm;
-        let end_time = if tp_idx + 1 < timing_points.len() {
-            timing_points[tp_idx + 1].time_seconds
-        } else {
-            duration_seconds
-        };
-
-        let mut beat = 0u32;
-        let mut time = tp.time_seconds;
-        while time <= end_time {
-            if time >= view_start && time <= view_end {
-                let x = rect.left() + (time - view_start) / visible_duration * rect.width();
-                let is_downbeat = beat.is_multiple_of(tp.time_signature_numerator);
-                let (color, width) = if is_downbeat {
-                    (
-                        egui::Color32::from_rgba_premultiplied(255, 255, 255, 80),
-                        1.5,
-                    )
-                } else {
-                    (
-                        egui::Color32::from_rgba_premultiplied(255, 255, 255, 30),
-                        0.5,
-                    )
-                };
-                painter.line_segment(
-                    [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-                    egui::Stroke::new(width, color),
-                );
-                // Label downbeats
-                if is_downbeat && rect.width() > 200.0 {
-                    painter.text(
-                        egui::pos2(x + 3.0, rect.top() + 2.0),
-                        egui::Align2::LEFT_TOP,
-                        format!("{:.1}s", time),
-                        egui::FontId::proportional(9.0),
-                        egui::Color32::from_gray(140),
-                    );
-                }
+    {
+        puffin::profile_scope!("UiWaveformBeatGrid");
+        for (tp_idx, tp) in timing_points.iter().enumerate() {
+            if tp.bpm <= 0.0 {
+                continue;
             }
-            beat += 1;
-            time += beat_duration;
-            if beat > 10000 {
-                break; // safety limit
+            let beat_duration = 60.0 / tp.bpm;
+            let end_time = if tp_idx + 1 < timing_points.len() {
+                timing_points[tp_idx + 1].time_seconds
+            } else {
+                duration_seconds
+            };
+
+            let mut beat = 0u32;
+            let mut time = tp.time_seconds;
+            while time <= end_time {
+                if time >= view_start && time <= view_end {
+                    let x = rect.left() + (time - view_start) / visible_duration * rect.width();
+                    let is_downbeat = beat.is_multiple_of(tp.time_signature_numerator);
+                    let (color, width) = if is_downbeat {
+                        (
+                            egui::Color32::from_rgba_premultiplied(255, 255, 255, 80),
+                            1.5,
+                        )
+                    } else {
+                        (
+                            egui::Color32::from_rgba_premultiplied(255, 255, 255, 30),
+                            0.5,
+                        )
+                    };
+                    painter.line_segment(
+                        [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+                        egui::Stroke::new(width, color),
+                    );
+                    // Label downbeats
+                    if is_downbeat && rect.width() > 200.0 {
+                        painter.text(
+                            egui::pos2(x + 3.0, rect.top() + 2.0),
+                            egui::Align2::LEFT_TOP,
+                            format!("{:.1}s", time),
+                            egui::FontId::proportional(9.0),
+                            egui::Color32::from_gray(140),
+                        );
+                    }
+                }
+                beat += 1;
+                time += beat_duration;
+                if beat > 10000 {
+                    break; // safety limit
+                }
             }
         }
     }

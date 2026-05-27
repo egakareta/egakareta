@@ -392,6 +392,7 @@ impl State {
     }
 
     pub(super) fn rebuild_editor_cursor_vertices(&mut self) {
+        puffin::profile_scope!("EditorCursorMesh");
         let vertices = build_editor_cursor_vertices(
             self.editor.ui.cursor,
             self.editor.selected_block_default_size(),
@@ -404,6 +405,7 @@ impl State {
     }
 
     pub(super) fn rebuild_editor_hover_outline_vertices(&mut self) {
+        puffin::profile_scope!("EditorHoverOutlineMesh");
         if self.phase != AppPhase::Editor || !self.editor.ui.mode.is_selection_mode() {
             self.render.meshes.editor_hover_stencil.clear();
             self.render.meshes.editor_hover_outline.clear();
@@ -467,6 +469,7 @@ impl State {
     }
 
     pub(super) fn rebuild_editor_gizmo_vertices(&mut self) {
+        puffin::profile_scope!("EditorGizmoMesh");
         let mode = self.editor.ui.mode;
         if self.phase != AppPhase::Editor || !mode.shows_gizmo() {
             self.render.meshes.editor_gizmo.clear();
@@ -533,6 +536,7 @@ impl State {
     }
 
     pub(super) fn rebuild_editor_selection_outline_vertices(&mut self) {
+        puffin::profile_scope!("EditorSelectionOutlineMesh");
         if self.phase != AppPhase::Editor || !self.editor.ui.mode.is_selection_mode() {
             self.render.meshes.editor_selection_stencil.clear();
             self.render.meshes.editor_selection_outline.clear();
@@ -598,6 +602,7 @@ impl State {
     }
 
     pub(super) fn rebuild_spawn_marker_vertices(&mut self) {
+        puffin::profile_scope!("SpawnMarkerMesh");
         let vertices = build_spawn_marker_vertices(
             self.editor.spawn.position,
             matches!(self.editor.spawn.direction, SpawnDirection::Right),
@@ -610,6 +615,7 @@ impl State {
     }
 
     pub(super) fn rebuild_camera_trigger_marker_vertices(&mut self) {
+        puffin::profile_scope!("CameraTriggerMarkerMesh");
         if self.phase != AppPhase::Editor {
             self.render.meshes.camera_trigger_markers.clear();
             return;
@@ -677,6 +683,7 @@ impl State {
     }
 
     fn rebuild_editor_block_vertices_split(&mut self) {
+        puffin::profile_scope!("BlockMeshSplitRebuild");
         let runtime_objects = self.editor_runtime_objects_for_render();
         let uses_runtime_objects = runtime_objects.is_some();
         let object_source = runtime_objects.unwrap_or_else(|| self.editor.objects.clone());
@@ -761,6 +768,7 @@ impl State {
     }
 
     fn append_editor_static_block_vertices(&mut self, index: usize) -> bool {
+        puffin::profile_scope!("BlockMeshAppendStatic");
         if self.phase != AppPhase::Editor
             || self.editor.block_static_vertex_cache_complete_len != Some(index)
             || index >= self.editor.objects.len()
@@ -769,20 +777,27 @@ impl State {
         }
 
         let object = &self.editor.objects[index];
-        let appended_geometry = build_block_geometry_for_object(object);
+        let appended_geometry = {
+            puffin::profile_scope!("BlockMeshAppendBuildOne");
+            build_block_geometry_for_object(object)
+        };
         let previous_vertex_count = self.editor.block_static_vertex_cache.vertex_count();
         let previous_draw_count = self.editor.block_static_vertex_cache.draw_count();
-        let appended = self.render.meshes.blocks_static.append_streaming_geometry(
-            &self.render.gpu.queue,
-            previous_vertex_count,
-            previous_draw_count,
-            &appended_geometry,
-        );
+        let appended = {
+            puffin::profile_scope!("BlockMeshAppendUpload");
+            self.render.meshes.blocks_static.append_streaming_geometry(
+                &self.render.gpu.queue,
+                previous_vertex_count,
+                previous_draw_count,
+                &appended_geometry,
+            )
+        };
         self.editor
             .block_static_vertex_cache
             .append_geometry(appended_geometry);
 
         if !appended {
+            puffin::profile_scope!("BlockMeshAppendFallbackUpload");
             let (spare_vertices, spare_indices) = editor_static_mesh_spare_capacity(
                 &self.editor.block_static_vertex_cache,
                 self.editor.objects.len(),

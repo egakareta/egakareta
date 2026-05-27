@@ -97,6 +97,7 @@ impl GameState {
 
     /// Rebuild the cached block behavior array from current objects.
     pub(crate) fn rebuild_behavior_cache(&mut self) {
+        puffin::profile_scope!("GameRebuildBehaviorCache");
         self.cached_behaviors = self
             .objects
             .iter()
@@ -107,6 +108,7 @@ impl GameState {
     }
 
     fn rebuild_spatial_grid(&mut self) {
+        puffin::profile_scope!("GameRebuildSpatialGrid");
         self.spatial_grid.clear();
         for (idx, obj) in self.objects.iter().enumerate() {
             self.spatial_grid.insert_object(idx, obj);
@@ -164,6 +166,7 @@ impl GameState {
     }
 
     pub(crate) fn update(&mut self, dt: f32) {
+        puffin::profile_scope!("GameUpdate");
         self.consumed_object_indices.clear();
 
         if self.level_complete {
@@ -215,44 +218,49 @@ impl GameState {
         let s_min_y = y + PLAYER_FOOTPRINT_TOLERANCE;
         let s_max_y = y + PLAYER_HEIGHT - PLAYER_FOOTPRINT_TOLERANCE;
 
-        let query_indices = self
-            .spatial_grid
-            .query_aabb(s_min_x, s_max_x, s_min_z, s_max_z);
+        let query_indices = {
+            puffin::profile_scope!("GameCollisionQuery");
+            self.spatial_grid
+                .query_aabb(s_min_x, s_max_x, s_min_z, s_max_z)
+        };
 
-        for i in query_indices {
-            let obj = &self.objects[i];
-            let o_min_y = obj.position[1];
-            let o_max_y = obj.position[1] + obj.size[1];
-            let behavior = self
-                .cached_behaviors
-                .get(i)
-                .copied()
-                .unwrap_or_else(|| CachedBlockBehavior::from_block_id(&obj.block_id));
+        {
+            puffin::profile_scope!("GameCollisionScan");
+            for i in query_indices {
+                let obj = &self.objects[i];
+                let o_min_y = obj.position[1];
+                let o_max_y = obj.position[1] + obj.size[1];
+                let behavior = self
+                    .cached_behaviors
+                    .get(i)
+                    .copied()
+                    .unwrap_or_else(|| CachedBlockBehavior::from_block_id(&obj.block_id));
 
-            if aabb_overlaps_object_xz(s_min_x, s_max_x, s_min_z, s_max_z, obj)
-                && s_max_y > o_min_y
-                && s_min_y < o_max_y
-            {
-                match behavior.collision {
-                    BlockCollision::Portal => {
-                        hit_portals.push(i);
-                    }
-                    BlockCollision::Finish => {
-                        if finish_target.is_none() {
-                            finish_target = Some([
-                                obj.position[0] + obj.size[0] * 0.5,
-                                obj.position[1] + obj.size[1] * 0.5,
-                                obj.position[2] + obj.size[2] * 0.5,
-                            ]);
+                if aabb_overlaps_object_xz(s_min_x, s_max_x, s_min_z, s_max_z, obj)
+                    && s_max_y > o_min_y
+                    && s_min_y < o_max_y
+                {
+                    match behavior.collision {
+                        BlockCollision::Portal => {
+                            hit_portals.push(i);
                         }
+                        BlockCollision::Finish => {
+                            if finish_target.is_none() {
+                                finish_target = Some([
+                                    obj.position[0] + obj.size[0] * 0.5,
+                                    obj.position[1] + obj.size[1] * 0.5,
+                                    obj.position[2] + obj.size[2] * 0.5,
+                                ]);
+                            }
+                        }
+                        BlockCollision::Hazard => {
+                            hit_death = true;
+                        }
+                        BlockCollision::Solid => {
+                            hit_death = true;
+                        }
+                        BlockCollision::PassThrough => {}
                     }
-                    BlockCollision::Hazard => {
-                        hit_death = true;
-                    }
-                    BlockCollision::Solid => {
-                        hit_death = true;
-                    }
-                    BlockCollision::PassThrough => {}
                 }
             }
         }
@@ -263,6 +271,7 @@ impl GameState {
         }
 
         if !hit_portals.is_empty() {
+            puffin::profile_scope!("GamePortalConsume");
             let mut removed = false;
             for i in hit_portals.into_iter().rev() {
                 if let Some(behavior) = self.cached_behaviors.get(i).copied() {
@@ -296,13 +305,16 @@ impl GameState {
         let was_grounded = self.is_grounded;
         let mut is_grounded = false;
 
-        let support_height = self.top_surface_y_under_aabb(
-            s_min_x,
-            s_max_x,
-            s_min_z,
-            s_max_z,
-            self.position[1] + SNAP_DISTANCE,
-        );
+        let support_height = {
+            puffin::profile_scope!("GameSupportScan");
+            self.top_surface_y_under_aabb(
+                s_min_x,
+                s_max_x,
+                s_min_z,
+                s_max_z,
+                self.position[1] + SNAP_DISTANCE,
+            )
+        };
 
         if let Some(top) = support_height {
             let close_enough =

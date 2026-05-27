@@ -93,6 +93,7 @@ impl TimelineSimulationRuntime {
         triggers: &[TimedTrigger],
         simulate_trigger_hitboxes: bool,
     ) -> Self {
+        puffin::profile_scope!("TimelineRuntimeBuild");
         let mut game = GameState::new();
         game.objects = objects.to_vec();
         game.rebuild_behavior_cache();
@@ -138,6 +139,7 @@ impl TimelineSimulationRuntime {
     }
 
     fn apply_trigger_hitboxes(&mut self, up_to_time: f32) {
+        puffin::profile_scope!("TimelineTriggerHitboxes");
         if !self.simulate_trigger_hitboxes || self.triggers.is_empty() {
             return;
         }
@@ -176,6 +178,7 @@ impl TimelineSimulationRuntime {
     }
 
     pub(crate) fn advance_to(&mut self, target_time_seconds: f32) {
+        puffin::profile_scope!("TimelineAdvanceTo");
         let mut elapsed_seconds = self.elapsed_seconds;
         advance_simulation_time(
             &mut elapsed_seconds,
@@ -236,6 +239,7 @@ pub(crate) fn simulate_timeline_state(
     tap_times: &[f32],
     timeline_time_seconds: f32,
 ) -> TimelineSimulationState {
+    puffin::profile_scope!("TimelineSimulateState");
     let mut runtime =
         TimelineSimulationRuntime::new(spawn_position, spawn_direction, objects, tap_times);
     runtime.advance_to(timeline_time_seconds);
@@ -251,6 +255,7 @@ pub(crate) fn simulate_timeline_state_with_triggers(
     simulate_trigger_hitboxes: bool,
     timeline_time_seconds: f32,
 ) -> TimelineSimulationState {
+    puffin::profile_scope!("TimelineSimulateStateWithTriggers");
     let mut runtime = TimelineSimulationRuntime::new_with_triggers(
         spawn_position,
         spawn_direction,
@@ -271,6 +276,7 @@ pub(crate) fn advance_simulation_time<F>(
 ) where
     F: FnMut(f32, f32) -> bool,
 {
+    puffin::profile_scope!("AdvanceSimulationTime");
     let target_time = target_time_seconds.max(0.0);
     if target_time <= *elapsed_seconds {
         return;
@@ -300,5 +306,6 @@ pub(crate) fn trigger_transformed_objects_at_time(
     triggers: &[TimedTrigger],
     time_seconds: f32,
 ) -> Vec<LevelObject> {
+    puffin::profile_scope!("TriggerTransformObjects");
     apply_timed_triggers_to_objects(base_objects, triggers, time_seconds)
 }

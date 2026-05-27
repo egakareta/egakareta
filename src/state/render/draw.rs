@@ -128,29 +128,36 @@ impl State {
         paint_jobs: &[egui::ClippedPrimitive],
         screen_descriptor: &ScreenDescriptor,
     ) -> Result<(), RenderSurfaceError> {
+        puffin::profile_scope!("RenderEgui");
         self.render_with_overlay(|device, queue, view, encoder| {
-            renderer.update_buffers(device, queue, encoder, paint_jobs, screen_descriptor);
+            {
+                puffin::profile_scope!("EguiUpdateBuffers");
+                renderer.update_buffers(device, queue, encoder, paint_jobs, screen_descriptor);
+            }
 
-            let mut pass = encoder
-                .begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("egui_render_pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view,
-                        resolve_target: None,
-                        depth_slice: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    multiview_mask: None,
-                })
-                .forget_lifetime();
+            {
+                puffin::profile_scope!("EguiRenderPass");
+                let mut pass = encoder
+                    .begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("egui_render_pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view,
+                            resolve_target: None,
+                            depth_slice: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                        multiview_mask: None,
+                    })
+                    .forget_lifetime();
 
-            renderer.render(&mut pass, paint_jobs, screen_descriptor);
+                renderer.render(&mut pass, paint_jobs, screen_descriptor);
+            }
         })
     }
 
@@ -167,6 +174,7 @@ impl State {
     ///
     /// This method clears the surface and draws the active scene (Menu, Editor, or Gameplay).
     pub fn render(&mut self) -> Result<(), RenderSurfaceError> {
+        puffin::profile_scope!("RenderFrame");
         self.render_with_overlay(|_, _, _, _| {})
     }
 
@@ -178,11 +186,15 @@ impl State {
     where
         F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
     {
+        puffin::profile_scope!("RenderWithOverlay");
         let surface = match &self.render.gpu.surface {
             Some(s) => s,
             None => return Ok(()),
         };
-        let Some(output) = current_surface_output(surface.get_current_texture())? else {
+        let Some(output) = ({
+            puffin::profile_scope!("SurfaceAcquire");
+            current_surface_output(surface.get_current_texture())?
+        }) else {
             return Ok(());
         };
         let view = output
@@ -197,10 +209,19 @@ impl State {
                     label: Some("Render Encoder"),
                 });
 
-        self.render_to_view(&view, &mut encoder, overlay);
+        {
+            puffin::profile_scope!("RenderToView");
+            self.render_to_view(&view, &mut encoder, overlay);
+        }
 
-        self.render.gpu.queue.submit(iter::once(encoder.finish()));
-        output.present();
+        {
+            puffin::profile_scope!("GpuSubmit");
+            self.render.gpu.queue.submit(iter::once(encoder.finish()));
+        }
+        {
+            puffin::profile_scope!("SurfacePresent");
+            output.present();
+        }
         Ok(())
     }
 
@@ -212,6 +233,7 @@ impl State {
     ) where
         F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
     {
+        puffin::profile_scope!("RenderWorld");
         let editor_mode = self.editor.ui.mode;
         let skip_world = should_skip_world(self.phase, editor_mode);
         let draw_editor_overlays = should_draw_editor_overlays(self.phase, skip_world);
@@ -254,6 +276,7 @@ impl State {
         render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
 
         if should_draw_floor_and_grid(self.phase, editor_mode) {
+            puffin::profile_scope!("DrawFloorGrid");
             if let Some(draw_data) = self.render.meshes.floor.draw_data() {
                 draw_mesh(&mut render_pass, draw_data);
             }
@@ -269,6 +292,7 @@ impl State {
             || self.phase == AppPhase::Menu
         {
             if !skip_world {
+                puffin::profile_scope!("DrawBlocksTrail");
                 if self.phase == AppPhase::Editor {
                     if let Some(draw_data) = self.render.meshes.blocks_static.draw_data() {
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
@@ -315,6 +339,7 @@ impl State {
             }
 
             if draw_editor_overlays {
+                puffin::profile_scope!("DrawEditorOverlayMeshes");
                 if let Some(draw_data) = self.render.meshes.spawn_marker.draw_data() {
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                     draw_mesh(&mut render_pass, draw_data);
@@ -335,6 +360,7 @@ impl State {
         drop(render_pass);
 
         if draw_editor_overlays {
+            puffin::profile_scope!("DrawEditorOverlays");
             // Selection outlines use a selected-only depth prepass, so each block keeps its own
             // hollow silhouette while other selected blocks occlude outlines behind them.
             let selection_instances = self
@@ -344,6 +370,7 @@ impl State {
                 .as_slice();
 
             if !selection_instances.is_empty() {
+                puffin::profile_scope!("DrawSelectionOutlines");
                 let selection_mask_buffer = match &self.render.meshes.editor_selection_stencil {
                     MeshSlot::VertexData { buffer, .. } => Some(buffer),
                     _ => None,
@@ -468,6 +495,7 @@ impl State {
                 self.render.meshes.editor_hover_stencil.draw_data(),
                 self.render.meshes.editor_hover_outline.draw_data(),
             ) {
+                puffin::profile_scope!("DrawHoverOutline");
                 let mut hover_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Editor Hover Outline Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -511,6 +539,7 @@ impl State {
                 draw_mesh(&mut hover_pass, outline_data);
             }
 
+            puffin::profile_scope!("DrawGizmoCursor");
             let mut gizmo_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Editor Gizmo/Cursor Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -569,12 +598,15 @@ impl State {
             }
         }
 
-        overlay(
-            &self.render.gpu.device,
-            &self.render.gpu.queue,
-            view,
-            encoder,
-        );
+        {
+            puffin::profile_scope!("RenderOverlayClosure");
+            overlay(
+                &self.render.gpu.device,
+                &self.render.gpu.queue,
+                view,
+                encoder,
+            );
+        }
     }
 
     /// Recreates the window surface following a resize or other configuration change.

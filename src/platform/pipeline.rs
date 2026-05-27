@@ -59,35 +59,48 @@ impl FramePipeline {
     ///
     /// Returns the full egui output for further processing.
     pub fn run_frame(&mut self, state: &mut State, raw_input: egui::RawInput) -> egui::FullOutput {
+        puffin::profile_scope!("PipelineFrame");
         // Use physical dimensions for responsive scaling calculation to avoid feedback loops.
         // Screen points (raw_input.screen_rect) depend on the current zoom factor,
         // which would cause the UI size to oscillate every frame.
-        let physical_size = egui::vec2(state.surface_width() as f32, state.surface_height() as f32);
-        let ui_scale_factor = combined_ui_scale_factor(
-            physical_size,
-            state.app_settings().normalized_ui_scale_multiplier(),
-        );
-        self.egui_ctx.set_zoom_factor(ui_scale_factor);
+        {
+            puffin::profile_scope!("UiScale");
+            let physical_size =
+                egui::vec2(state.surface_width() as f32, state.surface_height() as f32);
+            let ui_scale_factor = combined_ui_scale_factor(
+                physical_size,
+                state.app_settings().normalized_ui_scale_multiplier(),
+            );
+            self.egui_ctx.set_zoom_factor(ui_scale_factor);
+        }
 
-        self.block_icon_cache
-            .refresh_icons(state, &mut self.egui_renderer);
+        {
+            puffin::profile_scope!("BlockIconCacheRefresh");
+            self.block_icon_cache
+                .refresh_icons(state, &mut self.egui_renderer);
+        }
         let block_icon_texture_ids = self.block_icon_cache.texture_ids();
 
-        let full_output = self.egui_ctx.run_ui(raw_input, |root_ui| {
-            let ctx = root_ui.ctx();
-            show_editor_ui(ctx, state, &block_icon_texture_ids);
-            show_menu_topbar(ctx, state);
-            show_menu_auth_ui(ctx, state);
-            show_menu_play_ui(ctx, state);
-            if let Some(favicon) = &self.menu_favicon {
-                show_menu_favicon_ui(ctx, state, favicon);
-            }
-            show_perf_overlay(ctx, state);
-        });
+        let full_output = {
+            puffin::profile_scope!("EguiRunUi");
+            self.egui_ctx.run_ui(raw_input, |root_ui| {
+                let ctx = root_ui.ctx();
+                show_editor_ui(ctx, state, &block_icon_texture_ids);
+                show_menu_topbar(ctx, state);
+                show_menu_auth_ui(ctx, state);
+                show_menu_play_ui(ctx, state);
+                if let Some(favicon) = &self.menu_favicon {
+                    show_menu_favicon_ui(ctx, state, favicon);
+                }
+                show_perf_overlay(ctx, state);
+            })
+        };
 
-        let paint_jobs = self
-            .egui_ctx
-            .tessellate(full_output.shapes.clone(), full_output.pixels_per_point);
+        let paint_jobs = {
+            puffin::profile_scope!("EguiTessellate");
+            self.egui_ctx
+                .tessellate(full_output.shapes.clone(), full_output.pixels_per_point)
+        };
 
         let window_size = [state.surface_width(), state.surface_height()];
         let screen_descriptor = ScreenDescriptor {
@@ -95,14 +108,25 @@ impl FramePipeline {
             pixels_per_point: full_output.pixels_per_point,
         };
 
-        for (id, image_delta) in &full_output.textures_delta.set {
-            self.egui_renderer
-                .update_texture(state.device(), state.queue(), *id, image_delta);
+        {
+            puffin::profile_scope!("EguiTextureUpload");
+            for (id, image_delta) in &full_output.textures_delta.set {
+                self.egui_renderer
+                    .update_texture(state.device(), state.queue(), *id, image_delta);
+            }
         }
 
-        state.update();
+        {
+            puffin::profile_scope!("StateUpdate");
+            state.update();
+        }
 
-        match state.render_egui(&mut self.egui_renderer, &paint_jobs, &screen_descriptor) {
+        let render_result = {
+            puffin::profile_scope!("StateRenderWithEgui");
+            state.render_egui(&mut self.egui_renderer, &paint_jobs, &screen_descriptor)
+        };
+
+        match render_result {
             Ok(_) => {}
             Err(RenderSurfaceError::Lost) | Err(RenderSurfaceError::Outdated) => {
                 state.handle_surface_lost();
@@ -115,8 +139,11 @@ impl FramePipeline {
             }
         }
 
-        for id in &full_output.textures_delta.free {
-            self.egui_renderer.free_texture(id);
+        {
+            puffin::profile_scope!("EguiTextureFree");
+            for id in &full_output.textures_delta.free {
+                self.egui_renderer.free_texture(id);
+            }
         }
 
         full_output

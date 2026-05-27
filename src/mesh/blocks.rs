@@ -20,18 +20,22 @@ const LIQUID_PROFILE_TAG: f32 = 1.0;
 const FINISH_RING_PROFILE_TAG: f32 = 2.0;
 
 pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
+    puffin::profile_scope!("BuildBlockVertices");
     build_block_geometry_impl(objects.iter()).to_triangle_vertices()
 }
 
 pub(crate) fn build_block_geometry(objects: &[LevelObject]) -> MeshGeometry {
+    puffin::profile_scope!("BuildBlockGeometry");
     build_block_geometry_impl(objects.iter())
 }
 
 pub(crate) fn build_block_geometry_from_refs(objects: &[&LevelObject]) -> MeshGeometry {
+    puffin::profile_scope!("BuildBlockGeometryRefs");
     build_block_geometry_impl(objects.iter().copied())
 }
 
 pub(crate) fn build_block_geometry_for_object(object: &LevelObject) -> MeshGeometry {
+    puffin::profile_scope!("BuildBlockGeometryOne");
     let mut geometry = MeshGeometry::default();
     append_block_geometry(&mut geometry, object);
     geometry
@@ -41,6 +45,7 @@ fn build_block_geometry_impl<'a, I>(objects: I) -> MeshGeometry
 where
     I: Iterator<Item = &'a LevelObject>,
 {
+    puffin::profile_scope!("BuildBlockGeometryImpl");
     let mut all_geometry = MeshGeometry::default();
 
     for obj in objects {

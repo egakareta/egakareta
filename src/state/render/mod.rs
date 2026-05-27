@@ -116,6 +116,7 @@ impl MeshSlot {
         label: &'static str,
         vertices: &[Vertex],
     ) -> Self {
+        puffin::profile_scope!("MeshSlotFromVertices");
         if vertices.is_empty() {
             return Self::Empty;
         }
@@ -137,6 +138,7 @@ impl MeshSlot {
         label: &'static str,
         geometry: &MeshGeometry,
     ) -> Self {
+        puffin::profile_scope!("MeshSlotFromGeometry");
         if geometry.is_empty() {
             return Self::Empty;
         }
@@ -238,6 +240,7 @@ impl MeshSlot {
         spare_capacity_vertices: u32,
         spare_capacity_indices: u32,
     ) {
+        puffin::profile_scope!("MeshSlotStreamingReplace");
         if geometry.is_empty() {
             *self = Self::Empty;
             return;
@@ -269,6 +272,7 @@ impl MeshSlot {
         start_index: usize,
         geometry: &MeshGeometry,
     ) -> bool {
+        puffin::profile_scope!("MeshSlotStreamingAppend");
         match self {
             Self::Streaming {
                 buffer,
@@ -344,6 +348,7 @@ impl MeshSlot {
     }
 
     pub(crate) fn write_streaming_vertices(&mut self, queue: &wgpu::Queue, vertices: &[Vertex]) {
+        puffin::profile_scope!("MeshSlotStreamingWriteVertices");
         match self {
             Self::Streaming {
                 buffer,
