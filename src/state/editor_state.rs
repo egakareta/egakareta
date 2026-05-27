@@ -553,8 +553,8 @@ impl State {
         self.editor.mode()
     }
 
-    pub(crate) fn game_cursor(&self, pointer_over_egui: bool) -> GameCursor {
-        if self.phase == AppPhase::Playing || pointer_over_egui {
+    pub(crate) fn game_cursor(&self, _pointer_over_egui: bool) -> GameCursor {
+        if self.phase == AppPhase::Playing {
             return GameCursor::Hidden;
         }
 
@@ -1289,21 +1289,21 @@ mod tests {
     }
 
     #[test]
-    fn game_cursor_uses_default_cursor_outside_playing_and_egui() {
+    fn game_cursor_uses_default_cursor_outside_playing_including_over_egui() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
 
             state.phase = AppPhase::Menu;
             assert_eq!(state.game_cursor(false), GameCursor::Default);
-            assert_eq!(state.game_cursor(true), GameCursor::Hidden);
+            assert_eq!(state.game_cursor(true), GameCursor::Default);
 
             state.phase = AppPhase::Editor;
             assert_eq!(state.game_cursor(false), GameCursor::Default);
-            assert_eq!(state.game_cursor(true), GameCursor::Hidden);
+            assert_eq!(state.game_cursor(true), GameCursor::Default);
 
             state.phase = AppPhase::GameOver;
             assert_eq!(state.game_cursor(false), GameCursor::Default);
-            assert_eq!(state.game_cursor(true), GameCursor::Hidden);
+            assert_eq!(state.game_cursor(true), GameCursor::Default);
         });
     }
 

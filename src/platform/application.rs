@@ -587,7 +587,7 @@ mod tests {
             let state = State::new_test().await;
 
             assert!(App::system_cursor_visible_for_frame(&state, false));
-            assert!(!App::system_cursor_visible_for_frame(&state, true));
+            assert!(App::system_cursor_visible_for_frame(&state, true));
         });
     }
 
