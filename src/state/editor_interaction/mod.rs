@@ -28,8 +28,8 @@ pub(crate) struct EditorGizmoDrag {
 #[derive(Clone)]
 pub(crate) struct EditorBlockDrag {
     pub(crate) start_mouse: [f64; 2],
-    pub(crate) start_center_screen: [f32; 2],
     pub(crate) start_center_world: [f32; 3],
+    pub(crate) start_drag_world: [f32; 3],
     pub(crate) start_blocks: Vec<EditorDragBlockStart>,
 }
 

@@ -1074,8 +1074,8 @@ mod tests {
 
             state.editor.runtime.interaction.block_drag = Some(super::super::EditorBlockDrag {
                 start_mouse: [0.0, 0.0],
-                start_center_screen: [0.0, 0.0],
                 start_center_world: [0.0, 0.0, 0.0],
+                start_drag_world: [0.0, 0.0, 0.0],
                 start_blocks: Vec::new(),
             });
             state.editor.runtime.dirty = crate::state::EditorDirtyFlags::from_object_sync();

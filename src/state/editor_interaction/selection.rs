@@ -264,47 +264,34 @@ impl EditorSubsystem {
             return true;
         }
 
-        let (camera_right_xy, camera_up_xy) = self.camera_axes_xy();
-        let center = Vec3::new(
+        // Cast a ray through the current cursor position.
+        let Some((ray_origin, ray_dir)) = self.screen_to_ray(x, y, viewport) else {
+            return true;
+        };
+
+        // Intersect with a camera-perpendicular plane through the selection center.
+        // This naturally handles all 3 axes including Y (depth).
+        let plane_point = Vec3::new(
             drag.start_center_world[0],
             drag.start_center_world[1],
             drag.start_center_world[2],
         );
-
-        let Some(origin_screen) = self.world_to_screen_v(center, viewport) else {
-            return true;
-        };
-
-        let camera_shift =
-            Vec2::new(drag.start_center_screen[0], drag.start_center_screen[1]) - origin_screen;
-        let effective_mouse_delta = mouse_delta + camera_shift;
-
-        let right_world = Vec3::new(camera_right_xy.x, 0.0, camera_right_xy.y);
-        let up_world = Vec3::new(camera_up_xy.x, 0.0, camera_up_xy.y);
-
-        let Some(right_screen) = self.world_to_screen_v(center + right_world, viewport) else {
-            return true;
-        };
-        let Some(up_screen) = self.world_to_screen_v(center + up_world, viewport) else {
-            return true;
-        };
-
-        let right_screen_delta = right_screen - origin_screen;
-        let up_screen_delta = up_screen - origin_screen;
-
-        let det =
-            right_screen_delta.x * up_screen_delta.y - right_screen_delta.y * up_screen_delta.x;
-        if det.abs() <= f32::EPSILON {
+        let camera_forward = self.camera_forward();
+        let denom = ray_dir.dot(camera_forward);
+        if denom.abs() <= f32::EPSILON {
             return true;
         }
-
-        let inv_det = 1.0 / det;
-        let world_right_factor = (effective_mouse_delta.x * up_screen_delta.y
-            - effective_mouse_delta.y * up_screen_delta.x)
-            * inv_det;
-        let world_up_factor = (right_screen_delta.x * effective_mouse_delta.y
-            - right_screen_delta.y * effective_mouse_delta.x)
-            * inv_det;
+        let t = (plane_point - ray_origin).dot(camera_forward) / denom;
+        if t < 0.0 {
+            return true;
+        }
+        let current_hit = ray_origin + ray_dir * t;
+        let start_drag = Vec3::new(
+            drag.start_drag_world[0],
+            drag.start_drag_world[1],
+            drag.start_drag_world[2],
+        );
+        let world_delta = current_hit - start_drag;
 
         let snap_enabled = self.effective_snap_to_grid();
         let snap_step = self.config.snap_step.max(0.05);
@@ -313,13 +300,9 @@ impl EditorSubsystem {
         for block in &drag.start_blocks {
             if let Some(obj) = self.objects.get_mut(block.index) {
                 let mut next = [
-                    block.position[0]
-                        + world_right_factor * camera_right_xy.x
-                        + world_up_factor * camera_up_xy.x,
-                    block.position[1],
-                    block.position[2]
-                        + world_right_factor * camera_right_xy.y
-                        + world_up_factor * camera_up_xy.y,
+                    block.position[0] + world_delta.x,
+                    block.position[1] + world_delta.y,
+                    block.position[2] + world_delta.z,
                 ];
 
                 if snap_enabled {
@@ -374,9 +357,24 @@ impl EditorSubsystem {
                 bounds_position[1] + bounds_size[1] * 0.5,
                 bounds_position[2] + bounds_size[2] * 0.5,
             );
-            let Some(center_screen) = self.world_to_screen_v(center, viewport_size) else {
-                return false;
-            };
+
+            // Compute initial drag world position by intersecting the cursor ray
+            // with a camera-perpendicular plane through the selection center.
+            let start_drag_world = self
+                .screen_to_ray(x, y, viewport_size)
+                .and_then(|(ray_origin, ray_dir)| {
+                    let camera_forward = self.camera_forward();
+                    let denom = ray_dir.dot(camera_forward);
+                    if denom.abs() <= f32::EPSILON {
+                        return None;
+                    }
+                    let t = (center - ray_origin).dot(camera_forward) / denom;
+                    if t < 0.0 {
+                        return None;
+                    }
+                    Some(ray_origin + ray_dir * t)
+                })
+                .unwrap_or(center);
 
             let mut start_blocks = Vec::with_capacity(selected_indices.len());
             for index in selected_indices {
@@ -392,8 +390,8 @@ impl EditorSubsystem {
 
             self.runtime.interaction.block_drag = Some(EditorBlockDrag {
                 start_mouse: [x, y],
-                start_center_screen: [center_screen.x, center_screen.y],
                 start_center_world: [center.x, center.y, center.z],
+                start_drag_world: [start_drag_world.x, start_drag_world.y, start_drag_world.z],
                 start_blocks,
             });
             return true;
@@ -979,8 +977,8 @@ mod tests {
 
             state.editor.runtime.interaction.block_drag = Some(EditorBlockDrag {
                 start_mouse: [10.0, 20.0],
-                start_center_screen: [100.0, 120.0],
                 start_center_world: [0.5, 0.5, 0.5],
+                start_drag_world: [0.5, 0.5, 0.5],
                 start_blocks: vec![EditorDragBlockStart {
                     index: 0,
                     position: state.editor.objects[0].position,
@@ -1013,8 +1011,8 @@ mod tests {
 
             state.editor.runtime.interaction.block_drag = Some(EditorBlockDrag {
                 start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
-                start_center_screen: [origin_screen.x, origin_screen.y],
                 start_center_world: [center.x, center.y, center.z],
+                start_drag_world: [center.x, center.y, center.z],
                 start_blocks: vec![EditorDragBlockStart {
                     index: 0,
                     position: state.editor.objects[0].position,
