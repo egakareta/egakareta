@@ -55,6 +55,7 @@ impl State {
 
     pub(super) fn restart_level(&mut self) {
         self.stop_audio();
+        self.clear_pending_gameplay_inputs();
         self.gameplay.state = GameState::new();
 
         if self.session.playtesting_editor {
