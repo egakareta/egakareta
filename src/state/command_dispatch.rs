@@ -623,16 +623,16 @@ impl State {
                     None
                 }
             }
-            "mode_tapping" => {
+            "mode_trigger" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::EditorSetMode(EditorMode::Tapping))
+                    Some(AppCommand::EditorSetMode(EditorMode::Trigger))
                 } else {
                     None
                 }
             }
-            "mode_trigger" => {
+            "tab_tapping" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::EditorSetMode(EditorMode::Trigger))
+                    Some(AppCommand::EditorSetMode(EditorMode::Tapping))
                 } else {
                     None
                 }
@@ -1055,13 +1055,6 @@ mod tests {
 
             state.process_input_event(InputEvent::Key {
                 key: "6".to_string(),
-                pressed: true,
-                just_pressed: true,
-            });
-            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Tapping);
-
-            state.process_input_event(InputEvent::Key {
-                key: "7".to_string(),
                 pressed: true,
                 just_pressed: true,
             });
@@ -1923,14 +1916,13 @@ mod tests {
                 Some(AppCommand::EditorSetMode(EditorMode::Place))
             );
             assert_eq!(
-                state.command_for_keybind_action("mode_tapping", true),
-                Some(AppCommand::EditorSetMode(EditorMode::Tapping))
-            );
-            assert_eq!(
                 state.command_for_keybind_action("mode_trigger", true),
                 Some(AppCommand::EditorSetMode(EditorMode::Trigger))
             );
-
+            assert_eq!(
+                state.command_for_keybind_action("tab_tapping", true),
+                Some(AppCommand::EditorSetMode(EditorMode::Tapping))
+            );
             assert_eq!(
                 state.command_for_keybind_action("does_not_exist", true),
                 None
