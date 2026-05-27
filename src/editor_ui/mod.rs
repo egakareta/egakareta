@@ -88,6 +88,9 @@ const RESPONSIVE_UI_SCALE_MIN: f32 = 0.8;
 const RESPONSIVE_UI_SCALE_MAX: f32 = 1.35;
 const UI_SCALE_BASE_WIDTH: f32 = 1280.0;
 const UI_SCALE_BASE_HEIGHT: f32 = 720.0;
+const KEYBIND_LABEL_MIN_WIDTH: f32 = 88.0;
+const KEYBIND_LABEL_MAX_WIDTH: f32 = 132.0;
+const KEYBIND_VERTICAL_BREAKPOINT: f32 = 240.0;
 
 fn is_compact_editor_ui(viewport_width: f32) -> bool {
     viewport_width <= COMPACT_EDITOR_UI_BREAKPOINT
@@ -181,280 +184,201 @@ pub fn show_editor_ui(
     let is_timing = mode == EditorMode::Timing
         || (mode == EditorMode::Null && last_mode == Some(EditorMode::Timing));
     let is_compose = mode.is_compose_mode() && !is_timing;
-    let viewport_width = ctx.content_rect().width();
+    let content_rect = ctx.content_rect();
+    let viewport_width = content_rect.width();
+    let viewport_height = content_rect.height();
     let is_compact_ui = is_compact_editor_ui(viewport_width);
 
     if view.show_settings {
-        egui::Panel::left("editor_settings_sidebar")
-            .resizable(true)
-            .default_size(settings_sidebar_default_width(viewport_width))
+        let sidebar_width = settings_sidebar_default_width(viewport_width);
+        egui::Area::new("editor_settings_sidebar_overlay".into())
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.heading(format!("{} Settings", egui_phosphor::regular::GEAR));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let close_button_size = egui::vec2(
-                            ui.spacing().interact_size.y,
-                            ui.spacing().interact_size.y,
-                        );
+                egui::Frame::side_top_panel(ui.style()).show(ui, |ui| {
+                    ui.set_width(sidebar_width);
+                    ui.set_min_height(viewport_height);
+                    ui.horizontal(|ui| {
+                        ui.heading(format!("{} Settings", egui_phosphor::regular::GEAR));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let close_button_size = egui::vec2(
+                                ui.spacing().interact_size.y,
+                                ui.spacing().interact_size.y,
+                            );
+                            if ui
+                                .add_sized(
+                                    close_button_size,
+                                    egui::Button::new(egui_phosphor::regular::X).frame(false),
+                                )
+                                .on_hover_text("Close settings")
+                                .clicked()
+                            {
+                                commands.push(crate::commands::AppCommand::EditorSetShowSettings(
+                                    false,
+                                ));
+                            }
+                        });
+                    });
+                    ui.horizontal(|ui| {
                         if ui
-                            .add_sized(
-                                close_button_size,
-                                egui::Button::new(egui_phosphor::regular::X).frame(false),
+                            .selectable_label(
+                                view.settings_section == SettingsSection::Backends,
+                                format!("{} Backends", egui_phosphor::regular::MONITOR),
                             )
-                            .on_hover_text("Close settings")
                             .clicked()
                         {
-                            commands
-                                .push(crate::commands::AppCommand::EditorSetShowSettings(false));
+                            commands.push(crate::commands::AppCommand::EditorSetSettingsSection(
+                                SettingsSection::Backends,
+                            ));
+                        }
+
+                        if ui
+                            .selectable_label(
+                                view.settings_section == SettingsSection::Keybinds,
+                                format!("{} Keybinds", egui_phosphor::regular::KEYBOARD),
+                            )
+                            .clicked()
+                        {
+                            commands.push(crate::commands::AppCommand::EditorSetSettingsSection(
+                                SettingsSection::Keybinds,
+                            ));
                         }
                     });
-                });
-                ui.horizontal(|ui| {
-                    if ui
-                        .selectable_label(
-                            view.settings_section == SettingsSection::Backends,
-                            format!("{} Backends", egui_phosphor::regular::MONITOR),
-                        )
-                        .clicked()
-                    {
-                        commands.push(crate::commands::AppCommand::EditorSetSettingsSection(
-                            SettingsSection::Backends,
-                        ));
-                    }
 
-                    if ui
-                        .selectable_label(
-                            view.settings_section == SettingsSection::Keybinds,
-                            format!("{} Keybinds", egui_phosphor::regular::KEYBOARD),
-                        )
-                        .clicked()
-                    {
-                        commands.push(crate::commands::AppCommand::EditorSetSettingsSection(
-                            SettingsSection::Keybinds,
-                        ));
-                    }
-                });
+                    ui.separator();
 
-                ui.separator();
-
-                match view.settings_section {
-                    SettingsSection::Backends => {
-                        ui.label(format!(
-                            "{} Graphics backend",
-                            egui_phosphor::regular::DESKTOP
-                        ));
-                        let mut graphics_choice = view.configured_graphics_backend.to_string();
-                        egui::ComboBox::from_id_salt("settings_graphics_backend")
-                            .selected_text(graphics_choice.as_str())
-                            .show_ui(ui, |ui| {
-                                for backend in view.graphics_backend_options {
-                                    if ui
-                                        .selectable_label(graphics_choice == *backend, backend)
-                                        .clicked()
-                                    {
-                                        graphics_choice = backend.clone();
-                                    }
-                                }
-                            });
-                        if graphics_choice != view.configured_graphics_backend {
-                            commands.push(crate::commands::AppCommand::EditorSetGraphicsBackend(
-                                graphics_choice,
+                    match view.settings_section {
+                        SettingsSection::Backends => {
+                            ui.label(format!(
+                                "{} Graphics backend",
+                                egui_phosphor::regular::DESKTOP
                             ));
-                        }
-
-                        if view.settings_restart_required {
-                            ui.colored_label(
-                                egui::Color32::from_rgb(255, 196, 96),
-                                format!(
-                                    "{} Graphics backend change will apply after restart.",
-                                    egui_phosphor::regular::WARNING
-                                ),
-                            );
-                        }
-
-                        ui.separator();
-                        ui.label(format!(
-                            "{} Audio backend",
-                            egui_phosphor::regular::SPEAKER_HIGH
-                        ));
-                        let mut audio_choice = view.configured_audio_backend.to_string();
-                        egui::ComboBox::from_id_salt("settings_audio_backend")
-                            .selected_text(audio_choice.as_str())
-                            .show_ui(ui, |ui| {
-                                for backend in view.audio_backend_options {
-                                    if ui
-                                        .selectable_label(audio_choice == *backend, backend)
-                                        .clicked()
-                                    {
-                                        audio_choice = backend.clone();
-                                    }
-                                }
-                            });
-                        if audio_choice != view.configured_audio_backend {
-                            commands.push(crate::commands::AppCommand::EditorSetAudioBackend(
-                                audio_choice,
-                            ));
-                        }
-
-                        ui.separator();
-                        ui.label(format!("{} UI Scale", egui_phosphor::regular::GEAR));
-                        let mut ui_scale_multiplier = view.app_settings.normalized_ui_scale_multiplier();
-                        if ui
-                            .add(
-                                egui::DragValue::new(&mut ui_scale_multiplier)
-                                    .speed(0.05)
-                                    .range(0.5..=3.0)
-                                    .suffix("x"),
-                            )
-                            .changed()
-                        {
-                            commands.push(crate::commands::AppCommand::EditorSetUiScaleMultiplier(
-                                ui_scale_multiplier,
-                            ));
-                        }
-                    }
-                    SettingsSection::Keybinds => {
-                        let mut grouped_actions: std::collections::BTreeMap<
-                            &'static str,
-                            Vec<&'static crate::types::KeybindActionMetadata>,
-                        > = std::collections::BTreeMap::new();
-                        for metadata in essential_keybind_actions() {
-                            grouped_actions
-                                .entry(metadata.group)
-                                .or_default()
-                                .push(metadata);
-                        }
-
-                        let default_keybinds = crate::types::default_essential_keybinds();
-
-                        egui::ScrollArea::vertical()
-                            .id_salt("keybinds_scroll")
-                            .show(ui, |ui| {
-                                for (group, actions) in grouped_actions {
-                                    ui.collapsing(group, |ui| {
-                                        for metadata in actions {
-                                            let action = metadata.action;
-                                            let label = metadata.label;
-                                            let capacity = metadata.capacity;
-
-                                            let current_chords =
-                                                view.app_settings.keybinds_for_action(action);
-                                            let default_chords: Vec<_> = default_keybinds
-                                                .iter()
-                                                .filter(|b| b.action == action)
-                                                .map(|b| &b.chord)
-                                                .collect();
-
-                                            let is_not_default = current_chords != default_chords;
-
-                                            ui.horizontal(|ui| {
-                                                ui.label(label);
-                                                if is_not_default
-                                                    && ui
-                                                        .button(
-                                                            egui_phosphor::regular::ARROW_CLOCKWISE,
-                                                        )
-                                                        .on_hover_text("Reset to default")
-                                                        .clicked()
-                                                {
-                                                    commands.push(
-                                                        crate::commands::AppCommand::EditorResetKeybind(
-                                                            action.to_string(),
-                                                        ),
-                                                    );
-                                                    commands.push(
-                                                        crate::commands::AppCommand::EditorSetKeybindCapture(
-                                                            None,
-                                                        ),
-                                                    );
-                                                }
-
-                                                ui.with_layout(
-                                                    egui::Layout::right_to_left(egui::Align::Center),
-                                                    |ui| {
-                                                        for slot in (0..capacity).rev() {
-                                                            let chord = current_chords.get(slot);
-                                                            let key_label = chord
-                                                                .map(|c| format_key_chord(c))
-                                                                .unwrap_or_else(|| {
-                                                                    "Unbound".to_string()
-                                                                });
-
-                                                            let is_capturing = view
-                                                                .keybind_capture_action
-                                                                == Some(&(
-                                                                    action.to_string(),
-                                                                    slot,
-                                                                ));
-
-                                                            if chord.is_some()
-                                                                && ui
-                                                                    .button(egui_phosphor::regular::X)
-                                                                    .clicked()
-                                                            {
-                                                                commands.push(
-                                                                    crate::commands::AppCommand::EditorClearKeybindSlot {
-                                                                        action: action.to_string(),
-                                                                        slot,
-                                                                    },
-                                                                );
-                                                                commands.push(
-                                                                    crate::commands::AppCommand::EditorSetKeybindCapture(
-                                                                        None,
-                                                                    ),
-                                                                );
-                                                            }
-
-                                                            let (bg_color, display_label) =
-                                                                if is_capturing {
-                                                                    (
-                                                                        egui::Color32::from_rgb(
-                                                                            0, 120, 215,
-                                                                        ),
-                                                                        "...".to_string(),
-                                                                    )
-                                                                } else {
-                                                                    (
-                                                                        egui::Color32::from_gray(
-                                                                            32,
-                                                                        ),
-                                                                        key_label,
-                                                                    )
-                                                                };
-
-                                                            if ui
-                                                                .add(
-                                                                    egui::Button::new(
-                                                                        egui::RichText::new(
-                                                                            display_label,
-                                                                        )
-                                                                        .monospace(),
-                                                                    )
-                                                                    .fill(bg_color),
-                                                                )
-                                                                .clicked()
-                                                            {
-                                                                if is_capturing {
-                                                                    commands.push(crate::commands::AppCommand::EditorSetKeybindCapture(None));
-                                                                } else {
-                                                                    commands.push(crate::commands::AppCommand::EditorSetKeybindCapture(Some((action.to_string(), slot))));
-                                                                }
-                                                            }
-                                                        }
-                                                    },
-                                                );
-                                            });
+                            let mut graphics_choice = view.configured_graphics_backend.to_string();
+                            egui::ComboBox::from_id_salt("settings_graphics_backend")
+                                .selected_text(graphics_choice.as_str())
+                                .show_ui(ui, |ui| {
+                                    for backend in view.graphics_backend_options {
+                                        if ui
+                                            .selectable_label(graphics_choice == *backend, backend)
+                                            .clicked()
+                                        {
+                                            graphics_choice = backend.clone();
                                         }
-                                    });
-                                }
+                                    }
+                                });
+                            if graphics_choice != view.configured_graphics_backend {
+                                commands.push(
+                                    crate::commands::AppCommand::EditorSetGraphicsBackend(
+                                        graphics_choice,
+                                    ),
+                                );
+                            }
 
-                                ui.separator();
-                                if ui.button("Reset to Defaults").clicked() {
-                                    commands.push(crate::commands::AppCommand::EditorResetKeybinds);
-                                }
-                            });
+                            if view.settings_restart_required {
+                                ui.colored_label(
+                                    egui::Color32::from_rgb(255, 196, 96),
+                                    format!(
+                                        "{} Graphics backend change will apply after restart.",
+                                        egui_phosphor::regular::WARNING
+                                    ),
+                                );
+                            }
+
+                            ui.separator();
+                            ui.label(format!(
+                                "{} Audio backend",
+                                egui_phosphor::regular::SPEAKER_HIGH
+                            ));
+                            let mut audio_choice = view.configured_audio_backend.to_string();
+                            egui::ComboBox::from_id_salt("settings_audio_backend")
+                                .selected_text(audio_choice.as_str())
+                                .show_ui(ui, |ui| {
+                                    for backend in view.audio_backend_options {
+                                        if ui
+                                            .selectable_label(audio_choice == *backend, backend)
+                                            .clicked()
+                                        {
+                                            audio_choice = backend.clone();
+                                        }
+                                    }
+                                });
+                            if audio_choice != view.configured_audio_backend {
+                                commands.push(crate::commands::AppCommand::EditorSetAudioBackend(
+                                    audio_choice,
+                                ));
+                            }
+
+                            ui.separator();
+                            ui.label(format!("{} UI Scale", egui_phosphor::regular::GEAR));
+                            let mut ui_scale_multiplier =
+                                view.app_settings.normalized_ui_scale_multiplier();
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut ui_scale_multiplier)
+                                        .speed(0.05)
+                                        .range(0.5..=3.0)
+                                        .suffix("x"),
+                                )
+                                .changed()
+                            {
+                                commands.push(
+                                    crate::commands::AppCommand::EditorSetUiScaleMultiplier(
+                                        ui_scale_multiplier,
+                                    ),
+                                );
+                            }
+                        }
+                        SettingsSection::Keybinds => {
+                            let mut grouped_actions: std::collections::BTreeMap<
+                                &'static str,
+                                Vec<&'static crate::types::KeybindActionMetadata>,
+                            > = std::collections::BTreeMap::new();
+                            for metadata in essential_keybind_actions() {
+                                grouped_actions
+                                    .entry(metadata.group)
+                                    .or_default()
+                                    .push(metadata);
+                            }
+
+                            let default_keybinds = crate::types::default_essential_keybinds();
+
+                            egui::ScrollArea::vertical()
+                                .id_salt("keybinds_scroll")
+                                .show(ui, |ui| {
+                                    for (group, actions) in grouped_actions {
+                                        ui.collapsing(group, |ui| {
+                                            for metadata in actions {
+                                                let action = metadata.action;
+
+                                                let current_chords =
+                                                    view.app_settings.keybinds_for_action(action);
+                                                let default_chords: Vec<_> = default_keybinds
+                                                    .iter()
+                                                    .filter(|b| b.action == action)
+                                                    .map(|b| &b.chord)
+                                                    .collect();
+
+                                                show_keybind_action_row(
+                                                    ui,
+                                                    &mut commands,
+                                                    metadata,
+                                                    &current_chords,
+                                                    &default_chords,
+                                                    view.keybind_capture_action,
+                                                );
+                                            }
+                                        });
+                                    }
+
+                                    ui.separator();
+                                    if ui.button("Reset to Defaults").clicked() {
+                                        commands
+                                            .push(crate::commands::AppCommand::EditorResetKeybinds);
+                                    }
+                                });
+                        }
                     }
-                }
+                });
             });
     }
 
@@ -726,6 +650,131 @@ fn push_command_when_clicked(
 ) {
     if clicked {
         commands.push(command);
+    }
+}
+
+fn show_keybind_action_row(
+    ui: &mut egui::Ui,
+    commands: &mut Vec<AppCommand>,
+    metadata: &crate::types::KeybindActionMetadata,
+    current_chords: &[&crate::types::KeyChord],
+    default_chords: &[&crate::types::KeyChord],
+    keybind_capture_action: Option<&(String, usize)>,
+) {
+    let action = metadata.action;
+    let is_not_default = current_chords != default_chords;
+    let row_width = ui.available_width();
+    let label_width = (row_width * 0.42)
+        .clamp(KEYBIND_LABEL_MIN_WIDTH, KEYBIND_LABEL_MAX_WIDTH)
+        .min(row_width);
+    let controls_width = (row_width - label_width - ui.spacing().item_spacing.x).max(0.0);
+    let vertical = row_width <= KEYBIND_VERTICAL_BREAKPOINT || controls_width < 96.0;
+
+    if vertical {
+        ui.label(metadata.label);
+        ui.horizontal_wrapped(|ui| {
+            show_keybind_controls(
+                ui,
+                commands,
+                action,
+                metadata.capacity,
+                current_chords,
+                is_not_default,
+                keybind_capture_action,
+            );
+        });
+        return;
+    }
+
+    ui.horizontal_top(|ui| {
+        ui.add_sized(
+            egui::vec2(label_width, ui.spacing().interact_size.y),
+            egui::Label::new(metadata.label),
+        );
+        ui.allocate_ui_with_layout(
+            egui::vec2(controls_width, 0.0),
+            egui::Layout::left_to_right(egui::Align::Center).with_main_wrap(true),
+            |ui| {
+                show_keybind_controls(
+                    ui,
+                    commands,
+                    action,
+                    metadata.capacity,
+                    current_chords,
+                    is_not_default,
+                    keybind_capture_action,
+                );
+            },
+        );
+    });
+}
+
+fn show_keybind_controls(
+    ui: &mut egui::Ui,
+    commands: &mut Vec<AppCommand>,
+    action: &str,
+    capacity: usize,
+    current_chords: &[&crate::types::KeyChord],
+    is_not_default: bool,
+    keybind_capture_action: Option<&(String, usize)>,
+) {
+    ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+
+    if is_not_default
+        && ui
+            .button(egui_phosphor::regular::ARROW_CLOCKWISE)
+            .on_hover_text("Reset to default")
+            .clicked()
+    {
+        commands.push(crate::commands::AppCommand::EditorResetKeybind(
+            action.to_string(),
+        ));
+        commands.push(crate::commands::AppCommand::EditorSetKeybindCapture(None));
+    }
+
+    for slot in 0..capacity {
+        ui.horizontal(|ui| {
+            let chord = current_chords.get(slot).copied();
+            let key_label = chord
+                .map(format_key_chord)
+                .unwrap_or_else(|| "Unbound".to_string());
+            let is_capturing = keybind_capture_action == Some(&(action.to_string(), slot));
+
+            let (bg_color, display_label) = if is_capturing {
+                (egui::Color32::from_rgb(0, 120, 215), "...".to_string())
+            } else {
+                (egui::Color32::from_gray(32), key_label)
+            };
+
+            if ui
+                .add(
+                    egui::Button::new(egui::RichText::new(display_label).monospace())
+                        .fill(bg_color),
+                )
+                .clicked()
+            {
+                if is_capturing {
+                    commands.push(crate::commands::AppCommand::EditorSetKeybindCapture(None));
+                } else {
+                    commands.push(crate::commands::AppCommand::EditorSetKeybindCapture(Some(
+                        (action.to_string(), slot),
+                    )));
+                }
+            }
+
+            if chord.is_some()
+                && ui
+                    .button(egui_phosphor::regular::X)
+                    .on_hover_text("Clear binding")
+                    .clicked()
+            {
+                commands.push(crate::commands::AppCommand::EditorClearKeybindSlot {
+                    action: action.to_string(),
+                    slot,
+                });
+                commands.push(crate::commands::AppCommand::EditorSetKeybindCapture(None));
+            }
+        });
     }
 }
 
