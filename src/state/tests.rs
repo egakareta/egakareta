@@ -168,6 +168,62 @@ fn selection_outline_builds_instances_per_selected_block() {
     });
 }
 
+#[test]
+fn selection_outline_uses_single_bounds_mesh_for_large_selections() {
+    pollster::block_on(async {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+        state.editor.ui.mode = EditorMode::Select;
+
+        for index in 0..701 {
+            state.editor.objects.push(LevelObject {
+                position: [index as f32, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                roundness: 0.18,
+                block_id: "core/stone".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            });
+        }
+        state.editor.ui.selected_block_index = Some(0);
+        state.editor.ui.selected_block_indices = (0..701).collect();
+
+        state.rebuild_editor_selection_outline_vertices();
+
+        assert_eq!(
+            state.render.meshes.editor_selection_outline_instances.len(),
+            1
+        );
+        let instance = &state.render.meshes.editor_selection_outline_instances[0];
+        assert_eq!(
+            instance.outline_vertices.end - instance.outline_vertices.start,
+            36
+        );
+        assert_eq!(
+            instance.mask_vertices.end - instance.mask_vertices.start,
+            36
+        );
+
+        let total_outline = state
+            .render
+            .meshes
+            .editor_selection_outline
+            .draw_data()
+            .map(|draw_data| draw_data.count())
+            .expect("selection outline mesh should exist");
+        assert_eq!(total_outline, 36);
+
+        let total_mask = state
+            .render
+            .meshes
+            .editor_selection_stencil
+            .draw_data()
+            .map(|draw_data| draw_data.count())
+            .expect("selection mask mesh should exist");
+        assert_eq!(total_mask, 36);
+    });
+}
+
 // ── EditorDirtyFlags contract tests ─────────────────────────────
 #[test]
 fn dirty_flags_default_is_clean() {

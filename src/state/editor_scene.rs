@@ -21,6 +21,8 @@ use crate::mesh::{
 use crate::state::render::EditorOutlineInstance;
 use crate::types::{AppPhase, EditorMode, GizmoPart, LevelObject, SpawnDirection};
 
+const SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD: usize = 700;
+
 fn editor_static_mesh_spare_capacity(geometry: &MeshGeometry, object_count: usize) -> (u32, u32) {
     let object_room = object_count.min(512).saturating_mul(36);
     let vertex_growth_room = geometry.vertex_count() / 8;
@@ -555,6 +557,56 @@ impl State {
                 .meshes
                 .editor_selection_outline_instances
                 .clear();
+            return;
+        }
+
+        if selected_indices.len() > SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD {
+            let Some((bounds_position, bounds_size)) = self.selected_group_bounds() else {
+                self.render.meshes.editor_selection_stencil.clear();
+                self.render.meshes.editor_selection_outline.clear();
+                self.render
+                    .meshes
+                    .editor_selection_outline_instances
+                    .clear();
+                return;
+            };
+
+            let bounds_object = LevelObject {
+                position: bounds_position,
+                size: bounds_size,
+                rotation_degrees: [0.0, 0.0, 0.0],
+                roundness: 0.0,
+                block_id: "core/stone".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            };
+            let mask_vertices =
+                build_block_geometry_for_object(&bounds_object).to_triangle_vertices();
+            let outline_vertices = build_editor_selection_outline_vertices(
+                bounds_position,
+                bounds_size,
+                [0.0, 0.0, 0.0],
+                2.0,
+            );
+            self.render
+                .meshes
+                .editor_selection_stencil
+                .replace_with_vertices(
+                    &self.render.gpu.device,
+                    "Editor Selection Stencil Vertex Buffer",
+                    &mask_vertices,
+                );
+            self.render
+                .meshes
+                .editor_selection_outline
+                .replace_with_vertices(
+                    &self.render.gpu.device,
+                    "Editor Selection Outline Vertex Buffer",
+                    &outline_vertices,
+                );
+            self.render.meshes.editor_selection_outline_instances = vec![EditorOutlineInstance {
+                mask_vertices: 0..mask_vertices.len() as u32,
+                outline_vertices: 0..outline_vertices.len() as u32,
+            }];
             return;
         }
 
