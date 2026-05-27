@@ -474,7 +474,10 @@ impl State {
                 refresh_started: false,
                 channel: std::sync::mpsc::channel(),
             },
-            gameplay: GameplaySubsystem { state: game },
+            gameplay: GameplaySubsystem {
+                state: game,
+                pending_turn_inputs: std::collections::VecDeque::new(),
+            },
             phase: AppPhase::Menu,
             menu: MenuSubsystem { state: menu },
             frame_runtime: FrameRuntimeState {
@@ -1257,7 +1260,10 @@ impl State {
                 refresh_started: false,
                 channel: std::sync::mpsc::channel(),
             },
-            gameplay: GameplaySubsystem { state: game },
+            gameplay: GameplaySubsystem {
+                state: game,
+                pending_turn_inputs: std::collections::VecDeque::new(),
+            },
             phase: AppPhase::Menu,
             menu: MenuSubsystem { state: menu },
             frame_runtime: FrameRuntimeState {

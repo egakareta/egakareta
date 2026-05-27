@@ -34,6 +34,8 @@ mod shader_tests;
 #[cfg(test)]
 mod tests;
 
+use std::collections::VecDeque;
+
 pub(crate) use audio_state::{AudioState, AudioSubsystem};
 pub(crate) use editor_camera::EditorCameraState;
 pub(crate) use editor_config_state::EditorConfigState;
@@ -66,6 +68,12 @@ use crate::types::{
 /// Separates gameplay concern from the top-level application state.
 pub(crate) struct GameplaySubsystem {
     pub(crate) state: GameState,
+    pub(crate) pending_turn_inputs: VecDeque<TimedGameplayTurn>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TimedGameplayTurn {
+    pub(crate) time_seconds: f32,
 }
 
 pub(crate) struct AuthSubsystem {
@@ -173,6 +181,40 @@ impl State {
         self.render.gpu.apply_resize(new_size);
     }
 
+    fn current_gameplay_input_time_seconds(&self) -> f32 {
+        self.audio
+            .state
+            .runtime
+            .playback_time_seconds()
+            .unwrap_or(self.gameplay.state.elapsed_seconds)
+            .max(0.0)
+    }
+
+    pub(crate) fn queue_gameplay_turn_right(&mut self) {
+        self.queue_gameplay_turn_right_at(self.current_gameplay_input_time_seconds());
+    }
+
+    pub(crate) fn queue_gameplay_turn_right_at(&mut self, time_seconds: f32) {
+        if !time_seconds.is_finite() {
+            return;
+        }
+
+        let time_seconds = time_seconds.max(0.0);
+        let insert_at = self
+            .gameplay
+            .pending_turn_inputs
+            .iter()
+            .position(|input| time_seconds < input.time_seconds)
+            .unwrap_or(self.gameplay.pending_turn_inputs.len());
+        self.gameplay
+            .pending_turn_inputs
+            .insert(insert_at, TimedGameplayTurn { time_seconds });
+    }
+
+    pub(crate) fn clear_pending_gameplay_inputs(&mut self) {
+        self.gameplay.pending_turn_inputs.clear();
+    }
+
     /// Handles the "turn right" input action based on the current application phase.
     ///
     /// - In Menu: Starts the selected level
@@ -211,7 +253,7 @@ impl State {
                 } else if self.gameplay.state.game_over {
                     self.restart_level();
                 } else {
-                    self.gameplay.state.turn_right();
+                    self.queue_gameplay_turn_right();
                 }
             }
             AppPhase::Editor => {

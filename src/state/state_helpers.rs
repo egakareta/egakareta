@@ -128,6 +128,7 @@ impl State {
         self.session.playtest_audio_start_seconds = None;
         self.session.playing_trigger_hitboxes = false;
         self.session.playing_trigger_base_objects = None;
+        self.clear_pending_gameplay_inputs();
         self.reset_playing_camera_defaults();
         self.clear_editor_pan_keys();
         self.editor.runtime.interaction.clipboard = None;
@@ -140,6 +141,7 @@ impl State {
         self.session.playtest_audio_start_seconds = None;
         self.session.playing_trigger_hitboxes = false;
         self.session.playing_trigger_base_objects = None;
+        self.clear_pending_gameplay_inputs();
         self.session.editor_menu_preview_camera = None;
         self.editor.ui.right_dragging = false;
         self.editor.ui.mode = EditorMode::Place;
@@ -165,6 +167,7 @@ impl State {
         self.session.playtest_audio_start_seconds = None;
         self.session.playing_trigger_hitboxes = false;
         self.session.playing_trigger_base_objects = None;
+        self.clear_pending_gameplay_inputs();
         self.session.editor_level_name = None;
         self.editor.ui.selected_block_index = None;
         self.editor.ui.selected_block_indices.clear();

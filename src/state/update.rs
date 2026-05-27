@@ -132,6 +132,19 @@ impl State {
         Some(transformed)
     }
 
+    fn apply_pending_gameplay_turns_up_to(&mut self, time_seconds: f32) {
+        const INPUT_TIME_EPSILON: f32 = 1e-6;
+        while self
+            .gameplay
+            .pending_turn_inputs
+            .front()
+            .is_some_and(|input| input.time_seconds <= time_seconds + INPUT_TIME_EPSILON)
+        {
+            let _ = self.gameplay.pending_turn_inputs.pop_front();
+            self.gameplay.state.turn_right();
+        }
+    }
+
     fn target_playing_time(&self, frame_dt: f32) -> f32 {
         let elapsed = self.gameplay.state.elapsed_seconds.max(0.0);
         if !self.gameplay.state.started || self.gameplay.state.game_over {
@@ -150,26 +163,86 @@ impl State {
         clamped_forward_target.min(elapsed + 0.25)
     }
 
+    fn advance_playing_state_segment_to_time(
+        &mut self,
+        elapsed_seconds: &mut f32,
+        target_time: f32,
+        simulation_dt: f32,
+        trigger_render_objects: &mut Option<Vec<LevelObject>>,
+    ) -> bool {
+        let mut should_continue = true;
+        advance_simulation_time(
+            elapsed_seconds,
+            target_time,
+            simulation_dt,
+            |step_target, step_dt| {
+                *trigger_render_objects = self.apply_playing_object_triggers(step_target);
+                self.gameplay.state.update(step_dt);
+                self.prune_playing_trigger_base_objects_from_consumed();
+                should_continue = !self.gameplay.state.game_over;
+                should_continue
+            },
+        );
+        self.gameplay.state.elapsed_seconds = *elapsed_seconds;
+        should_continue
+    }
+
     fn advance_playing_state_to_time(
         &mut self,
         target_time: f32,
         simulation_dt: f32,
     ) -> Option<Vec<LevelObject>> {
         puffin::profile_scope!("PlayingAdvanceToTime");
+        const INPUT_TIME_EPSILON: f32 = 1e-6;
         let mut trigger_render_objects: Option<Vec<LevelObject>> = None;
         let mut elapsed_seconds = self.gameplay.state.elapsed_seconds;
 
-        advance_simulation_time(
-            &mut elapsed_seconds,
-            target_time,
-            simulation_dt,
-            |step_target, step_dt| {
-                trigger_render_objects = self.apply_playing_object_triggers(step_target);
-                self.gameplay.state.update(step_dt);
-                self.prune_playing_trigger_base_objects_from_consumed();
-                !self.gameplay.state.game_over
-            },
-        );
+        self.apply_pending_gameplay_turns_up_to(elapsed_seconds);
+        while elapsed_seconds + INPUT_TIME_EPSILON < target_time {
+            let next_turn_time = self
+                .gameplay
+                .pending_turn_inputs
+                .front()
+                .map(|input| input.time_seconds);
+
+            let Some(next_turn_time) = next_turn_time else {
+                let _ = self.advance_playing_state_segment_to_time(
+                    &mut elapsed_seconds,
+                    target_time,
+                    simulation_dt,
+                    &mut trigger_render_objects,
+                );
+                break;
+            };
+
+            if next_turn_time > target_time + INPUT_TIME_EPSILON {
+                let _ = self.advance_playing_state_segment_to_time(
+                    &mut elapsed_seconds,
+                    target_time,
+                    simulation_dt,
+                    &mut trigger_render_objects,
+                );
+                break;
+            }
+
+            let segment_target = next_turn_time.max(elapsed_seconds);
+            if segment_target > elapsed_seconds + INPUT_TIME_EPSILON
+                && !self.advance_playing_state_segment_to_time(
+                    &mut elapsed_seconds,
+                    segment_target,
+                    simulation_dt,
+                    &mut trigger_render_objects,
+                )
+            {
+                break;
+            }
+
+            self.gameplay.state.elapsed_seconds = elapsed_seconds;
+            self.apply_pending_gameplay_turns_up_to(elapsed_seconds);
+            if self.gameplay.state.game_over {
+                break;
+            }
+        }
         self.gameplay.state.elapsed_seconds = elapsed_seconds;
 
         if self.editor.has_object_transform_triggers() {
@@ -604,6 +677,7 @@ impl State {
 
         if self.gameplay.state.game_over {
             self.stop_audio();
+            self.clear_pending_gameplay_inputs();
         }
 
         let mut trail_vertices = Vec::new();
@@ -768,10 +842,10 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::State;
-    use crate::game::TimelineSimulationRuntime;
+    use crate::game::{GameState, TimelineSimulationRuntime};
     use crate::types::{
-        AppPhase, EditorMode, LevelObject, SpawnDirection, TimedTrigger, TimedTriggerAction,
-        TimedTriggerEasing, TimedTriggerTarget, TimingPoint,
+        AppPhase, Direction, EditorMode, LevelObject, SpawnDirection, TimedTrigger,
+        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, TimingPoint,
     };
 
     fn sample_object() -> LevelObject {
@@ -797,6 +871,31 @@ mod tests {
         }
     }
 
+    fn gameplay_floor() -> LevelObject {
+        LevelObject {
+            position: [-10.0, -1.0, -10.0],
+            size: [20.0, 1.0, 20.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.0,
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        }
+    }
+
+    fn prepare_started_gameplay(state: &mut State, speed: f32) {
+        state.phase = AppPhase::Playing;
+        state.gameplay.state = GameState::new();
+        state.gameplay.state.objects = vec![gameplay_floor()];
+        state.gameplay.state.rebuild_behavior_cache();
+        state
+            .gameplay
+            .state
+            .apply_spawn_exact([0.0, 0.0, 0.0], SpawnDirection::Forward);
+        state.gameplay.state.started = true;
+        state.gameplay.state.speed = speed;
+        state.clear_pending_gameplay_inputs();
+    }
+
     #[test]
     fn target_playing_time_respects_started_and_game_over_state() {
         pollster::block_on(async {
@@ -816,6 +915,40 @@ mod tests {
             state.gameplay.state.game_over = false;
             assert_eq!(state.target_playing_time(10.0), 1.5);
             assert_eq!(state.target_playing_time(-1.0), 1.25);
+        });
+    }
+
+    #[test]
+    fn queued_gameplay_turn_applies_at_its_timestamp() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            prepare_started_gameplay(&mut state, 12.0);
+
+            state.queue_gameplay_turn_right_at(0.05);
+            let _ = state.advance_playing_state_to_time(0.1, 1.0 / 120.0);
+
+            assert!(matches!(state.gameplay.state.direction, Direction::Right));
+            crate::test_utils::assert_approx_eq(state.gameplay.state.position[2], 0.6, 1e-4);
+            crate::test_utils::assert_approx_eq(state.gameplay.state.position[0], 0.6, 1e-4);
+            assert!(state.gameplay.pending_turn_inputs.is_empty());
+        });
+    }
+
+    #[test]
+    fn active_gameplay_turn_right_queues_until_update() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            prepare_started_gameplay(&mut state, 10.0);
+
+            state.turn_right();
+
+            assert!(matches!(state.gameplay.state.direction, Direction::Forward));
+            assert_eq!(state.gameplay.pending_turn_inputs.len(), 1);
+
+            let _ = state.advance_playing_state_to_time(1.0 / 120.0, 1.0 / 120.0);
+
+            assert!(matches!(state.gameplay.state.direction, Direction::Right));
+            assert!(state.gameplay.pending_turn_inputs.is_empty());
         });
     }
 
