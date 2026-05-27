@@ -751,12 +751,12 @@ mod tests {
             .orthographic_half_extent
             .expect("speed portal icon camera extent");
 
-        assert_approx_eq(position[0], 0.14, 1e-6);
+        assert_approx_eq(position[0], 0.5, 1e-6);
         assert_approx_eq(position[1], 4.0, 1e-6);
-        assert_approx_eq(position[2], 0.0, 1e-6);
+        assert_approx_eq(position[2], 0.5, 1e-6);
         assert_approx_eq(rotation[0], -90.0, 1e-6);
         assert_approx_eq(rotation[1], 0.0, 1e-6);
-        assert_approx_eq(rotation[2], 0.0, 1e-6);
-        assert_approx_eq(half_extent, 1.15, 1e-6);
+        assert_approx_eq(rotation[2], -90.0, 1e-6);
+        assert_approx_eq(half_extent, 0.6, 1e-6);
     }
 }

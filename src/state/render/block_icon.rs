@@ -411,15 +411,15 @@ mod tests {
     fn custom_icon_camera_configuration_controls_speed_portal_view() {
         let camera = resolve_icon_camera("core/speedportal", false);
 
-        assert_approx_eq(camera.eye.x, 0.14, 1e-6);
+        assert_approx_eq(camera.eye.x, 0.5, 1e-6);
         assert_approx_eq(camera.eye.y, 4.0, 1e-6);
-        assert_approx_eq(camera.eye.z, 0.0, 1e-6);
-        assert_approx_eq(camera.target.x, 0.14, 1e-5);
+        assert_approx_eq(camera.eye.z, 0.5, 1e-6);
+        assert_approx_eq(camera.target.x, 0.5, 1e-5);
         assert_approx_eq(camera.target.y, 3.0, 1e-5);
-        assert_approx_eq(camera.target.z, 0.0, 1e-5);
-        assert_approx_eq(camera.up.x, 0.0, 1e-5);
+        assert_approx_eq(camera.target.z, 0.5, 1e-5);
+        assert_approx_eq(camera.up.x, 1.0, 1e-5);
         assert_approx_eq(camera.up.y, 0.0, 1e-5);
-        assert_approx_eq(camera.up.z, -1.0, 1e-5);
+        assert_approx_eq(camera.up.z, 0.0, 1e-5);
     }
 
     #[test]
