@@ -169,10 +169,6 @@ pub fn show_editor_ui(
     state: &mut State,
     block_icon_texture_ids: &HashMap<String, egui::TextureId>,
 ) {
-    if !state.is_editor() {
-        return;
-    }
-
     let view = state.editor_ui_view_model();
     let mut commands = Vec::<AppCommand>::new();
 
@@ -185,10 +181,16 @@ pub fn show_editor_ui(
     let is_compact_ui = is_compact_editor_ui(viewport_width);
 
     if view.show_settings {
-        egui::Panel::left("editor_settings_sidebar")
-            .resizable(true)
-            .default_size(settings_sidebar_default_width(viewport_width))
+        let sidebar_width = settings_sidebar_default_width(viewport_width);
+        egui::Area::new("editor_settings_sidebar".into())
+            .anchor(egui::Align2::LEFT_TOP, egui::vec2(12.0, 12.0))
+            .order(egui::Order::Foreground)
             .show(ctx, |ui| {
+                egui::Frame::window(ui.style()).show(ui, |ui| {
+                    ui.set_min_width(sidebar_width.max(SETTINGS_SIDEBAR_MIN_WIDTH));
+                    ui.set_max_width(sidebar_width.max(SETTINGS_SIDEBAR_MIN_WIDTH));
+                    ui.set_max_height((ctx.content_rect().height() - 24.0).max(120.0));
+                    egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.heading(format!("{} Settings", egui_phosphor::regular::GEAR));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -455,7 +457,16 @@ pub fn show_editor_ui(
                             });
                     }
                 }
+                    });
+                });
             });
+    }
+
+    if !state.is_editor() {
+        for command in commands {
+            state.dispatch(command);
+        }
+        return;
     }
 
     egui::Panel::top("editor_top_bar").show(ctx, |ui| {
