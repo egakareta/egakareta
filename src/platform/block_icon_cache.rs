@@ -129,6 +129,12 @@ fn block_icon_signature(block: &BlockDefinition) -> u64 {
     block.assets.icon.hash(&mut hasher);
     render_profile_tag(&block.render.profile).hash(&mut hasher);
     block.render.icon_dimetric_projection.hash(&mut hasher);
+    hash_optional_f32_array(block.render.icon_camera.position, &mut hasher);
+    hash_optional_f32_array(block.render.icon_camera.rotation, &mut hasher);
+    hash_optional_f32(
+        block.render.icon_camera.orthographic_half_extent,
+        &mut hasher,
+    );
     for value in block.render.color_top {
         value.to_bits().hash(&mut hasher);
     }
@@ -146,6 +152,22 @@ fn block_icon_signature(block: &BlockDefinition) -> u64 {
     }
     block.render.noise.to_bits().hash(&mut hasher);
     hasher.finish()
+}
+
+fn hash_optional_f32_array(value: Option<[f32; 3]>, hasher: &mut DefaultHasher) {
+    value.is_some().hash(hasher);
+    if let Some(values) = value {
+        for value in values {
+            value.to_bits().hash(hasher);
+        }
+    }
+}
+
+fn hash_optional_f32(value: Option<f32>, hasher: &mut DefaultHasher) {
+    value.is_some().hash(hasher);
+    if let Some(value) = value {
+        value.to_bits().hash(hasher);
+    }
 }
 
 fn render_profile_tag(profile: &BlockRenderProfile) -> u8 {
@@ -219,6 +241,13 @@ mod tests {
         assert_ne!(
             block_icon_signature(&block),
             block_icon_signature(&with_projection_change)
+        );
+
+        let mut with_camera_change = block.clone();
+        with_camera_change.render.icon_camera.position = Some([1.0, 2.0, 3.0]);
+        assert_ne!(
+            block_icon_signature(&block),
+            block_icon_signature(&with_camera_change)
         );
     }
 

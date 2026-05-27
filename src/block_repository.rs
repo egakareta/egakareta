@@ -264,12 +264,24 @@ pub(crate) enum BlockRenderProfile {
     Neon,
 }
 
+#[derive(Clone, Default, Deserialize, Serialize)]
+pub(crate) struct BlockIconCamera {
+    #[serde(default)]
+    pub(crate) position: Option<[f32; 3]>,
+    #[serde(default, alias = "rotation_degrees")]
+    pub(crate) rotation: Option<[f32; 3]>,
+    #[serde(default)]
+    pub(crate) orthographic_half_extent: Option<f32>,
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct BlockRender {
     #[serde(default = "default_render_profile")]
     pub(crate) profile: BlockRenderProfile,
     #[serde(default = "default_icon_dimetric_projection")]
     pub(crate) icon_dimetric_projection: bool,
+    #[serde(default)]
+    pub(crate) icon_camera: BlockIconCamera,
     #[serde(default = "default_block_size")]
     pub(crate) default_size: [f32; 3],
     #[serde(default = "default_color_top")]
@@ -291,6 +303,7 @@ impl Default for BlockRender {
         Self {
             profile: default_render_profile(),
             icon_dimetric_projection: default_icon_dimetric_projection(),
+            icon_camera: BlockIconCamera::default(),
             default_size: default_block_size(),
             color_top: default_color_top(),
             color_side: default_color_side(),
@@ -585,6 +598,8 @@ pub(crate) fn normalize_block_id(block_id: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_utils::assert_approx_eq;
+
     use super::{
         all_placeable_blocks, block_texture_atlas, normalize_block_id, resolve_block_definition,
         resolve_block_texture_layers, BlockAssets, BlockBehavior, BlockCollision, BlockDefinition,
@@ -724,5 +739,24 @@ mod tests {
         .normalize()
         .expect("normalize");
         assert_eq!(normalized.default_size(), [1.0, 0.01, 3.0]);
+    }
+
+    #[test]
+    fn block_icon_camera_configuration_is_loaded() {
+        let speed_portal = resolve_block_definition("core/speedportal");
+        let camera = &speed_portal.render.icon_camera;
+        let position = camera.position.expect("speed portal icon camera position");
+        let rotation = camera.rotation.expect("speed portal icon camera rotation");
+        let half_extent = camera
+            .orthographic_half_extent
+            .expect("speed portal icon camera extent");
+
+        assert_approx_eq(position[0], 0.14, 1e-6);
+        assert_approx_eq(position[1], 4.0, 1e-6);
+        assert_approx_eq(position[2], 0.0, 1e-6);
+        assert_approx_eq(rotation[0], -90.0, 1e-6);
+        assert_approx_eq(rotation[1], 0.0, 1e-6);
+        assert_approx_eq(rotation[2], 0.0, 1e-6);
+        assert_approx_eq(half_extent, 1.15, 1e-6);
     }
 }

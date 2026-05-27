@@ -5,11 +5,11 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use glam::{Mat4, Vec3};
+use glam::{EulerRot, Mat3, Mat4, Vec3};
 use wgpu::util::DeviceExt;
 
 use crate::block_repository::{
-    resolve_block_definition, resolve_block_texture_layers, BlockRenderProfile,
+    resolve_block_definition, resolve_block_texture_layers, BlockIconCamera, BlockRenderProfile,
 };
 use crate::mesh::shapes::{append_prism_with_layers, PrismFaceColors, PrismTextureLayers};
 use crate::mesh::{build_block_geometry, MeshGeometry};
@@ -25,10 +25,104 @@ const ICON_PERSPECTIVE_FOV_DEGREES: f32 = 35.0;
 const ICON_ORTHO_NEAR_PLANE: f32 = 0.1;
 const ICON_ORTHO_FAR_PLANE: f32 = 16.0;
 
+struct IconCamera {
+    eye: Vec3,
+    target: Vec3,
+    up: Vec3,
+    projection: Mat4,
+}
+
 fn uses_dimetric_icon_projection(block_id: &str) -> bool {
     resolve_block_definition(block_id)
         .render
         .icon_dimetric_projection
+}
+
+fn configured_icon_camera(block_id: &str) -> BlockIconCamera {
+    resolve_block_definition(block_id)
+        .render
+        .icon_camera
+        .clone()
+}
+
+fn default_icon_camera(dimetric: bool) -> IconCamera {
+    let target = Vec3::new(0.5, 0.5, 0.5);
+    let up = Vec3::Y;
+    if dimetric {
+        let yaw = ICON_DIMETRIC_YAW_DEGREES.to_radians();
+        let pitch = ICON_DIMETRIC_PITCH_DEGREES.to_radians();
+        let camera_direction = Vec3::new(
+            pitch.cos() * yaw.cos(),
+            pitch.sin(),
+            pitch.cos() * yaw.sin(),
+        )
+        .normalize();
+        return IconCamera {
+            eye: target + (camera_direction * ICON_CAMERA_DISTANCE),
+            target,
+            up,
+            projection: orthographic_projection(ICON_ORTHO_HALF_EXTENT),
+        };
+    }
+
+    IconCamera {
+        eye: Vec3::new(2.0, 2.0, 2.0),
+        target,
+        up,
+        projection: Mat4::perspective_rh_gl(
+            ICON_PERSPECTIVE_FOV_DEGREES.to_radians(),
+            1.0,
+            0.1,
+            100.0,
+        ),
+    }
+}
+
+fn resolve_icon_camera(block_id: &str, dimetric: bool) -> IconCamera {
+    let mut camera = default_icon_camera(dimetric);
+    let config = configured_icon_camera(block_id);
+
+    if let Some(position) = finite_vec3(config.position) {
+        camera.eye = position;
+    }
+
+    if let Some(rotation) = finite_vec3(config.rotation) {
+        let rotation = Mat3::from_euler(
+            EulerRot::XYZ,
+            rotation.x.to_radians(),
+            rotation.y.to_radians(),
+            rotation.z.to_radians(),
+        );
+        let forward = (rotation * Vec3::NEG_Z).normalize();
+        camera.target = camera.eye + forward;
+        camera.up = (rotation * Vec3::Y).normalize();
+    }
+
+    if let Some(half_extent) = config
+        .orthographic_half_extent
+        .filter(|half_extent| half_extent.is_finite() && *half_extent > 0.0)
+    {
+        camera.projection = orthographic_projection(half_extent);
+    }
+
+    camera
+}
+
+fn finite_vec3(value: Option<[f32; 3]>) -> Option<Vec3> {
+    value
+        .filter(|components| components.iter().all(|component| component.is_finite()))
+        .map(Vec3::from)
+}
+
+fn orthographic_projection(half_extent: f32) -> Mat4 {
+    Mat4::orthographic_rh(
+        -half_extent,
+        half_extent,
+        -half_extent,
+        half_extent,
+        ICON_ORTHO_NEAR_PLANE,
+        ICON_ORTHO_FAR_PLANE,
+    )
 }
 
 fn build_block_icon_geometry(block_id: &str, dimetric: bool) -> MeshGeometry {
@@ -148,36 +242,9 @@ impl State {
             });
         let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let target = Vec3::new(0.5, 0.5, 0.5);
-        let up = Vec3::Y;
-        let (eye, proj) = if dimetric {
-            let yaw = ICON_DIMETRIC_YAW_DEGREES.to_radians();
-            let pitch = ICON_DIMETRIC_PITCH_DEGREES.to_radians();
-            let camera_direction = Vec3::new(
-                pitch.cos() * yaw.cos(),
-                pitch.sin(),
-                pitch.cos() * yaw.sin(),
-            )
-            .normalize();
-            (
-                target + (camera_direction * ICON_CAMERA_DISTANCE),
-                Mat4::orthographic_rh(
-                    -ICON_ORTHO_HALF_EXTENT,
-                    ICON_ORTHO_HALF_EXTENT,
-                    -ICON_ORTHO_HALF_EXTENT,
-                    ICON_ORTHO_HALF_EXTENT,
-                    ICON_ORTHO_NEAR_PLANE,
-                    ICON_ORTHO_FAR_PLANE,
-                ),
-            )
-        } else {
-            (
-                Vec3::new(2.0, 2.0, 2.0),
-                Mat4::perspective_rh_gl(ICON_PERSPECTIVE_FOV_DEGREES.to_radians(), 1.0, 0.1, 100.0),
-            )
-        };
-        let view = Mat4::look_at_rh(eye, target, up);
-        let view_proj = proj * view;
+        let camera = resolve_icon_camera(block_id, dimetric);
+        let view = Mat4::look_at_rh(camera.eye, camera.target, camera.up);
+        let view_proj = camera.projection * view;
         let camera_uniform = CameraUniform {
             view_proj: view_proj.to_cols_array_2d(),
         };
@@ -302,9 +369,10 @@ impl State {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_utils::assert_approx_eq;
     use crate::State;
 
-    use super::{build_block_icon_vertices, uses_dimetric_icon_projection};
+    use super::{build_block_icon_vertices, resolve_icon_camera, uses_dimetric_icon_projection};
 
     #[test]
     fn render_block_icon_snapshot_returns_texture_for_known_block() {
@@ -337,6 +405,21 @@ mod tests {
         assert!(uses_dimetric_icon_projection("core/stone"));
         assert!(!uses_dimetric_icon_projection("core/finish"));
         assert!(!uses_dimetric_icon_projection("core/speedportal"));
+    }
+
+    #[test]
+    fn custom_icon_camera_configuration_controls_speed_portal_view() {
+        let camera = resolve_icon_camera("core/speedportal", false);
+
+        assert_approx_eq(camera.eye.x, 0.14, 1e-6);
+        assert_approx_eq(camera.eye.y, 4.0, 1e-6);
+        assert_approx_eq(camera.eye.z, 0.0, 1e-6);
+        assert_approx_eq(camera.target.x, 0.14, 1e-5);
+        assert_approx_eq(camera.target.y, 3.0, 1e-5);
+        assert_approx_eq(camera.target.z, 0.0, 1e-5);
+        assert_approx_eq(camera.up.x, 0.0, 1e-5);
+        assert_approx_eq(camera.up.y, 0.0, 1e-5);
+        assert_approx_eq(camera.up.z, -1.0, 1e-5);
     }
 
     #[test]
