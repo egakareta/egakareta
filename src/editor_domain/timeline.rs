@@ -198,7 +198,11 @@ pub(crate) fn derive_timeline_time_for_world_target_near_time(
     target: [f32; 3],
     search: TimelineNearSearch,
 ) -> f32 {
-    let duration = duration_seconds.max(0.0);
+    let duration = if duration_seconds.is_finite() {
+        duration_seconds.max(0.0)
+    } else {
+        0.0
+    };
     if duration <= 0.0 {
         return 0.0;
     }
@@ -206,7 +210,11 @@ pub(crate) fn derive_timeline_time_for_world_target_near_time(
     const COARSE_SIMULATION_DT: f32 = 1.0 / 90.0;
     const FINE_SIMULATION_DT: f32 = 1.0 / 240.0;
 
-    let requested_seed_time = search.seed_time.clamp(0.0, duration);
+    let requested_seed_time = if search.seed_time.is_finite() {
+        search.seed_time.clamp(0.0, duration)
+    } else {
+        0.0
+    };
     let seed_time = {
         let mut runtime = TimelineSimulationRuntime::new_with_dt(
             spawn,
@@ -218,7 +226,11 @@ pub(crate) fn derive_timeline_time_for_world_target_near_time(
         runtime.advance_to(requested_seed_time);
         runtime.elapsed_seconds().clamp(0.0, duration)
     };
-    let search_window = search.window_seconds.max(0.01);
+    let search_window = if search.window_seconds.is_finite() {
+        search.window_seconds.max(0.01)
+    } else {
+        0.01
+    };
     let range_start = (seed_time - search_window).clamp(0.0, duration);
     let range_end = (seed_time + search_window).clamp(0.0, duration);
     if range_end <= range_start {
@@ -348,6 +360,7 @@ pub(crate) fn derive_timeline_time_for_world_target_near_time(
     let coarse_samples = ((range_width * 28.0).clamp(24.0, 96.0)) as usize;
     let (mut refined_time, best_distance_sq) =
         sample_best_time(range_start, range_end, coarse_samples, COARSE_SIMULATION_DT);
+    refined_time = refined_time.clamp(range_start, range_end);
 
     let refinement_window = (range_width * 0.16).clamp(0.08, 0.28);
     let refinement_samples = ((range_width * 64.0).clamp(48.0, 128.0)) as usize;

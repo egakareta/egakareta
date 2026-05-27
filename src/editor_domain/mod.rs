@@ -455,6 +455,42 @@ mod tests {
     }
 
     #[test]
+    fn near_solver_handles_seed_past_short_audio_duration() {
+        let time = derive_timeline_time_for_world_target_near_time(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[],
+            11.080078,
+            &[],
+            [0.5, 0.0, 90.5],
+            TimelineNearSearch {
+                seed_time: 12.842299,
+                window_seconds: 1.5,
+            },
+        );
+
+        assert!((0.0..=11.080078).contains(&time));
+    }
+
+    #[test]
+    fn near_solver_treats_non_finite_duration_as_zero() {
+        let time = derive_timeline_time_for_world_target_near_time(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[],
+            f32::NAN,
+            &[],
+            [0.5, 0.0, 4.5],
+            TimelineNearSearch {
+                seed_time: f32::NAN,
+                window_seconds: f32::NAN,
+            },
+        );
+
+        assert_eq!(time, 0.0);
+    }
+
+    #[test]
     fn near_solver_stays_within_requested_window() {
         let seed = 2.2;
         let window = 0.35;
