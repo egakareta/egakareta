@@ -8,7 +8,7 @@
 use crate::commands::AppCommand;
 use crate::State;
 
-const MENU_FAVICON_PNG: &[u8] = include_bytes!("../../assets/favicon.png");
+const MENU_FAVICON_PNG: &[u8] = include_bytes!("../../assets/darkicon.png");
 
 /// Loads the menu favicon texture from embedded PNG data.
 pub fn load_menu_favicon_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {

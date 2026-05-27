@@ -315,7 +315,7 @@ impl ApplicationHandler for App {
             use std::sync::Arc;
 
             let icon = {
-                let bytes = include_bytes!("../../assets/favicon.png");
+                let bytes = include_bytes!("../../assets/favicon.ico");
                 let image = image::load_from_memory(bytes).expect("Failed to load icon");
                 let rgba = image.to_rgba8();
                 let (width, height) = rgba.dimensions();

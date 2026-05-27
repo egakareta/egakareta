@@ -48,7 +48,7 @@ function page(message = "", isError = false, env: Cloudflare.Env) {
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>signup</title>
-        <link rel="icon" type="image/png" href="/assets/favicon.png" />
+        <link rel="icon" type="image/x-icon" href="/assets/favicon.ico" />
         <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
         <style>
             :root { color-scheme: dark; }

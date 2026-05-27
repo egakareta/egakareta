@@ -1,5 +1,5 @@
 <h3 align="center">
-    <img src="assets/favicon.png" alt="egakareta icon" width="128" />
+    <img src="assets/lighticon.png" alt="egakareta icon" width="128" />
     <br />
     egakareta
 </h2>
