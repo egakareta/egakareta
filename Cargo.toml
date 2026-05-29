@@ -34,7 +34,10 @@ puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "7e08a533f9deb
 puffin_egui = { git = "https://github.com/EmbarkStudios/puffin", rev = "7e08a533f9debfb7d051547263d2ab84c666314f" }
 rfd = "0.17"
 rayon = "1"
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = [
+    "ico",
+    "png",
+] }
 async-trait = "0.1"
 winit = "0.30"
 cpal = { version = "0.17", features = ["wasm-bindgen", "audioworklet"] }

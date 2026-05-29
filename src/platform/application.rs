@@ -76,6 +76,15 @@ impl App {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    fn native_window_icon() -> Option<Icon> {
+        let bytes = include_bytes!("../../assets/favicon.ico");
+        let image = image::load_from_memory(bytes).ok()?;
+        let rgba = image.to_rgba8();
+        let (width, height) = rgba.dimensions();
+        Icon::from_rgba(rgba.into_raw(), width, height).ok()
+    }
+
     #[cfg(target_arch = "wasm32")]
     fn new_web(runtime: Runtime, canvas: web_sys::HtmlCanvasElement) -> Self {
         Self {
@@ -314,18 +323,10 @@ impl ApplicationHandler for App {
         {
             use std::sync::Arc;
 
-            let icon = {
-                let bytes = include_bytes!("../../assets/favicon.ico");
-                let image = image::load_from_memory(bytes).expect("Failed to load icon");
-                let rgba = image.to_rgba8();
-                let (width, height) = rgba.dimensions();
-                Icon::from_rgba(rgba.into_raw(), width, height).ok()
-            };
-
             let window_attributes = Window::default_attributes()
                 .with_title("egakareta")
                 .with_inner_size(LogicalSize::new(800.0, 600.0))
-                .with_window_icon(icon);
+                .with_window_icon(Self::native_window_icon());
             let window = event_loop
                 .create_window(window_attributes)
                 .expect("Failed to create window");
@@ -585,6 +586,12 @@ mod tests {
     fn system_cursor_visibility_follows_game_cursor() {
         assert!(App::system_cursor_visible(GameCursor::Default));
         assert!(!App::system_cursor_visible(GameCursor::Hidden));
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn native_window_icon_loads_favicon_asset() {
+        assert!(App::native_window_icon().is_some());
     }
 
     #[test]
