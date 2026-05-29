@@ -231,9 +231,7 @@ impl State {
         let init = editor_session_init_from_metadata(Some(metadata));
 
         self.editor.objects = init.objects;
-        self.editor.ui.selected_block_index = None;
-        self.editor.ui.selected_block_indices.clear();
-        self.editor.ui.hovered_block_index = None;
+        self.editor.clear_block_selection();
         self.editor.spawn = init.spawn;
         self.editor.timeline.taps.tap_times = init.tap_times;
         self.editor.timing.timing_points = init.timing_points;

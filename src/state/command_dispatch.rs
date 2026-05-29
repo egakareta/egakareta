@@ -698,8 +698,7 @@ impl State {
 
     /// Whether any blocks are currently selected in the editor.
     fn has_block_selection(&self) -> bool {
-        self.editor.ui.selected_block_index.is_some()
-            || !self.editor.ui.selected_block_indices.is_empty()
+        !self.editor.selected_indices_normalized().is_empty()
     }
 }
 
@@ -1820,6 +1819,14 @@ mod tests {
             assert!(!State::is_modifier_key("m"));
 
             assert!(!state.has_block_selection());
+            state.editor.objects = vec![LevelObject {
+                position: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                roundness: 0.18,
+                block_id: "core/stone".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            }];
             state.editor.ui.selected_block_index = Some(0);
             assert!(state.has_block_selection());
             state.editor.ui.selected_block_index = None;

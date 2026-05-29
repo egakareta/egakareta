@@ -162,9 +162,7 @@ impl EditorSubsystem {
                     self.objects.remove(index);
                 }
             }
-            self.ui.selected_block_index = None;
-            self.ui.selected_block_indices.clear();
-            self.ui.hovered_block_index = None;
+            self.clear_block_selection();
             self.invalidate_samples();
             return true;
         }

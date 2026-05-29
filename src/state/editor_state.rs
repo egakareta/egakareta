@@ -123,9 +123,7 @@ impl EditorSubsystem {
         self.ui.marquee_start_screen = None;
         self.ui.marquee_current_screen = None;
         if !mode.can_select() {
-            self.ui.selected_block_index = None;
-            self.ui.selected_block_indices.clear();
-            self.ui.hovered_block_index = None;
+            self.clear_block_selection();
         }
     }
 

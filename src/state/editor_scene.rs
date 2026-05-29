@@ -39,21 +39,7 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn sync_objects(&mut self) {
-        self.sync_primary_selection_from_indices();
-        if let Some(index) = self.ui.selected_block_index {
-            if index >= self.objects.len() {
-                self.ui.selected_block_index = None;
-            }
-        }
-        self.ui
-            .selected_block_indices
-            .retain(|index| *index < self.objects.len());
-        self.sync_primary_selection_from_indices();
-        if let Some(index) = self.ui.hovered_block_index {
-            if index >= self.objects.len() {
-                self.ui.hovered_block_index = None;
-            }
-        }
+        self.normalize_block_selection();
         self.invalidate_samples();
         self.selected_mask_cache = None;
         self.block_static_vertex_cache.clear();
@@ -63,21 +49,7 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn sync_objects_for_drag(&mut self) {
-        self.sync_primary_selection_from_indices();
-        if let Some(index) = self.ui.selected_block_index {
-            if index >= self.objects.len() {
-                self.ui.selected_block_index = None;
-            }
-        }
-        self.ui
-            .selected_block_indices
-            .retain(|index| *index < self.objects.len());
-        self.sync_primary_selection_from_indices();
-        if let Some(index) = self.ui.hovered_block_index {
-            if index >= self.objects.len() {
-                self.ui.hovered_block_index = None;
-            }
-        }
+        self.normalize_block_selection();
         self.mark_dirty(EditorDirtyFlags {
             sync_game_objects: true,
             rebuild_block_mesh: true,
@@ -87,21 +59,7 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn sync_objects_after_drag_release(&mut self) {
-        self.sync_primary_selection_from_indices();
-        if let Some(index) = self.ui.selected_block_index {
-            if index >= self.objects.len() {
-                self.ui.selected_block_index = None;
-            }
-        }
-        self.ui
-            .selected_block_indices
-            .retain(|index| *index < self.objects.len());
-        self.sync_primary_selection_from_indices();
-        if let Some(index) = self.ui.hovered_block_index {
-            if index >= self.objects.len() {
-                self.ui.hovered_block_index = None;
-            }
-        }
+        self.normalize_block_selection();
         self.invalidate_samples();
         self.mark_dirty(EditorDirtyFlags {
             sync_game_objects: true,
@@ -127,9 +85,7 @@ impl EditorSubsystem {
         self.record_history_state();
         let placed_index = self.objects.len();
         self.objects.push(new_block);
-        self.ui.selected_block_index = None;
-        self.ui.selected_block_indices.clear();
-        self.ui.hovered_block_index = None;
+        self.clear_block_selection();
         if can_append_mesh {
             self.invalidate_samples();
             self.runtime.pending_block_mesh_appends.push(placed_index);

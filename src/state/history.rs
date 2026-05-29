@@ -47,15 +47,9 @@ impl EditorSubsystem {
 
     fn apply_history_snapshot(&mut self, snapshot: EditorHistorySnapshot) {
         self.objects = snapshot.objects;
-        self.ui.selected_block_index = snapshot
-            .selected_block_index
-            .filter(|index| *index < self.objects.len());
-        self.ui.selected_block_indices = snapshot
-            .selected_block_indices
-            .into_iter()
-            .filter(|index| *index < self.objects.len())
-            .collect();
-        self.sync_primary_selection_from_indices();
+        self.ui.selected_block_index = snapshot.selected_block_index;
+        self.ui.selected_block_indices = snapshot.selected_block_indices;
+        self.normalize_block_selection();
         self.ui.hovered_block_index = self.ui.selected_block_index;
         self.ui.cursor = snapshot.cursor;
         self.config.selected_block_id = snapshot.selected_block_id;

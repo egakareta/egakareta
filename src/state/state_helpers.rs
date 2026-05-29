@@ -19,23 +19,22 @@ impl EditorSubsystem {
         self.ui.ctrl_held = false;
     }
 
-    pub(crate) fn selected_indices_normalized(&self) -> Vec<usize> {
+    fn normalized_block_selection_indices(&self) -> Vec<usize> {
+        let object_count = self.objects.len();
         let mut indices: Vec<usize> = self
             .ui
             .selected_block_indices
             .iter()
             .copied()
-            .filter(|index| *index < self.objects.len())
+            .filter(|index| *index < object_count)
             .collect();
 
-        if indices.is_empty() {
-            if let Some(index) = self
-                .ui
-                .selected_block_index
-                .filter(|index| *index < self.objects.len())
-            {
-                indices.push(index);
-            }
+        if let Some(index) = self
+            .ui
+            .selected_block_index
+            .filter(|index| *index < object_count)
+        {
+            indices.push(index);
         }
 
         indices.sort_unstable();
@@ -43,10 +42,67 @@ impl EditorSubsystem {
         indices
     }
 
-    pub(crate) fn sync_primary_selection_from_indices(&mut self) {
-        let indices = self.selected_indices_normalized();
+    pub(crate) fn selected_indices_normalized(&self) -> Vec<usize> {
+        self.normalized_block_selection_indices()
+    }
+
+    pub(crate) fn normalize_block_selection(&mut self) {
+        let indices = self.normalized_block_selection_indices();
+        self.ui.selected_block_index = self
+            .ui
+            .selected_block_index
+            .filter(|index| indices.binary_search(index).is_ok())
+            .or_else(|| indices.first().copied());
+        self.ui.selected_block_indices = indices;
+
+        if self
+            .ui
+            .hovered_block_index
+            .is_some_and(|index| index >= self.objects.len())
+        {
+            self.ui.hovered_block_index = None;
+        }
+        self.selected_mask_cache = None;
+    }
+
+    pub(crate) fn clear_block_selection(&mut self) {
+        let had_selection = self.ui.selected_block_index.is_some()
+            || !self.ui.selected_block_indices.is_empty()
+            || self.ui.hovered_block_index.is_some();
+        self.ui.selected_block_index = None;
+        self.ui.selected_block_indices.clear();
+        self.ui.hovered_block_index = None;
+        if had_selection {
+            self.selected_mask_cache = None;
+        }
+    }
+
+    pub(crate) fn replace_block_selection(&mut self, indices: Vec<usize>) {
         self.ui.selected_block_index = indices.first().copied();
         self.ui.selected_block_indices = indices;
+        self.normalize_block_selection();
+    }
+
+    pub(crate) fn add_block_to_selection(&mut self, index: usize) {
+        self.ui.selected_block_indices.push(index);
+        self.normalize_block_selection();
+    }
+
+    pub(crate) fn remove_block_from_selection(&mut self, index: usize) {
+        self.ui
+            .selected_block_indices
+            .retain(|selected| *selected != index);
+        if self.ui.selected_block_index == Some(index) {
+            self.ui.selected_block_index = None;
+        }
+        self.normalize_block_selection();
+        if self.ui.selected_block_indices.is_empty() {
+            self.clear_block_selection();
+        }
+    }
+
+    pub(crate) fn sync_primary_selection_from_indices(&mut self) {
+        self.normalize_block_selection();
     }
 
     pub(crate) fn selection_contains(&self, index: usize) -> bool {
@@ -56,12 +112,7 @@ impl EditorSubsystem {
 
     pub(crate) fn selected_mask_for_len(&self, len: usize) -> Vec<bool> {
         let mut selected_mask = vec![false; len];
-        for index in self.ui.selected_block_indices.iter().copied() {
-            if index < len {
-                selected_mask[index] = true;
-            }
-        }
-        if let Some(index) = self.ui.selected_block_index {
+        for index in self.selected_indices_normalized() {
             if index < len {
                 selected_mask[index] = true;
             }
@@ -145,9 +196,7 @@ impl State {
         self.session.editor_menu_preview_camera = None;
         self.editor.ui.right_dragging = false;
         self.editor.ui.mode = EditorMode::Place;
-        self.editor.ui.selected_block_index = None;
-        self.editor.ui.selected_block_indices.clear();
-        self.editor.ui.hovered_block_index = None;
+        self.editor.clear_block_selection();
         self.editor.ui.marquee_start_screen = None;
         self.editor.ui.marquee_current_screen = None;
         self.editor.runtime.interaction.gizmo_drag = None;
@@ -169,9 +218,7 @@ impl State {
         self.session.playing_trigger_base_objects = None;
         self.clear_pending_gameplay_inputs();
         self.session.editor_level_name = None;
-        self.editor.ui.selected_block_index = None;
-        self.editor.ui.selected_block_indices.clear();
-        self.editor.ui.hovered_block_index = None;
+        self.editor.clear_block_selection();
         self.editor.ui.marquee_start_screen = None;
         self.editor.ui.marquee_current_screen = None;
         self.editor.runtime.interaction.gizmo_drag = None;
@@ -181,5 +228,45 @@ impl State {
         self.clear_editor_pan_keys();
         self.menu.state.preview_level_index = None;
         self.phase = AppPhase::Menu;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::State;
+    use crate::types::LevelObject;
+
+    fn block(position: [f32; 3]) -> LevelObject {
+        LevelObject {
+            position,
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.18,
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        }
+    }
+
+    #[test]
+    fn normalize_block_selection_filters_invalid_indices_and_preserves_valid_primary() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.objects = vec![
+                block([0.0, 0.0, 0.0]),
+                block([1.0, 0.0, 0.0]),
+                block([2.0, 0.0, 0.0]),
+            ];
+            state.editor.ui.selected_block_index = Some(1);
+            state.editor.ui.selected_block_indices = vec![2, 99, 2];
+            state.editor.ui.hovered_block_index = Some(42);
+            state.editor.selected_mask_cache = Some(vec![false, true, true]);
+
+            state.editor.normalize_block_selection();
+
+            assert_eq!(state.editor.ui.selected_block_index, Some(1));
+            assert_eq!(state.editor.ui.selected_block_indices, vec![1, 2]);
+            assert_eq!(state.editor.ui.hovered_block_index, None);
+            assert!(state.editor.selected_mask_cache.is_none());
+        });
     }
 }

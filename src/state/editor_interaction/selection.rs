@@ -173,16 +173,14 @@ impl EditorSubsystem {
                 let selected_mask = self.selected_mask_for_len(self.objects.len());
                 for hit in hits {
                     if hit < selected_mask.len() && !selected_mask[hit] {
-                        self.ui.selected_block_indices.push(hit);
+                        self.add_block_to_selection(hit);
                     }
                 }
             } else {
-                self.ui.selected_block_indices = hits;
+                self.replace_block_selection(hits);
             }
         } else {
-            self.ui.selected_block_indices.clear();
-            self.ui.selected_block_index = None;
-            self.ui.hovered_block_index = None;
+            self.clear_block_selection();
         }
 
         let trigger_hit = self.marquee_trigger_hit(rect_min, rect_max, viewport);
@@ -465,9 +463,7 @@ impl EditorSubsystem {
             {
                 puffin::profile_scope!("SelectApply");
                 if !additive {
-                    self.ui.selected_block_indices.clear();
-                    self.ui.selected_block_index = None;
-                    self.ui.hovered_block_index = None;
+                    self.clear_block_selection();
                     self.set_trigger_selected(None);
                 }
                 self.runtime.interaction.gizmo_drag = None;
@@ -497,50 +493,36 @@ impl EditorSubsystem {
                 }
 
                 if !additive || trigger_mode {
-                    self.ui.selected_block_indices.clear();
-                    self.ui.selected_block_index = None;
+                    self.clear_block_selection();
+                } else {
+                    self.ui.hovered_block_index = None;
                 }
-                self.ui.hovered_block_index = None;
                 changed = EditorInteractionChange::Hover;
             } else if let Some(hit_index) = pick.hit_block_index {
                 if trigger_mode {
                     if !additive {
                         self.set_trigger_selected(None);
                     }
-                    self.ui.selected_block_indices.clear();
-                    self.ui.selected_block_index = None;
-                    self.ui.hovered_block_index = None;
+                    self.clear_block_selection();
                     changed = EditorInteractionChange::Hover;
                 } else {
                     if !additive {
                         self.set_trigger_selected(None);
                     }
                     if additive {
-                        if let Some(existing) = self
-                            .ui
-                            .selected_block_indices
-                            .iter()
-                            .position(|idx| *idx == hit_index)
-                        {
-                            self.ui.selected_block_indices.remove(existing);
-                            if self.ui.selected_block_indices.is_empty() {
-                                self.ui.selected_block_index = None;
-                                self.ui.hovered_block_index = None;
-                            }
+                        if self.ui.selected_block_indices.contains(&hit_index) {
+                            self.remove_block_from_selection(hit_index);
                         } else {
-                            self.ui.selected_block_indices.push(hit_index);
+                            self.add_block_to_selection(hit_index);
                         }
                     } else {
-                        self.ui.selected_block_indices.clear();
-                        self.ui.selected_block_indices.push(hit_index);
+                        self.replace_block_selection(vec![hit_index]);
                     }
                     self.ui.hovered_block_index = Some(hit_index);
                     changed = EditorInteractionChange::Hover;
                 }
             } else if !additive {
-                self.ui.selected_block_indices.clear();
-                self.ui.selected_block_index = None;
-                self.ui.hovered_block_index = None;
+                self.clear_block_selection();
                 self.set_trigger_selected(None);
                 changed = EditorInteractionChange::Hover;
             }
@@ -1120,6 +1102,44 @@ mod tests {
             assert_eq!(additive_miss_result, EditorInteractionChange::None);
             assert_eq!(state.editor.ui.selected_block_index, Some(0));
             assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
+        });
+    }
+
+    #[test]
+    fn select_block_without_shift_replaces_previous_selection() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let viewport = default_viewport();
+
+            state.editor.ui.mode = EditorMode::Select;
+            state.editor.objects = vec![test_block([0.0, 0.0, 0.0]), test_block([2.0, 0.0, 0.0])];
+
+            let first_click = state
+                .editor
+                .world_to_screen_v(Vec3::new(0.5, 0.5, 0.5), viewport)
+                .expect("first block center should project to screen");
+            let second_click = state
+                .editor
+                .world_to_screen_v(Vec3::new(2.5, 0.5, 0.5), viewport)
+                .expect("second block center should project to screen");
+
+            state.editor.select_block_from_screen(
+                first_click.x as f64,
+                first_click.y as f64,
+                viewport,
+                AppPhase::Editor,
+            );
+            assert_eq!(state.editor.ui.selected_block_index, Some(0));
+            assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
+
+            state.editor.select_block_from_screen(
+                second_click.x as f64,
+                second_click.y as f64,
+                viewport,
+                AppPhase::Editor,
+            );
+            assert_eq!(state.editor.ui.selected_block_index, Some(1));
+            assert_eq!(state.editor.ui.selected_block_indices, vec![1]);
         });
     }
 }
