@@ -56,6 +56,11 @@ fn accumulate_interleaved_samples(
     }
 }
 
+pub(crate) struct WaveformDecodeSummary {
+    pub(crate) sample_rate: u32,
+    pub(crate) peak_count: usize,
+}
+
 impl PlatformAudio {
     pub(crate) fn new() -> Self {
         Self {
@@ -208,10 +213,29 @@ impl PlatformAudio {
 
 /// Decode audio bytes to a downsampled waveform suitable for display.
 /// Returns (peak_samples, sample_rate) where peak_samples contains one peak per window.
+#[cfg(test)]
 pub(crate) fn decode_audio_to_waveform(
     bytes: &[u8],
     window_size: usize,
 ) -> Option<(Vec<f32>, u32)> {
+    let mut peaks = Vec::new();
+    let summary =
+        decode_audio_to_waveform_streaming(bytes, window_size, usize::MAX, |_, chunk, _| {
+            peaks.extend(chunk);
+        })?;
+
+    Some((peaks, summary.sample_rate))
+}
+
+pub(crate) fn decode_audio_to_waveform_streaming<F>(
+    bytes: &[u8],
+    window_size: usize,
+    chunk_peak_count: usize,
+    mut on_chunk: F,
+) -> Option<WaveformDecodeSummary>
+where
+    F: FnMut(usize, Vec<f32>, u32),
+{
     use symphonia::core::audio::SampleBuffer;
     use symphonia::core::codecs::DecoderOptions;
     use symphonia::core::errors::Error as SymphoniaError;
@@ -247,7 +271,9 @@ pub(crate) fn decode_audio_to_waveform(
         .make(&track.codec_params, &DecoderOptions::default())
         .ok()?;
 
-    let mut peaks: Vec<f32> = Vec::new();
+    let chunk_peak_count = chunk_peak_count.max(1);
+    let mut peaks: Vec<f32> = Vec::with_capacity(chunk_peak_count.min(4096));
+    let mut emitted_peak_count = 0usize;
     let mut window_peak: f32 = 0.0;
     let mut window_count: usize = 0;
     let mut sample_buffer: Option<SampleBuffer<f32>> = None;
@@ -293,6 +319,12 @@ pub(crate) fn decode_audio_to_waveform(
                 &mut window_count,
                 window_size,
             );
+            if peaks.len() >= chunk_peak_count {
+                let chunk = std::mem::take(&mut peaks);
+                let chunk_len = chunk.len();
+                on_chunk(emitted_peak_count, chunk, sample_rate);
+                emitted_peak_count += chunk_len;
+            }
         }
     }
 
@@ -300,14 +332,29 @@ pub(crate) fn decode_audio_to_waveform(
         peaks.push(window_peak);
     }
 
-    log::info!("Audio waveform decoding complete ({} peaks)", peaks.len());
-    Some((peaks, sample_rate))
+    if !peaks.is_empty() {
+        let chunk = std::mem::take(&mut peaks);
+        let chunk_len = chunk.len();
+        on_chunk(emitted_peak_count, chunk, sample_rate);
+        emitted_peak_count += chunk_len;
+    }
+
+    log::info!(
+        "Audio waveform decoding complete ({} peaks)",
+        emitted_peak_count
+    );
+    Some(WaveformDecodeSummary {
+        sample_rate,
+        peak_count: emitted_peak_count,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::accumulate_interleaved_samples;
     use super::accumulate_waveform_frame_peak;
+    use super::decode_audio_to_waveform;
+    use super::decode_audio_to_waveform_streaming;
 
     #[test]
     fn interleaved_stereo_accumulates_per_frame_not_per_channel() {
@@ -354,5 +401,29 @@ mod tests {
         assert_eq!(peaks, vec![0.8]);
         assert_eq!(window_count, 0);
         assert_eq!(window_peak, 0.0);
+    }
+
+    #[test]
+    fn streaming_decoder_reports_chunks_from_peak_accumulation() {
+        let bytes = include_bytes!("../../assets/levels/Flowerfield/audio.mp3");
+        let mut chunks = Vec::new();
+        let summary = decode_audio_to_waveform_streaming(bytes, 256, 32, |start, peaks, _| {
+            chunks.push((start, peaks));
+        })
+        .expect("built-in audio should decode");
+
+        assert!(summary.sample_rate > 0);
+        assert!(summary.peak_count > 0);
+        assert!(!chunks.is_empty());
+        assert_eq!(chunks[0].0, 0);
+        for window in chunks.windows(2) {
+            assert_eq!(window[0].0 + window[0].1.len(), window[1].0);
+        }
+        let chunked_peak_count: usize = chunks.iter().map(|(_, peaks)| peaks.len()).sum();
+        assert_eq!(chunked_peak_count, summary.peak_count);
+
+        let collected = decode_audio_to_waveform(bytes, 256).expect("collector should decode");
+        assert_eq!(collected.0.len(), summary.peak_count);
+        assert_eq!(collected.1, summary.sample_rate);
     }
 }

@@ -471,6 +471,18 @@ impl EditorSubsystem {
         self.timing.waveform_sample_rate
     }
 
+    pub(crate) fn waveform_window_size(&self) -> usize {
+        self.timing.waveform_window_size
+    }
+
+    pub(crate) fn waveform_loading(&self) -> bool {
+        self.timing.waveform_loading
+    }
+
+    pub(crate) fn waveform_complete(&self) -> bool {
+        self.timing.waveform_complete
+    }
+
     pub(crate) fn bpm_tap_result(&self) -> Option<f32> {
         self.timing.bpm_tap_result
     }
@@ -1284,6 +1296,18 @@ impl State {
 
     pub(crate) fn editor_waveform_sample_rate(&self) -> u32 {
         self.editor.waveform_sample_rate()
+    }
+
+    pub(crate) fn editor_waveform_window_size(&self) -> usize {
+        self.editor.waveform_window_size()
+    }
+
+    pub(crate) fn editor_waveform_loading(&self) -> bool {
+        self.editor.waveform_loading()
+    }
+
+    pub(crate) fn editor_waveform_complete(&self) -> bool {
+        self.editor.waveform_complete()
     }
 
     pub(crate) fn editor_bpm_tap_result(&self) -> Option<f32> {

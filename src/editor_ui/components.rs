@@ -353,8 +353,8 @@ pub(crate) fn show_waveform_panel(
     if !waveform_samples.is_empty() && sample_rate > 0 {
         puffin::profile_scope!("UiWaveformDrawSamples");
         // Waveform drawing
-        const WAVEFORM_WINDOW: usize = 256;
-        let samples_per_second = sample_rate as f32 / WAVEFORM_WINDOW as f32;
+        let waveform_window = view.waveform_window_size.max(1);
+        let samples_per_second = sample_rate as f32 / waveform_window as f32;
         let pixels_per_second = rect.width() / visible_duration;
 
         let start_sample = (view_start * samples_per_second).floor().max(0.0) as usize;
@@ -391,10 +391,17 @@ pub(crate) fn show_waveform_panel(
             }
         }
     } else {
+        let message = if view.waveform_loading {
+            "Loading waveform..."
+        } else if view.waveform_complete {
+            "Waveform decoded with no visible peaks."
+        } else {
+            "No waveform data. Import audio to view waveform."
+        };
         painter.text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
-            "No waveform data. Import audio to view waveform.",
+            message,
             egui::FontId::proportional(16.0),
             egui::Color32::from_gray(120),
         );
@@ -582,6 +589,9 @@ mod tests {
             waveform_scroll,
             waveform_samples,
             waveform_sample_rate: 44_100,
+            waveform_window_size: crate::audio_service::WAVEFORM_WINDOW,
+            waveform_loading: false,
+            waveform_complete: true,
             bpm_tap_result: None,
             triggers,
             trigger_selected_index,

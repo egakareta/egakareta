@@ -12,13 +12,36 @@
 
 use std::sync::mpsc::Sender;
 
+use crate::platform::parallel::spawn_cpu_bound;
 use crate::platform::task::spawn_background;
 
 pub type AudioPreloadResult = (String, Option<Vec<u8>>);
-const WAVEFORM_WINDOW: usize = 256;
+pub(crate) const WAVEFORM_WINDOW: usize = 256;
+const WAVEFORM_CHUNK_PEAKS: usize = 2048;
 
-pub type WaveformData = (Vec<f32>, u32);
-pub type WaveformResult = (String, String, Option<WaveformData>, Option<Vec<u8>>);
+#[derive(Debug)]
+pub(crate) enum WaveformLoadMessage {
+    Started {
+        window_size: usize,
+    },
+    Chunk {
+        start_peak: usize,
+        peaks: Vec<f32>,
+        sample_rate: u32,
+        window_size: usize,
+    },
+    Finished {
+        sample_rate: u32,
+        window_size: usize,
+        total_peaks: usize,
+        bytes: Option<Vec<u8>>,
+    },
+    Failed {
+        bytes: Option<Vec<u8>>,
+    },
+}
+
+pub type WaveformResult = (String, String, WaveformLoadMessage);
 
 async fn load_level_audio_bytes(level_name: &str, music_source: &str) -> Option<Vec<u8>> {
     crate::level_repository::get_builtin_audio(level_name, music_source).map(|bytes| bytes.to_vec())
@@ -61,12 +84,60 @@ pub fn start_waveform_loading(
             load_level_audio_bytes(&level_name, &source_for_load).await
         };
 
-        let decoded = if let Some(ref bytes) = bytes {
-            crate::platform::audio::decode_audio_to_waveform(bytes, WAVEFORM_WINDOW)
-        } else {
-            None
+        let Some(bytes) = bytes else {
+            let _ = sender.send((
+                source_for_send,
+                level_for_send,
+                WaveformLoadMessage::Failed { bytes: None },
+            ));
+            return;
         };
 
-        let _ = sender.send((source_for_send, level_for_send, decoded, bytes));
+        spawn_cpu_bound(move || {
+            let _ = sender.send((
+                source_for_send.clone(),
+                level_for_send.clone(),
+                WaveformLoadMessage::Started {
+                    window_size: WAVEFORM_WINDOW,
+                },
+            ));
+
+            let decoded = crate::platform::audio::decode_audio_to_waveform_streaming(
+                &bytes,
+                WAVEFORM_WINDOW,
+                WAVEFORM_CHUNK_PEAKS,
+                |start_peak, peaks, sample_rate| {
+                    let _ = sender.send((
+                        source_for_send.clone(),
+                        level_for_send.clone(),
+                        WaveformLoadMessage::Chunk {
+                            start_peak,
+                            peaks,
+                            sample_rate,
+                            window_size: WAVEFORM_WINDOW,
+                        },
+                    ));
+                },
+            );
+
+            if let Some(summary) = decoded {
+                let _ = sender.send((
+                    source_for_send,
+                    level_for_send,
+                    WaveformLoadMessage::Finished {
+                        sample_rate: summary.sample_rate,
+                        window_size: WAVEFORM_WINDOW,
+                        total_peaks: summary.peak_count,
+                        bytes: Some(bytes),
+                    },
+                ));
+            } else {
+                let _ = sender.send((
+                    source_for_send,
+                    level_for_send,
+                    WaveformLoadMessage::Failed { bytes: Some(bytes) },
+                ));
+            }
+        });
     });
 }
