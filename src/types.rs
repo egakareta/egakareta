@@ -35,6 +35,13 @@ pub(crate) struct EditorPickResult {
     pub(crate) hit_block_index: Option<usize>,
     pub(crate) hit_trigger_index: Option<usize>,
     pub(crate) hit_tap_index: Option<usize>,
+    pub(crate) hit_tap_division: Option<EditorTapDivisionPick>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct EditorTapDivisionPick {
+    pub(crate) time_seconds: f32,
+    pub(crate) indicator_position: [f32; 3],
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]

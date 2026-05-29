@@ -6,7 +6,7 @@
 
 */
 use super::super::EditorSubsystem;
-use crate::types::{EditorMode, EditorPickResult};
+use crate::types::{EditorMode, EditorPickResult, EditorTapDivisionPick};
 use glam::{EulerRot, Mat3, Vec2, Vec3, Vec4};
 
 const CAMERA_TRIGGER_BALL_PICK_RADIUS: f32 = 0.55;
@@ -55,6 +55,8 @@ impl EditorSubsystem {
         let mut hit_block_index: Option<usize> = None;
         let mut hit_trigger_index: Option<usize> = None;
         let mut hit_tap_index: Option<usize> = None;
+        let mut hit_tap_division: Option<EditorTapDivisionPick> = None;
+        let mut cursor_override: Option<[f32; 3]> = None;
 
         {
             puffin::profile_scope!("PickRaycast");
@@ -68,7 +70,7 @@ impl EditorSubsystem {
             }
 
             if self.ui.mode == EditorMode::Tapping {
-                if let Some((tap_index, tap_t)) =
+                if let Some((tap_index, tap_t, tap_position)) =
                     self.ray_intersect_tap_indicator(ray_origin, ray_dir, min_t)
                 {
                     min_t = tap_t;
@@ -76,6 +78,21 @@ impl EditorSubsystem {
                     hit_block_index = None;
                     hit_trigger_index = None;
                     hit_tap_index = Some(tap_index);
+                    hit_tap_division = None;
+                    cursor_override = Some(tap_position);
+                    best_hit_normal = Vec3::Y;
+                }
+
+                if let Some((division, division_t)) =
+                    self.ray_intersect_tap_division(ray_origin, ray_dir, min_t)
+                {
+                    min_t = division_t;
+                    hit_found = true;
+                    hit_block_index = None;
+                    hit_trigger_index = None;
+                    hit_tap_index = None;
+                    hit_tap_division = Some(division);
+                    cursor_override = Some(division.indicator_position);
                     best_hit_normal = Vec3::Y;
                 }
             }
@@ -94,6 +111,8 @@ impl EditorSubsystem {
                         hit_block_index = Some(index);
                         hit_trigger_index = None;
                         hit_tap_index = None;
+                        hit_tap_division = None;
+                        cursor_override = None;
                         best_hit_normal = normal;
                     }
                 }
@@ -127,6 +146,8 @@ impl EditorSubsystem {
                         hit_block_index = None;
                         hit_trigger_index = Some(trigger_index);
                         hit_tap_index = None;
+                        hit_tap_division = None;
+                        cursor_override = None;
                     }
                 }
             }
@@ -136,13 +157,16 @@ impl EditorSubsystem {
             return None;
         }
 
-        let next_cursor = self.cursor_from_ray_hit(ray_origin + ray_dir * min_t, best_hit_normal);
+        let next_cursor = cursor_override.unwrap_or_else(|| {
+            self.cursor_from_ray_hit(ray_origin + ray_dir * min_t, best_hit_normal)
+        });
 
         Some(EditorPickResult {
             cursor: next_cursor,
             hit_block_index,
             hit_trigger_index,
             hit_tap_index,
+            hit_tap_division,
         })
     }
 
@@ -259,12 +283,12 @@ impl EditorSubsystem {
         ray_origin: Vec3,
         ray_dir: Vec3,
         max_t: f32,
-    ) -> Option<(usize, f32)> {
+    ) -> Option<(usize, f32, [f32; 3])> {
         if ray_dir.y.abs() <= f32::EPSILON {
             return None;
         }
 
-        let mut best_hit: Option<(usize, f32, f32)> = None;
+        let mut best_hit: Option<(usize, f32, f32, [f32; 3])> = None;
         for (index, position) in self
             .timeline
             .taps
@@ -296,15 +320,62 @@ impl EditorSubsystem {
                 .unwrap_or(f32::INFINITY);
 
             match best_hit {
+                Some((_, best_t, best_timeline_distance, _))
+                    if t > best_t + f32::EPSILON
+                        || ((t - best_t).abs() <= f32::EPSILON
+                            && timeline_distance >= best_timeline_distance) => {}
+                _ => best_hit = Some((index, t, timeline_distance, *position)),
+            }
+        }
+
+        best_hit.map(|(index, t, _, position)| (index, t, position))
+    }
+
+    fn ray_intersect_tap_division(
+        &self,
+        ray_origin: Vec3,
+        ray_dir: Vec3,
+        max_t: f32,
+    ) -> Option<(EditorTapDivisionPick, f32)> {
+        if ray_dir.y.abs() <= f32::EPSILON {
+            return None;
+        }
+
+        let mut best_hit: Option<(EditorTapDivisionPick, f32, f32)> = None;
+        for division in self.timing_division_tap_previews() {
+            let position = division.indicator_position;
+            let plane_y = position[1] + 0.1;
+            let t = (plane_y - ray_origin.y) / ray_dir.y;
+            if t < 0.0 || t >= max_t {
+                continue;
+            }
+
+            let hit = ray_origin + ray_dir * t;
+            if hit.x < position[0]
+                || hit.x > position[0] + 1.0
+                || hit.z < position[2]
+                || hit.z > position[2] + 1.0
+            {
+                continue;
+            }
+
+            let timeline_distance =
+                (division.time_seconds - self.timeline.clock.time_seconds).abs();
+            let pick = EditorTapDivisionPick {
+                time_seconds: division.time_seconds,
+                indicator_position: division.indicator_position,
+            };
+
+            match best_hit {
                 Some((_, best_t, best_timeline_distance))
                     if t > best_t + f32::EPSILON
                         || ((t - best_t).abs() <= f32::EPSILON
                             && timeline_distance >= best_timeline_distance) => {}
-                _ => best_hit = Some((index, t, timeline_distance)),
+                _ => best_hit = Some((pick, t, timeline_distance)),
             }
         }
 
-        best_hit.map(|(index, t, _)| (index, t))
+        best_hit.map(|(pick, t, _)| (pick, t))
     }
 
     fn ray_may_hit_block_bounds(

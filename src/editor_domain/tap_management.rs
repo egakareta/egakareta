@@ -7,13 +7,14 @@
 */
 use crate::types::SpawnDirection;
 
+pub(crate) const TAP_EPSILON_SECONDS: f32 = 0.01;
+
 pub(crate) fn add_tap_with_indicator(
     tap_times: &mut Vec<f32>,
     tap_indicator_positions: &mut Vec<[f32; 3]>,
     time_seconds: f32,
     indicator_position: [f32; 3],
 ) -> Option<usize> {
-    const TAP_EPSILON_SECONDS: f32 = 0.01;
     let clamped_time = time_seconds.max(0.0);
     if let Some(existing_index) = tap_times
         .iter()
@@ -33,7 +34,6 @@ pub(crate) fn remove_tap_with_indicator(
     tap_indicator_positions: &mut Vec<[f32; 3]>,
     time_seconds: f32,
 ) -> Option<usize> {
-    const TAP_EPSILON_SECONDS: f32 = 0.01;
     if let Some(index) = tap_times
         .iter()
         .position(|tap| (*tap - time_seconds).abs() <= TAP_EPSILON_SECONDS)

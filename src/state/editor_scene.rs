@@ -13,10 +13,10 @@ use crate::editor_domain::{create_block_at_cursor, derive_timeline_elapsed_secon
 use crate::game::trigger_transformed_objects_at_time;
 use crate::mesh::{
     build_block_geometry, build_block_geometry_for_object, build_block_geometry_from_refs,
-    build_camera_trigger_marker_vertices, build_editor_cursor_vertices,
-    build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
-    build_editor_selection_outline_vertices, build_spawn_marker_vertices,
-    build_tap_indicator_vertices, GizmoParams, MeshGeometry,
+    build_camera_trigger_marker_vertices, build_colored_tap_indicator_vertices,
+    build_editor_cursor_vertices, build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
+    build_editor_selection_outline_vertices, build_spawn_marker_vertices, GizmoParams,
+    MeshGeometry,
 };
 use crate::state::render::EditorOutlineInstance;
 use crate::types::{AppPhase, EditorMode, GizmoPart, LevelObject, SpawnDirection};
@@ -898,27 +898,41 @@ impl State {
             return;
         }
 
-        // Build unique sorted positions without a full clone when possible
-        let positions = &self.editor.timeline.taps.tap_indicator_positions;
-        let unique_positions: Vec<[f32; 3]> = if positions.len() <= 1 {
-            positions.clone()
-        } else {
-            let mut sorted = positions.clone();
-            sorted.sort_unstable_by(|a, b| {
-                a[0].total_cmp(&b[0])
-                    .then(a[1].total_cmp(&b[1]))
-                    .then(a[2].total_cmp(&b[2]))
-            });
-            sorted.dedup();
-            sorted
-        };
+        let mut indicators: Vec<([f32; 3], [f32; 4])> = self
+            .editor
+            .timing_division_tap_previews()
+            .into_iter()
+            .map(|preview| (preview.indicator_position, [0.05, 0.48, 0.95, 0.72]))
+            .collect();
+        indicators.extend(
+            self.editor
+                .timeline
+                .taps
+                .tap_indicator_positions
+                .iter()
+                .copied()
+                .map(|position| (position, [0.0, 0.0, 0.0, 1.0])),
+        );
+        indicators.sort_unstable_by(|a, b| {
+            a.0[0]
+                .total_cmp(&b.0[0])
+                .then(a.0[1].total_cmp(&b.0[1]))
+                .then(a.0[2].total_cmp(&b.0[2]))
+                .then(a.1[3].total_cmp(&b.1[3]))
+        });
+        indicators.dedup_by(|a, b| {
+            (a.0[0] - b.0[0]).abs() < 0.001
+                && (a.0[1] - b.0[1]).abs() < 0.001
+                && (a.0[2] - b.0[2]).abs() < 0.001
+                && (a.1[3] - b.1[3]).abs() < 0.001
+        });
 
-        if unique_positions.is_empty() {
+        if indicators.is_empty() {
             self.render.meshes.tap_indicators.clear();
             return;
         }
 
-        let vertices = build_tap_indicator_vertices(&unique_positions);
+        let vertices = build_colored_tap_indicator_vertices(&indicators);
         self.render.meshes.tap_indicators.replace_with_vertices(
             &self.render.gpu.device,
             "Tap Indicator Vertex Buffer",

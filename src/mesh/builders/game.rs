@@ -146,15 +146,16 @@ pub(crate) fn build_spawn_marker_vertices(position: [f32; 3], faces_right: bool)
     vertices
 }
 
-pub(crate) fn build_tap_indicator_vertices(positions: &[[f32; 3]]) -> Vec<Vertex> {
+pub(crate) fn build_colored_tap_indicator_vertices(
+    indicators: &[([f32; 3], [f32; 4])],
+) -> Vec<Vertex> {
     puffin::profile_scope!("BuildTapIndicatorVertices");
     let mut vertices = Vec::new();
-    let color = [0.0, 0.0, 0.0, 1.0]; // Black
     let thickness = 0.05;
     let dash_len = 0.2;
     // Gaps will be (1.0 - 3*0.2) / 2 = 0.2
 
-    for &pos in positions {
+    for &(pos, color) in indicators {
         let x_min = pos[0];
         let x_max = x_min + 1.0;
         let z_min = pos[2];

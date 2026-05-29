@@ -20,7 +20,7 @@ pub(crate) use transitions::*;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata};
+    use crate::types::{LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata, TimingPoint};
 
     fn assert_near_solver_hits_target(
         spawn: [f32; 3],
@@ -588,5 +588,55 @@ mod tests {
             assert!((left[1] - right[1]).abs() < 0.001);
             assert!((left[2] - right[2]).abs() < 0.001);
         }
+    }
+
+    #[test]
+    fn derives_timing_division_previews_at_exact_world_positions() {
+        let timing_points = vec![TimingPoint {
+            time_seconds: 0.1,
+            bpm: 600.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        }];
+
+        let previews = derive_timing_division_tap_previews(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[],
+            &timing_points,
+            0.35,
+            &[],
+        );
+
+        let preview = previews
+            .iter()
+            .find(|preview| (preview.time_seconds - 0.1).abs() < 0.001)
+            .expect("0.1s division should be visible");
+        assert!((preview.indicator_position[0] - 0.0).abs() < 0.001);
+        assert!((preview.indicator_position[1] - 0.0).abs() < 0.001);
+        assert!((preview.indicator_position[2] - 0.8).abs() < 0.02);
+    }
+
+    #[test]
+    fn timing_division_previews_skip_existing_taps() {
+        let timing_points = vec![TimingPoint {
+            time_seconds: 0.0,
+            bpm: 120.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        }];
+
+        let previews = derive_timing_division_tap_previews(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[0.5],
+            &timing_points,
+            1.0,
+            &[],
+        );
+
+        assert!(previews
+            .iter()
+            .all(|preview| (preview.time_seconds - 0.5).abs() > TAP_EPSILON_SECONDS));
     }
 }

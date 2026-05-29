@@ -10,8 +10,9 @@ use glam::Vec2;
 use super::{EditorDirtyFlags, EditorSubsystem, State};
 use crate::editor_domain::{
     add_tap_with_indicator, build_editor_playtest_transition, derive_tap_indicator_positions,
-    derive_timeline_time_for_world_target_near_time, playtest_return_objects,
-    remove_topmost_block_at_cursor, toggle_spawn_direction, TimelineNearSearch,
+    derive_timeline_time_for_world_target_near_time, derive_timing_division_tap_previews,
+    playtest_return_objects, remove_topmost_block_at_cursor, toggle_spawn_direction,
+    TapDivisionPreview, TimelineNearSearch,
 };
 use crate::game::{GameState, TimelineSimulationRuntime};
 use crate::types::{AppPhase, EditorMode};
@@ -24,6 +25,17 @@ impl EditorSubsystem {
             &self.timeline.taps.tap_times,
             &self.objects,
         );
+    }
+
+    pub(crate) fn timing_division_tap_previews(&self) -> Vec<TapDivisionPreview> {
+        derive_timing_division_tap_previews(
+            self.spawn.position,
+            self.spawn.direction,
+            &self.timeline.taps.tap_times,
+            &self.timing.timing_points,
+            self.timeline.clock.duration_seconds,
+            &self.objects,
+        )
     }
 
     pub(crate) fn toggle_tap_at_cursor(&mut self) -> (Option<f32>, bool) {
@@ -237,6 +249,24 @@ impl State {
             return false;
         };
         let Some(tap_index) = pick.hit_tap_index else {
+            if let Some(division) = pick.hit_tap_division {
+                self.record_editor_history_state();
+                let selected_index = add_tap_with_indicator(
+                    &mut self.editor.timeline.taps.tap_times,
+                    &mut self.editor.timeline.taps.tap_indicator_positions,
+                    division.time_seconds,
+                    division.indicator_position,
+                );
+                self.editor.set_selected_tap_index(selected_index);
+                self.set_editor_timeline_time_seconds(division.time_seconds);
+                self.editor.ui.cursor = division.indicator_position;
+                self.editor.invalidate_samples_from(division.time_seconds);
+                self.mark_editor_dirty(EditorDirtyFlags {
+                    rebuild_tap_indicators: true,
+                    ..EditorDirtyFlags::default()
+                });
+                return true;
+            }
             return false;
         };
         let Some(time_seconds) = self.editor.timeline.taps.tap_times.get(tap_index).copied() else {

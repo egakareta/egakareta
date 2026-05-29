@@ -8,7 +8,15 @@
 use crate::game::{
     simulate_timeline_state, simulate_timeline_state_with_triggers, TimelineSimulationRuntime,
 };
-use crate::types::{LevelObject, SpawnDirection, TimedTrigger};
+use crate::types::{LevelObject, SpawnDirection, TimedTrigger, TimingPoint};
+
+use super::TAP_EPSILON_SECONDS;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct TapDivisionPreview {
+    pub(crate) time_seconds: f32,
+    pub(crate) indicator_position: [f32; 3],
+}
 
 #[cfg(test)]
 pub(crate) fn derive_timeline_position(
@@ -85,6 +93,93 @@ pub(crate) fn derive_tap_indicator_positions(
         (a[0] - b[0]).abs() < 0.001 && (a[1] - b[1]).abs() < 0.001 && (a[2] - b[2]).abs() < 0.001
     });
     positions
+}
+
+pub(crate) fn derive_timing_division_tap_previews(
+    spawn: [f32; 3],
+    direction: SpawnDirection,
+    tap_times: &[f32],
+    timing_points: &[TimingPoint],
+    duration_seconds: f32,
+    objects: &[LevelObject],
+) -> Vec<TapDivisionPreview> {
+    let duration = if duration_seconds.is_finite() {
+        duration_seconds.max(0.0)
+    } else {
+        0.0
+    };
+    if duration <= 0.0 || timing_points.is_empty() {
+        return Vec::new();
+    }
+
+    let mut sorted_timing_points: Vec<TimingPoint> = timing_points
+        .iter()
+        .filter(|point| point.time_seconds.is_finite() && point.bpm.is_finite() && point.bpm > 0.0)
+        .cloned()
+        .collect();
+    sorted_timing_points.sort_by(|a, b| a.time_seconds.total_cmp(&b.time_seconds));
+    if sorted_timing_points.is_empty() {
+        return Vec::new();
+    }
+
+    let mut division_times = Vec::new();
+    for (point_index, point) in sorted_timing_points.iter().enumerate() {
+        let start_time = point.time_seconds.clamp(0.0, duration);
+        let end_time = sorted_timing_points
+            .get(point_index + 1)
+            .map(|next| next.time_seconds.clamp(0.0, duration))
+            .unwrap_or(duration);
+        if end_time < start_time {
+            continue;
+        }
+
+        let beat_duration = 60.0 / point.bpm;
+        if !beat_duration.is_finite() || beat_duration <= 0.0 {
+            continue;
+        }
+
+        let mut beat = 0u32;
+        let mut time = start_time;
+        while time <= end_time + TAP_EPSILON_SECONDS {
+            let clamped_time = time.clamp(0.0, duration);
+            if !tap_times
+                .iter()
+                .any(|tap| (*tap - clamped_time).abs() <= TAP_EPSILON_SECONDS)
+            {
+                division_times.push(clamped_time);
+            }
+
+            beat += 1;
+            if beat > 10000 {
+                break;
+            }
+            time = start_time + beat as f32 * beat_duration;
+        }
+    }
+
+    division_times.sort_by(f32::total_cmp);
+    division_times.dedup_by(|left, right| (*left - *right).abs() <= TAP_EPSILON_SECONDS);
+
+    let mut runtime = TimelineSimulationRuntime::new(spawn, direction, objects, tap_times);
+    let mut previews = Vec::with_capacity(division_times.len());
+    for time_seconds in division_times {
+        runtime.advance_to(time_seconds);
+        if runtime.game_over() && runtime.elapsed_seconds() + TAP_EPSILON_SECONDS < time_seconds {
+            break;
+        }
+
+        let snapshot = runtime.snapshot();
+        previews.push(TapDivisionPreview {
+            time_seconds,
+            indicator_position: [
+                snapshot.position[0] - 0.5,
+                snapshot.position[1],
+                snapshot.position[2] - 0.5,
+            ],
+        });
+    }
+
+    previews
 }
 
 #[cfg(test)]
