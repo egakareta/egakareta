@@ -329,19 +329,34 @@ impl EditorSubsystem {
                 ]
             });
 
+        // Clamp Y delta so the lowest block stops at y=0 instead of each
+        // block being clamped independently (which compresses stacked blocks
+        // into the same position).
+        let raw_delta_y = raycast_delta.map(|d| d[1]).unwrap_or(world_delta.y);
+        let min_start_y = drag
+            .start_blocks
+            .iter()
+            .map(|b| b.position[1])
+            .fold(f32::INFINITY, f32::min);
+        let y_shift = if min_start_y + raw_delta_y < 0.0 {
+            -(min_start_y + raw_delta_y)
+        } else {
+            0.0
+        };
+
         let mut first_cursor: Option<[f32; 3]> = None;
         for block in &drag.start_blocks {
             if let Some(obj) = self.objects.get_mut(block.index) {
                 let mut next = if let Some(delta) = raycast_delta {
                     [
                         block.position[0] + delta[0],
-                        block.position[1] + delta[1],
+                        block.position[1] + delta[1] + y_shift,
                         block.position[2] + delta[2],
                     ]
                 } else {
                     [
                         block.position[0] + world_delta.x,
-                        block.position[1] + world_delta.y,
+                        block.position[1] + world_delta.y + y_shift,
                         block.position[2] + world_delta.z,
                     ]
                 };

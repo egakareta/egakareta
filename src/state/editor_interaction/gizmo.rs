@@ -85,14 +85,32 @@ impl EditorSubsystem {
             GizmoDragKind::Move => {
                 let snap_enabled = self.effective_snap_to_grid();
                 let snap_step = self.config.snap_step.max(0.05);
+                // Clamp Y-axis delta so the lowest block stops at y=0 instead
+                // of each block being clamped independently (which compresses
+                // stacked blocks into the same position).
+                let clamped_delta = if matches!(drag.axis, GizmoAxis::Y | GizmoAxis::YNeg) {
+                    let min_start_y = drag
+                        .start_blocks
+                        .iter()
+                        .map(|b| b.position[1])
+                        .fold(f32::INFINITY, f32::min);
+                    let min_next_y = min_start_y + world_delta;
+                    if min_next_y < 0.0 {
+                        world_delta - min_next_y
+                    } else {
+                        world_delta
+                    }
+                } else {
+                    world_delta
+                };
                 let mut first_cursor: Option<[f32; 3]> = None;
                 for block in &drag.start_blocks {
                     if let Some(obj) = self.objects.get_mut(block.index) {
                         let mut next = block.position;
                         match drag.axis {
-                            GizmoAxis::X | GizmoAxis::XNeg => next[0] += world_delta,
-                            GizmoAxis::Y | GizmoAxis::YNeg => next[1] += world_delta,
-                            GizmoAxis::Z | GizmoAxis::ZNeg => next[2] += world_delta,
+                            GizmoAxis::X | GizmoAxis::XNeg => next[0] += clamped_delta,
+                            GizmoAxis::Y | GizmoAxis::YNeg => next[1] += clamped_delta,
+                            GizmoAxis::Z | GizmoAxis::ZNeg => next[2] += clamped_delta,
                         }
                         if snap_enabled {
                             next[0] = (next[0] / snap_step).round() * snap_step;
@@ -985,6 +1003,73 @@ mod tests {
             let lengths = state.editor_gizmo_axis_lengths_world(Vec3::new(0.5, 0.5, 0.5), 100.0);
             assert!(lengths[0] > 0.0 && lengths[1] > 0.0 && lengths[2] > 0.0);
             assert!(state.editor_gizmo_axis_width_world(Vec3::new(0.5, 0.5, 0.5), 100.0) > 0.0);
+        });
+    }
+
+    #[test]
+    fn drag_gizmo_y_prevents_compression_when_moving_below_ground() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let viewport = Vec2::new(1280.0, 720.0);
+
+            // Two blocks at different heights.
+            let mut low = test_block();
+            low.position = [0.0, 0.0, 0.0];
+            let mut high = test_block();
+            high.position = [0.0, 3.0, 0.0];
+            state.editor.objects = vec![low, high];
+            state.editor.ui.mode = EditorMode::Select;
+            state.editor.replace_block_selection(vec![0, 1]);
+
+            let center = Vec3::new(0.5, 2.0, 0.5);
+            let center_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center projects");
+
+            // Simulate a large negative Y gizmo drag.
+            state.editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+                axis: GizmoAxis::Y,
+                kind: GizmoDragKind::Move,
+                start_mouse: [center_screen.x as f64, center_screen.y as f64],
+                start_center_screen: [center_screen.x, center_screen.y],
+                start_center_world: [0.5, 2.0, 0.5],
+                start_blocks: vec![
+                    EditorDragBlockStart {
+                        index: 0,
+                        position: [0.0, 0.0, 0.0],
+                        size: [1.0, 1.0, 1.0],
+                        rotation_degrees: [0.0, 0.0, 0.0],
+                    },
+                    EditorDragBlockStart {
+                        index: 1,
+                        position: [0.0, 3.0, 0.0],
+                        size: [1.0, 1.0, 1.0],
+                        rotation_degrees: [0.0, 0.0, 0.0],
+                    },
+                ],
+            });
+
+            // Drag far below ground (simulate large negative world_delta via screen).
+            // We call drag_gizmo directly with a fake viewport and a screen position
+            // that yields a large negative Y world delta.
+            // Instead, directly test via the internal method by placing mouse far away.
+            let far_screen = Vec2::new(center_screen.x, center_screen.y - 2000.0);
+            state
+                .editor
+                .drag_gizmo(far_screen.x as f64, far_screen.y as f64, viewport);
+
+            // The low block should stop at y=0, the high block should maintain its
+            // relative 3-unit offset (staying at y=3 or wherever the delta places it
+            // without going negative for the lowest block).
+            let low_y = state.editor.objects[0].position[1];
+            let high_y = state.editor.objects[1].position[1];
+            assert!(low_y >= -1e-4, "low block y={low_y} should be >= 0");
+            let relative_gap = high_y - low_y;
+            assert!(
+                relative_gap >= 2.9,
+                "relative gap {relative_gap} should be preserved (~3.0)"
+            );
         });
     }
 }
