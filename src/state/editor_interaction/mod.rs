@@ -31,6 +31,7 @@ pub(crate) struct EditorBlockDrag {
     pub(crate) start_center_world: [f32; 3],
     pub(crate) start_drag_world: [f32; 3],
     pub(crate) start_blocks: Vec<EditorDragBlockStart>,
+    pub(crate) start_cursor: [f32; 3],
 }
 
 #[derive(Clone, Copy)]

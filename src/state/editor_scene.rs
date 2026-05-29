@@ -1099,6 +1099,7 @@ mod tests {
                 start_mouse: [0.0, 0.0],
                 start_center_world: [0.0, 0.0, 0.0],
                 start_drag_world: [0.0, 0.0, 0.0],
+                start_cursor: [0.0, 0.0, 0.0],
                 start_blocks: Vec::new(),
             });
             state.editor.runtime.dirty = crate::state::EditorDirtyFlags::from_object_sync();

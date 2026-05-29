@@ -136,9 +136,62 @@ impl EditorSubsystem {
             return None;
         }
 
-        let hit = ray_origin + ray_dir * min_t;
-        let target = hit + best_hit_normal * 0.01;
+        let next_cursor = self.cursor_from_ray_hit(ray_origin + ray_dir * min_t, best_hit_normal);
 
+        Some(EditorPickResult {
+            cursor: next_cursor,
+            hit_block_index,
+            hit_trigger_index,
+            hit_tap_index,
+        })
+    }
+
+    pub(crate) fn pick_block_cursor_from_screen_excluding(
+        &self,
+        x: f64,
+        y: f64,
+        viewport_size: Vec2,
+        excluded_indices: &[usize],
+    ) -> Option<[f32; 3]> {
+        let (ray_origin, ray_dir) = self.screen_to_ray(x, y, viewport_size)?;
+        self.pick_block_cursor_from_ray_excluding(ray_origin, ray_dir, excluded_indices)
+    }
+
+    fn pick_block_cursor_from_ray_excluding(
+        &self,
+        ray_origin: Vec3,
+        ray_dir: Vec3,
+        excluded_indices: &[usize],
+    ) -> Option<[f32; 3]> {
+        let mut min_t = f32::INFINITY;
+        let mut best_hit_normal = Vec3::Y;
+        let mut hit_found = false;
+
+        for (index, obj) in self.objects.iter().enumerate() {
+            if excluded_indices.contains(&index)
+                || !Self::ray_may_hit_block_bounds(ray_origin, ray_dir, obj, min_t)
+            {
+                continue;
+            }
+
+            if let Some((t, normal)) = self.ray_intersect_rotated_block(ray_origin, ray_dir, obj) {
+                if t < min_t {
+                    min_t = t;
+                    best_hit_normal = normal;
+                    hit_found = true;
+                }
+            }
+        }
+
+        if hit_found {
+            Some(self.cursor_from_ray_hit(ray_origin + ray_dir * min_t, best_hit_normal))
+        } else {
+            None
+        }
+    }
+
+    fn cursor_from_ray_hit(&self, hit: Vec3, hit_normal: Vec3) -> [f32; 3] {
+        let target = hit + hit_normal * 0.01;
         let snap_enabled = self.effective_snap_to_grid();
         let snap_step = self.config.snap_step.max(0.05);
 
@@ -149,17 +202,10 @@ impl EditorSubsystem {
                 (target.z / snap_step).floor() * snap_step,
             ]
         } else {
-            [target.x.floor(), target.y.floor(), target.z.floor()]
+            [target.x, target.y, target.z]
         };
 
-        let next_cursor = [next_cursor[0], next_cursor[1].max(0.0), next_cursor[2]];
-
-        Some(EditorPickResult {
-            cursor: next_cursor,
-            hit_block_index,
-            hit_trigger_index,
-            hit_tap_index,
-        })
+        [next_cursor[0], next_cursor[1].max(0.0), next_cursor[2]]
     }
 
     fn ray_intersect_tap_indicator(

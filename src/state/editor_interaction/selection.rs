@@ -14,6 +14,29 @@ use glam::{EulerRot, Mat3, Vec2, Vec3};
 const MARQUEE_DRAG_THRESHOLD_PX: f64 = 4.0;
 const CAMERA_TRIGGER_MARQUEE_RADIUS_PX: f32 = 16.0;
 
+fn unsnapped_drag_y_position(start_y: f32, raw_y: f32, snap_step: f32) -> f32 {
+    if start_y.abs() <= f32::EPSILON && raw_y < snap_step * 0.5 {
+        0.0
+    } else {
+        raw_y.max(0.0)
+    }
+}
+
+fn drag_anchor_position(drag: &EditorBlockDrag) -> [f32; 3] {
+    let mut anchor = [f32::INFINITY; 3];
+    for block in &drag.start_blocks {
+        anchor[0] = anchor[0].min(block.position[0]);
+        anchor[1] = anchor[1].min(block.position[1]);
+        anchor[2] = anchor[2].min(block.position[2]);
+    }
+
+    if anchor.iter().all(|component| component.is_finite()) {
+        anchor
+    } else {
+        [0.0, 0.0, 0.0]
+    }
+}
+
 impl EditorSubsystem {
     fn marquee_has_dragged_far_enough(&self) -> bool {
         let Some(start) = self.ui.marquee_start_screen else {
@@ -293,22 +316,42 @@ impl EditorSubsystem {
 
         let snap_enabled = self.effective_snap_to_grid();
         let snap_step = self.config.snap_step.max(0.05);
+        let excluded_indices: Vec<usize> =
+            drag.start_blocks.iter().map(|block| block.index).collect();
+        let raycast_delta = self
+            .pick_block_cursor_from_screen_excluding(x, y, viewport, &excluded_indices)
+            .map(|cursor| {
+                let anchor = drag_anchor_position(&drag);
+                [
+                    cursor[0] - drag.start_cursor[0],
+                    cursor[1] - anchor[1],
+                    cursor[2] - drag.start_cursor[2],
+                ]
+            });
 
         let mut first_cursor: Option<[f32; 3]> = None;
         for block in &drag.start_blocks {
             if let Some(obj) = self.objects.get_mut(block.index) {
-                let mut next = [
-                    block.position[0] + world_delta.x,
-                    block.position[1] + world_delta.y,
-                    block.position[2] + world_delta.z,
-                ];
+                let mut next = if let Some(delta) = raycast_delta {
+                    [
+                        block.position[0] + delta[0],
+                        block.position[1] + delta[1],
+                        block.position[2] + delta[2],
+                    ]
+                } else {
+                    [
+                        block.position[0] + world_delta.x,
+                        block.position[1] + world_delta.y,
+                        block.position[2] + world_delta.z,
+                    ]
+                };
 
-                if snap_enabled {
+                if raycast_delta.is_none() && snap_enabled {
                     next[0] = (next[0] / snap_step).round() * snap_step;
                     next[1] = (next[1].max(0.0) / snap_step).round() * snap_step;
                     next[2] = (next[2] / snap_step).round() * snap_step;
-                } else {
-                    next[1] = next[1].max(0.0);
+                } else if raycast_delta.is_none() {
+                    next[1] = unsnapped_drag_y_position(block.position[1], next[1], snap_step);
                 }
 
                 obj.position = next;
@@ -391,6 +434,7 @@ impl EditorSubsystem {
                 start_center_world: [center.x, center.y, center.z],
                 start_drag_world: [start_drag_world.x, start_drag_world.y, start_drag_world.z],
                 start_blocks,
+                start_cursor: pick.cursor,
             });
             return true;
         }
@@ -656,6 +700,7 @@ fn grow_screen_bounds(bounds: &mut Option<(Vec2, Vec2)>, point: Vec2) {
 mod tests {
     use super::super::super::State;
     use super::super::super::{EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart};
+    use crate::test_utils::assert_approx_eq as approx_eq;
     use crate::types::{AppPhase, EditorInteractionChange, EditorMode, LevelObject};
     use glam::{Vec2, Vec3};
 
@@ -672,6 +717,50 @@ mod tests {
 
     fn default_viewport() -> Vec2 {
         Vec2::new(1280.0, 720.0)
+    }
+
+    fn drag_delta_for_screen(
+        state: &State,
+        center: Vec3,
+        screen: Vec2,
+        viewport: Vec2,
+    ) -> Option<Vec3> {
+        let (ray_origin, ray_dir) =
+            state
+                .editor
+                .screen_to_ray(screen.x as f64, screen.y as f64, viewport)?;
+        let camera_forward = state.editor.camera_forward();
+        let denom = ray_dir.dot(camera_forward);
+        if denom.abs() <= f32::EPSILON {
+            return None;
+        }
+        let t = (center - ray_origin).dot(camera_forward) / denom;
+        if t < 0.0 {
+            return None;
+        }
+        Some(ray_origin + ray_dir * t - center)
+    }
+
+    fn screen_for_positive_y_delta(
+        state: &State,
+        center: Vec3,
+        origin_screen: Vec2,
+        viewport: Vec2,
+        min_y: f32,
+        max_y: f32,
+    ) -> (Vec2, f32) {
+        let directions = [Vec2::Y, -Vec2::Y, Vec2::X, -Vec2::X];
+        for pixels in 1..=1000 {
+            for direction in directions {
+                let screen = origin_screen + direction * pixels as f32;
+                if let Some(delta) = drag_delta_for_screen(state, center, screen, viewport) {
+                    if delta.y > min_y && delta.y < max_y {
+                        return (screen, delta.y);
+                    }
+                }
+            }
+        }
+        panic!("could not find drag target with positive Y delta in requested range");
     }
 
     #[test]
@@ -961,6 +1050,7 @@ mod tests {
                 start_mouse: [10.0, 20.0],
                 start_center_world: [0.5, 0.5, 0.5],
                 start_drag_world: [0.5, 0.5, 0.5],
+                start_cursor: [0.0, 0.0, 0.0],
                 start_blocks: vec![EditorDragBlockStart {
                     index: 0,
                     position: state.editor.objects[0].position,
@@ -995,6 +1085,7 @@ mod tests {
                 start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
                 start_center_world: [center.x, center.y, center.z],
                 start_drag_world: [center.x, center.y, center.z],
+                start_cursor: [center.x, center.y, center.z],
                 start_blocks: vec![EditorDragBlockStart {
                     index: 0,
                     position: state.editor.objects[0].position,
@@ -1029,6 +1120,139 @@ mod tests {
                 viewport,
                 AppPhase::Editor,
             ));
+        });
+    }
+
+    #[test]
+    fn drag_selection_without_snap_pins_small_ground_drift_but_allows_y_lift() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let viewport = default_viewport();
+
+            state.editor.ui.mode = EditorMode::Select;
+            state.editor.config.snap_to_grid = false;
+            state.editor.config.snap_step = 1.0;
+            state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
+
+            let center = Vec3::new(0.5, 0.5, 0.5);
+            let origin_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center should project to screen");
+            let release_height = state.editor.config.snap_step * 0.5;
+
+            let (small_drift_screen, small_drift_y) = screen_for_positive_y_delta(
+                &state,
+                center,
+                origin_screen,
+                viewport,
+                0.0,
+                release_height,
+            );
+
+            state.editor.runtime.interaction.block_drag = Some(EditorBlockDrag {
+                start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
+                start_center_world: [center.x, center.y, center.z],
+                start_drag_world: [center.x, center.y, center.z],
+                start_cursor: [center.x, center.y, center.z],
+                start_blocks: vec![EditorDragBlockStart {
+                    index: 0,
+                    position: state.editor.objects[0].position,
+                    size: state.editor.objects[0].size,
+                    rotation_degrees: state.editor.objects[0].rotation_degrees,
+                }],
+            });
+
+            assert!(state.editor.drag_selection(
+                small_drift_screen.x as f64,
+                small_drift_screen.y as f64,
+                viewport,
+            ));
+
+            assert!(small_drift_y > 0.0);
+            approx_eq(state.editor.objects[0].position[1], 0.0, 1e-6);
+            approx_eq(state.editor.ui.cursor[1], 0.0, 1e-6);
+
+            let (lift_screen, lift_y) = screen_for_positive_y_delta(
+                &state,
+                center,
+                origin_screen,
+                viewport,
+                release_height,
+                f32::INFINITY,
+            );
+            state.editor.runtime.interaction.block_drag = Some(EditorBlockDrag {
+                start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
+                start_center_world: [center.x, center.y, center.z],
+                start_drag_world: [center.x, center.y, center.z],
+                start_cursor: [center.x, center.y, center.z],
+                start_blocks: vec![EditorDragBlockStart {
+                    index: 0,
+                    position: [0.0, 0.0, 0.0],
+                    size: state.editor.objects[0].size,
+                    rotation_degrees: state.editor.objects[0].rotation_degrees,
+                }],
+            });
+
+            assert!(state.editor.drag_selection(
+                lift_screen.x as f64,
+                lift_screen.y as f64,
+                viewport,
+            ));
+
+            approx_eq(state.editor.objects[0].position[1], lift_y, 1e-5);
+            approx_eq(state.editor.ui.cursor[1], lift_y, 1e-5);
+        });
+    }
+
+    #[test]
+    fn drag_selection_raycast_ignores_dragged_block_and_lands_on_block_behind_it() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let viewport = default_viewport();
+
+            let mut support = test_block([-4.0, 0.0, -4.0]);
+            support.size = [8.0, 1.0, 8.0];
+            let floating = test_block([0.0, 5.0, 0.0]);
+
+            state.editor.ui.mode = EditorMode::Select;
+            state.editor.config.snap_to_grid = true;
+            state.editor.config.snap_step = 1.0;
+            state.editor.objects = vec![support, floating];
+            state.editor.ui.selected_block_indices = vec![1];
+            state.editor.ui.selected_block_index = Some(1);
+
+            let floating_center = Vec3::new(0.5, 5.5, 0.5);
+            let origin_screen = state
+                .editor
+                .world_to_screen_v(floating_center, viewport)
+                .expect("floating block center should project to screen");
+            let support_top_screen = state
+                .editor
+                .world_to_screen_v(Vec3::new(0.5, 1.0, 0.5), viewport)
+                .expect("support top should project to screen");
+
+            state.editor.runtime.interaction.block_drag = Some(EditorBlockDrag {
+                start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
+                start_center_world: [floating_center.x, floating_center.y, floating_center.z],
+                start_drag_world: [floating_center.x, floating_center.y, floating_center.z],
+                start_cursor: [floating_center.x, floating_center.y, floating_center.z],
+                start_blocks: vec![EditorDragBlockStart {
+                    index: 1,
+                    position: state.editor.objects[1].position,
+                    size: state.editor.objects[1].size,
+                    rotation_degrees: state.editor.objects[1].rotation_degrees,
+                }],
+            });
+
+            assert!(state.editor.drag_selection(
+                support_top_screen.x as f64,
+                support_top_screen.y as f64,
+                viewport,
+            ));
+
+            approx_eq(state.editor.objects[1].position[1], 1.0, 1e-6);
+            approx_eq(state.editor.ui.cursor[1], 1.0, 1e-6);
         });
     }
 
