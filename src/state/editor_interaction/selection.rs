@@ -1257,6 +1257,66 @@ mod tests {
     }
 
     #[test]
+    fn drag_selection_maintains_relative_grab_offset_instead_of_corner_snapping() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let viewport = default_viewport();
+
+            let mut support = test_block([-4.0, 0.0, -4.0]);
+            support.size = [8.0, 1.0, 8.0];
+            let floating = test_block([0.0, 5.0, 0.0]); // block at [0, 5, 0] center is [0.5, 5.5, 0.5]
+
+            state.editor.ui.mode = EditorMode::Select;
+            state.editor.config.snap_to_grid = false;
+            state.editor.config.snap_step = 1.0;
+            state.editor.objects = vec![support, floating];
+            state.editor.ui.selected_block_indices = vec![1];
+            state.editor.ui.selected_block_index = Some(1);
+
+            let grab_world = Vec3::new(0.75, 5.5, 0.25); // Grab at an offset near a corner
+            let grab_screen = state
+                .editor
+                .world_to_screen_v(grab_world, viewport)
+                .expect("grab offset should project to screen");
+
+            let target_world = Vec3::new(2.75, 1.0, 3.25);
+            let target_screen = state
+                .editor
+                .world_to_screen_v(target_world, viewport)
+                .expect("target offset should project to screen");
+
+            state.editor.runtime.interaction.block_drag = Some(EditorBlockDrag {
+                start_mouse: [grab_screen.x as f64, grab_screen.y as f64],
+                start_center_world: [0.5, 5.5, 0.5],
+                start_drag_world: [0.75, 5.5, 0.25],
+                start_cursor: [0.75, 5.5, 0.25],
+                start_blocks: vec![EditorDragBlockStart {
+                    index: 1,
+                    position: state.editor.objects[1].position,
+                    size: state.editor.objects[1].size,
+                    rotation_degrees: state.editor.objects[1].rotation_degrees,
+                }],
+            });
+
+            assert!(state.editor.drag_selection(
+                target_screen.x as f64,
+                target_screen.y as f64,
+                viewport,
+            ));
+
+            // We moved the grab cursor from X=0.75 -> 2.75 (+2.0 offset)
+            // Initial position X was 0.0, so new position X should be 2.0
+            // We moved the grab cursor from Z=0.25 -> 3.25 (+3.0 offset)
+            // Initial position Z was 0.0, so new position Z should be 3.0
+
+            // Height drops to sit on top of the block below (Y=1)
+            approx_eq(state.editor.objects[1].position[0], 2.0, 1e-4);
+            approx_eq(state.editor.objects[1].position[1], 1.0, 1e-4);
+            approx_eq(state.editor.objects[1].position[2], 3.0, 1e-4);
+        });
+    }
+
+    #[test]
     fn select_block_from_screen_handles_pick_miss_and_additive_toggle() {
         pollster::block_on(async {
             let mut state = State::new_test().await;

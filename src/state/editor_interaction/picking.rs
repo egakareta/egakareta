@@ -517,4 +517,21 @@ mod tests {
             assert!(pick.cursor[1] >= 0.0);
         });
     }
+
+    #[test]
+    fn cursor_from_ray_hit_does_not_snap_when_disabled() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.config.snap_to_grid = false;
+
+            let hit = Vec3::new(1.234, 0.5, 5.678);
+            let normal = Vec3::Y;
+
+            let cursor = state.editor.cursor_from_ray_hit(hit, normal);
+
+            approx_eq(cursor[0], 1.234, 1e-4);
+            approx_eq(cursor[1], 0.51, 1e-4);
+            approx_eq(cursor[2], 5.678, 1e-4);
+        });
+    }
 }
