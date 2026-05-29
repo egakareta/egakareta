@@ -28,7 +28,7 @@ sha2 = "0.10"
 zstd = "0.13"
 include_dir = "0.7"
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
-egui = "0.34.2"
+egui = "0.34.3"
 egui-wgpu = "0.34.2"
 egui-phosphor = "0.12.0"
 puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "7e08a533f9debfb7d051547263d2ab84c666314f" }
