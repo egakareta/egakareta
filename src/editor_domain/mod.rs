@@ -605,6 +605,10 @@ mod tests {
             &[],
             &timing_points,
             0.35,
+            TapDivisionPreviewRange {
+                start_seconds: 0.0,
+                end_seconds: 0.35,
+            },
             &[],
         );
 
@@ -632,11 +636,40 @@ mod tests {
             &[0.5],
             &timing_points,
             1.0,
+            TapDivisionPreviewRange {
+                start_seconds: 0.0,
+                end_seconds: 1.0,
+            },
             &[],
         );
 
         assert!(previews
             .iter()
             .all(|preview| (preview.time_seconds - 0.5).abs() > TAP_EPSILON_SECONDS));
+    }
+
+    #[test]
+    fn timing_division_previews_are_capped_for_pathological_timing() {
+        let timing_points = vec![TimingPoint {
+            time_seconds: 0.0,
+            bpm: 250_000.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        }];
+
+        let previews = derive_timing_division_tap_previews(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[],
+            &timing_points,
+            120.0,
+            TapDivisionPreviewRange {
+                start_seconds: 0.0,
+                end_seconds: 120.0,
+            },
+            &[],
+        );
+
+        assert!(previews.len() <= MAX_TIMING_DIVISION_TAP_PREVIEWS);
     }
 }

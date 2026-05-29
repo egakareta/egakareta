@@ -332,7 +332,7 @@ impl EditorSubsystem {
     }
 
     fn ray_intersect_tap_division(
-        &self,
+        &mut self,
         ray_origin: Vec3,
         ray_dir: Vec3,
         max_t: f32,
@@ -342,7 +342,9 @@ impl EditorSubsystem {
         }
 
         let mut best_hit: Option<(EditorTapDivisionPick, f32, f32)> = None;
-        for division in self.timing_division_tap_previews() {
+        let current_time = self.timeline.clock.time_seconds;
+        let previews: Vec<_> = self.timing_division_tap_previews().to_vec();
+        for division in previews {
             let position = division.indicator_position;
             let plane_y = position[1] + 0.1;
             let t = (plane_y - ray_origin.y) / ray_dir.y;
@@ -359,8 +361,7 @@ impl EditorSubsystem {
                 continue;
             }
 
-            let timeline_distance =
-                (division.time_seconds - self.timeline.clock.time_seconds).abs();
+            let timeline_distance = (division.time_seconds - current_time).abs();
             let pick = EditorTapDivisionPick {
                 time_seconds: division.time_seconds,
                 indicator_position: division.indicator_position,

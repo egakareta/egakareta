@@ -1499,7 +1499,8 @@ mod tests {
             let division = state
                 .editor
                 .timing_division_tap_previews()
-                .into_iter()
+                .iter()
+                .copied()
                 .find(|preview| (preview.time_seconds - 0.1).abs() < 0.001)
                 .expect("division preview should exist");
 

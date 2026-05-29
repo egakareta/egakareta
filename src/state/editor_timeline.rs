@@ -5,6 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use crate::editor_domain::TapDivisionPreview;
 use crate::game::TimelineSimulationRuntime;
 use crate::types::SpawnDirection;
 
@@ -47,6 +48,11 @@ pub(crate) struct EditorTimelineState {
     pub(crate) snapshot_cache: Vec<EditorTimelineSnapshot>,
     pub(crate) scrub_runtime_revision: u64,
     pub(crate) scrub_runtime: Option<TimelineSimulationRuntime>,
+    pub(crate) tap_division_preview_cache_revision: u64,
+    pub(crate) tap_division_preview_cache_timing_revision: u64,
+    pub(crate) tap_division_preview_cache_duration_seconds: f32,
+    pub(crate) tap_division_preview_cache_window: (f32, f32),
+    pub(crate) tap_division_preview_cache: Vec<TapDivisionPreview>,
 }
 
 impl EditorTimelineState {
@@ -77,6 +83,11 @@ impl EditorTimelineState {
             snapshot_cache: Vec::new(),
             scrub_runtime_revision: 0,
             scrub_runtime: None,
+            tap_division_preview_cache_revision: 0,
+            tap_division_preview_cache_timing_revision: 0,
+            tap_division_preview_cache_duration_seconds: 0.0,
+            tap_division_preview_cache_window: (0.0, 0.0),
+            tap_division_preview_cache: Vec::new(),
         }
     }
 }

@@ -12,10 +12,18 @@ use crate::types::{LevelObject, SpawnDirection, TimedTrigger, TimingPoint};
 
 use super::TAP_EPSILON_SECONDS;
 
+pub(crate) const MAX_TIMING_DIVISION_TAP_PREVIEWS: usize = 512;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct TapDivisionPreview {
     pub(crate) time_seconds: f32,
     pub(crate) indicator_position: [f32; 3],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct TapDivisionPreviewRange {
+    pub(crate) start_seconds: f32,
+    pub(crate) end_seconds: f32,
 }
 
 #[cfg(test)]
@@ -101,6 +109,7 @@ pub(crate) fn derive_timing_division_tap_previews(
     tap_times: &[f32],
     timing_points: &[TimingPoint],
     duration_seconds: f32,
+    preview_range: TapDivisionPreviewRange,
     objects: &[LevelObject],
 ) -> Vec<TapDivisionPreview> {
     let duration = if duration_seconds.is_finite() {
@@ -109,6 +118,20 @@ pub(crate) fn derive_timing_division_tap_previews(
         0.0
     };
     if duration <= 0.0 || timing_points.is_empty() {
+        return Vec::new();
+    }
+
+    let preview_start = if preview_range.start_seconds.is_finite() {
+        preview_range.start_seconds.clamp(0.0, duration)
+    } else {
+        0.0
+    };
+    let preview_end = if preview_range.end_seconds.is_finite() {
+        preview_range.end_seconds.clamp(preview_start, duration)
+    } else {
+        duration
+    };
+    if preview_end <= preview_start {
         return Vec::new();
     }
 
@@ -124,6 +147,10 @@ pub(crate) fn derive_timing_division_tap_previews(
 
     let mut division_times = Vec::new();
     for (point_index, point) in sorted_timing_points.iter().enumerate() {
+        if division_times.len() >= MAX_TIMING_DIVISION_TAP_PREVIEWS {
+            break;
+        }
+
         let start_time = point.time_seconds.clamp(0.0, duration);
         let end_time = sorted_timing_points
             .get(point_index + 1)
@@ -133,20 +160,34 @@ pub(crate) fn derive_timing_division_tap_previews(
             continue;
         }
 
+        let segment_start = start_time.max(preview_start);
+        let segment_end = end_time.min(preview_end);
+        if segment_end < segment_start {
+            continue;
+        }
+
         let beat_duration = 60.0 / point.bpm;
         if !beat_duration.is_finite() || beat_duration <= 0.0 {
             continue;
         }
 
-        let mut beat = 0u32;
-        let mut time = start_time;
+        let mut beat = ((segment_start - start_time) / beat_duration)
+            .ceil()
+            .max(0.0) as u32;
+        let mut time = start_time + beat as f32 * beat_duration;
         while time <= end_time + TAP_EPSILON_SECONDS {
             let clamped_time = time.clamp(0.0, duration);
+            if clamped_time > segment_end + TAP_EPSILON_SECONDS {
+                break;
+            }
             if !tap_times
                 .iter()
                 .any(|tap| (*tap - clamped_time).abs() <= TAP_EPSILON_SECONDS)
             {
                 division_times.push(clamped_time);
+                if division_times.len() >= MAX_TIMING_DIVISION_TAP_PREVIEWS {
+                    break;
+                }
             }
 
             beat += 1;

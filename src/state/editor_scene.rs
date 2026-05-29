@@ -901,7 +901,8 @@ impl State {
         let mut indicators: Vec<([f32; 3], [f32; 4])> = self
             .editor
             .timing_division_tap_previews()
-            .into_iter()
+            .iter()
+            .copied()
             .map(|preview| (preview.indicator_position, [0.05, 0.48, 0.95, 0.72]))
             .collect();
         indicators.extend(

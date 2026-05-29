@@ -12,12 +12,15 @@ use crate::editor_domain::{
     add_tap_with_indicator, build_editor_playtest_transition, derive_tap_indicator_positions,
     derive_timeline_time_for_world_target_near_time, derive_timing_division_tap_previews,
     playtest_return_objects, remove_topmost_block_at_cursor, toggle_spawn_direction,
-    TapDivisionPreview, TimelineNearSearch,
+    TapDivisionPreview, TapDivisionPreviewRange, TimelineNearSearch,
 };
 use crate::game::{GameState, TimelineSimulationRuntime};
 use crate::types::{AppPhase, EditorMode};
 
 impl EditorSubsystem {
+    const TAP_DIVISION_PREVIEW_LOOK_BEHIND_SECONDS: f32 = 4.0;
+    const TAP_DIVISION_PREVIEW_LOOK_AHEAD_SECONDS: f32 = 20.0;
+
     fn sync_tap_indicators_to_spawn(&mut self) {
         self.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
             self.spawn.position,
@@ -27,15 +30,44 @@ impl EditorSubsystem {
         );
     }
 
-    pub(crate) fn timing_division_tap_previews(&self) -> Vec<TapDivisionPreview> {
-        derive_timing_division_tap_previews(
-            self.spawn.position,
-            self.spawn.direction,
-            &self.timeline.taps.tap_times,
-            &self.timing.timing_points,
-            self.timeline.clock.duration_seconds,
-            &self.objects,
-        )
+    pub(crate) fn timing_division_tap_previews(&mut self) -> &[TapDivisionPreview] {
+        let duration_seconds = self.timeline.clock.duration_seconds.max(0.0);
+        let preview_start = (self.timeline.clock.time_seconds
+            - Self::TAP_DIVISION_PREVIEW_LOOK_BEHIND_SECONDS)
+            .clamp(0.0, duration_seconds);
+        let preview_end = (self.timeline.clock.time_seconds
+            + Self::TAP_DIVISION_PREVIEW_LOOK_AHEAD_SECONDS)
+            .clamp(preview_start, duration_seconds);
+
+        let window = (preview_start, preview_end);
+        let cache_is_current = self.timeline.tap_division_preview_cache_revision
+            == self.timeline.simulation_revision
+            && self.timeline.tap_division_preview_cache_timing_revision == self.timing.revision
+            && (self.timeline.tap_division_preview_cache_duration_seconds - duration_seconds).abs()
+                <= f32::EPSILON
+            && (self.timeline.tap_division_preview_cache_window.0 - window.0).abs() <= f32::EPSILON
+            && (self.timeline.tap_division_preview_cache_window.1 - window.1).abs() <= f32::EPSILON;
+
+        if !cache_is_current {
+            self.timeline.tap_division_preview_cache = derive_timing_division_tap_previews(
+                self.spawn.position,
+                self.spawn.direction,
+                &self.timeline.taps.tap_times,
+                &self.timing.timing_points,
+                duration_seconds,
+                TapDivisionPreviewRange {
+                    start_seconds: preview_start,
+                    end_seconds: preview_end,
+                },
+                &self.objects,
+            );
+            self.timeline.tap_division_preview_cache_revision = self.timeline.simulation_revision;
+            self.timeline.tap_division_preview_cache_timing_revision = self.timing.revision;
+            self.timeline.tap_division_preview_cache_duration_seconds = duration_seconds;
+            self.timeline.tap_division_preview_cache_window = window;
+        }
+
+        &self.timeline.tap_division_preview_cache
     }
 
     pub(crate) fn toggle_tap_at_cursor(&mut self) -> (Option<f32>, bool) {
@@ -211,6 +243,22 @@ impl EditorSubsystem {
 }
 
 impl State {
+    pub(crate) fn refresh_editor_after_tap_change(&mut self, cursor_override: Option<[f32; 3]>) {
+        let current_time = self.editor.timeline.clock.time_seconds;
+        self.set_editor_timeline_time_seconds(current_time);
+        self.resync_editor_timeline_playback_audio();
+        if let Some(cursor) = cursor_override {
+            self.editor.ui.cursor = cursor;
+            self.rebuild_editor_cursor_vertices();
+        }
+        self.mark_editor_dirty(EditorDirtyFlags {
+            rebuild_tap_indicators: true,
+            rebuild_preview_player: true,
+            rebuild_cursor: cursor_override.is_some(),
+            ..EditorDirtyFlags::default()
+        });
+    }
+
     pub(super) fn editor_add_tap_at_pointer_position(&mut self) {
         puffin::profile_scope!("TKeyToggle");
         if self.phase != AppPhase::Editor || self.editor.ui.mode != EditorMode::Tapping {
@@ -229,10 +277,7 @@ impl State {
         };
 
         if time.is_some() {
-            self.mark_editor_dirty(EditorDirtyFlags {
-                rebuild_tap_indicators: true,
-                ..EditorDirtyFlags::default()
-            });
+            self.refresh_editor_after_tap_change(Some(self.editor.ui.cursor));
         }
     }
 
@@ -258,13 +303,10 @@ impl State {
                     division.indicator_position,
                 );
                 self.editor.set_selected_tap_index(selected_index);
-                self.set_editor_timeline_time_seconds(division.time_seconds);
                 self.editor.ui.cursor = division.indicator_position;
                 self.editor.invalidate_samples_from(division.time_seconds);
-                self.mark_editor_dirty(EditorDirtyFlags {
-                    rebuild_tap_indicators: true,
-                    ..EditorDirtyFlags::default()
-                });
+                self.set_editor_timeline_time_seconds(division.time_seconds);
+                self.refresh_editor_after_tap_change(Some(division.indicator_position));
                 return true;
             }
             return false;

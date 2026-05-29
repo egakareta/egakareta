@@ -495,17 +495,20 @@ impl EditorSubsystem {
         self.timing
             .timing_points
             .sort_by(|a, b| a.time_seconds.total_cmp(&b.time_seconds));
+        self.timing.mark_timing_points_changed();
     }
 
     pub(crate) fn remove_timing_point(&mut self, index: usize) {
         if index < self.timing.timing_points.len() {
             self.timing.timing_points.remove(index);
+            self.timing.mark_timing_points_changed();
         }
     }
 
     pub(crate) fn update_timing_point_time(&mut self, index: usize, time: f32) {
         if let Some(tp) = self.timing.timing_points.get_mut(index) {
             tp.time_seconds = time.max(0.0);
+            self.timing.mark_timing_points_changed();
         }
         self.timing
             .timing_points
@@ -515,6 +518,7 @@ impl EditorSubsystem {
     pub(crate) fn update_timing_point_bpm(&mut self, index: usize, bpm: f32) {
         if let Some(tp) = self.timing.timing_points.get_mut(index) {
             tp.bpm = bpm.max(1.0);
+            self.timing.mark_timing_points_changed();
         }
     }
 
@@ -527,6 +531,7 @@ impl EditorSubsystem {
         if let Some(tp) = self.timing.timing_points.get_mut(index) {
             tp.time_signature_numerator = numerator.max(1);
             tp.time_signature_denominator = denominator.max(1);
+            self.timing.mark_timing_points_changed();
         }
     }
 
@@ -895,6 +900,12 @@ impl State {
                 ..EditorDirtyFlags::default()
             });
         }
+        if changed && self.phase == AppPhase::Editor && self.editor_mode() == EditorMode::Tapping {
+            self.mark_editor_dirty(EditorDirtyFlags {
+                rebuild_tap_indicators: true,
+                ..EditorDirtyFlags::default()
+            });
+        }
         if changed {
             if self.phase == AppPhase::Editor && self.editor.timeline.playback.playing {
                 const PLAYBACK_SEEK_RESYNC_DEBOUNCE_SECONDS: f32 = 0.12;
@@ -1046,10 +1057,7 @@ impl State {
             .tap_indicator_position_from_world(self.editor.timeline.preview.position);
         let tap_time = self.editor.add_tap(indicator_position);
         self.editor.invalidate_samples_from(tap_time);
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_tap_indicators: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.refresh_editor_after_tap_change(None);
     }
 
     /// Removes the tap event at the current timeline position, if one exists.
@@ -1059,10 +1067,7 @@ impl State {
         self.record_editor_history_state();
         let tap_time = self.editor.remove_tap();
         self.editor.invalidate_samples_from(tap_time);
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_tap_indicators: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.refresh_editor_after_tap_change(None);
     }
 
     /// Removes the tap event nearest to the given timestamp, if one exists.
@@ -1072,10 +1077,7 @@ impl State {
         self.record_editor_history_state();
         let tap_time = self.editor.remove_tap_at(time_seconds);
         self.editor.invalidate_samples_from(tap_time);
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_tap_indicators: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.refresh_editor_after_tap_change(None);
     }
 
     /// Clears all tap events from the editor's timeline.
@@ -1085,10 +1087,7 @@ impl State {
         self.record_editor_history_state();
         self.editor.clear_taps();
         self.editor.invalidate_samples();
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_tap_indicators: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.refresh_editor_after_tap_change(None);
     }
 
     pub(crate) fn editor_add_camera_trigger(&mut self) {
@@ -1611,6 +1610,38 @@ mod tests {
             state.set_editor_waveform_scroll(2.5);
             assert_eq!(state.editor_waveform_zoom(), 10.0);
             assert_eq!(state.editor_waveform_scroll(), 2.5);
+        });
+    }
+
+    #[test]
+    fn tap_mutations_mark_indicators_and_preview_dirty() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.timeline.clock.duration_seconds = 1.0;
+            state.set_editor_timeline_time_seconds(0.125);
+            assert_eq!(
+                state.editor.timeline.preview.direction,
+                SpawnDirection::Forward
+            );
+
+            state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
+            state.editor_add_tap();
+            assert!(state.editor.runtime.dirty.rebuild_tap_indicators);
+            assert!(state.editor.runtime.dirty.rebuild_preview_player);
+            assert_eq!(
+                state.editor.timeline.preview.direction,
+                SpawnDirection::Right
+            );
+
+            state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
+            state.editor_remove_tap();
+            assert!(state.editor.runtime.dirty.rebuild_tap_indicators);
+            assert!(state.editor.runtime.dirty.rebuild_preview_player);
+            assert_eq!(
+                state.editor.timeline.preview.direction,
+                SpawnDirection::Forward
+            );
         });
     }
 

@@ -126,6 +126,7 @@ impl State {
         self.session.editor_music_metadata = init.music;
         self.editor.timeline.taps.tap_times = init.tap_times;
         self.editor.timing.timing_points = init.timing_points;
+        self.editor.timing.mark_timing_points_changed();
         self.editor.timing.timing_selected_index = None;
         self.editor.set_triggers(init.triggers);
         self.editor.set_trigger_selected(None);
@@ -235,6 +236,7 @@ impl State {
         self.editor.spawn = init.spawn;
         self.editor.timeline.taps.tap_times = init.tap_times;
         self.editor.timing.timing_points = init.timing_points;
+        self.editor.timing.mark_timing_points_changed();
         self.editor
             .timing
             .timing_points
