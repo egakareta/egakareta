@@ -329,10 +329,28 @@ impl EditorSubsystem {
                 ]
             });
 
+        // Use the raw surface hit for Y when raycast snapping is active.
+        // `pick_block_cursor_from_screen_excluding` adds a 0.01 normal nudge
+        // (cursor_from_ray_hit) which is fine for X/Z (start_cursor has the
+        // same nudge so it cancels) but for Y the delta is computed against
+        // the anchor (block position) without the nudge, so the 0.01 leaks
+        // through and makes blocks float above surfaces.
+        let raycast_surface_y = if raycast_delta.is_some() {
+            self.pick_block_surface_from_screen_excluding(x, y, viewport, &excluded_indices)
+                .map(|surface| {
+                    let anchor = drag_anchor_position(&drag);
+                    surface[1] - anchor[1]
+                })
+        } else {
+            None
+        };
+
+        let effective_raycast_y = raycast_surface_y.or_else(|| raycast_delta.map(|d| d[1]));
+
         // Clamp Y delta so the lowest block stops at y=0 instead of each
         // block being clamped independently (which compresses stacked blocks
         // into the same position).
-        let raw_delta_y = raycast_delta.map(|d| d[1]).unwrap_or(world_delta.y);
+        let raw_delta_y = effective_raycast_y.unwrap_or(world_delta.y);
         let min_start_y = drag
             .start_blocks
             .iter()
@@ -348,9 +366,10 @@ impl EditorSubsystem {
         for block in &drag.start_blocks {
             if let Some(obj) = self.objects.get_mut(block.index) {
                 let mut next = if let Some(delta) = raycast_delta {
+                    let y = effective_raycast_y.unwrap_or(delta[1]);
                     [
                         block.position[0] + delta[0],
-                        block.position[1] + delta[1] + y_shift,
+                        block.position[1] + y + y_shift,
                         block.position[2] + delta[2],
                     ]
                 } else {

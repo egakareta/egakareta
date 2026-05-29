@@ -157,6 +157,52 @@ impl EditorSubsystem {
         self.pick_block_cursor_from_ray_excluding(ray_origin, ray_dir, excluded_indices)
     }
 
+    /// Like `pick_block_cursor_from_screen_excluding` but returns the raw surface
+    /// hit position (without the cursor nudge). Used for drag positioning where
+    /// the 0.01 surface offset would cause blocks to float above surfaces.
+    pub(crate) fn pick_block_surface_from_screen_excluding(
+        &self,
+        x: f64,
+        y: f64,
+        viewport_size: Vec2,
+        excluded_indices: &[usize],
+    ) -> Option<[f32; 3]> {
+        let (ray_origin, ray_dir) = self.screen_to_ray(x, y, viewport_size)?;
+        self.pick_block_surface_from_ray_excluding(ray_origin, ray_dir, excluded_indices)
+    }
+
+    fn pick_block_surface_from_ray_excluding(
+        &self,
+        ray_origin: Vec3,
+        ray_dir: Vec3,
+        excluded_indices: &[usize],
+    ) -> Option<[f32; 3]> {
+        let mut min_t = f32::INFINITY;
+        let mut hit_found = false;
+
+        for (index, obj) in self.objects.iter().enumerate() {
+            if excluded_indices.contains(&index)
+                || !Self::ray_may_hit_block_bounds(ray_origin, ray_dir, obj, min_t)
+            {
+                continue;
+            }
+
+            if let Some((t, _normal)) = self.ray_intersect_rotated_block(ray_origin, ray_dir, obj) {
+                if t < min_t {
+                    min_t = t;
+                    hit_found = true;
+                }
+            }
+        }
+
+        if hit_found {
+            let hit = ray_origin + ray_dir * min_t;
+            Some([hit.x, hit.y.max(0.0), hit.z])
+        } else {
+            None
+        }
+    }
+
     fn pick_block_cursor_from_ray_excluding(
         &self,
         ray_origin: Vec3,
