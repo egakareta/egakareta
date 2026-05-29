@@ -890,7 +890,10 @@ impl State {
 
     pub(super) fn rebuild_tap_indicator_vertices(&mut self) {
         puffin::profile_scope!("TapIndicatorMesh");
-        if self.phase != AppPhase::Editor {
+        let effective_mode_is_tapping = self.editor.ui.mode == EditorMode::Tapping
+            || (self.editor.ui.mode == EditorMode::Null
+                && self.editor.runtime.interaction.last_mode == Some(EditorMode::Tapping));
+        if self.phase != AppPhase::Editor || !effective_mode_is_tapping {
             self.render.meshes.tap_indicators.clear();
             return;
         }
@@ -1156,10 +1159,26 @@ mod tests {
             assert!(state.render.meshes.tap_indicators.draw_data().is_none());
 
             state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Tapping;
             state.editor.timeline.taps.tap_indicator_positions =
                 vec![[1.0, 0.0, 1.0], [1.0, 0.0, 1.0]];
             state.rebuild_tap_indicator_vertices();
             assert!(state.render.meshes.tap_indicators.draw_data().is_some());
+
+            state.editor.ui.mode = EditorMode::Place;
+            state.rebuild_tap_indicator_vertices();
+            assert!(state.render.meshes.tap_indicators.draw_data().is_none());
+
+            // During playback from Tapping tab (mode=Null, last_mode=Tapping), taps should remain visible
+            state.editor.ui.mode = EditorMode::Null;
+            state.editor.runtime.interaction.last_mode = Some(EditorMode::Tapping);
+            state.rebuild_tap_indicator_vertices();
+            assert!(state.render.meshes.tap_indicators.draw_data().is_some());
+
+            // During playback from Compose tab, taps should be hidden
+            state.editor.runtime.interaction.last_mode = Some(EditorMode::Place);
+            state.rebuild_tap_indicator_vertices();
+            assert!(state.render.meshes.tap_indicators.draw_data().is_none());
         });
     }
 

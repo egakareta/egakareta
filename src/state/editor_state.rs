@@ -620,6 +620,7 @@ impl State {
         self.rebuild_editor_gizmo_vertices();
         self.rebuild_editor_hover_outline_vertices();
         self.rebuild_editor_selection_outline_vertices();
+        self.editor.runtime.dirty.rebuild_tap_indicators = true;
     }
 
     pub(crate) fn editor_mode(&self) -> EditorMode {

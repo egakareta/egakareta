@@ -417,6 +417,12 @@ impl State {
             if self.editor.has_object_transform_triggers() {
                 self.mark_editor_dirty(EditorDirtyFlags {
                     rebuild_block_mesh: true,
+                    rebuild_tap_indicators: true,
+                    ..EditorDirtyFlags::default()
+                });
+            } else {
+                self.mark_editor_dirty(EditorDirtyFlags {
+                    rebuild_tap_indicators: true,
                     ..EditorDirtyFlags::default()
                 });
             }
@@ -461,6 +467,12 @@ impl State {
         if self.editor.has_object_transform_triggers() {
             self.mark_editor_dirty(EditorDirtyFlags {
                 rebuild_block_mesh: true,
+                rebuild_tap_indicators: true,
+                ..EditorDirtyFlags::default()
+            });
+        } else {
+            self.mark_editor_dirty(EditorDirtyFlags {
+                rebuild_tap_indicators: true,
                 ..EditorDirtyFlags::default()
             });
         }
