@@ -1434,6 +1434,53 @@ mod tests {
     }
 
     #[test]
+    fn tapping_mode_click_selects_tap_indicator_without_removing_it() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = new_editor_state().await;
+            state.dispatch(AppCommand::EditorSetMode(EditorMode::Tapping));
+            state.editor.timeline.clock.time_seconds = 0.0;
+            state.editor.timeline.clock.duration_seconds = 4.0;
+            state.editor.timeline.taps.tap_times = vec![1.25];
+            state.editor.timeline.taps.tap_indicator_positions = vec![[0.0, 0.0, 0.0]];
+            state.editor.timeline.taps.selected_index = None;
+
+            let viewport = Vec2::new(
+                state.render.gpu.config.width as f32,
+                state.render.gpu.config.height as f32,
+            );
+            let tap_center = glam::Vec3::new(0.5, 0.1, 0.5);
+            let tap_screen = state
+                .editor
+                .world_to_screen_v(tap_center, viewport)
+                .expect("tap indicator should project to the screen");
+
+            state.process_input_event(InputEvent::PointerMoved {
+                x: tap_screen.x as f64,
+                y: tap_screen.y as f64,
+            });
+            state.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: true,
+            });
+
+            assert_eq!(state.editor.timeline.taps.tap_times, vec![1.25]);
+            assert_eq!(state.editor.timeline.taps.selected_index, Some(0));
+            assert_eq!(state.editor.timeline.clock.time_seconds, 1.25);
+            assert_eq!(state.editor.ui.cursor, [0.0, 0.0, 0.0]);
+
+            let view = state.editor_ui_view_model();
+            let selected_tap = view
+                .selected_tap
+                .expect("selected tap should be exposed to the UI");
+            assert_eq!(selected_tap.index, 0);
+            assert_eq!(selected_tap.time_seconds, 1.25);
+            assert_eq!(selected_tap.position, [0.0, 0.0, 0.0]);
+        });
+    }
+
+    #[test]
     fn test_select_mode_click_selects_camera_trigger_marker() {
         pollster::block_on(async {
             use crate::commands::InputEvent;

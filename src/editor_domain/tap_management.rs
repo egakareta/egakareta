@@ -12,26 +12,27 @@ pub(crate) fn add_tap_with_indicator(
     tap_indicator_positions: &mut Vec<[f32; 3]>,
     time_seconds: f32,
     indicator_position: [f32; 3],
-) {
+) -> Option<usize> {
     const TAP_EPSILON_SECONDS: f32 = 0.01;
     let clamped_time = time_seconds.max(0.0);
-    if tap_times
+    if let Some(existing_index) = tap_times
         .iter()
-        .any(|existing| (existing - clamped_time).abs() <= TAP_EPSILON_SECONDS)
+        .position(|existing| (existing - clamped_time).abs() <= TAP_EPSILON_SECONDS)
     {
-        return;
+        return Some(existing_index);
     }
 
     let insert_index = tap_times.partition_point(|existing| *existing < clamped_time);
     tap_times.insert(insert_index, clamped_time);
     tap_indicator_positions.insert(insert_index, indicator_position);
+    Some(insert_index)
 }
 
 pub(crate) fn remove_tap_with_indicator(
     tap_times: &mut Vec<f32>,
     tap_indicator_positions: &mut Vec<[f32; 3]>,
     time_seconds: f32,
-) {
+) -> Option<usize> {
     const TAP_EPSILON_SECONDS: f32 = 0.01;
     if let Some(index) = tap_times
         .iter()
@@ -41,7 +42,10 @@ pub(crate) fn remove_tap_with_indicator(
         if index < tap_indicator_positions.len() {
             tap_indicator_positions.remove(index);
         }
+        return Some(index);
     }
+
+    None
 }
 
 pub(crate) fn clear_taps_with_indicators(

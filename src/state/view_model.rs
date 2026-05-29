@@ -11,6 +11,13 @@ use crate::types::{
     TimedTrigger, TimingPoint,
 };
 
+#[derive(Clone, Copy)]
+pub(crate) struct SelectedTapViewModel {
+    pub(crate) index: usize,
+    pub(crate) time_seconds: f32,
+    pub(crate) position: [f32; 3],
+}
+
 pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) mode: EditorMode,
     pub(crate) last_mode: Option<EditorMode>,
@@ -37,6 +44,7 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) timeline_time_seconds: f32,
     pub(crate) timeline_duration_seconds: f32,
     pub(crate) tap_times: &'a [f32],
+    pub(crate) selected_tap: Option<SelectedTapViewModel>,
     pub(crate) timeline_preview_position: [f32; 3],
     pub(crate) timeline_preview_direction: SpawnDirection,
     pub(crate) timing_points: &'a [TimingPoint],
@@ -64,6 +72,14 @@ impl State {
     pub(crate) fn editor_ui_view_model(&self) -> EditorUiViewModel<'_> {
         let (timeline_preview_position, timeline_preview_direction) =
             self.editor_timeline_preview();
+        let selected_tap = self
+            .editor
+            .selected_tap()
+            .map(|(index, time_seconds, position)| SelectedTapViewModel {
+                index,
+                time_seconds,
+                position,
+            });
 
         let camera_target = glam::Vec3::new(
             self.editor.camera.editor_pan[0],
@@ -99,6 +115,7 @@ impl State {
             timeline_time_seconds: self.editor_timeline_time_seconds(),
             timeline_duration_seconds: self.editor_timeline_duration_seconds(),
             tap_times: self.editor_tap_times(),
+            selected_tap,
             timeline_preview_position,
             timeline_preview_direction,
             timing_points: self.editor_timing_points(),

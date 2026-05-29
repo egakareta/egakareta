@@ -587,6 +587,7 @@ mod tests {
             timeline_time_seconds: 3.5,
             timeline_duration_seconds: 20.0,
             tap_times: &[],
+            selected_tap: None,
             timeline_preview_position: [0.0, 0.0, 0.0],
             timeline_preview_direction: SpawnDirection::Right,
             timing_points,

@@ -78,6 +78,7 @@ impl EditorSubsystem {
                     .tap_indicator_positions
                     .remove(remove_index);
             }
+            self.adjust_selected_tap_after_removal(remove_index);
 
             self.invalidate_samples_from(removed_time);
             return (Some(removed_time), false);
@@ -114,12 +115,13 @@ impl EditorSubsystem {
             .clamp(0.0, duration_seconds)
         };
 
-        add_tap_with_indicator(
+        let selected_index = add_tap_with_indicator(
             &mut self.timeline.taps.tap_times,
             &mut self.timeline.taps.tap_indicator_positions,
             derived_time,
             indicator_cell,
         );
+        self.set_selected_tap_index(selected_index);
         self.invalidate_samples_from(derived_time);
         (Some(derived_time), true)
     }
@@ -222,6 +224,31 @@ impl State {
                 ..EditorDirtyFlags::default()
             });
         }
+    }
+
+    pub(super) fn editor_select_tap_from_screen(&mut self, x: f64, y: f64) -> bool {
+        if self.phase != AppPhase::Editor || self.editor.ui.mode != EditorMode::Tapping {
+            return false;
+        }
+
+        let viewport_size = glam::Vec2::new(
+            self.render.gpu.config.width as f32,
+            self.render.gpu.config.height as f32,
+        );
+        let Some(pick) = self.editor.pick_from_screen(x, y, viewport_size) else {
+            return false;
+        };
+        let Some(tap_index) = pick.hit_tap_index else {
+            return false;
+        };
+        let Some(time_seconds) = self.editor.timeline.taps.tap_times.get(tap_index).copied() else {
+            return false;
+        };
+
+        self.editor.set_selected_tap_index(Some(tap_index));
+        self.set_editor_timeline_time_seconds(time_seconds);
+        self.editor.ui.cursor = pick.cursor;
+        true
     }
 
     pub(super) fn resync_editor_timeline_playback_audio(&mut self) {

@@ -195,6 +195,7 @@ mod tests {
             timeline_time_seconds: 1.0,
             timeline_duration_seconds: 16.0,
             tap_times: &[],
+            selected_tap: None,
             timeline_preview_position: [2.0, 1.0, 0.0],
             timeline_preview_direction: preview_direction,
             timing_points,

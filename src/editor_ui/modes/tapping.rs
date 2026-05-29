@@ -10,7 +10,7 @@ use crate::state::EditorUiViewModel;
 
 pub(crate) fn show_tapping_mode_bottom_panel(
     ui: &mut egui::Ui,
-    _view: &EditorUiViewModel<'_>,
+    view: &EditorUiViewModel<'_>,
     commands: &mut Vec<AppCommand>,
 ) {
     ui.horizontal_wrapped(|ui| {
@@ -25,4 +25,17 @@ pub(crate) fn show_tapping_mode_bottom_panel(
             commands.push(AppCommand::EditorClearTaps);
         }
     });
+
+    if let Some(selected_tap) = view.selected_tap {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(format!("Selected tap #{}", selected_tap.index + 1));
+            ui.separator();
+            ui.label(format!("Time: {:.3}s", selected_tap.time_seconds));
+            ui.separator();
+            ui.label(format!(
+                "Position: ({:.2}, {:.2}, {:.2})",
+                selected_tap.position[0], selected_tap.position[1], selected_tap.position[2]
+            ));
+        });
+    }
 }

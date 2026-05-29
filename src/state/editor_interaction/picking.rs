@@ -6,7 +6,7 @@
 
 */
 use super::super::EditorSubsystem;
-use crate::types::EditorPickResult;
+use crate::types::{EditorMode, EditorPickResult};
 use glam::{EulerRot, Mat3, Vec2, Vec3, Vec4};
 
 const CAMERA_TRIGGER_BALL_PICK_RADIUS: f32 = 0.55;
@@ -54,6 +54,7 @@ impl EditorSubsystem {
         let mut hit_found = false;
         let mut hit_block_index: Option<usize> = None;
         let mut hit_trigger_index: Option<usize> = None;
+        let mut hit_tap_index: Option<usize> = None;
 
         {
             puffin::profile_scope!("PickRaycast");
@@ -63,6 +64,19 @@ impl EditorSubsystem {
                 if t >= 0.0 {
                     min_t = t;
                     hit_found = true;
+                }
+            }
+
+            if self.ui.mode == EditorMode::Tapping {
+                if let Some((tap_index, tap_t)) =
+                    self.ray_intersect_tap_indicator(ray_origin, ray_dir, min_t)
+                {
+                    min_t = tap_t;
+                    hit_found = true;
+                    hit_block_index = None;
+                    hit_trigger_index = None;
+                    hit_tap_index = Some(tap_index);
+                    best_hit_normal = Vec3::Y;
                 }
             }
 
@@ -79,6 +93,7 @@ impl EditorSubsystem {
                         hit_found = true;
                         hit_block_index = Some(index);
                         hit_trigger_index = None;
+                        hit_tap_index = None;
                         best_hit_normal = normal;
                     }
                 }
@@ -111,6 +126,7 @@ impl EditorSubsystem {
                         hit_found = true;
                         hit_block_index = None;
                         hit_trigger_index = Some(trigger_index);
+                        hit_tap_index = None;
                     }
                 }
             }
@@ -142,7 +158,61 @@ impl EditorSubsystem {
             cursor: next_cursor,
             hit_block_index,
             hit_trigger_index,
+            hit_tap_index,
         })
+    }
+
+    fn ray_intersect_tap_indicator(
+        &self,
+        ray_origin: Vec3,
+        ray_dir: Vec3,
+        max_t: f32,
+    ) -> Option<(usize, f32)> {
+        if ray_dir.y.abs() <= f32::EPSILON {
+            return None;
+        }
+
+        let mut best_hit: Option<(usize, f32, f32)> = None;
+        for (index, position) in self
+            .timeline
+            .taps
+            .tap_indicator_positions
+            .iter()
+            .enumerate()
+        {
+            let plane_y = position[1] + 0.1;
+            let t = (plane_y - ray_origin.y) / ray_dir.y;
+            if t < 0.0 || t >= max_t {
+                continue;
+            }
+
+            let hit = ray_origin + ray_dir * t;
+            if hit.x < position[0]
+                || hit.x > position[0] + 1.0
+                || hit.z < position[2]
+                || hit.z > position[2] + 1.0
+            {
+                continue;
+            }
+
+            let timeline_distance = self
+                .timeline
+                .taps
+                .tap_times
+                .get(index)
+                .map(|time| (*time - self.timeline.clock.time_seconds).abs())
+                .unwrap_or(f32::INFINITY);
+
+            match best_hit {
+                Some((_, best_t, best_timeline_distance))
+                    if t > best_t + f32::EPSILON
+                        || ((t - best_t).abs() <= f32::EPSILON
+                            && timeline_distance >= best_timeline_distance) => {}
+                _ => best_hit = Some((index, t, timeline_distance)),
+            }
+        }
+
+        best_hit.map(|(index, t, _)| (index, t))
     }
 
     fn ray_may_hit_block_bounds(

@@ -53,6 +53,7 @@ pub(crate) struct EditorHistorySnapshot {
     pub(crate) timeline_duration_seconds: f32,
     pub(crate) tap_times: Vec<f32>,
     pub(crate) tap_indicator_positions: Vec<[f32; 3]>,
+    pub(crate) selected_tap_index: Option<usize>,
     pub(crate) timing_points: Vec<crate::types::TimingPoint>,
     pub(crate) triggers: Vec<TimedTrigger>,
     pub(crate) selected_trigger_index: Option<usize>,

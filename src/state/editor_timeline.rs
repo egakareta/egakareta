@@ -33,6 +33,7 @@ pub(crate) struct EditorTimelineClockState {
 pub(crate) struct EditorTimelineTapState {
     pub(crate) tap_times: Vec<f32>,
     pub(crate) tap_indicator_positions: Vec<[f32; 3]>,
+    pub(crate) selected_index: Option<usize>,
 }
 
 pub(crate) struct EditorTimelineState {
@@ -62,6 +63,7 @@ impl EditorTimelineState {
             taps: EditorTimelineTapState {
                 tap_times: Vec::new(),
                 tap_indicator_positions: Vec::new(),
+                selected_index: None,
             },
             playback: EditorTimelinePlaybackState {
                 playing: false,

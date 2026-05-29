@@ -34,6 +34,7 @@ pub(crate) struct EditorPickResult {
     pub(crate) cursor: [f32; 3],
     pub(crate) hit_block_index: Option<usize>,
     pub(crate) hit_trigger_index: Option<usize>,
+    pub(crate) hit_tap_index: Option<usize>,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]

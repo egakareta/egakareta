@@ -292,6 +292,28 @@ impl EditorSubsystem {
         &self.timeline.taps.tap_times
     }
 
+    pub(crate) fn selected_tap(&self) -> Option<(usize, f32, [f32; 3])> {
+        let index = self.timeline.taps.selected_index?;
+        let time_seconds = *self.timeline.taps.tap_times.get(index)?;
+        let position = *self.timeline.taps.tap_indicator_positions.get(index)?;
+        Some((index, time_seconds, position))
+    }
+
+    pub(crate) fn set_selected_tap_index(&mut self, selected_index: Option<usize>) {
+        self.timeline.taps.selected_index = selected_index.filter(|index| {
+            *index < self.timeline.taps.tap_times.len()
+                && *index < self.timeline.taps.tap_indicator_positions.len()
+        });
+    }
+
+    pub(crate) fn adjust_selected_tap_after_removal(&mut self, removed_index: usize) {
+        self.timeline.taps.selected_index = match self.timeline.taps.selected_index {
+            Some(selected_index) if selected_index == removed_index => None,
+            Some(selected_index) if selected_index > removed_index => Some(selected_index - 1),
+            selected_index => selected_index,
+        };
+    }
+
     pub(crate) fn fps(&self) -> f32 {
         self.perf.fps_smoothed
     }
@@ -317,30 +339,35 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn add_tap(&mut self, indicator_position: [f32; 3]) -> f32 {
-        add_tap_with_indicator(
+        let selected_index = add_tap_with_indicator(
             &mut self.timeline.taps.tap_times,
             &mut self.timeline.taps.tap_indicator_positions,
             self.timeline.clock.time_seconds,
             indicator_position,
         );
+        self.set_selected_tap_index(selected_index);
         self.timeline.clock.time_seconds
     }
 
     pub(crate) fn remove_tap(&mut self) -> f32 {
-        remove_tap_with_indicator(
+        if let Some(removed_index) = remove_tap_with_indicator(
             &mut self.timeline.taps.tap_times,
             &mut self.timeline.taps.tap_indicator_positions,
             self.timeline.clock.time_seconds,
-        );
+        ) {
+            self.adjust_selected_tap_after_removal(removed_index);
+        }
         self.timeline.clock.time_seconds
     }
 
     pub(crate) fn remove_tap_at(&mut self, time_seconds: f32) -> f32 {
-        remove_tap_with_indicator(
+        if let Some(removed_index) = remove_tap_with_indicator(
             &mut self.timeline.taps.tap_times,
             &mut self.timeline.taps.tap_indicator_positions,
             time_seconds,
-        );
+        ) {
+            self.adjust_selected_tap_after_removal(removed_index);
+        }
         time_seconds
     }
 
@@ -349,6 +376,7 @@ impl EditorSubsystem {
             &mut self.timeline.taps.tap_times,
             &mut self.timeline.taps.tap_indicator_positions,
         );
+        self.timeline.taps.selected_index = None;
     }
 
     pub(crate) fn invalidate_samples(&mut self) {
