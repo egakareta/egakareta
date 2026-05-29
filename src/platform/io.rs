@@ -5,6 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use crate::audio_service::PersistentWaveformCacheEntry;
 use crate::platform::storage;
 use crate::types::AppSettings;
 
@@ -103,6 +104,29 @@ pub(crate) fn read_editor_music_bytes(
     storage::read_editor_music_bytes(level_name, music_source)
 }
 
+pub(crate) async fn save_waveform_to_storage(
+    cache_key: &str,
+    entry: &PersistentWaveformCacheEntry,
+) -> Result<(), String> {
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    if let Some(result) = test_hooks::save_waveform_result() {
+        return result;
+    }
+
+    storage::save_waveform(cache_key, entry).await
+}
+
+pub(crate) async fn load_waveform_from_storage(
+    cache_key: &str,
+) -> Option<PersistentWaveformCacheEntry> {
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    if let Some(result) = test_hooks::load_waveform_result() {
+        return result;
+    }
+
+    storage::load_waveform(cache_key).await
+}
+
 pub(crate) async fn load_app_settings_from_storage() -> Result<AppSettings, String> {
     #[cfg(all(test, not(target_arch = "wasm32")))]
     if let Some(result) = test_hooks::load_settings_result() {
@@ -126,6 +150,7 @@ mod test_hooks {
     use std::collections::HashMap;
     use std::sync::{Mutex, OnceLock};
 
+    use crate::audio_service::PersistentWaveformCacheEntry;
     use crate::types::AppSettings;
 
     #[derive(Clone, Default)]
@@ -133,6 +158,8 @@ mod test_hooks {
         pub(crate) save_audio_result: Option<Result<(), String>>,
         pub(crate) load_audio_result: Option<HashMap<String, Vec<u8>>>,
         pub(crate) read_editor_music_result: Option<Option<Vec<u8>>>,
+        pub(crate) save_waveform_result: Option<Result<(), String>>,
+        pub(crate) load_waveform_result: Option<Option<PersistentWaveformCacheEntry>>,
         pub(crate) load_settings_result: Option<Result<AppSettings, String>>,
         pub(crate) save_settings_result: Option<Result<(), String>>,
     }
@@ -165,6 +192,14 @@ mod test_hooks {
         with_hooks_mut(|hooks| hooks.read_editor_music_result.clone())
     }
 
+    pub(crate) fn save_waveform_result() -> Option<Result<(), String>> {
+        with_hooks_mut(|hooks| hooks.save_waveform_result.clone())
+    }
+
+    pub(crate) fn load_waveform_result() -> Option<Option<PersistentWaveformCacheEntry>> {
+        with_hooks_mut(|hooks| hooks.load_waveform_result.clone())
+    }
+
     pub(crate) fn load_settings_result() -> Option<Result<AppSettings, String>> {
         with_hooks_mut(|hooks| hooks.load_settings_result.clone())
     }
@@ -181,9 +216,11 @@ mod tests {
     use std::sync::{Mutex, OnceLock};
 
     use super::{
-        load_all_local_audio, load_app_settings_from_storage, save_app_settings_to_storage,
-        save_audio_to_storage, save_level_export, test_hooks,
+        load_all_local_audio, load_app_settings_from_storage, load_waveform_from_storage,
+        save_app_settings_to_storage, save_audio_to_storage, save_level_export,
+        save_waveform_to_storage, test_hooks,
     };
+    use crate::audio_service::PersistentWaveformCacheEntry;
     use crate::types::AppSettings;
 
     fn shared_test_lock() -> &'static Mutex<()> {
@@ -271,6 +308,25 @@ mod tests {
 
         let loaded = pollster::block_on(load_all_local_audio());
         assert_eq!(loaded, expected_audio);
+    }
+
+    #[test]
+    fn waveform_storage_helpers_delegate_to_storage_layer() {
+        let _lock = shared_test_lock()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let _reset_guard = HookResetGuard::new();
+        let entry = PersistentWaveformCacheEntry::new(vec![0.2, 0.4], 48_000, 256);
+        test_hooks::with_hooks_mut(|hooks| {
+            hooks.save_waveform_result = Some(Ok(()));
+            hooks.load_waveform_result = Some(Some(entry.clone()));
+        });
+
+        let save_result = pollster::block_on(save_waveform_to_storage("cache-key", &entry));
+        assert!(save_result.is_ok(), "waveform save should delegate success");
+
+        let loaded = pollster::block_on(load_waveform_from_storage("cache-key"));
+        assert_eq!(loaded, Some(entry));
     }
 
     #[test]
