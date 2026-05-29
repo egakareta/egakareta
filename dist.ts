@@ -21,6 +21,17 @@ if (!fs.existsSync(distPath)) {
     fs.mkdirSync(distPath);
 }
 
+// Remove old pkg folder if it exists, then move the new one from target
+try {
+    fs.rmSync(path.join(distPath, "pkg"), { recursive: true, force: true });
+} catch (err) {}
+try {
+    fs.renameSync(
+        path.join(__dirname, "target", "pkg"),
+        path.join(distPath, "pkg"),
+    );
+} catch (err) {}
+
 // Copy index.html to dist
 fs.copyFileSync(
     path.join(__dirname, "index.html"),

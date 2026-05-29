@@ -1,7 +1,7 @@
 {
     "name": "egakareta",
     "scripts": {
-        "build": "rm -rf dist && wasm-pack build -t web -d dist/pkg && bun dist.ts",
+        "build": "wasm-pack build -t web -d target/pkg && bun dist.ts",
         "format:cargo": "cargo fmt",
         "format:prettier": "prettier --write .",
         "format": "bun run format:cargo && bun run format:prettier",
