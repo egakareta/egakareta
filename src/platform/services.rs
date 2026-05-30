@@ -7,6 +7,7 @@
 */
 use std::sync::mpsc::Sender;
 
+use crate::error_utils::MapErrContext;
 use crate::platform::io::{
     log_platform_error, pick_audio_file, pick_level_file, save_audio_to_storage, save_level_export,
 };
@@ -105,7 +106,7 @@ async fn persist_auth_session_result(
     let session = result?;
     crate::platform::storage::save_auth_session(&session)
         .await
-        .map_err(|error| format!("Session could not be saved: {error}"))?;
+        .ctx("Session could not be saved")?;
     Ok(session)
 }
 

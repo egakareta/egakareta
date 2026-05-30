@@ -17,6 +17,7 @@ mod block_repository;
 mod commands;
 mod editor_domain;
 mod editor_ui;
+mod error_utils;
 mod game;
 mod import_export_service;
 mod level_codec;

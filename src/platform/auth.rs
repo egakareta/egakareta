@@ -14,6 +14,8 @@ use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use web_time::Instant as PlatformInstant;
 
+use crate::error_utils::MapErrContext;
+
 use crate::types::{AuthErrorResponse, AuthSession};
 
 #[derive(Serialize)]
@@ -113,7 +115,7 @@ fn open_url(url: &str) -> Result<(), String> {
             .args(["/C", "start", "", url])
             .spawn()
             .map(|_| ())
-            .map_err(|err| format!("Opening browser failed: {err}"))
+            .ctx("Opening browser failed")
     }
 
     #[cfg(all(not(test), not(target_arch = "wasm32"), target_os = "macos"))]
@@ -122,7 +124,7 @@ fn open_url(url: &str) -> Result<(), String> {
             .arg(url)
             .spawn()
             .map(|_| ())
-            .map_err(|err| format!("Opening browser failed: {err}"))
+            .ctx("Opening browser failed")
     }
 
     #[cfg(all(
@@ -136,7 +138,7 @@ fn open_url(url: &str) -> Result<(), String> {
             .arg(url)
             .spawn()
             .map(|_| ())
-            .map_err(|err| format!("Opening browser failed: {err}"))
+            .ctx("Opening browser failed")
     }
 }
 
@@ -149,7 +151,7 @@ async fn claim_handoff(
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(30))
         .build()
-        .map_err(|err| format!("Auth client init failed: {err}"))?;
+        .ctx("Auth client init failed")?;
     let response = client
         .post(endpoint_url("/api/auth/handoff/claim"))
         .json(&HandoffClaimRequest {
@@ -157,11 +159,9 @@ async fn claim_handoff(
             handoff_secret,
         })
         .send()
-        .map_err(|err| format!("Auth handoff claim failed: {err}"))?;
+        .ctx("Auth handoff claim failed")?;
     let status = response.status().as_u16();
-    let text = response
-        .text()
-        .map_err(|err| format!("Auth handoff response read failed: {err}"))?;
+    let text = response.text().ctx("Auth handoff response read failed")?;
 
     if status == 202 {
         return Ok(None);
@@ -169,7 +169,7 @@ async fn claim_handoff(
     if (200..300).contains(&status) {
         return serde_json::from_str(&text)
             .map(Some)
-            .map_err(|err| format!("Auth handoff response parse failed: {err}"));
+            .ctx("Auth handoff response parse failed");
     }
 
     if let Ok(error) = serde_json::from_str::<AuthErrorResponse>(&text) {
@@ -230,8 +230,7 @@ where
     R: serde::de::DeserializeOwned,
 {
     if (200..300).contains(&status) {
-        return serde_json::from_str(text)
-            .map_err(|err| format!("Auth response parse failed: {err}"));
+        return serde_json::from_str(text).ctx("Auth response parse failed");
     }
 
     if let Ok(error) = serde_json::from_str::<AuthErrorResponse>(text) {
@@ -253,8 +252,7 @@ where
 {
     use gloo_net::http::Request;
 
-    let body =
-        serde_json::to_string(body).map_err(|err| format!("Auth JSON encode failed: {err}"))?;
+    let body = serde_json::to_string(body).ctx("Auth JSON encode failed")?;
     let mut request = Request::post(&endpoint_url(path)).header("Content-Type", "application/json");
     if let Some(token) = access_token.filter(|token| !token.is_empty()) {
         request = request.header("Authorization", &format!("Bearer {token}"));
@@ -262,15 +260,12 @@ where
 
     let response = request
         .body(body)
-        .map_err(|err| format!("Auth request build failed: {err}"))?
+        .ctx("Auth request build failed")?
         .send()
         .await
-        .map_err(|err| format!("Auth request failed: {err}"))?;
+        .ctx("Auth request failed")?;
     let status = response.status();
-    let text = response
-        .text()
-        .await
-        .map_err(|err| format!("Auth response read failed: {err}"))?;
+    let text = response.text().await.ctx("Auth response read failed")?;
 
     parse_response(status, &text)
 }
@@ -714,19 +709,15 @@ where
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(30))
         .build()
-        .map_err(|err| format!("Auth client init failed: {err}"))?;
+        .ctx("Auth client init failed")?;
     let mut request = client.post(endpoint_url(path)).json(body);
     if let Some(token) = access_token.filter(|token| !token.is_empty()) {
         request = request.bearer_auth(token);
     }
 
-    let response = request
-        .send()
-        .map_err(|err| format!("Auth request failed: {err}"))?;
+    let response = request.send().ctx("Auth request failed")?;
     let status = response.status().as_u16();
-    let text = response
-        .text()
-        .map_err(|err| format!("Auth response read failed: {err}"))?;
+    let text = response.text().ctx("Auth response read failed")?;
 
     parse_response(status, &text)
 }

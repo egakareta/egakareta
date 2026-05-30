@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 
 use crate::audio_service::PersistentWaveformCacheEntry;
+use crate::error_utils::MapErrContext;
 use crate::types::{AppSettings, AuthSession};
 
 #[cfg(target_arch = "wasm32")]
@@ -72,11 +73,11 @@ pub(crate) async fn load_waveform(cache_key: &str) -> Option<PersistentWaveformC
 }
 
 fn encode_waveform_entry(entry: &PersistentWaveformCacheEntry) -> Result<Vec<u8>, String> {
-    serde_cbor::to_vec(entry).map_err(|error| format!("Waveform cache encode failed: {error}"))
+    serde_cbor::to_vec(entry).ctx("Waveform cache encode failed")
 }
 
 fn decode_waveform_entry(bytes: &[u8]) -> Result<PersistentWaveformCacheEntry, String> {
-    serde_cbor::from_slice(bytes).map_err(|error| format!("Waveform cache decode failed: {error}"))
+    serde_cbor::from_slice(bytes).ctx("Waveform cache decode failed")
 }
 
 pub(crate) async fn load_app_settings() -> Result<AppSettings, String> {
@@ -108,7 +109,7 @@ async fn open_audio_db() -> Result<rexie::Rexie, String> {
         .add_object_store(ObjectStore::new(AUDIO_STORE_NAME))
         .build()
         .await
-        .map_err(|err| format!("IndexedDB open failed: {:?}", err))
+        .ctx("IndexedDB open failed")
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -120,7 +121,7 @@ async fn open_settings_db() -> Result<rexie::Rexie, String> {
         .add_object_store(ObjectStore::new(SETTINGS_STORE_NAME))
         .build()
         .await
-        .map_err(|err| format!("IndexedDB settings open failed: {:?}", err))
+        .ctx("IndexedDB settings open failed")
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -131,22 +132,19 @@ async fn load_platform_app_settings() -> Result<AppSettings, String> {
     let db = open_settings_db().await?;
     let tx = db
         .transaction(&[SETTINGS_STORE_NAME], TransactionMode::ReadOnly)
-        .map_err(|err| format!("IndexedDB settings transaction failed: {:?}", err))?;
+        .ctx("IndexedDB settings transaction failed")?;
     let store = tx
         .store(SETTINGS_STORE_NAME)
-        .map_err(|err| format!("IndexedDB settings store open failed: {:?}", err))?;
+        .ctx("IndexedDB settings store open failed")?;
 
     let value = store
         .get(JsValue::from_str(SETTINGS_KEY))
         .await
-        .map_err(|err| format!("IndexedDB settings read failed: {:?}", err))?;
+        .ctx("IndexedDB settings read failed")?;
 
-    tx.done().await.map_err(|err| {
-        format!(
-            "IndexedDB settings transaction completion failed: {:?}",
-            err
-        )
-    })?;
+    tx.done()
+        .await
+        .ctx("IndexedDB settings transaction completion failed")?;
 
     let Some(value) = value else {
         return Ok(AppSettings::default());
@@ -160,7 +158,7 @@ async fn load_platform_app_settings() -> Result<AppSettings, String> {
         return Ok(AppSettings::default());
     };
 
-    serde_json::from_str(&settings_json).map_err(|err| format!("Settings JSON parse failed: {err}"))
+    serde_json::from_str(&settings_json).ctx("Settings JSON parse failed")
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -168,16 +166,16 @@ async fn save_platform_app_settings(settings: &AppSettings) -> Result<(), String
     use rexie::TransactionMode;
     use wasm_bindgen::JsValue;
 
-    let settings_json = serde_json::to_string_pretty(settings)
-        .map_err(|err| format!("Settings JSON encode failed: {err}"))?;
+    let settings_json =
+        serde_json::to_string_pretty(settings).ctx("Settings JSON encode failed")?;
 
     let db = open_settings_db().await?;
     let tx = db
         .transaction(&[SETTINGS_STORE_NAME], TransactionMode::ReadWrite)
-        .map_err(|err| format!("IndexedDB settings transaction failed: {:?}", err))?;
+        .ctx("IndexedDB settings transaction failed")?;
     let store = tx
         .store(SETTINGS_STORE_NAME)
-        .map_err(|err| format!("IndexedDB settings store open failed: {:?}", err))?;
+        .ctx("IndexedDB settings store open failed")?;
 
     store
         .put(
@@ -185,11 +183,9 @@ async fn save_platform_app_settings(settings: &AppSettings) -> Result<(), String
             Some(&JsValue::from_str(SETTINGS_KEY)),
         )
         .await
-        .map_err(|err| format!("IndexedDB settings write failed: {:?}", err))?;
+        .ctx("IndexedDB settings write failed")?;
 
-    tx.done()
-        .await
-        .map_err(|err| format!("IndexedDB settings commit failed: {:?}", err))?;
+    tx.done().await.ctx("IndexedDB settings commit failed")?;
 
     Ok(())
 }
@@ -202,18 +198,18 @@ async fn load_platform_auth_session() -> Result<Option<AuthSession>, String> {
     let db = open_settings_db().await?;
     let tx = db
         .transaction(&[SETTINGS_STORE_NAME], TransactionMode::ReadOnly)
-        .map_err(|err| format!("IndexedDB auth transaction failed: {:?}", err))?;
+        .ctx("IndexedDB auth transaction failed")?;
     let store = tx
         .store(SETTINGS_STORE_NAME)
-        .map_err(|err| format!("IndexedDB auth store open failed: {:?}", err))?;
+        .ctx("IndexedDB auth store open failed")?;
     let value = store
         .get(JsValue::from_str(AUTH_SESSION_KEY))
         .await
-        .map_err(|err| format!("IndexedDB auth read failed: {:?}", err))?;
+        .ctx("IndexedDB auth read failed")?;
 
     tx.done()
         .await
-        .map_err(|err| format!("IndexedDB auth transaction completion failed: {:?}", err))?;
+        .ctx("IndexedDB auth transaction completion failed")?;
 
     let Some(value) = value else {
         return Ok(None);
@@ -228,7 +224,7 @@ async fn load_platform_auth_session() -> Result<Option<AuthSession>, String> {
 
     serde_json::from_str(&session_json)
         .map(Some)
-        .map_err(|err| format!("Auth session JSON parse failed: {err}"))
+        .ctx("Auth session JSON parse failed")
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -236,15 +232,15 @@ async fn save_platform_auth_session(session: &AuthSession) -> Result<(), String>
     use rexie::TransactionMode;
     use wasm_bindgen::JsValue;
 
-    let session_json = serde_json::to_string_pretty(session)
-        .map_err(|err| format!("Auth session JSON encode failed: {err}"))?;
+    let session_json =
+        serde_json::to_string_pretty(session).ctx("Auth session JSON encode failed")?;
     let db = open_settings_db().await?;
     let tx = db
         .transaction(&[SETTINGS_STORE_NAME], TransactionMode::ReadWrite)
-        .map_err(|err| format!("IndexedDB auth transaction failed: {:?}", err))?;
+        .ctx("IndexedDB auth transaction failed")?;
     let store = tx
         .store(SETTINGS_STORE_NAME)
-        .map_err(|err| format!("IndexedDB auth store open failed: {:?}", err))?;
+        .ctx("IndexedDB auth store open failed")?;
 
     store
         .put(
@@ -252,10 +248,8 @@ async fn save_platform_auth_session(session: &AuthSession) -> Result<(), String>
             Some(&JsValue::from_str(AUTH_SESSION_KEY)),
         )
         .await
-        .map_err(|err| format!("IndexedDB auth write failed: {:?}", err))?;
-    tx.done()
-        .await
-        .map_err(|err| format!("IndexedDB auth commit failed: {:?}", err))?;
+        .ctx("IndexedDB auth write failed")?;
+    tx.done().await.ctx("IndexedDB auth commit failed")?;
 
     Ok(())
 }
@@ -268,17 +262,15 @@ async fn clear_platform_auth_session() -> Result<(), String> {
     let db = open_settings_db().await?;
     let tx = db
         .transaction(&[SETTINGS_STORE_NAME], TransactionMode::ReadWrite)
-        .map_err(|err| format!("IndexedDB auth transaction failed: {:?}", err))?;
+        .ctx("IndexedDB auth transaction failed")?;
     let store = tx
         .store(SETTINGS_STORE_NAME)
-        .map_err(|err| format!("IndexedDB auth store open failed: {:?}", err))?;
+        .ctx("IndexedDB auth store open failed")?;
     store
         .delete(JsValue::from_str(AUTH_SESSION_KEY))
         .await
-        .map_err(|err| format!("IndexedDB auth delete failed: {:?}", err))?;
-    tx.done()
-        .await
-        .map_err(|err| format!("IndexedDB auth commit failed: {:?}", err))?;
+        .ctx("IndexedDB auth delete failed")?;
+    tx.done().await.ctx("IndexedDB auth commit failed")?;
 
     Ok(())
 }
@@ -294,19 +286,17 @@ impl AudioStorage for PlatformAudioStorage {
         let db = open_audio_db().await?;
         let tx = db
             .transaction(&[AUDIO_STORE_NAME], TransactionMode::ReadWrite)
-            .map_err(|err| format!("IndexedDB transaction failed: {:?}", err))?;
+            .ctx("IndexedDB transaction failed")?;
         let store = tx
             .store(AUDIO_STORE_NAME)
-            .map_err(|err| format!("IndexedDB store open failed: {:?}", err))?;
+            .ctx("IndexedDB store open failed")?;
 
         let value = js_sys::Uint8Array::from(data);
         store
             .put(&value.into(), Some(&JsValue::from_str(filename)))
             .await
-            .map_err(|err| format!("IndexedDB write failed: {:?}", err))?;
-        tx.done()
-            .await
-            .map_err(|err| format!("IndexedDB commit failed: {:?}", err))?;
+            .ctx("IndexedDB write failed")?;
+        tx.done().await.ctx("IndexedDB commit failed")?;
 
         Ok(())
     }
@@ -336,20 +326,18 @@ impl AudioStorage for PlatformAudioStorage {
         let db = open_audio_db().await?;
         let tx = db
             .transaction(&[AUDIO_STORE_NAME], TransactionMode::ReadWrite)
-            .map_err(|err| format!("IndexedDB waveform transaction failed: {:?}", err))?;
+            .ctx("IndexedDB waveform transaction failed")?;
         let store = tx
             .store(AUDIO_STORE_NAME)
-            .map_err(|err| format!("IndexedDB waveform store open failed: {:?}", err))?;
+            .ctx("IndexedDB waveform store open failed")?;
 
         let value = js_sys::Uint8Array::from(encoded.as_slice());
         let storage_key = format!("{WAVEFORM_CACHE_KEY_PREFIX}{cache_key}");
         store
             .put(&value.into(), Some(&JsValue::from_str(&storage_key)))
             .await
-            .map_err(|err| format!("IndexedDB waveform write failed: {:?}", err))?;
-        tx.done()
-            .await
-            .map_err(|err| format!("IndexedDB waveform commit failed: {:?}", err))?;
+            .ctx("IndexedDB waveform write failed")?;
+        tx.done().await.ctx("IndexedDB waveform commit failed")?;
 
         Ok(())
     }
@@ -420,7 +408,7 @@ async fn load_platform_app_settings() -> Result<AppSettings, String> {
     }
 
     let settings_json = std::fs::read_to_string(path).map_err(|err| err.to_string())?;
-    serde_json::from_str(&settings_json).map_err(|err| format!("Settings JSON parse failed: {err}"))
+    serde_json::from_str(&settings_json).ctx("Settings JSON parse failed")
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -430,8 +418,8 @@ async fn save_platform_app_settings(settings: &AppSettings) -> Result<(), String
         std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
     }
 
-    let settings_json = serde_json::to_string_pretty(settings)
-        .map_err(|err| format!("Settings JSON encode failed: {err}"))?;
+    let settings_json =
+        serde_json::to_string_pretty(settings).ctx("Settings JSON encode failed")?;
     std::fs::write(path, settings_json).map_err(|err| err.to_string())
 }
 
@@ -445,7 +433,7 @@ async fn load_platform_auth_session() -> Result<Option<AuthSession>, String> {
     let session_json = std::fs::read_to_string(path).map_err(|err| err.to_string())?;
     serde_json::from_str(&session_json)
         .map(Some)
-        .map_err(|err| format!("Auth session JSON parse failed: {err}"))
+        .ctx("Auth session JSON parse failed")
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -455,8 +443,8 @@ async fn save_platform_auth_session(session: &AuthSession) -> Result<(), String>
         std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
     }
 
-    let session_json = serde_json::to_string_pretty(session)
-        .map_err(|err| format!("Auth session JSON encode failed: {err}"))?;
+    let session_json =
+        serde_json::to_string_pretty(session).ctx("Auth session JSON encode failed")?;
     std::fs::write(path, session_json).map_err(|err| err.to_string())
 }
 
