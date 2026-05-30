@@ -95,6 +95,30 @@ fn should_build_geometry_in_parallel(object_count: usize) -> bool {
     rayon_is_ready() && object_count >= PARALLEL_GEOMETRY_OBJECT_THRESHOLD
 }
 
+struct BlockColors {
+    top: [f32; 4],
+    side: [f32; 4],
+    bottom: [f32; 4],
+    outline: [f32; 4],
+}
+
+impl BlockColors {
+    fn apply_noise(&mut self, factor: f32) {
+        for i in 0..3 {
+            self.top[i] = (self.top[i] + factor).clamp(0.0, 1.0);
+            self.side[i] = (self.side[i] + factor).clamp(0.0, 1.0);
+            self.bottom[i] = (self.bottom[i] + factor).clamp(0.0, 1.0);
+        }
+    }
+
+    fn apply_tint(&mut self, tint_rgb: [f32; 3]) {
+        self.top = apply_color_tint(self.top, tint_rgb);
+        self.side = apply_color_tint(self.side, tint_rgb);
+        self.bottom = apply_color_tint(self.bottom, tint_rgb);
+        self.outline = apply_color_tint(self.outline, tint_rgb);
+    }
+}
+
 fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
     let mut object_geometry = MeshGeometry::default();
     let mut object_vertices = Vec::new();
@@ -110,25 +134,20 @@ fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
     let block = resolve_block_definition(&obj.block_id);
     let texture_layers = resolve_block_texture_layers(&obj.block_id);
 
-    let mut color_top = block.render.color_top;
-    let mut color_side = block.render.color_side;
-    let mut color_bottom = block.render.color_bottom;
-    let mut color_outline = block.render.color_outline;
+    let mut colors = BlockColors {
+        top: block.render.color_top,
+        side: block.render.color_side,
+        bottom: block.render.color_bottom,
+        outline: block.render.color_outline,
+    };
 
     if block.render.noise.abs() > f32::EPSILON {
         let noise = pseudo_random_noise(obj.position[0], obj.position[1], obj.position[2]);
         let factor = (noise * 2.0 - 1.0) * block.render.noise;
-        for i in 0..3 {
-            color_top[i] = (color_top[i] + factor).clamp(0.0, 1.0);
-            color_side[i] = (color_side[i] + factor).clamp(0.0, 1.0);
-            color_bottom[i] = (color_bottom[i] + factor).clamp(0.0, 1.0);
-        }
+        colors.apply_noise(factor);
     }
 
-    color_top = apply_color_tint(color_top, obj.color_tint);
-    color_side = apply_color_tint(color_side, obj.color_tint);
-    color_bottom = apply_color_tint(color_bottom, obj.color_tint);
-    color_outline = apply_color_tint(color_outline, obj.color_tint);
+    colors.apply_tint(obj.color_tint);
 
     let center = [
         obj.position[0] + obj.size[0] * 0.5,
@@ -141,11 +160,11 @@ fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
                 &mut object_geometry,
                 obj,
                 mesh,
-                color_top,
+                colors.top,
                 texture_layers.side,
             );
         } else if let Some(mesh) = resolve_obj_mesh(mesh_path) {
-            append_obj_mesh(vertices, obj, mesh, color_top, texture_layers.side);
+            append_obj_mesh(vertices, obj, mesh, colors.top, texture_layers.side);
         }
     }
 
@@ -153,10 +172,20 @@ fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
         && vertices.is_empty()
         && matches!(block.render.profile, BlockRenderProfile::FinishRing)
     {
-        append_finish_ring(vertices, obj, color_top, color_outline, texture_layers.side);
+        append_finish_ring(
+            vertices,
+            obj,
+            colors.top,
+            colors.outline,
+            texture_layers.side,
+        );
     } else if object_geometry.vertices.is_empty() && vertices.is_empty() {
-        let prism_colors =
-            PrismFaceColors::new_with_outline(color_top, color_side, color_bottom, color_outline);
+        let prism_colors = PrismFaceColors::new_with_outline(
+            colors.top,
+            colors.side,
+            colors.bottom,
+            colors.outline,
+        );
 
         append_prism_with_layers(
             vertices,
@@ -179,7 +208,7 @@ fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
     if matches!(block.render.profile, BlockRenderProfile::Neon) {
         // Neon: use raw specified colors, strip any normal_tint lighting from mesh vertices.
         for vertex in &mut object_geometry.vertices {
-            vertex.color = color_top;
+            vertex.color = colors.top;
         }
     }
 
