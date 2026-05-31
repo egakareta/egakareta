@@ -1425,12 +1425,6 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
             capacity: 1,
         },
         KeybindActionMetadata {
-            group: "Timeline",
-            action: "toggle_tap_timing",
-            label: "Toggle Tap at Pointer",
-            capacity: 1,
-        },
-        KeybindActionMetadata {
             group: "Editor",
             action: "remove_block",
             label: "Remove Block",
@@ -1694,10 +1688,6 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
         KeybindBinding {
             action: "playtest".to_string(),
             chord: KeyChord::new("Enter", false, false, false),
-        },
-        KeybindBinding {
-            action: "toggle_tap_timing".to_string(),
-            chord: KeyChord::new("t", false, false, false),
         },
         KeybindBinding {
             action: "remove_block".to_string(),

@@ -14,7 +14,6 @@ pub(crate) fn show_tapping_mode_bottom_panel(
     commands: &mut Vec<AppCommand>,
 ) {
     ui.horizontal_wrapped(|ui| {
-        ui.label("Tapping:");
         if ui
             .button(format!(
                 "{} Add tap at current time",
@@ -25,13 +24,7 @@ pub(crate) fn show_tapping_mode_bottom_panel(
             commands.push(AppCommand::EditorAddTap);
         }
         if ui
-            .button(format!("{} Remove tap", egui_phosphor::regular::TRASH))
-            .clicked()
-        {
-            commands.push(AppCommand::EditorRemoveTap);
-        }
-        if ui
-            .button(format!("{} Clear taps", egui_phosphor::regular::BROOM))
+            .button(format!("{} Clear all taps", egui_phosphor::regular::BROOM))
             .clicked()
         {
             commands.push(AppCommand::EditorClearTaps);
@@ -40,7 +33,7 @@ pub(crate) fn show_tapping_mode_bottom_panel(
 
     if let Some(selected_tap) = view.selected_tap {
         ui.horizontal_wrapped(|ui| {
-            ui.label(format!("Selected tap #{}", selected_tap.index + 1));
+            ui.label(format!("Tap #{}", selected_tap.index + 1));
             ui.separator();
             ui.label("Time (s):");
             let mut time_seconds = selected_tap.time_seconds;
@@ -59,6 +52,13 @@ pub(crate) fn show_tapping_mode_bottom_panel(
                 "Position: ({:.2}, {:.2}, {:.2})",
                 selected_tap.position[0], selected_tap.position[1], selected_tap.position[2]
             ));
+
+            if ui
+                .button(format!("{} Delete", egui_phosphor::regular::TRASH))
+                .clicked()
+            {
+                commands.push(AppCommand::EditorRemoveTap);
+            }
         });
     }
 }

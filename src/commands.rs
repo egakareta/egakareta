@@ -73,8 +73,6 @@ pub(crate) enum AppCommand {
     EditorSetTimelineTime(f32),
     /// Set the total duration of the timeline (seconds).
     EditorSetTimelineDuration(f32),
-    /// Add or remove a tap at the current pointer position.
-    EditorToggleTapAtPointer,
     /// Add a tap at the current timeline position.
     EditorAddTap,
     /// Remove a tap at the current timeline position.

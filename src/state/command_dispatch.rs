@@ -77,7 +77,6 @@ impl State {
             AppCommand::EditorSetTimelineDuration(duration) => {
                 self.set_editor_timeline_duration_seconds(duration)
             }
-            AppCommand::EditorToggleTapAtPointer => self.editor_add_tap_at_pointer_position(),
             AppCommand::EditorAddTap => self.editor_add_tap(),
             AppCommand::EditorRemoveTap => self.editor_remove_tap(),
             AppCommand::EditorRemoveTapAt(time) => self.editor_remove_tap_at(time),
@@ -598,17 +597,6 @@ impl State {
             "spawn_rotate" => {
                 if just_pressed {
                     Some(AppCommand::EditorRotateSpawnDirection)
-                } else {
-                    None
-                }
-            }
-            "toggle_tap_timing" => {
-                if just_pressed && self.is_editor() {
-                    if self.editor.ui.mode == EditorMode::Tapping {
-                        Some(AppCommand::EditorToggleTapAtPointer)
-                    } else {
-                        None
-                    }
                 } else {
                     None
                 }
@@ -2231,27 +2219,6 @@ mod tests {
             assert_eq!(
                 state.command_for_keybind_action("spawn_rotate", true),
                 Some(AppCommand::EditorRotateSpawnDirection)
-            );
-
-            state.editor.ui.mode = EditorMode::Tapping;
-            assert_eq!(
-                state.command_for_keybind_action("toggle_tap_timing", true),
-                Some(AppCommand::EditorToggleTapAtPointer)
-            );
-            state.editor.ui.mode = EditorMode::Place;
-            assert_eq!(
-                state.command_for_keybind_action("toggle_tap_timing", true),
-                None
-            );
-            state.editor.ui.mode = EditorMode::Select;
-            assert_eq!(
-                state.command_for_keybind_action("toggle_tap_timing", true),
-                None
-            );
-            state.editor.ui.mode = EditorMode::Timing;
-            assert_eq!(
-                state.command_for_keybind_action("toggle_tap_timing", true),
-                None
             );
 
             assert_eq!(
