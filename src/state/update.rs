@@ -853,7 +853,6 @@ mod tests {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         }
@@ -876,7 +875,6 @@ mod tests {
             position: [-10.0, -1.0, -10.0],
             size: [20.0, 1.0, 20.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.0,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         }
@@ -1026,7 +1024,6 @@ mod tests {
             position: [0.0, 2.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         }];

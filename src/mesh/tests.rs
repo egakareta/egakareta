@@ -36,7 +36,6 @@ mod tests {
             position: [0.0, 0.0, 0.0],
             size: [2.0, 1.0, 1.0],
             rotation_degrees: [0.0, 90.0, 0.0],
-            roundness: 0.18,
             block_id: "core/dirt".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         };
@@ -320,7 +319,6 @@ f 1/1/1 2/2/1 3/3/1
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 0.3],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.0,
             block_id: "core/finish".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         };

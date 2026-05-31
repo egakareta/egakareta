@@ -134,22 +134,6 @@ pub(crate) fn show_compose_mode_bottom_panel(
                     });
 
                     ui.horizontal(|ui| {
-                        ui.label("Round:");
-                        if ui
-                            .add(
-                                egui::DragValue::new(&mut selected.roundness)
-                                    .speed(0.01)
-                                    .range(0.0..=10.0),
-                            )
-                            .changed()
-                        {
-                            commands.push(crate::commands::AppCommand::EditorUpdateSelectedBlock(
-                                selected.clone(),
-                            ));
-                        }
-                    });
-
-                    ui.horizontal(|ui| {
                         ui.label("Color:");
                         let mut color_tint = selected.color_tint;
                         if ui.color_edit_button_rgb(&mut color_tint).changed() {

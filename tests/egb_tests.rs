@@ -65,7 +65,6 @@ fn test_egb_roundtrip() {
       "position": [0.0, 0.0, 0.0],
       "size": [1.0, 1.0, 1.0],
       "rotation_degrees": [0.0, 0.0, 0.0],
-      "roundness": 0.0,
       "block_id": "core/stone",
       "color_tint": [1.0, 1.0, 1.0]
     }

@@ -236,16 +236,8 @@ fn default_block_rotation_degrees() -> [f32; 3] {
     [0.0, 0.0, 0.0]
 }
 
-fn default_block_roundness() -> f32 {
-    0.18
-}
-
 fn is_default_block_rotation_degrees(value: &[f32; 3]) -> bool {
     value.iter().all(|component| component.abs() <= 1e-6)
-}
-
-fn is_default_block_roundness(value: &f32) -> bool {
-    (value - default_block_roundness()).abs() <= 1e-6
 }
 
 fn default_level_object_position() -> [f32; 3] {
@@ -1063,11 +1055,6 @@ pub(crate) struct LevelObject {
     )]
     pub(crate) rotation_degrees: [f32; 3],
     #[serde(
-        default = "default_block_roundness",
-        skip_serializing_if = "is_default_block_roundness"
-    )]
-    pub(crate) roundness: f32,
-    #[serde(
         default = "default_level_object_block_id",
         alias = "kind",
         deserialize_with = "deserialize_level_object_block_id",
@@ -1093,7 +1080,6 @@ impl Default for LevelObject {
             position: default_level_object_position(),
             size: default_level_object_size(),
             rotation_degrees: default_block_rotation_degrees(),
-            roundness: default_block_roundness(),
             block_id: default_level_object_block_id(),
             color_tint: default_level_object_color_tint(),
         }
@@ -2066,7 +2052,6 @@ mod tests {
 
         let object: LevelObject = serde_json::from_str(json).expect("valid level object");
         assert_eq!(object.rotation_degrees, [0.0, 0.0, 0.0]);
-        assert_eq!(object.roundness, 0.18);
         assert_eq!(object.block_id, "core/stone");
         assert_eq!(object.color_tint, [1.0, 1.0, 1.0]);
     }
@@ -2085,17 +2070,15 @@ mod tests {
         let metadata: LevelMetadata = serde_json::from_str(json).expect("valid metadata");
         assert_eq!(metadata.objects.len(), 1);
         assert_eq!(metadata.objects[0].rotation_degrees, [0.0, 0.0, 0.0]);
-        assert_eq!(metadata.objects[0].roundness, 0.18);
         assert!(matches!(metadata.spawn.direction, SpawnDirection::Forward));
     }
 
     #[test]
-    fn level_object_serialization_omits_default_rotation_and_roundness() {
+    fn level_object_serialization_omits_default_rotation() {
         let object = LevelObject {
             position: [1.0, 2.0, 3.0],
             size: [4.0, 5.0, 6.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/grass".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         };
@@ -2127,7 +2110,6 @@ mod tests {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             }],
@@ -2150,7 +2132,6 @@ mod tests {
         assert!(object.get("position").is_none());
         assert!(object.get("size").is_none());
         assert!(object.get("rotation_degrees").is_none());
-        assert!(object.get("roundness").is_none());
         assert!(object.get("block_id").is_none());
     }
 
@@ -2312,7 +2293,6 @@ mod tests {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         }];
@@ -2363,7 +2343,6 @@ mod tests {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             },
@@ -2371,7 +2350,6 @@ mod tests {
                 position: [1.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             },
@@ -2379,7 +2357,6 @@ mod tests {
                 position: [2.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             },
@@ -2420,7 +2397,6 @@ mod tests {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         }];

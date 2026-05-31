@@ -36,7 +36,6 @@ fn test_marquee_no_redundant_selections_before_drag_started() {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         });
@@ -44,7 +43,6 @@ fn test_marquee_no_redundant_selections_before_drag_started() {
             position: [5.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         });
@@ -114,7 +112,6 @@ fn selection_outline_builds_instances_per_selected_block() {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         });
@@ -122,7 +119,6 @@ fn selection_outline_builds_instances_per_selected_block() {
             position: [2.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         });
@@ -180,7 +176,6 @@ fn selection_outline_uses_single_bounds_mesh_for_large_selections() {
                 position: [index as f32, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             });
@@ -340,7 +335,6 @@ fn falls_from_elevated_platform() {
         position: [0.0, 2.0, 0.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
-        roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     }];
@@ -419,7 +413,6 @@ fn configure_trigger_policy_parity_scene(
         position: [8.0, 0.0, 8.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
-        roundness: 0.18,
         block_id: "core/speedportal".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     }];
@@ -609,7 +602,6 @@ fn multi_selection_clicking_rendered_gizmo_starts_gizmo_drag_not_block_drag() {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             },
@@ -617,7 +609,6 @@ fn multi_selection_clicking_rendered_gizmo_starts_gizmo_drag_not_block_drag() {
                 position: [4.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             },
@@ -935,7 +926,6 @@ fn test_handle_primary_click_shift_priority() {
             position: [-5.0, -5.0, -5.0],
             size: [10.0, 10.0, 10.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         });
@@ -1018,7 +1008,6 @@ fn editor_null_mode_clears_selection() {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         });
@@ -1166,7 +1155,6 @@ fn test_gizmo_move_shaft_is_pickable() {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         });
@@ -1243,7 +1231,6 @@ fn test_gizmo_hover_priority_suppresses_block_outline() {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         });
@@ -1283,7 +1270,6 @@ fn test_gizmo_hover_priority_suppresses_block_outline() {
             ],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         });

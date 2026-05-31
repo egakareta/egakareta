@@ -23,7 +23,6 @@ fn test_ground_detection_normal() {
         position: [0.0, 0.0, 0.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
-        roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
@@ -41,7 +40,6 @@ fn test_ground_detection_includes_block_edges() {
         position: [0.0, 0.0, 0.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
-        roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
@@ -62,7 +60,6 @@ fn player_stays_grounded_when_footprint_overlaps_platform_edge() {
         position: [0.0, 0.0, 0.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
-        roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
@@ -85,7 +82,6 @@ fn test_ground_detection_under_overhang() {
         position: [0.0, 0.0, 0.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
-        roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
@@ -94,7 +90,6 @@ fn test_ground_detection_under_overhang() {
         position: [0.0, 3.0, 0.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
-        roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
@@ -133,7 +128,6 @@ fn rotated_object_contains_expected_points() {
         position: [0.0, 0.0, 0.0],
         size: [2.0, 1.0, 1.0],
         rotation_degrees: [0.0, 90.0, 0.0],
-        roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     };
@@ -148,7 +142,6 @@ fn rotated_overlap_uses_oriented_bounds() {
         position: [0.0, 0.0, 0.0],
         size: [2.0, 1.0, 1.0],
         rotation_degrees: [0.0, 45.0, 0.0],
-        roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     };
@@ -164,7 +157,6 @@ fn rotated_ground_detection_works() {
         position: [0.0, 0.0, 0.0],
         size: [2.0, 2.0, 1.0],
         rotation_degrees: [0.0, 90.0, 0.0],
-        roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
@@ -186,7 +178,6 @@ fn speed_portal_overlap_removes_portal_and_boosts_speed() {
         position: [0.0, 0.0, 0.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 30.0, 0.0],
-        roundness: 0.18,
         block_id: "core/speedportal".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
@@ -207,7 +198,6 @@ fn finish_block_overlap_completes_level_after_sink() {
         position: [0.0, -0.1, 0.0],
         size: [1.0, 0.2, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
-        roundness: 0.18,
         block_id: "core/finish".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
@@ -323,7 +313,6 @@ fn timeline_trigger_hitbox_mode_does_not_resurrect_consumed_portals() {
         position: [0.0, 0.0, 1.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
-        roundness: 0.18,
         block_id: "core/speedportal".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     }];
@@ -358,7 +347,6 @@ fn timeline_state_with_disabled_trigger_hitboxes_matches_plain_simulation() {
         position: [0.0, 0.0, 2.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
-        roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     }];

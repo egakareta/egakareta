@@ -50,7 +50,6 @@ struct BinaryLevelPayloadV1 {
     object_positions: Vec<[f32; 3]>,
     object_sizes: Vec<[f32; 3]>,
     object_rotations: Vec<[f32; 3]>,
-    object_roundness: Vec<f32>,
     object_color_tints: Vec<[f32; 3]>,
 }
 
@@ -71,13 +70,11 @@ fn push_full_object_streams(
     object_positions: &mut Vec<[f32; 3]>,
     object_sizes: &mut Vec<[f32; 3]>,
     object_rotations: &mut Vec<[f32; 3]>,
-    object_roundness: &mut Vec<f32>,
     object_color_tints: &mut Vec<[f32; 3]>,
 ) {
     object_positions.push(object.position);
     object_sizes.push(object.size);
     object_rotations.push(object.rotation_degrees);
-    object_roundness.push(object.roundness);
     object_color_tints.push(object.color_tint);
 }
 
@@ -89,7 +86,6 @@ pub(crate) fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<V
     let mut object_positions = Vec::with_capacity(metadata.objects.len());
     let mut object_sizes = Vec::with_capacity(metadata.objects.len());
     let mut object_rotations = Vec::with_capacity(metadata.objects.len());
-    let mut object_roundness = Vec::with_capacity(metadata.objects.len());
     let mut object_color_tints = Vec::with_capacity(metadata.objects.len());
 
     let mut compact_positions = Vec::<[i32; 3]>::new();
@@ -117,7 +113,6 @@ pub(crate) fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<V
                 &mut object_positions,
                 &mut object_sizes,
                 &mut object_rotations,
-                &mut object_roundness,
                 &mut object_color_tints,
             );
         }
@@ -147,7 +142,6 @@ pub(crate) fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<V
                 object_positions.clear();
                 object_sizes.clear();
                 object_rotations.clear();
-                object_roundness.clear();
                 object_color_tints.clear();
 
                 for object in &metadata.objects {
@@ -156,7 +150,6 @@ pub(crate) fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<V
                         &mut object_positions,
                         &mut object_sizes,
                         &mut object_rotations,
-                        &mut object_roundness,
                         &mut object_color_tints,
                     );
                 }
@@ -190,7 +183,6 @@ pub(crate) fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<V
         object_positions,
         object_sizes,
         object_rotations,
-        object_roundness,
         object_color_tints,
     };
 
@@ -309,7 +301,6 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
         if payload.object_positions.len() != object_count
             || payload.object_sizes.len() != object_count
             || payload.object_rotations.len() != object_count
-            || payload.object_roundness.len() != object_count
             || payload.object_color_tints.len() != object_count
         {
             return Err("Object stream length mismatch in binary payload".to_string());
@@ -325,7 +316,6 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
                 position: payload.object_positions[index],
                 size: payload.object_sizes[index],
                 rotation_degrees: payload.object_rotations[index],
-                roundness: payload.object_roundness[index],
                 block_id: block_id.clone(),
                 color_tint: payload.object_color_tints[index],
             };
@@ -342,7 +332,6 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
         if payload.object_positions.len() != full_count
             || payload.object_sizes.len() != full_count
             || payload.object_rotations.len() != full_count
-            || payload.object_roundness.len() != full_count
             || payload.object_color_tints.len() != full_count
         {
             return Err("Full object stream length mismatch in compact payload".to_string());
@@ -373,7 +362,6 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
                     )?,
                     size: [1.0, 1.0, 1.0],
                     rotation_degrees: [0.0, 0.0, 0.0],
-                    roundness: 0.0,
                     block_id: block_id.clone(),
                     color_tint: [1.0, 1.0, 1.0],
                 }
@@ -391,10 +379,6 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
                         .object_rotations
                         .get(full_cursor)
                         .ok_or_else(|| "Full object rotation cursor overflow".to_string())?,
-                    roundness: *payload
-                        .object_roundness
-                        .get(full_cursor)
-                        .ok_or_else(|| "Full object roundness cursor overflow".to_string())?,
                     block_id: block_id.clone(),
                     color_tint: *payload
                         .object_color_tints
@@ -435,7 +419,6 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
 fn quantize_compact_position(object: &LevelObject) -> Option<[i32; 3]> {
     if object.size != [1.0, 1.0, 1.0]
         || object.rotation_degrees != [0.0, 0.0, 0.0]
-        || object.roundness != 0.0
         || object.color_tint != [1.0, 1.0, 1.0]
     {
         return None;
@@ -672,7 +655,6 @@ mod tests {
                 position: [1.0, 2.0, 3.0],
                 size: [2.0, 2.0, 2.0],
                 rotation_degrees: [0.0, 90.0, 0.0],
-                roundness: 0.25,
                 color_tint: [0.8, 0.7, 0.6],
             },
             LevelObject {
@@ -680,7 +662,6 @@ mod tests {
                 position: [4.0, 5.0, 6.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.0,
                 color_tint: [1.0, 1.0, 1.0],
             },
             LevelObject {
@@ -688,7 +669,6 @@ mod tests {
                 position: [7.0, 8.0, 9.0],
                 size: [3.0, 1.0, 3.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.0,
                 color_tint: [1.0, 1.0, 1.0],
             },
         ];
@@ -712,7 +692,6 @@ mod tests {
                 position: [10.0, 20.0, 30.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.0,
                 color_tint: [1.0, 1.0, 1.0],
             },
             LevelObject {
@@ -720,7 +699,6 @@ mod tests {
                 position: [11.25, 21.0, 31.0],
                 size: [2.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.0,
                 color_tint: [1.0, 1.0, 1.0],
             },
         ];
@@ -748,7 +726,6 @@ mod tests {
             position: [2.0, 3.0, 4.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.0,
             color_tint: [1.0, 1.0, 1.0],
         }];
 
@@ -771,7 +748,6 @@ mod tests {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.0,
                 color_tint: [1.0, 1.0, 1.0],
             },
             LevelObject {
@@ -779,7 +755,6 @@ mod tests {
                 position: [0.5, 0.0, 0.0],
                 size: [2.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.0,
                 color_tint: [1.0, 1.0, 1.0],
             },
         ];
@@ -803,7 +778,6 @@ mod tests {
             position: [3.0, -2.0, 9.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.0,
             color_tint: [1.0, 1.0, 1.0],
         };
         assert_eq!(quantize_compact_position(&object), Some([3, -2, 9]));
@@ -908,7 +882,6 @@ mod tests {
             object_positions: Vec::new(),
             object_sizes: Vec::new(),
             object_rotations: Vec::new(),
-            object_roundness: Vec::new(),
             object_color_tints: Vec::new(),
         };
         let payload_bytes = serde_cbor::to_vec(&payload).expect("serialize");
@@ -987,7 +960,6 @@ mod tests {
             object_positions: vec![[0.0, 0.0, 0.0]],
             object_sizes: vec![[1.0, 1.0, 1.0]],
             object_rotations: vec![[0.0, 0.0, 0.0]],
-            object_roundness: vec![0.0],
             object_color_tints: vec![[1.0, 1.0, 1.0]],
         };
 

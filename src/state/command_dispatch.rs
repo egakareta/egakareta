@@ -55,7 +55,6 @@ impl State {
                 self.set_editor_selected_block_size(obj.size);
                 self.set_editor_selected_block_id(obj.block_id);
                 self.set_editor_selected_block_rotation(obj.rotation_degrees);
-                self.set_editor_selected_block_roundness(obj.roundness);
                 self.set_editor_selected_block_color_tint(obj.color_tint);
             }
 
@@ -1263,7 +1262,6 @@ mod tests {
                     position: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
                     rotation_degrees: [0.0, 0.0, 0.0],
-                    roundness: 0.18,
                     block_id: "core/stone".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
                 },
@@ -1271,7 +1269,6 @@ mod tests {
                     position: [2.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
                     rotation_degrees: [0.0, 0.0, 0.0],
-                    roundness: 0.18,
                     block_id: "core/stone".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
                 },
@@ -1318,7 +1315,6 @@ mod tests {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             }];
@@ -1404,7 +1400,6 @@ mod tests {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             }];
@@ -1742,7 +1737,6 @@ mod tests {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             });
@@ -1960,7 +1954,6 @@ mod tests {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             }];
@@ -2231,14 +2224,12 @@ mod tests {
                 position: [2.0, 1.0, 3.0],
                 size: [1.5, 1.0, 0.5],
                 rotation_degrees: [5.0, 10.0, 15.0],
-                roundness: 0.3,
                 block_id: "core/lava".to_string(),
                 color_tint: [0.2, 0.4, 0.8],
             };
             state.dispatch(AppCommand::EditorUpdateSelectedBlock(updated.clone()));
             assert_eq!(state.editor.objects[0].position, updated.position);
             assert_eq!(state.editor.objects[0].size, updated.size);
-            assert_eq!(state.editor.objects[0].roundness, updated.roundness);
             assert_eq!(state.editor.objects[0].block_id, updated.block_id);
 
             state.dispatch(AppCommand::EditorCopyBlock);

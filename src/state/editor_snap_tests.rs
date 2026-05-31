@@ -97,7 +97,6 @@ fn test_editor_nudge_respects_ctrl_override() {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         });
@@ -145,7 +144,6 @@ fn test_editor_nudge_left_right_screen_direction_regression() {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         });

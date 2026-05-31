@@ -217,7 +217,6 @@ mod tests {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             },
@@ -225,7 +224,6 @@ mod tests {
                 position: [0.0, 1.0, 0.0],
                 size: [1.0, 2.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/grass".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             },
@@ -263,7 +261,6 @@ mod tests {
                 position: [4.0, 6.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             }],
@@ -318,7 +315,6 @@ mod tests {
             position: [1.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         }];
@@ -336,7 +332,6 @@ mod tests {
             position: [0.5, 0.0, 5.5],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/speedportal".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         }];
@@ -390,7 +385,6 @@ mod tests {
                 position: [1.0, 2.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             }],
@@ -546,7 +540,6 @@ mod tests {
             position: [0.0, 0.0, 4.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         }];
@@ -781,7 +774,6 @@ mod tests {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.0,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         }];

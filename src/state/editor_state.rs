@@ -259,16 +259,6 @@ impl EditorSubsystem {
         }
     }
 
-    pub(crate) fn set_selected_block_roundness(&mut self, roundness: f32) {
-        if let Some(index) = self
-            .ui
-            .selected_block_index
-            .filter(|index| *index < self.objects.len())
-        {
-            self.objects[index].roundness = roundness.max(0.0);
-        }
-    }
-
     pub(crate) fn set_selected_block_color_tint(&mut self, color_tint: [f32; 3]) {
         if let Some(index) = self
             .ui
@@ -800,24 +790,6 @@ impl State {
         self.sync_primary_selection_from_indices();
 
         self.editor.set_selected_block_rotation(rotation_degrees);
-
-        if self.editor.ui.selected_block_index.is_some() {
-            self.sync_editor_objects();
-            self.rebuild_editor_gizmo_vertices();
-            self.rebuild_editor_selection_outline_vertices();
-        }
-    }
-
-    pub(crate) fn set_editor_selected_block_roundness(&mut self, roundness: f32) {
-        if self.phase != AppPhase::Editor {
-            return;
-        }
-
-        self.record_editor_history_state();
-
-        self.sync_primary_selection_from_indices();
-
-        self.editor.set_selected_block_roundness(roundness);
 
         if self.editor.ui.selected_block_index.is_some() {
             self.sync_editor_objects();
@@ -1473,7 +1445,6 @@ mod tests {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             });
@@ -1493,9 +1464,6 @@ mod tests {
 
             state.editor.set_selected_block_rotation([7.0, 22.0, 44.0]);
             assert_eq!(state.editor.objects[0].rotation_degrees, [0.0, 15.0, 45.0]);
-
-            state.editor.set_selected_block_roundness(-3.0);
-            assert_eq!(state.editor.objects[0].roundness, 0.0);
 
             state.editor.set_selected_block_color_tint([-1.0, 0.4, 2.0]);
             assert_eq!(state.editor.objects[0].color_tint, [0.0, 0.4, 1.0]);
@@ -1819,7 +1787,6 @@ mod tests {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             });
