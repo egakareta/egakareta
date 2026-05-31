@@ -71,6 +71,22 @@ mod tests {
     }
 
     #[test]
+    fn solid_block_black_tint_darkens_vertex_colors() {
+        let obj = LevelObject {
+            block_id: "core/solid".to_string(),
+            color_tint: [0.0, 0.0, 0.0],
+            ..LevelObject::default()
+        };
+
+        let vertices = build_block_vertices(&[obj]);
+
+        assert!(!vertices.is_empty());
+        assert!(vertices.iter().all(|vertex| vertex.color[0] == 0.0
+            && vertex.color[1] == 0.0
+            && vertex.color[2] == 0.0));
+    }
+
+    #[test]
     fn gizmo_hover_tip_growth_preserves_shaft_length() {
         let position = [0.0, 0.0, 0.0];
         let size = [1.0, 1.0, 1.0];
