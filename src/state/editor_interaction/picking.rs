@@ -157,12 +157,14 @@ impl EditorSubsystem {
             return None;
         }
 
-        let mut next_cursor = cursor_override.unwrap_or_else(|| {
-            self.cursor_from_ray_hit(ray_origin + ray_dir * min_t, best_hit_normal)
-        });
-        if self.ui.mode == EditorMode::Tapping && cursor_override.is_none() {
-            next_cursor = self.tap_path_cursor_near(next_cursor);
-        }
+        let next_cursor = if self.ui.mode == EditorMode::Tapping && cursor_override.is_none() {
+            let target = ray_origin + ray_dir * min_t + best_hit_normal * 0.01;
+            self.tap_path_cursor_near_world([target.x, target.y.max(0.0), target.z])
+        } else {
+            cursor_override.unwrap_or_else(|| {
+                self.cursor_from_ray_hit(ray_origin + ray_dir * min_t, best_hit_normal)
+            })
+        };
 
         Some(EditorPickResult {
             cursor: next_cursor,

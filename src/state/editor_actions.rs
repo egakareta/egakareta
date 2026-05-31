@@ -50,6 +50,24 @@ fn closest_point_on_segment(start: [f32; 3], end: [f32; 3], target: [f32; 3]) ->
     ]
 }
 
+#[derive(Clone, Copy)]
+enum PathAxis {
+    X,
+    Z,
+}
+
+fn segment_path_axis(start: [f32; 3], end: [f32; 3]) -> Option<PathAxis> {
+    let dx = (end[0] - start[0]).abs();
+    let dz = (end[2] - start[2]).abs();
+    if dx <= f32::EPSILON && dz <= f32::EPSILON {
+        None
+    } else if dx > dz {
+        Some(PathAxis::X)
+    } else {
+        Some(PathAxis::Z)
+    }
+}
+
 impl EditorSubsystem {
     const TAP_DIVISION_PREVIEW_LOOK_BEHIND_SECONDS: f32 = 4.0;
     const TAP_DIVISION_PREVIEW_LOOK_AHEAD_SECONDS: f32 = 20.0;
@@ -105,7 +123,7 @@ impl EditorSubsystem {
         &self.timeline.tap_division_preview_cache
     }
 
-    pub(crate) fn tap_path_cursor_near(&self, candidate_cursor: [f32; 3]) -> [f32; 3] {
+    pub(crate) fn tap_path_cursor_near_world(&self, target_world: [f32; 3]) -> [f32; 3] {
         let cache = &self.timeline.snapshot_cache;
         if cache.is_empty()
             || self.timeline.snapshot_cache_revision != self.timeline.simulation_revision
@@ -133,13 +151,9 @@ impl EditorSubsystem {
             return self.tap_indicator_position_from_world(self.timeline.preview.position);
         }
 
-        let target_world = [
-            candidate_cursor[0] + 0.5,
-            candidate_cursor[1],
-            candidate_cursor[2] + 0.5,
-        ];
         let mut best_position = cache[start_index].position;
-        let mut best_distance_sq = distance_sq(best_position, target_world);
+        let mut best_axis = None;
+        let mut best_distance_sq = f32::INFINITY;
 
         for index in start_index..end_index {
             let previous = cache[index].position;
@@ -149,10 +163,25 @@ impl EditorSubsystem {
             if candidate_distance_sq < best_distance_sq {
                 best_distance_sq = candidate_distance_sq;
                 best_position = candidate;
+                best_axis = segment_path_axis(previous, current);
             }
         }
 
-        self.tap_indicator_position_from_world(best_position)
+        let mut indicator_position = self.tap_indicator_position_from_world(best_position);
+        if self.effective_snap_to_grid() {
+            let snap_step = self.config.snap_step.max(0.05);
+            match best_axis {
+                Some(PathAxis::X) => {
+                    indicator_position[0] = (indicator_position[0] / snap_step).floor() * snap_step;
+                }
+                Some(PathAxis::Z) => {
+                    indicator_position[2] = (indicator_position[2] / snap_step).floor() * snap_step;
+                }
+                None => {}
+            }
+        }
+
+        indicator_position
     }
 
     pub(crate) fn toggle_tap_at_cursor(&mut self) -> (Option<f32>, bool) {
@@ -1028,6 +1057,43 @@ mod tests {
             state.editor.config.snap_to_grid = false;
             state.editor.move_cursor(1, 1);
             assert_eq!(state.editor.ui.cursor, [1.5, 0.0, 0.75]);
+        });
+    }
+
+    #[test]
+    fn tapping_path_cursor_snaps_only_along_movement_axis() {
+        pollster::block_on(async {
+            let mut forward_state = State::new_test().await;
+            forward_state.phase = AppPhase::Editor;
+            forward_state.editor.ui.mode = EditorMode::Tapping;
+            forward_state.editor.spawn.position = [1.0, 0.0, 0.0];
+            forward_state.editor.spawn.direction = SpawnDirection::Forward;
+            forward_state.editor.config.snap_to_grid = true;
+            forward_state.editor.config.snap_step = 2.0;
+            forward_state.editor.timeline.clock.duration_seconds = 4.0;
+            forward_state.set_editor_timeline_time_seconds(0.4);
+
+            let forward_cursor = forward_state
+                .editor
+                .tap_path_cursor_near_world([4.5, 0.0, 3.4]);
+            assert_eq!(forward_cursor[0], 1.0);
+            assert_eq!(forward_cursor[2], 2.0);
+
+            let mut right_state = State::new_test().await;
+            right_state.phase = AppPhase::Editor;
+            right_state.editor.ui.mode = EditorMode::Tapping;
+            right_state.editor.spawn.position = [0.0, 0.0, 1.0];
+            right_state.editor.spawn.direction = SpawnDirection::Right;
+            right_state.editor.config.snap_to_grid = true;
+            right_state.editor.config.snap_step = 2.0;
+            right_state.editor.timeline.clock.duration_seconds = 4.0;
+            right_state.set_editor_timeline_time_seconds(0.4);
+
+            let right_cursor = right_state
+                .editor
+                .tap_path_cursor_near_world([3.4, 0.0, 4.5]);
+            assert_eq!(right_cursor[0], 2.0);
+            assert_eq!(right_cursor[2], 1.0);
         });
     }
 
