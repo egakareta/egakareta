@@ -516,6 +516,39 @@ fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_enabled()
 }
 
 #[test]
+fn editor_playtest_preserves_airborne_vertical_motion() {
+    pollster::block_on(async {
+        let mut state = new_editor_state().await;
+        state.editor.objects.clear();
+        state.editor.timeline.taps.tap_times.clear();
+        state.editor.spawn.position = [0.0, 2.0, 0.0];
+        state.editor.timeline.clock.time_seconds = 0.25;
+
+        let expected = simulate_timeline_state_with_triggers(
+            state.editor.spawn.position,
+            state.editor.spawn.direction,
+            &state.editor.objects,
+            &state.editor.timeline.taps.tap_times,
+            state.editor.triggers(),
+            state.editor.simulate_trigger_hitboxes(),
+            state.editor.timeline.clock.time_seconds,
+        );
+
+        assert!(!expected.is_grounded);
+        assert!(expected.vertical_velocity < 0.0);
+
+        state.editor_playtest();
+
+        approx_eq(
+            state.gameplay.state.vertical_velocity,
+            expected.vertical_velocity,
+            1e-4,
+        );
+        assert_eq!(state.gameplay.state.is_grounded, expected.is_grounded);
+    });
+}
+
+#[test]
 fn editor_scrub_draws_ghost_trail_without_preview_head_mesh() {
     pollster::block_on(async {
         let mut state = new_editor_state().await;

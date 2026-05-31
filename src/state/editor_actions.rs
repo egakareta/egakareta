@@ -1034,6 +1034,8 @@ impl State {
             transition.spawn_direction,
             Some(transition.spawn_speed),
         );
+        self.gameplay.state.vertical_velocity = transition.spawn_vertical_velocity;
+        self.gameplay.state.is_grounded = transition.spawn_is_grounded;
         self.gameplay.state.elapsed_seconds = transition.playtest_audio_start_seconds;
         self.editor.camera.playing_rotation = transition.camera_rotation;
         self.editor.camera.playing_pitch = transition.camera_pitch;

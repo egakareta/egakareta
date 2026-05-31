@@ -89,6 +89,8 @@ impl State {
                 transition.spawn_direction,
                 Some(transition.spawn_speed),
             );
+            self.gameplay.state.vertical_velocity = transition.spawn_vertical_velocity;
+            self.gameplay.state.is_grounded = transition.spawn_is_grounded;
             self.gameplay.state.elapsed_seconds = transition.playtest_audio_start_seconds;
         } else if let Some(level_name) = self.session.playing_level_name.clone() {
             self.session.playtest_audio_start_seconds = None;

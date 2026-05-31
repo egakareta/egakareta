@@ -759,6 +759,8 @@ pub(crate) struct TimelineState {
     pub(crate) direction: SpawnDirection,
     pub(crate) elapsed_seconds: f32,
     pub(crate) speed: f32,
+    pub(crate) vertical_velocity: f32,
+    pub(crate) is_grounded: bool,
 }
 
 pub(crate) fn derive_timeline_state_with_triggers(
@@ -789,5 +791,7 @@ pub(crate) fn derive_timeline_state_with_triggers(
         direction: simulated.direction,
         elapsed_seconds: simulated.elapsed_seconds,
         speed: simulated.speed,
+        vertical_velocity: simulated.vertical_velocity,
+        is_grounded: simulated.is_grounded,
     }
 }

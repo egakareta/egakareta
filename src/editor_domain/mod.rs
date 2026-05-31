@@ -305,6 +305,8 @@ mod tests {
             transition.spawn_direction,
             crate::types::SpawnDirection::Forward
         ));
+        assert!((transition.spawn_vertical_velocity - 0.0).abs() < f32::EPSILON);
+        assert!(transition.spawn_is_grounded);
         assert!((transition.playtest_audio_start_seconds - timeline_time_seconds).abs() < 0.05);
         assert_eq!(transition.playing_level_name.as_deref(), Some("Demo"));
     }

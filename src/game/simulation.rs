@@ -15,6 +15,8 @@ pub(crate) struct TimelineSimulationState {
     pub(crate) direction: SpawnDirection,
     pub(crate) elapsed_seconds: f32,
     pub(crate) speed: f32,
+    pub(crate) vertical_velocity: f32,
+    pub(crate) is_grounded: bool,
 }
 
 pub(crate) struct TimelineSimulationRuntime {
@@ -252,6 +254,8 @@ impl TimelineSimulationRuntime {
             },
             elapsed_seconds: self.elapsed_seconds,
             speed: self.game.speed,
+            vertical_velocity: self.game.vertical_velocity,
+            is_grounded: self.game.is_grounded,
         }
     }
 }
