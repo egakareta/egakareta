@@ -7,7 +7,12 @@
 */
 use super::State;
 use crate::commands::AppCommand;
+use crate::editor_domain::{
+    has_timing_divisions, timing_division_time_in_direction, TimingDivisionDirection,
+};
 use crate::types::{normalize_binding_key, EditorMode, KeyChord};
+
+const FALLBACK_TIMELINE_SHIFT_SECONDS: f32 = 0.1;
 
 impl State {
     /// Central dispatcher: every `AppCommand` is routed here.
@@ -499,14 +504,14 @@ impl State {
             }
             "timeline_forward" => {
                 if self.is_editor() && !self.has_block_selection() {
-                    Some(AppCommand::EditorShiftTimeline(0.1))
+                    self.timeline_shift_to_division_command(TimingDivisionDirection::Forward)
                 } else {
                     None
                 }
             }
             "timeline_backward" => {
                 if self.is_editor() && !self.has_block_selection() {
-                    Some(AppCommand::EditorShiftTimeline(-0.1))
+                    self.timeline_shift_to_division_command(TimingDivisionDirection::Backward)
                 } else {
                     None
                 }
@@ -678,6 +683,31 @@ impl State {
             key,
             "Shift" | "Control" | "ControlLeft" | "ControlRight" | "Alt" | "AltLeft" | "AltRight"
         )
+    }
+
+    fn timeline_shift_to_division_command(
+        &self,
+        direction: TimingDivisionDirection,
+    ) -> Option<AppCommand> {
+        let current_time = self.editor.timeline.clock.time_seconds;
+        if let Some(target_time) = timing_division_time_in_direction(
+            current_time,
+            &self.editor.timing.timing_points,
+            self.editor.timeline.clock.duration_seconds,
+            direction,
+        ) {
+            return Some(AppCommand::EditorShiftTimeline(target_time - current_time));
+        }
+
+        if has_timing_divisions(&self.editor.timing.timing_points) {
+            return None;
+        }
+
+        let fallback_delta = match direction {
+            TimingDivisionDirection::Forward => FALLBACK_TIMELINE_SHIFT_SECONDS,
+            TimingDivisionDirection::Backward => -FALLBACK_TIMELINE_SHIFT_SECONDS,
+        };
+        Some(AppCommand::EditorShiftTimeline(fallback_delta))
     }
 
     /// Process a unified `InputEvent`.
@@ -2048,13 +2078,45 @@ mod tests {
                 None
             );
             state.editor.ui.selected_block_index = None;
+            state.editor.timeline.clock.time_seconds = 1.26;
+            state.editor.timing.timing_points = vec![
+                TimingPoint {
+                    time_seconds: 0.0,
+                    bpm: 120.0,
+                    time_signature_numerator: 4,
+                    time_signature_denominator: 4,
+                },
+                TimingPoint {
+                    time_seconds: 1.0,
+                    bpm: 240.0,
+                    time_signature_numerator: 4,
+                    time_signature_denominator: 4,
+                },
+            ];
+            let Some(AppCommand::EditorShiftTimeline(forward_delta)) =
+                state.command_for_keybind_action("timeline_forward", true)
+            else {
+                panic!("timeline forward should shift to the next timing division");
+            };
+            assert!((forward_delta - 0.24).abs() < 0.0001);
+
+            let Some(AppCommand::EditorShiftTimeline(backward_delta)) =
+                state.command_for_keybind_action("timeline_backward", true)
+            else {
+                panic!("timeline backward should shift to the previous timing division");
+            };
+            assert!((backward_delta + 0.01).abs() < 0.0001);
+            state.editor.timeline.clock.time_seconds = 1.25;
+            let Some(AppCommand::EditorShiftTimeline(backward_delta)) =
+                state.command_for_keybind_action("timeline_backward", true)
+            else {
+                panic!("timeline backward should keep moving from an exact timing division");
+            };
+            assert!((backward_delta + 0.25).abs() < 0.0001);
+            state.editor.timing.timing_points.clear();
             assert_eq!(
                 state.command_for_keybind_action("timeline_forward", true),
                 Some(AppCommand::EditorShiftTimeline(0.1))
-            );
-            assert_eq!(
-                state.command_for_keybind_action("timeline_backward", true),
-                Some(AppCommand::EditorShiftTimeline(-0.1))
             );
 
             assert_eq!(

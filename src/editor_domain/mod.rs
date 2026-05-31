@@ -736,6 +736,65 @@ mod tests {
     }
 
     #[test]
+    fn timing_division_time_snaps_in_requested_direction() {
+        let timing_points = vec![
+            TimingPoint {
+                time_seconds: 2.0,
+                bpm: 240.0,
+                time_signature_numerator: 4,
+                time_signature_denominator: 4,
+            },
+            TimingPoint {
+                time_seconds: 0.5,
+                bpm: 120.0,
+                time_signature_numerator: 4,
+                time_signature_denominator: 4,
+            },
+        ];
+
+        assert_eq!(
+            timing_division_time_in_direction(
+                1.26,
+                &timing_points,
+                4.0,
+                TimingDivisionDirection::Forward,
+            ),
+            Some(1.5)
+        );
+        assert_eq!(
+            timing_division_time_in_direction(
+                1.26,
+                &timing_points,
+                4.0,
+                TimingDivisionDirection::Backward,
+            ),
+            Some(1.0)
+        );
+        assert_eq!(
+            timing_division_time_in_direction(
+                2.0,
+                &timing_points,
+                4.0,
+                TimingDivisionDirection::Backward,
+            ),
+            Some(1.5)
+        );
+        assert_eq!(
+            timing_division_time_in_direction(
+                2.0,
+                &timing_points,
+                4.0,
+                TimingDivisionDirection::Forward,
+            ),
+            Some(2.25)
+        );
+        assert_eq!(
+            timing_division_time_in_direction(1.0, &[], 4.0, TimingDivisionDirection::Forward,),
+            None
+        );
+    }
+
+    #[test]
     fn timing_division_previews_skip_existing_taps() {
         let timing_points = vec![TimingPoint {
             time_seconds: 0.0,

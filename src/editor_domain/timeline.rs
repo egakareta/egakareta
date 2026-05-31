@@ -13,6 +13,7 @@ use crate::types::{LevelObject, SpawnDirection, TimedTrigger, TimingPoint};
 use super::TAP_EPSILON_SECONDS;
 
 pub(crate) const MAX_TIMING_DIVISION_TAP_PREVIEWS: usize = 2048;
+const TIMING_DIVISION_NAV_EPSILON_SECONDS: f32 = 0.00001;
 
 fn lerp_position(start: [f32; 3], end: [f32; 3], alpha: f32) -> [f32; 3] {
     [
@@ -118,6 +119,100 @@ pub(crate) struct TapDivisionPreview {
 pub(crate) struct TapDivisionPreviewRange {
     pub(crate) start_seconds: f32,
     pub(crate) end_seconds: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TimingDivisionDirection {
+    Backward,
+    Forward,
+}
+
+pub(crate) fn timing_division_time_in_direction(
+    timeline_time_seconds: f32,
+    timing_points: &[TimingPoint],
+    duration_seconds: f32,
+    direction: TimingDivisionDirection,
+) -> Option<f32> {
+    let duration = if duration_seconds.is_finite() {
+        duration_seconds.max(0.0)
+    } else {
+        0.0
+    };
+    if duration <= 0.0 {
+        return None;
+    }
+
+    let time_seconds = if timeline_time_seconds.is_finite() {
+        timeline_time_seconds.clamp(0.0, duration)
+    } else {
+        0.0
+    };
+
+    let division_times = timing_division_times(timing_points, duration);
+    match direction {
+        TimingDivisionDirection::Forward => division_times.into_iter().find(|division_time| {
+            *division_time > time_seconds + TIMING_DIVISION_NAV_EPSILON_SECONDS
+        }),
+        TimingDivisionDirection::Backward => {
+            division_times.into_iter().rev().find(|division_time| {
+                *division_time < time_seconds - TIMING_DIVISION_NAV_EPSILON_SECONDS
+            })
+        }
+    }
+}
+
+pub(crate) fn has_timing_divisions(timing_points: &[TimingPoint]) -> bool {
+    timing_points
+        .iter()
+        .any(|point| point.time_seconds.is_finite() && point.bpm.is_finite() && point.bpm > 0.0)
+}
+
+fn timing_division_times(timing_points: &[TimingPoint], duration: f32) -> Vec<f32> {
+    let mut sorted_timing_points: Vec<&TimingPoint> = timing_points
+        .iter()
+        .filter(|point| point.time_seconds.is_finite() && point.bpm.is_finite() && point.bpm > 0.0)
+        .collect();
+    sorted_timing_points.sort_by(|left, right| left.time_seconds.total_cmp(&right.time_seconds));
+
+    let mut division_times = Vec::new();
+    for (point_index, point) in sorted_timing_points.iter().enumerate() {
+        let start_time = point.time_seconds.clamp(0.0, duration);
+        let end_time = sorted_timing_points
+            .get(point_index + 1)
+            .map(|next| next.time_seconds.clamp(0.0, duration))
+            .unwrap_or(duration);
+        if end_time < start_time {
+            continue;
+        }
+
+        let beat_duration = 60.0 / point.bpm;
+        if !beat_duration.is_finite() || beat_duration <= 0.0 {
+            continue;
+        }
+
+        let mut beat = 0u32;
+        loop {
+            let division_time = start_time + beat as f32 * beat_duration;
+            if division_time > end_time + TIMING_DIVISION_NAV_EPSILON_SECONDS {
+                break;
+            }
+            if division_time >= -TIMING_DIVISION_NAV_EPSILON_SECONDS
+                && division_time <= duration + TIMING_DIVISION_NAV_EPSILON_SECONDS
+            {
+                division_times.push(division_time.clamp(0.0, duration));
+            }
+
+            beat += 1;
+            if beat > 10000 {
+                break;
+            }
+        }
+    }
+
+    division_times.sort_by(f32::total_cmp);
+    division_times
+        .dedup_by(|left, right| (*left - *right).abs() <= TIMING_DIVISION_NAV_EPSILON_SECONDS);
+    division_times
 }
 
 #[cfg(test)]
