@@ -777,6 +777,11 @@ impl State {
             return false;
         }
 
+        let mut solve_tap_times = self.editor.timeline.taps.tap_times.clone();
+        if selected_index < solve_tap_times.len() {
+            solve_tap_times.remove(selected_index);
+        }
+
         let target_world = [
             snapped_position[0] + 0.5,
             snapped_position[1],
@@ -786,7 +791,7 @@ impl State {
         let next_time = derive_timeline_time_for_world_target_near_time(
             self.editor.spawn.position,
             self.editor.spawn.direction,
-            &self.editor.timeline.taps.tap_times,
+            &solve_tap_times,
             duration_seconds,
             &self.editor.objects,
             target_world,
@@ -798,18 +803,29 @@ impl State {
         .clamp(0.0, duration_seconds);
 
         self.record_editor_history_state();
-        if let Some(time_seconds) = self.editor.timeline.taps.tap_times.get_mut(selected_index) {
-            *time_seconds = next_time;
-        }
-        if let Some(indicator_position) = self
-            .editor
+        self.editor.timeline.taps.tap_times.remove(selected_index);
+        self.editor
             .timeline
             .taps
             .tap_indicator_positions
-            .get_mut(selected_index)
-        {
-            *indicator_position = snapped_position;
-        }
+            .remove(selected_index);
+        let next_index = self
+            .editor
+            .timeline
+            .taps
+            .tap_times
+            .partition_point(|time| *time < next_time);
+        self.editor
+            .timeline
+            .taps
+            .tap_times
+            .insert(next_index, next_time);
+        self.editor
+            .timeline
+            .taps
+            .tap_indicator_positions
+            .insert(next_index, snapped_position);
+        self.editor.set_selected_tap_index(Some(next_index));
         self.editor.ui.cursor = snapped_position;
         self.editor
             .invalidate_samples_from(old_time_seconds.min(next_time));
@@ -1276,6 +1292,11 @@ mod tests {
                 state.editor.timeline.taps.tap_indicator_positions[0],
                 [0.0, 0.0, 2.0]
             );
+            assert!(
+                (state.editor.timeline.taps.tap_times[0] - 0.25).abs() < 0.001,
+                "snap should recalculate the tap time, got {}",
+                state.editor.timeline.taps.tap_times[0]
+            );
             assert_eq!(state.editor.timeline.taps.selected_index, Some(0));
             assert_eq!(state.editor.ui.cursor, [0.0, 0.0, 2.0]);
             assert!(
@@ -1284,6 +1305,16 @@ mod tests {
                     .abs()
                     < 0.001
             );
+            let recalculated_positions = derive_tap_indicator_positions(
+                state.editor.spawn.position,
+                state.editor.spawn.direction,
+                &state.editor.timeline.taps.tap_times,
+                &state.editor.objects,
+            );
+            assert_eq!(recalculated_positions.len(), 1);
+            assert!((recalculated_positions[0][0] - 0.0).abs() < 0.001);
+            assert!((recalculated_positions[0][1] - 0.0).abs() < 0.001);
+            assert!((recalculated_positions[0][2] - 2.0).abs() < 0.001);
         });
     }
 
