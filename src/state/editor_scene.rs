@@ -323,6 +323,19 @@ impl State {
         self.editor.timeline_elapsed_seconds(time_seconds)
     }
 
+    fn editor_tap_cursor_overlap_index(&self) -> Option<usize> {
+        let hovered_index = self.editor.runtime.interaction.hovered_tap_index;
+        let selected_index = self.editor.timeline.taps.selected_index;
+        hovered_index.or(selected_index).filter(|index| {
+            self.editor
+                .timeline
+                .taps
+                .tap_indicator_positions
+                .get(*index)
+                .is_some_and(|position| positions_match(*position, self.editor.ui.cursor))
+        })
+    }
+
     pub(super) fn apply_editor_timeline_preview_state(
         &mut self,
         position: [f32; 3],
@@ -352,6 +365,10 @@ impl State {
     pub(super) fn rebuild_editor_cursor_vertices(&mut self) {
         puffin::profile_scope!("EditorCursorMesh");
         let vertices = if self.editor.ui.mode == EditorMode::Tapping {
+            if self.editor_tap_cursor_overlap_index().is_some() {
+                self.render.meshes.editor_cursor.clear();
+                return;
+            }
             build_editor_tap_cursor_vertices(self.editor.ui.cursor)
         } else {
             build_editor_cursor_vertices(
@@ -902,6 +919,8 @@ impl State {
             return;
         }
 
+        let hovered_tap_index = self.editor.runtime.interaction.hovered_tap_index;
+        let selected_tap_index = self.editor.timeline.taps.selected_index;
         let hovered_division = self.editor.runtime.interaction.hovered_tap_division;
         let previews = self.editor.timing_division_tap_previews().to_vec();
         let tap_positions = self.editor.timeline.taps.tap_indicator_positions.clone();
@@ -935,7 +954,11 @@ impl State {
         let mut indicators: Vec<([f32; 3], [f32; 4])> = tap_positions
             .iter()
             .copied()
-            .map(|position| (position, [0.0, 0.0, 0.0, 1.0]))
+            .enumerate()
+            .map(|(index, position)| {
+                let color = tap_indicator_color(index, hovered_tap_index, selected_tap_index);
+                (position, color)
+            })
             .collect();
         indicators.sort_unstable_by(|a, b| {
             a.0[0]
@@ -996,9 +1019,21 @@ fn positions_match(left: [f32; 3], right: [f32; 3]) -> bool {
         && (left[2] - right[2]).abs() < 0.001
 }
 
+fn tap_indicator_color(
+    index: usize,
+    hovered_tap_index: Option<usize>,
+    selected_tap_index: Option<usize>,
+) -> [f32; 4] {
+    if hovered_tap_index == Some(index) || selected_tap_index == Some(index) {
+        [0.2, 0.85, 0.95, 1.0]
+    } else {
+        [0.0, 0.0, 0.0, 1.0]
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::State;
+    use super::{tap_indicator_color, State};
     use crate::types::{
         AppPhase, EditorMode, LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
         TimedTriggerTarget,
@@ -1234,6 +1269,49 @@ mod tests {
             state.editor.runtime.interaction.last_mode = Some(EditorMode::Place);
             state.rebuild_tap_indicator_vertices();
             assert!(state.render.meshes.tap_indicators.draw_data().is_none());
+        });
+    }
+
+    #[test]
+    fn tap_indicator_color_highlights_hovered_or_selected_taps() {
+        assert_eq!(
+            tap_indicator_color(2, Some(2), None),
+            [0.2, 0.85, 0.95, 1.0]
+        );
+        assert_eq!(
+            tap_indicator_color(2, None, Some(2)),
+            [0.2, 0.85, 0.95, 1.0]
+        );
+        assert_eq!(
+            tap_indicator_color(2, Some(1), Some(3)),
+            [0.0, 0.0, 0.0, 1.0]
+        );
+    }
+
+    #[test]
+    fn tapping_cursor_hides_only_when_overlapping_hovered_or_selected_tap() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Tapping;
+            state.editor.timeline.taps.tap_indicator_positions = vec![[1.0, 0.0, 1.0]];
+            state.editor.ui.cursor = [1.0, 0.0, 1.0];
+
+            state.rebuild_editor_cursor_vertices();
+            assert!(state.render.meshes.editor_cursor.draw_data().is_some());
+
+            state.editor.runtime.interaction.hovered_tap_index = Some(0);
+            state.rebuild_editor_cursor_vertices();
+            assert!(state.render.meshes.editor_cursor.draw_data().is_none());
+
+            state.editor.runtime.interaction.hovered_tap_index = None;
+            state.editor.timeline.taps.selected_index = Some(0);
+            state.rebuild_editor_cursor_vertices();
+            assert!(state.render.meshes.editor_cursor.draw_data().is_none());
+
+            state.editor.ui.cursor = [2.0, 0.0, 2.0];
+            state.rebuild_editor_cursor_vertices();
+            assert!(state.render.meshes.editor_cursor.draw_data().is_some());
         });
     }
 

@@ -71,6 +71,7 @@ pub(crate) struct EditorClipboard {
 pub(crate) struct EditorInteractionState {
     pub(crate) gizmo_drag: Option<EditorGizmoDrag>,
     pub(crate) hovered_gizmo: Option<(GizmoDragKind, GizmoAxis)>,
+    pub(crate) hovered_tap_index: Option<usize>,
     pub(crate) hovered_tap_division: Option<EditorTapDivisionPick>,
     pub(crate) block_drag: Option<EditorBlockDrag>,
     pub(crate) clipboard: Option<EditorClipboard>,
@@ -82,6 +83,7 @@ impl EditorInteractionState {
         Self {
             gizmo_drag: None,
             hovered_gizmo: None,
+            hovered_tap_index: None,
             hovered_tap_division: None,
             block_drag: None,
             clipboard: None,

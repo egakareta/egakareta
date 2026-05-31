@@ -621,6 +621,7 @@ impl State {
     }
 
     pub(crate) fn set_editor_mode(&mut self, mode: EditorMode) {
+        self.editor.runtime.interaction.hovered_tap_index = None;
         self.editor.runtime.interaction.hovered_tap_division = None;
         self.editor.set_mode(mode);
         self.rebuild_editor_gizmo_vertices();

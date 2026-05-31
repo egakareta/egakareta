@@ -493,8 +493,11 @@ impl State {
         };
 
         self.editor.set_selected_tap_index(Some(tap_index));
+        self.editor.runtime.interaction.hovered_tap_index = Some(tap_index);
         self.set_editor_timeline_time_seconds_preserving_editor_camera(time_seconds);
         self.editor.ui.cursor = pick.cursor;
+        self.rebuild_tap_indicator_vertices();
+        self.rebuild_editor_cursor_vertices();
         true
     }
 

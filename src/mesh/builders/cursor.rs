@@ -68,7 +68,7 @@ mod tests {
         assert_eq!(vertices.len(), 72);
         assert!(vertices
             .iter()
-            .all(|vertex| vertex.color == [0.2, 0.85, 0.95, 0.4]));
+            .all(|vertex| vertex.color == [0.2, 0.85, 0.95, 0.6]));
         assert!(vertices
             .iter()
             .all(|vertex| (vertex.position[1] - 2.1).abs() <= f32::EPSILON));
