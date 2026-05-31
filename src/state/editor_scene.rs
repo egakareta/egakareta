@@ -15,8 +15,8 @@ use crate::mesh::{
     build_block_geometry, build_block_geometry_for_object, build_block_geometry_from_refs,
     build_camera_trigger_marker_vertices, build_colored_tap_indicator_vertices,
     build_editor_cursor_vertices, build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
-    build_editor_selection_outline_vertices, build_spawn_marker_vertices,
-    build_tap_division_preview_vertices, GizmoParams, MeshGeometry,
+    build_editor_selection_outline_vertices, build_editor_tap_cursor_vertices,
+    build_spawn_marker_vertices, build_tap_division_preview_vertices, GizmoParams, MeshGeometry,
 };
 use crate::state::render::EditorOutlineInstance;
 use crate::types::{AppPhase, EditorMode, GizmoPart, LevelObject, SpawnDirection};
@@ -351,10 +351,14 @@ impl State {
 
     pub(super) fn rebuild_editor_cursor_vertices(&mut self) {
         puffin::profile_scope!("EditorCursorMesh");
-        let vertices = build_editor_cursor_vertices(
-            self.editor.ui.cursor,
-            self.editor.selected_block_default_size(),
-        );
+        let vertices = if self.editor.ui.mode == EditorMode::Tapping {
+            build_editor_tap_cursor_vertices(self.editor.ui.cursor)
+        } else {
+            build_editor_cursor_vertices(
+                self.editor.ui.cursor,
+                self.editor.selected_block_default_size(),
+            )
+        };
         self.render.meshes.editor_cursor.replace_with_vertices(
             &self.render.gpu.device,
             "Editor Cursor Vertex Buffer",
