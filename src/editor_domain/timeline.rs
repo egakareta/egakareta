@@ -161,12 +161,6 @@ pub(crate) fn timing_division_time_in_direction(
     }
 }
 
-pub(crate) fn has_timing_divisions(timing_points: &[TimingPoint]) -> bool {
-    timing_points
-        .iter()
-        .any(|point| point.time_seconds.is_finite() && point.bpm.is_finite() && point.bpm > 0.0)
-}
-
 fn timing_division_times(timing_points: &[TimingPoint], duration: f32) -> Vec<f32> {
     let mut sorted_timing_points: Vec<&TimingPoint> = timing_points
         .iter()

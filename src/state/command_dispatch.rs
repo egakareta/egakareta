@@ -7,9 +7,7 @@
 */
 use super::State;
 use crate::commands::AppCommand;
-use crate::editor_domain::{
-    has_timing_divisions, timing_division_time_in_direction, TimingDivisionDirection,
-};
+use crate::editor_domain::{timing_division_time_in_direction, TimingDivisionDirection};
 use crate::types::{normalize_binding_key, EditorMode, KeyChord};
 
 const FALLBACK_TIMELINE_SHIFT_SECONDS: f32 = 0.1;
@@ -697,10 +695,6 @@ impl State {
             direction,
         ) {
             return Some(AppCommand::EditorShiftTimeline(target_time - current_time));
-        }
-
-        if has_timing_divisions(&self.editor.timing.timing_points) {
-            return None;
         }
 
         let fallback_delta = match direction {
@@ -2114,6 +2108,26 @@ mod tests {
             };
             assert!((backward_delta + 0.25).abs() < 0.0001);
             state.editor.timing.timing_points.clear();
+            assert_eq!(
+                state.command_for_keybind_action("timeline_forward", true),
+                Some(AppCommand::EditorShiftTimeline(0.1))
+            );
+            assert_eq!(
+                state.command_for_keybind_action("timeline_backward", true),
+                Some(AppCommand::EditorShiftTimeline(-0.1))
+            );
+            state.editor.timing.timing_points = vec![TimingPoint {
+                time_seconds: 0.0,
+                bpm: 120.0,
+                time_signature_numerator: 4,
+                time_signature_denominator: 4,
+            }];
+            state.editor.timeline.clock.time_seconds = 0.0;
+            assert_eq!(
+                state.command_for_keybind_action("timeline_backward", true),
+                Some(AppCommand::EditorShiftTimeline(-0.1))
+            );
+            state.editor.timeline.clock.time_seconds = state.editor.timeline.clock.duration_seconds;
             assert_eq!(
                 state.command_for_keybind_action("timeline_forward", true),
                 Some(AppCommand::EditorShiftTimeline(0.1))
