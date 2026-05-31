@@ -148,17 +148,17 @@ pub(crate) fn show_compose_mode_bottom_panel(
                             ));
                         }
                     });
-                });
 
-                ui.horizontal(|ui| {
-                    ui.label("Color:");
-                    let mut color_tint = selected.color_tint;
-                    if ui.color_edit_button_rgb(&mut color_tint).changed() {
-                        selected.color_tint = color_tint;
-                        commands.push(crate::commands::AppCommand::EditorUpdateSelectedBlock(
-                            selected.clone(),
-                        ));
-                    }
+                    ui.horizontal(|ui| {
+                        ui.label("Color:");
+                        let mut color_tint = selected.color_tint;
+                        if ui.color_edit_button_rgb(&mut color_tint).changed() {
+                            selected.color_tint = color_tint;
+                            commands.push(crate::commands::AppCommand::EditorUpdateSelectedBlock(
+                                selected.clone(),
+                            ));
+                        }
+                    });
                 });
             }
         }
