@@ -62,7 +62,7 @@ pub(crate) fn show_compose_mode_bottom_panel(
             if let Some(mut selected) = view.selected_block.clone() {
                 ui.horizontal_wrapped(|ui| {
                     ui.horizontal(|ui| {
-                        ui.label("Move:");
+                        ui.label("Position:");
                         let mut changed = false;
                         changed |= ui
                             .add(egui::DragValue::new(&mut selected.position[0]).prefix("X "))
@@ -81,7 +81,7 @@ pub(crate) fn show_compose_mode_bottom_panel(
                     });
 
                     ui.horizontal(|ui| {
-                        ui.label("Resize:");
+                        ui.label("Size:");
                         let mut changed = false;
                         changed |= ui
                             .add(egui::DragValue::new(&mut selected.size[0]).prefix("W "))
@@ -100,8 +100,8 @@ pub(crate) fn show_compose_mode_bottom_panel(
                     });
 
                     ui.horizontal(|ui| {
-                        ui.label("Rotate:");
-                        let mut changed = false;
+                        ui.label("Rotation:");
+                        let mut changed: bool = false;
                         changed |= ui
                             .add(
                                 egui::DragValue::new(&mut selected.rotation_degrees[0])
