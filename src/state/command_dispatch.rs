@@ -446,7 +446,13 @@ impl State {
             }
             "remove_block" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::EditorRemoveBlock)
+                    if self.editor_effective_mode_for_playback() == EditorMode::Tapping {
+                        self.editor
+                            .selected_tap()
+                            .map(|(_, time_seconds, _)| AppCommand::EditorRemoveTapAt(time_seconds))
+                    } else {
+                        Some(AppCommand::EditorRemoveBlock)
+                    }
                 } else {
                     None
                 }
@@ -1559,6 +1565,18 @@ mod tests {
             assert_eq!(state.editor.camera.editor_pan, original_pan);
             assert_eq!(state.editor.camera.editor_target_z, original_target_z);
 
+            state.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: false,
+            });
+            state.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: true,
+            });
+
+            assert_eq!(state.editor.timeline.taps.tap_times, vec![1.25]);
+            assert_eq!(state.editor.timeline.taps.selected_index, Some(0));
+
             let view = state.editor_ui_view_model();
             let selected_tap = view
                 .selected_tap
@@ -2074,6 +2092,15 @@ mod tests {
                 state.command_for_keybind_action("remove_block", true),
                 Some(AppCommand::EditorRemoveBlock)
             );
+            state.editor.ui.mode = EditorMode::Tapping;
+            state.editor.timeline.taps.tap_times = vec![1.25];
+            state.editor.timeline.taps.tap_indicator_positions = vec![[0.0, 0.0, 0.0]];
+            state.editor.timeline.taps.selected_index = Some(0);
+            assert_eq!(
+                state.command_for_keybind_action("remove_block", true),
+                Some(AppCommand::EditorRemoveTapAt(1.25))
+            );
+            state.editor.ui.mode = EditorMode::Place;
             assert_eq!(
                 state.command_for_keybind_action("copy", true),
                 Some(AppCommand::EditorCopyBlock)

@@ -528,29 +528,6 @@ impl State {
             return false;
         };
 
-        if let Some((selected_index, selected_time_seconds, selected_position)) =
-            self.editor.selected_tap()
-        {
-            if self.editor.timeline.taps.selected_index == Some(selected_index) {
-                let selected_screen = self.editor.world_to_screen_v(
-                    glam::Vec3::new(
-                        selected_position[0] + 0.5,
-                        selected_position[1] + 0.1,
-                        selected_position[2] + 0.5,
-                    ),
-                    viewport_size,
-                );
-                if let Some(selected_screen) = selected_screen {
-                    let dx = selected_screen.x - x as f32;
-                    let dy = selected_screen.y - y as f32;
-                    if dx * dx + dy * dy <= 24.0 * 24.0 {
-                        self.editor_remove_tap_at(selected_time_seconds);
-                        return true;
-                    }
-                }
-            }
-        }
-
         let Some(tap_index) = pick.hit_tap_index else {
             if let Some(division) = pick.hit_tap_division {
                 self.record_editor_history_state();
