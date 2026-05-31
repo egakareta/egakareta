@@ -82,6 +82,127 @@ mod tests {
     }
 
     #[test]
+    fn tap_edits_deduplicate_within_epsilon_and_clamp_negative_times() {
+        let mut taps = Vec::new();
+        let mut indicators = Vec::new();
+
+        let first_index =
+            add_tap_with_indicator(&mut taps, &mut indicators, -0.25, [1.0, 0.0, 1.0]);
+        let duplicate_index = add_tap_with_indicator(
+            &mut taps,
+            &mut indicators,
+            TAP_EPSILON_SECONDS * 0.5,
+            [9.0, 0.0, 9.0],
+        );
+
+        assert_eq!(first_index, Some(0));
+        assert_eq!(duplicate_index, Some(0));
+        assert_eq!(taps, vec![0.0]);
+        assert_eq!(indicators, vec![[1.0, 0.0, 1.0]]);
+
+        let second_index = add_tap_with_indicator(
+            &mut taps,
+            &mut indicators,
+            TAP_EPSILON_SECONDS * 2.0,
+            [2.0, 0.0, 2.0],
+        );
+
+        assert_eq!(second_index, Some(1));
+        assert_eq!(taps.len(), 2);
+        assert_eq!(indicators.len(), 2);
+    }
+
+    #[test]
+    fn remove_tap_with_indicator_tolerates_missing_indicator_slot() {
+        let mut taps = vec![0.25, 0.5];
+        let mut indicators = vec![[1.0, 0.0, 1.0]];
+
+        let removed = remove_tap_with_indicator(&mut taps, &mut indicators, 0.5);
+
+        assert_eq!(removed, Some(1));
+        assert_eq!(taps, vec![0.25]);
+        assert_eq!(indicators, vec![[1.0, 0.0, 1.0]]);
+
+        let removed = remove_tap_with_indicator(&mut taps, &mut indicators, 0.25);
+
+        assert_eq!(removed, Some(0));
+        assert!(taps.is_empty());
+        assert!(indicators.is_empty());
+    }
+
+    #[test]
+    fn toggle_spawn_direction_cycles_between_supported_axes() {
+        assert_eq!(
+            toggle_spawn_direction(crate::types::SpawnDirection::Forward),
+            crate::types::SpawnDirection::Right
+        );
+        assert_eq!(
+            toggle_spawn_direction(crate::types::SpawnDirection::Right),
+            crate::types::SpawnDirection::Forward
+        );
+    }
+
+    #[test]
+    fn timeline_interpolation_splits_turns_into_axis_aligned_segments() {
+        let previous = [1.44, 0.0, 1.5];
+        let current = [1.5, 0.0, 1.56];
+        let corner = timeline_turn_corner_position(
+            previous,
+            crate::types::SpawnDirection::Right,
+            current,
+            crate::types::SpawnDirection::Forward,
+        )
+        .expect("right-to-forward turn should have a corner");
+
+        assert_eq!(corner, [1.5, 0.0, 1.5]);
+        assert!(
+            (timeline_axis_aligned_segment_split_fraction(previous, corner, current) - 0.5).abs()
+                < 1e-5
+        );
+
+        let first_leg = interpolate_timeline_sample_positions(
+            previous,
+            crate::types::SpawnDirection::Right,
+            current,
+            crate::types::SpawnDirection::Forward,
+            0.25,
+        );
+        assert!((first_leg[0] - 1.47).abs() < 1e-5);
+        assert!((first_leg[2] - 1.5).abs() < 1e-5);
+
+        let second_leg = interpolate_timeline_sample_positions(
+            previous,
+            crate::types::SpawnDirection::Right,
+            current,
+            crate::types::SpawnDirection::Forward,
+            0.75,
+        );
+        assert!((second_leg[0] - 1.5).abs() < 1e-5);
+        assert!((second_leg[2] - 1.53).abs() < 1e-5);
+    }
+
+    #[test]
+    fn timeline_interpolation_handles_straight_and_degenerate_segments() {
+        let straight = interpolate_timeline_sample_positions(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            [0.0, 0.0, 10.0],
+            crate::types::SpawnDirection::Forward,
+            0.25,
+        );
+
+        assert_eq!(straight, [0.0, 0.0, 2.5]);
+        assert_eq!(
+            timeline_axis_aligned_segment_split_fraction(
+                [1.0, 0.0, 1.0],
+                [1.0, 0.0, 1.0],
+                [1.0, 0.0, 1.0]
+            ),
+            0.5
+        );
+    }
+
+    #[test]
     fn creates_block_at_cursor() {
         let block = create_block_at_cursor([1.0, 2.0, 3.0], "core/grass", [2.0, 0.25, 1.0]);
         assert_eq!(block.position, [1.0, 2.0, 3.0]);
