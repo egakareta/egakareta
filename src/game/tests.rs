@@ -252,6 +252,39 @@ fn timeline_tap_at_zero_turns_before_movement() {
 }
 
 #[test]
+fn timeline_tap_at_nonzero_time_turns_at_exact_boundary() {
+    let tap_time = 1.0 / BASE_PLAYER_SPEED;
+    let snapshot = simulate_timeline_state(
+        [0.0, 0.0, 0.0],
+        SpawnDirection::Forward,
+        &[],
+        &[tap_time],
+        tap_time,
+    );
+
+    assert!(matches!(snapshot.direction, SpawnDirection::Right));
+    approx_eq(snapshot.position[0], 0.5, 1e-5);
+    approx_eq(snapshot.position[2], 1.5, 1e-5);
+    approx_eq(snapshot.elapsed_seconds, tap_time, 1e-6);
+
+    let next_tick = tap_time + 1.0 / 240.0;
+    let after_turn = simulate_timeline_state(
+        [0.0, 0.0, 0.0],
+        SpawnDirection::Forward,
+        &[],
+        &[tap_time],
+        next_tick,
+    );
+
+    approx_eq(
+        after_turn.position[0],
+        0.5 + BASE_PLAYER_SPEED / 240.0,
+        1e-5,
+    );
+    approx_eq(after_turn.position[2], 1.5, 1e-5);
+}
+
+#[test]
 fn timeline_incremental_runtime_matches_direct_simulation() {
     let mut runtime = TimelineSimulationRuntime::new(
         [0.0, 0.0, 0.0],

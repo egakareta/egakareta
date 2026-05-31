@@ -7,7 +7,8 @@
 */
 use super::{EditorDirtyFlags, EditorSubsystem, State};
 use crate::editor_domain::{
-    add_tap_with_indicator, clear_taps_with_indicators, remove_tap_with_indicator,
+    add_tap_with_indicator, clear_taps_with_indicators, interpolate_timeline_sample_positions,
+    remove_tap_with_indicator,
 };
 use crate::game::TimelineSimulationRuntime;
 use crate::types::{
@@ -967,11 +968,13 @@ impl State {
         let lower = &self.editor.timeline.snapshot_cache[lower_index];
         let upper = &self.editor.timeline.snapshot_cache[upper_index];
 
-        let position = [
-            lower.position[0] + (upper.position[0] - lower.position[0]) * alpha,
-            lower.position[1] + (upper.position[1] - lower.position[1]) * alpha,
-            lower.position[2] + (upper.position[2] - lower.position[2]) * alpha,
-        ];
+        let position = interpolate_timeline_sample_positions(
+            lower.position,
+            lower.direction,
+            upper.position,
+            upper.direction,
+            alpha,
+        );
         let direction = if alpha < 0.5 {
             lower.direction
         } else {

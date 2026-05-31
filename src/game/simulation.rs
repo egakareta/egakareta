@@ -130,8 +130,7 @@ impl TimelineSimulationRuntime {
     }
 
     fn apply_pending_taps(&mut self, up_to_time: f32) {
-        while self.tap_index < self.tap_times.len()
-            && self.tap_times[self.tap_index] <= up_to_time + TIMELINE_TAP_EPSILON_SECONDS
+        while self.tap_index < self.tap_times.len() && self.tap_times[self.tap_index] <= up_to_time
         {
             self.game.turn_right();
             self.tap_index += 1;
@@ -179,20 +178,45 @@ impl TimelineSimulationRuntime {
 
     pub(crate) fn advance_to(&mut self, target_time_seconds: f32) {
         puffin::profile_scope!("TimelineAdvanceTo");
-        let mut elapsed_seconds = self.elapsed_seconds;
-        advance_simulation_time(
-            &mut elapsed_seconds,
-            target_time_seconds,
-            self.simulation_dt,
-            |step_target, step_dt| {
-                self.apply_pending_taps(step_target);
-                self.apply_trigger_hitboxes(step_target);
-                self.game.update(step_dt);
-                self.sync_trigger_base_with_consumed();
-                !self.game.game_over
-            },
-        );
-        self.elapsed_seconds = elapsed_seconds;
+        let target_time = target_time_seconds.max(0.0);
+        if target_time <= self.elapsed_seconds {
+            return;
+        }
+
+        const TIME_EPSILON_SECONDS: f32 = 1e-6;
+        let simulation_dt = self.simulation_dt.max(TIME_EPSILON_SECONDS);
+
+        while self.elapsed_seconds < target_time {
+            self.apply_pending_taps(self.elapsed_seconds + TIME_EPSILON_SECONDS);
+
+            let mut step_target = (self.elapsed_seconds + simulation_dt).min(target_time);
+            if let Some(next_tap_time) = self.tap_times.get(self.tap_index).copied() {
+                if next_tap_time <= self.elapsed_seconds + TIME_EPSILON_SECONDS {
+                    self.apply_pending_taps(self.elapsed_seconds + TIME_EPSILON_SECONDS);
+                    continue;
+                }
+                if next_tap_time < step_target {
+                    step_target = next_tap_time;
+                }
+            }
+
+            let step_dt = step_target - self.elapsed_seconds;
+            if step_dt <= TIME_EPSILON_SECONDS {
+                self.elapsed_seconds = step_target;
+                self.apply_pending_taps(self.elapsed_seconds + TIME_EPSILON_SECONDS);
+                continue;
+            }
+
+            self.apply_trigger_hitboxes(step_target);
+            self.game.update(step_dt);
+            self.sync_trigger_base_with_consumed();
+            self.elapsed_seconds = step_target;
+            self.apply_pending_taps(self.elapsed_seconds + TIME_EPSILON_SECONDS);
+
+            if self.game.game_over {
+                return;
+            }
+        }
     }
 
     pub(crate) fn elapsed_seconds(&self) -> f32 {

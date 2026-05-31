@@ -11,8 +11,9 @@ use super::{EditorDirtyFlags, EditorSubsystem, State};
 use crate::editor_domain::{
     add_tap_with_indicator, build_editor_playtest_transition, derive_tap_indicator_positions,
     derive_timeline_time_for_world_target_near_time, derive_timing_division_tap_previews,
-    playtest_return_objects, remove_topmost_block_at_cursor, toggle_spawn_direction,
-    TapDivisionPreview, TapDivisionPreviewRange, TimelineNearSearch,
+    playtest_return_objects, remove_topmost_block_at_cursor,
+    timeline_axis_aligned_segment_split_fraction, timeline_turn_corner_position,
+    toggle_spawn_direction, TapDivisionPreview, TapDivisionPreviewRange, TimelineNearSearch,
 };
 use crate::game::{GameState, TimelineSimulationRuntime};
 use crate::types::{AppPhase, EditorMode};
@@ -157,8 +158,43 @@ impl EditorSubsystem {
         let mut best_distance_sq = f32::INFINITY;
 
         for index in 0..cache.len().saturating_sub(1) {
-            let previous = cache[index].position;
-            let current = cache[index + 1].position;
+            let previous_snapshot = &cache[index];
+            let current_snapshot = &cache[index + 1];
+            let previous = previous_snapshot.position;
+            let current = current_snapshot.position;
+
+            let mut consider_candidate =
+                |segment_start: [f32; 3],
+                 segment_end: [f32; 3],
+                 segment_start_alpha: f32,
+                 segment_alpha_width: f32| {
+                    let (candidate, alpha) =
+                        closest_point_on_segment(segment_start, segment_end, target_world);
+                    let segment_alpha =
+                        (segment_start_alpha + alpha * segment_alpha_width).clamp(0.0, 1.0);
+                    let candidate_distance_sq = distance_sq(candidate, target_world);
+                    if candidate_distance_sq < best_distance_sq {
+                        best_distance_sq = candidate_distance_sq;
+                        best_position = candidate;
+                        best_index = index;
+                        best_alpha = segment_alpha;
+                        best_axis = segment_path_axis(segment_start, segment_end);
+                    }
+                };
+
+            if let Some(corner) = timeline_turn_corner_position(
+                previous,
+                previous_snapshot.direction,
+                current,
+                current_snapshot.direction,
+            ) {
+                let split_fraction =
+                    timeline_axis_aligned_segment_split_fraction(previous, corner, current);
+                consider_candidate(previous, corner, 0.0, split_fraction);
+                consider_candidate(corner, current, split_fraction, 1.0 - split_fraction);
+                continue;
+            }
+
             let (candidate, alpha) = closest_point_on_segment(previous, current, target_world);
             let candidate_distance_sq = distance_sq(candidate, target_world);
             if candidate_distance_sq < best_distance_sq {
@@ -1303,6 +1339,36 @@ mod tests {
                 .tap_path_cursor_near_world([3.4, 0.0, 4.5]);
             assert_eq!(right_cursor[0], 2.0);
             assert_eq!(right_cursor[2], 1.0);
+        });
+    }
+
+    #[test]
+    fn tapping_path_cursor_splits_turn_samples_without_diagonal_drift() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Tapping;
+            state.editor.config.snap_to_grid = true;
+            state.editor.config.snap_step = 1.0;
+            state.editor.timeline.clock.duration_seconds = 2.0;
+            state.editor.timeline.snapshot_cache_step_seconds = 1.0;
+            state.editor.timeline.snapshot_cache_revision =
+                state.editor.timeline.simulation_revision;
+            state.editor.timeline.snapshot_cache = vec![
+                crate::state::editor_timeline::EditorTimelineSnapshot {
+                    position: [1.44, 0.0, 1.5],
+                    direction: SpawnDirection::Right,
+                },
+                crate::state::editor_timeline::EditorTimelineSnapshot {
+                    position: [1.5, 0.0, 1.56],
+                    direction: SpawnDirection::Forward,
+                },
+            ];
+
+            let cursor = state.editor.tap_path_cursor_near_world([1.5, 0.0, 1.55]);
+
+            assert_eq!(cursor[0], 1.0);
+            assert_eq!(cursor[2], 1.0);
         });
     }
 

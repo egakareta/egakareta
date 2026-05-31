@@ -14,6 +14,100 @@ use super::TAP_EPSILON_SECONDS;
 
 pub(crate) const MAX_TIMING_DIVISION_TAP_PREVIEWS: usize = 2048;
 
+fn lerp_position(start: [f32; 3], end: [f32; 3], alpha: f32) -> [f32; 3] {
+    [
+        start[0] + (end[0] - start[0]) * alpha,
+        start[1] + (end[1] - start[1]) * alpha,
+        start[2] + (end[2] - start[2]) * alpha,
+    ]
+}
+
+fn horizontal_distance(start: [f32; 3], end: [f32; 3]) -> f32 {
+    let dx = end[0] - start[0];
+    let dz = end[2] - start[2];
+    (dx * dx + dz * dz).sqrt()
+}
+
+pub(crate) fn timeline_turn_corner_position(
+    previous_position: [f32; 3],
+    previous_direction: SpawnDirection,
+    current_position: [f32; 3],
+    current_direction: SpawnDirection,
+) -> Option<[f32; 3]> {
+    if previous_direction == current_direction {
+        return None;
+    }
+
+    match (previous_direction, current_direction) {
+        (SpawnDirection::Forward, SpawnDirection::Right) => Some([
+            previous_position[0],
+            current_position[1],
+            current_position[2],
+        ]),
+        (SpawnDirection::Right, SpawnDirection::Forward) => Some([
+            current_position[0],
+            current_position[1],
+            previous_position[2],
+        ]),
+        _ => None,
+    }
+}
+
+pub(crate) fn timeline_axis_aligned_segment_split_fraction(
+    previous_position: [f32; 3],
+    corner_position: [f32; 3],
+    current_position: [f32; 3],
+) -> f32 {
+    let previous_length = horizontal_distance(previous_position, corner_position);
+    let current_length = horizontal_distance(corner_position, current_position);
+    let total_length = previous_length + current_length;
+    if total_length <= f32::EPSILON {
+        0.5
+    } else {
+        (previous_length / total_length).clamp(0.0, 1.0)
+    }
+}
+
+pub(crate) fn interpolate_timeline_sample_positions(
+    previous_position: [f32; 3],
+    previous_direction: SpawnDirection,
+    current_position: [f32; 3],
+    current_direction: SpawnDirection,
+    alpha: f32,
+) -> [f32; 3] {
+    let alpha = alpha.clamp(0.0, 1.0);
+    let Some(corner_position) = timeline_turn_corner_position(
+        previous_position,
+        previous_direction,
+        current_position,
+        current_direction,
+    ) else {
+        return lerp_position(previous_position, current_position, alpha);
+    };
+
+    let split_fraction = timeline_axis_aligned_segment_split_fraction(
+        previous_position,
+        corner_position,
+        current_position,
+    );
+    if alpha <= split_fraction {
+        let local_alpha = if split_fraction <= f32::EPSILON {
+            0.0
+        } else {
+            alpha / split_fraction
+        };
+        lerp_position(previous_position, corner_position, local_alpha)
+    } else {
+        let remaining_fraction = 1.0 - split_fraction;
+        let local_alpha = if remaining_fraction <= f32::EPSILON {
+            1.0
+        } else {
+            (alpha - split_fraction) / remaining_fraction
+        };
+        lerp_position(corner_position, current_position, local_alpha)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct TapDivisionPreview {
     pub(crate) time_seconds: f32,
