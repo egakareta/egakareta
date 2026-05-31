@@ -15,13 +15,25 @@ pub(crate) fn show_tapping_mode_bottom_panel(
 ) {
     ui.horizontal_wrapped(|ui| {
         ui.label("Tapping:");
-        if ui.button("Add tap at current time").clicked() {
+        if ui
+            .button(format!(
+                "{} Add tap at current time",
+                egui_phosphor::regular::PLUS_CIRCLE
+            ))
+            .clicked()
+        {
             commands.push(AppCommand::EditorAddTap);
         }
-        if ui.button("Remove tap").clicked() {
+        if ui
+            .button(format!("{} Remove tap", egui_phosphor::regular::TRASH))
+            .clicked()
+        {
             commands.push(AppCommand::EditorRemoveTap);
         }
-        if ui.button("Clear taps").clicked() {
+        if ui
+            .button(format!("{} Clear taps", egui_phosphor::regular::BROOM))
+            .clicked()
+        {
             commands.push(AppCommand::EditorClearTaps);
         }
     });
