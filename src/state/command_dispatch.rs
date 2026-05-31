@@ -5,6 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use super::runtime::EditorDirtyFlags;
 use super::State;
 use crate::commands::AppCommand;
 use crate::editor_domain::{timing_division_time_in_direction, TimingDivisionDirection};
@@ -230,6 +231,10 @@ impl State {
             return;
         }
 
+        if self.clear_editor_selection_for_escape() {
+            return;
+        }
+
         if self.editor.timeline.playback.playing {
             self.editor.timeline.playback.playing = false;
             self.editor.timeline.playback.runtime = None;
@@ -239,6 +244,26 @@ impl State {
         } else {
             self.back_to_menu();
         }
+    }
+
+    fn clear_editor_selection_for_escape(&mut self) -> bool {
+        let had_block_selection = self.has_block_selection();
+        let had_tap_selection = self.editor.selected_tap().is_some();
+
+        if had_block_selection {
+            self.editor.clear_block_selection();
+            self.editor.mark_dirty(EditorDirtyFlags {
+                rebuild_selection_overlays: true,
+                ..EditorDirtyFlags::default()
+            });
+        }
+
+        if had_tap_selection {
+            self.editor.set_selected_tap_index(None);
+            self.rebuild_tap_indicator_vertices();
+        }
+
+        had_block_selection || had_tap_selection
     }
 
     /// Translate a keyboard event into zero or more `AppCommand`s and
@@ -841,6 +866,39 @@ mod tests {
             assert!(!state.editor.timeline.playback.playing);
             assert_eq!(state.editor.ui.mode, EditorMode::Place);
             assert!(state.editor.runtime.interaction.last_mode.is_none());
+        });
+    }
+
+    #[test]
+    fn editor_escape_deselects_blocks_and_taps_before_playback_or_timeline() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.objects = vec![LevelObject {
+                position: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                block_id: "core/stone".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            }];
+            state.editor.ui.selected_block_indices = vec![0];
+            state.editor.timeline.taps.tap_times = vec![1.25];
+            state.editor.timeline.taps.tap_indicator_positions = vec![[0.25, 0.0, 0.75]];
+            state.editor.timeline.taps.selected_index = Some(0);
+            state.editor.timeline.clock.time_seconds = 2.0;
+            state.editor.timeline.playback.playing = true;
+
+            state.dispatch(AppCommand::EditorEscape);
+
+            assert!(state.editor.ui.selected_block_indices.is_empty());
+            assert!(state.editor.ui.selected_block_index.is_none());
+            assert_eq!(state.editor.timeline.taps.selected_index, None);
+            assert!(state.editor.timeline.playback.playing);
+            assert_eq!(state.editor.timeline.clock.time_seconds, 2.0);
+
+            state.dispatch(AppCommand::EditorEscape);
+
+            assert!(!state.editor.timeline.playback.playing);
+            assert_eq!(state.editor.timeline.clock.time_seconds, 2.0);
         });
     }
 
