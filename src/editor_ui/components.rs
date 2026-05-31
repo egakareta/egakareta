@@ -124,7 +124,9 @@ pub(crate) fn show_timeline_bar(
         }
         ui.add_space(4.0);
 
-        let available_width = ui.available_width();
+        let playtest_button_width = 72.0;
+        let available_width =
+            (ui.available_width() - playtest_button_width - ui.spacing().item_spacing.x).max(0.0);
         let timeline_height = 18.0;
         let (rect, response) = ui.allocate_exact_size(
             egui::vec2(available_width, timeline_height),
@@ -321,6 +323,18 @@ pub(crate) fn show_timeline_bar(
                     ));
                 }
             }
+        }
+
+        ui.add_space(4.0);
+        if ui
+            .add_sized(
+                [playtest_button_width, ui.spacing().interact_size.y],
+                egui::Button::new(format!("{} Test", egui_phosphor::regular::GAME_CONTROLLER)),
+            )
+            .on_hover_text("Start playtesting")
+            .clicked()
+        {
+            commands.push(AppCommand::EditorPlaytest);
         }
     });
 }
