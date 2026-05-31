@@ -557,12 +557,16 @@ impl State {
     /// If a block is successfully removed, the editor's visual objects and
     /// cursor vertices are synchronized to reflect the change.
     pub fn editor_remove_block(&mut self) {
-        if self.phase == AppPhase::Editor {
-            self.record_editor_history_state();
-            if self.editor.remove_selected() {
-                self.sync_editor_objects();
-                self.rebuild_editor_cursor_vertices();
-            }
+        if self.phase != AppPhase::Editor
+            || self.editor_effective_mode_for_playback() == EditorMode::Tapping
+        {
+            return;
+        }
+
+        self.record_editor_history_state();
+        if self.editor.remove_selected() {
+            self.sync_editor_objects();
+            self.rebuild_editor_cursor_vertices();
         }
     }
 
@@ -726,6 +730,24 @@ mod tests {
             state.editor_redo();
             assert_eq!(state.editor.objects.len(), 1);
             assert_eq!(state.editor.objects[0].position, [2.0, 0.0, 0.0]);
+        });
+    }
+
+    #[test]
+    fn remove_block_is_ignored_in_tapping_mode() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Tapping;
+            state.editor.objects = vec![test_block([0.0, 0.0, 0.0]), test_block([2.0, 0.0, 0.0])];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+
+            state.editor_remove_block();
+
+            assert_eq!(state.editor.objects.len(), 2);
+            assert_eq!(state.editor.objects[0].position, [0.0, 0.0, 0.0]);
+            assert_eq!(state.editor.objects[1].position, [2.0, 0.0, 0.0]);
         });
     }
 
