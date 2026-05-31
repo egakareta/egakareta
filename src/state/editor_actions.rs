@@ -356,7 +356,7 @@ impl State {
         };
 
         self.editor.set_selected_tap_index(Some(tap_index));
-        self.set_editor_timeline_time_seconds(time_seconds);
+        self.set_editor_timeline_time_seconds_preserving_editor_camera(time_seconds);
         self.editor.ui.cursor = pick.cursor;
         true
     }

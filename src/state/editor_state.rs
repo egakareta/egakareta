@@ -621,6 +621,7 @@ impl State {
     }
 
     pub(crate) fn set_editor_mode(&mut self, mode: EditorMode) {
+        self.editor.runtime.interaction.hovered_tap_division = None;
         self.editor.set_mode(mode);
         self.rebuild_editor_gizmo_vertices();
         self.rebuild_editor_hover_outline_vertices();
@@ -918,6 +919,17 @@ impl State {
                 self.resync_editor_timeline_playback_audio();
             }
         }
+    }
+
+    pub(crate) fn set_editor_timeline_time_seconds_preserving_editor_camera(
+        &mut self,
+        time_seconds: f32,
+    ) {
+        let editor_pan = self.editor.camera.editor_pan;
+        let editor_target_z = self.editor.camera.editor_target_z;
+        self.set_editor_timeline_time_seconds(time_seconds);
+        self.editor.camera.editor_pan = editor_pan;
+        self.editor.camera.editor_target_z = editor_target_z;
     }
 
     fn apply_editor_timeline_preview_from_cache(&mut self) {

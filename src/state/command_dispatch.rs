@@ -1444,6 +1444,10 @@ mod tests {
             state.editor.timeline.taps.tap_times = vec![1.25];
             state.editor.timeline.taps.tap_indicator_positions = vec![[0.25, 0.0, 0.75]];
             state.editor.timeline.taps.selected_index = None;
+            state.editor.camera.editor_pan = [4.0, -3.0];
+            state.editor.camera.editor_target_z = 2.5;
+            let original_pan = state.editor.camera.editor_pan;
+            let original_target_z = state.editor.camera.editor_target_z;
 
             let viewport = Vec2::new(
                 state.render.gpu.config.width as f32,
@@ -1468,6 +1472,8 @@ mod tests {
             assert_eq!(state.editor.timeline.taps.selected_index, Some(0));
             assert_eq!(state.editor.timeline.clock.time_seconds, 1.25);
             assert_eq!(state.editor.ui.cursor, [0.25, 0.0, 0.75]);
+            assert_eq!(state.editor.camera.editor_pan, original_pan);
+            assert_eq!(state.editor.camera.editor_target_z, original_target_z);
 
             let view = state.editor_ui_view_model();
             let selected_tap = view
@@ -1522,6 +1528,18 @@ mod tests {
                 x: division_screen.x as f64,
                 y: division_screen.y as f64,
             });
+            let hovered_division = state
+                .editor
+                .runtime
+                .interaction
+                .hovered_tap_division
+                .expect("division preview should be hovered after pointer move");
+            assert!((hovered_division.time_seconds - division.time_seconds).abs() < 0.001);
+            assert_eq!(
+                hovered_division.indicator_position,
+                division.indicator_position
+            );
+
             state.process_input_event(InputEvent::MouseButton {
                 button: 0,
                 pressed: true,

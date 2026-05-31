@@ -15,8 +15,8 @@ use crate::mesh::{
     build_block_geometry, build_block_geometry_for_object, build_block_geometry_from_refs,
     build_camera_trigger_marker_vertices, build_colored_tap_indicator_vertices,
     build_editor_cursor_vertices, build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
-    build_editor_selection_outline_vertices, build_spawn_marker_vertices, GizmoParams,
-    MeshGeometry,
+    build_editor_selection_outline_vertices, build_spawn_marker_vertices,
+    build_tap_division_preview_vertices, GizmoParams, MeshGeometry,
 };
 use crate::state::render::EditorOutlineInstance;
 use crate::types::{AppPhase, EditorMode, GizmoPart, LevelObject, SpawnDirection};
@@ -898,22 +898,41 @@ impl State {
             return;
         }
 
-        let mut indicators: Vec<([f32; 3], [f32; 4])> = self
-            .editor
-            .timing_division_tap_previews()
+        let hovered_division = self.editor.runtime.interaction.hovered_tap_division;
+        let previews = self.editor.timing_division_tap_previews().to_vec();
+        let tap_positions = self.editor.timeline.taps.tap_indicator_positions.clone();
+        let mut preview_indicators: Vec<([f32; 3], [f32; 4])> = previews
             .iter()
             .copied()
-            .map(|preview| (preview.indicator_position, [0.05, 0.48, 0.95, 0.72]))
+            .filter(|preview| {
+                !tap_positions
+                    .iter()
+                    .any(|position| positions_match(*position, preview.indicator_position))
+            })
+            .map(|preview| {
+                let is_hovered = hovered_division.is_some_and(|hovered| {
+                    (hovered.time_seconds - preview.time_seconds).abs() <= 0.001
+                        && positions_match(hovered.indicator_position, preview.indicator_position)
+                });
+                let alpha = if is_hovered { 0.95 } else { 0.24 };
+                (preview.indicator_position, [0.05, 0.48, 0.95, alpha])
+            })
             .collect();
-        indicators.extend(
-            self.editor
-                .timeline
-                .taps
-                .tap_indicator_positions
-                .iter()
-                .copied()
-                .map(|position| (position, [0.0, 0.0, 0.0, 1.0])),
-        );
+        preview_indicators.sort_unstable_by(|a, b| {
+            a.0[0]
+                .total_cmp(&b.0[0])
+                .then(a.0[1].total_cmp(&b.0[1]))
+                .then(a.0[2].total_cmp(&b.0[2]))
+                .then(a.1[3].total_cmp(&b.1[3]))
+        });
+        preview_indicators
+            .dedup_by(|a, b| positions_match(a.0, b.0) && (a.1[3] - b.1[3]).abs() < 0.001);
+
+        let mut indicators: Vec<([f32; 3], [f32; 4])> = tap_positions
+            .iter()
+            .copied()
+            .map(|position| (position, [0.0, 0.0, 0.0, 1.0]))
+            .collect();
         indicators.sort_unstable_by(|a, b| {
             a.0[0]
                 .total_cmp(&b.0[0])
@@ -928,12 +947,23 @@ impl State {
                 && (a.1[3] - b.1[3]).abs() < 0.001
         });
 
-        if indicators.is_empty() {
+        if indicators.is_empty() && preview_indicators.is_empty() {
             self.render.meshes.tap_indicators.clear();
             return;
         }
 
-        let vertices = build_colored_tap_indicator_vertices(&indicators);
+        if indicators.is_empty() {
+            let vertices = build_tap_division_preview_vertices(&preview_indicators);
+            self.render.meshes.tap_indicators.replace_with_vertices(
+                &self.render.gpu.device,
+                "Tap Indicator Vertex Buffer",
+                &vertices,
+            );
+            return;
+        }
+
+        let mut vertices = build_tap_division_preview_vertices(&preview_indicators);
+        vertices.extend(build_colored_tap_indicator_vertices(&indicators));
         self.render.meshes.tap_indicators.replace_with_vertices(
             &self.render.gpu.device,
             "Tap Indicator Vertex Buffer",
@@ -954,6 +984,12 @@ impl State {
         self.editor.timeline.preview.direction = direction;
         self.render.meshes.editor_preview_player.clear();
     }
+}
+
+fn positions_match(left: [f32; 3], right: [f32; 3]) -> bool {
+    (left[0] - right[0]).abs() < 0.001
+        && (left[1] - right[1]).abs() < 0.001
+        && (left[2] - right[2]).abs() < 0.001
 }
 
 #[cfg(test)]

@@ -8,7 +8,7 @@
 use crate::mesh::advanced_shapes::{append_cone, append_sphere};
 use crate::mesh::shapes::{append_prism, append_quad};
 use crate::types::{CameraTrigger, CameraTriggerMode, Vertex};
-use glam::Vec3;
+use glam::{Vec2, Vec3};
 
 pub(crate) fn build_trail_vertices(points: &[[f32; 3]], game_over: bool) -> Vec<Vertex> {
     puffin::profile_scope!("BuildTrailVertices");
@@ -211,6 +211,67 @@ pub(crate) fn build_colored_tap_indicator_vertices(
     vertices
 }
 
+pub(crate) fn build_tap_division_preview_vertices(
+    previews: &[([f32; 3], [f32; 4])],
+) -> Vec<Vertex> {
+    puffin::profile_scope!("BuildTapDivisionPreviewVertices");
+    let mut vertices = Vec::new();
+    let inset = 0.18;
+    let thickness = 0.06;
+
+    for &(pos, color) in previews {
+        let x_min = pos[0] + inset;
+        let x_max = pos[0] + 1.0 - inset;
+        let z_min = pos[2] + inset;
+        let z_max = pos[2] + 1.0 - inset;
+        let y = pos[1] + 0.1;
+
+        append_flat_xz_segment(
+            &mut vertices,
+            Vec2::new(x_min, z_min),
+            Vec2::new(x_max, z_max),
+            y,
+            thickness,
+            color,
+        );
+        append_flat_xz_segment(
+            &mut vertices,
+            Vec2::new(x_min, z_max),
+            Vec2::new(x_max, z_min),
+            y,
+            thickness,
+            color,
+        );
+    }
+
+    vertices
+}
+
+fn append_flat_xz_segment(
+    vertices: &mut Vec<Vertex>,
+    start: Vec2,
+    end: Vec2,
+    y: f32,
+    thickness: f32,
+    color: [f32; 4],
+) {
+    let delta = end - start;
+    let length = delta.length();
+    if length <= f32::EPSILON {
+        return;
+    }
+
+    let normal = Vec2::new(-delta.y, delta.x) / length * (thickness * 0.5);
+    append_quad(
+        vertices,
+        [start.x + normal.x, y, start.y + normal.y],
+        [end.x + normal.x, y, end.y + normal.y],
+        [end.x - normal.x, y, end.y - normal.y],
+        [start.x - normal.x, y, start.y - normal.y],
+        color,
+    );
+}
+
 pub(crate) fn build_camera_trigger_marker_vertices(
     camera_triggers: &[CameraTrigger],
     selected_index: Option<usize>,
@@ -295,7 +356,9 @@ pub(crate) fn build_camera_trigger_marker_vertices(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_trail_vertices, build_trail_vertices_with_alpha};
+    use super::{
+        build_tap_division_preview_vertices, build_trail_vertices, build_trail_vertices_with_alpha,
+    };
     use crate::types::Vertex;
 
     const PRISM_VERTEX_COUNT: usize = 36;
@@ -482,5 +545,39 @@ mod tests {
             game_over_first[2] < normal_first[2],
             "game over trail should reduce blue channel"
         );
+    }
+
+    #[test]
+    fn tap_division_preview_vertices_build_translucent_x_crosses() {
+        let color = [0.05, 0.48, 0.95, 0.24];
+        let vertices = build_tap_division_preview_vertices(&[([2.0, 1.0, 3.0], color)]);
+
+        assert_eq!(vertices.len(), 12);
+        assert!(vertices.iter().all(|vertex| vertex.color == color));
+        assert!(vertices
+            .iter()
+            .all(|vertex| (vertex.position[1] - 1.1).abs() <= f32::EPSILON));
+
+        let min_x = vertices
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::INFINITY, f32::min);
+        let max_x = vertices
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+        let min_z = vertices
+            .iter()
+            .map(|vertex| vertex.position[2])
+            .fold(f32::INFINITY, f32::min);
+        let max_z = vertices
+            .iter()
+            .map(|vertex| vertex.position[2])
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        assert!(min_x > 2.0);
+        assert!(max_x < 3.0);
+        assert!(min_z > 3.0);
+        assert!(max_z < 4.0);
     }
 }

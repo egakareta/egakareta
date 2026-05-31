@@ -12,7 +12,8 @@ mod picking;
 mod selection;
 
 use crate::types::{
-    EditorMode, GizmoAxis, GizmoDragKind, LevelObject, SpawnMetadata, TimedTrigger,
+    EditorMode, EditorTapDivisionPick, GizmoAxis, GizmoDragKind, LevelObject, SpawnMetadata,
+    TimedTrigger,
 };
 
 #[derive(Clone)]
@@ -70,6 +71,7 @@ pub(crate) struct EditorClipboard {
 pub(crate) struct EditorInteractionState {
     pub(crate) gizmo_drag: Option<EditorGizmoDrag>,
     pub(crate) hovered_gizmo: Option<(GizmoDragKind, GizmoAxis)>,
+    pub(crate) hovered_tap_division: Option<EditorTapDivisionPick>,
     pub(crate) block_drag: Option<EditorBlockDrag>,
     pub(crate) clipboard: Option<EditorClipboard>,
     pub(crate) last_mode: Option<EditorMode>,
@@ -80,6 +82,7 @@ impl EditorInteractionState {
         Self {
             gizmo_drag: None,
             hovered_gizmo: None,
+            hovered_tap_division: None,
             block_drag: None,
             clipboard: None,
             last_mode: None,
