@@ -1,0 +1,13 @@
+{
+    "id": "core/solid",
+    "display_name": "Solid",
+    "render": {
+        "profile": "solid",
+        "icon_dimetric_projection": true
+    },
+    "behavior": {
+        "collision": "solid",
+        "support_surface": true
+    },
+    "placeable": true
+}
