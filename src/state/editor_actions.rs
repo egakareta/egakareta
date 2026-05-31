@@ -24,12 +24,12 @@ fn distance_sq(left: [f32; 3], right: [f32; 3]) -> f32 {
     dx * dx + dy * dy + dz * dz
 }
 
-fn closest_point_on_segment(start: [f32; 3], end: [f32; 3], target: [f32; 3]) -> [f32; 3] {
+fn closest_point_on_segment(start: [f32; 3], end: [f32; 3], target: [f32; 3]) -> ([f32; 3], f32) {
     let segment = [end[0] - start[0], end[1] - start[1], end[2] - start[2]];
     let segment_length_sq =
         segment[0] * segment[0] + segment[1] * segment[1] + segment[2] * segment[2];
     if segment_length_sq <= f32::EPSILON {
-        return start;
+        return (start, 0.0);
     }
 
     let target_offset = [
@@ -43,11 +43,14 @@ fn closest_point_on_segment(start: [f32; 3], end: [f32; 3], target: [f32; 3]) ->
         / segment_length_sq)
         .clamp(0.0, 1.0);
 
-    [
-        start[0] + segment[0] * alpha,
-        start[1] + segment[1] * alpha,
-        start[2] + segment[2] * alpha,
-    ]
+    (
+        [
+            start[0] + segment[0] * alpha,
+            start[1] + segment[1] * alpha,
+            start[2] + segment[2] * alpha,
+        ],
+        alpha,
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -66,6 +69,12 @@ fn segment_path_axis(start: [f32; 3], end: [f32; 3]) -> Option<PathAxis> {
     } else {
         Some(PathAxis::Z)
     }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct TapPathPick {
+    pub(crate) indicator_position: [f32; 3],
+    pub(crate) time_seconds: f32,
 }
 
 impl EditorSubsystem {
@@ -123,65 +132,85 @@ impl EditorSubsystem {
         &self.timeline.tap_division_preview_cache
     }
 
-    pub(crate) fn tap_path_cursor_near_world(&self, target_world: [f32; 3]) -> [f32; 3] {
+    pub(crate) fn tap_path_pick_near_world(&self, target_world: [f32; 3]) -> Option<TapPathPick> {
         let cache = &self.timeline.snapshot_cache;
         if cache.is_empty()
             || self.timeline.snapshot_cache_revision != self.timeline.simulation_revision
         {
-            return self.tap_indicator_position_from_world(self.timeline.preview.position);
+            return None;
         }
-
-        const CURSOR_PATH_LOOKUP_WINDOW_SECONDS: f32 = 1.5;
 
         let step_seconds = self.timeline.snapshot_cache_step_seconds.max(1.0 / 480.0);
-        let duration_seconds = self.timeline.clock.duration_seconds.max(0.0);
-        let seed_time = self
-            .timeline
-            .clock
-            .time_seconds
-            .clamp(0.0, duration_seconds);
-        let start_index = ((seed_time - CURSOR_PATH_LOOKUP_WINDOW_SECONDS).max(0.0) / step_seconds)
-            .floor() as usize;
-        let end_index = (((seed_time + CURSOR_PATH_LOOKUP_WINDOW_SECONDS).min(duration_seconds)
-            / step_seconds)
-            .ceil() as usize)
-            .min(cache.len().saturating_sub(1));
-
-        if start_index > end_index {
-            return self.tap_indicator_position_from_world(self.timeline.preview.position);
+        if cache.len() == 1 {
+            return Some(TapPathPick {
+                indicator_position: self.tap_indicator_position_from_world(cache[0].position),
+                time_seconds: 0.0,
+            });
         }
 
-        let mut best_position = cache[start_index].position;
+        let mut best_position = cache[0].position;
+        let mut best_index = 0;
+        let mut best_alpha = 0.0;
         let mut best_axis = None;
         let mut best_distance_sq = f32::INFINITY;
 
-        for index in start_index..end_index {
+        for index in 0..cache.len().saturating_sub(1) {
             let previous = cache[index].position;
             let current = cache[index + 1].position;
-            let candidate = closest_point_on_segment(previous, current, target_world);
+            let (candidate, alpha) = closest_point_on_segment(previous, current, target_world);
             let candidate_distance_sq = distance_sq(candidate, target_world);
             if candidate_distance_sq < best_distance_sq {
                 best_distance_sq = candidate_distance_sq;
                 best_position = candidate;
+                best_index = index;
+                best_alpha = alpha;
                 best_axis = segment_path_axis(previous, current);
             }
         }
 
         let mut indicator_position = self.tap_indicator_position_from_world(best_position);
+        let mut time_seconds = (best_index as f32 + best_alpha) * step_seconds;
         if self.effective_snap_to_grid() {
             let snap_step = self.config.snap_step.max(0.05);
             match best_axis {
                 Some(PathAxis::X) => {
                     indicator_position[0] = (indicator_position[0] / snap_step).floor() * snap_step;
+                    let snapped_world_x = indicator_position[0] + 0.5;
+                    let previous = cache[best_index].position;
+                    let current = cache[best_index + 1].position;
+                    let segment_x = current[0] - previous[0];
+                    if segment_x.abs() > f32::EPSILON {
+                        best_alpha = ((snapped_world_x - previous[0]) / segment_x).clamp(0.0, 1.0);
+                        time_seconds = (best_index as f32 + best_alpha) * step_seconds;
+                    }
                 }
                 Some(PathAxis::Z) => {
                     indicator_position[2] = (indicator_position[2] / snap_step).floor() * snap_step;
+                    let snapped_world_z = indicator_position[2] + 0.5;
+                    let previous = cache[best_index].position;
+                    let current = cache[best_index + 1].position;
+                    let segment_z = current[2] - previous[2];
+                    if segment_z.abs() > f32::EPSILON {
+                        best_alpha = ((snapped_world_z - previous[2]) / segment_z).clamp(0.0, 1.0);
+                        time_seconds = (best_index as f32 + best_alpha) * step_seconds;
+                    }
                 }
                 None => {}
             }
         }
 
-        indicator_position
+        Some(TapPathPick {
+            indicator_position,
+            time_seconds: time_seconds.clamp(0.0, self.timeline.clock.duration_seconds.max(0.0)),
+        })
+    }
+
+    pub(crate) fn tap_path_cursor_near_world(&self, target_world: [f32; 3]) -> [f32; 3] {
+        self.tap_path_pick_near_world(target_world)
+            .map(|pick| pick.indicator_position)
+            .unwrap_or_else(|| {
+                self.tap_indicator_position_from_world(self.timeline.preview.position)
+            })
     }
 
     pub(crate) fn toggle_tap_at_cursor(&mut self) -> (Option<f32>, bool) {
@@ -258,19 +287,23 @@ impl EditorSubsystem {
         {
             seed_time
         } else {
-            derive_timeline_time_for_world_target_near_time(
-                self.spawn.position,
-                self.spawn.direction,
-                &self.timeline.taps.tap_times,
-                duration_seconds,
-                &self.objects,
-                target_world,
-                TimelineNearSearch {
-                    seed_time,
-                    window_seconds: 1.5,
-                },
-            )
-            .clamp(0.0, duration_seconds)
+            self.tap_path_pick_near_world(target_world)
+                .map(|pick| pick.time_seconds)
+                .unwrap_or_else(|| {
+                    derive_timeline_time_for_world_target_near_time(
+                        self.spawn.position,
+                        self.spawn.direction,
+                        &self.timeline.taps.tap_times,
+                        duration_seconds,
+                        &self.objects,
+                        target_world,
+                        TimelineNearSearch {
+                            seed_time,
+                            window_seconds: 1.5,
+                        },
+                    )
+                    .clamp(0.0, duration_seconds)
+                })
         };
 
         let selected_index = add_tap_with_indicator(
@@ -1094,6 +1127,34 @@ mod tests {
                 .tap_path_cursor_near_world([3.4, 0.0, 4.5]);
             assert_eq!(right_cursor[0], 2.0);
             assert_eq!(right_cursor[2], 1.0);
+        });
+    }
+
+    #[test]
+    fn toggle_tap_at_cursor_can_add_distant_cached_path_tap() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Tapping;
+            state.editor.config.snap_to_grid = true;
+            state.editor.config.snap_step = 1.0;
+            state.editor.timeline.clock.duration_seconds = 8.0;
+            state.set_editor_timeline_time_seconds(0.1);
+            state.editor.ui.cursor = [0.0, 0.0, 32.0];
+
+            let (added_time, added) = state.editor.toggle_tap_at_cursor();
+
+            assert!(added);
+            let added_time = added_time.expect("tap should be added");
+            assert!(
+                (added_time - 4.0).abs() < 0.02,
+                "expected distant tap near 4.0s, got {added_time}"
+            );
+            assert_eq!(state.editor.timeline.taps.tap_times, vec![added_time]);
+            assert_eq!(
+                state.editor.timeline.taps.tap_indicator_positions,
+                vec![[0.0, 0.0, 32.0]]
+            );
         });
     }
 
