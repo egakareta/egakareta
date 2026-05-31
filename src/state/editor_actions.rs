@@ -261,7 +261,7 @@ impl State {
             }
         }
         let current_time = self.editor.timeline.clock.time_seconds;
-        self.set_editor_timeline_time_seconds(current_time);
+        self.set_editor_timeline_time_seconds_preserving_editor_camera(current_time);
         self.resync_editor_timeline_playback_audio();
         if let Some(cursor) = cursor_override {
             self.editor.ui.cursor = cursor;
@@ -345,7 +345,9 @@ impl State {
                 self.editor.set_selected_tap_index(selected_index);
                 self.editor.ui.cursor = division.indicator_position;
                 self.editor.invalidate_samples_from(division.time_seconds);
-                self.set_editor_timeline_time_seconds(division.time_seconds);
+                self.set_editor_timeline_time_seconds_preserving_editor_camera(
+                    division.time_seconds,
+                );
                 self.refresh_editor_after_tap_change(Some(division.indicator_position));
                 return true;
             }

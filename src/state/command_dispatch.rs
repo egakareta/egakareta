@@ -1501,6 +1501,10 @@ mod tests {
                 time_signature_denominator: 4,
             }];
             state.editor.config.snap_to_grid = true;
+            state.editor.camera.editor_pan = [4.0, -3.0];
+            state.editor.camera.editor_target_z = 2.5;
+            let original_pan = state.editor.camera.editor_pan;
+            let original_target_z = state.editor.camera.editor_target_z;
 
             let division = state
                 .editor
@@ -1553,6 +1557,8 @@ mod tests {
             );
             assert_eq!(state.editor.timeline.taps.selected_index, Some(0));
             assert_eq!(state.editor.ui.cursor, division.indicator_position);
+            assert_eq!(state.editor.camera.editor_pan, original_pan);
+            assert_eq!(state.editor.camera.editor_target_z, original_target_z);
         });
     }
 

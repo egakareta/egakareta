@@ -1636,6 +1636,10 @@ mod tests {
                 state.editor.timeline.preview.direction,
                 SpawnDirection::Forward
             );
+            state.editor.camera.editor_pan = [8.0, -6.0];
+            state.editor.camera.editor_target_z = 3.0;
+            let original_pan = state.editor.camera.editor_pan;
+            let original_target_z = state.editor.camera.editor_target_z;
 
             state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
             state.editor_add_tap();
@@ -1645,6 +1649,8 @@ mod tests {
                 state.editor.timeline.preview.direction,
                 SpawnDirection::Right
             );
+            assert_eq!(state.editor.camera.editor_pan, original_pan);
+            assert_eq!(state.editor.camera.editor_target_z, original_target_z);
 
             state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
             state.editor_remove_tap();
@@ -1654,6 +1660,8 @@ mod tests {
                 state.editor.timeline.preview.direction,
                 SpawnDirection::Forward
             );
+            assert_eq!(state.editor.camera.editor_pan, original_pan);
+            assert_eq!(state.editor.camera.editor_target_z, original_target_z);
         });
     }
 
