@@ -1530,7 +1530,23 @@ fn handle_primary_click_covers_tapping_trigger_and_timing_mode_paths() {
         assert!(state.editor.ui.marquee_start_screen.is_none());
 
         state.editor.set_left_mouse_down(false);
-        state.handle_primary_click(260.0, 200.0);
+        let selected_tap_position = state.editor.timeline.taps.tap_indicator_positions[0];
+        let viewport = Vec2::new(
+            state.render.gpu.config.width as f32,
+            state.render.gpu.config.height as f32,
+        );
+        let selected_tap_screen = state
+            .editor
+            .world_to_screen_v(
+                Vec3::new(
+                    selected_tap_position[0] + 0.5,
+                    selected_tap_position[1] + 0.1,
+                    selected_tap_position[2] + 0.5,
+                ),
+                viewport,
+            )
+            .expect("selected tap should project to the screen");
+        state.handle_primary_click(selected_tap_screen.x as f64, selected_tap_screen.y as f64);
         assert!(state.editor_tap_times().is_empty());
         assert!(state.editor.timeline.taps.selected_index.is_none());
 

@@ -1563,6 +1563,46 @@ mod tests {
     }
 
     #[test]
+    fn tapping_mode_pointer_snaps_cursor_to_snake_path() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = new_editor_state().await;
+            state.dispatch(AppCommand::EditorSetMode(EditorMode::Tapping));
+            state.editor.timeline.clock.duration_seconds = 4.0;
+            state.set_editor_timeline_time_seconds(1.0 / crate::game::BASE_PLAYER_SPEED);
+            state.editor.camera.editor_pan = [4.0, -3.0];
+            state.editor.camera.editor_target_z = 2.5;
+
+            let viewport = Vec2::new(
+                state.render.gpu.config.width as f32,
+                state.render.gpu.config.height as f32,
+            );
+            let off_path_world = glam::Vec3::new(4.5, 0.0, 1.5);
+            let off_path_screen = state
+                .editor
+                .world_to_screen_v(off_path_world, viewport)
+                .expect("off-path ground point should project to the screen");
+
+            state.process_input_event(InputEvent::PointerMoved {
+                x: off_path_screen.x as f64,
+                y: off_path_screen.y as f64,
+            });
+
+            assert!(
+                state.editor.ui.cursor[0].abs() < 0.05,
+                "cursor should be constrained to the forward snake lane, got {:?}",
+                state.editor.ui.cursor
+            );
+            assert!(
+                (state.editor.ui.cursor[2] - 1.0).abs() < 0.1,
+                "cursor should stay near the timeline seed position, got {:?}",
+                state.editor.ui.cursor
+            );
+        });
+    }
+
+    #[test]
     fn test_select_mode_click_selects_camera_trigger_marker() {
         pollster::block_on(async {
             use crate::commands::InputEvent;

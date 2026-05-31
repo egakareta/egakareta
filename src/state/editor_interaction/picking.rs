@@ -157,9 +157,12 @@ impl EditorSubsystem {
             return None;
         }
 
-        let next_cursor = cursor_override.unwrap_or_else(|| {
+        let mut next_cursor = cursor_override.unwrap_or_else(|| {
             self.cursor_from_ray_hit(ray_origin + ray_dir * min_t, best_hit_normal)
         });
+        if self.ui.mode == EditorMode::Tapping && cursor_override.is_none() {
+            next_cursor = self.tap_path_cursor_near(next_cursor);
+        }
 
         Some(EditorPickResult {
             cursor: next_cursor,

@@ -17,6 +17,39 @@ use crate::editor_domain::{
 use crate::game::{GameState, TimelineSimulationRuntime};
 use crate::types::{AppPhase, EditorMode};
 
+fn distance_sq(left: [f32; 3], right: [f32; 3]) -> f32 {
+    let dx = left[0] - right[0];
+    let dy = left[1] - right[1];
+    let dz = left[2] - right[2];
+    dx * dx + dy * dy + dz * dz
+}
+
+fn closest_point_on_segment(start: [f32; 3], end: [f32; 3], target: [f32; 3]) -> [f32; 3] {
+    let segment = [end[0] - start[0], end[1] - start[1], end[2] - start[2]];
+    let segment_length_sq =
+        segment[0] * segment[0] + segment[1] * segment[1] + segment[2] * segment[2];
+    if segment_length_sq <= f32::EPSILON {
+        return start;
+    }
+
+    let target_offset = [
+        target[0] - start[0],
+        target[1] - start[1],
+        target[2] - start[2],
+    ];
+    let alpha = ((target_offset[0] * segment[0]
+        + target_offset[1] * segment[1]
+        + target_offset[2] * segment[2])
+        / segment_length_sq)
+        .clamp(0.0, 1.0);
+
+    [
+        start[0] + segment[0] * alpha,
+        start[1] + segment[1] * alpha,
+        start[2] + segment[2] * alpha,
+    ]
+}
+
 impl EditorSubsystem {
     const TAP_DIVISION_PREVIEW_LOOK_BEHIND_SECONDS: f32 = 4.0;
     const TAP_DIVISION_PREVIEW_LOOK_AHEAD_SECONDS: f32 = 20.0;
@@ -70,6 +103,56 @@ impl EditorSubsystem {
         }
 
         &self.timeline.tap_division_preview_cache
+    }
+
+    pub(crate) fn tap_path_cursor_near(&self, candidate_cursor: [f32; 3]) -> [f32; 3] {
+        let cache = &self.timeline.snapshot_cache;
+        if cache.is_empty()
+            || self.timeline.snapshot_cache_revision != self.timeline.simulation_revision
+        {
+            return self.tap_indicator_position_from_world(self.timeline.preview.position);
+        }
+
+        const CURSOR_PATH_LOOKUP_WINDOW_SECONDS: f32 = 1.5;
+
+        let step_seconds = self.timeline.snapshot_cache_step_seconds.max(1.0 / 480.0);
+        let duration_seconds = self.timeline.clock.duration_seconds.max(0.0);
+        let seed_time = self
+            .timeline
+            .clock
+            .time_seconds
+            .clamp(0.0, duration_seconds);
+        let start_index = ((seed_time - CURSOR_PATH_LOOKUP_WINDOW_SECONDS).max(0.0) / step_seconds)
+            .floor() as usize;
+        let end_index = (((seed_time + CURSOR_PATH_LOOKUP_WINDOW_SECONDS).min(duration_seconds)
+            / step_seconds)
+            .ceil() as usize)
+            .min(cache.len().saturating_sub(1));
+
+        if start_index > end_index {
+            return self.tap_indicator_position_from_world(self.timeline.preview.position);
+        }
+
+        let target_world = [
+            candidate_cursor[0] + 0.5,
+            candidate_cursor[1],
+            candidate_cursor[2] + 0.5,
+        ];
+        let mut best_position = cache[start_index].position;
+        let mut best_distance_sq = distance_sq(best_position, target_world);
+
+        for index in start_index..end_index {
+            let previous = cache[index].position;
+            let current = cache[index + 1].position;
+            let candidate = closest_point_on_segment(previous, current, target_world);
+            let candidate_distance_sq = distance_sq(candidate, target_world);
+            if candidate_distance_sq < best_distance_sq {
+                best_distance_sq = candidate_distance_sq;
+                best_position = candidate;
+            }
+        }
+
+        self.tap_indicator_position_from_world(best_position)
     }
 
     pub(crate) fn toggle_tap_at_cursor(&mut self) -> (Option<f32>, bool) {
