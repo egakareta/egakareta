@@ -78,9 +78,6 @@ pub(crate) struct TapPathPick {
 }
 
 impl EditorSubsystem {
-    const TAP_DIVISION_PREVIEW_LOOK_BEHIND_SECONDS: f32 = 4.0;
-    const TAP_DIVISION_PREVIEW_LOOK_AHEAD_SECONDS: f32 = 20.0;
-
     fn sync_tap_indicators_to_spawn(&mut self) {
         let selected_index = self.timeline.taps.selected_index;
         self.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
@@ -94,14 +91,7 @@ impl EditorSubsystem {
 
     pub(crate) fn timing_division_tap_previews(&mut self) -> &[TapDivisionPreview] {
         let duration_seconds = self.timeline.clock.duration_seconds.max(0.0);
-        let preview_start = (self.timeline.clock.time_seconds
-            - Self::TAP_DIVISION_PREVIEW_LOOK_BEHIND_SECONDS)
-            .clamp(0.0, duration_seconds);
-        let preview_end = (self.timeline.clock.time_seconds
-            + Self::TAP_DIVISION_PREVIEW_LOOK_AHEAD_SECONDS)
-            .clamp(preview_start, duration_seconds);
-
-        let window = (preview_start, preview_end);
+        let window = (0.0, duration_seconds);
         let cache_is_current = self.timeline.tap_division_preview_cache_revision
             == self.timeline.simulation_revision
             && self.timeline.tap_division_preview_cache_timing_revision == self.timing.revision
@@ -118,8 +108,8 @@ impl EditorSubsystem {
                 &self.timing.timing_points,
                 duration_seconds,
                 TapDivisionPreviewRange {
-                    start_seconds: preview_start,
-                    end_seconds: preview_end,
+                    start_seconds: window.0,
+                    end_seconds: window.1,
                 },
                 &self.objects,
             );
@@ -883,7 +873,7 @@ mod tests {
     use super::State;
     use crate::editor_domain::derive_tap_indicator_positions;
     use crate::game::TimelineSimulationRuntime;
-    use crate::types::{AppPhase, EditorMode, LevelObject, SpawnDirection};
+    use crate::types::{AppPhase, EditorMode, LevelObject, SpawnDirection, TimingPoint};
 
     fn test_block(position: [f32; 3]) -> LevelObject {
         LevelObject {
@@ -1127,6 +1117,30 @@ mod tests {
                 .tap_path_cursor_near_world([3.4, 0.0, 4.5]);
             assert_eq!(right_cursor[0], 2.0);
             assert_eq!(right_cursor[2], 1.0);
+        });
+    }
+
+    #[test]
+    fn timing_division_previews_include_distant_timeline_times() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Tapping;
+            state.editor.timeline.clock.duration_seconds = 60.0;
+            state.editor.timeline.clock.time_seconds = 0.0;
+            state.editor.timing.timing_points = vec![TimingPoint {
+                time_seconds: 0.0,
+                bpm: 120.0,
+                time_signature_numerator: 4,
+                time_signature_denominator: 4,
+            }];
+
+            let previews = state.editor.timing_division_tap_previews();
+
+            assert!(previews.iter().any(|preview| {
+                (preview.time_seconds - 45.0).abs() <= 0.001
+                    && (preview.indicator_position[2] - 360.0).abs() < 0.05
+            }));
         });
     }
 

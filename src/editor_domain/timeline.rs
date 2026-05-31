@@ -12,7 +12,7 @@ use crate::types::{LevelObject, SpawnDirection, TimedTrigger, TimingPoint};
 
 use super::TAP_EPSILON_SECONDS;
 
-pub(crate) const MAX_TIMING_DIVISION_TAP_PREVIEWS: usize = 512;
+pub(crate) const MAX_TIMING_DIVISION_TAP_PREVIEWS: usize = 2048;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct TapDivisionPreview {
