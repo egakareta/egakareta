@@ -302,6 +302,9 @@ pub(crate) fn derive_timing_division_tap_previews(
         if runtime.game_over() && runtime.elapsed_seconds() + TAP_EPSILON_SECONDS < time_seconds {
             break;
         }
+        if !runtime.is_grounded() {
+            continue;
+        }
 
         let snapshot = runtime.snapshot();
         previews.push(TapDivisionPreview {

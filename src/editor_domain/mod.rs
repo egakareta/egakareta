@@ -770,6 +770,44 @@ mod tests {
     }
 
     #[test]
+    fn timing_division_previews_skip_airborne_positions() {
+        let timing_points = vec![TimingPoint {
+            time_seconds: 0.1,
+            bpm: 600.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        }];
+        let objects = vec![LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            roundness: 0.0,
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        }];
+
+        let previews = derive_timing_division_tap_previews(
+            [0.0, 1.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[],
+            &timing_points,
+            0.35,
+            TapDivisionPreviewRange {
+                start_seconds: 0.0,
+                end_seconds: 0.35,
+            },
+            &objects,
+        );
+
+        assert!(previews
+            .iter()
+            .any(|preview| (preview.time_seconds - 0.1).abs() <= TAP_EPSILON_SECONDS));
+        assert!(previews
+            .iter()
+            .all(|preview| (preview.time_seconds - 0.2).abs() > TAP_EPSILON_SECONDS));
+    }
+
+    #[test]
     fn detects_taps_on_timing_divisions() {
         let timing_points = vec![TimingPoint {
             time_seconds: 0.25,
