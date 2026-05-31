@@ -15,7 +15,7 @@ pub(crate) fn show_tapping_mode_bottom_panel(
 ) {
     ui.horizontal_wrapped(|ui| {
         ui.label("Tapping:");
-        if ui.button("Add tap").clicked() {
+        if ui.button("Add tap at current time").clicked() {
             commands.push(AppCommand::EditorAddTap);
         }
         if ui.button("Remove tap").clicked() {
