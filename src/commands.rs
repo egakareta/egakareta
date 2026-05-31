@@ -61,6 +61,8 @@ pub(crate) enum AppCommand {
     // ── Editor – selection / transform ──────────────────────────────
     /// Nudge selected blocks by the given screen-relative offset.
     EditorNudgeSelected { dx: i32, dy: i32 },
+    /// Snap selected blocks or tap to the nearest grid cell.
+    EditorSnapSelectionToGrid,
 
     // ── Editor – timeline / playback ────────────────────────────────
     /// Toggle timeline playback.

@@ -63,6 +63,9 @@ impl State {
             AppCommand::EditorNudgeSelected { dx, dy } => {
                 self.editor_nudge_selected_blocks(dx, dy);
             }
+            AppCommand::EditorSnapSelectionToGrid => {
+                self.editor_snap_selection_to_grid();
+            }
 
             // ── Editor – timeline / playback ────────────────────────
             AppCommand::EditorToggleTimelinePlayback => self.toggle_editor_timeline_playback(),
@@ -475,6 +478,16 @@ impl State {
             "nudge_right" => {
                 if self.is_editor() && self.has_block_selection() {
                     Some(AppCommand::EditorNudgeSelected { dx: 1, dy: 0 })
+                } else {
+                    None
+                }
+            }
+            "snap_selection_to_grid" => {
+                if self.is_editor()
+                    && just_pressed
+                    && (self.has_block_selection() || self.editor.selected_tap().is_some())
+                {
+                    Some(AppCommand::EditorSnapSelectionToGrid)
                 } else {
                     None
                 }

@@ -24,6 +24,18 @@ fn distance_sq(left: [f32; 3], right: [f32; 3]) -> f32 {
     dx * dx + dy * dy + dz * dz
 }
 
+fn snap_component_to_step(component: f32, step: f32) -> f32 {
+    (component / step).round() * step
+}
+
+fn snap_cell_to_step(position: [f32; 3], step: f32) -> [f32; 3] {
+    [
+        snap_component_to_step(position[0], step),
+        snap_component_to_step(position[1].max(0.0), step),
+        snap_component_to_step(position[2], step),
+    ]
+}
+
 fn closest_point_on_segment(start: [f32; 3], end: [f32; 3], target: [f32; 3]) -> ([f32; 3], f32) {
     let segment = [end[0] - start[0], end[1] - start[1], end[2] - start[2]];
     let segment_length_sq =
@@ -333,6 +345,41 @@ impl EditorSubsystem {
 
         self.invalidate_samples();
         true
+    }
+
+    pub(crate) fn snap_selected_blocks_to_grid(&mut self) -> bool {
+        let selected_indices = self.selected_indices_normalized();
+        if selected_indices.is_empty() {
+            return false;
+        }
+
+        let step = self.config.snap_step.max(0.05);
+        let mut changed = false;
+        for index in &selected_indices {
+            if let Some(obj) = self.objects.get_mut(*index) {
+                let snapped = snap_cell_to_step(obj.position, step);
+                if obj.position != snapped {
+                    obj.position = snapped;
+                    changed = true;
+                }
+            }
+        }
+
+        if let Some(index) = self
+            .ui
+            .selected_block_index
+            .filter(|index| selected_indices.contains(index))
+            .or_else(|| selected_indices.first().copied())
+        {
+            if let Some(obj) = self.objects.get(index) {
+                self.ui.cursor = [obj.position[0], obj.position[1].max(0.0), obj.position[2]];
+            }
+        }
+
+        if changed {
+            self.invalidate_samples();
+        }
+        changed
     }
 
     pub(crate) fn remove_selected(&mut self) -> bool {
@@ -650,6 +697,89 @@ impl State {
         }
 
         false
+    }
+
+    pub(super) fn editor_snap_selection_to_grid(&mut self) -> bool {
+        if self.phase != AppPhase::Editor {
+            return false;
+        }
+
+        let selected_indices = self.editor.selected_indices_normalized();
+        if !selected_indices.is_empty() {
+            let step = self.editor.config.snap_step.max(0.05);
+            let needs_snap = selected_indices.iter().any(|index| {
+                self.editor
+                    .objects
+                    .get(*index)
+                    .is_some_and(|obj| obj.position != snap_cell_to_step(obj.position, step))
+            });
+            if !needs_snap {
+                return false;
+            }
+
+            self.record_editor_history_state();
+            if self.editor.snap_selected_blocks_to_grid() {
+                self.sync_editor_objects();
+                self.rebuild_editor_cursor_vertices();
+                self.rebuild_editor_gizmo_vertices();
+                self.rebuild_editor_selection_outline_vertices();
+                return true;
+            }
+            return false;
+        }
+
+        let Some((selected_index, old_time_seconds, position)) = self.editor.selected_tap() else {
+            return false;
+        };
+
+        let step = self.editor.config.snap_step.max(0.05);
+        let snapped_position = snap_cell_to_step(position, step);
+        if (position[0] - snapped_position[0]).abs() <= f32::EPSILON
+            && (position[1] - snapped_position[1]).abs() <= f32::EPSILON
+            && (position[2] - snapped_position[2]).abs() <= f32::EPSILON
+        {
+            return false;
+        }
+
+        let target_world = [
+            snapped_position[0] + 0.5,
+            snapped_position[1],
+            snapped_position[2] + 0.5,
+        ];
+        let duration_seconds = self.editor.timeline.clock.duration_seconds.max(0.0);
+        let next_time = derive_timeline_time_for_world_target_near_time(
+            self.editor.spawn.position,
+            self.editor.spawn.direction,
+            &self.editor.timeline.taps.tap_times,
+            duration_seconds,
+            &self.editor.objects,
+            target_world,
+            TimelineNearSearch {
+                seed_time: old_time_seconds,
+                window_seconds: 1.5,
+            },
+        )
+        .clamp(0.0, duration_seconds);
+
+        self.record_editor_history_state();
+        if let Some(time_seconds) = self.editor.timeline.taps.tap_times.get_mut(selected_index) {
+            *time_seconds = next_time;
+        }
+        if let Some(indicator_position) = self
+            .editor
+            .timeline
+            .taps
+            .tap_indicator_positions
+            .get_mut(selected_index)
+        {
+            *indicator_position = snapped_position;
+        }
+        self.editor.ui.cursor = snapped_position;
+        self.editor
+            .invalidate_samples_from(old_time_seconds.min(next_time));
+        self.set_editor_timeline_time_seconds_preserving_editor_camera(next_time);
+        self.refresh_editor_after_tap_change(Some(snapped_position));
+        true
     }
 
     pub(super) fn toggle_editor_timeline_playback(&mut self) {
@@ -1065,6 +1195,59 @@ mod tests {
 
             state.editor.ui.cursor = [999.0, 0.0, 999.0];
             assert!(!state.editor.remove_selected());
+        });
+    }
+
+    #[test]
+    fn snap_selection_to_grid_snaps_all_selected_blocks_to_configured_step() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.config.snap_step = 0.5;
+            state.editor.objects = vec![
+                test_block([0.24, 0.26, -0.74]),
+                test_block([1.76, 0.0, 2.24]),
+                test_block([9.1, 0.0, 9.1]),
+            ];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0, 1];
+
+            assert!(state.editor_snap_selection_to_grid());
+
+            assert_eq!(state.editor.objects[0].position, [0.0, 0.5, -0.5]);
+            assert_eq!(state.editor.objects[1].position, [2.0, 0.0, 2.0]);
+            assert_eq!(state.editor.objects[2].position, [9.1, 0.0, 9.1]);
+            assert_eq!(state.editor.ui.cursor, [0.0, 0.5, -0.5]);
+        });
+    }
+
+    #[test]
+    fn g_key_snaps_selected_tap_to_configured_grid_step() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Tapping;
+            state.editor.config.snap_step = 1.0;
+            state.editor.timeline.clock.duration_seconds = 4.0;
+            state.editor.timeline.clock.time_seconds = 0.2;
+            state.editor.timeline.taps.tap_times = vec![0.2];
+            state.editor.timeline.taps.tap_indicator_positions = vec![[0.24, 0.0, 1.76]];
+            state.editor.timeline.taps.selected_index = Some(0);
+
+            state.process_keyboard_input("g", true, true);
+
+            assert_eq!(
+                state.editor.timeline.taps.tap_indicator_positions[0],
+                [0.0, 0.0, 2.0]
+            );
+            assert_eq!(state.editor.timeline.taps.selected_index, Some(0));
+            assert_eq!(state.editor.ui.cursor, [0.0, 0.0, 2.0]);
+            assert!(
+                (state.editor.timeline.clock.time_seconds
+                    - state.editor.timeline.taps.tap_times[0])
+                    .abs()
+                    < 0.001
+            );
         });
     }
 

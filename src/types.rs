@@ -1530,6 +1530,12 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
         },
         KeybindActionMetadata {
             group: "Editor",
+            action: "snap_selection_to_grid",
+            label: "Snap Selection to Grid",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
             action: "spawn_set",
             label: "Set Spawn Position",
             capacity: 1,
@@ -1766,6 +1772,10 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
         KeybindBinding {
             action: "nudge_right".to_string(),
             chord: KeyChord::new("ArrowRight", false, false, false),
+        },
+        KeybindBinding {
+            action: "snap_selection_to_grid".to_string(),
+            chord: KeyChord::new("g", false, false, false),
         },
         KeybindBinding {
             action: "spawn_set".to_string(),
