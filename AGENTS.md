@@ -65,8 +65,6 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 
 - `src/shader.wgsl` — The core WebGPU shader. Compiled at build time. Defines vertex/fragment shaders for block rendering with texture arrays, color spaces, and line uniforms.
 - `build.rs` — Build script that bakes `wrangler.jsonc` environment variables into the binary for the configured build environment.
-- `voxel/exec.ts` — A Bun script for executing level generation/transformation scripts.
-- `dist.ts` — Post-build script that copies `index.html` and `assets/` into the `dist/` output directory.
 - `wrangler.jsonc` — Cloudflare Pages configuration with environment-specific vars.
 - `functions/` — Cloudflare Pages Functions (TypeScript serverless backend, Supabase integration).
 
