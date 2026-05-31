@@ -1646,6 +1646,35 @@ mod tests {
     }
 
     #[test]
+    fn adding_tap_recomputes_all_indicator_positions() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Tapping;
+            state.editor.objects.clear();
+            state.editor.spawn.position = [0.0, 0.0, 0.0];
+            state.editor.spawn.direction = SpawnDirection::Forward;
+            state.editor.timeline.clock.duration_seconds = 2.0;
+
+            let step_time = 1.0 / crate::game::BASE_PLAYER_SPEED;
+            state.set_editor_timeline_time_seconds(4.0 * step_time);
+            state.editor_add_tap();
+
+            state.set_editor_timeline_time_seconds(2.0 * step_time);
+            state.editor_add_tap();
+
+            let expected = crate::editor_domain::derive_tap_indicator_positions(
+                state.editor.spawn.position,
+                state.editor.spawn.direction,
+                &state.editor.timeline.taps.tap_times,
+                &state.editor.objects,
+            );
+
+            assert_eq!(state.editor.timeline.taps.tap_indicator_positions, expected);
+        });
+    }
+
+    #[test]
     fn pan_input_wrappers_are_phase_gated_but_modifiers_are_global() {
         pollster::block_on(async {
             let mut state = State::new_test().await;

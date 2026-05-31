@@ -1526,7 +1526,13 @@ fn handle_primary_click_covers_tapping_trigger_and_timing_mode_paths() {
         state.handle_primary_click(260.0, 200.0);
         assert_eq!(state.editor.ui.pointer_screen, Some([260.0, 200.0]));
         assert_eq!(state.editor_tap_times().len(), 1);
+        assert_eq!(state.editor.timeline.taps.selected_index, Some(0));
         assert!(state.editor.ui.marquee_start_screen.is_none());
+
+        state.editor.set_left_mouse_down(false);
+        state.handle_primary_click(260.0, 200.0);
+        assert!(state.editor_tap_times().is_empty());
+        assert!(state.editor.timeline.taps.selected_index.is_none());
 
         state.editor.set_left_mouse_down(false);
         state.editor.set_mode(EditorMode::Trigger);

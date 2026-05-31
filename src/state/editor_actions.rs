@@ -22,12 +22,14 @@ impl EditorSubsystem {
     const TAP_DIVISION_PREVIEW_LOOK_AHEAD_SECONDS: f32 = 20.0;
 
     fn sync_tap_indicators_to_spawn(&mut self) {
+        let selected_index = self.timeline.taps.selected_index;
         self.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
             self.spawn.position,
             self.spawn.direction,
             &self.timeline.taps.tap_times,
             &self.objects,
         );
+        self.set_selected_tap_index(selected_index);
     }
 
     pub(crate) fn timing_division_tap_previews(&mut self) -> &[TapDivisionPreview] {
@@ -244,6 +246,20 @@ impl EditorSubsystem {
 
 impl State {
     pub(crate) fn refresh_editor_after_tap_change(&mut self, cursor_override: Option<[f32; 3]>) {
+        self.editor.sync_tap_indicators_to_spawn();
+        if let (Some(cursor), Some(selected_index)) =
+            (cursor_override, self.editor.timeline.taps.selected_index)
+        {
+            if let Some(position) = self
+                .editor
+                .timeline
+                .taps
+                .tap_indicator_positions
+                .get_mut(selected_index)
+            {
+                *position = cursor;
+            }
+        }
         let current_time = self.editor.timeline.clock.time_seconds;
         self.set_editor_timeline_time_seconds(current_time);
         self.resync_editor_timeline_playback_audio();
@@ -293,6 +309,30 @@ impl State {
         let Some(pick) = self.editor.pick_from_screen(x, y, viewport_size) else {
             return false;
         };
+
+        if let Some((selected_index, selected_time_seconds, selected_position)) =
+            self.editor.selected_tap()
+        {
+            if self.editor.timeline.taps.selected_index == Some(selected_index) {
+                let selected_screen = self.editor.world_to_screen_v(
+                    glam::Vec3::new(
+                        selected_position[0] + 0.5,
+                        selected_position[1] + 0.1,
+                        selected_position[2] + 0.5,
+                    ),
+                    viewport_size,
+                );
+                if let Some(selected_screen) = selected_screen {
+                    let dx = selected_screen.x - x as f32;
+                    let dy = selected_screen.y - y as f32;
+                    if dx * dx + dy * dy <= 24.0 * 24.0 {
+                        self.editor_remove_tap_at(selected_time_seconds);
+                        return true;
+                    }
+                }
+            }
+        }
+
         let Some(tap_index) = pick.hit_tap_index else {
             if let Some(division) = pick.hit_tap_division {
                 self.record_editor_history_state();
