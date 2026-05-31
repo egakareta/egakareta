@@ -222,7 +222,7 @@ pub(crate) fn build_tap_division_tap_marker_vertices(
     indicators: &[([f32; 3], [f32; 4])],
 ) -> Vec<Vertex> {
     puffin::profile_scope!("BuildTapDivisionTapMarkerVertices");
-    build_tap_division_cross_vertices(indicators, 0.3, 0.045)
+    build_tap_division_cross_vertices(indicators, 0.18, 0.045)
 }
 
 fn build_tap_division_cross_vertices(
