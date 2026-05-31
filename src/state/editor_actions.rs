@@ -834,6 +834,57 @@ impl State {
         true
     }
 
+    pub(super) fn editor_set_selected_tap_time(&mut self, time_seconds: f32) -> bool {
+        if self.phase != AppPhase::Editor || !time_seconds.is_finite() {
+            return false;
+        }
+
+        let Some((selected_index, old_time_seconds, old_position)) = self.editor.selected_tap()
+        else {
+            return false;
+        };
+
+        let duration_seconds = self.editor.timeline.clock.duration_seconds.max(0.0);
+        let next_time = time_seconds.clamp(0.0, duration_seconds);
+        if (old_time_seconds - next_time).abs() <= 0.0001 {
+            return false;
+        }
+
+        self.record_editor_history_state();
+        self.editor.timeline.taps.tap_times.remove(selected_index);
+        self.editor
+            .timeline
+            .taps
+            .tap_indicator_positions
+            .remove(selected_index);
+        let next_index = self
+            .editor
+            .timeline
+            .taps
+            .tap_times
+            .partition_point(|time| *time < next_time);
+        self.editor
+            .timeline
+            .taps
+            .tap_times
+            .insert(next_index, next_time);
+        self.editor
+            .timeline
+            .taps
+            .tap_indicator_positions
+            .insert(next_index, old_position);
+        self.editor.set_selected_tap_index(Some(next_index));
+        self.editor
+            .invalidate_samples_from(old_time_seconds.min(next_time));
+        self.set_editor_timeline_time_seconds_preserving_editor_camera(next_time);
+        self.refresh_editor_after_tap_change(None);
+        if let Some((_, _, selected_position)) = self.editor.selected_tap() {
+            self.editor.ui.cursor = selected_position;
+            self.rebuild_editor_cursor_vertices();
+        }
+        true
+    }
+
     pub(super) fn toggle_editor_timeline_playback(&mut self) {
         if self.phase != AppPhase::Editor {
             return;
@@ -1315,6 +1366,37 @@ mod tests {
             assert!((recalculated_positions[0][0] - 0.0).abs() < 0.001);
             assert!((recalculated_positions[0][1] - 0.0).abs() < 0.001);
             assert!((recalculated_positions[0][2] - 2.0).abs() < 0.001);
+        });
+    }
+
+    #[test]
+    fn selected_tap_time_input_updates_time_and_preserves_selection() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Tapping;
+            state.editor.timeline.clock.duration_seconds = 4.0;
+            state.editor.timeline.clock.time_seconds = 1.5;
+            state.editor.timeline.taps.tap_times = vec![0.5, 1.5, 2.5];
+            state.editor.timeline.taps.tap_indicator_positions =
+                vec![[0.0, 0.0, 4.0], [8.0, 0.0, 4.0], [8.0, 0.0, 12.0]];
+            state.editor.timeline.taps.selected_index = Some(1);
+
+            assert!(state.editor_set_selected_tap_time(0.25));
+
+            assert_eq!(state.editor.timeline.taps.tap_times, vec![0.25, 0.5, 2.5]);
+            assert_eq!(state.editor.timeline.taps.selected_index, Some(0));
+            assert!(
+                (state.editor.timeline.clock.time_seconds
+                    - state.editor.timeline.taps.tap_times[0])
+                    .abs()
+                    < 0.001
+            );
+
+            let selected_tap = state.editor.selected_tap().expect("selected tap");
+            assert_eq!(selected_tap.0, 0);
+            assert!((selected_tap.1 - 0.25).abs() < 0.001);
+            assert_eq!(state.editor.ui.cursor, selected_tap.2);
         });
     }
 

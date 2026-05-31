@@ -78,6 +78,9 @@ impl State {
             AppCommand::EditorAddTap => self.editor_add_tap(),
             AppCommand::EditorRemoveTap => self.editor_remove_tap(),
             AppCommand::EditorRemoveTapAt(time) => self.editor_remove_tap_at(time),
+            AppCommand::EditorSetSelectedTapTime(time) => {
+                self.editor_set_selected_tap_time(time);
+            }
             AppCommand::EditorClearTaps => self.editor_clear_taps(),
             AppCommand::EditorSetPlaybackSpeed(speed) => self.set_editor_playback_speed(speed),
             AppCommand::EditorSetWaveformZoom(zoom) => self.set_editor_waveform_zoom(zoom),

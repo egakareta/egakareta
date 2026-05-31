@@ -30,7 +30,18 @@ pub(crate) fn show_tapping_mode_bottom_panel(
         ui.horizontal_wrapped(|ui| {
             ui.label(format!("Selected tap #{}", selected_tap.index + 1));
             ui.separator();
-            ui.label(format!("Time: {:.3}s", selected_tap.time_seconds));
+            ui.label("Time (s):");
+            let mut time_seconds = selected_tap.time_seconds;
+            if ui
+                .add(
+                    egui::DragValue::new(&mut time_seconds)
+                        .speed(0.01)
+                        .range(0.0..=view.timeline_duration_seconds.max(0.0)),
+                )
+                .changed()
+            {
+                commands.push(AppCommand::EditorSetSelectedTapTime(time_seconds));
+            }
             ui.separator();
             ui.label(format!(
                 "Position: ({:.2}, {:.2}, {:.2})",
