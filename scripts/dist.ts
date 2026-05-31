@@ -11,12 +11,15 @@ import fs from "fs";
 import path from "path";
 import url from "url";
 
-const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
+const rootDir = path.resolve(
+    path.dirname(url.fileURLToPath(import.meta.url)),
+    "..",
+);
 
 const start = Date.now();
 
 // Create dist folder if it doesn't exist
-const distPath = path.join(__dirname, "dist");
+const distPath = path.join(rootDir, "dist");
 if (!fs.existsSync(distPath)) {
     fs.mkdirSync(distPath);
 }
@@ -27,19 +30,19 @@ try {
 } catch (err) {}
 try {
     fs.renameSync(
-        path.join(__dirname, "target", "pkg"),
+        path.join(rootDir, "target", "pkg"),
         path.join(distPath, "pkg"),
     );
 } catch (err) {}
 
 // Copy index.html to dist
 fs.copyFileSync(
-    path.join(__dirname, "index.html"),
+    path.join(rootDir, "index.html"),
     path.join(distPath, "index.html"),
 );
 
 // Copy assets folder to dist
-const assetsSrcPath = path.join(__dirname, "assets");
+const assetsSrcPath = path.join(rootDir, "assets");
 const assetsDestPath = path.join(distPath, "assets");
 if (fs.existsSync(assetsDestPath)) {
     fs.rmSync(assetsDestPath, { recursive: true });
