@@ -9,6 +9,7 @@ use glam::Vec3;
 
 use super::{EditorDirtyFlags, EditorSubsystem, State};
 use crate::block_repository::resolve_block_definition;
+use crate::editor_domain::tap_time_is_timing_division;
 use crate::editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds_with_triggers};
 use crate::game::trigger_transformed_objects_at_time;
 use crate::mesh::{
@@ -16,10 +17,11 @@ use crate::mesh::{
     build_camera_trigger_marker_vertices, build_colored_tap_indicator_vertices,
     build_editor_cursor_vertices, build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
     build_editor_selection_outline_vertices, build_editor_tap_cursor_vertices,
-    build_spawn_marker_vertices, build_tap_division_preview_vertices, GizmoParams, MeshGeometry,
+    build_spawn_marker_vertices, build_tap_division_preview_vertices,
+    build_tap_division_tap_marker_vertices, GizmoParams, MeshGeometry,
 };
 use crate::state::render::EditorOutlineInstance;
-use crate::types::{AppPhase, EditorMode, GizmoPart, LevelObject, SpawnDirection};
+use crate::types::{AppPhase, EditorMode, GizmoPart, LevelObject, SpawnDirection, TimingPoint};
 
 const SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD: usize = 700;
 
@@ -974,12 +976,22 @@ impl State {
                 && (a.1[3] - b.1[3]).abs() < 0.001
         });
 
-        if indicators.is_empty() && preview_indicators.is_empty() {
+        let division_tap_indicators = tap_division_marker_indicators(
+            &self.editor.timeline.taps.tap_times,
+            &tap_positions,
+            &self.editor.timing.timing_points,
+            self.editor.timeline.clock.duration_seconds,
+        );
+
+        if indicators.is_empty()
+            && preview_indicators.is_empty()
+            && division_tap_indicators.is_empty()
+        {
             self.render.meshes.tap_indicators.clear();
             return;
         }
 
-        if indicators.is_empty() {
+        if indicators.is_empty() && division_tap_indicators.is_empty() {
             let vertices = build_tap_division_preview_vertices(&preview_indicators);
             self.render.meshes.tap_indicators.replace_with_vertices(
                 &self.render.gpu.device,
@@ -991,6 +1003,9 @@ impl State {
 
         let mut vertices = build_tap_division_preview_vertices(&preview_indicators);
         vertices.extend(build_colored_tap_indicator_vertices(&indicators));
+        vertices.extend(build_tap_division_tap_marker_vertices(
+            &division_tap_indicators,
+        ));
         self.render.meshes.tap_indicators.replace_with_vertices(
             &self.render.gpu.device,
             "Tap Indicator Vertex Buffer",
@@ -1019,6 +1034,23 @@ fn positions_match(left: [f32; 3], right: [f32; 3]) -> bool {
         && (left[2] - right[2]).abs() < 0.001
 }
 
+fn tap_division_marker_indicators(
+    tap_times: &[f32],
+    tap_positions: &[[f32; 3]],
+    timing_points: &[TimingPoint],
+    duration_seconds: f32,
+) -> Vec<([f32; 3], [f32; 4])> {
+    tap_times
+        .iter()
+        .copied()
+        .zip(tap_positions.iter().copied())
+        .filter(|(tap_time, _)| {
+            tap_time_is_timing_division(*tap_time, timing_points, duration_seconds)
+        })
+        .map(|(_, position)| (position, [0.0, 0.0, 0.0, 1.0]))
+        .collect()
+}
+
 fn tap_indicator_color(
     index: usize,
     hovered_tap_index: Option<usize>,
@@ -1033,10 +1065,10 @@ fn tap_indicator_color(
 
 #[cfg(test)]
 mod tests {
-    use super::{tap_indicator_color, State};
+    use super::{tap_division_marker_indicators, tap_indicator_color, State};
     use crate::types::{
         AppPhase, EditorMode, LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
-        TimedTriggerTarget,
+        TimedTriggerTarget, TimingPoint,
     };
 
     fn block(position: [f32; 3], size: [f32; 3]) -> LevelObject {
@@ -1286,6 +1318,26 @@ mod tests {
             tap_indicator_color(2, Some(1), Some(3)),
             [0.0, 0.0, 0.0, 1.0]
         );
+    }
+
+    #[test]
+    fn tap_division_marker_indicators_marks_only_taps_on_timing_divisions() {
+        let timing_points = vec![TimingPoint {
+            time_seconds: 0.0,
+            bpm: 120.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        }];
+        let markers = tap_division_marker_indicators(
+            &[0.5, 0.75, 1.0],
+            &[[1.0, 0.0, 1.0], [2.0, 0.0, 2.0], [3.0, 0.0, 3.0]],
+            &timing_points,
+            2.0,
+        );
+
+        assert_eq!(markers.len(), 2);
+        assert_eq!(markers[0], ([1.0, 0.0, 1.0], [0.0, 0.0, 0.0, 1.0]));
+        assert_eq!(markers[1], ([3.0, 0.0, 3.0], [0.0, 0.0, 0.0, 1.0]));
     }
 
     #[test]

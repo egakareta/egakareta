@@ -215,11 +215,24 @@ pub(crate) fn build_tap_division_preview_vertices(
     previews: &[([f32; 3], [f32; 4])],
 ) -> Vec<Vertex> {
     puffin::profile_scope!("BuildTapDivisionPreviewVertices");
-    let mut vertices = Vec::new();
-    let inset = 0.18;
-    let thickness = 0.06;
+    build_tap_division_cross_vertices(previews, 0.18, 0.06)
+}
 
-    for &(pos, color) in previews {
+pub(crate) fn build_tap_division_tap_marker_vertices(
+    indicators: &[([f32; 3], [f32; 4])],
+) -> Vec<Vertex> {
+    puffin::profile_scope!("BuildTapDivisionTapMarkerVertices");
+    build_tap_division_cross_vertices(indicators, 0.3, 0.045)
+}
+
+fn build_tap_division_cross_vertices(
+    indicators: &[([f32; 3], [f32; 4])],
+    inset: f32,
+    thickness: f32,
+) -> Vec<Vertex> {
+    let mut vertices = Vec::new();
+
+    for &(pos, color) in indicators {
         let x_min = pos[0] + inset;
         let x_max = pos[0] + 1.0 - inset;
         let z_min = pos[2] + inset;
@@ -357,7 +370,8 @@ pub(crate) fn build_camera_trigger_marker_vertices(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_tap_division_preview_vertices, build_trail_vertices, build_trail_vertices_with_alpha,
+        build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices,
+        build_trail_vertices, build_trail_vertices_with_alpha,
     };
     use crate::types::Vertex;
 
@@ -579,5 +593,34 @@ mod tests {
         assert!(max_x < 3.0);
         assert!(min_z > 3.0);
         assert!(max_z < 4.0);
+    }
+
+    #[test]
+    fn tap_division_tap_marker_vertices_build_smaller_opaque_crosses() {
+        let color = [0.0, 0.0, 0.0, 1.0];
+        let preview_vertices = build_tap_division_preview_vertices(&[([2.0, 1.0, 3.0], color)]);
+        let marker_vertices = build_tap_division_tap_marker_vertices(&[([2.0, 1.0, 3.0], color)]);
+
+        assert_eq!(marker_vertices.len(), 12);
+        assert!(marker_vertices.iter().all(|vertex| vertex.color == color));
+
+        let preview_width = preview_vertices
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::NEG_INFINITY, f32::max)
+            - preview_vertices
+                .iter()
+                .map(|vertex| vertex.position[0])
+                .fold(f32::INFINITY, f32::min);
+        let marker_width = marker_vertices
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::NEG_INFINITY, f32::max)
+            - marker_vertices
+                .iter()
+                .map(|vertex| vertex.position[0])
+                .fold(f32::INFINITY, f32::min);
+
+        assert!(marker_width < preview_width);
     }
 }

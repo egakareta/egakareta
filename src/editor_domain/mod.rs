@@ -649,6 +649,20 @@ mod tests {
     }
 
     #[test]
+    fn detects_taps_on_timing_divisions() {
+        let timing_points = vec![TimingPoint {
+            time_seconds: 0.25,
+            bpm: 120.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        }];
+
+        assert!(tap_time_is_timing_division(0.75, &timing_points, 2.0));
+        assert!(!tap_time_is_timing_division(0.9, &timing_points, 2.0));
+        assert!(!tap_time_is_timing_division(0.75, &[], 2.0));
+    }
+
+    #[test]
     fn timing_division_previews_are_capped_for_pathological_timing() {
         let timing_points = vec![TimingPoint {
             time_seconds: 0.0,

@@ -317,6 +317,57 @@ pub(crate) fn derive_timing_division_tap_previews(
     previews
 }
 
+pub(crate) fn tap_time_is_timing_division(
+    tap_time: f32,
+    timing_points: &[TimingPoint],
+    duration_seconds: f32,
+) -> bool {
+    if !tap_time.is_finite() || tap_time < 0.0 || timing_points.is_empty() {
+        return false;
+    }
+
+    let duration = if duration_seconds.is_finite() {
+        duration_seconds.max(0.0)
+    } else {
+        0.0
+    };
+    if duration <= 0.0 || tap_time > duration + TAP_EPSILON_SECONDS {
+        return false;
+    }
+
+    let mut sorted_timing_points: Vec<TimingPoint> = timing_points
+        .iter()
+        .filter(|point| point.time_seconds.is_finite() && point.bpm.is_finite() && point.bpm > 0.0)
+        .cloned()
+        .collect();
+    sorted_timing_points.sort_by(|a, b| a.time_seconds.total_cmp(&b.time_seconds));
+
+    for (point_index, point) in sorted_timing_points.iter().enumerate() {
+        let start_time = point.time_seconds.clamp(0.0, duration);
+        let end_time = sorted_timing_points
+            .get(point_index + 1)
+            .map(|next| next.time_seconds.clamp(0.0, duration))
+            .unwrap_or(duration);
+        if tap_time + TAP_EPSILON_SECONDS < start_time || tap_time - TAP_EPSILON_SECONDS > end_time
+        {
+            continue;
+        }
+
+        let beat_duration = 60.0 / point.bpm;
+        if !beat_duration.is_finite() || beat_duration <= 0.0 {
+            continue;
+        }
+
+        let beat = ((tap_time - start_time) / beat_duration).round().max(0.0);
+        let division_time = start_time + beat * beat_duration;
+        if (division_time - tap_time).abs() <= TAP_EPSILON_SECONDS {
+            return true;
+        }
+    }
+
+    false
+}
+
 #[cfg(test)]
 pub(crate) fn derive_timeline_time_for_world_target(
     spawn: [f32; 3],
