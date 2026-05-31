@@ -267,15 +267,27 @@ impl EditorSubsystem {
         let target = hit + hit_normal * 0.01;
         let snap_enabled = self.effective_snap_to_grid();
         let snap_step = self.config.snap_step.max(0.05);
+        let footprint_centered =
+            self.ui.mode == EditorMode::Place && (!snap_enabled || snap_step < 1.0);
+        let selected_size = self.selected_block_default_size();
+        let cursor_target = if footprint_centered {
+            Vec3::new(
+                target.x - selected_size[0] * 0.5,
+                target.y,
+                target.z - selected_size[2] * 0.5,
+            )
+        } else {
+            target
+        };
 
         let next_cursor = if snap_enabled {
             [
-                (target.x / snap_step).floor() * snap_step,
-                (target.y / snap_step).floor() * snap_step,
-                (target.z / snap_step).floor() * snap_step,
+                (cursor_target.x / snap_step).floor() * snap_step,
+                (cursor_target.y / snap_step).floor() * snap_step,
+                (cursor_target.z / snap_step).floor() * snap_step,
             ]
         } else {
-            [target.x, target.y, target.z]
+            [cursor_target.x, cursor_target.y, cursor_target.z]
         };
 
         [next_cursor[0], next_cursor[1].max(0.0), next_cursor[2]]
@@ -640,7 +652,7 @@ mod tests {
     }
 
     #[test]
-    fn cursor_from_ray_hit_does_not_snap_when_disabled() {
+    fn cursor_from_ray_hit_centers_footprint_when_snap_disabled() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
             state.editor.config.snap_to_grid = false;
@@ -650,9 +662,63 @@ mod tests {
 
             let cursor = state.editor.cursor_from_ray_hit(hit, normal);
 
-            approx_eq(cursor[0], 1.234, 1e-4);
+            approx_eq(cursor[0], 0.734, 1e-4);
             approx_eq(cursor[1], 0.51, 1e-4);
-            approx_eq(cursor[2], 5.678, 1e-4);
+            approx_eq(cursor[2], 5.178, 1e-4);
+        });
+    }
+
+    #[test]
+    fn cursor_from_ray_hit_preserves_unit_snap_flooring() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.config.snap_to_grid = true;
+            state.editor.config.snap_step = 1.0;
+
+            let hit = Vec3::new(1.234, 0.5, 5.678);
+            let normal = Vec3::Y;
+
+            let cursor = state.editor.cursor_from_ray_hit(hit, normal);
+
+            approx_eq(cursor[0], 1.0, 1e-4);
+            approx_eq(cursor[1], 0.0, 1e-4);
+            approx_eq(cursor[2], 5.0, 1e-4);
+        });
+    }
+
+    #[test]
+    fn cursor_from_ray_hit_centers_footprint_before_subunit_snap() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.config.snap_to_grid = true;
+            state.editor.config.snap_step = 0.25;
+
+            let hit = Vec3::new(1.234, 0.5, 5.678);
+            let normal = Vec3::Y;
+
+            let cursor = state.editor.cursor_from_ray_hit(hit, normal);
+
+            approx_eq(cursor[0], 0.5, 1e-4);
+            approx_eq(cursor[1], 0.5, 1e-4);
+            approx_eq(cursor[2], 5.0, 1e-4);
+        });
+    }
+
+    #[test]
+    fn cursor_from_ray_hit_centers_selected_block_size_when_snap_disabled() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.config.snap_to_grid = false;
+            state.editor.config.selected_block_id = "core/speedportal".to_string();
+
+            let hit = Vec3::new(4.0, 0.25, 9.0);
+            let normal = Vec3::Y;
+
+            let cursor = state.editor.cursor_from_ray_hit(hit, normal);
+
+            approx_eq(cursor[0], 3.0, 1e-4);
+            approx_eq(cursor[1], 0.26, 1e-4);
+            approx_eq(cursor[2], 8.5, 1e-4);
         });
     }
 }
