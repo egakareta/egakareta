@@ -885,6 +885,29 @@ impl State {
         true
     }
 
+    pub(super) fn editor_set_selected_tap_index(&mut self, selected_index: Option<usize>) -> bool {
+        if self.phase != AppPhase::Editor
+            || self.editor_effective_mode_for_playback() != EditorMode::Tapping
+        {
+            return false;
+        }
+
+        let old_selected_index = self.editor.timeline.taps.selected_index;
+        self.editor.set_selected_tap_index(selected_index);
+        let next_selected_index = self.editor.timeline.taps.selected_index;
+
+        if old_selected_index == next_selected_index {
+            return false;
+        }
+
+        if let Some((_, _, selected_position)) = self.editor.selected_tap() {
+            self.editor.ui.cursor = selected_position;
+            self.rebuild_editor_cursor_vertices();
+        }
+        self.rebuild_tap_indicator_vertices();
+        true
+    }
+
     pub(super) fn toggle_editor_timeline_playback(&mut self) {
         if self.phase != AppPhase::Editor {
             return;

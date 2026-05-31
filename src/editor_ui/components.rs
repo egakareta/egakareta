@@ -7,11 +7,13 @@
 */
 use crate::commands::AppCommand;
 use crate::state::EditorUiViewModel;
+use crate::types::EditorMode;
 
 pub(crate) const MIN_TIMELINE_DURATION_SECONDS: f32 = 0.1;
 pub(crate) const MAX_TIMELINE_DURATION_SECONDS: f32 = 600.0;
 pub(crate) const DEFAULT_TIMELINE_WINDOW_SECONDS: f32 = 20.0;
 const TIMELINE_TAP_HIT_RADIUS_PIXELS: f32 = 8.0;
+const TIMELINE_CURRENT_TAP_EPSILON_SECONDS: f32 = 0.0001;
 
 fn timeline_visible_duration(duration_seconds: f32, zoom: f32) -> f32 {
     let duration = duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS);
@@ -49,6 +51,40 @@ fn timeline_bar_nearest_tap_index(
             f32::total_cmp(left_distance, right_distance)
         })
         .map(|(index, _)| index)
+}
+
+fn timeline_bar_view_is_tapping(view: &EditorUiViewModel<'_>) -> bool {
+    view.mode == EditorMode::Tapping
+        || (view.mode == EditorMode::Null && view.last_mode == Some(EditorMode::Tapping))
+}
+
+fn timeline_bar_push_tap_click_commands(
+    view: &EditorUiViewModel<'_>,
+    pointer_x: f32,
+    rect: egui::Rect,
+    view_start: f32,
+    visible_duration: f32,
+    commands: &mut Vec<AppCommand>,
+) -> bool {
+    let Some(index) = timeline_bar_nearest_tap_index(
+        view.tap_times,
+        pointer_x,
+        rect,
+        view_start,
+        visible_duration,
+    ) else {
+        return false;
+    };
+
+    commands.push(AppCommand::EditorSetTimelineTime(view.tap_times[index]));
+    if timeline_bar_view_is_tapping(view) {
+        commands.push(AppCommand::EditorSetSelectedTap(Some(index)));
+    }
+    true
+}
+
+fn timeline_bar_tap_is_current(tap_time: f32, timeline_time_seconds: f32) -> bool {
+    (tap_time - timeline_time_seconds).abs() <= TIMELINE_CURRENT_TAP_EPSILON_SECONDS
 }
 
 pub(crate) fn show_timeline_bar(
@@ -187,11 +223,18 @@ pub(crate) fn show_timeline_bar(
         for tap_time in view.tap_times {
             if *tap_time >= view_start && *tap_time <= view_end {
                 let x = rect.left() + (*tap_time - view_start) / visible_duration * rect.width();
-                painter.circle_filled(
-                    egui::pos2(x, center_y),
-                    3.0,
-                    egui::Color32::from_rgb(255, 170, 64),
-                );
+                let center = egui::pos2(x, center_y);
+                if timeline_bar_tap_is_current(*tap_time, view.timeline_time_seconds) {
+                    painter.circle_stroke(
+                        center,
+                        3.0,
+                        egui::Stroke::new(
+                            2.0,
+                            egui::Color32::from_rgba_premultiplied(255, 245, 210, 230),
+                        ),
+                    );
+                }
+                painter.circle_filled(center, 3.0, egui::Color32::from_rgb(255, 170, 64));
             }
         }
 
@@ -290,37 +333,47 @@ pub(crate) fn show_timeline_bar(
 
         if response.clicked_by(egui::PointerButton::Primary) {
             if let Some(pointer) = response.interact_pointer_pos() {
-                let mut nearest_trigger_index = None;
-                let mut nearest_distance = f32::INFINITY;
+                if !timeline_bar_push_tap_click_commands(
+                    view,
+                    pointer.x,
+                    rect,
+                    view_start,
+                    visible_duration,
+                    commands,
+                ) {
+                    let mut nearest_trigger_index = None;
+                    let mut nearest_distance = f32::INFINITY;
 
-                for (index, trigger) in view.triggers.iter().enumerate() {
-                    if trigger.time_seconds < view_start || trigger.time_seconds > view_end {
-                        continue;
+                    for (index, trigger) in view.triggers.iter().enumerate() {
+                        if trigger.time_seconds < view_start || trigger.time_seconds > view_end {
+                            continue;
+                        }
+
+                        let x = rect.left()
+                            + (trigger.time_seconds - view_start) / visible_duration * rect.width();
+                        let distance = (x - pointer.x).abs();
+                        if distance < nearest_distance {
+                            nearest_distance = distance;
+                            nearest_trigger_index = Some(index);
+                        }
                     }
 
-                    let x = rect.left()
-                        + (trigger.time_seconds - view_start) / visible_duration * rect.width();
-                    let distance = (x - pointer.x).abs();
-                    if distance < nearest_distance {
-                        nearest_distance = distance;
-                        nearest_trigger_index = Some(index);
+                    if let Some(index) = nearest_trigger_index.filter(|_| nearest_distance <= 8.0) {
+                        commands.push(AppCommand::EditorSetTriggerSelected(Some(index)));
+                        commands.push(AppCommand::EditorSetTimelineTime(
+                            view.triggers[index]
+                                .time_seconds
+                                .clamp(0.0, duration_seconds),
+                        ));
+                    } else {
+                        let normalized_x =
+                            ((pointer.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
+                        let clicked_time = view_start + normalized_x * visible_duration;
+                        commands.push(AppCommand::EditorSetTriggerSelected(None));
+                        commands.push(AppCommand::EditorSetTimelineTime(
+                            clicked_time.clamp(0.0, duration_seconds),
+                        ));
                     }
-                }
-
-                if let Some(index) = nearest_trigger_index.filter(|_| nearest_distance <= 8.0) {
-                    commands.push(AppCommand::EditorSetTriggerSelected(Some(index)));
-                    commands.push(AppCommand::EditorSetTimelineTime(
-                        view.triggers[index]
-                            .time_seconds
-                            .clamp(0.0, duration_seconds),
-                    ));
-                } else {
-                    let normalized_x = ((pointer.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
-                    let clicked_time = view_start + normalized_x * visible_duration;
-                    commands.push(AppCommand::EditorSetTriggerSelected(None));
-                    commands.push(AppCommand::EditorSetTimelineTime(
-                        clicked_time.clamp(0.0, duration_seconds),
-                    ));
                 }
             }
         }
@@ -712,6 +765,91 @@ mod tests {
             timeline_bar_nearest_tap_index(&tap_times, 304.0, rect, 0.0, 10.0),
             None
         );
+    }
+
+    #[test]
+    fn timeline_bar_tap_click_seeks_to_tap_time() {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let timing_points = Vec::new();
+        let tap_times = [1.0, 5.0, 5.2, 12.0];
+        let view = make_view(
+            &app_settings,
+            &music_metadata,
+            &timing_points,
+            &[],
+            &tap_times,
+            &[],
+            0.0,
+            20.0,
+            1.0,
+            0.0,
+            false,
+            None,
+        );
+        let rect = egui::Rect::from_min_size(egui::pos2(100.0, 0.0), egui::vec2(200.0, 20.0));
+        let mut commands = Vec::new();
+
+        assert!(timeline_bar_push_tap_click_commands(
+            &view,
+            198.0,
+            rect,
+            0.0,
+            10.0,
+            &mut commands,
+        ));
+
+        assert_eq!(commands, vec![AppCommand::EditorSetTimelineTime(5.0)]);
+    }
+
+    #[test]
+    fn timeline_bar_tap_click_selects_tap_in_tapping_mode() {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let timing_points = Vec::new();
+        let tap_times = [1.0, 5.0, 5.2, 12.0];
+        let mut view = make_view(
+            &app_settings,
+            &music_metadata,
+            &timing_points,
+            &[],
+            &tap_times,
+            &[],
+            0.0,
+            20.0,
+            1.0,
+            0.0,
+            false,
+            None,
+        );
+        view.mode = EditorMode::Tapping;
+        view.last_mode = Some(EditorMode::Tapping);
+        let rect = egui::Rect::from_min_size(egui::pos2(100.0, 0.0), egui::vec2(200.0, 20.0));
+        let mut commands = Vec::new();
+
+        assert!(timeline_bar_push_tap_click_commands(
+            &view,
+            198.0,
+            rect,
+            0.0,
+            10.0,
+            &mut commands,
+        ));
+
+        assert_eq!(
+            commands,
+            vec![
+                AppCommand::EditorSetTimelineTime(5.0),
+                AppCommand::EditorSetSelectedTap(Some(1)),
+            ]
+        );
+    }
+
+    #[test]
+    fn timeline_bar_tap_is_current_uses_tight_epsilon() {
+        assert!(timeline_bar_tap_is_current(5.0, 5.0));
+        assert!(timeline_bar_tap_is_current(5.0, 5.00005));
+        assert!(!timeline_bar_tap_is_current(5.0, 5.001));
     }
 
     #[test]

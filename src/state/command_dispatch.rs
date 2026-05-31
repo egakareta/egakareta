@@ -77,6 +77,9 @@ impl State {
             AppCommand::EditorAddTap => self.editor_add_tap(),
             AppCommand::EditorRemoveTap => self.editor_remove_tap(),
             AppCommand::EditorRemoveTapAt(time) => self.editor_remove_tap_at(time),
+            AppCommand::EditorSetSelectedTap(index) => {
+                self.editor_set_selected_tap_index(index);
+            }
             AppCommand::EditorSetSelectedTapTime(time) => {
                 self.editor_set_selected_tap_time(time);
             }
