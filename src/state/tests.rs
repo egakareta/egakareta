@@ -364,29 +364,6 @@ fn test_state_phase_integrity() {
 }
 
 #[test]
-fn focused_init_path_start_editor_loads_builtin_state() {
-    pollster::block_on(async {
-        let mut state = State::new_test().await;
-
-        let expected_level_name = state.menu.state.levels[0].clone();
-        state.start_editor(0);
-
-        assert_eq!(state.phase, AppPhase::Editor);
-        assert_eq!(state.session.editor_level_name, Some(expected_level_name));
-        assert!(!state.editor.objects.is_empty());
-        assert_eq!(
-            state.editor.timeline.taps.tap_indicator_positions.len(),
-            state.editor.timeline.taps.tap_times.len(),
-            "tap indicators should be derived from loaded tap times"
-        );
-        assert_eq!(
-            state.editor.camera.editor_target_z, state.editor.ui.cursor[1],
-            "start_editor should sync camera target Z with loaded cursor"
-        );
-    });
-}
-
-#[test]
 fn focused_init_path_toggle_editor_uses_selected_builtin_level() {
     pollster::block_on(async {
         let mut state = State::new_test().await;
@@ -1496,8 +1473,13 @@ fn toggle_editor_and_mouse_paths_cover_playtest_and_release_guards() {
         let mut state = State::new_test().await;
 
         state.phase = AppPhase::Menu;
+        state.menu.state.levels = vec!["Missing test level".to_string()];
         state.toggle_editor();
         assert_eq!(state.phase, AppPhase::Editor);
+        assert_eq!(
+            state.session.editor_level_name,
+            Some("Missing test level".to_string())
+        );
 
         state.phase = AppPhase::Playing;
         state.session.playtesting_editor = true;

@@ -211,6 +211,11 @@ impl State {
         self.render.meshes.trail.clear();
     }
 
+    #[cfg(test)]
+    pub(crate) fn enter_editor_phase_for_test(&mut self, level_name: impl Into<String>) {
+        self.enter_editor_phase(level_name.into());
+    }
+
     pub(super) fn enter_menu_phase(&mut self) {
         self.session.playtesting_editor = false;
         self.session.playtest_audio_start_seconds = None;

@@ -1504,7 +1504,7 @@ mod tests {
                 return;
             };
 
-            state.toggle_editor();
+            state.enter_editor_phase_for_test("MarqueeUiTest");
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
 
             // Inject a marquee drag large enough to be considered active.
@@ -1534,7 +1534,7 @@ mod tests {
                 return;
             };
 
-            state.toggle_editor();
+            state.enter_editor_phase_for_test("EditorUiCompositionTest");
             assert!(state.is_editor());
 
             state.dispatch(AppCommand::EditorSetMode(EditorMode::Timing));

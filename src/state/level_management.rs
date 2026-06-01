@@ -1092,16 +1092,21 @@ mod tests {
     fn start_editor_loads_builtin_metadata_into_editor_session() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
+            let expected_level_name = state.menu.state.levels[0].clone();
 
             state.start_editor(0);
 
             assert_eq!(state.phase, AppPhase::Editor);
-            assert!(state.editor_level_name().is_some());
+            assert_eq!(state.editor_level_name(), Some(expected_level_name));
             assert!(state.editor.timeline.clock.duration_seconds > 0.0);
             assert!(!state.editor.objects.is_empty());
             assert_eq!(
                 state.editor.timeline.taps.tap_times.len(),
                 state.editor.timeline.taps.tap_indicator_positions.len()
+            );
+            assert_eq!(
+                state.editor.camera.editor_target_z, state.editor.ui.cursor[1],
+                "start_editor should sync camera target Z with loaded cursor"
             );
             assert_eq!(state.editor.timing.timing_selected_index, None);
             assert_eq!(state.editor.selected_trigger_index(), None);
