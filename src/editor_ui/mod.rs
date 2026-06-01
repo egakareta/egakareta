@@ -17,7 +17,9 @@ use crate::editor_ui::modes::compose::{
     show_block_preview_button, show_compose_mode_bottom_panel,
     show_selected_block_properties_window,
 };
-use crate::editor_ui::modes::tapping::show_tapping_mode_bottom_panel;
+use crate::editor_ui::modes::tapping::{
+    show_selected_tap_properties_window, show_tapping_mode_bottom_panel,
+};
 use crate::editor_ui::modes::timing::show_timing_mode_bottom_panel;
 use crate::editor_ui::modes::trigger::show_trigger_mode_bottom_panel;
 use crate::types::{essential_keybind_actions, format_key_chord, EditorMode, SettingsSection};
@@ -765,6 +767,12 @@ pub fn show_editor_ui(
             });
 
         show_selected_block_properties_window(ctx, &view, bottom_bar_height, &mut commands);
+    }
+
+    // Selected tap properties floating window
+    if is_tapping {
+        let bottom_bar_height = bottom_bar_response.response.rect.height();
+        show_selected_tap_properties_window(ctx, &view, bottom_bar_height, &mut commands);
     }
 
     // Waveform visualization central panel (Timing mode only)
