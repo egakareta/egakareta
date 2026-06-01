@@ -1516,6 +1516,12 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
         },
         KeybindActionMetadata {
             group: "Editor",
+            action: "pick_hovered_block",
+            label: "Pick Hovered Block",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
             action: "spawn_set",
             label: "Set Spawn Position",
             capacity: 1,
@@ -1752,6 +1758,10 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
         KeybindBinding {
             action: "snap_selection_to_grid".to_string(),
             chord: KeyChord::new("g", false, false, false),
+        },
+        KeybindBinding {
+            action: "pick_hovered_block".to_string(),
+            chord: KeyChord::new("b", false, false, false),
         },
         KeybindBinding {
             action: "spawn_set".to_string(),
@@ -2417,7 +2427,12 @@ mod tests {
     #[test]
     fn editor_tab_keybinds_are_registered_with_defaults() {
         let actions = super::essential_keybind_actions();
-        for action in ["tab_compose", "tab_timing", "tab_tapping"] {
+        for action in [
+            "pick_hovered_block",
+            "tab_compose",
+            "tab_timing",
+            "tab_tapping",
+        ] {
             assert!(
                 actions.iter().any(|metadata| metadata.action == action),
                 "{action} should be shown in keybind settings"
@@ -2426,6 +2441,10 @@ mod tests {
 
         let defaults = super::default_essential_keybinds();
         let expected = [
+            (
+                "pick_hovered_block",
+                super::KeyChord::new("b", false, false, false),
+            ),
             ("tab_compose", super::KeyChord::new("1", true, false, false)),
             ("tab_timing", super::KeyChord::new("2", true, false, false)),
             ("tab_tapping", super::KeyChord::new("3", true, false, false)),

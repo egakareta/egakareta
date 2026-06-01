@@ -37,6 +37,8 @@ pub(crate) enum AppCommand {
     EditorSetMode(crate::types::EditorMode),
     /// Set the current block ID for placement.
     EditorSetBlockId(String),
+    /// Pick the block under the pointer and enter place mode with that block type.
+    EditorPickHoveredBlock,
     /// Set whether to snap to grid.
     EditorSetSnapToGrid(bool),
     /// Set the grid snap step.

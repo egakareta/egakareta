@@ -44,6 +44,9 @@ impl State {
                 }
             }
             AppCommand::EditorSetBlockId(id) => self.set_editor_block_id(id),
+            AppCommand::EditorPickHoveredBlock => {
+                self.editor_pick_hovered_block_for_place();
+            }
             AppCommand::EditorSetSnapToGrid(snap) => self.set_editor_snap_to_grid(snap),
             AppCommand::EditorSetSnapStep(step) => self.set_editor_snap_step(step),
             AppCommand::EditorSetSnapRotation(snap) => self.set_editor_snap_rotation(snap),
@@ -530,6 +533,13 @@ impl State {
                     None
                 }
             }
+            "pick_hovered_block" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorPickHoveredBlock)
+                } else {
+                    None
+                }
+            }
             "timeline_forward" => {
                 if self.is_editor() && !self.has_block_selection() {
                     self.timeline_shift_to_division_command(TimingDivisionDirection::Forward)
@@ -721,6 +731,41 @@ impl State {
             TimingDivisionDirection::Backward => -FALLBACK_TIMELINE_SHIFT_SECONDS,
         };
         Some(AppCommand::EditorShiftTimeline(fallback_delta))
+    }
+
+    fn editor_pick_hovered_block_for_place(&mut self) -> bool {
+        if !self.is_editor() {
+            return false;
+        }
+
+        let mut block_index = self.editor.ui.hovered_block_index;
+        if block_index.is_none() {
+            if let Some([x, y]) = self.editor.ui.pointer_screen {
+                let viewport_size = glam::Vec2::new(
+                    self.render.gpu.config.width as f32,
+                    self.render.gpu.config.height as f32,
+                );
+                block_index = self
+                    .editor
+                    .pick_from_screen(x, y, viewport_size)
+                    .and_then(|pick| pick.hit_block_index);
+            }
+        }
+
+        let Some(block_id) = block_index
+            .and_then(|index| self.editor.objects.get(index))
+            .map(|object| object.block_id.clone())
+        else {
+            return false;
+        };
+
+        if self.editor.timeline.playback.playing {
+            self.set_editor_playback_effective_mode(EditorMode::Place);
+        } else {
+            self.set_editor_mode(EditorMode::Place);
+        }
+        self.set_editor_block_id(block_id);
+        true
     }
 
     /// Process a unified `InputEvent`.
@@ -927,6 +972,30 @@ mod tests {
 
             state.dispatch(AppCommand::EditorSetBlockId("core/lava".to_string()));
             assert_eq!(state.editor.config.selected_block_id, "core/lava");
+
+            state.editor.objects = vec![
+                LevelObject {
+                    position: [0.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
+                    rotation_degrees: [0.0, 0.0, 0.0],
+                    block_id: "core/stone".to_string(),
+                    color_tint: [1.0, 1.0, 1.0],
+                },
+                LevelObject {
+                    position: [1.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
+                    rotation_degrees: [0.0, 0.0, 0.0],
+                    block_id: "core/grass".to_string(),
+                    color_tint: [1.0, 1.0, 1.0],
+                },
+            ];
+            state.editor.ui.mode = EditorMode::Move;
+            state.editor.ui.hovered_block_index = Some(1);
+
+            state.dispatch(AppCommand::EditorPickHoveredBlock);
+
+            assert_eq!(state.editor.ui.mode, EditorMode::Place);
+            assert_eq!(state.editor.config.selected_block_id, "core/grass");
         });
     }
 
@@ -2145,6 +2214,14 @@ mod tests {
                 None
             );
             state.editor.ui.selected_block_index = None;
+            assert_eq!(
+                state.command_for_keybind_action("pick_hovered_block", true),
+                Some(AppCommand::EditorPickHoveredBlock)
+            );
+            assert_eq!(
+                state.command_for_keybind_action("pick_hovered_block", false),
+                None
+            );
             state.editor.timeline.clock.time_seconds = 1.26;
             state.editor.timing.timing_points = vec![
                 TimingPoint {
