@@ -260,7 +260,6 @@ pub(crate) enum BlockRenderProfile {
     Solid,
     Liquid,
     SpeedPortal,
-    FinishRing,
     Neon,
 }
 
@@ -322,7 +321,6 @@ pub(crate) enum BlockCollision {
     PassThrough,
     Hazard,
     Portal,
-    Finish,
 }
 
 #[derive(Clone, Deserialize, Serialize)]

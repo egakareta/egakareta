@@ -50,27 +50,6 @@ mod tests {
     }
 
     #[test]
-    fn finish_ring_vertices_use_shader_pulse_metadata() {
-        let obj = LevelObject {
-            position: [2.0, 0.0, 3.0],
-            size: [4.0, 1.0, 2.0],
-            block_id: "core/finish".to_string(),
-            ..LevelObject::default()
-        };
-        let vertices = build_block_vertices(std::slice::from_ref(&obj));
-        let expected_phase_offset =
-            (obj.position[0] * 0.37 + obj.position[2] * 0.21) * std::f32::consts::PI;
-
-        assert!(!vertices.is_empty());
-        for vertex in vertices {
-            assert_eq!(vertex.render_profile, 2.0);
-            assert_eq!(vertex.color_outline[0], 4.0);
-            assert_eq!(vertex.color_outline[1], 4.0);
-            assert!((vertex.color_outline[2] - expected_phase_offset).abs() < 1e-5);
-        }
-    }
-
-    #[test]
     fn solid_block_black_tint_darkens_vertex_colors() {
         let obj = LevelObject {
             block_id: "core/solid".to_string(),
@@ -327,20 +306,6 @@ f 1/1/1 2/2/1 3/3/1
             .as_ref()
             .is_some_and(|indices| !indices.is_empty()));
         assert_eq!(geometry.to_triangle_vertices().len(), mesh.indices.len());
-    }
-
-    #[test]
-    fn finish_ring_generates_vertices() {
-        let obj = LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 0.3],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            block_id: "core/finish".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-        };
-
-        let vertices = build_block_vertices(&[obj]);
-        assert!(vertices.len() >= 168); // 28 segments * (outer + inner + face) triangles
     }
 
     #[test]

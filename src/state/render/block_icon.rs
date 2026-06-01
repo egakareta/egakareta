@@ -403,7 +403,6 @@ mod tests {
     #[test]
     fn dimetric_projection_configuration_is_read_from_block_render_json() {
         assert!(uses_dimetric_icon_projection("core/stone"));
-        assert!(!uses_dimetric_icon_projection("core/finish"));
         assert!(!uses_dimetric_icon_projection("core/speedportal"));
     }
 

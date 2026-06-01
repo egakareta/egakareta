@@ -1004,7 +1004,10 @@ impl State {
             &self.editor.timeline.taps.tap_times,
             self.editor.triggers(),
             self.editor.simulate_trigger_hitboxes(),
-            self.editor.timeline.clock.time_seconds,
+            (
+                self.editor.timeline.clock.time_seconds,
+                self.editor.timeline.clock.duration_seconds,
+            ),
         );
 
         let music_source = self.session.editor_music_metadata.source.clone();
@@ -1027,6 +1030,9 @@ impl State {
         self.gameplay.state = GameState::new();
         self.gameplay.state.objects = transition.objects;
         self.gameplay.state.rebuild_behavior_cache();
+        self.gameplay
+            .state
+            .set_level_duration_seconds(transition.level_duration_seconds);
         self.session.playing_trigger_hitboxes = self.editor.simulate_trigger_hitboxes();
         self.session.playing_trigger_base_objects = Some(self.gameplay.state.objects.clone());
         self.apply_spawn_exact_to_game(

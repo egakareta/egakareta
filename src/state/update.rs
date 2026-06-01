@@ -147,7 +147,10 @@ impl State {
 
     fn target_playing_time(&self, frame_dt: f32) -> f32 {
         let elapsed = self.gameplay.state.elapsed_seconds.max(0.0);
-        if !self.gameplay.state.started || self.gameplay.state.game_over {
+        if !self.gameplay.state.started
+            || self.gameplay.state.game_over
+            || self.gameplay.state.level_complete
+        {
             return elapsed;
         }
 
@@ -160,7 +163,9 @@ impl State {
             .unwrap_or(fallback_target);
 
         let clamped_forward_target = audio_target.max(elapsed);
-        clamped_forward_target.min(elapsed + 0.25)
+        clamped_forward_target
+            .min(elapsed + 0.25)
+            .min(self.gameplay.state.level_duration_seconds)
     }
 
     fn advance_playing_state_segment_to_time(
@@ -179,7 +184,8 @@ impl State {
                 *trigger_render_objects = self.apply_playing_object_triggers(step_target);
                 self.gameplay.state.update(step_dt);
                 self.prune_playing_trigger_base_objects_from_consumed();
-                should_continue = !self.gameplay.state.game_over;
+                should_continue =
+                    !self.gameplay.state.game_over && !self.gameplay.state.level_complete;
                 should_continue
             },
         );

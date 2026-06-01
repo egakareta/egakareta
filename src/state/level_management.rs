@@ -44,6 +44,9 @@ impl State {
             log::debug!("Starting level: {}", transition.level_name);
             self.gameplay.state.objects = transition.objects;
             self.gameplay.state.rebuild_behavior_cache();
+            self.gameplay
+                .state
+                .set_level_duration_seconds(transition.level_duration_seconds);
             self.session.playing_trigger_base_objects = Some(self.gameplay.state.objects.clone());
             self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction, None);
         }
@@ -66,7 +69,10 @@ impl State {
                 &self.editor.timeline.taps.tap_times,
                 self.editor.triggers(),
                 self.editor.simulate_trigger_hitboxes(),
-                self.editor.timeline.clock.time_seconds,
+                (
+                    self.editor.timeline.clock.time_seconds,
+                    self.editor.timeline.clock.duration_seconds,
+                ),
             );
             let metadata = self.current_editor_metadata();
             let level_name = transition
@@ -82,6 +88,9 @@ impl State {
                 Some(transition.playtest_audio_start_seconds);
             self.gameplay.state.objects = transition.objects;
             self.gameplay.state.rebuild_behavior_cache();
+            self.gameplay
+                .state
+                .set_level_duration_seconds(transition.level_duration_seconds);
             self.session.playing_trigger_hitboxes = self.editor.simulate_trigger_hitboxes();
             self.session.playing_trigger_base_objects = Some(self.gameplay.state.objects.clone());
             self.apply_spawn_exact_to_game(
@@ -101,6 +110,9 @@ impl State {
                 let transition = build_playing_transition_from_metadata(metadata);
                 self.gameplay.state.objects = transition.objects;
                 self.gameplay.state.rebuild_behavior_cache();
+                self.gameplay
+                    .state
+                    .set_level_duration_seconds(transition.level_duration_seconds);
                 self.session.playing_trigger_base_objects =
                     Some(self.gameplay.state.objects.clone());
                 self.apply_spawn_to_game(

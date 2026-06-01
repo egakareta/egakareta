@@ -190,31 +190,20 @@ fn speed_portal_overlap_removes_portal_and_boosts_speed() {
 }
 
 #[test]
-fn finish_block_overlap_completes_level_after_sink() {
+fn level_completes_at_configured_duration() {
     let mut game = GameState::new();
     game.started = true;
-    game.position = [0.5, 0.0, 0.5];
-    game.objects.push(LevelObject {
-        position: [0.0, -0.1, 0.0],
-        size: [1.0, 0.2, 1.0],
-        rotation_degrees: [0.0, 0.0, 0.0],
-        block_id: "core/finish".to_string(),
-        color_tint: [1.0, 1.0, 1.0],
-    });
-    game.rebuild_behavior_cache();
+    game.set_level_duration_seconds(0.05);
 
-    game.update(0.0);
+    game.update(0.04);
     assert!(!game.level_complete);
 
-    for _ in 0..180 {
-        game.update(1.0 / 120.0);
-        if game.level_complete {
-            break;
-        }
-    }
+    game.update(0.02);
 
     assert!(game.level_complete);
+    assert!(!game.started);
     assert!(!game.game_over);
+    approx_eq(game.elapsed_seconds, 0.05, 1e-6);
 }
 
 #[test]
