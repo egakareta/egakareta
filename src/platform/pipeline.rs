@@ -159,11 +159,46 @@ mod tests {
     use super::FramePipeline;
     use crate::State;
 
+    fn configure_test_fonts(ctx: &egui::Context) {
+        let mut fonts = egui::FontDefinitions::default();
+        fonts.font_data.insert(
+            "sora".to_owned(),
+            std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+                "../../assets/Sora.ttf"
+            ))),
+        );
+        fonts.font_data.insert(
+            "sora_thin".to_owned(),
+            std::sync::Arc::new(
+                egui::FontData::from_static(include_bytes!("../../assets/Sora.ttf")).tweak(
+                    egui::FontTweak {
+                        coords: egui::epaint::text::VariationCoords::new([(b"wght", 100.0)]),
+                        ..Default::default()
+                    },
+                ),
+            ),
+        );
+        fonts
+            .families
+            .entry(egui::FontFamily::Name("sora_thin".into()))
+            .or_default()
+            .insert(0, "sora_thin".to_owned());
+        fonts
+            .families
+            .entry(egui::FontFamily::Proportional)
+            .or_default()
+            .insert(0, "sora".to_owned());
+
+        egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+        ctx.set_fonts(fonts);
+    }
+
     #[test]
     fn run_frame_executes_without_surface_and_returns_output() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
             let egui_ctx = egui::Context::default();
+            configure_test_fonts(&egui_ctx);
             let renderer = state.create_egui_renderer();
             let mut pipeline = FramePipeline::new(egui_ctx, renderer, None);
 
@@ -179,6 +214,7 @@ mod tests {
         pollster::block_on(async {
             let mut state = State::new_test().await;
             let egui_ctx = egui::Context::default();
+            configure_test_fonts(&egui_ctx);
             let renderer = state.create_egui_renderer();
             let favicon = egui_ctx.load_texture(
                 "test-favicon",

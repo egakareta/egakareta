@@ -176,6 +176,7 @@ fn render_profile_tag(profile: &BlockRenderProfile) -> u8 {
         BlockRenderProfile::Liquid => 1,
         BlockRenderProfile::SpeedPortal => 3,
         BlockRenderProfile::Neon => 5,
+        BlockRenderProfile::Gem => 7,
     }
 }
 
@@ -256,6 +257,7 @@ mod tests {
         assert_eq!(render_profile_tag(&BlockRenderProfile::Liquid), 1);
         assert_eq!(render_profile_tag(&BlockRenderProfile::SpeedPortal), 3);
         assert_eq!(render_profile_tag(&BlockRenderProfile::Neon), 5);
+        assert_eq!(render_profile_tag(&BlockRenderProfile::Gem), 7);
     }
 
     #[test]

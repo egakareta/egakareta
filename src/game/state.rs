@@ -10,7 +10,7 @@ use super::physics::object_xz_contains;
 use super::physics::{aabb_overlaps_object_xz, BASE_PLAYER_SPEED};
 use super::spatial::SpatialGrid;
 use crate::block_repository::{resolve_block_definition, BlockCollision};
-use crate::types::{Direction, LevelObject, SpawnDirection};
+use crate::types::{Direction, LevelObject, PlayerLevelProgress, SpawnDirection};
 
 const PLAYER_WIDTH: f32 = 0.8;
 const PLAYER_HEIGHT: f32 = 0.8;
@@ -24,6 +24,7 @@ pub(crate) struct CachedBlockBehavior {
     pub(crate) speed_multiplier: f32,
     pub(crate) support_surface: bool,
     pub(crate) consumed_on_overlap: bool,
+    pub(crate) gem_value: u32,
 }
 
 impl CachedBlockBehavior {
@@ -34,6 +35,15 @@ impl CachedBlockBehavior {
             speed_multiplier: def.behavior.speed_multiplier,
             support_surface: def.behavior.support_surface,
             consumed_on_overlap: def.behavior.consumed_on_overlap,
+            gem_value: def.behavior.gem_value,
+        }
+    }
+
+    pub(crate) fn collectible_gem_value(self) -> u32 {
+        if matches!(self.collision, BlockCollision::Collectible) {
+            self.gem_value.max(1)
+        } else {
+            0
         }
     }
 }
@@ -58,6 +68,7 @@ pub(crate) struct GameState {
     pub(crate) level_complete: bool,
     pub(crate) completion_hold_seconds: f32,
     pub(crate) started: bool,
+    progress: PlayerLevelProgress,
     consumed_object_indices: Vec<usize>,
 }
 
@@ -87,6 +98,7 @@ impl GameState {
             level_complete: false,
             completion_hold_seconds: 0.0,
             started: false,
+            progress: PlayerLevelProgress::default(),
             consumed_object_indices: Vec::new(),
         }
     }
@@ -109,6 +121,26 @@ impl GameState {
             .collect();
 
         self.rebuild_spatial_grid();
+    }
+
+    pub(crate) fn initialize_level_progress_from_objects(&mut self) {
+        let gems_max = self
+            .objects
+            .iter()
+            .map(|object| {
+                CachedBlockBehavior::from_block_id(&object.block_id).collectible_gem_value()
+            })
+            .sum();
+        self.progress = PlayerLevelProgress {
+            progress_percent: 0.0,
+            completed: false,
+            gems_collected: 0,
+            gems_max,
+        };
+    }
+
+    pub(crate) fn level_progress(&self) -> PlayerLevelProgress {
+        self.progress.sanitized()
     }
 
     fn rebuild_spatial_grid(&mut self) {
@@ -139,6 +171,9 @@ impl GameState {
         self.game_over = false;
         self.level_complete = false;
         self.completion_hold_seconds = 0.0;
+        self.progress.progress_percent = 0.0;
+        self.progress.completed = false;
+        self.progress.gems_collected = 0;
         self.consumed_object_indices.clear();
         self.trail_segments = vec![vec![spawn_position]];
     }
@@ -187,6 +222,7 @@ impl GameState {
         let step = remaining_level_time.min(dt.max(0.0));
 
         self.elapsed_seconds += step;
+        self.update_progress_percent(false);
 
         const GRAVITY: f32 = 26.0;
         const MAX_FALL_SPEED: f32 = 40.0;
@@ -204,6 +240,7 @@ impl GameState {
         // Collision detection
         let mut hit_death = false;
         let mut hit_portals = Vec::new();
+        let mut hit_collectibles = Vec::new();
 
         let x = self.position[0];
         let y = self.position[1];
@@ -242,6 +279,9 @@ impl GameState {
                         BlockCollision::Portal => {
                             hit_portals.push(i);
                         }
+                        BlockCollision::Collectible => {
+                            hit_collectibles.push(i);
+                        }
                         BlockCollision::Hazard => {
                             hit_death = true;
                         }
@@ -259,29 +299,56 @@ impl GameState {
             return;
         }
 
-        if !hit_portals.is_empty() {
-            puffin::profile_scope!("GamePortalConsume");
-            let mut removed = false;
-            for i in hit_portals.into_iter().rev() {
+        if !hit_portals.is_empty() || !hit_collectibles.is_empty() {
+            puffin::profile_scope!("GameConsumableOverlap");
+            let mut consumed_indices = Vec::new();
+
+            for i in hit_portals {
                 if let Some(behavior) = self.cached_behaviors.get(i).copied() {
                     self.speed *= behavior.speed_multiplier.max(0.1);
                     if behavior.consumed_on_overlap {
-                        self.objects.remove(i);
-                        self.cached_behaviors.remove(i);
-                        self.consumed_object_indices.push(i);
-                        removed = true;
+                        consumed_indices.push(i);
                     }
                 } else if let Some(portal) = self.objects.get(i) {
                     let behavior = &resolve_block_definition(&portal.block_id).behavior;
                     self.speed *= behavior.speed_multiplier.max(0.1);
                     if behavior.consumed_on_overlap {
-                        self.objects.remove(i);
-                        self.consumed_object_indices.push(i);
-                        removed = true;
+                        consumed_indices.push(i);
                     }
                 }
             }
-            if removed {
+
+            for i in hit_collectibles {
+                if let Some(behavior) = self.cached_behaviors.get(i).copied() {
+                    self.progress.gems_collected = self
+                        .progress
+                        .gems_collected
+                        .saturating_add(behavior.collectible_gem_value())
+                        .min(self.progress.gems_max);
+                    consumed_indices.push(i);
+                } else if let Some(object) = self.objects.get(i) {
+                    let behavior = CachedBlockBehavior::from_block_id(&object.block_id);
+                    self.progress.gems_collected = self
+                        .progress
+                        .gems_collected
+                        .saturating_add(behavior.collectible_gem_value())
+                        .min(self.progress.gems_max);
+                    consumed_indices.push(i);
+                }
+            }
+
+            consumed_indices.sort_unstable();
+            consumed_indices.dedup();
+            for i in consumed_indices.iter().copied().rev() {
+                if i < self.objects.len() {
+                    self.objects.remove(i);
+                    if i < self.cached_behaviors.len() {
+                        self.cached_behaviors.remove(i);
+                    }
+                    self.consumed_object_indices.push(i);
+                }
+            }
+            if !consumed_indices.is_empty() {
                 self.rebuild_spatial_grid();
             }
         }
@@ -354,6 +421,18 @@ impl GameState {
         self.level_complete = true;
         self.completion_hold_seconds = 0.6;
         self.started = false;
+        self.update_progress_percent(true);
+    }
+
+    fn update_progress_percent(&mut self, completed: bool) {
+        if self.level_duration_seconds.is_finite() && self.level_duration_seconds > 0.0 {
+            self.progress.progress_percent =
+                (self.elapsed_seconds / self.level_duration_seconds * 100.0).clamp(0.0, 100.0);
+        }
+        if completed {
+            self.progress.progress_percent = 100.0;
+            self.progress.completed = true;
+        }
     }
 
     fn start_new_trail_segment(&mut self, point: [f32; 3]) {

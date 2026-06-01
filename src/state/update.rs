@@ -682,11 +682,13 @@ impl State {
 
         if self.gameplay.state.level_complete && self.gameplay.state.completion_hold_seconds <= 0.0
         {
+            self.record_current_level_progress();
             self.back_to_menu();
             return;
         }
 
         if self.gameplay.state.game_over {
+            self.record_current_level_progress();
             self.stop_audio();
             self.clear_pending_gameplay_inputs();
         }

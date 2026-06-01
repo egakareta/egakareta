@@ -190,6 +190,30 @@ fn speed_portal_overlap_removes_portal_and_boosts_speed() {
 }
 
 #[test]
+fn gem_overlap_collects_and_tracks_progress() {
+    let mut game = GameState::new();
+    game.started = true;
+    game.position = [0.5, 0.0, 0.5];
+    game.objects.push(LevelObject {
+        position: [0.0, 0.0, 0.0],
+        size: [0.72, 0.86, 0.72],
+        rotation_degrees: [0.0, 0.0, 0.0],
+        block_id: "core/gem".to_string(),
+        color_tint: [1.0, 1.0, 1.0],
+    });
+    game.rebuild_behavior_cache();
+    game.initialize_level_progress_from_objects();
+
+    game.update(0.0);
+
+    let progress = game.level_progress();
+    assert_eq!(progress.gems_collected, 1);
+    assert_eq!(progress.gems_max, 1);
+    assert!(game.objects.is_empty());
+    assert!(!game.game_over);
+}
+
+#[test]
 fn level_completes_at_configured_duration() {
     let mut game = GameState::new();
     game.started = true;
@@ -203,6 +227,8 @@ fn level_completes_at_configured_duration() {
     assert!(game.level_complete);
     assert!(!game.started);
     assert!(!game.game_over);
+    assert!(game.level_progress().completed);
+    approx_eq(game.level_progress().progress_percent, 100.0, 1e-6);
     approx_eq(game.elapsed_seconds, 0.05, 1e-6);
 }
 

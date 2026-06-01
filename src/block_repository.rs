@@ -70,6 +70,10 @@ fn default_consumed_on_overlap() -> bool {
     false
 }
 
+fn default_gem_value() -> u32 {
+    0
+}
+
 fn default_placeable() -> bool {
     true
 }
@@ -261,6 +265,7 @@ pub(crate) enum BlockRenderProfile {
     Liquid,
     SpeedPortal,
     Neon,
+    Gem,
 }
 
 #[derive(Clone, Default, Deserialize, Serialize)]
@@ -321,6 +326,7 @@ pub(crate) enum BlockCollision {
     PassThrough,
     Hazard,
     Portal,
+    Collectible,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -333,6 +339,8 @@ pub(crate) struct BlockBehavior {
     pub(crate) support_surface: bool,
     #[serde(default = "default_consumed_on_overlap")]
     pub(crate) consumed_on_overlap: bool,
+    #[serde(default = "default_gem_value")]
+    pub(crate) gem_value: u32,
 }
 
 impl Default for BlockBehavior {
@@ -342,6 +350,7 @@ impl Default for BlockBehavior {
             speed_multiplier: default_speed_multiplier(),
             support_surface: default_support_surface(),
             consumed_on_overlap: default_consumed_on_overlap(),
+            gem_value: default_gem_value(),
         }
     }
 }

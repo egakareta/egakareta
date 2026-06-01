@@ -96,6 +96,19 @@ pub fn show_menu_play_ui(ctx: &egui::Context, state: &mut State) {
             {
                 state.turn_right();
             }
+
+            if let Some(progress) = state.menu_selected_level_progress() {
+                let status = if progress.completed {
+                    "Complete"
+                } else {
+                    "Best"
+                };
+                ui.add_space(8.0);
+                ui.label(format!(
+                    "{status}: {:.0}%  Gems: {}/{}",
+                    progress.progress_percent, progress.gems_collected, progress.gems_max
+                ));
+            }
         });
 }
 

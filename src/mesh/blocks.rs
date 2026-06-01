@@ -20,6 +20,7 @@ use crate::platform::parallel::rayon_is_ready;
 use crate::types::{LevelObject, Vertex};
 
 const LIQUID_PROFILE_TAG: f32 = 1.0;
+const GEM_PROFILE_TAG: f32 = 4.0;
 const PARALLEL_GEOMETRY_OBJECT_THRESHOLD: usize = 256;
 
 pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
@@ -203,6 +204,15 @@ fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
     if matches!(block.render.profile, BlockRenderProfile::Liquid) {
         for vertex in &mut object_geometry.vertices {
             vertex.set_render_profile(LIQUID_PROFILE_TAG);
+        }
+    }
+
+    if matches!(block.render.profile, BlockRenderProfile::Gem) {
+        let phase_seed =
+            pseudo_random_noise(center[0], center[1], center[2]) * std::f32::consts::TAU;
+        for vertex in &mut object_geometry.vertices {
+            vertex.set_render_profile(GEM_PROFILE_TAG);
+            vertex.color_outline = [center[0], center[1], center[2], phase_seed];
         }
     }
 

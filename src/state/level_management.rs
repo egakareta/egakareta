@@ -44,6 +44,7 @@ impl State {
             log::debug!("Starting level: {}", transition.level_name);
             self.gameplay.state.objects = transition.objects;
             self.gameplay.state.rebuild_behavior_cache();
+            self.gameplay.state.initialize_level_progress_from_objects();
             self.gameplay
                 .state
                 .set_level_duration_seconds(transition.level_duration_seconds);
@@ -88,6 +89,7 @@ impl State {
                 Some(transition.playtest_audio_start_seconds);
             self.gameplay.state.objects = transition.objects;
             self.gameplay.state.rebuild_behavior_cache();
+            self.gameplay.state.initialize_level_progress_from_objects();
             self.gameplay
                 .state
                 .set_level_duration_seconds(transition.level_duration_seconds);
@@ -110,6 +112,7 @@ impl State {
                 let transition = build_playing_transition_from_metadata(metadata);
                 self.gameplay.state.objects = transition.objects;
                 self.gameplay.state.rebuild_behavior_cache();
+                self.gameplay.state.initialize_level_progress_from_objects();
                 self.gameplay
                     .state
                     .set_level_duration_seconds(transition.level_duration_seconds);
@@ -410,6 +413,34 @@ impl State {
 
     pub(crate) fn app_settings(&self) -> &AppSettings {
         &self.session.app_settings
+    }
+
+    pub(crate) fn menu_selected_level_progress(&self) -> Option<crate::types::PlayerLevelProgress> {
+        let level_name = self.menu_level_name()?;
+        self.session
+            .app_settings
+            .level_progress
+            .get(level_name)
+            .copied()
+    }
+
+    pub(crate) fn record_current_level_progress(&mut self) {
+        if self.session.playtesting_editor {
+            return;
+        }
+
+        let Some(level_name) = self.session.playing_level_name.clone() else {
+            return;
+        };
+
+        let progress = self.gameplay.state.level_progress();
+        if self
+            .session
+            .app_settings
+            .update_level_progress(&level_name, progress)
+        {
+            self.persist_app_settings();
+        }
     }
 
     pub(crate) fn available_graphics_backends(&self) -> &[String] {

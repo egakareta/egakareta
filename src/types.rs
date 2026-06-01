@@ -5,6 +5,8 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use std::collections::HashMap;
+
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 
@@ -110,7 +112,7 @@ impl GizmoPart {
 
 pub(crate) const CURRENT_LEVEL_FORMAT_VERSION: u32 = 2;
 
-pub(crate) const APP_SETTINGS_VERSION: u32 = 2;
+pub(crate) const APP_SETTINGS_VERSION: u32 = 3;
 pub(crate) const DEFAULT_MENU_PREVIEW_CAMERA_POSITION: [f32; 3] = [22.657694, 15.0, -10.565456];
 pub(crate) const DEFAULT_MENU_PREVIEW_CAMERA_TARGET: [f32; 3] = [0.0, 0.0, 0.0];
 
@@ -369,6 +371,10 @@ fn default_app_keybinds() -> Vec<KeybindBinding> {
 
 fn is_default_app_keybinds(value: &[KeybindBinding]) -> bool {
     value == default_essential_keybinds().as_slice()
+}
+
+fn default_level_progress() -> HashMap<String, PlayerLevelProgress> {
+    HashMap::new()
 }
 
 fn deserialize_level_object_block_id<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -1182,6 +1188,36 @@ pub(crate) struct KeybindBinding {
     pub(crate) chord: KeyChord,
 }
 
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct PlayerLevelProgress {
+    #[serde(default)]
+    pub(crate) progress_percent: f32,
+    #[serde(default)]
+    pub(crate) completed: bool,
+    #[serde(default)]
+    pub(crate) gems_collected: u32,
+    #[serde(default)]
+    pub(crate) gems_max: u32,
+}
+
+impl PlayerLevelProgress {
+    pub(crate) fn sanitized(self) -> Self {
+        let progress_percent = if self.progress_percent.is_finite() {
+            self.progress_percent.clamp(0.0, 100.0)
+        } else {
+            0.0
+        };
+        let gems_collected = self.gems_collected.min(self.gems_max);
+
+        Self {
+            progress_percent,
+            completed: self.completed || progress_percent >= 100.0,
+            gems_collected,
+            gems_max: self.gems_max,
+        }
+    }
+}
+
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub(crate) struct AppSettings {
     #[serde(
@@ -1234,6 +1270,11 @@ pub(crate) struct AppSettings {
         skip_serializing_if = "is_default_app_keybinds"
     )]
     pub(crate) keybinds: Vec<KeybindBinding>,
+    #[serde(
+        default = "default_level_progress",
+        skip_serializing_if = "HashMap::is_empty"
+    )]
+    pub(crate) level_progress: HashMap<String, PlayerLevelProgress>,
 }
 
 impl Default for AppSettings {
@@ -1249,6 +1290,7 @@ impl Default for AppSettings {
             audio_backend: default_audio_backend_setting(),
             ui_scale_multiplier: default_ui_scale_multiplier_setting(),
             keybinds: default_app_keybinds(),
+            level_progress: default_level_progress(),
         }
     }
 }
@@ -1358,6 +1400,45 @@ impl AppSettings {
         }
         preserved.extend(default_essential_keybinds());
         self.keybinds = preserved;
+    }
+
+    pub(crate) fn update_level_progress(
+        &mut self,
+        level_name: &str,
+        attempt: PlayerLevelProgress,
+    ) -> bool {
+        let level_name = level_name.trim();
+        if level_name.is_empty() {
+            return false;
+        }
+
+        let attempt = attempt.sanitized();
+        let entry = self
+            .level_progress
+            .entry(level_name.to_string())
+            .or_default();
+        let mut changed = false;
+
+        if attempt.progress_percent > entry.progress_percent {
+            entry.progress_percent = attempt.progress_percent;
+            changed = true;
+        }
+        if attempt.completed && !entry.completed {
+            entry.completed = true;
+            changed = true;
+        }
+        if attempt.gems_max > entry.gems_max {
+            entry.gems_max = attempt.gems_max;
+            changed = true;
+        }
+        if attempt.gems_collected > entry.gems_collected {
+            entry.gems_collected = attempt
+                .gems_collected
+                .min(entry.gems_max.max(attempt.gems_max));
+            changed = true;
+        }
+
+        changed
     }
 
     pub(crate) fn migrate_defaults(&mut self) -> bool {
@@ -2639,5 +2720,35 @@ mod tests {
         assert!((super::AppSettings::clamp_ui_scale_multiplier(0.1) - 0.5).abs() <= 1e-6);
         assert!((super::AppSettings::clamp_ui_scale_multiplier(6.0) - 3.0).abs() <= 1e-6);
         assert!((super::AppSettings::clamp_ui_scale_multiplier(f32::NAN) - 1.0).abs() <= 1e-6);
+    }
+
+    #[test]
+    fn app_settings_level_progress_keeps_best_attempt() {
+        let mut settings = super::AppSettings::default();
+
+        assert!(settings.update_level_progress(
+            "Flowerfield",
+            super::PlayerLevelProgress {
+                progress_percent: 45.0,
+                completed: false,
+                gems_collected: 1,
+                gems_max: 3,
+            },
+        ));
+        assert!(settings.update_level_progress(
+            "Flowerfield",
+            super::PlayerLevelProgress {
+                progress_percent: 20.0,
+                completed: true,
+                gems_collected: 2,
+                gems_max: 3,
+            },
+        ));
+
+        let progress = settings.level_progress.get("Flowerfield").copied().unwrap();
+        assert!((progress.progress_percent - 45.0).abs() <= 1e-6);
+        assert!(progress.completed);
+        assert_eq!(progress.gems_collected, 2);
+        assert_eq!(progress.gems_max, 3);
     }
 }

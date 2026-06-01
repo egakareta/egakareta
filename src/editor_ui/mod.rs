@@ -110,6 +110,9 @@ const BLOCK_CATALOG_CATEGORIES: [BlockCatalogCategory; 4] = [
     BlockCatalogCategory::Danger,
     BlockCatalogCategory::Tech,
 ];
+const PLACE_BLOCK_CATALOG_COLUMNS: usize = 9;
+const PLACE_BLOCK_CATALOG_ROWS: usize = 4;
+const PLACE_BLOCK_CATALOG_CELL_SIZE: f32 = 72.0;
 
 impl BlockCatalogCategory {
     fn label(self) -> &'static str {
@@ -748,26 +751,48 @@ pub fn show_editor_ui(
                         }
                     });
 
-                    ui.horizontal_wrapped(|ui| {
-                        let current = view.selected_block_id;
-                        for block in crate::block_repository::all_placeable_blocks() {
-                            if !block.placeable
-                                || !block_matches_catalog_category(block, selected_place_category)
+                    egui::Grid::new("editor_place_block_catalog_grid")
+                        .num_columns(PLACE_BLOCK_CATALOG_COLUMNS)
+                        .show(ui, |ui| {
+                            let current = view.selected_block_id;
+                            let blocks: Vec<_> = crate::block_repository::all_placeable_blocks()
+                                .iter()
+                                .filter(|block| {
+                                    block.placeable
+                                        && block_matches_catalog_category(
+                                            block,
+                                            selected_place_category,
+                                        )
+                                })
+                                .take(PLACE_BLOCK_CATALOG_COLUMNS * PLACE_BLOCK_CATALOG_ROWS)
+                                .collect();
+
+                            for cell in 0..(PLACE_BLOCK_CATALOG_COLUMNS * PLACE_BLOCK_CATALOG_ROWS)
                             {
-                                continue;
+                                if let Some(block) = blocks.get(cell) {
+                                    if show_block_preview_button(
+                                        ui,
+                                        block,
+                                        current == block.id,
+                                        block_icon_texture_ids.get(block.id.as_str()).copied(),
+                                    ) {
+                                        commands
+                                            .push(AppCommand::EditorSetBlockId(block.id.clone()));
+                                        commands.push(AppCommand::EditorSetMode(EditorMode::Place));
+                                        commands.push(AppCommand::EditorTogglePlaceWindow);
+                                    }
+                                } else {
+                                    ui.allocate_exact_size(
+                                        egui::Vec2::splat(PLACE_BLOCK_CATALOG_CELL_SIZE),
+                                        egui::Sense::hover(),
+                                    );
+                                }
+
+                                if (cell + 1) % PLACE_BLOCK_CATALOG_COLUMNS == 0 {
+                                    ui.end_row();
+                                }
                             }
-                            if show_block_preview_button(
-                                ui,
-                                block,
-                                current == block.id,
-                                block_icon_texture_ids.get(block.id.as_str()).copied(),
-                            ) {
-                                commands.push(AppCommand::EditorSetBlockId(block.id.clone()));
-                                commands.push(AppCommand::EditorSetMode(EditorMode::Place));
-                                commands.push(AppCommand::EditorTogglePlaceWindow);
-                            }
-                        }
-                    });
+                        });
                 });
 
         ctx.data_mut(|data| data.insert_persisted(place_category_id, selected_place_category));
