@@ -104,7 +104,7 @@ impl GizmoPart {
 
 pub(crate) const CURRENT_LEVEL_FORMAT_VERSION: u32 = 2;
 
-pub(crate) const APP_SETTINGS_VERSION: u32 = 1;
+pub(crate) const APP_SETTINGS_VERSION: u32 = 2;
 pub(crate) const DEFAULT_MENU_PREVIEW_CAMERA_POSITION: [f32; 3] = [22.657694, 15.0, -10.565456];
 pub(crate) const DEFAULT_MENU_PREVIEW_CAMERA_TARGET: [f32; 3] = [0.0, 0.0, 0.0];
 
@@ -1353,6 +1353,26 @@ impl AppSettings {
         preserved.extend(default_essential_keybinds());
         self.keybinds = preserved;
     }
+
+    pub(crate) fn migrate_defaults(&mut self) -> bool {
+        if self.version >= APP_SETTINGS_VERSION {
+            return false;
+        }
+
+        let mut changed = self.version != APP_SETTINGS_VERSION;
+        for default_binding in default_essential_keybinds() {
+            if !self
+                .keybinds
+                .iter()
+                .any(|binding| binding.action == default_binding.action)
+            {
+                self.keybinds.push(default_binding);
+                changed = true;
+            }
+        }
+        self.version = APP_SETTINGS_VERSION;
+        changed
+    }
 }
 
 pub(crate) fn normalize_binding_key(key: &str) -> String {
@@ -1536,6 +1556,12 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
             group: "Editor",
             action: "pick_hovered_block",
             label: "Pick Hovered Block",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "focus_camera_target",
+            label: "Focus Camera Target",
             capacity: 1,
         },
         KeybindActionMetadata {
@@ -1780,6 +1806,10 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
         KeybindBinding {
             action: "pick_hovered_block".to_string(),
             chord: KeyChord::new("b", false, false, false),
+        },
+        KeybindBinding {
+            action: "focus_camera_target".to_string(),
+            chord: KeyChord::new("f", false, false, false),
         },
         KeybindBinding {
             action: "spawn_set".to_string(),
@@ -2447,6 +2477,7 @@ mod tests {
         let actions = super::essential_keybind_actions();
         for action in [
             "pick_hovered_block",
+            "focus_camera_target",
             "tab_compose",
             "tab_timing",
             "tab_tapping",
@@ -2462,6 +2493,10 @@ mod tests {
             (
                 "pick_hovered_block",
                 super::KeyChord::new("b", false, false, false),
+            ),
+            (
+                "focus_camera_target",
+                super::KeyChord::new("f", false, false, false),
             ),
             ("tab_compose", super::KeyChord::new("1", true, false, false)),
             ("tab_timing", super::KeyChord::new("2", true, false, false)),

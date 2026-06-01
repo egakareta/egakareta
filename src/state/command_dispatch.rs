@@ -10,6 +10,7 @@ use super::State;
 use crate::commands::AppCommand;
 use crate::editor_domain::{timing_division_time_in_direction, TimingDivisionDirection};
 use crate::types::{normalize_binding_key, EditorMode, KeyChord};
+use glam::Vec3;
 
 const FALLBACK_TIMELINE_SHIFT_SECONDS: f32 = 0.1;
 
@@ -71,6 +72,9 @@ impl State {
             }
             AppCommand::EditorSnapSelectionToGrid => {
                 self.editor_snap_selection_to_grid();
+            }
+            AppCommand::EditorFocusCameraTarget => {
+                self.editor_focus_camera_target();
             }
 
             // ── Editor – timeline / playback ────────────────────────
@@ -540,6 +544,13 @@ impl State {
                     None
                 }
             }
+            "focus_camera_target" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorFocusCameraTarget)
+                } else {
+                    None
+                }
+            }
             "timeline_forward" => {
                 if self.is_editor() && !self.has_block_selection() {
                     self.timeline_shift_to_division_command(TimingDivisionDirection::Forward)
@@ -775,6 +786,83 @@ impl State {
         true
     }
 
+    fn editor_focus_camera_target(&mut self) -> bool {
+        if !self.is_editor() {
+            return false;
+        }
+
+        if self.editor_effective_mode_for_playback() == EditorMode::Tapping {
+            if let Some((_, _, position)) = self.editor.selected_tap() {
+                self.set_editor_camera_focus(tap_focus_point(position), None);
+                return true;
+            }
+        }
+
+        if let Some((min, size)) = self.editor.selected_group_bounds() {
+            self.set_editor_camera_focus(block_bounds_center(min, size), None);
+            return true;
+        }
+
+        if let Some((_, _, position)) = self.editor.selected_tap() {
+            self.set_editor_camera_focus(tap_focus_point(position), None);
+            return true;
+        }
+
+        if let Some(index) = self.editor_focus_hovered_block_index() {
+            if let Some(object) = self.editor.objects.get(index) {
+                self.set_editor_camera_focus(
+                    block_bounds_center(object.position, object.size),
+                    None,
+                );
+                return true;
+            }
+        }
+
+        let (eye, target) = self.editor_preview_camera_view();
+        let orientation = camera_orientation_from_eye_target(eye, target);
+        self.set_editor_camera_focus(target, orientation);
+        true
+    }
+
+    fn editor_focus_hovered_block_index(&mut self) -> Option<usize> {
+        if let Some(index) = self
+            .editor
+            .ui
+            .hovered_block_index
+            .filter(|index| *index < self.editor.objects.len())
+        {
+            return Some(index);
+        }
+
+        let [x, y] = self.editor.ui.pointer_screen?;
+        let viewport_size = glam::Vec2::new(
+            self.render.gpu.config.width as f32,
+            self.render.gpu.config.height as f32,
+        );
+        self.editor
+            .pick_from_screen(x, y, viewport_size)
+            .and_then(|pick| pick.hit_block_index)
+            .filter(|index| *index < self.editor.objects.len())
+    }
+
+    fn set_editor_camera_focus(&mut self, target: [f32; 3], orientation: Option<(f32, f32)>) {
+        self.editor.camera.transition = None;
+        self.editor.camera.editor_pan = [target[0], target[2]];
+        self.editor.camera.editor_target_z = target[1];
+        if let Some((rotation, pitch)) = orientation {
+            self.editor.camera.editor_rotation = rotation;
+            self.editor.camera.editor_pitch =
+                pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
+        }
+        self.editor.mark_dirty(EditorDirtyFlags {
+            rebuild_selection_overlays: true,
+            rebuild_cursor: true,
+            rebuild_tap_indicators: true,
+            rebuild_preview_player: true,
+            ..EditorDirtyFlags::default()
+        });
+    }
+
     /// Process a unified `InputEvent`.
     pub fn process_input_event(&mut self, event: crate::commands::InputEvent) {
         use crate::commands::InputEvent;
@@ -813,6 +901,30 @@ impl State {
     fn has_block_selection(&self) -> bool {
         !self.editor.selected_indices_normalized().is_empty()
     }
+}
+
+fn block_bounds_center(position: [f32; 3], size: [f32; 3]) -> [f32; 3] {
+    [
+        position[0] + size[0] * 0.5,
+        position[1] + size[1] * 0.5,
+        position[2] + size[2] * 0.5,
+    ]
+}
+
+fn tap_focus_point(position: [f32; 3]) -> [f32; 3] {
+    [position[0] + 0.5, position[1], position[2] + 0.5]
+}
+
+fn camera_orientation_from_eye_target(eye: [f32; 3], target: [f32; 3]) -> Option<(f32, f32)> {
+    let offset = Vec3::from_array(eye) - Vec3::from_array(target);
+    let horizontal = Vec3::new(offset.x, 0.0, offset.z).length();
+    if horizontal <= f32::EPSILON && offset.y.abs() <= f32::EPSILON {
+        return None;
+    }
+
+    let rotation = (-offset.x).atan2(-offset.z);
+    let pitch = offset.y.atan2(horizontal);
+    Some((rotation, pitch))
 }
 
 #[cfg(test)]
@@ -1015,6 +1127,67 @@ mod tests {
 
             assert_eq!(state.editor.ui.mode, EditorMode::Place);
             assert_eq!(state.editor.config.selected_block_id, "core/grass");
+        });
+    }
+
+    #[test]
+    fn editor_focus_camera_target_prioritizes_selection_hover_then_preview() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.objects = vec![
+                LevelObject {
+                    position: [10.0, 2.0, 30.0],
+                    size: [2.0, 4.0, 6.0],
+                    rotation_degrees: [0.0, 0.0, 0.0],
+                    block_id: "core/stone".to_string(),
+                    color_tint: [1.0, 1.0, 1.0],
+                },
+                LevelObject {
+                    position: [50.0, 4.0, 70.0],
+                    size: [4.0, 2.0, 8.0],
+                    rotation_degrees: [0.0, 0.0, 0.0],
+                    block_id: "core/grass".to_string(),
+                    color_tint: [1.0, 1.0, 1.0],
+                },
+            ];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+            state.editor.ui.hovered_block_index = Some(1);
+
+            state.dispatch(AppCommand::EditorFocusCameraTarget);
+
+            assert_eq!(state.editor.camera.editor_pan, [11.0, 33.0]);
+            assert_eq!(state.editor.camera.editor_target_z, 4.0);
+
+            state.editor.ui.selected_block_index = None;
+            state.editor.ui.selected_block_indices.clear();
+            state.dispatch(AppCommand::EditorFocusCameraTarget);
+
+            assert_eq!(state.editor.camera.editor_pan, [52.0, 74.0]);
+            assert_eq!(state.editor.camera.editor_target_z, 5.0);
+
+            state.editor.ui.mode = EditorMode::Tapping;
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+            state.editor.timeline.taps.tap_times = vec![1.25];
+            state.editor.timeline.taps.tap_indicator_positions = vec![[5.0, 1.0, 6.0]];
+            state.editor.timeline.taps.selected_index = Some(0);
+            state.dispatch(AppCommand::EditorFocusCameraTarget);
+
+            assert_eq!(state.editor.camera.editor_pan, [5.5, 6.5]);
+            assert_eq!(state.editor.camera.editor_target_z, 1.0);
+
+            state.editor.ui.mode = EditorMode::Place;
+            state.editor.ui.selected_block_index = None;
+            state.editor.ui.selected_block_indices.clear();
+            state.editor.ui.hovered_block_index = None;
+            state.editor.timeline.taps.selected_index = None;
+            state.editor.ui.pointer_screen = None;
+            state.editor.timeline.preview.position = [7.0, 8.0, 9.0];
+            state.dispatch(AppCommand::EditorFocusCameraTarget);
+
+            assert_eq!(state.editor.camera.editor_pan, [7.0, 9.0]);
+            assert_eq!(state.editor.camera.editor_target_z, 8.0);
         });
     }
 
@@ -2251,6 +2424,14 @@ mod tests {
             );
             assert_eq!(
                 state.command_for_keybind_action("pick_hovered_block", false),
+                None
+            );
+            assert_eq!(
+                state.command_for_keybind_action("focus_camera_target", true),
+                Some(AppCommand::EditorFocusCameraTarget)
+            );
+            assert_eq!(
+                state.command_for_keybind_action("focus_camera_target", false),
                 None
             );
             state.editor.timeline.clock.time_seconds = 1.26;

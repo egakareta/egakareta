@@ -65,6 +65,8 @@ pub(crate) enum AppCommand {
     EditorNudgeSelected { dx: i32, dy: i32 },
     /// Snap selected blocks or tap to the nearest grid cell.
     EditorSnapSelectionToGrid,
+    /// Focus the editor camera on the selected, hovered, or preview target.
+    EditorFocusCameraTarget,
 
     // ── Editor – timeline / playback ────────────────────────────────
     /// Toggle timeline playback.

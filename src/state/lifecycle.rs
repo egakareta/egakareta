@@ -1167,6 +1167,16 @@ impl State {
         };
         app_settings.editor_selected_block_id =
             crate::block_repository::normalize_block_id(&app_settings.editor_selected_block_id);
+        let app_settings_migrated = app_settings.migrate_defaults();
+        if app_settings_migrated && !cfg!(test) {
+            if let Err(error) =
+                crate::platform::io::save_app_settings_to_storage(&app_settings).await
+            {
+                crate::platform::io::log_platform_error(&format!(
+                    "Failed to persist migrated app settings: {error}"
+                ));
+            }
+        }
 
         let auth_session = if cfg!(test) {
             None
