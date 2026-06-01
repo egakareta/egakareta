@@ -376,6 +376,7 @@ impl State {
             build_editor_cursor_vertices(
                 self.editor.ui.cursor,
                 self.editor.selected_block_default_size(),
+                &self.editor.config.selected_block_id,
             )
         };
         self.render.meshes.editor_cursor.replace_with_vertices(
