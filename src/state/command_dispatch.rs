@@ -738,7 +738,14 @@ impl State {
             return false;
         }
 
-        let mut block_index = self.editor.ui.hovered_block_index;
+        let selected_indices = self.editor.selected_indices_normalized();
+        let mut block_index = self
+            .editor
+            .ui
+            .selected_block_index
+            .filter(|index| selected_indices.contains(index))
+            .or_else(|| selected_indices.first().copied())
+            .or(self.editor.ui.hovered_block_index);
         if block_index.is_none() {
             if let Some([x, y]) = self.editor.ui.pointer_screen {
                 let viewport_size = glam::Vec2::new(
@@ -990,6 +997,18 @@ mod tests {
                 },
             ];
             state.editor.ui.mode = EditorMode::Move;
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+            state.editor.ui.hovered_block_index = Some(1);
+
+            state.dispatch(AppCommand::EditorPickHoveredBlock);
+
+            assert_eq!(state.editor.ui.mode, EditorMode::Place);
+            assert_eq!(state.editor.config.selected_block_id, "core/stone");
+
+            state.editor.ui.mode = EditorMode::Move;
+            state.editor.ui.selected_block_index = None;
+            state.editor.ui.selected_block_indices.clear();
             state.editor.ui.hovered_block_index = Some(1);
 
             state.dispatch(AppCommand::EditorPickHoveredBlock);
