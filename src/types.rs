@@ -1554,8 +1554,8 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
         },
         KeybindActionMetadata {
             group: "Editor",
-            action: "pick_hovered_block",
-            label: "Pick Hovered Block",
+            action: "pick_selected_block",
+            label: "Pick Selected Block",
             capacity: 1,
         },
         KeybindActionMetadata {
@@ -1808,7 +1808,7 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
             chord: KeyChord::new("g", false, false, false),
         },
         KeybindBinding {
-            action: "pick_hovered_block".to_string(),
+            action: "pick_selected_block".to_string(),
             chord: KeyChord::new("b", false, false, false),
         },
         KeybindBinding {
@@ -2476,7 +2476,7 @@ mod tests {
     fn editor_tab_keybinds_are_registered_with_defaults() {
         let actions = super::essential_keybind_actions();
         for action in [
-            "pick_hovered_block",
+            "pick_selected_block",
             "focus_camera_target",
             "tab_compose",
             "tab_timing",
@@ -2491,7 +2491,7 @@ mod tests {
         let defaults = super::default_essential_keybinds();
         let expected = [
             (
-                "pick_hovered_block",
+                "pick_selected_block",
                 super::KeyChord::new("b", false, false, false),
             ),
             (

@@ -37,8 +37,8 @@ pub(crate) enum AppCommand {
     EditorSetMode(crate::types::EditorMode),
     /// Set the current block ID for placement.
     EditorSetBlockId(String),
-    /// Pick the block under the pointer and enter place mode with that block type.
-    EditorPickHoveredBlock,
+    /// Pick the selected block and enter place mode with that block type.
+    EditorPickSelectedBlock,
     /// Set whether to snap to grid.
     EditorSetSnapToGrid(bool),
     /// Set the grid snap step.
@@ -65,7 +65,7 @@ pub(crate) enum AppCommand {
     EditorNudgeSelected { dx: i32, dy: i32 },
     /// Snap selected blocks or tap to the nearest grid cell.
     EditorSnapSelectionToGrid,
-    /// Focus the editor camera on the selected, hovered, or preview target.
+    /// Focus the editor camera on the selected or preview target.
     EditorFocusCameraTarget,
 
     // ── Editor – timeline / playback ────────────────────────────────

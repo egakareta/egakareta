@@ -45,8 +45,8 @@ impl State {
                 }
             }
             AppCommand::EditorSetBlockId(id) => self.set_editor_block_id(id),
-            AppCommand::EditorPickHoveredBlock => {
-                self.editor_pick_hovered_block_for_place();
+            AppCommand::EditorPickSelectedBlock => {
+                self.editor_pick_selected_block_for_place();
             }
             AppCommand::EditorSetSnapToGrid(snap) => self.set_editor_snap_to_grid(snap),
             AppCommand::EditorSetSnapStep(step) => self.set_editor_snap_step(step),
@@ -542,9 +542,9 @@ impl State {
                     None
                 }
             }
-            "pick_hovered_block" => {
+            "pick_selected_block" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::EditorPickHoveredBlock)
+                    Some(AppCommand::EditorPickSelectedBlock)
                 } else {
                     None
                 }
@@ -749,31 +749,18 @@ impl State {
         Some(AppCommand::EditorShiftTimeline(fallback_delta))
     }
 
-    fn editor_pick_hovered_block_for_place(&mut self) -> bool {
+    fn editor_pick_selected_block_for_place(&mut self) -> bool {
         if !self.is_editor() {
             return false;
         }
 
         let selected_indices = self.editor.selected_indices_normalized();
-        let mut block_index = self
+        let block_index = self
             .editor
             .ui
             .selected_block_index
             .filter(|index| selected_indices.contains(index))
-            .or_else(|| selected_indices.first().copied())
-            .or(self.editor.ui.hovered_block_index);
-        if block_index.is_none() {
-            if let Some([x, y]) = self.editor.ui.pointer_screen {
-                let viewport_size = glam::Vec2::new(
-                    self.render.gpu.config.width as f32,
-                    self.render.gpu.config.height as f32,
-                );
-                block_index = self
-                    .editor
-                    .pick_from_screen(x, y, viewport_size)
-                    .and_then(|pick| pick.hit_block_index);
-            }
-        }
+            .or_else(|| selected_indices.first().copied());
 
         let Some(block_id) = block_index
             .and_then(|index| self.editor.objects.get(index))
@@ -813,41 +800,10 @@ impl State {
             return true;
         }
 
-        if let Some(index) = self.editor_focus_hovered_block_index() {
-            if let Some(object) = self.editor.objects.get(index) {
-                self.set_editor_camera_focus(
-                    block_bounds_center(object.position, object.size),
-                    None,
-                );
-                return true;
-            }
-        }
-
         let (eye, target) = self.editor_preview_camera_view();
         let orientation = camera_orientation_from_eye_target(eye, target);
         self.set_editor_camera_focus(target, orientation);
         true
-    }
-
-    fn editor_focus_hovered_block_index(&mut self) -> Option<usize> {
-        if let Some(index) = self
-            .editor
-            .ui
-            .hovered_block_index
-            .filter(|index| *index < self.editor.objects.len())
-        {
-            return Some(index);
-        }
-
-        let [x, y] = self.editor.ui.pointer_screen?;
-        let viewport_size = glam::Vec2::new(
-            self.render.gpu.config.width as f32,
-            self.render.gpu.config.height as f32,
-        );
-        self.editor
-            .pick_from_screen(x, y, viewport_size)
-            .and_then(|pick| pick.hit_block_index)
-            .filter(|index| *index < self.editor.objects.len())
     }
 
     fn set_editor_camera_focus(&mut self, target: [f32; 3], orientation: Option<(f32, f32)>) {
@@ -1118,7 +1074,7 @@ mod tests {
             state.editor.ui.selected_block_indices = vec![0];
             state.editor.ui.hovered_block_index = Some(1);
 
-            state.dispatch(AppCommand::EditorPickHoveredBlock);
+            state.dispatch(AppCommand::EditorPickSelectedBlock);
 
             assert_eq!(state.editor.ui.mode, EditorMode::Place);
             assert_eq!(state.editor.config.selected_block_id, "core/stone");
@@ -1128,15 +1084,15 @@ mod tests {
             state.editor.ui.selected_block_indices.clear();
             state.editor.ui.hovered_block_index = Some(1);
 
-            state.dispatch(AppCommand::EditorPickHoveredBlock);
+            state.dispatch(AppCommand::EditorPickSelectedBlock);
 
-            assert_eq!(state.editor.ui.mode, EditorMode::Place);
-            assert_eq!(state.editor.config.selected_block_id, "core/grass");
+            assert_eq!(state.editor.ui.mode, EditorMode::Move);
+            assert_eq!(state.editor.config.selected_block_id, "core/stone");
         });
     }
 
     #[test]
-    fn editor_focus_camera_target_prioritizes_selection_hover_then_preview() {
+    fn editor_focus_camera_target_ignores_hover_and_uses_preview_fallback() {
         pollster::block_on(async {
             let mut state = new_editor_state().await;
             state.editor.objects = vec![
@@ -1166,10 +1122,11 @@ mod tests {
 
             state.editor.ui.selected_block_index = None;
             state.editor.ui.selected_block_indices.clear();
+            state.editor.timeline.preview.position = [7.0, 8.0, 9.0];
             state.dispatch(AppCommand::EditorFocusCameraTarget);
 
-            assert_eq!(state.editor.camera.editor_pan, [52.0, 74.0]);
-            assert_eq!(state.editor.camera.editor_target_z, 5.0);
+            assert_eq!(state.editor.camera.editor_pan, [7.0, 9.0]);
+            assert_eq!(state.editor.camera.editor_target_z, 8.0);
 
             state.editor.ui.mode = EditorMode::Tapping;
             state.editor.ui.selected_block_index = Some(0);
@@ -1185,7 +1142,7 @@ mod tests {
             state.editor.ui.mode = EditorMode::Place;
             state.editor.ui.selected_block_index = None;
             state.editor.ui.selected_block_indices.clear();
-            state.editor.ui.hovered_block_index = None;
+            state.editor.ui.hovered_block_index = Some(1);
             state.editor.timeline.taps.selected_index = None;
             state.editor.ui.pointer_screen = None;
             state.editor.timeline.preview.position = [7.0, 8.0, 9.0];
@@ -2417,11 +2374,11 @@ mod tests {
             );
             state.editor.ui.selected_block_index = None;
             assert_eq!(
-                state.command_for_keybind_action("pick_hovered_block", true),
-                Some(AppCommand::EditorPickHoveredBlock)
+                state.command_for_keybind_action("pick_selected_block", true),
+                Some(AppCommand::EditorPickSelectedBlock)
             );
             assert_eq!(
-                state.command_for_keybind_action("pick_hovered_block", false),
+                state.command_for_keybind_action("pick_selected_block", false),
                 None
             );
             assert_eq!(
