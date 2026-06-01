@@ -195,7 +195,7 @@ impl State {
         self.clear_pending_gameplay_inputs();
         self.session.editor_menu_preview_camera = None;
         self.editor.ui.right_dragging = false;
-        self.editor.ui.mode = EditorMode::Place;
+        self.editor.ui.mode = EditorMode::Null;
         self.editor.clear_block_selection();
         self.editor.ui.marquee_start_screen = None;
         self.editor.ui.marquee_current_screen = None;
