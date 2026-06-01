@@ -88,7 +88,7 @@ pub(crate) fn show_mode_and_snap_controls(
         if ui
             .checkbox(
                 &mut snap,
-                format!("{} Snap to Grid", egui_phosphor::regular::GRID_FOUR),
+                format!("{} Grid Snap", egui_phosphor::regular::GRID_FOUR),
             )
             .changed()
         {
@@ -110,11 +110,11 @@ pub(crate) fn show_mode_and_snap_controls(
 
         ui.separator();
         let mut snap_rotation = view.snap_rotation;
-        if ui.checkbox(&mut snap_rotation, "Snap Rotation").changed() {
+        if ui.checkbox(&mut snap_rotation, "Rotation Snap").changed() {
             commands.push(AppCommand::EditorSetSnapRotation(snap_rotation));
         }
 
-        ui.label("Rot Step:");
+        ui.label("Step:");
         let mut snap_rotation_step = view.snap_rotation_step_degrees;
         if ui
             .add(
