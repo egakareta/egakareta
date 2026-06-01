@@ -11,7 +11,7 @@ use crate::block_repository::{
     all_placeable_blocks, block_texture_atlas, resolve_block_texture_layers,
 };
 use crate::commands::AppCommand;
-use crate::editor_ui::modes::shared::{show_mode_and_snap_controls, show_player_camera_status_row};
+use crate::editor_ui::modes::shared::show_mode_and_snap_controls;
 use crate::state::EditorUiViewModel;
 use crate::types::EditorMode;
 
@@ -148,9 +148,6 @@ pub(crate) fn show_compose_mode_bottom_panel(
         }
         EditorMode::Tapping | EditorMode::Trigger | EditorMode::Timing | EditorMode::Null => {}
     }
-
-    ui.separator();
-    show_player_camera_status_row(ui, view);
 }
 
 fn show_block_preview_button(

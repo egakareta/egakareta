@@ -141,7 +141,10 @@ pub(crate) fn show_timeline_bar(
                 button_size,
                 egui::Button::new(egui_phosphor::regular::MAGNIFYING_GLASS_MINUS),
             )
-            .on_hover_text("Zoom Out")
+            .on_hover_text(format!(
+                "Zoom Out{}",
+                view.app_settings.hotkey_hint_or("zoom_out", "-")
+            ))
             .clicked()
         {
             let new_zoom = (timeline_zoom / 1.25).clamp(0.1, 10.0);
@@ -152,7 +155,10 @@ pub(crate) fn show_timeline_bar(
                 button_size,
                 egui::Button::new(egui_phosphor::regular::MAGNIFYING_GLASS_PLUS),
             )
-            .on_hover_text("Zoom In")
+            .on_hover_text(format!(
+                "Zoom In{}",
+                view.app_settings.hotkey_hint_or("zoom_in", "+")
+            ))
             .clicked()
         {
             let new_zoom = (timeline_zoom * 1.25).clamp(0.1, 10.0);
@@ -384,7 +390,10 @@ pub(crate) fn show_timeline_bar(
                 [playtest_button_width, ui.spacing().interact_size.y],
                 egui::Button::new(format!("{} Test", egui_phosphor::regular::GAME_CONTROLLER)),
             )
-            .on_hover_text("Start playtesting")
+            .on_hover_text(format!(
+                "Start playtesting{}",
+                view.app_settings.hotkey_hint_or("playtest", "Enter")
+            ))
             .clicked()
         {
             commands.push(AppCommand::EditorPlaytest);

@@ -1267,6 +1267,24 @@ impl AppSettings {
             .collect()
     }
 
+    /// Returns a formatted hotkey hint like `" (Ctrl+S)"` for use in tooltip text.
+    /// Returns an empty string if no keybinding exists for the action.
+    pub(crate) fn hotkey_hint(&self, action: &str) -> String {
+        self.keybinds_for_action(action)
+            .first()
+            .map(|c| format!(" ({})", format_key_chord(c)))
+            .unwrap_or_default()
+    }
+
+    /// Returns a formatted hotkey hint like `" (Ctrl+S)"`, falling back to
+    /// `" ({default_label})"` when no keybinding exists for the action.
+    pub(crate) fn hotkey_hint_or(&self, action: &str, default_label: &str) -> String {
+        self.keybinds_for_action(action)
+            .first()
+            .map(|c| format!(" ({})", format_key_chord(c)))
+            .unwrap_or_else(|| format!(" ({})", default_label))
+    }
+
     pub(crate) fn set_keybind_at_slot(&mut self, action: &str, slot: usize, chord: KeyChord) {
         let normalized = chord.normalized();
 

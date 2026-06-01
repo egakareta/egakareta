@@ -471,17 +471,41 @@ pub fn show_editor_ui(
     let top_bar_response = egui::Panel::top("editor_top_bar").show(ctx, |ui| {
         ui.horizontal(|ui| {
             // Top-level tabs: Compose / Tapping / Timing
-            if ui.selectable_label(is_compose, "Compose").clicked() && !is_compose {
+            if ui
+                .selectable_label(is_compose, "Compose")
+                .on_hover_text(format!(
+                    "Compose Tab{}",
+                    view.app_settings.hotkey_hint("tab_compose")
+                ))
+                .clicked()
+                && !is_compose
+            {
                 commands.push(crate::commands::AppCommand::EditorSetMode(
                     EditorMode::Place,
                 ));
             }
-            if ui.selectable_label(is_timing, "Timing").clicked() && !is_timing {
+            if ui
+                .selectable_label(is_timing, "Timing")
+                .on_hover_text(format!(
+                    "Timing Tab{}",
+                    view.app_settings.hotkey_hint("tab_timing")
+                ))
+                .clicked()
+                && !is_timing
+            {
                 commands.push(crate::commands::AppCommand::EditorSetMode(
                     EditorMode::Timing,
                 ));
             }
-            if ui.selectable_label(is_tapping, "Tapping").clicked() && !is_tapping {
+            if ui
+                .selectable_label(is_tapping, "Tapping")
+                .on_hover_text(format!(
+                    "Tapping Tab{}",
+                    view.app_settings.hotkey_hint("tab_tapping")
+                ))
+                .clicked()
+                && !is_tapping
+            {
                 commands.push(crate::commands::AppCommand::EditorSetMode(
                     EditorMode::Tapping,
                 ));
@@ -532,6 +556,10 @@ pub fn show_editor_ui(
 
             if ui
                 .button(format!("{} Settings", egui_phosphor::regular::GEAR))
+                .on_hover_text(format!(
+                    "Settings{}",
+                    view.app_settings.hotkey_hint("toggle_settings")
+                ))
                 .clicked()
             {
                 commands.push(crate::commands::AppCommand::EditorToggleSettings);

@@ -6,6 +6,7 @@
 
 */
 use crate::commands::AppCommand;
+use crate::editor_ui::modes::shared::show_player_camera_status_row;
 use crate::state::EditorUiViewModel;
 
 pub(crate) fn show_tapping_mode_bottom_panel(
@@ -29,6 +30,10 @@ pub(crate) fn show_tapping_mode_bottom_panel(
         {
             commands.push(AppCommand::EditorClearTaps);
         }
+
+        ui.separator();
+
+        show_player_camera_status_row(ui, view);
     });
 
     if let Some(selected_tap) = view.selected_tap {

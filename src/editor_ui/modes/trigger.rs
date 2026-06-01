@@ -6,7 +6,7 @@
 
 */
 use crate::commands::AppCommand;
-use crate::editor_ui::modes::shared::{show_mode_and_snap_controls, show_player_camera_status_row};
+use crate::editor_ui::modes::shared::show_mode_and_snap_controls;
 use crate::state::EditorUiViewModel;
 use crate::types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
 
@@ -533,8 +533,6 @@ pub(crate) fn show_trigger_mode_bottom_panel(
             }
         }
     }
-
-    show_player_camera_status_row(ui, view);
 }
 
 #[cfg(test)]

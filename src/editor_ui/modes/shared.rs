@@ -22,6 +22,10 @@ pub(crate) fn show_mode_and_snap_controls(
                 mode == EditorMode::Select,
                 format!("{} Select", egui_phosphor::regular::CURSOR_CLICK),
             )
+            .on_hover_text(format!(
+                "Select{}",
+                view.app_settings.hotkey_hint("mode_select")
+            ))
             .clicked()
         {
             commands.push(AppCommand::EditorSetMode(EditorMode::Select));
@@ -31,6 +35,10 @@ pub(crate) fn show_mode_and_snap_controls(
                 mode == EditorMode::Move,
                 format!("{} Move", egui_phosphor::regular::ARROWS_OUT),
             )
+            .on_hover_text(format!(
+                "Move{}",
+                view.app_settings.hotkey_hint("mode_move")
+            ))
             .clicked()
         {
             commands.push(AppCommand::EditorSetMode(EditorMode::Move));
@@ -40,6 +48,10 @@ pub(crate) fn show_mode_and_snap_controls(
                 mode == EditorMode::Scale,
                 format!("{} Scale", egui_phosphor::regular::CORNERS_OUT),
             )
+            .on_hover_text(format!(
+                "Scale{}",
+                view.app_settings.hotkey_hint("mode_scale")
+            ))
             .clicked()
         {
             commands.push(AppCommand::EditorSetMode(EditorMode::Scale));
@@ -49,6 +61,10 @@ pub(crate) fn show_mode_and_snap_controls(
                 mode == EditorMode::Rotate,
                 format!("{} Rotate", egui_phosphor::regular::ARROWS_CLOCKWISE),
             )
+            .on_hover_text(format!(
+                "Rotate{}",
+                view.app_settings.hotkey_hint("mode_rotate")
+            ))
             .clicked()
         {
             commands.push(AppCommand::EditorSetMode(EditorMode::Rotate));
@@ -58,6 +74,10 @@ pub(crate) fn show_mode_and_snap_controls(
                 mode == EditorMode::Place,
                 format!("{} Place", egui_phosphor::regular::CUBE),
             )
+            .on_hover_text(format!(
+                "Place{}",
+                view.app_settings.hotkey_hint("mode_place")
+            ))
             .clicked()
         {
             commands.push(AppCommand::EditorSetMode(EditorMode::Place));
@@ -67,6 +87,10 @@ pub(crate) fn show_mode_and_snap_controls(
                 mode == EditorMode::Trigger,
                 format!("{} Trigger", egui_phosphor::regular::LIGHTNING),
             )
+            .on_hover_text(format!(
+                "Trigger{}",
+                view.app_settings.hotkey_hint("mode_trigger")
+            ))
             .clicked()
         {
             commands.push(AppCommand::EditorSetMode(EditorMode::Trigger));
