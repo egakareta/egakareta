@@ -658,8 +658,13 @@ impl State {
         }
 
         puffin::profile_scope!("PlayingUpdate");
-        let target_time = self.target_playing_time(frame_dt);
-        let trigger_render_objects = self.advance_playing_state_to_time(target_time, FIXED_DT);
+        let trigger_render_objects = if self.gameplay.state.level_complete {
+            self.gameplay.state.update(frame_dt);
+            None
+        } else {
+            let target_time = self.target_playing_time(frame_dt);
+            self.advance_playing_state_to_time(target_time, FIXED_DT)
+        };
         self.frame_runtime.editor.accumulator = 0.0;
 
         let render_objects = trigger_render_objects
@@ -1292,6 +1297,24 @@ mod tests {
             state.update();
 
             assert_eq!(state.phase, AppPhase::Menu);
+        });
+    }
+
+    #[test]
+    fn update_playtest_level_complete_returns_to_editor_after_hold() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.enter_editor_phase("PlaytestComplete".to_string());
+            state.editor.objects = vec![sample_object()];
+            state.editor_playtest();
+            state.gameplay.state.level_complete = true;
+            state.gameplay.state.completion_hold_seconds = 0.0;
+
+            state.update();
+
+            assert_eq!(state.phase, AppPhase::Editor);
+            assert!(!state.session.playtesting_editor);
+            assert_eq!(state.gameplay.state.objects, state.editor.objects);
         });
     }
 
