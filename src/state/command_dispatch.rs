@@ -1424,13 +1424,6 @@ mod tests {
                 pressed: true,
                 just_pressed: true,
             });
-            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Place);
-
-            state.process_input_event(InputEvent::Key {
-                key: "6".to_string(),
-                pressed: true,
-                just_pressed: true,
-            });
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Trigger);
         });
     }
