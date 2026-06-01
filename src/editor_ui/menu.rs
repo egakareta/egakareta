@@ -6,6 +6,7 @@
 
 */
 use crate::commands::AppCommand;
+use crate::editor_ui::components::show_shadowed_label;
 use crate::State;
 
 const MENU_FAVICON_PNG: &[u8] = include_bytes!("../../assets/darkicon.png");
@@ -23,6 +24,8 @@ pub fn load_menu_favicon_texture(ctx: &egui::Context) -> Option<egui::TextureHan
 const MENU_LEVEL_TITLE_FONT_SIZE: f32 = 86.0;
 const MENU_LEVEL_TITLE_MAX_WIDTH_PADDING: f32 = 32.0;
 const MENU_LEVEL_TITLE_FONT_FAMILY: &str = "sora_thin";
+const MENU_LEVEL_TITLE_SHADOW_OFFSET_X: f32 = 3.0;
+const MENU_LEVEL_TITLE_SHADOW_OFFSET_Y: f32 = 3.0;
 
 /// Shows the selected level name in the menu hero position.
 pub fn show_menu_favicon_ui(ctx: &egui::Context, state: &State, _favicon: &egui::TextureHandle) {
@@ -40,13 +43,20 @@ pub fn show_menu_favicon_ui(ctx: &egui::Context, state: &State, _favicon: &egui:
         .show(ctx, |ui| {
             ui.set_max_width(max_width);
             ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-                ui.label(
-                    egui::RichText::new(level_name)
-                        .font(egui::FontId::new(
-                            MENU_LEVEL_TITLE_FONT_SIZE,
-                            egui::FontFamily::Name(MENU_LEVEL_TITLE_FONT_FAMILY.into()),
-                        ))
-                        .color(ui.visuals().strong_text_color()),
+                show_shadowed_label(
+                    ui,
+                    level_name,
+                    egui::FontId::new(
+                        MENU_LEVEL_TITLE_FONT_SIZE,
+                        egui::FontFamily::Name(MENU_LEVEL_TITLE_FONT_FAMILY.into()),
+                    ),
+                    ui.visuals().strong_text_color(),
+                    egui::Color32::BLACK,
+                    egui::vec2(
+                        MENU_LEVEL_TITLE_SHADOW_OFFSET_X,
+                        MENU_LEVEL_TITLE_SHADOW_OFFSET_Y,
+                    ),
+                    max_width,
                 );
             });
         });

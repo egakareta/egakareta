@@ -15,6 +15,34 @@ pub(crate) const DEFAULT_TIMELINE_WINDOW_SECONDS: f32 = 20.0;
 const TIMELINE_TAP_HIT_RADIUS_PIXELS: f32 = 8.0;
 const TIMELINE_CURRENT_TAP_EPSILON_SECONDS: f32 = 0.0001;
 
+pub(crate) fn show_shadowed_label(
+    ui: &mut egui::Ui,
+    text: impl Into<String>,
+    font_id: egui::FontId,
+    text_color: egui::Color32,
+    shadow_color: egui::Color32,
+    shadow_offset: egui::Vec2,
+    wrap_width: f32,
+) -> egui::Response {
+    let galley = ui
+        .painter()
+        .layout(text.into(), font_id, egui::Color32::PLACEHOLDER, wrap_width);
+    let shadow_extent = egui::vec2(shadow_offset.x.abs(), shadow_offset.y.abs());
+    let (rect, response) =
+        ui.allocate_exact_size(galley.size() + shadow_extent, egui::Sense::hover());
+    let text_pos = rect.min
+        + egui::vec2(
+            shadow_offset.x.min(0.0).abs(),
+            shadow_offset.y.min(0.0).abs(),
+        );
+
+    ui.painter()
+        .galley(text_pos + shadow_offset, galley.clone(), shadow_color);
+    ui.painter().galley(text_pos, galley, text_color);
+
+    response
+}
+
 fn timeline_visible_duration(duration_seconds: f32, zoom: f32) -> f32 {
     let duration = duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS);
     let zoom = zoom.clamp(0.1, 10.0);
