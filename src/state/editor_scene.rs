@@ -912,18 +912,21 @@ impl State {
 
     pub(super) fn rebuild_tap_indicator_vertices(&mut self) {
         puffin::profile_scope!("TapIndicatorMesh");
-        let effective_mode_is_tapping = self.editor.ui.mode == EditorMode::Tapping
-            || (self.editor.ui.mode == EditorMode::Null
-                && self.editor.runtime.interaction.last_mode == Some(EditorMode::Tapping));
-        if self.phase != AppPhase::Editor || !effective_mode_is_tapping {
+        let effective_mode = self.editor_effective_mode_for_playback();
+        if self.phase != AppPhase::Editor || effective_mode == EditorMode::Timing {
             self.render.meshes.tap_indicators.clear();
             return;
         }
+        let show_timing_division_previews = effective_mode == EditorMode::Tapping;
 
         let hovered_tap_index = self.editor.runtime.interaction.hovered_tap_index;
         let selected_tap_index = self.editor.timeline.taps.selected_index;
         let hovered_division = self.editor.runtime.interaction.hovered_tap_division;
-        let previews = self.editor.timing_division_tap_previews().to_vec();
+        let previews = if show_timing_division_previews {
+            self.editor.timing_division_tap_previews().to_vec()
+        } else {
+            Vec::new()
+        };
         let tap_positions = self.editor.timeline.taps.tap_indicator_positions.clone();
         let mut preview_indicators: Vec<([f32; 3], [f32; 4])> = previews
             .iter()
@@ -975,12 +978,16 @@ impl State {
                 && (a.1[3] - b.1[3]).abs() < 0.001
         });
 
-        let division_tap_indicators = tap_division_marker_indicators(
-            &self.editor.timeline.taps.tap_times,
-            &tap_positions,
-            &self.editor.timing.timing_points,
-            self.editor.timeline.clock.duration_seconds,
-        );
+        let division_tap_indicators = if show_timing_division_previews {
+            tap_division_marker_indicators(
+                &self.editor.timeline.taps.tap_times,
+                &tap_positions,
+                &self.editor.timing.timing_points,
+                self.editor.timeline.clock.duration_seconds,
+            )
+        } else {
+            Vec::new()
+        };
 
         if indicators.is_empty()
             && preview_indicators.is_empty()
@@ -1065,6 +1072,8 @@ fn tap_indicator_color(
 #[cfg(test)]
 mod tests {
     use super::{tap_division_marker_indicators, tap_indicator_color, State};
+    use crate::mesh::builders::game::build_colored_tap_indicator_vertices;
+    use crate::state::render::MeshDrawData;
     use crate::types::{
         AppPhase, EditorMode, LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
         TimedTriggerTarget, TimingPoint,
@@ -1077,6 +1086,12 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+        }
+    }
+
+    fn mesh_draw_count(draw_data: MeshDrawData<'_>) -> u32 {
+        match draw_data {
+            MeshDrawData::Vertices { count, .. } | MeshDrawData::Indexed { count, .. } => count,
         }
     }
 
@@ -1287,7 +1302,20 @@ mod tests {
 
             state.editor.ui.mode = EditorMode::Place;
             state.rebuild_tap_indicator_vertices();
-            assert!(state.render.meshes.tap_indicators.draw_data().is_none());
+            let compose_draw_data = state
+                .render
+                .meshes
+                .tap_indicators
+                .draw_data()
+                .expect("compose should draw saved tap indicators");
+            let expected_saved_tap_vertices = build_colored_tap_indicator_vertices(&[(
+                [1.0, 0.0, 1.0],
+                tap_indicator_color(0, None, None),
+            )]);
+            assert_eq!(
+                mesh_draw_count(compose_draw_data),
+                expected_saved_tap_vertices.len() as u32
+            );
 
             // During playback from Tapping tab (mode=Null, last_mode=Tapping), taps should remain visible
             state.editor.ui.mode = EditorMode::Null;
@@ -1295,8 +1323,13 @@ mod tests {
             state.rebuild_tap_indicator_vertices();
             assert!(state.render.meshes.tap_indicators.draw_data().is_some());
 
-            // During playback from Compose tab, taps should be hidden
+            // During playback from Compose tab, taps should remain visible
             state.editor.runtime.interaction.last_mode = Some(EditorMode::Place);
+            state.rebuild_tap_indicator_vertices();
+            assert!(state.render.meshes.tap_indicators.draw_data().is_some());
+
+            state.editor.runtime.interaction.last_mode = None;
+            state.editor.ui.mode = EditorMode::Timing;
             state.rebuild_tap_indicator_vertices();
             assert!(state.render.meshes.tap_indicators.draw_data().is_none());
         });
