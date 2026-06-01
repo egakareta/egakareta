@@ -1541,19 +1541,32 @@ fn handle_primary_click_covers_tapping_trigger_and_timing_mode_paths() {
 
         state.editor.set_left_mouse_down(false);
         state.editor.set_mode(EditorMode::Tapping);
+        state.editor.timeline.clock.duration_seconds = 4.0;
+        state.set_editor_timeline_time_seconds(0.0);
+        let viewport = Vec2::new(
+            state.render.gpu.config.width as f32,
+            state.render.gpu.config.height as f32,
+        );
+        let future_tap_screen = state
+            .editor
+            .world_to_screen_v(Vec3::new(0.5, 0.0, 4.5), viewport)
+            .expect("future tap point should project to the screen");
         assert!(state.editor_tap_times().is_empty());
-        state.handle_primary_click(260.0, 200.0);
-        assert_eq!(state.editor.ui.pointer_screen, Some([260.0, 200.0]));
+        state.handle_primary_click(future_tap_screen.x as f64, future_tap_screen.y as f64);
+        assert_eq!(
+            state.editor.ui.pointer_screen,
+            Some([future_tap_screen.x as f64, future_tap_screen.y as f64])
+        );
+        assert!(state.editor_tap_times().is_empty());
+
+        state.editor.set_left_mouse_down(false);
+        state.handle_primary_click(future_tap_screen.x as f64, future_tap_screen.y as f64);
         assert_eq!(state.editor_tap_times().len(), 1);
         assert_eq!(state.editor.timeline.taps.selected_index, Some(0));
         assert!(state.editor.ui.marquee_start_screen.is_none());
 
         state.editor.set_left_mouse_down(false);
         let selected_tap_position = state.editor.timeline.taps.tap_indicator_positions[0];
-        let viewport = Vec2::new(
-            state.render.gpu.config.width as f32,
-            state.render.gpu.config.height as f32,
-        );
         state
             .editor
             .world_to_screen_v(

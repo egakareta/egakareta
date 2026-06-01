@@ -7,7 +7,7 @@
 */
 use glam::Vec2;
 
-use super::{EditorDirtyFlags, EditorSubsystem, State};
+use super::{EditorDirtyFlags, EditorSubsystem, State, TAP_CLICK_SCREEN_EPSILON_PIXELS};
 use crate::editor_domain::{
     add_tap_with_indicator, build_editor_playtest_transition, derive_tap_indicator_positions,
     derive_timeline_time_for_world_target_near_time, derive_timing_division_tap_previews,
@@ -16,7 +16,9 @@ use crate::editor_domain::{
     toggle_spawn_direction, TapDivisionPreview, TapDivisionPreviewRange, TimelineNearSearch,
 };
 use crate::game::{GameState, TimelineSimulationRuntime};
-use crate::types::{AppPhase, EditorMode};
+use crate::types::{AppPhase, EditorMode, EditorTapDivisionPick};
+
+const TAP_CLICK_ADD_EPSILON_SECONDS: f32 = 0.001;
 
 fn distance_sq(left: [f32; 3], right: [f32; 3]) -> f32 {
     let dx = left[0] - right[0];
@@ -251,6 +253,44 @@ impl EditorSubsystem {
             })
     }
 
+    pub(crate) fn tap_time_for_indicator_cell(&self, indicator_cell: [f32; 3]) -> f32 {
+        let duration_seconds = self.timeline.clock.duration_seconds.max(0.0);
+        let seed_time = self
+            .timeline_elapsed_seconds(self.timeline.clock.time_seconds)
+            .clamp(0.0, duration_seconds);
+        let target_world = [
+            indicator_cell[0] + 0.5,
+            indicator_cell[1],
+            indicator_cell[2] + 0.5,
+        ];
+        let preview_cell = self.tap_indicator_position_from_world(self.timeline.preview.position);
+        if (preview_cell[0] - indicator_cell[0]).abs() <= 0.001
+            && (preview_cell[1] - indicator_cell[1]).abs() <= 0.001
+            && (preview_cell[2] - indicator_cell[2]).abs() <= 0.001
+        {
+            seed_time
+        } else {
+            self.tap_path_pick_near_world(target_world)
+                .map(|pick| pick.time_seconds)
+                .unwrap_or_else(|| {
+                    derive_timeline_time_for_world_target_near_time(
+                        self.spawn.position,
+                        self.spawn.direction,
+                        &self.timeline.taps.tap_times,
+                        duration_seconds,
+                        &self.objects,
+                        target_world,
+                        TimelineNearSearch {
+                            seed_time,
+                            window_seconds: 1.5,
+                        },
+                    )
+                    .clamp(0.0, duration_seconds)
+                })
+        }
+    }
+
+    #[cfg(test)]
     pub(crate) fn toggle_tap_at_cursor(&mut self) -> (Option<f32>, bool) {
         let indicator_cell = self.ui.cursor;
 
@@ -309,40 +349,7 @@ impl EditorSubsystem {
             return (Some(removed_time), false);
         }
 
-        let duration_seconds = self.timeline.clock.duration_seconds.max(0.0);
-        let seed_time = self
-            .timeline_elapsed_seconds(self.timeline.clock.time_seconds)
-            .clamp(0.0, duration_seconds);
-        let target_world = [
-            indicator_cell[0] + 0.5,
-            indicator_cell[1],
-            indicator_cell[2] + 0.5,
-        ];
-        let preview_cell = self.tap_indicator_position_from_world(self.timeline.preview.position);
-        let derived_time = if (preview_cell[0] - indicator_cell[0]).abs() <= 0.001
-            && (preview_cell[1] - indicator_cell[1]).abs() <= 0.001
-            && (preview_cell[2] - indicator_cell[2]).abs() <= 0.001
-        {
-            seed_time
-        } else {
-            self.tap_path_pick_near_world(target_world)
-                .map(|pick| pick.time_seconds)
-                .unwrap_or_else(|| {
-                    derive_timeline_time_for_world_target_near_time(
-                        self.spawn.position,
-                        self.spawn.direction,
-                        &self.timeline.taps.tap_times,
-                        duration_seconds,
-                        &self.objects,
-                        target_world,
-                        TimelineNearSearch {
-                            seed_time,
-                            window_seconds: 1.5,
-                        },
-                    )
-                    .clamp(0.0, duration_seconds)
-                })
-        };
+        let derived_time = self.tap_time_for_indicator_cell(indicator_cell);
 
         let selected_index = add_tap_with_indicator(
             &mut self.timeline.taps.tap_times,
@@ -493,29 +500,7 @@ impl State {
         });
     }
 
-    pub(super) fn editor_add_tap_at_pointer_position(&mut self) {
-        puffin::profile_scope!("TKeyToggle");
-        if self.phase != AppPhase::Editor || self.editor.ui.mode != EditorMode::Tapping {
-            return;
-        }
-
-        if let Some(pointer) = self.editor.ui.pointer_screen {
-            self.update_editor_cursor_from_screen(pointer[0], pointer[1]);
-        }
-
-        self.record_editor_history_state();
-
-        let (time, _added) = {
-            puffin::profile_scope!("TKeySolve");
-            self.editor.toggle_tap_at_cursor()
-        };
-
-        if time.is_some() {
-            self.refresh_editor_after_tap_change(Some(self.editor.ui.cursor));
-        }
-    }
-
-    pub(super) fn editor_select_tap_from_screen(&mut self, x: f64, y: f64) -> bool {
+    pub(super) fn editor_handle_tapping_click_from_screen(&mut self, x: f64, y: f64) -> bool {
         if self.phase != AppPhase::Editor || self.editor.ui.mode != EditorMode::Tapping {
             return false;
         }
@@ -528,36 +513,77 @@ impl State {
             return false;
         };
 
-        let Some(tap_index) = pick.hit_tap_index else {
-            if let Some(division) = pick.hit_tap_division {
-                self.record_editor_history_state();
-                let selected_index = add_tap_with_indicator(
-                    &mut self.editor.timeline.taps.tap_times,
-                    &mut self.editor.timeline.taps.tap_indicator_positions,
-                    division.time_seconds,
-                    division.indicator_position,
-                );
-                self.editor.set_selected_tap_index(selected_index);
-                self.editor.ui.cursor = division.indicator_position;
-                self.editor.invalidate_samples_from(division.time_seconds);
-                self.set_editor_timeline_time_seconds_preserving_editor_camera(
-                    division.time_seconds,
-                );
-                self.refresh_editor_after_tap_change(Some(division.indicator_position));
-                return true;
-            }
-            return false;
-        };
-        let Some(time_seconds) = self.editor.timeline.taps.tap_times.get(tap_index).copied() else {
-            return false;
-        };
+        if let Some(tap_index) = pick.hit_tap_index {
+            let Some(time_seconds) = self.editor.timeline.taps.tap_times.get(tap_index).copied()
+            else {
+                return false;
+            };
 
-        self.editor.set_selected_tap_index(Some(tap_index));
-        self.editor.runtime.interaction.hovered_tap_index = Some(tap_index);
-        self.set_editor_timeline_time_seconds_preserving_editor_camera(time_seconds);
-        self.editor.ui.cursor = pick.cursor;
-        self.rebuild_tap_indicator_vertices();
-        self.rebuild_editor_cursor_vertices();
+            self.editor.set_selected_tap_index(Some(tap_index));
+            self.editor.runtime.interaction.hovered_tap_index = Some(tap_index);
+            self.set_editor_timeline_time_seconds_preserving_editor_camera(time_seconds);
+            self.editor.ui.cursor = pick.cursor;
+            self.rebuild_tap_indicator_vertices();
+            self.rebuild_editor_cursor_vertices();
+            return true;
+        }
+
+        if let Some(pending_click) = self.editor.runtime.interaction.pending_tap_click {
+            let current_time_seconds = self.editor.timeline.clock.time_seconds;
+            let same_screen = (pending_click.screen[0] - x).abs()
+                <= TAP_CLICK_SCREEN_EPSILON_PIXELS
+                && (pending_click.screen[1] - y).abs() <= TAP_CLICK_SCREEN_EPSILON_PIXELS;
+            let same_time = (current_time_seconds - pending_click.pick.time_seconds).abs()
+                <= TAP_CLICK_ADD_EPSILON_SECONDS;
+            if same_screen && same_time {
+                return self.editor_add_tap_click_pick(pending_click.pick);
+            }
+        }
+
+        let target_pick = self
+            .editor
+            .runtime
+            .interaction
+            .hovered_tap_division
+            .or(pick.hit_tap_division)
+            .unwrap_or_else(|| EditorTapDivisionPick {
+                time_seconds: self.editor.tap_time_for_indicator_cell(pick.cursor),
+                indicator_position: pick.cursor,
+            });
+
+        let current_time_seconds = self.editor.timeline.clock.time_seconds;
+        if (current_time_seconds - target_pick.time_seconds).abs() > TAP_CLICK_ADD_EPSILON_SECONDS {
+            self.editor.set_selected_tap_index(None);
+            self.editor.runtime.interaction.pending_tap_click =
+                Some(super::EditorPendingTapClick {
+                    screen: [x, y],
+                    pick: target_pick,
+                });
+            self.set_editor_timeline_time_seconds_preserving_editor_camera(
+                target_pick.time_seconds,
+            );
+            self.editor.ui.cursor = target_pick.indicator_position;
+            self.rebuild_tap_indicator_vertices();
+            self.rebuild_editor_cursor_vertices();
+            return true;
+        }
+
+        self.editor_add_tap_click_pick(target_pick)
+    }
+
+    fn editor_add_tap_click_pick(&mut self, pick: EditorTapDivisionPick) -> bool {
+        self.editor.runtime.interaction.pending_tap_click = None;
+        self.record_editor_history_state();
+        let selected_index = add_tap_with_indicator(
+            &mut self.editor.timeline.taps.tap_times,
+            &mut self.editor.timeline.taps.tap_indicator_positions,
+            pick.time_seconds,
+            pick.indicator_position,
+        );
+        self.editor.set_selected_tap_index(selected_index);
+        self.editor.invalidate_samples_from(pick.time_seconds);
+        self.set_editor_timeline_time_seconds_preserving_editor_camera(pick.time_seconds);
+        self.refresh_editor_after_tap_change(Some(pick.indicator_position));
         true
     }
 

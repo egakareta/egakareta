@@ -39,6 +39,12 @@ pub(crate) fn show_tapping_mode_bottom_panel(
     if let Some(selected_tap) = view.selected_tap {
         ui.horizontal_wrapped(|ui| {
             ui.label(format!("Tap #{}", selected_tap.index + 1));
+            if ui
+                .button(format!("{} Delete", egui_phosphor::regular::TRASH))
+                .clicked()
+            {
+                commands.push(AppCommand::EditorRemoveTap);
+            }
             ui.separator();
             ui.label("Time (s):");
             let mut time_seconds = selected_tap.time_seconds;
@@ -57,13 +63,6 @@ pub(crate) fn show_tapping_mode_bottom_panel(
                 "Position: ({:.2}, {:.2}, {:.2})",
                 selected_tap.position[0], selected_tap.position[1], selected_tap.position[2]
             ));
-
-            if ui
-                .button(format!("{} Delete", egui_phosphor::regular::TRASH))
-                .clicked()
-            {
-                commands.push(AppCommand::EditorRemoveTap);
-            }
         });
     }
 }

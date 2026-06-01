@@ -73,9 +73,16 @@ pub(crate) struct EditorInteractionState {
     pub(crate) hovered_gizmo: Option<(GizmoDragKind, GizmoAxis)>,
     pub(crate) hovered_tap_index: Option<usize>,
     pub(crate) hovered_tap_division: Option<EditorTapDivisionPick>,
+    pub(crate) pending_tap_click: Option<EditorPendingTapClick>,
     pub(crate) block_drag: Option<EditorBlockDrag>,
     pub(crate) clipboard: Option<EditorClipboard>,
     pub(crate) last_mode: Option<EditorMode>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct EditorPendingTapClick {
+    pub(crate) screen: [f64; 2],
+    pub(crate) pick: EditorTapDivisionPick,
 }
 
 impl EditorInteractionState {
@@ -85,6 +92,7 @@ impl EditorInteractionState {
             hovered_gizmo: None,
             hovered_tap_index: None,
             hovered_tap_division: None,
+            pending_tap_click: None,
             block_drag: None,
             clipboard: None,
             last_mode: None,

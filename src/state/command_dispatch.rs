@@ -1676,7 +1676,7 @@ mod tests {
     }
 
     #[test]
-    fn tapping_mode_click_on_timing_division_creates_exact_tap() {
+    fn tapping_mode_click_on_timing_division_seeks_then_creates_exact_tap() {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
@@ -1734,6 +1734,18 @@ mod tests {
                 division.indicator_position
             );
 
+            state.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: true,
+            });
+
+            assert!(state.editor.timeline.taps.tap_times.is_empty());
+            assert!((state.editor.timeline.clock.time_seconds - 0.1).abs() < 0.001);
+            assert_eq!(state.editor.ui.cursor, division.indicator_position);
+            assert_eq!(state.editor.camera.editor_pan, original_pan);
+            assert_eq!(state.editor.camera.editor_target_z, original_target_z);
+
+            state.editor.set_left_mouse_down(false);
             state.process_input_event(InputEvent::MouseButton {
                 button: 0,
                 pressed: true,

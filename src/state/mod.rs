@@ -36,12 +36,14 @@ mod tests;
 
 use std::collections::VecDeque;
 
+pub(crate) const TAP_CLICK_SCREEN_EPSILON_PIXELS: f64 = 0.5;
+
 pub(crate) use audio_state::{AudioState, AudioSubsystem};
 pub(crate) use editor_camera::EditorCameraState;
 pub(crate) use editor_config_state::EditorConfigState;
 pub(crate) use editor_interaction::{
     EditorBlockDrag, EditorClipboard, EditorDragBlockStart, EditorGizmoDrag, EditorHistorySnapshot,
-    EditorInteractionState,
+    EditorInteractionState, EditorPendingTapClick,
 };
 pub(crate) use editor_timeline::EditorTimelineState;
 pub(crate) use editor_timing::EditorTimingState;
@@ -368,6 +370,16 @@ impl State {
     /// editor mode (Place or Select), potentially starting block placement, gizmo drag,
     /// or selection operations.
     pub(crate) fn handle_primary_click(&mut self, x: f64, y: f64) {
+        let previous_pointer = self.editor.ui.pointer_screen;
+        let pointer_moved = previous_pointer.is_none_or(|pointer| {
+            (pointer[0] - x).abs() > TAP_CLICK_SCREEN_EPSILON_PIXELS
+                || (pointer[1] - y).abs() > TAP_CLICK_SCREEN_EPSILON_PIXELS
+        });
+        if pointer_moved {
+            self.editor.runtime.interaction.hovered_tap_index = None;
+            self.editor.runtime.interaction.hovered_tap_division = None;
+            self.editor.runtime.interaction.pending_tap_click = None;
+        }
         self.editor.set_pointer_screen(Some([x, y]));
         self.editor.set_left_mouse_down(true);
         self.mark_editor_dirty(EditorDirtyFlags {
@@ -384,9 +396,7 @@ impl State {
                 self.update_editor_cursor_from_screen(x, y);
                 self.place_editor_block();
             } else if mode == EditorMode::Tapping {
-                if !self.editor_select_tap_from_screen(x, y) {
-                    self.editor_add_tap_at_pointer_position();
-                }
+                self.editor_handle_tapping_click_from_screen(x, y);
             } else if mode.is_selection_mode() {
                 if self.begin_editor_gizmo_drag(x, y) {
                     return;

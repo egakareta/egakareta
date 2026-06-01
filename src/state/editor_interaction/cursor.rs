@@ -17,7 +17,14 @@ impl EditorSubsystem {
         y: f64,
         viewport_size: Vec2,
     ) -> EditorInteractionChange {
+        let previous_pointer = self.ui.pointer_screen;
         self.ui.pointer_screen = Some([x, y]);
+        if previous_pointer.is_none_or(|pointer| {
+            (pointer[0] - x).abs() > crate::state::TAP_CLICK_SCREEN_EPSILON_PIXELS
+                || (pointer[1] - y).abs() > crate::state::TAP_CLICK_SCREEN_EPSILON_PIXELS
+        }) {
+            self.runtime.interaction.pending_tap_click = None;
+        }
 
         let Some(pick) = self.pick_from_screen(x, y, viewport_size) else {
             self.runtime.interaction.hovered_tap_index = None;
