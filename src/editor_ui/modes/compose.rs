@@ -7,11 +7,17 @@
 */
 use std::collections::HashMap;
 
-use crate::block_repository::{block_texture_atlas, resolve_block_texture_layers};
+use crate::block_repository::{
+    block_texture_atlas, resolve_block_definition, resolve_block_texture_layers,
+};
 use crate::commands::AppCommand;
 use crate::editor_ui::modes::shared::show_mode_and_snap_controls;
 use crate::state::EditorUiViewModel;
 use crate::types::EditorMode;
+
+const RECENT_BLOCK_STRIP_LIMIT: usize = 4;
+const COMPACT_PREVIEW_BUTTON_SIZE: f32 = 40.0;
+const COMPACT_PREVIEW_HEIGHT: f32 = 34.0;
 
 const PREVIEW_BUTTON_WIDTH: f32 = 72.0;
 const PREVIEW_BUTTON_HEIGHT: f32 = 72.0;
@@ -36,6 +42,39 @@ pub(crate) fn show_compose_mode_bottom_panel(
     commands: &mut Vec<AppCommand>,
 ) {
     show_mode_and_snap_controls(ui, view, commands);
+}
+
+pub(crate) fn show_recent_block_quick_strip(
+    ui: &mut egui::Ui,
+    view: &EditorUiViewModel<'_>,
+    block_icon_texture_ids: &HashMap<String, egui::TextureId>,
+    commands: &mut Vec<AppCommand>,
+) -> bool {
+    let blocks: Vec<_> = view
+        .recent_block_ids
+        .iter()
+        .map(|id| resolve_block_definition(id))
+        .filter(|block| block.placeable)
+        .take(RECENT_BLOCK_STRIP_LIMIT)
+        .collect();
+    if blocks.is_empty() {
+        return false;
+    }
+
+    for block in blocks {
+        if show_block_preview_button_sized(
+            ui,
+            block,
+            view.selected_block_id == block.id,
+            block_icon_texture_ids.get(block.id.as_str()).copied(),
+            egui::Vec2::splat(COMPACT_PREVIEW_BUTTON_SIZE),
+            COMPACT_PREVIEW_HEIGHT,
+        ) {
+            commands.push(AppCommand::EditorSetBlockId(block.id.clone()));
+            commands.push(AppCommand::EditorSetMode(EditorMode::Place));
+        }
+    }
+    true
 }
 
 pub(crate) fn show_selected_block_properties_window(
@@ -160,6 +199,24 @@ pub(crate) fn show_block_preview_button(
     icon_texture_id: Option<egui::TextureId>,
 ) -> bool {
     let button_size = egui::vec2(PREVIEW_BUTTON_WIDTH, PREVIEW_BUTTON_HEIGHT);
+    show_block_preview_button_sized(
+        ui,
+        block,
+        selected,
+        icon_texture_id,
+        button_size,
+        PREVIEW_HEIGHT,
+    )
+}
+
+fn show_block_preview_button_sized(
+    ui: &mut egui::Ui,
+    block: &crate::block_repository::BlockDefinition,
+    selected: bool,
+    icon_texture_id: Option<egui::TextureId>,
+    button_size: egui::Vec2,
+    preview_height: f32,
+) -> bool {
     let (rect, response) = ui.allocate_exact_size(button_size, egui::Sense::click());
 
     let visuals = ui.style().interact_selectable(&response, selected);
@@ -173,7 +230,7 @@ pub(crate) fn show_block_preview_button(
 
     let preview_rect = egui::Rect::from_min_size(
         rect.min + egui::vec2(PREVIEW_PADDING_X, PREVIEW_PADDING_Y),
-        egui::vec2(rect.width() - PREVIEW_PADDING_X * 2.0, PREVIEW_HEIGHT),
+        egui::vec2(rect.width() - PREVIEW_PADDING_X * 2.0, preview_height),
     );
     if let Some(texture_id) = icon_texture_id {
         let image_rect = preview_rect.shrink2(egui::vec2(2.0, 2.0));

@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use crate::commands::AppCommand;
 use crate::editor_ui::components::{show_timeline_bar, show_waveform_panel, timeline_metrics};
 use crate::editor_ui::modes::compose::{
-    show_block_preview_button, show_compose_mode_bottom_panel,
+    show_block_preview_button, show_compose_mode_bottom_panel, show_recent_block_quick_strip,
     show_selected_block_properties_window,
 };
 use crate::editor_ui::modes::tapping::{
@@ -752,18 +752,28 @@ pub fn show_editor_ui(
             .show(ctx, |ui| {
                 let button_size = egui::Vec2::splat(56.0);
                 let hotkey_hint = view.app_settings.hotkey_hint("toggle_place_window");
-                if ui
-                    .add_sized(
-                        button_size,
-                        egui::Button::new(
-                            egui::RichText::new(egui_phosphor::regular::PLUS).size(28.0),
-                        ),
-                    )
-                    .on_hover_text(format!("Place Block{}", hotkey_hint))
-                    .clicked()
-                {
-                    commands.push(AppCommand::EditorTogglePlaceWindow);
-                }
+                ui.horizontal(|ui| {
+                    if show_recent_block_quick_strip(
+                        ui,
+                        &view,
+                        block_icon_texture_ids,
+                        &mut commands,
+                    ) {
+                        ui.add_space(6.0);
+                    }
+                    if ui
+                        .add_sized(
+                            button_size,
+                            egui::Button::new(
+                                egui::RichText::new(egui_phosphor::regular::PLUS).size(28.0),
+                            ),
+                        )
+                        .on_hover_text(format!("Place Block{}", hotkey_hint))
+                        .clicked()
+                    {
+                        commands.push(AppCommand::EditorTogglePlaceWindow);
+                    }
+                });
             });
 
         show_selected_block_properties_window(ctx, &view, bottom_bar_height, &mut commands);

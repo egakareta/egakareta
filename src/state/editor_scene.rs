@@ -21,7 +21,9 @@ use crate::mesh::{
     build_tap_division_tap_marker_vertices, GizmoParams, MeshGeometry,
 };
 use crate::state::render::EditorOutlineInstance;
-use crate::types::{AppPhase, EditorMode, GizmoPart, LevelObject, SpawnDirection, TimingPoint};
+use crate::types::{
+    AppPhase, EditorMode, EditorPlaceMode, GizmoPart, LevelObject, SpawnDirection, TimingPoint,
+};
 
 const SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD: usize = 700;
 
@@ -76,7 +78,7 @@ impl EditorSubsystem {
         resolve_block_definition(&self.config.selected_block_id).default_size()
     }
 
-    pub(crate) fn add_block_at_cursor(&mut self) {
+    pub(crate) fn add_block_at_cursor(&mut self, place_mode: EditorPlaceMode) -> usize {
         let new_block = create_block_at_cursor(
             self.ui.cursor,
             &self.config.selected_block_id,
@@ -87,18 +89,25 @@ impl EditorSubsystem {
         self.record_history_state();
         let placed_index = self.objects.len();
         self.objects.push(new_block);
-        self.clear_block_selection();
+        if place_mode == EditorPlaceMode::SelectPlaced {
+            self.replace_block_selection(vec![placed_index]);
+            self.ui.hovered_block_index = Some(placed_index);
+        } else {
+            self.clear_block_selection();
+        }
         if can_append_mesh {
             self.invalidate_samples();
             self.runtime.pending_block_mesh_appends.push(placed_index);
             self.mark_dirty(EditorDirtyFlags {
                 sync_game_objects: true,
                 append_block_mesh: true,
+                rebuild_selection_overlays: place_mode == EditorPlaceMode::SelectPlaced,
                 ..EditorDirtyFlags::default()
             });
         } else {
             self.sync_objects();
         }
+        placed_index
     }
 
     fn can_append_block_mesh_after_placement(&self) -> bool {
@@ -285,7 +294,15 @@ impl State {
     }
 
     pub(super) fn place_editor_block(&mut self) {
-        self.editor.add_block_at_cursor();
+        let place_mode = if self.editor.ui.shift_held {
+            EditorPlaceMode::Stamp
+        } else {
+            EditorPlaceMode::SelectPlaced
+        };
+        self.editor.add_block_at_cursor(place_mode);
+        if place_mode == EditorPlaceMode::SelectPlaced {
+            self.set_editor_mode(EditorMode::Move);
+        }
         self.rebuild_editor_cursor_vertices();
     }
 
@@ -1444,7 +1461,9 @@ mod tests {
             assert_eq!(state.editor.block_static_vertex_cache_complete_len, Some(1));
 
             state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
-            state.editor.add_block_at_cursor();
+            state
+                .editor
+                .add_block_at_cursor(crate::types::EditorPlaceMode::Stamp);
 
             assert!(state.editor.runtime.dirty.sync_game_objects);
             assert!(state.editor.runtime.dirty.append_block_mesh);
@@ -1475,7 +1494,9 @@ mod tests {
             state.editor.config.selected_block_id = "core/speedportal".to_string();
             state.editor.ui.cursor = [2.0, 0.0, 4.0];
 
-            state.editor.add_block_at_cursor();
+            state
+                .editor
+                .add_block_at_cursor(crate::types::EditorPlaceMode::Stamp);
 
             assert_eq!(state.editor.objects.len(), 1);
             assert_eq!(state.editor.objects[0].position, [2.0, 0.0, 4.0]);

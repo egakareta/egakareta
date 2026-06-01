@@ -50,6 +50,7 @@ pub(crate) struct EditorHistorySnapshot {
     pub(crate) selected_block_indices: Vec<usize>,
     pub(crate) cursor: [f32; 3],
     pub(crate) selected_block_id: String,
+    pub(crate) recent_block_ids: Vec<String>,
     pub(crate) spawn: SpawnMetadata,
     pub(crate) timeline_time_seconds: f32,
     pub(crate) timeline_duration_seconds: f32,

@@ -22,6 +22,7 @@ impl EditorSubsystem {
             selected_block_indices: self.ui.selected_block_indices.clone(),
             cursor: self.ui.cursor,
             selected_block_id: self.config.selected_block_id.clone(),
+            recent_block_ids: self.config.recent_block_ids.clone(),
             spawn: self.spawn.clone(),
             timeline_time_seconds: self.timeline.clock.time_seconds,
             timeline_duration_seconds: self.timeline.clock.duration_seconds,
@@ -53,6 +54,7 @@ impl EditorSubsystem {
         self.ui.hovered_block_index = self.ui.selected_block_index;
         self.ui.cursor = snapshot.cursor;
         self.config.selected_block_id = snapshot.selected_block_id;
+        self.config.recent_block_ids = snapshot.recent_block_ids;
         self.spawn = snapshot.spawn;
         self.timeline.clock.time_seconds = snapshot.timeline_time_seconds.max(0.0);
         self.timeline.clock.duration_seconds = snapshot.timeline_duration_seconds.max(0.1);

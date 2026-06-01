@@ -115,6 +115,8 @@ impl EditorSubsystem {
 
     pub(crate) fn set_block_id(&mut self, block_id: String) {
         self.config.selected_block_id = crate::block_repository::normalize_block_id(&block_id);
+        self.config
+            .remember_recent_block_id(self.config.selected_block_id.clone());
     }
 
     pub(crate) fn set_mode(&mut self, mode: EditorMode) {

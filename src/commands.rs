@@ -39,6 +39,8 @@ pub(crate) enum AppCommand {
     EditorSetBlockId(String),
     /// Pick the selected block and enter place mode with that block type.
     EditorPickSelectedBlock,
+    /// Pick the block under the pointer and enter place mode with that block type.
+    EditorPickBlockAt { x: f64, y: f64 },
     /// Set whether to snap to grid.
     EditorSetSnapToGrid(bool),
     /// Set the grid snap step.

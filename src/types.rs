@@ -44,6 +44,12 @@ pub(crate) struct EditorTapDivisionPick {
     pub(crate) indicator_position: [f32; 3],
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EditorPlaceMode {
+    SelectPlaced,
+    Stamp,
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) enum GizmoAxis {
     X,

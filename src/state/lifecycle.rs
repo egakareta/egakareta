@@ -518,6 +518,7 @@ impl State {
                 ui: EditorState::new(),
                 config: EditorConfigState {
                     selected_block_id: app_settings.editor_selected_block_id.clone(),
+                    recent_block_ids: vec![app_settings.editor_selected_block_id.clone()],
                     snap_to_grid: app_settings.editor_snap_to_grid,
                     snap_step: app_settings.editor_snap_step.max(0.05),
                     snap_rotation: app_settings.editor_rotation_snap,
@@ -1315,6 +1316,7 @@ impl State {
                 ui: EditorState::new(),
                 config: EditorConfigState {
                     selected_block_id: app_settings.editor_selected_block_id.clone(),
+                    recent_block_ids: vec![app_settings.editor_selected_block_id.clone()],
                     snap_to_grid: app_settings.editor_snap_to_grid,
                     snap_step: app_settings.editor_snap_step.max(0.05),
                     snap_rotation: app_settings.editor_rotation_snap,

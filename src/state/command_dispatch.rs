@@ -10,7 +10,7 @@ use super::State;
 use crate::commands::AppCommand;
 use crate::editor_domain::{timing_division_time_in_direction, TimingDivisionDirection};
 use crate::types::{normalize_binding_key, EditorMode, KeyChord};
-use glam::Vec3;
+use glam::{Vec2, Vec3};
 
 const FALLBACK_TIMELINE_SHIFT_SECONDS: f32 = 0.1;
 
@@ -47,6 +47,9 @@ impl State {
             AppCommand::EditorSetBlockId(id) => self.set_editor_block_id(id),
             AppCommand::EditorPickSelectedBlock => {
                 self.editor_pick_selected_block_for_place();
+            }
+            AppCommand::EditorPickBlockAt { x, y } => {
+                self.editor_pick_block_at_screen(x, y);
             }
             AppCommand::EditorSetSnapToGrid(snap) => self.set_editor_snap_to_grid(snap),
             AppCommand::EditorSetSnapStep(step) => self.set_editor_snap_step(step),
@@ -213,6 +216,13 @@ impl State {
                         self.handle_primary_click(pos[0], pos[1]);
                     } else {
                         self.handle_mouse_button(button, pressed);
+                    }
+                } else if button == 1 && pressed {
+                    if let Some(pos) = self.editor.ui.pointer_screen {
+                        self.dispatch(AppCommand::EditorPickBlockAt {
+                            x: pos[0],
+                            y: pos[1],
+                        });
                     }
                 } else {
                     self.handle_mouse_button(button, pressed);
@@ -778,6 +788,34 @@ impl State {
         true
     }
 
+    pub(crate) fn editor_pick_block_at_screen(&mut self, x: f64, y: f64) -> bool {
+        if !self.is_editor() || self.editor_pointer_over_ui_input(x, y) {
+            return false;
+        }
+
+        let viewport_size = Vec2::new(
+            self.render.gpu.config.width as f32,
+            self.render.gpu.config.height as f32,
+        );
+        let Some(block_id) = self
+            .editor
+            .pick_from_screen(x, y, viewport_size)
+            .and_then(|pick| pick.hit_block_index)
+            .and_then(|index| self.editor.objects.get(index))
+            .map(|object| object.block_id.clone())
+        else {
+            return false;
+        };
+
+        if self.editor.timeline.playback.playing {
+            self.set_editor_playback_effective_mode(EditorMode::Place);
+        } else {
+            self.set_editor_mode(EditorMode::Place);
+        }
+        self.set_editor_block_id(block_id);
+        true
+    }
+
     fn editor_focus_camera_target(&mut self) -> bool {
         if !self.is_editor() {
             return false;
@@ -897,7 +935,7 @@ mod tests {
         KeyChord, LevelObject, MusicMetadata, SettingsSection, TimedTrigger, TimedTriggerAction,
         TimedTriggerEasing, TimedTriggerTarget, TimingPoint,
     };
-    use glam::Vec2;
+    use glam::{Vec2, Vec3};
 
     async fn new_editor_state() -> State {
         let mut state = State::new_test().await;
@@ -1052,6 +1090,7 @@ mod tests {
 
             state.dispatch(AppCommand::EditorSetBlockId("core/lava".to_string()));
             assert_eq!(state.editor.config.selected_block_id, "core/lava");
+            assert_eq!(state.editor.config.recent_block_ids[0], "core/lava");
 
             state.editor.objects = vec![
                 LevelObject {
@@ -1088,6 +1127,74 @@ mod tests {
 
             assert_eq!(state.editor.ui.mode, EditorMode::Move);
             assert_eq!(state.editor.config.selected_block_id, "core/stone");
+        });
+    }
+
+    #[test]
+    fn placing_block_selects_it_and_enters_move_mode_by_default() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+
+            state.dispatch(AppCommand::EditorSetMode(EditorMode::Place));
+            state.dispatch(AppCommand::EditorSetBlockId("core/lava".to_string()));
+            state.dispatch(AppCommand::TurnRight);
+
+            assert_eq!(state.editor.objects.len(), 1);
+            assert_eq!(state.editor.ui.mode, EditorMode::Move);
+            assert_eq!(state.editor.ui.selected_block_index, Some(0));
+            assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
+            assert_eq!(state.editor.ui.hovered_block_index, Some(0));
+            assert_eq!(state.editor.objects[0].block_id, "core/lava");
+        });
+    }
+
+    #[test]
+    fn shift_placing_block_keeps_stamp_mode_without_selection() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+
+            state.dispatch(AppCommand::EditorSetMode(EditorMode::Place));
+            state.dispatch(AppCommand::EditorSetShiftHeld(true));
+            state.dispatch(AppCommand::TurnRight);
+
+            assert_eq!(state.editor.objects.len(), 1);
+            assert_eq!(state.editor.ui.mode, EditorMode::Place);
+            assert!(state.editor.ui.selected_block_index.is_none());
+            assert!(state.editor.ui.selected_block_indices.is_empty());
+        });
+    }
+
+    #[test]
+    fn pick_block_at_screen_samples_block_type_for_placement() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.objects = vec![LevelObject {
+                position: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                block_id: "core/grass".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            }];
+            state.dispatch(AppCommand::EditorSetMode(EditorMode::Move));
+            state.dispatch(AppCommand::EditorSetBlockId("core/stone".to_string()));
+
+            let viewport = Vec2::new(
+                state.render.gpu.config.width as f32,
+                state.render.gpu.config.height as f32,
+            );
+            let screen = state
+                .editor
+                .world_to_screen_v(Vec3::new(0.5, 0.5, 0.5), viewport)
+                .expect("block center should project to the screen");
+
+            state.dispatch(AppCommand::EditorPickBlockAt {
+                x: screen.x as f64,
+                y: screen.y as f64,
+            });
+
+            assert_eq!(state.editor.ui.mode, EditorMode::Place);
+            assert_eq!(state.editor.config.selected_block_id, "core/grass");
+            assert_eq!(state.editor.config.recent_block_ids[0], "core/grass");
         });
     }
 

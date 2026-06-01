@@ -392,6 +392,11 @@ impl State {
                 return;
             }
 
+            if self.editor.ui.alt_held {
+                self.dispatch(crate::commands::AppCommand::EditorPickBlockAt { x, y });
+                return;
+            }
+
             let mode = self.editor.mode();
             if mode == EditorMode::Place {
                 self.update_editor_cursor_from_screen(x, y);
