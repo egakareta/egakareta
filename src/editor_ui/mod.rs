@@ -752,7 +752,7 @@ pub fn show_editor_ui(
             .show(ctx, |ui| {
                 let button_size = egui::Vec2::splat(56.0);
                 let hotkey_hint = view.app_settings.hotkey_hint("toggle_place_window");
-                ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Max), |ui| {
                     if show_recent_block_quick_strip(
                         ui,
                         &view,
