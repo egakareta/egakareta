@@ -13,7 +13,10 @@ use std::collections::HashMap;
 
 use crate::commands::AppCommand;
 use crate::editor_ui::components::{show_timeline_bar, show_waveform_panel, timeline_metrics};
-use crate::editor_ui::modes::compose::{show_block_preview_button, show_compose_mode_bottom_panel};
+use crate::editor_ui::modes::compose::{
+    show_block_preview_button, show_compose_mode_bottom_panel,
+    show_selected_block_properties_window,
+};
 use crate::editor_ui::modes::tapping::show_tapping_mode_bottom_panel;
 use crate::editor_ui::modes::timing::show_timing_mode_bottom_panel;
 use crate::editor_ui::modes::trigger::show_trigger_mode_bottom_panel;
@@ -760,6 +763,8 @@ pub fn show_editor_ui(
                     commands.push(AppCommand::EditorTogglePlaceWindow);
                 }
             });
+
+        show_selected_block_properties_window(ctx, &view, bottom_bar_height, &mut commands);
     }
 
     // Waveform visualization central panel (Timing mode only)

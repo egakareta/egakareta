@@ -36,11 +36,36 @@ pub(crate) fn show_compose_mode_bottom_panel(
     commands: &mut Vec<AppCommand>,
 ) {
     show_mode_and_snap_controls(ui, view, commands);
+}
 
-    match view.mode {
-        EditorMode::Select | EditorMode::Move | EditorMode::Scale | EditorMode::Rotate => {
-            if let Some(mut selected) = view.selected_block.clone() {
-                ui.horizontal_wrapped(|ui| {
+pub(crate) fn show_selected_block_properties_window(
+    ctx: &egui::Context,
+    view: &EditorUiViewModel<'_>,
+    bottom_bar_height: f32,
+    commands: &mut Vec<AppCommand>,
+) {
+    let mode = view.mode;
+    if !matches!(
+        mode,
+        EditorMode::Select | EditorMode::Move | EditorMode::Scale | EditorMode::Rotate
+    ) {
+        return;
+    }
+
+    let Some(mut selected) = view.selected_block.clone() else {
+        return;
+    };
+
+    egui::Area::new("selected_block_properties".into())
+        .anchor(
+            egui::Align2::LEFT_BOTTOM,
+            egui::Vec2::new(12.0, -12.0 - bottom_bar_height),
+        )
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            egui::Frame::popup(&ctx.global_style()).show(ui, |ui| {
+                ui.set_min_width(220.0);
+                ui.vertical(|ui| {
                     ui.horizontal(|ui| {
                         ui.label("Position:");
                         let mut changed = false;
@@ -124,14 +149,8 @@ pub(crate) fn show_compose_mode_bottom_panel(
                         }
                     });
                 });
-            }
-        }
-        EditorMode::Tapping
-        | EditorMode::Trigger
-        | EditorMode::Timing
-        | EditorMode::Null
-        | EditorMode::Place => {}
-    }
+            });
+        });
 }
 
 pub(crate) fn show_block_preview_button(
