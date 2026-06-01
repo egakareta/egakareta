@@ -25,6 +25,22 @@ impl Runtime {
                 "../../assets/Sora.ttf"
             ))),
         );
+        fonts.font_data.insert(
+            "sora_thin".to_owned(),
+            std::sync::Arc::new(
+                egui::FontData::from_static(include_bytes!("../../assets/Sora.ttf")).tweak(
+                    egui::FontTweak {
+                        coords: egui::epaint::text::VariationCoords::new([(b"wght", 100.0)]),
+                        ..Default::default()
+                    },
+                ),
+            ),
+        );
+        fonts
+            .families
+            .entry(egui::FontFamily::Name("sora_thin".into()))
+            .or_default()
+            .insert(0, "sora_thin".to_owned());
         fonts
             .families
             .entry(egui::FontFamily::Proportional)

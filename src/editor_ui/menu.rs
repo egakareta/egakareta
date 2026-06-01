@@ -20,63 +20,36 @@ pub fn load_menu_favicon_texture(ctx: &egui::Context) -> Option<egui::TextureHan
     Some(ctx.load_texture("menu_favicon", color_image, egui::TextureOptions::LINEAR))
 }
 
-/// Shows the menu favicon UI overlay.
-pub fn show_menu_favicon_ui(ctx: &egui::Context, state: &State, favicon: &egui::TextureHandle) {
+const MENU_LEVEL_TITLE_FONT_SIZE: f32 = 86.0;
+const MENU_LEVEL_TITLE_MAX_WIDTH_PADDING: f32 = 32.0;
+const MENU_LEVEL_TITLE_FONT_FAMILY: &str = "sora_thin";
+
+/// Shows the selected level name in the menu hero position.
+pub fn show_menu_favicon_ui(ctx: &egui::Context, state: &State, _favicon: &egui::TextureHandle) {
     if !state.is_menu() {
         return;
     }
 
-    let texture_size = favicon.size_vec2();
-    if texture_size.x <= 0.0 || texture_size.y <= 0.0 {
-        return;
-    }
-
-    let ui_scale = ctx.pixels_per_point();
-    let display_height = ctx.content_rect().height() * 0.2 * ui_scale;
-    let scale = display_height / texture_size.y;
-    let display_size = texture_size * scale;
+    let level_name = state.menu_level_name().unwrap_or("No Level Selected");
+    let max_width = (ctx.content_rect().width() - MENU_LEVEL_TITLE_MAX_WIDTH_PADDING).max(1.0);
 
     egui::Area::new("menu_favicon_area".into())
         .order(egui::Order::Foreground)
-        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 48.0))
+        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 44.0))
         .interactable(false)
         .show(ctx, |ui| {
-            ui.add(egui::Image::new((favicon.id(), display_size)));
+            ui.set_max_width(max_width);
+            ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                ui.label(
+                    egui::RichText::new(level_name)
+                        .font(egui::FontId::new(
+                            MENU_LEVEL_TITLE_FONT_SIZE,
+                            egui::FontFamily::Name(MENU_LEVEL_TITLE_FONT_FAMILY.into()),
+                        ))
+                        .color(ui.visuals().strong_text_color()),
+                );
+            });
         });
-}
-
-/// Shows the menu topbar with the current time.
-#[allow(deprecated)]
-pub fn show_menu_topbar(ctx: &egui::Context, state: &State) {
-    if !state.is_menu() {
-        return;
-    }
-
-    egui::Panel::top("menu_top_bar").show(ctx, |ui| {
-        ui.horizontal_wrapped(|ui| {
-            ui.add_space(4.0);
-            ui.label(
-                egui::RichText::new(egui_phosphor::regular::GAME_CONTROLLER)
-                    .size(18.0)
-                    .color(ui.visuals().strong_text_color()),
-            );
-            ui.label(egui::RichText::new("egakareta").strong());
-
-            ui.separator();
-
-            let level_name = state.menu_level_name().unwrap_or("No Level Selected");
-
-            ui.label(format!(
-                "{} {}",
-                egui_phosphor::regular::MAP_TRIFOLD,
-                level_name
-            ));
-
-            ui.separator();
-            ui.label(egui_phosphor::regular::CLOCK);
-            ui.label(egui::RichText::new(get_current_time_str()).monospace());
-        });
-    });
 }
 
 /// Shows the menu play button UI overlay.
@@ -116,61 +89,67 @@ pub fn show_menu_play_ui(ctx: &egui::Context, state: &mut State) {
         });
 }
 
-/// Shows the main-menu account status and sign-in dialog.
-pub fn show_menu_auth_ui(ctx: &egui::Context, state: &mut State) {
+/// Shows the main-menu topbar.
+pub fn show_menu_topbar_ui(root_ui: &mut egui::Ui, state: &mut State) {
     if !state.is_menu() {
         return;
     }
 
+    let ctx = root_ui.ctx().clone();
     let mut commands = Vec::new();
 
-    egui::Area::new("menu_auth_area".into())
-        .order(egui::Order::Foreground)
-        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 7.0))
-        .show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                if let Some(name) = state.auth_display_name() {
-                    ui.label(format!("{} {}", egui_phosphor::regular::USER, name));
-                    if ui
-                        .add_enabled(!state.auth_pending(), egui::Button::new("Sign out"))
-                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .clicked()
-                    {
-                        commands.push(AppCommand::AuthSignOut);
+    egui::Panel::top("menu_top_bar").show_inside(root_ui, |ui| {
+        ui.horizontal_wrapped(|ui| {
+            ui.add_space(4.0);
+            ui.label(egui_phosphor::regular::CLOCK);
+            ui.label(egui::RichText::new(get_current_time_str()).monospace());
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.horizontal(|ui| {
+                    if let Some(name) = state.auth_display_name() {
+                        ui.label(format!("{} {}", egui_phosphor::regular::USER, name));
+                        if ui
+                            .add_enabled(!state.auth_pending(), egui::Button::new("Sign out"))
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            commands.push(AppCommand::AuthSignOut);
+                        }
+                    } else {
+                        if ui
+                            .add_enabled(
+                                !state.auth_pending(),
+                                egui::Button::new(format!(
+                                    "{} Sign in",
+                                    egui_phosphor::regular::SIGN_IN
+                                )),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            commands.push(AppCommand::AuthSubmitSignIn);
+                        }
+                        if ui
+                            .add_enabled(!state.auth_pending(), egui::Button::new("Create account"))
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            commands.push(AppCommand::AuthOpenSignup);
+                        }
+                        if state.auth_pending() {
+                            ui.spinner();
+                        }
                     }
-                } else {
-                    if ui
-                        .add_enabled(
-                            !state.auth_pending(),
-                            egui::Button::new(format!(
-                                "{} Sign in",
-                                egui_phosphor::regular::SIGN_IN
-                            )),
-                        )
-                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .clicked()
-                    {
-                        commands.push(AppCommand::AuthSubmitSignIn);
-                    }
-                    if ui
-                        .add_enabled(!state.auth_pending(), egui::Button::new("Create account"))
-                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .clicked()
-                    {
-                        commands.push(AppCommand::AuthOpenSignup);
-                    }
-                    if state.auth_pending() {
-                        ui.spinner();
-                    }
-                }
+                });
             });
         });
+    });
 
     if let Some(message) = state.auth_message() {
         egui::Area::new("menu_auth_message_area".into())
             .order(egui::Order::Foreground)
             .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 42.0))
-            .show(ctx, |ui| {
+            .show(&ctx, |ui| {
                 ui.colored_label(ui.visuals().warn_fg_color, message);
             });
     }
@@ -200,7 +179,7 @@ fn get_current_time_str() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{show_menu_auth_ui, show_menu_topbar};
+    use super::show_menu_topbar_ui;
     use crate::types::{AuthProfile, AuthSession, AuthSessionTokens, AuthUser};
 
     fn test_auth_session(username: Option<&str>) -> AuthSession {
@@ -227,8 +206,7 @@ mod tests {
     fn run_menu_auth_ui_once(state: &mut crate::State) {
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
-            let ctx = root_ui.ctx();
-            show_menu_auth_ui(ctx, state);
+            show_menu_topbar_ui(root_ui, state);
         });
     }
 
@@ -236,12 +214,7 @@ mod tests {
     fn menu_topbar_and_auth_ui_render_guest_state() {
         pollster::block_on(async {
             let mut state = crate::State::new_test().await;
-            let ctx = egui::Context::default();
 
-            let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
-                let ctx = root_ui.ctx();
-                show_menu_topbar(ctx, &state);
-            });
             run_menu_auth_ui_once(&mut state);
 
             assert_eq!(state.auth_display_name(), None);
