@@ -141,13 +141,6 @@ pub(crate) fn show_player_camera_status_row(ui: &mut egui::Ui, view: &EditorUiVi
             view.camera_preview_target[1],
             view.camera_preview_target[2],
         ));
-        ui.separator();
-        ui.label(format!(
-            "Editor Camera: ({:.1}, {:.1}, {:.1})",
-            view.camera_position[0], view.camera_position[1], view.camera_position[2]
-        ));
-        ui.separator();
-        ui.label(format!("FPS: {:.0}", view.fps));
     });
 }
 

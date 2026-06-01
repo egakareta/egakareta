@@ -469,7 +469,7 @@ pub fn show_editor_ui(
     }
 
     let top_bar_response = egui::Panel::top("editor_top_bar").show(ctx, |ui| {
-        ui.horizontal_wrapped(|ui| {
+        ui.horizontal(|ui| {
             // Top-level tabs: Compose / Tapping / Timing
             if ui.selectable_label(is_compose, "Compose").clicked() && !is_compose {
                 commands.push(crate::commands::AppCommand::EditorSetMode(
@@ -536,6 +536,10 @@ pub fn show_editor_ui(
             {
                 commands.push(crate::commands::AppCommand::EditorToggleSettings);
             }
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(format!("FPS: {:.0}", view.fps));
+            });
         });
     });
     ui_input_blocking_rects.push(rect_to_input_bounds(top_bar_response.response.rect));
@@ -676,9 +680,13 @@ pub fn show_editor_ui(
     }
 
     if !is_timing && !is_compact_ui {
-        if let Some(rect) =
-            show_view_selector_cube(ctx, view.camera_rotation, view.camera_pitch, &mut commands)
-        {
+        if let Some(rect) = show_view_selector_cube(
+            ctx,
+            view.camera_rotation,
+            view.camera_pitch,
+            view.camera_position,
+            &mut commands,
+        ) {
             ui_input_blocking_rects.push(rect_to_input_bounds(rect));
         }
     }
@@ -761,6 +769,7 @@ fn show_view_selector_cube(
     ctx: &egui::Context,
     camera_rotation: f32,
     camera_pitch: f32,
+    camera_position: [f32; 3],
     commands: &mut Vec<AppCommand>,
 ) -> Option<egui::Rect> {
     const ROTATE_SPEED: f32 = 0.004;
@@ -917,12 +926,20 @@ fn show_view_selector_cube(
         .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-14.0, 52.0))
         .show(ctx, |ui| {
             let side = 128.0;
-            let (rect, response) =
-                ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::click_and_drag());
-            let painter = ui.painter_at(rect);
+            let label_height = 24.0;
+            let (widget_rect, response) = ui.allocate_exact_size(
+                egui::vec2(side, side + label_height),
+                egui::Sense::click_and_drag(),
+            );
+            let rect = egui::Rect::from_min_size(widget_rect.min, egui::vec2(side, side));
+            let label_rect = egui::Rect::from_min_size(
+                egui::pos2(widget_rect.min.x, rect.max.y),
+                egui::vec2(side, label_height),
+            );
+            let painter = ui.painter_at(widget_rect);
 
             painter.rect_filled(
-                rect,
+                widget_rect,
                 8.0,
                 egui::Color32::from_rgba_unmultiplied(16, 24, 32, 56),
             );
@@ -1115,6 +1132,17 @@ fn show_view_selector_cube(
                     });
                 }
             }
+
+            painter.text(
+                label_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                format!(
+                    "{:.1}, {:.1}, {:.1}",
+                    camera_position[0], camera_position[1], camera_position[2]
+                ),
+                egui::FontId::proportional(11.0),
+                egui::Color32::from_rgba_unmultiplied(235, 246, 255, 220),
+            );
         });
     Some(response.response.rect)
 }

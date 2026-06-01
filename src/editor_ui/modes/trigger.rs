@@ -532,8 +532,6 @@ pub(crate) fn show_trigger_mode_bottom_panel(
                 commands.push(AppCommand::EditorUpdateTrigger(selected_idx, trigger));
             }
         }
-    } else {
-        ui.label("Select a trigger to edit it.");
     }
 
     show_player_camera_status_row(ui, view);
