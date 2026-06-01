@@ -225,6 +225,11 @@ impl State {
                 self.resize_surface(crate::types::PhysicalSize::new(width, height));
             }
 
+            // ── Editor – place window ────────────────────────────────
+            AppCommand::EditorTogglePlaceWindow => {
+                self.set_editor_show_place_window(!self.editor_show_place_window());
+            }
+
             // ── Editor – escape context ─────────────────────────────
             AppCommand::EditorEscape => self.handle_editor_escape(),
         }
@@ -593,6 +598,13 @@ impl State {
                     None
                 }
             }
+            "toggle_place_window" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorTogglePlaceWindow)
+                } else {
+                    None
+                }
+            }
             "game_turn" => {
                 if !self.is_editor() && just_pressed {
                     Some(AppCommand::TurnRight)
@@ -673,13 +685,6 @@ impl State {
             "mode_rotate" => {
                 if self.is_editor() && just_pressed {
                     Some(AppCommand::EditorSetMode(EditorMode::Rotate))
-                } else {
-                    None
-                }
-            }
-            "mode_place" => {
-                if self.is_editor() && just_pressed {
-                    Some(AppCommand::EditorSetMode(EditorMode::Place))
                 } else {
                     None
                 }
@@ -2565,10 +2570,6 @@ mod tests {
             assert_eq!(
                 state.command_for_keybind_action("mode_rotate", true),
                 Some(AppCommand::EditorSetMode(EditorMode::Rotate))
-            );
-            assert_eq!(
-                state.command_for_keybind_action("mode_place", true),
-                Some(AppCommand::EditorSetMode(EditorMode::Place))
             );
             assert_eq!(
                 state.command_for_keybind_action("mode_trigger", true),

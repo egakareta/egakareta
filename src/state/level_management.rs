@@ -498,6 +498,14 @@ impl State {
         self.session.editor_show_metadata = show;
     }
 
+    pub(crate) fn editor_show_place_window(&self) -> bool {
+        self.session.editor_show_place_window
+    }
+
+    pub(crate) fn set_editor_show_place_window(&mut self, show: bool) {
+        self.session.editor_show_place_window = show;
+    }
+
     /// Returns a list of all level names available in the application's built-in repository.
     pub fn available_levels(&self) -> &[String] {
         &self.menu.state.levels

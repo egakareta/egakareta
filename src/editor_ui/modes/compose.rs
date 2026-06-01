@@ -7,9 +7,7 @@
 */
 use std::collections::HashMap;
 
-use crate::block_repository::{
-    all_placeable_blocks, block_texture_atlas, resolve_block_texture_layers,
-};
+use crate::block_repository::{block_texture_atlas, resolve_block_texture_layers};
 use crate::commands::AppCommand;
 use crate::editor_ui::modes::shared::show_mode_and_snap_controls;
 use crate::state::EditorUiViewModel;
@@ -33,31 +31,13 @@ const ATLAS_AVERAGE_MAX_SAMPLES: usize = 1024;
 pub(crate) fn show_compose_mode_bottom_panel(
     ui: &mut egui::Ui,
     view: &EditorUiViewModel<'_>,
-    block_icon_texture_ids: &HashMap<String, egui::TextureId>,
+    _block_icon_texture_ids: &HashMap<String, egui::TextureId>,
     _duration_seconds: f32,
     commands: &mut Vec<AppCommand>,
 ) {
     show_mode_and_snap_controls(ui, view, commands);
 
     match view.mode {
-        EditorMode::Place => {
-            ui.horizontal_wrapped(|ui| {
-                let current = view.selected_block_id;
-                for block in all_placeable_blocks() {
-                    if !block.placeable {
-                        continue;
-                    }
-                    if show_block_preview_button(
-                        ui,
-                        block,
-                        current == block.id,
-                        block_icon_texture_ids.get(block.id.as_str()).copied(),
-                    ) {
-                        commands.push(AppCommand::EditorSetBlockId(block.id.clone()));
-                    }
-                }
-            });
-        }
         EditorMode::Select | EditorMode::Move | EditorMode::Scale | EditorMode::Rotate => {
             if let Some(mut selected) = view.selected_block.clone() {
                 ui.horizontal_wrapped(|ui| {
@@ -146,11 +126,15 @@ pub(crate) fn show_compose_mode_bottom_panel(
                 });
             }
         }
-        EditorMode::Tapping | EditorMode::Trigger | EditorMode::Timing | EditorMode::Null => {}
+        EditorMode::Tapping
+        | EditorMode::Trigger
+        | EditorMode::Timing
+        | EditorMode::Null
+        | EditorMode::Place => {}
     }
 }
 
-fn show_block_preview_button(
+pub(crate) fn show_block_preview_button(
     ui: &mut egui::Ui,
     block: &crate::block_repository::BlockDefinition,
     selected: bool,

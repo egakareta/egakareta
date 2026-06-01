@@ -563,6 +563,7 @@ mod tests {
             available_levels: &[],
             level_name: Some("Trigger Test"),
             show_metadata: false,
+            show_place_window: false,
             show_settings: false,
             settings_section: SettingsSection::Backends,
             keybind_capture_action: None,

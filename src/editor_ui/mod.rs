@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use crate::commands::AppCommand;
 use crate::editor_ui::components::{show_timeline_bar, show_waveform_panel, timeline_metrics};
-use crate::editor_ui::modes::compose::show_compose_mode_bottom_panel;
+use crate::editor_ui::modes::compose::{show_block_preview_button, show_compose_mode_bottom_panel};
 use crate::editor_ui::modes::tapping::show_tapping_mode_bottom_panel;
 use crate::editor_ui::modes::timing::show_timing_mode_bottom_panel;
 use crate::editor_ui::modes::trigger::show_trigger_mode_bottom_panel;
@@ -667,6 +667,46 @@ pub fn show_editor_ui(
         }
     }
 
+    // Floating place window with block catalog
+    if view.show_place_window {
+        let mut place_open = true;
+
+        let place_response =
+            egui::Window::new(format!("{} Place Block", egui_phosphor::regular::CUBE))
+                .open(&mut place_open)
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        let current = view.selected_block_id;
+                        for block in crate::block_repository::all_placeable_blocks() {
+                            if !block.placeable {
+                                continue;
+                            }
+                            if show_block_preview_button(
+                                ui,
+                                block,
+                                current == block.id,
+                                block_icon_texture_ids.get(block.id.as_str()).copied(),
+                            ) {
+                                commands.push(AppCommand::EditorSetBlockId(block.id.clone()));
+                                commands.push(AppCommand::EditorSetMode(EditorMode::Place));
+                                commands.push(AppCommand::EditorTogglePlaceWindow);
+                            }
+                        }
+                    });
+                });
+
+        if let Some(place_response) = place_response {
+            ui_input_blocking_rects.push(rect_to_input_bounds(place_response.response.rect));
+        }
+
+        if !place_open {
+            commands.push(AppCommand::EditorTogglePlaceWindow);
+        }
+    }
+
     let bottom_bar_response = egui::Panel::bottom("block_selection_bar")
         .resizable(false)
         .show(ctx, |ui| {
@@ -694,6 +734,33 @@ pub fn show_editor_ui(
             });
         });
     ui_input_blocking_rects.push(rect_to_input_bounds(bottom_bar_response.response.rect));
+
+    // Massive plus button in compose tab, bottom-right above the bottom bar
+    if is_compose {
+        let bottom_bar_height = bottom_bar_response.response.rect.height();
+        egui::Area::new("place_button_area".into())
+            .anchor(
+                egui::Align2::RIGHT_BOTTOM,
+                egui::Vec2::new(-12.0, -12.0 - bottom_bar_height),
+            )
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                let button_size = egui::Vec2::splat(56.0);
+                let hotkey_hint = view.app_settings.hotkey_hint("toggle_place_window");
+                if ui
+                    .add_sized(
+                        button_size,
+                        egui::Button::new(
+                            egui::RichText::new(egui_phosphor::regular::PLUS).size(28.0),
+                        ),
+                    )
+                    .on_hover_text(format!("Place Block{}", hotkey_hint))
+                    .clicked()
+                {
+                    commands.push(AppCommand::EditorTogglePlaceWindow);
+                }
+            });
+    }
 
     // Waveform visualization central panel (Timing mode only)
     if is_timing {

@@ -1644,12 +1644,6 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
         },
         KeybindActionMetadata {
             group: "Modes",
-            action: "mode_place",
-            label: "Place Mode",
-            capacity: 1,
-        },
-        KeybindActionMetadata {
-            group: "Modes",
             action: "mode_trigger",
             label: "Trigger Mode",
             capacity: 1,
@@ -1678,6 +1672,12 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
             label: "Context Escape",
             capacity: 1,
         },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "toggle_place_window",
+            label: "Place Window",
+            capacity: 1,
+        },
     ]
 }
 
@@ -1689,6 +1689,10 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
         },
         KeybindBinding {
             action: "toggle_editor".to_string(),
+            chord: KeyChord::new("e", false, false, false),
+        },
+        KeybindBinding {
+            action: "toggle_place_window".to_string(),
             chord: KeyChord::new("e", false, false, false),
         },
         KeybindBinding {
@@ -1872,12 +1876,8 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
             chord: KeyChord::new("4", false, false, false),
         },
         KeybindBinding {
-            action: "mode_place".to_string(),
-            chord: KeyChord::new("5", false, false, false),
-        },
-        KeybindBinding {
             action: "mode_trigger".to_string(),
-            chord: KeyChord::new("6", false, false, false),
+            chord: KeyChord::new("5", false, false, false),
         },
         KeybindBinding {
             action: "tab_compose".to_string(),

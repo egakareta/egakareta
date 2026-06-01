@@ -71,19 +71,6 @@ pub(crate) fn show_mode_and_snap_controls(
         }
         if ui
             .selectable_label(
-                mode == EditorMode::Place,
-                format!("{} Place", egui_phosphor::regular::CUBE),
-            )
-            .on_hover_text(format!(
-                "Place{}",
-                view.app_settings.hotkey_hint("mode_place")
-            ))
-            .clicked()
-        {
-            commands.push(AppCommand::EditorSetMode(EditorMode::Place));
-        }
-        if ui
-            .selectable_label(
                 mode == EditorMode::Trigger,
                 format!("{} Trigger", egui_phosphor::regular::LIGHTNING),
             )
@@ -192,6 +179,7 @@ mod tests {
             available_levels: &[],
             level_name: Some("Shared Test"),
             show_metadata: false,
+            show_place_window: false,
             show_settings: false,
             settings_section: SettingsSection::Backends,
             keybind_capture_action: None,

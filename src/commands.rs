@@ -236,6 +236,10 @@ pub(crate) enum AppCommand {
     /// Resize render surface to the specified dimensions.
     ResizeSurface { width: u32, height: u32 },
 
+    // ── Editor – place window ───────────────────────────────────
+    /// Toggle the floating place window with block catalog.
+    EditorTogglePlaceWindow,
+
     // ── Editor – escape context ─────────────────────────────
     /// Escape key context-sensitive (stop playback → reset timeline → back to menu).
     EditorEscape,

@@ -96,6 +96,7 @@ pub(crate) struct SessionSubsystem {
     pub(crate) editor_music_metadata: MusicMetadata,
     pub(crate) editor_menu_preview_camera: Option<LevelPreviewCameraMetadata>,
     pub(crate) editor_show_metadata: bool,
+    pub(crate) editor_show_place_window: bool,
     pub(crate) editor_show_settings: bool,
     pub(crate) editor_settings_section: SettingsSection,
     pub(crate) editor_keybind_capture_action: Option<(String, usize)>,
