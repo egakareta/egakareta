@@ -623,6 +623,31 @@ impl State {
         self.editor.runtime.dirty.rebuild_tap_indicators = true;
     }
 
+    pub(super) fn refresh_editor_tapping_preview_on_mode_entry(&mut self) {
+        if self.phase != AppPhase::Editor
+            || self.editor_effective_mode_for_playback() != EditorMode::Tapping
+        {
+            return;
+        }
+
+        self.editor.timeline.tap_division_preview_cache_revision = 0;
+        self.editor
+            .timeline
+            .tap_division_preview_cache_timing_revision = 0;
+        self.editor.timeline.tap_division_preview_cache.clear();
+
+        if !self.editor.timeline.playback.playing {
+            self.apply_editor_timeline_preview_from_cache();
+        }
+
+        self.mark_editor_dirty(EditorDirtyFlags {
+            rebuild_tap_indicators: true,
+            rebuild_preview_player: true,
+            rebuild_cursor: true,
+            ..EditorDirtyFlags::default()
+        });
+    }
+
     pub(crate) fn editor_mode(&self) -> EditorMode {
         self.editor.mode()
     }

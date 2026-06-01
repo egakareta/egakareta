@@ -40,6 +40,9 @@ impl State {
                 } else {
                     self.set_editor_mode(mode);
                 }
+                if mode == EditorMode::Tapping && old_mode != EditorMode::Tapping {
+                    self.refresh_editor_tapping_preview_on_mode_entry();
+                }
                 if mode == EditorMode::Timing && old_mode != EditorMode::Timing {
                     self.load_waveform_for_current_audio();
                 }
@@ -988,6 +991,42 @@ mod tests {
 
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Trigger));
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Trigger);
+        });
+    }
+
+    #[test]
+    fn entering_tapping_mode_invalidates_stale_tap_division_previews() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.ui.mode = EditorMode::Place;
+            state.editor.timeline.tap_division_preview_cache_revision =
+                state.editor.timeline.simulation_revision;
+            state
+                .editor
+                .timeline
+                .tap_division_preview_cache_timing_revision = state.editor.timing.revision;
+            state.editor.timeline.tap_division_preview_cache.push(
+                crate::editor_domain::TapDivisionPreview {
+                    time_seconds: 1.0,
+                    indicator_position: [99.0, 99.0, 99.0],
+                },
+            );
+
+            state.dispatch(AppCommand::EditorSetMode(EditorMode::Tapping));
+
+            assert_eq!(state.editor.ui.mode, EditorMode::Tapping);
+            assert_eq!(state.editor.timeline.tap_division_preview_cache_revision, 0);
+            assert_eq!(
+                state
+                    .editor
+                    .timeline
+                    .tap_division_preview_cache_timing_revision,
+                0
+            );
+            assert!(state.editor.timeline.tap_division_preview_cache.is_empty());
+            assert!(state.editor.runtime.dirty.rebuild_tap_indicators);
+            assert!(state.editor.runtime.dirty.rebuild_preview_player);
+            assert!(state.editor.runtime.dirty.rebuild_cursor);
         });
     }
 
