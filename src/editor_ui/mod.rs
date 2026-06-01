@@ -11,6 +11,7 @@ pub(crate) mod modes;
 
 use std::collections::HashMap;
 
+use crate::block_repository::{BlockCollision, BlockDefinition};
 use crate::commands::AppCommand;
 use crate::editor_ui::components::{show_timeline_bar, show_waveform_panel, timeline_metrics};
 use crate::editor_ui::modes::compose::{
@@ -94,8 +95,58 @@ const RESPONSIVE_UI_SCALE_MAX: f32 = 1.35;
 const UI_SCALE_BASE_WIDTH: f32 = 1280.0;
 const UI_SCALE_BASE_HEIGHT: f32 = 720.0;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum BlockCatalogCategory {
+    #[default]
+    All,
+    Building,
+    Danger,
+    Tech,
+}
+
+const BLOCK_CATALOG_CATEGORIES: [BlockCatalogCategory; 4] = [
+    BlockCatalogCategory::All,
+    BlockCatalogCategory::Building,
+    BlockCatalogCategory::Danger,
+    BlockCatalogCategory::Tech,
+];
+
+impl BlockCatalogCategory {
+    fn label(self) -> &'static str {
+        match self {
+            Self::All => "All",
+            Self::Building => "Building",
+            Self::Danger => "Danger",
+            Self::Tech => "Tech",
+        }
+    }
+}
+
 fn is_compact_editor_ui(viewport_width: f32) -> bool {
     viewport_width <= COMPACT_EDITOR_UI_BREAKPOINT
+}
+
+fn block_catalog_category_for(block: &BlockDefinition) -> BlockCatalogCategory {
+    if matches!(block.behavior.collision, BlockCollision::Hazard) || block.id.contains("void") {
+        return BlockCatalogCategory::Danger;
+    }
+
+    if matches!(block.behavior.collision, BlockCollision::Portal)
+        || block.behavior.consumed_on_overlap
+        || (block.behavior.speed_multiplier - 1.0).abs() > f32::EPSILON
+    {
+        return BlockCatalogCategory::Tech;
+    }
+
+    if matches!(block.behavior.collision, BlockCollision::Solid) || block.behavior.support_surface {
+        return BlockCatalogCategory::Building;
+    }
+
+    BlockCatalogCategory::Tech
+}
+
+fn block_matches_catalog_category(block: &BlockDefinition, category: BlockCatalogCategory) -> bool {
+    category == BlockCatalogCategory::All || block_catalog_category_for(block) == category
 }
 
 fn settings_sidebar_default_width(viewport_width: f32) -> f32 {
@@ -674,6 +725,11 @@ pub fn show_editor_ui(
     // Floating place window with block catalog
     if view.show_place_window {
         let mut place_open = true;
+        let place_category_id = egui::Id::new("editor_place_block_catalog_category");
+        let mut selected_place_category = ctx.data_mut(|data| {
+            data.get_persisted::<BlockCatalogCategory>(place_category_id)
+                .unwrap_or_default()
+        });
 
         let place_response =
             egui::Window::new(format!("{} Place Block", egui_phosphor::regular::CUBE))
@@ -682,10 +738,22 @@ pub fn show_editor_ui(
                 .collapsible(false)
                 .resizable(false)
                 .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        for category in BLOCK_CATALOG_CATEGORIES {
+                            ui.selectable_value(
+                                &mut selected_place_category,
+                                category,
+                                category.label(),
+                            );
+                        }
+                    });
+
                     ui.horizontal_wrapped(|ui| {
                         let current = view.selected_block_id;
                         for block in crate::block_repository::all_placeable_blocks() {
-                            if !block.placeable {
+                            if !block.placeable
+                                || !block_matches_catalog_category(block, selected_place_category)
+                            {
                                 continue;
                             }
                             if show_block_preview_button(
@@ -701,6 +769,8 @@ pub fn show_editor_ui(
                         }
                     });
                 });
+
+        ctx.data_mut(|data| data.insert_persisted(place_category_id, selected_place_category));
 
         if let Some(place_response) = place_response {
             ui_input_blocking_rects.push(rect_to_input_bounds(place_response.response.rect));
@@ -1267,11 +1337,13 @@ fn show_view_selector_cube(
 #[cfg(test)]
 mod tests {
     use super::{
-        combined_ui_scale_factor, is_compact_editor_ui, marquee_screen_pos_to_egui_pos,
-        perf_overlay_window_order, push_command_when_clicked, responsive_ui_scale_multiplier,
-        settings_sidebar_default_width, show_editor_ui, show_perf_overlay, sort_quad_by_angle,
+        block_catalog_category_for, block_matches_catalog_category, combined_ui_scale_factor,
+        is_compact_editor_ui, marquee_screen_pos_to_egui_pos, perf_overlay_window_order,
+        push_command_when_clicked, responsive_ui_scale_multiplier, settings_sidebar_default_width,
+        show_editor_ui, show_perf_overlay, sort_quad_by_angle, BlockCatalogCategory,
         VIEW_CUBE_FACES,
     };
+    use crate::block_repository::resolve_block_definition;
     use crate::commands::AppCommand;
     use crate::test_utils::approx_eq;
     use crate::types::{EditorMode, SettingsSection};
@@ -1466,6 +1538,49 @@ mod tests {
         let p = marquee_screen_pos_to_egui_pos([300.0, 180.0], -2.0);
         assert!(approx_eq(p.x, 300.0, 0.001));
         assert!(approx_eq(p.y, 180.0, 0.001));
+    }
+
+    #[test]
+    fn block_catalog_category_groups_builtin_blocks() {
+        let stone = resolve_block_definition("core/stone");
+        let lava = resolve_block_definition("core/lava");
+        let void = resolve_block_definition("core/void");
+        let speed_portal = resolve_block_definition("core/speedportal");
+        let torch = resolve_block_definition("core/torch");
+
+        assert_eq!(
+            block_catalog_category_for(stone),
+            BlockCatalogCategory::Building
+        );
+        assert_eq!(
+            block_catalog_category_for(lava),
+            BlockCatalogCategory::Danger
+        );
+        assert_eq!(
+            block_catalog_category_for(void),
+            BlockCatalogCategory::Danger
+        );
+        assert_eq!(
+            block_catalog_category_for(speed_portal),
+            BlockCatalogCategory::Tech
+        );
+        assert_eq!(
+            block_catalog_category_for(torch),
+            BlockCatalogCategory::Tech
+        );
+
+        assert!(block_matches_catalog_category(
+            lava,
+            BlockCatalogCategory::All
+        ));
+        assert!(block_matches_catalog_category(
+            lava,
+            BlockCatalogCategory::Danger
+        ));
+        assert!(!block_matches_catalog_category(
+            lava,
+            BlockCatalogCategory::Building
+        ));
     }
 
     #[test]
