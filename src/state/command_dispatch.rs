@@ -1025,8 +1025,80 @@ mod tests {
             );
             assert!(state.editor.timeline.tap_division_preview_cache.is_empty());
             assert!(state.editor.runtime.dirty.rebuild_tap_indicators);
-            assert!(state.editor.runtime.dirty.rebuild_preview_player);
             assert!(state.editor.runtime.dirty.rebuild_cursor);
+        });
+    }
+
+    #[test]
+    fn entering_tapping_mode_does_not_move_editor_camera() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.ui.mode = EditorMode::Place;
+            state.editor.timeline.clock.time_seconds = 2.0;
+            state.editor.timeline.preview.position = [12.0, 3.0, -7.0];
+            state.editor.camera.editor_pan = [4.0, 8.0];
+            state.editor.camera.editor_target_z = 6.0;
+
+            state.dispatch(AppCommand::EditorSetMode(EditorMode::Tapping));
+
+            assert_eq!(state.editor.ui.mode, EditorMode::Tapping);
+            assert_eq!(state.editor.camera.editor_pan, [4.0, 8.0]);
+            assert_eq!(state.editor.camera.editor_target_z, 6.0);
+        });
+    }
+
+    #[test]
+    fn entering_tapping_mode_recomputes_stale_tap_positions_after_object_edit() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.ui.mode = EditorMode::Place;
+            state.editor.spawn.position = [0.0, 0.0, 0.0];
+            state.editor.spawn.direction = crate::types::SpawnDirection::Forward;
+            state.editor.timeline.taps.tap_times = vec![0.5];
+            state.editor.timeline.taps.tap_indicator_positions = vec![[42.0, 0.0, 42.0]];
+            state.editor.timeline.taps.selected_index = Some(0);
+
+            state.dispatch(AppCommand::EditorSetMode(EditorMode::Tapping));
+
+            let expected = crate::editor_domain::derive_tap_indicator_positions(
+                state.editor.spawn.position,
+                state.editor.spawn.direction,
+                &state.editor.timeline.taps.tap_times,
+                &state.editor.objects,
+            );
+            assert_eq!(state.editor.timeline.taps.tap_indicator_positions, expected);
+            assert_eq!(state.editor.timeline.taps.selected_index, Some(0));
+        });
+    }
+
+    #[test]
+    fn entering_tapping_mode_rebuilds_path_pick_samples_after_object_edit() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.ui.mode = EditorMode::Place;
+            state.editor.spawn.position = [0.0, 0.0, 0.0];
+            state.editor.spawn.direction = crate::types::SpawnDirection::Forward;
+            state.editor.timeline.clock.duration_seconds = 2.0;
+            state.editor.invalidate_samples();
+
+            assert!(state.editor.timeline.snapshot_cache.is_empty());
+            assert_ne!(
+                state.editor.timeline.snapshot_cache_revision,
+                state.editor.timeline.simulation_revision
+            );
+
+            state.dispatch(AppCommand::EditorSetMode(EditorMode::Tapping));
+
+            assert_eq!(state.editor.ui.mode, EditorMode::Tapping);
+            assert!(!state.editor.timeline.snapshot_cache.is_empty());
+            assert_eq!(
+                state.editor.timeline.snapshot_cache_revision,
+                state.editor.timeline.simulation_revision
+            );
+            assert!(state
+                .editor
+                .tap_path_pick_near_world([0.5, 0.0, 0.5])
+                .is_some());
         });
     }
 

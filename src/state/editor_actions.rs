@@ -93,7 +93,7 @@ pub(crate) struct TapPathPick {
 }
 
 impl EditorSubsystem {
-    fn sync_tap_indicators_to_spawn(&mut self) {
+    pub(crate) fn sync_tap_indicators_to_spawn(&mut self) {
         let selected_index = self.timeline.taps.selected_index;
         self.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
             self.spawn.position,

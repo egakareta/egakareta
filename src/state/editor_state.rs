@@ -635,14 +635,11 @@ impl State {
             .timeline
             .tap_division_preview_cache_timing_revision = 0;
         self.editor.timeline.tap_division_preview_cache.clear();
-
-        if !self.editor.timeline.playback.playing {
-            self.apply_editor_timeline_preview_from_cache();
-        }
+        self.editor.sync_tap_indicators_to_spawn();
+        self.rebuild_editor_timeline_snapshot_cache_if_needed();
 
         self.mark_editor_dirty(EditorDirtyFlags {
             rebuild_tap_indicators: true,
-            rebuild_preview_player: true,
             rebuild_cursor: true,
             ..EditorDirtyFlags::default()
         });
