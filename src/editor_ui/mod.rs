@@ -624,7 +624,7 @@ pub fn show_editor_ui(
             }
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(format!("FPS: {:.0}", view.fps));
+                ui.label(format!("{:.0}fps", view.fps));
             });
         });
     });
