@@ -23,6 +23,16 @@ const ZSTD_LEVEL: i32 = 3;
 struct BinaryLevelPayloadV1 {
     format_version: u32,
     name: String,
+    #[serde(default)]
+    creator: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    stars: f32,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    version: Option<String>,
     music_source: String,
     music_title: Option<String>,
     music_author: Option<String>,
@@ -161,6 +171,11 @@ pub(crate) fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<V
     let payload = BinaryLevelPayloadV1 {
         format_version: metadata.format_version,
         name: metadata.name.clone(),
+        creator: metadata.creator.clone(),
+        description: metadata.description.clone(),
+        stars: metadata.stars,
+        tags: metadata.tags.clone(),
+        version: metadata.version.clone(),
         music_source: metadata.music.source.clone(),
         music_title: metadata.music.title.clone(),
         music_author: metadata.music.author.clone(),
@@ -397,6 +412,11 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
     Ok(LevelMetadata {
         format_version: payload.format_version,
         name: payload.name,
+        creator: payload.creator,
+        description: payload.description,
+        stars: payload.stars.clamp(0.0, 10.0),
+        tags: payload.tags,
+        version: payload.version,
         music: MusicMetadata {
             source: payload.music_source,
             title: payload.music_title,
@@ -860,6 +880,11 @@ mod tests {
         let payload = BinaryLevelPayloadV1 {
             format_version: 1,
             name: "legacy".to_string(),
+            creator: None,
+            description: None,
+            stars: 0.0,
+            tags: Vec::new(),
+            version: None,
             music_source: "music.mp3".to_string(),
             music_title: None,
             music_author: None,
@@ -935,6 +960,11 @@ mod tests {
         let payload = BinaryLevelPayloadV1 {
             format_version: 1,
             name: "bad palette".to_string(),
+            creator: None,
+            description: None,
+            stars: 0.0,
+            tags: Vec::new(),
+            version: None,
             music_source: "music.mp3".to_string(),
             music_title: None,
             music_author: None,

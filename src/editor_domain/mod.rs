@@ -245,6 +245,11 @@ mod tests {
         let metadata = LevelMetadata {
             format_version: 1,
             name: "Test".to_string(),
+            creator: Some("Tester".to_string()),
+            description: Some("Session init metadata".to_string()),
+            stars: 6.5,
+            tags: vec!["unit".to_string(), "session".to_string()],
+            version: Some("1.0".to_string()),
             music: MusicMetadata {
                 source: "audio.mp3".to_string(),
                 title: None,
@@ -276,6 +281,9 @@ mod tests {
         assert_eq!(init.cursor, [4.0, 6.0, 0.0]);
         assert_eq!(init.camera_pan, [4.5, 0.5]);
         assert_eq!(init.tap_times, vec![0.2, 0.8]);
+        assert_eq!(init.creator_metadata.creator.as_deref(), Some("Tester"));
+        assert_eq!(init.creator_metadata.stars, 6.5);
+        assert_eq!(init.creator_metadata.tags, ["unit", "session"]);
         assert!((init.timeline_time_seconds - 0.5).abs() <= 1e-6);
     }
 
@@ -372,6 +380,11 @@ mod tests {
         let metadata = LevelMetadata {
             format_version: 1,
             name: "Starter".to_string(),
+            creator: None,
+            description: None,
+            stars: 0.0,
+            tags: Vec::new(),
+            version: None,
             music: MusicMetadata {
                 source: "audio.mp3".to_string(),
                 title: None,

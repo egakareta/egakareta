@@ -198,6 +198,9 @@ impl State {
             AppCommand::EditorResetKeybinds => self.reset_essential_keybinds(),
             AppCommand::EditorCompleteImport => self.complete_import(),
             AppCommand::EditorUpdateMusic(metadata) => self.set_editor_music_metadata(metadata),
+            AppCommand::EditorUpdateCreatorMetadata(metadata) => {
+                self.set_editor_creator_metadata(metadata)
+            }
             AppCommand::EditorTriggerAudioImport => self.trigger_audio_import(),
             AppCommand::EditorCaptureMenuPreviewCamera => self.editor_capture_menu_preview_camera(),
             AppCommand::EditorUseAutoMenuPreviewCamera => {

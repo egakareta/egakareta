@@ -20,9 +20,9 @@ use crate::mesh::build_block_obj;
 use crate::platform::io::{log_platform_error, read_editor_music_bytes};
 use crate::platform::services::{trigger_level_export, trigger_level_import};
 use crate::types::{
-    AppPhase, AppSettings, EditorMode, KeyChord, LevelMetadata, LevelPreviewCameraMetadata,
-    MusicMetadata, SettingsSection, SpawnDirection, DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
-    DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
+    AppPhase, AppSettings, EditorMode, KeyChord, LevelCreatorMetadata, LevelMetadata,
+    LevelPreviewCameraMetadata, MusicMetadata, SettingsSection, SpawnDirection,
+    DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
 };
 use glam::Vec3;
 
@@ -141,6 +141,7 @@ impl State {
         self.editor.objects = init.objects;
         self.editor.spawn = init.spawn;
         self.session.editor_music_metadata = init.music;
+        self.session.editor_creator_metadata = init.creator_metadata;
         self.editor.timeline.taps.tap_times = init.tap_times;
         self.editor.timing.timing_points = init.timing_points;
         self.editor.timing.mark_timing_points_changed();
@@ -231,6 +232,7 @@ impl State {
                 .editor_level_name
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string()),
+            creator_metadata: self.session.editor_creator_metadata.clone(),
             music: self.session.editor_music_metadata.clone(),
             spawn: self.editor.spawn.clone(),
             tap_times: self.editor.timeline.taps.tap_times.clone(),
@@ -264,6 +266,7 @@ impl State {
         self.editor
             .set_simulate_trigger_hitboxes(init.simulate_trigger_hitboxes);
         self.session.editor_menu_preview_camera = init.menu_preview_camera;
+        self.session.editor_creator_metadata = init.creator_metadata;
         self.editor.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
             self.editor.spawn.position,
             self.editor.spawn.direction,
@@ -321,6 +324,14 @@ impl State {
 
     pub(crate) fn set_editor_music_metadata(&mut self, metadata: MusicMetadata) {
         self.session.editor_music_metadata = metadata;
+    }
+
+    pub(crate) fn editor_creator_metadata(&self) -> &LevelCreatorMetadata {
+        &self.session.editor_creator_metadata
+    }
+
+    pub(crate) fn set_editor_creator_metadata(&mut self, metadata: LevelCreatorMetadata) {
+        self.session.editor_creator_metadata = metadata;
     }
 
     pub(crate) fn editor_capture_menu_preview_camera(&mut self) {
@@ -669,7 +680,7 @@ mod tests {
     use super::{auto_menu_preview_camera_from_spawn, menu_preview_camera_for_metadata, State};
     use crate::commands::AppCommand;
     use crate::types::{
-        AppPhase, EditorStateParams, KeyChord, LevelMetadata, LevelObject,
+        AppPhase, EditorStateParams, KeyChord, LevelCreatorMetadata, LevelMetadata, LevelObject,
         LevelPreviewCameraMetadata, MusicMetadata, SettingsSection, SpawnMetadata,
         DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
     };
@@ -716,6 +727,13 @@ mod tests {
                 source: "roundtrip.mp3".to_string(),
                 ..MusicMetadata::default()
             });
+            state.set_editor_creator_metadata(LevelCreatorMetadata {
+                creator: Some("Roundtrip Author".to_string()),
+                description: None,
+                stars: 6.5,
+                tags: vec!["binary".to_string(), "roundtrip".to_string()],
+                version: Some("1.0".to_string()),
+            });
             state.editor.objects = vec![test_object([2.0, 1.0, 3.0], "core/grass")];
             state.editor.spawn.position = [3.0, 0.0, 4.0];
             state.editor.timeline.taps.tap_times = vec![0.25, 0.5];
@@ -738,6 +756,10 @@ mod tests {
             let actual = state.current_editor_metadata();
             assert_eq!(actual.name, expected.name);
             assert_eq!(actual.music.source, expected.music.source);
+            assert_eq!(actual.creator, expected.creator);
+            assert_eq!(actual.stars, expected.stars);
+            assert_eq!(actual.tags, expected.tags);
+            assert_eq!(actual.version, expected.version);
             assert_eq!(actual.spawn.position, expected.spawn.position);
             assert_eq!(actual.tap_times, expected.tap_times);
             assert_eq!(actual.timeline_time_seconds, expected.timeline_time_seconds);
@@ -987,6 +1009,7 @@ mod tests {
     fn menu_preview_camera_for_metadata_prefers_manual_camera() {
         let metadata = LevelMetadata::from_editor_state(EditorStateParams {
             name: "ManualPreview".to_string(),
+            creator_metadata: LevelCreatorMetadata::default(),
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
             tap_times: Vec::new(),
@@ -1156,6 +1179,13 @@ mod tests {
                 source: "unit-test-audio.mp3".to_string(),
                 ..MusicMetadata::default()
             });
+            state.set_editor_creator_metadata(LevelCreatorMetadata {
+                creator: None,
+                description: Some("Bundled export metadata".to_string()),
+                stars: 8.25,
+                tags: vec!["test".to_string(), "archive".to_string()],
+                version: None,
+            });
             state
                 .audio
                 .state
@@ -1183,6 +1213,9 @@ mod tests {
             let actual = state.current_editor_metadata();
             assert_eq!(actual.name, expected.name);
             assert_eq!(actual.music.source, expected.music.source);
+            assert_eq!(actual.description, expected.description);
+            assert_eq!(actual.stars, expected.stars);
+            assert_eq!(actual.tags, expected.tags);
             assert_eq!(actual.spawn.position, expected.spawn.position);
             assert!(!state.editor.objects.is_empty());
             assert!(state

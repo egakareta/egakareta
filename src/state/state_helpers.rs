@@ -188,6 +188,7 @@ impl State {
     pub(super) fn enter_editor_phase(&mut self, level_name: String) {
         self.phase = AppPhase::Editor;
         self.session.editor_level_name = Some(level_name);
+        self.session.editor_creator_metadata = crate::types::LevelCreatorMetadata::default();
         self.session.playtesting_editor = false;
         self.session.playtest_audio_start_seconds = None;
         self.session.playing_trigger_hitboxes = false;
@@ -223,6 +224,7 @@ impl State {
         self.session.playing_trigger_base_objects = None;
         self.clear_pending_gameplay_inputs();
         self.session.editor_level_name = None;
+        self.session.editor_creator_metadata = crate::types::LevelCreatorMetadata::default();
         self.editor.clear_block_selection();
         self.editor.ui.marquee_start_screen = None;
         self.editor.ui.marquee_current_screen = None;

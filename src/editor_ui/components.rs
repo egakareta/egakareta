@@ -668,6 +668,7 @@ mod tests {
             settings_section: SettingsSection::Backends,
             keybind_capture_action: None,
             music_metadata,
+            creator_metadata: crate::types::LevelCreatorMetadata::default(),
             app_settings,
             configured_graphics_backend: "Auto",
             configured_audio_backend: "Default",

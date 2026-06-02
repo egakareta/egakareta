@@ -6,14 +6,15 @@
 
 */
 use crate::types::{
-    LevelMetadata, LevelObject, LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata,
-    TimedTrigger, TimingPoint,
+    LevelCreatorMetadata, LevelMetadata, LevelObject, LevelPreviewCameraMetadata, MusicMetadata,
+    SpawnMetadata, TimedTrigger, TimingPoint,
 };
 
 pub(crate) struct EditorSessionInit {
     pub(crate) objects: Vec<LevelObject>,
     pub(crate) spawn: SpawnMetadata,
     pub(crate) music: MusicMetadata,
+    pub(crate) creator_metadata: LevelCreatorMetadata,
     pub(crate) tap_times: Vec<f32>,
     pub(crate) timing_points: Vec<TimingPoint>,
     pub(crate) timeline_time_seconds: f32,
@@ -32,6 +33,7 @@ pub(crate) fn editor_session_init_from_metadata(
         objects,
         spawn,
         music,
+        creator_metadata,
         mut tap_times,
         timing_points,
         mut timeline_time_seconds,
@@ -41,10 +43,12 @@ pub(crate) fn editor_session_init_from_metadata(
         menu_preview_camera,
     ) = if let Some(metadata) = metadata {
         let triggers = metadata.resolved_triggers();
+        let creator_metadata = metadata.creator_metadata();
         (
             metadata.objects,
             metadata.spawn,
             metadata.music,
+            creator_metadata,
             metadata.tap_times,
             metadata.timing_points,
             metadata.timeline_time_seconds,
@@ -58,6 +62,7 @@ pub(crate) fn editor_session_init_from_metadata(
             Vec::new(),
             SpawnMetadata::default(),
             MusicMetadata::default(),
+            LevelCreatorMetadata::default(),
             Vec::new(),
             Vec::new(),
             0.0,
@@ -81,6 +86,7 @@ pub(crate) fn editor_session_init_from_metadata(
         objects,
         spawn,
         music,
+        creator_metadata,
         tap_times,
         timing_points,
         timeline_time_seconds,

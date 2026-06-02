@@ -67,6 +67,7 @@ mod tests {
     fn sample_metadata() -> LevelMetadata {
         LevelMetadata::from_editor_state(EditorStateParams {
             name: "Service Test".to_string(),
+            creator_metadata: crate::types::LevelCreatorMetadata::default(),
             music: MusicMetadata {
                 source: "audio.mp3".to_string(),
                 title: Some("Track".to_string()),

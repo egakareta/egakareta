@@ -85,6 +85,50 @@ const VIEW_CUBE_FACES: [ViewCubeFace; 6] = [
     },
 ];
 
+const EASY_STAR_THRESHOLD: f32 = 2.0;
+const NORMAL_STAR_THRESHOLD: f32 = 4.0;
+const HARD_STAR_THRESHOLD: f32 = 6.0;
+const HARDER_STAR_THRESHOLD: f32 = 8.0;
+const INSANE_STAR_THRESHOLD: f32 = 10.0;
+
+fn optional_trimmed_string(value: String) -> Option<String> {
+    let value = value.trim().to_string();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+fn tags_to_text(tags: &[String]) -> String {
+    tags.join(", ")
+}
+
+fn tags_from_text(value: String) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|tag| !tag.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn difficulty_for_stars(stars: f32) -> &'static str {
+    if stars < EASY_STAR_THRESHOLD {
+        "easy"
+    } else if stars < NORMAL_STAR_THRESHOLD {
+        "normal"
+    } else if stars < HARD_STAR_THRESHOLD {
+        "hard"
+    } else if stars < HARDER_STAR_THRESHOLD {
+        "harder"
+    } else if stars < INSANE_STAR_THRESHOLD {
+        "insane"
+    } else {
+        "demon"
+    }
+}
+
 const COMPACT_EDITOR_UI_BREAKPOINT: f32 = 720.0;
 const SETTINGS_SIDEBAR_TOTAL_PADDING: f32 = 24.0;
 const SETTINGS_SIDEBAR_MIN_WIDTH: f32 = 180.0;
@@ -684,6 +728,75 @@ pub fn show_editor_ui(
 
                     if changed {
                         commands.push(crate::commands::AppCommand::EditorUpdateMusic(music));
+                    }
+
+                    ui.separator();
+                    ui.heading(format!("{} Creator Info", egui_phosphor::regular::USER));
+
+                    let mut creator_metadata = view.creator_metadata.clone();
+                    let mut creator_metadata_changed = false;
+
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} Creator:", egui_phosphor::regular::USER));
+                        let mut creator = creator_metadata.creator.clone().unwrap_or_default();
+                        if ui.text_edit_singleline(&mut creator).changed() {
+                            creator_metadata.creator = optional_trimmed_string(creator);
+                            creator_metadata_changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} Version:", egui_phosphor::regular::TAG));
+                        let mut version = creator_metadata.version.clone().unwrap_or_default();
+                        if ui.text_edit_singleline(&mut version).changed() {
+                            creator_metadata.version = optional_trimmed_string(version);
+                            creator_metadata_changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} Stars:", egui_phosphor::regular::STAR));
+                        let mut stars = creator_metadata.stars.clamp(0.0, 10.0);
+                        if ui
+                            .add(
+                                egui::Slider::new(&mut stars, 0.0..=10.0)
+                                    .step_by(0.1)
+                                    .suffix(" stars"),
+                            )
+                            .changed()
+                        {
+                            creator_metadata.stars = stars.clamp(0.0, 10.0);
+                            creator_metadata_changed = true;
+                        }
+                        ui.label(difficulty_for_stars(stars));
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} Tags:", egui_phosphor::regular::HASH));
+                        let mut tags = tags_to_text(&creator_metadata.tags);
+                        if ui.text_edit_singleline(&mut tags).changed() {
+                            creator_metadata.tags = tags_from_text(tags);
+                            creator_metadata_changed = true;
+                        }
+                    });
+
+                    ui.label(format!(
+                        "{} Description:",
+                        egui_phosphor::regular::TEXT_ALIGN_LEFT
+                    ));
+                    let mut description = creator_metadata.description.clone().unwrap_or_default();
+                    if ui
+                        .add(egui::TextEdit::multiline(&mut description).desired_rows(3))
+                        .changed()
+                    {
+                        creator_metadata.description = optional_trimmed_string(description);
+                        creator_metadata_changed = true;
+                    }
+
+                    if creator_metadata_changed {
+                        commands.push(crate::commands::AppCommand::EditorUpdateCreatorMetadata(
+                            creator_metadata,
+                        ));
                     }
 
                     ui.separator();

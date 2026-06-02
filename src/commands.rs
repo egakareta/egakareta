@@ -205,6 +205,8 @@ pub(crate) enum AppCommand {
     EditorCompleteImport,
     /// Update music information for the level.
     EditorUpdateMusic(crate::types::MusicMetadata),
+    /// Update creator-facing metadata for the level.
+    EditorUpdateCreatorMetadata(crate::types::LevelCreatorMetadata),
     /// Trigger the platform audio import dialog.
     EditorTriggerAudioImport,
     /// Store the current editor camera as menu preview camera metadata.

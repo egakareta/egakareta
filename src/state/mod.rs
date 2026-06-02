@@ -61,7 +61,7 @@ use crate::platform::services::AuthServiceMessage;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::platform::state_host::NativeWindow;
 use crate::types::{
-    AppPhase, AppSettings, AuthSession, EditorMode, EditorState, LevelObject,
+    AppPhase, AppSettings, AuthSession, EditorMode, EditorState, LevelCreatorMetadata, LevelObject,
     LevelPreviewCameraMetadata, MenuState, MusicMetadata, PhysicalSize, SettingsSection,
     SpawnMetadata,
 };
@@ -94,6 +94,7 @@ pub(crate) struct AuthSubsystem {
 pub(crate) struct SessionSubsystem {
     pub(crate) editor_level_name: Option<String>,
     pub(crate) editor_music_metadata: MusicMetadata,
+    pub(crate) editor_creator_metadata: LevelCreatorMetadata,
     pub(crate) editor_menu_preview_camera: Option<LevelPreviewCameraMetadata>,
     pub(crate) editor_show_metadata: bool,
     pub(crate) editor_show_place_window: bool,

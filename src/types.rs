@@ -505,6 +505,27 @@ fn is_default_music_metadata(value: &MusicMetadata) -> bool {
         && value.extra.is_empty()
 }
 
+fn is_default_level_stars(value: &f32) -> bool {
+    value.abs() <= f32::EPSILON
+}
+
+fn default_level_tags() -> Vec<String> {
+    Vec::new()
+}
+
+fn is_default_level_tags(value: &[String]) -> bool {
+    value.is_empty()
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct LevelCreatorMetadata {
+    pub(crate) creator: Option<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) stars: f32,
+    pub(crate) tags: Vec<String>,
+    pub(crate) version: Option<String>,
+}
+
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 /// A timing point that defines the tempo and time signature at a specific time in the level.
 /// Used for rhythm-based gameplay and music synchronization.
@@ -899,6 +920,19 @@ pub(crate) struct LevelMetadata {
     )]
     pub(crate) format_version: u32,
     pub(crate) name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) creator: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) description: Option<String>,
+    #[serde(default, skip_serializing_if = "is_default_level_stars")]
+    pub(crate) stars: f32,
+    #[serde(
+        default = "default_level_tags",
+        skip_serializing_if = "is_default_level_tags"
+    )]
+    pub(crate) tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) version: Option<String>,
     #[serde(default, skip_serializing_if = "is_default_music_metadata")]
     pub(crate) music: MusicMetadata,
     #[serde(default, skip_serializing_if = "is_default_spawn_metadata")]
@@ -948,6 +982,7 @@ pub(crate) struct LevelPreviewCameraMetadata {
 
 pub(crate) struct EditorStateParams {
     pub name: String,
+    pub creator_metadata: LevelCreatorMetadata,
     pub music: MusicMetadata,
     pub spawn: SpawnMetadata,
     pub tap_times: Vec<f32>,
@@ -964,6 +999,7 @@ impl LevelMetadata {
     pub(crate) fn from_editor_state(
         EditorStateParams {
             name,
+            creator_metadata,
             music,
             spawn,
             tap_times,
@@ -979,6 +1015,11 @@ impl LevelMetadata {
         Self {
             format_version: CURRENT_LEVEL_FORMAT_VERSION,
             name,
+            creator: creator_metadata.creator,
+            description: creator_metadata.description,
+            stars: creator_metadata.stars.clamp(0.0, 10.0),
+            tags: creator_metadata.tags,
+            version: creator_metadata.version,
             music,
             spawn,
             tap_times,
@@ -995,6 +1036,16 @@ impl LevelMetadata {
 
     pub(crate) fn resolved_triggers(&self) -> Vec<TimedTrigger> {
         self.triggers.clone()
+    }
+
+    pub(crate) fn creator_metadata(&self) -> LevelCreatorMetadata {
+        LevelCreatorMetadata {
+            creator: self.creator.clone(),
+            description: self.description.clone(),
+            stars: self.stars.clamp(0.0, 10.0),
+            tags: self.tags.clone(),
+            version: self.version.clone(),
+        }
     }
 }
 
@@ -2157,9 +2208,10 @@ mod tests {
         apply_timed_triggers_to_objects, camera_triggers_to_timed_triggers,
         default_camera_trigger_pitch, default_camera_trigger_rotation,
         default_camera_trigger_transition_interval_seconds, timed_triggers_to_camera_triggers,
-        CameraTrigger, CameraTriggerMode, EditorStateParams, GameCursor, LevelMetadata,
-        LevelObject, LevelPreviewCameraMetadata, MusicMetadata, SpawnDirection, SpawnMetadata,
-        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, Vertex,
+        CameraTrigger, CameraTriggerMode, EditorStateParams, GameCursor, LevelCreatorMetadata,
+        LevelMetadata, LevelObject, LevelPreviewCameraMetadata, MusicMetadata, SpawnDirection,
+        SpawnMetadata, TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+        Vertex,
     };
     use serde_json::json;
 
@@ -2232,6 +2284,7 @@ mod tests {
     fn level_metadata_serialization_omits_default_fields() {
         let metadata = LevelMetadata::from_editor_state(EditorStateParams {
             name: "Minimal".to_string(),
+            creator_metadata: LevelCreatorMetadata::default(),
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
             tap_times: Vec::new(),
@@ -2253,6 +2306,11 @@ mod tests {
         let value = serde_json::to_value(&metadata).expect("serialize metadata");
         assert_eq!(value["name"], "Minimal");
         assert!(value.get("format_version").is_none());
+        assert!(value.get("creator").is_none());
+        assert!(value.get("description").is_none());
+        assert!(value.get("stars").is_none());
+        assert!(value.get("tags").is_none());
+        assert!(value.get("version").is_none());
         assert!(value.get("music").is_none());
         assert!(value.get("spawn").is_none());
         assert!(value.get("tap_times").is_none());
@@ -2274,6 +2332,7 @@ mod tests {
     fn level_metadata_serialization_includes_simulate_trigger_hitboxes_when_enabled() {
         let metadata = LevelMetadata::from_editor_state(EditorStateParams {
             name: "HitboxPolicy".to_string(),
+            creator_metadata: LevelCreatorMetadata::default(),
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
             tap_times: Vec::new(),
@@ -2294,6 +2353,7 @@ mod tests {
     fn level_metadata_serialization_includes_menu_preview_camera_when_present() {
         let metadata = LevelMetadata::from_editor_state(EditorStateParams {
             name: "MenuPreview".to_string(),
+            creator_metadata: LevelCreatorMetadata::default(),
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
             tap_times: Vec::new(),
@@ -2395,6 +2455,11 @@ mod tests {
         let metadata = LevelMetadata {
             format_version: 1,
             name: "Bridge".to_string(),
+            creator: None,
+            description: None,
+            stars: 0.0,
+            tags: Vec::new(),
+            version: None,
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
             tap_times: Vec::new(),

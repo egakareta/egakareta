@@ -7,8 +7,8 @@
 */
 use super::State;
 use crate::types::{
-    AppSettings, EditorMode, LevelObject, MusicMetadata, SettingsSection, SpawnDirection,
-    TimedTrigger, TimingPoint,
+    AppSettings, EditorMode, LevelCreatorMetadata, LevelObject, MusicMetadata, SettingsSection,
+    SpawnDirection, TimedTrigger, TimingPoint,
 };
 
 #[derive(Clone, Copy)]
@@ -29,6 +29,7 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) settings_section: SettingsSection,
     pub(crate) keybind_capture_action: Option<&'a (String, usize)>,
     pub(crate) music_metadata: &'a MusicMetadata,
+    pub(crate) creator_metadata: LevelCreatorMetadata,
     pub(crate) app_settings: &'a AppSettings,
     pub(crate) configured_graphics_backend: &'a str,
     pub(crate) configured_audio_backend: &'a str,
@@ -105,6 +106,7 @@ impl State {
             settings_section: self.editor_settings_section(),
             keybind_capture_action: self.editor_keybind_capture_action(),
             music_metadata: self.editor_music_metadata(),
+            creator_metadata: self.editor_creator_metadata().clone(),
             app_settings: self.app_settings(),
             configured_graphics_backend: self.app_settings().graphics_backend.as_str(),
             configured_audio_backend: self.app_settings().audio_backend.as_str(),

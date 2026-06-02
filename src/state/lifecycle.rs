@@ -31,9 +31,9 @@ use crate::platform::state_host::NativeWindow;
 use crate::platform::state_host::WasmCanvas;
 use crate::platform::state_host::{PlatformInstant, SurfaceHost};
 use crate::types::{
-    AppPhase, CameraUniform, ColorSpaceUniform, EditorState, LineUniform, MenuState, MusicMetadata,
-    PhysicalSize, SettingsSection, SpawnMetadata, Vertex, DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
-    DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
+    AppPhase, CameraUniform, ColorSpaceUniform, EditorState, LevelCreatorMetadata, LineUniform,
+    MenuState, MusicMetadata, PhysicalSize, SettingsSection, SpawnMetadata, Vertex,
+    DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
 };
 
 fn discover_graphics_backends() -> Vec<String> {
@@ -497,6 +497,7 @@ impl State {
                     author: None,
                     extra: serde_json::Map::new(),
                 },
+                editor_creator_metadata: LevelCreatorMetadata::default(),
                 editor_menu_preview_camera: None,
                 editor_show_metadata: false,
                 editor_show_place_window: false,
@@ -1296,6 +1297,7 @@ impl State {
                     author: None,
                     extra: serde_json::Map::new(),
                 },
+                editor_creator_metadata: LevelCreatorMetadata::default(),
                 editor_menu_preview_camera: None,
                 editor_show_metadata: false,
                 editor_show_place_window: false,
