@@ -261,6 +261,11 @@ impl EditorSubsystem {
         }
     }
 
+    pub(crate) fn rotate_selected_block_preview(&mut self) {
+        self.config.selected_block_rotation_degrees[1] =
+            (self.config.selected_block_rotation_degrees[1] + 90.0).rem_euclid(360.0);
+    }
+
     pub(crate) fn set_selected_block_color_tint(&mut self, color_tint: [f32; 3]) {
         if let Some(index) = self
             .ui
@@ -820,6 +825,15 @@ impl State {
             self.rebuild_editor_gizmo_vertices();
             self.rebuild_editor_selection_outline_vertices();
         }
+    }
+
+    pub(crate) fn rotate_editor_selected_block_preview(&mut self) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        self.editor.rotate_selected_block_preview();
+        self.rebuild_editor_cursor_vertices();
     }
 
     pub(crate) fn set_editor_selected_block_color_tint(&mut self, color_tint: [f32; 3]) {

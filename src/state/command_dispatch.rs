@@ -128,6 +128,7 @@ impl State {
             // ── Editor – spawn ──────────────────────────────────────
             AppCommand::EditorSetSpawnHere => self.editor_set_spawn_here(),
             AppCommand::EditorRotateSpawnDirection => self.editor_rotate_spawn_direction(),
+            AppCommand::EditorRotatePlacementPreview => self.editor_rotate_placement_preview(),
 
             // ── Editor – history ────────────────────────────────────
             AppCommand::EditorUndo => self.editor_undo(),
@@ -648,7 +649,11 @@ impl State {
             }
             "spawn_rotate" => {
                 if just_pressed {
-                    Some(AppCommand::EditorRotateSpawnDirection)
+                    if self.editor_effective_mode_for_playback() == EditorMode::Place {
+                        Some(AppCommand::EditorRotatePlacementPreview)
+                    } else {
+                        Some(AppCommand::EditorRotateSpawnDirection)
+                    }
                 } else {
                     None
                 }
@@ -1248,6 +1253,7 @@ mod tests {
 
             state.dispatch(AppCommand::EditorSetMode(EditorMode::Place));
             state.dispatch(AppCommand::EditorSetBlockId("core/lava".to_string()));
+            state.dispatch(AppCommand::EditorRotatePlacementPreview);
             state.dispatch(AppCommand::TurnRight);
 
             assert_eq!(state.editor.objects.len(), 1);
@@ -1256,6 +1262,29 @@ mod tests {
             assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
             assert_eq!(state.editor.ui.hovered_block_index, Some(0));
             assert_eq!(state.editor.objects[0].block_id, "core/lava");
+            assert_eq!(state.editor.objects[0].rotation_degrees, [0.0, 90.0, 0.0]);
+        });
+    }
+
+    #[test]
+    fn r_in_place_mode_rotates_preview_without_rotating_spawn() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.spawn.direction = crate::types::SpawnDirection::Forward;
+            state.editor.config.selected_block_rotation_degrees = [0.0, 0.0, 0.0];
+
+            let command = state.command_for_keybind_action("spawn_rotate", true);
+            assert_eq!(command, Some(AppCommand::EditorRotatePlacementPreview));
+            state.dispatch(command.unwrap());
+
+            assert_eq!(
+                state.editor.spawn.direction,
+                crate::types::SpawnDirection::Forward
+            );
+            assert_eq!(
+                state.editor.config.selected_block_rotation_degrees,
+                [0.0, 90.0, 0.0]
+            );
         });
     }
 
@@ -2705,6 +2734,12 @@ mod tests {
                 state.command_for_keybind_action("spawn_set", true),
                 Some(AppCommand::EditorSetSpawnHere)
             );
+            assert_eq!(
+                state.command_for_keybind_action("spawn_rotate", true),
+                Some(AppCommand::EditorRotatePlacementPreview)
+            );
+
+            state.editor.ui.mode = EditorMode::Move;
             assert_eq!(
                 state.command_for_keybind_action("spawn_rotate", true),
                 Some(AppCommand::EditorRotateSpawnDirection)

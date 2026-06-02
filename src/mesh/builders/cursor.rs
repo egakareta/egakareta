@@ -17,11 +17,12 @@ pub(crate) fn build_editor_cursor_vertices(
     cursor: [f32; 3],
     size: [f32; 3],
     block_id: &str,
+    rotation_degrees: [f32; 3],
 ) -> Vec<Vertex> {
     let object = LevelObject {
         position: cursor,
         size,
-        rotation_degrees: [0.0, 0.0, 0.0],
+        rotation_degrees,
         block_id: block_id.to_string(),
         color_tint: [1.0, 1.0, 1.0],
     };
@@ -68,8 +69,12 @@ mod tests {
 
     #[test]
     fn cursor_vertices_follow_requested_size() {
-        let vertices =
-            build_editor_cursor_vertices([1.0, 2.0, 3.0], [2.0, 0.25, 1.5], "core/stone");
+        let vertices = build_editor_cursor_vertices(
+            [1.0, 2.0, 3.0],
+            [2.0, 0.25, 1.5],
+            "core/stone",
+            [0.0, 0.0, 0.0],
+        );
         let max_x = vertices
             .iter()
             .map(|vertex| vertex.position[0])
@@ -92,7 +97,8 @@ mod tests {
     fn cursor_vertices_use_actual_block_shape_with_blue_translucent_tint() {
         let position = [1.0, 2.0, 3.0];
         let size = [2.0, 0.25, 1.0];
-        let vertices = build_editor_cursor_vertices(position, size, "core/speedportal");
+        let vertices =
+            build_editor_cursor_vertices(position, size, "core/speedportal", [0.0, 0.0, 0.0]);
         let block_vertices =
             build_block_geometry_for_object(&object(position, size, "core/speedportal"))
                 .to_triangle_vertices();
@@ -106,6 +112,28 @@ mod tests {
             assert_eq!(cursor_vertex.color[3], 0.6);
             assert_eq!(cursor_vertex.color_outline, [0.08, 0.48, 0.62, 0.45]);
             assert_eq!(cursor_vertex.render_profile, 0.0);
+        }
+    }
+
+    #[test]
+    fn cursor_vertices_apply_requested_rotation() {
+        let position = [1.0, 2.0, 3.0];
+        let size = [2.0, 0.25, 1.0];
+        let rotation_degrees = [0.0, 90.0, 0.0];
+        let vertices =
+            build_editor_cursor_vertices(position, size, "core/speedportal", rotation_degrees);
+        let block_vertices = build_block_geometry_for_object(&LevelObject {
+            position,
+            size,
+            rotation_degrees,
+            block_id: "core/speedportal".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        })
+        .to_triangle_vertices();
+
+        assert_eq!(vertices.len(), block_vertices.len());
+        for (cursor_vertex, block_vertex) in vertices.iter().zip(block_vertices) {
+            assert_eq!(cursor_vertex.position, block_vertex.position);
         }
     }
 

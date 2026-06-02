@@ -14,6 +14,7 @@ pub(crate) struct EditorConfigState {
     pub(crate) snap_step: f32,
     pub(crate) snap_rotation: bool,
     pub(crate) snap_rotation_step_degrees: f32,
+    pub(crate) selected_block_rotation_degrees: [f32; 3],
 }
 
 impl EditorConfigState {

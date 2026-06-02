@@ -125,6 +125,8 @@ pub(crate) enum AppCommand {
     EditorSetSpawnHere,
     /// Rotate the spawn direction.
     EditorRotateSpawnDirection,
+    /// Rotate the block placement preview.
+    EditorRotatePlacementPreview,
 
     // ── Editor – history ────────────────────────────────────────────
     /// Undo the last editor action.

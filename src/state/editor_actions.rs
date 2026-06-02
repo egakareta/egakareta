@@ -1100,6 +1100,11 @@ impl State {
         }
     }
 
+    /// Rotates the block placement preview without changing the spawn direction.
+    pub fn editor_rotate_placement_preview(&mut self) {
+        self.rotate_editor_selected_block_preview();
+    }
+
     /// Transitions the application back to the menu or editor from a playtest session.
     ///
     /// This stops any active gameplay audio and restores the editor state if the

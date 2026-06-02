@@ -204,7 +204,12 @@ mod tests {
 
     #[test]
     fn creates_block_at_cursor() {
-        let block = create_block_at_cursor([1.0, 2.0, 3.0], "core/grass", [2.0, 0.25, 1.0]);
+        let block = create_block_at_cursor(
+            [1.0, 2.0, 3.0],
+            "core/grass",
+            [2.0, 0.25, 1.0],
+            [0.0, 0.0, 0.0],
+        );
         assert_eq!(block.position, [1.0, 2.0, 3.0]);
         assert_eq!(block.size, [2.0, 0.25, 1.0]);
         assert_eq!(block.block_id, "core/grass");

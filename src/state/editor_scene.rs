@@ -83,6 +83,7 @@ impl EditorSubsystem {
             self.ui.cursor,
             &self.config.selected_block_id,
             self.selected_block_default_size(),
+            self.config.selected_block_rotation_degrees,
         );
         let can_append_mesh = self.can_append_block_mesh_after_placement();
 
@@ -394,6 +395,7 @@ impl State {
                 self.editor.ui.cursor,
                 self.editor.selected_block_default_size(),
                 &self.editor.config.selected_block_id,
+                self.editor.config.selected_block_rotation_degrees,
             )
         };
         self.render.meshes.editor_cursor.replace_with_vertices(
@@ -1492,6 +1494,7 @@ mod tests {
             let mut state = State::new_test().await;
             state.phase = AppPhase::Editor;
             state.editor.config.selected_block_id = "core/speedportal".to_string();
+            state.editor.config.selected_block_rotation_degrees = [0.0, 90.0, 0.0];
             state.editor.ui.cursor = [2.0, 0.0, 4.0];
 
             state
@@ -1501,6 +1504,7 @@ mod tests {
             assert_eq!(state.editor.objects.len(), 1);
             assert_eq!(state.editor.objects[0].position, [2.0, 0.0, 4.0]);
             assert_eq!(state.editor.objects[0].size, [2.0, 0.25, 1.0]);
+            assert_eq!(state.editor.objects[0].rotation_degrees, [0.0, 90.0, 0.0]);
             assert_eq!(state.editor.objects[0].block_id, "core/speedportal");
         });
     }
