@@ -1,0 +1,21 @@
+{
+    "id": "core/moon_rune",
+    "display_name": "Moon Rune",
+    "category": "building",
+    "assets": {
+        "texture": "moon_rune.png"
+    },
+    "render": {
+        "profile": "neon",
+        "icon_dimetric_projection": true,
+        "color_top": [0.78, 0.92, 1.0, 1.0],
+        "color_side": [0.34, 0.5, 0.74, 1.0],
+        "color_bottom": [0.05, 0.08, 0.18, 1.0],
+        "color_outline": [0.4, 0.9, 1.0, 0.5]
+    },
+    "behavior": {
+        "collision": "pass_through",
+        "support_surface": true
+    },
+    "placeable": true
+}

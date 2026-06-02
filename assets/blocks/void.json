@@ -1,6 +1,7 @@
 {
     "id": "core/void",
     "display_name": "Void",
+    "category": "danger",
     "render": {
         "profile": "solid",
         "icon_dimetric_projection": true,

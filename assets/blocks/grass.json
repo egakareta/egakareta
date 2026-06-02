@@ -1,6 +1,7 @@
 {
     "id": "core/grass",
     "display_name": "Grass",
+    "category": "building",
     "assets": {
         "texture_top": "grass_top.png",
         "texture_side": "grass_side.png",

@@ -1,6 +1,7 @@
 {
     "id": "core/gem",
     "display_name": "Gem",
+    "category": "tech",
     "assets": {
         "mesh": "gem.obj"
     },

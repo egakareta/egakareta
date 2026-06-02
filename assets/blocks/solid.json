@@ -1,6 +1,7 @@
 {
     "id": "core/solid",
     "display_name": "Solid",
+    "category": "building",
     "render": {
         "profile": "solid",
         "icon_dimetric_projection": true

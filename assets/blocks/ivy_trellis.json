@@ -1,18 +1,17 @@
 {
-    "id": "core/stone",
-    "display_name": "Stone",
+    "id": "core/ivy_trellis",
+    "display_name": "Ivy Trellis",
     "category": "building",
     "assets": {
-        "texture_top": "stone.png",
-        "texture_side": "stone.png"
+        "texture": "ivy_trellis.png"
     },
     "render": {
         "profile": "solid",
         "icon_dimetric_projection": true,
-        "color_outline": [0.0, 0.0, 0.0, 0.1]
+        "color_outline": [0.04, 0.14, 0.08, 0.35]
     },
     "behavior": {
-        "collision": "solid",
+        "collision": "pass_through",
         "support_surface": true
     },
     "placeable": true

@@ -1,6 +1,7 @@
 {
     "id": "core/speedportal",
     "display_name": "Speed Portal",
+    "category": "tech",
     "assets": {
         "mesh": "speedportal.obj"
     },

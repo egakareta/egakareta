@@ -1,6 +1,7 @@
 {
     "id": "core/dirt",
     "display_name": "Dirt",
+    "category": "building",
     "assets": {
         "texture": "dirt.png"
     },

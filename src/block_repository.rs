@@ -105,6 +105,7 @@ pub(crate) struct BlockDefinition {
     pub(crate) id: String,
     #[serde(default = "default_display_name")]
     pub(crate) display_name: String,
+    pub(crate) category: BlockCategory,
     #[serde(default)]
     pub(crate) assets: BlockAssets,
     #[serde(default)]
@@ -113,6 +114,14 @@ pub(crate) struct BlockDefinition {
     pub(crate) behavior: BlockBehavior,
     #[serde(default = "default_placeable")]
     pub(crate) placeable: bool,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum BlockCategory {
+    Building,
+    Danger,
+    Tech,
 }
 
 impl BlockDefinition {
@@ -390,6 +399,7 @@ impl BlockCatalog {
         BlockDefinition {
             id: DEFAULT_BLOCK_ID.to_string(),
             display_name: "Standard".to_string(),
+            category: BlockCategory::Building,
             assets: BlockAssets::default(),
             render: BlockRender::default(),
             behavior: BlockBehavior::default(),
@@ -609,8 +619,8 @@ mod tests {
 
     use super::{
         all_placeable_blocks, block_texture_atlas, normalize_block_id, resolve_block_definition,
-        resolve_block_texture_layers, BlockAssets, BlockBehavior, BlockCollision, BlockDefinition,
-        BlockRender, BlockRenderProfile,
+        resolve_block_texture_layers, BlockAssets, BlockBehavior, BlockCategory, BlockCollision,
+        BlockDefinition, BlockRender, BlockRenderProfile,
     };
 
     #[test]
@@ -658,6 +668,7 @@ mod tests {
         let normalized = BlockDefinition {
             id: "  CORE/STONE  ".to_string(),
             display_name: "   ".to_string(),
+            category: BlockCategory::Building,
             assets: BlockAssets::default(),
             render: BlockRender::default(),
             behavior: BlockBehavior::default(),
@@ -671,6 +682,7 @@ mod tests {
         let missing_id = BlockDefinition {
             id: "   ".to_string(),
             display_name: "name".to_string(),
+            category: BlockCategory::Building,
             assets: BlockAssets::default(),
             render: BlockRender::default(),
             behavior: BlockBehavior::default(),
@@ -735,6 +747,7 @@ mod tests {
         let normalized = BlockDefinition {
             id: "debug/flat".to_string(),
             display_name: "Flat".to_string(),
+            category: BlockCategory::Building,
             assets: BlockAssets::default(),
             render: BlockRender {
                 default_size: [f32::NAN, -2.0, 3.0],
@@ -765,5 +778,20 @@ mod tests {
         assert_approx_eq(rotation[1], 0.0, 1e-6);
         assert_approx_eq(rotation[2], -90.0, 1e-6);
         assert_approx_eq(half_extent, 0.6, 1e-6);
+    }
+
+    #[test]
+    fn block_categories_are_loaded_from_definitions() {
+        let stone = resolve_block_definition("core/stone");
+        let lava = resolve_block_definition("core/lava");
+        let void = resolve_block_definition("core/void");
+        let speed_portal = resolve_block_definition("core/speedportal");
+        let torch = resolve_block_definition("core/torch");
+
+        assert_eq!(stone.category, BlockCategory::Building);
+        assert_eq!(lava.category, BlockCategory::Danger);
+        assert_eq!(void.category, BlockCategory::Danger);
+        assert_eq!(speed_portal.category, BlockCategory::Tech);
+        assert_eq!(torch.category, BlockCategory::Tech);
     }
 }

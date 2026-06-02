@@ -1,0 +1,21 @@
+{
+    "id": "core/ribbon_banner",
+    "display_name": "Ribbon Banner",
+    "category": "building",
+    "assets": {
+        "texture": "ribbon_banner.png"
+    },
+    "render": {
+        "profile": "solid",
+        "icon_dimetric_projection": true,
+        "color_top": [1.0, 0.95, 0.86, 1.0],
+        "color_side": [0.92, 0.42, 0.4, 1.0],
+        "color_bottom": [0.36, 0.12, 0.18, 1.0],
+        "color_outline": [0.18, 0.05, 0.1, 0.3]
+    },
+    "behavior": {
+        "collision": "pass_through",
+        "support_surface": true
+    },
+    "placeable": true
+}
