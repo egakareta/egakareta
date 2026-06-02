@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::state::GameState;
+use super::state::{ConsumedObjectEvent, GameState};
 use crate::types::{
     apply_timed_triggers_to_objects, Direction, LevelObject, SpawnDirection, TimedTrigger,
 };
@@ -241,8 +241,16 @@ impl TimelineSimulationRuntime {
         self.game.game_over
     }
 
+    pub(crate) fn take_consumed_object_events(&mut self) -> Vec<ConsumedObjectEvent> {
+        self.game.take_consumed_object_events()
+    }
+
     pub(crate) fn trail_segments(&self) -> &[Vec<[f32; 3]>] {
         &self.game.trail_segments
+    }
+
+    pub(crate) fn objects(&self) -> &[LevelObject] {
+        &self.game.objects
     }
 
     pub(crate) fn snapshot(&self) -> TimelineSimulationState {

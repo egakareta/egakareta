@@ -160,8 +160,15 @@ impl State {
         if self.phase != AppPhase::Editor
             || !self.editor.timeline.playback.playing
             || self.editor.ui.mode == EditorMode::Timing
-            || !self.editor.has_object_transform_triggers()
         {
+            return None;
+        }
+
+        if let Some(runtime) = self.editor.timeline.playback.runtime.as_ref() {
+            return Some(runtime.objects().to_vec());
+        }
+
+        if !self.editor.has_object_transform_triggers() {
             return None;
         }
 
