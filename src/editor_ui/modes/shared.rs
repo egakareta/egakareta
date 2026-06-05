@@ -185,6 +185,7 @@ mod tests {
             keybind_capture_action: None,
             music_metadata,
             creator_metadata: crate::types::LevelCreatorMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
             app_settings,
             configured_graphics_backend: "Auto",
             configured_audio_backend: "Default",

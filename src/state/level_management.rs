@@ -9,6 +9,7 @@ use super::State;
 use crate::editor_domain::{
     build_editor_playtest_transition, build_playing_transition_from_metadata,
     derive_tap_indicator_positions, editor_session_init_from_metadata,
+    EditorPlaytestTransitionParams,
 };
 use crate::game::GameState;
 use crate::import_export_service::{
@@ -42,6 +43,7 @@ impl State {
             self.session.playing_trigger_hitboxes = metadata.simulate_trigger_hitboxes;
             let transition = build_playing_transition_from_metadata(metadata);
             log::debug!("Starting level: {}", transition.level_name);
+            self.session.playing_sky_color = transition.sky_color;
             self.gameplay.state.objects = transition.objects;
             self.gameplay.state.rebuild_behavior_cache();
             self.gameplay.state.initialize_level_progress_from_objects();
@@ -68,18 +70,19 @@ impl State {
         self.gameplay.state = GameState::new();
 
         if self.session.playtesting_editor {
-            let transition = build_editor_playtest_transition(
-                &self.editor.objects,
-                self.session.editor_level_name.as_deref(),
-                self.editor.spawn.clone(),
-                &self.editor.timeline.taps.tap_times,
-                self.editor.triggers(),
-                self.editor.simulate_trigger_hitboxes(),
-                (
+            let transition = build_editor_playtest_transition(EditorPlaytestTransitionParams {
+                objects: &self.editor.objects,
+                level_name: self.session.editor_level_name.as_deref(),
+                spawn: self.editor.spawn.clone(),
+                sky_color: self.session.editor_sky_color,
+                tap_times: &self.editor.timeline.taps.tap_times,
+                triggers: self.editor.triggers(),
+                simulate_trigger_hitboxes: self.editor.simulate_trigger_hitboxes(),
+                timeline_seconds: (
                     self.editor.timeline.clock.time_seconds,
                     self.editor.timeline.clock.duration_seconds,
                 ),
-            );
+            });
             let metadata = self.current_editor_metadata();
             let level_name = transition
                 .playing_level_name
@@ -92,6 +95,7 @@ impl State {
             );
             self.session.playtest_audio_start_seconds =
                 Some(transition.playtest_audio_start_seconds);
+            self.session.playing_sky_color = transition.sky_color;
             self.gameplay.state.objects = transition.objects;
             self.gameplay.state.rebuild_behavior_cache();
             self.gameplay.state.initialize_level_progress_from_objects();
@@ -115,6 +119,7 @@ impl State {
                 self.editor.set_trigger_selected(None);
                 self.session.playing_trigger_hitboxes = metadata.simulate_trigger_hitboxes;
                 let transition = build_playing_transition_from_metadata(metadata);
+                self.session.playing_sky_color = transition.sky_color;
                 self.gameplay.state.objects = transition.objects;
                 self.gameplay.state.rebuild_behavior_cache();
                 self.gameplay.state.initialize_level_progress_from_objects();
@@ -277,6 +282,7 @@ impl State {
             creator_metadata: self.session.editor_creator_metadata.clone(),
             music: self.session.editor_music_metadata.clone(),
             spawn: self.editor.spawn.clone(),
+            sky_color: self.session.editor_sky_color,
             tap_times: self.editor.timeline.taps.tap_times.clone(),
             timing_points: self.editor.timing.timing_points.clone(),
             timeline_time_seconds: self.editor.timeline.clock.time_seconds,
@@ -309,6 +315,7 @@ impl State {
             .set_simulate_trigger_hitboxes(init.simulate_trigger_hitboxes);
         self.session.editor_menu_preview_camera = init.menu_preview_camera;
         self.session.editor_creator_metadata = init.creator_metadata;
+        self.session.editor_sky_color = init.sky_color;
         self.editor.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
             self.editor.spawn.position,
             self.editor.spawn.direction,
@@ -374,6 +381,14 @@ impl State {
 
     pub(crate) fn set_editor_creator_metadata(&mut self, metadata: LevelCreatorMetadata) {
         self.session.editor_creator_metadata = metadata;
+    }
+
+    pub(crate) fn editor_sky_color(&self) -> [f32; 3] {
+        self.session.editor_sky_color
+    }
+
+    pub(crate) fn set_editor_sky_color(&mut self, color: [f32; 3]) {
+        self.session.editor_sky_color = color.map(|component| component.clamp(0.0, 1.0));
     }
 
     pub(crate) fn editor_capture_menu_preview_camera(&mut self) {
@@ -1054,6 +1069,7 @@ mod tests {
             creator_metadata: LevelCreatorMetadata::default(),
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
             tap_times: Vec::new(),
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,

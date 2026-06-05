@@ -207,6 +207,7 @@ impl State {
             AppCommand::EditorUpdateCreatorMetadata(metadata) => {
                 self.set_editor_creator_metadata(metadata)
             }
+            AppCommand::EditorUpdateSkyColor(color) => self.set_editor_sky_color(color),
             AppCommand::EditorTriggerAudioImport => self.trigger_audio_import(),
             AppCommand::EditorCaptureMenuPreviewCamera => self.editor_capture_menu_preview_camera(),
             AppCommand::EditorUseAutoMenuPreviewCamera => {

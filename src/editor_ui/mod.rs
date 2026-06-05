@@ -788,6 +788,17 @@ pub fn show_editor_ui(
                     }
 
                     ui.separator();
+                    ui.heading(format!("{} Visuals", egui_phosphor::regular::IMAGE));
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} Sky:", egui_phosphor::regular::CIRCLE));
+                        let mut sky_color = view.sky_color;
+                        if ui.color_edit_button_rgb(&mut sky_color).changed() {
+                            commands
+                                .push(crate::commands::AppCommand::EditorUpdateSkyColor(sky_color));
+                        }
+                    });
+
+                    ui.separator();
                     ui.heading(format!(
                         "{} Menu Preview Camera",
                         egui_phosphor::regular::CAMERA

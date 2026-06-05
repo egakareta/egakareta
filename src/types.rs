@@ -112,6 +112,17 @@ impl GizmoPart {
 
 pub(crate) const CURRENT_LEVEL_FORMAT_VERSION: u32 = 2;
 
+pub(crate) fn default_sky_color() -> [f32; 3] {
+    [0.04, 0.07, 0.09]
+}
+
+pub(crate) fn is_default_sky_color(value: &[f32; 3]) -> bool {
+    value
+        .iter()
+        .zip(default_sky_color())
+        .all(|(component, default)| (*component - default).abs() <= f32::EPSILON)
+}
+
 pub(crate) const APP_SETTINGS_VERSION: u32 = 3;
 pub(crate) const DEFAULT_MENU_PREVIEW_CAMERA_POSITION: [f32; 3] = [22.657694, 15.0, -10.565456];
 pub(crate) const DEFAULT_MENU_PREVIEW_CAMERA_TARGET: [f32; 3] = [0.0, 0.0, 0.0];
@@ -937,6 +948,11 @@ pub(crate) struct LevelMetadata {
     pub(crate) music: MusicMetadata,
     #[serde(default, skip_serializing_if = "is_default_spawn_metadata")]
     pub(crate) spawn: SpawnMetadata,
+    #[serde(
+        default = "default_sky_color",
+        skip_serializing_if = "is_default_sky_color"
+    )]
+    pub(crate) sky_color: [f32; 3],
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) tap_times: Vec<f32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -985,6 +1001,7 @@ pub(crate) struct EditorStateParams {
     pub creator_metadata: LevelCreatorMetadata,
     pub music: MusicMetadata,
     pub spawn: SpawnMetadata,
+    pub sky_color: [f32; 3],
     pub tap_times: Vec<f32>,
     pub timing_points: Vec<TimingPoint>,
     pub timeline_time_seconds: f32,
@@ -1002,6 +1019,7 @@ impl LevelMetadata {
             creator_metadata,
             music,
             spawn,
+            sky_color,
             tap_times,
             timing_points,
             timeline_time_seconds,
@@ -1022,6 +1040,7 @@ impl LevelMetadata {
             version: creator_metadata.version,
             music,
             spawn,
+            sky_color,
             tap_times,
             timing_points,
             timeline_time_seconds,
@@ -2307,6 +2326,7 @@ mod tests {
             creator_metadata: LevelCreatorMetadata::default(),
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
             tap_times: Vec::new(),
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
@@ -2333,6 +2353,7 @@ mod tests {
         assert!(value.get("version").is_none());
         assert!(value.get("music").is_none());
         assert!(value.get("spawn").is_none());
+        assert!(value.get("sky_color").is_none());
         assert!(value.get("tap_times").is_none());
         assert!(value.get("timeline_time_seconds").is_none());
         assert!(value.get("timeline_duration_seconds").is_none());
@@ -2355,6 +2376,7 @@ mod tests {
             creator_metadata: LevelCreatorMetadata::default(),
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
             tap_times: Vec::new(),
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
@@ -2370,12 +2392,38 @@ mod tests {
     }
 
     #[test]
+    fn level_metadata_serialization_includes_custom_sky_color() {
+        let metadata = LevelMetadata::from_editor_state(EditorStateParams {
+            name: "CustomSky".to_string(),
+            creator_metadata: LevelCreatorMetadata::default(),
+            music: MusicMetadata::default(),
+            spawn: SpawnMetadata::default(),
+            sky_color: [0.2, 0.4, 0.8],
+            tap_times: Vec::new(),
+            timing_points: Vec::new(),
+            timeline_time_seconds: 0.0,
+            timeline_duration_seconds: 16.0,
+            triggers: Vec::new(),
+            simulate_trigger_hitboxes: false,
+            menu_preview_camera: None,
+            objects: Vec::new(),
+        });
+
+        let value = serde_json::to_value(&metadata).expect("serialize metadata");
+        let sky_color = value["sky_color"].as_array().expect("sky_color array");
+        assert_approx_eq(sky_color[0].as_f64().expect("sky red") as f32, 0.2);
+        assert_approx_eq(sky_color[1].as_f64().expect("sky green") as f32, 0.4);
+        assert_approx_eq(sky_color[2].as_f64().expect("sky blue") as f32, 0.8);
+    }
+
+    #[test]
     fn level_metadata_serialization_includes_menu_preview_camera_when_present() {
         let metadata = LevelMetadata::from_editor_state(EditorStateParams {
             name: "MenuPreview".to_string(),
             creator_metadata: LevelCreatorMetadata::default(),
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
             tap_times: Vec::new(),
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
@@ -2482,6 +2530,7 @@ mod tests {
             version: None,
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
             tap_times: Vec::new(),
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,

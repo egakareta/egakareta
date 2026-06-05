@@ -178,6 +178,7 @@ impl State {
         self.session.game_paused = false;
         self.session.playing_level_name = level_name;
         self.session.playtest_audio_start_seconds = None;
+        self.session.playing_sky_color = crate::types::default_sky_color();
         self.session.playing_trigger_hitboxes = false;
         self.session.playing_trigger_base_objects = None;
         self.session.practice_mode_enabled = false;
@@ -194,9 +195,11 @@ impl State {
         self.phase = AppPhase::Editor;
         self.session.editor_level_name = Some(level_name);
         self.session.editor_creator_metadata = crate::types::LevelCreatorMetadata::default();
+        self.session.editor_sky_color = crate::types::default_sky_color();
         self.session.playtesting_editor = false;
         self.session.game_paused = false;
         self.session.playtest_audio_start_seconds = None;
+        self.session.playing_sky_color = crate::types::default_sky_color();
         self.session.playing_trigger_hitboxes = false;
         self.session.playing_trigger_base_objects = None;
         self.session.practice_mode_enabled = false;
@@ -231,6 +234,7 @@ impl State {
         self.session.playtesting_editor = false;
         self.session.game_paused = false;
         self.session.playtest_audio_start_seconds = None;
+        self.session.playing_sky_color = crate::types::default_sky_color();
         self.session.playing_trigger_hitboxes = false;
         self.session.playing_trigger_base_objects = None;
         self.session.practice_mode_enabled = false;
@@ -240,6 +244,7 @@ impl State {
         self.clear_pending_gameplay_inputs();
         self.session.editor_level_name = None;
         self.session.editor_creator_metadata = crate::types::LevelCreatorMetadata::default();
+        self.session.editor_sky_color = crate::types::default_sky_color();
         self.editor.clear_block_selection();
         self.editor.ui.marquee_start_screen = None;
         self.editor.ui.marquee_current_screen = None;

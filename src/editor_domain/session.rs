@@ -6,8 +6,8 @@
 
 */
 use crate::types::{
-    LevelCreatorMetadata, LevelMetadata, LevelObject, LevelPreviewCameraMetadata, MusicMetadata,
-    SpawnMetadata, TimedTrigger, TimingPoint,
+    default_sky_color, LevelCreatorMetadata, LevelMetadata, LevelObject,
+    LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata, TimedTrigger, TimingPoint,
 };
 
 pub(crate) struct EditorSessionInit {
@@ -15,6 +15,7 @@ pub(crate) struct EditorSessionInit {
     pub(crate) spawn: SpawnMetadata,
     pub(crate) music: MusicMetadata,
     pub(crate) creator_metadata: LevelCreatorMetadata,
+    pub(crate) sky_color: [f32; 3],
     pub(crate) tap_times: Vec<f32>,
     pub(crate) timing_points: Vec<TimingPoint>,
     pub(crate) timeline_time_seconds: f32,
@@ -34,6 +35,7 @@ pub(crate) fn editor_session_init_from_metadata(
         spawn,
         music,
         creator_metadata,
+        sky_color,
         mut tap_times,
         timing_points,
         mut timeline_time_seconds,
@@ -49,6 +51,7 @@ pub(crate) fn editor_session_init_from_metadata(
             metadata.spawn,
             metadata.music,
             creator_metadata,
+            metadata.sky_color,
             metadata.tap_times,
             metadata.timing_points,
             metadata.timeline_time_seconds,
@@ -63,6 +66,7 @@ pub(crate) fn editor_session_init_from_metadata(
             SpawnMetadata::default(),
             MusicMetadata::default(),
             LevelCreatorMetadata::default(),
+            default_sky_color(),
             Vec::new(),
             Vec::new(),
             0.0,
@@ -87,6 +91,7 @@ pub(crate) fn editor_session_init_from_metadata(
         spawn,
         music,
         creator_metadata,
+        sky_color,
         tap_times,
         timing_points,
         timeline_time_seconds,
