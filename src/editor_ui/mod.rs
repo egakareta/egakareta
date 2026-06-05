@@ -140,9 +140,10 @@ const RESPONSIVE_UI_SCALE_MIN: f32 = 0.8;
 const RESPONSIVE_UI_SCALE_MAX: f32 = 1.35;
 const UI_SCALE_BASE_WIDTH: f32 = 1280.0;
 const UI_SCALE_BASE_HEIGHT: f32 = 720.0;
-const KEYBIND_LABEL_MIN_WIDTH: f32 = 88.0;
-const KEYBIND_LABEL_MAX_WIDTH: f32 = 132.0;
-const KEYBIND_VERTICAL_BREAKPOINT: f32 = 240.0;
+const KEYBIND_ACTION_LABEL_WIDTH: f32 = 180.0;
+const KEYBIND_CONTROLS_MIN_WIDTH: f32 = 220.0;
+const KEYBIND_CONTENT_MIN_WIDTH: f32 =
+    KEYBIND_ACTION_LABEL_WIDTH + KEYBIND_CONTROLS_MIN_WIDTH + 12.0;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum BlockCatalogCategory {
@@ -441,9 +442,12 @@ pub fn show_editor_ui(
 
                             let default_keybinds = crate::types::default_essential_keybinds();
 
-                            egui::ScrollArea::vertical()
+                            egui::ScrollArea::both()
                                 .id_salt("keybinds_scroll")
+                                .auto_shrink([false, false])
                                 .show(ui, |ui| {
+                                    ui.set_min_width(KEYBIND_CONTENT_MIN_WIDTH);
+
                                     for (group, actions) in grouped_actions {
                                         ui.collapsing(group, |ui| {
                                             for metadata in actions {
@@ -465,6 +469,7 @@ pub fn show_editor_ui(
                                                     &default_chords,
                                                     view.keybind_capture_action,
                                                 );
+                                                ui.separator();
                                             }
                                         });
                                     }
@@ -1023,37 +1028,15 @@ fn show_keybind_action_row(
 ) {
     let action = metadata.action;
     let is_not_default = current_chords != default_chords;
-    let row_width = ui.available_width();
-    let label_width = (row_width * 0.42)
-        .clamp(KEYBIND_LABEL_MIN_WIDTH, KEYBIND_LABEL_MAX_WIDTH)
-        .min(row_width);
-    let controls_width = (row_width - label_width - ui.spacing().item_spacing.x).max(0.0);
-    let vertical = row_width <= KEYBIND_VERTICAL_BREAKPOINT || controls_width < 96.0;
-
-    if vertical {
-        ui.label(metadata.label);
-        ui.horizontal_wrapped(|ui| {
-            show_keybind_controls(
-                ui,
-                commands,
-                action,
-                metadata.capacity,
-                current_chords,
-                is_not_default,
-                keybind_capture_action,
-            );
-        });
-        return;
-    }
 
     ui.horizontal_top(|ui| {
-        ui.add_sized(
-            egui::vec2(label_width, ui.spacing().interact_size.y),
-            egui::Label::new(metadata.label),
-        );
+        ui.scope(|ui| {
+            ui.set_min_width(KEYBIND_ACTION_LABEL_WIDTH);
+            ui.add(egui::Label::new(metadata.label).wrap_mode(egui::TextWrapMode::Extend));
+        });
         ui.allocate_ui_with_layout(
-            egui::vec2(controls_width, 0.0),
-            egui::Layout::left_to_right(egui::Align::Center).with_main_wrap(true),
+            egui::vec2(KEYBIND_CONTROLS_MIN_WIDTH, 0.0),
+            egui::Layout::top_down(egui::Align::LEFT),
             |ui| {
                 show_keybind_controls(
                     ui,
@@ -1080,16 +1063,19 @@ fn show_keybind_controls(
 ) {
     ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
 
-    if is_not_default
-        && ui
-            .button(egui_phosphor::regular::ARROW_CLOCKWISE)
-            .on_hover_text("Reset to default")
-            .clicked()
-    {
-        commands.push(crate::commands::AppCommand::EditorResetKeybind(
-            action.to_string(),
-        ));
-        commands.push(crate::commands::AppCommand::EditorSetKeybindCapture(None));
+    if is_not_default {
+        ui.horizontal(|ui| {
+            if ui
+                .button(egui_phosphor::regular::ARROW_CLOCKWISE)
+                .on_hover_text("Reset to default")
+                .clicked()
+            {
+                commands.push(crate::commands::AppCommand::EditorResetKeybind(
+                    action.to_string(),
+                ));
+                commands.push(crate::commands::AppCommand::EditorSetKeybindCapture(None));
+            }
+        });
     }
 
     for slot in 0..capacity {
