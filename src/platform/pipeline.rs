@@ -15,7 +15,8 @@ use crate::platform::block_icon_cache::BlockIconCache;
 use crate::state::RenderSurfaceError;
 use crate::{
     show_editor_ui, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
-    show_pause_menu_ui, show_perf_overlay, show_practice_checkpoint_ui, State,
+    show_pause_menu_ui, show_perf_overlay, show_practice_checkpoint_ui, show_settings_sidebar,
+    State,
 };
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 
@@ -93,6 +94,9 @@ impl FramePipeline {
                 let ctx = root_ui.ctx().clone();
                 show_editor_ui(&ctx, state, &block_icon_texture_ids);
                 show_menu_topbar_ui(root_ui, state);
+                if !state.is_editor() {
+                    show_settings_sidebar(&ctx, state);
+                }
                 show_menu_play_ui(
                     &ctx,
                     state,

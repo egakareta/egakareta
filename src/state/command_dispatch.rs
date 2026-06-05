@@ -9,7 +9,7 @@ use super::runtime::EditorDirtyFlags;
 use super::State;
 use crate::commands::AppCommand;
 use crate::editor_domain::{timing_division_time_in_direction, TimingDivisionDirection};
-use crate::types::{normalize_binding_key, EditorMode, KeyChord};
+use crate::types::{normalize_binding_key, AppPhase, EditorMode, KeyChord};
 use glam::{Vec2, Vec3};
 
 const FALLBACK_TIMELINE_SHIFT_SECONDS: f32 = 0.1;
@@ -570,7 +570,8 @@ impl State {
     fn command_for_keybind_action(&self, action: &str, just_pressed: bool) -> Option<AppCommand> {
         match action {
             "toggle_settings" => {
-                if self.is_editor() && just_pressed {
+                // Allow toggle in menu, editor, and paused states; block during active gameplay
+                if just_pressed && !(self.phase == AppPhase::Playing && !self.is_game_paused()) {
                     Some(AppCommand::EditorToggleSettings)
                 } else {
                     None
