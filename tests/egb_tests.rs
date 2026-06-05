@@ -42,7 +42,7 @@ fn test_egb_roundtrip() {
     let egb_path = temp_dir.path().join("test.egb");
 
     let sample_json = r#"{
-  "version": 1,
+    "format_version": 1,
   "name": "Test Level",
   "music": {
     "source": "audio.mp3",
@@ -117,6 +117,7 @@ fn test_egb_roundtrip() {
     let decoded: serde_json::Value = serde_json::from_str(&decoded_json).unwrap();
 
     assert_eq!(original["name"], decoded["name"]);
+    assert_eq!(original["format_version"], decoded["format_version"]);
     assert_eq!(original["music"]["source"], decoded["music"]["source"]);
     assert_eq!(
         original["objects"].as_array().unwrap().len(),
@@ -131,7 +132,7 @@ fn test_egb_encode_stdin() {
     let egb_path = temp_dir.path().join("test_stdin.egb");
 
     let sample_json = r#"{
-  "version": 1,
+    "format_version": 1,
   "name": "Stdin Test",
   "music": {
     "source": "audio.mp3",
@@ -196,7 +197,7 @@ fn test_egb_short_flags() {
     let output_json_path = temp_dir.path().join("output.json");
 
     let sample_json = r#"{
-  "version": 1,
+    "format_version": 1,
   "name": "Short Flag Test",
   "music": {
     "source": "audio.mp3",

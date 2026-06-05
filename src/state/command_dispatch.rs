@@ -28,6 +28,9 @@ impl State {
             AppCommand::ToggleEditor => self.toggle_editor(),
             AppCommand::GameResume => self.resume_game(),
             AppCommand::GameRestartLevel => self.restart_game_from_pause(),
+            AppCommand::GameSetPracticeMode(enabled) => self.set_practice_mode_enabled(enabled),
+            AppCommand::GameSetPracticeCheckpoint => self.set_practice_checkpoint(),
+            AppCommand::GameRemovePracticeCheckpoint => self.remove_practice_checkpoint(),
             AppCommand::GameQuitToMenu => self.quit_game_from_pause(),
 
             // ── Auth ────────────────────────────────────────────────
@@ -342,6 +345,53 @@ impl State {
 
         self.session.game_paused = false;
         self.restart_level();
+    }
+
+    fn set_practice_mode_enabled(&mut self, enabled: bool) {
+        if self.phase != crate::types::AppPhase::Playing || self.session.playtesting_editor {
+            return;
+        }
+
+        if enabled {
+            self.session.practice_mode_enabled = true;
+            return;
+        }
+
+        self.session.practice_mode_enabled = false;
+        self.session.practice_checkpoints.clear();
+        self.restart_level();
+    }
+
+    fn set_practice_checkpoint(&mut self) {
+        if self.phase != crate::types::AppPhase::Playing
+            || self.session.playtesting_editor
+            || !self.session.practice_mode_enabled
+            || self.session.game_paused
+            || !self.gameplay.state.started
+            || self.gameplay.state.game_over
+            || self.gameplay.state.level_complete
+        {
+            return;
+        }
+
+        self.session
+            .practice_checkpoints
+            .push(super::PracticeCheckpoint {
+                gameplay: self.gameplay.state.checkpoint_state(),
+                trigger_base_objects: self.session.playing_trigger_base_objects.clone(),
+            });
+    }
+
+    fn remove_practice_checkpoint(&mut self) {
+        if self.phase != crate::types::AppPhase::Playing
+            || self.session.playtesting_editor
+            || !self.session.practice_mode_enabled
+            || self.session.game_paused
+        {
+            return;
+        }
+
+        let _ = self.session.practice_checkpoints.pop();
     }
 
     fn quit_game_from_pause(&mut self) {
@@ -684,6 +734,20 @@ impl State {
             "game_turn" => {
                 if !self.is_editor() && just_pressed {
                     Some(AppCommand::TurnRight)
+                } else {
+                    None
+                }
+            }
+            "practice_checkpoint" => {
+                if self.is_practice_mode_enabled() && just_pressed {
+                    Some(AppCommand::GameSetPracticeCheckpoint)
+                } else {
+                    None
+                }
+            }
+            "practice_remove_checkpoint" => {
+                if self.is_practice_mode_enabled() && just_pressed {
+                    Some(AppCommand::GameRemovePracticeCheckpoint)
                 } else {
                     None
                 }
@@ -1254,6 +1318,49 @@ mod tests {
 
             assert_eq!(state.phase, AppPhase::Playing);
             assert!(!state.is_game_paused());
+        });
+    }
+
+    #[test]
+    fn practice_checkpoint_key_only_maps_during_practice_mode() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.phase = AppPhase::Playing;
+            state.session.playtesting_editor = false;
+            state.session.practice_mode_enabled = false;
+            assert_eq!(
+                state.command_for_keybind_action("practice_checkpoint", true),
+                None
+            );
+
+            state.session.practice_mode_enabled = true;
+            assert_eq!(
+                state.command_for_keybind_action("practice_checkpoint", true),
+                Some(AppCommand::GameSetPracticeCheckpoint)
+            );
+            assert_eq!(
+                state.command_for_keybind_action("practice_remove_checkpoint", true),
+                Some(AppCommand::GameRemovePracticeCheckpoint)
+            );
+            assert_eq!(
+                state.command_for_keybind_action("practice_checkpoint", false),
+                None
+            );
+            assert_eq!(
+                state.command_for_keybind_action("practice_remove_checkpoint", false),
+                None
+            );
+
+            state.phase = AppPhase::Editor;
+            assert_eq!(
+                state.command_for_keybind_action("practice_checkpoint", true),
+                None
+            );
+            assert_eq!(
+                state.command_for_keybind_action("practice_remove_checkpoint", true),
+                None
+            );
         });
     }
 
