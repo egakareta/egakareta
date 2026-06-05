@@ -11,7 +11,9 @@ use crate::block_repository::{
     block_texture_atlas, resolve_block_definition, resolve_block_texture_layers,
 };
 use crate::commands::AppCommand;
-use crate::editor_ui::modes::shared::show_mode_and_snap_controls;
+use crate::editor_ui::modes::shared::{
+    show_editor_property_popup, show_mode_and_snap_controls, EditorPropertyPopup,
+};
 use crate::state::EditorUiViewModel;
 use crate::types::EditorMode;
 
@@ -95,101 +97,129 @@ pub(crate) fn show_selected_block_properties_window(
         return;
     };
 
-    egui::Area::new("selected_block_properties".into())
-        .anchor(
-            egui::Align2::LEFT_BOTTOM,
-            egui::Vec2::new(12.0, -12.0 - bottom_bar_height),
-        )
-        .order(egui::Order::Foreground)
-        .show(ctx, |ui| {
-            egui::Frame::popup(&ctx.global_style()).show(ui, |ui| {
-                ui.set_min_width(220.0);
-                ui.vertical(|ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("Position:");
-                        let mut changed = false;
-                        changed |= ui
-                            .add(egui::DragValue::new(&mut selected.position[0]).prefix("X "))
-                            .changed();
-                        changed |= ui
-                            .add(egui::DragValue::new(&mut selected.position[1]).prefix("Y "))
-                            .changed();
-                        changed |= ui
-                            .add(egui::DragValue::new(&mut selected.position[2]).prefix("Z "))
-                            .changed();
-                        if changed {
-                            commands.push(crate::commands::AppCommand::EditorUpdateSelectedBlock(
-                                selected.clone(),
-                            ));
-                        }
-                    });
+    show_editor_property_popup(
+        ctx,
+        EditorPropertyPopup::above_bottom_bar("selected_block_properties", bottom_bar_height),
+        |ui| {
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Position:");
+                    let mut changed = false;
+                    changed |= ui
+                        .add(egui::DragValue::new(&mut selected.position[0]).prefix("X "))
+                        .changed();
+                    changed |= ui
+                        .add(egui::DragValue::new(&mut selected.position[1]).prefix("Y "))
+                        .changed();
+                    changed |= ui
+                        .add(egui::DragValue::new(&mut selected.position[2]).prefix("Z "))
+                        .changed();
+                    if changed {
+                        commands.push(crate::commands::AppCommand::EditorUpdateSelectedBlock(
+                            selected.clone(),
+                        ));
+                    }
+                });
 
-                    ui.horizontal(|ui| {
-                        ui.label("Size:");
-                        let mut changed = false;
-                        changed |= ui
-                            .add(egui::DragValue::new(&mut selected.size[0]).prefix("W "))
-                            .changed();
-                        changed |= ui
-                            .add(egui::DragValue::new(&mut selected.size[1]).prefix("H "))
-                            .changed();
-                        changed |= ui
-                            .add(egui::DragValue::new(&mut selected.size[2]).prefix("D "))
-                            .changed();
-                        if changed {
-                            commands.push(crate::commands::AppCommand::EditorUpdateSelectedBlock(
-                                selected.clone(),
-                            ));
-                        }
-                    });
+                ui.horizontal(|ui| {
+                    ui.label("Size:");
+                    let mut changed = false;
+                    changed |= ui
+                        .add(egui::DragValue::new(&mut selected.size[0]).prefix("W "))
+                        .changed();
+                    changed |= ui
+                        .add(egui::DragValue::new(&mut selected.size[1]).prefix("H "))
+                        .changed();
+                    changed |= ui
+                        .add(egui::DragValue::new(&mut selected.size[2]).prefix("D "))
+                        .changed();
+                    if changed {
+                        commands.push(crate::commands::AppCommand::EditorUpdateSelectedBlock(
+                            selected.clone(),
+                        ));
+                    }
+                });
 
-                    ui.horizontal(|ui| {
-                        ui.label("Rotation:");
-                        let mut changed: bool = false;
-                        changed |= ui
-                            .add(
-                                egui::DragValue::new(&mut selected.rotation_degrees[0])
-                                    .speed(0.5)
-                                    .prefix("X ")
-                                    .suffix("°"),
-                            )
-                            .changed();
-                        changed |= ui
-                            .add(
-                                egui::DragValue::new(&mut selected.rotation_degrees[1])
-                                    .speed(0.5)
-                                    .prefix("Y ")
-                                    .suffix("°"),
-                            )
-                            .changed();
-                        changed |= ui
-                            .add(
-                                egui::DragValue::new(&mut selected.rotation_degrees[2])
-                                    .speed(0.5)
-                                    .prefix("Z ")
-                                    .suffix("°"),
-                            )
-                            .changed();
-                        if changed {
-                            commands.push(crate::commands::AppCommand::EditorUpdateSelectedBlock(
-                                selected.clone(),
-                            ));
-                        }
-                    });
+                ui.horizontal(|ui| {
+                    ui.label("Rotation:");
+                    let mut changed: bool = false;
+                    changed |= ui
+                        .add(
+                            egui::DragValue::new(&mut selected.rotation_degrees[0])
+                                .speed(0.5)
+                                .prefix("X ")
+                                .suffix("°"),
+                        )
+                        .changed();
+                    changed |= ui
+                        .add(
+                            egui::DragValue::new(&mut selected.rotation_degrees[1])
+                                .speed(0.5)
+                                .prefix("Y ")
+                                .suffix("°"),
+                        )
+                        .changed();
+                    changed |= ui
+                        .add(
+                            egui::DragValue::new(&mut selected.rotation_degrees[2])
+                                .speed(0.5)
+                                .prefix("Z ")
+                                .suffix("°"),
+                        )
+                        .changed();
+                    if changed {
+                        commands.push(crate::commands::AppCommand::EditorUpdateSelectedBlock(
+                            selected.clone(),
+                        ));
+                    }
+                });
 
-                    ui.horizontal(|ui| {
-                        ui.label("Color:");
-                        let mut color_tint = selected.color_tint;
-                        if ui.color_edit_button_rgb(&mut color_tint).changed() {
-                            selected.color_tint = color_tint;
-                            commands.push(crate::commands::AppCommand::EditorUpdateSelectedBlock(
-                                selected.clone(),
-                            ));
-                        }
-                    });
+                ui.horizontal(|ui| {
+                    ui.label("Color:");
+                    let mut color_tint = selected.color_tint;
+                    if ui.color_edit_button_rgb(&mut color_tint).changed() {
+                        selected.color_tint = color_tint;
+                        commands.push(crate::commands::AppCommand::EditorUpdateSelectedBlock(
+                            selected.clone(),
+                        ));
+                    }
                 });
             });
-        });
+        },
+    );
+}
+
+pub(crate) fn show_place_block_properties_window(
+    ctx: &egui::Context,
+    view: &EditorUiViewModel<'_>,
+    bottom_bar_height: f32,
+) {
+    if view.mode != EditorMode::Place {
+        return;
+    }
+
+    let block = resolve_block_definition(view.selected_block_id);
+    show_editor_property_popup(
+        ctx,
+        EditorPropertyPopup::above_bottom_bar("place_block_properties", bottom_bar_height),
+        |ui| {
+            ui.vertical(|ui| {
+                ui.label(block.display_name.as_str());
+                ui.label(format!(
+                    "Position: ({:.2}, {:.2}, {:.2})",
+                    view.place_preview_position[0],
+                    view.place_preview_position[1],
+                    view.place_preview_position[2]
+                ));
+                ui.label(format!(
+                    "Size: ({:.2}, {:.2}, {:.2})",
+                    view.place_preview_size[0],
+                    view.place_preview_size[1],
+                    view.place_preview_size[2]
+                ));
+            });
+        },
+    );
 }
 
 pub(crate) fn show_block_preview_button(
@@ -357,11 +387,79 @@ fn scale_channel(value: u8, factor: f32) -> u8 {
 mod tests {
     use super::{
         atlas_average_color, block_preview_colors, scale_channel, scale_rgb,
-        show_block_preview_button, FALLBACK_SIDE_COLOR, FALLBACK_TOP_COLOR, TOP_LIGHTEN_FACTOR,
+        show_block_preview_button, show_place_block_properties_window, FALLBACK_SIDE_COLOR,
+        FALLBACK_TOP_COLOR, TOP_LIGHTEN_FACTOR,
     };
     use crate::block_repository::{
         all_placeable_blocks, block_texture_atlas, resolve_block_texture_layers,
     };
+    use crate::state::EditorUiViewModel;
+    use crate::types::{AppSettings, EditorMode, MusicMetadata, SettingsSection, SpawnDirection};
+
+    fn make_view<'a>(
+        app_settings: &'a AppSettings,
+        music_metadata: &'a MusicMetadata,
+        mode: EditorMode,
+    ) -> EditorUiViewModel<'a> {
+        EditorUiViewModel {
+            mode,
+            last_mode: Some(mode),
+            available_levels: &[],
+            level_name: Some("Compose Test"),
+            show_metadata: false,
+            show_place_window: false,
+            show_settings: false,
+            settings_section: SettingsSection::Backends,
+            keybind_capture_action: None,
+            music_metadata,
+            creator_metadata: crate::types::LevelCreatorMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
+            app_settings,
+            configured_graphics_backend: "Auto",
+            configured_audio_backend: "Default",
+            graphics_backend_options: &[],
+            audio_backend_options: &[],
+            settings_restart_required: false,
+            snap_to_grid: true,
+            snap_step: 1.0,
+            snap_rotation: true,
+            snap_rotation_step_degrees: 15.0,
+            selected_block_id: "core/stone",
+            place_preview_position: [2.0, 1.0, 3.0],
+            place_preview_size: [1.0, 2.0, 1.0],
+            recent_block_ids: &[],
+            selected_block: None,
+            playing: false,
+            timeline_time_seconds: 0.0,
+            timeline_duration_seconds: 16.0,
+            tap_times: &[],
+            selected_tap: None,
+            timeline_preview_position: [0.0, 0.0, 0.0],
+            timeline_preview_direction: SpawnDirection::Forward,
+            timing_points: &[],
+            playback_speed: 1.0,
+            timing_selected_index: None,
+            waveform_zoom: 1.0,
+            waveform_scroll: 0.0,
+            waveform_samples: &[],
+            waveform_sample_rate: 0,
+            waveform_window_size: crate::audio_service::WAVEFORM_WINDOW,
+            waveform_loading: false,
+            waveform_complete: false,
+            bpm_tap_result: None,
+            triggers: &[],
+            trigger_selected_index: None,
+            simulate_trigger_hitboxes: false,
+            camera_position: [0.0, 0.0, 0.0],
+            camera_preview_position: [0.0, 0.0, 0.0],
+            camera_preview_target: [0.0, 0.0, 0.0],
+            camera_rotation: 0.0,
+            camera_pitch: 0.0,
+            fps: 60.0,
+            marquee_selection_rect_screen: None,
+            object_count: 0,
+        }
+    }
 
     #[test]
     fn atlas_average_color_returns_some_for_known_default_layer() {
@@ -438,5 +536,19 @@ mod tests {
 
         assert!(!clicked_without_texture);
         assert!(!clicked_with_texture);
+    }
+
+    #[test]
+    fn show_place_block_properties_window_handles_place_and_other_modes() {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let place_view = make_view(&app_settings, &music_metadata, EditorMode::Place);
+        let select_view = make_view(&app_settings, &music_metadata, EditorMode::Select);
+        let ctx = egui::Context::default();
+
+        let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
+            show_place_block_properties_window(&ctx, &place_view, 48.0);
+            show_place_block_properties_window(&ctx, &select_view, 48.0);
+        });
     }
 }

@@ -581,6 +581,8 @@ mod tests {
             snap_rotation: true,
             snap_rotation_step_degrees: 15.0,
             selected_block_id: "core/stone",
+            place_preview_position: [0.0, 0.0, 0.0],
+            place_preview_size: [1.0, 1.0, 1.0],
             recent_block_ids: &[],
             selected_block,
             playing: false,

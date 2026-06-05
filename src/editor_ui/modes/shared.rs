@@ -9,6 +9,52 @@ use crate::commands::AppCommand;
 use crate::state::EditorUiViewModel;
 use crate::types::{EditorMode, SpawnDirection};
 
+const PROPERTY_POPUP_MARGIN: f32 = 12.0;
+const PROPERTY_POPUP_MIN_WIDTH: f32 = 220.0;
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct EditorPropertyPopup {
+    id: egui::Id,
+    anchor: egui::Align2,
+    offset: egui::Vec2,
+    order: egui::Order,
+    min_width: f32,
+}
+
+impl EditorPropertyPopup {
+    pub(crate) fn above_bottom_bar(
+        id_source: impl std::hash::Hash,
+        bottom_bar_height: f32,
+    ) -> Self {
+        Self {
+            id: egui::Id::new(id_source),
+            anchor: egui::Align2::LEFT_BOTTOM,
+            offset: egui::Vec2::new(
+                PROPERTY_POPUP_MARGIN,
+                -PROPERTY_POPUP_MARGIN - bottom_bar_height,
+            ),
+            order: egui::Order::Foreground,
+            min_width: PROPERTY_POPUP_MIN_WIDTH,
+        }
+    }
+}
+
+pub(crate) fn show_editor_property_popup(
+    ctx: &egui::Context,
+    popup: EditorPropertyPopup,
+    add_contents: impl FnOnce(&mut egui::Ui),
+) {
+    egui::Area::new(popup.id)
+        .anchor(popup.anchor, popup.offset)
+        .order(popup.order)
+        .show(ctx, |ui| {
+            egui::Frame::popup(&ctx.global_style()).show(ui, |ui| {
+                ui.set_min_width(popup.min_width);
+                add_contents(ui);
+            });
+        });
+}
+
 pub(crate) fn show_mode_and_snap_controls(
     ui: &mut egui::Ui,
     view: &EditorUiViewModel<'_>,
@@ -157,7 +203,10 @@ pub(crate) fn show_player_camera_status_row(ui: &mut egui::Ui, view: &EditorUiVi
 
 #[cfg(test)]
 mod tests {
-    use super::{show_mode_and_snap_controls, show_player_camera_status_row};
+    use super::{
+        show_editor_property_popup, show_mode_and_snap_controls, show_player_camera_status_row,
+        EditorPropertyPopup, PROPERTY_POPUP_MARGIN,
+    };
     use crate::commands::AppCommand;
     use crate::state::EditorUiViewModel;
     use crate::types::{
@@ -197,6 +246,8 @@ mod tests {
             snap_rotation: true,
             snap_rotation_step_degrees: 15.0,
             selected_block_id: "core/stone",
+            place_preview_position: [0.0, 0.0, 0.0],
+            place_preview_size: [1.0, 1.0, 1.0],
             recent_block_ids: &[],
             selected_block: None,
             playing: false,
@@ -253,6 +304,25 @@ mod tests {
         });
 
         assert!(commands.is_empty());
+    }
+
+    #[test]
+    fn property_popup_runs_content_closure_with_bottom_bar_offset() {
+        let popup = EditorPropertyPopup::above_bottom_bar("test_property_popup", 48.0);
+        assert_eq!(popup.anchor, egui::Align2::LEFT_BOTTOM);
+        assert_eq!(popup.offset.x, PROPERTY_POPUP_MARGIN);
+        assert_eq!(popup.offset.y, -PROPERTY_POPUP_MARGIN - 48.0);
+
+        let ctx = egui::Context::default();
+        let mut rendered = false;
+        let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
+            show_editor_property_popup(&ctx, popup, |ui| {
+                rendered = true;
+                ui.label("Property popup");
+            });
+        });
+
+        assert!(rendered);
     }
 
     #[test]

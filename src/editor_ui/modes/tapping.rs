@@ -6,7 +6,9 @@
 
 */
 use crate::commands::AppCommand;
-use crate::editor_ui::modes::shared::show_player_camera_status_row;
+use crate::editor_ui::modes::shared::{
+    show_editor_property_popup, show_player_camera_status_row, EditorPropertyPopup,
+};
 use crate::state::EditorUiViewModel;
 
 pub(crate) fn show_tapping_mode_bottom_panel(
@@ -47,48 +49,41 @@ pub(crate) fn show_selected_tap_properties_window(
         return;
     };
 
-    egui::Area::new("selected_tap_properties".into())
-        .anchor(
-            egui::Align2::LEFT_BOTTOM,
-            egui::Vec2::new(12.0, -12.0 - bottom_bar_height),
-        )
-        .order(egui::Order::Foreground)
-        .show(ctx, |ui| {
-            egui::Frame::popup(&ctx.global_style()).show(ui, |ui| {
-                ui.set_min_width(220.0);
-                ui.vertical(|ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(format!("Tap #{}", selected_tap.index + 1));
-                        if ui
-                            .button(format!("{} Delete", egui_phosphor::regular::TRASH))
-                            .clicked()
-                        {
-                            commands.push(AppCommand::EditorRemoveTap);
-                        }
-                    });
-
-                    ui.horizontal(|ui| {
-                        ui.label("Time (s):");
-                        let mut time_seconds = selected_tap.time_seconds;
-                        if ui
-                            .add(
-                                egui::DragValue::new(&mut time_seconds)
-                                    .speed(0.01)
-                                    .range(0.0..=view.timeline_duration_seconds.max(0.0)),
-                            )
-                            .changed()
-                        {
-                            commands.push(AppCommand::EditorSetSelectedTapTime(time_seconds));
-                        }
-                    });
-
-                    ui.label(format!(
-                        "Position: ({:.2}, {:.2}, {:.2})",
-                        selected_tap.position[0],
-                        selected_tap.position[1],
-                        selected_tap.position[2]
-                    ));
+    show_editor_property_popup(
+        ctx,
+        EditorPropertyPopup::above_bottom_bar("selected_tap_properties", bottom_bar_height),
+        |ui| {
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    ui.label(format!("Tap #{}", selected_tap.index + 1));
+                    if ui
+                        .button(format!("{} Delete", egui_phosphor::regular::TRASH))
+                        .clicked()
+                    {
+                        commands.push(AppCommand::EditorRemoveTap);
+                    }
                 });
+
+                ui.horizontal(|ui| {
+                    ui.label("Time (s):");
+                    let mut time_seconds = selected_tap.time_seconds;
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut time_seconds)
+                                .speed(0.01)
+                                .range(0.0..=view.timeline_duration_seconds.max(0.0)),
+                        )
+                        .changed()
+                    {
+                        commands.push(AppCommand::EditorSetSelectedTapTime(time_seconds));
+                    }
+                });
+
+                ui.label(format!(
+                    "Position: ({:.2}, {:.2}, {:.2})",
+                    selected_tap.position[0], selected_tap.position[1], selected_tap.position[2]
+                ));
             });
-        });
+        },
+    );
 }
