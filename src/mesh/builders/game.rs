@@ -10,6 +10,79 @@ use crate::mesh::shapes::{append_prism, append_quad};
 use crate::types::{CameraTrigger, CameraTriggerMode, Vertex};
 use glam::{Vec2, Vec3};
 
+const GEM_SHATTER_DURATION_SECONDS: f32 = 0.48;
+const GEM_SHATTER_SHARD_COUNT: usize = 14;
+
+pub(crate) struct GemShatterInstance {
+    pub(crate) position: [f32; 3],
+    pub(crate) size: [f32; 3],
+    pub(crate) color_tint: [f32; 3],
+    pub(crate) age_seconds: f32,
+}
+
+pub(crate) fn gem_shatter_duration_seconds() -> f32 {
+    GEM_SHATTER_DURATION_SECONDS
+}
+
+pub(crate) fn build_gem_shatter_vertices(effects: &[GemShatterInstance]) -> Vec<Vertex> {
+    puffin::profile_scope!("BuildGemShatterVertices");
+    let mut vertices = Vec::new();
+    for effect in effects {
+        append_gem_shatter_effect(&mut vertices, effect);
+    }
+    vertices
+}
+
+fn append_gem_shatter_effect(vertices: &mut Vec<Vertex>, effect: &GemShatterInstance) {
+    let t = (effect.age_seconds / GEM_SHATTER_DURATION_SECONDS).clamp(0.0, 1.0);
+    let ease = 1.0 - (1.0 - t) * (1.0 - t);
+    let fade = (1.0 - t).clamp(0.0, 1.0);
+    let center = Vec3::new(
+        effect.position[0] + effect.size[0] * 0.5,
+        effect.position[1] + effect.size[1] * 0.5,
+        effect.position[2] + effect.size[2] * 0.5,
+    );
+    let base_radius = effect.size[0]
+        .max(effect.size[1])
+        .max(effect.size[2])
+        .max(0.2)
+        * 0.5;
+    let base_color = [
+        (0.25 + 0.75 * effect.color_tint[0]).clamp(0.0, 1.0),
+        (0.55 + 0.45 * effect.color_tint[1]).clamp(0.0, 1.0),
+        (0.95 * effect.color_tint[2]).clamp(0.2, 1.0),
+        (0.9 * fade).clamp(0.0, 1.0),
+    ];
+
+    for shard in 0..GEM_SHATTER_SHARD_COUNT {
+        let angle = shard as f32 * std::f32::consts::TAU / GEM_SHATTER_SHARD_COUNT as f32;
+        let vertical_phase = ((shard * 37) % 11) as f32 / 10.0;
+        let outward = Vec3::new(angle.cos(), vertical_phase * 0.9 + 0.25, angle.sin()).normalize();
+        let tangent = Vec3::new(-angle.sin(), 0.0, angle.cos()).normalize();
+        let upish = outward.cross(tangent).normalize_or_zero();
+        let burst = base_radius * (0.25 + ease * (1.55 + vertical_phase * 0.55));
+        let gravity = Vec3::Y * (-0.55 * t * t * base_radius);
+        let wobble =
+            tangent * ((t * std::f32::consts::TAU + shard as f32).sin() * 0.08 * base_radius);
+        let shard_center = center + outward * burst + gravity + wobble;
+        let shard_size = base_radius * (0.1 + 0.04 * (shard % 3) as f32) * (1.0 - t * 0.35);
+        let sparkle = if shard % 4 == 0 { 1.18 } else { 1.0 };
+        let color = [
+            (base_color[0] * sparkle).min(1.0),
+            (base_color[1] * sparkle).min(1.0),
+            (base_color[2] * sparkle).min(1.0),
+            base_color[3],
+        ];
+        let p0 = (shard_center + tangent * shard_size * 1.35).to_array();
+        let p1 = (shard_center - tangent * shard_size * 0.8 + upish * shard_size).to_array();
+        let p2 =
+            (shard_center - tangent * shard_size * 0.65 - upish * shard_size * 0.85).to_array();
+        vertices.push(Vertex::untextured(p0, color));
+        vertices.push(Vertex::untextured(p1, color));
+        vertices.push(Vertex::untextured(p2, color));
+    }
+}
+
 pub(crate) fn build_trail_vertices(points: &[[f32; 3]], game_over: bool) -> Vec<Vertex> {
     puffin::profile_scope!("BuildTrailVertices");
     build_trail_vertices_internal(points, game_over, 1.0)
@@ -370,8 +443,9 @@ pub(crate) fn build_camera_trigger_marker_vertices(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices,
-        build_trail_vertices, build_trail_vertices_with_alpha,
+        build_gem_shatter_vertices, build_tap_division_preview_vertices,
+        build_tap_division_tap_marker_vertices, build_trail_vertices,
+        build_trail_vertices_with_alpha, gem_shatter_duration_seconds, GemShatterInstance,
     };
     use crate::types::Vertex;
 
@@ -404,6 +478,27 @@ mod tests {
                 (min_y, max_y)
             })
             .collect()
+    }
+
+    #[test]
+    fn gem_shatter_vertices_emit_fading_shards() {
+        let fresh = build_gem_shatter_vertices(&[GemShatterInstance {
+            position: [1.0, 2.0, 3.0],
+            size: [0.72, 0.86, 0.72],
+            color_tint: [0.8, 0.9, 1.0],
+            age_seconds: 0.0,
+        }]);
+        let fading = build_gem_shatter_vertices(&[GemShatterInstance {
+            position: [1.0, 2.0, 3.0],
+            size: [0.72, 0.86, 0.72],
+            color_tint: [0.8, 0.9, 1.0],
+            age_seconds: gem_shatter_duration_seconds() * 0.75,
+        }]);
+
+        assert_eq!(fresh.len(), 14 * 3);
+        assert_eq!(fading.len(), fresh.len());
+        assert!(fresh.iter().all(|vertex| vertex.color[3] > 0.8));
+        assert!(fading.iter().all(|vertex| vertex.color[3] < 0.3));
     }
 
     #[test]

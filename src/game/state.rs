@@ -52,6 +52,11 @@ impl CachedBlockBehavior {
 ///
 /// Manages the player's position, direction, speed, trail, collision with level objects,
 /// and game progression states like game over and level completion.
+#[derive(Clone)]
+pub(crate) struct ConsumedObjectEvent {
+    pub(crate) object: LevelObject,
+}
+
 pub(crate) struct GameState {
     pub(crate) position: [f32; 3],
     pub(crate) direction: Direction,
@@ -70,6 +75,7 @@ pub(crate) struct GameState {
     pub(crate) started: bool,
     progress: PlayerLevelProgress,
     consumed_object_indices: Vec<usize>,
+    consumed_object_events: Vec<ConsumedObjectEvent>,
 }
 
 pub(crate) fn center_spawn_position(position: [f32; 3]) -> [f32; 3] {
@@ -100,6 +106,7 @@ impl GameState {
             started: false,
             progress: PlayerLevelProgress::default(),
             consumed_object_indices: Vec::new(),
+            consumed_object_events: Vec::new(),
         }
     }
 
@@ -175,6 +182,7 @@ impl GameState {
         self.progress.completed = false;
         self.progress.gems_collected = 0;
         self.consumed_object_indices.clear();
+        self.consumed_object_events.clear();
         self.trail_segments = vec![vec![spawn_position]];
     }
 
@@ -302,6 +310,7 @@ impl GameState {
         if !hit_portals.is_empty() || !hit_collectibles.is_empty() {
             puffin::profile_scope!("GameConsumableOverlap");
             let mut consumed_indices = Vec::new();
+            let mut consumed_event_indices = Vec::new();
 
             for i in hit_portals {
                 if let Some(behavior) = self.cached_behaviors.get(i).copied() {
@@ -326,6 +335,7 @@ impl GameState {
                         .saturating_add(behavior.collectible_gem_value())
                         .min(self.progress.gems_max);
                     consumed_indices.push(i);
+                    consumed_event_indices.push(i);
                 } else if let Some(object) = self.objects.get(i) {
                     let behavior = CachedBlockBehavior::from_block_id(&object.block_id);
                     self.progress.gems_collected = self
@@ -334,18 +344,25 @@ impl GameState {
                         .saturating_add(behavior.collectible_gem_value())
                         .min(self.progress.gems_max);
                     consumed_indices.push(i);
+                    consumed_event_indices.push(i);
                 }
             }
 
             consumed_indices.sort_unstable();
             consumed_indices.dedup();
+            consumed_event_indices.sort_unstable();
+            consumed_event_indices.dedup();
             for i in consumed_indices.iter().copied().rev() {
                 if i < self.objects.len() {
-                    self.objects.remove(i);
+                    let object = self.objects.remove(i);
                     if i < self.cached_behaviors.len() {
                         self.cached_behaviors.remove(i);
                     }
                     self.consumed_object_indices.push(i);
+                    if consumed_event_indices.binary_search(&i).is_ok() {
+                        self.consumed_object_events
+                            .push(ConsumedObjectEvent { object });
+                    }
                 }
             }
             if !consumed_indices.is_empty() {
@@ -407,6 +424,10 @@ impl GameState {
 
     pub(crate) fn take_consumed_object_indices(&mut self) -> Vec<usize> {
         std::mem::take(&mut self.consumed_object_indices)
+    }
+
+    pub(crate) fn take_consumed_object_events(&mut self) -> Vec<ConsumedObjectEvent> {
+        std::mem::take(&mut self.consumed_object_events)
     }
 
     fn remaining_level_time(&self) -> f32 {

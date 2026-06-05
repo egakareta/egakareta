@@ -209,6 +209,10 @@ fn gem_overlap_collects_and_tracks_progress() {
     let progress = game.level_progress();
     assert_eq!(progress.gems_collected, 1);
     assert_eq!(progress.gems_max, 1);
+    let events = game.take_consumed_object_events();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].object.block_id, "core/gem");
+    assert!(game.take_consumed_object_events().is_empty());
     assert!(game.objects.is_empty());
     assert!(!game.game_over);
 }

@@ -7,17 +7,63 @@
 */
 use glam::{Mat4, Vec3};
 
+use super::runtime::GemShatterEffect;
 use super::State;
 use crate::game::{
     advance_simulation_time, trigger_transformed_objects_at_time, TimelineSimulationRuntime,
 };
-use crate::mesh::{build_block_geometry, build_trail_vertices, build_trail_vertices_with_alpha};
+use crate::mesh::{
+    build_block_geometry, build_gem_shatter_vertices, build_trail_vertices,
+    build_trail_vertices_with_alpha, gem_shatter_duration_seconds, GemShatterInstance,
+};
 use crate::platform::state_host::PlatformInstant;
 use crate::types::{
     AppPhase, CameraUniform, ColorSpaceUniform, Direction, EditorMode, LevelObject,
 };
 
 impl State {
+    fn push_gem_shatter_events(&mut self, events: Vec<crate::game::ConsumedObjectEvent>) {
+        self.frame_runtime.player_render.gem_shatter_effects.extend(
+            events
+                .iter()
+                .map(|event| GemShatterEffect::from_object(&event.object)),
+        );
+    }
+
+    fn update_gem_shatter_effect_mesh(&mut self, frame_dt: f32) {
+        puffin::profile_scope!("GemShatterEffectMesh");
+        let effects = &mut self.frame_runtime.player_render.gem_shatter_effects;
+        for effect in effects.iter_mut() {
+            effect.age_seconds += frame_dt.max(0.0);
+        }
+        let duration = gem_shatter_duration_seconds();
+        effects.retain(|effect| effect.age_seconds < duration);
+
+        if effects.is_empty() {
+            self.render.meshes.gem_shatter_effects.clear();
+            return;
+        }
+
+        let instances = effects
+            .iter()
+            .map(|effect| GemShatterInstance {
+                position: effect.position,
+                size: effect.size,
+                color_tint: effect.color_tint,
+                age_seconds: effect.age_seconds,
+            })
+            .collect::<Vec<_>>();
+        let vertices = build_gem_shatter_vertices(&instances);
+        self.render
+            .meshes
+            .gem_shatter_effects
+            .replace_with_vertices(
+                &self.render.gpu.device,
+                "Gem Shatter Vertex Buffer",
+                &vertices,
+            );
+    }
+
     fn recent_trail_segments<'a>(
         trail_segments: &'a [Vec<[f32; 3]>],
         max_points: usize,
@@ -183,6 +229,11 @@ impl State {
             |step_target, step_dt| {
                 *trigger_render_objects = self.apply_playing_object_triggers(step_target);
                 self.gameplay.state.update(step_dt);
+                let events = self.gameplay.state.take_consumed_object_events();
+                if !events.is_empty() && trigger_render_objects.is_none() {
+                    *trigger_render_objects = Some(self.gameplay.state.objects.clone());
+                }
+                self.push_gem_shatter_events(events);
                 self.prune_playing_trigger_base_objects_from_consumed();
                 should_continue =
                     !self.gameplay.state.game_over && !self.gameplay.state.level_complete;
@@ -454,6 +505,8 @@ impl State {
         if self.phase == AppPhase::Menu {
             puffin::profile_scope!("MenuUpdate");
             self.frame_runtime.editor.accumulator = 0.0;
+            self.frame_runtime.player_render.gem_shatter_effects.clear();
+            self.render.meshes.gem_shatter_effects.clear();
             self.refresh_menu_level_preview_if_needed();
             self.update_menu_camera();
             return;
@@ -491,7 +544,7 @@ impl State {
                     let old_time = self.editor.timeline.clock.time_seconds;
                     self.editor.timeline.clock.time_seconds = clamped_time;
 
-                    if simulate_preview && self.editor.has_object_transform_triggers() {
+                    if simulate_preview {
                         self.mark_editor_dirty(super::EditorDirtyFlags {
                             rebuild_block_mesh: true,
                             ..super::EditorDirtyFlags::default()
@@ -503,7 +556,16 @@ impl State {
                         if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
                             if clamped_time + 1e-6 >= runtime.elapsed_seconds() {
                                 runtime.advance_to(clamped_time);
+                                let events = runtime.take_consumed_object_events();
+                                let consumed_gems = !events.is_empty();
                                 let snapshot = runtime.snapshot();
+                                self.push_gem_shatter_events(events);
+                                if consumed_gems {
+                                    self.mark_editor_dirty(super::EditorDirtyFlags {
+                                        rebuild_block_mesh: true,
+                                        ..super::EditorDirtyFlags::default()
+                                    });
+                                }
                                 self.apply_editor_timeline_preview_state(
                                     snapshot.position,
                                     snapshot.direction,
@@ -522,7 +584,16 @@ impl State {
                                 self.editor.simulate_trigger_hitboxes(),
                             );
                             runtime.advance_to(clamped_time);
+                            let events = runtime.take_consumed_object_events();
+                            let consumed_gems = !events.is_empty();
+                            self.push_gem_shatter_events(events);
                             let snapshot = runtime.snapshot();
+                            if consumed_gems {
+                                self.mark_editor_dirty(super::EditorDirtyFlags {
+                                    rebuild_block_mesh: true,
+                                    ..super::EditorDirtyFlags::default()
+                                });
+                            }
                             self.apply_editor_timeline_preview_state(
                                 snapshot.position,
                                 snapshot.direction,
@@ -569,6 +640,7 @@ impl State {
                 if simulate_preview {
                     self.update_editor_playback_trail_mesh();
                 }
+                self.update_gem_shatter_effect_mesh(frame_dt);
 
                 if clamped_time >= self.editor.timeline.clock.duration_seconds
                     || !self.audio.state.runtime.is_playing()
@@ -577,7 +649,7 @@ impl State {
                     self.editor.timeline.playback.runtime = None;
                     self.editor.timeline.playback.pending_seek_time_seconds = None;
                     self.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
-                    if simulate_preview && self.editor.has_object_transform_triggers() {
+                    if simulate_preview {
                         self.mark_editor_dirty(super::EditorDirtyFlags {
                             rebuild_block_mesh: true,
                             ..super::EditorDirtyFlags::default()
@@ -586,7 +658,12 @@ impl State {
                     self.stop_audio();
                 }
             } else if self.editor.ui.mode != EditorMode::Timing {
+                self.frame_runtime.player_render.gem_shatter_effects.clear();
+                self.render.meshes.gem_shatter_effects.clear();
                 self.update_editor_scrub_trail_mesh();
+            } else {
+                self.frame_runtime.player_render.gem_shatter_effects.clear();
+                self.render.meshes.gem_shatter_effects.clear();
             }
 
             {
@@ -672,6 +749,7 @@ impl State {
             self.advance_playing_state_to_time(target_time, FIXED_DT)
         };
         self.frame_runtime.editor.accumulator = 0.0;
+        self.update_gem_shatter_effect_mesh(frame_dt);
 
         let render_objects = trigger_render_objects
             .as_deref()
