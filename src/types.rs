@@ -1589,6 +1589,18 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
             capacity: 2,
         },
         KeybindActionMetadata {
+            group: "Gameplay",
+            action: "practice_checkpoint",
+            label: "Place Practice Checkpoint",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Gameplay",
+            action: "practice_remove_checkpoint",
+            label: "Remove Practice Checkpoint",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
             group: "Timeline",
             action: "toggle_timeline_playback",
             label: "Toggle Timeline Playback",
@@ -1860,6 +1872,14 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
         KeybindBinding {
             action: "menu_next_level".to_string(),
             chord: KeyChord::new("ArrowRight", false, false, false),
+        },
+        KeybindBinding {
+            action: "practice_checkpoint".to_string(),
+            chord: KeyChord::new("c", false, false, false),
+        },
+        KeybindBinding {
+            action: "practice_remove_checkpoint".to_string(),
+            chord: KeyChord::new("z", false, false, false),
         },
         KeybindBinding {
             action: "toggle_timeline_playback".to_string(),
