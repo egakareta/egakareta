@@ -474,6 +474,7 @@ pub(crate) struct GpuContext {
     pub(crate) editor_outline_occlusion_depth_texture: wgpu::Texture,
     pub(crate) editor_outline_occlusion_depth_view: wgpu::TextureView,
     pub(crate) render_pipeline: wgpu::RenderPipeline,
+    pub(crate) grid_pipeline: wgpu::RenderPipeline,
     pub(crate) block_icon_pipeline: wgpu::RenderPipeline,
     pub(crate) editor_ghost_trail_pipeline: wgpu::RenderPipeline,
     pub(crate) gizmo_overlay_pipeline: wgpu::RenderPipeline,
@@ -492,6 +493,10 @@ pub(crate) struct GpuContext {
     pub(crate) color_space_bind_group_layout: wgpu::BindGroupLayout,
     pub(crate) color_space_uniform_buffer: wgpu::Buffer,
     pub(crate) color_space_bind_group: wgpu::BindGroup,
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) grid_bind_group_layout: wgpu::BindGroupLayout,
+    pub(crate) grid_uniform_buffer: wgpu::Buffer,
+    pub(crate) grid_bind_group: wgpu::BindGroup,
     pub(crate) block_texture_bind_group: wgpu::BindGroup,
     pub(crate) apply_gamma_correction: bool,
 }
@@ -577,6 +582,7 @@ impl Drop for RenderSubsystem {
         self.gpu.line_uniform_buffer.destroy();
         self.gpu.camera_uniform_buffer.destroy();
         self.gpu.color_space_uniform_buffer.destroy();
+        self.gpu.grid_uniform_buffer.destroy();
         let _ = self.gpu.device.poll(wgpu::PollType::Poll);
     }
 }

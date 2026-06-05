@@ -12,7 +12,9 @@ use wgpu::{CurrentSurfaceTexture, TextureViewDescriptor};
 
 use super::super::State;
 use super::{MeshDrawData, MeshSlot};
-use crate::types::{default_sky_color, AppPhase, EditorMode};
+use crate::types::{default_sky_color, AppPhase, EditorMode, GridUniform};
+
+const GRID_HALF_EXTENT: f32 = 2048.0;
 
 fn linear_to_srgb(linear: f32) -> f32 {
     if linear <= 0.0031308 {
@@ -117,6 +119,21 @@ fn draw_mesh(render_pass: &mut wgpu::RenderPass<'_>, draw_data: MeshDrawData<'_>
             render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             render_pass.draw_indexed(0..count, 0, 0..1);
         }
+    }
+}
+
+fn grid_center_for_phase(state: &State) -> [f32; 2] {
+    match state.phase {
+        AppPhase::Editor if state.editor_is_playing() => [
+            state.editor.timeline.preview.position[0],
+            state.editor.timeline.preview.position[2],
+        ],
+        AppPhase::Editor => state.editor.camera.editor_pan,
+        AppPhase::Playing | AppPhase::GameOver => [
+            state.gameplay.state.position[0],
+            state.gameplay.state.position[2],
+        ],
+        _ => [0.0, 0.0],
     }
 }
 
@@ -252,6 +269,17 @@ impl State {
             self.render.gpu.apply_gamma_correction,
         );
 
+        let grid_uniform = GridUniform {
+            center: grid_center_for_phase(self),
+            half_extent: GRID_HALF_EXTENT,
+            _pad: 0.0,
+        };
+        self.render.gpu.queue.write_buffer(
+            &self.render.gpu.grid_uniform_buffer,
+            0,
+            bytemuck::bytes_of(&grid_uniform),
+        );
+
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -292,7 +320,16 @@ impl State {
             }
 
             if let Some(draw_data) = self.render.meshes.grid.draw_data() {
+                render_pass.set_pipeline(&self.render.gpu.grid_pipeline);
+                render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
+                render_pass.set_bind_group(1, &self.render.gpu.grid_bind_group, &[]);
+                render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
                 draw_mesh(&mut render_pass, draw_data);
+                render_pass.set_pipeline(&self.render.gpu.render_pipeline);
+                render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
+                render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
             }
         }
 

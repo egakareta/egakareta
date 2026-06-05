@@ -8,38 +8,13 @@
 use crate::types::Vertex;
 
 pub(crate) fn build_grid_vertices() -> Vec<Vertex> {
-    let mut grid_vertices: Vec<Vertex> = Vec::new();
-    let extent = 60.0;
-    let step = 1.0;
-    let grid_color = [0.2, 0.22, 0.26, 1.0];
-    let line_width = 0.02;
-    let grid_y = 0.01;
-
-    let mut x = -extent;
-    while x <= extent {
-        let x_min = x - line_width;
-        let x_max = x + line_width;
-        grid_vertices.push(Vertex::untextured([x_min, grid_y, -extent], grid_color));
-        grid_vertices.push(Vertex::untextured([x_max, grid_y, -extent], grid_color));
-        grid_vertices.push(Vertex::untextured([x_max, grid_y, extent], grid_color));
-        grid_vertices.push(Vertex::untextured([x_min, grid_y, -extent], grid_color));
-        grid_vertices.push(Vertex::untextured([x_max, grid_y, extent], grid_color));
-        grid_vertices.push(Vertex::untextured([x_min, grid_y, extent], grid_color));
-        x += step;
-    }
-
-    let mut z = -extent;
-    while z <= extent {
-        let z_min = z - line_width;
-        let z_max = z + line_width;
-        grid_vertices.push(Vertex::untextured([-extent, grid_y, z_min], grid_color));
-        grid_vertices.push(Vertex::untextured([extent, grid_y, z_min], grid_color));
-        grid_vertices.push(Vertex::untextured([extent, grid_y, z_max], grid_color));
-        grid_vertices.push(Vertex::untextured([-extent, grid_y, z_min], grid_color));
-        grid_vertices.push(Vertex::untextured([extent, grid_y, z_max], grid_color));
-        grid_vertices.push(Vertex::untextured([-extent, grid_y, z_max], grid_color));
-        z += step;
-    }
-
-    grid_vertices
+    let color = [1.0, 1.0, 1.0, 1.0];
+    vec![
+        Vertex::untextured([-1.0, 0.0, -1.0], color),
+        Vertex::untextured([1.0, 0.0, -1.0], color),
+        Vertex::untextured([1.0, 0.0, 1.0], color),
+        Vertex::untextured([-1.0, 0.0, -1.0], color),
+        Vertex::untextured([1.0, 0.0, 1.0], color),
+        Vertex::untextured([-1.0, 0.0, 1.0], color),
+    ]
 }

@@ -45,6 +45,16 @@ fn shader_wgsl_parses_and_validates_with_naga() {
 }
 
 #[test]
+fn grid_shader_wgsl_parses_and_validates_with_naga() {
+    let shader_source = include_str!("../grid.wgsl");
+    let module = wgsl::parse_str(shader_source).expect("grid.wgsl should parse");
+
+    Validator::new(ValidationFlags::all(), Capabilities::all())
+        .validate(&module)
+        .expect("grid.wgsl should pass naga validation");
+}
+
+#[test]
 fn texture_sample_stays_outside_fragment_conditionals() {
     let shader_source = include_str!("../shader.wgsl");
     let fs_source = fs_main_source(shader_source);

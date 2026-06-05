@@ -2242,6 +2242,15 @@ pub(crate) struct ColorSpaceUniform {
     pub(crate) viewport_size: [f32; 2],
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+/// Uniform buffer for the analytic world grid.
+pub(crate) struct GridUniform {
+    pub(crate) center: [f32; 2],
+    pub(crate) half_extent: f32,
+    pub(crate) _pad: f32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

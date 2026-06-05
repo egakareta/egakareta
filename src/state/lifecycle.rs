@@ -31,10 +31,12 @@ use crate::platform::state_host::NativeWindow;
 use crate::platform::state_host::WasmCanvas;
 use crate::platform::state_host::{PlatformInstant, SurfaceHost};
 use crate::types::{
-    AppPhase, CameraUniform, ColorSpaceUniform, EditorState, LevelCreatorMetadata, LineUniform,
-    MenuState, MusicMetadata, PhysicalSize, SettingsSection, SpawnMetadata, Vertex,
+    AppPhase, CameraUniform, ColorSpaceUniform, EditorState, GridUniform, LevelCreatorMetadata,
+    LineUniform, MenuState, MusicMetadata, PhysicalSize, SettingsSection, SpawnMetadata, Vertex,
     DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
 };
+
+const GRID_HALF_EXTENT: f32 = 2048.0;
 
 fn discover_graphics_backends() -> Vec<String> {
     #[cfg(target_arch = "wasm32")]
@@ -147,6 +149,16 @@ fn editor_hover_outline_depth_stencil_state() -> wgpu::DepthStencilState {
     }
 }
 
+fn grid_depth_stencil_state() -> wgpu::DepthStencilState {
+    wgpu::DepthStencilState {
+        format: DEPTH_FORMAT,
+        depth_write_enabled: Some(false),
+        depth_compare: Some(wgpu::CompareFunction::LessEqual),
+        stencil: wgpu::StencilState::default(),
+        bias: wgpu::DepthBiasState::default(),
+    }
+}
+
 fn default_line_uniform() -> LineUniform {
     LineUniform {
         offset: [0.0, 0.0],
@@ -169,6 +181,14 @@ fn default_color_space_uniform(apply_gamma_correction: bool) -> ColorSpaceUnifor
     }
 }
 
+fn default_grid_uniform() -> GridUniform {
+    GridUniform {
+        center: [0.0, 0.0],
+        half_extent: GRID_HALF_EXTENT,
+        _pad: 0.0,
+    }
+}
+
 #[cfg(test)]
 struct TestGpuFixture {
     adapter_info: wgpu::AdapterInfo,
@@ -181,6 +201,7 @@ struct TestGpuFixture {
     editor_outline_occlusion_depth_texture: wgpu::Texture,
     editor_outline_occlusion_depth_view: wgpu::TextureView,
     render_pipeline: wgpu::RenderPipeline,
+    grid_pipeline: wgpu::RenderPipeline,
     block_icon_pipeline: wgpu::RenderPipeline,
     editor_ghost_trail_pipeline: wgpu::RenderPipeline,
     gizmo_overlay_pipeline: wgpu::RenderPipeline,
@@ -193,6 +214,7 @@ struct TestGpuFixture {
     zero_line_bind_group: wgpu::BindGroup,
     camera_bind_group_layout: wgpu::BindGroupLayout,
     color_space_bind_group_layout: wgpu::BindGroupLayout,
+    grid_bind_group_layout: wgpu::BindGroupLayout,
     block_texture_bind_group: wgpu::BindGroup,
     apply_gamma_correction: bool,
 }
@@ -229,6 +251,7 @@ impl From<&GpuContext> for TestGpuFixture {
                 .clone(),
             editor_outline_occlusion_depth_view: gpu.editor_outline_occlusion_depth_view.clone(),
             render_pipeline: gpu.render_pipeline.clone(),
+            grid_pipeline: gpu.grid_pipeline.clone(),
             block_icon_pipeline: gpu.block_icon_pipeline.clone(),
             editor_ghost_trail_pipeline: gpu.editor_ghost_trail_pipeline.clone(),
             gizmo_overlay_pipeline: gpu.gizmo_overlay_pipeline.clone(),
@@ -243,6 +266,7 @@ impl From<&GpuContext> for TestGpuFixture {
             zero_line_bind_group,
             camera_bind_group_layout: gpu.camera_bind_group_layout.clone(),
             color_space_bind_group_layout: gpu.color_space_bind_group_layout.clone(),
+            grid_bind_group_layout: gpu.grid_bind_group_layout.clone(),
             block_texture_bind_group: gpu.block_texture_bind_group.clone(),
             apply_gamma_correction: gpu.apply_gamma_correction,
         }
@@ -378,6 +402,26 @@ impl State {
                 }],
             });
 
+        let grid_uniform = default_grid_uniform();
+        let grid_uniform_buffer =
+            fixture
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Grid Uniform Buffer"),
+                    contents: bytemuck::bytes_of(&grid_uniform),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+        let grid_bind_group = fixture
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Grid Bind Group"),
+                layout: &fixture.grid_bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: grid_uniform_buffer.as_entire_binding(),
+                }],
+            });
+
         let trail_mesh = MeshSlot::streaming(&fixture.device, "Trail Vertex Buffer", 36 * 1024);
 
         let menu = MenuState {
@@ -427,6 +471,7 @@ impl State {
                         .editor_outline_occlusion_depth_view
                         .clone(),
                     render_pipeline: fixture.render_pipeline.clone(),
+                    grid_pipeline: fixture.grid_pipeline.clone(),
                     block_icon_pipeline: fixture.block_icon_pipeline.clone(),
                     editor_ghost_trail_pipeline: fixture.editor_ghost_trail_pipeline.clone(),
                     gizmo_overlay_pipeline: fixture.gizmo_overlay_pipeline.clone(),
@@ -445,6 +490,9 @@ impl State {
                     color_space_bind_group_layout: fixture.color_space_bind_group_layout.clone(),
                     color_space_uniform_buffer,
                     color_space_bind_group,
+                    grid_bind_group_layout: fixture.grid_bind_group_layout.clone(),
+                    grid_uniform_buffer,
+                    grid_bind_group,
                     block_texture_bind_group: fixture.block_texture_bind_group.clone(),
                     apply_gamma_correction: fixture.apply_gamma_correction,
                 },
@@ -682,6 +730,10 @@ impl State {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../shader.wgsl").into()),
         });
+        let grid_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Grid Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../grid.wgsl").into()),
+        });
 
         let line_uniform = default_line_uniform();
 
@@ -710,6 +762,14 @@ impl State {
                 contents: bytemuck::bytes_of(&color_space_uniform),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
+
+        let grid_uniform = default_grid_uniform();
+
+        let grid_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Grid Uniform Buffer"),
+            contents: bytemuck::bytes_of(&grid_uniform),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
 
         let line_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -744,6 +804,21 @@ impl State {
         let color_space_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("Color Space Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let grid_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Grid Bind Group Layout"),
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
@@ -880,6 +955,15 @@ impl State {
             }],
         });
 
+        let grid_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Grid Bind Group"),
+            layout: &grid_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: grid_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
         let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Camera Bind Group"),
             layout: &camera_bind_group_layout,
@@ -911,6 +995,16 @@ impl State {
             immediate_size: 0,
         });
 
+        let grid_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Grid Pipeline Layout"),
+            bind_group_layouts: &[
+                Some(&camera_bind_group_layout),
+                Some(&grid_bind_group_layout),
+                Some(&color_space_bind_group_layout),
+            ],
+            immediate_size: 0,
+        });
+
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&pipeline_layout),
@@ -938,6 +1032,32 @@ impl State {
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        let grid_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Grid Pipeline"),
+            layout: Some(&grid_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &grid_shader,
+                entry_point: Some("vs_grid"),
+                buffers: &[Vertex::desc()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &grid_shader,
+                entry_point: Some("fs_grid"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(grid_depth_stencil_state()),
             multisample: wgpu::MultisampleState::default(),
             multiview_mask: None,
             cache: None,
@@ -1241,6 +1361,7 @@ impl State {
                     editor_outline_occlusion_depth_texture,
                     editor_outline_occlusion_depth_view,
                     render_pipeline,
+                    grid_pipeline,
                     block_icon_pipeline,
                     editor_ghost_trail_pipeline,
                     gizmo_overlay_pipeline,
@@ -1257,6 +1378,9 @@ impl State {
                     color_space_bind_group_layout,
                     color_space_uniform_buffer,
                     color_space_bind_group,
+                    grid_bind_group_layout,
+                    grid_uniform_buffer,
+                    grid_bind_group,
                     block_texture_bind_group,
                     apply_gamma_correction: should_apply_gamma_correction,
                 },
