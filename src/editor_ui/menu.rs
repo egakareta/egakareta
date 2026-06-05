@@ -520,6 +520,17 @@ pub fn show_menu_topbar_ui(root_ui: &mut egui::Ui, state: &mut State) {
             ui.label(egui_phosphor::regular::CLOCK);
             ui.label(egui::RichText::new(get_current_time_str()).monospace());
 
+            if ui
+                .button(format!("{} Settings", egui_phosphor::regular::GEAR))
+                .on_hover_text(format!(
+                    "Settings{}",
+                    state.app_settings().hotkey_hint("toggle_settings")
+                ))
+                .clicked()
+            {
+                commands.push(AppCommand::EditorToggleSettings);
+            }
+
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.horizontal(|ui| {
                     if let Some(name) = state.auth_display_name() {
