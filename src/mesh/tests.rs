@@ -309,7 +309,8 @@ d 0.5
         let mesh = parse_obj_mesh_with_materials(obj, &[("flag.mtl", mtl)]).expect("valid mesh");
 
         assert_eq!(mesh.materials.len(), 1);
-        assert_eq!(mesh.materials[0].diffuse, [0.4, 0.8, 0.5, 0.5]);
+        assert_eq!(mesh.materials[0].name, "cloth");
+        assert_eq!(mesh.materials[0].color.diffuse, [0.4, 0.8, 0.5, 0.5]);
         assert_eq!(mesh.faces[0][0].material_index, Some(0));
 
         let mut vertices = Vec::new();

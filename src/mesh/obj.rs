@@ -26,8 +26,14 @@ pub(crate) struct ObjMesh {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct ObjMaterial {
+pub(crate) struct ObjMaterialColor {
     pub(crate) diffuse: [f32; 4],
+}
+
+#[derive(Clone)]
+pub(crate) struct ObjMaterial {
+    pub(crate) name: String,
+    pub(crate) color: ObjMaterialColor,
 }
 
 #[derive(Clone, Copy)]
@@ -376,8 +382,11 @@ fn flush_material(
     }
 
     let index = materials.len();
-    materials.push(ObjMaterial { diffuse });
-    material_indices.insert(name, index);
+    material_indices.insert(name.clone(), index);
+    materials.push(ObjMaterial {
+        name,
+        color: ObjMaterialColor { diffuse },
+    });
 }
 
 fn resolve_obj_index(raw_index: isize, len: usize) -> Option<usize> {
@@ -458,7 +467,7 @@ pub(crate) fn append_obj_mesh(
             let material_color = corner
                 .material_index
                 .and_then(|index| mesh.materials.get(index))
-                .map(|material| material.diffuse)
+                .map(|material| material.color.diffuse)
                 .unwrap_or([1.0, 1.0, 1.0, 1.0]);
 
             vertices.push(Vertex::textured(
