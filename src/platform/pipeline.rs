@@ -21,13 +21,15 @@ use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 
 /// The main frame pipeline that orchestrates UI rendering and game updates.
 ///
-/// This struct holds the egui context, renderer, and menu favicon texture.
+/// This struct holds the egui context, renderer, and menu textures.
 /// It runs each frame by updating the UI, tessellating shapes, updating textures,
 /// running game logic, and rendering everything to the surface.
 pub struct FramePipeline {
     egui_ctx: egui::Context,
     egui_renderer: EguiRenderer,
     menu_favicon: Option<egui::TextureHandle>,
+    menu_play_button: Option<egui::TextureHandle>,
+    menu_play_button_filled: Option<egui::TextureHandle>,
     block_icon_cache: BlockIconCache,
 }
 
@@ -37,11 +39,15 @@ impl FramePipeline {
         egui_ctx: egui::Context,
         egui_renderer: EguiRenderer,
         menu_favicon: Option<egui::TextureHandle>,
+        menu_play_button: Option<egui::TextureHandle>,
+        menu_play_button_filled: Option<egui::TextureHandle>,
     ) -> Self {
         Self {
             egui_ctx,
             egui_renderer,
             menu_favicon,
+            menu_play_button,
+            menu_play_button_filled,
             block_icon_cache: BlockIconCache::new(),
         }
     }
@@ -87,7 +93,12 @@ impl FramePipeline {
                 let ctx = root_ui.ctx().clone();
                 show_editor_ui(&ctx, state, &block_icon_texture_ids);
                 show_menu_topbar_ui(root_ui, state);
-                show_menu_play_ui(&ctx, state);
+                show_menu_play_ui(
+                    &ctx,
+                    state,
+                    self.menu_play_button.as_ref(),
+                    self.menu_play_button_filled.as_ref(),
+                );
                 show_practice_checkpoint_ui(&ctx, state);
                 show_pause_menu_ui(&ctx, state);
                 if let Some(favicon) = &self.menu_favicon {
@@ -202,7 +213,7 @@ mod tests {
             let egui_ctx = egui::Context::default();
             configure_test_fonts(&egui_ctx);
             let renderer = state.create_egui_renderer();
-            let mut pipeline = FramePipeline::new(egui_ctx, renderer, None);
+            let mut pipeline = FramePipeline::new(egui_ctx, renderer, None, None, None);
 
             let output = pipeline.run_frame(&mut state, egui::RawInput::default());
 
@@ -223,7 +234,38 @@ mod tests {
                 egui::ColorImage::new([2, 2], vec![egui::Color32::WHITE; 4]),
                 egui::TextureOptions::LINEAR,
             );
-            let mut pipeline = FramePipeline::new(egui_ctx, renderer, Some(favicon));
+            let mut pipeline = FramePipeline::new(egui_ctx, renderer, Some(favicon), None, None);
+
+            let output = pipeline.run_frame(&mut state, egui::RawInput::default());
+
+            assert!(output.pixels_per_point > 0.0);
+        });
+    }
+
+    #[test]
+    fn run_frame_executes_play_button_texture_branch_when_texture_is_present() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let egui_ctx = egui::Context::default();
+            configure_test_fonts(&egui_ctx);
+            let renderer = state.create_egui_renderer();
+            let play_button = egui_ctx.load_texture(
+                "test-play-button",
+                egui::ColorImage::new([2, 2], vec![egui::Color32::WHITE; 4]),
+                egui::TextureOptions::LINEAR,
+            );
+            let filled_play_button = egui_ctx.load_texture(
+                "test-filled-play-button",
+                egui::ColorImage::new([2, 2], vec![egui::Color32::WHITE; 4]),
+                egui::TextureOptions::LINEAR,
+            );
+            let mut pipeline = FramePipeline::new(
+                egui_ctx,
+                renderer,
+                None,
+                Some(play_button),
+                Some(filled_play_button),
+            );
 
             let output = pipeline.run_frame(&mut state, egui::RawInput::default());
 

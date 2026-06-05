@@ -29,8 +29,9 @@ mod test_utils;
 mod types;
 
 pub use editor_ui::{
-    load_menu_favicon_texture, show_editor_ui, show_menu_favicon_ui, show_menu_play_ui,
-    show_menu_topbar_ui, show_pause_menu_ui, show_perf_overlay, show_practice_checkpoint_ui,
+    load_menu_favicon_texture, load_menu_play_button_filled_texture, load_menu_play_button_texture,
+    show_editor_ui, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
+    show_pause_menu_ui, show_perf_overlay, show_practice_checkpoint_ui,
 };
 pub use import_export_service::convert_level_binary_to_json;
 pub use import_export_service::convert_level_json_to_binary;

@@ -10,16 +10,37 @@ use crate::editor_ui::components::show_shadowed_label;
 use crate::State;
 
 const MENU_FAVICON_PNG: &[u8] = include_bytes!("../../assets/darkicon.png");
+const MENU_PLAY_BUTTON_PNG: &[u8] = include_bytes!("../../assets/circularplaybutton.png");
+const MENU_PLAY_BUTTON_FILLED_PNG: &[u8] =
+    include_bytes!("../../assets/circularplaybuttonfilled.png");
 const MENU_GEM_ICON_SVG: &str = include_str!("../../assets/gem_icon.svg");
 
-/// Loads the menu favicon texture from embedded PNG data.
-pub fn load_menu_favicon_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
-    let decoded = image::load_from_memory(MENU_FAVICON_PNG).ok()?;
+fn load_png_texture(
+    ctx: &egui::Context,
+    name: &'static str,
+    png_bytes: &'static [u8],
+) -> Option<egui::TextureHandle> {
+    let decoded = image::load_from_memory(png_bytes).ok()?;
     let rgba = decoded.to_rgba8();
     let size = [rgba.width() as usize, rgba.height() as usize];
     let color_image = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
 
-    Some(ctx.load_texture("menu_favicon", color_image, egui::TextureOptions::LINEAR))
+    Some(ctx.load_texture(name, color_image, egui::TextureOptions::LINEAR))
+}
+
+/// Loads the menu favicon texture from embedded PNG data.
+pub fn load_menu_favicon_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_png_texture(ctx, "menu_favicon", MENU_FAVICON_PNG)
+}
+
+/// Loads the main menu play button texture from embedded PNG data.
+pub fn load_menu_play_button_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_png_texture(ctx, "menu_play_button", MENU_PLAY_BUTTON_PNG)
+}
+
+/// Loads the filled main menu play button texture from embedded PNG data.
+pub fn load_menu_play_button_filled_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_png_texture(ctx, "menu_play_button_filled", MENU_PLAY_BUTTON_FILLED_PNG)
 }
 
 const MENU_LEVEL_TITLE_FONT_SIZE: f32 = 86.0;
@@ -33,6 +54,8 @@ const MENU_LEVEL_PROGRESS_SHADOW_OFFSET_Y: f32 = 1.5;
 const MENU_LEVEL_PROGRESS_GAP_FROM_TITLE: f32 = 8.0;
 const MENU_LEVEL_PROGRESS_TEXT_GAP: f32 = 10.0;
 const MENU_LEVEL_PROGRESS_GEM_SIZE: f32 = 24.0;
+const MENU_PLAY_BUTTON_MIN_SIZE: f32 = 88.0;
+const MENU_PLAY_BUTTON_MAX_SIZE: f32 = 308.0;
 const PAUSE_MENU_SIDE_BUTTON_SIZE: f32 = 70.0;
 const PAUSE_MENU_PLAY_BUTTON_SIZE: f32 = 90.0;
 const PAUSE_MENU_BUTTON_SPACING: f32 = 14.0;
@@ -76,7 +99,12 @@ pub fn show_menu_favicon_ui(ctx: &egui::Context, state: &State, _favicon: &egui:
 }
 
 /// Shows the menu play button UI overlay.
-pub fn show_menu_play_ui(ctx: &egui::Context, state: &mut State) {
+pub fn show_menu_play_ui(
+    ctx: &egui::Context,
+    state: &mut State,
+    play_button: Option<&egui::TextureHandle>,
+    play_button_filled: Option<&egui::TextureHandle>,
+) {
     if !state.is_menu() {
         return;
     }
@@ -84,6 +112,8 @@ pub fn show_menu_play_ui(ctx: &egui::Context, state: &mut State) {
     let ui_scale = ctx.pixels_per_point();
     let screen_height = ctx.content_rect().height();
     let icon_size = screen_height * 0.07 * ui_scale;
+    let button_size = (screen_height * 0.25 * ui_scale)
+        .clamp(MENU_PLAY_BUTTON_MIN_SIZE, MENU_PLAY_BUTTON_MAX_SIZE);
     let padding = egui::vec2(24.0, 16.0);
     let offset_y = 40.0;
 
@@ -91,6 +121,38 @@ pub fn show_menu_play_ui(ctx: &egui::Context, state: &mut State) {
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, offset_y))
         .show(ctx, |ui| {
+            if let Some(play_button) = play_button {
+                let (rect, response) = ui.allocate_exact_size(
+                    egui::vec2(button_size, button_size),
+                    egui::Sense::click(),
+                );
+                let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+                let hover_alpha = ctx.animate_bool(response.id, response.hovered());
+
+                if ui.is_rect_visible(rect) {
+                    ui.painter().image(
+                        play_button.id(),
+                        rect,
+                        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                        egui::Color32::WHITE,
+                    );
+
+                    if let Some(play_button_filled) = play_button_filled {
+                        ui.painter().image(
+                            play_button_filled.id(),
+                            rect,
+                            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                            egui::Color32::from_white_alpha((hover_alpha * 255.0).round() as u8),
+                        );
+                    }
+                }
+
+                if response.clicked() {
+                    state.turn_right();
+                }
+                return;
+            }
+
             ui.spacing_mut().button_padding = padding;
 
             let play_text = egui::RichText::new(egui_phosphor::regular::PLAY)
