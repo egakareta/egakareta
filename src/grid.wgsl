@@ -12,7 +12,7 @@ struct CameraData {
 struct GridData {
     center: vec2<f32>,
     half_extent: f32,
-    _pad: f32,
+    darkening: f32,
 };
 
 struct ColorSpaceData {
@@ -67,7 +67,10 @@ fn fs_grid(input: VertexOutput) -> @location(0) vec4<f32> {
 
     let edge_distance = max(abs(input.local_xz.x), abs(input.local_xz.y)) / u_grid.half_extent;
     let edge_fade = 1.0 - smoothstep(0.92, 1.0, edge_distance);
-    let alpha = line_alpha * edge_fade;
+    let floor_alpha = u_grid.darkening * edge_fade;
+    let line_layer_alpha = line_alpha * edge_fade;
+    let alpha = line_layer_alpha + floor_alpha * (1.0 - line_layer_alpha);
+    color = color * line_layer_alpha / max(alpha, 1e-5);
 
     if u_color_space.flags.x > 0.5 {
         color = linear_to_srgb(color);

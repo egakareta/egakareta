@@ -71,6 +71,22 @@ fn should_draw_floor_and_grid(phase: AppPhase, mode: EditorMode) -> bool {
     phase != AppPhase::Menu && mode != EditorMode::Timing
 }
 
+fn smoothstep(edge0: f32, edge1: f32, value: f32) -> f32 {
+    let t = ((value - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+fn editor_grid_darkening(phase: AppPhase, sky_color: [f32; 3]) -> f32 {
+    if phase != AppPhase::Editor {
+        return 0.0;
+    }
+
+    let luminance = sky_color[0].clamp(0.0, 1.0) * 0.2126
+        + sky_color[1].clamp(0.0, 1.0) * 0.7152
+        + sky_color[2].clamp(0.0, 1.0) * 0.0722;
+    0.10 + 0.35 * smoothstep(0.35, 0.80, luminance)
+}
+
 fn should_skip_world(phase: AppPhase, mode: EditorMode) -> bool {
     phase == AppPhase::Editor && mode == EditorMode::Timing
 }
@@ -272,7 +288,7 @@ impl State {
         let grid_uniform = GridUniform {
             center: grid_center_for_phase(self),
             half_extent: GRID_HALF_EXTENT,
-            _pad: 0.0,
+            darkening: editor_grid_darkening(self.phase, sky_color),
         };
         self.render.gpu.queue.write_buffer(
             &self.render.gpu.grid_uniform_buffer,
@@ -685,8 +701,9 @@ mod tests {
     use super::super::{EditorOutlineInstance, MeshSlot};
     use super::{
         apply_gamma_correction_if_enabled, clear_color_for_phase, current_surface_output,
-        linear_to_srgb, should_draw_editor_cursor, should_draw_editor_overlays,
-        should_draw_floor_and_grid, should_skip_world, RenderSurfaceError,
+        editor_grid_darkening, linear_to_srgb, should_draw_editor_cursor,
+        should_draw_editor_overlays, should_draw_floor_and_grid, should_skip_world,
+        RenderSurfaceError,
     };
     use crate::state::State;
     use crate::types::{AppPhase, CameraUniform, EditorMode, PhysicalSize, Vertex};
@@ -1000,6 +1017,26 @@ mod tests {
         assert!(!should_draw_editor_cursor(EditorMode::Select));
         assert!(!should_draw_editor_cursor(EditorMode::Trigger));
         assert!(!should_draw_editor_cursor(EditorMode::Timing));
+    }
+
+    #[test]
+    fn editor_grid_darkening_scales_with_bright_editor_skies() {
+        approx_eq(
+            editor_grid_darkening(AppPhase::Editor, [0.0, 0.0, 0.0]),
+            0.10,
+            1e-6,
+        );
+        approx_eq(
+            editor_grid_darkening(AppPhase::Editor, [1.0, 1.0, 1.0]),
+            0.45,
+            1e-6,
+        );
+        assert!(editor_grid_darkening(AppPhase::Editor, [0.55, 0.75, 0.84]) > 0.40);
+        approx_eq(
+            editor_grid_darkening(AppPhase::Playing, [1.0, 1.0, 1.0]),
+            0.0,
+            1e-6,
+        );
     }
 
     #[test]

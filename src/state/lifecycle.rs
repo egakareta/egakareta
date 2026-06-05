@@ -185,7 +185,7 @@ fn default_grid_uniform() -> GridUniform {
     GridUniform {
         center: [0.0, 0.0],
         half_extent: GRID_HALF_EXTENT,
-        _pad: 0.0,
+        darkening: 0.0,
     }
 }
 

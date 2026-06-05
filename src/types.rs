@@ -2248,7 +2248,7 @@ pub(crate) struct ColorSpaceUniform {
 pub(crate) struct GridUniform {
     pub(crate) center: [f32; 2],
     pub(crate) half_extent: f32,
-    pub(crate) _pad: f32,
+    pub(crate) darkening: f32,
 }
 
 #[cfg(test)]
