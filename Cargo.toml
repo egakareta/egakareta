@@ -76,6 +76,7 @@ gloo-console = "0.4"
 gloo-file = "0.4"
 gloo-utils = "0.3"
 js-sys = "0.3"
+parking_lot_core = { version = "0.9.12", features = ["nightly"] }
 puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "7e08a533f9debfb7d051547263d2ab84c666314f", features = [
     "web",
 ] }
