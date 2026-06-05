@@ -1875,11 +1875,11 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
         },
         KeybindBinding {
             action: "practice_checkpoint".to_string(),
-            chord: KeyChord::new("c", false, false, false),
+            chord: KeyChord::new("z", false, false, false),
         },
         KeybindBinding {
             action: "practice_remove_checkpoint".to_string(),
-            chord: KeyChord::new("z", false, false, false),
+            chord: KeyChord::new("x", false, false, false),
         },
         KeybindBinding {
             action: "toggle_timeline_playback".to_string(),

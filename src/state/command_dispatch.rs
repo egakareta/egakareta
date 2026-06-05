@@ -352,15 +352,17 @@ impl State {
             return;
         }
 
+        self.session.practice_mode_enabled = enabled;
+        self.session.practice_checkpoints.clear();
+
         if enabled {
-            self.session.practice_mode_enabled = true;
+            self.resume_game();
             return;
         }
 
-        self.session.practice_mode_enabled = false;
-        self.session.practice_checkpoints.clear();
         self.rebuild_practice_checkpoint_vertices();
         self.restart_level();
+        self.resume_game();
     }
 
     fn set_practice_checkpoint(&mut self) {

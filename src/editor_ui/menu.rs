@@ -154,16 +154,20 @@ pub fn show_pause_menu_ui(ctx: &egui::Context, state: &mut State) {
                 {
                     commands.push(AppCommand::GameRestartLevel);
                 }
+                if pause_menu_button(ui, egui_phosphor::regular::HOUSE, "Main Menu").clicked() {
+                    commands.push(AppCommand::GameQuitToMenu);
+                }
+
                 let mut practice_enabled = state.is_practice_mode_enabled();
                 if ui
-                    .checkbox(&mut practice_enabled, "Practice Mode")
+                    .checkbox(
+                        &mut practice_enabled,
+                        format!("{} {}", egui_phosphor::regular::FLAG, "Practice"),
+                    )
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
                     .changed()
                 {
                     commands.push(AppCommand::GameSetPracticeMode(practice_enabled));
-                }
-                if pause_menu_button(ui, egui_phosphor::regular::HOUSE, "Main Menu").clicked() {
-                    commands.push(AppCommand::GameQuitToMenu);
                 }
             });
         });
@@ -179,30 +183,22 @@ pub fn show_practice_checkpoint_ui(ctx: &egui::Context, state: &mut State) {
         return;
     }
 
-    let checkpoint_text = state
-        .practice_checkpoint_time_seconds()
-        .map(|seconds| format!("{:.1}s", seconds))
-        .unwrap_or_else(|| "None".to_string());
-    let checkpoint_count = state.practice_checkpoint_count();
     let mut place_checkpoint = false;
     let mut remove_checkpoint = false;
 
     egui::Area::new("practice_checkpoint_area".into())
         .order(egui::Order::Foreground)
-        .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-24.0, -24.0))
+        .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -24.0))
         .show(ctx, |ui| {
-            ui.vertical(|ui| {
-                ui.label(format!(
-                    "Checkpoint: {} ({})",
-                    checkpoint_text, checkpoint_count
-                ));
+            ui.horizontal(|ui| {
+                let checkpoint_icon_size = 36.0;
                 if ui
                     .add_sized(
-                        egui::vec2(180.0, 40.0),
-                        egui::Button::new(format!(
-                            "{} Set Checkpoint",
-                            egui_phosphor::regular::FLAG
-                        )),
+                        egui::vec2(70.0, 70.0),
+                        egui::Button::new(
+                            egui::RichText::new(egui_phosphor::regular::FLAG)
+                                .size(checkpoint_icon_size),
+                        ),
                     )
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
                     .clicked()
@@ -210,12 +206,12 @@ pub fn show_practice_checkpoint_ui(ctx: &egui::Context, state: &mut State) {
                     place_checkpoint = true;
                 }
                 if ui
-                    .add_enabled(
-                        checkpoint_count > 0,
-                        egui::Button::new(format!(
-                            "{} Remove Latest",
-                            egui_phosphor::regular::TRASH
-                        )),
+                    .add_sized(
+                        egui::vec2(70.0, 70.0),
+                        egui::Button::new(
+                            egui::RichText::new(egui_phosphor::regular::TRASH)
+                                .size(checkpoint_icon_size),
+                        ),
                     )
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
                     .clicked()
