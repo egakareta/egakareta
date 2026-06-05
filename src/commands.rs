@@ -31,6 +31,8 @@ pub(crate) enum AppCommand {
     GameSetPracticeMode(bool),
     /// Place a practice-mode checkpoint at the current gameplay position.
     GameSetPracticeCheckpoint,
+    /// Remove the latest practice-mode checkpoint.
+    GameRemovePracticeCheckpoint,
     /// Quit the current real gameplay level from the pause menu.
     GameQuitToMenu,
 

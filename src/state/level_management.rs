@@ -60,7 +60,7 @@ impl State {
     pub(super) fn restart_level(&mut self) {
         self.session.game_paused = false;
         self.session.practice_mode_enabled = false;
-        self.session.practice_checkpoint = None;
+        self.session.practice_checkpoints.clear();
         self.stop_audio();
         self.clear_pending_gameplay_inputs();
         self.gameplay.state = GameState::new();
@@ -142,8 +142,11 @@ impl State {
             return false;
         }
 
-        let Some(checkpoint) = self.session.practice_checkpoint.clone() else {
-            return false;
+        let Some(checkpoint) = self.session.practice_checkpoints.last().cloned() else {
+            self.restart_level();
+            self.session.practice_mode_enabled = true;
+            self.session.practice_checkpoints.clear();
+            return true;
         };
 
         self.stop_audio();
@@ -1194,10 +1197,13 @@ mod tests {
             state.gameplay.state.started = true;
             state.gameplay.state.position = [4.0, 2.0, 6.0];
             state.gameplay.state.elapsed_seconds = 3.5;
-            state.session.practice_checkpoint = Some(super::super::PracticeCheckpoint {
-                gameplay: state.gameplay.state.checkpoint_state(),
-                trigger_base_objects: state.session.playing_trigger_base_objects.clone(),
-            });
+            state
+                .session
+                .practice_checkpoints
+                .push(super::super::PracticeCheckpoint {
+                    gameplay: state.gameplay.state.checkpoint_state(),
+                    trigger_base_objects: state.session.playing_trigger_base_objects.clone(),
+                });
 
             state.gameplay.state.position = [20.0, -8.0, 20.0];
             state.gameplay.state.elapsed_seconds = 9.0;
@@ -1212,7 +1218,84 @@ mod tests {
 
             state.restart_level();
             assert!(!state.session.practice_mode_enabled);
-            assert!(state.session.practice_checkpoint.is_none());
+            assert!(state.session.practice_checkpoints.is_empty());
+        });
+    }
+
+    #[test]
+    fn removing_practice_checkpoint_falls_back_to_previous_latest() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Playing;
+            state.session.playtesting_editor = false;
+            state.session.practice_mode_enabled = true;
+            state.gameplay.state.objects = vec![test_object([0.0, 0.0, 0.0], "core/stone")];
+            state.gameplay.state.rebuild_behavior_cache();
+            state.gameplay.state.started = true;
+
+            state.gameplay.state.position = [2.0, 2.0, 2.0];
+            state.gameplay.state.elapsed_seconds = 2.0;
+            state.dispatch(crate::commands::AppCommand::GameSetPracticeCheckpoint);
+
+            state.gameplay.state.position = [5.0, 2.0, 5.0];
+            state.gameplay.state.elapsed_seconds = 5.0;
+            state.dispatch(crate::commands::AppCommand::GameSetPracticeCheckpoint);
+
+            assert_eq!(state.practice_checkpoint_count(), 2);
+            assert_eq!(state.practice_checkpoint_time_seconds(), Some(5.0));
+
+            state.dispatch(crate::commands::AppCommand::GameRemovePracticeCheckpoint);
+
+            assert_eq!(state.practice_checkpoint_count(), 1);
+            assert_eq!(state.practice_checkpoint_time_seconds(), Some(2.0));
+
+            state.gameplay.state.position = [20.0, -8.0, 20.0];
+            state.gameplay.state.elapsed_seconds = 9.0;
+            state.gameplay.state.game_over = true;
+
+            assert!(state.respawn_from_practice_checkpoint());
+            assert_eq!(state.gameplay.state.position, [2.0, 2.0, 2.0]);
+            assert_eq!(state.gameplay.state.elapsed_seconds, 2.0);
+        });
+    }
+
+    #[test]
+    fn practice_death_before_checkpoint_restarts_at_zero_but_stays_in_practice() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.start_level(0);
+            state.session.practice_mode_enabled = true;
+            state.session.practice_checkpoints.clear();
+            state.gameplay.state.started = true;
+            state.gameplay.state.elapsed_seconds = 4.0;
+            state.gameplay.state.game_over = true;
+
+            assert!(state.respawn_from_practice_checkpoint());
+            assert!(state.session.practice_mode_enabled);
+            assert!(state.session.practice_checkpoints.is_empty());
+            assert!(!state.gameplay.state.started);
+            assert!(!state.gameplay.state.game_over);
+            assert_eq!(state.gameplay.state.elapsed_seconds, 0.0);
+        });
+    }
+
+    #[test]
+    fn practice_game_over_input_before_checkpoint_keeps_practice_mode() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.start_level(0);
+            state.session.practice_mode_enabled = true;
+            state.session.practice_checkpoints.clear();
+            state.gameplay.state.started = true;
+            state.gameplay.state.elapsed_seconds = 4.0;
+            state.gameplay.state.game_over = true;
+
+            state.turn_right();
+
+            assert!(state.session.practice_mode_enabled);
+            assert!(!state.gameplay.state.started);
+            assert!(!state.gameplay.state.game_over);
+            assert_eq!(state.gameplay.state.elapsed_seconds, 0.0);
         });
     }
 

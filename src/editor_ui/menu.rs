@@ -183,14 +183,19 @@ pub fn show_practice_checkpoint_ui(ctx: &egui::Context, state: &mut State) {
         .practice_checkpoint_time_seconds()
         .map(|seconds| format!("{:.1}s", seconds))
         .unwrap_or_else(|| "None".to_string());
+    let checkpoint_count = state.practice_checkpoint_count();
     let mut place_checkpoint = false;
+    let mut remove_checkpoint = false;
 
     egui::Area::new("practice_checkpoint_area".into())
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-24.0, -24.0))
         .show(ctx, |ui| {
             ui.vertical(|ui| {
-                ui.label(format!("Checkpoint: {}", checkpoint_text));
+                ui.label(format!(
+                    "Checkpoint: {} ({})",
+                    checkpoint_text, checkpoint_count
+                ));
                 if ui
                     .add_sized(
                         egui::vec2(180.0, 40.0),
@@ -204,11 +209,27 @@ pub fn show_practice_checkpoint_ui(ctx: &egui::Context, state: &mut State) {
                 {
                     place_checkpoint = true;
                 }
+                if ui
+                    .add_enabled(
+                        checkpoint_count > 0,
+                        egui::Button::new(format!(
+                            "{} Remove Latest",
+                            egui_phosphor::regular::TRASH
+                        )),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .clicked()
+                {
+                    remove_checkpoint = true;
+                }
             });
         });
 
     if place_checkpoint {
         state.dispatch(AppCommand::GameSetPracticeCheckpoint);
+    }
+    if remove_checkpoint {
+        state.dispatch(AppCommand::GameRemovePracticeCheckpoint);
     }
 }
 

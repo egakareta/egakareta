@@ -520,7 +520,7 @@ impl State {
                 playing_trigger_hitboxes: false,
                 playing_trigger_base_objects: None,
                 practice_mode_enabled: false,
-                practice_checkpoint: None,
+                practice_checkpoints: Vec::new(),
             },
             editor: EditorSubsystem {
                 ui: EditorState::new(),
@@ -1327,7 +1327,7 @@ impl State {
                 playing_trigger_hitboxes: false,
                 playing_trigger_base_objects: None,
                 practice_mode_enabled: false,
-                practice_checkpoint: None,
+                practice_checkpoints: Vec::new(),
             },
             editor: EditorSubsystem {
                 ui: EditorState::new(),

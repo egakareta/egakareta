@@ -116,7 +116,7 @@ pub(crate) struct SessionSubsystem {
     pub(crate) playing_trigger_hitboxes: bool,
     pub(crate) playing_trigger_base_objects: Option<Vec<LevelObject>>,
     pub(crate) practice_mode_enabled: bool,
-    pub(crate) practice_checkpoint: Option<PracticeCheckpoint>,
+    pub(crate) practice_checkpoints: Vec<PracticeCheckpoint>,
 }
 
 #[derive(Clone)]
@@ -272,6 +272,10 @@ impl State {
                         }
                     }
                 } else if self.gameplay.state.game_over {
+                    if self.session.practice_mode_enabled && self.respawn_from_practice_checkpoint()
+                    {
+                        return;
+                    }
                     self.restart_level();
                 } else {
                     self.queue_gameplay_turn_right();
@@ -357,12 +361,17 @@ impl State {
             && self.session.practice_mode_enabled
     }
 
-    /// Returns the current practice checkpoint time, if one has been placed.
+    /// Returns the latest practice checkpoint time, if one has been placed.
     pub fn practice_checkpoint_time_seconds(&self) -> Option<f32> {
         self.session
-            .practice_checkpoint
-            .as_ref()
+            .practice_checkpoints
+            .last()
             .map(|checkpoint| checkpoint.gameplay.elapsed_seconds)
+    }
+
+    /// Returns how many practice checkpoints are currently stacked.
+    pub fn practice_checkpoint_count(&self) -> usize {
+        self.session.practice_checkpoints.len()
     }
 
     /// Sets whether the right mouse button is currently being dragged in the editor.
