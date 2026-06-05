@@ -9,6 +9,7 @@ use super::State;
 use crate::editor_domain::{
     build_editor_playtest_transition, build_playing_transition_from_metadata,
     derive_tap_indicator_positions, editor_session_init_from_metadata,
+    EditorPlaytestTransitionParams,
 };
 use crate::game::GameState;
 use crate::import_export_service::{
@@ -42,6 +43,7 @@ impl State {
             self.session.playing_trigger_hitboxes = metadata.simulate_trigger_hitboxes;
             let transition = build_playing_transition_from_metadata(metadata);
             log::debug!("Starting level: {}", transition.level_name);
+            self.session.playing_sky_color = transition.sky_color;
             self.gameplay.state.objects = transition.objects;
             self.gameplay.state.rebuild_behavior_cache();
             self.gameplay.state.initialize_level_progress_from_objects();
@@ -61,23 +63,26 @@ impl State {
         self.session.game_paused = false;
         self.session.practice_mode_enabled = false;
         self.session.practice_checkpoints.clear();
+        self.gameplay.death_sfx_played = false;
+        self.rebuild_practice_checkpoint_vertices();
         self.stop_audio();
         self.clear_pending_gameplay_inputs();
         self.gameplay.state = GameState::new();
 
         if self.session.playtesting_editor {
-            let transition = build_editor_playtest_transition(
-                &self.editor.objects,
-                self.session.editor_level_name.as_deref(),
-                self.editor.spawn.clone(),
-                &self.editor.timeline.taps.tap_times,
-                self.editor.triggers(),
-                self.editor.simulate_trigger_hitboxes(),
-                (
+            let transition = build_editor_playtest_transition(EditorPlaytestTransitionParams {
+                objects: &self.editor.objects,
+                level_name: self.session.editor_level_name.as_deref(),
+                spawn: self.editor.spawn.clone(),
+                sky_color: self.session.editor_sky_color,
+                tap_times: &self.editor.timeline.taps.tap_times,
+                triggers: self.editor.triggers(),
+                simulate_trigger_hitboxes: self.editor.simulate_trigger_hitboxes(),
+                timeline_seconds: (
                     self.editor.timeline.clock.time_seconds,
                     self.editor.timeline.clock.duration_seconds,
                 ),
-            );
+            });
             let metadata = self.current_editor_metadata();
             let level_name = transition
                 .playing_level_name
@@ -90,6 +95,7 @@ impl State {
             );
             self.session.playtest_audio_start_seconds =
                 Some(transition.playtest_audio_start_seconds);
+            self.session.playing_sky_color = transition.sky_color;
             self.gameplay.state.objects = transition.objects;
             self.gameplay.state.rebuild_behavior_cache();
             self.gameplay.state.initialize_level_progress_from_objects();
@@ -113,6 +119,7 @@ impl State {
                 self.editor.set_trigger_selected(None);
                 self.session.playing_trigger_hitboxes = metadata.simulate_trigger_hitboxes;
                 let transition = build_playing_transition_from_metadata(metadata);
+                self.session.playing_sky_color = transition.sky_color;
                 self.gameplay.state.objects = transition.objects;
                 self.gameplay.state.rebuild_behavior_cache();
                 self.gameplay.state.initialize_level_progress_from_objects();
@@ -154,6 +161,7 @@ impl State {
         self.gameplay
             .state
             .restore_checkpoint_state(&checkpoint.gameplay);
+        self.gameplay.death_sfx_played = false;
         self.session.playing_trigger_base_objects = checkpoint.trigger_base_objects;
 
         if let Some(level_name) = self.session.playing_level_name.clone() {
@@ -181,6 +189,7 @@ impl State {
         self.editor.spawn = init.spawn;
         self.session.editor_music_metadata = init.music;
         self.session.editor_creator_metadata = init.creator_metadata;
+        self.session.editor_sky_color = init.sky_color;
         self.editor.timeline.taps.tap_times = init.tap_times;
         self.editor.timing.timing_points = init.timing_points;
         self.editor.timing.mark_timing_points_changed();
@@ -274,6 +283,7 @@ impl State {
             creator_metadata: self.session.editor_creator_metadata.clone(),
             music: self.session.editor_music_metadata.clone(),
             spawn: self.editor.spawn.clone(),
+            sky_color: self.session.editor_sky_color,
             tap_times: self.editor.timeline.taps.tap_times.clone(),
             timing_points: self.editor.timing.timing_points.clone(),
             timeline_time_seconds: self.editor.timeline.clock.time_seconds,
@@ -306,6 +316,7 @@ impl State {
             .set_simulate_trigger_hitboxes(init.simulate_trigger_hitboxes);
         self.session.editor_menu_preview_camera = init.menu_preview_camera;
         self.session.editor_creator_metadata = init.creator_metadata;
+        self.session.editor_sky_color = init.sky_color;
         self.editor.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
             self.editor.spawn.position,
             self.editor.spawn.direction,
@@ -373,6 +384,14 @@ impl State {
         self.session.editor_creator_metadata = metadata;
     }
 
+    pub(crate) fn editor_sky_color(&self) -> [f32; 3] {
+        self.session.editor_sky_color
+    }
+
+    pub(crate) fn set_editor_sky_color(&mut self, color: [f32; 3]) {
+        self.session.editor_sky_color = color.map(|component| component.clamp(0.0, 1.0));
+    }
+
     pub(crate) fn editor_capture_menu_preview_camera(&mut self) {
         if self.phase != AppPhase::Editor {
             return;
@@ -421,6 +440,7 @@ impl State {
         let (position, target) = menu_preview_camera_for_metadata(&metadata);
         self.gameplay.state.objects = metadata.objects;
         self.gameplay.state.rebuild_behavior_cache();
+        self.menu.state.preview_sky_color = metadata.sky_color;
         self.menu.state.preview_camera_position = position;
         self.menu.state.preview_camera_target = target;
         self.rebuild_block_vertices();
@@ -429,6 +449,7 @@ impl State {
     fn reset_menu_preview_to_default_scene(&mut self) {
         self.gameplay.state.objects = crate::game::create_menu_scene();
         self.gameplay.state.rebuild_behavior_cache();
+        self.menu.state.preview_sky_color = crate::types::default_sky_color();
         self.menu.state.preview_camera_position = DEFAULT_MENU_PREVIEW_CAMERA_POSITION;
         self.menu.state.preview_camera_target = DEFAULT_MENU_PREVIEW_CAMERA_TARGET;
         self.rebuild_block_vertices();
@@ -985,6 +1006,7 @@ mod tests {
                 .unwrap_or_else(|| auto_menu_preview_camera_from_spawn(&metadata.spawn));
             assert_eq!(state.menu.state.preview_camera_position, expected_camera.0);
             assert_eq!(state.menu.state.preview_camera_target, expected_camera.1);
+            assert_eq!(state.menu.state.preview_sky_color, metadata.sky_color);
 
             state.refresh_menu_level_preview_if_needed();
             assert_eq!(state.menu.state.preview_level_index, Some(0));
@@ -1018,6 +1040,10 @@ mod tests {
                 DEFAULT_MENU_PREVIEW_CAMERA_TARGET
             );
             assert_eq!(
+                state.menu.state.preview_sky_color,
+                crate::types::default_sky_color()
+            );
+            assert_eq!(
                 state.gameplay.state.objects,
                 crate::game::create_menu_scene()
             );
@@ -1041,6 +1067,10 @@ mod tests {
                 state.menu.state.preview_camera_target,
                 DEFAULT_MENU_PREVIEW_CAMERA_TARGET
             );
+            assert_eq!(
+                state.menu.state.preview_sky_color,
+                crate::types::default_sky_color()
+            );
         });
     }
 
@@ -1051,6 +1081,7 @@ mod tests {
             creator_metadata: LevelCreatorMetadata::default(),
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
             tap_times: Vec::new(),
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
@@ -1260,6 +1291,34 @@ mod tests {
     }
 
     #[test]
+    fn practice_checkpoint_commands_sync_flag_mesh() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Playing;
+            state.session.playtesting_editor = false;
+            state.session.practice_mode_enabled = true;
+            state.gameplay.state.started = true;
+
+            state.gameplay.state.position = [2.0, 1.0, 2.0];
+            state.dispatch(crate::commands::AppCommand::GameSetPracticeCheckpoint);
+            assert!(state
+                .render
+                .meshes
+                .practice_checkpoints
+                .draw_data()
+                .is_some());
+
+            state.dispatch(crate::commands::AppCommand::GameRemovePracticeCheckpoint);
+            assert!(state
+                .render
+                .meshes
+                .practice_checkpoints
+                .draw_data()
+                .is_none());
+        });
+    }
+
+    #[test]
     fn practice_death_before_checkpoint_restarts_at_zero_but_stays_in_practice() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
@@ -1304,11 +1363,15 @@ mod tests {
         pollster::block_on(async {
             let mut state = State::new_test().await;
             let expected_level_name = state.menu.state.levels[0].clone();
+            let expected_metadata = state
+                .load_level_metadata(&expected_level_name)
+                .expect("selected level metadata should exist");
 
             state.start_editor(0);
 
             assert_eq!(state.phase, AppPhase::Editor);
             assert_eq!(state.editor_level_name(), Some(expected_level_name));
+            assert_eq!(state.editor_sky_color(), expected_metadata.sky_color);
             assert!(state.editor.timeline.clock.duration_seconds > 0.0);
             assert!(!state.editor.objects.is_empty());
             assert_eq!(

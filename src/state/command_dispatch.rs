@@ -207,6 +207,7 @@ impl State {
             AppCommand::EditorUpdateCreatorMetadata(metadata) => {
                 self.set_editor_creator_metadata(metadata)
             }
+            AppCommand::EditorUpdateSkyColor(color) => self.set_editor_sky_color(color),
             AppCommand::EditorTriggerAudioImport => self.trigger_audio_import(),
             AppCommand::EditorCaptureMenuPreviewCamera => self.editor_capture_menu_preview_camera(),
             AppCommand::EditorUseAutoMenuPreviewCamera => {
@@ -334,7 +335,9 @@ impl State {
 
         if self.session.game_paused {
             self.session.game_paused = false;
-            self.resume_game_audio();
+            if !self.start_gameplay_if_needed() {
+                self.resume_game_audio();
+            }
         }
     }
 
@@ -352,14 +355,17 @@ impl State {
             return;
         }
 
+        self.session.practice_mode_enabled = enabled;
+        self.session.practice_checkpoints.clear();
+
         if enabled {
-            self.session.practice_mode_enabled = true;
+            self.resume_game();
             return;
         }
 
-        self.session.practice_mode_enabled = false;
-        self.session.practice_checkpoints.clear();
+        self.rebuild_practice_checkpoint_vertices();
         self.restart_level();
+        self.resume_game();
     }
 
     fn set_practice_checkpoint(&mut self) {
@@ -380,6 +386,7 @@ impl State {
                 gameplay: self.gameplay.state.checkpoint_state(),
                 trigger_base_objects: self.session.playing_trigger_base_objects.clone(),
             });
+        self.rebuild_practice_checkpoint_vertices();
     }
 
     fn remove_practice_checkpoint(&mut self) {
@@ -392,6 +399,7 @@ impl State {
         }
 
         let _ = self.session.practice_checkpoints.pop();
+        self.rebuild_practice_checkpoint_vertices();
     }
 
     fn quit_game_from_pause(&mut self) {
@@ -1322,6 +1330,22 @@ mod tests {
     }
 
     #[test]
+    fn resume_from_pause_starts_waiting_real_gameplay() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Playing;
+            state.session.playtesting_editor = false;
+            state.session.game_paused = true;
+            state.gameplay.state.started = false;
+
+            state.dispatch(AppCommand::GameResume);
+
+            assert!(!state.is_game_paused());
+            assert!(state.gameplay.state.started);
+        });
+    }
+
+    #[test]
     fn practice_checkpoint_key_only_maps_during_practice_mode() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
@@ -1457,7 +1481,7 @@ mod tests {
     }
 
     #[test]
-    fn placing_block_selects_it_and_enters_move_mode_by_default() {
+    fn placing_block_selects_it_and_enters_scale_mode_by_default() {
         pollster::block_on(async {
             let mut state = new_editor_state().await;
 
@@ -1467,7 +1491,7 @@ mod tests {
             state.dispatch(AppCommand::TurnRight);
 
             assert_eq!(state.editor.objects.len(), 1);
-            assert_eq!(state.editor.ui.mode, EditorMode::Move);
+            assert_eq!(state.editor.ui.mode, EditorMode::Scale);
             assert_eq!(state.editor.ui.selected_block_index, Some(0));
             assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
             assert_eq!(state.editor.ui.hovered_block_index, Some(0));

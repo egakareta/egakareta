@@ -13,7 +13,8 @@ use crate::editor_domain::{
     derive_timeline_time_for_world_target_near_time, derive_timing_division_tap_previews,
     playtest_return_objects, remove_topmost_block_at_cursor,
     timeline_axis_aligned_segment_split_fraction, timeline_turn_corner_position,
-    toggle_spawn_direction, TapDivisionPreview, TapDivisionPreviewRange, TimelineNearSearch,
+    toggle_spawn_direction, EditorPlaytestTransitionParams, TapDivisionPreview,
+    TapDivisionPreviewRange, TimelineNearSearch,
 };
 use crate::game::{GameState, TimelineSimulationRuntime};
 use crate::types::{AppPhase, EditorMode, EditorTapDivisionPick};
@@ -1024,18 +1025,19 @@ impl State {
         self.session.game_paused = false;
         self.stop_audio();
 
-        let transition = build_editor_playtest_transition(
-            &self.editor.objects,
-            self.session.editor_level_name.as_deref(),
-            self.editor.spawn.clone(),
-            &self.editor.timeline.taps.tap_times,
-            self.editor.triggers(),
-            self.editor.simulate_trigger_hitboxes(),
-            (
+        let transition = build_editor_playtest_transition(EditorPlaytestTransitionParams {
+            objects: &self.editor.objects,
+            level_name: self.session.editor_level_name.as_deref(),
+            spawn: self.editor.spawn.clone(),
+            sky_color: self.session.editor_sky_color,
+            tap_times: &self.editor.timeline.taps.tap_times,
+            triggers: self.editor.triggers(),
+            simulate_trigger_hitboxes: self.editor.simulate_trigger_hitboxes(),
+            timeline_seconds: (
                 self.editor.timeline.clock.time_seconds,
                 self.editor.timeline.clock.duration_seconds,
             ),
-        );
+        });
 
         let music_source = self.session.editor_music_metadata.source.clone();
         let metadata = self.current_editor_metadata();
@@ -1054,6 +1056,7 @@ impl State {
 
         self.enter_playing_phase(transition.playing_level_name, true);
         self.session.playtest_audio_start_seconds = Some(transition.playtest_audio_start_seconds);
+        self.session.playing_sky_color = transition.sky_color;
         self.gameplay.state = GameState::new();
         self.gameplay.state.objects = transition.objects;
         self.gameplay.state.rebuild_behavior_cache();
@@ -1123,6 +1126,7 @@ impl State {
             self.editor.timeline.playback.playing = false;
             self.editor.timeline.playback.runtime = None;
             self.gameplay.state = GameState::new();
+            self.gameplay.death_sfx_played = false;
             self.gameplay.state.objects = objects;
             self.gameplay.state.rebuild_behavior_cache();
             self.rebuild_block_vertices();
@@ -1132,6 +1136,7 @@ impl State {
         self.enter_menu_phase();
 
         self.gameplay.state = GameState::new();
+        self.gameplay.death_sfx_played = false;
         self.refresh_menu_level_preview_if_needed();
         self.render.meshes.trail.clear();
     }

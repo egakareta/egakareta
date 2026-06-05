@@ -28,8 +28,9 @@ use crate::State;
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
 use glam::{Mat3, Vec3};
 pub use menu::{
-    load_menu_favicon_texture, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
-    show_pause_menu_ui, show_practice_checkpoint_ui,
+    load_menu_favicon_texture, load_menu_play_button_filled_texture, load_menu_play_button_texture,
+    show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui, show_pause_menu_ui,
+    show_practice_checkpoint_ui,
 };
 
 #[derive(Clone, Copy)]
@@ -785,6 +786,17 @@ pub fn show_editor_ui(
                             creator_metadata,
                         ));
                     }
+
+                    ui.separator();
+                    ui.heading(format!("{} Visuals", egui_phosphor::regular::IMAGE));
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} Sky:", egui_phosphor::regular::CIRCLE));
+                        let mut sky_color = view.sky_color;
+                        if ui.color_edit_button_rgb(&mut sky_color).changed() {
+                            commands
+                                .push(crate::commands::AppCommand::EditorUpdateSkyColor(sky_color));
+                        }
+                    });
 
                     ui.separator();
                     ui.heading(format!(

@@ -78,6 +78,7 @@ mod tests {
                 position: [1.0, 2.0, 3.0],
                 direction: SpawnDirection::Right,
             },
+            sky_color: crate::types::default_sky_color(),
             tap_times: vec![0.25, 0.75],
             timing_points: Vec::new(),
             timeline_time_seconds: 0.5,

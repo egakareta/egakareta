@@ -10,16 +10,37 @@ use crate::editor_ui::components::show_shadowed_label;
 use crate::State;
 
 const MENU_FAVICON_PNG: &[u8] = include_bytes!("../../assets/darkicon.png");
+const MENU_PLAY_BUTTON_PNG: &[u8] = include_bytes!("../../assets/circularplaybutton.png");
+const MENU_PLAY_BUTTON_FILLED_PNG: &[u8] =
+    include_bytes!("../../assets/circularplaybuttonfilled.png");
 const MENU_GEM_ICON_SVG: &str = include_str!("../../assets/gem_icon.svg");
 
-/// Loads the menu favicon texture from embedded PNG data.
-pub fn load_menu_favicon_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
-    let decoded = image::load_from_memory(MENU_FAVICON_PNG).ok()?;
+fn load_png_texture(
+    ctx: &egui::Context,
+    name: &'static str,
+    png_bytes: &'static [u8],
+) -> Option<egui::TextureHandle> {
+    let decoded = image::load_from_memory(png_bytes).ok()?;
     let rgba = decoded.to_rgba8();
     let size = [rgba.width() as usize, rgba.height() as usize];
     let color_image = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
 
-    Some(ctx.load_texture("menu_favicon", color_image, egui::TextureOptions::LINEAR))
+    Some(ctx.load_texture(name, color_image, egui::TextureOptions::LINEAR))
+}
+
+/// Loads the menu favicon texture from embedded PNG data.
+pub fn load_menu_favicon_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_png_texture(ctx, "menu_favicon", MENU_FAVICON_PNG)
+}
+
+/// Loads the main menu play button texture from embedded PNG data.
+pub fn load_menu_play_button_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_png_texture(ctx, "menu_play_button", MENU_PLAY_BUTTON_PNG)
+}
+
+/// Loads the filled main menu play button texture from embedded PNG data.
+pub fn load_menu_play_button_filled_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_png_texture(ctx, "menu_play_button_filled", MENU_PLAY_BUTTON_FILLED_PNG)
 }
 
 const MENU_LEVEL_TITLE_FONT_SIZE: f32 = 86.0;
@@ -33,6 +54,12 @@ const MENU_LEVEL_PROGRESS_SHADOW_OFFSET_Y: f32 = 1.5;
 const MENU_LEVEL_PROGRESS_GAP_FROM_TITLE: f32 = 8.0;
 const MENU_LEVEL_PROGRESS_TEXT_GAP: f32 = 10.0;
 const MENU_LEVEL_PROGRESS_GEM_SIZE: f32 = 24.0;
+const MENU_PLAY_BUTTON_MIN_SIZE: f32 = 88.0;
+const MENU_PLAY_BUTTON_MAX_SIZE: f32 = 308.0;
+const PAUSE_MENU_SIDE_BUTTON_SIZE: f32 = 70.0;
+const PAUSE_MENU_PLAY_BUTTON_SIZE: f32 = 90.0;
+const PAUSE_MENU_BUTTON_SPACING: f32 = 14.0;
+const PAUSE_MENU_PRACTICE_GAP: f32 = 10.0;
 
 /// Shows the selected level name in the menu hero position.
 pub fn show_menu_favicon_ui(ctx: &egui::Context, state: &State, _favicon: &egui::TextureHandle) {
@@ -72,7 +99,12 @@ pub fn show_menu_favicon_ui(ctx: &egui::Context, state: &State, _favicon: &egui:
 }
 
 /// Shows the menu play button UI overlay.
-pub fn show_menu_play_ui(ctx: &egui::Context, state: &mut State) {
+pub fn show_menu_play_ui(
+    ctx: &egui::Context,
+    state: &mut State,
+    play_button: Option<&egui::TextureHandle>,
+    play_button_filled: Option<&egui::TextureHandle>,
+) {
     if !state.is_menu() {
         return;
     }
@@ -80,6 +112,8 @@ pub fn show_menu_play_ui(ctx: &egui::Context, state: &mut State) {
     let ui_scale = ctx.pixels_per_point();
     let screen_height = ctx.content_rect().height();
     let icon_size = screen_height * 0.07 * ui_scale;
+    let button_size = (screen_height * 0.25 * ui_scale)
+        .clamp(MENU_PLAY_BUTTON_MIN_SIZE, MENU_PLAY_BUTTON_MAX_SIZE);
     let padding = egui::vec2(24.0, 16.0);
     let offset_y = 40.0;
 
@@ -87,6 +121,38 @@ pub fn show_menu_play_ui(ctx: &egui::Context, state: &mut State) {
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, offset_y))
         .show(ctx, |ui| {
+            if let Some(play_button) = play_button {
+                let (rect, response) = ui.allocate_exact_size(
+                    egui::vec2(button_size, button_size),
+                    egui::Sense::click(),
+                );
+                let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+                let hover_alpha = ctx.animate_bool(response.id, response.hovered());
+
+                if ui.is_rect_visible(rect) {
+                    ui.painter().image(
+                        play_button.id(),
+                        rect,
+                        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                        egui::Color32::WHITE,
+                    );
+
+                    if let Some(play_button_filled) = play_button_filled {
+                        ui.painter().image(
+                            play_button_filled.id(),
+                            rect,
+                            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                            egui::Color32::from_white_alpha((hover_alpha * 255.0).round() as u8),
+                        );
+                    }
+                }
+
+                if response.clicked() {
+                    state.turn_right();
+                }
+                return;
+            }
+
             ui.spacing_mut().button_padding = padding;
 
             let play_text = egui::RichText::new(egui_phosphor::regular::PLAY)
@@ -126,45 +192,88 @@ pub fn show_pause_menu_ui(ctx: &egui::Context, state: &mut State) {
     );
 
     let mut commands = Vec::new();
-    egui::Window::new("Paused")
-        .id("pause_menu_window".into())
+    let pause_menu_width = PAUSE_MENU_SIDE_BUTTON_SIZE * 2.0
+        + PAUSE_MENU_PLAY_BUTTON_SIZE
+        + PAUSE_MENU_BUTTON_SPACING * 2.0;
+
+    egui::Area::new("pause_menu_controls".into())
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-        .collapsible(false)
-        .resizable(false)
-        .title_bar(false)
-        .frame(
-            egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::symmetric(24, 20)),
-        )
         .show(ctx, |ui| {
-            ui.set_min_width(260.0);
-            ui.vertical_centered(|ui| {
-                ui.heading("Paused");
-                ui.add_space(12.0);
+            ui.set_width(pause_menu_width);
+            ui.spacing_mut().item_spacing.x = PAUSE_MENU_BUTTON_SPACING;
 
-                if pause_menu_button(ui, egui_phosphor::regular::PLAY, "Resume").clicked() {
-                    commands.push(AppCommand::GameResume);
-                }
-                if pause_menu_button(
-                    ui,
-                    egui_phosphor::regular::ARROW_COUNTER_CLOCKWISE,
-                    "Restart",
-                )
-                .clicked()
-                {
-                    commands.push(AppCommand::GameRestartLevel);
-                }
+            ui.vertical_centered(|ui| {
+                ui.allocate_ui_with_layout(
+                    egui::vec2(pause_menu_width, PAUSE_MENU_PLAY_BUTTON_SIZE),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        if ui
+                            .add_sized(
+                                egui::vec2(
+                                    PAUSE_MENU_SIDE_BUTTON_SIZE,
+                                    PAUSE_MENU_SIDE_BUTTON_SIZE,
+                                ),
+                                egui::Button::new(
+                                    egui::RichText::new(
+                                        egui_phosphor::regular::ARROW_COUNTER_CLOCKWISE,
+                                    )
+                                    .size(36.0),
+                                ),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            commands.push(AppCommand::GameRestartLevel);
+                        }
+                        if ui
+                            .add_sized(
+                                egui::vec2(
+                                    PAUSE_MENU_PLAY_BUTTON_SIZE,
+                                    PAUSE_MENU_PLAY_BUTTON_SIZE,
+                                ),
+                                egui::Button::new(
+                                    egui::RichText::new(egui_phosphor::regular::PLAY).size(36.0),
+                                ),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            commands.push(AppCommand::GameResume);
+                        }
+                        if ui
+                            .add_sized(
+                                egui::vec2(
+                                    PAUSE_MENU_SIDE_BUTTON_SIZE,
+                                    PAUSE_MENU_SIDE_BUTTON_SIZE,
+                                ),
+                                egui::Button::new(
+                                    egui::RichText::new(egui_phosphor::regular::HOUSE).size(36.0),
+                                ),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            commands.push(AppCommand::GameQuitToMenu);
+                        }
+                    },
+                );
+
+                ui.add_space(PAUSE_MENU_PRACTICE_GAP);
+
                 let mut practice_enabled = state.is_practice_mode_enabled();
-                if ui
-                    .checkbox(&mut practice_enabled, "Practice Mode")
-                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .changed()
-                {
-                    commands.push(AppCommand::GameSetPracticeMode(practice_enabled));
-                }
-                if pause_menu_button(ui, egui_phosphor::regular::HOUSE, "Main Menu").clicked() {
-                    commands.push(AppCommand::GameQuitToMenu);
-                }
+                ui.horizontal_centered(|ui| {
+                    if ui
+                        .checkbox(
+                            &mut practice_enabled,
+                            format!("{} {}", egui_phosphor::regular::FLAG, "Practice"),
+                        )
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .changed()
+                    {
+                        commands.push(AppCommand::GameSetPracticeMode(practice_enabled));
+                    }
+                });
             });
         });
 
@@ -179,30 +288,22 @@ pub fn show_practice_checkpoint_ui(ctx: &egui::Context, state: &mut State) {
         return;
     }
 
-    let checkpoint_text = state
-        .practice_checkpoint_time_seconds()
-        .map(|seconds| format!("{:.1}s", seconds))
-        .unwrap_or_else(|| "None".to_string());
-    let checkpoint_count = state.practice_checkpoint_count();
     let mut place_checkpoint = false;
     let mut remove_checkpoint = false;
 
     egui::Area::new("practice_checkpoint_area".into())
         .order(egui::Order::Foreground)
-        .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-24.0, -24.0))
+        .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -24.0))
         .show(ctx, |ui| {
-            ui.vertical(|ui| {
-                ui.label(format!(
-                    "Checkpoint: {} ({})",
-                    checkpoint_text, checkpoint_count
-                ));
+            ui.horizontal(|ui| {
+                let checkpoint_icon_size = 36.0;
                 if ui
                     .add_sized(
-                        egui::vec2(180.0, 40.0),
-                        egui::Button::new(format!(
-                            "{} Set Checkpoint",
-                            egui_phosphor::regular::FLAG
-                        )),
+                        egui::vec2(70.0, 70.0),
+                        egui::Button::new(
+                            egui::RichText::new(egui_phosphor::regular::FLAG)
+                                .size(checkpoint_icon_size),
+                        ),
                     )
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
                     .clicked()
@@ -210,12 +311,12 @@ pub fn show_practice_checkpoint_ui(ctx: &egui::Context, state: &mut State) {
                     place_checkpoint = true;
                 }
                 if ui
-                    .add_enabled(
-                        checkpoint_count > 0,
-                        egui::Button::new(format!(
-                            "{} Remove Latest",
-                            egui_phosphor::regular::TRASH
-                        )),
+                    .add_sized(
+                        egui::vec2(70.0, 70.0),
+                        egui::Button::new(
+                            egui::RichText::new(egui_phosphor::regular::TRASH)
+                                .size(checkpoint_icon_size),
+                        ),
                     )
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
                     .clicked()
@@ -231,14 +332,6 @@ pub fn show_practice_checkpoint_ui(ctx: &egui::Context, state: &mut State) {
     if remove_checkpoint {
         state.dispatch(AppCommand::GameRemovePracticeCheckpoint);
     }
-}
-
-fn pause_menu_button(ui: &mut egui::Ui, icon: &str, label: &str) -> egui::Response {
-    ui.add_sized(
-        egui::vec2(220.0, 40.0),
-        egui::Button::new(format!("{} {}", icon, label)),
-    )
-    .on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 fn show_menu_level_progress_row(ui: &mut egui::Ui, state: &State) {

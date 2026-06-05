@@ -256,6 +256,7 @@ mod tests {
                 author: None,
                 extra: serde_json::Map::new(),
             },
+            sky_color: crate::types::default_sky_color(),
             spawn: SpawnMetadata {
                 position: [2.0, 3.0, 1.0],
                 direction: crate::types::SpawnDirection::Right,
@@ -302,15 +303,16 @@ mod tests {
         let objects = Vec::new();
         let timeline_time_seconds = 1.0 / crate::game::BASE_PLAYER_SPEED;
 
-        let transition = build_editor_playtest_transition(
-            &objects,
-            Some("Demo"),
-            SpawnMetadata::default(),
-            &[],
-            &[],
-            false,
-            (timeline_time_seconds, 16.0),
-        );
+        let transition = build_editor_playtest_transition(EditorPlaytestTransitionParams {
+            objects: &objects,
+            level_name: Some("Demo"),
+            spawn: SpawnMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
+            tap_times: &[],
+            triggers: &[],
+            simulate_trigger_hitboxes: false,
+            timeline_seconds: (timeline_time_seconds, 16.0),
+        });
 
         assert!(transition.objects.is_empty());
         assert!((transition.spawn_position[2] - 1.5).abs() < 0.1);
@@ -355,15 +357,16 @@ mod tests {
         // Advance timeline past the portal (e.g., 10 units / BASE_PLAYER_SPEED seconds)
         let timeline_time_seconds = 10.0 / BASE_PLAYER_SPEED;
 
-        let transition = build_editor_playtest_transition(
-            &objects,
-            None,
-            SpawnMetadata::default(),
-            &[],
-            &[],
-            false,
-            (timeline_time_seconds, 16.0),
-        );
+        let transition = build_editor_playtest_transition(EditorPlaytestTransitionParams {
+            objects: &objects,
+            level_name: None,
+            spawn: SpawnMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
+            tap_times: &[],
+            triggers: &[],
+            simulate_trigger_hitboxes: false,
+            timeline_seconds: (timeline_time_seconds, 16.0),
+        });
 
         // BASE_PLAYER_SPEED * 1.5 (from speedportal.json)
         let expected_speed = BASE_PLAYER_SPEED * 1.5;
@@ -391,6 +394,7 @@ mod tests {
                 author: None,
                 extra: serde_json::Map::new(),
             },
+            sky_color: [0.2, 0.3, 0.4],
             spawn: SpawnMetadata {
                 position: [3.0, 4.0, 1.0],
                 direction: crate::types::SpawnDirection::Right,

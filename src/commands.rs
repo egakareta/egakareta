@@ -219,6 +219,8 @@ pub(crate) enum AppCommand {
     EditorUpdateMusic(crate::types::MusicMetadata),
     /// Update creator-facing metadata for the level.
     EditorUpdateCreatorMetadata(crate::types::LevelCreatorMetadata),
+    /// Update the level sky clear color.
+    EditorUpdateSkyColor([f32; 3]),
     /// Trigger the platform audio import dialog.
     EditorTriggerAudioImport,
     /// Store the current editor camera as menu preview camera metadata.

@@ -71,6 +71,7 @@ use crate::types::{
 pub(crate) struct GameplaySubsystem {
     pub(crate) state: GameState,
     pub(crate) pending_turn_inputs: VecDeque<TimedGameplayTurn>,
+    pub(crate) death_sfx_played: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -95,6 +96,7 @@ pub(crate) struct SessionSubsystem {
     pub(crate) editor_level_name: Option<String>,
     pub(crate) editor_music_metadata: MusicMetadata,
     pub(crate) editor_creator_metadata: LevelCreatorMetadata,
+    pub(crate) editor_sky_color: [f32; 3],
     pub(crate) editor_menu_preview_camera: Option<LevelPreviewCameraMetadata>,
     pub(crate) editor_show_metadata: bool,
     pub(crate) editor_show_place_window: bool,
@@ -113,6 +115,7 @@ pub(crate) struct SessionSubsystem {
     pub(crate) playtesting_editor: bool,
     pub(crate) game_paused: bool,
     pub(crate) playtest_audio_start_seconds: Option<f32>,
+    pub(crate) playing_sky_color: [f32; 3],
     pub(crate) playing_trigger_hitboxes: bool,
     pub(crate) playing_trigger_base_objects: Option<Vec<LevelObject>>,
     pub(crate) practice_mode_enabled: bool,
@@ -243,42 +246,17 @@ impl State {
                 if self.session.game_paused {
                     return;
                 }
-                if !self.gameplay.state.started {
-                    self.gameplay.state.started = true;
-                    if self.session.playtesting_editor {
-                        let metadata = self.current_editor_metadata();
-                        let level_name = self
-                            .session
-                            .editor_level_name
-                            .clone()
-                            .unwrap_or_else(|| "Untitled".to_string());
-                        let start_seconds = self
-                            .session
-                            .playtest_audio_start_seconds
-                            .unwrap_or_else(|| {
-                                self.editor_timeline_elapsed_seconds(
-                                    self.editor.timeline_time_seconds(),
-                                )
-                            });
-                        self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
-                    } else if let Some(level_name) = self.session.playing_level_name.clone() {
-                        if let Some(metadata) = self.load_level_metadata(&level_name) {
-                            let start_seconds = self.gameplay.state.elapsed_seconds;
-                            if start_seconds > 0.001 {
-                                self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
-                            } else {
-                                self.start_audio(&level_name, &metadata);
-                            }
+                if !self.start_gameplay_if_needed() {
+                    if self.gameplay.state.game_over {
+                        if self.session.practice_mode_enabled
+                            && self.respawn_from_practice_checkpoint()
+                        {
+                            return;
                         }
+                        self.restart_level();
+                    } else {
+                        self.queue_gameplay_turn_right();
                     }
-                } else if self.gameplay.state.game_over {
-                    if self.session.practice_mode_enabled && self.respawn_from_practice_checkpoint()
-                    {
-                        return;
-                    }
-                    self.restart_level();
-                } else {
-                    self.queue_gameplay_turn_right();
                 }
             }
             AppPhase::Editor => {
@@ -288,6 +266,40 @@ impl State {
                 self.phase = AppPhase::Menu;
             }
         }
+    }
+
+    pub(crate) fn start_gameplay_if_needed(&mut self) -> bool {
+        if self.gameplay.state.started {
+            return false;
+        }
+
+        self.gameplay.state.started = true;
+        if self.session.playtesting_editor {
+            let metadata = self.current_editor_metadata();
+            let level_name = self
+                .session
+                .editor_level_name
+                .clone()
+                .unwrap_or_else(|| "Untitled".to_string());
+            let start_seconds = self
+                .session
+                .playtest_audio_start_seconds
+                .unwrap_or_else(|| {
+                    self.editor_timeline_elapsed_seconds(self.editor.timeline_time_seconds())
+                });
+            self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
+        } else if let Some(level_name) = self.session.playing_level_name.clone() {
+            if let Some(metadata) = self.load_level_metadata(&level_name) {
+                let start_seconds = self.gameplay.state.elapsed_seconds;
+                if start_seconds > 0.001 {
+                    self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
+                } else {
+                    self.start_audio(&level_name, &metadata);
+                }
+            }
+        }
+
+        true
     }
 
     /// Advances to the next level or moves the editor cursor right.

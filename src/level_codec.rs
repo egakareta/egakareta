@@ -8,8 +8,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::types::{
-    LevelMetadata, LevelObject, LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata,
-    TimedTrigger, TimingPoint,
+    default_sky_color, LevelMetadata, LevelObject, LevelPreviewCameraMetadata, MusicMetadata,
+    SpawnMetadata, TimedTrigger, TimingPoint,
 };
 
 const LEVEL_MAGIC: [u8; 4] = *b"EGB1";
@@ -38,6 +38,8 @@ struct BinaryLevelPayloadV1 {
     music_author: Option<String>,
     music_extra_entries: Vec<MetadataEntry>,
     spawn: SpawnMetadata,
+    #[serde(default = "default_sky_color")]
+    sky_color: [f32; 3],
     tap_times: Vec<f32>,
     timing_points: Vec<TimingPoint>,
     timeline_time_seconds: f32,
@@ -181,6 +183,7 @@ pub(crate) fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<V
         music_author: metadata.music.author.clone(),
         music_extra_entries: map_to_entries(&metadata.music.extra)?,
         spawn: metadata.spawn.clone(),
+        sky_color: metadata.sky_color,
         tap_times: metadata.tap_times.clone(),
         timing_points: metadata.timing_points.clone(),
         timeline_time_seconds: metadata.timeline_time_seconds,
@@ -424,6 +427,7 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
             extra: entries_to_map(payload.music_extra_entries)?,
         },
         spawn: payload.spawn,
+        sky_color: payload.sky_color,
         tap_times: payload.tap_times,
         timing_points: payload.timing_points,
         timeline_time_seconds: payload.timeline_time_seconds,
@@ -890,6 +894,7 @@ mod tests {
             music_author: None,
             music_extra_entries: Vec::new(),
             spawn: crate::types::SpawnMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
             tap_times: Vec::new(),
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
@@ -970,6 +975,7 @@ mod tests {
             music_author: None,
             music_extra_entries: Vec::new(),
             spawn: crate::types::SpawnMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
             tap_times: Vec::new(),
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,

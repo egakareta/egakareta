@@ -1,0 +1,23 @@
+newmtl pole
+Kd 0.92 0.83 0.58
+d 1.0
+
+newmtl base
+Kd 0.46 0.35 0.18
+d 1.0
+
+newmtl cap
+Kd 1.0 0.87 0.24
+d 1.0
+
+newmtl flag_band_top
+Kd 1.0 0.87 0.24
+d 1.0
+
+newmtl flag_band_mid
+Kd 1.0 0.585 0.33
+d 1.0
+
+newmtl flag_band_bottom
+Kd 1.0 0.3 0.42
+d 1.0

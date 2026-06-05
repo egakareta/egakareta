@@ -22,6 +22,18 @@ use crate::types::{
 };
 
 impl State {
+    fn play_death_sfx_once(&mut self) {
+        if self.gameplay.death_sfx_played {
+            return;
+        }
+
+        self.gameplay.death_sfx_played = true;
+        self.audio
+            .state
+            .runtime
+            .play_sfx(include_bytes!("../../assets/dead.mp3"));
+    }
+
     fn push_gem_shatter_events(&mut self, events: Vec<crate::game::ConsumedObjectEvent>) {
         self.frame_runtime.player_render.gem_shatter_effects.extend(
             events
@@ -771,10 +783,13 @@ impl State {
             return;
         }
 
-        if self.gameplay.state.game_over && !self.respawn_from_practice_checkpoint() {
-            self.record_current_level_progress();
-            self.stop_audio();
-            self.clear_pending_gameplay_inputs();
+        if self.gameplay.state.game_over {
+            self.play_death_sfx_once();
+            if !self.respawn_from_practice_checkpoint() {
+                self.record_current_level_progress();
+                self.stop_audio();
+                self.clear_pending_gameplay_inputs();
+            }
         }
 
         let mut trail_vertices = Vec::new();
@@ -1418,10 +1433,16 @@ mod tests {
             state.gameplay.state.objects = vec![sample_object()];
             state.gameplay.state.rebuild_behavior_cache();
 
+            assert!(!state.gameplay.death_sfx_played);
             state.update();
 
             assert_eq!(state.phase, AppPhase::Playing);
             assert!(state.gameplay.state.game_over);
+            assert!(state.gameplay.death_sfx_played);
+
+            state.update();
+
+            assert!(state.gameplay.death_sfx_played);
         });
     }
 

@@ -12,7 +12,7 @@ use wgpu::{CurrentSurfaceTexture, TextureViewDescriptor};
 
 use super::super::State;
 use super::{MeshDrawData, MeshSlot};
-use crate::types::{AppPhase, EditorMode};
+use crate::types::{default_sky_color, AppPhase, EditorMode};
 
 fn linear_to_srgb(linear: f32) -> f32 {
     if linear <= 0.0031308 {
@@ -22,7 +22,16 @@ fn linear_to_srgb(linear: f32) -> f32 {
     }
 }
 
-fn clear_color_for_phase(phase: AppPhase, game_over: bool) -> wgpu::Color {
+fn color_from_rgb(rgb: [f32; 3]) -> wgpu::Color {
+    wgpu::Color {
+        r: rgb[0].clamp(0.0, 1.0) as f64,
+        g: rgb[1].clamp(0.0, 1.0) as f64,
+        b: rgb[2].clamp(0.0, 1.0) as f64,
+        a: 1.0,
+    }
+}
+
+fn clear_color_for_phase(phase: AppPhase, game_over: bool, sky_color: [f32; 3]) -> wgpu::Color {
     match phase {
         AppPhase::Playing if game_over => wgpu::Color {
             r: 0.15,
@@ -30,12 +39,7 @@ fn clear_color_for_phase(phase: AppPhase, game_over: bool) -> wgpu::Color {
             b: 0.05,
             a: 1.0,
         },
-        AppPhase::Editor => wgpu::Color {
-            r: 0.04,
-            g: 0.07,
-            b: 0.09,
-            a: 1.0,
-        },
+        AppPhase::Menu | AppPhase::Editor | AppPhase::Playing => color_from_rgb(sky_color),
         _ => wgpu::Color {
             r: 0.05,
             g: 0.05,
@@ -237,8 +241,14 @@ impl State {
         let editor_mode = self.editor.ui.mode;
         let skip_world = should_skip_world(self.phase, editor_mode);
         let draw_editor_overlays = should_draw_editor_overlays(self.phase, skip_world);
+        let sky_color = match self.phase {
+            AppPhase::Menu => self.menu.state.preview_sky_color,
+            AppPhase::Editor => self.session.editor_sky_color,
+            AppPhase::Playing => self.session.playing_sky_color,
+            _ => default_sky_color(),
+        };
         let clear_color = apply_gamma_correction_if_enabled(
-            clear_color_for_phase(self.phase, self.gameplay.state.game_over),
+            clear_color_for_phase(self.phase, self.gameplay.state.game_over, sky_color),
             self.render.gpu.apply_gamma_correction,
         );
 
@@ -309,6 +319,11 @@ impl State {
                 }
 
                 if let Some(draw_data) = self.render.meshes.gem_shatter_effects.draw_data() {
+                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    draw_mesh(&mut render_pass, draw_data);
+                }
+
+                if let Some(draw_data) = self.render.meshes.practice_checkpoints.draw_data() {
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                     draw_mesh(&mut render_pass, draw_data);
                 }
@@ -646,6 +661,13 @@ mod tests {
         );
     }
 
+    fn assert_color_approx(actual: Color, expected: Color) {
+        approx_eq(actual.r as f32, expected.r as f32, 1e-6);
+        approx_eq(actual.g as f32, expected.g as f32, 1e-6);
+        approx_eq(actual.b as f32, expected.b as f32, 1e-6);
+        approx_eq(actual.a as f32, expected.a as f32, 1e-6);
+    }
+
     fn fullscreen_triangle(z: f32, color: [f32; 4]) -> Vec<Vertex> {
         vec![
             Vertex::untextured([-1.0, -1.0, z], color),
@@ -806,54 +828,87 @@ mod tests {
 
     #[test]
     fn clear_color_for_phase_matches_expected_palette() {
-        assert_eq!(
-            clear_color_for_phase(AppPhase::Playing, true),
+        assert_color_approx(
+            clear_color_for_phase(AppPhase::Playing, true, crate::types::default_sky_color()),
             Color {
                 r: 0.15,
                 g: 0.05,
                 b: 0.05,
                 a: 1.0,
-            }
+            },
         );
 
-        assert_eq!(
-            clear_color_for_phase(AppPhase::Editor, false),
+        assert_color_approx(
+            clear_color_for_phase(AppPhase::Editor, false, crate::types::default_sky_color()),
             Color {
                 r: 0.04,
                 g: 0.07,
                 b: 0.09,
                 a: 1.0,
-            }
+            },
         );
 
-        assert_eq!(
-            clear_color_for_phase(AppPhase::Playing, false),
+        assert_color_approx(
+            clear_color_for_phase(AppPhase::Playing, false, crate::types::default_sky_color()),
+            Color {
+                r: 0.04,
+                g: 0.07,
+                b: 0.09,
+                a: 1.0,
+            },
+        );
+
+        assert_color_approx(
+            clear_color_for_phase(AppPhase::Menu, false, crate::types::default_sky_color()),
+            Color {
+                r: 0.04,
+                g: 0.07,
+                b: 0.09,
+                a: 1.0,
+            },
+        );
+
+        assert_color_approx(
+            clear_color_for_phase(AppPhase::GameOver, false, crate::types::default_sky_color()),
             Color {
                 r: 0.05,
                 g: 0.05,
                 b: 0.08,
                 a: 1.0,
-            }
+            },
         );
+    }
 
-        assert_eq!(
-            clear_color_for_phase(AppPhase::Menu, false),
+    #[test]
+    fn clear_color_for_phase_uses_custom_sky_for_menu_editor_and_playing() {
+        let sky_color = [0.2, 0.4, 0.8];
+
+        assert_color_approx(
+            clear_color_for_phase(AppPhase::Menu, false, sky_color),
             Color {
-                r: 0.05,
-                g: 0.05,
-                b: 0.08,
+                r: 0.2,
+                g: 0.4,
+                b: 0.8,
                 a: 1.0,
-            }
+            },
         );
-
-        assert_eq!(
-            clear_color_for_phase(AppPhase::GameOver, false),
+        assert_color_approx(
+            clear_color_for_phase(AppPhase::Editor, false, sky_color),
             Color {
-                r: 0.05,
-                g: 0.05,
-                b: 0.08,
+                r: 0.2,
+                g: 0.4,
+                b: 0.8,
                 a: 1.0,
-            }
+            },
+        );
+        assert_color_approx(
+            clear_color_for_phase(AppPhase::Playing, false, sky_color),
+            Color {
+                r: 0.2,
+                g: 0.4,
+                b: 0.8,
+                a: 1.0,
+            },
         );
     }
 
