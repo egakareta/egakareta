@@ -116,7 +116,7 @@ pub fn show_pause_menu_ui(ctx: &egui::Context, state: &mut State) {
 
     let screen_rect = ctx.content_rect();
     let painter = ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Foreground,
+        egui::Order::Middle,
         "pause_menu_scrim".into(),
     ));
     painter.rect_filled(
@@ -128,6 +128,7 @@ pub fn show_pause_menu_ui(ctx: &egui::Context, state: &mut State) {
     let mut commands = Vec::new();
     egui::Window::new("Paused")
         .id("pause_menu_window".into())
+        .order(egui::Order::Foreground)
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .collapsible(false)
         .resizable(false)

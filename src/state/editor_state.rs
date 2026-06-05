@@ -672,7 +672,7 @@ impl State {
     }
 
     pub(crate) fn game_cursor(&self, _pointer_over_egui: bool) -> GameCursor {
-        if self.phase == AppPhase::Playing {
+        if self.phase == AppPhase::Playing && !self.is_game_paused() {
             return GameCursor::Hidden;
         }
 
@@ -1407,12 +1407,27 @@ mod tests {
 
             state.phase = AppPhase::Playing;
             state.session.playtesting_editor = false;
+            state.session.game_paused = false;
             assert_eq!(state.game_cursor(false), GameCursor::Hidden);
             assert_eq!(state.game_cursor(true), GameCursor::Hidden);
 
             state.session.playtesting_editor = true;
             assert_eq!(state.game_cursor(false), GameCursor::Hidden);
             assert_eq!(state.game_cursor(true), GameCursor::Hidden);
+        });
+    }
+
+    #[test]
+    fn game_cursor_uses_default_cursor_while_real_gameplay_is_paused() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.phase = AppPhase::Playing;
+            state.session.playtesting_editor = false;
+            state.session.game_paused = true;
+
+            assert_eq!(state.game_cursor(false), GameCursor::Default);
+            assert_eq!(state.game_cursor(true), GameCursor::Default);
         });
     }
 
