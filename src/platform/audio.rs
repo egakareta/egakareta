@@ -244,39 +244,40 @@ pub(crate) fn decode_audio_to_waveform_streaming<F>(
 where
     F: FnMut(usize, Vec<f32>, u32),
 {
-    use symphonia::core::audio::SampleBuffer;
-    use symphonia::core::codecs::DecoderOptions;
+    use symphonia::core::audio::sample::Sample;
+    use symphonia::core::codecs::audio::AudioDecoderOptions;
     use symphonia::core::errors::Error as SymphoniaError;
+    use symphonia::core::formats::probe::Hint;
     use symphonia::core::formats::FormatOptions;
+    use symphonia::core::formats::TrackType;
     use symphonia::core::io::MediaSourceStream;
     use symphonia::core::meta::MetadataOptions;
-    use symphonia::core::probe::Hint;
 
     let source = std::io::Cursor::new(bytes.to_vec());
     let mss = MediaSourceStream::new(Box::new(source), Default::default());
     log::info!("Decoding audio to waveform ({} bytes)", bytes.len());
     let hint = Hint::new();
-    let probed = symphonia::default::get_probe()
-        .format(
-            &hint,
-            mss,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
-        )
+
+    let fmt_opts: FormatOptions = Default::default();
+    let meta_opts: MetadataOptions = Default::default();
+    let dec_opts: AudioDecoderOptions = Default::default();
+
+    let mut format = symphonia::default::get_probe()
+        .probe(&hint, mss, fmt_opts, meta_opts)
         .ok()?;
 
-    let mut format = probed.format;
-    let track = format.default_track()?;
-    let sample_rate = track.codec_params.sample_rate?;
-    let channel_count = track
-        .codec_params
+    let track = format.default_track(TrackType::Audio)?;
+    let audio_params = track.codec_params.as_ref()?.audio()?;
+    let sample_rate = audio_params.sample_rate?;
+    let channel_count = audio_params
         .channels
+        .as_ref()
         .map(|channels| channels.count())
         .unwrap_or(1)
         .max(1);
 
     let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
+        .make_audio_decoder(audio_params, &dec_opts)
         .ok()?;
 
     let chunk_peak_count = chunk_peak_count.max(1);
@@ -284,18 +285,19 @@ where
     let mut emitted_peak_count = 0usize;
     let mut window_peak: f32 = 0.0;
     let mut window_count: usize = 0;
-    let mut sample_buffer: Option<SampleBuffer<f32>> = None;
     let track_id = track.id;
+    let mut interleaved_samples: Vec<f32> = Vec::new();
 
     loop {
         let packet = match format.next_packet() {
-            Ok(packet) => packet,
+            Ok(Some(packet)) => packet,
+            Ok(None) => break,
             Err(SymphoniaError::IoError(_)) => break,
             Err(SymphoniaError::ResetRequired) => return None,
             Err(_) => break,
         };
 
-        if packet.track_id() != track_id {
+        if packet.track_id != track_id {
             continue;
         }
 
@@ -306,33 +308,22 @@ where
             Err(_) => return None,
         };
 
-        if sample_buffer
-            .as_ref()
-            .map(|buf| buf.capacity() < decoded.capacity())
-            .unwrap_or(true)
-        {
-            sample_buffer = Some(SampleBuffer::<f32>::new(
-                decoded.capacity() as u64,
-                *decoded.spec(),
-            ));
-        }
+        interleaved_samples.resize(decoded.samples_interleaved(), f32::MID);
+        decoded.copy_to_slice_interleaved(&mut interleaved_samples);
+        accumulate_interleaved_samples(
+            &interleaved_samples,
+            channel_count,
+            &mut peaks,
+            &mut window_peak,
+            &mut window_count,
+            window_size,
+        );
 
-        if let Some(buf) = sample_buffer.as_mut() {
-            buf.copy_interleaved_ref(decoded);
-            accumulate_interleaved_samples(
-                buf.samples(),
-                channel_count,
-                &mut peaks,
-                &mut window_peak,
-                &mut window_count,
-                window_size,
-            );
-            if peaks.len() >= chunk_peak_count {
-                let chunk = std::mem::take(&mut peaks);
-                let chunk_len = chunk.len();
-                on_chunk(emitted_peak_count, chunk, sample_rate);
-                emitted_peak_count += chunk_len;
-            }
+        if peaks.len() >= chunk_peak_count {
+            let chunk = std::mem::take(&mut peaks);
+            let chunk_len = chunk.len();
+            on_chunk(emitted_peak_count, chunk, sample_rate);
+            emitted_peak_count += chunk_len;
         }
     }
 
