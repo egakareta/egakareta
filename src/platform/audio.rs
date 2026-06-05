@@ -72,6 +72,10 @@ impl PlatformAudio {
         self.backend.stop();
     }
 
+    pub(crate) fn pause(&mut self) {
+        self.backend.pause();
+    }
+
     fn start_with_source_key_at(
         &mut self,
         source_key: String,
@@ -200,6 +204,10 @@ impl PlatformAudio {
 
     pub(crate) fn resume(&mut self) {
         self.backend.resume();
+    }
+
+    pub(crate) fn resume_playback(&mut self) {
+        self.backend.resume_playback();
     }
 
     pub(crate) fn backend_name(&self) -> String {

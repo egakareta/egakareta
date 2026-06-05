@@ -111,6 +111,7 @@ pub(crate) struct SessionSubsystem {
     pub(crate) app_settings: AppSettings,
     pub(crate) playing_level_name: Option<String>,
     pub(crate) playtesting_editor: bool,
+    pub(crate) game_paused: bool,
     pub(crate) playtest_audio_start_seconds: Option<f32>,
     pub(crate) playing_trigger_hitboxes: bool,
     pub(crate) playing_trigger_base_objects: Option<Vec<LevelObject>>,
@@ -231,6 +232,9 @@ impl State {
                 self.start_level(self.menu.state.selected_level);
             }
             AppPhase::Playing => {
+                if self.session.game_paused {
+                    return;
+                }
                 if !self.gameplay.state.started {
                     self.gameplay.state.started = true;
                     if self.session.playtesting_editor {
@@ -324,6 +328,13 @@ impl State {
     /// Returns true if the application is currently in menu mode.
     pub fn is_menu(&self) -> bool {
         self.phase == AppPhase::Menu
+    }
+
+    /// Returns true when a real gameplay session is paused.
+    pub fn is_game_paused(&self) -> bool {
+        self.phase == AppPhase::Playing
+            && !self.session.playtesting_editor
+            && self.session.game_paused
     }
 
     /// Sets whether the right mouse button is currently being dragged in the editor.

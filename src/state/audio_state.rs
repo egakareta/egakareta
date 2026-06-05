@@ -127,6 +127,14 @@ impl State {
         self.audio.state.runtime.stop();
     }
 
+    pub(crate) fn pause_game_audio(&mut self) {
+        self.audio.state.runtime.pause();
+    }
+
+    pub(crate) fn resume_game_audio(&mut self) {
+        self.audio.state.runtime.resume_playback();
+    }
+
     pub(crate) fn resume_audio(&mut self) {
         self.audio.state.runtime.resume();
     }

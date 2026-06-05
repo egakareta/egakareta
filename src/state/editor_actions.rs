@@ -1021,6 +1021,7 @@ impl State {
 
         self.editor.timeline.playback.playing = false;
         self.editor.timeline.playback.runtime = None;
+        self.session.game_paused = false;
         self.stop_audio();
 
         let transition = build_editor_playtest_transition(

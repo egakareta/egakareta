@@ -204,6 +204,31 @@ impl RodioBackendInner {
         }
     }
 
+    fn pause_playback(&mut self) {
+        if let Some(started_at) = self.playback_started_at {
+            self.playback_start_offset_seconds +=
+                started_at.elapsed().as_secs_f32() * self.playback_speed;
+        }
+        if let Some(player) = &self.current_player {
+            player.pause();
+        }
+        self.playback_started_at = None;
+    }
+
+    fn resume_playback(&mut self) {
+        self.resume();
+        if let Some(player) = &self.current_player {
+            player.set_speed(self.playback_speed);
+            player.play();
+            self.playback_started_at = Some(web_time::Instant::now());
+        } else {
+            #[cfg(test)]
+            if self.current_audio_source.is_some() {
+                self.playback_started_at = Some(web_time::Instant::now());
+            }
+        }
+    }
+
     fn set_new_sink(
         &mut self,
         source_key: String,
@@ -333,6 +358,10 @@ impl AudioBackend {
         }
         inner.playback_started_at = None;
         inner.playback_start_offset_seconds = 0.0;
+    }
+
+    pub(crate) fn pause(&mut self) {
+        self.inner.borrow_mut().pause_playback();
     }
 
     pub(crate) fn can_reuse_source(&self, source_key: &str) -> bool {
@@ -577,6 +606,10 @@ impl AudioBackend {
 
     pub(crate) fn resume(&mut self) {
         self.inner.borrow_mut().resume();
+    }
+
+    pub(crate) fn resume_playback(&mut self) {
+        self.inner.borrow_mut().resume_playback();
     }
 
     pub(crate) fn backend_name(&self) -> String {

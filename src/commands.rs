@@ -23,6 +23,12 @@ pub(crate) enum AppCommand {
     PrevLevel,
     /// Toggle between editor and menu/playing.
     ToggleEditor,
+    /// Resume real gameplay from the pause menu.
+    GameResume,
+    /// Restart the current real gameplay level from the pause menu.
+    GameRestartLevel,
+    /// Quit the current real gameplay level from the pause menu.
+    GameQuitToMenu,
 
     // ── Auth ───────────────────────────────────────────────────────
     /// Start the browser sign-in flow.

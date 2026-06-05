@@ -658,6 +658,12 @@ impl State {
         }
 
         puffin::profile_scope!("PlayingUpdate");
+        if self.is_game_paused() {
+            self.frame_runtime.editor.accumulator = 0.0;
+            self.update_playing_render_uniforms();
+            return;
+        }
+
         let trigger_render_objects = if self.gameplay.state.level_complete {
             self.gameplay.state.update(frame_dt);
             None
@@ -762,6 +768,10 @@ impl State {
             .trail
             .write_streaming_vertices(&self.render.gpu.queue, &trail_vertices);
 
+        self.update_playing_render_uniforms();
+    }
+
+    fn update_playing_render_uniforms(&mut self) {
         self.frame_runtime.player_render.line_uniform.offset = [
             (self.gameplay.state.position[0] * 100.0).round() / 100.0,
             (self.gameplay.state.position[2] * 100.0).round() / 100.0,
@@ -1356,6 +1366,26 @@ mod tests {
                 -std::f32::consts::FRAC_PI_2
             );
             assert!(state.render.meshes.trail.draw_data().is_some());
+        });
+    }
+
+    #[test]
+    fn update_playing_phase_paused_does_not_advance_gameplay() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Playing;
+            state.session.playtesting_editor = false;
+            state.session.game_paused = true;
+            state.gameplay.state.started = true;
+            state.gameplay.state.elapsed_seconds = 1.0;
+            state.gameplay.state.position = [2.0, 0.0, 3.0];
+
+            state.update();
+
+            assert_eq!(state.phase, AppPhase::Playing);
+            assert_eq!(state.gameplay.state.elapsed_seconds, 1.0);
+            assert_eq!(state.gameplay.state.position, [2.0, 0.0, 3.0]);
+            assert_eq!(state.frame_runtime.editor.accumulator, 0.0);
         });
     }
 

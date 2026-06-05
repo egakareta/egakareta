@@ -108,6 +108,70 @@ pub fn show_menu_play_ui(ctx: &egui::Context, state: &mut State) {
         });
 }
 
+/// Shows the in-game pause menu overlay for real gameplay sessions.
+pub fn show_pause_menu_ui(ctx: &egui::Context, state: &mut State) {
+    if !state.is_game_paused() {
+        return;
+    }
+
+    let screen_rect = ctx.content_rect();
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        "pause_menu_scrim".into(),
+    ));
+    painter.rect_filled(
+        screen_rect,
+        0.0,
+        egui::Color32::from_rgba_unmultiplied(5, 8, 12, 172),
+    );
+
+    let mut commands = Vec::new();
+    egui::Window::new("Paused")
+        .id("pause_menu_window".into())
+        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+        .collapsible(false)
+        .resizable(false)
+        .title_bar(false)
+        .frame(
+            egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::symmetric(24, 20)),
+        )
+        .show(ctx, |ui| {
+            ui.set_min_width(260.0);
+            ui.vertical_centered(|ui| {
+                ui.heading("Paused");
+                ui.add_space(12.0);
+
+                if pause_menu_button(ui, egui_phosphor::regular::PLAY, "Resume").clicked() {
+                    commands.push(AppCommand::GameResume);
+                }
+                if pause_menu_button(
+                    ui,
+                    egui_phosphor::regular::ARROW_COUNTER_CLOCKWISE,
+                    "Restart",
+                )
+                .clicked()
+                {
+                    commands.push(AppCommand::GameRestartLevel);
+                }
+                if pause_menu_button(ui, egui_phosphor::regular::HOUSE, "Main Menu").clicked() {
+                    commands.push(AppCommand::GameQuitToMenu);
+                }
+            });
+        });
+
+    for command in commands {
+        state.dispatch(command);
+    }
+}
+
+fn pause_menu_button(ui: &mut egui::Ui, icon: &str, label: &str) -> egui::Response {
+    ui.add_sized(
+        egui::vec2(220.0, 40.0),
+        egui::Button::new(format!("{} {}", icon, label)),
+    )
+    .on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
 fn show_menu_level_progress_row(ui: &mut egui::Ui, state: &State) {
     let Some(progress) = state.menu_selected_level_progress() else {
         return;

@@ -26,6 +26,9 @@ impl State {
             AppCommand::NextLevel => self.next_level(),
             AppCommand::PrevLevel => self.prev_level(),
             AppCommand::ToggleEditor => self.toggle_editor(),
+            AppCommand::GameResume => self.resume_game(),
+            AppCommand::GameRestartLevel => self.restart_game_from_pause(),
+            AppCommand::GameQuitToMenu => self.quit_game_from_pause(),
 
             // ── Auth ────────────────────────────────────────────────
             AppCommand::AuthSubmitSignIn => self.submit_auth_sign_in(),
@@ -254,6 +257,11 @@ impl State {
 
     /// Context-sensitive escape for the editor.
     fn handle_editor_escape(&mut self) {
+        if self.phase == crate::types::AppPhase::Playing && !self.session.playtesting_editor {
+            self.toggle_game_pause();
+            return;
+        }
+
         if !self.is_editor() {
             self.back_to_menu();
             return;
@@ -292,6 +300,57 @@ impl State {
         }
 
         had_block_selection || had_tap_selection
+    }
+
+    fn toggle_game_pause(&mut self) {
+        if self.phase != crate::types::AppPhase::Playing || self.session.playtesting_editor {
+            return;
+        }
+
+        if self.session.game_paused {
+            self.resume_game();
+        } else {
+            self.pause_game();
+        }
+    }
+
+    fn pause_game(&mut self) {
+        if self.phase != crate::types::AppPhase::Playing || self.session.playtesting_editor {
+            return;
+        }
+
+        self.session.game_paused = true;
+        self.clear_pending_gameplay_inputs();
+        self.pause_game_audio();
+    }
+
+    fn resume_game(&mut self) {
+        if self.phase != crate::types::AppPhase::Playing || self.session.playtesting_editor {
+            return;
+        }
+
+        if self.session.game_paused {
+            self.session.game_paused = false;
+            self.resume_game_audio();
+        }
+    }
+
+    fn restart_game_from_pause(&mut self) {
+        if self.phase != crate::types::AppPhase::Playing || self.session.playtesting_editor {
+            return;
+        }
+
+        self.session.game_paused = false;
+        self.restart_level();
+    }
+
+    fn quit_game_from_pause(&mut self) {
+        if self.phase != crate::types::AppPhase::Playing || self.session.playtesting_editor {
+            return;
+        }
+
+        self.session.game_paused = false;
+        self.back_to_menu();
     }
 
     /// Translate a keyboard event into zero or more `AppCommand`s and
@@ -1175,6 +1234,47 @@ mod tests {
 
             assert!(!state.editor.timeline.playback.playing);
             assert_eq!(state.editor.timeline.clock.time_seconds, 2.0);
+        });
+    }
+
+    #[test]
+    fn escape_toggles_pause_for_real_play_without_returning_to_menu() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Playing;
+            state.session.playtesting_editor = false;
+            state.gameplay.state.started = true;
+
+            state.dispatch(AppCommand::EditorEscape);
+
+            assert_eq!(state.phase, AppPhase::Playing);
+            assert!(state.is_game_paused());
+
+            state.dispatch(AppCommand::EditorEscape);
+
+            assert_eq!(state.phase, AppPhase::Playing);
+            assert!(!state.is_game_paused());
+        });
+    }
+
+    #[test]
+    fn escape_during_playtest_still_returns_to_editor() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.enter_editor_phase("Playtest Escape".to_string());
+            state.editor.objects = vec![LevelObject {
+                position: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                block_id: "core/stone".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            }];
+            state.editor_playtest();
+
+            state.dispatch(AppCommand::EditorEscape);
+
+            assert_eq!(state.phase, AppPhase::Editor);
+            assert!(!state.is_game_paused());
         });
     }
 

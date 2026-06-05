@@ -175,6 +175,7 @@ impl State {
     ) {
         self.phase = AppPhase::Playing;
         self.session.playtesting_editor = playtesting_editor;
+        self.session.game_paused = false;
         self.session.playing_level_name = level_name;
         self.session.playtest_audio_start_seconds = None;
         self.session.playing_trigger_hitboxes = false;
@@ -190,6 +191,7 @@ impl State {
         self.session.editor_level_name = Some(level_name);
         self.session.editor_creator_metadata = crate::types::LevelCreatorMetadata::default();
         self.session.playtesting_editor = false;
+        self.session.game_paused = false;
         self.session.playtest_audio_start_seconds = None;
         self.session.playing_trigger_hitboxes = false;
         self.session.playing_trigger_base_objects = None;
@@ -219,6 +221,7 @@ impl State {
 
     pub(super) fn enter_menu_phase(&mut self) {
         self.session.playtesting_editor = false;
+        self.session.game_paused = false;
         self.session.playtest_audio_start_seconds = None;
         self.session.playing_trigger_hitboxes = false;
         self.session.playing_trigger_base_objects = None;
