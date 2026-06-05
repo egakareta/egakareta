@@ -2,12 +2,12 @@
 
 ## 1. Project Overview
 
-**egakareta** is a high-performance 3D rhythm game engine written in Rust. It utilizes:
+**egakareta** is a high-performance 3D rhythm game written in Rust. It utilizes:
 
 - **Rust (2021 Edition)** as the core programming language.
-- **wgpu 27** for cross-platform, hardware-accelerated 3D rendering.
-- **egui 0.33** (with `egui-phosphor` icons) for the user interface and level editor toolset.
-- **wasm-pack** to target WebAssembly (`wasm32-unknown-unknown`) for the web version.
+- **wgpu** for cross-platform, hardware-accelerated 3D rendering.
+- **egui** (with `egui-phosphor` icons) for the user interface.
+- **wasm-pack** to target `wasm32-unknown-unknown` for the web version.
 - **Bun** as the package manager and script runner for frontend/tooling.
 - **Cloudflare Pages (wrangler)** for the web deployment target and dev server.
 - **Supabase** for backend services (auth, database, storage).
@@ -20,35 +20,28 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 
 ### Build & Run
 
-- **Development Server:** `bun run dev` — runs `concurrently` with:
-    - `nodemon` watching `src/`, `assets/`, `index.html`, `dist.ts` for changes → triggers `wasm-pack build -t web -d dist/pkg && bun dist.ts`
-    - `wrangler pages dev` serving from `./dist` on `http://127.0.0.1:8788`
-- **Web Build:** `bun run build` — compiles Rust to WASM via `wasm-pack build -t web -d dist/pkg`, then runs `dist.ts` (copies `index.html` and `assets/` into `dist/`).
+- **Development Server:** `bun scripts/dev.ts` runs wasm-pack and wrangler.
+    - `wrangler pages dev` serving from `./dist` on `http://127.0.0.1:8788`. If this is running, you have access to local Cloudflare services (KV, R2, D1, Durable Objects, and Workflows) for this app via the Explorer API.
+    - Fetch the OpenAPI schema from http://127.0.0.1:8788/cdn-cgi/explorer/api to discover available operations. Use these endpoints to list, query, and manage local resources during development.
+- **Web Build:** `bun run build` — prepares `./dist` with wasm-pack and `scripts/dist.ts`.
 - **CLI Tool:** The `egb` binary (`src/bin/egb.rs`) is a standalone level metadata conversion helper (JSON ↔ binary `.egb`). Build it with `cargo build --bin egb`.
 
 ### Linting & Formatting
 
 - **Lint (Clippy):** `bun run lint` — executes `cargo clippy -- -D warnings`. **Never bypass these warnings!** Clippy denials are treated as hard errors in CI.
 - **Format Code:** `bun run format` — runs `cargo fmt` then `prettier --write .`.
-- **Prettier Config:** `.prettierrc` specifies:
-    - 4-space indentation for most files (`*.ts`, `*.json`, `*.rs`, `*.md`, etc.)
-    - 2-space indentation for `*.yml` / `*.yaml`
-    - No trailing commas in `*.jsonc`
-    - `singleQuote: false`, `semi: true`
 - **License Headers:** `bun run license:add` / `bun run license:check` — ensures every source file has the AGPLv3/commercial copyright header. The lefthook pre-commit hook runs `license:check` and `format` in parallel.
 
 ### Testing
 
-- **Run All Tests:** `bun run test` → `cargo test -- -Zunstable-options --report-time`
-- **Run Single Test:** `cargo test <test_name> -- -Zunstable-options --report-time`
-- **Run Coverage:** `bun run test:coverage` → `cargo llvm-cov --lcov --output-path lcov.info -- -Zunstable-options --report-time`
+- **Run All Tests:** `bun run test`
+- **Run Single Test:** `cargo test <test_name>`
+- **Run Coverage:** `bun run test:coverage`
 - **Database Tests:** `bun run test:db` → `supabase test db`
 
 ### Type Generation
 
-- **Generate Types:** `bun run typegen` — runs both:
-    - `wrangler types --env-interface CloudflareEnv functions/cloudflare-env.d.ts`
-    - `supabase gen types typescript --local > functions/_supabase_types.ts`
+- **Generate Types:** `bun run typegen` regenerates wrangler and supabase types.
 
 ## 3. Code Architecture & Layout
 
@@ -72,8 +65,6 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 
 - `src/shader.wgsl` — The core WebGPU shader. Compiled at build time. Defines vertex/fragment shaders for block rendering with texture arrays, color spaces, and line uniforms.
 - `build.rs` — Build script that bakes `wrangler.jsonc` environment variables into the binary for the configured build environment.
-- `voxel/exec.ts` — A Bun script for executing level generation/transformation scripts.
-- `dist.ts` — Post-build script that copies `index.html` and `assets/` into the `dist/` output directory.
 - `wrangler.jsonc` — Cloudflare Pages configuration with environment-specific vars.
 - `functions/` — Cloudflare Pages Functions (TypeScript serverless backend, Supabase integration).
 
@@ -136,10 +127,6 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 
 - Use `#[cfg(not(target_arch = "wasm32"))]` on tests that need filesystem access, native audio, or other platform-specific features.
 - WASM smoke tests may run without a compatible GPU adapter — treat graceful startup failure (no panic/crash) as a valid outcome alongside successful first-frame readiness.
-
-### wgpu Polling API
-
-- wgpu v27 changed `Device::poll` — use `wgpu::PollType::wait_indefinitely()` or `Wait { submission_index, timeout }`. The old `PollType::Wait` unit variant no longer exists.
 
 ## 6. Development Workflow Guidelines
 

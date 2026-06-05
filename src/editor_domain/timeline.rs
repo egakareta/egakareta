@@ -8,7 +8,206 @@
 use crate::game::{
     simulate_timeline_state, simulate_timeline_state_with_triggers, TimelineSimulationRuntime,
 };
-use crate::types::{LevelObject, SpawnDirection, TimedTrigger};
+use crate::types::{LevelObject, SpawnDirection, TimedTrigger, TimingPoint};
+
+use super::TAP_EPSILON_SECONDS;
+
+pub(crate) const MAX_TIMING_DIVISION_TAP_PREVIEWS: usize = 2048;
+const TIMING_DIVISION_NAV_EPSILON_SECONDS: f32 = 0.00001;
+
+fn lerp_position(start: [f32; 3], end: [f32; 3], alpha: f32) -> [f32; 3] {
+    [
+        start[0] + (end[0] - start[0]) * alpha,
+        start[1] + (end[1] - start[1]) * alpha,
+        start[2] + (end[2] - start[2]) * alpha,
+    ]
+}
+
+fn horizontal_distance(start: [f32; 3], end: [f32; 3]) -> f32 {
+    let dx = end[0] - start[0];
+    let dz = end[2] - start[2];
+    (dx * dx + dz * dz).sqrt()
+}
+
+pub(crate) fn timeline_turn_corner_position(
+    previous_position: [f32; 3],
+    previous_direction: SpawnDirection,
+    current_position: [f32; 3],
+    current_direction: SpawnDirection,
+) -> Option<[f32; 3]> {
+    if previous_direction == current_direction {
+        return None;
+    }
+
+    match (previous_direction, current_direction) {
+        (SpawnDirection::Forward, SpawnDirection::Right) => Some([
+            previous_position[0],
+            current_position[1],
+            current_position[2],
+        ]),
+        (SpawnDirection::Right, SpawnDirection::Forward) => Some([
+            current_position[0],
+            current_position[1],
+            previous_position[2],
+        ]),
+        _ => None,
+    }
+}
+
+pub(crate) fn timeline_axis_aligned_segment_split_fraction(
+    previous_position: [f32; 3],
+    corner_position: [f32; 3],
+    current_position: [f32; 3],
+) -> f32 {
+    let previous_length = horizontal_distance(previous_position, corner_position);
+    let current_length = horizontal_distance(corner_position, current_position);
+    let total_length = previous_length + current_length;
+    if total_length <= f32::EPSILON {
+        0.5
+    } else {
+        (previous_length / total_length).clamp(0.0, 1.0)
+    }
+}
+
+pub(crate) fn interpolate_timeline_sample_positions(
+    previous_position: [f32; 3],
+    previous_direction: SpawnDirection,
+    current_position: [f32; 3],
+    current_direction: SpawnDirection,
+    alpha: f32,
+) -> [f32; 3] {
+    let alpha = alpha.clamp(0.0, 1.0);
+    let Some(corner_position) = timeline_turn_corner_position(
+        previous_position,
+        previous_direction,
+        current_position,
+        current_direction,
+    ) else {
+        return lerp_position(previous_position, current_position, alpha);
+    };
+
+    let split_fraction = timeline_axis_aligned_segment_split_fraction(
+        previous_position,
+        corner_position,
+        current_position,
+    );
+    if alpha <= split_fraction {
+        let local_alpha = if split_fraction <= f32::EPSILON {
+            0.0
+        } else {
+            alpha / split_fraction
+        };
+        lerp_position(previous_position, corner_position, local_alpha)
+    } else {
+        let remaining_fraction = 1.0 - split_fraction;
+        let local_alpha = if remaining_fraction <= f32::EPSILON {
+            1.0
+        } else {
+            (alpha - split_fraction) / remaining_fraction
+        };
+        lerp_position(corner_position, current_position, local_alpha)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct TapDivisionPreview {
+    pub(crate) time_seconds: f32,
+    pub(crate) indicator_position: [f32; 3],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct TapDivisionPreviewRange {
+    pub(crate) start_seconds: f32,
+    pub(crate) end_seconds: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TimingDivisionDirection {
+    Backward,
+    Forward,
+}
+
+pub(crate) fn timing_division_time_in_direction(
+    timeline_time_seconds: f32,
+    timing_points: &[TimingPoint],
+    duration_seconds: f32,
+    direction: TimingDivisionDirection,
+) -> Option<f32> {
+    let duration = if duration_seconds.is_finite() {
+        duration_seconds.max(0.0)
+    } else {
+        0.0
+    };
+    if duration <= 0.0 {
+        return None;
+    }
+
+    let time_seconds = if timeline_time_seconds.is_finite() {
+        timeline_time_seconds.clamp(0.0, duration)
+    } else {
+        0.0
+    };
+
+    let division_times = timing_division_times(timing_points, duration);
+    match direction {
+        TimingDivisionDirection::Forward => division_times.into_iter().find(|division_time| {
+            *division_time > time_seconds + TIMING_DIVISION_NAV_EPSILON_SECONDS
+        }),
+        TimingDivisionDirection::Backward => {
+            division_times.into_iter().rev().find(|division_time| {
+                *division_time < time_seconds - TIMING_DIVISION_NAV_EPSILON_SECONDS
+            })
+        }
+    }
+}
+
+fn timing_division_times(timing_points: &[TimingPoint], duration: f32) -> Vec<f32> {
+    let mut sorted_timing_points: Vec<&TimingPoint> = timing_points
+        .iter()
+        .filter(|point| point.time_seconds.is_finite() && point.bpm.is_finite() && point.bpm > 0.0)
+        .collect();
+    sorted_timing_points.sort_by(|left, right| left.time_seconds.total_cmp(&right.time_seconds));
+
+    let mut division_times = Vec::new();
+    for (point_index, point) in sorted_timing_points.iter().enumerate() {
+        let start_time = point.time_seconds.clamp(0.0, duration);
+        let end_time = sorted_timing_points
+            .get(point_index + 1)
+            .map(|next| next.time_seconds.clamp(0.0, duration))
+            .unwrap_or(duration);
+        if end_time < start_time {
+            continue;
+        }
+
+        let beat_duration = 60.0 / point.bpm;
+        if !beat_duration.is_finite() || beat_duration <= 0.0 {
+            continue;
+        }
+
+        let mut beat = 0u32;
+        loop {
+            let division_time = start_time + beat as f32 * beat_duration;
+            if division_time > end_time + TIMING_DIVISION_NAV_EPSILON_SECONDS {
+                break;
+            }
+            if division_time >= -TIMING_DIVISION_NAV_EPSILON_SECONDS
+                && division_time <= duration + TIMING_DIVISION_NAV_EPSILON_SECONDS
+            {
+                division_times.push(division_time.clamp(0.0, duration));
+            }
+
+            beat += 1;
+            if beat > 10000 {
+                break;
+            }
+        }
+    }
+
+    division_times.sort_by(f32::total_cmp);
+    division_times
+        .dedup_by(|left, right| (*left - *right).abs() <= TIMING_DIVISION_NAV_EPSILON_SECONDS);
+    division_times
+}
 
 #[cfg(test)]
 pub(crate) fn derive_timeline_position(
@@ -85,6 +284,180 @@ pub(crate) fn derive_tap_indicator_positions(
         (a[0] - b[0]).abs() < 0.001 && (a[1] - b[1]).abs() < 0.001 && (a[2] - b[2]).abs() < 0.001
     });
     positions
+}
+
+pub(crate) fn derive_timing_division_tap_previews(
+    spawn: [f32; 3],
+    direction: SpawnDirection,
+    tap_times: &[f32],
+    timing_points: &[TimingPoint],
+    duration_seconds: f32,
+    preview_range: TapDivisionPreviewRange,
+    objects: &[LevelObject],
+) -> Vec<TapDivisionPreview> {
+    let duration = if duration_seconds.is_finite() {
+        duration_seconds.max(0.0)
+    } else {
+        0.0
+    };
+    if duration <= 0.0 || timing_points.is_empty() {
+        return Vec::new();
+    }
+
+    let preview_start = if preview_range.start_seconds.is_finite() {
+        preview_range.start_seconds.clamp(0.0, duration)
+    } else {
+        0.0
+    };
+    let preview_end = if preview_range.end_seconds.is_finite() {
+        preview_range.end_seconds.clamp(preview_start, duration)
+    } else {
+        duration
+    };
+    if preview_end <= preview_start {
+        return Vec::new();
+    }
+
+    let mut sorted_timing_points: Vec<TimingPoint> = timing_points
+        .iter()
+        .filter(|point| point.time_seconds.is_finite() && point.bpm.is_finite() && point.bpm > 0.0)
+        .cloned()
+        .collect();
+    sorted_timing_points.sort_by(|a, b| a.time_seconds.total_cmp(&b.time_seconds));
+    if sorted_timing_points.is_empty() {
+        return Vec::new();
+    }
+
+    let mut division_times = Vec::new();
+    for (point_index, point) in sorted_timing_points.iter().enumerate() {
+        if division_times.len() >= MAX_TIMING_DIVISION_TAP_PREVIEWS {
+            break;
+        }
+
+        let start_time = point.time_seconds.clamp(0.0, duration);
+        let end_time = sorted_timing_points
+            .get(point_index + 1)
+            .map(|next| next.time_seconds.clamp(0.0, duration))
+            .unwrap_or(duration);
+        if end_time < start_time {
+            continue;
+        }
+
+        let segment_start = start_time.max(preview_start);
+        let segment_end = end_time.min(preview_end);
+        if segment_end < segment_start {
+            continue;
+        }
+
+        let beat_duration = 60.0 / point.bpm;
+        if !beat_duration.is_finite() || beat_duration <= 0.0 {
+            continue;
+        }
+
+        let mut beat = ((segment_start - start_time) / beat_duration)
+            .ceil()
+            .max(0.0) as u32;
+        let mut time = start_time + beat as f32 * beat_duration;
+        while time <= end_time + TAP_EPSILON_SECONDS {
+            let clamped_time = time.clamp(0.0, duration);
+            if clamped_time > segment_end + TAP_EPSILON_SECONDS {
+                break;
+            }
+            if !tap_times
+                .iter()
+                .any(|tap| (*tap - clamped_time).abs() <= TAP_EPSILON_SECONDS)
+            {
+                division_times.push(clamped_time);
+                if division_times.len() >= MAX_TIMING_DIVISION_TAP_PREVIEWS {
+                    break;
+                }
+            }
+
+            beat += 1;
+            if beat > 10000 {
+                break;
+            }
+            time = start_time + beat as f32 * beat_duration;
+        }
+    }
+
+    division_times.sort_by(f32::total_cmp);
+    division_times.dedup_by(|left, right| (*left - *right).abs() <= TAP_EPSILON_SECONDS);
+
+    let mut runtime = TimelineSimulationRuntime::new(spawn, direction, objects, tap_times);
+    let mut previews = Vec::with_capacity(division_times.len());
+    for time_seconds in division_times {
+        runtime.advance_to(time_seconds);
+        if runtime.game_over() && runtime.elapsed_seconds() + TAP_EPSILON_SECONDS < time_seconds {
+            break;
+        }
+        if !runtime.is_grounded() {
+            continue;
+        }
+
+        let snapshot = runtime.snapshot();
+        previews.push(TapDivisionPreview {
+            time_seconds,
+            indicator_position: [
+                snapshot.position[0] - 0.5,
+                snapshot.position[1],
+                snapshot.position[2] - 0.5,
+            ],
+        });
+    }
+
+    previews
+}
+
+pub(crate) fn tap_time_is_timing_division(
+    tap_time: f32,
+    timing_points: &[TimingPoint],
+    duration_seconds: f32,
+) -> bool {
+    if !tap_time.is_finite() || tap_time < 0.0 || timing_points.is_empty() {
+        return false;
+    }
+
+    let duration = if duration_seconds.is_finite() {
+        duration_seconds.max(0.0)
+    } else {
+        0.0
+    };
+    if duration <= 0.0 || tap_time > duration + TAP_EPSILON_SECONDS {
+        return false;
+    }
+
+    let mut sorted_timing_points: Vec<TimingPoint> = timing_points
+        .iter()
+        .filter(|point| point.time_seconds.is_finite() && point.bpm.is_finite() && point.bpm > 0.0)
+        .cloned()
+        .collect();
+    sorted_timing_points.sort_by(|a, b| a.time_seconds.total_cmp(&b.time_seconds));
+
+    for (point_index, point) in sorted_timing_points.iter().enumerate() {
+        let start_time = point.time_seconds.clamp(0.0, duration);
+        let end_time = sorted_timing_points
+            .get(point_index + 1)
+            .map(|next| next.time_seconds.clamp(0.0, duration))
+            .unwrap_or(duration);
+        if tap_time + TAP_EPSILON_SECONDS < start_time || tap_time - TAP_EPSILON_SECONDS > end_time
+        {
+            continue;
+        }
+
+        let beat_duration = 60.0 / point.bpm;
+        if !beat_duration.is_finite() || beat_duration <= 0.0 {
+            continue;
+        }
+
+        let beat = ((tap_time - start_time) / beat_duration).round().max(0.0);
+        let division_time = start_time + beat * beat_duration;
+        if (division_time - tap_time).abs() <= TAP_EPSILON_SECONDS {
+            return true;
+        }
+    }
+
+    false
 }
 
 #[cfg(test)]
@@ -198,7 +571,11 @@ pub(crate) fn derive_timeline_time_for_world_target_near_time(
     target: [f32; 3],
     search: TimelineNearSearch,
 ) -> f32 {
-    let duration = duration_seconds.max(0.0);
+    let duration = if duration_seconds.is_finite() {
+        duration_seconds.max(0.0)
+    } else {
+        0.0
+    };
     if duration <= 0.0 {
         return 0.0;
     }
@@ -206,7 +583,11 @@ pub(crate) fn derive_timeline_time_for_world_target_near_time(
     const COARSE_SIMULATION_DT: f32 = 1.0 / 90.0;
     const FINE_SIMULATION_DT: f32 = 1.0 / 240.0;
 
-    let requested_seed_time = search.seed_time.clamp(0.0, duration);
+    let requested_seed_time = if search.seed_time.is_finite() {
+        search.seed_time.clamp(0.0, duration)
+    } else {
+        0.0
+    };
     let seed_time = {
         let mut runtime = TimelineSimulationRuntime::new_with_dt(
             spawn,
@@ -218,7 +599,11 @@ pub(crate) fn derive_timeline_time_for_world_target_near_time(
         runtime.advance_to(requested_seed_time);
         runtime.elapsed_seconds().clamp(0.0, duration)
     };
-    let search_window = search.window_seconds.max(0.01);
+    let search_window = if search.window_seconds.is_finite() {
+        search.window_seconds.max(0.01)
+    } else {
+        0.01
+    };
     let range_start = (seed_time - search_window).clamp(0.0, duration);
     let range_end = (seed_time + search_window).clamp(0.0, duration);
     if range_end <= range_start {
@@ -348,6 +733,7 @@ pub(crate) fn derive_timeline_time_for_world_target_near_time(
     let coarse_samples = ((range_width * 28.0).clamp(24.0, 96.0)) as usize;
     let (mut refined_time, best_distance_sq) =
         sample_best_time(range_start, range_end, coarse_samples, COARSE_SIMULATION_DT);
+    refined_time = refined_time.clamp(range_start, range_end);
 
     let refinement_window = (range_width * 0.16).clamp(0.08, 0.28);
     let refinement_samples = ((range_width * 64.0).clamp(48.0, 128.0)) as usize;
@@ -373,6 +759,8 @@ pub(crate) struct TimelineState {
     pub(crate) direction: SpawnDirection,
     pub(crate) elapsed_seconds: f32,
     pub(crate) speed: f32,
+    pub(crate) vertical_velocity: f32,
+    pub(crate) is_grounded: bool,
 }
 
 pub(crate) fn derive_timeline_state_with_triggers(
@@ -403,5 +791,7 @@ pub(crate) fn derive_timeline_state_with_triggers(
         direction: simulated.direction,
         elapsed_seconds: simulated.elapsed_seconds,
         speed: simulated.speed,
+        vertical_velocity: simulated.vertical_velocity,
+        is_grounded: simulated.is_grounded,
     }
 }

@@ -31,9 +31,9 @@ use crate::platform::state_host::NativeWindow;
 use crate::platform::state_host::WasmCanvas;
 use crate::platform::state_host::{PlatformInstant, SurfaceHost};
 use crate::types::{
-    AppPhase, CameraUniform, ColorSpaceUniform, EditorState, LineUniform, MenuState, MusicMetadata,
-    PhysicalSize, SettingsSection, SpawnMetadata, Vertex, DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
-    DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
+    AppPhase, CameraUniform, ColorSpaceUniform, EditorState, LevelCreatorMetadata, LineUniform,
+    MenuState, MusicMetadata, PhysicalSize, SettingsSection, SpawnMetadata, Vertex,
+    DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
 };
 
 fn discover_graphics_backends() -> Vec<String> {
@@ -384,6 +384,7 @@ impl State {
             selected_level: 0,
             levels: builtin_level_names(),
             preview_level_index: None,
+            preview_sky_color: crate::types::default_sky_color(),
             preview_camera_position: DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
             preview_camera_target: DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
         };
@@ -451,6 +452,8 @@ impl State {
                     floor: MeshSlot::Empty,
                     grid: MeshSlot::Empty,
                     trail: trail_mesh,
+                    gem_shatter_effects: MeshSlot::Empty,
+                    practice_checkpoints: MeshSlot::Empty,
                     blocks: MeshSlot::Empty,
                     blocks_static: MeshSlot::Empty,
                     blocks_selected: MeshSlot::Empty,
@@ -474,7 +477,11 @@ impl State {
                 refresh_started: false,
                 channel: std::sync::mpsc::channel(),
             },
-            gameplay: GameplaySubsystem { state: game },
+            gameplay: GameplaySubsystem {
+                state: game,
+                pending_turn_inputs: std::collections::VecDeque::new(),
+                death_sfx_played: false,
+            },
             phase: AppPhase::Menu,
             menu: MenuSubsystem { state: menu },
             frame_runtime: FrameRuntimeState {
@@ -482,7 +489,10 @@ impl State {
                     last_frame: now,
                     accumulator: 0.0,
                 },
-                player_render: PlayerRenderState { line_uniform },
+                player_render: PlayerRenderState {
+                    line_uniform,
+                    gem_shatter_effects: Vec::new(),
+                },
                 global_time_seconds: 0.0,
             },
             audio: AudioSubsystem { state: audio_state },
@@ -494,8 +504,11 @@ impl State {
                     author: None,
                     extra: serde_json::Map::new(),
                 },
+                editor_creator_metadata: LevelCreatorMetadata::default(),
+                editor_sky_color: crate::types::default_sky_color(),
                 editor_menu_preview_camera: None,
                 editor_show_metadata: false,
+                editor_show_place_window: false,
                 editor_show_settings: false,
                 editor_settings_section: SettingsSection::Backends,
                 editor_keybind_capture_action: None,
@@ -506,18 +519,24 @@ impl State {
                 app_settings: app_settings.clone(),
                 playing_level_name: None,
                 playtesting_editor: false,
+                game_paused: false,
                 playtest_audio_start_seconds: None,
+                playing_sky_color: crate::types::default_sky_color(),
                 playing_trigger_hitboxes: false,
                 playing_trigger_base_objects: None,
+                practice_mode_enabled: false,
+                practice_checkpoints: Vec::new(),
             },
             editor: EditorSubsystem {
                 ui: EditorState::new(),
                 config: EditorConfigState {
                     selected_block_id: app_settings.editor_selected_block_id.clone(),
+                    recent_block_ids: vec![app_settings.editor_selected_block_id.clone()],
                     snap_to_grid: app_settings.editor_snap_to_grid,
                     snap_step: app_settings.editor_snap_step.max(0.05),
                     snap_rotation: app_settings.editor_rotation_snap,
                     snap_rotation_step_degrees: app_settings.editor_rotation_snap_step.max(1.0),
+                    selected_block_rotation_degrees: [0.0, 0.0, 0.0],
                 },
                 objects: Vec::new(),
                 spawn: SpawnMetadata::default(),
@@ -1141,6 +1160,7 @@ impl State {
             selected_level: 0,
             levels: builtin_level_names(),
             preview_level_index: None,
+            preview_sky_color: crate::types::default_sky_color(),
             preview_camera_position: DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
             preview_camera_target: DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
         };
@@ -1164,6 +1184,16 @@ impl State {
         };
         app_settings.editor_selected_block_id =
             crate::block_repository::normalize_block_id(&app_settings.editor_selected_block_id);
+        let app_settings_migrated = app_settings.migrate_defaults();
+        if app_settings_migrated && !cfg!(test) {
+            if let Err(error) =
+                crate::platform::io::save_app_settings_to_storage(&app_settings).await
+            {
+                crate::platform::io::log_platform_error(&format!(
+                    "Failed to persist migrated app settings: {error}"
+                ));
+            }
+        }
 
         let auth_session = if cfg!(test) {
             None
@@ -1234,6 +1264,8 @@ impl State {
                     floor: floor_mesh,
                     grid: grid_mesh,
                     trail: trail_mesh,
+                    gem_shatter_effects: MeshSlot::Empty,
+                    practice_checkpoints: MeshSlot::Empty,
                     blocks: block_mesh,
                     blocks_static: MeshSlot::Empty,
                     blocks_selected: MeshSlot::Empty,
@@ -1257,7 +1289,11 @@ impl State {
                 refresh_started: false,
                 channel: std::sync::mpsc::channel(),
             },
-            gameplay: GameplaySubsystem { state: game },
+            gameplay: GameplaySubsystem {
+                state: game,
+                pending_turn_inputs: std::collections::VecDeque::new(),
+                death_sfx_played: false,
+            },
             phase: AppPhase::Menu,
             menu: MenuSubsystem { state: menu },
             frame_runtime: FrameRuntimeState {
@@ -1265,7 +1301,10 @@ impl State {
                     last_frame: now,
                     accumulator: 0.0,
                 },
-                player_render: PlayerRenderState { line_uniform },
+                player_render: PlayerRenderState {
+                    line_uniform,
+                    gem_shatter_effects: Vec::new(),
+                },
                 global_time_seconds: 0.0,
             },
             audio: AudioSubsystem { state: audio_state },
@@ -1277,8 +1316,11 @@ impl State {
                     author: None,
                     extra: serde_json::Map::new(),
                 },
+                editor_creator_metadata: LevelCreatorMetadata::default(),
+                editor_sky_color: crate::types::default_sky_color(),
                 editor_menu_preview_camera: None,
                 editor_show_metadata: false,
+                editor_show_place_window: false,
                 editor_show_settings: false,
                 editor_settings_section: SettingsSection::Backends,
                 editor_keybind_capture_action: None,
@@ -1289,18 +1331,24 @@ impl State {
                 app_settings: app_settings.clone(),
                 playing_level_name: None,
                 playtesting_editor: false,
+                game_paused: false,
                 playtest_audio_start_seconds: None,
+                playing_sky_color: crate::types::default_sky_color(),
                 playing_trigger_hitboxes: false,
                 playing_trigger_base_objects: None,
+                practice_mode_enabled: false,
+                practice_checkpoints: Vec::new(),
             },
             editor: EditorSubsystem {
                 ui: EditorState::new(),
                 config: EditorConfigState {
                     selected_block_id: app_settings.editor_selected_block_id.clone(),
+                    recent_block_ids: vec![app_settings.editor_selected_block_id.clone()],
                     snap_to_grid: app_settings.editor_snap_to_grid,
                     snap_step: app_settings.editor_snap_step.max(0.05),
                     snap_rotation: app_settings.editor_rotation_snap,
                     snap_rotation_step_degrees: app_settings.editor_rotation_snap_step.max(1.0),
+                    selected_block_rotation_degrees: [0.0, 0.0, 0.0],
                 },
                 objects: Vec::new(),
                 spawn: SpawnMetadata::default(),

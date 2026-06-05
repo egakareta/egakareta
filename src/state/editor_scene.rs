@@ -8,17 +8,25 @@
 use glam::Vec3;
 
 use super::{EditorDirtyFlags, EditorSubsystem, State};
+use crate::block_repository::resolve_block_definition;
+use crate::editor_domain::tap_time_is_timing_division;
 use crate::editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds_with_triggers};
 use crate::game::trigger_transformed_objects_at_time;
 use crate::mesh::{
     build_block_geometry, build_block_geometry_for_object, build_block_geometry_from_refs,
-    build_camera_trigger_marker_vertices, build_editor_cursor_vertices,
-    build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
-    build_editor_selection_outline_vertices, build_spawn_marker_vertices,
-    build_tap_indicator_vertices, GizmoParams, MeshGeometry,
+    build_camera_trigger_marker_vertices, build_colored_tap_indicator_vertices,
+    build_editor_cursor_vertices, build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
+    build_editor_selection_outline_vertices, build_editor_tap_cursor_vertices,
+    build_practice_checkpoint_flag_geometry, build_spawn_marker_vertices,
+    build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices, GizmoParams,
+    MeshGeometry, PracticeCheckpointFlagInstance,
 };
 use crate::state::render::EditorOutlineInstance;
-use crate::types::{AppPhase, EditorMode, GizmoPart, LevelObject, SpawnDirection};
+use crate::types::{
+    AppPhase, EditorMode, EditorPlaceMode, GizmoPart, LevelObject, SpawnDirection, TimingPoint,
+};
+
+const SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD: usize = 700;
 
 fn editor_static_mesh_spare_capacity(geometry: &MeshGeometry, object_count: usize) -> (u32, u32) {
     let object_room = object_count.min(512).saturating_mul(36);
@@ -36,21 +44,7 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn sync_objects(&mut self) {
-        self.sync_primary_selection_from_indices();
-        if let Some(index) = self.ui.selected_block_index {
-            if index >= self.objects.len() {
-                self.ui.selected_block_index = None;
-            }
-        }
-        self.ui
-            .selected_block_indices
-            .retain(|index| *index < self.objects.len());
-        self.sync_primary_selection_from_indices();
-        if let Some(index) = self.ui.hovered_block_index {
-            if index >= self.objects.len() {
-                self.ui.hovered_block_index = None;
-            }
-        }
+        self.normalize_block_selection();
         self.invalidate_samples();
         self.selected_mask_cache = None;
         self.block_static_vertex_cache.clear();
@@ -60,21 +54,7 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn sync_objects_for_drag(&mut self) {
-        self.sync_primary_selection_from_indices();
-        if let Some(index) = self.ui.selected_block_index {
-            if index >= self.objects.len() {
-                self.ui.selected_block_index = None;
-            }
-        }
-        self.ui
-            .selected_block_indices
-            .retain(|index| *index < self.objects.len());
-        self.sync_primary_selection_from_indices();
-        if let Some(index) = self.ui.hovered_block_index {
-            if index >= self.objects.len() {
-                self.ui.hovered_block_index = None;
-            }
-        }
+        self.normalize_block_selection();
         self.mark_dirty(EditorDirtyFlags {
             sync_game_objects: true,
             rebuild_block_mesh: true,
@@ -84,21 +64,7 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn sync_objects_after_drag_release(&mut self) {
-        self.sync_primary_selection_from_indices();
-        if let Some(index) = self.ui.selected_block_index {
-            if index >= self.objects.len() {
-                self.ui.selected_block_index = None;
-            }
-        }
-        self.ui
-            .selected_block_indices
-            .retain(|index| *index < self.objects.len());
-        self.sync_primary_selection_from_indices();
-        if let Some(index) = self.ui.hovered_block_index {
-            if index >= self.objects.len() {
-                self.ui.hovered_block_index = None;
-            }
-        }
+        self.normalize_block_selection();
         self.invalidate_samples();
         self.mark_dirty(EditorDirtyFlags {
             sync_game_objects: true,
@@ -109,27 +75,41 @@ impl EditorSubsystem {
         });
     }
 
-    pub(crate) fn add_block_at_cursor(&mut self) {
-        let new_block = create_block_at_cursor(self.ui.cursor, &self.config.selected_block_id);
+    pub(crate) fn selected_block_default_size(&self) -> [f32; 3] {
+        resolve_block_definition(&self.config.selected_block_id).default_size()
+    }
+
+    pub(crate) fn add_block_at_cursor(&mut self, place_mode: EditorPlaceMode) -> usize {
+        let new_block = create_block_at_cursor(
+            self.ui.cursor,
+            &self.config.selected_block_id,
+            self.selected_block_default_size(),
+            self.config.selected_block_rotation_degrees,
+        );
         let can_append_mesh = self.can_append_block_mesh_after_placement();
 
         self.record_history_state();
         let placed_index = self.objects.len();
         self.objects.push(new_block);
-        self.ui.selected_block_index = None;
-        self.ui.selected_block_indices.clear();
-        self.ui.hovered_block_index = None;
+        if place_mode == EditorPlaceMode::SelectPlaced {
+            self.replace_block_selection(vec![placed_index]);
+            self.ui.hovered_block_index = Some(placed_index);
+        } else {
+            self.clear_block_selection();
+        }
         if can_append_mesh {
             self.invalidate_samples();
             self.runtime.pending_block_mesh_appends.push(placed_index);
             self.mark_dirty(EditorDirtyFlags {
                 sync_game_objects: true,
                 append_block_mesh: true,
+                rebuild_selection_overlays: place_mode == EditorPlaceMode::SelectPlaced,
                 ..EditorDirtyFlags::default()
             });
         } else {
             self.sync_objects();
         }
+        placed_index
     }
 
     fn can_append_block_mesh_after_placement(&self) -> bool {
@@ -182,8 +162,15 @@ impl State {
         if self.phase != AppPhase::Editor
             || !self.editor.timeline.playback.playing
             || self.editor.ui.mode == EditorMode::Timing
-            || !self.editor.has_object_transform_triggers()
         {
+            return None;
+        }
+
+        if let Some(runtime) = self.editor.timeline.playback.runtime.as_ref() {
+            return Some(runtime.objects().to_vec());
+        }
+
+        if !self.editor.has_object_transform_triggers() {
             return None;
         }
 
@@ -316,7 +303,15 @@ impl State {
     }
 
     pub(super) fn place_editor_block(&mut self) {
-        self.editor.add_block_at_cursor();
+        let place_mode = if self.editor.ui.shift_held {
+            EditorPlaceMode::Stamp
+        } else {
+            EditorPlaceMode::SelectPlaced
+        };
+        self.editor.add_block_at_cursor(place_mode);
+        if place_mode == EditorPlaceMode::SelectPlaced {
+            self.set_editor_mode(EditorMode::Scale);
+        }
         self.rebuild_editor_cursor_vertices();
     }
 
@@ -335,6 +330,7 @@ impl State {
         speed: Option<f32>,
     ) {
         self.gameplay.state.apply_spawn(position, direction);
+        self.gameplay.death_sfx_played = false;
         if let Some(speed) = speed {
             self.gameplay.state.speed = speed;
         }
@@ -347,6 +343,7 @@ impl State {
         speed: Option<f32>,
     ) {
         self.gameplay.state.apply_spawn_exact(position, direction);
+        self.gameplay.death_sfx_played = false;
         if let Some(speed) = speed {
             self.gameplay.state.speed = speed;
         }
@@ -354,6 +351,19 @@ impl State {
 
     pub(super) fn editor_timeline_elapsed_seconds(&self, time_seconds: f32) -> f32 {
         self.editor.timeline_elapsed_seconds(time_seconds)
+    }
+
+    fn editor_tap_cursor_overlap_index(&self) -> Option<usize> {
+        let hovered_index = self.editor.runtime.interaction.hovered_tap_index;
+        let selected_index = self.editor.timeline.taps.selected_index;
+        hovered_index.or(selected_index).filter(|index| {
+            self.editor
+                .timeline
+                .taps
+                .tap_indicator_positions
+                .get(*index)
+                .is_some_and(|position| positions_match(*position, self.editor.ui.cursor))
+        })
     }
 
     pub(super) fn apply_editor_timeline_preview_state(
@@ -383,7 +393,21 @@ impl State {
     }
 
     pub(super) fn rebuild_editor_cursor_vertices(&mut self) {
-        let vertices = build_editor_cursor_vertices(self.editor.ui.cursor);
+        puffin::profile_scope!("EditorCursorMesh");
+        let vertices = if self.editor.ui.mode == EditorMode::Tapping {
+            if self.editor_tap_cursor_overlap_index().is_some() {
+                self.render.meshes.editor_cursor.clear();
+                return;
+            }
+            build_editor_tap_cursor_vertices(self.editor.ui.cursor)
+        } else {
+            build_editor_cursor_vertices(
+                self.editor.ui.cursor,
+                self.editor.selected_block_default_size(),
+                &self.editor.config.selected_block_id,
+                self.editor.config.selected_block_rotation_degrees,
+            )
+        };
         self.render.meshes.editor_cursor.replace_with_vertices(
             &self.render.gpu.device,
             "Editor Cursor Vertex Buffer",
@@ -392,6 +416,7 @@ impl State {
     }
 
     pub(super) fn rebuild_editor_hover_outline_vertices(&mut self) {
+        puffin::profile_scope!("EditorHoverOutlineMesh");
         if self.phase != AppPhase::Editor || !self.editor.ui.mode.is_selection_mode() {
             self.render.meshes.editor_hover_stencil.clear();
             self.render.meshes.editor_hover_outline.clear();
@@ -455,6 +480,7 @@ impl State {
     }
 
     pub(super) fn rebuild_editor_gizmo_vertices(&mut self) {
+        puffin::profile_scope!("EditorGizmoMesh");
         let mode = self.editor.ui.mode;
         if self.phase != AppPhase::Editor || !mode.shows_gizmo() {
             self.render.meshes.editor_gizmo.clear();
@@ -521,6 +547,7 @@ impl State {
     }
 
     pub(super) fn rebuild_editor_selection_outline_vertices(&mut self) {
+        puffin::profile_scope!("EditorSelectionOutlineMesh");
         if self.phase != AppPhase::Editor || !self.editor.ui.mode.is_selection_mode() {
             self.render.meshes.editor_selection_stencil.clear();
             self.render.meshes.editor_selection_outline.clear();
@@ -539,6 +566,55 @@ impl State {
                 .meshes
                 .editor_selection_outline_instances
                 .clear();
+            return;
+        }
+
+        if selected_indices.len() > SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD {
+            let Some((bounds_position, bounds_size)) = self.selected_group_bounds() else {
+                self.render.meshes.editor_selection_stencil.clear();
+                self.render.meshes.editor_selection_outline.clear();
+                self.render
+                    .meshes
+                    .editor_selection_outline_instances
+                    .clear();
+                return;
+            };
+
+            let bounds_object = LevelObject {
+                position: bounds_position,
+                size: bounds_size,
+                rotation_degrees: [0.0, 0.0, 0.0],
+                block_id: "core/stone".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            };
+            let mask_vertices =
+                build_block_geometry_for_object(&bounds_object).to_triangle_vertices();
+            let outline_vertices = build_editor_selection_outline_vertices(
+                bounds_position,
+                bounds_size,
+                [0.0, 0.0, 0.0],
+                2.0,
+            );
+            self.render
+                .meshes
+                .editor_selection_stencil
+                .replace_with_vertices(
+                    &self.render.gpu.device,
+                    "Editor Selection Stencil Vertex Buffer",
+                    &mask_vertices,
+                );
+            self.render
+                .meshes
+                .editor_selection_outline
+                .replace_with_vertices(
+                    &self.render.gpu.device,
+                    "Editor Selection Outline Vertex Buffer",
+                    &outline_vertices,
+                );
+            self.render.meshes.editor_selection_outline_instances = vec![EditorOutlineInstance {
+                mask_vertices: 0..mask_vertices.len() as u32,
+                outline_vertices: 0..outline_vertices.len() as u32,
+            }];
             return;
         }
 
@@ -586,6 +662,7 @@ impl State {
     }
 
     pub(super) fn rebuild_spawn_marker_vertices(&mut self) {
+        puffin::profile_scope!("SpawnMarkerMesh");
         let vertices = build_spawn_marker_vertices(
             self.editor.spawn.position,
             matches!(self.editor.spawn.direction, SpawnDirection::Right),
@@ -598,6 +675,7 @@ impl State {
     }
 
     pub(super) fn rebuild_camera_trigger_marker_vertices(&mut self) {
+        puffin::profile_scope!("CameraTriggerMarkerMesh");
         if self.phase != AppPhase::Editor {
             self.render.meshes.camera_trigger_markers.clear();
             return;
@@ -664,7 +742,41 @@ impl State {
         }
     }
 
+    pub(super) fn rebuild_practice_checkpoint_vertices(&mut self) {
+        if self.phase != AppPhase::Playing
+            || self.session.playtesting_editor
+            || !self.session.practice_mode_enabled
+            || self.session.practice_checkpoints.is_empty()
+        {
+            self.render.meshes.practice_checkpoints.clear();
+            return;
+        }
+
+        let latest_index = self.session.practice_checkpoints.len().saturating_sub(1);
+        let flags = self
+            .session
+            .practice_checkpoints
+            .iter()
+            .enumerate()
+            .map(|(index, checkpoint)| PracticeCheckpointFlagInstance {
+                position: checkpoint.gameplay.position,
+                direction: checkpoint.gameplay.direction,
+                is_latest: index == latest_index,
+            })
+            .collect::<Vec<_>>();
+        let geometry = build_practice_checkpoint_flag_geometry(&flags);
+        self.render
+            .meshes
+            .practice_checkpoints
+            .replace_with_geometry(
+                &self.render.gpu.device,
+                "Practice Checkpoint Flag Vertex Buffer",
+                &geometry,
+            );
+    }
+
     fn rebuild_editor_block_vertices_split(&mut self) {
+        puffin::profile_scope!("BlockMeshSplitRebuild");
         let runtime_objects = self.editor_runtime_objects_for_render();
         let uses_runtime_objects = runtime_objects.is_some();
         let object_source = runtime_objects.unwrap_or_else(|| self.editor.objects.clone());
@@ -749,6 +861,7 @@ impl State {
     }
 
     fn append_editor_static_block_vertices(&mut self, index: usize) -> bool {
+        puffin::profile_scope!("BlockMeshAppendStatic");
         if self.phase != AppPhase::Editor
             || self.editor.block_static_vertex_cache_complete_len != Some(index)
             || index >= self.editor.objects.len()
@@ -757,20 +870,27 @@ impl State {
         }
 
         let object = &self.editor.objects[index];
-        let appended_geometry = build_block_geometry_for_object(object);
+        let appended_geometry = {
+            puffin::profile_scope!("BlockMeshAppendBuildOne");
+            build_block_geometry_for_object(object)
+        };
         let previous_vertex_count = self.editor.block_static_vertex_cache.vertex_count();
         let previous_draw_count = self.editor.block_static_vertex_cache.draw_count();
-        let appended = self.render.meshes.blocks_static.append_streaming_geometry(
-            &self.render.gpu.queue,
-            previous_vertex_count,
-            previous_draw_count,
-            &appended_geometry,
-        );
+        let appended = {
+            puffin::profile_scope!("BlockMeshAppendUpload");
+            self.render.meshes.blocks_static.append_streaming_geometry(
+                &self.render.gpu.queue,
+                previous_vertex_count,
+                previous_draw_count,
+                &appended_geometry,
+            )
+        };
         self.editor
             .block_static_vertex_cache
             .append_geometry(appended_geometry);
 
         if !appended {
+            puffin::profile_scope!("BlockMeshAppendFallbackUpload");
             let (spare_vertices, spare_indices) = editor_static_mesh_spare_capacity(
                 &self.editor.block_static_vertex_cache,
                 self.editor.objects.len(),
@@ -855,32 +975,106 @@ impl State {
 
     pub(super) fn rebuild_tap_indicator_vertices(&mut self) {
         puffin::profile_scope!("TapIndicatorMesh");
-        if self.phase != AppPhase::Editor {
+        let effective_mode = self.editor_effective_mode_for_playback();
+        if self.phase != AppPhase::Editor || effective_mode == EditorMode::Timing {
             self.render.meshes.tap_indicators.clear();
             return;
         }
+        let show_timing_division_previews = effective_mode == EditorMode::Tapping;
 
-        // Build unique sorted positions without a full clone when possible
-        let positions = &self.editor.timeline.taps.tap_indicator_positions;
-        let unique_positions: Vec<[f32; 3]> = if positions.len() <= 1 {
-            positions.clone()
+        let hovered_tap_index = self.editor.runtime.interaction.hovered_tap_index;
+        let selected_tap_index = self.editor.timeline.taps.selected_index;
+        let hovered_division = self.editor.runtime.interaction.hovered_tap_division;
+        let previews = if show_timing_division_previews {
+            self.editor.timing_division_tap_previews().to_vec()
         } else {
-            let mut sorted = positions.clone();
-            sorted.sort_unstable_by(|a, b| {
-                a[0].total_cmp(&b[0])
-                    .then(a[1].total_cmp(&b[1]))
-                    .then(a[2].total_cmp(&b[2]))
-            });
-            sorted.dedup();
-            sorted
+            Vec::new()
+        };
+        let tap_positions = self.editor.timeline.taps.tap_indicator_positions.clone();
+        let mut preview_indicators: Vec<([f32; 3], [f32; 4])> = previews
+            .iter()
+            .copied()
+            .filter(|preview| {
+                !tap_positions
+                    .iter()
+                    .any(|position| positions_match(*position, preview.indicator_position))
+            })
+            .map(|preview| {
+                let is_hovered = hovered_division.is_some_and(|hovered| {
+                    (hovered.time_seconds - preview.time_seconds).abs() <= 0.001
+                        && positions_match(hovered.indicator_position, preview.indicator_position)
+                });
+                let alpha = if is_hovered { 0.95 } else { 0.24 };
+                (preview.indicator_position, [0.05, 0.48, 0.95, alpha])
+            })
+            .collect();
+        preview_indicators.sort_unstable_by(|a, b| {
+            a.0[0]
+                .total_cmp(&b.0[0])
+                .then(a.0[1].total_cmp(&b.0[1]))
+                .then(a.0[2].total_cmp(&b.0[2]))
+                .then(a.1[3].total_cmp(&b.1[3]))
+        });
+        preview_indicators
+            .dedup_by(|a, b| positions_match(a.0, b.0) && (a.1[3] - b.1[3]).abs() < 0.001);
+
+        let mut indicators: Vec<([f32; 3], [f32; 4])> = tap_positions
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, position)| {
+                let color = tap_indicator_color(index, hovered_tap_index, selected_tap_index);
+                (position, color)
+            })
+            .collect();
+        indicators.sort_unstable_by(|a, b| {
+            a.0[0]
+                .total_cmp(&b.0[0])
+                .then(a.0[1].total_cmp(&b.0[1]))
+                .then(a.0[2].total_cmp(&b.0[2]))
+                .then(a.1[3].total_cmp(&b.1[3]))
+        });
+        indicators.dedup_by(|a, b| {
+            (a.0[0] - b.0[0]).abs() < 0.001
+                && (a.0[1] - b.0[1]).abs() < 0.001
+                && (a.0[2] - b.0[2]).abs() < 0.001
+                && (a.1[3] - b.1[3]).abs() < 0.001
+        });
+
+        let division_tap_indicators = if show_timing_division_previews {
+            tap_division_marker_indicators(
+                &self.editor.timeline.taps.tap_times,
+                &tap_positions,
+                &self.editor.timing.timing_points,
+                self.editor.timeline.clock.duration_seconds,
+            )
+        } else {
+            Vec::new()
         };
 
-        if unique_positions.is_empty() {
+        if indicators.is_empty()
+            && preview_indicators.is_empty()
+            && division_tap_indicators.is_empty()
+        {
             self.render.meshes.tap_indicators.clear();
             return;
         }
 
-        let vertices = build_tap_indicator_vertices(&unique_positions);
+        if indicators.is_empty() && division_tap_indicators.is_empty() {
+            let vertices = build_tap_division_preview_vertices(&preview_indicators);
+            self.render.meshes.tap_indicators.replace_with_vertices(
+                &self.render.gpu.device,
+                "Tap Indicator Vertex Buffer",
+                &vertices,
+            );
+            return;
+        }
+
+        let mut vertices = build_tap_division_preview_vertices(&preview_indicators);
+        vertices.extend(build_colored_tap_indicator_vertices(&indicators));
+        vertices.extend(build_tap_division_tap_marker_vertices(
+            &division_tap_indicators,
+        ));
         self.render.meshes.tap_indicators.replace_with_vertices(
             &self.render.gpu.device,
             "Tap Indicator Vertex Buffer",
@@ -903,12 +1097,49 @@ impl State {
     }
 }
 
+fn positions_match(left: [f32; 3], right: [f32; 3]) -> bool {
+    (left[0] - right[0]).abs() < 0.001
+        && (left[1] - right[1]).abs() < 0.001
+        && (left[2] - right[2]).abs() < 0.001
+}
+
+fn tap_division_marker_indicators(
+    tap_times: &[f32],
+    tap_positions: &[[f32; 3]],
+    timing_points: &[TimingPoint],
+    duration_seconds: f32,
+) -> Vec<([f32; 3], [f32; 4])> {
+    tap_times
+        .iter()
+        .copied()
+        .zip(tap_positions.iter().copied())
+        .filter(|(tap_time, _)| {
+            tap_time_is_timing_division(*tap_time, timing_points, duration_seconds)
+        })
+        .map(|(_, position)| (position, [0.0, 0.0, 0.0, 1.0]))
+        .collect()
+}
+
+fn tap_indicator_color(
+    index: usize,
+    hovered_tap_index: Option<usize>,
+    selected_tap_index: Option<usize>,
+) -> [f32; 4] {
+    if hovered_tap_index == Some(index) || selected_tap_index == Some(index) {
+        [0.2, 0.85, 0.95, 1.0]
+    } else {
+        [0.0, 0.0, 0.0, 1.0]
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::State;
+    use super::{tap_division_marker_indicators, tap_indicator_color, State};
+    use crate::mesh::builders::game::build_colored_tap_indicator_vertices;
+    use crate::state::render::MeshDrawData;
     use crate::types::{
         AppPhase, EditorMode, LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
-        TimedTriggerTarget,
+        TimedTriggerTarget, TimingPoint,
     };
 
     fn block(position: [f32; 3], size: [f32; 3]) -> LevelObject {
@@ -916,9 +1147,14 @@ mod tests {
             position,
             size,
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+        }
+    }
+
+    fn mesh_draw_count(draw_data: MeshDrawData<'_>) -> u32 {
+        match draw_data {
+            MeshDrawData::Vertices { count, .. } | MeshDrawData::Indexed { count, .. } => count,
         }
     }
 
@@ -1062,8 +1298,9 @@ mod tests {
 
             state.editor.runtime.interaction.block_drag = Some(super::super::EditorBlockDrag {
                 start_mouse: [0.0, 0.0],
-                start_center_screen: [0.0, 0.0],
                 start_center_world: [0.0, 0.0, 0.0],
+                start_drag_world: [0.0, 0.0, 0.0],
+                start_cursor: [0.0, 0.0, 0.0],
                 start_blocks: Vec::new(),
             });
             state.editor.runtime.dirty = crate::state::EditorDirtyFlags::from_object_sync();
@@ -1120,10 +1357,107 @@ mod tests {
             assert!(state.render.meshes.tap_indicators.draw_data().is_none());
 
             state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Tapping;
             state.editor.timeline.taps.tap_indicator_positions =
                 vec![[1.0, 0.0, 1.0], [1.0, 0.0, 1.0]];
             state.rebuild_tap_indicator_vertices();
             assert!(state.render.meshes.tap_indicators.draw_data().is_some());
+
+            state.editor.ui.mode = EditorMode::Place;
+            state.rebuild_tap_indicator_vertices();
+            let compose_draw_data = state
+                .render
+                .meshes
+                .tap_indicators
+                .draw_data()
+                .expect("compose should draw saved tap indicators");
+            let expected_saved_tap_vertices = build_colored_tap_indicator_vertices(&[(
+                [1.0, 0.0, 1.0],
+                tap_indicator_color(0, None, None),
+            )]);
+            assert_eq!(
+                mesh_draw_count(compose_draw_data),
+                expected_saved_tap_vertices.len() as u32
+            );
+
+            // During playback from Tapping tab (mode=Null, last_mode=Tapping), taps should remain visible
+            state.editor.ui.mode = EditorMode::Null;
+            state.editor.runtime.interaction.last_mode = Some(EditorMode::Tapping);
+            state.rebuild_tap_indicator_vertices();
+            assert!(state.render.meshes.tap_indicators.draw_data().is_some());
+
+            // During playback from Compose tab, taps should remain visible
+            state.editor.runtime.interaction.last_mode = Some(EditorMode::Place);
+            state.rebuild_tap_indicator_vertices();
+            assert!(state.render.meshes.tap_indicators.draw_data().is_some());
+
+            state.editor.runtime.interaction.last_mode = None;
+            state.editor.ui.mode = EditorMode::Timing;
+            state.rebuild_tap_indicator_vertices();
+            assert!(state.render.meshes.tap_indicators.draw_data().is_none());
+        });
+    }
+
+    #[test]
+    fn tap_indicator_color_highlights_hovered_or_selected_taps() {
+        assert_eq!(
+            tap_indicator_color(2, Some(2), None),
+            [0.2, 0.85, 0.95, 1.0]
+        );
+        assert_eq!(
+            tap_indicator_color(2, None, Some(2)),
+            [0.2, 0.85, 0.95, 1.0]
+        );
+        assert_eq!(
+            tap_indicator_color(2, Some(1), Some(3)),
+            [0.0, 0.0, 0.0, 1.0]
+        );
+    }
+
+    #[test]
+    fn tap_division_marker_indicators_marks_only_taps_on_timing_divisions() {
+        let timing_points = vec![TimingPoint {
+            time_seconds: 0.0,
+            bpm: 120.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        }];
+        let markers = tap_division_marker_indicators(
+            &[0.5, 0.75, 1.0],
+            &[[1.0, 0.0, 1.0], [2.0, 0.0, 2.0], [3.0, 0.0, 3.0]],
+            &timing_points,
+            2.0,
+        );
+
+        assert_eq!(markers.len(), 2);
+        assert_eq!(markers[0], ([1.0, 0.0, 1.0], [0.0, 0.0, 0.0, 1.0]));
+        assert_eq!(markers[1], ([3.0, 0.0, 3.0], [0.0, 0.0, 0.0, 1.0]));
+    }
+
+    #[test]
+    fn tapping_cursor_hides_only_when_overlapping_hovered_or_selected_tap() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Tapping;
+            state.editor.timeline.taps.tap_indicator_positions = vec![[1.0, 0.0, 1.0]];
+            state.editor.ui.cursor = [1.0, 0.0, 1.0];
+
+            state.rebuild_editor_cursor_vertices();
+            assert!(state.render.meshes.editor_cursor.draw_data().is_some());
+
+            state.editor.runtime.interaction.hovered_tap_index = Some(0);
+            state.rebuild_editor_cursor_vertices();
+            assert!(state.render.meshes.editor_cursor.draw_data().is_none());
+
+            state.editor.runtime.interaction.hovered_tap_index = None;
+            state.editor.timeline.taps.selected_index = Some(0);
+            state.rebuild_editor_cursor_vertices();
+            assert!(state.render.meshes.editor_cursor.draw_data().is_none());
+
+            state.editor.ui.cursor = [2.0, 0.0, 2.0];
+            state.rebuild_editor_cursor_vertices();
+            assert!(state.render.meshes.editor_cursor.draw_data().is_some());
         });
     }
 
@@ -1172,7 +1506,9 @@ mod tests {
             assert_eq!(state.editor.block_static_vertex_cache_complete_len, Some(1));
 
             state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
-            state.editor.add_block_at_cursor();
+            state
+                .editor
+                .add_block_at_cursor(crate::types::EditorPlaceMode::Stamp);
 
             assert!(state.editor.runtime.dirty.sync_game_objects);
             assert!(state.editor.runtime.dirty.append_block_mesh);
@@ -1192,6 +1528,27 @@ mod tests {
             assert!(after_count > before_count);
             assert_eq!(state.editor.block_static_vertex_cache_complete_len, Some(2));
             assert!(!state.editor.runtime.dirty.any());
+        });
+    }
+
+    #[test]
+    fn placing_selected_block_uses_block_default_size() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.config.selected_block_id = "core/speedportal".to_string();
+            state.editor.config.selected_block_rotation_degrees = [0.0, 90.0, 0.0];
+            state.editor.ui.cursor = [2.0, 0.0, 4.0];
+
+            state
+                .editor
+                .add_block_at_cursor(crate::types::EditorPlaceMode::Stamp);
+
+            assert_eq!(state.editor.objects.len(), 1);
+            assert_eq!(state.editor.objects[0].position, [2.0, 0.0, 4.0]);
+            assert_eq!(state.editor.objects[0].size, [2.0, 0.25, 1.0]);
+            assert_eq!(state.editor.objects[0].rotation_degrees, [0.0, 90.0, 0.0]);
+            assert_eq!(state.editor.objects[0].block_id, "core/speedportal");
         });
     }
 

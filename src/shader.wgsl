@@ -58,22 +58,28 @@ struct VertexOutput {
 fn vs_main(input: VertexInput) -> VertexOutput {
     var out: VertexOutput;
 
-    var world_pos = input.position;
-    let finish_ring_profile = step(1.5, input.render_profile) * (1.0 - step(2.5, input.render_profile));
-    if finish_ring_profile > 0.5 {
-        let center_xz = input.color_outline.xy;
-        let phase_offset = input.color_outline.z;
-        let pulse = 1.0 + 0.14 * sin(u_color_space.flags.y * 5.0 + phase_offset);
-        let pulsed_xz = center_xz + (world_pos.xz - center_xz) * pulse;
-        world_pos = vec3<f32>(pulsed_xz.x, world_pos.y, pulsed_xz.y);
+    var world_position = input.position;
+    let gem_profile = step(3.5, input.render_profile) * (1.0 - step(4.5, input.render_profile));
+    if gem_profile > 0.5 {
+        let anchor = input.color_outline.xyz;
+        let local = input.position - anchor;
+        let angle = u_color_space.flags.y * 1.6 + input.color_outline.w;
+        let c_gem = cos(angle);
+        let s_gem = sin(angle);
+        let bob = sin(u_color_space.flags.y * 2.4 + input.color_outline.w) * 0.055;
+        world_position = anchor + vec3<f32>(
+            local.x * c_gem - local.z * s_gem,
+            local.y + bob,
+            local.x * s_gem + local.z * c_gem
+        );
     }
 
     let c = cos(u_line.rotation);
     let s = sin(u_line.rotation);
     let rotated_pos = vec3<f32>(
-        world_pos.x * c - world_pos.z * s,
-        world_pos.y,
-        world_pos.x * s + world_pos.z * c
+        world_position.x * c - world_position.z * s,
+        world_position.y,
+        world_position.x * s + world_position.z * c
     );
 
     let offset = vec3<f32>(u_line.offset.x, 0.0, u_line.offset.y);
@@ -130,6 +136,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let has_texture = input.texture_layer >= 0.0;
     let texture_layer = max(i32(round(input.texture_layer)), 0);
     let liquid_profile = step(0.5, input.render_profile) * (1.0 - step(1.5, input.render_profile));
+    let gem_profile = step(3.5, input.render_profile) * (1.0 - step(4.5, input.render_profile));
     let wave_a = sin((input.uv.x * 8.0 + input.uv.y * 11.0) + u_color_space.flags.y * 2.8);
     let wave_b = cos((input.uv.x * 13.0 - input.uv.y * 7.0) - u_color_space.flags.y * 3.6);
     let liquid_uv_offset = vec2<f32>(wave_a, wave_b) * (0.017 * liquid_profile);
@@ -145,6 +152,11 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let molten_glow = (wave_a * 0.5 + 0.5) * 0.6 + (wave_b * 0.5 + 0.5) * 0.4;
     let glow_rgb = vec3<f32>(1.0, 0.42, 0.08) * molten_glow * 0.38;
     color = mix(color, color * 0.78 + glow_rgb, liquid_profile * 0.68);
+
+    let gem_spark = pow(max(wave_a * 0.5 + wave_b * 0.5 + 0.5, 0.0), 3.0);
+    let gem_prism = vec3<f32>(0.10, 0.95, 1.0) * (1.0 - input.uv.y)
+        + vec3<f32>(1.0, 0.28, 0.95) * input.uv.y;
+    color = mix(color, color * 0.72 + gem_prism * (0.62 + gem_spark * 0.55), gem_profile);
 
     let face_size = input.uv_norm;
     if face_size.x > 0.0 && face_size.y > 0.0 {

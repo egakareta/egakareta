@@ -1,6 +1,7 @@
 {
     "id": "core/lava",
     "display_name": "Lava",
+    "category": "danger",
     "render": {
         "profile": "liquid",
         "icon_dimetric_projection": true,

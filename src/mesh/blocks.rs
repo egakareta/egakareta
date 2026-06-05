@@ -5,6 +5,8 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use rayon::prelude::*;
+
 use crate::block_repository::{
     resolve_block_definition, resolve_block_texture_layers, BlockRenderProfile,
 };
@@ -14,24 +16,40 @@ use crate::mesh::noise::pseudo_random_noise;
 use crate::mesh::obj::{append_obj_mesh, resolve_obj_mesh};
 use crate::mesh::shapes::{append_prism_with_layers, PrismFaceColors, PrismTextureLayers};
 use crate::mesh::transforms::rotate_vertices_around_euler;
+use crate::platform::parallel::rayon_is_ready;
 use crate::types::{LevelObject, Vertex};
 
 const LIQUID_PROFILE_TAG: f32 = 1.0;
-const FINISH_RING_PROFILE_TAG: f32 = 2.0;
+const GEM_PROFILE_TAG: f32 = 4.0;
+const PARALLEL_GEOMETRY_OBJECT_THRESHOLD: usize = 256;
 
 pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
-    build_block_geometry_impl(objects.iter()).to_triangle_vertices()
+    puffin::profile_scope!("BuildBlockVertices");
+    build_block_geometry_from_slice(objects).to_triangle_vertices()
 }
 
 pub(crate) fn build_block_geometry(objects: &[LevelObject]) -> MeshGeometry {
-    build_block_geometry_impl(objects.iter())
+    puffin::profile_scope!("BuildBlockGeometry");
+    build_block_geometry_from_slice(objects)
 }
 
 pub(crate) fn build_block_geometry_from_refs(objects: &[&LevelObject]) -> MeshGeometry {
-    build_block_geometry_impl(objects.iter().copied())
+    puffin::profile_scope!("BuildBlockGeometryRefs");
+    if should_build_geometry_in_parallel(objects.len()) {
+        puffin::profile_scope!("BuildBlockGeometryRefsParallel");
+        merge_object_geometries(
+            objects
+                .par_iter()
+                .map(|object| build_block_geometry_for_object(object))
+                .collect(),
+        )
+    } else {
+        build_block_geometry_impl(objects.iter().copied())
+    }
 }
 
 pub(crate) fn build_block_geometry_for_object(object: &LevelObject) -> MeshGeometry {
+    puffin::profile_scope!("BuildBlockGeometryOne");
     let mut geometry = MeshGeometry::default();
     append_block_geometry(&mut geometry, object);
     geometry
@@ -41,6 +59,7 @@ fn build_block_geometry_impl<'a, I>(objects: I) -> MeshGeometry
 where
     I: Iterator<Item = &'a LevelObject>,
 {
+    puffin::profile_scope!("BuildBlockGeometryImpl");
     let mut all_geometry = MeshGeometry::default();
 
     for obj in objects {
@@ -48,6 +67,56 @@ where
     }
 
     all_geometry
+}
+
+fn build_block_geometry_from_slice(objects: &[LevelObject]) -> MeshGeometry {
+    if should_build_geometry_in_parallel(objects.len()) {
+        puffin::profile_scope!("BuildBlockGeometryParallel");
+        merge_object_geometries(
+            objects
+                .par_iter()
+                .map(build_block_geometry_for_object)
+                .collect(),
+        )
+    } else {
+        build_block_geometry_impl(objects.iter())
+    }
+}
+
+fn merge_object_geometries(object_geometries: Vec<MeshGeometry>) -> MeshGeometry {
+    let mut all_geometry = MeshGeometry::default();
+    for object_geometry in object_geometries {
+        all_geometry.append_geometry(object_geometry);
+    }
+    all_geometry
+}
+
+fn should_build_geometry_in_parallel(object_count: usize) -> bool {
+    rayon_is_ready() && object_count >= PARALLEL_GEOMETRY_OBJECT_THRESHOLD
+}
+
+struct BlockColors {
+    top: [f32; 4],
+    side: [f32; 4],
+    bottom: [f32; 4],
+    outline: [f32; 4],
+}
+
+impl BlockColors {
+    fn apply_noise(&mut self, factor: f32) {
+        for i in 0..3 {
+            self.top[i] = (self.top[i] + factor).clamp(0.0, 1.0);
+            self.side[i] = (self.side[i] + factor).clamp(0.0, 1.0);
+            self.bottom[i] = (self.bottom[i] + factor).clamp(0.0, 1.0);
+        }
+    }
+
+    fn apply_tint(&mut self, tint_rgb: [f32; 3]) {
+        self.top = apply_color_tint(self.top, tint_rgb);
+        self.side = apply_color_tint(self.side, tint_rgb);
+        self.bottom = apply_color_tint(self.bottom, tint_rgb);
+        self.outline = apply_color_tint(self.outline, tint_rgb);
+    }
 }
 
 fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
@@ -65,25 +134,20 @@ fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
     let block = resolve_block_definition(&obj.block_id);
     let texture_layers = resolve_block_texture_layers(&obj.block_id);
 
-    let mut color_top = block.render.color_top;
-    let mut color_side = block.render.color_side;
-    let mut color_bottom = block.render.color_bottom;
-    let mut color_outline = block.render.color_outline;
+    let mut colors = BlockColors {
+        top: block.render.color_top,
+        side: block.render.color_side,
+        bottom: block.render.color_bottom,
+        outline: block.render.color_outline,
+    };
 
     if block.render.noise.abs() > f32::EPSILON {
         let noise = pseudo_random_noise(obj.position[0], obj.position[1], obj.position[2]);
         let factor = (noise * 2.0 - 1.0) * block.render.noise;
-        for i in 0..3 {
-            color_top[i] = (color_top[i] + factor).clamp(0.0, 1.0);
-            color_side[i] = (color_side[i] + factor).clamp(0.0, 1.0);
-            color_bottom[i] = (color_bottom[i] + factor).clamp(0.0, 1.0);
-        }
+        colors.apply_noise(factor);
     }
 
-    color_top = apply_color_tint(color_top, obj.color_tint);
-    color_side = apply_color_tint(color_side, obj.color_tint);
-    color_bottom = apply_color_tint(color_bottom, obj.color_tint);
-    color_outline = apply_color_tint(color_outline, obj.color_tint);
+    colors.apply_tint(obj.color_tint);
 
     let center = [
         obj.position[0] + obj.size[0] * 0.5,
@@ -96,22 +160,21 @@ fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
                 &mut object_geometry,
                 obj,
                 mesh,
-                color_top,
+                colors.top,
                 texture_layers.side,
             );
         } else if let Some(mesh) = resolve_obj_mesh(mesh_path) {
-            append_obj_mesh(vertices, obj, mesh, color_top, texture_layers.side);
+            append_obj_mesh(vertices, obj, mesh, colors.top, texture_layers.side);
         }
     }
 
-    if object_geometry.vertices.is_empty()
-        && vertices.is_empty()
-        && matches!(block.render.profile, BlockRenderProfile::FinishRing)
-    {
-        append_finish_ring(vertices, obj, color_top, color_outline, texture_layers.side);
-    } else if object_geometry.vertices.is_empty() && vertices.is_empty() {
-        let prism_colors =
-            PrismFaceColors::new_with_outline(color_top, color_side, color_bottom, color_outline);
+    if object_geometry.vertices.is_empty() && vertices.is_empty() {
+        let prism_colors = PrismFaceColors::new_with_outline(
+            colors.top,
+            colors.side,
+            colors.bottom,
+            colors.outline,
+        );
 
         append_prism_with_layers(
             vertices,
@@ -131,9 +194,25 @@ fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
         object_geometry.append_vertices(object_vertices);
     }
 
+    if matches!(block.render.profile, BlockRenderProfile::Neon) {
+        // Neon: use raw specified colors, strip any normal_tint lighting from mesh vertices.
+        for vertex in &mut object_geometry.vertices {
+            vertex.color = colors.top;
+        }
+    }
+
     if matches!(block.render.profile, BlockRenderProfile::Liquid) {
         for vertex in &mut object_geometry.vertices {
             vertex.set_render_profile(LIQUID_PROFILE_TAG);
+        }
+    }
+
+    if matches!(block.render.profile, BlockRenderProfile::Gem) {
+        let phase_seed =
+            pseudo_random_noise(center[0], center[1], center[2]) * std::f32::consts::TAU;
+        for vertex in &mut object_geometry.vertices {
+            vertex.set_render_profile(GEM_PROFILE_TAG);
+            vertex.color_outline = [center[0], center[1], center[2], phase_seed];
         }
     }
 
@@ -141,233 +220,10 @@ fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
 }
 
 fn apply_color_tint(color: [f32; 4], tint_rgb: [f32; 3]) -> [f32; 4] {
-    let (tint_hue, tint_sat, _) = rgb_to_hsv(tint_rgb[0], tint_rgb[1], tint_rgb[2]);
-    if tint_sat <= 1e-4 {
-        return color;
-    }
-
-    let (.., source_sat, source_val) = rgb_to_hsv(color[0], color[1], color[2]);
-    let (r, g, b) = hsv_to_rgb(tint_hue, source_sat, source_val);
-    [r, g, b, color[3]]
-}
-
-fn rgb_to_hsv(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
-    let max = r.max(g.max(b));
-    let min = r.min(g.min(b));
-    let delta = max - min;
-
-    let hue = if delta <= f32::EPSILON {
-        0.0
-    } else if (max - r).abs() <= f32::EPSILON {
-        ((g - b) / delta).rem_euclid(6.0) / 6.0
-    } else if (max - g).abs() <= f32::EPSILON {
-        (((b - r) / delta) + 2.0) / 6.0
-    } else {
-        (((r - g) / delta) + 4.0) / 6.0
-    };
-    let sat = if max <= f32::EPSILON {
-        0.0
-    } else {
-        delta / max
-    };
-    (hue, sat, max)
-}
-
-fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (f32, f32, f32) {
-    let c = v * s;
-    let h_prime = h.rem_euclid(1.0) * 6.0;
-    let x = c * (1.0 - (h_prime.rem_euclid(2.0) - 1.0).abs());
-    let (r1, g1, b1) = match h_prime {
-        h if (0.0..1.0).contains(&h) => (c, x, 0.0),
-        h if (1.0..2.0).contains(&h) => (x, c, 0.0),
-        h if (2.0..3.0).contains(&h) => (0.0, c, x),
-        h if (3.0..4.0).contains(&h) => (0.0, x, c),
-        h if (4.0..5.0).contains(&h) => (x, 0.0, c),
-        _ => (c, 0.0, x),
-    };
-    let m = v - c;
-    (r1 + m, g1 + m, b1 + m)
-}
-
-fn append_finish_ring(
-    vertices: &mut Vec<Vertex>,
-    obj: &LevelObject,
-    color_outer: [f32; 4],
-    color_inner: [f32; 4],
-    texture_layer: u32,
-) {
-    const SEGMENTS: usize = 28;
-    let vertex_start = vertices.len();
-    let center = [
-        obj.position[0] + obj.size[0] * 0.5,
-        obj.position[1] + obj.size[1] * 0.5,
-        obj.position[2] + obj.size[2] * 0.5,
-    ];
-
-    let phase_offset = (obj.position[0] * 0.37 + obj.position[2] * 0.21) * std::f32::consts::PI;
-
-    let base_radius = (obj.size[0].min(obj.size[2]) * 0.5 * 0.85).max(0.15);
-    let outer_radius = base_radius;
-    let inner_radius = (outer_radius * 0.56).max(0.08);
-    let half_thickness = (obj.size[1] * 0.16).clamp(0.03, 0.14);
-    let y_top = center[1] + half_thickness;
-    let y_bottom = center[1] - half_thickness;
-
-    let mut funnel_color = color_inner;
-    funnel_color[3] = (funnel_color[3] * 0.72).clamp(0.0, 1.0);
-    let sink_point = [
-        center[0],
-        obj.position[1] - obj.size[1] * 0.9 - 0.25,
-        center[2],
-    ];
-
-    for index in 0..SEGMENTS {
-        let t0 = index as f32 / SEGMENTS as f32;
-        let t1 = (index + 1) as f32 / SEGMENTS as f32;
-        let a0 = t0 * std::f32::consts::TAU;
-        let a1 = t1 * std::f32::consts::TAU;
-
-        let (cos0, sin0) = (a0.cos(), a0.sin());
-        let (cos1, sin1) = (a1.cos(), a1.sin());
-
-        let outer_top_0 = [
-            center[0] + cos0 * outer_radius,
-            y_top,
-            center[2] + sin0 * outer_radius,
-        ];
-        let outer_top_1 = [
-            center[0] + cos1 * outer_radius,
-            y_top,
-            center[2] + sin1 * outer_radius,
-        ];
-        let inner_top_0 = [
-            center[0] + cos0 * inner_radius,
-            y_top,
-            center[2] + sin0 * inner_radius,
-        ];
-        let inner_top_1 = [
-            center[0] + cos1 * inner_radius,
-            y_top,
-            center[2] + sin1 * inner_radius,
-        ];
-
-        let outer_bottom_0 = [
-            center[0] + cos0 * outer_radius,
-            y_bottom,
-            center[2] + sin0 * outer_radius,
-        ];
-        let outer_bottom_1 = [
-            center[0] + cos1 * outer_radius,
-            y_bottom,
-            center[2] + sin1 * outer_radius,
-        ];
-        let inner_bottom_0 = [
-            center[0] + cos0 * inner_radius,
-            y_bottom,
-            center[2] + sin0 * inner_radius,
-        ];
-        let inner_bottom_1 = [
-            center[0] + cos1 * inner_radius,
-            y_bottom,
-            center[2] + sin1 * inner_radius,
-        ];
-
-        push_triangle(
-            vertices,
-            outer_top_0,
-            outer_top_1,
-            inner_top_1,
-            color_outer,
-            texture_layer,
-        );
-        push_triangle(
-            vertices,
-            outer_top_0,
-            inner_top_1,
-            inner_top_0,
-            color_outer,
-            texture_layer,
-        );
-
-        push_triangle(
-            vertices,
-            outer_bottom_0,
-            inner_bottom_1,
-            outer_bottom_1,
-            color_outer,
-            texture_layer,
-        );
-        push_triangle(
-            vertices,
-            outer_bottom_0,
-            inner_bottom_0,
-            inner_bottom_1,
-            color_outer,
-            texture_layer,
-        );
-
-        push_triangle(
-            vertices,
-            outer_bottom_0,
-            outer_bottom_1,
-            outer_top_1,
-            color_inner,
-            texture_layer,
-        );
-        push_triangle(
-            vertices,
-            outer_bottom_0,
-            outer_top_1,
-            outer_top_0,
-            color_inner,
-            texture_layer,
-        );
-
-        push_triangle(
-            vertices,
-            inner_bottom_0,
-            inner_top_1,
-            inner_bottom_1,
-            color_inner,
-            texture_layer,
-        );
-        push_triangle(
-            vertices,
-            inner_bottom_0,
-            inner_top_0,
-            inner_top_1,
-            color_inner,
-            texture_layer,
-        );
-
-        if index % 2 == 0 {
-            push_triangle(
-                vertices,
-                inner_bottom_0,
-                inner_bottom_1,
-                sink_point,
-                funnel_color,
-                texture_layer,
-            );
-        }
-    }
-
-    let pulse_metadata = [center[0], center[2], phase_offset, 0.0];
-    for vertex in vertices.iter_mut().skip(vertex_start) {
-        vertex.set_render_profile(FINISH_RING_PROFILE_TAG);
-        vertex.color_outline = pulse_metadata;
-    }
-}
-
-fn push_triangle(
-    vertices: &mut Vec<Vertex>,
-    p0: [f32; 3],
-    p1: [f32; 3],
-    p2: [f32; 3],
-    color: [f32; 4],
-    texture_layer: u32,
-) {
-    vertices.push(Vertex::textured(p0, color, [0.0, 0.0], texture_layer));
-    vertices.push(Vertex::textured(p1, color, [1.0, 0.0], texture_layer));
-    vertices.push(Vertex::textured(p2, color, [0.5, 1.0], texture_layer));
+    [
+        color[0] * tint_rgb[0].clamp(0.0, 1.0),
+        color[1] * tint_rgb[1].clamp(0.0, 1.0),
+        color[2] * tint_rgb[2].clamp(0.0, 1.0),
+        color[3],
+    ]
 }

@@ -34,12 +34,16 @@ mod shader_tests;
 #[cfg(test)]
 mod tests;
 
+use std::collections::VecDeque;
+
+pub(crate) const TAP_CLICK_SCREEN_EPSILON_PIXELS: f64 = 0.5;
+
 pub(crate) use audio_state::{AudioState, AudioSubsystem};
 pub(crate) use editor_camera::EditorCameraState;
 pub(crate) use editor_config_state::EditorConfigState;
 pub(crate) use editor_interaction::{
     EditorBlockDrag, EditorClipboard, EditorDragBlockStart, EditorGizmoDrag, EditorHistorySnapshot,
-    EditorInteractionState,
+    EditorInteractionState, EditorPendingTapClick,
 };
 pub(crate) use editor_timeline::EditorTimelineState;
 pub(crate) use editor_timing::EditorTimingState;
@@ -51,13 +55,13 @@ pub(crate) use render::RenderSubsystem;
 pub(crate) use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
 pub(crate) use view_model::EditorUiViewModel;
 
-use crate::game::GameState;
+use crate::game::{GameCheckpointState, GameState};
 use crate::mesh::MeshGeometry;
 use crate::platform::services::AuthServiceMessage;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::platform::state_host::NativeWindow;
 use crate::types::{
-    AppPhase, AppSettings, AuthSession, EditorMode, EditorState, LevelObject,
+    AppPhase, AppSettings, AuthSession, EditorMode, EditorState, LevelCreatorMetadata, LevelObject,
     LevelPreviewCameraMetadata, MenuState, MusicMetadata, PhysicalSize, SettingsSection,
     SpawnMetadata,
 };
@@ -66,6 +70,13 @@ use crate::types::{
 /// Separates gameplay concern from the top-level application state.
 pub(crate) struct GameplaySubsystem {
     pub(crate) state: GameState,
+    pub(crate) pending_turn_inputs: VecDeque<TimedGameplayTurn>,
+    pub(crate) death_sfx_played: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TimedGameplayTurn {
+    pub(crate) time_seconds: f32,
 }
 
 pub(crate) struct AuthSubsystem {
@@ -84,8 +95,11 @@ pub(crate) struct AuthSubsystem {
 pub(crate) struct SessionSubsystem {
     pub(crate) editor_level_name: Option<String>,
     pub(crate) editor_music_metadata: MusicMetadata,
+    pub(crate) editor_creator_metadata: LevelCreatorMetadata,
+    pub(crate) editor_sky_color: [f32; 3],
     pub(crate) editor_menu_preview_camera: Option<LevelPreviewCameraMetadata>,
     pub(crate) editor_show_metadata: bool,
+    pub(crate) editor_show_place_window: bool,
     pub(crate) editor_show_settings: bool,
     pub(crate) editor_settings_section: SettingsSection,
     pub(crate) editor_keybind_capture_action: Option<(String, usize)>,
@@ -99,9 +113,19 @@ pub(crate) struct SessionSubsystem {
     pub(crate) app_settings: AppSettings,
     pub(crate) playing_level_name: Option<String>,
     pub(crate) playtesting_editor: bool,
+    pub(crate) game_paused: bool,
     pub(crate) playtest_audio_start_seconds: Option<f32>,
+    pub(crate) playing_sky_color: [f32; 3],
     pub(crate) playing_trigger_hitboxes: bool,
     pub(crate) playing_trigger_base_objects: Option<Vec<LevelObject>>,
+    pub(crate) practice_mode_enabled: bool,
+    pub(crate) practice_checkpoints: Vec<PracticeCheckpoint>,
+}
+
+#[derive(Clone)]
+pub(crate) struct PracticeCheckpoint {
+    pub(crate) gameplay: GameCheckpointState,
+    pub(crate) trigger_base_objects: Option<Vec<LevelObject>>,
 }
 
 /// Bundles all editor-related state into a single subsystem.
@@ -173,6 +197,40 @@ impl State {
         self.render.gpu.apply_resize(new_size);
     }
 
+    fn current_gameplay_input_time_seconds(&self) -> f32 {
+        self.audio
+            .state
+            .runtime
+            .playback_time_seconds()
+            .unwrap_or(self.gameplay.state.elapsed_seconds)
+            .max(0.0)
+    }
+
+    pub(crate) fn queue_gameplay_turn_right(&mut self) {
+        self.queue_gameplay_turn_right_at(self.current_gameplay_input_time_seconds());
+    }
+
+    pub(crate) fn queue_gameplay_turn_right_at(&mut self, time_seconds: f32) {
+        if !time_seconds.is_finite() {
+            return;
+        }
+
+        let time_seconds = time_seconds.max(0.0);
+        let insert_at = self
+            .gameplay
+            .pending_turn_inputs
+            .iter()
+            .position(|input| time_seconds < input.time_seconds)
+            .unwrap_or(self.gameplay.pending_turn_inputs.len());
+        self.gameplay
+            .pending_turn_inputs
+            .insert(insert_at, TimedGameplayTurn { time_seconds });
+    }
+
+    pub(crate) fn clear_pending_gameplay_inputs(&mut self) {
+        self.gameplay.pending_turn_inputs.clear();
+    }
+
     /// Handles the "turn right" input action based on the current application phase.
     ///
     /// - In Menu: Starts the selected level
@@ -185,33 +243,20 @@ impl State {
                 self.start_level(self.menu.state.selected_level);
             }
             AppPhase::Playing => {
-                if !self.gameplay.state.started {
-                    self.gameplay.state.started = true;
-                    if self.session.playtesting_editor {
-                        let metadata = self.current_editor_metadata();
-                        let level_name = self
-                            .session
-                            .editor_level_name
-                            .clone()
-                            .unwrap_or_else(|| "Untitled".to_string());
-                        let start_seconds = self
-                            .session
-                            .playtest_audio_start_seconds
-                            .unwrap_or_else(|| {
-                                self.editor_timeline_elapsed_seconds(
-                                    self.editor.timeline_time_seconds(),
-                                )
-                            });
-                        self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
-                    } else if let Some(level_name) = self.session.playing_level_name.clone() {
-                        if let Some(metadata) = self.load_level_metadata(&level_name) {
-                            self.start_audio(&level_name, &metadata);
+                if self.session.game_paused {
+                    return;
+                }
+                if !self.start_gameplay_if_needed() {
+                    if self.gameplay.state.game_over {
+                        if self.session.practice_mode_enabled
+                            && self.respawn_from_practice_checkpoint()
+                        {
+                            return;
                         }
+                        self.restart_level();
+                    } else {
+                        self.queue_gameplay_turn_right();
                     }
-                } else if self.gameplay.state.game_over {
-                    self.restart_level();
-                } else {
-                    self.gameplay.state.turn_right();
                 }
             }
             AppPhase::Editor => {
@@ -221,6 +266,40 @@ impl State {
                 self.phase = AppPhase::Menu;
             }
         }
+    }
+
+    pub(crate) fn start_gameplay_if_needed(&mut self) -> bool {
+        if self.gameplay.state.started {
+            return false;
+        }
+
+        self.gameplay.state.started = true;
+        if self.session.playtesting_editor {
+            let metadata = self.current_editor_metadata();
+            let level_name = self
+                .session
+                .editor_level_name
+                .clone()
+                .unwrap_or_else(|| "Untitled".to_string());
+            let start_seconds = self
+                .session
+                .playtest_audio_start_seconds
+                .unwrap_or_else(|| {
+                    self.editor_timeline_elapsed_seconds(self.editor.timeline_time_seconds())
+                });
+            self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
+        } else if let Some(level_name) = self.session.playing_level_name.clone() {
+            if let Some(metadata) = self.load_level_metadata(&level_name) {
+                let start_seconds = self.gameplay.state.elapsed_seconds;
+                if start_seconds > 0.001 {
+                    self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
+                } else {
+                    self.start_audio(&level_name, &metadata);
+                }
+            }
+        }
+
+        true
     }
 
     /// Advances to the next level or moves the editor cursor right.
@@ -280,6 +359,33 @@ impl State {
         self.phase == AppPhase::Menu
     }
 
+    /// Returns true when a real gameplay session is paused.
+    pub fn is_game_paused(&self) -> bool {
+        self.phase == AppPhase::Playing
+            && !self.session.playtesting_editor
+            && self.session.game_paused
+    }
+
+    /// Returns true when real gameplay is currently using practice-mode checkpoints.
+    pub fn is_practice_mode_enabled(&self) -> bool {
+        self.phase == AppPhase::Playing
+            && !self.session.playtesting_editor
+            && self.session.practice_mode_enabled
+    }
+
+    /// Returns the latest practice checkpoint time, if one has been placed.
+    pub fn practice_checkpoint_time_seconds(&self) -> Option<f32> {
+        self.session
+            .practice_checkpoints
+            .last()
+            .map(|checkpoint| checkpoint.gameplay.elapsed_seconds)
+    }
+
+    /// Returns how many practice checkpoints are currently stacked.
+    pub fn practice_checkpoint_count(&self) -> usize {
+        self.session.practice_checkpoints.len()
+    }
+
     /// Sets whether the right mouse button is currently being dragged in the editor.
     pub(crate) fn set_editor_right_dragging(&mut self, dragging: bool) {
         self.editor.set_right_dragging(dragging);
@@ -326,6 +432,16 @@ impl State {
     /// editor mode (Place or Select), potentially starting block placement, gizmo drag,
     /// or selection operations.
     pub(crate) fn handle_primary_click(&mut self, x: f64, y: f64) {
+        let previous_pointer = self.editor.ui.pointer_screen;
+        let pointer_moved = previous_pointer.is_none_or(|pointer| {
+            (pointer[0] - x).abs() > TAP_CLICK_SCREEN_EPSILON_PIXELS
+                || (pointer[1] - y).abs() > TAP_CLICK_SCREEN_EPSILON_PIXELS
+        });
+        if pointer_moved {
+            self.editor.runtime.interaction.hovered_tap_index = None;
+            self.editor.runtime.interaction.hovered_tap_division = None;
+            self.editor.runtime.interaction.pending_tap_click = None;
+        }
         self.editor.set_pointer_screen(Some([x, y]));
         self.editor.set_left_mouse_down(true);
         self.mark_editor_dirty(EditorDirtyFlags {
@@ -333,10 +449,21 @@ impl State {
             ..EditorDirtyFlags::default()
         });
         if self.phase == AppPhase::Editor {
+            if self.editor_pointer_over_ui_input(x, y) {
+                return;
+            }
+
+            if self.editor.ui.alt_held {
+                self.dispatch(crate::commands::AppCommand::EditorPickBlockAt { x, y });
+                return;
+            }
+
             let mode = self.editor.mode();
             if mode == EditorMode::Place {
                 self.update_editor_cursor_from_screen(x, y);
                 self.place_editor_block();
+            } else if mode == EditorMode::Tapping {
+                self.editor_handle_tapping_click_from_screen(x, y);
             } else if mode.is_selection_mode() {
                 if self.begin_editor_gizmo_drag(x, y) {
                     return;

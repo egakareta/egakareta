@@ -1,0 +1,26 @@
+{
+    "id": "core/gem",
+    "display_name": "Gem",
+    "category": "tech",
+    "assets": {
+        "mesh": "gem.obj"
+    },
+    "render": {
+        "profile": "gem",
+        "icon_dimetric_projection": false,
+        "icon_camera": {
+            "position": [4.0, 0.5, 0.5],
+            "orthographic_half_extent": 0.7
+        },
+        "color_top": [0.18, 0.92, 1.0, 1.0],
+        "color_side": [0.55, 0.25, 1.0, 1.0],
+        "color_bottom": [0.08, 0.14, 0.55, 1.0]
+    },
+    "behavior": {
+        "collision": "collectible",
+        "support_surface": false,
+        "consumed_on_overlap": true,
+        "gem_value": 1
+    },
+    "placeable": true
+}

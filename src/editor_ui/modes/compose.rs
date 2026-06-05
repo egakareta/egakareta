@@ -8,13 +8,16 @@
 use std::collections::HashMap;
 
 use crate::block_repository::{
-    all_placeable_blocks, block_texture_atlas, resolve_block_texture_layers,
+    block_texture_atlas, resolve_block_definition, resolve_block_texture_layers,
 };
 use crate::commands::AppCommand;
-use crate::editor_ui::components::{MAX_TIMELINE_DURATION_SECONDS, MIN_TIMELINE_DURATION_SECONDS};
-use crate::editor_ui::modes::shared::{show_mode_and_snap_controls, show_player_camera_status_row};
+use crate::editor_ui::modes::shared::show_mode_and_snap_controls;
 use crate::state::EditorUiViewModel;
 use crate::types::EditorMode;
+
+const RECENT_BLOCK_STRIP_LIMIT: usize = 4;
+const COMPACT_PREVIEW_BUTTON_SIZE: f32 = 40.0;
+const COMPACT_PREVIEW_HEIGHT: f32 = 34.0;
 
 const PREVIEW_BUTTON_WIDTH: f32 = 72.0;
 const PREVIEW_BUTTON_HEIGHT: f32 = 72.0;
@@ -34,36 +37,76 @@ const ATLAS_AVERAGE_MAX_SAMPLES: usize = 1024;
 pub(crate) fn show_compose_mode_bottom_panel(
     ui: &mut egui::Ui,
     view: &EditorUiViewModel<'_>,
-    block_icon_texture_ids: &HashMap<String, egui::TextureId>,
+    _block_icon_texture_ids: &HashMap<String, egui::TextureId>,
     _duration_seconds: f32,
     commands: &mut Vec<AppCommand>,
 ) {
     show_mode_and_snap_controls(ui, view, commands);
+}
 
-    match view.mode {
-        EditorMode::Place => {
-            ui.horizontal_wrapped(|ui| {
-                let current = view.selected_block_id;
-                for block in all_placeable_blocks() {
-                    if !block.placeable {
-                        continue;
-                    }
-                    if show_block_preview_button(
-                        ui,
-                        block,
-                        current == block.id,
-                        block_icon_texture_ids.get(block.id.as_str()).copied(),
-                    ) {
-                        commands.push(AppCommand::EditorSetBlockId(block.id.clone()));
-                    }
-                }
-            });
+pub(crate) fn show_recent_block_quick_strip(
+    ui: &mut egui::Ui,
+    view: &EditorUiViewModel<'_>,
+    block_icon_texture_ids: &HashMap<String, egui::TextureId>,
+    commands: &mut Vec<AppCommand>,
+) -> bool {
+    let blocks: Vec<_> = view
+        .recent_block_ids
+        .iter()
+        .map(|id| resolve_block_definition(id))
+        .filter(|block| block.placeable)
+        .take(RECENT_BLOCK_STRIP_LIMIT)
+        .collect();
+    if blocks.is_empty() {
+        return false;
+    }
+
+    for block in blocks {
+        if show_block_preview_button_sized(
+            ui,
+            block,
+            view.selected_block_id == block.id,
+            block_icon_texture_ids.get(block.id.as_str()).copied(),
+            egui::Vec2::splat(COMPACT_PREVIEW_BUTTON_SIZE),
+            COMPACT_PREVIEW_HEIGHT,
+        ) {
+            commands.push(AppCommand::EditorSetBlockId(block.id.clone()));
+            commands.push(AppCommand::EditorSetMode(EditorMode::Place));
         }
-        EditorMode::Select | EditorMode::Move | EditorMode::Scale | EditorMode::Rotate => {
-            if let Some(mut selected) = view.selected_block.clone() {
-                ui.horizontal_wrapped(|ui| {
+    }
+    true
+}
+
+pub(crate) fn show_selected_block_properties_window(
+    ctx: &egui::Context,
+    view: &EditorUiViewModel<'_>,
+    bottom_bar_height: f32,
+    commands: &mut Vec<AppCommand>,
+) {
+    let mode = view.mode;
+    if !matches!(
+        mode,
+        EditorMode::Select | EditorMode::Move | EditorMode::Scale | EditorMode::Rotate
+    ) {
+        return;
+    }
+
+    let Some(mut selected) = view.selected_block.clone() else {
+        return;
+    };
+
+    egui::Area::new("selected_block_properties".into())
+        .anchor(
+            egui::Align2::LEFT_BOTTOM,
+            egui::Vec2::new(12.0, -12.0 - bottom_bar_height),
+        )
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            egui::Frame::popup(&ctx.global_style()).show(ui, |ui| {
+                ui.set_min_width(220.0);
+                ui.vertical(|ui| {
                     ui.horizontal(|ui| {
-                        ui.label("Move:");
+                        ui.label("Position:");
                         let mut changed = false;
                         changed |= ui
                             .add(egui::DragValue::new(&mut selected.position[0]).prefix("X "))
@@ -82,7 +125,7 @@ pub(crate) fn show_compose_mode_bottom_panel(
                     });
 
                     ui.horizontal(|ui| {
-                        ui.label("Resize:");
+                        ui.label("Size:");
                         let mut changed = false;
                         changed |= ui
                             .add(egui::DragValue::new(&mut selected.size[0]).prefix("W "))
@@ -101,8 +144,8 @@ pub(crate) fn show_compose_mode_bottom_panel(
                     });
 
                     ui.horizontal(|ui| {
-                        ui.label("Rotate:");
-                        let mut changed = false;
+                        ui.label("Rotation:");
+                        let mut changed: bool = false;
                         changed |= ui
                             .add(
                                 egui::DragValue::new(&mut selected.rotation_degrees[0])
@@ -135,78 +178,45 @@ pub(crate) fn show_compose_mode_bottom_panel(
                     });
 
                     ui.horizontal(|ui| {
-                        ui.label("Round:");
-                        if ui
-                            .add(
-                                egui::DragValue::new(&mut selected.roundness)
-                                    .speed(0.01)
-                                    .range(0.0..=10.0),
-                            )
-                            .changed()
-                        {
+                        ui.label("Color:");
+                        let mut color_tint = selected.color_tint;
+                        if ui.color_edit_button_rgb(&mut color_tint).changed() {
+                            selected.color_tint = color_tint;
                             commands.push(crate::commands::AppCommand::EditorUpdateSelectedBlock(
                                 selected.clone(),
                             ));
                         }
                     });
                 });
-
-                ui.horizontal(|ui| {
-                    ui.label("Color:");
-                    let mut color_tint = selected.color_tint;
-                    if ui.color_edit_button_rgb(&mut color_tint).changed() {
-                        selected.color_tint = color_tint;
-                        commands.push(crate::commands::AppCommand::EditorUpdateSelectedBlock(
-                            selected.clone(),
-                        ));
-                    }
-                });
-            } else {
-                ui.label("Selection mode: click a block to edit it.");
-            }
-        }
-        EditorMode::Trigger | EditorMode::Timing | EditorMode::Null => {} // handled separately
-    }
-
-    ui.separator();
-
-    ui.horizontal_wrapped(|ui| {
-        let mut duration = view.timeline_duration_seconds;
-        ui.label("Duration (s):");
-        if ui
-            .add(
-                egui::DragValue::new(&mut duration)
-                    .speed(0.1)
-                    .range(MIN_TIMELINE_DURATION_SECONDS..=MAX_TIMELINE_DURATION_SECONDS),
-            )
-            .changed()
-        {
-            commands.push(crate::commands::AppCommand::EditorSetTimelineDuration(
-                duration,
-            ));
-        }
-
-        if ui.button("Add tap").clicked() {
-            commands.push(crate::commands::AppCommand::EditorAddTap);
-        }
-        if ui.button("Remove tap").clicked() {
-            commands.push(crate::commands::AppCommand::EditorRemoveTap);
-        }
-        if ui.button("Clear taps").clicked() {
-            commands.push(crate::commands::AppCommand::EditorClearTaps);
-        }
-    });
-
-    show_player_camera_status_row(ui, view);
+            });
+        });
 }
 
-fn show_block_preview_button(
+pub(crate) fn show_block_preview_button(
     ui: &mut egui::Ui,
     block: &crate::block_repository::BlockDefinition,
     selected: bool,
     icon_texture_id: Option<egui::TextureId>,
 ) -> bool {
     let button_size = egui::vec2(PREVIEW_BUTTON_WIDTH, PREVIEW_BUTTON_HEIGHT);
+    show_block_preview_button_sized(
+        ui,
+        block,
+        selected,
+        icon_texture_id,
+        button_size,
+        PREVIEW_HEIGHT,
+    )
+}
+
+fn show_block_preview_button_sized(
+    ui: &mut egui::Ui,
+    block: &crate::block_repository::BlockDefinition,
+    selected: bool,
+    icon_texture_id: Option<egui::TextureId>,
+    button_size: egui::Vec2,
+    preview_height: f32,
+) -> bool {
     let (rect, response) = ui.allocate_exact_size(button_size, egui::Sense::click());
 
     let visuals = ui.style().interact_selectable(&response, selected);
@@ -220,7 +230,7 @@ fn show_block_preview_button(
 
     let preview_rect = egui::Rect::from_min_size(
         rect.min + egui::vec2(PREVIEW_PADDING_X, PREVIEW_PADDING_Y),
-        egui::vec2(rect.width() - PREVIEW_PADDING_X * 2.0, PREVIEW_HEIGHT),
+        egui::vec2(rect.width() - PREVIEW_PADDING_X * 2.0, preview_height),
     );
     if let Some(texture_id) = icon_texture_id {
         let image_rect = preview_rect.shrink2(egui::vec2(2.0, 2.0));

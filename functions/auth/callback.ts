@@ -43,7 +43,7 @@ function page(message = "", isError = false, email = "") {
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>confirm email</title>
-        <link rel="icon" type="image/png" href="/assets/favicon.png" />
+        <link rel="icon" type="image/x-icon" href="/assets/favicon.ico" />
         <style>
             :root { color-scheme: dark; }
             body {

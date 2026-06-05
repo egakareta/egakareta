@@ -22,11 +22,14 @@ impl EditorSubsystem {
             selected_block_indices: self.ui.selected_block_indices.clone(),
             cursor: self.ui.cursor,
             selected_block_id: self.config.selected_block_id.clone(),
+            selected_block_rotation_degrees: self.config.selected_block_rotation_degrees,
+            recent_block_ids: self.config.recent_block_ids.clone(),
             spawn: self.spawn.clone(),
             timeline_time_seconds: self.timeline.clock.time_seconds,
             timeline_duration_seconds: self.timeline.clock.duration_seconds,
             tap_times: self.timeline.taps.tap_times.clone(),
             tap_indicator_positions: self.timeline.taps.tap_indicator_positions.clone(),
+            selected_tap_index: self.timeline.taps.selected_index,
             timing_points: self.timing.timing_points.clone(),
             triggers: self.triggers.items.clone(),
             selected_trigger_index: self.triggers.selected_index,
@@ -46,24 +49,24 @@ impl EditorSubsystem {
 
     fn apply_history_snapshot(&mut self, snapshot: EditorHistorySnapshot) {
         self.objects = snapshot.objects;
-        self.ui.selected_block_index = snapshot
-            .selected_block_index
-            .filter(|index| *index < self.objects.len());
-        self.ui.selected_block_indices = snapshot
-            .selected_block_indices
-            .into_iter()
-            .filter(|index| *index < self.objects.len())
-            .collect();
-        self.sync_primary_selection_from_indices();
+        self.ui.selected_block_index = snapshot.selected_block_index;
+        self.ui.selected_block_indices = snapshot.selected_block_indices;
+        self.normalize_block_selection();
         self.ui.hovered_block_index = self.ui.selected_block_index;
         self.ui.cursor = snapshot.cursor;
         self.config.selected_block_id = snapshot.selected_block_id;
+        self.config.selected_block_rotation_degrees = snapshot.selected_block_rotation_degrees;
+        self.config.recent_block_ids = snapshot.recent_block_ids;
         self.spawn = snapshot.spawn;
         self.timeline.clock.time_seconds = snapshot.timeline_time_seconds.max(0.0);
         self.timeline.clock.duration_seconds = snapshot.timeline_duration_seconds.max(0.1);
         self.timeline.taps.tap_times = snapshot.tap_times;
         self.timeline.taps.tap_indicator_positions = snapshot.tap_indicator_positions;
+        self.timeline.taps.selected_index = snapshot
+            .selected_tap_index
+            .filter(|index| *index < self.timeline.taps.tap_times.len());
         self.timing.timing_points = snapshot.timing_points;
+        self.timing.mark_timing_points_changed();
         self.triggers.items = snapshot.triggers;
         self.triggers.simulate_trigger_hitboxes = snapshot.simulate_trigger_hitboxes;
         self.triggers.selected_index = snapshot
@@ -88,6 +91,11 @@ impl EditorSubsystem {
                 &self.objects,
             );
         }
+        self.timeline.taps.selected_index = self
+            .timeline
+            .taps
+            .selected_index
+            .filter(|index| *index < self.timeline.taps.tap_times.len());
 
         self.timeline.clock.time_seconds = self
             .timeline
@@ -291,7 +299,6 @@ mod tests {
             position,
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         }

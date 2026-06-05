@@ -9,7 +9,7 @@ See LICENSE and COMMERCIAL.md for details.
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>egakareta</title>
-        <link rel="icon" type="image/png" href="assets/favicon.png" />
+        <link rel="icon" type="image/x-icon" href="assets/favicon.ico" />
         <style>
             html,
             body {
@@ -140,10 +140,10 @@ See LICENSE and COMMERCIAL.md for details.
             <img
                 width="100"
                 class="splash-logo"
-                src="assets/favicon.png"
+                src="assets/lighticon.png"
                 alt="egakareta Logo"
             />
-            <p>click anywhere to start</p>
+            <p>loading egakareta...</p>
             <div id="firefox-warning">
                 firefox is not recommended due to performance issues :( please
                 use chrome or edge for the best experience
@@ -264,8 +264,12 @@ See LICENSE and COMMERCIAL.md for details.
             const init_wasm = async () => {
                 try {
                     console.log("importing js");
-                    const { default: init, run_game } =
-                        await import("./pkg/egakareta_lib.js");
+                    const {
+                        default: init,
+                        initThreadPool,
+                        mark_rayon_ready,
+                        run_game,
+                    } = await import("./pkg/egakareta_lib.js");
                     run_game_fn = run_game;
 
                     console.log("fetching wasm");
@@ -275,14 +279,62 @@ See LICENSE and COMMERCIAL.md for details.
 
                     // Initialize WebAssembly
                     console.log("initializing wasm");
-                    await init(wasmResponse);
+                    await init({ module_or_path: wasmResponse });
 
                     console.log("isolated:", self.crossOriginIsolated);
 
-                    // Show splash and hide loading
+                    let rayonInitPromise = null;
+                    window.__EGAKARETA_INIT_RAYON = async () => {
+                        if (rayonInitPromise) {
+                            return rayonInitPromise;
+                        }
+
+                        if (!self.crossOriginIsolated) {
+                            console.warn(
+                                "Rayon worker pool disabled: cross-origin isolation is unavailable",
+                            );
+                            return null;
+                        }
+
+                        const workerCount = Math.max(
+                            1,
+                            Math.min(navigator.hardwareConcurrency || 1, 8),
+                        );
+                        console.log("initializing rayon:", workerCount);
+                        rayonInitPromise = initThreadPool(workerCount).then(
+                            () => {
+                                mark_rayon_ready();
+                                console.log("rayon ready");
+                            },
+                        );
+                        return rayonInitPromise;
+                    };
+
+                    // Hide loading, show splash briefly for branding
                     loading.style.display = "none";
                     if (splash) {
                         splash.style.display = "flex";
+                        const splashText = splash.querySelector("p");
+                        if (splashText) {
+                            splashText.textContent = "starting...";
+                        }
+                    }
+
+                    // Auto-start the game — audio context will resume on first user input
+                    if (run_game_fn) {
+                        console.log("starting game");
+                        try {
+                            await run_game_fn("gameCanvas");
+                            if (splash) {
+                                splash.style.display = "none";
+                            }
+                        } catch (error) {
+                            console.error("Failed to run game:", error);
+                            window.__EGAKARETA_LAUNCH_ERROR =
+                                error?.message ?? String(error);
+                            errorDiv.style.display = "block";
+                            errorDiv.textContent = `error: ${window.__EGAKARETA_LAUNCH_ERROR}`;
+                        }
                     }
                 } catch (error) {
                     console.error("Failed to load:", error);
@@ -293,31 +345,6 @@ See LICENSE and COMMERCIAL.md for details.
                     errorDiv.textContent = `error: ${error.message}`;
                 }
             };
-
-            splash?.addEventListener(
-                "click",
-                async (event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    if (splash) {
-                        splash.style.display = "none";
-                    }
-
-                    if (run_game_fn) {
-                        console.log("starting game");
-                        try {
-                            await run_game_fn("gameCanvas");
-                        } catch (error) {
-                            console.error("Failed to run game:", error);
-                            window.__EGAKARETA_LAUNCH_ERROR =
-                                error?.message ?? String(error);
-                            errorDiv.style.display = "block";
-                            errorDiv.textContent = `error: ${window.__EGAKARETA_LAUNCH_ERROR}`;
-                        }
-                    }
-                },
-                { once: true },
-            );
 
             // Start loading immediately
             init_wasm();

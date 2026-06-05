@@ -1,6 +1,7 @@
 {
     "id": "core/torch",
     "display_name": "Torch",
+    "category": "tech",
     "render": {
         "profile": "liquid",
         "icon_dimetric_projection": true,

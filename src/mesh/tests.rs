@@ -13,7 +13,7 @@ mod tests {
         build_editor_selection_outline_vertices, GizmoParams,
     };
     use crate::mesh::egmesh::resolve_egmesh;
-    use crate::mesh::obj::parse_obj_mesh;
+    use crate::mesh::obj::{append_obj_mesh, parse_obj_mesh, parse_obj_mesh_with_materials};
     use crate::types::{GizmoPart, LevelObject, Vertex};
 
     fn bounds_xz(vertices: &[[f32; 3]]) -> (f32, f32, f32, f32) {
@@ -36,7 +36,6 @@ mod tests {
             position: [0.0, 0.0, 0.0],
             size: [2.0, 1.0, 1.0],
             rotation_degrees: [0.0, 90.0, 0.0],
-            roundness: 0.18,
             block_id: "core/dirt".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         };
@@ -51,24 +50,19 @@ mod tests {
     }
 
     #[test]
-    fn finish_ring_vertices_use_shader_pulse_metadata() {
+    fn solid_block_black_tint_darkens_vertex_colors() {
         let obj = LevelObject {
-            position: [2.0, 0.0, 3.0],
-            size: [4.0, 1.0, 2.0],
-            block_id: "core/finish".to_string(),
+            block_id: "core/solid".to_string(),
+            color_tint: [0.0, 0.0, 0.0],
             ..LevelObject::default()
         };
-        let vertices = build_block_vertices(std::slice::from_ref(&obj));
-        let expected_phase_offset =
-            (obj.position[0] * 0.37 + obj.position[2] * 0.21) * std::f32::consts::PI;
+
+        let vertices = build_block_vertices(&[obj]);
 
         assert!(!vertices.is_empty());
-        for vertex in vertices {
-            assert_eq!(vertex.render_profile, 2.0);
-            assert_eq!(vertex.color_outline[0], 4.0);
-            assert_eq!(vertex.color_outline[1], 4.0);
-            assert!((vertex.color_outline[2] - expected_phase_offset).abs() < 1e-5);
-        }
+        assert!(vertices.iter().all(|vertex| vertex.color[0] == 0.0
+            && vertex.color[1] == 0.0
+            && vertex.color[2] == 0.0));
     }
 
     #[test]
@@ -297,6 +291,47 @@ f 1/1/1 2/2/1 3/3/1
     }
 
     #[test]
+    fn obj_parser_applies_mtl_materials_to_faces() {
+        let obj = r#"
+mtllib flag.mtl
+v 0 0 0
+v 1 0 0
+v 0 1 0
+usemtl cloth
+f 1 2 3
+"#;
+        let mtl = r#"
+newmtl cloth
+Kd 0.4 0.8 0.5
+d 0.5
+"#;
+
+        let mesh = parse_obj_mesh_with_materials(obj, &[("flag.mtl", mtl)]).expect("valid mesh");
+
+        assert_eq!(mesh.materials.len(), 1);
+        assert_eq!(mesh.materials[0].name, "cloth");
+        assert_eq!(mesh.materials[0].color.diffuse, [0.4, 0.8, 0.5, 0.5]);
+        assert_eq!(mesh.faces[0][0].material_index, Some(0));
+
+        let mut vertices = Vec::new();
+        append_obj_mesh(
+            &mut vertices,
+            &LevelObject::default(),
+            &mesh,
+            [0.5, 0.25, 1.0, 0.8],
+            0,
+        );
+
+        assert!(!vertices.is_empty());
+        for vertex in vertices {
+            assert!((vertex.color[0] - 0.2).abs() <= 1e-6);
+            assert!((vertex.color[1] - 0.2).abs() <= 1e-6);
+            assert!((vertex.color[2] - 0.5).abs() <= 1e-6);
+            assert!((vertex.color[3] - 0.4).abs() <= 1e-6);
+        }
+    }
+
+    #[test]
     fn generated_speedportal_egmesh_builds_indexed_geometry() {
         let mesh = resolve_egmesh("speedportal.obj").expect("speedportal egmesh should resolve");
         assert!(!mesh.vertices.is_empty());
@@ -312,21 +347,6 @@ f 1/1/1 2/2/1 3/3/1
             .as_ref()
             .is_some_and(|indices| !indices.is_empty()));
         assert_eq!(geometry.to_triangle_vertices().len(), mesh.indices.len());
-    }
-
-    #[test]
-    fn finish_ring_generates_vertices() {
-        let obj = LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 0.3],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.0,
-            block_id: "core/finish".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-        };
-
-        let vertices = build_block_vertices(&[obj]);
-        assert!(vertices.len() >= 168); // 28 segments * (outer + inner + face) triangles
     }
 
     #[test]

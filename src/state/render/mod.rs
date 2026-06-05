@@ -116,6 +116,7 @@ impl MeshSlot {
         label: &'static str,
         vertices: &[Vertex],
     ) -> Self {
+        puffin::profile_scope!("MeshSlotFromVertices");
         if vertices.is_empty() {
             return Self::Empty;
         }
@@ -137,6 +138,7 @@ impl MeshSlot {
         label: &'static str,
         geometry: &MeshGeometry,
     ) -> Self {
+        puffin::profile_scope!("MeshSlotFromGeometry");
         if geometry.is_empty() {
             return Self::Empty;
         }
@@ -238,6 +240,7 @@ impl MeshSlot {
         spare_capacity_vertices: u32,
         spare_capacity_indices: u32,
     ) {
+        puffin::profile_scope!("MeshSlotStreamingReplace");
         if geometry.is_empty() {
             *self = Self::Empty;
             return;
@@ -269,6 +272,7 @@ impl MeshSlot {
         start_index: usize,
         geometry: &MeshGeometry,
     ) -> bool {
+        puffin::profile_scope!("MeshSlotStreamingAppend");
         match self {
             Self::Streaming {
                 buffer,
@@ -344,6 +348,7 @@ impl MeshSlot {
     }
 
     pub(crate) fn write_streaming_vertices(&mut self, queue: &wgpu::Queue, vertices: &[Vertex]) {
+        puffin::profile_scope!("MeshSlotStreamingWriteVertices");
         match self {
             Self::Streaming {
                 buffer,
@@ -414,6 +419,8 @@ pub(crate) struct SceneMeshes {
     pub(crate) floor: MeshSlot,
     pub(crate) grid: MeshSlot,
     pub(crate) trail: MeshSlot,
+    pub(crate) gem_shatter_effects: MeshSlot,
+    pub(crate) practice_checkpoints: MeshSlot,
     pub(crate) blocks: MeshSlot,
     pub(crate) blocks_static: MeshSlot,
     pub(crate) blocks_selected: MeshSlot,
@@ -436,6 +443,8 @@ impl SceneMeshes {
         self.floor.destroy();
         self.grid.destroy();
         self.trail.destroy();
+        self.gem_shatter_effects.destroy();
+        self.practice_checkpoints.destroy();
         self.blocks.destroy();
         self.blocks_static.destroy();
         self.blocks_selected.destroy();

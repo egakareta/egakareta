@@ -8,6 +8,7 @@
 use crate::types::{LevelObject, Vertex};
 use include_dir::{include_dir, Dir};
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::OnceLock;
 
 pub(crate) static BLOCK_ASSETS_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/blocks");
@@ -18,9 +19,21 @@ pub(crate) struct ObjMesh {
     pub(crate) positions: Vec<[f32; 3]>,
     pub(crate) texcoords: Vec<[f32; 2]>,
     pub(crate) normals: Vec<[f32; 3]>,
+    pub(crate) materials: Vec<ObjMaterial>,
     pub(crate) faces: Vec<[ObjFaceVertex; 3]>,
     pub(crate) min: [f32; 3],
     pub(crate) max: [f32; 3],
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct ObjMaterialColor {
+    pub(crate) diffuse: [f32; 4],
+}
+
+#[derive(Clone)]
+pub(crate) struct ObjMaterial {
+    pub(crate) name: String,
+    pub(crate) color: ObjMaterialColor,
 }
 
 #[derive(Clone, Copy)]
@@ -28,6 +41,7 @@ pub(crate) struct ObjFaceVertex {
     pub(crate) position_index: usize,
     pub(crate) texcoord_index: Option<usize>,
     pub(crate) normal_index: Option<usize>,
+    pub(crate) material_index: Option<usize>,
 }
 
 pub(crate) fn resolve_obj_mesh(mesh_path: &str) -> Option<&'static ObjMesh> {
@@ -63,7 +77,9 @@ fn collect_obj_meshes(dir: &Dir<'_>, meshes: &mut HashMap<String, ObjMesh>) {
             continue;
         };
 
-        let Some(mesh) = parse_obj_mesh(contents) else {
+        let Some(mesh) = parse_obj_mesh_with_loader(contents, |material_path| {
+            resolve_embedded_material(file.path(), material_path)
+        }) else {
             continue;
         };
 
@@ -84,14 +100,56 @@ fn collect_obj_meshes(dir: &Dir<'_>, meshes: &mut HashMap<String, ObjMesh>) {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn parse_obj_mesh(contents: &str) -> Option<ObjMesh> {
+    parse_obj_mesh_with_loader(contents, |_| None)
+}
+
+#[cfg(test)]
+pub(crate) fn parse_obj_mesh_with_materials(
+    contents: &str,
+    material_libraries: &[(&str, &str)],
+) -> Option<ObjMesh> {
+    parse_obj_mesh_with_loader(contents, |material_path| {
+        material_libraries
+            .iter()
+            .find(|(path, _)| path.eq_ignore_ascii_case(material_path))
+            .map(|(_, contents)| (*contents).to_string())
+    })
+}
+
+fn parse_obj_mesh_with_loader<F>(contents: &str, mut load_material_library: F) -> Option<ObjMesh>
+where
+    F: FnMut(&str) -> Option<String>,
+{
     let mut positions = Vec::new();
     let mut texcoords = Vec::new();
     let mut normals = Vec::new();
+    let mut materials = Vec::new();
+    let mut material_indices = HashMap::new();
+    let mut current_material_index = None;
     let mut faces = Vec::new();
 
     for line in contents.lines() {
         let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("mtllib ") {
+            for material_path in rest.split_whitespace() {
+                if let Some(material_contents) = load_material_library(material_path) {
+                    append_mtl_materials(&material_contents, &mut materials, &mut material_indices);
+                }
+            }
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("usemtl ") {
+            current_material_index = material_indices.get(rest.trim()).copied();
+            continue;
+        }
+
         if let Some(rest) = trimmed.strip_prefix("v ") {
             let mut parts = rest.split_whitespace();
             let x = parts.next()?.parse::<f32>().ok()?;
@@ -188,6 +246,7 @@ pub(crate) fn parse_obj_mesh(contents: &str) -> Option<ObjMesh> {
                     position_index,
                     texcoord_index,
                     normal_index,
+                    material_index: current_material_index,
                 });
             }
 
@@ -216,10 +275,118 @@ pub(crate) fn parse_obj_mesh(contents: &str) -> Option<ObjMesh> {
         positions,
         texcoords,
         normals,
+        materials,
         faces,
         min,
         max,
     })
+}
+
+fn resolve_embedded_material(obj_path: &Path, material_path: &str) -> Option<String> {
+    let material_path = obj_path
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .join(material_path)
+        .to_string_lossy()
+        .replace('\\', "/");
+    BLOCK_ASSETS_DIR
+        .get_file(material_path)
+        .and_then(|file| file.contents_utf8())
+        .map(str::to_string)
+}
+
+fn append_mtl_materials(
+    contents: &str,
+    materials: &mut Vec<ObjMaterial>,
+    material_indices: &mut HashMap<String, usize>,
+) {
+    let mut current_name = None::<String>;
+    let mut current_diffuse = [1.0, 1.0, 1.0, 1.0];
+
+    for line in contents.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("newmtl ") {
+            flush_material(
+                &mut current_name,
+                current_diffuse,
+                materials,
+                material_indices,
+            );
+            current_name = Some(rest.trim().to_string());
+            current_diffuse = [1.0, 1.0, 1.0, 1.0];
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("Kd ") {
+            let mut parts = rest.split_whitespace();
+            let Some(r) = parts.next().and_then(|value| value.parse::<f32>().ok()) else {
+                continue;
+            };
+            let Some(g) = parts.next().and_then(|value| value.parse::<f32>().ok()) else {
+                continue;
+            };
+            let Some(b) = parts.next().and_then(|value| value.parse::<f32>().ok()) else {
+                continue;
+            };
+            current_diffuse[0] = r.clamp(0.0, 1.0);
+            current_diffuse[1] = g.clamp(0.0, 1.0);
+            current_diffuse[2] = b.clamp(0.0, 1.0);
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("d ") {
+            if let Some(alpha) = rest
+                .split_whitespace()
+                .next()
+                .and_then(|value| value.parse::<f32>().ok())
+            {
+                current_diffuse[3] = alpha.clamp(0.0, 1.0);
+            }
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("Tr ") {
+            if let Some(transparency) = rest
+                .split_whitespace()
+                .next()
+                .and_then(|value| value.parse::<f32>().ok())
+            {
+                current_diffuse[3] = (1.0 - transparency).clamp(0.0, 1.0);
+            }
+        }
+    }
+
+    flush_material(
+        &mut current_name,
+        current_diffuse,
+        materials,
+        material_indices,
+    );
+}
+
+fn flush_material(
+    current_name: &mut Option<String>,
+    diffuse: [f32; 4],
+    materials: &mut Vec<ObjMaterial>,
+    material_indices: &mut HashMap<String, usize>,
+) {
+    let Some(name) = current_name.take() else {
+        return;
+    };
+    if name.is_empty() || material_indices.contains_key(&name) {
+        return;
+    }
+
+    let index = materials.len();
+    material_indices.insert(name.clone(), index);
+    materials.push(ObjMaterial {
+        name,
+        color: ObjMaterialColor { diffuse },
+    });
 }
 
 fn resolve_obj_index(raw_index: isize, len: usize) -> Option<usize> {
@@ -247,6 +414,16 @@ pub(crate) fn append_obj_mesh(
         (mesh.max[0] - mesh.min[0]).max(f32::EPSILON),
         (mesh.max[1] - mesh.min[1]).max(f32::EPSILON),
         (mesh.max[2] - mesh.min[2]).max(f32::EPSILON),
+    ];
+
+    // Uniform scale to contain the mesh within the block bounds (preserving aspect ratio).
+    let scale = (obj.size[0] / span[0])
+        .min(obj.size[1] / span[1])
+        .min(obj.size[2] / span[2]);
+    let offset = [
+        (obj.size[0] - span[0] * scale) / 2.0,
+        (obj.size[1] - span[1] * scale) / 2.0,
+        (obj.size[2] - span[2] * scale) / 2.0,
     ];
 
     for face in &mesh.faces {
@@ -280,22 +457,30 @@ pub(crate) fn append_obj_mesh(
                         let nx = normal[0] / length;
                         let ny = normal[1] / length;
                         let nz = normal[2] / length;
-                        (nx * 0.25 + ny * 0.35 + nz * 0.4).abs().clamp(0.35, 1.0)
+                        // Light direction (0.25, 0.35, 0.4), normalized.
+                        let l_len = 0.58738_f32;
+                        let dot = (nx * 0.25 + ny * 0.35 + nz * 0.4) / l_len;
+                        dot.abs().clamp(0.35, 1.0)
                     }
                 })
                 .unwrap_or(1.0);
+            let material_color = corner
+                .material_index
+                .and_then(|index| mesh.materials.get(index))
+                .map(|material| material.color.diffuse)
+                .unwrap_or([1.0, 1.0, 1.0, 1.0]);
 
             vertices.push(Vertex::textured(
                 [
-                    obj.position[0] + normalized[0] * obj.size[0],
-                    obj.position[1] + normalized[1] * obj.size[1],
-                    obj.position[2] + normalized[2] * obj.size[2],
+                    obj.position[0] + (raw[0] - mesh.min[0]) * scale + offset[0],
+                    obj.position[1] + (raw[1] - mesh.min[1]) * scale + offset[1],
+                    obj.position[2] + (raw[2] - mesh.min[2]) * scale + offset[2],
                 ],
                 [
-                    color[0] * normal_tint,
-                    color[1] * normal_tint,
-                    color[2] * normal_tint,
-                    color[3],
+                    color[0] * material_color[0] * normal_tint,
+                    color[1] * material_color[1] * normal_tint,
+                    color[2] * material_color[2] * normal_tint,
+                    color[3] * material_color[3],
                 ],
                 uv,
                 texture_layer,

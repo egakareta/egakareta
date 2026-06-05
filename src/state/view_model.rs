@@ -7,9 +7,16 @@
 */
 use super::State;
 use crate::types::{
-    AppSettings, EditorMode, LevelObject, MusicMetadata, SettingsSection, SpawnDirection,
-    TimedTrigger, TimingPoint,
+    AppSettings, EditorMode, LevelCreatorMetadata, LevelObject, MusicMetadata, SettingsSection,
+    SpawnDirection, TimedTrigger, TimingPoint,
 };
+
+#[derive(Clone, Copy)]
+pub(crate) struct SelectedTapViewModel {
+    pub(crate) index: usize,
+    pub(crate) time_seconds: f32,
+    pub(crate) position: [f32; 3],
+}
 
 pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) mode: EditorMode,
@@ -17,10 +24,13 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) available_levels: &'a [String],
     pub(crate) level_name: Option<&'a str>,
     pub(crate) show_metadata: bool,
+    pub(crate) show_place_window: bool,
     pub(crate) show_settings: bool,
     pub(crate) settings_section: SettingsSection,
     pub(crate) keybind_capture_action: Option<&'a (String, usize)>,
     pub(crate) music_metadata: &'a MusicMetadata,
+    pub(crate) creator_metadata: LevelCreatorMetadata,
+    pub(crate) sky_color: [f32; 3],
     pub(crate) app_settings: &'a AppSettings,
     pub(crate) configured_graphics_backend: &'a str,
     pub(crate) configured_audio_backend: &'a str,
@@ -32,11 +42,13 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) snap_rotation: bool,
     pub(crate) snap_rotation_step_degrees: f32,
     pub(crate) selected_block_id: &'a str,
+    pub(crate) recent_block_ids: &'a [String],
     pub(crate) selected_block: Option<LevelObject>,
     pub(crate) playing: bool,
     pub(crate) timeline_time_seconds: f32,
     pub(crate) timeline_duration_seconds: f32,
     pub(crate) tap_times: &'a [f32],
+    pub(crate) selected_tap: Option<SelectedTapViewModel>,
     pub(crate) timeline_preview_position: [f32; 3],
     pub(crate) timeline_preview_direction: SpawnDirection,
     pub(crate) timing_points: &'a [TimingPoint],
@@ -46,6 +58,9 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) waveform_scroll: f32,
     pub(crate) waveform_samples: &'a [f32],
     pub(crate) waveform_sample_rate: u32,
+    pub(crate) waveform_window_size: usize,
+    pub(crate) waveform_loading: bool,
+    pub(crate) waveform_complete: bool,
     pub(crate) bpm_tap_result: Option<f32>,
     pub(crate) triggers: &'a [TimedTrigger],
     pub(crate) trigger_selected_index: Option<usize>,
@@ -64,6 +79,14 @@ impl State {
     pub(crate) fn editor_ui_view_model(&self) -> EditorUiViewModel<'_> {
         let (timeline_preview_position, timeline_preview_direction) =
             self.editor_timeline_preview();
+        let selected_tap = self
+            .editor
+            .selected_tap()
+            .map(|(index, time_seconds, position)| SelectedTapViewModel {
+                index,
+                time_seconds,
+                position,
+            });
 
         let camera_target = glam::Vec3::new(
             self.editor.camera.editor_pan[0],
@@ -79,10 +102,13 @@ impl State {
             available_levels: self.available_levels(),
             level_name: self.session.editor_level_name.as_deref(),
             show_metadata: self.editor_show_metadata(),
+            show_place_window: self.editor_show_place_window(),
             show_settings: self.editor_show_settings(),
             settings_section: self.editor_settings_section(),
             keybind_capture_action: self.editor_keybind_capture_action(),
             music_metadata: self.editor_music_metadata(),
+            creator_metadata: self.editor_creator_metadata().clone(),
+            sky_color: self.editor_sky_color(),
             app_settings: self.app_settings(),
             configured_graphics_backend: self.app_settings().graphics_backend.as_str(),
             configured_audio_backend: self.app_settings().audio_backend.as_str(),
@@ -94,11 +120,13 @@ impl State {
             snap_rotation: self.editor_snap_rotation(),
             snap_rotation_step_degrees: self.editor_snap_rotation_step_degrees(),
             selected_block_id: self.editor_selected_block_id(),
+            recent_block_ids: &self.editor.config.recent_block_ids,
             selected_block: self.editor_selected_block(),
             playing: self.editor_is_playing(),
             timeline_time_seconds: self.editor_timeline_time_seconds(),
             timeline_duration_seconds: self.editor_timeline_duration_seconds(),
             tap_times: self.editor_tap_times(),
+            selected_tap,
             timeline_preview_position,
             timeline_preview_direction,
             timing_points: self.editor_timing_points(),
@@ -108,6 +136,9 @@ impl State {
             waveform_scroll: self.editor_waveform_scroll(),
             waveform_samples: self.editor_waveform_samples(),
             waveform_sample_rate: self.editor_waveform_sample_rate(),
+            waveform_window_size: self.editor_waveform_window_size(),
+            waveform_loading: self.editor_waveform_loading(),
+            waveform_complete: self.editor_waveform_complete(),
             bpm_tap_result: self.editor_bpm_tap_result(),
             triggers: self.editor_triggers(),
             trigger_selected_index: self.editor_selected_trigger_index(),

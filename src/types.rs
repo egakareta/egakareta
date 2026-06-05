@@ -5,6 +5,8 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use std::collections::HashMap;
+
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +36,20 @@ pub(crate) struct EditorPickResult {
     pub(crate) cursor: [f32; 3],
     pub(crate) hit_block_index: Option<usize>,
     pub(crate) hit_trigger_index: Option<usize>,
+    pub(crate) hit_tap_index: Option<usize>,
+    pub(crate) hit_tap_division: Option<EditorTapDivisionPick>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct EditorTapDivisionPick {
+    pub(crate) time_seconds: f32,
+    pub(crate) indicator_position: [f32; 3],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EditorPlaceMode {
+    SelectPlaced,
+    Stamp,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -96,7 +112,18 @@ impl GizmoPart {
 
 pub(crate) const CURRENT_LEVEL_FORMAT_VERSION: u32 = 2;
 
-pub(crate) const APP_SETTINGS_VERSION: u32 = 1;
+pub(crate) fn default_sky_color() -> [f32; 3] {
+    [0.04, 0.07, 0.09]
+}
+
+pub(crate) fn is_default_sky_color(value: &[f32; 3]) -> bool {
+    value
+        .iter()
+        .zip(default_sky_color())
+        .all(|(component, default)| (*component - default).abs() <= f32::EPSILON)
+}
+
+pub(crate) const APP_SETTINGS_VERSION: u32 = 3;
 pub(crate) const DEFAULT_MENU_PREVIEW_CAMERA_POSITION: [f32; 3] = [22.657694, 15.0, -10.565456];
 pub(crate) const DEFAULT_MENU_PREVIEW_CAMERA_TARGET: [f32; 3] = [0.0, 0.0, 0.0];
 
@@ -228,16 +255,8 @@ fn default_block_rotation_degrees() -> [f32; 3] {
     [0.0, 0.0, 0.0]
 }
 
-fn default_block_roundness() -> f32 {
-    0.18
-}
-
 fn is_default_block_rotation_degrees(value: &[f32; 3]) -> bool {
     value.iter().all(|component| component.abs() <= 1e-6)
-}
-
-fn is_default_block_roundness(value: &f32) -> bool {
-    (value - default_block_roundness()).abs() <= 1e-6
 }
 
 fn default_level_object_position() -> [f32; 3] {
@@ -363,6 +382,10 @@ fn default_app_keybinds() -> Vec<KeybindBinding> {
 
 fn is_default_app_keybinds(value: &[KeybindBinding]) -> bool {
     value == default_essential_keybinds().as_slice()
+}
+
+fn default_level_progress() -> HashMap<String, PlayerLevelProgress> {
+    HashMap::new()
 }
 
 fn deserialize_level_object_block_id<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -491,6 +514,27 @@ fn is_default_music_metadata(value: &MusicMetadata) -> bool {
         && value.title.is_none()
         && value.author.is_none()
         && value.extra.is_empty()
+}
+
+fn is_default_level_stars(value: &f32) -> bool {
+    value.abs() <= f32::EPSILON
+}
+
+fn default_level_tags() -> Vec<String> {
+    Vec::new()
+}
+
+fn is_default_level_tags(value: &[String]) -> bool {
+    value.is_empty()
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct LevelCreatorMetadata {
+    pub(crate) creator: Option<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) stars: f32,
+    pub(crate) tags: Vec<String>,
+    pub(crate) version: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
@@ -887,10 +931,28 @@ pub(crate) struct LevelMetadata {
     )]
     pub(crate) format_version: u32,
     pub(crate) name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) creator: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) description: Option<String>,
+    #[serde(default, skip_serializing_if = "is_default_level_stars")]
+    pub(crate) stars: f32,
+    #[serde(
+        default = "default_level_tags",
+        skip_serializing_if = "is_default_level_tags"
+    )]
+    pub(crate) tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) version: Option<String>,
     #[serde(default, skip_serializing_if = "is_default_music_metadata")]
     pub(crate) music: MusicMetadata,
     #[serde(default, skip_serializing_if = "is_default_spawn_metadata")]
     pub(crate) spawn: SpawnMetadata,
+    #[serde(
+        default = "default_sky_color",
+        skip_serializing_if = "is_default_sky_color"
+    )]
+    pub(crate) sky_color: [f32; 3],
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) tap_times: Vec<f32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -936,8 +998,10 @@ pub(crate) struct LevelPreviewCameraMetadata {
 
 pub(crate) struct EditorStateParams {
     pub name: String,
+    pub creator_metadata: LevelCreatorMetadata,
     pub music: MusicMetadata,
     pub spawn: SpawnMetadata,
+    pub sky_color: [f32; 3],
     pub tap_times: Vec<f32>,
     pub timing_points: Vec<TimingPoint>,
     pub timeline_time_seconds: f32,
@@ -952,8 +1016,10 @@ impl LevelMetadata {
     pub(crate) fn from_editor_state(
         EditorStateParams {
             name,
+            creator_metadata,
             music,
             spawn,
+            sky_color,
             tap_times,
             timing_points,
             timeline_time_seconds,
@@ -967,8 +1033,14 @@ impl LevelMetadata {
         Self {
             format_version: CURRENT_LEVEL_FORMAT_VERSION,
             name,
+            creator: creator_metadata.creator,
+            description: creator_metadata.description,
+            stars: creator_metadata.stars.clamp(0.0, 10.0),
+            tags: creator_metadata.tags,
+            version: creator_metadata.version,
             music,
             spawn,
+            sky_color,
             tap_times,
             timing_points,
             timeline_time_seconds,
@@ -983,6 +1055,16 @@ impl LevelMetadata {
 
     pub(crate) fn resolved_triggers(&self) -> Vec<TimedTrigger> {
         self.triggers.clone()
+    }
+
+    pub(crate) fn creator_metadata(&self) -> LevelCreatorMetadata {
+        LevelCreatorMetadata {
+            creator: self.creator.clone(),
+            description: self.description.clone(),
+            stars: self.stars.clamp(0.0, 10.0),
+            tags: self.tags.clone(),
+            version: self.version.clone(),
+        }
     }
 }
 
@@ -1055,11 +1137,6 @@ pub(crate) struct LevelObject {
     )]
     pub(crate) rotation_degrees: [f32; 3],
     #[serde(
-        default = "default_block_roundness",
-        skip_serializing_if = "is_default_block_roundness"
-    )]
-    pub(crate) roundness: f32,
-    #[serde(
         default = "default_level_object_block_id",
         alias = "kind",
         deserialize_with = "deserialize_level_object_block_id",
@@ -1085,7 +1162,6 @@ impl Default for LevelObject {
             position: default_level_object_position(),
             size: default_level_object_size(),
             rotation_degrees: default_block_rotation_degrees(),
-            roundness: default_block_roundness(),
             block_id: default_level_object_block_id(),
             color_tint: default_level_object_color_tint(),
         }
@@ -1182,6 +1258,36 @@ pub(crate) struct KeybindBinding {
     pub(crate) chord: KeyChord,
 }
 
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct PlayerLevelProgress {
+    #[serde(default)]
+    pub(crate) progress_percent: f32,
+    #[serde(default)]
+    pub(crate) completed: bool,
+    #[serde(default)]
+    pub(crate) gems_collected: u32,
+    #[serde(default)]
+    pub(crate) gems_max: u32,
+}
+
+impl PlayerLevelProgress {
+    pub(crate) fn sanitized(self) -> Self {
+        let progress_percent = if self.progress_percent.is_finite() {
+            self.progress_percent.clamp(0.0, 100.0)
+        } else {
+            0.0
+        };
+        let gems_collected = self.gems_collected.min(self.gems_max);
+
+        Self {
+            progress_percent,
+            completed: self.completed || progress_percent >= 100.0,
+            gems_collected,
+            gems_max: self.gems_max,
+        }
+    }
+}
+
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub(crate) struct AppSettings {
     #[serde(
@@ -1234,6 +1340,11 @@ pub(crate) struct AppSettings {
         skip_serializing_if = "is_default_app_keybinds"
     )]
     pub(crate) keybinds: Vec<KeybindBinding>,
+    #[serde(
+        default = "default_level_progress",
+        skip_serializing_if = "HashMap::is_empty"
+    )]
+    pub(crate) level_progress: HashMap<String, PlayerLevelProgress>,
 }
 
 impl Default for AppSettings {
@@ -1249,6 +1360,7 @@ impl Default for AppSettings {
             audio_backend: default_audio_backend_setting(),
             ui_scale_multiplier: default_ui_scale_multiplier_setting(),
             keybinds: default_app_keybinds(),
+            level_progress: default_level_progress(),
         }
     }
 }
@@ -1271,6 +1383,24 @@ impl AppSettings {
             .filter(|binding| binding.action == action)
             .map(|binding| &binding.chord)
             .collect()
+    }
+
+    /// Returns a formatted hotkey hint like `" (Ctrl+S)"` for use in tooltip text.
+    /// Returns an empty string if no keybinding exists for the action.
+    pub(crate) fn hotkey_hint(&self, action: &str) -> String {
+        self.keybinds_for_action(action)
+            .first()
+            .map(|c| format!(" ({})", format_key_chord(c)))
+            .unwrap_or_default()
+    }
+
+    /// Returns a formatted hotkey hint like `" (Ctrl+S)"`, falling back to
+    /// `" ({default_label})"` when no keybinding exists for the action.
+    pub(crate) fn hotkey_hint_or(&self, action: &str, default_label: &str) -> String {
+        self.keybinds_for_action(action)
+            .first()
+            .map(|c| format!(" ({})", format_key_chord(c)))
+            .unwrap_or_else(|| format!(" ({})", default_label))
     }
 
     pub(crate) fn set_keybind_at_slot(&mut self, action: &str, slot: usize, chord: KeyChord) {
@@ -1340,6 +1470,65 @@ impl AppSettings {
         }
         preserved.extend(default_essential_keybinds());
         self.keybinds = preserved;
+    }
+
+    pub(crate) fn update_level_progress(
+        &mut self,
+        level_name: &str,
+        attempt: PlayerLevelProgress,
+    ) -> bool {
+        let level_name = level_name.trim();
+        if level_name.is_empty() {
+            return false;
+        }
+
+        let attempt = attempt.sanitized();
+        let entry = self
+            .level_progress
+            .entry(level_name.to_string())
+            .or_default();
+        let mut changed = false;
+
+        if attempt.progress_percent > entry.progress_percent {
+            entry.progress_percent = attempt.progress_percent;
+            changed = true;
+        }
+        if attempt.completed && !entry.completed {
+            entry.completed = true;
+            changed = true;
+        }
+        if attempt.gems_max > entry.gems_max {
+            entry.gems_max = attempt.gems_max;
+            changed = true;
+        }
+        if attempt.gems_collected > entry.gems_collected {
+            entry.gems_collected = attempt
+                .gems_collected
+                .min(entry.gems_max.max(attempt.gems_max));
+            changed = true;
+        }
+
+        changed
+    }
+
+    pub(crate) fn migrate_defaults(&mut self) -> bool {
+        if self.version >= APP_SETTINGS_VERSION {
+            return false;
+        }
+
+        let mut changed = self.version != APP_SETTINGS_VERSION;
+        for default_binding in default_essential_keybinds() {
+            if !self
+                .keybinds
+                .iter()
+                .any(|binding| binding.action == default_binding.action)
+            {
+                self.keybinds.push(default_binding);
+                changed = true;
+            }
+        }
+        self.version = APP_SETTINGS_VERSION;
+        changed
     }
 }
 
@@ -1419,6 +1608,18 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
             capacity: 2,
         },
         KeybindActionMetadata {
+            group: "Gameplay",
+            action: "practice_checkpoint",
+            label: "Place Practice Checkpoint",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Gameplay",
+            action: "practice_remove_checkpoint",
+            label: "Remove Practice Checkpoint",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
             group: "Timeline",
             action: "toggle_timeline_playback",
             label: "Toggle Timeline Playback",
@@ -1428,12 +1629,6 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
             group: "Timeline",
             action: "playtest",
             label: "Start Playtest",
-            capacity: 1,
-        },
-        KeybindActionMetadata {
-            group: "Timeline",
-            action: "toggle_tap_timing",
-            label: "Toggle Tap/Timing Mode",
             capacity: 1,
         },
         KeybindActionMetadata {
@@ -1522,6 +1717,24 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
         },
         KeybindActionMetadata {
             group: "Editor",
+            action: "snap_selection_to_grid",
+            label: "Snap Selection to Grid",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "pick_selected_block",
+            label: "Pick Selected Block",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "focus_camera_target",
+            label: "Focus Camera Target",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
             action: "spawn_set",
             label: "Set Spawn Position",
             capacity: 1,
@@ -1600,20 +1813,38 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
         },
         KeybindActionMetadata {
             group: "Modes",
-            action: "mode_place",
-            label: "Place Mode",
+            action: "mode_trigger",
+            label: "Trigger Mode",
             capacity: 1,
         },
         KeybindActionMetadata {
-            group: "Modes",
-            action: "mode_trigger",
-            label: "Trigger Mode",
+            group: "Tabs",
+            action: "tab_compose",
+            label: "Compose Tab",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Tabs",
+            action: "tab_timing",
+            label: "Timing Tab",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Tabs",
+            action: "tab_tapping",
+            label: "Tapping Tab",
             capacity: 1,
         },
         KeybindActionMetadata {
             group: "General",
             action: "escape",
             label: "Context Escape",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "toggle_place_window",
+            label: "Place Window",
             capacity: 1,
         },
     ]
@@ -1627,6 +1858,10 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
         },
         KeybindBinding {
             action: "toggle_editor".to_string(),
+            chord: KeyChord::new("e", false, false, false),
+        },
+        KeybindBinding {
+            action: "toggle_place_window".to_string(),
             chord: KeyChord::new("e", false, false, false),
         },
         KeybindBinding {
@@ -1658,6 +1893,14 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
             chord: KeyChord::new("ArrowRight", false, false, false),
         },
         KeybindBinding {
+            action: "practice_checkpoint".to_string(),
+            chord: KeyChord::new("z", false, false, false),
+        },
+        KeybindBinding {
+            action: "practice_remove_checkpoint".to_string(),
+            chord: KeyChord::new("x", false, false, false),
+        },
+        KeybindBinding {
             action: "toggle_timeline_playback".to_string(),
             chord: KeyChord::new("Space", false, false, false),
         },
@@ -1676,10 +1919,6 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
         KeybindBinding {
             action: "playtest".to_string(),
             chord: KeyChord::new("Enter", false, false, false),
-        },
-        KeybindBinding {
-            action: "toggle_tap_timing".to_string(),
-            chord: KeyChord::new("t", false, false, false),
         },
         KeybindBinding {
             action: "remove_block".to_string(),
@@ -1742,6 +1981,18 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
             chord: KeyChord::new("ArrowRight", false, false, false),
         },
         KeybindBinding {
+            action: "snap_selection_to_grid".to_string(),
+            chord: KeyChord::new("g", false, false, false),
+        },
+        KeybindBinding {
+            action: "pick_selected_block".to_string(),
+            chord: KeyChord::new("b", false, false, false),
+        },
+        KeybindBinding {
+            action: "focus_camera_target".to_string(),
+            chord: KeyChord::new("f", false, false, false),
+        },
+        KeybindBinding {
             action: "spawn_set".to_string(),
             chord: KeyChord::new("p", false, false, false),
         },
@@ -1802,12 +2053,20 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
             chord: KeyChord::new("4", false, false, false),
         },
         KeybindBinding {
-            action: "mode_place".to_string(),
+            action: "mode_trigger".to_string(),
             chord: KeyChord::new("5", false, false, false),
         },
         KeybindBinding {
-            action: "mode_trigger".to_string(),
-            chord: KeyChord::new("6", false, false, false),
+            action: "tab_compose".to_string(),
+            chord: KeyChord::new("1", true, false, false),
+        },
+        KeybindBinding {
+            action: "tab_timing".to_string(),
+            chord: KeyChord::new("2", true, false, false),
+        },
+        KeybindBinding {
+            action: "tab_tapping".to_string(),
+            chord: KeyChord::new("3", true, false, false),
         },
         KeybindBinding {
             action: "escape".to_string(),
@@ -1824,6 +2083,7 @@ pub(crate) struct MenuState {
     pub(crate) selected_level: usize,
     pub(crate) levels: Vec<String>,
     pub(crate) preview_level_index: Option<usize>,
+    pub(crate) preview_sky_color: [f32; 3],
     pub(crate) preview_camera_position: [f32; 3],
     pub(crate) preview_camera_target: [f32; 3],
 }
@@ -1846,6 +2106,8 @@ pub(crate) struct EditorState {
     pub(crate) selected_block_indices: Vec<usize>,
     pub(crate) hovered_block_index: Option<usize>,
     pub(crate) pointer_screen: Option<[f64; 2]>,
+    pub(crate) ui_input_blocking_rects: Vec<[f32; 4]>,
+    pub(crate) ui_input_pixels_per_point: f32,
     pub(crate) marquee_start_screen: Option<[f64; 2]>,
     pub(crate) marquee_current_screen: Option<[f64; 2]>,
 }
@@ -1860,6 +2122,7 @@ pub(crate) enum EditorMode {
     Rotate,
     #[default]
     Place,
+    Tapping,
     Trigger,
     Timing,
     Null,
@@ -1900,7 +2163,7 @@ impl EditorMode {
     }
 
     pub(crate) fn can_select(self) -> bool {
-        self != Self::Null && self != Self::Timing && self != Self::Trigger
+        self != Self::Null && self != Self::Timing && self != Self::Tapping && self != Self::Trigger
     }
 }
 
@@ -1922,6 +2185,8 @@ impl EditorState {
             selected_block_indices: Vec::new(),
             hovered_block_index: None,
             pointer_screen: None,
+            ui_input_blocking_rects: Vec::new(),
+            ui_input_pixels_per_point: 1.0,
             marquee_start_screen: None,
             marquee_current_screen: None,
         }
@@ -1983,9 +2248,10 @@ mod tests {
         apply_timed_triggers_to_objects, camera_triggers_to_timed_triggers,
         default_camera_trigger_pitch, default_camera_trigger_rotation,
         default_camera_trigger_transition_interval_seconds, timed_triggers_to_camera_triggers,
-        CameraTrigger, CameraTriggerMode, EditorStateParams, GameCursor, LevelMetadata,
-        LevelObject, LevelPreviewCameraMetadata, MusicMetadata, SpawnDirection, SpawnMetadata,
-        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, Vertex,
+        CameraTrigger, CameraTriggerMode, EditorStateParams, GameCursor, LevelCreatorMetadata,
+        LevelMetadata, LevelObject, LevelPreviewCameraMetadata, MusicMetadata, SpawnDirection,
+        SpawnMetadata, TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+        Vertex,
     };
     use serde_json::json;
 
@@ -2013,7 +2279,6 @@ mod tests {
 
         let object: LevelObject = serde_json::from_str(json).expect("valid level object");
         assert_eq!(object.rotation_degrees, [0.0, 0.0, 0.0]);
-        assert_eq!(object.roundness, 0.18);
         assert_eq!(object.block_id, "core/stone");
         assert_eq!(object.color_tint, [1.0, 1.0, 1.0]);
     }
@@ -2032,17 +2297,15 @@ mod tests {
         let metadata: LevelMetadata = serde_json::from_str(json).expect("valid metadata");
         assert_eq!(metadata.objects.len(), 1);
         assert_eq!(metadata.objects[0].rotation_degrees, [0.0, 0.0, 0.0]);
-        assert_eq!(metadata.objects[0].roundness, 0.18);
         assert!(matches!(metadata.spawn.direction, SpawnDirection::Forward));
     }
 
     #[test]
-    fn level_object_serialization_omits_default_rotation_and_roundness() {
+    fn level_object_serialization_omits_default_rotation() {
         let object = LevelObject {
             position: [1.0, 2.0, 3.0],
             size: [4.0, 5.0, 6.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/grass".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         };
@@ -2061,8 +2324,10 @@ mod tests {
     fn level_metadata_serialization_omits_default_fields() {
         let metadata = LevelMetadata::from_editor_state(EditorStateParams {
             name: "Minimal".to_string(),
+            creator_metadata: LevelCreatorMetadata::default(),
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
             tap_times: Vec::new(),
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
@@ -2074,7 +2339,6 @@ mod tests {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             }],
@@ -2083,8 +2347,14 @@ mod tests {
         let value = serde_json::to_value(&metadata).expect("serialize metadata");
         assert_eq!(value["name"], "Minimal");
         assert!(value.get("format_version").is_none());
+        assert!(value.get("creator").is_none());
+        assert!(value.get("description").is_none());
+        assert!(value.get("stars").is_none());
+        assert!(value.get("tags").is_none());
+        assert!(value.get("version").is_none());
         assert!(value.get("music").is_none());
         assert!(value.get("spawn").is_none());
+        assert!(value.get("sky_color").is_none());
         assert!(value.get("tap_times").is_none());
         assert!(value.get("timeline_time_seconds").is_none());
         assert!(value.get("timeline_duration_seconds").is_none());
@@ -2097,7 +2367,6 @@ mod tests {
         assert!(object.get("position").is_none());
         assert!(object.get("size").is_none());
         assert!(object.get("rotation_degrees").is_none());
-        assert!(object.get("roundness").is_none());
         assert!(object.get("block_id").is_none());
     }
 
@@ -2105,8 +2374,10 @@ mod tests {
     fn level_metadata_serialization_includes_simulate_trigger_hitboxes_when_enabled() {
         let metadata = LevelMetadata::from_editor_state(EditorStateParams {
             name: "HitboxPolicy".to_string(),
+            creator_metadata: LevelCreatorMetadata::default(),
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
             tap_times: Vec::new(),
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
@@ -2122,11 +2393,38 @@ mod tests {
     }
 
     #[test]
+    fn level_metadata_serialization_includes_custom_sky_color() {
+        let metadata = LevelMetadata::from_editor_state(EditorStateParams {
+            name: "CustomSky".to_string(),
+            creator_metadata: LevelCreatorMetadata::default(),
+            music: MusicMetadata::default(),
+            spawn: SpawnMetadata::default(),
+            sky_color: [0.2, 0.4, 0.8],
+            tap_times: Vec::new(),
+            timing_points: Vec::new(),
+            timeline_time_seconds: 0.0,
+            timeline_duration_seconds: 16.0,
+            triggers: Vec::new(),
+            simulate_trigger_hitboxes: false,
+            menu_preview_camera: None,
+            objects: Vec::new(),
+        });
+
+        let value = serde_json::to_value(&metadata).expect("serialize metadata");
+        let sky_color = value["sky_color"].as_array().expect("sky_color array");
+        assert_approx_eq(sky_color[0].as_f64().expect("sky red") as f32, 0.2);
+        assert_approx_eq(sky_color[1].as_f64().expect("sky green") as f32, 0.4);
+        assert_approx_eq(sky_color[2].as_f64().expect("sky blue") as f32, 0.8);
+    }
+
+    #[test]
     fn level_metadata_serialization_includes_menu_preview_camera_when_present() {
         let metadata = LevelMetadata::from_editor_state(EditorStateParams {
             name: "MenuPreview".to_string(),
+            creator_metadata: LevelCreatorMetadata::default(),
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
             tap_times: Vec::new(),
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
@@ -2226,8 +2524,14 @@ mod tests {
         let metadata = LevelMetadata {
             format_version: 1,
             name: "Bridge".to_string(),
+            creator: None,
+            description: None,
+            stars: 0.0,
+            tags: Vec::new(),
+            version: None,
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
             tap_times: Vec::new(),
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
@@ -2259,7 +2563,6 @@ mod tests {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         }];
@@ -2310,7 +2613,6 @@ mod tests {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             },
@@ -2318,7 +2620,6 @@ mod tests {
                 position: [1.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             },
@@ -2326,7 +2627,6 @@ mod tests {
                 position: [2.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             },
@@ -2367,7 +2667,6 @@ mod tests {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         }];
@@ -2392,6 +2691,47 @@ mod tests {
         for metadata in actions {
             assert!(!metadata.group.is_empty());
             assert!(!metadata.action.is_empty());
+        }
+    }
+
+    #[test]
+    fn editor_tab_keybinds_are_registered_with_defaults() {
+        let actions = super::essential_keybind_actions();
+        for action in [
+            "pick_selected_block",
+            "focus_camera_target",
+            "tab_compose",
+            "tab_timing",
+            "tab_tapping",
+        ] {
+            assert!(
+                actions.iter().any(|metadata| metadata.action == action),
+                "{action} should be shown in keybind settings"
+            );
+        }
+
+        let defaults = super::default_essential_keybinds();
+        let expected = [
+            (
+                "pick_selected_block",
+                super::KeyChord::new("b", false, false, false),
+            ),
+            (
+                "focus_camera_target",
+                super::KeyChord::new("f", false, false, false),
+            ),
+            ("tab_compose", super::KeyChord::new("1", true, false, false)),
+            ("tab_timing", super::KeyChord::new("2", true, false, false)),
+            ("tab_tapping", super::KeyChord::new("3", true, false, false)),
+        ];
+
+        for (action, chord) in expected {
+            assert!(
+                defaults
+                    .iter()
+                    .any(|binding| binding.action == action && binding.chord == chord),
+                "{action} should have the expected default chord"
+            );
         }
     }
 
@@ -2515,5 +2855,35 @@ mod tests {
         assert!((super::AppSettings::clamp_ui_scale_multiplier(0.1) - 0.5).abs() <= 1e-6);
         assert!((super::AppSettings::clamp_ui_scale_multiplier(6.0) - 3.0).abs() <= 1e-6);
         assert!((super::AppSettings::clamp_ui_scale_multiplier(f32::NAN) - 1.0).abs() <= 1e-6);
+    }
+
+    #[test]
+    fn app_settings_level_progress_keeps_best_attempt() {
+        let mut settings = super::AppSettings::default();
+
+        assert!(settings.update_level_progress(
+            "Flowerfield",
+            super::PlayerLevelProgress {
+                progress_percent: 45.0,
+                completed: false,
+                gems_collected: 1,
+                gems_max: 3,
+            },
+        ));
+        assert!(settings.update_level_progress(
+            "Flowerfield",
+            super::PlayerLevelProgress {
+                progress_percent: 20.0,
+                completed: true,
+                gems_collected: 2,
+                gems_max: 3,
+            },
+        ));
+
+        let progress = settings.level_progress.get("Flowerfield").copied().unwrap();
+        assert!((progress.progress_percent - 45.0).abs() <= 1e-6);
+        assert!(progress.completed);
+        assert_eq!(progress.gems_collected, 2);
+        assert_eq!(progress.gems_max, 3);
     }
 }

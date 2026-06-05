@@ -6,7 +6,7 @@
 
 */
 use crate::commands::AppCommand;
-use crate::editor_ui::modes::shared::{show_mode_and_snap_controls, show_player_camera_status_row};
+use crate::editor_ui::modes::shared::show_mode_and_snap_controls;
 use crate::state::EditorUiViewModel;
 use crate::types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
 
@@ -532,11 +532,7 @@ pub(crate) fn show_trigger_mode_bottom_panel(
                 commands.push(AppCommand::EditorUpdateTrigger(selected_idx, trigger));
             }
         }
-    } else {
-        ui.label("Select a trigger to edit it.");
     }
-
-    show_player_camera_status_row(ui, view);
 }
 
 #[cfg(test)]
@@ -567,10 +563,13 @@ mod tests {
             available_levels: &[],
             level_name: Some("Trigger Test"),
             show_metadata: false,
+            show_place_window: false,
             show_settings: false,
             settings_section: SettingsSection::Backends,
             keybind_capture_action: None,
             music_metadata,
+            creator_metadata: crate::types::LevelCreatorMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
             app_settings,
             configured_graphics_backend: "Auto",
             configured_audio_backend: "Default",
@@ -582,11 +581,13 @@ mod tests {
             snap_rotation: true,
             snap_rotation_step_degrees: 15.0,
             selected_block_id: "core/stone",
+            recent_block_ids: &[],
             selected_block,
             playing: false,
             timeline_time_seconds: 3.5,
             timeline_duration_seconds: 20.0,
             tap_times: &[],
+            selected_tap: None,
             timeline_preview_position: [0.0, 0.0, 0.0],
             timeline_preview_direction: SpawnDirection::Right,
             timing_points,
@@ -596,6 +597,9 @@ mod tests {
             waveform_scroll: 0.0,
             waveform_samples: &[],
             waveform_sample_rate: 0,
+            waveform_window_size: crate::audio_service::WAVEFORM_WINDOW,
+            waveform_loading: false,
+            waveform_complete: false,
             bpm_tap_result: None,
             triggers,
             trigger_selected_index,

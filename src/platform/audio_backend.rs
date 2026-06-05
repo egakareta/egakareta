@@ -8,6 +8,11 @@
 use std::cell::RefCell;
 use std::io::Cursor;
 use std::rc::Rc;
+#[cfg(target_arch = "wasm32")]
+use std::sync::atomic::{AtomicBool, Ordering};
+
+#[cfg(target_arch = "wasm32")]
+static RAYON_INIT_SCHEDULED_AFTER_AUDIO: AtomicBool = AtomicBool::new(false);
 
 fn host_label(host_id: cpal::HostId) -> String {
     format!("{:?}", host_id)
@@ -51,6 +56,48 @@ fn select_host(preferred_host: Option<cpal::HostId>) -> cpal::Host {
     }
 
     cpal::default_host()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn schedule_rayon_after_audio_worklet() {
+    use wasm_bindgen::JsCast;
+
+    if RAYON_INIT_SCHEDULED_AFTER_AUDIO.swap(true, Ordering::AcqRel) {
+        return;
+    }
+
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+
+    let callback = wasm_bindgen::closure::Closure::<dyn FnMut()>::once(move || {
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+
+        let Ok(init_rayon) = js_sys::Reflect::get(
+            &window,
+            &wasm_bindgen::JsValue::from_str("__EGAKARETA_INIT_RAYON"),
+        ) else {
+            log::warn!("Rayon worker pool initializer is unavailable");
+            return;
+        };
+
+        if let Some(init_rayon) = init_rayon.dyn_ref::<js_sys::Function>() {
+            if let Err(err) = init_rayon.call0(&wasm_bindgen::JsValue::NULL) {
+                log::warn!("Failed to start Rayon worker pool: {:?}", err);
+            }
+        }
+    });
+
+    if let Err(err) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+        callback.as_ref().unchecked_ref(),
+        750,
+    ) {
+        log::warn!("Failed to schedule Rayon worker pool startup: {:?}", err);
+    }
+
+    callback.forget();
 }
 
 fn available_host_labels() -> Vec<String> {
@@ -120,6 +167,10 @@ impl RodioBackendInner {
                 match rodio::DeviceSinkBuilder::from_device(device).and_then(|b| b.open_stream()) {
                     Ok(sink) => {
                         log::info!("Audio stream opened successfully");
+                        #[cfg(target_arch = "wasm32")]
+                        if host_id == cpal::HostId::AudioWorklet {
+                            schedule_rayon_after_audio_worklet();
+                        }
                         Some(sink)
                     }
                     Err(err) => {
@@ -149,6 +200,31 @@ impl RodioBackendInner {
                 // another chance to unlock playback after user interaction policies change.
                 let _ = self.ensure_device();
                 log::trace!("AudioBackend: resume requested on existing output device");
+            }
+        }
+    }
+
+    fn pause_playback(&mut self) {
+        if let Some(started_at) = self.playback_started_at {
+            self.playback_start_offset_seconds +=
+                started_at.elapsed().as_secs_f32() * self.playback_speed;
+        }
+        if let Some(player) = &self.current_player {
+            player.pause();
+        }
+        self.playback_started_at = None;
+    }
+
+    fn resume_playback(&mut self) {
+        self.resume();
+        if let Some(player) = &self.current_player {
+            player.set_speed(self.playback_speed);
+            player.play();
+            self.playback_started_at = Some(web_time::Instant::now());
+        } else {
+            #[cfg(test)]
+            if self.current_audio_source.is_some() {
+                self.playback_started_at = Some(web_time::Instant::now());
             }
         }
     }
@@ -282,6 +358,10 @@ impl AudioBackend {
         }
         inner.playback_started_at = None;
         inner.playback_start_offset_seconds = 0.0;
+    }
+
+    pub(crate) fn pause(&mut self) {
+        self.inner.borrow_mut().pause_playback();
     }
 
     pub(crate) fn can_reuse_source(&self, source_key: &str) -> bool {
@@ -526,6 +606,10 @@ impl AudioBackend {
 
     pub(crate) fn resume(&mut self) {
         self.inner.borrow_mut().resume();
+    }
+
+    pub(crate) fn resume_playback(&mut self) {
+        self.inner.borrow_mut().resume_playback();
     }
 
     pub(crate) fn backend_name(&self) -> String {

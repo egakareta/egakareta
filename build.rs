@@ -21,15 +21,22 @@ struct BuildObjFaceVertex {
     position_index: usize,
     texcoord_index: Option<usize>,
     normal_index: Option<usize>,
+    material_index: Option<usize>,
 }
 
 struct BuildObjMesh {
     positions: Vec<[f32; 3]>,
     texcoords: Vec<[f32; 2]>,
     normals: Vec<[f32; 3]>,
+    materials: Vec<BuildObjMaterial>,
     faces: Vec<[BuildObjFaceVertex; 3]>,
     min: [f32; 3],
     max: [f32; 3],
+}
+
+#[derive(Clone, Copy)]
+struct BuildObjMaterial {
+    diffuse: [f32; 4],
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -37,6 +44,7 @@ struct BuildEgMeshVertex {
     position: [f32; 3],
     uv: [f32; 2],
     normal_tint: f32,
+    material_color: [f32; 4],
 }
 
 #[derive(Deserialize, Serialize)]
@@ -52,6 +60,7 @@ struct EgMeshVertexKey {
     position: [u32; 3],
     uv: [u32; 2],
     normal_tint: u32,
+    material_color: [u32; 4],
 }
 
 fn load_wrangler_vars(build_env: &str) -> Vec<(String, String)> {
@@ -157,14 +166,66 @@ fn collect_obj_paths(dir: &Path, paths: &mut Vec<PathBuf>) {
     }
 }
 
-fn parse_build_obj_mesh(contents: &str) -> Result<BuildObjMesh, String> {
+fn collect_mtl_paths(dir: &Path, paths: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_mtl_paths(&path, paths);
+        } else if path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("mtl"))
+        {
+            paths.push(path);
+        }
+    }
+}
+
+fn parse_build_obj_mesh(contents: &str, obj_path: &Path) -> Result<BuildObjMesh, String> {
     let mut positions = Vec::new();
     let mut texcoords = Vec::new();
     let mut normals = Vec::new();
+    let mut materials = Vec::new();
+    let mut material_indices = HashMap::new();
+    let mut current_material_index = None;
     let mut faces = Vec::new();
 
     for line in contents.lines() {
         let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("mtllib ") {
+            for material_path in rest.split_whitespace() {
+                let resolved_path = obj_path
+                    .parent()
+                    .unwrap_or_else(|| Path::new(""))
+                    .join(material_path);
+                match fs::read_to_string(&resolved_path) {
+                    Ok(material_contents) => append_build_mtl_materials(
+                        &material_contents,
+                        &mut materials,
+                        &mut material_indices,
+                    ),
+                    Err(error) => println!(
+                        "cargo:warning=Failed to read material library {}: {error}",
+                        resolved_path.display()
+                    ),
+                }
+            }
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("usemtl ") {
+            current_material_index = material_indices.get(rest.trim()).copied();
+            continue;
+        }
+
         if let Some(rest) = trimmed.strip_prefix("v ") {
             let mut parts = rest.split_whitespace();
             let x = parts
@@ -274,6 +335,7 @@ fn parse_build_obj_mesh(contents: &str) -> Result<BuildObjMesh, String> {
                     position_index,
                     texcoord_index,
                     normal_index,
+                    material_index: current_material_index,
                 });
             }
 
@@ -307,10 +369,102 @@ fn parse_build_obj_mesh(contents: &str) -> Result<BuildObjMesh, String> {
         positions,
         texcoords,
         normals,
+        materials,
         faces,
         min,
         max,
     })
+}
+
+fn append_build_mtl_materials(
+    contents: &str,
+    materials: &mut Vec<BuildObjMaterial>,
+    material_indices: &mut HashMap<String, usize>,
+) {
+    let mut current_name = None::<String>;
+    let mut current_diffuse = [1.0, 1.0, 1.0, 1.0];
+
+    for line in contents.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("newmtl ") {
+            flush_build_material(
+                &mut current_name,
+                current_diffuse,
+                materials,
+                material_indices,
+            );
+            current_name = Some(rest.trim().to_string());
+            current_diffuse = [1.0, 1.0, 1.0, 1.0];
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("Kd ") {
+            let mut parts = rest.split_whitespace();
+            let Some(r) = parts.next().and_then(|value| value.parse::<f32>().ok()) else {
+                continue;
+            };
+            let Some(g) = parts.next().and_then(|value| value.parse::<f32>().ok()) else {
+                continue;
+            };
+            let Some(b) = parts.next().and_then(|value| value.parse::<f32>().ok()) else {
+                continue;
+            };
+            current_diffuse[0] = r.clamp(0.0, 1.0);
+            current_diffuse[1] = g.clamp(0.0, 1.0);
+            current_diffuse[2] = b.clamp(0.0, 1.0);
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("d ") {
+            if let Some(alpha) = rest
+                .split_whitespace()
+                .next()
+                .and_then(|value| value.parse::<f32>().ok())
+            {
+                current_diffuse[3] = alpha.clamp(0.0, 1.0);
+            }
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("Tr ") {
+            if let Some(transparency) = rest
+                .split_whitespace()
+                .next()
+                .and_then(|value| value.parse::<f32>().ok())
+            {
+                current_diffuse[3] = (1.0 - transparency).clamp(0.0, 1.0);
+            }
+        }
+    }
+
+    flush_build_material(
+        &mut current_name,
+        current_diffuse,
+        materials,
+        material_indices,
+    );
+}
+
+fn flush_build_material(
+    current_name: &mut Option<String>,
+    diffuse: [f32; 4],
+    materials: &mut Vec<BuildObjMaterial>,
+    material_indices: &mut HashMap<String, usize>,
+) {
+    let Some(name) = current_name.take() else {
+        return;
+    };
+    if name.is_empty() || material_indices.contains_key(&name) {
+        return;
+    }
+
+    let index = materials.len();
+    materials.push(BuildObjMaterial { diffuse });
+    material_indices.insert(name, index);
 }
 
 fn resolve_build_obj_index(raw_index: isize, len: usize) -> Option<usize> {
@@ -366,10 +520,18 @@ fn convert_obj_to_egmesh(mesh: &BuildObjMesh) -> Result<BuildEgMesh, String> {
                         let nx = normal[0] / length;
                         let ny = normal[1] / length;
                         let nz = normal[2] / length;
-                        (nx * 0.25 + ny * 0.35 + nz * 0.4).abs().clamp(0.35, 1.0)
+                        // Light direction (0.25, 0.35, 0.4), normalized.
+                        let l_len = 0.58738_f32;
+                        let dot = (nx * 0.25 + ny * 0.35 + nz * 0.4) / l_len;
+                        dot.abs().clamp(0.35, 1.0)
                     }
                 })
                 .unwrap_or(1.0);
+            let material_color = corner
+                .material_index
+                .and_then(|index| mesh.materials.get(index))
+                .map(|material| material.diffuse)
+                .unwrap_or([1.0, 1.0, 1.0, 1.0]);
 
             let key = EgMeshVertexKey {
                 position: [
@@ -379,6 +541,12 @@ fn convert_obj_to_egmesh(mesh: &BuildObjMesh) -> Result<BuildEgMesh, String> {
                 ],
                 uv: [uv[0].to_bits(), uv[1].to_bits()],
                 normal_tint: normal_tint.to_bits(),
+                material_color: [
+                    material_color[0].to_bits(),
+                    material_color[1].to_bits(),
+                    material_color[2].to_bits(),
+                    material_color[3].to_bits(),
+                ],
             };
             let index = if let Some(index) = lookup.get(&key) {
                 *index
@@ -389,6 +557,7 @@ fn convert_obj_to_egmesh(mesh: &BuildObjMesh) -> Result<BuildEgMesh, String> {
                     position: normalized,
                     uv,
                     normal_tint,
+                    material_color,
                 });
                 lookup.insert(key, index);
                 index
@@ -482,13 +651,20 @@ fn generate_egmesh_manifest() {
     collect_obj_paths(assets_dir, &mut obj_paths);
     obj_paths.sort();
 
+    let mut mtl_paths = Vec::new();
+    collect_mtl_paths(assets_dir, &mut mtl_paths);
+    mtl_paths.sort();
+    for mtl_path in mtl_paths {
+        println!("cargo:rerun-if-changed={}", mtl_path.display());
+    }
+
     for obj_path in obj_paths {
         println!("cargo:rerun-if-changed={}", obj_path.display());
         let relative_path = obj_path.strip_prefix(assets_dir).unwrap_or(&obj_path);
         let output_path = generated_dir.join(generated_egmesh_file_name(relative_path));
         let conversion = fs::read_to_string(&obj_path)
             .map_err(|error| error.to_string())
-            .and_then(|contents| parse_build_obj_mesh(&contents))
+            .and_then(|contents| parse_build_obj_mesh(&contents, &obj_path))
             .and_then(|mesh| convert_obj_to_egmesh(&mesh))
             .and_then(|mesh| encode_build_egmesh(&mesh));
 

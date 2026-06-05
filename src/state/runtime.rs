@@ -8,7 +8,7 @@
 use super::editor_interaction::EditorInteractionState;
 use super::history::EditorHistoryState;
 use crate::platform::state_host::PlatformInstant;
-use crate::types::LineUniform;
+use crate::types::{LevelObject, LineUniform};
 
 #[derive(Clone, Copy, Default, Debug)]
 pub(crate) struct EditorDirtyFlags {
@@ -77,8 +77,27 @@ pub(crate) struct EditorFrameState {
     pub(crate) accumulator: f32,
 }
 
+pub(crate) struct GemShatterEffect {
+    pub(crate) position: [f32; 3],
+    pub(crate) size: [f32; 3],
+    pub(crate) color_tint: [f32; 3],
+    pub(crate) age_seconds: f32,
+}
+
+impl GemShatterEffect {
+    pub(crate) fn from_object(object: &LevelObject) -> Self {
+        Self {
+            position: object.position,
+            size: object.size,
+            color_tint: object.color_tint,
+            age_seconds: 0.0,
+        }
+    }
+}
+
 pub(crate) struct PlayerRenderState {
     pub(crate) line_uniform: LineUniform,
+    pub(crate) gem_shatter_effects: Vec<GemShatterEffect>,
 }
 
 pub(crate) struct FrameRuntimeState {

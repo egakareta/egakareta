@@ -11,9 +11,16 @@ pub(crate) mod modes;
 
 use std::collections::HashMap;
 
+use crate::block_repository::{BlockCategory, BlockDefinition};
 use crate::commands::AppCommand;
 use crate::editor_ui::components::{show_timeline_bar, show_waveform_panel, timeline_metrics};
-use crate::editor_ui::modes::compose::show_compose_mode_bottom_panel;
+use crate::editor_ui::modes::compose::{
+    show_block_preview_button, show_compose_mode_bottom_panel, show_recent_block_quick_strip,
+    show_selected_block_properties_window,
+};
+use crate::editor_ui::modes::tapping::{
+    show_selected_tap_properties_window, show_tapping_mode_bottom_panel,
+};
 use crate::editor_ui::modes::timing::show_timing_mode_bottom_panel;
 use crate::editor_ui::modes::trigger::show_trigger_mode_bottom_panel;
 use crate::types::{essential_keybind_actions, format_key_chord, EditorMode, SettingsSection};
@@ -21,8 +28,9 @@ use crate::State;
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
 use glam::{Mat3, Vec3};
 pub use menu::{
-    load_menu_favicon_texture, show_menu_auth_ui, show_menu_favicon_ui, show_menu_play_ui,
-    show_menu_topbar,
+    load_menu_favicon_texture, load_menu_play_button_filled_texture, load_menu_play_button_texture,
+    show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui, show_pause_menu_ui,
+    show_practice_checkpoint_ui,
 };
 
 #[derive(Clone, Copy)]
@@ -79,6 +87,50 @@ const VIEW_CUBE_FACES: [ViewCubeFace; 6] = [
     },
 ];
 
+const EASY_STAR_THRESHOLD: f32 = 2.0;
+const NORMAL_STAR_THRESHOLD: f32 = 4.0;
+const HARD_STAR_THRESHOLD: f32 = 6.0;
+const HARDER_STAR_THRESHOLD: f32 = 8.0;
+const INSANE_STAR_THRESHOLD: f32 = 10.0;
+
+fn optional_trimmed_string(value: String) -> Option<String> {
+    let value = value.trim().to_string();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+fn tags_to_text(tags: &[String]) -> String {
+    tags.join(", ")
+}
+
+fn tags_from_text(value: String) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|tag| !tag.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn difficulty_for_stars(stars: f32) -> &'static str {
+    if stars < EASY_STAR_THRESHOLD {
+        "easy"
+    } else if stars < NORMAL_STAR_THRESHOLD {
+        "normal"
+    } else if stars < HARD_STAR_THRESHOLD {
+        "hard"
+    } else if stars < HARDER_STAR_THRESHOLD {
+        "harder"
+    } else if stars < INSANE_STAR_THRESHOLD {
+        "insane"
+    } else {
+        "demon"
+    }
+}
+
 const COMPACT_EDITOR_UI_BREAKPOINT: f32 = 720.0;
 const SETTINGS_SIDEBAR_TOTAL_PADDING: f32 = 24.0;
 const SETTINGS_SIDEBAR_MIN_WIDTH: f32 = 180.0;
@@ -92,8 +144,47 @@ const KEYBIND_LABEL_MIN_WIDTH: f32 = 88.0;
 const KEYBIND_LABEL_MAX_WIDTH: f32 = 132.0;
 const KEYBIND_VERTICAL_BREAKPOINT: f32 = 240.0;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum BlockCatalogCategory {
+    #[default]
+    All,
+    Building,
+    Danger,
+    Tech,
+}
+
+const BLOCK_CATALOG_CATEGORIES: [BlockCatalogCategory; 4] = [
+    BlockCatalogCategory::All,
+    BlockCatalogCategory::Building,
+    BlockCatalogCategory::Danger,
+    BlockCatalogCategory::Tech,
+];
+const PLACE_BLOCK_CATALOG_COLUMNS: usize = 9;
+const PLACE_BLOCK_CATALOG_ROWS: usize = 4;
+const PLACE_BLOCK_CATALOG_CELL_SIZE: f32 = 72.0;
+
+impl BlockCatalogCategory {
+    fn label(self) -> &'static str {
+        match self {
+            Self::All => "All",
+            Self::Building => "Building",
+            Self::Danger => "Danger",
+            Self::Tech => "Tech",
+        }
+    }
+}
+
 fn is_compact_editor_ui(viewport_width: f32) -> bool {
     viewport_width <= COMPACT_EDITOR_UI_BREAKPOINT
+}
+
+fn block_matches_catalog_category(block: &BlockDefinition, category: BlockCatalogCategory) -> bool {
+    match category {
+        BlockCatalogCategory::All => true,
+        BlockCatalogCategory::Building => block.category == BlockCategory::Building,
+        BlockCatalogCategory::Danger => block.category == BlockCategory::Danger,
+        BlockCatalogCategory::Tech => block.category == BlockCategory::Tech,
+    }
 }
 
 fn settings_sidebar_default_width(viewport_width: f32) -> f32 {
@@ -162,6 +253,10 @@ fn marquee_screen_pos_to_egui_pos(screen_pos: [f64; 2], pixels_per_point: f32) -
     egui::pos2(screen_pos[0] as f32 / scale, screen_pos[1] as f32 / scale)
 }
 
+fn rect_to_input_bounds(rect: egui::Rect) -> [f32; 4] {
+    [rect.min.x, rect.min.y, rect.max.x, rect.max.y]
+}
+
 /// Shows the editor UI using egui.
 /// Handles the top bar, bottom panels, and other editor interface elements.
 // egui 0.34 deprecates top-level Panel::show in favor of show_inside;
@@ -173,16 +268,20 @@ pub fn show_editor_ui(
     block_icon_texture_ids: &HashMap<String, egui::TextureId>,
 ) {
     if !state.is_editor() {
+        state.clear_editor_ui_input_blocking_rects();
         return;
     }
 
     let view = state.editor_ui_view_model();
     let mut commands = Vec::<AppCommand>::new();
+    let mut ui_input_blocking_rects = Vec::<[f32; 4]>::new();
 
     let mode = view.mode;
     let last_mode = view.last_mode;
     let is_timing = mode == EditorMode::Timing
         || (mode == EditorMode::Null && last_mode == Some(EditorMode::Timing));
+    let is_tapping = mode == EditorMode::Tapping
+        || (mode == EditorMode::Null && last_mode == Some(EditorMode::Tapping));
     let is_compose = mode.is_compose_mode() && !is_timing;
     let content_rect = ctx.content_rect();
     let viewport_width = content_rect.width();
@@ -191,7 +290,7 @@ pub fn show_editor_ui(
 
     if view.show_settings {
         let sidebar_width = settings_sidebar_default_width(viewport_width);
-        egui::Area::new("editor_settings_sidebar_overlay".into())
+        let settings_response = egui::Area::new("editor_settings_sidebar_overlay".into())
             .order(egui::Order::Foreground)
             .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
             .show(ctx, |ui| {
@@ -380,19 +479,49 @@ pub fn show_editor_ui(
                     }
                 });
             });
+        ui_input_blocking_rects.push(rect_to_input_bounds(settings_response.response.rect));
     }
 
-    egui::Panel::top("editor_top_bar").show(ctx, |ui| {
-        ui.horizontal_wrapped(|ui| {
-            // Top-level tabs: Compose / Timing
-            if ui.selectable_label(is_compose, "Compose").clicked() && !is_compose {
+    let top_bar_response = egui::Panel::top("editor_top_bar").show(ctx, |ui| {
+        ui.horizontal(|ui| {
+            // Top-level tabs: Compose / Tapping / Timing
+            if ui
+                .selectable_label(is_compose, "Compose")
+                .on_hover_text(format!(
+                    "Compose Tab{}",
+                    view.app_settings.hotkey_hint("tab_compose")
+                ))
+                .clicked()
+                && !is_compose
+            {
                 commands.push(crate::commands::AppCommand::EditorSetMode(
                     EditorMode::Place,
                 ));
             }
-            if ui.selectable_label(is_timing, "Timing").clicked() && !is_timing {
+            if ui
+                .selectable_label(is_timing, "Timing")
+                .on_hover_text(format!(
+                    "Timing Tab{}",
+                    view.app_settings.hotkey_hint("tab_timing")
+                ))
+                .clicked()
+                && !is_timing
+            {
                 commands.push(crate::commands::AppCommand::EditorSetMode(
                     EditorMode::Timing,
+                ));
+            }
+            if ui
+                .selectable_label(is_tapping, "Tapping")
+                .on_hover_text(format!(
+                    "Tapping Tab{}",
+                    view.app_settings.hotkey_hint("tab_tapping")
+                ))
+                .clicked()
+                && !is_tapping
+            {
+                commands.push(crate::commands::AppCommand::EditorSetMode(
+                    EditorMode::Tapping,
                 ));
             }
 
@@ -441,105 +570,279 @@ pub fn show_editor_ui(
 
             if ui
                 .button(format!("{} Settings", egui_phosphor::regular::GEAR))
+                .on_hover_text(format!(
+                    "Settings{}",
+                    view.app_settings.hotkey_hint("toggle_settings")
+                ))
                 .clicked()
             {
                 commands.push(crate::commands::AppCommand::EditorToggleSettings);
             }
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(format!("{:.0}fps", view.fps));
+            });
         });
     });
+    ui_input_blocking_rects.push(rect_to_input_bounds(top_bar_response.response.rect));
 
     if view.show_metadata {
         let mut metadata_open = true;
 
-        egui::Window::new(format!("{} Level Metadata", egui_phosphor::regular::INFO))
-            .open(&mut metadata_open)
-            .show(ctx, |ui| {
-                ui.label(format!("{} Level Name:", egui_phosphor::regular::PENCIL));
-                let mut name = view.level_name.unwrap_or("Untitled").to_string();
-                if ui.text_edit_singleline(&mut name).changed() {
-                    commands.push(crate::commands::AppCommand::EditorRenameLevel(name));
-                }
-
-                ui.separator();
-
-                let mut music = view.music_metadata.clone();
-                let mut changed = false;
-
-                ui.horizontal(|ui| {
-                    ui.label(format!("{} Source:", egui_phosphor::regular::GLOBE));
-                    if ui.text_edit_singleline(&mut music.source).changed() {
-                        changed = true;
+        let metadata_response =
+            egui::Window::new(format!("{} Level Metadata", egui_phosphor::regular::INFO))
+                .open(&mut metadata_open)
+                .show(ctx, |ui| {
+                    ui.label(format!("{} Level Name:", egui_phosphor::regular::PENCIL));
+                    let mut name = view.level_name.unwrap_or("Untitled").to_string();
+                    if ui.text_edit_singleline(&mut name).changed() {
+                        commands.push(crate::commands::AppCommand::EditorRenameLevel(name));
                     }
+
+                    ui.separator();
+
+                    let mut music = view.music_metadata.clone();
+                    let mut changed = false;
+
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} Source:", egui_phosphor::regular::GLOBE));
+                        if ui.text_edit_singleline(&mut music.source).changed() {
+                            changed = true;
+                        }
+                        if ui
+                            .button(format!(
+                                "{} Import External Audio",
+                                egui_phosphor::regular::FILE_AUDIO
+                            ))
+                            .clicked()
+                        {
+                            commands.push(crate::commands::AppCommand::EditorTriggerAudioImport);
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} Title:", egui_phosphor::regular::TEXT_T));
+                        let mut title = music.title.clone().unwrap_or_default();
+                        if ui.text_edit_singleline(&mut title).changed() {
+                            music.title = Some(title);
+                            changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} Author:", egui_phosphor::regular::USER));
+                        let mut author = music.author.clone().unwrap_or_default();
+                        if ui.text_edit_singleline(&mut author).changed() {
+                            music.author = Some(author);
+                            changed = true;
+                        }
+                    });
+
+                    if changed {
+                        commands.push(crate::commands::AppCommand::EditorUpdateMusic(music));
+                    }
+
+                    ui.separator();
+                    ui.heading(format!("{} Creator Info", egui_phosphor::regular::USER));
+
+                    let mut creator_metadata = view.creator_metadata.clone();
+                    let mut creator_metadata_changed = false;
+
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} Creator:", egui_phosphor::regular::USER));
+                        let mut creator = creator_metadata.creator.clone().unwrap_or_default();
+                        if ui.text_edit_singleline(&mut creator).changed() {
+                            creator_metadata.creator = optional_trimmed_string(creator);
+                            creator_metadata_changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} Version:", egui_phosphor::regular::TAG));
+                        let mut version = creator_metadata.version.clone().unwrap_or_default();
+                        if ui.text_edit_singleline(&mut version).changed() {
+                            creator_metadata.version = optional_trimmed_string(version);
+                            creator_metadata_changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} Stars:", egui_phosphor::regular::STAR));
+                        let mut stars = creator_metadata.stars.clamp(0.0, 10.0);
+                        if ui
+                            .add(
+                                egui::Slider::new(&mut stars, 0.0..=10.0)
+                                    .step_by(0.1)
+                                    .suffix(" stars"),
+                            )
+                            .changed()
+                        {
+                            creator_metadata.stars = stars.clamp(0.0, 10.0);
+                            creator_metadata_changed = true;
+                        }
+                        ui.label(difficulty_for_stars(stars));
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} Tags:", egui_phosphor::regular::HASH));
+                        let mut tags = tags_to_text(&creator_metadata.tags);
+                        if ui.text_edit_singleline(&mut tags).changed() {
+                            creator_metadata.tags = tags_from_text(tags);
+                            creator_metadata_changed = true;
+                        }
+                    });
+
+                    ui.label(format!(
+                        "{} Description:",
+                        egui_phosphor::regular::TEXT_ALIGN_LEFT
+                    ));
+                    let mut description = creator_metadata.description.clone().unwrap_or_default();
                     if ui
-                        .button(format!(
-                            "{} Import External Audio",
-                            egui_phosphor::regular::FILE_AUDIO
-                        ))
-                        .clicked()
+                        .add(egui::TextEdit::multiline(&mut description).desired_rows(3))
+                        .changed()
                     {
-                        commands.push(crate::commands::AppCommand::EditorTriggerAudioImport);
+                        creator_metadata.description = optional_trimmed_string(description);
+                        creator_metadata_changed = true;
                     }
-                });
 
-                ui.horizontal(|ui| {
-                    ui.label(format!("{} Title:", egui_phosphor::regular::TEXT_T));
-                    let mut title = music.title.clone().unwrap_or_default();
-                    if ui.text_edit_singleline(&mut title).changed() {
-                        music.title = Some(title);
-                        changed = true;
+                    if creator_metadata_changed {
+                        commands.push(crate::commands::AppCommand::EditorUpdateCreatorMetadata(
+                            creator_metadata,
+                        ));
                     }
+
+                    ui.separator();
+                    ui.heading(format!("{} Visuals", egui_phosphor::regular::IMAGE));
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} Sky:", egui_phosphor::regular::CIRCLE));
+                        let mut sky_color = view.sky_color;
+                        if ui.color_edit_button_rgb(&mut sky_color).changed() {
+                            commands
+                                .push(crate::commands::AppCommand::EditorUpdateSkyColor(sky_color));
+                        }
+                    });
+
+                    ui.separator();
+                    ui.heading(format!(
+                        "{} Menu Preview Camera",
+                        egui_phosphor::regular::CAMERA
+                    ));
+                    ui.horizontal_wrapped(|ui| {
+                        push_command_when_clicked(
+                            &mut commands,
+                            ui.button(format!(
+                                "{} Capture Current Camera",
+                                egui_phosphor::regular::CAMERA
+                            ))
+                            .clicked(),
+                            crate::commands::AppCommand::EditorCaptureMenuPreviewCamera,
+                        );
+                        push_command_when_clicked(
+                            &mut commands,
+                            ui.button("Use Auto from Spawn").clicked(),
+                            crate::commands::AppCommand::EditorUseAutoMenuPreviewCamera,
+                        );
+                    });
+
+                    ui.separator();
+
+                    ui.label(format!(
+                        "{} Objects: {}",
+                        egui_phosphor::regular::CUBE,
+                        view.object_count
+                    ));
                 });
-
-                ui.horizontal(|ui| {
-                    ui.label(format!("{} Author:", egui_phosphor::regular::USER));
-                    let mut author = music.author.clone().unwrap_or_default();
-                    if ui.text_edit_singleline(&mut author).changed() {
-                        music.author = Some(author);
-                        changed = true;
-                    }
-                });
-
-                if changed {
-                    commands.push(crate::commands::AppCommand::EditorUpdateMusic(music));
-                }
-
-                ui.separator();
-                ui.heading(format!(
-                    "{} Menu Preview Camera",
-                    egui_phosphor::regular::CAMERA
-                ));
-                ui.horizontal_wrapped(|ui| {
-                    push_command_when_clicked(
-                        &mut commands,
-                        ui.button(format!(
-                            "{} Capture Current Camera",
-                            egui_phosphor::regular::CAMERA
-                        ))
-                        .clicked(),
-                        crate::commands::AppCommand::EditorCaptureMenuPreviewCamera,
-                    );
-                    push_command_when_clicked(
-                        &mut commands,
-                        ui.button("Use Auto from Spawn").clicked(),
-                        crate::commands::AppCommand::EditorUseAutoMenuPreviewCamera,
-                    );
-                });
-
-                ui.separator();
-
-                ui.label(format!(
-                    "{} Objects: {}",
-                    egui_phosphor::regular::CUBE,
-                    view.object_count
-                ));
-            });
+        if let Some(metadata_response) = metadata_response {
+            ui_input_blocking_rects.push(rect_to_input_bounds(metadata_response.response.rect));
+        }
 
         if !metadata_open {
             commands.push(crate::commands::AppCommand::EditorSetShowMetadata(false));
         }
     }
 
-    egui::Panel::bottom("block_selection_bar")
+    // Floating place window with block catalog
+    if view.show_place_window {
+        let mut place_open = true;
+        let place_category_id = egui::Id::new("editor_place_block_catalog_category");
+        let mut selected_place_category = ctx.data_mut(|data| {
+            data.get_persisted::<BlockCatalogCategory>(place_category_id)
+                .unwrap_or_default()
+        });
+
+        let place_response =
+            egui::Window::new(format!("{} Place Block", egui_phosphor::regular::CUBE))
+                .open(&mut place_open)
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        for category in BLOCK_CATALOG_CATEGORIES {
+                            ui.selectable_value(
+                                &mut selected_place_category,
+                                category,
+                                category.label(),
+                            );
+                        }
+                    });
+
+                    egui::Grid::new("editor_place_block_catalog_grid")
+                        .num_columns(PLACE_BLOCK_CATALOG_COLUMNS)
+                        .show(ui, |ui| {
+                            let current = view.selected_block_id;
+                            let blocks: Vec<_> = crate::block_repository::all_placeable_blocks()
+                                .iter()
+                                .filter(|block| {
+                                    block.placeable
+                                        && block_matches_catalog_category(
+                                            block,
+                                            selected_place_category,
+                                        )
+                                })
+                                .take(PLACE_BLOCK_CATALOG_COLUMNS * PLACE_BLOCK_CATALOG_ROWS)
+                                .collect();
+
+                            for cell in 0..(PLACE_BLOCK_CATALOG_COLUMNS * PLACE_BLOCK_CATALOG_ROWS)
+                            {
+                                if let Some(block) = blocks.get(cell) {
+                                    if show_block_preview_button(
+                                        ui,
+                                        block,
+                                        current == block.id,
+                                        block_icon_texture_ids.get(block.id.as_str()).copied(),
+                                    ) {
+                                        commands
+                                            .push(AppCommand::EditorSetBlockId(block.id.clone()));
+                                        commands.push(AppCommand::EditorSetMode(EditorMode::Place));
+                                        commands.push(AppCommand::EditorTogglePlaceWindow);
+                                    }
+                                } else {
+                                    ui.allocate_exact_size(
+                                        egui::Vec2::splat(PLACE_BLOCK_CATALOG_CELL_SIZE),
+                                        egui::Sense::hover(),
+                                    );
+                                }
+
+                                if (cell + 1) % PLACE_BLOCK_CATALOG_COLUMNS == 0 {
+                                    ui.end_row();
+                                }
+                            }
+                        });
+                });
+
+        ctx.data_mut(|data| data.insert_persisted(place_category_id, selected_place_category));
+
+        if let Some(place_response) = place_response {
+            ui_input_blocking_rects.push(rect_to_input_bounds(place_response.response.rect));
+        }
+
+        if !place_open {
+            commands.push(AppCommand::EditorTogglePlaceWindow);
+        }
+    }
+
+    let bottom_bar_response = egui::Panel::bottom("block_selection_bar")
         .resizable(false)
         .show(ctx, |ui| {
             ui.vertical(|ui| {
@@ -547,6 +850,8 @@ pub fn show_editor_ui(
 
                 if is_timing {
                     show_timing_mode_bottom_panel(ui, &view, duration_seconds, &mut commands);
+                } else if is_tapping {
+                    show_tapping_mode_bottom_panel(ui, &view, &mut commands);
                 } else if view.mode == EditorMode::Trigger {
                     show_trigger_mode_bottom_panel(ui, &view, duration_seconds, &mut commands);
                 } else {
@@ -563,6 +868,52 @@ pub fn show_editor_ui(
                 show_timeline_bar(ui, &view, duration_seconds, &mut commands);
             });
         });
+    ui_input_blocking_rects.push(rect_to_input_bounds(bottom_bar_response.response.rect));
+
+    // Massive plus button in compose tab, bottom-right above the bottom bar
+    if is_compose {
+        let bottom_bar_height = bottom_bar_response.response.rect.height();
+        egui::Area::new("place_button_area".into())
+            .anchor(
+                egui::Align2::RIGHT_BOTTOM,
+                egui::Vec2::new(-12.0, -12.0 - bottom_bar_height),
+            )
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                let button_size = egui::Vec2::splat(56.0);
+                let hotkey_hint = view.app_settings.hotkey_hint("toggle_place_window");
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Max), |ui| {
+                    if show_recent_block_quick_strip(
+                        ui,
+                        &view,
+                        block_icon_texture_ids,
+                        &mut commands,
+                    ) {
+                        ui.add_space(6.0);
+                    }
+                    if ui
+                        .add_sized(
+                            button_size,
+                            egui::Button::new(
+                                egui::RichText::new(egui_phosphor::regular::PLUS).size(28.0),
+                            ),
+                        )
+                        .on_hover_text(format!("Place Block{}", hotkey_hint))
+                        .clicked()
+                    {
+                        commands.push(AppCommand::EditorTogglePlaceWindow);
+                    }
+                });
+            });
+
+        show_selected_block_properties_window(ctx, &view, bottom_bar_height, &mut commands);
+    }
+
+    // Selected tap properties floating window
+    if is_tapping {
+        let bottom_bar_height = bottom_bar_response.response.rect.height();
+        show_selected_tap_properties_window(ctx, &view, bottom_bar_height, &mut commands);
+    }
 
     // Waveform visualization central panel (Timing mode only)
     if is_timing {
@@ -577,7 +928,15 @@ pub fn show_editor_ui(
     }
 
     if !is_timing && !is_compact_ui {
-        show_view_selector_cube(ctx, view.camera_rotation, view.camera_pitch, &mut commands);
+        if let Some(rect) = show_view_selector_cube(
+            ctx,
+            view.camera_rotation,
+            view.camera_pitch,
+            view.camera_position,
+            &mut commands,
+        ) {
+            ui_input_blocking_rects.push(rect_to_input_bounds(rect));
+        }
     }
 
     if view.mode.is_selection_mode() || view.mode == EditorMode::Trigger {
@@ -605,6 +964,7 @@ pub fn show_editor_ui(
     }
 
     drop(view);
+    state.set_editor_ui_input_blocking_rects(ui_input_blocking_rects, ctx.pixels_per_point());
     for command in commands {
         state.dispatch(command);
     }
@@ -782,8 +1142,9 @@ fn show_view_selector_cube(
     ctx: &egui::Context,
     camera_rotation: f32,
     camera_pitch: f32,
+    camera_position: [f32; 3],
     commands: &mut Vec<AppCommand>,
-) {
+) -> Option<egui::Rect> {
     const ROTATE_SPEED: f32 = 0.004;
     const PITCH_SPEED: f32 = 0.006;
 
@@ -933,17 +1294,25 @@ fn show_view_selector_cube(
         rounded
     }
 
-    egui::Area::new("editor_view_selector_cube".into())
+    let response = egui::Area::new("editor_view_selector_cube".into())
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-14.0, 52.0))
         .show(ctx, |ui| {
             let side = 128.0;
-            let (rect, response) =
-                ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::click_and_drag());
-            let painter = ui.painter_at(rect);
+            let label_height = 24.0;
+            let (widget_rect, response) = ui.allocate_exact_size(
+                egui::vec2(side, side + label_height),
+                egui::Sense::click_and_drag(),
+            );
+            let rect = egui::Rect::from_min_size(widget_rect.min, egui::vec2(side, side));
+            let label_rect = egui::Rect::from_min_size(
+                egui::pos2(widget_rect.min.x, rect.max.y),
+                egui::vec2(side, label_height),
+            );
+            let painter = ui.painter_at(widget_rect);
 
             painter.rect_filled(
-                rect,
+                widget_rect,
                 8.0,
                 egui::Color32::from_rgba_unmultiplied(16, 24, 32, 56),
             );
@@ -1136,17 +1505,30 @@ fn show_view_selector_cube(
                     });
                 }
             }
+
+            painter.text(
+                label_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                format!(
+                    "{:.1}, {:.1}, {:.1}",
+                    camera_position[0], camera_position[1], camera_position[2]
+                ),
+                egui::FontId::proportional(11.0),
+                egui::Color32::from_rgba_unmultiplied(235, 246, 255, 220),
+            );
         });
+    Some(response.response.rect)
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        combined_ui_scale_factor, is_compact_editor_ui, marquee_screen_pos_to_egui_pos,
-        perf_overlay_window_order, push_command_when_clicked, responsive_ui_scale_multiplier,
-        settings_sidebar_default_width, show_editor_ui, show_perf_overlay, sort_quad_by_angle,
-        VIEW_CUBE_FACES,
+        block_matches_catalog_category, combined_ui_scale_factor, is_compact_editor_ui,
+        marquee_screen_pos_to_egui_pos, perf_overlay_window_order, push_command_when_clicked,
+        responsive_ui_scale_multiplier, settings_sidebar_default_width, show_editor_ui,
+        show_perf_overlay, sort_quad_by_angle, BlockCatalogCategory, VIEW_CUBE_FACES,
     };
+    use crate::block_repository::resolve_block_definition;
     use crate::commands::AppCommand;
     use crate::test_utils::approx_eq;
     use crate::types::{EditorMode, SettingsSection};
@@ -1344,6 +1726,49 @@ mod tests {
     }
 
     #[test]
+    fn block_catalog_category_groups_builtin_blocks() {
+        let stone = resolve_block_definition("core/stone");
+        let lava = resolve_block_definition("core/lava");
+        let void = resolve_block_definition("core/void");
+        let speed_portal = resolve_block_definition("core/speedportal");
+        let torch = resolve_block_definition("core/torch");
+
+        assert!(block_matches_catalog_category(
+            stone,
+            BlockCatalogCategory::Building
+        ));
+        assert!(block_matches_catalog_category(
+            lava,
+            BlockCatalogCategory::Danger
+        ));
+        assert!(block_matches_catalog_category(
+            void,
+            BlockCatalogCategory::Danger
+        ));
+        assert!(block_matches_catalog_category(
+            speed_portal,
+            BlockCatalogCategory::Tech
+        ));
+        assert!(block_matches_catalog_category(
+            torch,
+            BlockCatalogCategory::Tech
+        ));
+
+        assert!(block_matches_catalog_category(
+            lava,
+            BlockCatalogCategory::All
+        ));
+        assert!(block_matches_catalog_category(
+            lava,
+            BlockCatalogCategory::Danger
+        ));
+        assert!(!block_matches_catalog_category(
+            lava,
+            BlockCatalogCategory::Building
+        ));
+    }
+
+    #[test]
     fn show_editor_ui_returns_early_when_not_in_editor() {
         pollster::block_on(async {
             let Some(mut state) = crate::State::try_new_test().await else {
@@ -1388,7 +1813,7 @@ mod tests {
                 return;
             };
 
-            state.toggle_editor();
+            state.enter_editor_phase_for_test("MarqueeUiTest");
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
 
             // Inject a marquee drag large enough to be considered active.
@@ -1412,13 +1837,13 @@ mod tests {
     }
 
     #[test]
-    fn show_editor_ui_composes_timing_compose_and_trigger_modes() {
+    fn show_editor_ui_composes_timing_tapping_compose_and_trigger_modes() {
         pollster::block_on(async {
             let Some(mut state) = crate::State::try_new_test().await else {
                 return;
             };
 
-            state.toggle_editor();
+            state.enter_editor_phase_for_test("EditorUiCompositionTest");
             assert!(state.is_editor());
 
             state.dispatch(AppCommand::EditorSetMode(EditorMode::Timing));
@@ -1444,6 +1869,11 @@ mod tests {
 
             assert_eq!(state.editor_mode(), EditorMode::Place);
             assert_eq!(state.editor_settings_section(), SettingsSection::Keybinds);
+
+            state.dispatch(AppCommand::EditorSetMode(EditorMode::Tapping));
+            run_editor_ui_once(&mut state);
+
+            assert_eq!(state.editor_mode(), EditorMode::Tapping);
 
             state.dispatch(AppCommand::EditorSetMode(EditorMode::Trigger));
             run_editor_ui_once(&mut state);

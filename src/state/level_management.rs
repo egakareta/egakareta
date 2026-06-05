@@ -9,6 +9,7 @@ use super::State;
 use crate::editor_domain::{
     build_editor_playtest_transition, build_playing_transition_from_metadata,
     derive_tap_indicator_positions, editor_session_init_from_metadata,
+    EditorPlaytestTransitionParams,
 };
 use crate::game::GameState;
 use crate::import_export_service::{
@@ -20,9 +21,9 @@ use crate::mesh::build_block_obj;
 use crate::platform::io::{log_platform_error, read_editor_music_bytes};
 use crate::platform::services::{trigger_level_export, trigger_level_import};
 use crate::types::{
-    AppPhase, AppSettings, EditorMode, KeyChord, LevelMetadata, LevelPreviewCameraMetadata,
-    MusicMetadata, SettingsSection, SpawnDirection, DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
-    DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
+    AppPhase, AppSettings, EditorMode, KeyChord, LevelCreatorMetadata, LevelMetadata,
+    LevelPreviewCameraMetadata, MusicMetadata, SettingsSection, SpawnDirection,
+    DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
 };
 use glam::Vec3;
 
@@ -42,8 +43,13 @@ impl State {
             self.session.playing_trigger_hitboxes = metadata.simulate_trigger_hitboxes;
             let transition = build_playing_transition_from_metadata(metadata);
             log::debug!("Starting level: {}", transition.level_name);
+            self.session.playing_sky_color = transition.sky_color;
             self.gameplay.state.objects = transition.objects;
             self.gameplay.state.rebuild_behavior_cache();
+            self.gameplay.state.initialize_level_progress_from_objects();
+            self.gameplay
+                .state
+                .set_level_duration_seconds(transition.level_duration_seconds);
             self.session.playing_trigger_base_objects = Some(self.gameplay.state.objects.clone());
             self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction, None);
         }
@@ -54,19 +60,29 @@ impl State {
     }
 
     pub(super) fn restart_level(&mut self) {
+        self.session.game_paused = false;
+        self.session.practice_mode_enabled = false;
+        self.session.practice_checkpoints.clear();
+        self.gameplay.death_sfx_played = false;
+        self.rebuild_practice_checkpoint_vertices();
         self.stop_audio();
+        self.clear_pending_gameplay_inputs();
         self.gameplay.state = GameState::new();
 
         if self.session.playtesting_editor {
-            let transition = build_editor_playtest_transition(
-                &self.editor.objects,
-                self.session.editor_level_name.as_deref(),
-                self.editor.spawn.clone(),
-                &self.editor.timeline.taps.tap_times,
-                self.editor.triggers(),
-                self.editor.simulate_trigger_hitboxes(),
-                self.editor.timeline.clock.time_seconds,
-            );
+            let transition = build_editor_playtest_transition(EditorPlaytestTransitionParams {
+                objects: &self.editor.objects,
+                level_name: self.session.editor_level_name.as_deref(),
+                spawn: self.editor.spawn.clone(),
+                sky_color: self.session.editor_sky_color,
+                tap_times: &self.editor.timeline.taps.tap_times,
+                triggers: self.editor.triggers(),
+                simulate_trigger_hitboxes: self.editor.simulate_trigger_hitboxes(),
+                timeline_seconds: (
+                    self.editor.timeline.clock.time_seconds,
+                    self.editor.timeline.clock.duration_seconds,
+                ),
+            });
             let metadata = self.current_editor_metadata();
             let level_name = transition
                 .playing_level_name
@@ -79,8 +95,13 @@ impl State {
             );
             self.session.playtest_audio_start_seconds =
                 Some(transition.playtest_audio_start_seconds);
+            self.session.playing_sky_color = transition.sky_color;
             self.gameplay.state.objects = transition.objects;
             self.gameplay.state.rebuild_behavior_cache();
+            self.gameplay.state.initialize_level_progress_from_objects();
+            self.gameplay
+                .state
+                .set_level_duration_seconds(transition.level_duration_seconds);
             self.session.playing_trigger_hitboxes = self.editor.simulate_trigger_hitboxes();
             self.session.playing_trigger_base_objects = Some(self.gameplay.state.objects.clone());
             self.apply_spawn_exact_to_game(
@@ -88,6 +109,8 @@ impl State {
                 transition.spawn_direction,
                 Some(transition.spawn_speed),
             );
+            self.gameplay.state.vertical_velocity = transition.spawn_vertical_velocity;
+            self.gameplay.state.is_grounded = transition.spawn_is_grounded;
             self.gameplay.state.elapsed_seconds = transition.playtest_audio_start_seconds;
         } else if let Some(level_name) = self.session.playing_level_name.clone() {
             self.session.playtest_audio_start_seconds = None;
@@ -96,8 +119,13 @@ impl State {
                 self.editor.set_trigger_selected(None);
                 self.session.playing_trigger_hitboxes = metadata.simulate_trigger_hitboxes;
                 let transition = build_playing_transition_from_metadata(metadata);
+                self.session.playing_sky_color = transition.sky_color;
                 self.gameplay.state.objects = transition.objects;
                 self.gameplay.state.rebuild_behavior_cache();
+                self.gameplay.state.initialize_level_progress_from_objects();
+                self.gameplay
+                    .state
+                    .set_level_duration_seconds(transition.level_duration_seconds);
                 self.session.playing_trigger_base_objects =
                     Some(self.gameplay.state.objects.clone());
                 self.apply_spawn_to_game(
@@ -113,6 +141,43 @@ impl State {
         self.rebuild_block_vertices();
     }
 
+    pub(super) fn respawn_from_practice_checkpoint(&mut self) -> bool {
+        if self.phase != AppPhase::Playing
+            || self.session.playtesting_editor
+            || !self.session.practice_mode_enabled
+        {
+            return false;
+        }
+
+        let Some(checkpoint) = self.session.practice_checkpoints.last().cloned() else {
+            self.restart_level();
+            self.session.practice_mode_enabled = true;
+            self.session.practice_checkpoints.clear();
+            return true;
+        };
+
+        self.stop_audio();
+        self.clear_pending_gameplay_inputs();
+        self.gameplay
+            .state
+            .restore_checkpoint_state(&checkpoint.gameplay);
+        self.gameplay.death_sfx_played = false;
+        self.session.playing_trigger_base_objects = checkpoint.trigger_base_objects;
+
+        if let Some(level_name) = self.session.playing_level_name.clone() {
+            if let Some(metadata) = self.load_level_metadata(&level_name) {
+                self.warmup_audio_at_seconds(
+                    &level_name,
+                    &metadata,
+                    self.gameplay.state.elapsed_seconds,
+                );
+            }
+        }
+
+        self.rebuild_block_vertices();
+        true
+    }
+
     pub(super) fn start_editor(&mut self, index: usize) {
         let level_name = self.menu.state.levels[index].clone();
         self.stop_audio();
@@ -123,8 +188,11 @@ impl State {
         self.editor.objects = init.objects;
         self.editor.spawn = init.spawn;
         self.session.editor_music_metadata = init.music;
+        self.session.editor_creator_metadata = init.creator_metadata;
+        self.session.editor_sky_color = init.sky_color;
         self.editor.timeline.taps.tap_times = init.tap_times;
         self.editor.timing.timing_points = init.timing_points;
+        self.editor.timing.mark_timing_points_changed();
         self.editor.timing.timing_selected_index = None;
         self.editor.set_triggers(init.triggers);
         self.editor.set_trigger_selected(None);
@@ -212,8 +280,10 @@ impl State {
                 .editor_level_name
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string()),
+            creator_metadata: self.session.editor_creator_metadata.clone(),
             music: self.session.editor_music_metadata.clone(),
             spawn: self.editor.spawn.clone(),
+            sky_color: self.session.editor_sky_color,
             tap_times: self.editor.timeline.taps.tap_times.clone(),
             timing_points: self.editor.timing.timing_points.clone(),
             timeline_time_seconds: self.editor.timeline.clock.time_seconds,
@@ -230,12 +300,11 @@ impl State {
         let init = editor_session_init_from_metadata(Some(metadata));
 
         self.editor.objects = init.objects;
-        self.editor.ui.selected_block_index = None;
-        self.editor.ui.selected_block_indices.clear();
-        self.editor.ui.hovered_block_index = None;
+        self.editor.clear_block_selection();
         self.editor.spawn = init.spawn;
         self.editor.timeline.taps.tap_times = init.tap_times;
         self.editor.timing.timing_points = init.timing_points;
+        self.editor.timing.mark_timing_points_changed();
         self.editor
             .timing
             .timing_points
@@ -246,6 +315,8 @@ impl State {
         self.editor
             .set_simulate_trigger_hitboxes(init.simulate_trigger_hitboxes);
         self.session.editor_menu_preview_camera = init.menu_preview_camera;
+        self.session.editor_creator_metadata = init.creator_metadata;
+        self.session.editor_sky_color = init.sky_color;
         self.editor.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
             self.editor.spawn.position,
             self.editor.spawn.direction,
@@ -305,6 +376,22 @@ impl State {
         self.session.editor_music_metadata = metadata;
     }
 
+    pub(crate) fn editor_creator_metadata(&self) -> &LevelCreatorMetadata {
+        &self.session.editor_creator_metadata
+    }
+
+    pub(crate) fn set_editor_creator_metadata(&mut self, metadata: LevelCreatorMetadata) {
+        self.session.editor_creator_metadata = metadata;
+    }
+
+    pub(crate) fn editor_sky_color(&self) -> [f32; 3] {
+        self.session.editor_sky_color
+    }
+
+    pub(crate) fn set_editor_sky_color(&mut self, color: [f32; 3]) {
+        self.session.editor_sky_color = color.map(|component| component.clamp(0.0, 1.0));
+    }
+
     pub(crate) fn editor_capture_menu_preview_camera(&mut self) {
         if self.phase != AppPhase::Editor {
             return;
@@ -353,6 +440,7 @@ impl State {
         let (position, target) = menu_preview_camera_for_metadata(&metadata);
         self.gameplay.state.objects = metadata.objects;
         self.gameplay.state.rebuild_behavior_cache();
+        self.menu.state.preview_sky_color = metadata.sky_color;
         self.menu.state.preview_camera_position = position;
         self.menu.state.preview_camera_target = target;
         self.rebuild_block_vertices();
@@ -361,6 +449,7 @@ impl State {
     fn reset_menu_preview_to_default_scene(&mut self) {
         self.gameplay.state.objects = crate::game::create_menu_scene();
         self.gameplay.state.rebuild_behavior_cache();
+        self.menu.state.preview_sky_color = crate::types::default_sky_color();
         self.menu.state.preview_camera_position = DEFAULT_MENU_PREVIEW_CAMERA_POSITION;
         self.menu.state.preview_camera_target = DEFAULT_MENU_PREVIEW_CAMERA_TARGET;
         self.rebuild_block_vertices();
@@ -395,6 +484,34 @@ impl State {
 
     pub(crate) fn app_settings(&self) -> &AppSettings {
         &self.session.app_settings
+    }
+
+    pub(crate) fn menu_selected_level_progress(&self) -> Option<crate::types::PlayerLevelProgress> {
+        let level_name = self.menu_level_name()?;
+        self.session
+            .app_settings
+            .level_progress
+            .get(level_name)
+            .copied()
+    }
+
+    pub(crate) fn record_current_level_progress(&mut self) {
+        if self.session.playtesting_editor {
+            return;
+        }
+
+        let Some(level_name) = self.session.playing_level_name.clone() else {
+            return;
+        };
+
+        let progress = self.gameplay.state.level_progress();
+        if self
+            .session
+            .app_settings
+            .update_level_progress(&level_name, progress)
+        {
+            self.persist_app_settings();
+        }
     }
 
     pub(crate) fn available_graphics_backends(&self) -> &[String] {
@@ -481,6 +598,14 @@ impl State {
 
     pub(crate) fn set_editor_show_metadata(&mut self, show: bool) {
         self.session.editor_show_metadata = show;
+    }
+
+    pub(crate) fn editor_show_place_window(&self) -> bool {
+        self.session.editor_show_place_window
+    }
+
+    pub(crate) fn set_editor_show_place_window(&mut self, show: bool) {
+        self.session.editor_show_place_window = show;
     }
 
     /// Returns a list of all level names available in the application's built-in repository.
@@ -615,7 +740,7 @@ mod tests {
     use super::{auto_menu_preview_camera_from_spawn, menu_preview_camera_for_metadata, State};
     use crate::commands::AppCommand;
     use crate::types::{
-        AppPhase, EditorStateParams, KeyChord, LevelMetadata, LevelObject,
+        AppPhase, EditorStateParams, KeyChord, LevelCreatorMetadata, LevelMetadata, LevelObject,
         LevelPreviewCameraMetadata, MusicMetadata, SettingsSection, SpawnMetadata,
         DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
     };
@@ -646,7 +771,6 @@ mod tests {
             position,
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: block_id.to_string(),
             color_tint: [1.0, 1.0, 1.0],
         }
@@ -662,6 +786,13 @@ mod tests {
             state.set_editor_music_metadata(MusicMetadata {
                 source: "roundtrip.mp3".to_string(),
                 ..MusicMetadata::default()
+            });
+            state.set_editor_creator_metadata(LevelCreatorMetadata {
+                creator: Some("Roundtrip Author".to_string()),
+                description: None,
+                stars: 6.5,
+                tags: vec!["binary".to_string(), "roundtrip".to_string()],
+                version: Some("1.0".to_string()),
             });
             state.editor.objects = vec![test_object([2.0, 1.0, 3.0], "core/grass")];
             state.editor.spawn.position = [3.0, 0.0, 4.0];
@@ -685,6 +816,10 @@ mod tests {
             let actual = state.current_editor_metadata();
             assert_eq!(actual.name, expected.name);
             assert_eq!(actual.music.source, expected.music.source);
+            assert_eq!(actual.creator, expected.creator);
+            assert_eq!(actual.stars, expected.stars);
+            assert_eq!(actual.tags, expected.tags);
+            assert_eq!(actual.version, expected.version);
             assert_eq!(actual.spawn.position, expected.spawn.position);
             assert_eq!(actual.tap_times, expected.tap_times);
             assert_eq!(actual.timeline_time_seconds, expected.timeline_time_seconds);
@@ -871,6 +1006,7 @@ mod tests {
                 .unwrap_or_else(|| auto_menu_preview_camera_from_spawn(&metadata.spawn));
             assert_eq!(state.menu.state.preview_camera_position, expected_camera.0);
             assert_eq!(state.menu.state.preview_camera_target, expected_camera.1);
+            assert_eq!(state.menu.state.preview_sky_color, metadata.sky_color);
 
             state.refresh_menu_level_preview_if_needed();
             assert_eq!(state.menu.state.preview_level_index, Some(0));
@@ -904,6 +1040,10 @@ mod tests {
                 DEFAULT_MENU_PREVIEW_CAMERA_TARGET
             );
             assert_eq!(
+                state.menu.state.preview_sky_color,
+                crate::types::default_sky_color()
+            );
+            assert_eq!(
                 state.gameplay.state.objects,
                 crate::game::create_menu_scene()
             );
@@ -927,6 +1067,10 @@ mod tests {
                 state.menu.state.preview_camera_target,
                 DEFAULT_MENU_PREVIEW_CAMERA_TARGET
             );
+            assert_eq!(
+                state.menu.state.preview_sky_color,
+                crate::types::default_sky_color()
+            );
         });
     }
 
@@ -934,8 +1078,10 @@ mod tests {
     fn menu_preview_camera_for_metadata_prefers_manual_camera() {
         let metadata = LevelMetadata::from_editor_state(EditorStateParams {
             name: "ManualPreview".to_string(),
+            creator_metadata: LevelCreatorMetadata::default(),
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
             tap_times: Vec::new(),
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
@@ -1067,19 +1213,174 @@ mod tests {
     }
 
     #[test]
+    fn practice_checkpoint_respawns_and_restart_exits_practice_mode() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Playing;
+            state.session.playtesting_editor = false;
+            state.session.practice_mode_enabled = true;
+            state.gameplay.state.objects = vec![test_object([0.0, 0.0, 0.0], "core/stone")];
+            state.gameplay.state.rebuild_behavior_cache();
+            state
+                .gameplay
+                .state
+                .initialize_level_progress_from_objects();
+            state.gameplay.state.started = true;
+            state.gameplay.state.position = [4.0, 2.0, 6.0];
+            state.gameplay.state.elapsed_seconds = 3.5;
+            state
+                .session
+                .practice_checkpoints
+                .push(super::super::PracticeCheckpoint {
+                    gameplay: state.gameplay.state.checkpoint_state(),
+                    trigger_base_objects: state.session.playing_trigger_base_objects.clone(),
+                });
+
+            state.gameplay.state.position = [20.0, -8.0, 20.0];
+            state.gameplay.state.elapsed_seconds = 9.0;
+            state.gameplay.state.game_over = true;
+
+            assert!(state.respawn_from_practice_checkpoint());
+            assert_eq!(state.gameplay.state.position, [4.0, 2.0, 6.0]);
+            assert_eq!(state.gameplay.state.elapsed_seconds, 3.5);
+            assert!(!state.gameplay.state.started);
+            assert!(!state.gameplay.state.game_over);
+            assert!(state.session.practice_mode_enabled);
+
+            state.restart_level();
+            assert!(!state.session.practice_mode_enabled);
+            assert!(state.session.practice_checkpoints.is_empty());
+        });
+    }
+
+    #[test]
+    fn removing_practice_checkpoint_falls_back_to_previous_latest() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Playing;
+            state.session.playtesting_editor = false;
+            state.session.practice_mode_enabled = true;
+            state.gameplay.state.objects = vec![test_object([0.0, 0.0, 0.0], "core/stone")];
+            state.gameplay.state.rebuild_behavior_cache();
+            state.gameplay.state.started = true;
+
+            state.gameplay.state.position = [2.0, 2.0, 2.0];
+            state.gameplay.state.elapsed_seconds = 2.0;
+            state.dispatch(crate::commands::AppCommand::GameSetPracticeCheckpoint);
+
+            state.gameplay.state.position = [5.0, 2.0, 5.0];
+            state.gameplay.state.elapsed_seconds = 5.0;
+            state.dispatch(crate::commands::AppCommand::GameSetPracticeCheckpoint);
+
+            assert_eq!(state.practice_checkpoint_count(), 2);
+            assert_eq!(state.practice_checkpoint_time_seconds(), Some(5.0));
+
+            state.dispatch(crate::commands::AppCommand::GameRemovePracticeCheckpoint);
+
+            assert_eq!(state.practice_checkpoint_count(), 1);
+            assert_eq!(state.practice_checkpoint_time_seconds(), Some(2.0));
+
+            state.gameplay.state.position = [20.0, -8.0, 20.0];
+            state.gameplay.state.elapsed_seconds = 9.0;
+            state.gameplay.state.game_over = true;
+
+            assert!(state.respawn_from_practice_checkpoint());
+            assert_eq!(state.gameplay.state.position, [2.0, 2.0, 2.0]);
+            assert_eq!(state.gameplay.state.elapsed_seconds, 2.0);
+        });
+    }
+
+    #[test]
+    fn practice_checkpoint_commands_sync_flag_mesh() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Playing;
+            state.session.playtesting_editor = false;
+            state.session.practice_mode_enabled = true;
+            state.gameplay.state.started = true;
+
+            state.gameplay.state.position = [2.0, 1.0, 2.0];
+            state.dispatch(crate::commands::AppCommand::GameSetPracticeCheckpoint);
+            assert!(state
+                .render
+                .meshes
+                .practice_checkpoints
+                .draw_data()
+                .is_some());
+
+            state.dispatch(crate::commands::AppCommand::GameRemovePracticeCheckpoint);
+            assert!(state
+                .render
+                .meshes
+                .practice_checkpoints
+                .draw_data()
+                .is_none());
+        });
+    }
+
+    #[test]
+    fn practice_death_before_checkpoint_restarts_at_zero_but_stays_in_practice() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.start_level(0);
+            state.session.practice_mode_enabled = true;
+            state.session.practice_checkpoints.clear();
+            state.gameplay.state.started = true;
+            state.gameplay.state.elapsed_seconds = 4.0;
+            state.gameplay.state.game_over = true;
+
+            assert!(state.respawn_from_practice_checkpoint());
+            assert!(state.session.practice_mode_enabled);
+            assert!(state.session.practice_checkpoints.is_empty());
+            assert!(!state.gameplay.state.started);
+            assert!(!state.gameplay.state.game_over);
+            assert_eq!(state.gameplay.state.elapsed_seconds, 0.0);
+        });
+    }
+
+    #[test]
+    fn practice_game_over_input_before_checkpoint_keeps_practice_mode() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.start_level(0);
+            state.session.practice_mode_enabled = true;
+            state.session.practice_checkpoints.clear();
+            state.gameplay.state.started = true;
+            state.gameplay.state.elapsed_seconds = 4.0;
+            state.gameplay.state.game_over = true;
+
+            state.turn_right();
+
+            assert!(state.session.practice_mode_enabled);
+            assert!(!state.gameplay.state.started);
+            assert!(!state.gameplay.state.game_over);
+            assert_eq!(state.gameplay.state.elapsed_seconds, 0.0);
+        });
+    }
+
+    #[test]
     fn start_editor_loads_builtin_metadata_into_editor_session() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
+            let expected_level_name = state.menu.state.levels[0].clone();
+            let expected_metadata = state
+                .load_level_metadata(&expected_level_name)
+                .expect("selected level metadata should exist");
 
             state.start_editor(0);
 
             assert_eq!(state.phase, AppPhase::Editor);
-            assert!(state.editor_level_name().is_some());
+            assert_eq!(state.editor_level_name(), Some(expected_level_name));
+            assert_eq!(state.editor_sky_color(), expected_metadata.sky_color);
             assert!(state.editor.timeline.clock.duration_seconds > 0.0);
             assert!(!state.editor.objects.is_empty());
             assert_eq!(
                 state.editor.timeline.taps.tap_times.len(),
                 state.editor.timeline.taps.tap_indicator_positions.len()
+            );
+            assert_eq!(
+                state.editor.camera.editor_target_z, state.editor.ui.cursor[1],
+                "start_editor should sync camera target Z with loaded cursor"
             );
             assert_eq!(state.editor.timing.timing_selected_index, None);
             assert_eq!(state.editor.selected_trigger_index(), None);
@@ -1097,6 +1398,13 @@ mod tests {
             state.set_editor_music_metadata(MusicMetadata {
                 source: "unit-test-audio.mp3".to_string(),
                 ..MusicMetadata::default()
+            });
+            state.set_editor_creator_metadata(LevelCreatorMetadata {
+                creator: None,
+                description: Some("Bundled export metadata".to_string()),
+                stars: 8.25,
+                tags: vec!["test".to_string(), "archive".to_string()],
+                version: None,
             });
             state
                 .audio
@@ -1125,6 +1433,9 @@ mod tests {
             let actual = state.current_editor_metadata();
             assert_eq!(actual.name, expected.name);
             assert_eq!(actual.music.source, expected.music.source);
+            assert_eq!(actual.description, expected.description);
+            assert_eq!(actual.stars, expected.stars);
+            assert_eq!(actual.tags, expected.tags);
             assert_eq!(actual.spawn.position, expected.spawn.position);
             assert!(!state.editor.objects.is_empty());
             assert!(state

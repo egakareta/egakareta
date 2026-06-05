@@ -28,6 +28,12 @@ pub(crate) struct EgMeshVertex {
     pub(crate) position: [f32; 3],
     pub(crate) uv: [f32; 2],
     pub(crate) normal_tint: f32,
+    #[serde(default = "default_material_color")]
+    pub(crate) material_color: [f32; 4],
+}
+
+fn default_material_color() -> [f32; 4] {
+    [1.0, 1.0, 1.0, 1.0]
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -128,19 +134,36 @@ pub(crate) fn append_egmesh_geometry(
         obj.position[1] + obj.size[1] * 0.5,
         obj.position[2] + obj.size[2] * 0.5,
     ];
+
+    // Recover the original OBJ aspect ratio from the stored bounds.
+    let aspect = [
+        (mesh.max[0] - mesh.min[0]).max(f32::EPSILON),
+        (mesh.max[1] - mesh.min[1]).max(f32::EPSILON),
+        (mesh.max[2] - mesh.min[2]).max(f32::EPSILON),
+    ];
+    // Uniform scale to contain the mesh within the block bounds (preserving aspect ratio).
+    let scale = (obj.size[0] / aspect[0])
+        .min(obj.size[1] / aspect[1])
+        .min(obj.size[2] / aspect[2]);
+    let offset = [
+        (obj.size[0] - aspect[0] * scale) / 2.0,
+        (obj.size[1] - aspect[1] * scale) / 2.0,
+        (obj.size[2] - aspect[2] * scale) / 2.0,
+    ];
+
     let mut vertices = Vec::with_capacity(mesh.vertices.len());
     for vertex in &mesh.vertices {
         vertices.push(Vertex::textured(
             [
-                obj.position[0] + vertex.position[0] * obj.size[0],
-                obj.position[1] + vertex.position[1] * obj.size[1],
-                obj.position[2] + vertex.position[2] * obj.size[2],
+                obj.position[0] + vertex.position[0] * aspect[0] * scale + offset[0],
+                obj.position[1] + vertex.position[1] * aspect[1] * scale + offset[1],
+                obj.position[2] + vertex.position[2] * aspect[2] * scale + offset[2],
             ],
             [
-                color[0] * vertex.normal_tint,
-                color[1] * vertex.normal_tint,
-                color[2] * vertex.normal_tint,
-                color[3],
+                color[0] * vertex.material_color[0] * vertex.normal_tint,
+                color[1] * vertex.material_color[1] * vertex.normal_tint,
+                color[2] * vertex.material_color[2] * vertex.normal_tint,
+                color[3] * vertex.material_color[3],
             ],
             vertex.uv,
             texture_layer,
@@ -198,6 +221,7 @@ mod tests {
             assert_float_array_approx_eq(actual.position, expected.position);
             assert_float_array_approx_eq(actual.uv, expected.uv);
             assert_approx_eq(actual.normal_tint, expected.normal_tint, 1e-6);
+            assert_float_array_approx_eq(actual.material_color, expected.material_color);
         }
     }
 
@@ -209,16 +233,19 @@ mod tests {
                     position: [0.0, 0.0, 0.0],
                     uv: [0.0, 0.0],
                     normal_tint: 1.0,
+                    material_color: [1.0, 0.5, 0.25, 1.0],
                 },
                 EgMeshVertex {
                     position: [1.0, 0.0, 0.0],
                     uv: [1.0, 0.0],
                     normal_tint: 0.75,
+                    material_color: [0.5, 1.0, 0.25, 0.8],
                 },
                 EgMeshVertex {
                     position: [0.0, 1.0, 0.0],
                     uv: [0.0, 1.0],
                     normal_tint: 0.5,
+                    material_color: [0.25, 0.5, 1.0, 0.6],
                 },
             ],
             indices: vec![0, 1, 2],
@@ -238,6 +265,7 @@ mod tests {
                 position: [0.0, 0.0, 0.0],
                 uv: [0.0, 0.0],
                 normal_tint: 1.0,
+                material_color: [1.0, 1.0, 1.0, 1.0],
             }],
             indices: vec![0, 1],
             min: [0.0; 3],

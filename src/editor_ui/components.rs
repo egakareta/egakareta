@@ -7,11 +7,41 @@
 */
 use crate::commands::AppCommand;
 use crate::state::EditorUiViewModel;
+use crate::types::EditorMode;
 
 pub(crate) const MIN_TIMELINE_DURATION_SECONDS: f32 = 0.1;
 pub(crate) const MAX_TIMELINE_DURATION_SECONDS: f32 = 600.0;
 pub(crate) const DEFAULT_TIMELINE_WINDOW_SECONDS: f32 = 20.0;
 const TIMELINE_TAP_HIT_RADIUS_PIXELS: f32 = 8.0;
+const TIMELINE_CURRENT_TAP_EPSILON_SECONDS: f32 = 0.0001;
+
+pub(crate) fn show_shadowed_label(
+    ui: &mut egui::Ui,
+    text: impl Into<String>,
+    font_id: egui::FontId,
+    text_color: egui::Color32,
+    shadow_color: egui::Color32,
+    shadow_offset: egui::Vec2,
+    wrap_width: f32,
+) -> egui::Response {
+    let galley = ui
+        .painter()
+        .layout(text.into(), font_id, egui::Color32::PLACEHOLDER, wrap_width);
+    let shadow_extent = egui::vec2(shadow_offset.x.abs(), shadow_offset.y.abs());
+    let (rect, response) =
+        ui.allocate_exact_size(galley.size() + shadow_extent, egui::Sense::hover());
+    let text_pos = rect.min
+        + egui::vec2(
+            shadow_offset.x.min(0.0).abs(),
+            shadow_offset.y.min(0.0).abs(),
+        );
+
+    ui.painter()
+        .galley(text_pos + shadow_offset, galley.clone(), shadow_color);
+    ui.painter().galley(text_pos, galley, text_color);
+
+    response
+}
 
 fn timeline_visible_duration(duration_seconds: f32, zoom: f32) -> f32 {
     let duration = duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS);
@@ -51,12 +81,47 @@ fn timeline_bar_nearest_tap_index(
         .map(|(index, _)| index)
 }
 
+fn timeline_bar_view_is_tapping(view: &EditorUiViewModel<'_>) -> bool {
+    view.mode == EditorMode::Tapping
+        || (view.mode == EditorMode::Null && view.last_mode == Some(EditorMode::Tapping))
+}
+
+fn timeline_bar_push_tap_click_commands(
+    view: &EditorUiViewModel<'_>,
+    pointer_x: f32,
+    rect: egui::Rect,
+    view_start: f32,
+    visible_duration: f32,
+    commands: &mut Vec<AppCommand>,
+) -> bool {
+    let Some(index) = timeline_bar_nearest_tap_index(
+        view.tap_times,
+        pointer_x,
+        rect,
+        view_start,
+        visible_duration,
+    ) else {
+        return false;
+    };
+
+    commands.push(AppCommand::EditorSetTimelineTime(view.tap_times[index]));
+    if timeline_bar_view_is_tapping(view) {
+        commands.push(AppCommand::EditorSetSelectedTap(Some(index)));
+    }
+    true
+}
+
+fn timeline_bar_tap_is_current(tap_time: f32, timeline_time_seconds: f32) -> bool {
+    (tap_time - timeline_time_seconds).abs() <= TIMELINE_CURRENT_TAP_EPSILON_SECONDS
+}
+
 pub(crate) fn show_timeline_bar(
     ui: &mut egui::Ui,
     view: &EditorUiViewModel<'_>,
     duration_seconds: f32,
     commands: &mut Vec<AppCommand>,
 ) {
+    puffin::profile_scope!("UiTimelineBar");
     let duration_seconds = duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS);
     let timeline_zoom = view.waveform_zoom;
     let visible_duration = timeline_visible_duration(duration_seconds, timeline_zoom);
@@ -104,7 +169,10 @@ pub(crate) fn show_timeline_bar(
                 button_size,
                 egui::Button::new(egui_phosphor::regular::MAGNIFYING_GLASS_MINUS),
             )
-            .on_hover_text("Zoom Out")
+            .on_hover_text(format!(
+                "Zoom Out{}",
+                view.app_settings.hotkey_hint_or("zoom_out", "-")
+            ))
             .clicked()
         {
             let new_zoom = (timeline_zoom / 1.25).clamp(0.1, 10.0);
@@ -115,7 +183,10 @@ pub(crate) fn show_timeline_bar(
                 button_size,
                 egui::Button::new(egui_phosphor::regular::MAGNIFYING_GLASS_PLUS),
             )
-            .on_hover_text("Zoom In")
+            .on_hover_text(format!(
+                "Zoom In{}",
+                view.app_settings.hotkey_hint_or("zoom_in", "+")
+            ))
             .clicked()
         {
             let new_zoom = (timeline_zoom * 1.25).clamp(0.1, 10.0);
@@ -123,7 +194,9 @@ pub(crate) fn show_timeline_bar(
         }
         ui.add_space(4.0);
 
-        let available_width = ui.available_width();
+        let playtest_button_width = 72.0;
+        let available_width =
+            (ui.available_width() - playtest_button_width - ui.spacing().item_spacing.x).max(0.0);
         let timeline_height = 18.0;
         let (rect, response) = ui.allocate_exact_size(
             egui::vec2(available_width, timeline_height),
@@ -143,36 +216,39 @@ pub(crate) fn show_timeline_bar(
 
         // Draw beat lines from timing points
         let timing_points = view.timing_points;
-        for (tp_idx, tp) in timing_points.iter().enumerate() {
-            if tp.bpm <= 0.0 {
-                continue;
-            }
-            let beat_duration = 60.0 / tp.bpm;
-            let end_time = if tp_idx + 1 < timing_points.len() {
-                timing_points[tp_idx + 1].time_seconds
-            } else {
-                duration_seconds
-            };
-
-            let mut beat = 0u32;
-            let mut time = tp.time_seconds;
-            while time <= end_time {
-                if time >= view_start && time <= view_end {
-                    let x = rect.left() + (time - view_start) / visible_duration * rect.width();
-                    let is_downbeat = beat.is_multiple_of(tp.time_signature_numerator);
-                    let (alpha, width) = if is_downbeat { (100, 1.5) } else { (50, 0.5) };
-                    painter.line_segment(
-                        [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-                        egui::Stroke::new(
-                            width,
-                            egui::Color32::from_rgba_premultiplied(180, 180, 255, alpha),
-                        ),
-                    );
+        {
+            puffin::profile_scope!("UiTimelineBeatLines");
+            for (tp_idx, tp) in timing_points.iter().enumerate() {
+                if tp.bpm <= 0.0 {
+                    continue;
                 }
-                beat += 1;
-                time += beat_duration;
-                if beat > 10000 {
-                    break;
+                let beat_duration = 60.0 / tp.bpm;
+                let end_time = if tp_idx + 1 < timing_points.len() {
+                    timing_points[tp_idx + 1].time_seconds
+                } else {
+                    duration_seconds
+                };
+
+                let mut beat = 0u32;
+                let mut time = tp.time_seconds;
+                while time <= end_time {
+                    if time >= view_start && time <= view_end {
+                        let x = rect.left() + (time - view_start) / visible_duration * rect.width();
+                        let is_downbeat = beat.is_multiple_of(tp.time_signature_numerator);
+                        let (alpha, width) = if is_downbeat { (100, 1.5) } else { (50, 0.5) };
+                        painter.line_segment(
+                            [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+                            egui::Stroke::new(
+                                width,
+                                egui::Color32::from_rgba_premultiplied(180, 180, 255, alpha),
+                            ),
+                        );
+                    }
+                    beat += 1;
+                    time += beat_duration;
+                    if beat > 10000 {
+                        break;
+                    }
                 }
             }
         }
@@ -181,11 +257,18 @@ pub(crate) fn show_timeline_bar(
         for tap_time in view.tap_times {
             if *tap_time >= view_start && *tap_time <= view_end {
                 let x = rect.left() + (*tap_time - view_start) / visible_duration * rect.width();
-                painter.circle_filled(
-                    egui::pos2(x, center_y),
-                    3.0,
-                    egui::Color32::from_rgb(255, 170, 64),
-                );
+                let center = egui::pos2(x, center_y);
+                if timeline_bar_tap_is_current(*tap_time, view.timeline_time_seconds) {
+                    painter.circle_stroke(
+                        center,
+                        3.0,
+                        egui::Stroke::new(
+                            2.0,
+                            egui::Color32::from_rgba_premultiplied(255, 245, 210, 230),
+                        ),
+                    );
+                }
+                painter.circle_filled(center, 3.0, egui::Color32::from_rgb(255, 170, 64));
             }
         }
 
@@ -284,39 +367,64 @@ pub(crate) fn show_timeline_bar(
 
         if response.clicked_by(egui::PointerButton::Primary) {
             if let Some(pointer) = response.interact_pointer_pos() {
-                let mut nearest_trigger_index = None;
-                let mut nearest_distance = f32::INFINITY;
+                if !timeline_bar_push_tap_click_commands(
+                    view,
+                    pointer.x,
+                    rect,
+                    view_start,
+                    visible_duration,
+                    commands,
+                ) {
+                    let mut nearest_trigger_index = None;
+                    let mut nearest_distance = f32::INFINITY;
 
-                for (index, trigger) in view.triggers.iter().enumerate() {
-                    if trigger.time_seconds < view_start || trigger.time_seconds > view_end {
-                        continue;
+                    for (index, trigger) in view.triggers.iter().enumerate() {
+                        if trigger.time_seconds < view_start || trigger.time_seconds > view_end {
+                            continue;
+                        }
+
+                        let x = rect.left()
+                            + (trigger.time_seconds - view_start) / visible_duration * rect.width();
+                        let distance = (x - pointer.x).abs();
+                        if distance < nearest_distance {
+                            nearest_distance = distance;
+                            nearest_trigger_index = Some(index);
+                        }
                     }
 
-                    let x = rect.left()
-                        + (trigger.time_seconds - view_start) / visible_duration * rect.width();
-                    let distance = (x - pointer.x).abs();
-                    if distance < nearest_distance {
-                        nearest_distance = distance;
-                        nearest_trigger_index = Some(index);
+                    if let Some(index) = nearest_trigger_index.filter(|_| nearest_distance <= 8.0) {
+                        commands.push(AppCommand::EditorSetTriggerSelected(Some(index)));
+                        commands.push(AppCommand::EditorSetTimelineTime(
+                            view.triggers[index]
+                                .time_seconds
+                                .clamp(0.0, duration_seconds),
+                        ));
+                    } else {
+                        let normalized_x =
+                            ((pointer.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
+                        let clicked_time = view_start + normalized_x * visible_duration;
+                        commands.push(AppCommand::EditorSetTriggerSelected(None));
+                        commands.push(AppCommand::EditorSetTimelineTime(
+                            clicked_time.clamp(0.0, duration_seconds),
+                        ));
                     }
-                }
-
-                if let Some(index) = nearest_trigger_index.filter(|_| nearest_distance <= 8.0) {
-                    commands.push(AppCommand::EditorSetTriggerSelected(Some(index)));
-                    commands.push(AppCommand::EditorSetTimelineTime(
-                        view.triggers[index]
-                            .time_seconds
-                            .clamp(0.0, duration_seconds),
-                    ));
-                } else {
-                    let normalized_x = ((pointer.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
-                    let clicked_time = view_start + normalized_x * visible_duration;
-                    commands.push(AppCommand::EditorSetTriggerSelected(None));
-                    commands.push(AppCommand::EditorSetTimelineTime(
-                        clicked_time.clamp(0.0, duration_seconds),
-                    ));
                 }
             }
+        }
+
+        ui.add_space(4.0);
+        if ui
+            .add_sized(
+                [playtest_button_width, ui.spacing().interact_size.y],
+                egui::Button::new(format!("{} Test", egui_phosphor::regular::GAME_CONTROLLER)),
+            )
+            .on_hover_text(format!(
+                "Start playtesting{}",
+                view.app_settings.hotkey_hint_or("playtest", "Enter")
+            ))
+            .clicked()
+        {
+            commands.push(AppCommand::EditorPlaytest);
         }
     });
 }
@@ -326,6 +434,7 @@ pub(crate) fn show_waveform_panel(
     view: &EditorUiViewModel<'_>,
     commands: &mut Vec<AppCommand>,
 ) {
+    puffin::profile_scope!("UiWaveformPanel");
     let duration_seconds = view
         .timeline_duration_seconds
         .max(MIN_TIMELINE_DURATION_SECONDS);
@@ -346,9 +455,10 @@ pub(crate) fn show_waveform_panel(
     let view_end = view_start + visible_duration;
 
     if !waveform_samples.is_empty() && sample_rate > 0 {
+        puffin::profile_scope!("UiWaveformDrawSamples");
         // Waveform drawing
-        const WAVEFORM_WINDOW: usize = 256;
-        let samples_per_second = sample_rate as f32 / WAVEFORM_WINDOW as f32;
+        let waveform_window = view.waveform_window_size.max(1);
+        let samples_per_second = sample_rate as f32 / waveform_window as f32;
         let pixels_per_second = rect.width() / visible_duration;
 
         let start_sample = (view_start * samples_per_second).floor().max(0.0) as usize;
@@ -385,10 +495,17 @@ pub(crate) fn show_waveform_panel(
             }
         }
     } else {
+        let message = if view.waveform_loading {
+            "Loading waveform..."
+        } else if view.waveform_complete {
+            "Waveform decoded with no visible peaks."
+        } else {
+            "No waveform data. Import audio to view waveform."
+        };
         painter.text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
-            "No waveform data. Import audio to view waveform.",
+            message,
             egui::FontId::proportional(16.0),
             egui::Color32::from_gray(120),
         );
@@ -396,53 +513,56 @@ pub(crate) fn show_waveform_panel(
 
     // Draw beat grid lines from timing points
     let timing_points = view.timing_points;
-    for (tp_idx, tp) in timing_points.iter().enumerate() {
-        if tp.bpm <= 0.0 {
-            continue;
-        }
-        let beat_duration = 60.0 / tp.bpm;
-        let end_time = if tp_idx + 1 < timing_points.len() {
-            timing_points[tp_idx + 1].time_seconds
-        } else {
-            duration_seconds
-        };
-
-        let mut beat = 0u32;
-        let mut time = tp.time_seconds;
-        while time <= end_time {
-            if time >= view_start && time <= view_end {
-                let x = rect.left() + (time - view_start) / visible_duration * rect.width();
-                let is_downbeat = beat.is_multiple_of(tp.time_signature_numerator);
-                let (color, width) = if is_downbeat {
-                    (
-                        egui::Color32::from_rgba_premultiplied(255, 255, 255, 80),
-                        1.5,
-                    )
-                } else {
-                    (
-                        egui::Color32::from_rgba_premultiplied(255, 255, 255, 30),
-                        0.5,
-                    )
-                };
-                painter.line_segment(
-                    [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-                    egui::Stroke::new(width, color),
-                );
-                // Label downbeats
-                if is_downbeat && rect.width() > 200.0 {
-                    painter.text(
-                        egui::pos2(x + 3.0, rect.top() + 2.0),
-                        egui::Align2::LEFT_TOP,
-                        format!("{:.1}s", time),
-                        egui::FontId::proportional(9.0),
-                        egui::Color32::from_gray(140),
-                    );
-                }
+    {
+        puffin::profile_scope!("UiWaveformBeatGrid");
+        for (tp_idx, tp) in timing_points.iter().enumerate() {
+            if tp.bpm <= 0.0 {
+                continue;
             }
-            beat += 1;
-            time += beat_duration;
-            if beat > 10000 {
-                break; // safety limit
+            let beat_duration = 60.0 / tp.bpm;
+            let end_time = if tp_idx + 1 < timing_points.len() {
+                timing_points[tp_idx + 1].time_seconds
+            } else {
+                duration_seconds
+            };
+
+            let mut beat = 0u32;
+            let mut time = tp.time_seconds;
+            while time <= end_time {
+                if time >= view_start && time <= view_end {
+                    let x = rect.left() + (time - view_start) / visible_duration * rect.width();
+                    let is_downbeat = beat.is_multiple_of(tp.time_signature_numerator);
+                    let (color, width) = if is_downbeat {
+                        (
+                            egui::Color32::from_rgba_premultiplied(255, 255, 255, 80),
+                            1.5,
+                        )
+                    } else {
+                        (
+                            egui::Color32::from_rgba_premultiplied(255, 255, 255, 30),
+                            0.5,
+                        )
+                    };
+                    painter.line_segment(
+                        [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+                        egui::Stroke::new(width, color),
+                    );
+                    // Label downbeats
+                    if is_downbeat && rect.width() > 200.0 {
+                        painter.text(
+                            egui::pos2(x + 3.0, rect.top() + 2.0),
+                            egui::Align2::LEFT_TOP,
+                            format!("{:.1}s", time),
+                            egui::FontId::proportional(9.0),
+                            egui::Color32::from_gray(140),
+                        );
+                    }
+                }
+                beat += 1;
+                time += beat_duration;
+                if beat > 10000 {
+                    break; // safety limit
+                }
             }
         }
     }
@@ -543,10 +663,13 @@ mod tests {
             available_levels: &[],
             level_name: Some("Test Level"),
             show_metadata: false,
+            show_place_window: false,
             show_settings: false,
             settings_section: SettingsSection::Backends,
             keybind_capture_action: None,
             music_metadata,
+            creator_metadata: crate::types::LevelCreatorMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
             app_settings,
             configured_graphics_backend: "Auto",
             configured_audio_backend: "Default",
@@ -558,11 +681,13 @@ mod tests {
             snap_rotation: true,
             snap_rotation_step_degrees: 15.0,
             selected_block_id: "core/stone",
+            recent_block_ids: &[],
             selected_block: None,
             playing,
             timeline_time_seconds,
             timeline_duration_seconds,
             tap_times,
+            selected_tap: None,
             timeline_preview_position: [0.0, 0.0, 0.0],
             timeline_preview_direction: SpawnDirection::Forward,
             timing_points,
@@ -572,6 +697,9 @@ mod tests {
             waveform_scroll,
             waveform_samples,
             waveform_sample_rate: 44_100,
+            waveform_window_size: crate::audio_service::WAVEFORM_WINDOW,
+            waveform_loading: false,
+            waveform_complete: true,
             bpm_tap_result: None,
             triggers,
             trigger_selected_index,
@@ -678,6 +806,91 @@ mod tests {
             timeline_bar_nearest_tap_index(&tap_times, 304.0, rect, 0.0, 10.0),
             None
         );
+    }
+
+    #[test]
+    fn timeline_bar_tap_click_seeks_to_tap_time() {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let timing_points = Vec::new();
+        let tap_times = [1.0, 5.0, 5.2, 12.0];
+        let view = make_view(
+            &app_settings,
+            &music_metadata,
+            &timing_points,
+            &[],
+            &tap_times,
+            &[],
+            0.0,
+            20.0,
+            1.0,
+            0.0,
+            false,
+            None,
+        );
+        let rect = egui::Rect::from_min_size(egui::pos2(100.0, 0.0), egui::vec2(200.0, 20.0));
+        let mut commands = Vec::new();
+
+        assert!(timeline_bar_push_tap_click_commands(
+            &view,
+            198.0,
+            rect,
+            0.0,
+            10.0,
+            &mut commands,
+        ));
+
+        assert_eq!(commands, vec![AppCommand::EditorSetTimelineTime(5.0)]);
+    }
+
+    #[test]
+    fn timeline_bar_tap_click_selects_tap_in_tapping_mode() {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let timing_points = Vec::new();
+        let tap_times = [1.0, 5.0, 5.2, 12.0];
+        let mut view = make_view(
+            &app_settings,
+            &music_metadata,
+            &timing_points,
+            &[],
+            &tap_times,
+            &[],
+            0.0,
+            20.0,
+            1.0,
+            0.0,
+            false,
+            None,
+        );
+        view.mode = EditorMode::Tapping;
+        view.last_mode = Some(EditorMode::Tapping);
+        let rect = egui::Rect::from_min_size(egui::pos2(100.0, 0.0), egui::vec2(200.0, 20.0));
+        let mut commands = Vec::new();
+
+        assert!(timeline_bar_push_tap_click_commands(
+            &view,
+            198.0,
+            rect,
+            0.0,
+            10.0,
+            &mut commands,
+        ));
+
+        assert_eq!(
+            commands,
+            vec![
+                AppCommand::EditorSetTimelineTime(5.0),
+                AppCommand::EditorSetSelectedTap(Some(1)),
+            ]
+        );
+    }
+
+    #[test]
+    fn timeline_bar_tap_is_current_uses_tight_epsilon() {
+        assert!(timeline_bar_tap_is_current(5.0, 5.0));
+        assert!(timeline_bar_tap_is_current(5.0, 5.00005));
+        assert!(!timeline_bar_tap_is_current(5.0, 5.001));
     }
 
     #[test]

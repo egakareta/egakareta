@@ -76,6 +76,15 @@ impl App {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    fn native_window_icon() -> Option<Icon> {
+        let bytes = include_bytes!("../../assets/favicon.ico");
+        let image = image::load_from_memory(bytes).ok()?;
+        let rgba = image.to_rgba8();
+        let (width, height) = rgba.dimensions();
+        Icon::from_rgba(rgba.into_raw(), width, height).ok()
+    }
+
     #[cfg(target_arch = "wasm32")]
     fn new_web(runtime: Runtime, canvas: web_sys::HtmlCanvasElement) -> Self {
         Self {
@@ -136,6 +145,14 @@ impl App {
 
     fn system_cursor_visible_for_frame(state: &State, pointer_over_egui: bool) -> bool {
         Self::system_cursor_visible(state.game_cursor(pointer_over_egui))
+    }
+
+    fn should_route_mouse_button_input(
+        egui_consumed: bool,
+        pointer_over_egui: bool,
+        pressed: bool,
+    ) -> bool {
+        !pressed || should_route_pointer_input(egui_consumed, pointer_over_egui)
     }
 
     fn collect_touch_input_events(
@@ -306,18 +323,10 @@ impl ApplicationHandler for App {
         {
             use std::sync::Arc;
 
-            let icon = {
-                let bytes = include_bytes!("../../assets/favicon.png");
-                let image = image::load_from_memory(bytes).expect("Failed to load icon");
-                let rgba = image.to_rgba8();
-                let (width, height) = rgba.dimensions();
-                Icon::from_rgba(rgba.into_raw(), width, height).ok()
-            };
-
             let window_attributes = Window::default_attributes()
                 .with_title("egakareta")
                 .with_inner_size(LogicalSize::new(800.0, 600.0))
-                .with_window_icon(icon);
+                .with_window_icon(Self::native_window_icon());
             let window = event_loop
                 .create_window(window_attributes)
                 .expect("Failed to create window");
@@ -417,6 +426,13 @@ impl ApplicationHandler for App {
             };
             egui_state.on_window_event(window, &event).consumed
         };
+        let pointer_over_egui = runtime.pipeline.ctx().is_pointer_over_egui();
+        let pointer_over_editor_ui = self.last_cursor_pos.is_some_and(|position| {
+            runtime
+                .state
+                .editor_pointer_over_ui_input(position.x, position.y)
+        });
+        let ui_wants_pointer = pointer_over_egui || pointer_over_editor_ui;
 
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
@@ -430,9 +446,14 @@ impl ApplicationHandler for App {
                 button,
                 state: element_state,
                 ..
-            } if should_route_pointer_input(egui_consumed, false) => {
-                runtime.state.resume_audio();
+            } => {
                 let pressed = element_state == ElementState::Pressed;
+                if !Self::should_route_mouse_button_input(egui_consumed, ui_wants_pointer, pressed)
+                {
+                    return;
+                }
+
+                runtime.state.resume_audio();
                 let button_idx = mouse_button_index_from_winit(button);
                 runtime.state.process_input_event(InputEvent::MouseButton {
                     button: button_idx,
@@ -440,7 +461,7 @@ impl ApplicationHandler for App {
                 });
             }
             WindowEvent::CursorMoved { position, .. } => {
-                if should_route_pointer_input(egui_consumed, false) {
+                if should_route_pointer_input(egui_consumed, ui_wants_pointer) {
                     runtime.state.process_input_event(InputEvent::PointerMoved {
                         x: position.x,
                         y: position.y,
@@ -456,7 +477,7 @@ impl ApplicationHandler for App {
                 self.last_cursor_pos = Some(position);
             }
             WindowEvent::MouseWheel { delta, .. }
-                if should_route_pointer_input(egui_consumed, false) =>
+                if should_route_pointer_input(egui_consumed, ui_wants_pointer) =>
             {
                 let zoom_delta = zoom_delta_from_winit(delta);
                 runtime
@@ -567,14 +588,33 @@ mod tests {
         assert!(!App::system_cursor_visible(GameCursor::Hidden));
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn native_window_icon_loads_favicon_asset() {
+        assert!(App::native_window_icon().is_some());
+    }
+
     #[test]
     fn frame_system_cursor_visibility_follows_default_state_and_ui_hover() {
         pollster::block_on(async {
             let state = State::new_test().await;
 
             assert!(App::system_cursor_visible_for_frame(&state, false));
-            assert!(!App::system_cursor_visible_for_frame(&state, true));
+            assert!(App::system_cursor_visible_for_frame(&state, true));
         });
+    }
+
+    #[test]
+    fn mouse_press_is_not_routed_when_pointer_is_over_egui() {
+        assert!(App::should_route_mouse_button_input(false, false, true));
+        assert!(!App::should_route_mouse_button_input(false, true, true));
+        assert!(!App::should_route_mouse_button_input(true, false, true));
+    }
+
+    #[test]
+    fn mouse_release_routes_even_when_pointer_is_over_egui() {
+        assert!(App::should_route_mouse_button_input(false, true, false));
+        assert!(App::should_route_mouse_button_input(true, true, false));
     }
 
     #[test]

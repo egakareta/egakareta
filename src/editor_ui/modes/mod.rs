@@ -7,5 +7,6 @@
 */
 pub(crate) mod compose;
 pub(crate) mod shared;
+pub(crate) mod tapping;
 pub(crate) mod timing;
 pub(crate) mod trigger;

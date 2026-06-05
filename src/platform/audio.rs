@@ -56,6 +56,11 @@ fn accumulate_interleaved_samples(
     }
 }
 
+pub(crate) struct WaveformDecodeSummary {
+    pub(crate) sample_rate: u32,
+    pub(crate) peak_count: usize,
+}
+
 impl PlatformAudio {
     pub(crate) fn new() -> Self {
         Self {
@@ -65,6 +70,10 @@ impl PlatformAudio {
 
     pub(crate) fn stop(&mut self) {
         self.backend.stop();
+    }
+
+    pub(crate) fn pause(&mut self) {
+        self.backend.pause();
     }
 
     fn start_with_source_key_at(
@@ -197,6 +206,10 @@ impl PlatformAudio {
         self.backend.resume();
     }
 
+    pub(crate) fn resume_playback(&mut self) {
+        self.backend.resume_playback();
+    }
+
     pub(crate) fn backend_name(&self) -> String {
         self.backend.backend_name()
     }
@@ -208,10 +221,29 @@ impl PlatformAudio {
 
 /// Decode audio bytes to a downsampled waveform suitable for display.
 /// Returns (peak_samples, sample_rate) where peak_samples contains one peak per window.
+#[cfg(test)]
 pub(crate) fn decode_audio_to_waveform(
     bytes: &[u8],
     window_size: usize,
 ) -> Option<(Vec<f32>, u32)> {
+    let mut peaks = Vec::new();
+    let summary =
+        decode_audio_to_waveform_streaming(bytes, window_size, usize::MAX, |_, chunk, _| {
+            peaks.extend(chunk);
+        })?;
+
+    Some((peaks, summary.sample_rate))
+}
+
+pub(crate) fn decode_audio_to_waveform_streaming<F>(
+    bytes: &[u8],
+    window_size: usize,
+    chunk_peak_count: usize,
+    mut on_chunk: F,
+) -> Option<WaveformDecodeSummary>
+where
+    F: FnMut(usize, Vec<f32>, u32),
+{
     use symphonia::core::audio::SampleBuffer;
     use symphonia::core::codecs::DecoderOptions;
     use symphonia::core::errors::Error as SymphoniaError;
@@ -247,7 +279,9 @@ pub(crate) fn decode_audio_to_waveform(
         .make(&track.codec_params, &DecoderOptions::default())
         .ok()?;
 
-    let mut peaks: Vec<f32> = Vec::new();
+    let chunk_peak_count = chunk_peak_count.max(1);
+    let mut peaks: Vec<f32> = Vec::with_capacity(chunk_peak_count.min(4096));
+    let mut emitted_peak_count = 0usize;
     let mut window_peak: f32 = 0.0;
     let mut window_count: usize = 0;
     let mut sample_buffer: Option<SampleBuffer<f32>> = None;
@@ -293,6 +327,12 @@ pub(crate) fn decode_audio_to_waveform(
                 &mut window_count,
                 window_size,
             );
+            if peaks.len() >= chunk_peak_count {
+                let chunk = std::mem::take(&mut peaks);
+                let chunk_len = chunk.len();
+                on_chunk(emitted_peak_count, chunk, sample_rate);
+                emitted_peak_count += chunk_len;
+            }
         }
     }
 
@@ -300,14 +340,29 @@ pub(crate) fn decode_audio_to_waveform(
         peaks.push(window_peak);
     }
 
-    log::info!("Audio waveform decoding complete ({} peaks)", peaks.len());
-    Some((peaks, sample_rate))
+    if !peaks.is_empty() {
+        let chunk = std::mem::take(&mut peaks);
+        let chunk_len = chunk.len();
+        on_chunk(emitted_peak_count, chunk, sample_rate);
+        emitted_peak_count += chunk_len;
+    }
+
+    log::info!(
+        "Audio waveform decoding complete ({} peaks)",
+        emitted_peak_count
+    );
+    Some(WaveformDecodeSummary {
+        sample_rate,
+        peak_count: emitted_peak_count,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::accumulate_interleaved_samples;
     use super::accumulate_waveform_frame_peak;
+    use super::decode_audio_to_waveform;
+    use super::decode_audio_to_waveform_streaming;
 
     #[test]
     fn interleaved_stereo_accumulates_per_frame_not_per_channel() {
@@ -354,5 +409,68 @@ mod tests {
         assert_eq!(peaks, vec![0.8]);
         assert_eq!(window_count, 0);
         assert_eq!(window_peak, 0.0);
+    }
+
+    /// Build a minimal valid WAV file (16-bit mono PCM) from the given samples.
+    fn build_wav_mono_16bit(sample_rate: u32, samples: &[i16]) -> Vec<u8> {
+        let data_bytes = samples.len() as u32 * 2;
+        let mut wav = Vec::with_capacity(44 + data_bytes as usize);
+        // RIFF header
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + data_bytes).to_le_bytes());
+        wav.extend_from_slice(b"WAVE");
+        // fmt sub-chunk
+        wav.extend_from_slice(b"fmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes()); // chunk size
+        wav.extend_from_slice(&1u16.to_le_bytes()); // PCM format
+        wav.extend_from_slice(&1u16.to_le_bytes()); // mono
+        wav.extend_from_slice(&sample_rate.to_le_bytes());
+        let byte_rate = sample_rate * 2; // mono 16-bit
+        wav.extend_from_slice(&byte_rate.to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes()); // block align
+        wav.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+                                                     // data sub-chunk
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&data_bytes.to_le_bytes());
+        for &s in samples {
+            wav.extend_from_slice(&s.to_le_bytes());
+        }
+        wav
+    }
+
+    #[test]
+    fn streaming_decoder_reports_chunks_from_peak_accumulation() {
+        // Use a small synthetic WAV instead of a 4 MB MP3 to keep the test fast
+        // while exercising the same streaming decode → chunk emission paths.
+        let sample_rate = 44100u32;
+        let num_samples = sample_rate as usize * 3; // 3 seconds
+        let samples: Vec<i16> = (0..num_samples)
+            .map(|i| {
+                let t = i as f64 / sample_rate as f64;
+                (t * 440.0 * 2.0 * std::f64::consts::PI).sin() * 16000.0
+            })
+            .map(|v| v as i16)
+            .collect();
+        let bytes = build_wav_mono_16bit(sample_rate, &samples);
+
+        let mut chunks = Vec::new();
+        let summary = decode_audio_to_waveform_streaming(&bytes, 256, 32, |start, peaks, _| {
+            chunks.push((start, peaks));
+        })
+        .expect("synthetic wav should decode");
+
+        assert!(summary.sample_rate > 0);
+        assert!(summary.peak_count > 0);
+        assert!(!chunks.is_empty());
+        assert_eq!(chunks[0].0, 0);
+        for window in chunks.windows(2) {
+            assert_eq!(window[0].0 + window[0].1.len(), window[1].0);
+        }
+        let chunked_peak_count: usize = chunks.iter().map(|(_, peaks)| peaks.len()).sum();
+        assert_eq!(chunked_peak_count, summary.peak_count);
+
+        let collected = decode_audio_to_waveform(&bytes, 256).expect("collector should decode");
+        assert_eq!(collected.0.len(), summary.peak_count);
+        assert_eq!(collected.1, summary.sample_rate);
     }
 }

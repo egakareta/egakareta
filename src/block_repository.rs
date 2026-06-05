@@ -70,6 +70,10 @@ fn default_consumed_on_overlap() -> bool {
     false
 }
 
+fn default_gem_value() -> u32 {
+    0
+}
+
 fn default_placeable() -> bool {
     true
 }
@@ -82,11 +86,26 @@ fn default_icon_dimetric_projection() -> bool {
     true
 }
 
+fn default_block_size() -> [f32; 3] {
+    [1.0, 1.0, 1.0]
+}
+
+fn sanitize_block_size(size: [f32; 3]) -> [f32; 3] {
+    size.map(|component| {
+        if component.is_finite() {
+            component.max(0.01)
+        } else {
+            1.0
+        }
+    })
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct BlockDefinition {
     pub(crate) id: String,
     #[serde(default = "default_display_name")]
     pub(crate) display_name: String,
+    pub(crate) category: BlockCategory,
     #[serde(default)]
     pub(crate) assets: BlockAssets,
     #[serde(default)]
@@ -95,6 +114,14 @@ pub(crate) struct BlockDefinition {
     pub(crate) behavior: BlockBehavior,
     #[serde(default = "default_placeable")]
     pub(crate) placeable: bool,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum BlockCategory {
+    Building,
+    Danger,
+    Tech,
 }
 
 impl BlockDefinition {
@@ -110,7 +137,12 @@ impl BlockDefinition {
         if self.display_name.is_empty() {
             self.display_name = self.id.clone();
         }
+        self.render.default_size = sanitize_block_size(self.render.default_size);
         Some(self)
+    }
+
+    pub(crate) fn default_size(&self) -> [f32; 3] {
+        self.render.default_size
     }
 }
 
@@ -241,7 +273,18 @@ pub(crate) enum BlockRenderProfile {
     Solid,
     Liquid,
     SpeedPortal,
-    FinishRing,
+    Neon,
+    Gem,
+}
+
+#[derive(Clone, Default, Deserialize, Serialize)]
+pub(crate) struct BlockIconCamera {
+    #[serde(default)]
+    pub(crate) position: Option<[f32; 3]>,
+    #[serde(default, alias = "rotation_degrees")]
+    pub(crate) rotation: Option<[f32; 3]>,
+    #[serde(default)]
+    pub(crate) orthographic_half_extent: Option<f32>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -250,6 +293,10 @@ pub(crate) struct BlockRender {
     pub(crate) profile: BlockRenderProfile,
     #[serde(default = "default_icon_dimetric_projection")]
     pub(crate) icon_dimetric_projection: bool,
+    #[serde(default)]
+    pub(crate) icon_camera: BlockIconCamera,
+    #[serde(default = "default_block_size")]
+    pub(crate) default_size: [f32; 3],
     #[serde(default = "default_color_top")]
     pub(crate) color_top: [f32; 4],
     #[serde(default = "default_color_side")]
@@ -269,6 +316,8 @@ impl Default for BlockRender {
         Self {
             profile: default_render_profile(),
             icon_dimetric_projection: default_icon_dimetric_projection(),
+            icon_camera: BlockIconCamera::default(),
+            default_size: default_block_size(),
             color_top: default_color_top(),
             color_side: default_color_side(),
             color_bottom: default_color_bottom(),
@@ -286,7 +335,7 @@ pub(crate) enum BlockCollision {
     PassThrough,
     Hazard,
     Portal,
-    Finish,
+    Collectible,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -299,6 +348,8 @@ pub(crate) struct BlockBehavior {
     pub(crate) support_surface: bool,
     #[serde(default = "default_consumed_on_overlap")]
     pub(crate) consumed_on_overlap: bool,
+    #[serde(default = "default_gem_value")]
+    pub(crate) gem_value: u32,
 }
 
 impl Default for BlockBehavior {
@@ -308,6 +359,7 @@ impl Default for BlockBehavior {
             speed_multiplier: default_speed_multiplier(),
             support_surface: default_support_surface(),
             consumed_on_overlap: default_consumed_on_overlap(),
+            gem_value: default_gem_value(),
         }
     }
 }
@@ -347,6 +399,7 @@ impl BlockCatalog {
         BlockDefinition {
             id: DEFAULT_BLOCK_ID.to_string(),
             display_name: "Standard".to_string(),
+            category: BlockCategory::Building,
             assets: BlockAssets::default(),
             render: BlockRender::default(),
             behavior: BlockBehavior::default(),
@@ -562,10 +615,12 @@ pub(crate) fn normalize_block_id(block_id: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_utils::assert_approx_eq;
+
     use super::{
         all_placeable_blocks, block_texture_atlas, normalize_block_id, resolve_block_definition,
-        resolve_block_texture_layers, BlockAssets, BlockBehavior, BlockCollision, BlockDefinition,
-        BlockRender, BlockRenderProfile,
+        resolve_block_texture_layers, BlockAssets, BlockBehavior, BlockCategory, BlockCollision,
+        BlockDefinition, BlockRender, BlockRenderProfile,
     };
 
     #[test]
@@ -613,6 +668,7 @@ mod tests {
         let normalized = BlockDefinition {
             id: "  CORE/STONE  ".to_string(),
             display_name: "   ".to_string(),
+            category: BlockCategory::Building,
             assets: BlockAssets::default(),
             render: BlockRender::default(),
             behavior: BlockBehavior::default(),
@@ -626,6 +682,7 @@ mod tests {
         let missing_id = BlockDefinition {
             id: "   ".to_string(),
             display_name: "name".to_string(),
+            category: BlockCategory::Building,
             assets: BlockAssets::default(),
             render: BlockRender::default(),
             behavior: BlockBehavior::default(),
@@ -680,5 +737,61 @@ mod tests {
         ));
         assert!(!torch.behavior.support_surface);
         assert!(matches!(torch.render.profile, BlockRenderProfile::Liquid));
+    }
+
+    #[test]
+    fn block_default_size_is_loaded_and_sanitized() {
+        let speed_portal = resolve_block_definition("core/speedportal");
+        assert_eq!(speed_portal.default_size(), [2.0, 0.25, 1.0]);
+
+        let normalized = BlockDefinition {
+            id: "debug/flat".to_string(),
+            display_name: "Flat".to_string(),
+            category: BlockCategory::Building,
+            assets: BlockAssets::default(),
+            render: BlockRender {
+                default_size: [f32::NAN, -2.0, 3.0],
+                ..BlockRender::default()
+            },
+            behavior: BlockBehavior::default(),
+            placeable: true,
+        }
+        .normalize()
+        .expect("normalize");
+        assert_eq!(normalized.default_size(), [1.0, 0.01, 3.0]);
+    }
+
+    #[test]
+    fn block_icon_camera_configuration_is_loaded() {
+        let speed_portal = resolve_block_definition("core/speedportal");
+        let camera = &speed_portal.render.icon_camera;
+        let position = camera.position.expect("speed portal icon camera position");
+        let rotation = camera.rotation.expect("speed portal icon camera rotation");
+        let half_extent = camera
+            .orthographic_half_extent
+            .expect("speed portal icon camera extent");
+
+        assert_approx_eq(position[0], 0.5, 1e-6);
+        assert_approx_eq(position[1], 4.0, 1e-6);
+        assert_approx_eq(position[2], 0.5, 1e-6);
+        assert_approx_eq(rotation[0], -90.0, 1e-6);
+        assert_approx_eq(rotation[1], 0.0, 1e-6);
+        assert_approx_eq(rotation[2], -90.0, 1e-6);
+        assert_approx_eq(half_extent, 0.6, 1e-6);
+    }
+
+    #[test]
+    fn block_categories_are_loaded_from_definitions() {
+        let stone = resolve_block_definition("core/stone");
+        let lava = resolve_block_definition("core/lava");
+        let void = resolve_block_definition("core/void");
+        let speed_portal = resolve_block_definition("core/speedportal");
+        let torch = resolve_block_definition("core/torch");
+
+        assert_eq!(stone.category, BlockCategory::Building);
+        assert_eq!(lava.category, BlockCategory::Danger);
+        assert_eq!(void.category, BlockCategory::Danger);
+        assert_eq!(speed_portal.category, BlockCategory::Tech);
+        assert_eq!(torch.category, BlockCategory::Tech);
     }
 }

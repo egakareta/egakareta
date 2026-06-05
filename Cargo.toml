@@ -24,16 +24,21 @@ web-time = "1.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_cbor = "0.11"
+sha2 = "0.10"
 zstd = "0.13"
 include_dir = "0.7"
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
-egui = "0.34.2"
-egui-wgpu = "0.34.2"
+egui = "0.34.3"
+egui-wgpu = "0.34.3"
 egui-phosphor = "0.12.0"
 puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "7e08a533f9debfb7d051547263d2ab84c666314f" }
 puffin_egui = { git = "https://github.com/EmbarkStudios/puffin", rev = "7e08a533f9debfb7d051547263d2ab84c666314f" }
 rfd = "0.17"
-image = { version = "0.25", default-features = false, features = ["png"] }
+rayon = "1"
+image = { version = "0.25", default-features = false, features = [
+    "ico",
+    "png",
+] }
 async-trait = "0.1"
 winit = "0.30"
 cpal = { version = "0.17", features = ["wasm-bindgen", "audioworklet"] }
@@ -77,6 +82,7 @@ puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "7e08a533f9deb
 rexie = "0.6"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
+wasm-bindgen-rayon = "1"
 web-sys = { version = "0.3", features = [
     "console",
     "Window",

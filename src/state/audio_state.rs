@@ -10,12 +10,34 @@ use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{Receiver, Sender};
 
 use super::State;
+use crate::audio_service::{PersistentWaveformCacheEntry, WaveformLoadMessage};
+use crate::platform::io::{log_platform_error, save_waveform_to_storage};
 use crate::platform::services::trigger_audio_import;
+use crate::platform::task::spawn_background;
 use crate::types::LevelMetadata;
 
 pub(crate) type AudioImportData = (String, Vec<u8>);
 pub(crate) type RuntimeAudioPreloadData = crate::audio_service::AudioPreloadResult;
 pub(crate) type WaveformLoadData = crate::audio_service::WaveformResult;
+
+#[derive(Clone, Debug)]
+pub(crate) struct WaveformCacheEntry {
+    pub(crate) samples: Vec<f32>,
+    pub(crate) sample_rate: u32,
+    pub(crate) window_size: usize,
+    pub(crate) complete: bool,
+}
+
+impl Default for WaveformCacheEntry {
+    fn default() -> Self {
+        Self {
+            samples: Vec::new(),
+            sample_rate: 0,
+            window_size: crate::audio_service::WAVEFORM_WINDOW,
+            complete: false,
+        }
+    }
+}
 
 pub(crate) struct RuntimeAudioPreloadState {
     pub(crate) preloaded_audio: HashMap<String, Vec<u8>>,
@@ -32,7 +54,7 @@ pub(crate) struct EditorAudioState {
     pub(crate) local_audio_cache: HashMap<String, Vec<u8>>,
     pub(crate) audio_import_channel: (Sender<AudioImportData>, Receiver<AudioImportData>),
     pub(crate) waveform_load_channel: (Sender<WaveformLoadData>, Receiver<WaveformLoadData>),
-    pub(crate) waveform_cache: HashMap<String, (Vec<f32>, u32)>,
+    pub(crate) waveform_cache: HashMap<String, WaveformCacheEntry>,
     pub(crate) waveform_loading_source: Option<String>,
 }
 
@@ -103,6 +125,14 @@ impl State {
 
     pub(crate) fn stop_audio(&mut self) {
         self.audio.state.runtime.stop();
+    }
+
+    pub(crate) fn pause_game_audio(&mut self) {
+        self.audio.state.runtime.pause();
+    }
+
+    pub(crate) fn resume_game_audio(&mut self) {
+        self.audio.state.runtime.resume_playback();
     }
 
     pub(crate) fn resume_audio(&mut self) {
@@ -271,51 +301,166 @@ impl State {
     }
 
     pub(crate) fn update_waveform_loading(&mut self) {
-        while let Ok((source, level_name, decoded, bytes)) =
+        while let Ok((source, level_name, message)) =
             self.audio.state.editor.waveform_load_channel.1.try_recv()
         {
             let source_key = runtime_asset_source_key(&level_name, &source);
+            let is_current = source == self.session.editor_music_metadata.source
+                && self.session.editor_level_name.as_deref() == Some(&level_name);
 
-            if let Some((samples, sample_rate)) = decoded {
-                self.audio
-                    .state
-                    .editor
-                    .waveform_cache
-                    .insert(source_key.clone(), (samples.clone(), sample_rate));
+            match message {
+                WaveformLoadMessage::Started { window_size } => {
+                    self.audio.state.editor.waveform_cache.insert(
+                        source_key.clone(),
+                        WaveformCacheEntry {
+                            window_size,
+                            ..WaveformCacheEntry::default()
+                        },
+                    );
 
-                if source != self.session.editor_music_metadata.source
-                    || self.session.editor_level_name.as_deref() != Some(&level_name)
-                {
-                    continue;
+                    if is_current {
+                        self.editor.timing.waveform_samples.clear();
+                        self.editor.timing.waveform_sample_rate = 0;
+                        self.editor.timing.waveform_window_size = window_size;
+                        self.editor.timing.waveform_loading = true;
+                        self.editor.timing.waveform_complete = false;
+                    }
                 }
+                WaveformLoadMessage::Chunk {
+                    start_peak,
+                    peaks,
+                    sample_rate,
+                    window_size,
+                } => {
+                    let entry = self
+                        .audio
+                        .state
+                        .editor
+                        .waveform_cache
+                        .entry(source_key.clone())
+                        .or_default();
+                    entry.sample_rate = sample_rate;
+                    entry.window_size = window_size;
+                    entry.complete = false;
+                    apply_waveform_chunk(&mut entry.samples, start_peak, peaks);
 
-                self.editor.timing.waveform_samples = samples;
-                self.editor.timing.waveform_sample_rate = sample_rate;
-            } else {
-                if source != self.session.editor_music_metadata.source
-                    || self.session.editor_level_name.as_deref() != Some(&level_name)
-                {
-                    continue;
+                    if is_current {
+                        self.editor.timing.waveform_samples = entry.samples.clone();
+                        self.editor.timing.waveform_sample_rate = sample_rate;
+                        self.editor.timing.waveform_window_size = window_size;
+                        self.editor.timing.waveform_loading = true;
+                        self.editor.timing.waveform_complete = false;
+                    }
                 }
+                WaveformLoadMessage::Cached {
+                    samples,
+                    sample_rate,
+                    window_size,
+                    bytes,
+                } => {
+                    self.audio.state.editor.waveform_cache.insert(
+                        source_key.clone(),
+                        WaveformCacheEntry {
+                            samples,
+                            sample_rate,
+                            window_size,
+                            complete: true,
+                        },
+                    );
 
-                self.editor.timing.waveform_samples.clear();
-                self.editor.timing.waveform_sample_rate = 0;
-            }
+                    if is_current {
+                        if let Some(entry) = self.audio.state.editor.waveform_cache.get(&source_key)
+                        {
+                            self.editor.timing.waveform_samples = entry.samples.clone();
+                            self.editor.timing.waveform_sample_rate = entry.sample_rate;
+                            self.editor.timing.waveform_window_size = entry.window_size;
+                        }
+                        self.editor.timing.waveform_loading = false;
+                        self.editor.timing.waveform_complete = true;
+                        self.audio.state.editor.waveform_loading_source = None;
+                    }
 
-            if let Some(bytes) = bytes {
-                // We cache builtin bytes in runtime_preload instead of local_audio_cache
-                // to avoid filename collisions (e.g., both Flowerfield and Golden Haze using "audio.mp3")
-                self.audio
-                    .state
-                    .runtime_preload
-                    .preloaded_audio
-                    .insert(source_key.clone(), bytes);
-            }
+                    if let Some(bytes) = bytes {
+                        self.audio
+                            .state
+                            .runtime_preload
+                            .preloaded_audio
+                            .insert(source_key.clone(), bytes);
+                    }
+                }
+                WaveformLoadMessage::Finished {
+                    sample_rate,
+                    window_size,
+                    total_peaks,
+                    cache_key,
+                    bytes,
+                } => {
+                    let entry = self
+                        .audio
+                        .state
+                        .editor
+                        .waveform_cache
+                        .entry(source_key.clone())
+                        .or_default();
+                    entry.sample_rate = sample_rate;
+                    entry.window_size = window_size;
+                    entry.complete = true;
+                    entry.samples.truncate(total_peaks);
 
-            if self.audio.state.editor.waveform_loading_source.as_deref()
-                == Some(source_key.as_str())
-            {
-                self.audio.state.editor.waveform_loading_source = None;
+                    if let Some(cache_key) = cache_key {
+                        persist_waveform_cache_entry(cache_key, entry);
+                    }
+
+                    if is_current {
+                        self.editor.timing.waveform_samples = entry.samples.clone();
+                        self.editor.timing.waveform_sample_rate = sample_rate;
+                        self.editor.timing.waveform_window_size = window_size;
+                        self.editor.timing.waveform_loading = false;
+                        self.editor.timing.waveform_complete = true;
+                    }
+
+                    if let Some(bytes) = bytes {
+                        // We cache builtin bytes in runtime_preload instead of local_audio_cache
+                        // to avoid filename collisions (e.g., both Flowerfield and Golden Haze using "audio.mp3")
+                        self.audio
+                            .state
+                            .runtime_preload
+                            .preloaded_audio
+                            .insert(source_key.clone(), bytes);
+                    }
+
+                    if is_current
+                        && self.audio.state.editor.waveform_loading_source.as_deref()
+                            == Some(source_key.as_str())
+                    {
+                        self.audio.state.editor.waveform_loading_source = None;
+                    }
+                }
+                WaveformLoadMessage::Failed { bytes } => {
+                    self.audio.state.editor.waveform_cache.remove(&source_key);
+
+                    if is_current {
+                        self.editor.timing.waveform_samples.clear();
+                        self.editor.timing.waveform_sample_rate = 0;
+                        self.editor.timing.waveform_loading = false;
+                        self.editor.timing.waveform_complete = false;
+                    }
+
+                    if let Some(bytes) = bytes {
+                        self.audio
+                            .state
+                            .runtime_preload
+                            .preloaded_audio
+                            .insert(source_key.clone(), bytes);
+                    }
+
+                    if is_current
+                        && self.audio.state.editor.waveform_loading_source.as_deref()
+                            == Some(source_key.as_str())
+                    {
+                        self.audio.state.editor.waveform_loading_source = None;
+                    }
+                }
             }
         }
     }
@@ -329,12 +474,15 @@ impl State {
             .unwrap_or_else(|| "Untitled".to_string());
         let source_key = runtime_asset_source_key(&level_name, &music_source);
 
-        if let Some((samples, sample_rate)) =
-            self.audio.state.editor.waveform_cache.get(&source_key)
-        {
-            self.editor.timing.waveform_samples = samples.clone();
-            self.editor.timing.waveform_sample_rate = *sample_rate;
-            self.audio.state.editor.waveform_loading_source = None;
+        if let Some(entry) = self.audio.state.editor.waveform_cache.get(&source_key) {
+            self.editor.timing.waveform_samples = entry.samples.clone();
+            self.editor.timing.waveform_sample_rate = entry.sample_rate;
+            self.editor.timing.waveform_window_size = entry.window_size;
+            self.editor.timing.waveform_loading = !entry.complete;
+            self.editor.timing.waveform_complete = entry.complete;
+            if entry.complete {
+                self.audio.state.editor.waveform_loading_source = None;
+            }
             return;
         }
 
@@ -345,6 +493,9 @@ impl State {
         self.audio.state.editor.waveform_loading_source = Some(source_key.clone());
         self.editor.timing.waveform_samples.clear();
         self.editor.timing.waveform_sample_rate = 0;
+        self.editor.timing.waveform_window_size = crate::audio_service::WAVEFORM_WINDOW;
+        self.editor.timing.waveform_loading = true;
+        self.editor.timing.waveform_complete = false;
 
         let cached_bytes = self
             .audio
@@ -372,9 +523,37 @@ impl State {
     }
 }
 
+fn apply_waveform_chunk(samples: &mut Vec<f32>, start_peak: usize, peaks: Vec<f32>) {
+    if samples.len() < start_peak {
+        samples.resize(start_peak, 0.0);
+    }
+
+    let end_peak = start_peak + peaks.len();
+    if samples.len() < end_peak {
+        samples.resize(end_peak, 0.0);
+    }
+
+    samples[start_peak..end_peak].copy_from_slice(&peaks);
+}
+
+fn persist_waveform_cache_entry(cache_key: String, entry: &WaveformCacheEntry) {
+    let cached = PersistentWaveformCacheEntry::new(
+        entry.samples.clone(),
+        entry.sample_rate,
+        entry.window_size,
+    );
+
+    spawn_background(async move {
+        if let Err(error) = save_waveform_to_storage(&cache_key, &cached).await {
+            log_platform_error(&format!("Failed to save waveform cache: {error}"));
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
-    use super::AudioState;
+    use super::{AudioState, WaveformCacheEntry};
+    use crate::audio_service::WaveformLoadMessage;
     use crate::platform::audio::runtime_asset_source_key;
     use crate::state::State;
     use std::collections::HashMap;
@@ -506,15 +685,38 @@ mod tests {
                 .send((
                     "song.mp3".to_string(),
                     "Test Level".to_string(),
-                    Some((vec![0.25, 0.75], 44_100)),
-                    Some(vec![4, 5, 6]),
+                    WaveformLoadMessage::Chunk {
+                        start_peak: 0,
+                        peaks: vec![0.25, 0.75],
+                        sample_rate: 44_100,
+                        window_size: crate::audio_service::WAVEFORM_WINDOW,
+                    },
                 ))
                 .expect("waveform send should succeed");
+            state
+                .audio
+                .state
+                .editor
+                .waveform_load_channel
+                .0
+                .send((
+                    "song.mp3".to_string(),
+                    "Test Level".to_string(),
+                    WaveformLoadMessage::Finished {
+                        sample_rate: 44_100,
+                        window_size: crate::audio_service::WAVEFORM_WINDOW,
+                        total_peaks: 2,
+                        cache_key: None,
+                        bytes: Some(vec![4, 5, 6]),
+                    },
+                ))
+                .expect("waveform finish send should succeed");
 
             state.update_waveform_loading();
 
             assert_eq!(state.editor.timing.waveform_samples, vec![0.25, 0.75]);
             assert_eq!(state.editor.timing.waveform_sample_rate, 44_100);
+            assert!(state.editor.timing.waveform_complete);
             assert_eq!(state.audio.state.editor.waveform_loading_source, None);
 
             let cached = state
@@ -524,8 +726,9 @@ mod tests {
                 .waveform_cache
                 .get(&source_key)
                 .expect("decoded waveform should be cached");
-            assert_eq!(cached.0, vec![0.25, 0.75]);
-            assert_eq!(cached.1, 44_100);
+            assert_eq!(cached.samples, vec![0.25, 0.75]);
+            assert_eq!(cached.sample_rate, 44_100);
+            assert!(cached.complete);
 
             assert_eq!(
                 state
@@ -535,6 +738,63 @@ mod tests {
                     .preloaded_audio
                     .get(&source_key),
                 Some(&vec![4, 5, 6])
+            );
+        });
+    }
+
+    #[test]
+    fn update_waveform_loading_applies_persistent_cache_hit() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.session.editor_level_name = Some("Test Level".to_string());
+            state.session.editor_music_metadata.source = "song.mp3".to_string();
+
+            let source_key = runtime_asset_source_key("Test Level", "song.mp3");
+            state.audio.state.editor.waveform_loading_source = Some(source_key.clone());
+
+            state
+                .audio
+                .state
+                .editor
+                .waveform_load_channel
+                .0
+                .send((
+                    "song.mp3".to_string(),
+                    "Test Level".to_string(),
+                    WaveformLoadMessage::Cached {
+                        samples: vec![0.15, 0.45, 0.9],
+                        sample_rate: 44_100,
+                        window_size: crate::audio_service::WAVEFORM_WINDOW,
+                        bytes: Some(vec![7, 8, 9]),
+                    },
+                ))
+                .expect("cached waveform send should succeed");
+
+            state.update_waveform_loading();
+
+            assert_eq!(state.editor.timing.waveform_samples, vec![0.15, 0.45, 0.9]);
+            assert_eq!(state.editor.timing.waveform_sample_rate, 44_100);
+            assert!(state.editor.timing.waveform_complete);
+            assert!(!state.editor.timing.waveform_loading);
+            assert_eq!(state.audio.state.editor.waveform_loading_source, None);
+
+            let cached = state
+                .audio
+                .state
+                .editor
+                .waveform_cache
+                .get(&source_key)
+                .expect("persistent cache hit should be cached in memory");
+            assert!(cached.complete);
+            assert_eq!(cached.samples, vec![0.15, 0.45, 0.9]);
+            assert_eq!(
+                state
+                    .audio
+                    .state
+                    .runtime_preload
+                    .preloaded_audio
+                    .get(&source_key),
+                Some(&vec![7, 8, 9])
             );
         });
     }
@@ -560,8 +820,12 @@ mod tests {
                 .send((
                     "stale.mp3".to_string(),
                     "Test Level".to_string(),
-                    Some((vec![0.1, 0.2], 48_000)),
-                    None,
+                    WaveformLoadMessage::Chunk {
+                        start_peak: 0,
+                        peaks: vec![0.1, 0.2],
+                        sample_rate: 48_000,
+                        window_size: crate::audio_service::WAVEFORM_WINDOW,
+                    },
                 ))
                 .expect("stale waveform send should succeed");
 
@@ -603,8 +867,7 @@ mod tests {
                 .send((
                     "broken.mp3".to_string(),
                     "Test Level".to_string(),
-                    None,
-                    None,
+                    WaveformLoadMessage::Failed { bytes: None },
                 ))
                 .expect("failed waveform send should succeed");
 
@@ -624,12 +887,15 @@ mod tests {
             state.session.editor_music_metadata.source = "song.mp3".to_string();
             let source_key = runtime_asset_source_key("Test Level", "song.mp3");
 
-            state
-                .audio
-                .state
-                .editor
-                .waveform_cache
-                .insert(source_key.clone(), (vec![0.3, 0.9], 32_000));
+            state.audio.state.editor.waveform_cache.insert(
+                source_key.clone(),
+                WaveformCacheEntry {
+                    samples: vec![0.3, 0.9],
+                    sample_rate: 32_000,
+                    window_size: crate::audio_service::WAVEFORM_WINDOW,
+                    complete: true,
+                },
+            );
             state.audio.state.editor.waveform_loading_source = Some("other:key".to_string());
             state.load_waveform_for_current_audio();
             assert_eq!(state.editor.timing.waveform_samples, vec![0.3, 0.9]);
@@ -678,12 +944,15 @@ mod tests {
 
             let imported_name = "imported.mp3".to_string();
             let source_key = runtime_asset_source_key("Test Level", &imported_name);
-            state
-                .audio
-                .state
-                .editor
-                .waveform_cache
-                .insert(source_key.clone(), (vec![0.5], 8_000));
+            state.audio.state.editor.waveform_cache.insert(
+                source_key.clone(),
+                WaveformCacheEntry {
+                    samples: vec![0.5],
+                    sample_rate: 8_000,
+                    window_size: crate::audio_service::WAVEFORM_WINDOW,
+                    complete: true,
+                },
+            );
             state.audio.state.editor.waveform_loading_source = Some("some:old:key".to_string());
 
             state

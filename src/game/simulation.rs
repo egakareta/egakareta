@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::state::GameState;
+use super::state::{ConsumedObjectEvent, GameState};
 use crate::types::{
     apply_timed_triggers_to_objects, Direction, LevelObject, SpawnDirection, TimedTrigger,
 };
@@ -15,6 +15,8 @@ pub(crate) struct TimelineSimulationState {
     pub(crate) direction: SpawnDirection,
     pub(crate) elapsed_seconds: f32,
     pub(crate) speed: f32,
+    pub(crate) vertical_velocity: f32,
+    pub(crate) is_grounded: bool,
 }
 
 pub(crate) struct TimelineSimulationRuntime {
@@ -93,6 +95,7 @@ impl TimelineSimulationRuntime {
         triggers: &[TimedTrigger],
         simulate_trigger_hitboxes: bool,
     ) -> Self {
+        puffin::profile_scope!("TimelineRuntimeBuild");
         let mut game = GameState::new();
         game.objects = objects.to_vec();
         game.rebuild_behavior_cache();
@@ -129,8 +132,7 @@ impl TimelineSimulationRuntime {
     }
 
     fn apply_pending_taps(&mut self, up_to_time: f32) {
-        while self.tap_index < self.tap_times.len()
-            && self.tap_times[self.tap_index] <= up_to_time + TIMELINE_TAP_EPSILON_SECONDS
+        while self.tap_index < self.tap_times.len() && self.tap_times[self.tap_index] <= up_to_time
         {
             self.game.turn_right();
             self.tap_index += 1;
@@ -138,6 +140,7 @@ impl TimelineSimulationRuntime {
     }
 
     fn apply_trigger_hitboxes(&mut self, up_to_time: f32) {
+        puffin::profile_scope!("TimelineTriggerHitboxes");
         if !self.simulate_trigger_hitboxes || self.triggers.is_empty() {
             return;
         }
@@ -176,20 +179,46 @@ impl TimelineSimulationRuntime {
     }
 
     pub(crate) fn advance_to(&mut self, target_time_seconds: f32) {
-        let mut elapsed_seconds = self.elapsed_seconds;
-        advance_simulation_time(
-            &mut elapsed_seconds,
-            target_time_seconds,
-            self.simulation_dt,
-            |step_target, step_dt| {
-                self.apply_pending_taps(step_target);
-                self.apply_trigger_hitboxes(step_target);
-                self.game.update(step_dt);
-                self.sync_trigger_base_with_consumed();
-                !self.game.game_over
-            },
-        );
-        self.elapsed_seconds = elapsed_seconds;
+        puffin::profile_scope!("TimelineAdvanceTo");
+        let target_time = target_time_seconds.max(0.0);
+        if target_time <= self.elapsed_seconds {
+            return;
+        }
+
+        const TIME_EPSILON_SECONDS: f32 = 1e-6;
+        let simulation_dt = self.simulation_dt.max(TIME_EPSILON_SECONDS);
+
+        while self.elapsed_seconds < target_time {
+            self.apply_pending_taps(self.elapsed_seconds + TIME_EPSILON_SECONDS);
+
+            let mut step_target = (self.elapsed_seconds + simulation_dt).min(target_time);
+            if let Some(next_tap_time) = self.tap_times.get(self.tap_index).copied() {
+                if next_tap_time <= self.elapsed_seconds + TIME_EPSILON_SECONDS {
+                    self.apply_pending_taps(self.elapsed_seconds + TIME_EPSILON_SECONDS);
+                    continue;
+                }
+                if next_tap_time < step_target {
+                    step_target = next_tap_time;
+                }
+            }
+
+            let step_dt = step_target - self.elapsed_seconds;
+            if step_dt <= TIME_EPSILON_SECONDS {
+                self.elapsed_seconds = step_target;
+                self.apply_pending_taps(self.elapsed_seconds + TIME_EPSILON_SECONDS);
+                continue;
+            }
+
+            self.apply_trigger_hitboxes(step_target);
+            self.game.update(step_dt);
+            self.sync_trigger_base_with_consumed();
+            self.elapsed_seconds = step_target;
+            self.apply_pending_taps(self.elapsed_seconds + TIME_EPSILON_SECONDS);
+
+            if self.game.game_over {
+                return;
+            }
+        }
     }
 
     pub(crate) fn elapsed_seconds(&self) -> f32 {
@@ -212,8 +241,16 @@ impl TimelineSimulationRuntime {
         self.game.game_over
     }
 
+    pub(crate) fn take_consumed_object_events(&mut self) -> Vec<ConsumedObjectEvent> {
+        self.game.take_consumed_object_events()
+    }
+
     pub(crate) fn trail_segments(&self) -> &[Vec<[f32; 3]>] {
         &self.game.trail_segments
+    }
+
+    pub(crate) fn objects(&self) -> &[LevelObject] {
+        &self.game.objects
     }
 
     pub(crate) fn snapshot(&self) -> TimelineSimulationState {
@@ -225,6 +262,8 @@ impl TimelineSimulationRuntime {
             },
             elapsed_seconds: self.elapsed_seconds,
             speed: self.game.speed,
+            vertical_velocity: self.game.vertical_velocity,
+            is_grounded: self.game.is_grounded,
         }
     }
 }
@@ -236,6 +275,7 @@ pub(crate) fn simulate_timeline_state(
     tap_times: &[f32],
     timeline_time_seconds: f32,
 ) -> TimelineSimulationState {
+    puffin::profile_scope!("TimelineSimulateState");
     let mut runtime =
         TimelineSimulationRuntime::new(spawn_position, spawn_direction, objects, tap_times);
     runtime.advance_to(timeline_time_seconds);
@@ -251,6 +291,7 @@ pub(crate) fn simulate_timeline_state_with_triggers(
     simulate_trigger_hitboxes: bool,
     timeline_time_seconds: f32,
 ) -> TimelineSimulationState {
+    puffin::profile_scope!("TimelineSimulateStateWithTriggers");
     let mut runtime = TimelineSimulationRuntime::new_with_triggers(
         spawn_position,
         spawn_direction,
@@ -271,6 +312,7 @@ pub(crate) fn advance_simulation_time<F>(
 ) where
     F: FnMut(f32, f32) -> bool,
 {
+    puffin::profile_scope!("AdvanceSimulationTime");
     let target_time = target_time_seconds.max(0.0);
     if target_time <= *elapsed_seconds {
         return;
@@ -300,5 +342,6 @@ pub(crate) fn trigger_transformed_objects_at_time(
     triggers: &[TimedTrigger],
     time_seconds: f32,
 ) -> Vec<LevelObject> {
+    puffin::profile_scope!("TriggerTransformObjects");
     apply_timed_triggers_to_objects(base_objects, triggers, time_seconds)
 }

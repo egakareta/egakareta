@@ -20,7 +20,7 @@ pub(crate) use transitions::*;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata};
+    use crate::types::{LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata, TimingPoint};
 
     fn assert_near_solver_hits_target(
         spawn: [f32; 3],
@@ -82,10 +82,136 @@ mod tests {
     }
 
     #[test]
+    fn tap_edits_deduplicate_within_epsilon_and_clamp_negative_times() {
+        let mut taps = Vec::new();
+        let mut indicators = Vec::new();
+
+        let first_index =
+            add_tap_with_indicator(&mut taps, &mut indicators, -0.25, [1.0, 0.0, 1.0]);
+        let duplicate_index = add_tap_with_indicator(
+            &mut taps,
+            &mut indicators,
+            TAP_EPSILON_SECONDS * 0.5,
+            [9.0, 0.0, 9.0],
+        );
+
+        assert_eq!(first_index, Some(0));
+        assert_eq!(duplicate_index, Some(0));
+        assert_eq!(taps, vec![0.0]);
+        assert_eq!(indicators, vec![[1.0, 0.0, 1.0]]);
+
+        let second_index = add_tap_with_indicator(
+            &mut taps,
+            &mut indicators,
+            TAP_EPSILON_SECONDS * 2.0,
+            [2.0, 0.0, 2.0],
+        );
+
+        assert_eq!(second_index, Some(1));
+        assert_eq!(taps.len(), 2);
+        assert_eq!(indicators.len(), 2);
+    }
+
+    #[test]
+    fn remove_tap_with_indicator_tolerates_missing_indicator_slot() {
+        let mut taps = vec![0.25, 0.5];
+        let mut indicators = vec![[1.0, 0.0, 1.0]];
+
+        let removed = remove_tap_with_indicator(&mut taps, &mut indicators, 0.5);
+
+        assert_eq!(removed, Some(1));
+        assert_eq!(taps, vec![0.25]);
+        assert_eq!(indicators, vec![[1.0, 0.0, 1.0]]);
+
+        let removed = remove_tap_with_indicator(&mut taps, &mut indicators, 0.25);
+
+        assert_eq!(removed, Some(0));
+        assert!(taps.is_empty());
+        assert!(indicators.is_empty());
+    }
+
+    #[test]
+    fn toggle_spawn_direction_cycles_between_supported_axes() {
+        assert_eq!(
+            toggle_spawn_direction(crate::types::SpawnDirection::Forward),
+            crate::types::SpawnDirection::Right
+        );
+        assert_eq!(
+            toggle_spawn_direction(crate::types::SpawnDirection::Right),
+            crate::types::SpawnDirection::Forward
+        );
+    }
+
+    #[test]
+    fn timeline_interpolation_splits_turns_into_axis_aligned_segments() {
+        let previous = [1.44, 0.0, 1.5];
+        let current = [1.5, 0.0, 1.56];
+        let corner = timeline_turn_corner_position(
+            previous,
+            crate::types::SpawnDirection::Right,
+            current,
+            crate::types::SpawnDirection::Forward,
+        )
+        .expect("right-to-forward turn should have a corner");
+
+        assert_eq!(corner, [1.5, 0.0, 1.5]);
+        assert!(
+            (timeline_axis_aligned_segment_split_fraction(previous, corner, current) - 0.5).abs()
+                < 1e-5
+        );
+
+        let first_leg = interpolate_timeline_sample_positions(
+            previous,
+            crate::types::SpawnDirection::Right,
+            current,
+            crate::types::SpawnDirection::Forward,
+            0.25,
+        );
+        assert!((first_leg[0] - 1.47).abs() < 1e-5);
+        assert!((first_leg[2] - 1.5).abs() < 1e-5);
+
+        let second_leg = interpolate_timeline_sample_positions(
+            previous,
+            crate::types::SpawnDirection::Right,
+            current,
+            crate::types::SpawnDirection::Forward,
+            0.75,
+        );
+        assert!((second_leg[0] - 1.5).abs() < 1e-5);
+        assert!((second_leg[2] - 1.53).abs() < 1e-5);
+    }
+
+    #[test]
+    fn timeline_interpolation_handles_straight_and_degenerate_segments() {
+        let straight = interpolate_timeline_sample_positions(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            [0.0, 0.0, 10.0],
+            crate::types::SpawnDirection::Forward,
+            0.25,
+        );
+
+        assert_eq!(straight, [0.0, 0.0, 2.5]);
+        assert_eq!(
+            timeline_axis_aligned_segment_split_fraction(
+                [1.0, 0.0, 1.0],
+                [1.0, 0.0, 1.0],
+                [1.0, 0.0, 1.0]
+            ),
+            0.5
+        );
+    }
+
+    #[test]
     fn creates_block_at_cursor() {
-        let block = create_block_at_cursor([1.0, 2.0, 3.0], "core/grass");
+        let block = create_block_at_cursor(
+            [1.0, 2.0, 3.0],
+            "core/grass",
+            [2.0, 0.25, 1.0],
+            [0.0, 0.0, 0.0],
+        );
         assert_eq!(block.position, [1.0, 2.0, 3.0]);
-        assert_eq!(block.size, [1.0, 1.0, 1.0]);
+        assert_eq!(block.size, [2.0, 0.25, 1.0]);
         assert_eq!(block.block_id, "core/grass");
     }
 
@@ -96,7 +222,6 @@ mod tests {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             },
@@ -104,7 +229,6 @@ mod tests {
                 position: [0.0, 1.0, 0.0],
                 size: [1.0, 2.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/grass".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             },
@@ -121,12 +245,18 @@ mod tests {
         let metadata = LevelMetadata {
             format_version: 1,
             name: "Test".to_string(),
+            creator: Some("Tester".to_string()),
+            description: Some("Session init metadata".to_string()),
+            stars: 6.5,
+            tags: vec!["unit".to_string(), "session".to_string()],
+            version: Some("1.0".to_string()),
             music: MusicMetadata {
                 source: "audio.mp3".to_string(),
                 title: None,
                 author: None,
                 extra: serde_json::Map::new(),
             },
+            sky_color: crate::types::default_sky_color(),
             spawn: SpawnMetadata {
                 position: [2.0, 3.0, 1.0],
                 direction: crate::types::SpawnDirection::Right,
@@ -142,7 +272,6 @@ mod tests {
                 position: [4.0, 6.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             }],
@@ -153,6 +282,9 @@ mod tests {
         assert_eq!(init.cursor, [4.0, 6.0, 0.0]);
         assert_eq!(init.camera_pan, [4.5, 0.5]);
         assert_eq!(init.tap_times, vec![0.2, 0.8]);
+        assert_eq!(init.creator_metadata.creator.as_deref(), Some("Tester"));
+        assert_eq!(init.creator_metadata.stars, 6.5);
+        assert_eq!(init.creator_metadata.tags, ["unit", "session"]);
         assert!((init.timeline_time_seconds - 0.5).abs() <= 1e-6);
     }
 
@@ -171,15 +303,16 @@ mod tests {
         let objects = Vec::new();
         let timeline_time_seconds = 1.0 / crate::game::BASE_PLAYER_SPEED;
 
-        let transition = build_editor_playtest_transition(
-            &objects,
-            Some("Demo"),
-            SpawnMetadata::default(),
-            &[],
-            &[],
-            false,
-            timeline_time_seconds,
-        );
+        let transition = build_editor_playtest_transition(EditorPlaytestTransitionParams {
+            objects: &objects,
+            level_name: Some("Demo"),
+            spawn: SpawnMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
+            tap_times: &[],
+            triggers: &[],
+            simulate_trigger_hitboxes: false,
+            timeline_seconds: (timeline_time_seconds, 16.0),
+        });
 
         assert!(transition.objects.is_empty());
         assert!((transition.spawn_position[2] - 1.5).abs() < 0.1);
@@ -187,7 +320,10 @@ mod tests {
             transition.spawn_direction,
             crate::types::SpawnDirection::Forward
         ));
+        assert!((transition.spawn_vertical_velocity - 0.0).abs() < f32::EPSILON);
+        assert!(transition.spawn_is_grounded);
         assert!((transition.playtest_audio_start_seconds - timeline_time_seconds).abs() < 0.05);
+        assert_eq!(transition.level_duration_seconds, 16.0);
         assert_eq!(transition.playing_level_name.as_deref(), Some("Demo"));
     }
 
@@ -197,7 +333,6 @@ mod tests {
             position: [1.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         }];
@@ -215,7 +350,6 @@ mod tests {
             position: [0.5, 0.0, 5.5],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/speedportal".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         }];
@@ -223,15 +357,16 @@ mod tests {
         // Advance timeline past the portal (e.g., 10 units / BASE_PLAYER_SPEED seconds)
         let timeline_time_seconds = 10.0 / BASE_PLAYER_SPEED;
 
-        let transition = build_editor_playtest_transition(
-            &objects,
-            None,
-            SpawnMetadata::default(),
-            &[],
-            &[],
-            false,
-            timeline_time_seconds,
-        );
+        let transition = build_editor_playtest_transition(EditorPlaytestTransitionParams {
+            objects: &objects,
+            level_name: None,
+            spawn: SpawnMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
+            tap_times: &[],
+            triggers: &[],
+            simulate_trigger_hitboxes: false,
+            timeline_seconds: (timeline_time_seconds, 16.0),
+        });
 
         // BASE_PLAYER_SPEED * 1.5 (from speedportal.json)
         let expected_speed = BASE_PLAYER_SPEED * 1.5;
@@ -248,12 +383,18 @@ mod tests {
         let metadata = LevelMetadata {
             format_version: 1,
             name: "Starter".to_string(),
+            creator: None,
+            description: None,
+            stars: 0.0,
+            tags: Vec::new(),
+            version: None,
             music: MusicMetadata {
                 source: "audio.mp3".to_string(),
                 title: None,
                 author: None,
                 extra: serde_json::Map::new(),
             },
+            sky_color: [0.2, 0.3, 0.4],
             spawn: SpawnMetadata {
                 position: [3.0, 4.0, 1.0],
                 direction: crate::types::SpawnDirection::Right,
@@ -269,7 +410,6 @@ mod tests {
                 position: [1.0, 2.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             }],
@@ -283,6 +423,7 @@ mod tests {
             transition.spawn_direction,
             crate::types::SpawnDirection::Right
         ));
+        assert_eq!(transition.level_duration_seconds, 16.0);
         assert_eq!(transition.objects.len(), 1);
     }
 
@@ -425,7 +566,6 @@ mod tests {
             position: [0.0, 0.0, 4.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         }];
@@ -452,6 +592,42 @@ mod tests {
             &objects,
         );
         assert!((position[2] - target[2]).abs() < 0.03);
+    }
+
+    #[test]
+    fn near_solver_handles_seed_past_short_audio_duration() {
+        let time = derive_timeline_time_for_world_target_near_time(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[],
+            11.080078,
+            &[],
+            [0.5, 0.0, 90.5],
+            TimelineNearSearch {
+                seed_time: 12.842299,
+                window_seconds: 1.5,
+            },
+        );
+
+        assert!((0.0..=11.080078).contains(&time));
+    }
+
+    #[test]
+    fn near_solver_treats_non_finite_duration_as_zero() {
+        let time = derive_timeline_time_for_world_target_near_time(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[],
+            f32::NAN,
+            &[],
+            [0.5, 0.0, 4.5],
+            TimelineNearSearch {
+                seed_time: f32::NAN,
+                window_seconds: f32::NAN,
+            },
+        );
+
+        assert_eq!(time, 0.0);
     }
 
     #[test]
@@ -552,5 +728,198 @@ mod tests {
             assert!((left[1] - right[1]).abs() < 0.001);
             assert!((left[2] - right[2]).abs() < 0.001);
         }
+    }
+
+    #[test]
+    fn derives_timing_division_previews_at_exact_world_positions() {
+        let timing_points = vec![TimingPoint {
+            time_seconds: 0.1,
+            bpm: 600.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        }];
+
+        let previews = derive_timing_division_tap_previews(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[],
+            &timing_points,
+            0.35,
+            TapDivisionPreviewRange {
+                start_seconds: 0.0,
+                end_seconds: 0.35,
+            },
+            &[],
+        );
+
+        let preview = previews
+            .iter()
+            .find(|preview| (preview.time_seconds - 0.1).abs() < 0.001)
+            .expect("0.1s division should be visible");
+        assert!((preview.indicator_position[0] - 0.0).abs() < 0.001);
+        assert!((preview.indicator_position[1] - 0.0).abs() < 0.001);
+        assert!((preview.indicator_position[2] - 0.8).abs() < 0.02);
+    }
+
+    #[test]
+    fn timing_division_time_snaps_in_requested_direction() {
+        let timing_points = vec![
+            TimingPoint {
+                time_seconds: 2.0,
+                bpm: 240.0,
+                time_signature_numerator: 4,
+                time_signature_denominator: 4,
+            },
+            TimingPoint {
+                time_seconds: 0.5,
+                bpm: 120.0,
+                time_signature_numerator: 4,
+                time_signature_denominator: 4,
+            },
+        ];
+
+        assert_eq!(
+            timing_division_time_in_direction(
+                1.26,
+                &timing_points,
+                4.0,
+                TimingDivisionDirection::Forward,
+            ),
+            Some(1.5)
+        );
+        assert_eq!(
+            timing_division_time_in_direction(
+                1.26,
+                &timing_points,
+                4.0,
+                TimingDivisionDirection::Backward,
+            ),
+            Some(1.0)
+        );
+        assert_eq!(
+            timing_division_time_in_direction(
+                2.0,
+                &timing_points,
+                4.0,
+                TimingDivisionDirection::Backward,
+            ),
+            Some(1.5)
+        );
+        assert_eq!(
+            timing_division_time_in_direction(
+                2.0,
+                &timing_points,
+                4.0,
+                TimingDivisionDirection::Forward,
+            ),
+            Some(2.25)
+        );
+        assert_eq!(
+            timing_division_time_in_direction(1.0, &[], 4.0, TimingDivisionDirection::Forward,),
+            None
+        );
+    }
+
+    #[test]
+    fn timing_division_previews_skip_existing_taps() {
+        let timing_points = vec![TimingPoint {
+            time_seconds: 0.0,
+            bpm: 120.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        }];
+
+        let previews = derive_timing_division_tap_previews(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[0.5],
+            &timing_points,
+            1.0,
+            TapDivisionPreviewRange {
+                start_seconds: 0.0,
+                end_seconds: 1.0,
+            },
+            &[],
+        );
+
+        assert!(previews
+            .iter()
+            .all(|preview| (preview.time_seconds - 0.5).abs() > TAP_EPSILON_SECONDS));
+    }
+
+    #[test]
+    fn timing_division_previews_skip_airborne_positions() {
+        let timing_points = vec![TimingPoint {
+            time_seconds: 0.1,
+            bpm: 600.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        }];
+        let objects = vec![LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        }];
+
+        let previews = derive_timing_division_tap_previews(
+            [0.0, 1.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[],
+            &timing_points,
+            0.35,
+            TapDivisionPreviewRange {
+                start_seconds: 0.0,
+                end_seconds: 0.35,
+            },
+            &objects,
+        );
+
+        assert!(previews
+            .iter()
+            .any(|preview| (preview.time_seconds - 0.1).abs() <= TAP_EPSILON_SECONDS));
+        assert!(previews
+            .iter()
+            .all(|preview| (preview.time_seconds - 0.2).abs() > TAP_EPSILON_SECONDS));
+    }
+
+    #[test]
+    fn detects_taps_on_timing_divisions() {
+        let timing_points = vec![TimingPoint {
+            time_seconds: 0.25,
+            bpm: 120.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        }];
+
+        assert!(tap_time_is_timing_division(0.75, &timing_points, 2.0));
+        assert!(!tap_time_is_timing_division(0.9, &timing_points, 2.0));
+        assert!(!tap_time_is_timing_division(0.75, &[], 2.0));
+    }
+
+    #[test]
+    fn timing_division_previews_are_capped_for_pathological_timing() {
+        let timing_points = vec![TimingPoint {
+            time_seconds: 0.0,
+            bpm: 250_000.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        }];
+
+        let previews = derive_timing_division_tap_previews(
+            [0.0, 0.0, 0.0],
+            crate::types::SpawnDirection::Forward,
+            &[],
+            &timing_points,
+            120.0,
+            TapDivisionPreviewRange {
+                start_seconds: 0.0,
+                end_seconds: 120.0,
+            },
+            &[],
+        );
+
+        assert!(previews.len() <= MAX_TIMING_DIVISION_TAP_PREVIEWS);
     }
 }

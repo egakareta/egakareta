@@ -1,6 +1,7 @@
 {
     "id": "core/stone",
     "display_name": "Stone",
+    "category": "building",
     "assets": {
         "texture_top": "stone.png",
         "texture_side": "stone.png"

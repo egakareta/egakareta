@@ -6,7 +6,7 @@
 
 */
 use super::super::EditorSubsystem;
-use crate::types::EditorPickResult;
+use crate::types::{EditorMode, EditorPickResult, EditorTapDivisionPick};
 use glam::{EulerRot, Mat3, Vec2, Vec3, Vec4};
 
 const CAMERA_TRIGGER_BALL_PICK_RADIUS: f32 = 0.55;
@@ -54,6 +54,9 @@ impl EditorSubsystem {
         let mut hit_found = false;
         let mut hit_block_index: Option<usize> = None;
         let mut hit_trigger_index: Option<usize> = None;
+        let mut hit_tap_index: Option<usize> = None;
+        let mut hit_tap_division: Option<EditorTapDivisionPick> = None;
+        let mut cursor_override: Option<[f32; 3]> = None;
 
         {
             puffin::profile_scope!("PickRaycast");
@@ -63,6 +66,34 @@ impl EditorSubsystem {
                 if t >= 0.0 {
                     min_t = t;
                     hit_found = true;
+                }
+            }
+
+            if self.ui.mode == EditorMode::Tapping {
+                if let Some((tap_index, tap_t, tap_position)) =
+                    self.ray_intersect_tap_indicator(ray_origin, ray_dir, min_t)
+                {
+                    min_t = tap_t;
+                    hit_found = true;
+                    hit_block_index = None;
+                    hit_trigger_index = None;
+                    hit_tap_index = Some(tap_index);
+                    hit_tap_division = None;
+                    cursor_override = Some(tap_position);
+                    best_hit_normal = Vec3::Y;
+                }
+
+                if let Some((division, division_t)) =
+                    self.ray_intersect_tap_division(ray_origin, ray_dir, min_t)
+                {
+                    min_t = division_t;
+                    hit_found = true;
+                    hit_block_index = None;
+                    hit_trigger_index = None;
+                    hit_tap_index = None;
+                    hit_tap_division = Some(division);
+                    cursor_override = Some(division.indicator_position);
+                    best_hit_normal = Vec3::Y;
                 }
             }
 
@@ -79,6 +110,9 @@ impl EditorSubsystem {
                         hit_found = true;
                         hit_block_index = Some(index);
                         hit_trigger_index = None;
+                        hit_tap_index = None;
+                        hit_tap_division = None;
+                        cursor_override = None;
                         best_hit_normal = normal;
                     }
                 }
@@ -111,6 +145,9 @@ impl EditorSubsystem {
                         hit_found = true;
                         hit_block_index = None;
                         hit_trigger_index = Some(trigger_index);
+                        hit_tap_index = None;
+                        hit_tap_division = None;
+                        cursor_override = None;
                     }
                 }
             }
@@ -120,29 +157,243 @@ impl EditorSubsystem {
             return None;
         }
 
-        let hit = ray_origin + ray_dir * min_t;
-        let target = hit + best_hit_normal * 0.01;
-
-        let snap_enabled = self.effective_snap_to_grid();
-        let snap_step = self.config.snap_step.max(0.05);
-
-        let next_cursor = if snap_enabled {
-            [
-                (target.x / snap_step).floor() * snap_step,
-                (target.y / snap_step).floor() * snap_step,
-                (target.z / snap_step).floor() * snap_step,
-            ]
+        let next_cursor = if self.ui.mode == EditorMode::Tapping && cursor_override.is_none() {
+            let target = ray_origin + ray_dir * min_t + best_hit_normal * 0.01;
+            self.tap_path_cursor_near_world([target.x, target.y.max(0.0), target.z])
         } else {
-            [target.x.floor(), target.y.floor(), target.z.floor()]
+            cursor_override.unwrap_or_else(|| {
+                self.cursor_from_ray_hit(ray_origin + ray_dir * min_t, best_hit_normal)
+            })
         };
-
-        let next_cursor = [next_cursor[0], next_cursor[1].max(0.0), next_cursor[2]];
 
         Some(EditorPickResult {
             cursor: next_cursor,
             hit_block_index,
             hit_trigger_index,
+            hit_tap_index,
+            hit_tap_division,
         })
+    }
+
+    pub(crate) fn pick_block_cursor_from_screen_excluding(
+        &self,
+        x: f64,
+        y: f64,
+        viewport_size: Vec2,
+        excluded_indices: &[usize],
+    ) -> Option<[f32; 3]> {
+        let (ray_origin, ray_dir) = self.screen_to_ray(x, y, viewport_size)?;
+        self.pick_block_cursor_from_ray_excluding(ray_origin, ray_dir, excluded_indices)
+    }
+
+    /// Like `pick_block_cursor_from_screen_excluding` but returns the raw surface
+    /// hit position (without the cursor nudge). Used for drag positioning where
+    /// the 0.01 surface offset would cause blocks to float above surfaces.
+    pub(crate) fn pick_block_surface_from_screen_excluding(
+        &self,
+        x: f64,
+        y: f64,
+        viewport_size: Vec2,
+        excluded_indices: &[usize],
+    ) -> Option<[f32; 3]> {
+        let (ray_origin, ray_dir) = self.screen_to_ray(x, y, viewport_size)?;
+        self.pick_block_surface_from_ray_excluding(ray_origin, ray_dir, excluded_indices)
+    }
+
+    fn pick_block_surface_from_ray_excluding(
+        &self,
+        ray_origin: Vec3,
+        ray_dir: Vec3,
+        excluded_indices: &[usize],
+    ) -> Option<[f32; 3]> {
+        let mut min_t = f32::INFINITY;
+        let mut hit_found = false;
+
+        for (index, obj) in self.objects.iter().enumerate() {
+            if excluded_indices.contains(&index)
+                || !Self::ray_may_hit_block_bounds(ray_origin, ray_dir, obj, min_t)
+            {
+                continue;
+            }
+
+            if let Some((t, _normal)) = self.ray_intersect_rotated_block(ray_origin, ray_dir, obj) {
+                if t < min_t {
+                    min_t = t;
+                    hit_found = true;
+                }
+            }
+        }
+
+        if hit_found {
+            let hit = ray_origin + ray_dir * min_t;
+            Some([hit.x, hit.y.max(0.0), hit.z])
+        } else {
+            None
+        }
+    }
+
+    fn pick_block_cursor_from_ray_excluding(
+        &self,
+        ray_origin: Vec3,
+        ray_dir: Vec3,
+        excluded_indices: &[usize],
+    ) -> Option<[f32; 3]> {
+        let mut min_t = f32::INFINITY;
+        let mut best_hit_normal = Vec3::Y;
+        let mut hit_found = false;
+
+        for (index, obj) in self.objects.iter().enumerate() {
+            if excluded_indices.contains(&index)
+                || !Self::ray_may_hit_block_bounds(ray_origin, ray_dir, obj, min_t)
+            {
+                continue;
+            }
+
+            if let Some((t, normal)) = self.ray_intersect_rotated_block(ray_origin, ray_dir, obj) {
+                if t < min_t {
+                    min_t = t;
+                    best_hit_normal = normal;
+                    hit_found = true;
+                }
+            }
+        }
+
+        if hit_found {
+            Some(self.cursor_from_ray_hit(ray_origin + ray_dir * min_t, best_hit_normal))
+        } else {
+            None
+        }
+    }
+
+    fn cursor_from_ray_hit(&self, hit: Vec3, hit_normal: Vec3) -> [f32; 3] {
+        let target = hit + hit_normal * 0.01;
+        let snap_enabled = self.effective_snap_to_grid();
+        let snap_step = self.config.snap_step.max(0.05);
+        let footprint_centered =
+            self.ui.mode == EditorMode::Place && (!snap_enabled || snap_step < 1.0);
+        let selected_size = self.selected_block_default_size();
+        let cursor_target = if footprint_centered {
+            Vec3::new(
+                target.x - selected_size[0] * 0.5,
+                target.y,
+                target.z - selected_size[2] * 0.5,
+            )
+        } else {
+            target
+        };
+
+        let next_cursor = if snap_enabled {
+            [
+                (cursor_target.x / snap_step).floor() * snap_step,
+                (cursor_target.y / snap_step).floor() * snap_step,
+                (cursor_target.z / snap_step).floor() * snap_step,
+            ]
+        } else {
+            [cursor_target.x, cursor_target.y, cursor_target.z]
+        };
+
+        [next_cursor[0], next_cursor[1].max(0.0), next_cursor[2]]
+    }
+
+    fn ray_intersect_tap_indicator(
+        &self,
+        ray_origin: Vec3,
+        ray_dir: Vec3,
+        max_t: f32,
+    ) -> Option<(usize, f32, [f32; 3])> {
+        if ray_dir.y.abs() <= f32::EPSILON {
+            return None;
+        }
+
+        let mut best_hit: Option<(usize, f32, f32, [f32; 3])> = None;
+        for (index, position) in self
+            .timeline
+            .taps
+            .tap_indicator_positions
+            .iter()
+            .enumerate()
+        {
+            let plane_y = position[1] + 0.1;
+            let t = (plane_y - ray_origin.y) / ray_dir.y;
+            if t < 0.0 || t >= max_t {
+                continue;
+            }
+
+            let hit = ray_origin + ray_dir * t;
+            if hit.x < position[0]
+                || hit.x > position[0] + 1.0
+                || hit.z < position[2]
+                || hit.z > position[2] + 1.0
+            {
+                continue;
+            }
+
+            let timeline_distance = self
+                .timeline
+                .taps
+                .tap_times
+                .get(index)
+                .map(|time| (*time - self.timeline.clock.time_seconds).abs())
+                .unwrap_or(f32::INFINITY);
+
+            match best_hit {
+                Some((_, best_t, best_timeline_distance, _))
+                    if t > best_t + f32::EPSILON
+                        || ((t - best_t).abs() <= f32::EPSILON
+                            && timeline_distance >= best_timeline_distance) => {}
+                _ => best_hit = Some((index, t, timeline_distance, *position)),
+            }
+        }
+
+        best_hit.map(|(index, t, _, position)| (index, t, position))
+    }
+
+    fn ray_intersect_tap_division(
+        &mut self,
+        ray_origin: Vec3,
+        ray_dir: Vec3,
+        max_t: f32,
+    ) -> Option<(EditorTapDivisionPick, f32)> {
+        if ray_dir.y.abs() <= f32::EPSILON {
+            return None;
+        }
+
+        let mut best_hit: Option<(EditorTapDivisionPick, f32, f32)> = None;
+        let current_time = self.timeline.clock.time_seconds;
+        let previews: Vec<_> = self.timing_division_tap_previews().to_vec();
+        for division in previews {
+            let position = division.indicator_position;
+            let plane_y = position[1] + 0.1;
+            let t = (plane_y - ray_origin.y) / ray_dir.y;
+            if t < 0.0 || t >= max_t {
+                continue;
+            }
+
+            let hit = ray_origin + ray_dir * t;
+            if hit.x < position[0]
+                || hit.x > position[0] + 1.0
+                || hit.z < position[2]
+                || hit.z > position[2] + 1.0
+            {
+                continue;
+            }
+
+            let timeline_distance = (division.time_seconds - current_time).abs();
+            let pick = EditorTapDivisionPick {
+                time_seconds: division.time_seconds,
+                indicator_position: division.indicator_position,
+            };
+
+            match best_hit {
+                Some((_, best_t, best_timeline_distance))
+                    if t > best_t + f32::EPSILON
+                        || ((t - best_t).abs() <= f32::EPSILON
+                            && timeline_distance >= best_timeline_distance) => {}
+                _ => best_hit = Some((pick, t, timeline_distance)),
+            }
+        }
+
+        best_hit.map(|(pick, t, _)| (pick, t))
     }
 
     fn ray_may_hit_block_bounds(
@@ -313,7 +564,6 @@ mod tests {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees,
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         }
@@ -399,6 +649,77 @@ mod tests {
 
             assert!(pick.hit_trigger_index.is_none());
             assert!(pick.cursor[1] >= 0.0);
+        });
+    }
+
+    #[test]
+    fn cursor_from_ray_hit_centers_footprint_when_snap_disabled() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.config.snap_to_grid = false;
+
+            let hit = Vec3::new(1.234, 0.5, 5.678);
+            let normal = Vec3::Y;
+
+            let cursor = state.editor.cursor_from_ray_hit(hit, normal);
+
+            approx_eq(cursor[0], 0.734, 1e-4);
+            approx_eq(cursor[1], 0.51, 1e-4);
+            approx_eq(cursor[2], 5.178, 1e-4);
+        });
+    }
+
+    #[test]
+    fn cursor_from_ray_hit_preserves_unit_snap_flooring() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.config.snap_to_grid = true;
+            state.editor.config.snap_step = 1.0;
+
+            let hit = Vec3::new(1.234, 0.5, 5.678);
+            let normal = Vec3::Y;
+
+            let cursor = state.editor.cursor_from_ray_hit(hit, normal);
+
+            approx_eq(cursor[0], 1.0, 1e-4);
+            approx_eq(cursor[1], 0.0, 1e-4);
+            approx_eq(cursor[2], 5.0, 1e-4);
+        });
+    }
+
+    #[test]
+    fn cursor_from_ray_hit_centers_footprint_before_subunit_snap() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.config.snap_to_grid = true;
+            state.editor.config.snap_step = 0.25;
+
+            let hit = Vec3::new(1.234, 0.5, 5.678);
+            let normal = Vec3::Y;
+
+            let cursor = state.editor.cursor_from_ray_hit(hit, normal);
+
+            approx_eq(cursor[0], 0.5, 1e-4);
+            approx_eq(cursor[1], 0.5, 1e-4);
+            approx_eq(cursor[2], 5.0, 1e-4);
+        });
+    }
+
+    #[test]
+    fn cursor_from_ray_hit_centers_selected_block_size_when_snap_disabled() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.config.snap_to_grid = false;
+            state.editor.config.selected_block_id = "core/speedportal".to_string();
+
+            let hit = Vec3::new(4.0, 0.25, 9.0);
+            let normal = Vec3::Y;
+
+            let cursor = state.editor.cursor_from_ray_hit(hit, normal);
+
+            approx_eq(cursor[0], 3.0, 1e-4);
+            approx_eq(cursor[1], 0.26, 1e-4);
+            approx_eq(cursor[2], 8.5, 1e-4);
         });
     }
 }

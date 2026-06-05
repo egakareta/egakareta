@@ -7,6 +7,7 @@
 */
 use std::collections::HashMap;
 
+use crate::audio_service::PersistentWaveformCacheEntry;
 use crate::types::{AppSettings, AuthSession};
 
 #[cfg(target_arch = "wasm32")]
@@ -21,6 +22,8 @@ const SETTINGS_STORE_NAME: &str = "settings";
 const SETTINGS_KEY: &str = "app";
 #[cfg(target_arch = "wasm32")]
 const AUTH_SESSION_KEY: &str = "auth_session";
+#[cfg(target_arch = "wasm32")]
+const WAVEFORM_CACHE_KEY_PREFIX: &str = "waveform:";
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
@@ -32,6 +35,12 @@ pub(crate) trait AudioStorage {
         level_name: Option<&str>,
         music_source: &str,
     ) -> Option<Vec<u8>>;
+    async fn save_waveform(
+        &self,
+        cache_key: &str,
+        entry: &PersistentWaveformCacheEntry,
+    ) -> Result<(), String>;
+    async fn load_waveform(&self, cache_key: &str) -> Option<PersistentWaveformCacheEntry>;
 }
 
 pub(crate) struct PlatformAudioStorage;
@@ -49,6 +58,25 @@ pub(crate) fn read_editor_music_bytes(
     music_source: &str,
 ) -> Option<Vec<u8>> {
     PlatformAudioStorage.read_editor_music_bytes(level_name, music_source)
+}
+
+pub(crate) async fn save_waveform(
+    cache_key: &str,
+    entry: &PersistentWaveformCacheEntry,
+) -> Result<(), String> {
+    PlatformAudioStorage.save_waveform(cache_key, entry).await
+}
+
+pub(crate) async fn load_waveform(cache_key: &str) -> Option<PersistentWaveformCacheEntry> {
+    PlatformAudioStorage.load_waveform(cache_key).await
+}
+
+fn encode_waveform_entry(entry: &PersistentWaveformCacheEntry) -> Result<Vec<u8>, String> {
+    serde_cbor::to_vec(entry).map_err(|error| format!("Waveform cache encode failed: {error}"))
+}
+
+fn decode_waveform_entry(bytes: &[u8]) -> Result<PersistentWaveformCacheEntry, String> {
+    serde_cbor::from_slice(bytes).map_err(|error| format!("Waveform cache decode failed: {error}"))
 }
 
 pub(crate) async fn load_app_settings() -> Result<AppSettings, String> {
@@ -295,6 +323,58 @@ impl AudioStorage for PlatformAudioStorage {
         let _ = (level_name, music_source);
         None
     }
+
+    async fn save_waveform(
+        &self,
+        cache_key: &str,
+        entry: &PersistentWaveformCacheEntry,
+    ) -> Result<(), String> {
+        use rexie::TransactionMode;
+        use wasm_bindgen::JsValue;
+
+        let encoded = encode_waveform_entry(entry)?;
+        let db = open_audio_db().await?;
+        let tx = db
+            .transaction(&[AUDIO_STORE_NAME], TransactionMode::ReadWrite)
+            .map_err(|err| format!("IndexedDB waveform transaction failed: {:?}", err))?;
+        let store = tx
+            .store(AUDIO_STORE_NAME)
+            .map_err(|err| format!("IndexedDB waveform store open failed: {:?}", err))?;
+
+        let value = js_sys::Uint8Array::from(encoded.as_slice());
+        let storage_key = format!("{WAVEFORM_CACHE_KEY_PREFIX}{cache_key}");
+        store
+            .put(&value.into(), Some(&JsValue::from_str(&storage_key)))
+            .await
+            .map_err(|err| format!("IndexedDB waveform write failed: {:?}", err))?;
+        tx.done()
+            .await
+            .map_err(|err| format!("IndexedDB waveform commit failed: {:?}", err))?;
+
+        Ok(())
+    }
+
+    async fn load_waveform(&self, cache_key: &str) -> Option<PersistentWaveformCacheEntry> {
+        use rexie::TransactionMode;
+        use wasm_bindgen::JsValue;
+
+        let db = open_audio_db().await.ok()?;
+        let tx = db
+            .transaction(&[AUDIO_STORE_NAME], TransactionMode::ReadOnly)
+            .ok()?;
+        let store = tx.store(AUDIO_STORE_NAME).ok()?;
+        let storage_key = format!("{WAVEFORM_CACHE_KEY_PREFIX}{cache_key}");
+        let value = store.get(JsValue::from_str(&storage_key)).await.ok()??;
+        let _ = tx.done().await;
+        if value.is_undefined() || value.is_null() {
+            return None;
+        }
+
+        let array = js_sys::Uint8Array::new(&value);
+        let mut bytes = vec![0; array.length() as usize];
+        array.copy_to(bytes.as_mut_slice());
+        decode_waveform_entry(&bytes).ok()
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -310,6 +390,16 @@ fn storage_root_dir() -> Result<std::path::PathBuf, String> {
 #[cfg(not(target_arch = "wasm32"))]
 fn audio_storage_dir() -> Result<std::path::PathBuf, String> {
     Ok(storage_root_dir()?.join("user_audio"))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn waveform_storage_dir() -> Result<std::path::PathBuf, String> {
+    Ok(storage_root_dir()?.join("waveforms"))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn waveform_storage_path(cache_key: &str) -> Result<std::path::PathBuf, String> {
+    Ok(waveform_storage_dir()?.join(format!("{cache_key}.cbor")))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -429,6 +519,25 @@ impl AudioStorage for PlatformAudioStorage {
         path.push(music_source);
         std::fs::read(path).ok()
     }
+
+    async fn save_waveform(
+        &self,
+        cache_key: &str,
+        entry: &PersistentWaveformCacheEntry,
+    ) -> Result<(), String> {
+        let path = waveform_storage_path(cache_key)?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+        let encoded = encode_waveform_entry(entry)?;
+        std::fs::write(path, encoded).map_err(|error| error.to_string())
+    }
+
+    async fn load_waveform(&self, cache_key: &str) -> Option<PersistentWaveformCacheEntry> {
+        let path = waveform_storage_path(cache_key).ok()?;
+        let bytes = std::fs::read(path).ok()?;
+        decode_waveform_entry(&bytes).ok()
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -483,6 +592,13 @@ mod tests {
         let _env = TestEnv::new();
         let path = auth_session_file_path().expect("auth session file should resolve");
         assert!(path.to_string_lossy().contains("auth_session.json"));
+    }
+
+    #[test]
+    fn resolves_waveform_storage_directory() {
+        let _env = TestEnv::new();
+        let dir = waveform_storage_dir().expect("waveform storage dir should resolve");
+        assert!(dir.to_string_lossy().contains("waveforms"));
     }
 
     #[test]
@@ -593,6 +709,24 @@ mod tests {
             save_audio("user.ogg", data).await.unwrap();
             let read = read_editor_music_bytes(Some("UnknownLevel"), "user.ogg").unwrap();
             assert_eq!(read, data);
+        });
+    }
+
+    #[test]
+    fn test_waveform_cache_roundtrip() {
+        pollster::block_on(async {
+            let _env = TestEnv::new();
+            let entry = PersistentWaveformCacheEntry::new(vec![0.1, 0.5, 1.0], 44_100, 256);
+
+            save_waveform("waveform-v1-window-256-sha256-test", &entry)
+                .await
+                .expect("failed to save waveform cache");
+
+            let loaded = load_waveform("waveform-v1-window-256-sha256-test")
+                .await
+                .expect("failed to load waveform cache");
+            assert_eq!(loaded, entry);
+            assert!(load_waveform("missing-waveform").await.is_none());
         });
     }
 }

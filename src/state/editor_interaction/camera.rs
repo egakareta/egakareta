@@ -7,7 +7,7 @@
 */
 use super::super::{EditorSubsystem, State};
 use crate::types::AppPhase;
-use glam::{Mat4, Vec2, Vec3};
+use glam::{Mat4, Vec2, Vec3, Vec4};
 
 impl EditorSubsystem {
     pub(crate) fn camera_axes_xy(&self) -> (Vec2, Vec2) {
@@ -20,6 +20,43 @@ impl EditorSubsystem {
             self.camera.editor_rotation.cos(),
         );
         (right, up)
+    }
+
+    pub(crate) fn screen_to_ray(&self, x: f64, y: f64, viewport: Vec2) -> Option<(Vec3, Vec3)> {
+        if viewport.x <= 0.0 || viewport.y <= 0.0 {
+            return None;
+        }
+        let view_proj = self.view_proj(viewport);
+        let inv_view_proj = view_proj.inverse();
+
+        let ndc_x = (2.0 * x as f32 / viewport.x) - 1.0;
+        let ndc_y = 1.0 - (2.0 * y as f32 / viewport.y);
+
+        let near_clip = Vec4::new(ndc_x, ndc_y, -1.0, 1.0);
+        let far_clip = Vec4::new(ndc_x, ndc_y, 1.0, 1.0);
+        let mut near_world = inv_view_proj * near_clip;
+        let mut far_world = inv_view_proj * far_clip;
+
+        if near_world.w.abs() <= f32::EPSILON || far_world.w.abs() <= f32::EPSILON {
+            return None;
+        }
+
+        near_world /= near_world.w;
+        far_world /= far_world.w;
+
+        let ray_origin = near_world.truncate();
+        let ray_dir = (far_world.truncate() - ray_origin).normalize();
+        Some((ray_origin, ray_dir))
+    }
+
+    pub(crate) fn camera_forward(&self) -> Vec3 {
+        let target = Vec3::new(
+            self.camera.editor_pan[0],
+            self.camera.editor_target_z,
+            self.camera.editor_pan[1],
+        );
+        let eye = target + self.camera_offset();
+        (target - eye).normalize()
     }
 
     pub(crate) fn camera_offset(&self) -> Vec3 {

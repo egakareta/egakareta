@@ -23,6 +23,18 @@ pub(crate) enum AppCommand {
     PrevLevel,
     /// Toggle between editor and menu/playing.
     ToggleEditor,
+    /// Resume real gameplay from the pause menu.
+    GameResume,
+    /// Restart the current real gameplay level from the pause menu.
+    GameRestartLevel,
+    /// Enable or disable practice mode for the current real gameplay level.
+    GameSetPracticeMode(bool),
+    /// Place a practice-mode checkpoint at the current gameplay position.
+    GameSetPracticeCheckpoint,
+    /// Remove the latest practice-mode checkpoint.
+    GameRemovePracticeCheckpoint,
+    /// Quit the current real gameplay level from the pause menu.
+    GameQuitToMenu,
 
     // ── Auth ───────────────────────────────────────────────────────
     /// Start the browser sign-in flow.
@@ -37,6 +49,10 @@ pub(crate) enum AppCommand {
     EditorSetMode(crate::types::EditorMode),
     /// Set the current block ID for placement.
     EditorSetBlockId(String),
+    /// Pick the selected block and enter place mode with that block type.
+    EditorPickSelectedBlock,
+    /// Pick the block under the pointer and enter place mode with that block type.
+    EditorPickBlockAt { x: f64, y: f64 },
     /// Set whether to snap to grid.
     EditorSetSnapToGrid(bool),
     /// Set the grid snap step.
@@ -61,6 +77,10 @@ pub(crate) enum AppCommand {
     // ── Editor – selection / transform ──────────────────────────────
     /// Nudge selected blocks by the given screen-relative offset.
     EditorNudgeSelected { dx: i32, dy: i32 },
+    /// Snap selected blocks or tap to the nearest grid cell.
+    EditorSnapSelectionToGrid,
+    /// Focus the editor camera on the selected or preview target.
+    EditorFocusCameraTarget,
 
     // ── Editor – timeline / playback ────────────────────────────────
     /// Toggle timeline playback.
@@ -71,14 +91,16 @@ pub(crate) enum AppCommand {
     EditorSetTimelineTime(f32),
     /// Set the total duration of the timeline (seconds).
     EditorSetTimelineDuration(f32),
-    /// Add or remove a tap at the current pointer position.
-    EditorToggleTapAtPointer,
     /// Add a tap at the current timeline position.
     EditorAddTap,
     /// Remove a tap at the current timeline position.
     EditorRemoveTap,
     /// Remove a tap at a specific timeline position.
     EditorRemoveTapAt(f32),
+    /// Select or deselect a tap by index.
+    EditorSetSelectedTap(Option<usize>),
+    /// Update the selected tap's timestamp.
+    EditorSetSelectedTapTime(f32),
     /// Remove all taps from the level.
     EditorClearTaps,
     /// Update the playback speed multiplier.
@@ -115,6 +137,8 @@ pub(crate) enum AppCommand {
     EditorSetSpawnHere,
     /// Rotate the spawn direction.
     EditorRotateSpawnDirection,
+    /// Rotate the block placement preview.
+    EditorRotatePlacementPreview,
 
     // ── Editor – history ────────────────────────────────────────────
     /// Undo the last editor action.
@@ -193,6 +217,10 @@ pub(crate) enum AppCommand {
     EditorCompleteImport,
     /// Update music information for the level.
     EditorUpdateMusic(crate::types::MusicMetadata),
+    /// Update creator-facing metadata for the level.
+    EditorUpdateCreatorMetadata(crate::types::LevelCreatorMetadata),
+    /// Update the level sky clear color.
+    EditorUpdateSkyColor([f32; 3]),
     /// Trigger the platform audio import dialog.
     EditorTriggerAudioImport,
     /// Store the current editor camera as menu preview camera metadata.
@@ -227,6 +255,10 @@ pub(crate) enum AppCommand {
     EditorCameraDrag { dx: f64, dy: f64 },
     /// Resize render surface to the specified dimensions.
     ResizeSurface { width: u32, height: u32 },
+
+    // ── Editor – place window ───────────────────────────────────
+    /// Toggle the floating place window with block catalog.
+    EditorTogglePlaceWindow,
 
     // ── Editor – escape context ─────────────────────────────
     /// Escape key context-sensitive (stop playback → reset timeline → back to menu).

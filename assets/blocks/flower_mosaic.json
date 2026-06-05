@@ -1,0 +1,20 @@
+{
+    "id": "core/flower_mosaic",
+    "display_name": "Flower Mosaic",
+    "category": "building",
+    "assets": {
+        "texture_top": "flower_mosaic_top.png",
+        "texture_side": "flower_mosaic_side.png",
+        "texture_bottom": "flower_mosaic_side.png"
+    },
+    "render": {
+        "profile": "solid",
+        "icon_dimetric_projection": true,
+        "color_outline": [0.06, 0.05, 0.08, 0.25]
+    },
+    "behavior": {
+        "collision": "pass_through",
+        "support_surface": true
+    },
+    "placeable": true
+}

@@ -12,7 +12,7 @@ use wgpu::{CurrentSurfaceTexture, TextureViewDescriptor};
 
 use super::super::State;
 use super::{MeshDrawData, MeshSlot};
-use crate::types::{AppPhase, EditorMode};
+use crate::types::{default_sky_color, AppPhase, EditorMode};
 
 fn linear_to_srgb(linear: f32) -> f32 {
     if linear <= 0.0031308 {
@@ -22,7 +22,16 @@ fn linear_to_srgb(linear: f32) -> f32 {
     }
 }
 
-fn clear_color_for_phase(phase: AppPhase, game_over: bool) -> wgpu::Color {
+fn color_from_rgb(rgb: [f32; 3]) -> wgpu::Color {
+    wgpu::Color {
+        r: rgb[0].clamp(0.0, 1.0) as f64,
+        g: rgb[1].clamp(0.0, 1.0) as f64,
+        b: rgb[2].clamp(0.0, 1.0) as f64,
+        a: 1.0,
+    }
+}
+
+fn clear_color_for_phase(phase: AppPhase, game_over: bool, sky_color: [f32; 3]) -> wgpu::Color {
     match phase {
         AppPhase::Playing if game_over => wgpu::Color {
             r: 0.15,
@@ -30,12 +39,7 @@ fn clear_color_for_phase(phase: AppPhase, game_over: bool) -> wgpu::Color {
             b: 0.05,
             a: 1.0,
         },
-        AppPhase::Editor => wgpu::Color {
-            r: 0.04,
-            g: 0.07,
-            b: 0.09,
-            a: 1.0,
-        },
+        AppPhase::Menu | AppPhase::Editor | AppPhase::Playing => color_from_rgb(sky_color),
         _ => wgpu::Color {
             r: 0.05,
             g: 0.05,
@@ -74,7 +78,7 @@ fn should_draw_editor_overlays(phase: AppPhase, skip_world: bool) -> bool {
 }
 
 fn should_draw_editor_cursor(mode: EditorMode) -> bool {
-    mode == EditorMode::Place
+    mode == EditorMode::Place || mode == EditorMode::Tapping
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,29 +132,36 @@ impl State {
         paint_jobs: &[egui::ClippedPrimitive],
         screen_descriptor: &ScreenDescriptor,
     ) -> Result<(), RenderSurfaceError> {
+        puffin::profile_scope!("RenderEgui");
         self.render_with_overlay(|device, queue, view, encoder| {
-            renderer.update_buffers(device, queue, encoder, paint_jobs, screen_descriptor);
+            {
+                puffin::profile_scope!("EguiUpdateBuffers");
+                renderer.update_buffers(device, queue, encoder, paint_jobs, screen_descriptor);
+            }
 
-            let mut pass = encoder
-                .begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("egui_render_pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view,
-                        resolve_target: None,
-                        depth_slice: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    multiview_mask: None,
-                })
-                .forget_lifetime();
+            {
+                puffin::profile_scope!("EguiRenderPass");
+                let mut pass = encoder
+                    .begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("egui_render_pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view,
+                            resolve_target: None,
+                            depth_slice: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                        multiview_mask: None,
+                    })
+                    .forget_lifetime();
 
-            renderer.render(&mut pass, paint_jobs, screen_descriptor);
+                renderer.render(&mut pass, paint_jobs, screen_descriptor);
+            }
         })
     }
 
@@ -167,6 +178,7 @@ impl State {
     ///
     /// This method clears the surface and draws the active scene (Menu, Editor, or Gameplay).
     pub fn render(&mut self) -> Result<(), RenderSurfaceError> {
+        puffin::profile_scope!("RenderFrame");
         self.render_with_overlay(|_, _, _, _| {})
     }
 
@@ -178,11 +190,15 @@ impl State {
     where
         F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
     {
+        puffin::profile_scope!("RenderWithOverlay");
         let surface = match &self.render.gpu.surface {
             Some(s) => s,
             None => return Ok(()),
         };
-        let Some(output) = current_surface_output(surface.get_current_texture())? else {
+        let Some(output) = ({
+            puffin::profile_scope!("SurfaceAcquire");
+            current_surface_output(surface.get_current_texture())?
+        }) else {
             return Ok(());
         };
         let view = output
@@ -197,10 +213,19 @@ impl State {
                     label: Some("Render Encoder"),
                 });
 
-        self.render_to_view(&view, &mut encoder, overlay);
+        {
+            puffin::profile_scope!("RenderToView");
+            self.render_to_view(&view, &mut encoder, overlay);
+        }
 
-        self.render.gpu.queue.submit(iter::once(encoder.finish()));
-        output.present();
+        {
+            puffin::profile_scope!("GpuSubmit");
+            self.render.gpu.queue.submit(iter::once(encoder.finish()));
+        }
+        {
+            puffin::profile_scope!("SurfacePresent");
+            output.present();
+        }
         Ok(())
     }
 
@@ -212,11 +237,18 @@ impl State {
     ) where
         F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
     {
+        puffin::profile_scope!("RenderWorld");
         let editor_mode = self.editor.ui.mode;
         let skip_world = should_skip_world(self.phase, editor_mode);
         let draw_editor_overlays = should_draw_editor_overlays(self.phase, skip_world);
+        let sky_color = match self.phase {
+            AppPhase::Menu => self.menu.state.preview_sky_color,
+            AppPhase::Editor => self.session.editor_sky_color,
+            AppPhase::Playing => self.session.playing_sky_color,
+            _ => default_sky_color(),
+        };
         let clear_color = apply_gamma_correction_if_enabled(
-            clear_color_for_phase(self.phase, self.gameplay.state.game_over),
+            clear_color_for_phase(self.phase, self.gameplay.state.game_over, sky_color),
             self.render.gpu.apply_gamma_correction,
         );
 
@@ -254,6 +286,7 @@ impl State {
         render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
 
         if should_draw_floor_and_grid(self.phase, editor_mode) {
+            puffin::profile_scope!("DrawFloorGrid");
             if let Some(draw_data) = self.render.meshes.floor.draw_data() {
                 draw_mesh(&mut render_pass, draw_data);
             }
@@ -269,6 +302,7 @@ impl State {
             || self.phase == AppPhase::Menu
         {
             if !skip_world {
+                puffin::profile_scope!("DrawBlocksTrail");
                 if self.phase == AppPhase::Editor {
                     if let Some(draw_data) = self.render.meshes.blocks_static.draw_data() {
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
@@ -280,6 +314,16 @@ impl State {
                         draw_mesh(&mut render_pass, draw_data);
                     }
                 } else if let Some(draw_data) = self.render.meshes.blocks.draw_data() {
+                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    draw_mesh(&mut render_pass, draw_data);
+                }
+
+                if let Some(draw_data) = self.render.meshes.gem_shatter_effects.draw_data() {
+                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    draw_mesh(&mut render_pass, draw_data);
+                }
+
+                if let Some(draw_data) = self.render.meshes.practice_checkpoints.draw_data() {
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                     draw_mesh(&mut render_pass, draw_data);
                 }
@@ -315,6 +359,7 @@ impl State {
             }
 
             if draw_editor_overlays {
+                puffin::profile_scope!("DrawEditorOverlayMeshes");
                 if let Some(draw_data) = self.render.meshes.spawn_marker.draw_data() {
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                     draw_mesh(&mut render_pass, draw_data);
@@ -335,6 +380,7 @@ impl State {
         drop(render_pass);
 
         if draw_editor_overlays {
+            puffin::profile_scope!("DrawEditorOverlays");
             // Selection outlines use a selected-only depth prepass, so each block keeps its own
             // hollow silhouette while other selected blocks occlude outlines behind them.
             let selection_instances = self
@@ -344,6 +390,7 @@ impl State {
                 .as_slice();
 
             if !selection_instances.is_empty() {
+                puffin::profile_scope!("DrawSelectionOutlines");
                 let selection_mask_buffer = match &self.render.meshes.editor_selection_stencil {
                     MeshSlot::VertexData { buffer, .. } => Some(buffer),
                     _ => None,
@@ -468,6 +515,7 @@ impl State {
                 self.render.meshes.editor_hover_stencil.draw_data(),
                 self.render.meshes.editor_hover_outline.draw_data(),
             ) {
+                puffin::profile_scope!("DrawHoverOutline");
                 let mut hover_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Editor Hover Outline Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -511,6 +559,7 @@ impl State {
                 draw_mesh(&mut hover_pass, outline_data);
             }
 
+            puffin::profile_scope!("DrawGizmoCursor");
             let mut gizmo_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Editor Gizmo/Cursor Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -569,12 +618,15 @@ impl State {
             }
         }
 
-        overlay(
-            &self.render.gpu.device,
-            &self.render.gpu.queue,
-            view,
-            encoder,
-        );
+        {
+            puffin::profile_scope!("RenderOverlayClosure");
+            overlay(
+                &self.render.gpu.device,
+                &self.render.gpu.queue,
+                view,
+                encoder,
+            );
+        }
     }
 
     /// Recreates the window surface following a resize or other configuration change.
@@ -607,6 +659,13 @@ mod tests {
             (a - b).abs() <= eps,
             "expected {a} to be within {eps} of {b}"
         );
+    }
+
+    fn assert_color_approx(actual: Color, expected: Color) {
+        approx_eq(actual.r as f32, expected.r as f32, 1e-6);
+        approx_eq(actual.g as f32, expected.g as f32, 1e-6);
+        approx_eq(actual.b as f32, expected.b as f32, 1e-6);
+        approx_eq(actual.a as f32, expected.a as f32, 1e-6);
     }
 
     fn fullscreen_triangle(z: f32, color: [f32; 4]) -> Vec<Vertex> {
@@ -769,54 +828,87 @@ mod tests {
 
     #[test]
     fn clear_color_for_phase_matches_expected_palette() {
-        assert_eq!(
-            clear_color_for_phase(AppPhase::Playing, true),
+        assert_color_approx(
+            clear_color_for_phase(AppPhase::Playing, true, crate::types::default_sky_color()),
             Color {
                 r: 0.15,
                 g: 0.05,
                 b: 0.05,
                 a: 1.0,
-            }
+            },
         );
 
-        assert_eq!(
-            clear_color_for_phase(AppPhase::Editor, false),
+        assert_color_approx(
+            clear_color_for_phase(AppPhase::Editor, false, crate::types::default_sky_color()),
             Color {
                 r: 0.04,
                 g: 0.07,
                 b: 0.09,
                 a: 1.0,
-            }
+            },
         );
 
-        assert_eq!(
-            clear_color_for_phase(AppPhase::Playing, false),
+        assert_color_approx(
+            clear_color_for_phase(AppPhase::Playing, false, crate::types::default_sky_color()),
+            Color {
+                r: 0.04,
+                g: 0.07,
+                b: 0.09,
+                a: 1.0,
+            },
+        );
+
+        assert_color_approx(
+            clear_color_for_phase(AppPhase::Menu, false, crate::types::default_sky_color()),
+            Color {
+                r: 0.04,
+                g: 0.07,
+                b: 0.09,
+                a: 1.0,
+            },
+        );
+
+        assert_color_approx(
+            clear_color_for_phase(AppPhase::GameOver, false, crate::types::default_sky_color()),
             Color {
                 r: 0.05,
                 g: 0.05,
                 b: 0.08,
                 a: 1.0,
-            }
+            },
         );
+    }
 
-        assert_eq!(
-            clear_color_for_phase(AppPhase::Menu, false),
+    #[test]
+    fn clear_color_for_phase_uses_custom_sky_for_menu_editor_and_playing() {
+        let sky_color = [0.2, 0.4, 0.8];
+
+        assert_color_approx(
+            clear_color_for_phase(AppPhase::Menu, false, sky_color),
             Color {
-                r: 0.05,
-                g: 0.05,
-                b: 0.08,
+                r: 0.2,
+                g: 0.4,
+                b: 0.8,
                 a: 1.0,
-            }
+            },
         );
-
-        assert_eq!(
-            clear_color_for_phase(AppPhase::GameOver, false),
+        assert_color_approx(
+            clear_color_for_phase(AppPhase::Editor, false, sky_color),
             Color {
-                r: 0.05,
-                g: 0.05,
-                b: 0.08,
+                r: 0.2,
+                g: 0.4,
+                b: 0.8,
                 a: 1.0,
-            }
+            },
+        );
+        assert_color_approx(
+            clear_color_for_phase(AppPhase::Playing, false, sky_color),
+            Color {
+                r: 0.2,
+                g: 0.4,
+                b: 0.8,
+                a: 1.0,
+            },
         );
     }
 
@@ -867,6 +959,7 @@ mod tests {
         assert!(!should_draw_editor_overlays(AppPhase::Menu, false));
 
         assert!(should_draw_editor_cursor(EditorMode::Place));
+        assert!(should_draw_editor_cursor(EditorMode::Tapping));
         assert!(!should_draw_editor_cursor(EditorMode::Select));
         assert!(!should_draw_editor_cursor(EditorMode::Trigger));
         assert!(!should_draw_editor_cursor(EditorMode::Timing));

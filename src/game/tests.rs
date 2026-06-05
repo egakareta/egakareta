@@ -23,7 +23,6 @@ fn test_ground_detection_normal() {
         position: [0.0, 0.0, 0.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
-        roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
@@ -41,7 +40,6 @@ fn test_ground_detection_includes_block_edges() {
         position: [0.0, 0.0, 0.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
-        roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
@@ -62,7 +60,6 @@ fn player_stays_grounded_when_footprint_overlaps_platform_edge() {
         position: [0.0, 0.0, 0.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
-        roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
@@ -85,7 +82,6 @@ fn test_ground_detection_under_overhang() {
         position: [0.0, 0.0, 0.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
-        roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
@@ -94,7 +90,6 @@ fn test_ground_detection_under_overhang() {
         position: [0.0, 3.0, 0.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
-        roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
@@ -133,7 +128,6 @@ fn rotated_object_contains_expected_points() {
         position: [0.0, 0.0, 0.0],
         size: [2.0, 1.0, 1.0],
         rotation_degrees: [0.0, 90.0, 0.0],
-        roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     };
@@ -148,7 +142,6 @@ fn rotated_overlap_uses_oriented_bounds() {
         position: [0.0, 0.0, 0.0],
         size: [2.0, 1.0, 1.0],
         rotation_degrees: [0.0, 45.0, 0.0],
-        roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     };
@@ -164,7 +157,6 @@ fn rotated_ground_detection_works() {
         position: [0.0, 0.0, 0.0],
         size: [2.0, 2.0, 1.0],
         rotation_degrees: [0.0, 90.0, 0.0],
-        roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
@@ -186,7 +178,6 @@ fn speed_portal_overlap_removes_portal_and_boosts_speed() {
         position: [0.0, 0.0, 0.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 30.0, 0.0],
-        roundness: 0.18,
         block_id: "core/speedportal".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
@@ -199,32 +190,50 @@ fn speed_portal_overlap_removes_portal_and_boosts_speed() {
 }
 
 #[test]
-fn finish_block_overlap_completes_level_after_sink() {
+fn gem_overlap_collects_and_tracks_progress() {
     let mut game = GameState::new();
     game.started = true;
     game.position = [0.5, 0.0, 0.5];
     game.objects.push(LevelObject {
-        position: [0.0, -0.1, 0.0],
-        size: [1.0, 0.2, 1.0],
+        position: [0.0, 0.0, 0.0],
+        size: [0.72, 0.86, 0.72],
         rotation_degrees: [0.0, 0.0, 0.0],
-        roundness: 0.18,
-        block_id: "core/finish".to_string(),
+        block_id: "core/gem".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     });
     game.rebuild_behavior_cache();
+    game.initialize_level_progress_from_objects();
 
     game.update(0.0);
+
+    let progress = game.level_progress();
+    assert_eq!(progress.gems_collected, 1);
+    assert_eq!(progress.gems_max, 1);
+    let events = game.take_consumed_object_events();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].object.block_id, "core/gem");
+    assert!(game.take_consumed_object_events().is_empty());
+    assert!(game.objects.is_empty());
+    assert!(!game.game_over);
+}
+
+#[test]
+fn level_completes_at_configured_duration() {
+    let mut game = GameState::new();
+    game.started = true;
+    game.set_level_duration_seconds(0.05);
+
+    game.update(0.04);
     assert!(!game.level_complete);
 
-    for _ in 0..180 {
-        game.update(1.0 / 120.0);
-        if game.level_complete {
-            break;
-        }
-    }
+    game.update(0.02);
 
     assert!(game.level_complete);
+    assert!(!game.started);
     assert!(!game.game_over);
+    assert!(game.level_progress().completed);
+    approx_eq(game.level_progress().progress_percent, 100.0, 1e-6);
+    approx_eq(game.elapsed_seconds, 0.05, 1e-6);
 }
 
 #[test]
@@ -249,6 +258,39 @@ fn timeline_tap_at_zero_turns_before_movement() {
     approx_eq(snapshot.position[0], 1.5, 0.05);
     approx_eq(snapshot.position[2], 0.5, 0.05);
     approx_eq(snapshot.elapsed_seconds, dt, 1e-6);
+}
+
+#[test]
+fn timeline_tap_at_nonzero_time_turns_at_exact_boundary() {
+    let tap_time = 1.0 / BASE_PLAYER_SPEED;
+    let snapshot = simulate_timeline_state(
+        [0.0, 0.0, 0.0],
+        SpawnDirection::Forward,
+        &[],
+        &[tap_time],
+        tap_time,
+    );
+
+    assert!(matches!(snapshot.direction, SpawnDirection::Right));
+    approx_eq(snapshot.position[0], 0.5, 1e-5);
+    approx_eq(snapshot.position[2], 1.5, 1e-5);
+    approx_eq(snapshot.elapsed_seconds, tap_time, 1e-6);
+
+    let next_tick = tap_time + 1.0 / 240.0;
+    let after_turn = simulate_timeline_state(
+        [0.0, 0.0, 0.0],
+        SpawnDirection::Forward,
+        &[],
+        &[tap_time],
+        next_tick,
+    );
+
+    approx_eq(
+        after_turn.position[0],
+        0.5 + BASE_PLAYER_SPEED / 240.0,
+        1e-5,
+    );
+    approx_eq(after_turn.position[2], 1.5, 1e-5);
 }
 
 #[test]
@@ -290,7 +332,6 @@ fn timeline_trigger_hitbox_mode_does_not_resurrect_consumed_portals() {
         position: [0.0, 0.0, 1.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
-        roundness: 0.18,
         block_id: "core/speedportal".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     }];
@@ -325,7 +366,6 @@ fn timeline_state_with_disabled_trigger_hitboxes_matches_plain_simulation() {
         position: [0.0, 0.0, 2.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
-        roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     }];

@@ -5,9 +5,11 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use crate::load_menu_favicon_texture;
 use crate::platform::pipeline::FramePipeline;
-use crate::State;
+use crate::{
+    load_menu_favicon_texture, load_menu_play_button_filled_texture, load_menu_play_button_texture,
+    State,
+};
 
 pub struct Runtime {
     pub state: State,
@@ -25,6 +27,22 @@ impl Runtime {
                 "../../assets/Sora.ttf"
             ))),
         );
+        fonts.font_data.insert(
+            "sora_thin".to_owned(),
+            std::sync::Arc::new(
+                egui::FontData::from_static(include_bytes!("../../assets/Sora.ttf")).tweak(
+                    egui::FontTweak {
+                        coords: egui::epaint::text::VariationCoords::new([(b"wght", 100.0)]),
+                        ..Default::default()
+                    },
+                ),
+            ),
+        );
+        fonts
+            .families
+            .entry(egui::FontFamily::Name("sora_thin".into()))
+            .or_default()
+            .insert(0, "sora_thin".to_owned());
         fonts
             .families
             .entry(egui::FontFamily::Proportional)
@@ -41,7 +59,15 @@ impl Runtime {
 
         let egui_renderer = state.create_egui_renderer();
         let menu_favicon = load_menu_favicon_texture(&egui_ctx);
-        let pipeline = FramePipeline::new(egui_ctx, egui_renderer, menu_favicon);
+        let menu_play_button = load_menu_play_button_texture(&egui_ctx);
+        let menu_play_button_filled = load_menu_play_button_filled_texture(&egui_ctx);
+        let pipeline = FramePipeline::new(
+            egui_ctx,
+            egui_renderer,
+            menu_favicon,
+            menu_play_button,
+            menu_play_button_filled,
+        );
 
         Self { state, pipeline }
     }

@@ -7,7 +7,8 @@
 */
 use super::{EditorDirtyFlags, EditorSubsystem, State};
 use crate::editor_domain::{
-    add_tap_with_indicator, clear_taps_with_indicators, remove_tap_with_indicator,
+    add_tap_with_indicator, clear_taps_with_indicators, interpolate_timeline_sample_positions,
+    remove_tap_with_indicator,
 };
 use crate::game::TimelineSimulationRuntime;
 use crate::types::{
@@ -55,6 +56,38 @@ impl EditorSubsystem {
         self.ui.pointer_screen = position;
     }
 
+    pub(crate) fn set_ui_input_blocking_rects(
+        &mut self,
+        rects: Vec<[f32; 4]>,
+        pixels_per_point: f32,
+    ) {
+        self.ui.ui_input_blocking_rects = rects;
+        self.ui.ui_input_pixels_per_point =
+            if pixels_per_point.is_finite() && pixels_per_point > 0.0 {
+                pixels_per_point
+            } else {
+                1.0
+            };
+    }
+
+    pub(crate) fn clear_ui_input_blocking_rects(&mut self) {
+        self.ui.ui_input_blocking_rects.clear();
+        self.ui.ui_input_pixels_per_point = 1.0;
+    }
+
+    pub(crate) fn pointer_over_ui_input(&self, x: f64, y: f64) -> bool {
+        let pixels_per_point = self.ui.ui_input_pixels_per_point as f64;
+        let point_x = x / pixels_per_point;
+        let point_y = y / pixels_per_point;
+
+        self.ui.ui_input_blocking_rects.iter().any(|rect| {
+            point_x >= rect[0] as f64
+                && point_x <= rect[2] as f64
+                && point_y >= rect[1] as f64
+                && point_y <= rect[3] as f64
+        })
+    }
+
     pub(crate) fn clear_interaction_drags(&mut self) {
         self.runtime.interaction.gizmo_drag = None;
         self.runtime.interaction.block_drag = None;
@@ -82,6 +115,8 @@ impl EditorSubsystem {
 
     pub(crate) fn set_block_id(&mut self, block_id: String) {
         self.config.selected_block_id = crate::block_repository::normalize_block_id(&block_id);
+        self.config
+            .remember_recent_block_id(self.config.selected_block_id.clone());
     }
 
     pub(crate) fn set_mode(&mut self, mode: EditorMode) {
@@ -91,9 +126,7 @@ impl EditorSubsystem {
         self.ui.marquee_start_screen = None;
         self.ui.marquee_current_screen = None;
         if !mode.can_select() {
-            self.ui.selected_block_index = None;
-            self.ui.selected_block_indices.clear();
-            self.ui.hovered_block_index = None;
+            self.clear_block_selection();
         }
     }
 
@@ -228,14 +261,9 @@ impl EditorSubsystem {
         }
     }
 
-    pub(crate) fn set_selected_block_roundness(&mut self, roundness: f32) {
-        if let Some(index) = self
-            .ui
-            .selected_block_index
-            .filter(|index| *index < self.objects.len())
-        {
-            self.objects[index].roundness = roundness.max(0.0);
-        }
+    pub(crate) fn rotate_selected_block_preview(&mut self) {
+        self.config.selected_block_rotation_degrees[1] =
+            (self.config.selected_block_rotation_degrees[1] + 90.0).rem_euclid(360.0);
     }
 
     pub(crate) fn set_selected_block_color_tint(&mut self, color_tint: [f32; 3]) {
@@ -258,6 +286,28 @@ impl EditorSubsystem {
 
     pub(crate) fn tap_times(&self) -> &[f32] {
         &self.timeline.taps.tap_times
+    }
+
+    pub(crate) fn selected_tap(&self) -> Option<(usize, f32, [f32; 3])> {
+        let index = self.timeline.taps.selected_index?;
+        let time_seconds = *self.timeline.taps.tap_times.get(index)?;
+        let position = *self.timeline.taps.tap_indicator_positions.get(index)?;
+        Some((index, time_seconds, position))
+    }
+
+    pub(crate) fn set_selected_tap_index(&mut self, selected_index: Option<usize>) {
+        self.timeline.taps.selected_index = selected_index.filter(|index| {
+            *index < self.timeline.taps.tap_times.len()
+                && *index < self.timeline.taps.tap_indicator_positions.len()
+        });
+    }
+
+    pub(crate) fn adjust_selected_tap_after_removal(&mut self, removed_index: usize) {
+        self.timeline.taps.selected_index = match self.timeline.taps.selected_index {
+            Some(selected_index) if selected_index == removed_index => None,
+            Some(selected_index) if selected_index > removed_index => Some(selected_index - 1),
+            selected_index => selected_index,
+        };
     }
 
     pub(crate) fn fps(&self) -> f32 {
@@ -285,30 +335,35 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn add_tap(&mut self, indicator_position: [f32; 3]) -> f32 {
-        add_tap_with_indicator(
+        let selected_index = add_tap_with_indicator(
             &mut self.timeline.taps.tap_times,
             &mut self.timeline.taps.tap_indicator_positions,
             self.timeline.clock.time_seconds,
             indicator_position,
         );
+        self.set_selected_tap_index(selected_index);
         self.timeline.clock.time_seconds
     }
 
     pub(crate) fn remove_tap(&mut self) -> f32 {
-        remove_tap_with_indicator(
+        if let Some(removed_index) = remove_tap_with_indicator(
             &mut self.timeline.taps.tap_times,
             &mut self.timeline.taps.tap_indicator_positions,
             self.timeline.clock.time_seconds,
-        );
+        ) {
+            self.adjust_selected_tap_after_removal(removed_index);
+        }
         self.timeline.clock.time_seconds
     }
 
     pub(crate) fn remove_tap_at(&mut self, time_seconds: f32) -> f32 {
-        remove_tap_with_indicator(
+        if let Some(removed_index) = remove_tap_with_indicator(
             &mut self.timeline.taps.tap_times,
             &mut self.timeline.taps.tap_indicator_positions,
             time_seconds,
-        );
+        ) {
+            self.adjust_selected_tap_after_removal(removed_index);
+        }
         time_seconds
     }
 
@@ -317,6 +372,7 @@ impl EditorSubsystem {
             &mut self.timeline.taps.tap_times,
             &mut self.timeline.taps.tap_indicator_positions,
         );
+        self.timeline.taps.selected_index = None;
     }
 
     pub(crate) fn invalidate_samples(&mut self) {
@@ -411,6 +467,18 @@ impl EditorSubsystem {
         self.timing.waveform_sample_rate
     }
 
+    pub(crate) fn waveform_window_size(&self) -> usize {
+        self.timing.waveform_window_size
+    }
+
+    pub(crate) fn waveform_loading(&self) -> bool {
+        self.timing.waveform_loading
+    }
+
+    pub(crate) fn waveform_complete(&self) -> bool {
+        self.timing.waveform_complete
+    }
+
     pub(crate) fn bpm_tap_result(&self) -> Option<f32> {
         self.timing.bpm_tap_result
     }
@@ -425,17 +493,20 @@ impl EditorSubsystem {
         self.timing
             .timing_points
             .sort_by(|a, b| a.time_seconds.total_cmp(&b.time_seconds));
+        self.timing.mark_timing_points_changed();
     }
 
     pub(crate) fn remove_timing_point(&mut self, index: usize) {
         if index < self.timing.timing_points.len() {
             self.timing.timing_points.remove(index);
+            self.timing.mark_timing_points_changed();
         }
     }
 
     pub(crate) fn update_timing_point_time(&mut self, index: usize, time: f32) {
         if let Some(tp) = self.timing.timing_points.get_mut(index) {
             tp.time_seconds = time.max(0.0);
+            self.timing.mark_timing_points_changed();
         }
         self.timing
             .timing_points
@@ -445,6 +516,7 @@ impl EditorSubsystem {
     pub(crate) fn update_timing_point_bpm(&mut self, index: usize, bpm: f32) {
         if let Some(tp) = self.timing.timing_points.get_mut(index) {
             tp.bpm = bpm.max(1.0);
+            self.timing.mark_timing_points_changed();
         }
     }
 
@@ -457,6 +529,7 @@ impl EditorSubsystem {
         if let Some(tp) = self.timing.timing_points.get_mut(index) {
             tp.time_signature_numerator = numerator.max(1);
             tp.time_signature_denominator = denominator.max(1);
+            self.timing.mark_timing_points_changed();
         }
     }
 
@@ -540,21 +613,66 @@ impl State {
         self.session.app_settings.editor_selected_block_id =
             self.editor.config.selected_block_id.clone();
         self.persist_app_settings();
+        if self.phase == AppPhase::Editor {
+            self.rebuild_editor_cursor_vertices();
+        }
     }
 
     pub(crate) fn set_editor_mode(&mut self, mode: EditorMode) {
+        self.editor.runtime.interaction.hovered_tap_index = None;
+        self.editor.runtime.interaction.hovered_tap_division = None;
         self.editor.set_mode(mode);
         self.rebuild_editor_gizmo_vertices();
         self.rebuild_editor_hover_outline_vertices();
         self.rebuild_editor_selection_outline_vertices();
+        self.editor.runtime.dirty.rebuild_tap_indicators = true;
+    }
+
+    pub(super) fn refresh_editor_tapping_preview_on_mode_entry(&mut self) {
+        if self.phase != AppPhase::Editor
+            || self.editor_effective_mode_for_playback() != EditorMode::Tapping
+        {
+            return;
+        }
+
+        self.editor.timeline.tap_division_preview_cache_revision = 0;
+        self.editor
+            .timeline
+            .tap_division_preview_cache_timing_revision = 0;
+        self.editor.timeline.tap_division_preview_cache.clear();
+        self.editor.sync_tap_indicators_to_spawn();
+        self.rebuild_editor_timeline_snapshot_cache_if_needed();
+
+        self.mark_editor_dirty(EditorDirtyFlags {
+            rebuild_tap_indicators: true,
+            rebuild_cursor: true,
+            ..EditorDirtyFlags::default()
+        });
     }
 
     pub(crate) fn editor_mode(&self) -> EditorMode {
         self.editor.mode()
     }
 
-    pub(crate) fn game_cursor(&self, pointer_over_egui: bool) -> GameCursor {
-        if self.phase == AppPhase::Playing || pointer_over_egui {
+    pub(crate) fn set_editor_ui_input_blocking_rects(
+        &mut self,
+        rects: Vec<[f32; 4]>,
+        pixels_per_point: f32,
+    ) {
+        self.editor
+            .set_ui_input_blocking_rects(rects, pixels_per_point);
+    }
+
+    pub(crate) fn clear_editor_ui_input_blocking_rects(&mut self) {
+        self.editor.clear_ui_input_blocking_rects();
+    }
+
+    pub(crate) fn editor_pointer_over_ui_input(&self, x: f64, y: f64) -> bool {
+        self.phase == AppPhase::Editor && self.editor.pointer_over_ui_input(x, y)
+    }
+
+    pub(crate) fn game_cursor(&self, _pointer_over_egui: bool) -> GameCursor {
+        if self.phase == AppPhase::Playing && !self.is_game_paused() {
             return GameCursor::Hidden;
         }
 
@@ -709,22 +827,13 @@ impl State {
         }
     }
 
-    pub(crate) fn set_editor_selected_block_roundness(&mut self, roundness: f32) {
+    pub(crate) fn rotate_editor_selected_block_preview(&mut self) {
         if self.phase != AppPhase::Editor {
             return;
         }
 
-        self.record_editor_history_state();
-
-        self.sync_primary_selection_from_indices();
-
-        self.editor.set_selected_block_roundness(roundness);
-
-        if self.editor.ui.selected_block_index.is_some() {
-            self.sync_editor_objects();
-            self.rebuild_editor_gizmo_vertices();
-            self.rebuild_editor_selection_outline_vertices();
-        }
+        self.editor.rotate_selected_block_preview();
+        self.rebuild_editor_cursor_vertices();
     }
 
     pub(crate) fn set_editor_selected_block_color_tint(&mut self, color_tint: [f32; 3]) {
@@ -804,6 +913,12 @@ impl State {
                 ..EditorDirtyFlags::default()
             });
         }
+        if changed && self.phase == AppPhase::Editor && self.editor_mode() == EditorMode::Tapping {
+            self.mark_editor_dirty(EditorDirtyFlags {
+                rebuild_tap_indicators: true,
+                ..EditorDirtyFlags::default()
+            });
+        }
         if changed {
             if self.phase == AppPhase::Editor && self.editor.timeline.playback.playing {
                 const PLAYBACK_SEEK_RESYNC_DEBOUNCE_SECONDS: f32 = 0.12;
@@ -816,6 +931,17 @@ impl State {
                 self.resync_editor_timeline_playback_audio();
             }
         }
+    }
+
+    pub(crate) fn set_editor_timeline_time_seconds_preserving_editor_camera(
+        &mut self,
+        time_seconds: f32,
+    ) {
+        let editor_pan = self.editor.camera.editor_pan;
+        let editor_target_z = self.editor.camera.editor_target_z;
+        self.set_editor_timeline_time_seconds(time_seconds);
+        self.editor.camera.editor_pan = editor_pan;
+        self.editor.camera.editor_target_z = editor_target_z;
     }
 
     fn apply_editor_timeline_preview_from_cache(&mut self) {
@@ -852,11 +978,13 @@ impl State {
         let lower = &self.editor.timeline.snapshot_cache[lower_index];
         let upper = &self.editor.timeline.snapshot_cache[upper_index];
 
-        let position = [
-            lower.position[0] + (upper.position[0] - lower.position[0]) * alpha,
-            lower.position[1] + (upper.position[1] - lower.position[1]) * alpha,
-            lower.position[2] + (upper.position[2] - lower.position[2]) * alpha,
-        ];
+        let position = interpolate_timeline_sample_positions(
+            lower.position,
+            lower.direction,
+            upper.position,
+            upper.direction,
+            alpha,
+        );
         let direction = if alpha < 0.5 {
             lower.direction
         } else {
@@ -955,10 +1083,7 @@ impl State {
             .tap_indicator_position_from_world(self.editor.timeline.preview.position);
         let tap_time = self.editor.add_tap(indicator_position);
         self.editor.invalidate_samples_from(tap_time);
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_tap_indicators: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.refresh_editor_after_tap_change(None);
     }
 
     /// Removes the tap event at the current timeline position, if one exists.
@@ -968,10 +1093,7 @@ impl State {
         self.record_editor_history_state();
         let tap_time = self.editor.remove_tap();
         self.editor.invalidate_samples_from(tap_time);
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_tap_indicators: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.refresh_editor_after_tap_change(None);
     }
 
     /// Removes the tap event nearest to the given timestamp, if one exists.
@@ -981,10 +1103,7 @@ impl State {
         self.record_editor_history_state();
         let tap_time = self.editor.remove_tap_at(time_seconds);
         self.editor.invalidate_samples_from(tap_time);
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_tap_indicators: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.refresh_editor_after_tap_change(None);
     }
 
     /// Clears all tap events from the editor's timeline.
@@ -994,10 +1113,7 @@ impl State {
         self.record_editor_history_state();
         self.editor.clear_taps();
         self.editor.invalidate_samples();
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_tap_indicators: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.refresh_editor_after_tap_change(None);
     }
 
     pub(crate) fn editor_add_camera_trigger(&mut self) {
@@ -1206,6 +1322,18 @@ impl State {
         self.editor.waveform_sample_rate()
     }
 
+    pub(crate) fn editor_waveform_window_size(&self) -> usize {
+        self.editor.waveform_window_size()
+    }
+
+    pub(crate) fn editor_waveform_loading(&self) -> bool {
+        self.editor.waveform_loading()
+    }
+
+    pub(crate) fn editor_waveform_complete(&self) -> bool {
+        self.editor.waveform_complete()
+    }
+
     pub(crate) fn editor_bpm_tap_result(&self) -> Option<f32> {
         self.editor.bpm_tap_result()
     }
@@ -1279,6 +1407,7 @@ mod tests {
 
             state.phase = AppPhase::Playing;
             state.session.playtesting_editor = false;
+            state.session.game_paused = false;
             assert_eq!(state.game_cursor(false), GameCursor::Hidden);
             assert_eq!(state.game_cursor(true), GameCursor::Hidden);
 
@@ -1289,21 +1418,35 @@ mod tests {
     }
 
     #[test]
-    fn game_cursor_uses_default_cursor_outside_playing_and_egui() {
+    fn game_cursor_uses_default_cursor_while_real_gameplay_is_paused() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.phase = AppPhase::Playing;
+            state.session.playtesting_editor = false;
+            state.session.game_paused = true;
+
+            assert_eq!(state.game_cursor(false), GameCursor::Default);
+            assert_eq!(state.game_cursor(true), GameCursor::Default);
+        });
+    }
+
+    #[test]
+    fn game_cursor_uses_default_cursor_outside_playing_including_over_egui() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
 
             state.phase = AppPhase::Menu;
             assert_eq!(state.game_cursor(false), GameCursor::Default);
-            assert_eq!(state.game_cursor(true), GameCursor::Hidden);
+            assert_eq!(state.game_cursor(true), GameCursor::Default);
 
             state.phase = AppPhase::Editor;
             assert_eq!(state.game_cursor(false), GameCursor::Default);
-            assert_eq!(state.game_cursor(true), GameCursor::Hidden);
+            assert_eq!(state.game_cursor(true), GameCursor::Default);
 
             state.phase = AppPhase::GameOver;
             assert_eq!(state.game_cursor(false), GameCursor::Default);
-            assert_eq!(state.game_cursor(true), GameCursor::Hidden);
+            assert_eq!(state.game_cursor(true), GameCursor::Default);
         });
     }
 
@@ -1327,8 +1470,9 @@ mod tests {
             });
             state.editor.runtime.interaction.block_drag = Some(super::super::EditorBlockDrag {
                 start_mouse: [0.0, 0.0],
-                start_center_screen: [0.0, 0.0],
                 start_center_world: [0.0, 0.0, 0.0],
+                start_drag_world: [0.0, 0.0, 0.0],
+                start_cursor: [0.0, 0.0, 0.0],
                 start_blocks: Vec::new(),
             });
 
@@ -1354,7 +1498,6 @@ mod tests {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             });
@@ -1374,9 +1517,6 @@ mod tests {
 
             state.editor.set_selected_block_rotation([7.0, 22.0, 44.0]);
             assert_eq!(state.editor.objects[0].rotation_degrees, [0.0, 15.0, 45.0]);
-
-            state.editor.set_selected_block_roundness(-3.0);
-            assert_eq!(state.editor.objects[0].roundness, 0.0);
 
             state.editor.set_selected_block_color_tint([-1.0, 0.4, 2.0]);
             assert_eq!(state.editor.objects[0].color_tint, [0.0, 0.4, 1.0]);
@@ -1511,6 +1651,75 @@ mod tests {
     }
 
     #[test]
+    fn tap_mutations_mark_indicators_and_preview_dirty() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.timeline.clock.duration_seconds = 1.0;
+            state.set_editor_timeline_time_seconds(0.125);
+            assert_eq!(
+                state.editor.timeline.preview.direction,
+                SpawnDirection::Forward
+            );
+            state.editor.camera.editor_pan = [8.0, -6.0];
+            state.editor.camera.editor_target_z = 3.0;
+            let original_pan = state.editor.camera.editor_pan;
+            let original_target_z = state.editor.camera.editor_target_z;
+
+            state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
+            state.editor_add_tap();
+            assert!(state.editor.runtime.dirty.rebuild_tap_indicators);
+            assert!(state.editor.runtime.dirty.rebuild_preview_player);
+            assert_eq!(
+                state.editor.timeline.preview.direction,
+                SpawnDirection::Right
+            );
+            assert_eq!(state.editor.camera.editor_pan, original_pan);
+            assert_eq!(state.editor.camera.editor_target_z, original_target_z);
+
+            state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
+            state.editor_remove_tap();
+            assert!(state.editor.runtime.dirty.rebuild_tap_indicators);
+            assert!(state.editor.runtime.dirty.rebuild_preview_player);
+            assert_eq!(
+                state.editor.timeline.preview.direction,
+                SpawnDirection::Forward
+            );
+            assert_eq!(state.editor.camera.editor_pan, original_pan);
+            assert_eq!(state.editor.camera.editor_target_z, original_target_z);
+        });
+    }
+
+    #[test]
+    fn adding_tap_recomputes_all_indicator_positions() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Tapping;
+            state.editor.objects.clear();
+            state.editor.spawn.position = [0.0, 0.0, 0.0];
+            state.editor.spawn.direction = SpawnDirection::Forward;
+            state.editor.timeline.clock.duration_seconds = 2.0;
+
+            let step_time = 1.0 / crate::game::BASE_PLAYER_SPEED;
+            state.set_editor_timeline_time_seconds(4.0 * step_time);
+            state.editor_add_tap();
+
+            state.set_editor_timeline_time_seconds(2.0 * step_time);
+            state.editor_add_tap();
+
+            let expected = crate::editor_domain::derive_tap_indicator_positions(
+                state.editor.spawn.position,
+                state.editor.spawn.direction,
+                &state.editor.timeline.taps.tap_times,
+                &state.editor.objects,
+            );
+
+            assert_eq!(state.editor.timeline.taps.tap_indicator_positions, expected);
+        });
+    }
+
+    #[test]
     fn pan_input_wrappers_are_phase_gated_but_modifiers_are_global() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
@@ -1631,7 +1840,6 @@ mod tests {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             });

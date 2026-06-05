@@ -17,9 +17,18 @@ impl EditorSubsystem {
         y: f64,
         viewport_size: Vec2,
     ) -> EditorInteractionChange {
+        let previous_pointer = self.ui.pointer_screen;
         self.ui.pointer_screen = Some([x, y]);
+        if previous_pointer.is_none_or(|pointer| {
+            (pointer[0] - x).abs() > crate::state::TAP_CLICK_SCREEN_EPSILON_PIXELS
+                || (pointer[1] - y).abs() > crate::state::TAP_CLICK_SCREEN_EPSILON_PIXELS
+        }) {
+            self.runtime.interaction.pending_tap_click = None;
+        }
 
         let Some(pick) = self.pick_from_screen(x, y, viewport_size) else {
+            self.runtime.interaction.hovered_tap_index = None;
+            self.runtime.interaction.hovered_tap_division = None;
             if self.ui.mode.is_selection_mode() && self.ui.hovered_block_index.is_some() {
                 self.ui.hovered_block_index = None;
                 return EditorInteractionChange::Hover;
@@ -28,6 +37,8 @@ impl EditorSubsystem {
         };
 
         if self.ui.mode.is_selection_mode() {
+            self.runtime.interaction.hovered_tap_index = None;
+            self.runtime.interaction.hovered_tap_division = None;
             let next_hover = if self.runtime.interaction.hovered_gizmo.is_some() {
                 None
             } else {
@@ -40,6 +51,15 @@ impl EditorSubsystem {
             }
             return EditorInteractionChange::None;
         }
+
+        self.runtime.interaction.hovered_tap_index = (self.ui.mode
+            == crate::types::EditorMode::Tapping)
+            .then_some(pick.hit_tap_index)
+            .flatten();
+        self.runtime.interaction.hovered_tap_division = (self.ui.mode
+            == crate::types::EditorMode::Tapping)
+            .then_some(pick.hit_tap_division)
+            .flatten();
 
         if pick.cursor != self.ui.cursor {
             self.ui.cursor = pick.cursor;
@@ -70,6 +90,8 @@ impl State {
             self.render.gpu.config.width as f32,
             self.render.gpu.config.height as f32,
         );
+        let previous_tap_division_hover = self.editor.runtime.interaction.hovered_tap_division;
+        let previous_tap_hover = self.editor.runtime.interaction.hovered_tap_index;
         match self
             .editor
             .update_cursor_from_screen_ext(x, y, viewport_size, self.phase)
@@ -77,6 +99,12 @@ impl State {
             EditorInteractionChange::Hover => self.rebuild_editor_hover_outline_vertices(),
             EditorInteractionChange::Cursor => self.rebuild_editor_cursor_vertices(),
             EditorInteractionChange::None => {}
+        }
+        if self.editor.runtime.interaction.hovered_tap_division != previous_tap_division_hover
+            || self.editor.runtime.interaction.hovered_tap_index != previous_tap_hover
+        {
+            self.rebuild_tap_indicator_vertices();
+            self.rebuild_editor_cursor_vertices();
         }
     }
 }

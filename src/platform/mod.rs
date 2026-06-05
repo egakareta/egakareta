@@ -13,6 +13,7 @@ pub(crate) mod block_icon_cache;
 pub(crate) mod input_mapping;
 pub(crate) mod input_routing;
 pub(crate) mod io;
+pub(crate) mod parallel;
 pub(crate) mod pipeline;
 pub(crate) mod runtime;
 pub(crate) mod services;

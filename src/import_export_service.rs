@@ -67,6 +67,7 @@ mod tests {
     fn sample_metadata() -> LevelMetadata {
         LevelMetadata::from_editor_state(EditorStateParams {
             name: "Service Test".to_string(),
+            creator_metadata: crate::types::LevelCreatorMetadata::default(),
             music: MusicMetadata {
                 source: "audio.mp3".to_string(),
                 title: Some("Track".to_string()),
@@ -77,6 +78,7 @@ mod tests {
                 position: [1.0, 2.0, 3.0],
                 direction: SpawnDirection::Right,
             },
+            sky_color: crate::types::default_sky_color(),
             tap_times: vec![0.25, 0.75],
             timing_points: Vec::new(),
             timeline_time_seconds: 0.5,
@@ -88,7 +90,6 @@ mod tests {
                 position: [4.0, 0.0, 2.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 45.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 0.8, 0.7],
             }],

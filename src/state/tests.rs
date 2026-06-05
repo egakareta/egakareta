@@ -36,7 +36,6 @@ fn test_marquee_no_redundant_selections_before_drag_started() {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         });
@@ -44,7 +43,6 @@ fn test_marquee_no_redundant_selections_before_drag_started() {
             position: [5.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         });
@@ -114,7 +112,6 @@ fn selection_outline_builds_instances_per_selected_block() {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         });
@@ -122,7 +119,6 @@ fn selection_outline_builds_instances_per_selected_block() {
             position: [2.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         });
@@ -165,6 +161,61 @@ fn selection_outline_builds_instances_per_selected_block() {
             .map(|draw_data| draw_data.count())
             .expect("selection mask mesh should exist");
         assert_eq!(total_mask, 72);
+    });
+}
+
+#[test]
+fn selection_outline_uses_single_bounds_mesh_for_large_selections() {
+    pollster::block_on(async {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+        state.editor.ui.mode = EditorMode::Select;
+
+        for index in 0..701 {
+            state.editor.objects.push(LevelObject {
+                position: [index as f32, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                block_id: "core/stone".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            });
+        }
+        state.editor.ui.selected_block_index = Some(0);
+        state.editor.ui.selected_block_indices = (0..701).collect();
+
+        state.rebuild_editor_selection_outline_vertices();
+
+        assert_eq!(
+            state.render.meshes.editor_selection_outline_instances.len(),
+            1
+        );
+        let instance = &state.render.meshes.editor_selection_outline_instances[0];
+        assert_eq!(
+            instance.outline_vertices.end - instance.outline_vertices.start,
+            36
+        );
+        assert_eq!(
+            instance.mask_vertices.end - instance.mask_vertices.start,
+            36
+        );
+
+        let total_outline = state
+            .render
+            .meshes
+            .editor_selection_outline
+            .draw_data()
+            .map(|draw_data| draw_data.count())
+            .expect("selection outline mesh should exist");
+        assert_eq!(total_outline, 36);
+
+        let total_mask = state
+            .render
+            .meshes
+            .editor_selection_stencil
+            .draw_data()
+            .map(|draw_data| draw_data.count())
+            .expect("selection mask mesh should exist");
+        assert_eq!(total_mask, 36);
     });
 }
 
@@ -284,7 +335,6 @@ fn falls_from_elevated_platform() {
         position: [0.0, 2.0, 0.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
-        roundness: 0.18,
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     }];
@@ -310,29 +360,6 @@ fn test_state_phase_integrity() {
 
         state.toggle_editor(); // Should go back to menu from editor
         assert_eq!(state.phase, crate::types::AppPhase::Menu);
-    });
-}
-
-#[test]
-fn focused_init_path_start_editor_loads_builtin_state() {
-    pollster::block_on(async {
-        let mut state = State::new_test().await;
-
-        let expected_level_name = state.menu.state.levels[0].clone();
-        state.start_editor(0);
-
-        assert_eq!(state.phase, AppPhase::Editor);
-        assert_eq!(state.session.editor_level_name, Some(expected_level_name));
-        assert!(!state.editor.objects.is_empty());
-        assert_eq!(
-            state.editor.timeline.taps.tap_indicator_positions.len(),
-            state.editor.timeline.taps.tap_times.len(),
-            "tap indicators should be derived from loaded tap times"
-        );
-        assert_eq!(
-            state.editor.camera.editor_target_z, state.editor.ui.cursor[1],
-            "start_editor should sync camera target Z with loaded cursor"
-        );
     });
 }
 
@@ -363,7 +390,6 @@ fn configure_trigger_policy_parity_scene(
         position: [8.0, 0.0, 8.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
-        roundness: 0.18,
         block_id: "core/speedportal".to_string(),
         color_tint: [1.0, 1.0, 1.0],
     }];
@@ -467,6 +493,39 @@ fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_enabled()
 }
 
 #[test]
+fn editor_playtest_preserves_airborne_vertical_motion() {
+    pollster::block_on(async {
+        let mut state = new_editor_state().await;
+        state.editor.objects.clear();
+        state.editor.timeline.taps.tap_times.clear();
+        state.editor.spawn.position = [0.0, 2.0, 0.0];
+        state.editor.timeline.clock.time_seconds = 0.25;
+
+        let expected = simulate_timeline_state_with_triggers(
+            state.editor.spawn.position,
+            state.editor.spawn.direction,
+            &state.editor.objects,
+            &state.editor.timeline.taps.tap_times,
+            state.editor.triggers(),
+            state.editor.simulate_trigger_hitboxes(),
+            state.editor.timeline.clock.time_seconds,
+        );
+
+        assert!(!expected.is_grounded);
+        assert!(expected.vertical_velocity < 0.0);
+
+        state.editor_playtest();
+
+        approx_eq(
+            state.gameplay.state.vertical_velocity,
+            expected.vertical_velocity,
+            1e-4,
+        );
+        assert_eq!(state.gameplay.state.is_grounded, expected.is_grounded);
+    });
+}
+
+#[test]
 fn editor_scrub_draws_ghost_trail_without_preview_head_mesh() {
     pollster::block_on(async {
         let mut state = new_editor_state().await;
@@ -553,7 +612,6 @@ fn multi_selection_clicking_rendered_gizmo_starts_gizmo_drag_not_block_drag() {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             },
@@ -561,7 +619,6 @@ fn multi_selection_clicking_rendered_gizmo_starts_gizmo_drag_not_block_drag() {
                 position: [4.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                roundness: 0.18,
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
             },
@@ -879,7 +936,6 @@ fn test_handle_primary_click_shift_priority() {
             position: [-5.0, -5.0, -5.0],
             size: [10.0, 10.0, 10.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         });
@@ -923,6 +979,7 @@ fn editor_mode_selection_constraints() {
     assert!(EditorMode::Move.can_select());
     assert!(EditorMode::Scale.can_select());
     assert!(EditorMode::Place.can_select());
+    assert!(!EditorMode::Tapping.can_select());
     assert!(!EditorMode::Trigger.can_select());
     assert!(!EditorMode::Timing.can_select());
     assert!(!EditorMode::Null.can_select());
@@ -961,7 +1018,6 @@ fn editor_null_mode_clears_selection() {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         });
@@ -1109,7 +1165,6 @@ fn test_gizmo_move_shaft_is_pickable() {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         });
@@ -1186,7 +1241,6 @@ fn test_gizmo_hover_priority_suppresses_block_outline() {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         });
@@ -1226,7 +1280,6 @@ fn test_gizmo_hover_priority_suppresses_block_outline() {
             ],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
-            roundness: 0.18,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
         });
@@ -1420,8 +1473,13 @@ fn toggle_editor_and_mouse_paths_cover_playtest_and_release_guards() {
         let mut state = State::new_test().await;
 
         state.phase = AppPhase::Menu;
+        state.menu.state.levels = vec!["Missing test level".to_string()];
         state.toggle_editor();
         assert_eq!(state.phase, AppPhase::Editor);
+        assert_eq!(
+            state.session.editor_level_name,
+            Some("Missing test level".to_string())
+        );
 
         state.phase = AppPhase::Playing;
         state.session.playtesting_editor = true;
@@ -1452,7 +1510,7 @@ fn toggle_editor_and_mouse_paths_cover_playtest_and_release_guards() {
 }
 
 #[test]
-fn handle_primary_click_covers_trigger_and_timing_mode_paths() {
+fn handle_primary_click_covers_tapping_trigger_and_timing_mode_paths() {
     pollster::block_on(async {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
@@ -1462,6 +1520,46 @@ fn handle_primary_click_covers_trigger_and_timing_mode_paths() {
         assert_eq!(state.editor.ui.pointer_screen, Some([220.0, 180.0]));
         assert!(state.editor.ui.left_mouse_down);
         assert!(state.editor.ui.marquee_start_screen.is_none());
+
+        state.editor.set_left_mouse_down(false);
+        state.editor.set_mode(EditorMode::Tapping);
+        state.editor.timeline.clock.duration_seconds = 4.0;
+        state.set_editor_timeline_time_seconds(0.0);
+        let viewport = Vec2::new(
+            state.render.gpu.config.width as f32,
+            state.render.gpu.config.height as f32,
+        );
+        let future_tap_screen = state
+            .editor
+            .world_to_screen_v(Vec3::new(0.5, 0.0, 4.5), viewport)
+            .expect("future tap point should project to the screen");
+        assert!(state.editor_tap_times().is_empty());
+        state.handle_primary_click(future_tap_screen.x as f64, future_tap_screen.y as f64);
+        assert_eq!(
+            state.editor.ui.pointer_screen,
+            Some([future_tap_screen.x as f64, future_tap_screen.y as f64])
+        );
+        assert!(state.editor_tap_times().is_empty());
+
+        state.editor.set_left_mouse_down(false);
+        state.handle_primary_click(future_tap_screen.x as f64, future_tap_screen.y as f64);
+        assert_eq!(state.editor_tap_times().len(), 1);
+        assert_eq!(state.editor.timeline.taps.selected_index, Some(0));
+        assert!(state.editor.ui.marquee_start_screen.is_none());
+
+        state.editor.set_left_mouse_down(false);
+        let selected_tap_position = state.editor.timeline.taps.tap_indicator_positions[0];
+        state
+            .editor
+            .world_to_screen_v(
+                Vec3::new(
+                    selected_tap_position[0] + 0.5,
+                    selected_tap_position[1] + 0.1,
+                    selected_tap_position[2] + 0.5,
+                ),
+                viewport,
+            )
+            .expect("selected tap should project to the screen");
 
         state.editor.set_left_mouse_down(false);
         state.editor.set_mode(EditorMode::Trigger);

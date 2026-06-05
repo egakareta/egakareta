@@ -10,7 +10,7 @@ use super::physics::object_xz_contains;
 use super::physics::{aabb_overlaps_object_xz, BASE_PLAYER_SPEED};
 use super::spatial::SpatialGrid;
 use crate::block_repository::{resolve_block_definition, BlockCollision};
-use crate::types::{Direction, LevelObject, SpawnDirection};
+use crate::types::{Direction, LevelObject, PlayerLevelProgress, SpawnDirection};
 
 const PLAYER_WIDTH: f32 = 0.8;
 const PLAYER_HEIGHT: f32 = 0.8;
@@ -24,6 +24,7 @@ pub(crate) struct CachedBlockBehavior {
     pub(crate) speed_multiplier: f32,
     pub(crate) support_surface: bool,
     pub(crate) consumed_on_overlap: bool,
+    pub(crate) gem_value: u32,
 }
 
 impl CachedBlockBehavior {
@@ -34,6 +35,15 @@ impl CachedBlockBehavior {
             speed_multiplier: def.behavior.speed_multiplier,
             support_surface: def.behavior.support_surface,
             consumed_on_overlap: def.behavior.consumed_on_overlap,
+            gem_value: def.behavior.gem_value,
+        }
+    }
+
+    pub(crate) fn collectible_gem_value(self) -> u32 {
+        if matches!(self.collision, BlockCollision::Collectible) {
+            self.gem_value.max(1)
+        } else {
+            0
         }
     }
 }
@@ -42,10 +52,28 @@ impl CachedBlockBehavior {
 ///
 /// Manages the player's position, direction, speed, trail, collision with level objects,
 /// and game progression states like game over and level completion.
+#[derive(Clone)]
+pub(crate) struct ConsumedObjectEvent {
+    pub(crate) object: LevelObject,
+}
+
+#[derive(Clone)]
+pub(crate) struct GameCheckpointState {
+    pub(crate) position: [f32; 3],
+    pub(crate) direction: Direction,
+    pub(crate) elapsed_seconds: f32,
+    pub(crate) speed: f32,
+    pub(crate) objects: Vec<LevelObject>,
+    pub(crate) vertical_velocity: f32,
+    pub(crate) is_grounded: bool,
+    progress: PlayerLevelProgress,
+}
+
 pub(crate) struct GameState {
     pub(crate) position: [f32; 3],
     pub(crate) direction: Direction,
     pub(crate) elapsed_seconds: f32,
+    pub(crate) level_duration_seconds: f32,
     pub(crate) speed: f32,
     pub(crate) trail_segments: Vec<Vec<[f32; 3]>>,
     pub(crate) objects: Vec<LevelObject>,
@@ -57,10 +85,9 @@ pub(crate) struct GameState {
     pub(crate) level_complete: bool,
     pub(crate) completion_hold_seconds: f32,
     pub(crate) started: bool,
-    finishing: bool,
-    finish_target: [f32; 3],
-    finish_sink_velocity: f32,
+    progress: PlayerLevelProgress,
     consumed_object_indices: Vec<usize>,
+    consumed_object_events: Vec<ConsumedObjectEvent>,
 }
 
 pub(crate) fn center_spawn_position(position: [f32; 3]) -> [f32; 3] {
@@ -77,6 +104,7 @@ impl GameState {
             position: [0.0, 0.0, 0.0],
             direction: Direction::Forward,
             elapsed_seconds: 0.0,
+            level_duration_seconds: f32::INFINITY,
             speed: BASE_PLAYER_SPEED,
             trail_segments: vec![vec![[0.0, 0.0, 0.0]]],
             objects: Vec::new(),
@@ -88,15 +116,23 @@ impl GameState {
             level_complete: false,
             completion_hold_seconds: 0.0,
             started: false,
-            finishing: false,
-            finish_target: [0.0, 0.0, 0.0],
-            finish_sink_velocity: 0.0,
+            progress: PlayerLevelProgress::default(),
             consumed_object_indices: Vec::new(),
+            consumed_object_events: Vec::new(),
         }
+    }
+
+    pub(crate) fn set_level_duration_seconds(&mut self, duration_seconds: f32) {
+        self.level_duration_seconds = if duration_seconds.is_finite() && duration_seconds > 0.0 {
+            duration_seconds
+        } else {
+            f32::INFINITY
+        };
     }
 
     /// Rebuild the cached block behavior array from current objects.
     pub(crate) fn rebuild_behavior_cache(&mut self) {
+        puffin::profile_scope!("GameRebuildBehaviorCache");
         self.cached_behaviors = self
             .objects
             .iter()
@@ -106,7 +142,28 @@ impl GameState {
         self.rebuild_spatial_grid();
     }
 
+    pub(crate) fn initialize_level_progress_from_objects(&mut self) {
+        let gems_max = self
+            .objects
+            .iter()
+            .map(|object| {
+                CachedBlockBehavior::from_block_id(&object.block_id).collectible_gem_value()
+            })
+            .sum();
+        self.progress = PlayerLevelProgress {
+            progress_percent: 0.0,
+            completed: false,
+            gems_collected: 0,
+            gems_max,
+        };
+    }
+
+    pub(crate) fn level_progress(&self) -> PlayerLevelProgress {
+        self.progress.sanitized()
+    }
+
     fn rebuild_spatial_grid(&mut self) {
+        puffin::profile_scope!("GameRebuildSpatialGrid");
         self.spatial_grid.clear();
         for (idx, obj) in self.objects.iter().enumerate() {
             self.spatial_grid.insert_object(idx, obj);
@@ -133,9 +190,11 @@ impl GameState {
         self.game_over = false;
         self.level_complete = false;
         self.completion_hold_seconds = 0.0;
-        self.finishing = false;
-        self.finish_sink_velocity = 0.0;
+        self.progress.progress_percent = 0.0;
+        self.progress.completed = false;
+        self.progress.gems_collected = 0;
         self.consumed_object_indices.clear();
+        self.consumed_object_events.clear();
         self.trail_segments = vec![vec![spawn_position]];
     }
 
@@ -147,13 +206,40 @@ impl GameState {
         self.apply_spawn_internal(position, direction, false);
     }
 
+    pub(crate) fn checkpoint_state(&self) -> GameCheckpointState {
+        GameCheckpointState {
+            position: self.position,
+            direction: self.direction,
+            elapsed_seconds: self.elapsed_seconds,
+            speed: self.speed,
+            objects: self.objects.clone(),
+            vertical_velocity: self.vertical_velocity,
+            is_grounded: self.is_grounded,
+            progress: self.progress,
+        }
+    }
+
+    pub(crate) fn restore_checkpoint_state(&mut self, checkpoint: &GameCheckpointState) {
+        self.position = checkpoint.position;
+        self.direction = checkpoint.direction;
+        self.elapsed_seconds = checkpoint.elapsed_seconds.max(0.0);
+        self.speed = checkpoint.speed.max(0.1);
+        self.objects = checkpoint.objects.clone();
+        self.rebuild_behavior_cache();
+        self.vertical_velocity = checkpoint.vertical_velocity;
+        self.is_grounded = checkpoint.is_grounded;
+        self.game_over = false;
+        self.level_complete = false;
+        self.completion_hold_seconds = 0.0;
+        self.started = false;
+        self.progress = checkpoint.progress;
+        self.consumed_object_indices.clear();
+        self.consumed_object_events.clear();
+        self.trail_segments = vec![vec![checkpoint.position]];
+    }
+
     pub(crate) fn turn_right(&mut self) {
-        if self.game_over
-            || self.level_complete
-            || self.finishing
-            || !self.started
-            || !self.is_grounded
-        {
+        if self.game_over || self.level_complete || !self.started || !self.is_grounded {
             return;
         }
         self.push_to_active_trail(self.position);
@@ -164,6 +250,7 @@ impl GameState {
     }
 
     pub(crate) fn update(&mut self, dt: f32) {
+        puffin::profile_scope!("GameUpdate");
         self.consumed_object_indices.clear();
 
         if self.level_complete {
@@ -175,16 +262,19 @@ impl GameState {
             return;
         }
 
-        if self.finishing {
-            self.update_finish_sequence(dt);
-            return;
-        }
-
         if !self.started {
             return;
         }
 
-        self.elapsed_seconds += dt.max(0.0);
+        let remaining_level_time = self.remaining_level_time();
+        if remaining_level_time <= 0.0 {
+            self.complete_level();
+            return;
+        }
+        let step = remaining_level_time.min(dt.max(0.0));
+
+        self.elapsed_seconds += step;
+        self.update_progress_percent(false);
 
         const GRAVITY: f32 = 26.0;
         const MAX_FALL_SPEED: f32 = 40.0;
@@ -196,13 +286,13 @@ impl GameState {
             Direction::Right => [1.0, 0.0],
         };
 
-        self.position[0] += delta[0] * self.speed * dt;
-        self.position[2] += delta[1] * self.speed * dt;
+        self.position[0] += delta[0] * self.speed * step;
+        self.position[2] += delta[1] * self.speed * step;
 
         // Collision detection
         let mut hit_death = false;
         let mut hit_portals = Vec::new();
-        let mut finish_target: Option<[f32; 3]> = None;
+        let mut hit_collectibles = Vec::new();
 
         let x = self.position[0];
         let y = self.position[1];
@@ -215,44 +305,43 @@ impl GameState {
         let s_min_y = y + PLAYER_FOOTPRINT_TOLERANCE;
         let s_max_y = y + PLAYER_HEIGHT - PLAYER_FOOTPRINT_TOLERANCE;
 
-        let query_indices = self
-            .spatial_grid
-            .query_aabb(s_min_x, s_max_x, s_min_z, s_max_z);
+        let query_indices = {
+            puffin::profile_scope!("GameCollisionQuery");
+            self.spatial_grid
+                .query_aabb(s_min_x, s_max_x, s_min_z, s_max_z)
+        };
 
-        for i in query_indices {
-            let obj = &self.objects[i];
-            let o_min_y = obj.position[1];
-            let o_max_y = obj.position[1] + obj.size[1];
-            let behavior = self
-                .cached_behaviors
-                .get(i)
-                .copied()
-                .unwrap_or_else(|| CachedBlockBehavior::from_block_id(&obj.block_id));
+        {
+            puffin::profile_scope!("GameCollisionScan");
+            for i in query_indices {
+                let obj = &self.objects[i];
+                let o_min_y = obj.position[1];
+                let o_max_y = obj.position[1] + obj.size[1];
+                let behavior = self
+                    .cached_behaviors
+                    .get(i)
+                    .copied()
+                    .unwrap_or_else(|| CachedBlockBehavior::from_block_id(&obj.block_id));
 
-            if aabb_overlaps_object_xz(s_min_x, s_max_x, s_min_z, s_max_z, obj)
-                && s_max_y > o_min_y
-                && s_min_y < o_max_y
-            {
-                match behavior.collision {
-                    BlockCollision::Portal => {
-                        hit_portals.push(i);
-                    }
-                    BlockCollision::Finish => {
-                        if finish_target.is_none() {
-                            finish_target = Some([
-                                obj.position[0] + obj.size[0] * 0.5,
-                                obj.position[1] + obj.size[1] * 0.5,
-                                obj.position[2] + obj.size[2] * 0.5,
-                            ]);
+                if aabb_overlaps_object_xz(s_min_x, s_max_x, s_min_z, s_max_z, obj)
+                    && s_max_y > o_min_y
+                    && s_min_y < o_max_y
+                {
+                    match behavior.collision {
+                        BlockCollision::Portal => {
+                            hit_portals.push(i);
                         }
+                        BlockCollision::Collectible => {
+                            hit_collectibles.push(i);
+                        }
+                        BlockCollision::Hazard => {
+                            hit_death = true;
+                        }
+                        BlockCollision::Solid => {
+                            hit_death = true;
+                        }
+                        BlockCollision::PassThrough => {}
                     }
-                    BlockCollision::Hazard => {
-                        hit_death = true;
-                    }
-                    BlockCollision::Solid => {
-                        hit_death = true;
-                    }
-                    BlockCollision::PassThrough => {}
                 }
             }
         }
@@ -262,47 +351,82 @@ impl GameState {
             return;
         }
 
-        if !hit_portals.is_empty() {
-            let mut removed = false;
-            for i in hit_portals.into_iter().rev() {
+        if !hit_portals.is_empty() || !hit_collectibles.is_empty() {
+            puffin::profile_scope!("GameConsumableOverlap");
+            let mut consumed_indices = Vec::new();
+            let mut consumed_event_indices = Vec::new();
+
+            for i in hit_portals {
                 if let Some(behavior) = self.cached_behaviors.get(i).copied() {
                     self.speed *= behavior.speed_multiplier.max(0.1);
                     if behavior.consumed_on_overlap {
-                        self.objects.remove(i);
-                        self.cached_behaviors.remove(i);
-                        self.consumed_object_indices.push(i);
-                        removed = true;
+                        consumed_indices.push(i);
                     }
                 } else if let Some(portal) = self.objects.get(i) {
                     let behavior = &resolve_block_definition(&portal.block_id).behavior;
                     self.speed *= behavior.speed_multiplier.max(0.1);
                     if behavior.consumed_on_overlap {
-                        self.objects.remove(i);
-                        self.consumed_object_indices.push(i);
-                        removed = true;
+                        consumed_indices.push(i);
                     }
                 }
             }
-            if removed {
+
+            for i in hit_collectibles {
+                if let Some(behavior) = self.cached_behaviors.get(i).copied() {
+                    self.progress.gems_collected = self
+                        .progress
+                        .gems_collected
+                        .saturating_add(behavior.collectible_gem_value())
+                        .min(self.progress.gems_max);
+                    consumed_indices.push(i);
+                    consumed_event_indices.push(i);
+                } else if let Some(object) = self.objects.get(i) {
+                    let behavior = CachedBlockBehavior::from_block_id(&object.block_id);
+                    self.progress.gems_collected = self
+                        .progress
+                        .gems_collected
+                        .saturating_add(behavior.collectible_gem_value())
+                        .min(self.progress.gems_max);
+                    consumed_indices.push(i);
+                    consumed_event_indices.push(i);
+                }
+            }
+
+            consumed_indices.sort_unstable();
+            consumed_indices.dedup();
+            consumed_event_indices.sort_unstable();
+            consumed_event_indices.dedup();
+            for i in consumed_indices.iter().copied().rev() {
+                if i < self.objects.len() {
+                    let object = self.objects.remove(i);
+                    if i < self.cached_behaviors.len() {
+                        self.cached_behaviors.remove(i);
+                    }
+                    self.consumed_object_indices.push(i);
+                    if consumed_event_indices.binary_search(&i).is_ok() {
+                        self.consumed_object_events
+                            .push(ConsumedObjectEvent { object });
+                    }
+                }
+            }
+            if !consumed_indices.is_empty() {
                 self.rebuild_spatial_grid();
             }
-        }
-
-        if let Some(target) = finish_target {
-            self.begin_finish_sequence(target);
-            return;
         }
 
         let was_grounded = self.is_grounded;
         let mut is_grounded = false;
 
-        let support_height = self.top_surface_y_under_aabb(
-            s_min_x,
-            s_max_x,
-            s_min_z,
-            s_max_z,
-            self.position[1] + SNAP_DISTANCE,
-        );
+        let support_height = {
+            puffin::profile_scope!("GameSupportScan");
+            self.top_surface_y_under_aabb(
+                s_min_x,
+                s_max_x,
+                s_min_z,
+                s_max_z,
+                self.position[1] + SNAP_DISTANCE,
+            )
+        };
 
         if let Some(top) = support_height {
             let close_enough =
@@ -313,12 +437,12 @@ impl GameState {
                 is_grounded = true;
             } else {
                 self.vertical_velocity =
-                    (self.vertical_velocity - GRAVITY * dt).max(-MAX_FALL_SPEED);
-                self.position[1] += self.vertical_velocity * dt;
+                    (self.vertical_velocity - GRAVITY * step).max(-MAX_FALL_SPEED);
+                self.position[1] += self.vertical_velocity * step;
             }
         } else {
-            self.vertical_velocity = (self.vertical_velocity - GRAVITY * dt).max(-MAX_FALL_SPEED);
-            self.position[1] += self.vertical_velocity * dt;
+            self.vertical_velocity = (self.vertical_velocity - GRAVITY * step).max(-MAX_FALL_SPEED);
+            self.position[1] += self.vertical_velocity * step;
         }
 
         if was_grounded && !is_grounded {
@@ -332,6 +456,10 @@ impl GameState {
         if self.position[1] < DEATH_Y {
             self.game_over = true;
         }
+
+        if self.elapsed_seconds >= self.level_duration_seconds {
+            self.complete_level();
+        }
     }
 
     pub(crate) fn has_animated_blocks(&self) -> bool {
@@ -342,40 +470,33 @@ impl GameState {
         std::mem::take(&mut self.consumed_object_indices)
     }
 
-    fn begin_finish_sequence(&mut self, target: [f32; 3]) {
-        self.finishing = true;
-        self.finish_target = target;
-        self.finish_sink_velocity = -1.8;
-        self.vertical_velocity = 0.0;
-        self.is_grounded = false;
-        self.push_to_active_trail(self.position);
+    pub(crate) fn take_consumed_object_events(&mut self) -> Vec<ConsumedObjectEvent> {
+        std::mem::take(&mut self.consumed_object_events)
     }
 
-    fn update_finish_sequence(&mut self, dt: f32) {
-        const HORIZONTAL_PULL: f32 = 8.5;
-        const DOWN_ACCEL: f32 = 30.0;
-        const MAX_SINK_SPEED: f32 = 20.0;
+    fn remaining_level_time(&self) -> f32 {
+        if self.level_duration_seconds.is_finite() {
+            (self.level_duration_seconds - self.elapsed_seconds).max(0.0)
+        } else {
+            f32::INFINITY
+        }
+    }
 
-        let step = dt.max(0.0);
-        let pull = (HORIZONTAL_PULL * step).clamp(0.0, 1.0);
+    fn complete_level(&mut self) {
+        self.level_complete = true;
+        self.completion_hold_seconds = 0.6;
+        self.started = false;
+        self.update_progress_percent(true);
+    }
 
-        self.position[0] += (self.finish_target[0] - self.position[0]) * pull;
-        self.position[2] += (self.finish_target[2] - self.position[2]) * pull;
-
-        self.finish_sink_velocity =
-            (self.finish_sink_velocity - DOWN_ACCEL * step).max(-MAX_SINK_SPEED);
-        self.position[1] += self.finish_sink_velocity * step;
-
-        let dx = self.finish_target[0] - self.position[0];
-        let dz = self.finish_target[2] - self.position[2];
-        let distance_xz_sq = dx * dx + dz * dz;
-        let sink_goal_y = self.finish_target[1] - 1.0;
-
-        if distance_xz_sq <= 0.0064 && self.position[1] <= sink_goal_y {
-            self.finishing = false;
-            self.level_complete = true;
-            self.completion_hold_seconds = 0.6;
-            self.started = false;
+    fn update_progress_percent(&mut self, completed: bool) {
+        if self.level_duration_seconds.is_finite() && self.level_duration_seconds > 0.0 {
+            self.progress.progress_percent =
+                (self.elapsed_seconds / self.level_duration_seconds * 100.0).clamp(0.0, 100.0);
+        }
+        if completed {
+            self.progress.progress_percent = 100.0;
+            self.progress.completed = true;
         }
     }
 

@@ -7,12 +7,16 @@
 */
 use crate::types::LevelObject;
 
-pub(crate) fn create_block_at_cursor(cursor: [f32; 3], block_id: &str) -> LevelObject {
+pub(crate) fn create_block_at_cursor(
+    cursor: [f32; 3],
+    block_id: &str,
+    default_size: [f32; 3],
+    rotation_degrees: [f32; 3],
+) -> LevelObject {
     LevelObject {
         position: cursor,
-        size: [1.0, 1.0, 1.0],
-        rotation_degrees: [0.0, 0.0, 0.0],
-        roundness: 0.18,
+        size: default_size,
+        rotation_degrees,
         block_id: block_id.to_string(),
         color_tint: [1.0, 1.0, 1.0],
     }

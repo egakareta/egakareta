@@ -22,6 +22,10 @@ pub(crate) fn show_mode_and_snap_controls(
                 mode == EditorMode::Select,
                 format!("{} Select", egui_phosphor::regular::CURSOR_CLICK),
             )
+            .on_hover_text(format!(
+                "Select{}",
+                view.app_settings.hotkey_hint("mode_select")
+            ))
             .clicked()
         {
             commands.push(AppCommand::EditorSetMode(EditorMode::Select));
@@ -31,6 +35,10 @@ pub(crate) fn show_mode_and_snap_controls(
                 mode == EditorMode::Move,
                 format!("{} Move", egui_phosphor::regular::ARROWS_OUT),
             )
+            .on_hover_text(format!(
+                "Move{}",
+                view.app_settings.hotkey_hint("mode_move")
+            ))
             .clicked()
         {
             commands.push(AppCommand::EditorSetMode(EditorMode::Move));
@@ -40,6 +48,10 @@ pub(crate) fn show_mode_and_snap_controls(
                 mode == EditorMode::Scale,
                 format!("{} Scale", egui_phosphor::regular::CORNERS_OUT),
             )
+            .on_hover_text(format!(
+                "Scale{}",
+                view.app_settings.hotkey_hint("mode_scale")
+            ))
             .clicked()
         {
             commands.push(AppCommand::EditorSetMode(EditorMode::Scale));
@@ -49,24 +61,23 @@ pub(crate) fn show_mode_and_snap_controls(
                 mode == EditorMode::Rotate,
                 format!("{} Rotate", egui_phosphor::regular::ARROWS_CLOCKWISE),
             )
+            .on_hover_text(format!(
+                "Rotate{}",
+                view.app_settings.hotkey_hint("mode_rotate")
+            ))
             .clicked()
         {
             commands.push(AppCommand::EditorSetMode(EditorMode::Rotate));
         }
         if ui
             .selectable_label(
-                mode == EditorMode::Place,
-                format!("{} Place", egui_phosphor::regular::CUBE),
-            )
-            .clicked()
-        {
-            commands.push(AppCommand::EditorSetMode(EditorMode::Place));
-        }
-        if ui
-            .selectable_label(
                 mode == EditorMode::Trigger,
                 format!("{} Trigger", egui_phosphor::regular::LIGHTNING),
             )
+            .on_hover_text(format!(
+                "Trigger{}",
+                view.app_settings.hotkey_hint("mode_trigger")
+            ))
             .clicked()
         {
             commands.push(AppCommand::EditorSetMode(EditorMode::Trigger));
@@ -77,7 +88,7 @@ pub(crate) fn show_mode_and_snap_controls(
         if ui
             .checkbox(
                 &mut snap,
-                format!("{} Snap to Grid", egui_phosphor::regular::GRID_FOUR),
+                format!("{} Grid Snap", egui_phosphor::regular::GRID_FOUR),
             )
             .changed()
         {
@@ -99,11 +110,11 @@ pub(crate) fn show_mode_and_snap_controls(
 
         ui.separator();
         let mut snap_rotation = view.snap_rotation;
-        if ui.checkbox(&mut snap_rotation, "Snap Rotation").changed() {
+        if ui.checkbox(&mut snap_rotation, "Rotation Snap").changed() {
             commands.push(AppCommand::EditorSetSnapRotation(snap_rotation));
         }
 
-        ui.label("Rot Step:");
+        ui.label("Step:");
         let mut snap_rotation_step = view.snap_rotation_step_degrees;
         if ui
             .add(
@@ -141,13 +152,6 @@ pub(crate) fn show_player_camera_status_row(ui: &mut egui::Ui, view: &EditorUiVi
             view.camera_preview_target[1],
             view.camera_preview_target[2],
         ));
-        ui.separator();
-        ui.label(format!(
-            "Editor Camera: ({:.1}, {:.1}, {:.1})",
-            view.camera_position[0], view.camera_position[1], view.camera_position[2]
-        ));
-        ui.separator();
-        ui.label(format!("FPS: {:.0}", view.fps));
     });
 }
 
@@ -175,10 +179,13 @@ mod tests {
             available_levels: &[],
             level_name: Some("Shared Test"),
             show_metadata: false,
+            show_place_window: false,
             show_settings: false,
             settings_section: SettingsSection::Backends,
             keybind_capture_action: None,
             music_metadata,
+            creator_metadata: crate::types::LevelCreatorMetadata::default(),
+            sky_color: crate::types::default_sky_color(),
             app_settings,
             configured_graphics_backend: "Auto",
             configured_audio_backend: "Default",
@@ -190,11 +197,13 @@ mod tests {
             snap_rotation: true,
             snap_rotation_step_degrees: 15.0,
             selected_block_id: "core/stone",
+            recent_block_ids: &[],
             selected_block: None,
             playing: false,
             timeline_time_seconds: 1.0,
             timeline_duration_seconds: 16.0,
             tap_times: &[],
+            selected_tap: None,
             timeline_preview_position: [2.0, 1.0, 0.0],
             timeline_preview_direction: preview_direction,
             timing_points,
@@ -204,6 +213,9 @@ mod tests {
             waveform_scroll: 0.0,
             waveform_samples: &[],
             waveform_sample_rate: 0,
+            waveform_window_size: crate::audio_service::WAVEFORM_WINDOW,
+            waveform_loading: false,
+            waveform_complete: false,
             bpm_tap_result: None,
             triggers,
             trigger_selected_index: None,
