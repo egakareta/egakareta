@@ -334,7 +334,9 @@ impl State {
 
         if self.session.game_paused {
             self.session.game_paused = false;
-            self.resume_game_audio();
+            if !self.start_gameplay_if_needed() {
+                self.resume_game_audio();
+            }
         }
     }
 
@@ -1323,6 +1325,22 @@ mod tests {
 
             assert_eq!(state.phase, AppPhase::Playing);
             assert!(!state.is_game_paused());
+        });
+    }
+
+    #[test]
+    fn resume_from_pause_starts_waiting_real_gameplay() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Playing;
+            state.session.playtesting_editor = false;
+            state.session.game_paused = true;
+            state.gameplay.state.started = false;
+
+            state.dispatch(AppCommand::GameResume);
+
+            assert!(!state.is_game_paused());
+            assert!(state.gameplay.state.started);
         });
     }
 
