@@ -359,6 +359,7 @@ impl State {
 
         self.session.practice_mode_enabled = false;
         self.session.practice_checkpoints.clear();
+        self.rebuild_practice_checkpoint_vertices();
         self.restart_level();
     }
 
@@ -380,6 +381,7 @@ impl State {
                 gameplay: self.gameplay.state.checkpoint_state(),
                 trigger_base_objects: self.session.playing_trigger_base_objects.clone(),
             });
+        self.rebuild_practice_checkpoint_vertices();
     }
 
     fn remove_practice_checkpoint(&mut self) {
@@ -392,6 +394,7 @@ impl State {
         }
 
         let _ = self.session.practice_checkpoints.pop();
+        self.rebuild_practice_checkpoint_vertices();
     }
 
     fn quit_game_from_pause(&mut self) {

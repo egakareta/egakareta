@@ -313,6 +313,11 @@ impl State {
                     draw_mesh(&mut render_pass, draw_data);
                 }
 
+                if let Some(draw_data) = self.render.meshes.practice_checkpoints.draw_data() {
+                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    draw_mesh(&mut render_pass, draw_data);
+                }
+
                 if let Some(draw_data) = self.render.meshes.trail.draw_data() {
                     if self.phase == AppPhase::Editor {
                         render_pass.set_pipeline(&self.render.gpu.editor_ghost_trail_pipeline);

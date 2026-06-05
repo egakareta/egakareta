@@ -6,8 +6,10 @@
 
 */
 use crate::mesh::advanced_shapes::{append_cone, append_sphere};
+use crate::mesh::lighting::apply_lighting;
 use crate::mesh::shapes::{append_prism, append_quad};
-use crate::types::{CameraTrigger, CameraTriggerMode, Vertex};
+use crate::mesh::MeshGeometry;
+use crate::types::{CameraTrigger, CameraTriggerMode, Direction, Vertex};
 use glam::{Vec2, Vec3};
 
 const GEM_SHATTER_DURATION_SECONDS: f32 = 0.48;
@@ -18,6 +20,12 @@ pub(crate) struct GemShatterInstance {
     pub(crate) size: [f32; 3],
     pub(crate) color_tint: [f32; 3],
     pub(crate) age_seconds: f32,
+}
+
+pub(crate) struct PracticeCheckpointFlagInstance {
+    pub(crate) position: [f32; 3],
+    pub(crate) direction: Direction,
+    pub(crate) is_latest: bool,
 }
 
 pub(crate) fn gem_shatter_duration_seconds() -> f32 {
@@ -217,6 +225,246 @@ pub(crate) fn build_spawn_marker_vertices(position: [f32; 3], faces_right: bool)
     }
 
     vertices
+}
+
+pub(crate) fn build_practice_checkpoint_flag_geometry(
+    checkpoints: &[PracticeCheckpointFlagInstance],
+) -> MeshGeometry {
+    puffin::profile_scope!("BuildPracticeCheckpointFlags");
+    let mut geometry = MeshGeometry::default();
+
+    for checkpoint in checkpoints {
+        append_practice_checkpoint_flag(&mut geometry, checkpoint);
+    }
+
+    geometry
+}
+
+fn append_practice_checkpoint_flag(
+    geometry: &mut MeshGeometry,
+    checkpoint: &PracticeCheckpointFlagInstance,
+) {
+    let anchor = Vec3::from_array(checkpoint.position);
+    let forward = match checkpoint.direction {
+        Direction::Forward => Vec3::Z,
+        Direction::Right => Vec3::X,
+    };
+    let normal = Vec3::Y.cross(forward).normalize_or_zero();
+    let pole_base = anchor + Vec3::Y * 0.05;
+    let pole_top = pole_base + Vec3::Y * 2.15;
+    let pole_color = [0.92, 0.83, 0.58, 1.0];
+    let pole_shadow = [0.46, 0.35, 0.18, 1.0];
+    let flag_top = if checkpoint.is_latest {
+        [1.0, 0.87, 0.24, 1.0]
+    } else {
+        [0.25, 0.78, 1.0, 0.92]
+    };
+    let flag_bottom = if checkpoint.is_latest {
+        [1.0, 0.3, 0.42, 1.0]
+    } else {
+        [0.24, 0.42, 1.0, 0.78]
+    };
+
+    append_cylinder_geometry(geometry, pole_base, pole_top, 0.045, 10, pole_color);
+    append_cylinder_geometry(
+        geometry,
+        pole_base - Vec3::Y * 0.035,
+        pole_base + Vec3::Y * 0.045,
+        0.18,
+        12,
+        pole_shadow,
+    );
+    append_diamond_geometry(
+        geometry,
+        pole_top + Vec3::Y * 0.08,
+        Vec3::new(0.13, 0.16, 0.13),
+        flag_top,
+    );
+    append_flag_cloth_geometry(
+        geometry,
+        pole_top - Vec3::Y * 0.28,
+        forward,
+        normal,
+        flag_top,
+        flag_bottom,
+    );
+}
+
+fn append_cylinder_geometry(
+    geometry: &mut MeshGeometry,
+    start: Vec3,
+    end: Vec3,
+    radius: f32,
+    segments: usize,
+    color: [f32; 4],
+) {
+    let axis = end - start;
+    let height = axis.length();
+    if height <= f32::EPSILON || segments < 3 {
+        return;
+    }
+
+    let axis_normal = axis / height;
+    let tangent_seed = if axis_normal.x.abs() < 0.9 {
+        Vec3::X
+    } else {
+        Vec3::Z
+    };
+    let tangent = axis_normal.cross(tangent_seed).normalize_or_zero();
+    let bitangent = axis_normal.cross(tangent).normalize_or_zero();
+    let mut vertices = Vec::with_capacity(segments * 2 + 2);
+    let mut indices = Vec::with_capacity(segments * 12);
+
+    for segment_index in 0..segments {
+        let angle = segment_index as f32 * std::f32::consts::TAU / segments as f32;
+        let (angle_sin, angle_cos) = angle.sin_cos();
+        let radial = tangent * angle_cos + bitangent * angle_sin;
+        let shaded = apply_lighting(color, radial.to_array());
+        vertices.push(Vertex::untextured(
+            (start + radial * radius).to_array(),
+            shaded,
+        ));
+        vertices.push(Vertex::untextured(
+            (end + radial * radius).to_array(),
+            shaded,
+        ));
+    }
+
+    let bottom_center_index = vertices.len() as u32;
+    vertices.push(Vertex::untextured(
+        start.to_array(),
+        apply_lighting(color, (-axis_normal).to_array()),
+    ));
+    let top_center_index = vertices.len() as u32;
+    vertices.push(Vertex::untextured(
+        end.to_array(),
+        apply_lighting(color, axis_normal.to_array()),
+    ));
+
+    for segment_index in 0..segments {
+        let next_segment = (segment_index + 1) % segments;
+        let bottom_current = (segment_index * 2) as u32;
+        let top_current = bottom_current + 1;
+        let bottom_next = (next_segment * 2) as u32;
+        let top_next = bottom_next + 1;
+        indices.extend_from_slice(&[
+            bottom_current,
+            bottom_next,
+            top_next,
+            bottom_current,
+            top_next,
+            top_current,
+            bottom_center_index,
+            bottom_current,
+            bottom_next,
+            top_center_index,
+            top_next,
+            top_current,
+        ]);
+    }
+
+    geometry.append_indexed(vertices, &indices);
+}
+
+fn append_diamond_geometry(
+    geometry: &mut MeshGeometry,
+    center: Vec3,
+    radius: Vec3,
+    color: [f32; 4],
+) {
+    let top = center + Vec3::Y * radius.y;
+    let bottom = center - Vec3::Y * radius.y;
+    let points = [
+        center + Vec3::X * radius.x,
+        center + Vec3::Z * radius.z,
+        center - Vec3::X * radius.x,
+        center - Vec3::Z * radius.z,
+    ];
+    let mut vertices = Vec::with_capacity(6);
+    vertices.push(Vertex::untextured(top.to_array(), color));
+    vertices.push(Vertex::untextured(
+        bottom.to_array(),
+        apply_lighting(color, [0.0, -1.0, 0.0]),
+    ));
+    for point in points {
+        let normal = (point - center).normalize_or_zero();
+        vertices.push(Vertex::untextured(
+            point.to_array(),
+            apply_lighting(color, normal.to_array()),
+        ));
+    }
+
+    geometry.append_indexed(
+        vertices,
+        &[
+            0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 2, 1, 3, 2, 1, 4, 3, 1, 5, 4, 1, 2, 5,
+        ],
+    );
+}
+
+fn append_flag_cloth_geometry(
+    geometry: &mut MeshGeometry,
+    top_anchor: Vec3,
+    forward: Vec3,
+    normal: Vec3,
+    top_color: [f32; 4],
+    bottom_color: [f32; 4],
+) {
+    const COLUMNS: usize = 4;
+    const ROWS: usize = 3;
+    let width = 1.15;
+    let height = 0.78;
+    let mut vertices = Vec::with_capacity((COLUMNS + 1) * (ROWS + 1));
+    let mut indices = Vec::with_capacity(COLUMNS * ROWS * 12);
+
+    for row_index in 0..=ROWS {
+        let row_progress = row_index as f32 / ROWS as f32;
+        let row_color = [
+            top_color[0] + (bottom_color[0] - top_color[0]) * row_progress,
+            top_color[1] + (bottom_color[1] - top_color[1]) * row_progress,
+            top_color[2] + (bottom_color[2] - top_color[2]) * row_progress,
+            top_color[3] + (bottom_color[3] - top_color[3]) * row_progress,
+        ];
+        for column_index in 0..=COLUMNS {
+            let column_progress = column_index as f32 / COLUMNS as f32;
+            let ripple = (column_progress * std::f32::consts::TAU * 1.25).sin() * 0.07;
+            let sag = row_progress * column_progress * 0.12;
+            let point = top_anchor + forward * (0.08 + width * column_progress)
+                - Vec3::Y * (height * row_progress + sag)
+                + normal * ripple;
+            let lit_color = apply_lighting(
+                row_color,
+                (normal + Vec3::Y * 0.18).normalize_or_zero().to_array(),
+            );
+            vertices.push(Vertex::untextured(point.to_array(), lit_color));
+        }
+    }
+
+    let row_stride = COLUMNS + 1;
+    for row_index in 0..ROWS {
+        for column_index in 0..COLUMNS {
+            let top_left = (row_index * row_stride + column_index) as u32;
+            let top_right = top_left + 1;
+            let bottom_left = ((row_index + 1) * row_stride + column_index) as u32;
+            let bottom_right = bottom_left + 1;
+            indices.extend_from_slice(&[
+                top_left,
+                bottom_left,
+                top_right,
+                top_right,
+                bottom_left,
+                bottom_right,
+                top_right,
+                bottom_left,
+                top_left,
+                bottom_right,
+                bottom_left,
+                top_right,
+            ]);
+        }
+    }
+
+    geometry.append_indexed(vertices, &indices);
 }
 
 pub(crate) fn build_colored_tap_indicator_vertices(
@@ -443,11 +691,12 @@ pub(crate) fn build_camera_trigger_marker_vertices(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_gem_shatter_vertices, build_tap_division_preview_vertices,
-        build_tap_division_tap_marker_vertices, build_trail_vertices,
-        build_trail_vertices_with_alpha, gem_shatter_duration_seconds, GemShatterInstance,
+        build_gem_shatter_vertices, build_practice_checkpoint_flag_geometry,
+        build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices,
+        build_trail_vertices, build_trail_vertices_with_alpha, gem_shatter_duration_seconds,
+        GemShatterInstance, PracticeCheckpointFlagInstance,
     };
-    use crate::types::Vertex;
+    use crate::types::{Direction, Vertex};
 
     const PRISM_VERTEX_COUNT: usize = 36;
 
@@ -499,6 +748,34 @@ mod tests {
         assert_eq!(fading.len(), fresh.len());
         assert!(fresh.iter().all(|vertex| vertex.color[3] > 0.8));
         assert!(fading.iter().all(|vertex| vertex.color[3] < 0.3));
+    }
+
+    #[test]
+    fn practice_checkpoint_flags_use_compact_indexed_geometry() {
+        let geometry = build_practice_checkpoint_flag_geometry(&[
+            PracticeCheckpointFlagInstance {
+                position: [2.0, 1.0, 3.0],
+                direction: Direction::Forward,
+                is_latest: false,
+            },
+            PracticeCheckpointFlagInstance {
+                position: [5.0, 2.0, 6.0],
+                direction: Direction::Right,
+                is_latest: true,
+            },
+        ]);
+
+        assert!(!geometry.vertices.is_empty());
+        assert!(geometry
+            .indices
+            .as_ref()
+            .is_some_and(|indices| !indices.is_empty()));
+        assert!(geometry.vertex_count() < 160);
+        assert!(geometry.draw_count() < 900);
+        assert!(geometry
+            .vertices
+            .iter()
+            .any(|vertex| vertex.position[1] > 4.0 && vertex.color[0] > 0.8));
     }
 
     #[test]

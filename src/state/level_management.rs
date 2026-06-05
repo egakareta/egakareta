@@ -61,6 +61,7 @@ impl State {
         self.session.game_paused = false;
         self.session.practice_mode_enabled = false;
         self.session.practice_checkpoints.clear();
+        self.rebuild_practice_checkpoint_vertices();
         self.stop_audio();
         self.clear_pending_gameplay_inputs();
         self.gameplay.state = GameState::new();
@@ -1256,6 +1257,34 @@ mod tests {
             assert!(state.respawn_from_practice_checkpoint());
             assert_eq!(state.gameplay.state.position, [2.0, 2.0, 2.0]);
             assert_eq!(state.gameplay.state.elapsed_seconds, 2.0);
+        });
+    }
+
+    #[test]
+    fn practice_checkpoint_commands_sync_flag_mesh() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Playing;
+            state.session.playtesting_editor = false;
+            state.session.practice_mode_enabled = true;
+            state.gameplay.state.started = true;
+
+            state.gameplay.state.position = [2.0, 1.0, 2.0];
+            state.dispatch(crate::commands::AppCommand::GameSetPracticeCheckpoint);
+            assert!(state
+                .render
+                .meshes
+                .practice_checkpoints
+                .draw_data()
+                .is_some());
+
+            state.dispatch(crate::commands::AppCommand::GameRemovePracticeCheckpoint);
+            assert!(state
+                .render
+                .meshes
+                .practice_checkpoints
+                .draw_data()
+                .is_none());
         });
     }
 

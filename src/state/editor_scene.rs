@@ -17,8 +17,9 @@ use crate::mesh::{
     build_camera_trigger_marker_vertices, build_colored_tap_indicator_vertices,
     build_editor_cursor_vertices, build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
     build_editor_selection_outline_vertices, build_editor_tap_cursor_vertices,
-    build_spawn_marker_vertices, build_tap_division_preview_vertices,
-    build_tap_division_tap_marker_vertices, GizmoParams, MeshGeometry,
+    build_practice_checkpoint_flag_geometry, build_spawn_marker_vertices,
+    build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices, GizmoParams,
+    MeshGeometry, PracticeCheckpointFlagInstance,
 };
 use crate::state::render::EditorOutlineInstance;
 use crate::types::{
@@ -737,6 +738,39 @@ impl State {
             self.editor.block_static_vertex_cache.clear();
             self.editor.block_static_vertex_cache_complete_len = None;
         }
+    }
+
+    pub(super) fn rebuild_practice_checkpoint_vertices(&mut self) {
+        if self.phase != AppPhase::Playing
+            || self.session.playtesting_editor
+            || !self.session.practice_mode_enabled
+            || self.session.practice_checkpoints.is_empty()
+        {
+            self.render.meshes.practice_checkpoints.clear();
+            return;
+        }
+
+        let latest_index = self.session.practice_checkpoints.len().saturating_sub(1);
+        let flags = self
+            .session
+            .practice_checkpoints
+            .iter()
+            .enumerate()
+            .map(|(index, checkpoint)| PracticeCheckpointFlagInstance {
+                position: checkpoint.gameplay.position,
+                direction: checkpoint.gameplay.direction,
+                is_latest: index == latest_index,
+            })
+            .collect::<Vec<_>>();
+        let geometry = build_practice_checkpoint_flag_geometry(&flags);
+        self.render
+            .meshes
+            .practice_checkpoints
+            .replace_with_geometry(
+                &self.render.gpu.device,
+                "Practice Checkpoint Flag Vertex Buffer",
+                &geometry,
+            );
     }
 
     fn rebuild_editor_block_vertices_split(&mut self) {

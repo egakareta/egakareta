@@ -420,6 +420,7 @@ pub(crate) struct SceneMeshes {
     pub(crate) grid: MeshSlot,
     pub(crate) trail: MeshSlot,
     pub(crate) gem_shatter_effects: MeshSlot,
+    pub(crate) practice_checkpoints: MeshSlot,
     pub(crate) blocks: MeshSlot,
     pub(crate) blocks_static: MeshSlot,
     pub(crate) blocks_selected: MeshSlot,
@@ -443,6 +444,7 @@ impl SceneMeshes {
         self.grid.destroy();
         self.trail.destroy();
         self.gem_shatter_effects.destroy();
+        self.practice_checkpoints.destroy();
         self.blocks.destroy();
         self.blocks_static.destroy();
         self.blocks_selected.destroy();
