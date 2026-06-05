@@ -22,7 +22,7 @@
         "prepare": "lefthook install"
     },
     "dependencies": {
-        "@supabase/supabase-js": "^2.106.2"
+        "@supabase/supabase-js": "^2.107.0"
     },
     "devDependencies": {
         "@cloudflare/vitest-pool-workers": "^0.16.10",
