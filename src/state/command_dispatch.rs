@@ -1481,7 +1481,7 @@ mod tests {
     }
 
     #[test]
-    fn placing_block_selects_it_and_enters_move_mode_by_default() {
+    fn placing_block_selects_it_and_enters_scale_mode_by_default() {
         pollster::block_on(async {
             let mut state = new_editor_state().await;
 
@@ -1491,7 +1491,7 @@ mod tests {
             state.dispatch(AppCommand::TurnRight);
 
             assert_eq!(state.editor.objects.len(), 1);
-            assert_eq!(state.editor.ui.mode, EditorMode::Move);
+            assert_eq!(state.editor.ui.mode, EditorMode::Scale);
             assert_eq!(state.editor.ui.selected_block_index, Some(0));
             assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
             assert_eq!(state.editor.ui.hovered_block_index, Some(0));

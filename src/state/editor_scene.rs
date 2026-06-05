@@ -310,7 +310,7 @@ impl State {
         };
         self.editor.add_block_at_cursor(place_mode);
         if place_mode == EditorPlaceMode::SelectPlaced {
-            self.set_editor_mode(EditorMode::Move);
+            self.set_editor_mode(EditorMode::Scale);
         }
         self.rebuild_editor_cursor_vertices();
     }
