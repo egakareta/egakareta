@@ -189,6 +189,7 @@ impl State {
         self.editor.spawn = init.spawn;
         self.session.editor_music_metadata = init.music;
         self.session.editor_creator_metadata = init.creator_metadata;
+        self.session.editor_sky_color = init.sky_color;
         self.editor.timeline.taps.tap_times = init.tap_times;
         self.editor.timing.timing_points = init.timing_points;
         self.editor.timing.mark_timing_points_changed();
@@ -439,6 +440,7 @@ impl State {
         let (position, target) = menu_preview_camera_for_metadata(&metadata);
         self.gameplay.state.objects = metadata.objects;
         self.gameplay.state.rebuild_behavior_cache();
+        self.menu.state.preview_sky_color = metadata.sky_color;
         self.menu.state.preview_camera_position = position;
         self.menu.state.preview_camera_target = target;
         self.rebuild_block_vertices();
@@ -447,6 +449,7 @@ impl State {
     fn reset_menu_preview_to_default_scene(&mut self) {
         self.gameplay.state.objects = crate::game::create_menu_scene();
         self.gameplay.state.rebuild_behavior_cache();
+        self.menu.state.preview_sky_color = crate::types::default_sky_color();
         self.menu.state.preview_camera_position = DEFAULT_MENU_PREVIEW_CAMERA_POSITION;
         self.menu.state.preview_camera_target = DEFAULT_MENU_PREVIEW_CAMERA_TARGET;
         self.rebuild_block_vertices();
@@ -1003,6 +1006,7 @@ mod tests {
                 .unwrap_or_else(|| auto_menu_preview_camera_from_spawn(&metadata.spawn));
             assert_eq!(state.menu.state.preview_camera_position, expected_camera.0);
             assert_eq!(state.menu.state.preview_camera_target, expected_camera.1);
+            assert_eq!(state.menu.state.preview_sky_color, metadata.sky_color);
 
             state.refresh_menu_level_preview_if_needed();
             assert_eq!(state.menu.state.preview_level_index, Some(0));
@@ -1036,6 +1040,10 @@ mod tests {
                 DEFAULT_MENU_PREVIEW_CAMERA_TARGET
             );
             assert_eq!(
+                state.menu.state.preview_sky_color,
+                crate::types::default_sky_color()
+            );
+            assert_eq!(
                 state.gameplay.state.objects,
                 crate::game::create_menu_scene()
             );
@@ -1058,6 +1066,10 @@ mod tests {
             assert_eq!(
                 state.menu.state.preview_camera_target,
                 DEFAULT_MENU_PREVIEW_CAMERA_TARGET
+            );
+            assert_eq!(
+                state.menu.state.preview_sky_color,
+                crate::types::default_sky_color()
             );
         });
     }
@@ -1351,11 +1363,15 @@ mod tests {
         pollster::block_on(async {
             let mut state = State::new_test().await;
             let expected_level_name = state.menu.state.levels[0].clone();
+            let expected_metadata = state
+                .load_level_metadata(&expected_level_name)
+                .expect("selected level metadata should exist");
 
             state.start_editor(0);
 
             assert_eq!(state.phase, AppPhase::Editor);
             assert_eq!(state.editor_level_name(), Some(expected_level_name));
+            assert_eq!(state.editor_sky_color(), expected_metadata.sky_color);
             assert!(state.editor.timeline.clock.duration_seconds > 0.0);
             assert!(!state.editor.objects.is_empty());
             assert_eq!(

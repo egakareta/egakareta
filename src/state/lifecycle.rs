@@ -384,6 +384,7 @@ impl State {
             selected_level: 0,
             levels: builtin_level_names(),
             preview_level_index: None,
+            preview_sky_color: crate::types::default_sky_color(),
             preview_camera_position: DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
             preview_camera_target: DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
         };
@@ -1159,6 +1160,7 @@ impl State {
             selected_level: 0,
             levels: builtin_level_names(),
             preview_level_index: None,
+            preview_sky_color: crate::types::default_sky_color(),
             preview_camera_position: DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
             preview_camera_target: DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
         };

@@ -39,7 +39,7 @@ fn clear_color_for_phase(phase: AppPhase, game_over: bool, sky_color: [f32; 3]) 
             b: 0.05,
             a: 1.0,
         },
-        AppPhase::Editor | AppPhase::Playing => color_from_rgb(sky_color),
+        AppPhase::Menu | AppPhase::Editor | AppPhase::Playing => color_from_rgb(sky_color),
         _ => wgpu::Color {
             r: 0.05,
             g: 0.05,
@@ -242,6 +242,7 @@ impl State {
         let skip_world = should_skip_world(self.phase, editor_mode);
         let draw_editor_overlays = should_draw_editor_overlays(self.phase, skip_world);
         let sky_color = match self.phase {
+            AppPhase::Menu => self.menu.state.preview_sky_color,
             AppPhase::Editor => self.session.editor_sky_color,
             AppPhase::Playing => self.session.playing_sky_color,
             _ => default_sky_color(),
@@ -860,9 +861,9 @@ mod tests {
         assert_color_approx(
             clear_color_for_phase(AppPhase::Menu, false, crate::types::default_sky_color()),
             Color {
-                r: 0.05,
-                g: 0.05,
-                b: 0.08,
+                r: 0.04,
+                g: 0.07,
+                b: 0.09,
                 a: 1.0,
             },
         );
@@ -879,9 +880,18 @@ mod tests {
     }
 
     #[test]
-    fn clear_color_for_phase_uses_custom_sky_for_editor_and_playing() {
+    fn clear_color_for_phase_uses_custom_sky_for_menu_editor_and_playing() {
         let sky_color = [0.2, 0.4, 0.8];
 
+        assert_color_approx(
+            clear_color_for_phase(AppPhase::Menu, false, sky_color),
+            Color {
+                r: 0.2,
+                g: 0.4,
+                b: 0.8,
+                a: 1.0,
+            },
+        );
         assert_color_approx(
             clear_color_for_phase(AppPhase::Editor, false, sky_color),
             Color {

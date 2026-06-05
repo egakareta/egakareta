@@ -2083,6 +2083,7 @@ pub(crate) struct MenuState {
     pub(crate) selected_level: usize,
     pub(crate) levels: Vec<String>,
     pub(crate) preview_level_index: Option<usize>,
+    pub(crate) preview_sky_color: [f32; 3],
     pub(crate) preview_camera_position: [f32; 3],
     pub(crate) preview_camera_target: [f32; 3],
 }
