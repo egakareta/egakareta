@@ -13,7 +13,7 @@ mod tests {
         build_editor_selection_outline_vertices, GizmoParams,
     };
     use crate::mesh::egmesh::resolve_egmesh;
-    use crate::mesh::obj::parse_obj_mesh;
+    use crate::mesh::obj::{append_obj_mesh, parse_obj_mesh, parse_obj_mesh_with_materials};
     use crate::types::{GizmoPart, LevelObject, Vertex};
 
     fn bounds_xz(vertices: &[[f32; 3]]) -> (f32, f32, f32, f32) {
@@ -288,6 +288,46 @@ f 1/1/1 2/2/1 3/3/1
         assert_eq!(mesh.faces.len(), 1);
         assert_eq!(mesh.faces[0][0].texcoord_index, Some(0));
         assert_eq!(mesh.faces[0][0].normal_index, Some(0));
+    }
+
+    #[test]
+    fn obj_parser_applies_mtl_materials_to_faces() {
+        let obj = r#"
+mtllib flag.mtl
+v 0 0 0
+v 1 0 0
+v 0 1 0
+usemtl cloth
+f 1 2 3
+"#;
+        let mtl = r#"
+newmtl cloth
+Kd 0.4 0.8 0.5
+d 0.5
+"#;
+
+        let mesh = parse_obj_mesh_with_materials(obj, &[("flag.mtl", mtl)]).expect("valid mesh");
+
+        assert_eq!(mesh.materials.len(), 1);
+        assert_eq!(mesh.materials[0].diffuse, [0.4, 0.8, 0.5, 0.5]);
+        assert_eq!(mesh.faces[0][0].material_index, Some(0));
+
+        let mut vertices = Vec::new();
+        append_obj_mesh(
+            &mut vertices,
+            &LevelObject::default(),
+            &mesh,
+            [0.5, 0.25, 1.0, 0.8],
+            0,
+        );
+
+        assert!(!vertices.is_empty());
+        for vertex in vertices {
+            assert!((vertex.color[0] - 0.2).abs() <= 1e-6);
+            assert!((vertex.color[1] - 0.2).abs() <= 1e-6);
+            assert!((vertex.color[2] - 0.5).abs() <= 1e-6);
+            assert!((vertex.color[3] - 0.4).abs() <= 1e-6);
+        }
     }
 
     #[test]
