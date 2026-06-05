@@ -829,6 +829,7 @@ dependencies = [
  "js-sys",
  "log",
  "naga",
+ "parking_lot_core",
  "pollster",
  "puffin",
  "puffin_egui",
