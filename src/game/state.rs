@@ -57,6 +57,18 @@ pub(crate) struct ConsumedObjectEvent {
     pub(crate) object: LevelObject,
 }
 
+#[derive(Clone)]
+pub(crate) struct GameCheckpointState {
+    pub(crate) position: [f32; 3],
+    pub(crate) direction: Direction,
+    pub(crate) elapsed_seconds: f32,
+    pub(crate) speed: f32,
+    pub(crate) objects: Vec<LevelObject>,
+    pub(crate) vertical_velocity: f32,
+    pub(crate) is_grounded: bool,
+    progress: PlayerLevelProgress,
+}
+
 pub(crate) struct GameState {
     pub(crate) position: [f32; 3],
     pub(crate) direction: Direction,
@@ -192,6 +204,38 @@ impl GameState {
 
     pub(crate) fn apply_spawn_exact(&mut self, position: [f32; 3], direction: SpawnDirection) {
         self.apply_spawn_internal(position, direction, false);
+    }
+
+    pub(crate) fn checkpoint_state(&self) -> GameCheckpointState {
+        GameCheckpointState {
+            position: self.position,
+            direction: self.direction,
+            elapsed_seconds: self.elapsed_seconds,
+            speed: self.speed,
+            objects: self.objects.clone(),
+            vertical_velocity: self.vertical_velocity,
+            is_grounded: self.is_grounded,
+            progress: self.progress,
+        }
+    }
+
+    pub(crate) fn restore_checkpoint_state(&mut self, checkpoint: &GameCheckpointState) {
+        self.position = checkpoint.position;
+        self.direction = checkpoint.direction;
+        self.elapsed_seconds = checkpoint.elapsed_seconds.max(0.0);
+        self.speed = checkpoint.speed.max(0.1);
+        self.objects = checkpoint.objects.clone();
+        self.rebuild_behavior_cache();
+        self.vertical_velocity = checkpoint.vertical_velocity;
+        self.is_grounded = checkpoint.is_grounded;
+        self.game_over = false;
+        self.level_complete = false;
+        self.completion_hold_seconds = 0.0;
+        self.started = false;
+        self.progress = checkpoint.progress;
+        self.consumed_object_indices.clear();
+        self.consumed_object_events.clear();
+        self.trail_segments = vec![vec![checkpoint.position]];
     }
 
     pub(crate) fn turn_right(&mut self) {

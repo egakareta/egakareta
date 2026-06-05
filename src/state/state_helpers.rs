@@ -180,6 +180,8 @@ impl State {
         self.session.playtest_audio_start_seconds = None;
         self.session.playing_trigger_hitboxes = false;
         self.session.playing_trigger_base_objects = None;
+        self.session.practice_mode_enabled = false;
+        self.session.practice_checkpoint = None;
         self.clear_pending_gameplay_inputs();
         self.reset_playing_camera_defaults();
         self.clear_editor_pan_keys();
@@ -195,6 +197,8 @@ impl State {
         self.session.playtest_audio_start_seconds = None;
         self.session.playing_trigger_hitboxes = false;
         self.session.playing_trigger_base_objects = None;
+        self.session.practice_mode_enabled = false;
+        self.session.practice_checkpoint = None;
         self.clear_pending_gameplay_inputs();
         self.session.editor_menu_preview_camera = None;
         self.editor.ui.right_dragging = false;
@@ -225,6 +229,8 @@ impl State {
         self.session.playtest_audio_start_seconds = None;
         self.session.playing_trigger_hitboxes = false;
         self.session.playing_trigger_base_objects = None;
+        self.session.practice_mode_enabled = false;
+        self.session.practice_checkpoint = None;
         self.clear_pending_gameplay_inputs();
         self.session.editor_level_name = None;
         self.session.editor_creator_metadata = crate::types::LevelCreatorMetadata::default();

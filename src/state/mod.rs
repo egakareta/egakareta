@@ -55,7 +55,7 @@ pub(crate) use render::RenderSubsystem;
 pub(crate) use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
 pub(crate) use view_model::EditorUiViewModel;
 
-use crate::game::GameState;
+use crate::game::{GameCheckpointState, GameState};
 use crate::mesh::MeshGeometry;
 use crate::platform::services::AuthServiceMessage;
 #[cfg(not(target_arch = "wasm32"))]
@@ -115,6 +115,14 @@ pub(crate) struct SessionSubsystem {
     pub(crate) playtest_audio_start_seconds: Option<f32>,
     pub(crate) playing_trigger_hitboxes: bool,
     pub(crate) playing_trigger_base_objects: Option<Vec<LevelObject>>,
+    pub(crate) practice_mode_enabled: bool,
+    pub(crate) practice_checkpoint: Option<PracticeCheckpoint>,
+}
+
+#[derive(Clone)]
+pub(crate) struct PracticeCheckpoint {
+    pub(crate) gameplay: GameCheckpointState,
+    pub(crate) trigger_base_objects: Option<Vec<LevelObject>>,
 }
 
 /// Bundles all editor-related state into a single subsystem.
@@ -255,7 +263,12 @@ impl State {
                         self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
                     } else if let Some(level_name) = self.session.playing_level_name.clone() {
                         if let Some(metadata) = self.load_level_metadata(&level_name) {
-                            self.start_audio(&level_name, &metadata);
+                            let start_seconds = self.gameplay.state.elapsed_seconds;
+                            if start_seconds > 0.001 {
+                                self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
+                            } else {
+                                self.start_audio(&level_name, &metadata);
+                            }
                         }
                     }
                 } else if self.gameplay.state.game_over {
@@ -335,6 +348,21 @@ impl State {
         self.phase == AppPhase::Playing
             && !self.session.playtesting_editor
             && self.session.game_paused
+    }
+
+    /// Returns true when real gameplay is currently using practice-mode checkpoints.
+    pub fn is_practice_mode_enabled(&self) -> bool {
+        self.phase == AppPhase::Playing
+            && !self.session.playtesting_editor
+            && self.session.practice_mode_enabled
+    }
+
+    /// Returns the current practice checkpoint time, if one has been placed.
+    pub fn practice_checkpoint_time_seconds(&self) -> Option<f32> {
+        self.session
+            .practice_checkpoint
+            .as_ref()
+            .map(|checkpoint| checkpoint.gameplay.elapsed_seconds)
     }
 
     /// Sets whether the right mouse button is currently being dragged in the editor.

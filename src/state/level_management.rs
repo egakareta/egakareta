@@ -59,6 +59,8 @@ impl State {
 
     pub(super) fn restart_level(&mut self) {
         self.session.game_paused = false;
+        self.session.practice_mode_enabled = false;
+        self.session.practice_checkpoint = None;
         self.stop_audio();
         self.clear_pending_gameplay_inputs();
         self.gameplay.state = GameState::new();
@@ -130,6 +132,39 @@ impl State {
         self.gameplay.state.started = false;
         self.reset_playing_camera_defaults();
         self.rebuild_block_vertices();
+    }
+
+    pub(super) fn respawn_from_practice_checkpoint(&mut self) -> bool {
+        if self.phase != AppPhase::Playing
+            || self.session.playtesting_editor
+            || !self.session.practice_mode_enabled
+        {
+            return false;
+        }
+
+        let Some(checkpoint) = self.session.practice_checkpoint.clone() else {
+            return false;
+        };
+
+        self.stop_audio();
+        self.clear_pending_gameplay_inputs();
+        self.gameplay
+            .state
+            .restore_checkpoint_state(&checkpoint.gameplay);
+        self.session.playing_trigger_base_objects = checkpoint.trigger_base_objects;
+
+        if let Some(level_name) = self.session.playing_level_name.clone() {
+            if let Some(metadata) = self.load_level_metadata(&level_name) {
+                self.warmup_audio_at_seconds(
+                    &level_name,
+                    &metadata,
+                    self.gameplay.state.elapsed_seconds,
+                );
+            }
+        }
+
+        self.rebuild_block_vertices();
+        true
     }
 
     pub(super) fn start_editor(&mut self, index: usize) {
@@ -1140,6 +1175,44 @@ mod tests {
             assert!(!state.gameplay.state.started);
             assert!(state.gameplay.state.elapsed_seconds >= 0.0);
             assert!(!state.gameplay.state.objects.is_empty());
+        });
+    }
+
+    #[test]
+    fn practice_checkpoint_respawns_and_restart_exits_practice_mode() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Playing;
+            state.session.playtesting_editor = false;
+            state.session.practice_mode_enabled = true;
+            state.gameplay.state.objects = vec![test_object([0.0, 0.0, 0.0], "core/stone")];
+            state.gameplay.state.rebuild_behavior_cache();
+            state
+                .gameplay
+                .state
+                .initialize_level_progress_from_objects();
+            state.gameplay.state.started = true;
+            state.gameplay.state.position = [4.0, 2.0, 6.0];
+            state.gameplay.state.elapsed_seconds = 3.5;
+            state.session.practice_checkpoint = Some(super::super::PracticeCheckpoint {
+                gameplay: state.gameplay.state.checkpoint_state(),
+                trigger_base_objects: state.session.playing_trigger_base_objects.clone(),
+            });
+
+            state.gameplay.state.position = [20.0, -8.0, 20.0];
+            state.gameplay.state.elapsed_seconds = 9.0;
+            state.gameplay.state.game_over = true;
+
+            assert!(state.respawn_from_practice_checkpoint());
+            assert_eq!(state.gameplay.state.position, [4.0, 2.0, 6.0]);
+            assert_eq!(state.gameplay.state.elapsed_seconds, 3.5);
+            assert!(!state.gameplay.state.started);
+            assert!(!state.gameplay.state.game_over);
+            assert!(state.session.practice_mode_enabled);
+
+            state.restart_level();
+            assert!(!state.session.practice_mode_enabled);
+            assert!(state.session.practice_checkpoint.is_none());
         });
     }
 

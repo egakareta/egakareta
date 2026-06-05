@@ -771,7 +771,7 @@ impl State {
             return;
         }
 
-        if self.gameplay.state.game_over {
+        if self.gameplay.state.game_over && !self.respawn_from_practice_checkpoint() {
             self.record_current_level_progress();
             self.stop_audio();
             self.clear_pending_gameplay_inputs();

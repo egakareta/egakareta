@@ -519,6 +519,8 @@ impl State {
                 playtest_audio_start_seconds: None,
                 playing_trigger_hitboxes: false,
                 playing_trigger_base_objects: None,
+                practice_mode_enabled: false,
+                practice_checkpoint: None,
             },
             editor: EditorSubsystem {
                 ui: EditorState::new(),
@@ -1324,6 +1326,8 @@ impl State {
                 playtest_audio_start_seconds: None,
                 playing_trigger_hitboxes: false,
                 playing_trigger_base_objects: None,
+                practice_mode_enabled: false,
+                practice_checkpoint: None,
             },
             editor: EditorSubsystem {
                 ui: EditorState::new(),
