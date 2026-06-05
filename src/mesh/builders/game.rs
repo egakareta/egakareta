@@ -17,6 +17,7 @@ use glam::{Vec2, Vec3};
 const GEM_SHATTER_DURATION_SECONDS: f32 = 0.48;
 const GEM_SHATTER_SHARD_COUNT: usize = 14;
 const PRACTICE_CHECKPOINT_FLAG_MESH: &str = "practice_checkpoint_flag.obj";
+const PRACTICE_CHECKPOINT_FLAG_SCALE: f32 = 0.4;
 
 pub(crate) struct GemShatterInstance {
     pub(crate) position: [f32; 3],
@@ -338,7 +339,7 @@ fn transform_practice_checkpoint_flag_position(
         Direction::Forward => local_position,
         Direction::Right => Vec3::new(local_position.z, local_position.y, -local_position.x),
     };
-    anchor + oriented
+    anchor + (oriented * PRACTICE_CHECKPOINT_FLAG_SCALE) + Vec3::new(0.0, 1.0, 0.0)
 }
 
 fn practice_checkpoint_flag_material_color(
@@ -673,10 +674,14 @@ mod tests {
             .is_some_and(|indices| !indices.is_empty()));
         assert!(geometry.vertex_count() < 160);
         assert!(geometry.draw_count() < 900);
-        assert!(geometry
+        let max_latest_flag_y = geometry
             .vertices
             .iter()
-            .any(|vertex| vertex.position[1] > 4.0 && vertex.color[0] > 0.8));
+            .filter(|vertex| vertex.color[0] > 0.8)
+            .map(|vertex| vertex.position[1])
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!(max_latest_flag_y > 3.9);
+        assert!(max_latest_flag_y < 4.1);
     }
 
     #[test]
