@@ -456,6 +456,12 @@ impl State {
             return;
         }
 
+        // Close settings sidebar on Escape when it's open (before any other Escape handling)
+        if key == "Escape" && self.editor_show_settings() {
+            self.dispatch(AppCommand::EditorSetShowSettings(false));
+            return;
+        }
+
         for cmd in self.map_key_to_commands(key, just_pressed, pressed) {
             self.dispatch(cmd);
         }
