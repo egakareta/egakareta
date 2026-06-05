@@ -33,6 +33,10 @@ const MENU_LEVEL_PROGRESS_SHADOW_OFFSET_Y: f32 = 1.5;
 const MENU_LEVEL_PROGRESS_GAP_FROM_TITLE: f32 = 8.0;
 const MENU_LEVEL_PROGRESS_TEXT_GAP: f32 = 10.0;
 const MENU_LEVEL_PROGRESS_GEM_SIZE: f32 = 24.0;
+const PAUSE_MENU_SIDE_BUTTON_SIZE: f32 = 70.0;
+const PAUSE_MENU_PLAY_BUTTON_SIZE: f32 = 90.0;
+const PAUSE_MENU_BUTTON_SPACING: f32 = 14.0;
+const PAUSE_MENU_PRACTICE_GAP: f32 = 10.0;
 
 /// Shows the selected level name in the menu hero position.
 pub fn show_menu_favicon_ui(ctx: &egui::Context, state: &State, _favicon: &egui::TextureHandle) {
@@ -126,49 +130,88 @@ pub fn show_pause_menu_ui(ctx: &egui::Context, state: &mut State) {
     );
 
     let mut commands = Vec::new();
-    egui::Window::new("Paused")
-        .id("pause_menu_window".into())
+    let pause_menu_width = PAUSE_MENU_SIDE_BUTTON_SIZE * 2.0
+        + PAUSE_MENU_PLAY_BUTTON_SIZE
+        + PAUSE_MENU_BUTTON_SPACING * 2.0;
+
+    egui::Area::new("pause_menu_controls".into())
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-        .collapsible(false)
-        .resizable(false)
-        .title_bar(false)
-        .frame(
-            egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::symmetric(24, 20)),
-        )
         .show(ctx, |ui| {
-            ui.set_min_width(260.0);
-            ui.vertical_centered(|ui| {
-                ui.heading("Paused");
-                ui.add_space(12.0);
+            ui.set_width(pause_menu_width);
+            ui.spacing_mut().item_spacing.x = PAUSE_MENU_BUTTON_SPACING;
 
-                if pause_menu_button(ui, egui_phosphor::regular::PLAY, "Resume").clicked() {
-                    commands.push(AppCommand::GameResume);
-                }
-                if pause_menu_button(
-                    ui,
-                    egui_phosphor::regular::ARROW_COUNTER_CLOCKWISE,
-                    "Restart",
-                )
-                .clicked()
-                {
-                    commands.push(AppCommand::GameRestartLevel);
-                }
-                if pause_menu_button(ui, egui_phosphor::regular::HOUSE, "Main Menu").clicked() {
-                    commands.push(AppCommand::GameQuitToMenu);
-                }
+            ui.vertical_centered(|ui| {
+                ui.allocate_ui_with_layout(
+                    egui::vec2(pause_menu_width, PAUSE_MENU_PLAY_BUTTON_SIZE),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        if ui
+                            .add_sized(
+                                egui::vec2(
+                                    PAUSE_MENU_SIDE_BUTTON_SIZE,
+                                    PAUSE_MENU_SIDE_BUTTON_SIZE,
+                                ),
+                                egui::Button::new(
+                                    egui::RichText::new(
+                                        egui_phosphor::regular::ARROW_COUNTER_CLOCKWISE,
+                                    )
+                                    .size(36.0),
+                                ),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            commands.push(AppCommand::GameRestartLevel);
+                        }
+                        if ui
+                            .add_sized(
+                                egui::vec2(
+                                    PAUSE_MENU_PLAY_BUTTON_SIZE,
+                                    PAUSE_MENU_PLAY_BUTTON_SIZE,
+                                ),
+                                egui::Button::new(
+                                    egui::RichText::new(egui_phosphor::regular::PLAY).size(36.0),
+                                ),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            commands.push(AppCommand::GameResume);
+                        }
+                        if ui
+                            .add_sized(
+                                egui::vec2(
+                                    PAUSE_MENU_SIDE_BUTTON_SIZE,
+                                    PAUSE_MENU_SIDE_BUTTON_SIZE,
+                                ),
+                                egui::Button::new(
+                                    egui::RichText::new(egui_phosphor::regular::HOUSE).size(36.0),
+                                ),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            commands.push(AppCommand::GameQuitToMenu);
+                        }
+                    },
+                );
+
+                ui.add_space(PAUSE_MENU_PRACTICE_GAP);
 
                 let mut practice_enabled = state.is_practice_mode_enabled();
-                if ui
-                    .checkbox(
-                        &mut practice_enabled,
-                        format!("{} {}", egui_phosphor::regular::FLAG, "Practice"),
-                    )
-                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .changed()
-                {
-                    commands.push(AppCommand::GameSetPracticeMode(practice_enabled));
-                }
+                ui.horizontal_centered(|ui| {
+                    if ui
+                        .checkbox(
+                            &mut practice_enabled,
+                            format!("{} {}", egui_phosphor::regular::FLAG, "Practice"),
+                        )
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .changed()
+                    {
+                        commands.push(AppCommand::GameSetPracticeMode(practice_enabled));
+                    }
+                });
             });
         });
 
@@ -227,14 +270,6 @@ pub fn show_practice_checkpoint_ui(ctx: &egui::Context, state: &mut State) {
     if remove_checkpoint {
         state.dispatch(AppCommand::GameRemovePracticeCheckpoint);
     }
-}
-
-fn pause_menu_button(ui: &mut egui::Ui, icon: &str, label: &str) -> egui::Response {
-    ui.add_sized(
-        egui::vec2(220.0, 40.0),
-        egui::Button::new(format!("{} {}", icon, label)),
-    )
-    .on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 fn show_menu_level_progress_row(ui: &mut egui::Ui, state: &State) {
