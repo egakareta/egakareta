@@ -10,6 +10,7 @@ use crate::editor_ui::components::show_shadowed_label;
 use crate::State;
 
 const MENU_FAVICON_PNG: &[u8] = include_bytes!("../../assets/darkicon.png");
+const MENU_GEM_ICON_SVG: &str = include_str!("../../assets/gem_icon.svg");
 
 /// Loads the menu favicon texture from embedded PNG data.
 pub fn load_menu_favicon_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
@@ -26,6 +27,12 @@ const MENU_LEVEL_TITLE_MAX_WIDTH_PADDING: f32 = 32.0;
 const MENU_LEVEL_TITLE_FONT_FAMILY: &str = "sora_thin";
 const MENU_LEVEL_TITLE_SHADOW_OFFSET_X: f32 = 3.0;
 const MENU_LEVEL_TITLE_SHADOW_OFFSET_Y: f32 = 3.0;
+const MENU_LEVEL_PROGRESS_FONT_SIZE: f32 = 28.0;
+const MENU_LEVEL_PROGRESS_SHADOW_OFFSET_X: f32 = 1.5;
+const MENU_LEVEL_PROGRESS_SHADOW_OFFSET_Y: f32 = 1.5;
+const MENU_LEVEL_PROGRESS_GAP_FROM_TITLE: f32 = 8.0;
+const MENU_LEVEL_PROGRESS_TEXT_GAP: f32 = 10.0;
+const MENU_LEVEL_PROGRESS_GEM_SIZE: f32 = 24.0;
 
 /// Shows the selected level name in the menu hero position.
 pub fn show_menu_favicon_ui(ctx: &egui::Context, state: &State, _favicon: &egui::TextureHandle) {
@@ -58,6 +65,8 @@ pub fn show_menu_favicon_ui(ctx: &egui::Context, state: &State, _favicon: &egui:
                     ),
                     max_width,
                 );
+                ui.add_space(MENU_LEVEL_PROGRESS_GAP_FROM_TITLE);
+                show_menu_level_progress_row(ui, state);
             });
         });
 }
@@ -96,20 +105,178 @@ pub fn show_menu_play_ui(ctx: &egui::Context, state: &mut State) {
             {
                 state.turn_right();
             }
-
-            if let Some(progress) = state.menu_selected_level_progress() {
-                let status = if progress.completed {
-                    "Complete"
-                } else {
-                    "Best"
-                };
-                ui.add_space(8.0);
-                ui.label(format!(
-                    "{status}: {:.0}%  Gems: {}/{}",
-                    progress.progress_percent, progress.gems_collected, progress.gems_max
-                ));
-            }
         });
+}
+
+fn show_menu_level_progress_row(ui: &mut egui::Ui, state: &State) {
+    let Some(progress) = state.menu_selected_level_progress() else {
+        return;
+    };
+
+    let percent_text = format!("{:.0}%", progress.progress_percent);
+    let gems_text = format!("{}/{}", progress.gems_collected, progress.gems_max);
+
+    show_shadowed_gem_progress(
+        ui,
+        percent_text,
+        gems_text,
+        egui::FontId::new(
+            MENU_LEVEL_PROGRESS_FONT_SIZE,
+            egui::FontFamily::Name(MENU_LEVEL_TITLE_FONT_FAMILY.into()),
+        ),
+        ui.visuals().strong_text_color(),
+        egui::Color32::BLACK,
+        egui::vec2(
+            MENU_LEVEL_PROGRESS_SHADOW_OFFSET_X,
+            MENU_LEVEL_PROGRESS_SHADOW_OFFSET_Y,
+        ),
+    );
+}
+
+fn show_shadowed_gem_progress(
+    ui: &mut egui::Ui,
+    percent_text: String,
+    gems_text: String,
+    font_id: egui::FontId,
+    text_color: egui::Color32,
+    shadow_color: egui::Color32,
+    shadow_offset: egui::Vec2,
+) -> egui::Response {
+    debug_assert!(MENU_GEM_ICON_SVG.contains("<svg"));
+
+    let percent_galley =
+        ui.painter()
+            .layout_no_wrap(percent_text, font_id.clone(), egui::Color32::PLACEHOLDER);
+    let gems_galley = ui
+        .painter()
+        .layout_no_wrap(gems_text, font_id, egui::Color32::PLACEHOLDER);
+    let shadow_extent = egui::vec2(shadow_offset.x.abs(), shadow_offset.y.abs());
+    let content_width = percent_galley.size().x
+        + MENU_LEVEL_PROGRESS_TEXT_GAP
+        + MENU_LEVEL_PROGRESS_GEM_SIZE
+        + MENU_LEVEL_PROGRESS_TEXT_GAP
+        + gems_galley.size().x;
+    let content_height = percent_galley
+        .size()
+        .y
+        .max(gems_galley.size().y)
+        .max(MENU_LEVEL_PROGRESS_GEM_SIZE);
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(content_width, content_height) + shadow_extent,
+        egui::Sense::hover(),
+    );
+    let content_min = rect.min
+        + egui::vec2(
+            shadow_offset.x.min(0.0).abs(),
+            shadow_offset.y.min(0.0).abs(),
+        );
+    let center_y = content_min.y + content_height * 0.5;
+
+    let percent_pos = egui::pos2(content_min.x, center_y - percent_galley.size().y * 0.5);
+    let gem_rect = egui::Rect::from_min_size(
+        egui::pos2(
+            percent_pos.x + percent_galley.size().x + MENU_LEVEL_PROGRESS_TEXT_GAP,
+            center_y - MENU_LEVEL_PROGRESS_GEM_SIZE * 0.5,
+        ),
+        egui::vec2(MENU_LEVEL_PROGRESS_GEM_SIZE, MENU_LEVEL_PROGRESS_GEM_SIZE),
+    );
+    let gems_pos = egui::pos2(
+        gem_rect.right() + MENU_LEVEL_PROGRESS_TEXT_GAP,
+        center_y - gems_galley.size().y * 0.5,
+    );
+
+    ui.painter().galley(
+        percent_pos + shadow_offset,
+        percent_galley.clone(),
+        shadow_color,
+    );
+    paint_menu_gem_icon(ui.painter(), gem_rect.translate(shadow_offset), true);
+    ui.painter()
+        .galley(gems_pos + shadow_offset, gems_galley.clone(), shadow_color);
+
+    ui.painter().galley(percent_pos, percent_galley, text_color);
+    paint_menu_gem_icon(ui.painter(), gem_rect, false);
+    ui.painter().galley(gems_pos, gems_galley, text_color);
+
+    response
+}
+
+fn paint_menu_gem_icon(painter: &egui::Painter, rect: egui::Rect, shadow: bool) {
+    let gem_point = |x: f32, y: f32| {
+        egui::pos2(
+            rect.left() + x / 24.0 * rect.width(),
+            rect.top() + y / 24.0 * rect.height(),
+        )
+    };
+
+    let top_left = gem_point(6.5, 3.5);
+    let top_right = gem_point(17.5, 3.5);
+    let middle_left = gem_point(2.5, 9.0);
+    let middle_inner_left = gem_point(8.25, 9.0);
+    let middle_inner_right = gem_point(15.75, 9.0);
+    let middle_right = gem_point(21.5, 9.0);
+    let top_center = gem_point(12.0, 3.5);
+    let bottom = gem_point(12.0, 21.0);
+
+    let outer_points = vec![top_left, top_right, middle_right, bottom, middle_left];
+    if shadow {
+        painter.add(egui::Shape::convex_polygon(
+            outer_points,
+            egui::Color32::from_rgba_unmultiplied(0, 0, 0, 190),
+            egui::Stroke::NONE,
+        ));
+        return;
+    }
+
+    let outline = egui::Stroke::new(1.7, egui::Color32::WHITE);
+    let facet_line =
+        egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(74, 95, 114, 184));
+
+    painter.add(egui::Shape::convex_polygon(
+        vec![middle_left, middle_inner_left, bottom],
+        egui::Color32::from_rgb(200, 241, 255),
+        egui::Stroke::NONE,
+    ));
+    painter.add(egui::Shape::convex_polygon(
+        vec![middle_inner_left, middle_inner_right, bottom],
+        egui::Color32::from_rgb(157, 231, 255),
+        egui::Stroke::NONE,
+    ));
+    painter.add(egui::Shape::convex_polygon(
+        vec![middle_inner_right, middle_right, bottom],
+        egui::Color32::from_rgb(126, 220, 255),
+        egui::Stroke::NONE,
+    ));
+    painter.add(egui::Shape::convex_polygon(
+        vec![top_left, top_right, middle_right, middle_left],
+        egui::Color32::WHITE,
+        egui::Stroke::NONE,
+    ));
+    painter.add(egui::Shape::convex_polygon(
+        vec![middle_inner_left, top_center, middle_inner_right],
+        egui::Color32::from_rgb(247, 253, 255),
+        egui::Stroke::NONE,
+    ));
+    painter.add(egui::Shape::convex_polygon(
+        outer_points,
+        egui::Color32::TRANSPARENT,
+        outline,
+    ));
+
+    for points in [
+        [middle_left, middle_right],
+        [middle_inner_left, bottom],
+        [middle_inner_right, bottom],
+        [middle_inner_left, top_center],
+        [middle_inner_right, top_center],
+    ] {
+        painter.line_segment(points, facet_line);
+    }
+    painter.circle_filled(
+        gem_point(7.0, 6.0),
+        rect.width() * 0.07,
+        egui::Color32::WHITE,
+    );
 }
 
 /// Shows the main-menu topbar.
