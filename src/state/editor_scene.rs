@@ -166,12 +166,20 @@ impl State {
             return None;
         }
 
-        if let Some(runtime) = self.editor.timeline.playback.runtime.as_ref() {
-            return Some(runtime.objects().to_vec());
+        if !self.editor.has_object_transform_triggers() {
+            return self
+                .editor
+                .timeline
+                .playback
+                .runtime
+                .as_ref()
+                .map(|runtime| runtime.objects().to_vec());
         }
 
-        if !self.editor.has_object_transform_triggers() {
-            return None;
+        if self.editor.simulate_trigger_hitboxes() {
+            if let Some(runtime) = self.editor.timeline.playback.runtime.as_ref() {
+                return Some(runtime.objects().to_vec());
+            }
         }
 
         Some(trigger_transformed_objects_at_time(
@@ -1280,6 +1288,35 @@ mod tests {
             let transformed = state
                 .editor_runtime_objects_for_render()
                 .expect("expected transformed render objects");
+            assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
+        });
+    }
+
+    #[test]
+    fn editor_runtime_objects_for_render_keeps_object_triggers_during_playback_runtime() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.ui.mode = EditorMode::Place;
+            state.editor.objects = vec![block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])];
+            state.editor.set_triggers(vec![object_move_trigger()]);
+            state.set_editor_simulate_trigger_hitboxes(false);
+            state.editor.timeline.clock.time_seconds = 0.5;
+            state.editor.timeline.playback.playing = true;
+            state.editor.timeline.playback.runtime =
+                Some(crate::game::TimelineSimulationRuntime::new_with_triggers(
+                    state.editor.spawn.position,
+                    state.editor.spawn.direction,
+                    &state.editor.objects,
+                    &state.editor.timeline.taps.tap_times,
+                    state.editor.triggers(),
+                    state.editor.simulate_trigger_hitboxes(),
+                ));
+
+            let transformed = state
+                .editor_runtime_objects_for_render()
+                .expect("expected transformed render objects");
+
             assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
         });
     }
