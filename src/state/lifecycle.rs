@@ -479,6 +479,7 @@ impl State {
             gameplay: GameplaySubsystem {
                 state: game,
                 pending_turn_inputs: std::collections::VecDeque::new(),
+                death_sfx_played: false,
             },
             phase: AppPhase::Menu,
             menu: MenuSubsystem { state: menu },
@@ -1287,6 +1288,7 @@ impl State {
             gameplay: GameplaySubsystem {
                 state: game,
                 pending_turn_inputs: std::collections::VecDeque::new(),
+                death_sfx_played: false,
             },
             phase: AppPhase::Menu,
             menu: MenuSubsystem { state: menu },

@@ -1123,6 +1123,7 @@ impl State {
             self.editor.timeline.playback.playing = false;
             self.editor.timeline.playback.runtime = None;
             self.gameplay.state = GameState::new();
+            self.gameplay.death_sfx_played = false;
             self.gameplay.state.objects = objects;
             self.gameplay.state.rebuild_behavior_cache();
             self.rebuild_block_vertices();
@@ -1132,6 +1133,7 @@ impl State {
         self.enter_menu_phase();
 
         self.gameplay.state = GameState::new();
+        self.gameplay.death_sfx_played = false;
         self.refresh_menu_level_preview_if_needed();
         self.render.meshes.trail.clear();
     }

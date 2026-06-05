@@ -71,6 +71,7 @@ use crate::types::{
 pub(crate) struct GameplaySubsystem {
     pub(crate) state: GameState,
     pub(crate) pending_turn_inputs: VecDeque<TimedGameplayTurn>,
+    pub(crate) death_sfx_played: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

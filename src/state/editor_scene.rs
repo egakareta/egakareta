@@ -330,6 +330,7 @@ impl State {
         speed: Option<f32>,
     ) {
         self.gameplay.state.apply_spawn(position, direction);
+        self.gameplay.death_sfx_played = false;
         if let Some(speed) = speed {
             self.gameplay.state.speed = speed;
         }
@@ -342,6 +343,7 @@ impl State {
         speed: Option<f32>,
     ) {
         self.gameplay.state.apply_spawn_exact(position, direction);
+        self.gameplay.death_sfx_played = false;
         if let Some(speed) = speed {
             self.gameplay.state.speed = speed;
         }

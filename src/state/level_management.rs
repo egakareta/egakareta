@@ -61,6 +61,7 @@ impl State {
         self.session.game_paused = false;
         self.session.practice_mode_enabled = false;
         self.session.practice_checkpoints.clear();
+        self.gameplay.death_sfx_played = false;
         self.rebuild_practice_checkpoint_vertices();
         self.stop_audio();
         self.clear_pending_gameplay_inputs();
@@ -155,6 +156,7 @@ impl State {
         self.gameplay
             .state
             .restore_checkpoint_state(&checkpoint.gameplay);
+        self.gameplay.death_sfx_played = false;
         self.session.playing_trigger_base_objects = checkpoint.trigger_base_objects;
 
         if let Some(level_name) = self.session.playing_level_name.clone() {
