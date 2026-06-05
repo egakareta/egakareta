@@ -8,11 +8,20 @@
 
 version: 2
 updates:
-  - package-ecosystem: "bun" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  - package-ecosystem: "bun"
+    directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      javascript:
+        patterns:
+          - "*"
+
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      rust:
+        patterns:
+          - "*"
