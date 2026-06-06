@@ -5,6 +5,8 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use std::borrow::Cow;
+
 use glam::Vec3;
 
 use super::{EditorDirtyFlags, EditorSubsystem, State};
@@ -27,7 +29,7 @@ use crate::mesh::{
 };
 use crate::state::render::EditorOutlineInstance;
 use crate::types::{
-    AppPhase, EditorMode, EditorPlaceMode, GizmoPart, LevelObject, SpawnDirection,
+    AppPhase, EditorMode, EditorPlaceMode, GizmoPart, LevelObject, SpawnDirection, TimedTrigger,
     TimedTriggerAction, TimedTriggerTarget, TimingPoint, Vertex,
 };
 
@@ -78,6 +80,114 @@ fn append_transform_capture_origin_outlines(
             ),
         );
     }
+}
+
+fn transform_trigger_markers_for_triggers(
+    objects: &[LevelObject],
+    triggers: &[TimedTrigger],
+    selected_trigger_index: Option<usize>,
+) -> Vec<TransformTriggerMarker> {
+    let mut markers = Vec::new();
+
+    for (trigger_index, trigger) in triggers.iter().enumerate() {
+        let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
+            continue;
+        };
+        let TimedTriggerAction::TransformObjects {
+            position,
+            rotation_degrees,
+            size,
+        } = &trigger.action
+        else {
+            continue;
+        };
+
+        let source_objects = transform_trigger_marker_source_objects(
+            objects,
+            triggers,
+            trigger_index,
+            trigger.time_seconds,
+        );
+
+        for object_id in object_ids {
+            let Ok(object_index) = usize::try_from(*object_id) else {
+                continue;
+            };
+            let Some(source_object) = source_objects.get(object_index) else {
+                continue;
+            };
+
+            markers.push(TransformTriggerMarker {
+                source_position: source_object.position,
+                source_size: source_object.size,
+                target_position: *position,
+                target_rotation_degrees: *rotation_degrees,
+                target_size: *size,
+                time_seconds: trigger.time_seconds,
+                duration_seconds: trigger.duration_seconds,
+                is_selected: selected_trigger_index == Some(trigger_index),
+            });
+        }
+    }
+
+    markers
+}
+
+fn transform_trigger_marker_source_objects<'a>(
+    objects: &'a [LevelObject],
+    triggers: &[TimedTrigger],
+    trigger_index: usize,
+    time_seconds: f32,
+) -> Cow<'a, [LevelObject]> {
+    if trigger_index == 0 {
+        Cow::Borrowed(objects)
+    } else {
+        Cow::Owned(trigger_transformed_objects_at_time(
+            objects,
+            &triggers[..trigger_index],
+            time_seconds,
+        ))
+    }
+}
+
+fn transform_trigger_markers_for_capture(
+    objects: &[LevelObject],
+    triggers: &[TimedTrigger],
+    capture_time_seconds: f32,
+    original_objects: &[(usize, LevelObject)],
+) -> Vec<TransformTriggerMarker> {
+    let mut source_base_objects = objects.to_vec();
+    for (object_index, original_object) in original_objects {
+        if let Some(object) = source_base_objects.get_mut(*object_index) {
+            *object = original_object.clone();
+        }
+    }
+
+    let source_objects =
+        trigger_transformed_objects_at_time(&source_base_objects, triggers, capture_time_seconds);
+    let mut markers = Vec::new();
+
+    for (object_index, _) in original_objects {
+        let Some(source_object) = source_objects.get(*object_index) else {
+            continue;
+        };
+        let Some(current_object) = objects.get(*object_index) else {
+            continue;
+        };
+
+        markers.push(TransformTriggerMarker {
+            source_position: source_object.position,
+            source_size: source_object.size,
+            target_position: current_object.position,
+            target_rotation_degrees: current_object.rotation_degrees,
+            target_size: current_object.size,
+            time_seconds: capture_time_seconds,
+            duration_seconds: 1.0,
+            is_selected: true,
+        });
+    }
+
+    markers
 }
 
 fn editor_static_mesh_spare_capacity(geometry: &MeshGeometry, object_count: usize) -> (u32, u32) {
@@ -831,60 +941,21 @@ impl State {
 
         // Hide finalized markers while defining a new transform trigger target.
         if !capture_active {
-            for (trigger_index, trigger) in self.editor.triggers().iter().enumerate() {
-                let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
-                    continue;
-                };
-                let TimedTriggerAction::TransformObjects {
-                    position,
-                    rotation_degrees,
-                    size,
-                } = &trigger.action
-                else {
-                    continue;
-                };
-
-                for object_id in object_ids {
-                    let Ok(object_index) = usize::try_from(*object_id) else {
-                        continue;
-                    };
-                    let Some(source_object) = self.editor.objects.get(object_index) else {
-                        continue;
-                    };
-
-                    markers.push(TransformTriggerMarker {
-                        source_position: source_object.position,
-                        source_size: source_object.size,
-                        target_position: *position,
-                        target_rotation_degrees: *rotation_degrees,
-                        target_size: *size,
-                        time_seconds: trigger.time_seconds,
-                        duration_seconds: trigger.duration_seconds,
-                        is_selected: selected_trigger_index == Some(trigger_index),
-                    });
-                }
-            }
+            markers = transform_trigger_markers_for_triggers(
+                &self.editor.objects,
+                self.editor.triggers(),
+                selected_trigger_index,
+            );
         }
 
         // Show preview markers for in-progress transform trigger captures.
-        // Source = original position, Target = current moved position.
         if let Some(capture) = self.editor.runtime.transform_trigger_capture.as_ref() {
-            let time_seconds = capture.time_seconds;
-            for &(object_index, ref original) in &capture.original_objects {
-                let Some(current) = self.editor.objects.get(object_index) else {
-                    continue;
-                };
-                markers.push(TransformTriggerMarker {
-                    source_position: original.position,
-                    source_size: original.size,
-                    target_position: current.position,
-                    target_rotation_degrees: current.rotation_degrees,
-                    target_size: current.size,
-                    time_seconds,
-                    duration_seconds: 1.0,
-                    is_selected: true,
-                });
-            }
+            markers.extend(transform_trigger_markers_for_capture(
+                &self.editor.objects,
+                self.editor.triggers(),
+                capture.time_seconds,
+                &capture.original_objects,
+            ));
         }
 
         if markers.is_empty() {
@@ -1410,7 +1481,10 @@ fn tap_indicator_color(
 
 #[cfg(test)]
 mod tests {
-    use super::{tap_division_marker_indicators, tap_indicator_color, State};
+    use super::{
+        tap_division_marker_indicators, tap_indicator_color, transform_trigger_markers_for_capture,
+        transform_trigger_markers_for_triggers, State,
+    };
     use crate::mesh::builders::game::build_colored_tap_indicator_vertices;
     use crate::state::render::MeshDrawData;
     use crate::types::{
@@ -1432,6 +1506,14 @@ mod tests {
         match draw_data {
             MeshDrawData::Vertices { count, .. } | MeshDrawData::Indexed { count, .. } => count,
         }
+    }
+
+    fn approx_eq(a: f32, b: f32, eps: f32) {
+        assert!(
+            (a - b).abs() <= eps,
+            "expected {a} to be within {eps} of {b} (delta: {})",
+            (a - b).abs()
+        );
     }
 
     fn object_move_trigger() -> TimedTrigger {
@@ -1746,6 +1828,81 @@ mod tests {
                 .draw_data()
                 .is_none());
         });
+    }
+
+    #[test]
+    fn transform_trigger_marker_sources_reflect_prior_trigger_state() {
+        let objects = vec![block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])];
+        let triggers = vec![
+            TimedTrigger {
+                time_seconds: 1.0,
+                duration_seconds: 4.0,
+                easing: TimedTriggerEasing::Linear,
+                target: TimedTriggerTarget::Objects {
+                    object_ids: vec![0],
+                },
+                action: TimedTriggerAction::TransformObjects {
+                    position: [8.0, 0.0, 0.0],
+                    rotation_degrees: [0.0, 90.0, 0.0],
+                    size: [2.0, 1.0, 1.0],
+                },
+            },
+            TimedTrigger {
+                time_seconds: 3.0,
+                duration_seconds: 1.0,
+                easing: TimedTriggerEasing::Linear,
+                target: TimedTriggerTarget::Objects {
+                    object_ids: vec![0],
+                },
+                action: TimedTriggerAction::TransformObjects {
+                    position: [10.0, 0.0, 0.0],
+                    rotation_degrees: [0.0, 180.0, 0.0],
+                    size: [3.0, 1.0, 1.0],
+                },
+            },
+        ];
+
+        let markers = transform_trigger_markers_for_triggers(&objects, &triggers, Some(1));
+
+        assert_eq!(markers.len(), 2);
+        assert_eq!(markers[0].source_position, [0.0, 0.0, 0.0]);
+        approx_eq(markers[1].source_position[0], 4.0, 1e-6);
+        approx_eq(markers[1].source_size[0], 1.5, 1e-6);
+        assert!(markers[1].is_selected);
+    }
+
+    #[test]
+    fn transform_trigger_capture_marker_source_uses_trigger_time_state() {
+        let original_object = block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        let current_target_object = block([12.0, 0.0, 0.0], [2.0, 1.0, 1.0]);
+        let objects = vec![current_target_object];
+        let triggers = vec![TimedTrigger {
+            time_seconds: 1.0,
+            duration_seconds: 4.0,
+            easing: TimedTriggerEasing::Linear,
+            target: TimedTriggerTarget::Objects {
+                object_ids: vec![0],
+            },
+            action: TimedTriggerAction::TransformObjects {
+                position: [8.0, 0.0, 0.0],
+                rotation_degrees: [0.0, 90.0, 0.0],
+                size: [3.0, 1.0, 1.0],
+            },
+        }];
+
+        let markers = transform_trigger_markers_for_capture(
+            &objects,
+            &triggers,
+            3.0,
+            &[(0, original_object)],
+        );
+
+        assert_eq!(markers.len(), 1);
+        approx_eq(markers[0].source_position[0], 4.0, 1e-6);
+        approx_eq(markers[0].source_size[0], 2.0, 1e-6);
+        assert_eq!(markers[0].target_position, [12.0, 0.0, 0.0]);
+        assert_eq!(markers[0].target_size, [2.0, 1.0, 1.0]);
+        assert!(markers[0].is_selected);
     }
 
     #[test]
