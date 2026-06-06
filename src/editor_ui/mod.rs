@@ -1282,6 +1282,28 @@ pub fn show_editor_ui(
 
                     ui.separator();
                     ui.heading(format!(
+                        "{} Gameplay",
+                        egui_phosphor::regular::GAME_CONTROLLER
+                    ));
+                    ui.horizontal(|ui| {
+                        let mut simulate_hitboxes = view.simulate_trigger_hitboxes;
+                        if ui
+                            .checkbox(
+                                &mut simulate_hitboxes,
+                                "Timed Object Triggers Move Hitboxes During Play",
+                            )
+                            .changed()
+                        {
+                            commands.push(
+                                crate::commands::AppCommand::EditorSetSimulateTriggerHitboxes(
+                                    simulate_hitboxes,
+                                ),
+                            );
+                        }
+                    });
+
+                    ui.separator();
+                    ui.heading(format!(
                         "{} Menu Preview Camera",
                         egui_phosphor::regular::CAMERA
                     ));
