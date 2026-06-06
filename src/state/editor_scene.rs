@@ -15,14 +15,15 @@ use crate::game::trigger_transformed_objects_at_time;
 use crate::mesh::TransformTriggerMarker;
 use crate::mesh::{
     build_block_geometry, build_block_geometry_for_object, build_block_geometry_from_refs,
-    build_camera_trigger_marker_vertices, build_colored_tap_indicator_vertices,
-    build_editor_cursor_vertices, build_editor_gizmo_vertices,
-    build_editor_hitbox_visualization_vertices, build_editor_hover_outline_vertices,
-    build_editor_selection_outline_vertices, build_editor_tap_cursor_vertices,
-    build_editor_transform_origin_outline_vertices, build_practice_checkpoint_flag_geometry,
-    build_spawn_marker_vertices, build_tap_division_preview_vertices,
-    build_tap_division_tap_marker_vertices, build_transform_trigger_marker_vertices, GizmoParams,
-    MeshGeometry, PracticeCheckpointFlagInstance,
+    build_camera_arrow_vertices, build_camera_trigger_marker_vertices,
+    build_colored_tap_indicator_vertices, build_editor_cursor_vertices,
+    build_editor_gizmo_vertices, build_editor_hitbox_visualization_vertices,
+    build_editor_hover_outline_vertices, build_editor_selection_outline_vertices,
+    build_editor_tap_cursor_vertices, build_editor_transform_origin_outline_vertices,
+    build_practice_checkpoint_flag_geometry, build_spawn_marker_vertices,
+    build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices,
+    build_transform_trigger_marker_vertices, GizmoParams, MeshGeometry,
+    PracticeCheckpointFlagInstance,
 };
 use crate::state::render::EditorOutlineInstance;
 use crate::types::{
@@ -1289,6 +1290,40 @@ impl State {
                 "Editor Hitbox Visualization Vertex Buffer",
                 &vertices,
             );
+    }
+
+    pub(super) fn rebuild_camera_arrow_vertices(&mut self) {
+        puffin::profile_scope!("CameraArrowMesh");
+        if self.phase != AppPhase::Editor || self.editor_is_playing() {
+            self.render.meshes.camera_arrow.clear();
+            return;
+        }
+
+        let (eye, target) = {
+            let (e, t) = self.editor_preview_camera_view();
+            (Vec3::from_array(e), Vec3::from_array(t))
+        };
+
+        let forward = {
+            let dir = target - eye;
+            if dir.length_squared() > f32::EPSILON {
+                dir.normalize().to_array()
+            } else {
+                [0.0, 0.0, 1.0]
+            }
+        };
+
+        let editor_camera_eye = {
+            let target = self.editor.editor_camera_target();
+            let offset = self.editor_camera_offset();
+            (target + offset).to_array()
+        };
+        let vertices = build_camera_arrow_vertices(eye.to_array(), forward, editor_camera_eye);
+        self.render.meshes.camera_arrow.replace_with_vertices(
+            &self.render.gpu.device,
+            "Camera Arrow Vertex Buffer",
+            &vertices,
+        );
     }
 }
 

@@ -745,6 +745,10 @@ impl State {
                 self.process_editor_dirty(frame_dt);
             }
             {
+                puffin::profile_scope!("CameraArrowRebuild");
+                self.rebuild_camera_arrow_vertices();
+            }
+            {
                 puffin::profile_scope!("EditorCameraUniform");
                 self.update_editor_camera();
             }

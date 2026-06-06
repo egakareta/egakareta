@@ -583,6 +583,7 @@ impl State {
                     camera_trigger_markers: MeshSlot::Empty,
                     editor_preview_player: MeshSlot::Empty,
                     editor_hitbox_visualization: MeshSlot::Empty,
+                    camera_arrow: MeshSlot::Empty,
                 },
             },
             auth: AuthSubsystem {
@@ -1490,6 +1491,7 @@ impl State {
                     camera_trigger_markers: MeshSlot::Empty,
                     editor_preview_player: MeshSlot::Empty,
                     editor_hitbox_visualization: MeshSlot::Empty,
+                    camera_arrow: MeshSlot::Empty,
                 },
             },
             auth: AuthSubsystem {

@@ -858,6 +858,45 @@ fn append_cylinder_segment(
     }
 }
 
+pub(crate) fn build_camera_arrow_vertices(
+    eye: [f32; 3],
+    forward: [f32; 3],
+    editor_camera_eye: [f32; 3],
+) -> Vec<Vertex> {
+    puffin::profile_scope!("BuildCameraArrowVertices");
+    const BASE_ALPHA: f32 = 0.55;
+    const FADE_START_DISTANCE: f32 = 3.0;
+    const FADE_END_DISTANCE: f32 = 1.0;
+
+    let dist = {
+        let dx = editor_camera_eye[0] - eye[0];
+        let dy = editor_camera_eye[1] - eye[1];
+        let dz = editor_camera_eye[2] - eye[2];
+        (dx * dx + dy * dy + dz * dz).sqrt()
+    };
+    let alpha = if dist >= FADE_START_DISTANCE {
+        BASE_ALPHA
+    } else if dist <= FADE_END_DISTANCE {
+        0.0
+    } else {
+        BASE_ALPHA * (dist - FADE_END_DISTANCE) / (FADE_START_DISTANCE - FADE_END_DISTANCE)
+    };
+    let arrow_color: [f32; 4] = [0.8, 0.25, 0.35, alpha];
+
+    let mut vertices = Vec::new();
+    if alpha <= f32::EPSILON {
+        return vertices;
+    }
+    let shaft_start = [
+        eye[0] + forward[0],
+        eye[1] + forward[1],
+        eye[2] + forward[2],
+    ];
+    append_cone(&mut vertices, eye, shaft_start, 0.5, arrow_color);
+
+    vertices
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

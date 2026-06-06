@@ -730,6 +730,21 @@ impl State {
                     draw_mesh(&mut gizmo_pass, draw_data);
                 }
             }
+
+            if let Some(draw_data) = self.render.meshes.camera_arrow.draw_data() {
+                gizmo_pass.set_pipeline(&self.render.gpu.gizmo_overlay_pipeline);
+                gizmo_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
+                gizmo_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                gizmo_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                gizmo_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+                draw_mesh(&mut gizmo_pass, draw_data);
+
+                gizmo_pass.set_pipeline(&self.render.gpu.render_pipeline);
+                gizmo_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
+                gizmo_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                gizmo_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                gizmo_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+            }
         }
 
         {

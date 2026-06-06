@@ -437,6 +437,7 @@ pub(crate) struct SceneMeshes {
     pub(crate) camera_trigger_markers: MeshSlot,
     pub(crate) editor_preview_player: MeshSlot,
     pub(crate) editor_hitbox_visualization: MeshSlot,
+    pub(crate) camera_arrow: MeshSlot,
 }
 
 #[cfg(test)]
@@ -462,6 +463,7 @@ impl SceneMeshes {
         self.camera_trigger_markers.destroy();
         self.editor_preview_player.destroy();
         self.editor_hitbox_visualization.destroy();
+        self.camera_arrow.destroy();
     }
 }
 
