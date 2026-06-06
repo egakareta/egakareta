@@ -1115,6 +1115,31 @@ fn log_envs() {
     log::info!("PUBLISHABLE_KEY: {}", env!("PUBLISHABLE_KEY"));
 }
 
+#[cfg(target_arch = "wasm32")]
+fn launch_backend_query_param(name: &str) -> Option<String> {
+    let window = web_sys::window()?;
+    let location = js_sys::Reflect::get(window.as_ref(), &JsValue::from_str("location")).ok()?;
+    let search = js_sys::Reflect::get(&location, &JsValue::from_str("search"))
+        .ok()?
+        .as_string()?;
+
+    for pair in search.trim_start_matches('?').split('&') {
+        let mut parts = pair.splitn(2, '=');
+        let Some(key) = parts.next() else {
+            continue;
+        };
+        if key.eq_ignore_ascii_case(name) {
+            return parts
+                .next()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned);
+        }
+    }
+
+    None
+}
+
 /// Runs the native application for desktop platforms.
 /// Initializes the event loop, creates the window, and starts the game loop.
 #[cfg(not(target_arch = "wasm32"))]
@@ -1175,7 +1200,12 @@ pub async fn run_game() -> Result<(), JsValue> {
         "display:block;width:100vw;height:100vh;touch-action:none;",
     )?;
 
-    let state = State::new(canvas.clone()).await;
+    let state = State::new(
+        canvas.clone(),
+        launch_backend_query_param("graphics"),
+        launch_backend_query_param("audio"),
+    )
+    .await;
     let runtime = Runtime::new(state);
 
     let event_loop = EventLoop::builder().build().unwrap();

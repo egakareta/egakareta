@@ -33,6 +33,7 @@ impl SurfaceHost {
     #[cfg(target_arch = "wasm32")]
     pub(crate) fn create_for_wasm(
         canvas: WasmCanvas,
+        backends: wgpu::Backends,
     ) -> (
         SurfaceHost,
         wgpu::Instance,
@@ -42,7 +43,7 @@ impl SurfaceHost {
         let size = PhysicalSize::new(canvas.width(), canvas.height());
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
+            backends,
             ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
         let surface = instance

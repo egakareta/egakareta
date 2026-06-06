@@ -8,6 +8,7 @@
 use std::cell::RefCell;
 use std::io::Cursor;
 use std::rc::Rc;
+use std::str::FromStr;
 #[cfg(target_arch = "wasm32")]
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -22,6 +23,10 @@ fn parse_host_id_by_label(label: &str) -> Option<cpal::HostId> {
     let trimmed = label.trim();
     if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("Default") {
         return None;
+    }
+
+    if let Ok(host_id) = cpal::HostId::from_str(trimmed) {
+        return Some(host_id);
     }
 
     if let Some(host_id) = cpal::available_hosts()
@@ -314,6 +319,18 @@ impl AudioBackend {
 impl AudioBackend {
     pub(crate) fn available_backend_names() -> Vec<String> {
         available_host_labels()
+    }
+
+    pub(crate) fn canonical_backend_name(backend_name: &str) -> Option<String> {
+        let trimmed = backend_name.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        if trimmed.eq_ignore_ascii_case("Default") {
+            return Some("Default".to_string());
+        }
+
+        parse_host_id_by_label(trimmed).map(host_label)
     }
 
     pub(crate) fn set_preferred_backend_name(&mut self, backend_name: &str) -> bool {

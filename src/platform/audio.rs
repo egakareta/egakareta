@@ -11,6 +11,10 @@ pub(crate) fn available_backend_names() -> Vec<String> {
     AudioBackend::available_backend_names()
 }
 
+pub(crate) fn canonical_backend_name(backend_name: &str) -> Option<String> {
+    AudioBackend::canonical_backend_name(backend_name)
+}
+
 pub(crate) struct PlatformAudio {
     backend: AudioBackend,
 }

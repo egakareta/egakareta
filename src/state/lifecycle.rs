@@ -56,6 +56,31 @@ fn discover_graphics_backends() -> Vec<String> {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+fn normalize_web_graphics_backend_setting(value: &str) -> Option<String> {
+    let normalized = value
+        .trim()
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+
+    match normalized.as_str() {
+        "browserwebgpu" | "webgpu" | "gpu" => Some("BrowserWebGpu".to_string()),
+        "gl" | "webgl" | "opengl" => Some("Gl".to_string()),
+        _ => None,
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn wasm_graphics_backends_for_setting(value: &str) -> wgpu::Backends {
+    match value {
+        "BrowserWebGpu" => wgpu::Backends::BROWSER_WEBGPU,
+        "Gl" => wgpu::Backends::GL,
+        _ => wgpu::Backends::all(),
+    }
+}
+
 fn editor_ghost_trail_primitive_state() -> wgpu::PrimitiveState {
     wgpu::PrimitiveState {
         // Ghost trail uses `append_prism` (untextured) winding, which is opposite
@@ -275,11 +300,34 @@ impl From<&GpuContext> for TestGpuFixture {
 
 impl State {
     #[cfg(target_arch = "wasm32")]
-    pub(crate) async fn new(canvas: WasmCanvas) -> Self {
-        let (surface_host, instance, surface, size) = SurfaceHost::create_for_wasm(canvas);
-        Self::new_common(instance, Some(surface_host), Some(surface), size)
-            .await
-            .expect("Failed to initialize state: No compatible GPU adapter found")
+    pub(crate) async fn new(
+        canvas: WasmCanvas,
+        graphics_backend_override: Option<String>,
+        audio_backend_override: Option<String>,
+    ) -> Self {
+        let graphics_backend_override = graphics_backend_override.and_then(|backend| {
+            let normalized = normalize_web_graphics_backend_setting(&backend);
+            if normalized.is_none() {
+                log::warn!("Ignoring unsupported graphics backend query override: {backend}");
+            }
+            normalized
+        });
+        let wasm_backends = graphics_backend_override
+            .as_deref()
+            .map(wasm_graphics_backends_for_setting)
+            .unwrap_or_else(wgpu::Backends::all);
+        let (surface_host, instance, surface, size) =
+            SurfaceHost::create_for_wasm(canvas, wasm_backends);
+        Self::new_common(
+            instance,
+            Some(surface_host),
+            Some(surface),
+            size,
+            graphics_backend_override,
+            audio_backend_override,
+        )
+        .await
+        .expect("Failed to initialize state: No compatible GPU adapter found")
     }
 
     /// Creates a new `State` instance for native platforms.
@@ -289,9 +337,16 @@ impl State {
     #[cfg(not(target_arch = "wasm32"))]
     pub async fn new_native(window: NativeWindow) -> State {
         let (surface_host, instance, surface, size) = SurfaceHost::create_for_native(window);
-        Self::new_common(instance, Some(surface_host), Some(surface), size)
-            .await
-            .expect("Failed to initialize state: No compatible GPU adapter found")
+        Self::new_common(
+            instance,
+            Some(surface_host),
+            Some(surface),
+            size,
+            None,
+            None,
+        )
+        .await
+        .expect("Failed to initialize state: No compatible GPU adapter found")
     }
 
     #[cfg(test)]
@@ -336,6 +391,8 @@ impl State {
                                 width: 800,
                                 height: 600,
                             },
+                            None,
+                            None,
                         )
                         .await
                         {
@@ -631,6 +688,8 @@ impl State {
         surface_host: Option<SurfaceHost>,
         surface: Option<wgpu::Surface<'static>>,
         size: PhysicalSize<u32>,
+        graphics_backend_override: Option<String>,
+        audio_backend_override: Option<String>,
     ) -> Option<State> {
         let adapter = match instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -1313,6 +1372,19 @@ impl State {
                 crate::platform::io::log_platform_error(&format!(
                     "Failed to persist migrated app settings: {error}"
                 ));
+            }
+        }
+
+        if let Some(graphics_backend) = graphics_backend_override {
+            app_settings.graphics_backend = graphics_backend;
+        }
+        if let Some(audio_backend) = audio_backend_override {
+            if let Some(audio_backend) =
+                crate::platform::audio::canonical_backend_name(&audio_backend)
+            {
+                app_settings.audio_backend = audio_backend;
+            } else {
+                log::warn!("Ignoring unsupported audio backend query override: {audio_backend}");
             }
         }
 
