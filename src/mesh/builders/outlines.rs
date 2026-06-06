@@ -68,25 +68,56 @@ fn build_editor_outline_hull_vertices(
     vertices
 }
 
-fn append_hitbox_volume_vertices(
+fn append_hitbox_outline_vertices(
     vertices: &mut Vec<Vertex>,
     object: &LevelObject,
-    fill_color: [f32; 4],
-    outline_color: [f32; 4],
-    line_width: f32,
+    color: [f32; 4],
+    thickness: f32,
 ) {
     let start = vertices.len();
-    append_prism(
-        vertices,
-        object.position,
-        [
-            object.position[0] + object.size[0],
-            object.position[1] + object.size[1],
-            object.position[2] + object.size[2],
-        ],
-        fill_color,
-        fill_color,
-    );
+    let x_min = object.position[0];
+    let x_max = object.position[0] + object.size[0];
+    let y_min = object.position[1];
+    let y_max = object.position[1] + object.size[1];
+    let z_min = object.position[2];
+    let z_max = object.position[2] + object.size[2];
+    let half_thickness = (thickness * 0.5).max(0.001);
+
+    for y in [y_min, y_max] {
+        for z in [z_min, z_max] {
+            append_prism(
+                vertices,
+                [x_min, y - half_thickness, z - half_thickness],
+                [x_max, y + half_thickness, z + half_thickness],
+                color,
+                color,
+            );
+        }
+    }
+
+    for x in [x_min, x_max] {
+        for z in [z_min, z_max] {
+            append_prism(
+                vertices,
+                [x - half_thickness, y_min, z - half_thickness],
+                [x + half_thickness, y_max, z + half_thickness],
+                color,
+                color,
+            );
+        }
+    }
+
+    for x in [x_min, x_max] {
+        for y in [y_min, y_max] {
+            append_prism(
+                vertices,
+                [x - half_thickness, y - half_thickness, z_min],
+                [x + half_thickness, y + half_thickness, z_max],
+                color,
+                color,
+            );
+        }
+    }
 
     let center = [
         object.position[0] + object.size[0] * 0.5,
@@ -94,47 +125,30 @@ fn append_hitbox_volume_vertices(
         object.position[2] + object.size[2] * 0.5,
     ];
     rotate_vertices_around_euler(&mut vertices[start..], center, object.rotation_degrees);
-
-    vertices.extend(build_editor_outline_hull_vertices(
-        object.position,
-        object.size,
-        object.rotation_degrees,
-        line_width,
-        outline_color,
-        outline_color,
-    ));
 }
 
 pub(crate) fn build_editor_hitbox_visualization_vertices(
     objects: &[LevelObject],
     player_hitbox: Option<LevelObject>,
 ) -> Vec<Vertex> {
-    let mut vertices = Vec::with_capacity(objects.len().saturating_mul(72));
+    let mut vertices = Vec::with_capacity(objects.len().saturating_mul(432));
 
     for object in objects {
         let collision = resolve_block_definition(&object.block_id)
             .behavior
             .collision;
-        let (fill_color, outline_color) = match collision {
-            BlockCollision::Solid | BlockCollision::Hazard => {
-                ([1.0, 0.04, 0.06, 0.16], [1.0, 0.04, 0.06, 0.82])
-            }
-            BlockCollision::Portal => ([0.0, 0.74, 1.0, 0.16], [0.0, 0.82, 1.0, 0.82]),
-            BlockCollision::Collectible => ([1.0, 0.78, 0.08, 0.18], [1.0, 0.86, 0.10, 0.86]),
+        let outline_color = match collision {
+            BlockCollision::Solid | BlockCollision::Hazard => [1.0, 0.04, 0.06, 0.88],
+            BlockCollision::Portal => [0.0, 0.82, 1.0, 0.88],
+            BlockCollision::Collectible => [1.0, 0.86, 0.10, 0.9],
             BlockCollision::PassThrough => continue,
         };
 
-        append_hitbox_volume_vertices(&mut vertices, object, fill_color, outline_color, 2.25);
+        append_hitbox_outline_vertices(&mut vertices, object, outline_color, 0.035);
     }
 
     if let Some(player) = player_hitbox {
-        append_hitbox_volume_vertices(
-            &mut vertices,
-            &player,
-            [1.0, 1.0, 1.0, 0.10],
-            [1.0, 1.0, 1.0, 0.72],
-            1.75,
-        );
+        append_hitbox_outline_vertices(&mut vertices, &player, [1.0, 1.0, 1.0, 0.78], 0.025);
     }
 
     vertices

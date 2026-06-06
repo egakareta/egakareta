@@ -235,7 +235,7 @@ mod tests {
     }
 
     #[test]
-    fn hitbox_visualization_colors_lethal_and_consumable_volumes() {
+    fn hitbox_visualization_draws_outline_only_for_lethal_and_consumables() {
         let objects = vec![
             LevelObject {
                 position: [0.0, 0.0, 0.0],
@@ -263,15 +263,17 @@ mod tests {
         let vertices = build_editor_hitbox_visualization_vertices(&objects, None);
 
         assert!(!vertices.is_empty());
+        assert!(vertices.iter().all(|vertex| vertex.render_profile == 0.0));
+        assert_eq!(vertices.len(), objects.len() * 12 * 36);
         assert!(vertices
             .iter()
-            .any(|vertex| vertex.color == [1.0, 0.04, 0.06, 0.16]));
+            .any(|vertex| vertex.color == [1.0, 0.04, 0.06, 0.88]));
         assert!(vertices
             .iter()
-            .any(|vertex| vertex.color == [0.0, 0.74, 1.0, 0.16]));
+            .any(|vertex| vertex.color == [0.0, 0.82, 1.0, 0.88]));
         assert!(vertices
             .iter()
-            .any(|vertex| vertex.color == [1.0, 0.78, 0.08, 0.18]));
+            .any(|vertex| vertex.color == [1.0, 0.86, 0.10, 0.9]));
     }
 
     #[test]
