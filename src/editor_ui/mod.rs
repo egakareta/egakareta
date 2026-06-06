@@ -310,12 +310,14 @@ fn show_editor_context_menu(
 ) {
     let menu_id = egui::Id::new("editor_canvas_context_menu_position");
     let secondary_clicked = ctx.input(|input| input.pointer.secondary_clicked());
+    let mut opened_this_frame = false;
     if secondary_clicked {
         if let Some(pointer) = ctx.input(|input| input.pointer.latest_pos()) {
             if !ctx.is_pointer_over_egui()
                 && !pointer_over_ui_rects(pointer, ui_input_blocking_rects)
             {
                 ctx.data_mut(|data| data.insert_temp(menu_id, pointer));
+                opened_this_frame = true;
             }
         }
     }
@@ -554,7 +556,7 @@ fn show_editor_context_menu(
                 .latest_pos()
                 .is_some_and(|pointer| !menu_rect.contains(pointer))
     });
-    if clicked_outside {
+    if clicked_outside && !opened_this_frame {
         ctx.data_mut(|data| data.remove::<egui::Pos2>(menu_id));
     }
 }
