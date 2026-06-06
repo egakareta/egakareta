@@ -432,6 +432,7 @@ pub(crate) struct SceneMeshes {
     pub(crate) editor_selection_outline_instances: Vec<EditorOutlineInstance>,
     pub(crate) editor_gizmo: MeshSlot,
     pub(crate) tap_indicators: MeshSlot,
+    pub(crate) transform_trigger_markers: MeshSlot,
     pub(crate) spawn_marker: MeshSlot,
     pub(crate) camera_trigger_markers: MeshSlot,
     pub(crate) editor_preview_player: MeshSlot,
@@ -456,6 +457,7 @@ impl SceneMeshes {
         self.editor_selection_outline.destroy();
         self.editor_gizmo.destroy();
         self.tap_indicators.destroy();
+        self.transform_trigger_markers.destroy();
         self.spawn_marker.destroy();
         self.camera_trigger_markers.destroy();
         self.editor_preview_player.destroy();

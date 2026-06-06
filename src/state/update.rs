@@ -560,6 +560,7 @@ impl State {
                         self.mark_editor_dirty(super::EditorDirtyFlags {
                             rebuild_block_mesh: true,
                             rebuild_hitbox_visualization: true,
+                            rebuild_transform_trigger_markers: true,
                             ..super::EditorDirtyFlags::default()
                         });
                     }

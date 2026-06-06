@@ -12,7 +12,7 @@ use crate::mesh::obj::{resolve_obj_mesh, ObjMaterial, ObjMesh};
 use crate::mesh::shapes::{append_prism, append_quad};
 use crate::mesh::MeshGeometry;
 use crate::types::{CameraTrigger, CameraTriggerMode, Direction, Vertex};
-use glam::{Vec2, Vec3};
+use glam::{EulerRot, Quat, Vec2, Vec3};
 
 const GEM_SHATTER_DURATION_SECONDS: f32 = 0.48;
 const GEM_SHATTER_SHARD_COUNT: usize = 14;
@@ -30,6 +30,17 @@ pub(crate) struct PracticeCheckpointFlagInstance {
     pub(crate) position: [f32; 3],
     pub(crate) direction: Direction,
     pub(crate) is_latest: bool,
+}
+
+pub(crate) struct TransformTriggerMarker {
+    pub(crate) source_position: [f32; 3],
+    pub(crate) source_size: [f32; 3],
+    pub(crate) target_position: [f32; 3],
+    pub(crate) target_rotation_degrees: [f32; 3],
+    pub(crate) target_size: [f32; 3],
+    pub(crate) time_seconds: f32,
+    pub(crate) duration_seconds: f32,
+    pub(crate) is_selected: bool,
 }
 
 pub(crate) fn gem_shatter_duration_seconds() -> f32 {
@@ -590,13 +601,271 @@ pub(crate) fn build_camera_trigger_marker_vertices(
     vertices
 }
 
+pub(crate) fn build_transform_trigger_marker_vertices(
+    markers: &[TransformTriggerMarker],
+    current_time_seconds: f32,
+) -> Vec<Vertex> {
+    puffin::profile_scope!("BuildTransformTriggerMarkerVertices");
+    let mut vertices = Vec::new();
+
+    for marker in markers {
+        append_transform_trigger_marker(&mut vertices, marker, current_time_seconds);
+    }
+
+    vertices
+}
+
+fn append_transform_trigger_marker(
+    vertices: &mut Vec<Vertex>,
+    marker: &TransformTriggerMarker,
+    current_time_seconds: f32,
+) {
+    let source_center = object_center(marker.source_position, marker.source_size);
+    let target_center = object_center(marker.target_position, marker.target_size);
+    let progress = transform_trigger_countdown_progress(
+        marker.time_seconds,
+        marker.duration_seconds,
+        current_time_seconds,
+    );
+
+    let selected_boost = if marker.is_selected { 0.1 } else { 0.0 };
+    let ring_radius = 0.46 - progress * 0.31 + selected_boost;
+    let ring_color = if current_time_seconds >= marker.time_seconds {
+        [1.0, 0.52, 0.18, 0.88]
+    } else if marker.is_selected {
+        [1.0, 0.84, 0.24, 0.96]
+    } else {
+        [0.64, 0.22, 1.0, 0.9]
+    };
+    append_xz_ring(
+        vertices,
+        source_center,
+        ring_radius.max(0.12),
+        0.055,
+        ring_color,
+    );
+
+    let connector_color = [0.72, 0.42, 1.0, 0.72];
+    append_cylinder_segment(
+        vertices,
+        source_center,
+        target_center,
+        0.035,
+        connector_color,
+    );
+
+    let rotation = transform_marker_rotation(marker.target_rotation_degrees);
+    let forward = (rotation * Vec3::Z).normalize_or_zero();
+    let arrow_direction = if forward.length_squared() > f32::EPSILON {
+        forward
+    } else {
+        Vec3::Z
+    };
+    let target_extent = marker
+        .target_size
+        .iter()
+        .copied()
+        .fold(0.0_f32, f32::max)
+        .max(0.75);
+    let arrow_base = Vec3::from_array(target_center) - arrow_direction * (target_extent * 0.3);
+    let arrow_shaft_end =
+        Vec3::from_array(target_center) + arrow_direction * (target_extent * 0.42);
+    let arrow_tip = arrow_shaft_end + arrow_direction * 0.45;
+    let arrow_color = if marker.is_selected {
+        [1.0, 0.8, 0.18, 0.96]
+    } else {
+        [0.22, 0.9, 1.0, 0.88]
+    };
+
+    append_cylinder_segment(
+        vertices,
+        arrow_base.to_array(),
+        arrow_shaft_end.to_array(),
+        0.055,
+        arrow_color,
+    );
+    append_cone(
+        vertices,
+        arrow_shaft_end.to_array(),
+        arrow_tip.to_array(),
+        0.17,
+        arrow_color,
+    );
+    append_oriented_box_edges(
+        vertices,
+        marker.target_position,
+        marker.target_size,
+        rotation,
+        0.028,
+        [0.18, 1.0, 0.62, 0.58],
+    );
+}
+
+fn transform_trigger_countdown_progress(
+    time_seconds: f32,
+    duration_seconds: f32,
+    current_time_seconds: f32,
+) -> f32 {
+    if current_time_seconds >= time_seconds {
+        return 1.0;
+    }
+
+    let window_seconds = duration_seconds.max(1.0);
+    let remaining = time_seconds - current_time_seconds;
+    1.0 - (remaining / window_seconds).clamp(0.0, 1.0)
+}
+
+fn object_center(position: [f32; 3], size: [f32; 3]) -> [f32; 3] {
+    [
+        position[0] + size[0] * 0.5,
+        position[1] + size[1] * 0.5,
+        position[2] + size[2] * 0.5,
+    ]
+}
+
+fn transform_marker_rotation(rotation_degrees: [f32; 3]) -> Quat {
+    Quat::from_euler(
+        EulerRot::XYZ,
+        rotation_degrees[0].to_radians(),
+        rotation_degrees[1].to_radians(),
+        rotation_degrees[2].to_radians(),
+    )
+}
+
+fn append_xz_ring(
+    vertices: &mut Vec<Vertex>,
+    center: [f32; 3],
+    radius: f32,
+    thickness: f32,
+    color: [f32; 4],
+) {
+    let segments = 32;
+    let outer_radius = radius + thickness * 0.5;
+    let inner_radius = (radius - thickness * 0.5).max(0.02);
+    let center = Vec3::from_array(center);
+
+    for segment in 0..segments {
+        let a0 = segment as f32 * std::f32::consts::TAU / segments as f32;
+        let a1 = (segment + 1) as f32 * std::f32::consts::TAU / segments as f32;
+        let (s0, c0) = a0.sin_cos();
+        let (s1, c1) = a1.sin_cos();
+        let outer0 = center + Vec3::new(c0 * outer_radius, 0.0, s0 * outer_radius);
+        let outer1 = center + Vec3::new(c1 * outer_radius, 0.0, s1 * outer_radius);
+        let inner0 = center + Vec3::new(c0 * inner_radius, 0.0, s0 * inner_radius);
+        let inner1 = center + Vec3::new(c1 * inner_radius, 0.0, s1 * inner_radius);
+        append_quad(
+            vertices,
+            outer0.to_array(),
+            outer1.to_array(),
+            inner1.to_array(),
+            inner0.to_array(),
+            color,
+        );
+    }
+}
+
+fn append_oriented_box_edges(
+    vertices: &mut Vec<Vertex>,
+    position: [f32; 3],
+    size: [f32; 3],
+    rotation: Quat,
+    radius: f32,
+    color: [f32; 4],
+) {
+    let center = Vec3::from_array(object_center(position, size));
+    let half = Vec3::new(size[0] * 0.5, size[1] * 0.5, size[2] * 0.5);
+    let corners = [
+        Vec3::new(-half.x, -half.y, -half.z),
+        Vec3::new(half.x, -half.y, -half.z),
+        Vec3::new(half.x, -half.y, half.z),
+        Vec3::new(-half.x, -half.y, half.z),
+        Vec3::new(-half.x, half.y, -half.z),
+        Vec3::new(half.x, half.y, -half.z),
+        Vec3::new(half.x, half.y, half.z),
+        Vec3::new(-half.x, half.y, half.z),
+    ]
+    .map(|corner| center + rotation * corner);
+    let edges = [
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 0),
+        (4, 5),
+        (5, 6),
+        (6, 7),
+        (7, 4),
+        (0, 4),
+        (1, 5),
+        (2, 6),
+        (3, 7),
+    ];
+
+    for (start, end) in edges {
+        append_cylinder_segment(
+            vertices,
+            corners[start].to_array(),
+            corners[end].to_array(),
+            radius,
+            color,
+        );
+    }
+}
+
+fn append_cylinder_segment(
+    vertices: &mut Vec<Vertex>,
+    start: [f32; 3],
+    end: [f32; 3],
+    radius: f32,
+    color: [f32; 4],
+) {
+    let start = Vec3::from_array(start);
+    let end = Vec3::from_array(end);
+    let axis = end - start;
+    let length = axis.length();
+    if length <= f32::EPSILON {
+        return;
+    }
+
+    let forward = axis / length;
+    let arbitrary = if forward.x.abs() < 0.9 {
+        Vec3::X
+    } else {
+        Vec3::Y
+    };
+    let right = forward.cross(arbitrary).normalize_or_zero();
+    if right.length_squared() <= f32::EPSILON {
+        return;
+    }
+    let up = right.cross(forward).normalize_or_zero();
+    let segments = 12;
+
+    for segment in 0..segments {
+        let a0 = segment as f32 * std::f32::consts::TAU / segments as f32;
+        let a1 = (segment + 1) as f32 * std::f32::consts::TAU / segments as f32;
+        let (s0, c0) = a0.sin_cos();
+        let (s1, c1) = a1.sin_cos();
+        let offset0 = (right * c0 + up * s0) * radius;
+        let offset1 = (right * c1 + up * s1) * radius;
+
+        append_quad(
+            vertices,
+            (start + offset0).to_array(),
+            (end + offset0).to_array(),
+            (end + offset1).to_array(),
+            (start + offset1).to_array(),
+            color,
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         build_gem_shatter_vertices, build_practice_checkpoint_flag_geometry,
         build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices,
-        build_trail_vertices, build_trail_vertices_with_alpha, gem_shatter_duration_seconds,
-        GemShatterInstance, PracticeCheckpointFlagInstance,
+        build_trail_vertices, build_trail_vertices_with_alpha,
+        build_transform_trigger_marker_vertices, gem_shatter_duration_seconds, GemShatterInstance,
+        PracticeCheckpointFlagInstance, TransformTriggerMarker,
     };
     use crate::types::{Direction, Vertex};
 
@@ -682,6 +951,51 @@ mod tests {
             .fold(f32::NEG_INFINITY, f32::max);
         assert!(max_latest_flag_y > 3.9);
         assert!(max_latest_flag_y < 4.1);
+    }
+
+    #[test]
+    fn transform_trigger_marker_contains_countdown_ring_connector_arrow_and_scale_cage() {
+        let marker = TransformTriggerMarker {
+            source_position: [0.0, 0.0, 0.0],
+            source_size: [1.0, 1.0, 1.0],
+            target_position: [3.0, 0.0, 2.0],
+            target_rotation_degrees: [0.0, 90.0, 0.0],
+            target_size: [2.0, 1.5, 0.75],
+            time_seconds: 4.0,
+            duration_seconds: 2.0,
+            is_selected: false,
+        };
+        let early = build_transform_trigger_marker_vertices(std::slice::from_ref(&marker), 2.0);
+        let late = build_transform_trigger_marker_vertices(std::slice::from_ref(&marker), 4.0);
+
+        assert!(!early.is_empty());
+        assert!(!late.is_empty());
+        assert_eq!(early.len(), late.len());
+
+        let source_center = [0.5, 0.5, 0.5];
+        let ring_outer_radius = |vertices: &[Vertex]| {
+            vertices
+                .iter()
+                .take(32 * 6)
+                .map(|vertex| {
+                    let dx = vertex.position[0] - source_center[0];
+                    let dz = vertex.position[2] - source_center[2];
+                    (dx * dx + dz * dz).sqrt()
+                })
+                .fold(0.0_f32, f32::max)
+        };
+        assert!(ring_outer_radius(&late) < ring_outer_radius(&early));
+
+        let max_target_x = early
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+        let min_target_x = early
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::INFINITY, f32::min);
+        assert!(max_target_x > 4.2);
+        assert!(min_target_x < 0.4);
     }
 
     #[test]

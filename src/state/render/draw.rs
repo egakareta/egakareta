@@ -434,6 +434,52 @@ impl State {
 
         if draw_editor_overlays {
             puffin::profile_scope!("DrawEditorOverlays");
+
+            if let Some(draw_data) = self.render.meshes.transform_trigger_markers.draw_data() {
+                puffin::profile_scope!("DrawTransformTriggerMarkers");
+                let mut transform_marker_pass =
+                    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("Editor Transform Trigger Marker Pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view,
+                            resolve_target: None,
+                            depth_slice: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                            view: &self.render.gpu.editor_outline_occlusion_depth_view,
+                            depth_ops: Some(wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(1.0),
+                                store: wgpu::StoreOp::Store,
+                            }),
+                            stencil_ops: Some(wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(0),
+                                store: wgpu::StoreOp::Store,
+                            }),
+                        }),
+                        occlusion_query_set: None,
+                        timestamp_writes: None,
+                        multiview_mask: None,
+                    });
+                transform_marker_pass.set_pipeline(&self.render.gpu.render_pipeline);
+                transform_marker_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
+                transform_marker_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                transform_marker_pass.set_bind_group(
+                    2,
+                    &self.render.gpu.color_space_bind_group,
+                    &[],
+                );
+                transform_marker_pass.set_bind_group(
+                    3,
+                    &self.render.gpu.block_texture_bind_group,
+                    &[],
+                );
+                draw_mesh(&mut transform_marker_pass, draw_data);
+            }
+
             // Selection outlines use a selected-only depth prepass, so each block keeps its own
             // hollow silhouette while other selected blocks occlude outlines behind them.
             let selection_instances = self
@@ -873,6 +919,7 @@ mod tests {
             .clear();
         state.render.meshes.editor_gizmo = MeshSlot::Empty;
         state.render.meshes.tap_indicators = MeshSlot::Empty;
+        state.render.meshes.transform_trigger_markers = MeshSlot::Empty;
         state.render.meshes.spawn_marker = MeshSlot::Empty;
         state.render.meshes.camera_trigger_markers = MeshSlot::Empty;
         state.render.meshes.editor_preview_player = MeshSlot::Empty;
@@ -1328,6 +1375,8 @@ mod tests {
                 MeshSlot::from_vertices(state.device(), "gizmo", &tri);
             state.render.meshes.tap_indicators =
                 MeshSlot::from_vertices(state.device(), "taps", &tri);
+            state.render.meshes.transform_trigger_markers =
+                MeshSlot::from_vertices(state.device(), "transform_markers", &tri);
             state.render.meshes.spawn_marker =
                 MeshSlot::from_vertices(state.device(), "spawn", &tri);
             state.render.meshes.camera_trigger_markers =

@@ -12,6 +12,7 @@ use crate::block_repository::resolve_block_definition;
 use crate::editor_domain::tap_time_is_timing_division;
 use crate::editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds_with_triggers};
 use crate::game::trigger_transformed_objects_at_time;
+use crate::mesh::TransformTriggerMarker;
 use crate::mesh::{
     build_block_geometry, build_block_geometry_for_object, build_block_geometry_from_refs,
     build_camera_trigger_marker_vertices, build_colored_tap_indicator_vertices,
@@ -20,13 +21,13 @@ use crate::mesh::{
     build_editor_selection_outline_vertices, build_editor_tap_cursor_vertices,
     build_editor_transform_origin_outline_vertices, build_practice_checkpoint_flag_geometry,
     build_spawn_marker_vertices, build_tap_division_preview_vertices,
-    build_tap_division_tap_marker_vertices, GizmoParams, MeshGeometry,
-    PracticeCheckpointFlagInstance,
+    build_tap_division_tap_marker_vertices, build_transform_trigger_marker_vertices, GizmoParams,
+    MeshGeometry, PracticeCheckpointFlagInstance,
 };
 use crate::state::render::EditorOutlineInstance;
 use crate::types::{
-    AppPhase, EditorMode, EditorPlaceMode, GizmoPart, LevelObject, SpawnDirection, TimingPoint,
-    Vertex,
+    AppPhase, EditorMode, EditorPlaceMode, GizmoPart, LevelObject, SpawnDirection,
+    TimedTriggerAction, TimedTriggerTarget, TimingPoint, Vertex,
 };
 
 const SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD: usize = 700;
@@ -297,6 +298,9 @@ impl State {
         if dirty.rebuild_tap_indicators {
             self.editor.runtime.dirty.rebuild_tap_indicators = false;
         }
+        if dirty.rebuild_transform_trigger_markers {
+            self.editor.runtime.dirty.rebuild_transform_trigger_markers = false;
+        }
         if dirty.rebuild_preview_player {
             self.editor.runtime.dirty.rebuild_preview_player = false;
         }
@@ -355,6 +359,11 @@ impl State {
         if dirty.rebuild_tap_indicators {
             puffin::profile_scope!("DirtyTapIndicators");
             self.rebuild_tap_indicator_vertices();
+        }
+
+        if dirty.rebuild_transform_trigger_markers {
+            puffin::profile_scope!("DirtyTransformTriggerMarkers");
+            self.rebuild_transform_trigger_marker_vertices();
         }
 
         if dirty.rebuild_preview_player {
@@ -804,6 +813,68 @@ impl State {
             .replace_with_vertices(
                 &self.render.gpu.device,
                 "Camera Trigger Marker Vertex Buffer",
+                &vertices,
+            );
+    }
+
+    pub(super) fn rebuild_transform_trigger_marker_vertices(&mut self) {
+        puffin::profile_scope!("TransformTriggerMarkerMesh");
+        if self.phase != AppPhase::Editor {
+            self.render.meshes.transform_trigger_markers.clear();
+            return;
+        }
+
+        let selected_trigger_index = self.editor.selected_trigger_index();
+        let mut markers = Vec::new();
+        for (trigger_index, trigger) in self.editor.triggers().iter().enumerate() {
+            let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
+                continue;
+            };
+            let TimedTriggerAction::TransformObjects {
+                position,
+                rotation_degrees,
+                size,
+            } = &trigger.action
+            else {
+                continue;
+            };
+
+            for object_id in object_ids {
+                let Ok(object_index) = usize::try_from(*object_id) else {
+                    continue;
+                };
+                let Some(source_object) = self.editor.objects.get(object_index) else {
+                    continue;
+                };
+
+                markers.push(TransformTriggerMarker {
+                    source_position: source_object.position,
+                    source_size: source_object.size,
+                    target_position: *position,
+                    target_rotation_degrees: *rotation_degrees,
+                    target_size: *size,
+                    time_seconds: trigger.time_seconds,
+                    duration_seconds: trigger.duration_seconds,
+                    is_selected: selected_trigger_index == Some(trigger_index),
+                });
+            }
+        }
+
+        if markers.is_empty() {
+            self.render.meshes.transform_trigger_markers.clear();
+            return;
+        }
+
+        let vertices = build_transform_trigger_marker_vertices(
+            &markers,
+            self.editor.timeline.clock.time_seconds,
+        );
+        self.render
+            .meshes
+            .transform_trigger_markers
+            .replace_with_vertices(
+                &self.render.gpu.device,
+                "Transform Trigger Marker Vertex Buffer",
                 &vertices,
             );
     }
@@ -1577,6 +1648,42 @@ mod tests {
             state.editor.ui.mode = EditorMode::Timing;
             state.rebuild_tap_indicator_vertices();
             assert!(state.render.meshes.tap_indicators.draw_data().is_none());
+        });
+    }
+
+    #[test]
+    fn transform_trigger_marker_meshes_clear_or_build_by_phase_and_data() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.objects = vec![block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])];
+            state.editor.set_triggers(vec![object_move_trigger()]);
+
+            state.phase = AppPhase::Menu;
+            state.rebuild_transform_trigger_marker_vertices();
+            assert!(state
+                .render
+                .meshes
+                .transform_trigger_markers
+                .draw_data()
+                .is_none());
+
+            state.phase = AppPhase::Editor;
+            state.rebuild_transform_trigger_marker_vertices();
+            assert!(state
+                .render
+                .meshes
+                .transform_trigger_markers
+                .draw_data()
+                .is_some());
+
+            state.editor.set_triggers(Vec::new());
+            state.rebuild_transform_trigger_marker_vertices();
+            assert!(state
+                .render
+                .meshes
+                .transform_trigger_markers
+                .draw_data()
+                .is_none());
         });
     }
 

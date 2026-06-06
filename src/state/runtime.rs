@@ -17,6 +17,7 @@ pub(crate) struct EditorDirtyFlags {
     pub(crate) append_block_mesh: bool,
     pub(crate) rebuild_selection_overlays: bool,
     pub(crate) rebuild_tap_indicators: bool,
+    pub(crate) rebuild_transform_trigger_markers: bool,
     pub(crate) rebuild_preview_player: bool,
     pub(crate) rebuild_cursor: bool,
     pub(crate) rebuild_hitbox_visualization: bool,
@@ -30,6 +31,7 @@ impl EditorDirtyFlags {
             append_block_mesh: false,
             rebuild_selection_overlays: true,
             rebuild_tap_indicators: true,
+            rebuild_transform_trigger_markers: true,
             rebuild_preview_player: true,
             rebuild_cursor: true,
             rebuild_hitbox_visualization: true,
@@ -42,6 +44,7 @@ impl EditorDirtyFlags {
         self.append_block_mesh |= other.append_block_mesh;
         self.rebuild_selection_overlays |= other.rebuild_selection_overlays;
         self.rebuild_tap_indicators |= other.rebuild_tap_indicators;
+        self.rebuild_transform_trigger_markers |= other.rebuild_transform_trigger_markers;
         self.rebuild_preview_player |= other.rebuild_preview_player;
         self.rebuild_cursor |= other.rebuild_cursor;
         self.rebuild_hitbox_visualization |= other.rebuild_hitbox_visualization;
@@ -53,6 +56,7 @@ impl EditorDirtyFlags {
             || self.append_block_mesh
             || self.rebuild_selection_overlays
             || self.rebuild_tap_indicators
+            || self.rebuild_transform_trigger_markers
             || self.rebuild_preview_player
             || self.rebuild_cursor
             || self.rebuild_hitbox_visualization

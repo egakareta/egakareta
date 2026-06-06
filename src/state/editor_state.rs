@@ -955,6 +955,7 @@ impl State {
             self.mark_editor_dirty(EditorDirtyFlags {
                 rebuild_block_mesh: true,
                 rebuild_hitbox_visualization: true,
+                rebuild_transform_trigger_markers: true,
                 ..EditorDirtyFlags::default()
             });
         }
@@ -1190,6 +1191,7 @@ impl State {
             rebuild_selection_overlays: true,
             rebuild_block_mesh: transforms_objects,
             rebuild_hitbox_visualization: transforms_objects,
+            rebuild_transform_trigger_markers: transforms_objects,
             ..EditorDirtyFlags::default()
         });
     }
@@ -1313,6 +1315,7 @@ impl State {
             rebuild_preview_player: true,
             rebuild_cursor: true,
             rebuild_hitbox_visualization: true,
+            rebuild_transform_trigger_markers: true,
             ..EditorDirtyFlags::default()
         });
 
@@ -1349,6 +1352,7 @@ impl State {
             rebuild_preview_player: true,
             rebuild_cursor: true,
             rebuild_hitbox_visualization: true,
+            rebuild_transform_trigger_markers: true,
             ..EditorDirtyFlags::default()
         });
 
@@ -1469,6 +1473,7 @@ impl State {
             rebuild_selection_overlays: true,
             rebuild_block_mesh: transforms_objects,
             rebuild_hitbox_visualization: true,
+            rebuild_transform_trigger_markers: transforms_objects,
             ..EditorDirtyFlags::default()
         });
     }
@@ -1478,6 +1483,7 @@ impl State {
             self.editor.set_trigger_selected(selected);
             self.mark_editor_dirty(EditorDirtyFlags {
                 rebuild_selection_overlays: true,
+                rebuild_transform_trigger_markers: true,
                 ..EditorDirtyFlags::default()
             });
         }
@@ -1500,6 +1506,7 @@ impl State {
             rebuild_selection_overlays: true,
             rebuild_block_mesh: transforms_objects,
             rebuild_hitbox_visualization: true,
+            rebuild_transform_trigger_markers: transforms_objects,
             ..EditorDirtyFlags::default()
         });
     }
