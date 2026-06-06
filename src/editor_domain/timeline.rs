@@ -274,15 +274,6 @@ pub(crate) fn derive_tap_indicator_positions(
             snapshot.position[2] - 0.5,
         ]);
     }
-
-    positions.sort_unstable_by(|a, b| {
-        a[0].total_cmp(&b[0])
-            .then(a[1].total_cmp(&b[1]))
-            .then(a[2].total_cmp(&b[2]))
-    });
-    positions.dedup_by(|a, b| {
-        (a[0] - b[0]).abs() < 0.001 && (a[1] - b[1]).abs() < 0.001 && (a[2] - b[2]).abs() < 0.001
-    });
     positions
 }
 

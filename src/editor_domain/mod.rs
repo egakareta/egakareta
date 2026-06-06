@@ -674,7 +674,7 @@ mod tests {
     }
 
     #[test]
-    fn derives_tap_indicator_positions_with_single_simulation_path() {
+    fn derives_tap_indicator_positions_in_sorted_tap_time_order() {
         let taps = [0.4, 0.1, 0.4, 0.7];
         let positions = derive_tap_indicator_positions(
             [0.0, 0.0, 0.0],
@@ -683,19 +683,20 @@ mod tests {
             &[],
         );
 
-        assert!(!positions.is_empty());
-        let mut unique_check = positions.clone();
-        unique_check.sort_by(|a, b| {
-            a[0].total_cmp(&b[0])
-                .then(a[1].total_cmp(&b[1]))
-                .then(a[2].total_cmp(&b[2]))
-        });
-        unique_check.dedup_by(|a, b| {
-            (a[0] - b[0]).abs() < 0.001
-                && (a[1] - b[1]).abs() < 0.001
-                && (a[2] - b[2]).abs() < 0.001
-        });
-        assert_eq!(positions.len(), unique_check.len());
+        let sorted_taps = [0.1, 0.4, 0.4, 0.7];
+        let mut expected = Vec::new();
+        for tap in sorted_taps {
+            let (position, _) = derive_timeline_position(
+                [0.0, 0.0, 0.0],
+                crate::types::SpawnDirection::Forward,
+                &sorted_taps,
+                tap,
+                &[],
+            );
+            expected.push([position[0] - 0.5, position[1], position[2] - 0.5]);
+        }
+
+        assert_eq!(positions, expected);
     }
 
     #[test]
@@ -711,16 +712,6 @@ mod tests {
             let (position, _) = derive_timeline_position(spawn, direction, &taps, tap, &[]);
             expected.push([position[0] - 0.5, position[1], position[2] - 0.5]);
         }
-        expected.sort_by(|a, b| {
-            a[0].total_cmp(&b[0])
-                .then(a[1].total_cmp(&b[1]))
-                .then(a[2].total_cmp(&b[2]))
-        });
-        expected.dedup_by(|a, b| {
-            (a[0] - b[0]).abs() < 0.001
-                && (a[1] - b[1]).abs() < 0.001
-                && (a[2] - b[2]).abs() < 0.001
-        });
 
         assert_eq!(derived.len(), expected.len());
         for (left, right) in derived.iter().zip(expected.iter()) {

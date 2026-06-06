@@ -2305,6 +2305,7 @@ mod tests {
 
             let mut state = new_editor_state().await;
             state.dispatch(AppCommand::EditorSetMode(EditorMode::Tapping));
+            state.editor.objects.clear();
             state.editor.timeline.clock.time_seconds = 0.0;
             state.editor.timeline.clock.duration_seconds = 4.0;
             state.editor.timeline.taps.tap_times = vec![1.25];
@@ -2360,6 +2361,70 @@ mod tests {
             assert_eq!(selected_tap.index, 0);
             assert_eq!(selected_tap.time_seconds, 1.25);
             assert_eq!(selected_tap.position, [0.25, 0.0, 0.75]);
+        });
+    }
+
+    #[test]
+    fn tapping_mode_click_selects_tap_indicator_by_matching_time_index() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = new_editor_state().await;
+            state.dispatch(AppCommand::EditorSetMode(EditorMode::Tapping));
+            state.editor.objects.clear();
+            state.editor.timeline.clock.time_seconds = 0.0;
+            state.editor.timeline.clock.duration_seconds = 4.0;
+            state.editor.timeline.taps.tap_times = vec![0.125, 0.25];
+            state.editor.timeline.taps.tap_indicator_positions =
+                crate::editor_domain::derive_tap_indicator_positions(
+                    state.editor.spawn.position,
+                    state.editor.spawn.direction,
+                    &state.editor.timeline.taps.tap_times,
+                    &state.editor.objects,
+                );
+            state.editor.timeline.taps.selected_index = None;
+            state.editor.camera.editor_pan = [2.0, 1.0];
+            state.editor.camera.editor_target_z = 1.5;
+
+            let first_tap_position = state.editor.timeline.taps.tap_indicator_positions[0];
+            let second_tap_position = state.editor.timeline.taps.tap_indicator_positions[1];
+            assert!(first_tap_position[0] < second_tap_position[0]);
+            assert!((first_tap_position[2] - second_tap_position[2]).abs() < 0.001);
+
+            let viewport = Vec2::new(
+                state.render.gpu.config.width as f32,
+                state.render.gpu.config.height as f32,
+            );
+            let second_tap_center = glam::Vec3::new(
+                second_tap_position[0] + 0.5,
+                second_tap_position[1] + 0.1,
+                second_tap_position[2] + 0.5,
+            );
+            let second_tap_screen = state
+                .editor
+                .world_to_screen_v(second_tap_center, viewport)
+                .expect("second tap indicator should project to the screen");
+
+            state.process_input_event(InputEvent::PointerMoved {
+                x: second_tap_screen.x as f64,
+                y: second_tap_screen.y as f64,
+            });
+            state.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: true,
+            });
+
+            assert_eq!(state.editor.timeline.taps.selected_index, Some(1));
+            assert!((state.editor.timeline.clock.time_seconds - 0.25).abs() < 0.001);
+            assert_eq!(state.editor.ui.cursor, second_tap_position);
+
+            let selected_tap = state
+                .editor_ui_view_model()
+                .selected_tap
+                .expect("selected tap should be exposed to the UI");
+            assert_eq!(selected_tap.index, 1);
+            assert_eq!(selected_tap.time_seconds, 0.25);
+            assert_eq!(selected_tap.position, second_tap_position);
         });
     }
 
