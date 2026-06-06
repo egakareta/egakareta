@@ -926,18 +926,11 @@ impl State {
             self.editor.timeline.playback.pending_seek_time_seconds = None;
             self.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
 
-            if self.editor.has_object_transform_triggers() {
-                self.mark_editor_dirty(EditorDirtyFlags {
-                    rebuild_block_mesh: true,
-                    rebuild_tap_indicators: true,
-                    ..EditorDirtyFlags::default()
-                });
-            } else {
-                self.mark_editor_dirty(EditorDirtyFlags {
-                    rebuild_tap_indicators: true,
-                    ..EditorDirtyFlags::default()
-                });
-            }
+            self.mark_editor_dirty(EditorDirtyFlags {
+                rebuild_block_mesh: true,
+                rebuild_tap_indicators: true,
+                ..EditorDirtyFlags::default()
+            });
             if last_mode == EditorMode::Timing {
                 self.editor.timeline.playback.runtime = None;
             } else {
@@ -976,18 +969,11 @@ impl State {
             self.editor.set_mode(EditorMode::Place);
         }
 
-        if self.editor.has_object_transform_triggers() {
-            self.mark_editor_dirty(EditorDirtyFlags {
-                rebuild_block_mesh: true,
-                rebuild_tap_indicators: true,
-                ..EditorDirtyFlags::default()
-            });
-        } else {
-            self.mark_editor_dirty(EditorDirtyFlags {
-                rebuild_tap_indicators: true,
-                ..EditorDirtyFlags::default()
-            });
-        }
+        self.mark_editor_dirty(EditorDirtyFlags {
+            rebuild_block_mesh: true,
+            rebuild_tap_indicators: true,
+            ..EditorDirtyFlags::default()
+        });
         self.stop_audio();
     }
 

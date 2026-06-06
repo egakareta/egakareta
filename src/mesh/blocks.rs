@@ -22,6 +22,8 @@ use crate::types::{LevelObject, Vertex};
 const LIQUID_PROFILE_TAG: f32 = 1.0;
 const GEM_PROFILE_TAG: f32 = 4.0;
 const PARALLEL_GEOMETRY_OBJECT_THRESHOLD: usize = 256;
+const PARALLEL_CHUNK_SIZE: usize = 128;
+const VERTICES_PER_PRISM: usize = 36;
 
 pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
     puffin::profile_scope!("BuildBlockVertices");
@@ -37,12 +39,19 @@ pub(crate) fn build_block_geometry_from_refs(objects: &[&LevelObject]) -> MeshGe
     puffin::profile_scope!("BuildBlockGeometryRefs");
     if should_build_geometry_in_parallel(objects.len()) {
         puffin::profile_scope!("BuildBlockGeometryRefsParallel");
-        merge_object_geometries(
-            objects
-                .par_iter()
-                .map(|object| build_block_geometry_for_object(object))
-                .collect(),
-        )
+        let chunk_geometries: Vec<MeshGeometry> = objects
+            .par_chunks(PARALLEL_CHUNK_SIZE)
+            .map(|chunk| {
+                let mut geometry = MeshGeometry::default();
+                geometry.vertices.reserve(chunk.len() * VERTICES_PER_PRISM);
+                let mut scratch = Vec::with_capacity(VERTICES_PER_PRISM);
+                for object in chunk {
+                    append_block_geometry_with_scratch(&mut geometry, object, &mut scratch);
+                }
+                geometry
+            })
+            .collect();
+        merge_object_geometries(chunk_geometries)
     } else {
         build_block_geometry_impl(objects.iter().copied())
     }
@@ -61,9 +70,13 @@ where
 {
     puffin::profile_scope!("BuildBlockGeometryImpl");
     let mut all_geometry = MeshGeometry::default();
-
+    let (lower, _) = objects.size_hint();
+    all_geometry
+        .vertices
+        .reserve(lower.saturating_mul(VERTICES_PER_PRISM));
+    let mut scratch = Vec::with_capacity(VERTICES_PER_PRISM);
     for obj in objects {
-        append_block_geometry(&mut all_geometry, obj);
+        append_block_geometry_with_scratch(&mut all_geometry, obj, &mut scratch);
     }
 
     all_geometry
@@ -72,19 +85,36 @@ where
 fn build_block_geometry_from_slice(objects: &[LevelObject]) -> MeshGeometry {
     if should_build_geometry_in_parallel(objects.len()) {
         puffin::profile_scope!("BuildBlockGeometryParallel");
-        merge_object_geometries(
-            objects
-                .par_iter()
-                .map(build_block_geometry_for_object)
-                .collect(),
-        )
+        let chunk_geometries: Vec<MeshGeometry> = objects
+            .par_chunks(PARALLEL_CHUNK_SIZE)
+            .map(|chunk| {
+                let mut geometry = MeshGeometry::default();
+                geometry.vertices.reserve(chunk.len() * VERTICES_PER_PRISM);
+                let mut scratch = Vec::with_capacity(VERTICES_PER_PRISM);
+                for object in chunk {
+                    append_block_geometry_with_scratch(&mut geometry, object, &mut scratch);
+                }
+                geometry
+            })
+            .collect();
+        merge_object_geometries(chunk_geometries)
     } else {
         build_block_geometry_impl(objects.iter())
     }
 }
 
 fn merge_object_geometries(object_geometries: Vec<MeshGeometry>) -> MeshGeometry {
+    let total_vertices: usize = object_geometries.iter().map(|g| g.vertices.len()).sum();
+    let total_indices: usize = object_geometries
+        .iter()
+        .filter_map(|g| g.indices.as_ref().map(Vec::len))
+        .sum();
+
     let mut all_geometry = MeshGeometry::default();
+    all_geometry.vertices.reserve(total_vertices);
+    if total_indices > 0 {
+        all_geometry.indices = Some(Vec::with_capacity(total_indices));
+    }
     for object_geometry in object_geometries {
         all_geometry.append_geometry(object_geometry);
     }
@@ -122,8 +152,32 @@ impl BlockColors {
 fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
     let mut object_geometry = MeshGeometry::default();
     let mut object_vertices = Vec::new();
-    let vertices = &mut object_vertices;
+    append_block_geometry_inner(
+        all_geometry,
+        obj,
+        &mut object_vertices,
+        &mut object_geometry,
+    );
+}
 
+/// Like `append_block_geometry` but reuses `scratch_vertices` across calls to avoid
+/// per-object heap allocations. Used in parallel chunk builders and serial loops.
+fn append_block_geometry_with_scratch(
+    all_geometry: &mut MeshGeometry,
+    obj: &LevelObject,
+    scratch_vertices: &mut Vec<Vertex>,
+) {
+    scratch_vertices.clear();
+    let mut object_geometry = MeshGeometry::default();
+    append_block_geometry_inner(all_geometry, obj, scratch_vertices, &mut object_geometry);
+}
+
+fn append_block_geometry_inner(
+    all_geometry: &mut MeshGeometry,
+    obj: &LevelObject,
+    object_vertices: &mut Vec<Vertex>,
+    object_geometry: &mut MeshGeometry,
+) {
     let x_min = obj.position[0];
     let x_max = obj.position[0] + obj.size[0];
     let y_min = obj.position[1];
@@ -156,19 +210,13 @@ fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
     ];
     if let Some(mesh_path) = block.assets.mesh.as_deref() {
         if let Some(mesh) = resolve_egmesh(mesh_path) {
-            append_egmesh_geometry(
-                &mut object_geometry,
-                obj,
-                mesh,
-                colors.top,
-                texture_layers.side,
-            );
+            append_egmesh_geometry(object_geometry, obj, mesh, colors.top, texture_layers.side);
         } else if let Some(mesh) = resolve_obj_mesh(mesh_path) {
-            append_obj_mesh(vertices, obj, mesh, colors.top, texture_layers.side);
+            append_obj_mesh(object_vertices, obj, mesh, colors.top, texture_layers.side);
         }
     }
 
-    if object_geometry.vertices.is_empty() && vertices.is_empty() {
+    if object_geometry.vertices.is_empty() && object_vertices.is_empty() {
         let prism_colors = PrismFaceColors::new_with_outline(
             colors.top,
             colors.side,
@@ -177,7 +225,7 @@ fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
         );
 
         append_prism_with_layers(
-            vertices,
+            object_vertices,
             [x_min, y_min, z_min],
             [x_max, y_max, z_max],
             prism_colors,
@@ -190,33 +238,50 @@ fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
     }
 
     if !object_vertices.is_empty() {
-        rotate_vertices_around_euler(&mut object_vertices, center, obj.rotation_degrees);
-        object_geometry.append_vertices(object_vertices);
+        rotate_vertices_around_euler(object_vertices, center, obj.rotation_degrees);
+        // Apply profile tags directly to the vertex buffer before appending.
+        apply_block_profile_tags(object_vertices, &block.render.profile, &colors, center);
+        all_geometry.append_vertices_from_slice(object_vertices);
+        return;
     }
 
-    if matches!(block.render.profile, BlockRenderProfile::Neon) {
-        // Neon: use raw specified colors, strip any normal_tint lighting from mesh vertices.
-        for vertex in &mut object_geometry.vertices {
-            vertex.color = colors.top;
+    // egmesh path: profile tags applied to object_geometry vertices.
+    apply_block_profile_tags(
+        &mut object_geometry.vertices,
+        &block.render.profile,
+        &colors,
+        center,
+    );
+    all_geometry.append_geometry(std::mem::take(object_geometry));
+}
+
+fn apply_block_profile_tags(
+    vertices: &mut [Vertex],
+    profile: &BlockRenderProfile,
+    colors: &BlockColors,
+    center: [f32; 3],
+) {
+    match profile {
+        BlockRenderProfile::Neon => {
+            for vertex in vertices.iter_mut() {
+                vertex.color = colors.top;
+            }
         }
-    }
-
-    if matches!(block.render.profile, BlockRenderProfile::Liquid) {
-        for vertex in &mut object_geometry.vertices {
-            vertex.set_render_profile(LIQUID_PROFILE_TAG);
+        BlockRenderProfile::Liquid => {
+            for vertex in vertices.iter_mut() {
+                vertex.set_render_profile(LIQUID_PROFILE_TAG);
+            }
         }
-    }
-
-    if matches!(block.render.profile, BlockRenderProfile::Gem) {
-        let phase_seed =
-            pseudo_random_noise(center[0], center[1], center[2]) * std::f32::consts::TAU;
-        for vertex in &mut object_geometry.vertices {
-            vertex.set_render_profile(GEM_PROFILE_TAG);
-            vertex.color_outline = [center[0], center[1], center[2], phase_seed];
+        BlockRenderProfile::Gem => {
+            let phase_seed =
+                pseudo_random_noise(center[0], center[1], center[2]) * std::f32::consts::TAU;
+            for vertex in vertices.iter_mut() {
+                vertex.set_render_profile(GEM_PROFILE_TAG);
+                vertex.color_outline = [center[0], center[1], center[2], phase_seed];
+            }
         }
+        BlockRenderProfile::Solid | BlockRenderProfile::SpeedPortal => {}
     }
-
-    all_geometry.append_geometry(object_geometry);
 }
 
 fn apply_color_tint(color: [f32; 4], tint_rgb: [f32; 3]) -> [f32; 4] {

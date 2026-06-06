@@ -54,6 +54,18 @@ impl MeshGeometry {
         self.vertices.extend(vertices);
     }
 
+    pub(crate) fn append_vertices_from_slice(&mut self, vertices: &[Vertex]) {
+        if vertices.is_empty() {
+            return;
+        }
+
+        let start = self.vertices.len() as u32;
+        if let Some(indices) = self.indices.as_mut() {
+            indices.extend(start..start + vertices.len() as u32);
+        }
+        self.vertices.extend_from_slice(vertices);
+    }
+
     pub(crate) fn append_indexed(&mut self, vertices: Vec<Vertex>, indices: &[u32]) {
         if vertices.is_empty() || indices.is_empty() {
             return;

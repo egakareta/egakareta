@@ -836,30 +836,6 @@ fn timed_trigger_progress(trigger: &TimedTrigger, time_seconds: f32) -> Option<f
     Some(timed_trigger_eased_alpha(trigger.easing, alpha))
 }
 
-fn timed_trigger_target_indices(target: &TimedTriggerTarget, object_count: usize) -> Vec<usize> {
-    match target {
-        TimedTriggerTarget::Camera => Vec::new(),
-        TimedTriggerTarget::Object { object_id } => {
-            let index = *object_id as usize;
-            if index < object_count {
-                vec![index]
-            } else {
-                Vec::new()
-            }
-        }
-        TimedTriggerTarget::Objects { object_ids } => {
-            let mut indices = Vec::new();
-            for object_id in object_ids {
-                let index = *object_id as usize;
-                if index < object_count && !indices.contains(&index) {
-                    indices.push(index);
-                }
-            }
-            indices
-        }
-    }
-}
-
 pub(crate) fn apply_timed_triggers_to_objects(
     base_objects: &[LevelObject],
     triggers: &[TimedTrigger],
@@ -870,55 +846,80 @@ pub(crate) fn apply_timed_triggers_to_objects(
         return objects;
     }
 
-    let mut ordered_triggers = triggers
-        .iter()
-        .filter(|trigger| trigger.time_seconds.is_finite())
-        .collect::<Vec<_>>();
-    ordered_triggers.sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
-
-    for trigger in ordered_triggers {
-        let Some(progress) = timed_trigger_progress(trigger, time_seconds) else {
-            continue;
-        };
-        let target_indices = timed_trigger_target_indices(&trigger.target, objects.len());
-        if target_indices.is_empty() {
+    // Triggers are stored sorted by time_seconds (set_triggers / insert_trigger_sorted).
+    // Iterate directly. No per-call sort or allocation for target indices.
+    for trigger in triggers {
+        if !trigger.time_seconds.is_finite() {
             continue;
         }
 
-        for index in target_indices {
-            let Some(object) = objects.get_mut(index) else {
-                continue;
-            };
+        let Some(progress) = timed_trigger_progress(trigger, time_seconds) else {
+            continue;
+        };
+        let object_count = objects.len();
 
-            match &trigger.action {
-                TimedTriggerAction::MoveTo { position } => {
-                    for (current, target) in object.position.iter_mut().zip(position.iter()) {
-                        *current = *current + (*target - *current) * progress;
-                    }
+        match &trigger.target {
+            TimedTriggerTarget::Camera => {}
+            TimedTriggerTarget::Object { object_id } => {
+                let index = *object_id as usize;
+                if index < object_count {
+                    apply_trigger_action_to_object(&mut objects[index], &trigger.action, progress);
                 }
-                TimedTriggerAction::RotateTo { rotation_degrees } => {
-                    for (current, target) in object
-                        .rotation_degrees
-                        .iter_mut()
-                        .zip(rotation_degrees.iter())
-                    {
-                        *current = *current + (*target - *current) * progress;
+            }
+            TimedTriggerTarget::Objects { object_ids } => {
+                // Apply transforms directly without allocating a target-index Vec.
+                // Dedup is handled inline via a small seen-set.
+                let mut seen: Vec<u32> = Vec::new();
+                for &object_id in object_ids {
+                    if object_id as usize >= object_count {
+                        continue;
                     }
-                }
-                TimedTriggerAction::ScaleTo { size } => {
-                    for (current, target) in object.size.iter_mut().zip(size.iter()) {
-                        let current_value = (*current).max(0.01);
-                        let target_value = (*target).max(0.01);
-                        *current = current_value + (target_value - current_value) * progress;
+                    if seen.contains(&object_id) {
+                        continue;
                     }
-                }
-                TimedTriggerAction::CameraPose { .. } | TimedTriggerAction::CameraFollow { .. } => {
+                    seen.push(object_id);
+                    apply_trigger_action_to_object(
+                        &mut objects[object_id as usize],
+                        &trigger.action,
+                        progress,
+                    );
                 }
             }
         }
     }
 
     objects
+}
+
+fn apply_trigger_action_to_object(
+    object: &mut LevelObject,
+    action: &TimedTriggerAction,
+    progress: f32,
+) {
+    match action {
+        TimedTriggerAction::MoveTo { position } => {
+            for (current, target) in object.position.iter_mut().zip(position.iter()) {
+                *current += (*target - *current) * progress;
+            }
+        }
+        TimedTriggerAction::RotateTo { rotation_degrees } => {
+            for (current, target) in object
+                .rotation_degrees
+                .iter_mut()
+                .zip(rotation_degrees.iter())
+            {
+                *current += (*target - *current) * progress;
+            }
+        }
+        TimedTriggerAction::ScaleTo { size } => {
+            for (current, target) in object.size.iter_mut().zip(size.iter()) {
+                let current_value = (*current).max(0.01);
+                let target_value = (*target).max(0.01);
+                *current = current_value + (target_value - current_value) * progress;
+            }
+        }
+        TimedTriggerAction::CameraPose { .. } | TimedTriggerAction::CameraFollow { .. } => {}
+    }
 }
 
 #[derive(Deserialize, Serialize, Clone)]
