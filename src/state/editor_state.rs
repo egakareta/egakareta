@@ -21,6 +21,44 @@ fn timed_trigger_transforms_objects(trigger: &TimedTrigger) -> bool {
         && matches!(trigger.action, TimedTriggerAction::TransformObjects { .. })
 }
 
+const TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS: f32 = 0.001;
+
+fn remove_replaced_transform_trigger_targets(
+    triggers: Vec<TimedTrigger>,
+    time_seconds: f32,
+    object_ids_to_replace: &[u32],
+) -> Vec<TimedTrigger> {
+    triggers
+        .into_iter()
+        .filter_map(|mut trigger| {
+            if (trigger.time_seconds - time_seconds).abs()
+                > TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS
+                || !matches!(trigger.action, TimedTriggerAction::TransformObjects { .. })
+            {
+                return Some(trigger);
+            }
+
+            let TimedTriggerTarget::Objects { object_ids } = &mut trigger.target else {
+                return Some(trigger);
+            };
+
+            if !object_ids
+                .iter()
+                .any(|object_id| object_ids_to_replace.contains(object_id))
+            {
+                return Some(trigger);
+            }
+
+            object_ids.retain(|object_id| !object_ids_to_replace.contains(object_id));
+            if object_ids.is_empty() {
+                None
+            } else {
+                Some(trigger)
+            }
+        })
+        .collect()
+}
+
 impl EditorSubsystem {
     pub(crate) fn set_pan_up_held(&mut self, held: bool) {
         self.ui.pan_up_held = held;
@@ -1220,6 +1258,7 @@ impl State {
         self.editor.runtime.interaction.block_drag = None;
 
         let mut triggers = Vec::with_capacity(capture.original_objects.len());
+        let mut replaced_object_ids = Vec::with_capacity(capture.original_objects.len());
         for (index, original_object) in &capture.original_objects {
             let Some(final_object) = self.editor.objects.get(*index).cloned() else {
                 continue;
@@ -1227,6 +1266,7 @@ impl State {
             let Ok(object_id) = u32::try_from(*index) else {
                 continue;
             };
+            replaced_object_ids.push(object_id);
 
             triggers.push(TimedTrigger {
                 time_seconds: capture.time_seconds,
@@ -1249,6 +1289,12 @@ impl State {
 
         if !triggers.is_empty() {
             self.editor.record_history_state_force();
+            let retained_triggers = remove_replaced_transform_trigger_targets(
+                std::mem::take(&mut self.editor.triggers.items),
+                capture.time_seconds,
+                &replaced_object_ids,
+            );
+            self.editor.set_triggers(retained_triggers);
             for trigger in triggers {
                 self.editor.add_trigger(trigger);
             }
@@ -1595,7 +1641,7 @@ mod tests {
     use crate::test_utils::assert_approx_eq as approx_eq;
     use crate::types::{
         AppPhase, EditorMode, GameCursor, GizmoAxis, GizmoDragKind, LevelObject, SpawnDirection,
-        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
     };
 
     fn test_level_object(position: [f32; 3]) -> LevelObject {
@@ -1612,6 +1658,24 @@ mod tests {
         for component in 0..3 {
             approx_eq(object.position[component], position[component], 1e-6);
             approx_eq(object.size[component], size[component], 1e-6);
+        }
+    }
+
+    fn transform_trigger(
+        time_seconds: f32,
+        object_ids: Vec<u32>,
+        position: [f32; 3],
+    ) -> TimedTrigger {
+        TimedTrigger {
+            time_seconds,
+            duration_seconds: 1.0,
+            easing: TimedTriggerEasing::EaseInOut,
+            target: TimedTriggerTarget::Objects { object_ids },
+            action: TimedTriggerAction::TransformObjects {
+                position,
+                rotation_degrees: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+            },
         }
     }
 
@@ -1726,6 +1790,86 @@ mod tests {
                 }
                 _ => panic!("expected transform objects action"),
             }
+        });
+    }
+
+    #[test]
+    fn transform_trigger_capture_commit_overrides_existing_same_time_object_triggers() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.phase = AppPhase::Editor;
+            state.editor.timeline.clock.time_seconds = 2.5;
+            state.editor.timeline.clock.duration_seconds = 8.0;
+            state.editor.objects = vec![
+                test_level_object([0.0, 0.0, 0.0]),
+                test_level_object([4.0, 0.0, 0.0]),
+                test_level_object([8.0, 0.0, 0.0]),
+            ];
+            state.editor.ui.selected_block_indices = vec![0, 1];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.triggers.items = vec![
+                transform_trigger(2.5, vec![0], [10.0, 0.0, 0.0]),
+                transform_trigger(2.5, vec![1, 2], [20.0, 0.0, 0.0]),
+                transform_trigger(2.5, vec![2], [30.0, 0.0, 0.0]),
+                transform_trigger(4.0, vec![0], [40.0, 0.0, 0.0]),
+            ];
+
+            assert!(state.begin_editor_transform_trigger_capture());
+            state.editor.objects[0].position = [1.0, 2.0, 3.0];
+            state.editor.objects[1].position = [5.0, 6.0, 7.0];
+
+            assert!(state.commit_editor_transform_trigger_capture());
+
+            let mut object_zero_same_time_count = 0;
+            let mut object_one_same_time_count = 0;
+            let mut retained_object_two_multi_target = false;
+            let mut retained_object_two_standalone = false;
+            let mut retained_different_time_object_zero = false;
+
+            for trigger in &state.editor.triggers.items {
+                let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
+                    continue;
+                };
+
+                if (trigger.time_seconds - 2.5).abs() <= 1e-6 && object_ids == &[0] {
+                    object_zero_same_time_count += 1;
+                    if let TimedTriggerAction::TransformObjects { position, .. } = &trigger.action {
+                        approx_eq(position[0], 1.0, 1e-6);
+                        approx_eq(position[1], 2.0, 1e-6);
+                        approx_eq(position[2], 3.0, 1e-6);
+                    }
+                }
+
+                if (trigger.time_seconds - 2.5).abs() <= 1e-6 && object_ids == &[1] {
+                    object_one_same_time_count += 1;
+                    if let TimedTriggerAction::TransformObjects { position, .. } = &trigger.action {
+                        approx_eq(position[0], 5.0, 1e-6);
+                        approx_eq(position[1], 6.0, 1e-6);
+                        approx_eq(position[2], 7.0, 1e-6);
+                    }
+                }
+
+                if (trigger.time_seconds - 2.5).abs() <= 1e-6 && object_ids == &[2] {
+                    if let TimedTriggerAction::TransformObjects { position, .. } = &trigger.action {
+                        if (position[0] - 20.0).abs() <= 1e-6 {
+                            retained_object_two_multi_target = true;
+                        } else if (position[0] - 30.0).abs() <= 1e-6 {
+                            retained_object_two_standalone = true;
+                        }
+                    }
+                }
+
+                if (trigger.time_seconds - 4.0).abs() <= 1e-6 && object_ids == &[0] {
+                    retained_different_time_object_zero = true;
+                }
+            }
+
+            assert_eq!(object_zero_same_time_count, 1);
+            assert_eq!(object_one_same_time_count, 1);
+            assert!(retained_object_two_multi_target);
+            assert!(retained_object_two_standalone);
+            assert!(retained_different_time_object_zero);
         });
     }
 
