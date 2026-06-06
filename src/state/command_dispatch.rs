@@ -135,7 +135,10 @@ impl State {
             AppCommand::EditorBpmTapReset => self.editor_bpm_tap_reset(),
 
             // ── Editor – spawn ──────────────────────────────────────
-            AppCommand::EditorSetSpawnHere => self.editor_set_spawn_here(),
+            AppCommand::EditorSetSpawnHere => {
+                self.force_editor_cursor_from_pointer();
+                self.editor_set_spawn_here();
+            }
             AppCommand::EditorRotateSpawnDirection => self.editor_rotate_spawn_direction(),
             AppCommand::EditorRotatePlacementPreview => self.editor_rotate_placement_preview(),
 

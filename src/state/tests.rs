@@ -952,6 +952,34 @@ fn context_cursor_update_forces_cursor_in_select_mode_while_right_dragging() {
 }
 
 #[test]
+fn spawn_hotkey_updates_spawn_from_pointer_in_select_mode() {
+    pollster::block_on(async {
+        let mut state = new_editor_state().await;
+        state.editor.objects.clear();
+        state.editor.ui.mode = EditorMode::Select;
+        state.editor.ui.cursor = [99.0, 99.0, 99.0];
+
+        let viewport = Vec2::new(
+            state.render.gpu.config.width as f32,
+            state.render.gpu.config.height as f32,
+        );
+        let screen_x = viewport.x as f64 * 0.5;
+        let screen_y = viewport.y as f64 * 0.5;
+        let expected_cursor = state
+            .editor
+            .pick_from_screen(screen_x, screen_y, viewport)
+            .expect("expected pointer pick")
+            .cursor;
+        state.editor.ui.cursor = [99.0, 99.0, 99.0];
+        state.editor.ui.pointer_screen = Some([screen_x, screen_y]);
+
+        state.dispatch(AppCommand::EditorSetSpawnHere);
+
+        assert_eq!(state.editor.spawn.position, expected_cursor);
+    });
+}
+
+#[test]
 fn test_handle_primary_click_shift_priority() {
     pollster::block_on(async {
         let mut state = State::new_test().await;

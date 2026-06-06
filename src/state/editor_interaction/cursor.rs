@@ -112,6 +112,18 @@ impl EditorSubsystem {
 }
 
 impl State {
+    pub(crate) fn force_editor_cursor_from_pointer(&mut self) {
+        let Some(pointer) = self.editor.ui.pointer_screen else {
+            return;
+        };
+
+        if self.editor_pointer_over_ui_input(pointer[0], pointer[1]) {
+            return;
+        }
+
+        self.force_editor_cursor_from_screen(pointer[0], pointer[1]);
+    }
+
     pub(crate) fn force_editor_cursor_from_screen(&mut self, x: f64, y: f64) {
         if self.phase != AppPhase::Editor {
             return;
