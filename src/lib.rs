@@ -13,6 +13,8 @@
 
 #![warn(missing_docs)]
 mod audio_service;
+#[cfg(feature = "benchmarks")]
+pub mod bench_support;
 mod block_repository;
 mod commands;
 mod editor_domain;
