@@ -803,9 +803,13 @@ mod tests {
                 time_seconds: 1.0,
                 duration_seconds: 0.0,
                 easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Object { object_id: 0 },
-                action: TimedTriggerAction::MoveTo {
+                target: TimedTriggerTarget::Objects {
+                    object_ids: vec![0],
+                },
+                action: TimedTriggerAction::TransformObjects {
                     position: [1.0, 2.0, 3.0],
+                    rotation_degrees: [0.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
                 },
             }];
             state.editor.triggers.selected_index = Some(0);

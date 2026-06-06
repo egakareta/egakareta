@@ -154,20 +154,14 @@ fn benchmark_object_triggers(
                     _ => TimedTriggerEasing::EaseInOut,
                 },
                 target: TimedTriggerTarget::Objects { object_ids },
-                action: match trigger_index % 3 {
-                    0 => TimedTriggerAction::MoveTo {
-                        position: [
-                            (trigger_index % 64) as f32 * 0.25,
-                            0.5 + (trigger_index % 5) as f32,
-                            (trigger_index % 48) as f32 * 0.25,
-                        ],
-                    },
-                    1 => TimedTriggerAction::RotateTo {
-                        rotation_degrees: [0.0, 90.0 + (trigger_index % 8) as f32 * 15.0, 0.0],
-                    },
-                    _ => TimedTriggerAction::ScaleTo {
-                        size: [1.0, 0.5 + (trigger_index % 6) as f32 * 0.25, 1.0],
-                    },
+                action: TimedTriggerAction::TransformObjects {
+                    position: [
+                        (trigger_index % 64) as f32 * 0.25,
+                        0.5 + (trigger_index % 5) as f32,
+                        (trigger_index % 48) as f32 * 0.25,
+                    ],
+                    rotation_degrees: [0.0, 90.0 + (trigger_index % 8) as f32 * 15.0, 0.0],
+                    size: [1.0, 0.5 + (trigger_index % 6) as f32 * 0.25, 1.0],
                 },
             }
         })

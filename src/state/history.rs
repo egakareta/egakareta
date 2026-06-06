@@ -351,8 +351,10 @@ mod tests {
                 TimedTrigger {
                     time_seconds: 5.0,
                     target: TimedTriggerTarget::Camera,
-                    action: TimedTriggerAction::MoveTo {
+                    action: TimedTriggerAction::TransformObjects {
                         position: [0.0, 0.0, 0.0],
+                        rotation_degrees: [0.0, 0.0, 0.0],
+                        size: [1.0, 1.0, 1.0],
                     },
                     easing: Default::default(),
                     duration_seconds: 0.0,
@@ -360,8 +362,10 @@ mod tests {
                 TimedTrigger {
                     time_seconds: f32::NAN,
                     target: TimedTriggerTarget::Camera,
-                    action: TimedTriggerAction::MoveTo {
+                    action: TimedTriggerAction::TransformObjects {
                         position: [0.0, 0.0, 0.0],
+                        rotation_degrees: [0.0, 0.0, 0.0],
+                        size: [1.0, 1.0, 1.0],
                     },
                     easing: Default::default(),
                     duration_seconds: 0.0,
@@ -369,8 +373,10 @@ mod tests {
                 TimedTrigger {
                     time_seconds: 1.0,
                     target: TimedTriggerTarget::Camera,
-                    action: TimedTriggerAction::MoveTo {
+                    action: TimedTriggerAction::TransformObjects {
                         position: [0.0, 0.0, 0.0],
+                        rotation_degrees: [0.0, 0.0, 0.0],
+                        size: [1.0, 1.0, 1.0],
                     },
                     easing: Default::default(),
                     duration_seconds: 0.0,

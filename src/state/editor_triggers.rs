@@ -53,7 +53,6 @@ impl EditorSubsystem {
 
         match &mut trigger.target {
             TimedTriggerTarget::Camera => {}
-            TimedTriggerTarget::Object { .. } => {}
             TimedTriggerTarget::Objects { object_ids } => {
                 object_ids.sort_unstable();
                 object_ids.dedup();
@@ -61,7 +60,11 @@ impl EditorSubsystem {
         }
 
         match &mut trigger.action {
-            TimedTriggerAction::MoveTo { position } => {
+            TimedTriggerAction::TransformObjects {
+                position,
+                rotation_degrees,
+                size,
+            } => {
                 *position = position.map(|component| {
                     if component.is_finite() {
                         component
@@ -69,8 +72,7 @@ impl EditorSubsystem {
                         0.0
                     }
                 });
-            }
-            TimedTriggerAction::RotateTo { rotation_degrees } => {
+
                 *rotation_degrees = rotation_degrees.map(|component| {
                     if component.is_finite() {
                         component
@@ -78,8 +80,7 @@ impl EditorSubsystem {
                         0.0
                     }
                 });
-            }
-            TimedTriggerAction::ScaleTo { size } => {
+
                 *size = size.map(|component| {
                     if component.is_finite() {
                         component.max(0.01)
@@ -175,12 +176,7 @@ impl EditorSubsystem {
     pub(crate) fn has_object_transform_triggers(&self) -> bool {
         self.triggers.items.iter().any(|trigger| {
             !matches!(trigger.target, TimedTriggerTarget::Camera)
-                && matches!(
-                    trigger.action,
-                    TimedTriggerAction::MoveTo { .. }
-                        | TimedTriggerAction::RotateTo { .. }
-                        | TimedTriggerAction::ScaleTo { .. }
-                )
+                && matches!(trigger.action, TimedTriggerAction::TransformObjects { .. })
         })
     }
 
@@ -260,9 +256,13 @@ mod tests {
             time_seconds,
             duration_seconds: 0.0,
             easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Object { object_id: 0 },
-            action: TimedTriggerAction::MoveTo {
+            target: TimedTriggerTarget::Objects {
+                object_ids: vec![0],
+            },
+            action: TimedTriggerAction::TransformObjects {
                 position: [1.0, 2.0, 3.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
             },
         }
     }
@@ -319,7 +319,9 @@ mod tests {
                 target: TimedTriggerTarget::Objects {
                     object_ids: vec![3, 1, 3, 2],
                 },
-                action: TimedTriggerAction::ScaleTo {
+                action: TimedTriggerAction::TransformObjects {
+                    position: [f32::NAN, 2.0, f32::INFINITY],
+                    rotation_degrees: [f32::NEG_INFINITY, 90.0, f32::NAN],
                     size: [f32::NAN, -9.0, 2.0],
                 },
             });
@@ -338,12 +340,18 @@ mod tests {
                 _ => panic!("expected object list target"),
             }
             match first.action {
-                TimedTriggerAction::ScaleTo { size } => {
+                TimedTriggerAction::TransformObjects {
+                    position,
+                    rotation_degrees,
+                    size,
+                } => {
+                    assert_eq!(position, [0.0, 2.0, 0.0]);
+                    assert_eq!(rotation_degrees, [0.0, 90.0, 0.0]);
                     assert_eq!(size[0], 1.0);
                     assert_eq!(size[1], 0.01);
                     assert_eq!(size[2], 2.0);
                 }
-                _ => panic!("expected scale action"),
+                _ => panic!("expected transform action"),
             }
         });
     }
@@ -492,9 +500,13 @@ mod tests {
                 time_seconds: 1.0,
                 duration_seconds: 0.0,
                 easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Object { object_id: 1 },
-                action: TimedTriggerAction::RotateTo {
+                target: TimedTriggerTarget::Objects {
+                    object_ids: vec![1],
+                },
+                action: TimedTriggerAction::TransformObjects {
+                    position: [0.0, 0.0, 0.0],
                     rotation_degrees: [10.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
                 },
             });
             assert!(state.editor.has_object_transform_triggers());

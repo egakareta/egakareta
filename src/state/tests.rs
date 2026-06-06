@@ -400,9 +400,13 @@ fn configure_trigger_policy_parity_scene(
         time_seconds: 0.0,
         duration_seconds: 0.0,
         easing: crate::types::TimedTriggerEasing::Linear,
-        target: crate::types::TimedTriggerTarget::Object { object_id: 0 },
-        action: crate::types::TimedTriggerAction::MoveTo {
+        target: crate::types::TimedTriggerTarget::Objects {
+            object_ids: vec![0],
+        },
+        action: crate::types::TimedTriggerAction::TransformObjects {
             position: [0.0, 0.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
         },
     }]);
     state.set_editor_simulate_trigger_hitboxes(simulate_trigger_hitboxes);
@@ -1140,9 +1144,13 @@ fn timing_origin_playback_seek_resync_keeps_runtime_disabled() {
             time_seconds: 0.5,
             duration_seconds: 1.0,
             easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Object { object_id: 0 },
-            action: TimedTriggerAction::MoveTo {
+            target: TimedTriggerTarget::Objects {
+                object_ids: vec![0],
+            },
+            action: TimedTriggerAction::TransformObjects {
                 position: [3.0, 0.0, 0.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
             },
         }]);
 
@@ -1384,9 +1392,13 @@ fn timing_mode_timeline_scrub_skips_simulation_and_mesh_dirty() {
             time_seconds: 1.0,
             duration_seconds: 1.0,
             easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Object { object_id: 0 },
-            action: TimedTriggerAction::MoveTo {
+            target: TimedTriggerTarget::Objects {
+                object_ids: vec![0],
+            },
+            action: TimedTriggerAction::TransformObjects {
                 position: [10.0, 0.0, 0.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
             },
         }]);
 
@@ -1419,9 +1431,13 @@ fn compose_mode_timeline_scrub_runs_simulation_and_mesh_dirty() {
             time_seconds: 1.0,
             duration_seconds: 1.0,
             easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Object { object_id: 0 },
-            action: TimedTriggerAction::MoveTo {
+            target: TimedTriggerTarget::Objects {
+                object_ids: vec![0],
+            },
+            action: TimedTriggerAction::TransformObjects {
                 position: [10.0, 0.0, 0.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
             },
         }]);
 

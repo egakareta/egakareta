@@ -340,9 +340,13 @@ fn timeline_trigger_hitbox_mode_does_not_resurrect_consumed_portals() {
         time_seconds: 0.0,
         duration_seconds: 0.0,
         easing: TimedTriggerEasing::Linear,
-        target: TimedTriggerTarget::Object { object_id: 0 },
-        action: TimedTriggerAction::MoveTo {
+        target: TimedTriggerTarget::Objects {
+            object_ids: vec![0],
+        },
+        action: TimedTriggerAction::TransformObjects {
             position: [0.0, 0.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
         },
     }];
 
@@ -374,9 +378,13 @@ fn timeline_state_with_disabled_trigger_hitboxes_matches_plain_simulation() {
         time_seconds: 0.0,
         duration_seconds: 1.0,
         easing: TimedTriggerEasing::Linear,
-        target: TimedTriggerTarget::Object { object_id: 0 },
-        action: TimedTriggerAction::MoveTo {
+        target: TimedTriggerTarget::Objects {
+            object_ids: vec![0],
+        },
+        action: TimedTriggerAction::TransformObjects {
             position: [5.0, 0.0, 2.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
         },
     }];
 

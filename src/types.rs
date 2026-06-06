@@ -635,20 +635,15 @@ pub(crate) struct CameraTrigger {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum TimedTriggerTarget {
     Camera,
-    Object { object_id: u32 },
     Objects { object_ids: Vec<u32> },
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum TimedTriggerAction {
-    MoveTo {
+    TransformObjects {
         position: [f32; 3],
-    },
-    RotateTo {
         rotation_degrees: [f32; 3],
-    },
-    ScaleTo {
         size: [f32; 3],
     },
     CameraPose {
@@ -785,9 +780,7 @@ pub(crate) fn timed_triggers_to_camera_triggers(triggers: &[TimedTrigger]) -> Ve
                     pitch: default_camera_trigger_pitch(),
                 });
             }
-            TimedTriggerAction::MoveTo { .. }
-            | TimedTriggerAction::RotateTo { .. }
-            | TimedTriggerAction::ScaleTo { .. } => {}
+            TimedTriggerAction::TransformObjects { .. } => {}
         }
     }
 
@@ -860,12 +853,6 @@ pub(crate) fn apply_timed_triggers_to_objects(
 
         match &trigger.target {
             TimedTriggerTarget::Camera => {}
-            TimedTriggerTarget::Object { object_id } => {
-                let index = *object_id as usize;
-                if index < object_count {
-                    apply_trigger_action_to_object(&mut objects[index], &trigger.action, progress);
-                }
-            }
             TimedTriggerTarget::Objects { object_ids } => {
                 // Apply transforms directly without allocating a target-index Vec.
                 // Dedup is handled inline via a small seen-set.
@@ -897,12 +884,14 @@ fn apply_trigger_action_to_object(
     progress: f32,
 ) {
     match action {
-        TimedTriggerAction::MoveTo { position } => {
+        TimedTriggerAction::TransformObjects {
+            position,
+            rotation_degrees,
+            size,
+        } => {
             for (current, target) in object.position.iter_mut().zip(position.iter()) {
                 *current += (*target - *current) * progress;
             }
-        }
-        TimedTriggerAction::RotateTo { rotation_degrees } => {
             for (current, target) in object
                 .rotation_degrees
                 .iter_mut()
@@ -910,8 +899,6 @@ fn apply_trigger_action_to_object(
             {
                 *current += (*target - *current) * progress;
             }
-        }
-        TimedTriggerAction::ScaleTo { size } => {
             for (current, target) in object.size.iter_mut().zip(size.iter()) {
                 let current_value = (*current).max(0.01);
                 let target_value = (*target).max(0.01);
@@ -2629,43 +2616,27 @@ mod tests {
             color_tint: [1.0, 1.0, 1.0],
         }];
 
-        let triggers = vec![
-            TimedTrigger {
-                time_seconds: 2.0,
-                duration_seconds: 1.0,
-                easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Object { object_id: 0 },
-                action: TimedTriggerAction::MoveTo {
-                    position: [10.0, 0.0, 0.0],
-                },
+        let triggers = vec![TimedTrigger {
+            time_seconds: 2.0,
+            duration_seconds: 1.0,
+            easing: TimedTriggerEasing::Linear,
+            target: TimedTriggerTarget::Objects {
+                object_ids: vec![0],
             },
-            TimedTrigger {
-                time_seconds: 1.0,
-                duration_seconds: 2.0,
-                easing: TimedTriggerEasing::EaseIn,
-                target: TimedTriggerTarget::Object { object_id: 0 },
-                action: TimedTriggerAction::RotateTo {
-                    rotation_degrees: [0.0, 90.0, 0.0],
-                },
+            action: TimedTriggerAction::TransformObjects {
+                position: [10.0, 0.0, 0.0],
+                rotation_degrees: [0.0, 90.0, 0.0],
+                size: [2.0, 0.0, 3.0],
             },
-            TimedTrigger {
-                time_seconds: 1.5,
-                duration_seconds: 1.0,
-                easing: TimedTriggerEasing::EaseOut,
-                target: TimedTriggerTarget::Object { object_id: 0 },
-                action: TimedTriggerAction::ScaleTo {
-                    size: [2.0, 0.0, 3.0],
-                },
-            },
-        ];
+        }];
 
         let applied = apply_timed_triggers_to_objects(&base, &triggers, 2.5);
         let object = &applied[0];
         assert_approx_eq(object.position[0], 5.0);
-        assert_approx_eq(object.rotation_degrees[1], 50.625);
-        assert_approx_eq(object.size[0], 2.0);
-        assert_approx_eq(object.size[1], 0.01);
-        assert_approx_eq(object.size[2], 3.0);
+        assert_approx_eq(object.rotation_degrees[1], 45.0);
+        assert_approx_eq(object.size[0], 1.5);
+        assert_approx_eq(object.size[1], 0.505);
+        assert_approx_eq(object.size[2], 2.0);
     }
 
     #[test]
@@ -2702,8 +2673,10 @@ mod tests {
                 target: TimedTriggerTarget::Objects {
                     object_ids: vec![2, 2, 9, 1],
                 },
-                action: TimedTriggerAction::MoveTo {
+                action: TimedTriggerAction::TransformObjects {
                     position: [9.0, 9.0, 9.0],
+                    rotation_degrees: [0.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
                 },
             },
             TimedTrigger {
@@ -2711,8 +2684,10 @@ mod tests {
                 duration_seconds: 0.0,
                 easing: TimedTriggerEasing::Linear,
                 target: TimedTriggerTarget::Camera,
-                action: TimedTriggerAction::MoveTo {
+                action: TimedTriggerAction::TransformObjects {
                     position: [5.0, 5.0, 5.0],
+                    rotation_degrees: [0.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
                 },
             },
         ];
@@ -2736,9 +2711,13 @@ mod tests {
             time_seconds: f32::NAN,
             duration_seconds: 0.0,
             easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Object { object_id: 0 },
-            action: TimedTriggerAction::MoveTo {
+            target: TimedTriggerTarget::Objects {
+                object_ids: vec![0],
+            },
+            action: TimedTriggerAction::TransformObjects {
                 position: [99.0, 0.0, 0.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
             },
         }];
 

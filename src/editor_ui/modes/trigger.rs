@@ -52,16 +52,13 @@ fn selected_size_or_default(view: &EditorUiViewModel<'_>) -> [f32; 3] {
 fn trigger_target_label(target: &TimedTriggerTarget) -> &'static str {
     match target {
         TimedTriggerTarget::Camera => "Camera",
-        TimedTriggerTarget::Object { .. } => "Object",
         TimedTriggerTarget::Objects { .. } => "Objects",
     }
 }
 
 fn trigger_action_label(action: &TimedTriggerAction) -> &'static str {
     match action {
-        TimedTriggerAction::MoveTo { .. } => "Move",
-        TimedTriggerAction::RotateTo { .. } => "Rotate",
-        TimedTriggerAction::ScaleTo { .. } => "Scale",
+        TimedTriggerAction::TransformObjects { .. } => "Transform Objects",
         TimedTriggerAction::CameraPose { .. } => "Camera Pose",
         TimedTriggerAction::CameraFollow { .. } => "Camera Follow",
     }
@@ -118,14 +115,6 @@ fn show_target_editor(ui: &mut egui::Ui, target: &mut TimedTriggerTarget) -> boo
     let mut changed = false;
     match target {
         TimedTriggerTarget::Camera => {}
-        TimedTriggerTarget::Object { object_id } => {
-            ui.horizontal(|ui| {
-                ui.label("Object ID:");
-                changed |= ui
-                    .add(egui::DragValue::new(object_id).range(0..=u32::MAX))
-                    .changed();
-            });
-        }
         TimedTriggerTarget::Objects { object_ids } => {
             let mut text = object_ids
                 .iter()
@@ -160,7 +149,11 @@ fn show_action_editor(
     let mut changed = false;
 
     match action {
-        TimedTriggerAction::MoveTo { position } => {
+        TimedTriggerAction::TransformObjects {
+            position,
+            rotation_degrees,
+            size,
+        } => {
             ui.horizontal(|ui| {
                 ui.label("Position:");
                 changed |= ui
@@ -173,8 +166,6 @@ fn show_action_editor(
                     .add(egui::DragValue::new(&mut position[2]).prefix("Z "))
                     .changed();
             });
-        }
-        TimedTriggerAction::RotateTo { rotation_degrees } => {
             ui.horizontal(|ui| {
                 ui.label("Rotation:");
                 changed |= ui
@@ -199,8 +190,6 @@ fn show_action_editor(
                     )
                     .changed();
             });
-        }
-        TimedTriggerAction::ScaleTo { size } => {
             ui.horizontal(|ui| {
                 ui.label("Scale:");
                 changed |= ui
@@ -338,57 +327,16 @@ pub(crate) fn show_trigger_mode_bottom_panel(
 
         add_trigger_button(
             ui,
-            "Add object move trigger",
-            view,
-            TimedTriggerTarget::Object { object_id },
-            TimedTriggerAction::MoveTo { position },
-            commands,
-        );
-        add_trigger_button(
-            ui,
-            "Add object rotate trigger",
-            view,
-            TimedTriggerTarget::Object { object_id },
-            TimedTriggerAction::RotateTo { rotation_degrees },
-            commands,
-        );
-        add_trigger_button(
-            ui,
-            "Add object scale trigger",
-            view,
-            TimedTriggerTarget::Object { object_id },
-            TimedTriggerAction::ScaleTo { size },
-            commands,
-        );
-
-        add_trigger_button(
-            ui,
-            "Add objects move trigger",
+            "Add Transform Objects trigger",
             view,
             TimedTriggerTarget::Objects {
                 object_ids: vec![object_id],
             },
-            TimedTriggerAction::MoveTo { position },
-            commands,
-        );
-        add_trigger_button(
-            ui,
-            "Add objects rotate trigger",
-            view,
-            TimedTriggerTarget::Objects {
-                object_ids: vec![object_id],
+            TimedTriggerAction::TransformObjects {
+                position,
+                rotation_degrees,
+                size,
             },
-            TimedTriggerAction::RotateTo { rotation_degrees },
-            commands,
-        );
-        add_trigger_button(
-            ui,
-            "Add objects scale trigger",
-            view,
-            TimedTriggerTarget::Objects {
-                object_ids: vec![object_id],
-            },
-            TimedTriggerAction::ScaleTo { size },
             commands,
         );
     });
@@ -645,9 +593,13 @@ mod tests {
 
         let trigger = make_trigger(
             &view_with_selected,
-            TimedTriggerTarget::Object { object_id: 0 },
-            TimedTriggerAction::MoveTo {
+            TimedTriggerTarget::Objects {
+                object_ids: vec![0],
+            },
+            TimedTriggerAction::TransformObjects {
                 position: [1.0, 2.0, 3.0],
+                rotation_degrees: [4.0, 5.0, 6.0],
+                size: [1.0, 1.5, 2.0],
             },
         );
         assert_eq!(trigger.time_seconds, 3.5);
@@ -700,16 +652,23 @@ mod tests {
             time_seconds: 2.0,
             duration_seconds: 0.5,
             easing: TimedTriggerEasing::EaseInOut,
-            target: TimedTriggerTarget::Object { object_id: 0 },
-            action: TimedTriggerAction::MoveTo {
+            target: TimedTriggerTarget::Objects {
+                object_ids: vec![0],
+            },
+            action: TimedTriggerAction::TransformObjects {
                 position: [1.0, 0.0, 0.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
             },
         };
 
         assert_eq!(trigger_target_label(&camera_pose.target), "Camera");
-        assert_eq!(trigger_target_label(&object_move.target), "Object");
+        assert_eq!(trigger_target_label(&object_move.target), "Objects");
         assert_eq!(trigger_action_label(&camera_pose.action), "Camera Pose");
-        assert_eq!(trigger_action_label(&object_move.action), "Move");
+        assert_eq!(
+            trigger_action_label(&object_move.action),
+            "Transform Objects"
+        );
         assert!(is_camera_track_trigger(&camera_pose));
         assert!(!is_camera_track_trigger(&object_move));
     }
