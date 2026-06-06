@@ -826,37 +826,63 @@ impl State {
         }
 
         let selected_trigger_index = self.editor.selected_trigger_index();
+        let capture_active = self.editor.runtime.transform_trigger_capture.is_some();
         let mut markers = Vec::new();
-        for (trigger_index, trigger) in self.editor.triggers().iter().enumerate() {
-            let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
-                continue;
-            };
-            let TimedTriggerAction::TransformObjects {
-                position,
-                rotation_degrees,
-                size,
-            } = &trigger.action
-            else {
-                continue;
-            };
 
-            for object_id in object_ids {
-                let Ok(object_index) = usize::try_from(*object_id) else {
+        // Hide finalized markers while defining a new transform trigger target.
+        if !capture_active {
+            for (trigger_index, trigger) in self.editor.triggers().iter().enumerate() {
+                let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
                     continue;
                 };
-                let Some(source_object) = self.editor.objects.get(object_index) else {
+                let TimedTriggerAction::TransformObjects {
+                    position,
+                    rotation_degrees,
+                    size,
+                } = &trigger.action
+                else {
                     continue;
                 };
 
+                for object_id in object_ids {
+                    let Ok(object_index) = usize::try_from(*object_id) else {
+                        continue;
+                    };
+                    let Some(source_object) = self.editor.objects.get(object_index) else {
+                        continue;
+                    };
+
+                    markers.push(TransformTriggerMarker {
+                        source_position: source_object.position,
+                        source_size: source_object.size,
+                        target_position: *position,
+                        target_rotation_degrees: *rotation_degrees,
+                        target_size: *size,
+                        time_seconds: trigger.time_seconds,
+                        duration_seconds: trigger.duration_seconds,
+                        is_selected: selected_trigger_index == Some(trigger_index),
+                    });
+                }
+            }
+        }
+
+        // Show preview markers for in-progress transform trigger captures.
+        // Source = original position, Target = current moved position.
+        if let Some(capture) = self.editor.runtime.transform_trigger_capture.as_ref() {
+            let time_seconds = capture.time_seconds;
+            for &(object_index, ref original) in &capture.original_objects {
+                let Some(current) = self.editor.objects.get(object_index) else {
+                    continue;
+                };
                 markers.push(TransformTriggerMarker {
-                    source_position: source_object.position,
-                    source_size: source_object.size,
-                    target_position: *position,
-                    target_rotation_degrees: *rotation_degrees,
-                    target_size: *size,
-                    time_seconds: trigger.time_seconds,
-                    duration_seconds: trigger.duration_seconds,
-                    is_selected: selected_trigger_index == Some(trigger_index),
+                    source_position: original.position,
+                    source_size: original.size,
+                    target_position: current.position,
+                    target_rotation_degrees: current.rotation_degrees,
+                    target_size: current.size,
+                    time_seconds,
+                    duration_seconds: 1.0,
+                    is_selected: true,
                 });
             }
         }

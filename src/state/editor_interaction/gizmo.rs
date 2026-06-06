@@ -564,11 +564,13 @@ impl EditorSubsystem {
 
         if self.drag_gizmo(x, y, viewport) {
             self.sync_objects_for_drag();
-            if self.runtime.interaction.gizmo_drag.as_ref().map(|d| d.kind)
-                == Some(GizmoDragKind::Move)
-            {
+            let is_move = self.runtime.interaction.gizmo_drag.as_ref().map(|d| d.kind)
+                == Some(GizmoDragKind::Move);
+            let capture_active = self.runtime.transform_trigger_capture.is_some();
+            if is_move || capture_active {
                 self.mark_dirty(EditorDirtyFlags {
-                    rebuild_cursor: true,
+                    rebuild_cursor: is_move,
+                    rebuild_transform_trigger_markers: capture_active,
                     ..EditorDirtyFlags::default()
                 });
             }
