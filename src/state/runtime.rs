@@ -19,6 +19,7 @@ pub(crate) struct EditorDirtyFlags {
     pub(crate) rebuild_tap_indicators: bool,
     pub(crate) rebuild_preview_player: bool,
     pub(crate) rebuild_cursor: bool,
+    pub(crate) rebuild_hitbox_visualization: bool,
 }
 
 impl EditorDirtyFlags {
@@ -31,6 +32,7 @@ impl EditorDirtyFlags {
             rebuild_tap_indicators: true,
             rebuild_preview_player: true,
             rebuild_cursor: true,
+            rebuild_hitbox_visualization: true,
         }
     }
 
@@ -42,6 +44,7 @@ impl EditorDirtyFlags {
         self.rebuild_tap_indicators |= other.rebuild_tap_indicators;
         self.rebuild_preview_player |= other.rebuild_preview_player;
         self.rebuild_cursor |= other.rebuild_cursor;
+        self.rebuild_hitbox_visualization |= other.rebuild_hitbox_visualization;
     }
 
     pub(crate) fn any(self) -> bool {
@@ -52,6 +55,7 @@ impl EditorDirtyFlags {
             || self.rebuild_tap_indicators
             || self.rebuild_preview_player
             || self.rebuild_cursor
+            || self.rebuild_hitbox_visualization
     }
 }
 

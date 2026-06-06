@@ -1778,6 +1778,12 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
         },
         KeybindActionMetadata {
             group: "Debug",
+            action: "toggle_hitbox_visualization",
+            label: "Toggle Hitbox Visualization",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Debug",
             action: "export_obj",
             label: "Export Block as OBJ",
             capacity: 1,
@@ -2030,6 +2036,10 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
             chord: KeyChord::new("_", false, false, false),
         },
         KeybindBinding {
+            action: "toggle_hitbox_visualization".to_string(),
+            chord: KeyChord::new("h", true, false, false),
+        },
+        KeybindBinding {
             action: "export_obj".to_string(),
             chord: KeyChord::new("o", true, true, true),
         },
@@ -2111,6 +2121,7 @@ pub(crate) struct EditorState {
     pub(crate) ui_input_pixels_per_point: f32,
     pub(crate) marquee_start_screen: Option<[f64; 2]>,
     pub(crate) marquee_current_screen: Option<[f64; 2]>,
+    pub(crate) show_hitbox_visualization: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -2190,6 +2201,7 @@ impl EditorState {
             ui_input_pixels_per_point: 1.0,
             marquee_start_screen: None,
             marquee_current_screen: None,
+            show_hitbox_visualization: false,
         }
     }
 }

@@ -5,9 +5,10 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use crate::block_repository::{resolve_block_definition, BlockCollision};
 use crate::mesh::shapes::append_prism;
 use crate::mesh::transforms::rotate_vertices_around_euler;
-use crate::types::Vertex;
+use crate::types::{LevelObject, Vertex};
 use glam::{EulerRot, Mat3, Vec3};
 
 fn euler_rotation_matrix(degrees: [f32; 3]) -> Mat3 {
@@ -64,6 +65,78 @@ fn build_editor_outline_hull_vertices(
         vertex.color_outline = [anchor.x, anchor.y, anchor.z, outline_width_pixels];
         vertex.render_profile = 3.0;
     }
+    vertices
+}
+
+fn append_hitbox_volume_vertices(
+    vertices: &mut Vec<Vertex>,
+    object: &LevelObject,
+    fill_color: [f32; 4],
+    outline_color: [f32; 4],
+    line_width: f32,
+) {
+    let start = vertices.len();
+    append_prism(
+        vertices,
+        object.position,
+        [
+            object.position[0] + object.size[0],
+            object.position[1] + object.size[1],
+            object.position[2] + object.size[2],
+        ],
+        fill_color,
+        fill_color,
+    );
+
+    let center = [
+        object.position[0] + object.size[0] * 0.5,
+        object.position[1] + object.size[1] * 0.5,
+        object.position[2] + object.size[2] * 0.5,
+    ];
+    rotate_vertices_around_euler(&mut vertices[start..], center, object.rotation_degrees);
+
+    vertices.extend(build_editor_outline_hull_vertices(
+        object.position,
+        object.size,
+        object.rotation_degrees,
+        line_width,
+        outline_color,
+        outline_color,
+    ));
+}
+
+pub(crate) fn build_editor_hitbox_visualization_vertices(
+    objects: &[LevelObject],
+    player_hitbox: Option<LevelObject>,
+) -> Vec<Vertex> {
+    let mut vertices = Vec::with_capacity(objects.len().saturating_mul(72));
+
+    for object in objects {
+        let collision = resolve_block_definition(&object.block_id)
+            .behavior
+            .collision;
+        let (fill_color, outline_color) = match collision {
+            BlockCollision::Solid | BlockCollision::Hazard => {
+                ([1.0, 0.04, 0.06, 0.16], [1.0, 0.04, 0.06, 0.82])
+            }
+            BlockCollision::Portal => ([0.0, 0.74, 1.0, 0.16], [0.0, 0.82, 1.0, 0.82]),
+            BlockCollision::Collectible => ([1.0, 0.78, 0.08, 0.18], [1.0, 0.86, 0.10, 0.86]),
+            BlockCollision::PassThrough => continue,
+        };
+
+        append_hitbox_volume_vertices(&mut vertices, object, fill_color, outline_color, 2.25);
+    }
+
+    if let Some(player) = player_hitbox {
+        append_hitbox_volume_vertices(
+            &mut vertices,
+            &player,
+            [1.0, 1.0, 1.0, 0.10],
+            [1.0, 1.0, 1.0, 0.72],
+            1.75,
+        );
+    }
+
     vertices
 }
 

@@ -9,8 +9,8 @@
 mod tests {
     use crate::mesh::blocks::{build_block_geometry, build_block_vertices};
     use crate::mesh::builders::{
-        build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
-        build_editor_selection_outline_vertices, GizmoParams,
+        build_editor_gizmo_vertices, build_editor_hitbox_visualization_vertices,
+        build_editor_hover_outline_vertices, build_editor_selection_outline_vertices, GizmoParams,
     };
     use crate::mesh::egmesh::resolve_egmesh;
     use crate::mesh::obj::{append_obj_mesh, parse_obj_mesh, parse_obj_mesh_with_materials};
@@ -232,6 +232,46 @@ mod tests {
         assert!(vertices
             .iter()
             .all(|vertex| vertex.color == [0.098, 0.6, 1.0, 1.0]));
+    }
+
+    #[test]
+    fn hitbox_visualization_colors_lethal_and_consumable_volumes() {
+        let objects = vec![
+            LevelObject {
+                position: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                block_id: "core/lava".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            },
+            LevelObject {
+                position: [2.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                block_id: "core/speedportal".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            },
+            LevelObject {
+                position: [4.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                block_id: "core/gem".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            },
+        ];
+
+        let vertices = build_editor_hitbox_visualization_vertices(&objects, None);
+
+        assert!(!vertices.is_empty());
+        assert!(vertices
+            .iter()
+            .any(|vertex| vertex.color == [1.0, 0.04, 0.06, 0.16]));
+        assert!(vertices
+            .iter()
+            .any(|vertex| vertex.color == [0.0, 0.74, 1.0, 0.16]));
+        assert!(vertices
+            .iter()
+            .any(|vertex| vertex.color == [1.0, 0.78, 0.08, 0.18]));
     }
 
     #[test]

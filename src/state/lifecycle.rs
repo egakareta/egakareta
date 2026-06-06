@@ -516,6 +516,7 @@ impl State {
                     spawn_marker: MeshSlot::Empty,
                     camera_trigger_markers: MeshSlot::Empty,
                     editor_preview_player: MeshSlot::Empty,
+                    editor_hitbox_visualization: MeshSlot::Empty,
                 },
             },
             auth: AuthSubsystem {
@@ -1404,6 +1405,7 @@ impl State {
                     spawn_marker: MeshSlot::Empty,
                     camera_trigger_markers: MeshSlot::Empty,
                     editor_preview_player: MeshSlot::Empty,
+                    editor_hitbox_visualization: MeshSlot::Empty,
                 },
             },
             auth: AuthSubsystem {

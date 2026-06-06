@@ -173,6 +173,8 @@ pub(crate) enum AppCommand {
     EditorSetSimulateTriggerHitboxes(bool),
 
     // ── Editor – misc ───────────────────────────────────────────────
+    /// Toggle editor hitbox visualization.
+    EditorToggleHitboxVisualization,
     /// Toggle the performance overlay.
     EditorTogglePerfOverlay,
     /// Export the selected block as OBJ.

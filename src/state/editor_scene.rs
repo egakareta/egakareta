@@ -15,7 +15,8 @@ use crate::game::trigger_transformed_objects_at_time;
 use crate::mesh::{
     build_block_geometry, build_block_geometry_for_object, build_block_geometry_from_refs,
     build_camera_trigger_marker_vertices, build_colored_tap_indicator_vertices,
-    build_editor_cursor_vertices, build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
+    build_editor_cursor_vertices, build_editor_gizmo_vertices,
+    build_editor_hitbox_visualization_vertices, build_editor_hover_outline_vertices,
     build_editor_selection_outline_vertices, build_editor_tap_cursor_vertices,
     build_practice_checkpoint_flag_geometry, build_spawn_marker_vertices,
     build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices, GizmoParams,
@@ -244,6 +245,9 @@ impl State {
         if dirty.rebuild_cursor {
             self.editor.runtime.dirty.rebuild_cursor = false;
         }
+        if dirty.rebuild_hitbox_visualization {
+            self.editor.runtime.dirty.rebuild_hitbox_visualization = false;
+        }
 
         if dirty.rebuild_block_mesh {
             puffin::profile_scope!("DirtyBlockMesh");
@@ -303,6 +307,11 @@ impl State {
         if dirty.rebuild_cursor {
             puffin::profile_scope!("DirtyCursor");
             self.rebuild_editor_cursor_vertices();
+        }
+
+        if dirty.rebuild_hitbox_visualization {
+            puffin::profile_scope!("DirtyHitboxVisualization");
+            self.rebuild_editor_hitbox_visualization_vertices();
         }
 
         if dirty.sync_game_objects || dirty.rebuild_block_mesh {
@@ -1102,6 +1111,66 @@ impl State {
         self.editor.timeline.preview.position = position;
         self.editor.timeline.preview.direction = direction;
         self.render.meshes.editor_preview_player.clear();
+        self.mark_editor_dirty(EditorDirtyFlags {
+            rebuild_hitbox_visualization: true,
+            ..EditorDirtyFlags::default()
+        });
+    }
+
+    pub(super) fn rebuild_editor_hitbox_visualization_vertices(&mut self) {
+        puffin::profile_scope!("EditorHitboxVisualizationMesh");
+        let effective_mode = self.editor_effective_mode_for_playback();
+        if self.phase != AppPhase::Editor
+            || effective_mode == EditorMode::Timing
+            || !self.editor.ui.show_hitbox_visualization
+        {
+            self.render.meshes.editor_hitbox_visualization.clear();
+            return;
+        }
+
+        let object_source = if self.editor.simulate_trigger_hitboxes() {
+            self.editor_runtime_objects_for_render().unwrap_or_else(|| {
+                trigger_transformed_objects_at_time(
+                    &self.editor.objects,
+                    self.editor.triggers(),
+                    self.editor.timeline.clock.time_seconds,
+                )
+            })
+        } else {
+            self.editor.objects.clone()
+        };
+
+        let player_hitbox = editor_preview_player_hitbox(self.editor.timeline.preview.position);
+        let vertices =
+            build_editor_hitbox_visualization_vertices(&object_source, Some(player_hitbox));
+        self.render
+            .meshes
+            .editor_hitbox_visualization
+            .replace_with_vertices(
+                &self.render.gpu.device,
+                "Editor Hitbox Visualization Vertex Buffer",
+                &vertices,
+            );
+    }
+}
+
+fn editor_preview_player_hitbox(position: [f32; 3]) -> LevelObject {
+    const PLAYER_WIDTH: f32 = 0.8;
+    const PLAYER_HEIGHT: f32 = 0.8;
+    const PLAYER_FOOTPRINT_TOLERANCE: f32 = PLAYER_WIDTH * 0.05;
+
+    let inset_width = PLAYER_WIDTH - PLAYER_FOOTPRINT_TOLERANCE * 2.0;
+    let inset_height = PLAYER_HEIGHT - PLAYER_FOOTPRINT_TOLERANCE * 2.0;
+    LevelObject {
+        position: [
+            position[0] - inset_width * 0.5,
+            position[1] + PLAYER_FOOTPRINT_TOLERANCE,
+            position[2] - inset_width * 0.5,
+        ],
+        size: [inset_width, inset_height, inset_width],
+        rotation_degrees: [0.0, 0.0, 0.0],
+        block_id: "core/void".to_string(),
+        color_tint: [1.0, 1.0, 1.0],
     }
 }
 

@@ -910,6 +910,7 @@ impl State {
             puffin::profile_scope!("SeekDirtyBlockMesh");
             self.mark_editor_dirty(EditorDirtyFlags {
                 rebuild_block_mesh: true,
+                rebuild_hitbox_visualization: true,
                 ..EditorDirtyFlags::default()
             });
         }
@@ -1128,6 +1129,7 @@ impl State {
         self.editor.add_trigger(trigger);
         self.mark_editor_dirty(EditorDirtyFlags {
             rebuild_selection_overlays: true,
+            rebuild_hitbox_visualization: true,
             ..EditorDirtyFlags::default()
         });
     }
@@ -1222,6 +1224,23 @@ impl State {
         self.editor.simulate_trigger_hitboxes()
     }
 
+    #[cfg(test)]
+    pub(crate) fn editor_hitbox_visualization_enabled(&self) -> bool {
+        self.editor.ui.show_hitbox_visualization
+    }
+
+    pub(crate) fn toggle_editor_hitbox_visualization(&mut self) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        self.editor.ui.show_hitbox_visualization = !self.editor.ui.show_hitbox_visualization;
+        self.mark_editor_dirty(EditorDirtyFlags {
+            rebuild_hitbox_visualization: true,
+            ..EditorDirtyFlags::default()
+        });
+    }
+
     pub(crate) fn editor_selected_trigger_index(&self) -> Option<usize> {
         self.editor.selected_trigger_index()
     }
@@ -1235,6 +1254,7 @@ impl State {
         self.editor.remove_trigger(index);
         self.mark_editor_dirty(EditorDirtyFlags {
             rebuild_selection_overlays: true,
+            rebuild_hitbox_visualization: true,
             ..EditorDirtyFlags::default()
         });
     }
@@ -1258,6 +1278,7 @@ impl State {
         self.editor.update_trigger(index, trigger);
         self.mark_editor_dirty(EditorDirtyFlags {
             rebuild_selection_overlays: true,
+            rebuild_hitbox_visualization: true,
             ..EditorDirtyFlags::default()
         });
     }
@@ -1277,6 +1298,7 @@ impl State {
         self.mark_editor_dirty(EditorDirtyFlags {
             rebuild_preview_player: true,
             rebuild_block_mesh: true,
+            rebuild_hitbox_visualization: true,
             ..EditorDirtyFlags::default()
         });
     }

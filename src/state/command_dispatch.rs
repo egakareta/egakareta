@@ -167,6 +167,9 @@ impl State {
             }
 
             // ── Editor – misc ───────────────────────────────────────
+            AppCommand::EditorToggleHitboxVisualization => {
+                self.toggle_editor_hitbox_visualization()
+            }
             AppCommand::EditorTogglePerfOverlay => self.toggle_perf_overlay(),
             AppCommand::EditorExportBlockObj => self.trigger_selected_block_obj_export(),
 
@@ -809,6 +812,13 @@ impl State {
             "export_obj" => {
                 if self.is_editor() && just_pressed {
                     Some(AppCommand::EditorExportBlockObj)
+                } else {
+                    None
+                }
+            }
+            "toggle_hitbox_visualization" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorToggleHitboxVisualization)
                 } else {
                     None
                 }
@@ -3243,6 +3253,9 @@ mod tests {
 
             state.dispatch(AppCommand::EditorSetSimulateTriggerHitboxes(true));
             assert!(state.editor_simulate_trigger_hitboxes());
+
+            state.dispatch(AppCommand::EditorToggleHitboxVisualization);
+            assert!(state.editor_hitbox_visualization_enabled());
 
             state.dispatch(AppCommand::EditorSetMode(EditorMode::Timing));
             assert_eq!(state.editor_mode(), EditorMode::Timing);

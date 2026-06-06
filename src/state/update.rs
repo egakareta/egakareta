@@ -559,6 +559,7 @@ impl State {
                     if simulate_preview && self.editor.has_object_transform_triggers() {
                         self.mark_editor_dirty(super::EditorDirtyFlags {
                             rebuild_block_mesh: true,
+                            rebuild_hitbox_visualization: true,
                             ..super::EditorDirtyFlags::default()
                         });
                     }
@@ -575,6 +576,7 @@ impl State {
                                 if consumed_gems {
                                     self.mark_editor_dirty(super::EditorDirtyFlags {
                                         rebuild_block_mesh: true,
+                                        rebuild_hitbox_visualization: true,
                                         ..super::EditorDirtyFlags::default()
                                     });
                                 }
@@ -603,6 +605,7 @@ impl State {
                             if consumed_gems {
                                 self.mark_editor_dirty(super::EditorDirtyFlags {
                                     rebuild_block_mesh: true,
+                                    rebuild_hitbox_visualization: true,
                                     ..super::EditorDirtyFlags::default()
                                 });
                             }
@@ -664,6 +667,7 @@ impl State {
                     if simulate_preview {
                         self.mark_editor_dirty(super::EditorDirtyFlags {
                             rebuild_block_mesh: true,
+                            rebuild_hitbox_visualization: true,
                             ..super::EditorDirtyFlags::default()
                         });
                     }
