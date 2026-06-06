@@ -23,6 +23,7 @@ use crate::editor_ui::modes::tapping::{
 };
 use crate::editor_ui::modes::timing::show_timing_mode_bottom_panel;
 use crate::editor_ui::modes::trigger::show_trigger_mode_bottom_panel;
+use crate::platform::io::{copy_text_to_clipboard, log_platform_error};
 use crate::types::{essential_keybind_actions, format_key_chord, EditorMode, SettingsSection};
 use crate::State;
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
@@ -1207,10 +1208,25 @@ pub fn show_perf_overlay(ctx: &egui::Context, state: &mut State) {
         .default_size([1024.0, 600.0])
         .open(&mut profiler_open)
         .show(ctx, |ui| {
-            ui.monospace(format!(
-                "{} | {} | FPS {:.1}",
-                graphics_backend, audio_backend, fps
-            ));
+            ui.horizontal(|ui| {
+                ui.monospace(format!(
+                    "{} | {} | FPS {:.1}",
+                    graphics_backend, audio_backend, fps
+                ));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .button("📋 Copy Frame")
+                        .on_hover_text("Copy the latest profiling frame to clipboard")
+                        .clicked()
+                    {
+                        if let Some(text) = state.format_latest_frame() {
+                            if let Err(error) = copy_text_to_clipboard(&text) {
+                                log_platform_error(&error);
+                            }
+                        }
+                    }
+                });
+            });
             ui.separator();
             puffin_egui::profiler_ui(ui);
         });

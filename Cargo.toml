@@ -61,6 +61,7 @@ symphonia = { version = "0.6", default-features = false, features = [
 ] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+arboard = "3.6"
 directories = "6.0"
 egui-winit = "0.34.3"
 env_logger = "0.11"
@@ -88,6 +89,7 @@ wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 wasm-bindgen-rayon = "1"
 web-sys = { version = "0.3", features = [
+    "Clipboard",
     "console",
     "Window",
     "Document",
@@ -116,6 +118,7 @@ web-sys = { version = "0.3", features = [
     "IdbTransaction",
     "IdbTransactionMode",
     "DomStringList",
+    "Navigator",
 ] }
 
 [package.metadata.wasm-pack.profile.release]

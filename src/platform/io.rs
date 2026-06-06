@@ -9,6 +9,43 @@ use crate::audio_service::PersistentWaveformCacheEntry;
 use crate::platform::storage;
 use crate::types::AppSettings;
 
+pub(crate) fn copy_text_to_clipboard(text: &str) -> Result<(), String> {
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    if let Some(result) = test_hooks::copy_text_result(text) {
+        return result;
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen_futures::JsFuture;
+
+        let window = web_sys::window().ok_or_else(|| "Window is not available".to_string())?;
+        let clipboard = window.navigator().clipboard();
+        let promise = clipboard.write_text(text);
+        let text_len = text.len();
+
+        crate::platform::task::spawn_background(async move {
+            if let Err(error) = JsFuture::from(promise).await {
+                log_platform_error(&format!(
+                    "Failed to copy {text_len} bytes to clipboard: {:?}",
+                    error
+                ));
+            }
+        });
+
+        Ok(())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut clipboard = arboard::Clipboard::new()
+            .map_err(|error| format!("Failed to open clipboard: {error}"))?;
+        clipboard
+            .set_text(text.to_string())
+            .map_err(|error| format!("Failed to copy text to clipboard: {error}"))
+    }
+}
+
 pub(crate) fn save_level_export(filename: &str, data: &[u8]) -> Result<(), String> {
     #[cfg(target_arch = "wasm32")]
     {
@@ -162,6 +199,8 @@ mod test_hooks {
         pub(crate) load_waveform_result: Option<Option<PersistentWaveformCacheEntry>>,
         pub(crate) load_settings_result: Option<Result<AppSettings, String>>,
         pub(crate) save_settings_result: Option<Result<(), String>>,
+        pub(crate) copy_text_result: Option<Result<(), String>>,
+        pub(crate) copied_text: Option<String>,
     }
 
     fn hooks_state() -> &'static Mutex<IoHooks> {
@@ -207,6 +246,13 @@ mod test_hooks {
     pub(crate) fn save_settings_result() -> Option<Result<(), String>> {
         with_hooks_mut(|hooks| hooks.save_settings_result.clone())
     }
+
+    pub(crate) fn copy_text_result(text: &str) -> Option<Result<(), String>> {
+        with_hooks_mut(|hooks| {
+            hooks.copied_text = Some(text.to_string());
+            hooks.copy_text_result.clone()
+        })
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -216,9 +262,9 @@ mod tests {
     use std::sync::{Mutex, OnceLock};
 
     use super::{
-        load_all_local_audio, load_app_settings_from_storage, load_waveform_from_storage,
-        save_app_settings_to_storage, save_audio_to_storage, save_level_export,
-        save_waveform_to_storage, test_hooks,
+        copy_text_to_clipboard, load_all_local_audio, load_app_settings_from_storage,
+        load_waveform_from_storage, save_app_settings_to_storage, save_audio_to_storage,
+        save_level_export, save_waveform_to_storage, test_hooks,
     };
     use crate::audio_service::PersistentWaveformCacheEntry;
     use crate::types::AppSettings;
@@ -264,6 +310,39 @@ mod tests {
         let result = save_level_export(missing_parent.to_string_lossy().as_ref(), b"bytes");
 
         assert!(result.is_err(), "missing parent directory should fail");
+    }
+
+    #[test]
+    fn copy_text_to_clipboard_delegates_to_clipboard_layer() {
+        let _lock = shared_test_lock()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let _reset_guard = HookResetGuard::new();
+        test_hooks::with_hooks_mut(|hooks| {
+            hooks.copy_text_result = Some(Ok(()));
+        });
+
+        let result = copy_text_to_clipboard("latest profiling frame");
+
+        assert_eq!(result, Ok(()));
+        test_hooks::with_hooks_mut(|hooks| {
+            assert_eq!(hooks.copied_text.as_deref(), Some("latest profiling frame"));
+        });
+    }
+
+    #[test]
+    fn copy_text_to_clipboard_returns_clipboard_error() {
+        let _lock = shared_test_lock()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let _reset_guard = HookResetGuard::new();
+        test_hooks::with_hooks_mut(|hooks| {
+            hooks.copy_text_result = Some(Err("clipboard unavailable".to_string()));
+        });
+
+        let result = copy_text_to_clipboard("latest profiling frame");
+
+        assert_eq!(result, Err("clipboard unavailable".to_string()));
     }
 
     #[test]
