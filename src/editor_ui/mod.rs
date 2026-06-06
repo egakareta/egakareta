@@ -302,6 +302,22 @@ fn context_menu_button(
     }
 }
 
+fn push_context_cursor_command(
+    commands: &mut Vec<AppCommand>,
+    menu_position: egui::Pos2,
+    pixels_per_point: f32,
+) {
+    let scale = if pixels_per_point.is_finite() && pixels_per_point > 0.0 {
+        pixels_per_point
+    } else {
+        1.0
+    };
+    commands.push(AppCommand::EditorUpdateCursorFromScreen {
+        x: (menu_position.x * scale) as f64,
+        y: (menu_position.y * scale) as f64,
+    });
+}
+
 fn show_editor_context_menu(
     ctx: &egui::Context,
     view: &EditorUiViewModel<'_>,
@@ -430,6 +446,11 @@ fn show_editor_context_menu(
                     AppCommand::EditorPasteBlock,
                     hint("paste").as_deref(),
                 );
+                if close_menu && commands.last() == Some(&AppCommand::EditorPasteBlock) {
+                    let paste_command = commands.pop().expect("paste command was just pushed");
+                    push_context_cursor_command(commands, menu_position, ctx.pixels_per_point());
+                    commands.push(paste_command);
+                }
                 close_menu |= context_menu_button(
                     ui,
                     commands,
@@ -521,6 +542,11 @@ fn show_editor_context_menu(
                     AppCommand::EditorSetSpawnHere,
                     hint("spawn_set").as_deref(),
                 );
+                if close_menu && commands.last() == Some(&AppCommand::EditorSetSpawnHere) {
+                    let spawn_command = commands.pop().expect("spawn command was just pushed");
+                    push_context_cursor_command(commands, menu_position, ctx.pixels_per_point());
+                    commands.push(spawn_command);
+                }
                 close_menu |= context_menu_button(
                     ui,
                     commands,

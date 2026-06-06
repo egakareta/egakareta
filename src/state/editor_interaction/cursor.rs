@@ -11,6 +11,33 @@ use crate::types::EditorInteractionChange;
 use glam::Vec2;
 
 impl EditorSubsystem {
+    pub(crate) fn force_cursor_from_screen(
+        &mut self,
+        x: f64,
+        y: f64,
+        viewport_size: Vec2,
+    ) -> EditorInteractionChange {
+        let previous_pointer = self.ui.pointer_screen;
+        self.ui.pointer_screen = Some([x, y]);
+        if previous_pointer.is_none_or(|pointer| {
+            (pointer[0] - x).abs() > crate::state::TAP_CLICK_SCREEN_EPSILON_PIXELS
+                || (pointer[1] - y).abs() > crate::state::TAP_CLICK_SCREEN_EPSILON_PIXELS
+        }) {
+            self.runtime.interaction.pending_tap_click = None;
+        }
+
+        let Some(pick) = self.pick_from_screen(x, y, viewport_size) else {
+            return EditorInteractionChange::None;
+        };
+
+        if pick.cursor != self.ui.cursor {
+            self.ui.cursor = pick.cursor;
+            return EditorInteractionChange::Cursor;
+        }
+
+        EditorInteractionChange::None
+    }
+
     pub(crate) fn update_cursor_from_screen(
         &mut self,
         x: f64,
@@ -85,6 +112,22 @@ impl EditorSubsystem {
 }
 
 impl State {
+    pub(crate) fn force_editor_cursor_from_screen(&mut self, x: f64, y: f64) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        let viewport_size = Vec2::new(
+            self.render.gpu.config.width as f32,
+            self.render.gpu.config.height as f32,
+        );
+        if self.editor.force_cursor_from_screen(x, y, viewport_size)
+            == EditorInteractionChange::Cursor
+        {
+            self.rebuild_editor_cursor_vertices();
+        }
+    }
+
     pub(crate) fn update_editor_cursor_from_screen(&mut self, x: f64, y: f64) {
         let viewport_size = Vec2::new(
             self.render.gpu.config.width as f32,

@@ -255,6 +255,8 @@ pub(crate) enum AppCommand {
     EditorPrimaryClick { x: f64, y: f64 },
     /// Pointer moved to screen coordinates.
     EditorPointerMoved { x: f64, y: f64 },
+    /// Update the editor cursor from screen coordinates without triggering a click.
+    EditorUpdateCursorFromScreen { x: f64, y: f64 },
     /// Camera drag delta in screen pixels.
     EditorCameraDrag { dx: f64, dy: f64 },
     /// Resize render surface to the specified dimensions.

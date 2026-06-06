@@ -250,6 +250,9 @@ impl State {
             }
             AppCommand::EditorPrimaryClick { x, y } => self.handle_primary_click(x, y),
             AppCommand::EditorPointerMoved { x, y } => self.handle_pointer_moved(x, y),
+            AppCommand::EditorUpdateCursorFromScreen { x, y } => {
+                self.force_editor_cursor_from_screen(x, y)
+            }
             AppCommand::EditorCameraDrag { dx, dy } => self.drag_editor_camera_by_pixels(dx, dy),
             AppCommand::ResizeSurface { width, height } => {
                 self.resize_surface(crate::types::PhysicalSize::new(width, height));
