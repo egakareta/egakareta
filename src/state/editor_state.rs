@@ -12,8 +12,14 @@ use crate::editor_domain::{
 };
 use crate::game::TimelineSimulationRuntime;
 use crate::types::{
-    AppPhase, EditorMode, GameCursor, LevelObject, SpawnDirection, TimedTrigger, TimingPoint,
+    AppPhase, EditorMode, GameCursor, LevelObject, SpawnDirection, TimedTrigger,
+    TimedTriggerAction, TimedTriggerTarget, TimingPoint,
 };
+
+fn timed_trigger_transforms_objects(trigger: &TimedTrigger) -> bool {
+    !matches!(trigger.target, TimedTriggerTarget::Camera)
+        && matches!(trigger.action, TimedTriggerAction::TransformObjects { .. })
+}
 
 impl EditorSubsystem {
     pub(crate) fn set_pan_up_held(&mut self, held: bool) {
@@ -1139,10 +1145,13 @@ impl State {
             return;
         }
 
+        let transforms_objects = timed_trigger_transforms_objects(&trigger);
         self.record_editor_history_state();
         self.editor.add_trigger(trigger);
         self.mark_editor_dirty(EditorDirtyFlags {
             rebuild_selection_overlays: true,
+            rebuild_block_mesh: transforms_objects,
+            rebuild_hitbox_visualization: transforms_objects,
             ..EditorDirtyFlags::default()
         });
     }
@@ -1250,10 +1259,16 @@ impl State {
             return;
         }
 
+        let transforms_objects = self
+            .editor
+            .triggers()
+            .get(index)
+            .is_some_and(timed_trigger_transforms_objects);
         self.record_editor_history_state();
         self.editor.remove_trigger(index);
         self.mark_editor_dirty(EditorDirtyFlags {
             rebuild_selection_overlays: true,
+            rebuild_block_mesh: transforms_objects,
             rebuild_hitbox_visualization: true,
             ..EditorDirtyFlags::default()
         });
@@ -1274,10 +1289,17 @@ impl State {
             return;
         }
 
+        let transforms_objects = timed_trigger_transforms_objects(&trigger)
+            || self
+                .editor
+                .triggers()
+                .get(index)
+                .is_some_and(timed_trigger_transforms_objects);
         self.record_editor_history_state();
         self.editor.update_trigger(index, trigger);
         self.mark_editor_dirty(EditorDirtyFlags {
             rebuild_selection_overlays: true,
+            rebuild_block_mesh: transforms_objects,
             rebuild_hitbox_visualization: true,
             ..EditorDirtyFlags::default()
         });

@@ -160,14 +160,23 @@ impl State {
     }
 
     fn editor_runtime_objects_for_render(&self) -> Option<Vec<LevelObject>> {
-        if self.phase != AppPhase::Editor
-            || !self.editor.timeline.playback.playing
-            || self.editor.ui.mode == EditorMode::Timing
-        {
+        if self.phase != AppPhase::Editor || self.editor.ui.mode == EditorMode::Timing {
             return None;
         }
 
-        if !self.editor.has_object_transform_triggers() {
+        let has_object_transform_triggers = self.editor.has_object_transform_triggers();
+
+        if !self.editor.timeline.playback.playing {
+            return has_object_transform_triggers.then(|| {
+                trigger_transformed_objects_at_time(
+                    &self.editor.objects,
+                    self.editor.triggers(),
+                    self.editor.timeline.clock.time_seconds,
+                )
+            });
+        }
+
+        if !has_object_transform_triggers {
             return self
                 .editor
                 .timeline
@@ -1340,18 +1349,23 @@ mod tests {
     }
 
     #[test]
-    fn editor_runtime_objects_for_render_requires_editor_playback_and_transform_triggers() {
+    fn editor_runtime_objects_for_render_previews_transforms_without_playback() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
             state.editor.objects = vec![block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])];
             state.editor.set_triggers(vec![object_move_trigger()]);
+            state.editor.timeline.clock.time_seconds = 0.0;
 
             state.phase = AppPhase::Menu;
             assert!(state.editor_runtime_objects_for_render().is_none());
 
             state.phase = AppPhase::Editor;
             state.editor.timeline.playback.playing = false;
-            assert!(state.editor_runtime_objects_for_render().is_none());
+            state.editor.ui.mode = EditorMode::Place;
+            let transformed = state
+                .editor_runtime_objects_for_render()
+                .expect("expected stopped editor transform preview objects");
+            assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
 
             state.editor.timeline.playback.playing = true;
             state.editor.ui.mode = EditorMode::Timing;
