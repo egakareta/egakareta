@@ -54,6 +54,9 @@ impl State {
                 }
             }
             AppCommand::EditorSetBlockId(id) => self.set_editor_block_id(id),
+            AppCommand::EditorSelectRecentBlock(index) => {
+                self.select_recent_block(index);
+            }
             AppCommand::EditorPickSelectedBlock => {
                 self.editor_pick_selected_block_for_place();
             }
@@ -693,6 +696,34 @@ impl State {
                     None
                 }
             }
+            "select_recent_block_1" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorSelectRecentBlock(0))
+                } else {
+                    None
+                }
+            }
+            "select_recent_block_2" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorSelectRecentBlock(1))
+                } else {
+                    None
+                }
+            }
+            "select_recent_block_3" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorSelectRecentBlock(2))
+                } else {
+                    None
+                }
+            }
+            "select_recent_block_4" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::EditorSelectRecentBlock(3))
+                } else {
+                    None
+                }
+            }
             "focus_camera_target" => {
                 if self.is_editor() && just_pressed {
                     Some(AppCommand::EditorFocusCameraTarget)
@@ -895,6 +926,31 @@ impl State {
             key,
             "Shift" | "Control" | "ControlLeft" | "ControlRight" | "Alt" | "AltLeft" | "AltRight"
         )
+    }
+
+    fn select_recent_block(&mut self, index: usize) {
+        let block_ids: Vec<String> = self
+            .editor
+            .config
+            .recent_block_ids
+            .iter()
+            .filter_map(|id| {
+                let block = crate::block_repository::resolve_block_definition(id);
+                if block.placeable {
+                    Some(id.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if let Some(id) = block_ids.get(index) {
+            self.set_editor_block_id(id.clone());
+            if self.editor.timeline.playback.playing {
+                self.set_editor_playback_effective_mode(EditorMode::Place);
+            } else {
+                self.set_editor_mode(EditorMode::Place);
+            }
+        }
     }
 
     fn timeline_shift_to_division_command(

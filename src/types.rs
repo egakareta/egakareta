@@ -1730,6 +1730,30 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
         },
         KeybindActionMetadata {
             group: "Editor",
+            action: "select_recent_block_1",
+            label: "Select Recent Block 1",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "select_recent_block_2",
+            label: "Select Recent Block 2",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "select_recent_block_3",
+            label: "Select Recent Block 3",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "select_recent_block_4",
+            label: "Select Recent Block 4",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
             action: "focus_camera_target",
             label: "Focus Camera Target",
             capacity: 1,
@@ -2078,6 +2102,22 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
         KeybindBinding {
             action: "tab_tapping".to_string(),
             chord: KeyChord::new("3", true, false, false),
+        },
+        KeybindBinding {
+            action: "select_recent_block_1".to_string(),
+            chord: KeyChord::new("1", false, false, true),
+        },
+        KeybindBinding {
+            action: "select_recent_block_2".to_string(),
+            chord: KeyChord::new("2", false, false, true),
+        },
+        KeybindBinding {
+            action: "select_recent_block_3".to_string(),
+            chord: KeyChord::new("3", false, false, true),
+        },
+        KeybindBinding {
+            action: "select_recent_block_4".to_string(),
+            chord: KeyChord::new("4", false, false, true),
         },
         KeybindBinding {
             action: "escape".to_string(),

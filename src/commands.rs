@@ -49,6 +49,8 @@ pub(crate) enum AppCommand {
     EditorSetMode(crate::types::EditorMode),
     /// Set the current block ID for placement.
     EditorSetBlockId(String),
+    /// Select the Nth recent placeable block and switch to Place mode.
+    EditorSelectRecentBlock(usize),
     /// Pick the selected block and enter place mode with that block type.
     EditorPickSelectedBlock,
     /// Pick the block under the pointer and enter place mode with that block type.
