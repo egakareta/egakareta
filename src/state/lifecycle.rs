@@ -38,6 +38,14 @@ use crate::types::{
 
 const GRID_HALF_EXTENT: f32 = 2048.0;
 
+fn block_texture_array_layer_count(source_layers: usize) -> u32 {
+    let mut layer_count = source_layers.max(2) as u32;
+    if layer_count.is_multiple_of(6) {
+        layer_count += 1;
+    }
+    layer_count
+}
+
 fn discover_graphics_backends() -> Vec<String> {
     #[cfg(target_arch = "wasm32")]
     {
@@ -915,12 +923,13 @@ impl State {
             });
 
         let texture_atlas = block_texture_atlas();
+        let block_texture_layer_count = block_texture_array_layer_count(texture_atlas.layers.len());
         let block_texture_array = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Block Texture Array"),
             size: wgpu::Extent3d {
                 width: texture_atlas.width,
                 height: texture_atlas.height,
-                depth_or_array_layers: texture_atlas.layers.len().max(1) as u32,
+                depth_or_array_layers: block_texture_layer_count,
             },
             mip_level_count: 1,
             sample_count: 1,
@@ -966,7 +975,7 @@ impl State {
                 base_mip_level: 0,
                 mip_level_count: Some(1),
                 base_array_layer: 0,
-                array_layer_count: Some(texture_atlas.layers.len().max(1) as u32),
+                array_layer_count: Some(block_texture_layer_count),
             });
 
         let block_texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -1595,12 +1604,22 @@ mod tests {
     use crate::types::SpawnDirection;
 
     use super::{
-        editor_ghost_trail_depth_stencil_state, editor_ghost_trail_primitive_state,
-        editor_hover_outline_depth_stencil_state, editor_outline_depth_stencil_state,
-        editor_outline_mask_depth_stencil_state,
+        block_texture_array_layer_count, editor_ghost_trail_depth_stencil_state,
+        editor_ghost_trail_primitive_state, editor_hover_outline_depth_stencil_state,
+        editor_outline_depth_stencil_state, editor_outline_mask_depth_stencil_state,
         editor_outline_occlusion_depth_mask_depth_stencil_state, State,
     };
     use crate::types::AppPhase;
+
+    #[test]
+    fn block_texture_array_layer_count_avoids_gl_cube_heuristics() {
+        assert_eq!(block_texture_array_layer_count(0), 2);
+        assert_eq!(block_texture_array_layer_count(1), 2);
+        assert_eq!(block_texture_array_layer_count(5), 5);
+        assert_eq!(block_texture_array_layer_count(6), 7);
+        assert_eq!(block_texture_array_layer_count(11), 11);
+        assert_eq!(block_texture_array_layer_count(12), 13);
+    }
 
     #[test]
     fn editor_ghost_trail_pipeline_state_prevents_floor_z_fighting() {

@@ -46,9 +46,23 @@ impl SurfaceHost {
             backends,
             ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
-        let surface = instance
-            .create_surface(wgpu::SurfaceTarget::Canvas(canvas.clone()))
-            .expect("Failed to create surface");
+        let surface = {
+            let value: &wasm_bindgen::JsValue = &canvas;
+            let raw_window_handle =
+                wgpu::rwh::WebCanvasWindowHandle::new(core::ptr::NonNull::from(value).cast())
+                    .into();
+            let raw_display_handle = wgpu::rwh::WebDisplayHandle::new().into();
+
+            // wgpu 29's safe Canvas target does not provide the web display handle
+            // that wgpu-core requires before it reaches the WebGL surface path.
+            unsafe {
+                instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
+                    raw_display_handle: Some(raw_display_handle),
+                    raw_window_handle,
+                })
+            }
+            .expect("Failed to create surface")
+        };
 
         (SurfaceHost::Canvas(canvas), instance, surface, size)
     }
