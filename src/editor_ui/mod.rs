@@ -24,6 +24,7 @@ use crate::editor_ui::modes::tapping::{
 use crate::editor_ui::modes::timing::show_timing_mode_bottom_panel;
 use crate::editor_ui::modes::trigger::show_trigger_mode_bottom_panel;
 use crate::platform::io::{copy_text_to_clipboard, log_platform_error};
+use crate::state::EditorUiViewModel;
 use crate::types::{essential_keybind_actions, format_key_chord, EditorMode, SettingsSection};
 use crate::State;
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
@@ -145,6 +146,7 @@ const KEYBIND_ACTION_LABEL_WIDTH: f32 = 180.0;
 const KEYBIND_CONTROLS_MIN_WIDTH: f32 = 220.0;
 const KEYBIND_CONTENT_MIN_WIDTH: f32 =
     KEYBIND_ACTION_LABEL_WIDTH + KEYBIND_CONTROLS_MIN_WIDTH + 12.0;
+const EDITOR_CONTEXT_MENU_WIDTH: f32 = 220.0;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum BlockCatalogCategory {
@@ -257,6 +259,304 @@ fn marquee_screen_pos_to_egui_pos(screen_pos: [f64; 2], pixels_per_point: f32) -
 
 fn rect_to_input_bounds(rect: egui::Rect) -> [f32; 4] {
     [rect.min.x, rect.min.y, rect.max.x, rect.max.y]
+}
+
+fn point_in_rect_bounds(point: egui::Pos2, rect: [f32; 4]) -> bool {
+    point.x >= rect[0] && point.x <= rect[2] && point.y >= rect[1] && point.y <= rect[3]
+}
+
+fn pointer_over_ui_rects(point: egui::Pos2, rects: &[[f32; 4]]) -> bool {
+    rects.iter().any(|rect| point_in_rect_bounds(point, *rect))
+}
+
+fn context_menu_button(
+    ui: &mut egui::Ui,
+    commands: &mut Vec<AppCommand>,
+    enabled: bool,
+    icon: &str,
+    label: &str,
+    command: AppCommand,
+    hotkey: Option<&str>,
+) -> bool {
+    let mut clicked = false;
+    ui.horizontal(|ui| {
+        let text = format!("{icon} {label}");
+        clicked = ui
+            .add_enabled(enabled, egui::Button::new(text).frame(false))
+            .clicked();
+        if let Some(hotkey) = hotkey {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(
+                    egui::RichText::new(hotkey)
+                        .color(egui::Color32::from_gray(140))
+                        .size(11.0),
+                );
+            });
+        }
+    });
+    if clicked {
+        commands.push(command);
+        true
+    } else {
+        false
+    }
+}
+
+fn show_editor_context_menu(
+    ctx: &egui::Context,
+    view: &EditorUiViewModel<'_>,
+    ui_input_blocking_rects: &mut Vec<[f32; 4]>,
+    commands: &mut Vec<AppCommand>,
+) {
+    let menu_id = egui::Id::new("editor_canvas_context_menu_position");
+    let secondary_clicked = ctx.input(|input| input.pointer.secondary_clicked());
+    if secondary_clicked {
+        if let Some(pointer) = ctx.input(|input| input.pointer.latest_pos()) {
+            if !ctx.is_pointer_over_egui()
+                && !pointer_over_ui_rects(pointer, ui_input_blocking_rects)
+            {
+                ctx.data_mut(|data| data.insert_temp(menu_id, pointer));
+            }
+        }
+    }
+
+    let Some(menu_position) = ctx.data_mut(|data| data.get_temp::<egui::Pos2>(menu_id)) else {
+        return;
+    };
+
+    let has_block_selection = view.selected_block_count > 0;
+    let has_clipboard = view.clipboard_block_count > 0;
+    let has_tap_selection = view.selected_tap.is_some();
+    let has_focus_target = has_block_selection || has_tap_selection;
+    let is_tapping = view.mode == EditorMode::Tapping
+        || (view.mode == EditorMode::Null && view.last_mode == Some(EditorMode::Tapping));
+    let selected_label = if view.selected_block_count == 1 {
+        "selected block"
+    } else {
+        "selected blocks"
+    };
+
+    let hint = |action: &str| -> Option<String> {
+        let h = view.app_settings.hotkey_hint(action);
+        if h.is_empty() {
+            None
+        } else {
+            Some(h)
+        }
+    };
+
+    let response = egui::Area::new("editor_canvas_context_menu".into())
+        .order(egui::Order::Foreground)
+        .fixed_pos(menu_position)
+        .show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_width(EDITOR_CONTEXT_MENU_WIDTH);
+                ui.spacing_mut().button_padding = egui::vec2(8.0, 4.0);
+
+                let mut close_menu = false;
+                close_menu |= context_menu_button(
+                    ui,
+                    commands,
+                    view.can_undo,
+                    egui_phosphor::regular::ARROW_COUNTER_CLOCKWISE,
+                    "Undo",
+                    AppCommand::EditorUndo,
+                    hint("undo").as_deref(),
+                );
+                close_menu |= context_menu_button(
+                    ui,
+                    commands,
+                    view.can_redo,
+                    egui_phosphor::regular::ARROW_CLOCKWISE,
+                    "Redo",
+                    AppCommand::EditorRedo,
+                    hint("redo").as_deref(),
+                );
+
+                ui.separator();
+
+                {
+                    let cut_hotkey_str = hint("copy");
+                    let cut_hotkey = cut_hotkey_str.as_deref();
+                    let mut cut_clicked = false;
+                    ui.horizontal(|ui| {
+                        cut_clicked = ui
+                            .add_enabled(
+                                has_block_selection && !is_tapping,
+                                egui::Button::new(format!(
+                                    "{} Cut",
+                                    egui_phosphor::regular::SCISSORS
+                                ))
+                                .frame(false),
+                            )
+                            .on_hover_text(format!("Cut {selected_label}"))
+                            .clicked();
+                        if let Some(hotkey) = cut_hotkey {
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.label(
+                                        egui::RichText::new(hotkey)
+                                            .color(egui::Color32::from_gray(140))
+                                            .size(11.0),
+                                    );
+                                },
+                            );
+                        }
+                    });
+                    if cut_clicked {
+                        commands.push(AppCommand::EditorCopyBlock);
+                        commands.push(AppCommand::EditorRemoveBlock);
+                        close_menu = true;
+                    }
+                }
+                close_menu |= context_menu_button(
+                    ui,
+                    commands,
+                    has_block_selection,
+                    egui_phosphor::regular::COPY,
+                    "Copy",
+                    AppCommand::EditorCopyBlock,
+                    hint("copy").as_deref(),
+                );
+                close_menu |= context_menu_button(
+                    ui,
+                    commands,
+                    has_clipboard,
+                    egui_phosphor::regular::CLIPBOARD_TEXT,
+                    "Paste",
+                    AppCommand::EditorPasteBlock,
+                    hint("paste").as_deref(),
+                );
+                close_menu |= context_menu_button(
+                    ui,
+                    commands,
+                    has_block_selection && !is_tapping,
+                    egui_phosphor::regular::COPY_SIMPLE,
+                    "Duplicate",
+                    AppCommand::EditorDuplicateBlock,
+                    hint("duplicate").as_deref(),
+                );
+
+                if let Some(selected_tap) = view.selected_tap {
+                    close_menu |= context_menu_button(
+                        ui,
+                        commands,
+                        true,
+                        egui_phosphor::regular::TRASH,
+                        "Delete Tap",
+                        AppCommand::EditorRemoveTapAt(selected_tap.time_seconds),
+                        hint("remove_block").as_deref(),
+                    );
+                } else {
+                    close_menu |= context_menu_button(
+                        ui,
+                        commands,
+                        has_block_selection,
+                        egui_phosphor::regular::TRASH,
+                        "Delete",
+                        AppCommand::EditorRemoveBlock,
+                        hint("remove_block").as_deref(),
+                    );
+                }
+
+                ui.separator();
+
+                close_menu |= context_menu_button(
+                    ui,
+                    commands,
+                    has_block_selection || has_tap_selection,
+                    egui_phosphor::regular::CORNERS_OUT,
+                    "Snap to Grid",
+                    AppCommand::EditorSnapSelectionToGrid,
+                    hint("snap_selection_to_grid").as_deref(),
+                );
+                close_menu |= context_menu_button(
+                    ui,
+                    commands,
+                    has_focus_target,
+                    egui_phosphor::regular::CROSSHAIR,
+                    "Focus View",
+                    AppCommand::EditorFocusCameraTarget,
+                    hint("focus_camera_target").as_deref(),
+                );
+                close_menu |= context_menu_button(
+                    ui,
+                    commands,
+                    has_block_selection,
+                    egui_phosphor::regular::EYEDROPPER,
+                    "Pick Block Type",
+                    AppCommand::EditorPickSelectedBlock,
+                    hint("pick_selected_block").as_deref(),
+                );
+                close_menu |= context_menu_button(
+                    ui,
+                    commands,
+                    has_block_selection,
+                    egui_phosphor::regular::EXPORT,
+                    "Export OBJ",
+                    AppCommand::EditorExportBlockObj,
+                    hint("export_obj").as_deref(),
+                );
+
+                ui.separator();
+
+                close_menu |= context_menu_button(
+                    ui,
+                    commands,
+                    true,
+                    egui_phosphor::regular::CUBE,
+                    "Block Catalog",
+                    AppCommand::EditorTogglePlaceWindow,
+                    hint("toggle_place_window").as_deref(),
+                );
+                close_menu |= context_menu_button(
+                    ui,
+                    commands,
+                    true,
+                    egui_phosphor::regular::MAP_PIN,
+                    "Set Spawn Here",
+                    AppCommand::EditorSetSpawnHere,
+                    hint("spawn_set").as_deref(),
+                );
+                close_menu |= context_menu_button(
+                    ui,
+                    commands,
+                    true,
+                    egui_phosphor::regular::CAMERA,
+                    "Add Camera Trigger",
+                    AppCommand::EditorAddCameraTrigger,
+                    hint("add_camera_trigger").as_deref(),
+                );
+                close_menu |= context_menu_button(
+                    ui,
+                    commands,
+                    true,
+                    egui_phosphor::regular::SELECTION,
+                    "Toggle Hitboxes",
+                    AppCommand::EditorToggleHitboxVisualization,
+                    hint("toggle_hitbox_visualization").as_deref(),
+                );
+
+                if close_menu {
+                    ctx.data_mut(|data| data.remove::<egui::Pos2>(menu_id));
+                }
+            });
+        });
+
+    let menu_rect = response.response.rect;
+    ui_input_blocking_rects.push(rect_to_input_bounds(menu_rect));
+
+    let clicked_outside = ctx.input(|input| {
+        (input.pointer.primary_clicked() || input.pointer.secondary_clicked())
+            && input
+                .pointer
+                .latest_pos()
+                .is_some_and(|pointer| !menu_rect.contains(pointer))
+    });
+    if clicked_outside {
+        ctx.data_mut(|data| data.remove::<egui::Pos2>(menu_id));
+    }
 }
 
 /// Shows the settings sidebar overlay. Works in menu, editor, and paused phases.
@@ -1184,6 +1484,8 @@ pub fn show_editor_ui(
             }
         }
     }
+
+    show_editor_context_menu(ctx, &view, &mut ui_input_blocking_rects, &mut commands);
 
     drop(view);
     state.set_editor_ui_input_blocking_rects(ui_input_blocking_rects, ctx.pixels_per_point());

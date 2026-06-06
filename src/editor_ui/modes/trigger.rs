@@ -557,6 +557,8 @@ mod tests {
         selected_block: Option<LevelObject>,
         trigger_selected_index: Option<usize>,
     ) -> EditorUiViewModel<'a> {
+        let selected_block_count = usize::from(selected_block.is_some());
+
         EditorUiViewModel {
             mode: EditorMode::Trigger,
             last_mode: Some(EditorMode::Trigger),
@@ -585,6 +587,10 @@ mod tests {
             place_preview_size: [1.0, 1.0, 1.0],
             recent_block_ids: &[],
             selected_block,
+            selected_block_count,
+            clipboard_block_count: 0,
+            can_undo: false,
+            can_redo: false,
             playing: false,
             timeline_time_seconds: 3.5,
             timeline_duration_seconds: 20.0,

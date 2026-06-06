@@ -46,6 +46,10 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) place_preview_size: [f32; 3],
     pub(crate) recent_block_ids: &'a [String],
     pub(crate) selected_block: Option<LevelObject>,
+    pub(crate) selected_block_count: usize,
+    pub(crate) clipboard_block_count: usize,
+    pub(crate) can_undo: bool,
+    pub(crate) can_redo: bool,
     pub(crate) playing: bool,
     pub(crate) timeline_time_seconds: f32,
     pub(crate) timeline_duration_seconds: f32,
@@ -81,6 +85,7 @@ impl State {
     pub(crate) fn editor_ui_view_model(&self) -> EditorUiViewModel<'_> {
         let (timeline_preview_position, timeline_preview_direction) =
             self.editor_timeline_preview();
+        let selected_block_indices = self.editor.selected_indices_normalized();
         let selected_tap = self
             .editor
             .selected_tap()
@@ -126,6 +131,17 @@ impl State {
             place_preview_size: self.editor.selected_block_default_size(),
             recent_block_ids: &self.editor.config.recent_block_ids,
             selected_block: self.editor_selected_block(),
+            selected_block_count: selected_block_indices.len(),
+            clipboard_block_count: self
+                .editor
+                .runtime
+                .interaction
+                .clipboard
+                .as_ref()
+                .map(|clipboard| clipboard.objects.len())
+                .unwrap_or(0),
+            can_undo: !self.editor.runtime.history.undo.is_empty(),
+            can_redo: !self.editor.runtime.history.redo.is_empty(),
             playing: self.editor_is_playing(),
             timeline_time_seconds: self.editor_timeline_time_seconds(),
             timeline_duration_seconds: self.editor_timeline_duration_seconds(),
