@@ -204,10 +204,10 @@ impl EditorSubsystem {
                 }
             }
             GizmoDragKind::Rotate => {
-                let axis_index = match drag.axis {
-                    GizmoAxis::X | GizmoAxis::XNeg => 0,
-                    GizmoAxis::Y | GizmoAxis::YNeg => 1,
-                    GizmoAxis::Z | GizmoAxis::ZNeg => 2,
+                let local_axis = match drag.axis {
+                    GizmoAxis::X | GizmoAxis::XNeg => Vec3::X,
+                    GizmoAxis::Y | GizmoAxis::YNeg => Vec3::Y,
+                    GizmoAxis::Z | GizmoAxis::ZNeg => Vec3::Z,
                 };
 
                 let mut raw_delta_degrees = 0.0;
@@ -249,15 +249,25 @@ impl EditorSubsystem {
 
                 let snap_enabled = self.effective_snap_rotation();
                 let snap_step = self.config.snap_rotation_step_degrees.max(1.0);
+                let mut delta_degrees = raw_delta_degrees;
+                if snap_enabled {
+                    delta_degrees = (delta_degrees / snap_step).round() * snap_step;
+                }
 
                 for block in &drag.start_blocks {
                     if let Some(obj) = self.objects.get_mut(block.index) {
-                        let mut next = block.rotation_degrees;
-                        next[axis_index] = block.rotation_degrees[axis_index] + raw_delta_degrees;
-                        if snap_enabled {
-                            next[axis_index] = (next[axis_index] / snap_step).round() * snap_step;
-                        }
-                        obj.rotation_degrees = next;
+                        let block_rotation = glam::Quat::from_euler(
+                            glam::EulerRot::XYZ,
+                            block.rotation_degrees[0].to_radians(),
+                            block.rotation_degrees[1].to_radians(),
+                            block.rotation_degrees[2].to_radians(),
+                        );
+                        let world_axis = block_rotation * local_axis;
+                        let delta_quat =
+                            glam::Quat::from_axis_angle(world_axis, delta_degrees.to_radians());
+                        let new_rotation = delta_quat * block_rotation;
+                        let (rx, ry, rz) = new_rotation.to_euler(glam::EulerRot::XYZ);
+                        obj.rotation_degrees = [rx.to_degrees(), ry.to_degrees(), rz.to_degrees()];
                     }
                 }
             }
@@ -1071,6 +1081,394 @@ mod tests {
                 relative_gap >= 2.9,
                 "relative gap {relative_gap} should be preserved (~3.0)"
             );
+        });
+    }
+
+    /// Helper: compute the signed angular delta (in degrees) that the rotation
+    /// drag code would produce for the given screen-space mouse positions,
+    /// camera, and world-space axis direction.
+    fn compute_rotation_delta_degrees(
+        state: &State,
+        start_mouse: Vec2,
+        current_mouse: Vec2,
+        center_screen: Vec2,
+        axis_dir: Vec3,
+    ) -> f32 {
+        let sv = start_mouse - center_screen;
+        let cv = current_mouse - center_screen;
+        if sv.length_squared() <= f32::EPSILON || cv.length_squared() <= f32::EPSILON {
+            return 0.0;
+        }
+        let start_angle = sv.y.atan2(sv.x);
+        let current_angle = cv.y.atan2(cv.x);
+        let mut diff = current_angle - start_angle;
+        if diff > std::f32::consts::PI {
+            diff -= std::f32::consts::TAU;
+        } else if diff < -std::f32::consts::PI {
+            diff += std::f32::consts::TAU;
+        }
+        let target = Vec3::new(
+            state.editor.camera.editor_pan[0],
+            state.editor.camera.editor_target_z,
+            state.editor.camera.editor_pan[1],
+        );
+        let eye = target + state.editor.camera_offset();
+        let view_dir = (target - eye).normalize_or_zero();
+        let sign = if axis_dir.dot(view_dir) < 0.0 {
+            -1.0
+        } else {
+            1.0
+        };
+        diff.to_degrees() * sign
+    }
+
+    /// Helper: given a start rotation and a delta around a world-space axis,
+    /// compute the expected Euler XYZ result via quaternion composition.
+    fn expected_rotation_after_delta(
+        start_degrees: [f32; 3],
+        world_axis: Vec3,
+        delta_degrees: f32,
+    ) -> [f32; 3] {
+        let start_quat = glam::Quat::from_euler(
+            glam::EulerRot::XYZ,
+            start_degrees[0].to_radians(),
+            start_degrees[1].to_radians(),
+            start_degrees[2].to_radians(),
+        );
+        let delta_quat = glam::Quat::from_axis_angle(world_axis, delta_degrees.to_radians());
+        let result_quat = delta_quat * start_quat;
+        let (rx, ry, rz) = result_quat.to_euler(glam::EulerRot::XYZ);
+        [rx.to_degrees(), ry.to_degrees(), rz.to_degrees()]
+    }
+
+    #[test]
+    fn drag_gizmo_rotate_identity_block_produces_single_axis_change() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.config.snap_rotation = false;
+            state.editor.objects = vec![test_block()];
+
+            let viewport = Vec2::new(1280.0, 720.0);
+            let center = Vec3::new(0.5, 0.5, 0.5);
+            let center_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center projects");
+
+            // 90° clockwise screen-space rotation
+            let start_mouse = center_screen + Vec2::new(30.0, 0.0);
+            let current_mouse = center_screen + Vec2::new(0.0, 30.0);
+
+            let block = state.editor.objects[0].clone();
+            state.editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+                axis: GizmoAxis::Y,
+                kind: GizmoDragKind::Rotate,
+                start_mouse: [start_mouse.x as f64, start_mouse.y as f64],
+                start_center_screen: [center_screen.x, center_screen.y],
+                start_center_world: center.to_array(),
+                start_blocks: vec![start_block_for_index(0, &block)],
+            });
+
+            assert!(state.editor.drag_gizmo(
+                current_mouse.x as f64,
+                current_mouse.y as f64,
+                viewport,
+            ));
+
+            let rot = state.editor.objects[0].rotation_degrees;
+            // With no pre-rotation, the Y ring axis is world Y.
+            // Rotation should mostly affect the Y Euler component.
+            assert!(
+                rot[1].abs() > 1.0,
+                "Y rotation should be non-trivial, got {rot:?}"
+            );
+            // X and Z should remain near zero since we rotated around Y
+            // and the block had no prior rotation.
+            approx_eq(rot[0], 0.0, 1.0);
+            approx_eq(rot[2], 0.0, 1.0);
+        });
+    }
+
+    #[test]
+    fn drag_gizmo_rotate_around_x_with_y90_uses_world_axis() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.config.snap_rotation = false;
+
+            let mut block = test_block();
+            block.rotation_degrees = [0.0, 90.0, 0.0];
+            state.editor.objects = vec![block];
+
+            let viewport = Vec2::new(1280.0, 720.0);
+            let center = Vec3::new(0.5, 0.5, 0.5);
+            let center_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center projects");
+
+            let start_mouse = center_screen + Vec2::new(30.0, 0.0);
+            let current_mouse = center_screen + Vec2::new(0.0, 30.0);
+
+            let block_snap = state.editor.objects[0].clone();
+            state.editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+                axis: GizmoAxis::X,
+                kind: GizmoDragKind::Rotate,
+                start_mouse: [start_mouse.x as f64, start_mouse.y as f64],
+                start_center_screen: [center_screen.x, center_screen.y],
+                start_center_world: center.to_array(),
+                start_blocks: vec![start_block_for_index(0, &block_snap)],
+            });
+
+            assert!(state.editor.drag_gizmo(
+                current_mouse.x as f64,
+                current_mouse.y as f64,
+                viewport,
+            ));
+
+            let start_degrees = [0.0_f32, 90.0, 0.0];
+            let start_quat = glam::Quat::from_euler(
+                glam::EulerRot::XYZ,
+                start_degrees[0].to_radians(),
+                start_degrees[1].to_radians(),
+                start_degrees[2].to_radians(),
+            );
+            let world_axis = start_quat * Vec3::X;
+
+            let axis_dir = world_axis;
+            let delta = compute_rotation_delta_degrees(
+                &state,
+                start_mouse,
+                current_mouse,
+                center_screen,
+                axis_dir,
+            );
+            assert!(delta.abs() > 1.0, "delta should be non-trivial");
+
+            let expected = expected_rotation_after_delta(start_degrees, world_axis, delta);
+            let actual = state.editor.objects[0].rotation_degrees;
+
+            approx_eq(actual[0], expected[0], 0.5);
+            approx_eq(actual[1], expected[1], 0.5);
+            approx_eq(actual[2], expected[2], 0.5);
+
+            // Verify it differs from naive Euler addition (the old buggy behavior).
+            // Old code would set X = 0 + delta, Y = 90, Z = 0.
+            let naive = [delta, 90.0, 0.0];
+            let differs = (actual[0] - naive[0]).abs() > 1.0
+                || (actual[1] - naive[1]).abs() > 1.0
+                || (actual[2] - naive[2]).abs() > 1.0;
+            assert!(
+                differs,
+                "quaternion rotation should differ from naive Euler addition: actual={actual:?}, naive={naive:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn drag_gizmo_rotate_around_y_with_xz_rotation_uses_world_axis() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.config.snap_rotation = false;
+
+            // Use X+Z rotation so the world Y axis actually diverges from local Y.
+            // (Pure X rotation doesn't change the Y axis direction.)
+            let mut block = test_block();
+            block.rotation_degrees = [45.0, 0.0, 45.0];
+            state.editor.objects = vec![block];
+
+            let viewport = Vec2::new(1280.0, 720.0);
+            let center = Vec3::new(0.5, 0.5, 0.5);
+            let center_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center projects");
+
+            let start_mouse = center_screen + Vec2::new(30.0, 0.0);
+            let current_mouse = center_screen + Vec2::new(0.0, 30.0);
+
+            let block_snap = state.editor.objects[0].clone();
+            state.editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+                axis: GizmoAxis::Y,
+                kind: GizmoDragKind::Rotate,
+                start_mouse: [start_mouse.x as f64, start_mouse.y as f64],
+                start_center_screen: [center_screen.x, center_screen.y],
+                start_center_world: center.to_array(),
+                start_blocks: vec![start_block_for_index(0, &block_snap)],
+            });
+
+            assert!(state.editor.drag_gizmo(
+                current_mouse.x as f64,
+                current_mouse.y as f64,
+                viewport,
+            ));
+
+            let start_degrees = [45.0_f32, 0.0, 45.0];
+            let start_quat = glam::Quat::from_euler(
+                glam::EulerRot::XYZ,
+                start_degrees[0].to_radians(),
+                start_degrees[1].to_radians(),
+                start_degrees[2].to_radians(),
+            );
+            let world_axis = start_quat * Vec3::Y;
+
+            let delta = compute_rotation_delta_degrees(
+                &state,
+                start_mouse,
+                current_mouse,
+                center_screen,
+                world_axis,
+            );
+            assert!(delta.abs() > 1.0);
+
+            let expected = expected_rotation_after_delta(start_degrees, world_axis, delta);
+            let actual = state.editor.objects[0].rotation_degrees;
+
+            approx_eq(actual[0], expected[0], 0.5);
+            approx_eq(actual[1], expected[1], 0.5);
+            approx_eq(actual[2], expected[2], 0.5);
+
+            // Verify it differs from naive Euler addition
+            let naive = [45.0, delta, 45.0];
+            let differs = (actual[0] - naive[0]).abs() > 1.0
+                || (actual[1] - naive[1]).abs() > 1.0
+                || (actual[2] - naive[2]).abs() > 1.0;
+            assert!(
+                differs,
+                "quaternion rotation should differ from naive Euler: actual={actual:?}, naive={naive:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn drag_gizmo_rotate_around_z_with_combined_rotation_uses_world_axis() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.config.snap_rotation = false;
+
+            let mut block = test_block();
+            block.rotation_degrees = [30.0, 20.0, 0.0];
+            state.editor.objects = vec![block];
+
+            let viewport = Vec2::new(1280.0, 720.0);
+            let center = Vec3::new(0.5, 0.5, 0.5);
+            let center_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center projects");
+
+            let start_mouse = center_screen + Vec2::new(30.0, 0.0);
+            let current_mouse = center_screen + Vec2::new(0.0, 30.0);
+
+            let block_snap = state.editor.objects[0].clone();
+            state.editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+                axis: GizmoAxis::Z,
+                kind: GizmoDragKind::Rotate,
+                start_mouse: [start_mouse.x as f64, start_mouse.y as f64],
+                start_center_screen: [center_screen.x, center_screen.y],
+                start_center_world: center.to_array(),
+                start_blocks: vec![start_block_for_index(0, &block_snap)],
+            });
+
+            assert!(state.editor.drag_gizmo(
+                current_mouse.x as f64,
+                current_mouse.y as f64,
+                viewport,
+            ));
+
+            let start_degrees = [30.0_f32, 20.0, 0.0];
+            let start_quat = glam::Quat::from_euler(
+                glam::EulerRot::XYZ,
+                start_degrees[0].to_radians(),
+                start_degrees[1].to_radians(),
+                start_degrees[2].to_radians(),
+            );
+            let world_axis = start_quat * Vec3::Z;
+
+            let delta = compute_rotation_delta_degrees(
+                &state,
+                start_mouse,
+                current_mouse,
+                center_screen,
+                world_axis,
+            );
+            assert!(delta.abs() > 1.0);
+
+            let expected = expected_rotation_after_delta(start_degrees, world_axis, delta);
+            let actual = state.editor.objects[0].rotation_degrees;
+
+            approx_eq(actual[0], expected[0], 0.5);
+            approx_eq(actual[1], expected[1], 0.5);
+            approx_eq(actual[2], expected[2], 0.5);
+        });
+    }
+
+    #[test]
+    fn drag_gizmo_rotate_with_snap_rounds_delta_before_composition() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.editor.config.snap_rotation = true;
+            state.editor.config.snap_rotation_step_degrees = 15.0;
+
+            let mut block = test_block();
+            block.rotation_degrees = [0.0, 45.0, 0.0];
+            state.editor.objects = vec![block];
+
+            let viewport = Vec2::new(1280.0, 720.0);
+            let center = Vec3::new(0.5, 0.5, 0.5);
+            let center_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center projects");
+
+            let start_mouse = center_screen + Vec2::new(30.0, 0.0);
+            let current_mouse = center_screen + Vec2::new(0.0, 30.0);
+
+            let block_snap = state.editor.objects[0].clone();
+            state.editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+                axis: GizmoAxis::X,
+                kind: GizmoDragKind::Rotate,
+                start_mouse: [start_mouse.x as f64, start_mouse.y as f64],
+                start_center_screen: [center_screen.x, center_screen.y],
+                start_center_world: center.to_array(),
+                start_blocks: vec![start_block_for_index(0, &block_snap)],
+            });
+
+            assert!(state.editor.drag_gizmo(
+                current_mouse.x as f64,
+                current_mouse.y as f64,
+                viewport,
+            ));
+
+            // Compute the snapped delta and verify quaternion composition
+            let start_degrees = [0.0_f32, 45.0, 0.0];
+            let start_quat = glam::Quat::from_euler(
+                glam::EulerRot::XYZ,
+                start_degrees[0].to_radians(),
+                start_degrees[1].to_radians(),
+                start_degrees[2].to_radians(),
+            );
+            let world_axis = start_quat * Vec3::X;
+
+            let raw_delta = compute_rotation_delta_degrees(
+                &state,
+                start_mouse,
+                current_mouse,
+                center_screen,
+                world_axis,
+            );
+            // The code snaps the delta to 15° increments
+            let snapped_delta = (raw_delta / 15.0).round() * 15.0;
+            assert!(
+                snapped_delta.abs() >= 15.0,
+                "snapped delta should be at least one snap step"
+            );
+
+            let expected = expected_rotation_after_delta(start_degrees, world_axis, snapped_delta);
+            let actual = state.editor.objects[0].rotation_degrees;
+
+            approx_eq(actual[0], expected[0], 0.5);
+            approx_eq(actual[1], expected[1], 0.5);
+            approx_eq(actual[2], expected[2], 0.5);
         });
     }
 }
