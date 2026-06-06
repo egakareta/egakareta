@@ -52,7 +52,9 @@ pub(crate) use history::EditorHistoryState;
 pub(crate) use perf::EditorPerfState;
 pub(crate) use render::draw::RenderSurfaceError;
 pub(crate) use render::RenderSubsystem;
-pub(crate) use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
+pub(crate) use runtime::{
+    EditorDirtyFlags, EditorRuntimeState, EditorTransformTriggerCapture, FrameRuntimeState,
+};
 pub(crate) use view_model::EditorUiViewModel;
 
 use crate::game::{GameCheckpointState, GameState};

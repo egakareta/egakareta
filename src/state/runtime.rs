@@ -8,7 +8,7 @@
 use super::editor_interaction::EditorInteractionState;
 use super::history::EditorHistoryState;
 use crate::platform::state_host::PlatformInstant;
-use crate::types::{LevelObject, LineUniform};
+use crate::types::{EditorMode, LevelObject, LineUniform};
 
 #[derive(Clone, Copy, Default, Debug)]
 pub(crate) struct EditorDirtyFlags {
@@ -74,6 +74,13 @@ pub(crate) struct EditorRuntimeState {
     pub(crate) drag_heavy_rebuild_accumulator: f32,
     pub(crate) interaction: EditorInteractionState,
     pub(crate) history: EditorHistoryState,
+    pub(crate) transform_trigger_capture: Option<EditorTransformTriggerCapture>,
+}
+
+pub(crate) struct EditorTransformTriggerCapture {
+    pub(crate) time_seconds: f32,
+    pub(crate) original_objects: Vec<(usize, LevelObject)>,
+    pub(crate) previous_mode: EditorMode,
 }
 
 pub(crate) struct EditorFrameState {

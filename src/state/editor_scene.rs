@@ -18,16 +18,65 @@ use crate::mesh::{
     build_editor_cursor_vertices, build_editor_gizmo_vertices,
     build_editor_hitbox_visualization_vertices, build_editor_hover_outline_vertices,
     build_editor_selection_outline_vertices, build_editor_tap_cursor_vertices,
-    build_practice_checkpoint_flag_geometry, build_spawn_marker_vertices,
-    build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices, GizmoParams,
-    MeshGeometry, PracticeCheckpointFlagInstance,
+    build_editor_transform_origin_outline_vertices, build_practice_checkpoint_flag_geometry,
+    build_spawn_marker_vertices, build_tap_division_preview_vertices,
+    build_tap_division_tap_marker_vertices, GizmoParams, MeshGeometry,
+    PracticeCheckpointFlagInstance,
 };
 use crate::state::render::EditorOutlineInstance;
 use crate::types::{
     AppPhase, EditorMode, EditorPlaceMode, GizmoPart, LevelObject, SpawnDirection, TimingPoint,
+    Vertex,
 };
 
 const SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD: usize = 700;
+
+fn append_outline_instance(
+    mask_vertices: &mut Vec<Vertex>,
+    outline_vertices: &mut Vec<Vertex>,
+    instances: &mut Vec<EditorOutlineInstance>,
+    object: &LevelObject,
+    outline_vertices_for_object: Vec<Vertex>,
+) {
+    let mask_start = mask_vertices.len() as u32;
+    mask_vertices.extend(build_block_geometry_for_object(object).to_triangle_vertices());
+    let mask_end = mask_vertices.len() as u32;
+
+    let outline_start = outline_vertices.len() as u32;
+    outline_vertices.extend(outline_vertices_for_object);
+    let outline_end = outline_vertices.len() as u32;
+
+    instances.push(EditorOutlineInstance {
+        mask_vertices: mask_start..mask_end,
+        outline_vertices: outline_start..outline_end,
+    });
+}
+
+fn append_transform_capture_origin_outlines(
+    mask_vertices: &mut Vec<Vertex>,
+    outline_vertices: &mut Vec<Vertex>,
+    instances: &mut Vec<EditorOutlineInstance>,
+    capture: Option<&super::EditorTransformTriggerCapture>,
+) {
+    let Some(capture) = capture else {
+        return;
+    };
+
+    for (_, object) in &capture.original_objects {
+        append_outline_instance(
+            mask_vertices,
+            outline_vertices,
+            instances,
+            object,
+            build_editor_transform_origin_outline_vertices(
+                object.position,
+                object.size,
+                object.rotation_degrees,
+                2.5,
+            ),
+        );
+    }
+}
 
 fn editor_static_mesh_spare_capacity(geometry: &MeshGeometry, object_count: usize) -> (u32, u32) {
     let object_room = object_count.min(512).saturating_mul(36);
@@ -615,11 +664,22 @@ impl State {
             };
             let mask_vertices =
                 build_block_geometry_for_object(&bounds_object).to_triangle_vertices();
-            let outline_vertices = build_editor_selection_outline_vertices(
+            let mut outline_vertices = build_editor_selection_outline_vertices(
                 bounds_position,
                 bounds_size,
                 [0.0, 0.0, 0.0],
                 2.0,
+            );
+            let mut mask_vertices = mask_vertices;
+            let mut instances = vec![EditorOutlineInstance {
+                mask_vertices: 0..mask_vertices.len() as u32,
+                outline_vertices: 0..outline_vertices.len() as u32,
+            }];
+            append_transform_capture_origin_outlines(
+                &mut mask_vertices,
+                &mut outline_vertices,
+                &mut instances,
+                self.editor.runtime.transform_trigger_capture.as_ref(),
             );
             self.render
                 .meshes
@@ -637,10 +697,7 @@ impl State {
                     "Editor Selection Outline Vertex Buffer",
                     &outline_vertices,
                 );
-            self.render.meshes.editor_selection_outline_instances = vec![EditorOutlineInstance {
-                mask_vertices: 0..mask_vertices.len() as u32,
-                outline_vertices: 0..outline_vertices.len() as u32,
-            }];
+            self.render.meshes.editor_selection_outline_instances = instances;
             return;
         }
 
@@ -649,25 +706,26 @@ impl State {
         let mut instances = Vec::new();
         for index in selected_indices {
             if let Some(obj) = self.editor.objects.get(index) {
-                let mask_start = mask_vertices.len() as u32;
-                mask_vertices.extend(build_block_geometry_for_object(obj).to_triangle_vertices());
-                let mask_end = mask_vertices.len() as u32;
-
-                let outline_start = outline_vertices.len() as u32;
-                outline_vertices.extend(build_editor_selection_outline_vertices(
-                    obj.position,
-                    obj.size,
-                    obj.rotation_degrees,
-                    2.0,
-                ));
-                let outline_end = outline_vertices.len() as u32;
-
-                instances.push(EditorOutlineInstance {
-                    mask_vertices: mask_start..mask_end,
-                    outline_vertices: outline_start..outline_end,
-                });
+                append_outline_instance(
+                    &mut mask_vertices,
+                    &mut outline_vertices,
+                    &mut instances,
+                    obj,
+                    build_editor_selection_outline_vertices(
+                        obj.position,
+                        obj.size,
+                        obj.rotation_degrees,
+                        2.0,
+                    ),
+                );
             }
         }
+        append_transform_capture_origin_outlines(
+            &mut mask_vertices,
+            &mut outline_vertices,
+            &mut instances,
+            self.editor.runtime.transform_trigger_capture.as_ref(),
+        );
         self.render
             .meshes
             .editor_selection_stencil

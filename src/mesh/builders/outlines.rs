@@ -171,6 +171,23 @@ pub(crate) fn build_editor_selection_outline_vertices(
     )
 }
 
+pub(crate) fn build_editor_transform_origin_outline_vertices(
+    position: [f32; 3],
+    size: [f32; 3],
+    rotation_degrees: [f32; 3],
+    line_width: f32,
+) -> Vec<Vertex> {
+    let origin_color = [0.72, 0.22, 1.0, 1.0];
+    build_editor_outline_hull_vertices(
+        position,
+        size,
+        rotation_degrees,
+        line_width,
+        origin_color,
+        origin_color,
+    )
+}
+
 pub(crate) fn build_editor_hover_outline_vertices(
     position: [f32; 3],
     size: [f32; 3],

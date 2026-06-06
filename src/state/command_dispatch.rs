@@ -91,6 +91,15 @@ impl State {
             AppCommand::EditorFocusCameraTarget => {
                 self.editor_focus_camera_target();
             }
+            AppCommand::EditorBeginTransformTriggerCapture => {
+                self.begin_editor_transform_trigger_capture();
+            }
+            AppCommand::EditorCommitTransformTriggerCapture => {
+                self.commit_editor_transform_trigger_capture();
+            }
+            AppCommand::EditorCancelTransformTriggerCapture => {
+                self.cancel_editor_transform_trigger_capture();
+            }
 
             // ── Editor – timeline / playback ────────────────────────
             AppCommand::EditorToggleTimelinePlayback => self.toggle_editor_timeline_playback(),
@@ -280,6 +289,10 @@ impl State {
 
         if !self.is_editor() {
             self.back_to_menu();
+            return;
+        }
+
+        if self.cancel_editor_transform_trigger_capture() {
             return;
         }
 
@@ -733,6 +746,13 @@ impl State {
             "focus_camera_target" => {
                 if self.is_editor() && just_pressed {
                     Some(AppCommand::EditorFocusCameraTarget)
+                } else {
+                    None
+                }
+            }
+            "add_transform_trigger" => {
+                if self.is_editor() && just_pressed && self.has_block_selection() {
+                    Some(AppCommand::EditorBeginTransformTriggerCapture)
                 } else {
                     None
                 }

@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::{EditorDirtyFlags, EditorSubsystem, State};
+use super::{EditorDirtyFlags, EditorSubsystem, EditorTransformTriggerCapture, State};
 use crate::editor_domain::{
     add_tap_with_indicator, clear_taps_with_indicators, interpolate_timeline_sample_positions,
     remove_tap_with_indicator,
@@ -13,7 +13,7 @@ use crate::editor_domain::{
 use crate::game::TimelineSimulationRuntime;
 use crate::types::{
     AppPhase, EditorMode, GameCursor, LevelObject, SpawnDirection, TimedTrigger,
-    TimedTriggerAction, TimedTriggerTarget, TimingPoint,
+    TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, TimingPoint,
 };
 
 fn timed_trigger_transforms_objects(trigger: &TimedTrigger) -> bool {
@@ -1156,6 +1156,159 @@ impl State {
         });
     }
 
+    pub(crate) fn editor_transform_trigger_capture_active(&self) -> bool {
+        self.editor.runtime.transform_trigger_capture.is_some()
+    }
+
+    pub(crate) fn begin_editor_transform_trigger_capture(&mut self) -> bool {
+        if self.phase != AppPhase::Editor
+            || self.editor.runtime.transform_trigger_capture.is_some()
+            || self.editor.timeline.playback.playing
+        {
+            return false;
+        }
+
+        let original_objects = self
+            .selected_block_indices_normalized()
+            .into_iter()
+            .filter_map(|index| {
+                self.editor
+                    .objects
+                    .get(index)
+                    .cloned()
+                    .map(|object| (index, object))
+            })
+            .collect::<Vec<_>>();
+
+        if original_objects.is_empty() {
+            return false;
+        }
+
+        let previous_mode = self.editor_mode();
+        self.editor.runtime.transform_trigger_capture = Some(EditorTransformTriggerCapture {
+            time_seconds: self.editor.timeline.clock.time_seconds.max(0.0),
+            original_objects,
+            previous_mode,
+        });
+        self.editor.runtime.interaction.gizmo_drag = None;
+        self.editor.runtime.interaction.block_drag = None;
+        self.session.editor_show_place_window = false;
+
+        if !previous_mode.is_selection_mode() {
+            self.set_editor_mode(EditorMode::Move);
+        }
+
+        self.mark_editor_dirty(EditorDirtyFlags {
+            rebuild_selection_overlays: true,
+            rebuild_cursor: true,
+            ..EditorDirtyFlags::default()
+        });
+
+        true
+    }
+
+    pub(crate) fn commit_editor_transform_trigger_capture(&mut self) -> bool {
+        if self.phase != AppPhase::Editor {
+            return false;
+        }
+
+        let Some(capture) = self.editor.runtime.transform_trigger_capture.take() else {
+            return false;
+        };
+
+        self.editor.runtime.interaction.gizmo_drag = None;
+        self.editor.runtime.interaction.block_drag = None;
+
+        let mut triggers = Vec::with_capacity(capture.original_objects.len());
+        for (index, original_object) in &capture.original_objects {
+            let Some(final_object) = self.editor.objects.get(*index).cloned() else {
+                continue;
+            };
+            let Ok(object_id) = u32::try_from(*index) else {
+                continue;
+            };
+
+            triggers.push(TimedTrigger {
+                time_seconds: capture.time_seconds,
+                duration_seconds: 1.0,
+                easing: TimedTriggerEasing::EaseInOut,
+                target: TimedTriggerTarget::Objects {
+                    object_ids: vec![object_id],
+                },
+                action: TimedTriggerAction::TransformObjects {
+                    position: final_object.position,
+                    rotation_degrees: final_object.rotation_degrees,
+                    size: final_object.size,
+                },
+            });
+
+            if let Some(object) = self.editor.objects.get_mut(*index) {
+                *object = original_object.clone();
+            }
+        }
+
+        if !triggers.is_empty() {
+            self.editor.record_history_state_force();
+            for trigger in triggers {
+                self.editor.add_trigger(trigger);
+            }
+        }
+
+        self.set_editor_mode(capture.previous_mode);
+        self.sync_editor_objects();
+        self.rebuild_editor_cursor_vertices();
+        self.rebuild_editor_gizmo_vertices();
+        self.rebuild_editor_selection_outline_vertices();
+        self.mark_editor_dirty(EditorDirtyFlags {
+            sync_game_objects: true,
+            rebuild_block_mesh: true,
+            rebuild_selection_overlays: true,
+            rebuild_tap_indicators: true,
+            rebuild_preview_player: true,
+            rebuild_cursor: true,
+            rebuild_hitbox_visualization: true,
+            ..EditorDirtyFlags::default()
+        });
+
+        true
+    }
+
+    pub(crate) fn cancel_editor_transform_trigger_capture(&mut self) -> bool {
+        if self.phase != AppPhase::Editor {
+            return false;
+        }
+
+        let Some(capture) = self.editor.runtime.transform_trigger_capture.take() else {
+            return false;
+        };
+
+        self.editor.runtime.interaction.gizmo_drag = None;
+        self.editor.runtime.interaction.block_drag = None;
+        for (index, original_object) in &capture.original_objects {
+            if let Some(object) = self.editor.objects.get_mut(*index) {
+                *object = original_object.clone();
+            }
+        }
+
+        self.set_editor_mode(capture.previous_mode);
+        self.sync_editor_objects();
+        self.rebuild_editor_cursor_vertices();
+        self.rebuild_editor_gizmo_vertices();
+        self.rebuild_editor_selection_outline_vertices();
+        self.mark_editor_dirty(EditorDirtyFlags {
+            sync_game_objects: true,
+            rebuild_block_mesh: true,
+            rebuild_selection_overlays: true,
+            rebuild_tap_indicators: true,
+            rebuild_preview_player: true,
+            rebuild_cursor: true,
+            rebuild_hitbox_visualization: true,
+            ..EditorDirtyFlags::default()
+        });
+
+        true
+    }
+
     pub(crate) fn editor_capture_selected_camera_trigger(&mut self) {
         if self.phase != AppPhase::Editor {
             return;
@@ -1442,7 +1595,162 @@ mod tests {
     use crate::test_utils::assert_approx_eq as approx_eq;
     use crate::types::{
         AppPhase, EditorMode, GameCursor, GizmoAxis, GizmoDragKind, LevelObject, SpawnDirection,
+        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
     };
+
+    fn test_level_object(position: [f32; 3]) -> LevelObject {
+        LevelObject {
+            position,
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+        }
+    }
+
+    fn assert_object_pose(object: &LevelObject, position: [f32; 3], size: [f32; 3]) {
+        for component in 0..3 {
+            approx_eq(object.position[component], position[component], 1e-6);
+            approx_eq(object.size[component], size[component], 1e-6);
+        }
+    }
+
+    #[test]
+    fn transform_trigger_capture_cancel_restores_original_blocks() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.phase = AppPhase::Editor;
+            state.editor.objects = vec![test_level_object([1.0, 2.0, 3.0])];
+            state.editor.ui.selected_block_indices = vec![0];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.mode = EditorMode::Place;
+
+            assert!(state.begin_editor_transform_trigger_capture());
+            assert!(state.editor_transform_trigger_capture_active());
+            assert_eq!(state.editor.ui.mode, EditorMode::Move);
+
+            state.editor.objects[0].position = [9.0, 8.0, 7.0];
+            state.editor.objects[0].size = [2.0, 3.0, 4.0];
+
+            assert!(state.cancel_editor_transform_trigger_capture());
+            assert!(!state.editor_transform_trigger_capture_active());
+            assert_eq!(state.editor.ui.mode, EditorMode::Place);
+            assert!(state.editor.triggers.items.is_empty());
+            assert_object_pose(&state.editor.objects[0], [1.0, 2.0, 3.0], [1.0, 1.0, 1.0]);
+        });
+    }
+
+    #[test]
+    fn transform_trigger_capture_commit_restores_blocks_and_adds_per_object_triggers() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.phase = AppPhase::Editor;
+            state.editor.timeline.clock.time_seconds = 2.5;
+            state.editor.timeline.clock.duration_seconds = 8.0;
+            state.editor.objects = vec![
+                test_level_object([0.0, 0.0, 0.0]),
+                test_level_object([4.0, 0.0, 0.0]),
+            ];
+            state.editor.ui.selected_block_indices = vec![0, 1];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.mode = EditorMode::Rotate;
+
+            assert!(state.begin_editor_transform_trigger_capture());
+            state.editor.objects[0].position = [1.0, 2.0, 3.0];
+            state.editor.objects[0].rotation_degrees = [0.0, 45.0, 0.0];
+            state.editor.objects[0].size = [2.0, 1.0, 1.0];
+            state.editor.objects[1].position = [5.0, 6.0, 7.0];
+            state.editor.objects[1].rotation_degrees = [15.0, 0.0, 90.0];
+            state.editor.objects[1].size = [1.0, 3.0, 2.0];
+
+            assert!(state.commit_editor_transform_trigger_capture());
+            assert!(!state.editor_transform_trigger_capture_active());
+            assert_eq!(state.editor.ui.mode, EditorMode::Rotate);
+            assert_object_pose(&state.editor.objects[0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+            assert_object_pose(&state.editor.objects[1], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+
+            let mut triggers = state.editor.triggers.items.clone();
+            triggers.sort_by_key(|trigger| match &trigger.target {
+                TimedTriggerTarget::Objects { object_ids } => object_ids[0],
+                TimedTriggerTarget::Camera => u32::MAX,
+            });
+            assert_eq!(triggers.len(), 2);
+
+            for (trigger, expected_id) in triggers.iter().zip([0, 1]) {
+                approx_eq(trigger.time_seconds, 2.5, 1e-6);
+                approx_eq(trigger.duration_seconds, 1.0, 1e-6);
+                assert_eq!(trigger.easing, TimedTriggerEasing::EaseInOut);
+                assert_eq!(
+                    trigger.target,
+                    TimedTriggerTarget::Objects {
+                        object_ids: vec![expected_id],
+                    }
+                );
+            }
+
+            match &triggers[0].action {
+                TimedTriggerAction::TransformObjects {
+                    position,
+                    rotation_degrees,
+                    size,
+                } => {
+                    for component in 0..3 {
+                        approx_eq(position[component], [1.0, 2.0, 3.0][component], 1e-6);
+                        approx_eq(
+                            rotation_degrees[component],
+                            [0.0, 45.0, 0.0][component],
+                            1e-6,
+                        );
+                        approx_eq(size[component], [2.0, 1.0, 1.0][component], 1e-6);
+                    }
+                }
+                _ => panic!("expected transform objects action"),
+            }
+            match &triggers[1].action {
+                TimedTriggerAction::TransformObjects {
+                    position,
+                    rotation_degrees,
+                    size,
+                } => {
+                    for component in 0..3 {
+                        approx_eq(position[component], [5.0, 6.0, 7.0][component], 1e-6);
+                        approx_eq(
+                            rotation_degrees[component],
+                            [15.0, 0.0, 90.0][component],
+                            1e-6,
+                        );
+                        approx_eq(size[component], [1.0, 3.0, 2.0][component], 1e-6);
+                    }
+                }
+                _ => panic!("expected transform objects action"),
+            }
+        });
+    }
+
+    #[test]
+    fn transform_trigger_keybind_starts_capture_and_escape_cancels_it() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.phase = AppPhase::Editor;
+            state.editor.objects = vec![test_level_object([0.0, 0.0, 0.0])];
+            state.editor.ui.selected_block_indices = vec![0];
+            state.editor.ui.selected_block_index = Some(0);
+
+            state.process_keyboard_input("t", true, true);
+            assert!(state.editor_transform_trigger_capture_active());
+
+            state.editor.objects[0].position = [3.0, 4.0, 5.0];
+            state.process_keyboard_input("Escape", true, true);
+
+            assert!(!state.editor_transform_trigger_capture_active());
+            assert_object_pose(&state.editor.objects[0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+            assert!(state.editor.triggers.items.is_empty());
+            assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
+        });
+    }
 
     #[test]
     fn game_cursor_is_hidden_while_playing_or_playtesting() {

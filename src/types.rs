@@ -1764,6 +1764,12 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
             capacity: 1,
         },
         KeybindActionMetadata {
+            group: "Editor",
+            action: "add_transform_trigger",
+            label: "Add Transform Trigger",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
             group: "Timeline",
             action: "timeline_forward",
             label: "Shift Timeline Forward",
@@ -2021,6 +2027,10 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
         KeybindBinding {
             action: "add_camera_trigger".to_string(),
             chord: KeyChord::new("k", false, true, false),
+        },
+        KeybindBinding {
+            action: "add_transform_trigger".to_string(),
+            chord: KeyChord::new("t", false, false, false),
         },
         KeybindBinding {
             action: "timeline_forward".to_string(),

@@ -515,6 +515,15 @@ fn show_editor_context_menu(
                 close_menu |= context_menu_button(
                     ui,
                     commands,
+                    has_block_selection && !is_tapping && !view.transform_trigger_capture_active,
+                    egui_phosphor::regular::ARROWS_CLOCKWISE,
+                    "Add Transform Trigger",
+                    AppCommand::EditorBeginTransformTriggerCapture,
+                    hint("add_transform_trigger").as_deref(),
+                );
+                close_menu |= context_menu_button(
+                    ui,
+                    commands,
                     has_block_selection,
                     egui_phosphor::regular::EXPORT,
                     "Export OBJ",
@@ -1430,27 +1439,55 @@ pub fn show_editor_ui(
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
                 let button_size = egui::Vec2::splat(56.0);
-                let hotkey_hint = view.app_settings.hotkey_hint("toggle_place_window");
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Max), |ui| {
-                    if show_recent_block_quick_strip(
-                        ui,
-                        &view,
-                        block_icon_texture_ids,
-                        &mut commands,
-                    ) {
+                    if view.transform_trigger_capture_active {
+                        if ui
+                            .add_sized(
+                                button_size,
+                                egui::Button::new(
+                                    egui::RichText::new(egui_phosphor::regular::X).size(28.0),
+                                ),
+                            )
+                            .on_hover_text("Cancel transform trigger")
+                            .clicked()
+                        {
+                            commands.push(AppCommand::EditorCancelTransformTriggerCapture);
+                        }
                         ui.add_space(6.0);
-                    }
-                    if ui
-                        .add_sized(
-                            button_size,
-                            egui::Button::new(
-                                egui::RichText::new(egui_phosphor::regular::PLUS).size(28.0),
-                            ),
-                        )
-                        .on_hover_text(format!("Place Block{}", hotkey_hint))
-                        .clicked()
-                    {
-                        commands.push(AppCommand::EditorTogglePlaceWindow);
+                        if ui
+                            .add_sized(
+                                button_size,
+                                egui::Button::new(
+                                    egui::RichText::new(egui_phosphor::regular::CHECK).size(28.0),
+                                ),
+                            )
+                            .on_hover_text("Create transform trigger")
+                            .clicked()
+                        {
+                            commands.push(AppCommand::EditorCommitTransformTriggerCapture);
+                        }
+                    } else {
+                        let hotkey_hint = view.app_settings.hotkey_hint("toggle_place_window");
+                        if show_recent_block_quick_strip(
+                            ui,
+                            &view,
+                            block_icon_texture_ids,
+                            &mut commands,
+                        ) {
+                            ui.add_space(6.0);
+                        }
+                        if ui
+                            .add_sized(
+                                button_size,
+                                egui::Button::new(
+                                    egui::RichText::new(egui_phosphor::regular::PLUS).size(28.0),
+                                ),
+                            )
+                            .on_hover_text(format!("Place Block{}", hotkey_hint))
+                            .clicked()
+                        {
+                            commands.push(AppCommand::EditorTogglePlaceWindow);
+                        }
                     }
                 });
             });

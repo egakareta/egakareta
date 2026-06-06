@@ -38,6 +38,14 @@ impl EditorSubsystem {
     }
 
     pub(super) fn record_history_state(&mut self) {
+        if self.runtime.transform_trigger_capture.is_some() {
+            return;
+        }
+
+        self.record_history_state_force();
+    }
+
+    pub(super) fn record_history_state_force(&mut self) {
         const MAX_HISTORY: usize = 256;
         if self.runtime.history.undo.len() >= MAX_HISTORY {
             self.runtime.history.undo.remove(0);
