@@ -1477,8 +1477,10 @@ fn tap_indicator_color(
     hovered_tap_index: Option<usize>,
     selected_tap_index: Option<usize>,
 ) -> [f32; 4] {
-    if hovered_tap_index == Some(index) || selected_tap_index == Some(index) {
+    if selected_tap_index == Some(index) {
         [0.2, 0.85, 0.95, 1.0]
+    } else if hovered_tap_index == Some(index) {
+        [0.1, 0.45, 0.5, 1.0]
     } else {
         [0.0, 0.0, 0.0, 1.0]
     }
