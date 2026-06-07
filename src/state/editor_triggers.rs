@@ -204,40 +204,6 @@ impl EditorSubsystem {
         self.insert_trigger_sorted(trigger)
     }
 
-    pub(crate) fn remove_trigger(&mut self, index: usize) -> bool {
-        if index >= self.triggers.items.len() {
-            return false;
-        }
-
-        self.triggers.items.remove(index);
-        self.triggers.selected_index = if self.triggers.items.is_empty() {
-            None
-        } else {
-            Some(index.min(self.triggers.items.len() - 1))
-        };
-        true
-    }
-
-    pub(crate) fn update_trigger(
-        &mut self,
-        index: usize,
-        mut trigger: TimedTrigger,
-    ) -> Option<usize> {
-        if index >= self.triggers.items.len() {
-            return None;
-        }
-
-        self.sanitize_trigger(&mut trigger);
-        self.triggers.items.remove(index);
-        let insert_index = self
-            .triggers
-            .items
-            .partition_point(|existing| existing.time_seconds <= trigger.time_seconds);
-        self.triggers.items.insert(insert_index, trigger);
-        self.triggers.selected_index = Some(insert_index);
-        Some(insert_index)
-    }
-
     pub(crate) fn set_trigger_selected(&mut self, selected: Option<usize>) {
         self.triggers.selected_index = selected.filter(|index| *index < self.triggers.items.len());
     }
@@ -420,41 +386,6 @@ mod tests {
                 }
                 _ => panic!("expected camera pose"),
             }
-        });
-    }
-
-    #[test]
-    fn remove_and_update_trigger_maintain_selection_and_order() {
-        pollster::block_on(async {
-            let mut state = new_editor_state().await;
-            state.editor.set_triggers(vec![
-                camera_pose_trigger(1.0),
-                camera_pose_trigger(3.0),
-                camera_pose_trigger(5.0),
-            ]);
-            state.editor.set_trigger_selected(Some(1));
-
-            assert!(!state.editor.remove_trigger(9));
-            assert!(state.editor.remove_trigger(1));
-            assert_eq!(state.editor.triggers().len(), 2);
-            assert_eq!(state.editor.selected_trigger_index(), Some(1));
-
-            let moved = state.editor.update_trigger(
-                0,
-                TimedTrigger {
-                    time_seconds: 6.0,
-                    ..camera_pose_trigger(1.0)
-                },
-            );
-            assert_eq!(moved, Some(1));
-            assert_eq!(state.editor.triggers()[0].time_seconds, 5.0);
-            assert_eq!(state.editor.triggers()[1].time_seconds, 6.0);
-            assert_eq!(state.editor.selected_trigger_index(), Some(1));
-
-            assert_eq!(
-                state.editor.update_trigger(99, camera_pose_trigger(1.0)),
-                None
-            );
         });
     }
 

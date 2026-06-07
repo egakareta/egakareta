@@ -786,6 +786,7 @@ impl State {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             };
             let mask_vertices =
                 build_block_geometry_for_object(&bounds_object).to_triangle_vertices();
@@ -1446,6 +1447,7 @@ fn editor_preview_player_hitbox(position: [f32; 3]) -> LevelObject {
         rotation_degrees: [0.0, 0.0, 0.0],
         block_id: "core/void".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        trigger: None,
     }
 }
 
@@ -1506,6 +1508,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }
     }
 

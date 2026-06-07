@@ -14,12 +14,8 @@ use crate::game::TimelineSimulationRuntime;
 use crate::types::{
     AppPhase, EditorMode, GameCursor, LevelObject, SpawnDirection, TimedTrigger,
     TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, TimingPoint,
+    CAMERA_TRIGGER_BLOCK_ID, TRANSFORM_TRIGGER_BLOCK_ID,
 };
-
-fn timed_trigger_transforms_objects(trigger: &TimedTrigger) -> bool {
-    !matches!(trigger.target, TimedTriggerTarget::Camera)
-        && matches!(trigger.action, TimedTriggerAction::TransformObjects { .. })
-}
 
 const TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS: f32 = 0.001;
 
@@ -57,6 +53,51 @@ fn remove_replaced_transform_trigger_targets(
             }
         })
         .collect()
+}
+
+fn trigger_block_id(trigger: &TimedTrigger) -> &'static str {
+    match trigger.action {
+        TimedTriggerAction::CameraPose { .. } | TimedTriggerAction::CameraFollow { .. } => {
+            CAMERA_TRIGGER_BLOCK_ID
+        }
+        TimedTriggerAction::TransformObjects { .. } => TRANSFORM_TRIGGER_BLOCK_ID,
+    }
+}
+
+fn camera_trigger_rotation_degrees(rotation: f32, pitch: f32) -> [f32; 3] {
+    [pitch.to_degrees(), rotation.to_degrees(), 0.0]
+}
+
+fn trigger_object(trigger: TimedTrigger) -> LevelObject {
+    let (position, size, rotation_degrees) = match &trigger.action {
+        TimedTriggerAction::CameraPose {
+            target_position,
+            rotation,
+            pitch,
+            ..
+        } => (
+            *target_position,
+            [1.0, 1.0, 1.0],
+            camera_trigger_rotation_degrees(*rotation, *pitch),
+        ),
+        TimedTriggerAction::TransformObjects {
+            position,
+            rotation_degrees,
+            size,
+        } => (*position, *size, *rotation_degrees),
+        TimedTriggerAction::CameraFollow { .. } => {
+            ([0.0, 0.0, 0.0], [1.0, 1.0, 1.0], [0.0, 0.0, 0.0])
+        }
+    };
+
+    LevelObject {
+        position,
+        size,
+        rotation_degrees,
+        block_id: trigger_block_id(&trigger).to_string(),
+        color_tint: [1.0, 1.0, 1.0],
+        trigger: Some(trigger),
+    }
 }
 
 impl EditorSubsystem {
@@ -1171,27 +1212,14 @@ impl State {
         let trigger = self
             .editor
             .capture_current_camera_trigger(self.editor.timeline.clock.time_seconds);
+        self.editor.objects.push(trigger_object(trigger.clone()));
         self.editor.add_trigger(trigger);
+        self.sync_editor_objects();
         self.mark_editor_dirty(EditorDirtyFlags {
+            sync_game_objects: true,
+            rebuild_block_mesh: true,
             rebuild_selection_overlays: true,
             rebuild_hitbox_visualization: true,
-            ..EditorDirtyFlags::default()
-        });
-    }
-
-    pub(crate) fn editor_add_trigger(&mut self, trigger: TimedTrigger) {
-        if self.phase != AppPhase::Editor {
-            return;
-        }
-
-        let transforms_objects = timed_trigger_transforms_objects(&trigger);
-        self.record_editor_history_state();
-        self.editor.add_trigger(trigger);
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_selection_overlays: true,
-            rebuild_block_mesh: transforms_objects,
-            rebuild_hitbox_visualization: transforms_objects,
-            rebuild_transform_trigger_markers: transforms_objects,
             ..EditorDirtyFlags::default()
         });
     }
@@ -1259,6 +1287,7 @@ impl State {
         self.editor.runtime.interaction.gizmo_drag = None;
         self.editor.runtime.interaction.block_drag = None;
 
+        let mut trigger_objects = Vec::with_capacity(capture.original_objects.len());
         let mut triggers = Vec::with_capacity(capture.original_objects.len());
         let mut replaced_object_ids = Vec::with_capacity(capture.original_objects.len());
         for (index, original_object) in &capture.original_objects {
@@ -1270,7 +1299,7 @@ impl State {
             };
             replaced_object_ids.push(object_id);
 
-            triggers.push(TimedTrigger {
+            let trigger = TimedTrigger {
                 time_seconds: capture.time_seconds,
                 duration_seconds: 1.0,
                 easing: TimedTriggerEasing::EaseInOut,
@@ -1282,7 +1311,9 @@ impl State {
                     rotation_degrees: final_object.rotation_degrees,
                     size: final_object.size,
                 },
-            });
+            };
+            triggers.push(trigger.clone());
+            trigger_objects.push(trigger_object(trigger));
 
             if let Some(object) = self.editor.objects.get_mut(*index) {
                 *object = original_object.clone();
@@ -1300,6 +1331,7 @@ impl State {
             for trigger in triggers {
                 self.editor.add_trigger(trigger);
             }
+            self.editor.objects.extend(trigger_objects);
         }
 
         self.set_editor_mode(capture.previous_mode);
@@ -1359,67 +1391,6 @@ impl State {
         true
     }
 
-    pub(crate) fn editor_capture_selected_camera_trigger(&mut self) {
-        if self.phase != AppPhase::Editor {
-            return;
-        }
-
-        self.record_editor_history_state();
-        let Some(selected_index) = self.editor.selected_trigger_index() else {
-            return;
-        };
-        let Some(trigger) = self.editor.triggers().get(selected_index).cloned() else {
-            return;
-        };
-        if !EditorSubsystem::is_camera_track_trigger(&trigger) {
-            return;
-        }
-
-        let captured = self
-            .editor
-            .capture_current_camera_trigger(trigger.time_seconds);
-        let mut updated = trigger;
-        if let (
-            crate::types::TimedTriggerAction::CameraPose {
-                target_position,
-                rotation,
-                pitch,
-                ..
-            },
-            crate::types::TimedTriggerAction::CameraPose {
-                target_position: captured_target_position,
-                rotation: captured_rotation,
-                pitch: captured_pitch,
-                ..
-            },
-        ) = (&mut updated.action, captured.action)
-        {
-            *target_position = captured_target_position;
-            *rotation = captured_rotation;
-            *pitch = captured_pitch;
-            self.editor.update_trigger(selected_index, updated);
-        }
-
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_selection_overlays: true,
-            ..EditorDirtyFlags::default()
-        });
-    }
-
-    pub(crate) fn editor_apply_selected_camera_trigger(&mut self) {
-        if self.phase == AppPhase::Editor
-            && self.editor.apply_selected_camera_trigger_to_editor_camera()
-        {
-            self.mark_editor_dirty(EditorDirtyFlags {
-                rebuild_selection_overlays: true,
-                rebuild_cursor: true,
-                rebuild_tap_indicators: true,
-                rebuild_preview_player: true,
-                ..EditorDirtyFlags::default()
-            });
-        }
-    }
-
     pub(crate) fn editor_timeline_preview(&self) -> ([f32; 3], SpawnDirection) {
         self.editor.timeline_preview()
     }
@@ -1457,27 +1428,6 @@ impl State {
         self.editor.selected_trigger_index()
     }
 
-    pub(crate) fn editor_remove_trigger(&mut self, index: usize) {
-        if self.phase != AppPhase::Editor {
-            return;
-        }
-
-        let transforms_objects = self
-            .editor
-            .triggers()
-            .get(index)
-            .is_some_and(timed_trigger_transforms_objects);
-        self.record_editor_history_state();
-        self.editor.remove_trigger(index);
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_selection_overlays: true,
-            rebuild_block_mesh: transforms_objects,
-            rebuild_hitbox_visualization: true,
-            rebuild_transform_trigger_markers: transforms_objects,
-            ..EditorDirtyFlags::default()
-        });
-    }
-
     pub(crate) fn set_editor_trigger_selected(&mut self, selected: Option<usize>) {
         if self.phase == AppPhase::Editor {
             self.editor.set_trigger_selected(selected);
@@ -1487,28 +1437,6 @@ impl State {
                 ..EditorDirtyFlags::default()
             });
         }
-    }
-
-    pub(crate) fn editor_update_trigger(&mut self, index: usize, trigger: TimedTrigger) {
-        if self.phase != AppPhase::Editor {
-            return;
-        }
-
-        let transforms_objects = timed_trigger_transforms_objects(&trigger)
-            || self
-                .editor
-                .triggers()
-                .get(index)
-                .is_some_and(timed_trigger_transforms_objects);
-        self.record_editor_history_state();
-        self.editor.update_trigger(index, trigger);
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_selection_overlays: true,
-            rebuild_block_mesh: transforms_objects,
-            rebuild_hitbox_visualization: true,
-            rebuild_transform_trigger_markers: transforms_objects,
-            ..EditorDirtyFlags::default()
-        });
     }
 
     pub(crate) fn set_editor_simulate_trigger_hitboxes(&mut self, enabled: bool) {
@@ -1649,6 +1577,7 @@ mod tests {
     use crate::types::{
         AppPhase, EditorMode, GameCursor, GizmoAxis, GizmoDragKind, LevelObject, SpawnDirection,
         TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+        TRANSFORM_TRIGGER_BLOCK_ID,
     };
 
     fn test_level_object(position: [f32; 3]) -> LevelObject {
@@ -1658,6 +1587,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }
     }
 
@@ -1741,6 +1671,13 @@ mod tests {
             assert_eq!(state.editor.ui.mode, EditorMode::Rotate);
             assert_object_pose(&state.editor.objects[0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
             assert_object_pose(&state.editor.objects[1], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+            assert_eq!(state.editor.objects.len(), 4);
+            assert_eq!(state.editor.objects[2].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
+            assert_object_pose(&state.editor.objects[2], [1.0, 2.0, 3.0], [2.0, 1.0, 1.0]);
+            assert_eq!(state.editor.objects[2].rotation_degrees, [0.0, 45.0, 0.0]);
+            assert_eq!(state.editor.objects[3].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
+            assert_object_pose(&state.editor.objects[3], [5.0, 6.0, 7.0], [1.0, 3.0, 2.0]);
+            assert_eq!(state.editor.objects[3].rotation_degrees, [15.0, 0.0, 90.0]);
 
             let mut triggers = state.editor.triggers.items.clone();
             triggers.sort_by_key(|trigger| match &trigger.target {
@@ -2003,6 +1940,7 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             });
             state.editor.ui.selected_block_index = Some(0);
             state.editor.config.snap_to_grid = true;
@@ -2345,6 +2283,7 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             });
             state.editor.ui.selected_block_index = Some(0);
             state.editor.ui.selected_block_indices = vec![0];

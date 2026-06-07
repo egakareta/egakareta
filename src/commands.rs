@@ -165,18 +165,8 @@ pub(crate) enum AppCommand {
     },
     /// Capture a new camera trigger from the current editor camera at the playhead.
     EditorAddCameraTrigger,
-    /// Add a trigger with full target/action payload.
-    EditorAddTrigger(crate::types::TimedTrigger),
-    /// Overwrite the selected camera trigger pose from the current editor camera.
-    EditorCaptureSelectedCameraTrigger,
-    /// Snap the editor viewport to the selected camera trigger.
-    EditorApplySelectedCameraTrigger,
-    /// Remove a trigger by index.
-    EditorRemoveTrigger(usize),
     /// Select or deselect a trigger in the UI.
     EditorSetTriggerSelected(Option<usize>),
-    /// Replace an existing trigger.
-    EditorUpdateTrigger(usize, crate::types::TimedTrigger),
     /// Set whether timed object triggers move gameplay hitboxes during play.
     EditorSetSimulateTriggerHitboxes(bool),
 

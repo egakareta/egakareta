@@ -115,20 +115,6 @@ pub(crate) fn show_mode_and_snap_controls(
         {
             commands.push(AppCommand::EditorSetMode(EditorMode::Rotate));
         }
-        if ui
-            .selectable_label(
-                mode == EditorMode::Trigger,
-                format!("{} Trigger", egui_phosphor::regular::LIGHTNING),
-            )
-            .on_hover_text(format!(
-                "Trigger{}",
-                view.app_settings.hotkey_hint("mode_trigger")
-            ))
-            .clicked()
-        {
-            commands.push(AppCommand::EditorSetMode(EditorMode::Trigger));
-        }
-
         ui.separator();
         let mut snap = view.snap_to_grid;
         if ui

@@ -8,7 +8,7 @@
 use super::super::{
     EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart, EditorSubsystem, State,
 };
-use crate::types::{AppPhase, EditorInteractionChange, EditorMode};
+use crate::types::{AppPhase, EditorInteractionChange};
 use glam::{EulerRot, Mat3, Vec2, Vec3};
 
 const MARQUEE_DRAG_THRESHOLD_PX: f64 = 4.0;
@@ -55,8 +55,7 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn begin_marquee_selection(&mut self, x: f64, y: f64, phase: AppPhase) -> bool {
-        let allows_marquee =
-            self.ui.mode.is_selection_mode() || self.ui.mode == EditorMode::Trigger;
+        let allows_marquee = self.ui.mode.is_selection_mode();
         if phase != AppPhase::Editor || self.ui.right_dragging || !allows_marquee {
             return false;
         }
@@ -66,8 +65,7 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn update_marquee_selection(&mut self, x: f64, y: f64, phase: AppPhase) -> bool {
-        let allows_marquee =
-            self.ui.mode.is_selection_mode() || self.ui.mode == EditorMode::Trigger;
+        let allows_marquee = self.ui.mode.is_selection_mode();
         if phase != AppPhase::Editor || self.ui.right_dragging || !allows_marquee {
             return false;
         }
@@ -242,8 +240,7 @@ impl EditorSubsystem {
         viewport: Vec2,
         phase: AppPhase,
     ) -> bool {
-        let allows_marquee =
-            self.ui.mode.is_selection_mode() || self.ui.mode == EditorMode::Trigger;
+        let allows_marquee = self.ui.mode.is_selection_mode();
         if phase != AppPhase::Editor || !allows_marquee {
             self.ui.marquee_start_screen = None;
             self.ui.marquee_current_screen = None;
@@ -558,47 +555,25 @@ impl EditorSubsystem {
             return EditorInteractionChange::None;
         };
 
-        let trigger_mode = self.ui.mode == EditorMode::Trigger;
         let mut changed = EditorInteractionChange::None;
 
         {
             puffin::profile_scope!("SelectApply");
-            if let Some(hit_trigger_index) = pick.hit_trigger_index {
-                if additive && self.selected_trigger_index() == Some(hit_trigger_index) {
+            if let Some(hit_index) = pick.hit_block_index {
+                if !additive {
                     self.set_trigger_selected(None);
-                } else {
-                    self.set_trigger_selected(Some(hit_trigger_index));
                 }
-
-                if !additive || trigger_mode {
-                    self.clear_block_selection();
-                } else {
-                    self.ui.hovered_block_index = None;
-                }
-                changed = EditorInteractionChange::Hover;
-            } else if let Some(hit_index) = pick.hit_block_index {
-                if trigger_mode {
-                    if !additive {
-                        self.set_trigger_selected(None);
-                    }
-                    self.clear_block_selection();
-                    changed = EditorInteractionChange::Hover;
-                } else {
-                    if !additive {
-                        self.set_trigger_selected(None);
-                    }
-                    if additive {
-                        if self.ui.selected_block_indices.contains(&hit_index) {
-                            self.remove_block_from_selection(hit_index);
-                        } else {
-                            self.add_block_to_selection(hit_index);
-                        }
+                if additive {
+                    if self.ui.selected_block_indices.contains(&hit_index) {
+                        self.remove_block_from_selection(hit_index);
                     } else {
-                        self.replace_block_selection(vec![hit_index]);
+                        self.add_block_to_selection(hit_index);
                     }
-                    self.ui.hovered_block_index = Some(hit_index);
-                    changed = EditorInteractionChange::Hover;
+                } else {
+                    self.replace_block_selection(vec![hit_index]);
                 }
+                self.ui.hovered_block_index = Some(hit_index);
+                changed = EditorInteractionChange::Hover;
             } else if !additive {
                 self.clear_block_selection();
                 self.set_trigger_selected(None);
@@ -688,9 +663,7 @@ impl State {
         });
 
         let mode = self.editor.mode();
-        if self.phase == AppPhase::Editor
-            && (mode.is_selection_mode() || mode == EditorMode::Trigger)
-        {
+        if self.phase == AppPhase::Editor && mode.is_selection_mode() {
             self.editor
                 .select_block_from_screen(x, y, viewport_size, self.phase);
             return true;
@@ -745,6 +718,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }
     }
 

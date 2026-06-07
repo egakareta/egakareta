@@ -12,6 +12,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::block_repository::{normalize_block_id, DEFAULT_BLOCK_ID};
 
+pub(crate) const CAMERA_TRIGGER_BLOCK_ID: &str = "core/camera_trigger";
+pub(crate) const TRANSFORM_TRIGGER_BLOCK_ID: &str = "core/transform_trigger";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EditorInteractionChange {
     None,
@@ -955,8 +958,6 @@ pub(crate) struct LevelMetadata {
         skip_serializing_if = "is_default_timeline_duration_seconds"
     )]
     pub(crate) timeline_duration_seconds: f32,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) triggers: Vec<TimedTrigger>,
     #[serde(
         default = "default_simulate_trigger_hitboxes",
         skip_serializing_if = "is_default_simulate_trigger_hitboxes"
@@ -994,7 +995,6 @@ pub(crate) struct EditorStateParams {
     pub timing_points: Vec<TimingPoint>,
     pub timeline_time_seconds: f32,
     pub timeline_duration_seconds: f32,
-    pub triggers: Vec<TimedTrigger>,
     pub simulate_trigger_hitboxes: bool,
     pub menu_preview_camera: Option<LevelPreviewCameraMetadata>,
     pub objects: Vec<LevelObject>,
@@ -1012,7 +1012,6 @@ impl LevelMetadata {
             timing_points,
             timeline_time_seconds,
             timeline_duration_seconds,
-            triggers,
             simulate_trigger_hitboxes,
             menu_preview_camera,
             objects,
@@ -1033,7 +1032,6 @@ impl LevelMetadata {
             timing_points,
             timeline_time_seconds,
             timeline_duration_seconds,
-            triggers,
             simulate_trigger_hitboxes,
             menu_preview_camera,
             objects,
@@ -1042,7 +1040,7 @@ impl LevelMetadata {
     }
 
     pub(crate) fn resolved_triggers(&self) -> Vec<TimedTrigger> {
-        self.triggers.clone()
+        triggers_from_objects(&self.objects)
     }
 
     pub(crate) fn creator_metadata(&self) -> LevelCreatorMetadata {
@@ -1136,12 +1134,49 @@ pub(crate) struct LevelObject {
         skip_serializing_if = "is_default_level_object_color_tint"
     )]
     pub(crate) color_tint: [f32; 3],
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) trigger: Option<TimedTrigger>,
 }
 
 impl LevelObject {
     pub(crate) fn normalize_block_id(&mut self) {
         self.block_id = normalize_block_id(&self.block_id);
     }
+}
+
+pub(crate) fn triggers_from_objects(objects: &[LevelObject]) -> Vec<TimedTrigger> {
+    let mut triggers = objects
+        .iter()
+        .filter_map(|object| {
+            let mut trigger = object.trigger.clone()?;
+            match &mut trigger.action {
+                TimedTriggerAction::TransformObjects {
+                    position,
+                    rotation_degrees,
+                    size,
+                } => {
+                    *position = object.position;
+                    *rotation_degrees = object.rotation_degrees;
+                    *size = object.size;
+                }
+                TimedTriggerAction::CameraPose {
+                    target_position,
+                    rotation,
+                    pitch,
+                    ..
+                } => {
+                    *target_position = object.position;
+                    *pitch = object.rotation_degrees[0].to_radians();
+                    *rotation = object.rotation_degrees[1].to_radians();
+                }
+                TimedTriggerAction::CameraFollow { .. } => {}
+            }
+            Some(trigger)
+        })
+        .filter(|trigger| trigger.time_seconds.is_finite())
+        .collect::<Vec<_>>();
+    triggers.sort_by(|left, right| f32::total_cmp(&left.time_seconds, &right.time_seconds));
+    triggers
 }
 
 impl Default for LevelObject {
@@ -1152,6 +1187,7 @@ impl Default for LevelObject {
             rotation_degrees: default_block_rotation_degrees(),
             block_id: default_level_object_block_id(),
             color_tint: default_level_object_color_tint(),
+            trigger: None,
         }
     }
 }
@@ -1836,12 +1872,6 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
             capacity: 1,
         },
         KeybindActionMetadata {
-            group: "Modes",
-            action: "mode_trigger",
-            label: "Trigger Mode",
-            capacity: 1,
-        },
-        KeybindActionMetadata {
             group: "Tabs",
             action: "tab_compose",
             label: "Compose Tab",
@@ -2085,10 +2115,6 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
             chord: KeyChord::new("4", false, false, false),
         },
         KeybindBinding {
-            action: "mode_trigger".to_string(),
-            chord: KeyChord::new("5", false, false, false),
-        },
-        KeybindBinding {
             action: "tab_compose".to_string(),
             chord: KeyChord::new("1", true, false, false),
         },
@@ -2172,7 +2198,6 @@ pub(crate) enum EditorMode {
     #[default]
     Place,
     Tapping,
-    Trigger,
     Timing,
     Null,
 }
@@ -2185,13 +2210,7 @@ impl EditorMode {
     pub(crate) fn is_compose_mode(self) -> bool {
         matches!(
             self,
-            Self::Select
-                | Self::Move
-                | Self::Scale
-                | Self::Rotate
-                | Self::Place
-                | Self::Trigger
-                | Self::Null
+            Self::Select | Self::Move | Self::Scale | Self::Rotate | Self::Place | Self::Null
         )
     }
 
@@ -2212,7 +2231,7 @@ impl EditorMode {
     }
 
     pub(crate) fn can_select(self) -> bool {
-        self != Self::Null && self != Self::Timing && self != Self::Tapping && self != Self::Trigger
+        self != Self::Null && self != Self::Timing && self != Self::Tapping
     }
 }
 
@@ -2307,10 +2326,11 @@ mod tests {
         apply_timed_triggers_to_objects, camera_triggers_to_timed_triggers,
         default_camera_trigger_pitch, default_camera_trigger_rotation,
         default_camera_trigger_transition_interval_seconds, timed_triggers_to_camera_triggers,
-        CameraTrigger, CameraTriggerMode, EditorStateParams, GameCursor, LevelCreatorMetadata,
-        LevelMetadata, LevelObject, LevelPreviewCameraMetadata, MusicMetadata, SpawnDirection,
-        SpawnMetadata, TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
-        Vertex,
+        triggers_from_objects, CameraTrigger, CameraTriggerMode, EditorStateParams, GameCursor,
+        LevelCreatorMetadata, LevelMetadata, LevelObject, LevelPreviewCameraMetadata,
+        MusicMetadata, SpawnDirection, SpawnMetadata, TimedTrigger, TimedTriggerAction,
+        TimedTriggerEasing, TimedTriggerTarget, Vertex, CAMERA_TRIGGER_BLOCK_ID,
+        TRANSFORM_TRIGGER_BLOCK_ID,
     };
     use serde_json::json;
 
@@ -2367,6 +2387,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/grass".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         };
 
         let value = serde_json::to_value(&object).expect("serialize object");
@@ -2391,7 +2412,6 @@ mod tests {
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 16.0,
-            triggers: Vec::new(),
             simulate_trigger_hitboxes: false,
             menu_preview_camera: None,
             objects: vec![LevelObject {
@@ -2400,6 +2420,7 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             }],
         });
 
@@ -2441,7 +2462,6 @@ mod tests {
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 16.0,
-            triggers: Vec::new(),
             simulate_trigger_hitboxes: true,
             menu_preview_camera: None,
             objects: Vec::new(),
@@ -2463,7 +2483,6 @@ mod tests {
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 16.0,
-            triggers: Vec::new(),
             simulate_trigger_hitboxes: false,
             menu_preview_camera: None,
             objects: Vec::new(),
@@ -2488,7 +2507,6 @@ mod tests {
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 16.0,
-            triggers: Vec::new(),
             simulate_trigger_hitboxes: false,
             menu_preview_camera: Some(LevelPreviewCameraMetadata {
                 position: [4.0, 8.0, -3.0],
@@ -2595,25 +2613,78 @@ mod tests {
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 16.0,
-            triggers: camera_triggers_to_timed_triggers(&[CameraTrigger {
-                time_seconds: 1.2,
-                mode: CameraTriggerMode::Static,
-                easing: TimedTriggerEasing::Linear,
-                transition_interval_seconds: 1.0,
-                use_full_segment_transition: false,
-                target_position: [2.0, 3.0, 4.0],
-                rotation: 0.4,
-                pitch: 0.6,
-            }]),
             simulate_trigger_hitboxes: false,
             menu_preview_camera: None,
-            objects: Vec::new(),
+            objects: vec![LevelObject {
+                position: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+                trigger: camera_triggers_to_timed_triggers(&[CameraTrigger {
+                    time_seconds: 1.2,
+                    mode: CameraTriggerMode::Static,
+                    easing: TimedTriggerEasing::Linear,
+                    transition_interval_seconds: 1.0,
+                    use_full_segment_transition: false,
+                    target_position: [2.0, 3.0, 4.0],
+                    rotation: 0.4,
+                    pitch: 0.6,
+                }])
+                .into_iter()
+                .next(),
+            }],
             extra: serde_json::Map::new(),
         };
+        let mut metadata = metadata;
+        metadata.objects[0].position = [9.0, 8.0, 7.0];
+        metadata.objects[0].rotation_degrees = [30.0, 60.0, 0.0];
 
         let resolved = timed_triggers_to_camera_triggers(&metadata.resolved_triggers());
         assert_eq!(resolved.len(), 1);
         assert!((resolved[0].time_seconds - 1.2).abs() <= 1e-6);
+        assert_eq!(resolved[0].target_position, [9.0, 8.0, 7.0]);
+        assert!((resolved[0].pitch - 30.0_f32.to_radians()).abs() <= 1e-6);
+        assert!((resolved[0].rotation - 60.0_f32.to_radians()).abs() <= 1e-6);
+    }
+
+    #[test]
+    fn resolved_transform_trigger_uses_trigger_object_transform() {
+        let object = LevelObject {
+            position: [4.0, 5.0, 6.0],
+            size: [2.0, 3.0, 4.0],
+            rotation_degrees: [10.0, 20.0, 30.0],
+            block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+            trigger: Some(TimedTrigger {
+                time_seconds: 1.0,
+                duration_seconds: 2.0,
+                easing: TimedTriggerEasing::EaseInOut,
+                target: TimedTriggerTarget::Objects {
+                    object_ids: vec![0],
+                },
+                action: TimedTriggerAction::TransformObjects {
+                    position: [0.0, 0.0, 0.0],
+                    rotation_degrees: [0.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
+                },
+            }),
+        };
+
+        let triggers = triggers_from_objects(&[object]);
+        assert_eq!(triggers.len(), 1);
+        match &triggers[0].action {
+            TimedTriggerAction::TransformObjects {
+                position,
+                rotation_degrees,
+                size,
+            } => {
+                assert_eq!(position, &[4.0, 5.0, 6.0]);
+                assert_eq!(rotation_degrees, &[10.0, 20.0, 30.0]);
+                assert_eq!(size, &[2.0, 3.0, 4.0]);
+            }
+            _ => panic!("expected transform trigger"),
+        }
     }
 
     #[test]
@@ -2624,6 +2695,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }];
 
         let triggers = vec![TimedTrigger {
@@ -2658,6 +2730,7 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             },
             LevelObject {
                 position: [1.0, 0.0, 0.0],
@@ -2665,6 +2738,7 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             },
             LevelObject {
                 position: [2.0, 0.0, 0.0],
@@ -2672,6 +2746,7 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             },
         ];
 
@@ -2716,6 +2791,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }];
         let triggers = vec![TimedTrigger {
             time_seconds: f32::NAN,

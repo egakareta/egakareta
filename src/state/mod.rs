@@ -489,21 +489,6 @@ impl State {
                     return;
                 }
                 self.begin_editor_marquee_selection(x, y);
-            } else if mode == EditorMode::Trigger {
-                let viewport_size = glam::Vec2::new(
-                    self.render.gpu.config.width as f32,
-                    self.render.gpu.config.height as f32,
-                );
-                let hit_trigger = self
-                    .editor
-                    .pick_from_screen(x, y, viewport_size)
-                    .is_some_and(|pick| pick.hit_trigger_index.is_some());
-                if hit_trigger {
-                    self.editor
-                        .select_block_from_screen(x, y, viewport_size, self.phase);
-                    return;
-                }
-                self.begin_editor_marquee_selection(x, y);
             } else if mode == EditorMode::Timing {
                 // Timing mode: clicks handled by egui waveform panel
             }

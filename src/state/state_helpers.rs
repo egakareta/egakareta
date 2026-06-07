@@ -171,6 +171,7 @@ impl EditorSubsystem {
                 rotation_degrees: *rotation_degrees,
                 block_id: crate::block_repository::DEFAULT_BLOCK_ID.to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             },
         ))
     }
@@ -331,6 +332,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }
     }
 

@@ -99,6 +99,7 @@ fn test_editor_nudge_respects_ctrl_override() {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         });
         state.editor.ui.selected_block_index = Some(0);
 
@@ -146,6 +147,7 @@ fn test_editor_nudge_left_right_screen_direction_regression() {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         });
         state.editor.ui.selected_block_index = Some(0);
 

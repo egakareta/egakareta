@@ -224,6 +224,7 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             },
             LevelObject {
                 position: [0.0, 1.0, 0.0],
@@ -231,6 +232,7 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/grass".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             },
         ];
 
@@ -265,7 +267,6 @@ mod tests {
             timing_points: Vec::new(),
             timeline_time_seconds: 0.5,
             timeline_duration_seconds: 16.0,
-            triggers: Vec::new(),
             simulate_trigger_hitboxes: false,
             menu_preview_camera: None,
             objects: vec![LevelObject {
@@ -274,6 +275,7 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             }],
             extra: serde_json::Map::new(),
         };
@@ -335,6 +337,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }];
 
         assert!(playtest_return_objects(true, &objects).is_some());
@@ -352,6 +355,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/speedportal".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }];
 
         // Advance timeline past the portal (e.g., 10 units / BASE_PLAYER_SPEED seconds)
@@ -403,7 +407,6 @@ mod tests {
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 16.0,
-            triggers: Vec::new(),
             simulate_trigger_hitboxes: false,
             menu_preview_camera: None,
             objects: vec![LevelObject {
@@ -412,6 +415,7 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             }],
             extra: serde_json::Map::new(),
         };
@@ -568,6 +572,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }];
         let target = [0.5, 0.0, 3.5];
         let time = derive_timeline_time_for_world_target_near_time(
@@ -852,6 +857,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }];
 
         let previews = derive_timing_division_tap_previews(

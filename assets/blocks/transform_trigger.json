@@ -1,0 +1,15 @@
+{
+    "id": "core/transform_trigger",
+    "display_name": "Transform Trigger",
+    "category": "tech",
+    "render": {
+        "profile": "neon",
+        "color_top": [1.0, 0.52, 0.18, 0.88],
+        "color_side": [0.72, 0.42, 1.0, 0.72]
+    },
+    "behavior": {
+        "collision": "pass_through",
+        "support_surface": false
+    },
+    "placeable": false
+}

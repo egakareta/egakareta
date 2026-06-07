@@ -122,6 +122,7 @@ fn benchmark_objects(object_count: usize) -> Vec<LevelObject> {
                 rotation_degrees: [0.0, ((index % 4) as f32) * 15.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             }
         })
         .collect()

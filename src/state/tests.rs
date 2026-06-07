@@ -38,6 +38,7 @@ fn test_marquee_no_redundant_selections_before_drag_started() {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         });
         state.editor.objects.push(LevelObject {
             position: [5.0, 0.0, 0.0],
@@ -45,6 +46,7 @@ fn test_marquee_no_redundant_selections_before_drag_started() {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         });
 
         // 1. Just hovering over the first block (no mouse down)
@@ -114,6 +116,7 @@ fn selection_outline_builds_instances_per_selected_block() {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         });
         state.editor.objects.push(LevelObject {
             position: [2.0, 0.0, 0.0],
@@ -121,6 +124,7 @@ fn selection_outline_builds_instances_per_selected_block() {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         });
 
         state.editor.ui.selected_block_index = Some(0);
@@ -178,6 +182,7 @@ fn selection_outline_uses_single_bounds_mesh_for_large_selections() {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             });
         }
         state.editor.ui.selected_block_index = Some(0);
@@ -337,6 +342,7 @@ fn falls_from_elevated_platform() {
         rotation_degrees: [0.0, 0.0, 0.0],
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        trigger: None,
     }];
     let (position, direction) = derive_timeline_position(
         [0.0, 3.0, 0.0],
@@ -392,6 +398,7 @@ fn configure_trigger_policy_parity_scene(
         rotation_degrees: [0.0, 0.0, 0.0],
         block_id: "core/speedportal".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        trigger: None,
     }];
     state.editor.spawn.position = [0.0, 0.0, 0.0];
     state.editor.spawn.direction = SpawnDirection::Forward;
@@ -618,6 +625,7 @@ fn multi_selection_clicking_rendered_gizmo_starts_gizmo_drag_not_block_drag() {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             },
             LevelObject {
                 position: [4.0, 0.0, 0.0],
@@ -625,6 +633,7 @@ fn multi_selection_clicking_rendered_gizmo_starts_gizmo_drag_not_block_drag() {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             },
         ];
         state.editor.ui.selected_block_indices = vec![0, 1];
@@ -1001,6 +1010,7 @@ fn test_handle_primary_click_shift_priority() {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         });
         state.editor.ui.selected_block_indices.push(0);
 
@@ -1043,7 +1053,6 @@ fn editor_mode_selection_constraints() {
     assert!(EditorMode::Scale.can_select());
     assert!(EditorMode::Place.can_select());
     assert!(!EditorMode::Tapping.can_select());
-    assert!(!EditorMode::Trigger.can_select());
     assert!(!EditorMode::Timing.can_select());
     assert!(!EditorMode::Null.can_select());
 }
@@ -1083,6 +1092,7 @@ fn editor_null_mode_clears_selection() {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         });
         state.editor.ui.selected_block_index = Some(0);
         state.editor.set_mode(EditorMode::Place);
@@ -1234,6 +1244,7 @@ fn test_gizmo_move_shaft_is_pickable() {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         });
         state.editor.ui.selected_block_indices.push(0);
         state.sync_editor_objects();
@@ -1310,6 +1321,7 @@ fn test_gizmo_hover_priority_suppresses_block_outline() {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         });
         state.editor.ui.selected_block_indices.push(0);
         state.sync_editor_objects();
@@ -1349,6 +1361,7 @@ fn test_gizmo_hover_priority_suppresses_block_outline() {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         });
         state.sync_editor_objects();
 
@@ -1635,10 +1648,5 @@ fn handle_primary_click_covers_tapping_trigger_and_timing_mode_paths() {
                 viewport,
             )
             .expect("selected tap should project to the screen");
-
-        state.editor.set_left_mouse_down(false);
-        state.editor.set_mode(EditorMode::Trigger);
-        state.handle_primary_click(320.0, 240.0);
-        assert!(state.editor.ui.marquee_start_screen.is_some());
     });
 }

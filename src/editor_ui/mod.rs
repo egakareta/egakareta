@@ -22,9 +22,6 @@ use crate::editor_ui::modes::tapping::{
     show_selected_tap_properties_window, show_tapping_mode_bottom_panel,
 };
 use crate::editor_ui::modes::timing::show_timing_mode_bottom_panel;
-use crate::editor_ui::modes::trigger::{
-    show_selected_trigger_properties_window, show_trigger_mode_bottom_panel,
-};
 use crate::platform::io::{copy_text_to_clipboard, log_platform_error};
 use crate::state::EditorUiViewModel;
 use crate::types::{essential_keybind_actions, format_key_chord, EditorMode, SettingsSection};
@@ -1434,8 +1431,6 @@ pub fn show_editor_ui(
                     show_timing_mode_bottom_panel(ui, &view, duration_seconds, &mut commands);
                 } else if is_tapping {
                     show_tapping_mode_bottom_panel(ui, &view, &mut commands);
-                } else if view.mode == EditorMode::Trigger {
-                    show_trigger_mode_bottom_panel(ui, &view, duration_seconds, &mut commands);
                 } else {
                     show_compose_mode_bottom_panel(
                         ui,
@@ -1517,7 +1512,6 @@ pub fn show_editor_ui(
             });
 
         show_selected_block_properties_window(ctx, &view, bottom_bar_height, &mut commands);
-        show_selected_trigger_properties_window(ctx, &view, bottom_bar_height, &mut commands);
         show_place_block_properties_window(ctx, &view, bottom_bar_height);
     }
 
@@ -1551,7 +1545,7 @@ pub fn show_editor_ui(
         }
     }
 
-    if view.mode.is_selection_mode() || view.mode == EditorMode::Trigger {
+    if view.mode.is_selection_mode() {
         if let Some((start, current, is_active_drag)) = view.marquee_selection_rect_screen {
             if is_active_drag {
                 let pixels_per_point = ctx.pixels_per_point();
@@ -2484,11 +2478,6 @@ mod tests {
             run_editor_ui_once(&mut state);
 
             assert_eq!(state.editor_mode(), EditorMode::Tapping);
-
-            state.dispatch(AppCommand::EditorSetMode(EditorMode::Trigger));
-            run_editor_ui_once(&mut state);
-
-            assert_eq!(state.editor_mode(), EditorMode::Trigger);
             assert!(state.is_editor());
         });
     }

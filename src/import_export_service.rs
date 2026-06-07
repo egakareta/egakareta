@@ -83,7 +83,6 @@ mod tests {
             timing_points: Vec::new(),
             timeline_time_seconds: 0.5,
             timeline_duration_seconds: 12.0,
-            triggers: Vec::new(),
             simulate_trigger_hitboxes: true,
             menu_preview_camera: None,
             objects: vec![LevelObject {
@@ -92,6 +91,7 @@ mod tests {
                 rotation_degrees: [0.0, 45.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 0.8, 0.7],
+                trigger: None,
             }],
         })
     }

@@ -288,7 +288,6 @@ impl State {
             timing_points: self.editor.timing.timing_points.clone(),
             timeline_time_seconds: self.editor.timeline.clock.time_seconds,
             timeline_duration_seconds: self.editor.timeline.clock.duration_seconds,
-            triggers: self.editor.triggers().to_vec(),
             simulate_trigger_hitboxes: self.editor.simulate_trigger_hitboxes(),
             menu_preview_camera: self.session.editor_menu_preview_camera.clone(),
             objects: self.editor.objects.clone(),
@@ -773,6 +772,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: block_id.to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }
     }
 
@@ -1086,7 +1086,6 @@ mod tests {
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 16.0,
-            triggers: Vec::new(),
             simulate_trigger_hitboxes: false,
             menu_preview_camera: Some(LevelPreviewCameraMetadata {
                 position: [1.0, 2.0, 3.0],

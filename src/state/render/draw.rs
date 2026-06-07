@@ -1078,7 +1078,7 @@ mod tests {
         ));
         assert!(should_draw_floor_and_grid(
             AppPhase::GameOver,
-            EditorMode::Trigger
+            EditorMode::Place
         ));
 
         assert!(should_skip_world(AppPhase::Editor, EditorMode::Timing));
@@ -1092,7 +1092,6 @@ mod tests {
         assert!(should_draw_editor_cursor(EditorMode::Place));
         assert!(should_draw_editor_cursor(EditorMode::Tapping));
         assert!(!should_draw_editor_cursor(EditorMode::Select));
-        assert!(!should_draw_editor_cursor(EditorMode::Trigger));
         assert!(!should_draw_editor_cursor(EditorMode::Timing));
     }
 

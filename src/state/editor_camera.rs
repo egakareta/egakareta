@@ -147,32 +147,6 @@ impl EditorSubsystem {
         }
     }
 
-    pub(crate) fn apply_selected_camera_trigger_to_editor_camera(&mut self) -> bool {
-        let Some(index) = self.selected_trigger_index() else {
-            return false;
-        };
-        let Some(trigger) = self.triggers().get(index) else {
-            return false;
-        };
-        let Some(camera_trigger) = timed_triggers_to_camera_triggers(std::slice::from_ref(trigger))
-            .into_iter()
-            .next()
-        else {
-            return false;
-        };
-
-        self.camera.editor_pan = [
-            camera_trigger.target_position[0],
-            camera_trigger.target_position[2],
-        ];
-        self.camera.editor_target_z = camera_trigger.target_position[1];
-        self.camera.editor_rotation = camera_trigger.rotation;
-        self.camera.editor_pitch = camera_trigger
-            .pitch
-            .clamp(MIN_EDITOR_PITCH, MAX_EDITOR_PITCH);
-        true
-    }
-
     pub(crate) fn adjust_zoom(&mut self, delta: f32) {
         let offset = self.camera_offset();
         let look_dir = -offset.normalize();
@@ -430,7 +404,7 @@ mod tests {
     use super::{
         eased_alpha, editor_camera_offset_for_pose, interpolate_camera_samples,
         playing_camera_offset_for_angles, CameraViewSample, State, DEFAULT_PLAY_CAMERA_PITCH,
-        DEFAULT_PLAY_CAMERA_ROTATION, MAX_EDITOR_PITCH, MIN_PLAYING_PITCH,
+        DEFAULT_PLAY_CAMERA_ROTATION, MIN_PLAYING_PITCH,
     };
     use crate::types::AppPhase;
     use crate::types::{
@@ -761,66 +735,6 @@ mod tests {
                 }
                 _ => panic!("expected camera pose trigger"),
             }
-        });
-    }
-
-    #[test]
-    fn apply_selected_camera_trigger_clamps_and_applies_pose() {
-        pollster::block_on(async {
-            let mut state = new_editor_state().await;
-            state.editor.triggers.items = vec![pose_trigger(
-                1.0,
-                [3.0, 9.0, -2.0],
-                0.77,
-                10.0,
-                1.0,
-                false,
-                TimedTriggerEasing::Linear,
-            )];
-            state.editor.triggers.selected_index = Some(0);
-
-            assert!(state
-                .editor
-                .apply_selected_camera_trigger_to_editor_camera());
-            assert_eq!(state.editor.camera.editor_pan, [3.0, -2.0]);
-            assert_eq!(state.editor.camera.editor_target_z, 9.0);
-            assert_eq!(state.editor.camera.editor_rotation, 0.77);
-            assert_eq!(state.editor.camera.editor_pitch, MAX_EDITOR_PITCH);
-        });
-    }
-
-    #[test]
-    fn apply_selected_camera_trigger_returns_false_for_invalid_or_non_camera_selection() {
-        pollster::block_on(async {
-            let mut state = new_editor_state().await;
-
-            state.editor.triggers.selected_index = None;
-            assert!(!state
-                .editor
-                .apply_selected_camera_trigger_to_editor_camera());
-
-            state.editor.triggers.items = vec![TimedTrigger {
-                time_seconds: 1.0,
-                duration_seconds: 0.0,
-                easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Objects {
-                    object_ids: vec![0],
-                },
-                action: TimedTriggerAction::TransformObjects {
-                    position: [1.0, 2.0, 3.0],
-                    rotation_degrees: [0.0, 0.0, 0.0],
-                    size: [1.0, 1.0, 1.0],
-                },
-            }];
-            state.editor.triggers.selected_index = Some(0);
-            assert!(!state
-                .editor
-                .apply_selected_camera_trigger_to_editor_camera());
-
-            state.editor.triggers.selected_index = Some(9);
-            assert!(!state
-                .editor
-                .apply_selected_camera_trigger_to_editor_camera());
         });
     }
 
