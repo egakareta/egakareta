@@ -129,10 +129,9 @@ impl EditorSubsystem {
                 if let Some((t, _normal)) =
                     self.ray_intersect_rotated_block(ray_origin, ray_dir, &target)
                 {
-                    if t <= min_t + 0.02 {
+                    if t < min_t {
                         min_t = t;
                         hit_found = true;
-                        hit_block_index = None;
                         hit_trigger_index = Some(trigger_index);
                         hit_tap_index = None;
                         hit_tap_division = None;
