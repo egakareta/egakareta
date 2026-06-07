@@ -718,6 +718,11 @@ impl State {
             .first()
             .and_then(|&index| self.editor.objects.get(index))
             .map(|obj| obj.rotation_degrees)
+            .or_else(|| {
+                self.editor
+                    .selected_transform_trigger_target()
+                    .map(|(_, target)| target.rotation_degrees)
+            })
             .unwrap_or([0.0, 0.0, 0.0]);
 
         let vertices = build_editor_gizmo_vertices(GizmoParams {

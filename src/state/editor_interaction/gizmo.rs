@@ -17,6 +17,15 @@ const GIZMO_RESIZE_PICK_RADIUS_PIXELS: f32 = 32.0;
 const GIZMO_ROTATE_PICK_RADIUS_PIXELS: f32 = 18.0;
 
 impl EditorSubsystem {
+    fn gizmo_drag_trigger_start(&self, drag: &EditorGizmoDrag) -> Option<EditorDragBlockStart> {
+        if !self.selected_indices_normalized().is_empty() {
+            return None;
+        }
+        let (trigger_index, _) = self.selected_transform_trigger_target()?;
+        let start = drag.start_blocks.first().copied()?;
+        (start.index == trigger_index).then_some(start)
+    }
+
     pub(crate) fn drag_gizmo(&mut self, x: f64, y: f64, viewport: Vec2) -> bool {
         self.ui.pointer_screen = Some([x, y]);
 
@@ -43,10 +52,11 @@ impl EditorSubsystem {
             GizmoAxis::Z | GizmoAxis::ZNeg => Vec3::Z,
         };
 
+        let trigger_start = self.gizmo_drag_trigger_start(&drag);
+
         if drag.kind == GizmoDragKind::Rotate {
-            let rotation = drag
-                .start_blocks
-                .first()
+            let rotation_source = trigger_start.as_ref().or_else(|| drag.start_blocks.first());
+            let rotation = rotation_source
                 .map(|b| {
                     glam::Quat::from_euler(
                         glam::EulerRot::XYZ,
@@ -104,24 +114,48 @@ impl EditorSubsystem {
                     world_delta
                 };
                 let mut first_cursor: Option<[f32; 3]> = None;
-                for block in &drag.start_blocks {
-                    if let Some(obj) = self.objects.get_mut(block.index) {
-                        let mut next = block.position;
-                        match drag.axis {
-                            GizmoAxis::X | GizmoAxis::XNeg => next[0] += clamped_delta,
-                            GizmoAxis::Y | GizmoAxis::YNeg => next[1] += clamped_delta,
-                            GizmoAxis::Z | GizmoAxis::ZNeg => next[2] += clamped_delta,
-                        }
-                        if snap_enabled {
-                            next[0] = (next[0] / snap_step).round() * snap_step;
-                            next[1] = (next[1].max(0.0) / snap_step).round() * snap_step;
-                            next[2] = (next[2] / snap_step).round() * snap_step;
-                        } else {
-                            next[1] = next[1].max(0.0);
-                        }
-                        obj.position = next;
-                        if first_cursor.is_none() {
-                            first_cursor = Some(next);
+                if let Some(start) = trigger_start {
+                    let mut next = start.position;
+                    match drag.axis {
+                        GizmoAxis::X | GizmoAxis::XNeg => next[0] += clamped_delta,
+                        GizmoAxis::Y | GizmoAxis::YNeg => next[1] += clamped_delta,
+                        GizmoAxis::Z | GizmoAxis::ZNeg => next[2] += clamped_delta,
+                    }
+                    if snap_enabled {
+                        next[0] = (next[0] / snap_step).round() * snap_step;
+                        next[1] = (next[1].max(0.0) / snap_step).round() * snap_step;
+                        next[2] = (next[2] / snap_step).round() * snap_step;
+                    } else {
+                        next[1] = next[1].max(0.0);
+                    }
+                    if self.set_transform_trigger_target(
+                        start.index,
+                        next,
+                        start.size,
+                        start.rotation_degrees,
+                    ) {
+                        first_cursor = Some(next);
+                    }
+                } else {
+                    for block in &drag.start_blocks {
+                        if let Some(obj) = self.objects.get_mut(block.index) {
+                            let mut next = block.position;
+                            match drag.axis {
+                                GizmoAxis::X | GizmoAxis::XNeg => next[0] += clamped_delta,
+                                GizmoAxis::Y | GizmoAxis::YNeg => next[1] += clamped_delta,
+                                GizmoAxis::Z | GizmoAxis::ZNeg => next[2] += clamped_delta,
+                            }
+                            if snap_enabled {
+                                next[0] = (next[0] / snap_step).round() * snap_step;
+                                next[1] = (next[1].max(0.0) / snap_step).round() * snap_step;
+                                next[2] = (next[2] / snap_step).round() * snap_step;
+                            } else {
+                                next[1] = next[1].max(0.0);
+                            }
+                            obj.position = next;
+                            if first_cursor.is_none() {
+                                first_cursor = Some(next);
+                            }
                         }
                     }
                 }
@@ -137,67 +171,139 @@ impl EditorSubsystem {
                 let snap_enabled = self.effective_snap_to_grid();
                 let snap_step = self.config.snap_step.max(0.05);
                 let min_size = if snap_enabled { snap_step } else { 0.25 };
-                for block in &drag.start_blocks {
-                    if let Some(obj) = self.objects.get_mut(block.index) {
-                        match drag.axis {
-                            GizmoAxis::X => {
-                                let mut s = block.size[0] + world_delta;
-                                if snap_enabled {
-                                    s = (s / snap_step).round() * snap_step;
-                                }
-                                obj.size[0] = s.max(min_size);
+                if let Some(start) = trigger_start {
+                    let mut next_position = start.position;
+                    let mut next_size = start.size;
+                    match drag.axis {
+                        GizmoAxis::X => {
+                            let mut s = start.size[0] + world_delta;
+                            if snap_enabled {
+                                s = (s / snap_step).round() * snap_step;
                             }
-                            GizmoAxis::Y => {
-                                let mut s = block.size[1] + world_delta;
-                                if snap_enabled {
-                                    s = (s / snap_step).round() * snap_step;
-                                }
-                                obj.size[1] = s.max(min_size);
+                            next_size[0] = s.max(min_size);
+                        }
+                        GizmoAxis::Y => {
+                            let mut s = start.size[1] + world_delta;
+                            if snap_enabled {
+                                s = (s / snap_step).round() * snap_step;
                             }
-                            GizmoAxis::Z => {
-                                let mut s = block.size[2] + world_delta;
-                                if snap_enabled {
-                                    s = (s / snap_step).round() * snap_step;
-                                }
-                                obj.size[2] = s.max(min_size);
+                            next_size[1] = s.max(min_size);
+                        }
+                        GizmoAxis::Z => {
+                            let mut s = start.size[2] + world_delta;
+                            if snap_enabled {
+                                s = (s / snap_step).round() * snap_step;
                             }
-                            GizmoAxis::XNeg => {
-                                let mut s = block.size[0] - world_delta;
-                                let mut p = block.position[0] + world_delta;
-                                let right_edge = block.position[0] + block.size[0];
-                                if snap_enabled {
-                                    p = (p / snap_step).round() * snap_step;
-                                    s = (right_edge - p).max(min_size);
-                                    p = right_edge - s;
-                                } else {
-                                    s = s.max(min_size);
-                                    p = right_edge - s;
-                                }
-                                obj.position[0] = p;
-                                obj.size[0] = s;
+                            next_size[2] = s.max(min_size);
+                        }
+                        GizmoAxis::XNeg => {
+                            let mut s = start.size[0] - world_delta;
+                            let mut p = start.position[0] + world_delta;
+                            let right_edge = start.position[0] + start.size[0];
+                            if snap_enabled {
+                                p = (p / snap_step).round() * snap_step;
+                                s = (right_edge - p).max(min_size);
+                                p = right_edge - s;
+                            } else {
+                                s = s.max(min_size);
+                                p = right_edge - s;
                             }
-                            GizmoAxis::YNeg => {
-                                let mut p = block.position[1] + world_delta;
-                                let top_edge = block.position[1] + block.size[1];
-                                if snap_enabled {
-                                    p = (p / snap_step).round() * snap_step;
-                                }
-                                p = p.max(0.0);
-                                let s = (top_edge - p).max(min_size);
-                                p = top_edge - s;
-                                obj.position[1] = p;
-                                obj.size[1] = s;
+                            next_position[0] = p;
+                            next_size[0] = s;
+                        }
+                        GizmoAxis::YNeg => {
+                            let mut p = start.position[1] + world_delta;
+                            let top_edge = start.position[1] + start.size[1];
+                            if snap_enabled {
+                                p = (p / snap_step).round() * snap_step;
                             }
-                            GizmoAxis::ZNeg => {
-                                let mut p = block.position[2] + world_delta;
-                                let upper_edge = block.position[2] + block.size[2];
-                                if snap_enabled {
-                                    p = (p / snap_step).round() * snap_step;
+                            p = p.max(0.0);
+                            let s = (top_edge - p).max(min_size);
+                            p = top_edge - s;
+                            next_position[1] = p;
+                            next_size[1] = s;
+                        }
+                        GizmoAxis::ZNeg => {
+                            let mut p = start.position[2] + world_delta;
+                            let upper_edge = start.position[2] + start.size[2];
+                            if snap_enabled {
+                                p = (p / snap_step).round() * snap_step;
+                            }
+                            let s = (upper_edge - p).max(min_size);
+                            p = upper_edge - s;
+                            next_position[2] = p;
+                            next_size[2] = s;
+                        }
+                    }
+                    self.set_transform_trigger_target(
+                        start.index,
+                        next_position,
+                        next_size,
+                        start.rotation_degrees,
+                    );
+                } else {
+                    for block in &drag.start_blocks {
+                        if let Some(obj) = self.objects.get_mut(block.index) {
+                            match drag.axis {
+                                GizmoAxis::X => {
+                                    let mut s = block.size[0] + world_delta;
+                                    if snap_enabled {
+                                        s = (s / snap_step).round() * snap_step;
+                                    }
+                                    obj.size[0] = s.max(min_size);
                                 }
-                                let s = (upper_edge - p).max(min_size);
-                                p = upper_edge - s;
-                                obj.position[2] = p;
-                                obj.size[2] = s;
+                                GizmoAxis::Y => {
+                                    let mut s = block.size[1] + world_delta;
+                                    if snap_enabled {
+                                        s = (s / snap_step).round() * snap_step;
+                                    }
+                                    obj.size[1] = s.max(min_size);
+                                }
+                                GizmoAxis::Z => {
+                                    let mut s = block.size[2] + world_delta;
+                                    if snap_enabled {
+                                        s = (s / snap_step).round() * snap_step;
+                                    }
+                                    obj.size[2] = s.max(min_size);
+                                }
+                                GizmoAxis::XNeg => {
+                                    let mut s = block.size[0] - world_delta;
+                                    let mut p = block.position[0] + world_delta;
+                                    let right_edge = block.position[0] + block.size[0];
+                                    if snap_enabled {
+                                        p = (p / snap_step).round() * snap_step;
+                                        s = (right_edge - p).max(min_size);
+                                        p = right_edge - s;
+                                    } else {
+                                        s = s.max(min_size);
+                                        p = right_edge - s;
+                                    }
+                                    obj.position[0] = p;
+                                    obj.size[0] = s;
+                                }
+                                GizmoAxis::YNeg => {
+                                    let mut p = block.position[1] + world_delta;
+                                    let top_edge = block.position[1] + block.size[1];
+                                    if snap_enabled {
+                                        p = (p / snap_step).round() * snap_step;
+                                    }
+                                    p = p.max(0.0);
+                                    let s = (top_edge - p).max(min_size);
+                                    p = top_edge - s;
+                                    obj.position[1] = p;
+                                    obj.size[1] = s;
+                                }
+                                GizmoAxis::ZNeg => {
+                                    let mut p = block.position[2] + world_delta;
+                                    let upper_edge = block.position[2] + block.size[2];
+                                    if snap_enabled {
+                                        p = (p / snap_step).round() * snap_step;
+                                    }
+                                    let s = (upper_edge - p).max(min_size);
+                                    p = upper_edge - s;
+                                    obj.position[2] = p;
+                                    obj.size[2] = s;
+                                }
                             }
                         }
                     }
@@ -254,20 +360,34 @@ impl EditorSubsystem {
                     delta_degrees = (delta_degrees / snap_step).round() * snap_step;
                 }
 
-                for block in &drag.start_blocks {
-                    if let Some(obj) = self.objects.get_mut(block.index) {
-                        let block_rotation = glam::Quat::from_euler(
-                            glam::EulerRot::XYZ,
-                            block.rotation_degrees[0].to_radians(),
-                            block.rotation_degrees[1].to_radians(),
-                            block.rotation_degrees[2].to_radians(),
-                        );
-                        let world_axis = block_rotation * local_axis;
-                        let delta_quat =
-                            glam::Quat::from_axis_angle(world_axis, delta_degrees.to_radians());
-                        let new_rotation = delta_quat * block_rotation;
-                        let (rx, ry, rz) = new_rotation.to_euler(glam::EulerRot::XYZ);
-                        obj.rotation_degrees = [rx.to_degrees(), ry.to_degrees(), rz.to_degrees()];
+                let apply_rotation = |block: EditorDragBlockStart| {
+                    let block_rotation = glam::Quat::from_euler(
+                        glam::EulerRot::XYZ,
+                        block.rotation_degrees[0].to_radians(),
+                        block.rotation_degrees[1].to_radians(),
+                        block.rotation_degrees[2].to_radians(),
+                    );
+                    let world_axis = block_rotation * local_axis;
+                    let delta_quat =
+                        glam::Quat::from_axis_angle(world_axis, delta_degrees.to_radians());
+                    let new_rotation = delta_quat * block_rotation;
+                    let (rx, ry, rz) = new_rotation.to_euler(glam::EulerRot::XYZ);
+                    [rx.to_degrees(), ry.to_degrees(), rz.to_degrees()]
+                };
+
+                if let Some(start) = trigger_start {
+                    let next_rotation = apply_rotation(start);
+                    self.set_transform_trigger_target(
+                        start.index,
+                        start.position,
+                        start.size,
+                        next_rotation,
+                    );
+                } else {
+                    for block in &drag.start_blocks {
+                        if let Some(obj) = self.objects.get_mut(block.index) {
+                            obj.rotation_degrees = apply_rotation(*block);
+                        }
                     }
                 }
             }
@@ -400,6 +520,10 @@ impl EditorSubsystem {
                 .first()
                 .and_then(|&index| self.objects.get(index))
                 .map(|obj| obj.rotation_degrees)
+                .or_else(|| {
+                    self.selected_transform_trigger_target()
+                        .map(|(_, target)| target.rotation_degrees)
+                })
                 .unwrap_or([0.0, 0.0, 0.0]);
             let rotation = glam::Quat::from_euler(
                 glam::EulerRot::XYZ,
@@ -516,7 +640,12 @@ impl EditorSubsystem {
         }
 
         let indices = self.selected_indices_normalized();
-        if indices.is_empty() {
+        let trigger_target = if indices.is_empty() {
+            self.selected_transform_trigger_target()
+        } else {
+            None
+        };
+        if indices.is_empty() && trigger_target.is_none() {
             return false;
         }
 
@@ -537,15 +666,24 @@ impl EditorSubsystem {
             return false;
         };
 
-        let mut start_blocks = Vec::with_capacity(indices.len());
-        for index in indices {
-            if let Some(obj) = self.objects.get(index) {
-                start_blocks.push(EditorDragBlockStart {
-                    index,
-                    position: obj.position,
-                    size: obj.size,
-                    rotation_degrees: obj.rotation_degrees,
-                });
+        let mut start_blocks = Vec::with_capacity(indices.len().max(1));
+        if let Some((trigger_index, target)) = trigger_target {
+            start_blocks.push(EditorDragBlockStart {
+                index: trigger_index,
+                position: target.position,
+                size: target.size,
+                rotation_degrees: target.rotation_degrees,
+            });
+        } else {
+            for index in indices {
+                if let Some(obj) = self.objects.get(index) {
+                    start_blocks.push(EditorDragBlockStart {
+                        index,
+                        position: obj.position,
+                        size: obj.size,
+                        rotation_degrees: obj.rotation_degrees,
+                    });
+                }
             }
         }
 
@@ -577,10 +715,19 @@ impl EditorSubsystem {
             let is_move = self.runtime.interaction.gizmo_drag.as_ref().map(|d| d.kind)
                 == Some(GizmoDragKind::Move);
             let capture_active = self.runtime.transform_trigger_capture.is_some();
-            if is_move || capture_active {
+            let trigger_drag = self
+                .runtime
+                .interaction
+                .gizmo_drag
+                .as_ref()
+                .is_some_and(|drag| self.gizmo_drag_trigger_start(drag).is_some());
+            if is_move || capture_active || trigger_drag {
                 self.mark_dirty(EditorDirtyFlags {
                     rebuild_cursor: is_move,
-                    rebuild_transform_trigger_markers: capture_active,
+                    rebuild_block_mesh: trigger_drag,
+                    rebuild_hitbox_visualization: trigger_drag,
+                    rebuild_transform_trigger_markers: capture_active || trigger_drag,
+                    rebuild_preview_player: trigger_drag,
                     ..EditorDirtyFlags::default()
                 });
             }
@@ -656,7 +803,10 @@ impl State {
 mod tests {
     use super::super::super::{EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag, State};
     use crate::test_utils::assert_approx_eq as approx_eq;
-    use crate::types::{AppPhase, EditorMode, GizmoAxis, GizmoDragKind, LevelObject};
+    use crate::types::{
+        AppPhase, EditorMode, GizmoAxis, GizmoDragKind, LevelObject, TimedTrigger,
+        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+    };
     use glam::{Vec2, Vec3};
 
     fn test_block() -> LevelObject {
@@ -730,6 +880,65 @@ mod tests {
             assert!(state.editor.objects[0].position[0] > 0.0);
             approx_eq(state.editor.objects[0].position[1], 0.0, 1e-4);
             approx_eq(state.editor.objects[0].position[2], 0.0, 1e-4);
+        });
+    }
+
+    #[test]
+    fn drag_gizmo_move_updates_selected_transform_trigger_target() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.editor.config.snap_to_grid = false;
+            state.editor.ui.mode = EditorMode::Move;
+            state.editor.set_triggers(vec![TimedTrigger {
+                time_seconds: 1.0,
+                duration_seconds: 1.0,
+                easing: TimedTriggerEasing::Linear,
+                target: TimedTriggerTarget::Objects {
+                    object_ids: vec![0],
+                },
+                action: TimedTriggerAction::TransformObjects {
+                    position: [0.0, 0.0, 0.0],
+                    rotation_degrees: [0.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
+                },
+            }]);
+            state.editor.set_trigger_selected(Some(0));
+
+            let viewport = Vec2::new(1280.0, 720.0);
+            let center = Vec3::new(0.5, 0.5, 0.5);
+            let origin_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center projects");
+            let axis_screen = state
+                .editor
+                .world_to_screen_v(center + Vec3::X, viewport)
+                .expect("axis projects");
+            let target = state
+                .editor
+                .selected_transform_trigger_target()
+                .expect("selected trigger target")
+                .1;
+            state.editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+                axis: GizmoAxis::X,
+                kind: GizmoDragKind::Move,
+                start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
+                start_center_screen: [origin_screen.x, origin_screen.y],
+                start_center_world: [center.x, center.y, center.z],
+                start_blocks: vec![start_block_for_index(0, &target)],
+            });
+
+            state
+                .editor
+                .drag_gizmo(axis_screen.x as f64, axis_screen.y as f64, viewport);
+
+            let TimedTriggerAction::TransformObjects { position, .. } =
+                &state.editor.triggers()[0].action
+            else {
+                panic!("expected transform trigger");
+            };
+            assert!(position[0] > 0.9, "expected trigger target to move on X");
         });
     }
 

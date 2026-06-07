@@ -2690,6 +2690,57 @@ mod tests {
     }
 
     #[test]
+    fn test_select_mode_click_selects_transform_trigger_target() {
+        pollster::block_on(async {
+            use crate::commands::InputEvent;
+
+            let mut state = new_editor_state().await;
+            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
+            state.editor.set_triggers(vec![TimedTrigger {
+                time_seconds: 1.0,
+                duration_seconds: 1.0,
+                easing: TimedTriggerEasing::Linear,
+                target: TimedTriggerTarget::Objects {
+                    object_ids: vec![0],
+                },
+                action: TimedTriggerAction::TransformObjects {
+                    position: [2.0, 0.0, 0.0],
+                    rotation_degrees: [0.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
+                },
+            }]);
+            state.editor.set_trigger_selected(None);
+
+            let viewport = Vec2::new(
+                state.render.gpu.config.width as f32,
+                state.render.gpu.config.height as f32,
+            );
+            let target_center = glam::Vec3::new(2.5, 0.5, 0.5);
+            let target_screen = state
+                .editor
+                .world_to_screen_v(target_center, viewport)
+                .expect("transform trigger target should project to the screen");
+
+            state.process_input_event(InputEvent::PointerMoved {
+                x: target_screen.x as f64,
+                y: target_screen.y as f64,
+            });
+            state.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: true,
+            });
+            state.process_input_event(InputEvent::MouseButton {
+                button: 0,
+                pressed: false,
+            });
+
+            assert_eq!(state.editor.selected_trigger_index(), Some(0));
+            assert!(state.editor.ui.selected_block_index.is_none());
+            assert!(state.editor.ui.selected_block_indices.is_empty());
+        });
+    }
+
+    #[test]
     fn test_trigger_mode_click_does_not_select_blocks() {
         pollster::block_on(async {
             use crate::commands::InputEvent;

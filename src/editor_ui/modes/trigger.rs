@@ -6,7 +6,9 @@
 
 */
 use crate::commands::AppCommand;
-use crate::editor_ui::modes::shared::show_mode_and_snap_controls;
+use crate::editor_ui::modes::shared::{
+    show_editor_property_popup, show_mode_and_snap_controls, EditorPropertyPopup,
+};
 use crate::state::EditorUiViewModel;
 use crate::types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
 
@@ -465,6 +467,116 @@ pub(crate) fn show_trigger_mode_bottom_panel(
                 commands.push(AppCommand::EditorUpdateTrigger(selected_idx, trigger));
             }
         }
+    }
+}
+
+pub(crate) fn show_selected_trigger_properties_window(
+    ctx: &egui::Context,
+    view: &EditorUiViewModel<'_>,
+    bottom_bar_height: f32,
+    commands: &mut Vec<AppCommand>,
+) {
+    if !view.mode.is_selection_mode() {
+        return;
+    }
+
+    let Some(selected_index) = view.trigger_selected_index else {
+        return;
+    };
+    let Some(selected_trigger) = view.triggers.get(selected_index).cloned() else {
+        return;
+    };
+
+    let mut trigger = selected_trigger;
+    let mut changed = false;
+
+    show_editor_property_popup(
+        ctx,
+        EditorPropertyPopup::above_bottom_bar("selected_trigger_properties", bottom_bar_height),
+        |ui| {
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    ui.label(format!("Trigger #{}", selected_index + 1));
+                    if ui
+                        .button(format!("{} Delete", egui_phosphor::regular::TRASH))
+                        .clicked()
+                    {
+                        commands.push(AppCommand::EditorRemoveTrigger(selected_index));
+                    }
+                });
+
+                ui.horizontal_wrapped(|ui| {
+                    ui.label("Time:");
+                    changed |= ui
+                        .add(
+                            egui::DragValue::new(&mut trigger.time_seconds)
+                                .speed(0.01)
+                                .range(0.0..=view.timeline_duration_seconds.max(0.1))
+                                .suffix("s"),
+                        )
+                        .changed();
+                    if ui.button("Use current time").clicked() {
+                        trigger.time_seconds = view.timeline_time_seconds;
+                        changed = true;
+                    }
+                    ui.separator();
+
+                    ui.label("Duration:");
+                    changed |= ui
+                        .add(
+                            egui::DragValue::new(&mut trigger.duration_seconds)
+                                .speed(0.01)
+                                .range(0.0..=view.timeline_duration_seconds.max(0.1))
+                                .suffix("s"),
+                        )
+                        .changed();
+                });
+
+                ui.horizontal_wrapped(|ui| {
+                    ui.label("Easing:");
+                    let mut easing = trigger.easing;
+                    egui::ComboBox::from_id_salt("selected_trigger_easing")
+                        .selected_text(match easing {
+                            TimedTriggerEasing::Linear => "Linear",
+                            TimedTriggerEasing::EaseIn => "Ease In",
+                            TimedTriggerEasing::EaseOut => "Ease Out",
+                            TimedTriggerEasing::EaseInOut => "Ease In/Out",
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut easing, TimedTriggerEasing::Linear, "Linear");
+                            ui.selectable_value(&mut easing, TimedTriggerEasing::EaseIn, "Ease In");
+                            ui.selectable_value(
+                                &mut easing,
+                                TimedTriggerEasing::EaseOut,
+                                "Ease Out",
+                            );
+                            ui.selectable_value(
+                                &mut easing,
+                                TimedTriggerEasing::EaseInOut,
+                                "Ease In/Out",
+                            );
+                        });
+                    if easing != trigger.easing {
+                        trigger.easing = easing;
+                        changed = true;
+                    }
+                });
+
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(format!("Target: {}", trigger_target_label(&trigger.target)));
+                    ui.separator();
+                    ui.label(format!("Action: {}", trigger_action_label(&trigger.action)));
+                });
+
+                changed |= show_target_editor(ui, &mut trigger.target);
+                changed |=
+                    show_action_editor(ui, &mut trigger.action, view.timeline_duration_seconds);
+            });
+        },
+    );
+
+    if changed {
+        commands.push(AppCommand::EditorUpdateTrigger(selected_index, trigger));
     }
 }
 

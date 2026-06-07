@@ -6,7 +6,9 @@
 
 */
 use super::super::EditorSubsystem;
-use crate::types::{EditorMode, EditorPickResult, EditorTapDivisionPick};
+use crate::types::{
+    EditorMode, EditorPickResult, EditorTapDivisionPick, LevelObject, TimedTriggerAction,
+};
 use glam::{EulerRot, Mat3, Vec2, Vec3, Vec4};
 
 const CAMERA_TRIGGER_BALL_PICK_RADIUS: f32 = 0.55;
@@ -114,6 +116,29 @@ impl EditorSubsystem {
                         hit_tap_division = None;
                         cursor_override = None;
                         best_hit_normal = normal;
+                    }
+                }
+            }
+
+            for (trigger_index, trigger) in self.triggers.items.iter().enumerate() {
+                let Some(target) = transform_trigger_target_object(&trigger.action) else {
+                    continue;
+                };
+                if !Self::ray_may_hit_block_bounds(ray_origin, ray_dir, &target, min_t) {
+                    continue;
+                }
+
+                if let Some((t, _normal)) =
+                    self.ray_intersect_rotated_block(ray_origin, ray_dir, &target)
+                {
+                    if t <= min_t + 0.02 {
+                        min_t = t;
+                        hit_found = true;
+                        hit_block_index = None;
+                        hit_trigger_index = Some(trigger_index);
+                        hit_tap_index = None;
+                        hit_tap_division = None;
+                        cursor_override = None;
                     }
                 }
             }
@@ -550,6 +575,25 @@ impl EditorSubsystem {
 
         Some((t_hit, normal))
     }
+}
+
+fn transform_trigger_target_object(action: &TimedTriggerAction) -> Option<LevelObject> {
+    let TimedTriggerAction::TransformObjects {
+        position,
+        rotation_degrees,
+        size,
+    } = action
+    else {
+        return None;
+    };
+
+    Some(LevelObject {
+        position: *position,
+        size: *size,
+        rotation_degrees: *rotation_degrees,
+        block_id: crate::block_repository::DEFAULT_BLOCK_ID.to_string(),
+        color_tint: [1.0, 1.0, 1.0],
+    })
 }
 
 #[cfg(test)]

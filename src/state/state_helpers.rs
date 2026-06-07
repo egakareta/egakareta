@@ -7,7 +7,7 @@
 */
 use super::{EditorSubsystem, State};
 use crate::game::GameState;
-use crate::types::{AppPhase, EditorMode};
+use crate::types::{AppPhase, EditorMode, LevelObject, TimedTriggerAction};
 
 impl EditorSubsystem {
     pub(crate) fn clear_pan_keys(&mut self) {
@@ -122,6 +122,12 @@ impl EditorSubsystem {
 
     pub(crate) fn selected_group_bounds(&self) -> Option<([f32; 3], [f32; 3])> {
         let indices = self.selected_indices_normalized();
+        if indices.is_empty() {
+            return self
+                .selected_transform_trigger_target()
+                .map(|(_, target)| (target.position, target.size));
+        }
+
         let first = *indices.first()?;
         let first_obj = self.objects.get(first)?;
         let mut min = first_obj.position;
@@ -143,6 +149,61 @@ impl EditorSubsystem {
         }
 
         Some((min, [max[0] - min[0], max[1] - min[1], max[2] - min[2]]))
+    }
+
+    pub(crate) fn selected_transform_trigger_target(&self) -> Option<(usize, LevelObject)> {
+        let index = self.selected_trigger_index()?;
+        let trigger = self.triggers.items.get(index)?;
+        let TimedTriggerAction::TransformObjects {
+            position,
+            rotation_degrees,
+            size,
+        } = &trigger.action
+        else {
+            return None;
+        };
+
+        Some((
+            index,
+            LevelObject {
+                position: *position,
+                size: *size,
+                rotation_degrees: *rotation_degrees,
+                block_id: crate::block_repository::DEFAULT_BLOCK_ID.to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+            },
+        ))
+    }
+
+    pub(crate) fn set_transform_trigger_target(
+        &mut self,
+        trigger_index: usize,
+        position: [f32; 3],
+        size: [f32; 3],
+        rotation_degrees: [f32; 3],
+    ) -> bool {
+        let Some(trigger) = self.triggers.items.get_mut(trigger_index) else {
+            return false;
+        };
+        let TimedTriggerAction::TransformObjects {
+            position: target_position,
+            rotation_degrees: target_rotation_degrees,
+            size: target_size,
+        } = &mut trigger.action
+        else {
+            return false;
+        };
+
+        *target_position = [position[0], position[1].max(0.0), position[2]];
+        *target_size = [size[0].max(0.01), size[1].max(0.01), size[2].max(0.01)];
+        *target_rotation_degrees = rotation_degrees;
+
+        self.ui.cursor = [
+            target_position[0],
+            target_position[1].max(0.0),
+            target_position[2],
+        ];
+        true
     }
 }
 

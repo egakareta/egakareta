@@ -22,7 +22,9 @@ use crate::editor_ui::modes::tapping::{
     show_selected_tap_properties_window, show_tapping_mode_bottom_panel,
 };
 use crate::editor_ui::modes::timing::show_timing_mode_bottom_panel;
-use crate::editor_ui::modes::trigger::show_trigger_mode_bottom_panel;
+use crate::editor_ui::modes::trigger::{
+    show_selected_trigger_properties_window, show_trigger_mode_bottom_panel,
+};
 use crate::platform::io::{copy_text_to_clipboard, log_platform_error};
 use crate::state::EditorUiViewModel;
 use crate::types::{essential_keybind_actions, format_key_chord, EditorMode, SettingsSection};
@@ -1515,6 +1517,7 @@ pub fn show_editor_ui(
             });
 
         show_selected_block_properties_window(ctx, &view, bottom_bar_height, &mut commands);
+        show_selected_trigger_properties_window(ctx, &view, bottom_bar_height, &mut commands);
         show_place_block_properties_window(ctx, &view, bottom_bar_height);
     }
 
