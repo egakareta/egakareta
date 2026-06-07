@@ -1142,6 +1142,19 @@ impl LevelObject {
     pub(crate) fn normalize_block_id(&mut self) {
         self.block_id = normalize_block_id(&self.block_id);
     }
+
+    /// Returns `true` when this object is a transform trigger block — i.e. a
+    /// placed block whose visual marker overlay (source ring + connector line
+    /// + target wireframe) needs to follow the block's pose on the grid.
+    pub(crate) fn is_transform_trigger(&self) -> bool {
+        if self.block_id == TRANSFORM_TRIGGER_BLOCK_ID {
+            return true;
+        }
+        matches!(
+            self.trigger.as_ref().map(|t| &t.action),
+            Some(TimedTriggerAction::TransformObjects { .. })
+        )
+    }
 }
 
 pub(crate) fn triggers_from_objects(objects: &[LevelObject]) -> Vec<TimedTrigger> {
@@ -2398,6 +2411,70 @@ mod tests {
         });
 
         assert_eq!(value, expected);
+    }
+
+    #[test]
+    fn level_object_is_transform_trigger_matches_block_id_or_trigger_action() {
+        // A plain block is not a transform trigger.
+        let plain = LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            block_id: "core/grass".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
+        };
+        assert!(!plain.is_transform_trigger());
+
+        // A transform trigger block (matched by block_id) is detected even
+        // without a stored trigger.
+        let mut by_block_id = plain.clone();
+        by_block_id.block_id = TRANSFORM_TRIGGER_BLOCK_ID.to_string();
+        assert!(by_block_id.is_transform_trigger());
+
+        // A non-transform-trigger block carrying a TransformObjects action is
+        // also detected (covers deserialized levels that omit block_id).
+        let by_action = LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            block_id: "core/grass".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+            trigger: Some(TimedTrigger {
+                time_seconds: 1.0,
+                duration_seconds: 1.0,
+                easing: TimedTriggerEasing::EaseInOut,
+                target: TimedTriggerTarget::Objects {
+                    object_ids: vec![0],
+                },
+                action: TimedTriggerAction::TransformObjects {
+                    position: [2.0, 0.0, 0.0],
+                    rotation_degrees: [0.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
+                },
+            }),
+        };
+        assert!(by_action.is_transform_trigger());
+
+        // A non-TransformObjects trigger (e.g. camera) should not be detected.
+        let camera_block = LevelObject {
+            block_id: "core/camera_trigger".to_string(),
+            trigger: Some(TimedTrigger {
+                time_seconds: 0.0,
+                duration_seconds: 0.0,
+                easing: TimedTriggerEasing::EaseInOut,
+                target: TimedTriggerTarget::Camera,
+                action: TimedTriggerAction::CameraPose {
+                    transition_interval_seconds: 1.0,
+                    use_full_segment_transition: false,
+                    target_position: [0.0, 0.0, 0.0],
+                    rotation: 0.0,
+                    pitch: 0.0,
+                },
+            }),
+            ..plain.clone()
+        };
+        assert!(!camera_block.is_transform_trigger());
     }
 
     #[test]

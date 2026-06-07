@@ -721,12 +721,30 @@ impl EditorSubsystem {
                 .gizmo_drag
                 .as_ref()
                 .is_some_and(|drag| self.gizmo_drag_trigger_start(drag).is_some());
+            // The dragged block(s) may be a transform trigger block on the
+            // grid (not the virtual trigger target). When the user moves,
+            // resizes, or rotates the trigger block itself, the source ring
+            // and connector line should follow the block pose live.
+            let dragging_transform_trigger_block = self
+                .runtime
+                .interaction
+                .gizmo_drag
+                .as_ref()
+                .is_some_and(|drag| {
+                    drag.start_blocks.iter().any(|b| {
+                        self.objects
+                            .get(b.index)
+                            .is_some_and(|o| o.is_transform_trigger())
+                    })
+                });
             if is_move || capture_active || trigger_drag {
                 self.mark_dirty(EditorDirtyFlags {
                     rebuild_cursor: is_move,
                     rebuild_block_mesh: trigger_drag,
                     rebuild_hitbox_visualization: trigger_drag,
-                    rebuild_transform_trigger_markers: capture_active || trigger_drag,
+                    rebuild_transform_trigger_markers: capture_active
+                        || trigger_drag
+                        || dragging_transform_trigger_block,
                     rebuild_preview_player: trigger_drag,
                     ..EditorDirtyFlags::default()
                 });

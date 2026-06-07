@@ -487,8 +487,24 @@ impl EditorSubsystem {
 
         if self.drag_selection(x, y, viewport) {
             self.sync_objects_for_drag();
+            // When a transform trigger block is being moved on the grid via
+            // click-and-drag, the source ring + connector line must follow
+            // the block pose live.
+            let dragging_transform_trigger_block = self
+                .runtime
+                .interaction
+                .block_drag
+                .as_ref()
+                .is_some_and(|drag| {
+                    drag.start_blocks.iter().any(|b| {
+                        self.objects
+                            .get(b.index)
+                            .is_some_and(|o| o.is_transform_trigger())
+                    })
+                });
             self.mark_dirty(EditorDirtyFlags {
                 rebuild_cursor: true,
+                rebuild_transform_trigger_markers: dragging_transform_trigger_block,
                 ..EditorDirtyFlags::default()
             });
             true
