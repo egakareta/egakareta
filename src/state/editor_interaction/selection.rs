@@ -502,9 +502,20 @@ impl EditorSubsystem {
                             .is_some_and(|o| o.is_transform_trigger())
                     })
                 });
+            // Check if any dragged blocks are sources of transform triggers
+            let dragged_indices: Vec<usize> = self
+                .runtime
+                .interaction
+                .block_drag
+                .as_ref()
+                .map(|drag| drag.start_blocks.iter().map(|b| b.index).collect())
+                .unwrap_or_default();
+            let dragging_transform_trigger_source =
+                self.any_block_is_transform_trigger_source(&dragged_indices);
             self.mark_dirty(EditorDirtyFlags {
                 rebuild_cursor: true,
-                rebuild_transform_trigger_markers: dragging_transform_trigger_block,
+                rebuild_transform_trigger_markers: dragging_transform_trigger_block
+                    || dragging_transform_trigger_source,
                 ..EditorDirtyFlags::default()
             });
             true
@@ -1447,6 +1458,65 @@ mod tests {
             );
             assert_eq!(state.editor.ui.selected_block_index, Some(1));
             assert_eq!(state.editor.ui.selected_block_indices, vec![1]);
+        });
+    }
+
+    #[test]
+    fn drag_selection_transform_trigger_source_sets_dirty_flag() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let viewport = default_viewport();
+
+            state.editor.ui.mode = EditorMode::Select;
+            state.editor.config.snap_to_grid = false;
+            state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
+
+            // Add a transform trigger that targets object 0
+            state.editor.set_triggers(vec![crate::types::TimedTrigger {
+                time_seconds: 1.0,
+                duration_seconds: 1.0,
+                easing: crate::types::TimedTriggerEasing::Linear,
+                target: crate::types::TimedTriggerTarget::Objects {
+                    object_ids: vec![0],
+                },
+                action: crate::types::TimedTriggerAction::TransformObjects {
+                    position: [5.0, 0.0, 0.0],
+                    rotation_degrees: [0.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
+                },
+            }]);
+
+            let center = Vec3::new(0.5, 0.5, 0.5);
+            let origin_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center should project to screen");
+
+            state.editor.runtime.interaction.block_drag = Some(EditorBlockDrag {
+                start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
+                start_center_world: [center.x, center.y, center.z],
+                start_drag_world: [center.x, center.y, center.z],
+                start_cursor: [center.x, center.y, center.z],
+                start_blocks: vec![EditorDragBlockStart {
+                    index: 0,
+                    position: state.editor.objects[0].position,
+                    size: state.editor.objects[0].size,
+                    rotation_degrees: state.editor.objects[0].rotation_degrees,
+                }],
+            });
+
+            state.editor.runtime.dirty = EditorDirtyFlags::default();
+
+            assert!(state.editor.drag_selection_from_screen(
+                origin_screen.x as f64 + 40.0,
+                origin_screen.y as f64,
+                viewport,
+                AppPhase::Editor,
+            ));
+            assert!(
+                state.editor.runtime.dirty.rebuild_transform_trigger_markers,
+                "Moving a transform trigger source block should mark transform trigger markers dirty"
+            );
         });
     }
 }

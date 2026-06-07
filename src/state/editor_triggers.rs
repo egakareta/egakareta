@@ -215,6 +215,30 @@ impl EditorSubsystem {
         })
     }
 
+    /// Returns `true` when any of the given block indices are referenced as
+    /// source objects by at least one transform trigger. Used to decide when
+    /// the transform trigger marker overlay must be rebuilt after a block
+    /// move/resize/rotate.
+    pub(crate) fn any_block_is_transform_trigger_source(&self, indices: &[usize]) -> bool {
+        if indices.is_empty() {
+            return false;
+        }
+        self.triggers.items.iter().any(|trigger| {
+            if !matches!(trigger.action, TimedTriggerAction::TransformObjects { .. }) {
+                return false;
+            }
+            let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
+                return false;
+            };
+            object_ids.iter().any(|id| {
+                let Ok(object_index) = usize::try_from(*id) else {
+                    return false;
+                };
+                indices.contains(&object_index)
+            })
+        })
+    }
+
     pub(crate) fn simulate_trigger_hitboxes(&self) -> bool {
         self.triggers.simulate_trigger_hitboxes
     }
