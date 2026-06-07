@@ -14,7 +14,6 @@ use crate::game::TimelineSimulationRuntime;
 use crate::types::{
     AppPhase, EditorMode, GameCursor, LevelObject, SpawnDirection, TimedTrigger,
     TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, TimingPoint,
-    CAMERA_TRIGGER_BLOCK_ID, TRANSFORM_TRIGGER_BLOCK_ID,
 };
 
 const TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS: f32 = 0.001;
@@ -53,51 +52,6 @@ fn remove_replaced_transform_trigger_targets(
             }
         })
         .collect()
-}
-
-fn trigger_block_id(trigger: &TimedTrigger) -> &'static str {
-    match trigger.action {
-        TimedTriggerAction::CameraPose { .. } | TimedTriggerAction::CameraFollow { .. } => {
-            CAMERA_TRIGGER_BLOCK_ID
-        }
-        TimedTriggerAction::TransformObjects { .. } => TRANSFORM_TRIGGER_BLOCK_ID,
-    }
-}
-
-fn camera_trigger_rotation_degrees(rotation: f32, pitch: f32) -> [f32; 3] {
-    [pitch.to_degrees(), rotation.to_degrees(), 0.0]
-}
-
-fn trigger_object(trigger: TimedTrigger) -> LevelObject {
-    let (position, size, rotation_degrees) = match &trigger.action {
-        TimedTriggerAction::CameraPose {
-            target_position,
-            rotation,
-            pitch,
-            ..
-        } => (
-            *target_position,
-            [1.0, 1.0, 1.0],
-            camera_trigger_rotation_degrees(*rotation, *pitch),
-        ),
-        TimedTriggerAction::TransformObjects {
-            position,
-            rotation_degrees,
-            size,
-        } => (*position, *size, *rotation_degrees),
-        TimedTriggerAction::CameraFollow { .. } => {
-            ([0.0, 0.0, 0.0], [1.0, 1.0, 1.0], [0.0, 0.0, 0.0])
-        }
-    };
-
-    LevelObject {
-        position,
-        size,
-        rotation_degrees,
-        block_id: trigger_block_id(&trigger).to_string(),
-        color_tint: [1.0, 1.0, 1.0],
-        trigger: Some(trigger),
-    }
 }
 
 impl EditorSubsystem {
@@ -1114,7 +1068,7 @@ impl State {
             self.editor.spawn.direction,
             &self.editor.objects,
             &self.editor.timeline.taps.tap_times,
-            self.editor.triggers(),
+            &self.editor.triggers(),
             self.editor.simulate_trigger_hitboxes(),
         );
 
@@ -1212,7 +1166,6 @@ impl State {
         let trigger = self
             .editor
             .capture_current_camera_trigger(self.editor.timeline.clock.time_seconds);
-        self.editor.objects.push(trigger_object(trigger.clone()));
         self.editor.add_trigger(trigger);
         self.sync_editor_objects();
         self.mark_editor_dirty(EditorDirtyFlags {
@@ -1287,7 +1240,6 @@ impl State {
         self.editor.runtime.interaction.gizmo_drag = None;
         self.editor.runtime.interaction.block_drag = None;
 
-        let mut trigger_objects = Vec::with_capacity(capture.original_objects.len());
         let mut triggers = Vec::with_capacity(capture.original_objects.len());
         let mut replaced_object_ids = Vec::with_capacity(capture.original_objects.len());
         for (index, original_object) in &capture.original_objects {
@@ -1313,7 +1265,6 @@ impl State {
                 },
             };
             triggers.push(trigger.clone());
-            trigger_objects.push(trigger_object(trigger));
 
             if let Some(object) = self.editor.objects.get_mut(*index) {
                 *object = original_object.clone();
@@ -1331,7 +1282,6 @@ impl State {
             for trigger in triggers {
                 self.editor.add_trigger(trigger);
             }
-            self.editor.objects.extend(trigger_objects);
         }
 
         self.set_editor_mode(capture.previous_mode);
@@ -1399,7 +1349,7 @@ impl State {
         self.editor.timing_points()
     }
 
-    pub(crate) fn editor_triggers(&self) -> &[TimedTrigger] {
+    pub(crate) fn editor_triggers(&self) -> Vec<TimedTrigger> {
         self.editor.triggers()
     }
 
@@ -1752,12 +1702,12 @@ mod tests {
             ];
             state.editor.ui.selected_block_indices = vec![0, 1];
             state.editor.ui.selected_block_index = Some(0);
-            state.editor.triggers.items = vec![
+            state.editor.set_triggers(vec![
                 transform_trigger(2.5, vec![0], [10.0, 0.0, 0.0]),
                 transform_trigger(2.5, vec![1, 2], [20.0, 0.0, 0.0]),
                 transform_trigger(2.5, vec![2], [30.0, 0.0, 0.0]),
                 transform_trigger(4.0, vec![0], [40.0, 0.0, 0.0]),
-            ];
+            ]);
 
             assert!(state.begin_editor_transform_trigger_capture());
             state.editor.objects[0].position = [1.0, 2.0, 3.0];

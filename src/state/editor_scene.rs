@@ -288,7 +288,7 @@ impl EditorSubsystem {
             &self.timeline.taps.tap_times,
             time_seconds,
             &self.objects,
-            self.triggers(),
+            &self.triggers(),
             self.simulate_trigger_hitboxes(),
         )
     }
@@ -331,7 +331,7 @@ impl State {
             return has_object_transform_triggers.then(|| {
                 trigger_transformed_objects_at_time(
                     &self.editor.objects,
-                    self.editor.triggers(),
+                    &self.editor.triggers(),
                     self.editor.timeline.clock.time_seconds,
                 )
             });
@@ -355,7 +355,7 @@ impl State {
 
         Some(trigger_transformed_objects_at_time(
             &self.editor.objects,
-            self.editor.triggers(),
+            &self.editor.triggers(),
             self.editor.timeline.clock.time_seconds,
         ))
     }
@@ -949,7 +949,7 @@ impl State {
         if !capture_active {
             markers = transform_trigger_markers_for_triggers(
                 &self.editor.objects,
-                self.editor.triggers(),
+                &self.editor.triggers(),
                 selected_trigger_index,
             );
         }
@@ -958,7 +958,7 @@ impl State {
         if let Some(capture) = self.editor.runtime.transform_trigger_capture.as_ref() {
             markers.extend(transform_trigger_markers_for_capture(
                 &self.editor.objects,
-                self.editor.triggers(),
+                &self.editor.triggers(),
                 capture.time_seconds,
                 &capture.original_objects,
             ));
@@ -1374,7 +1374,7 @@ impl State {
             self.editor_runtime_objects_for_render().unwrap_or_else(|| {
                 trigger_transformed_objects_at_time(
                     &self.editor.objects,
-                    self.editor.triggers(),
+                    &self.editor.triggers(),
                     self.editor.timeline.clock.time_seconds,
                 )
             })
@@ -1678,7 +1678,7 @@ mod tests {
                     state.editor.spawn.direction,
                     &state.editor.objects,
                     &state.editor.timeline.taps.tap_times,
-                    state.editor.triggers(),
+                    &state.editor.triggers(),
                     state.editor.simulate_trigger_hitboxes(),
                 ));
 

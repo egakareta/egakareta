@@ -609,7 +609,7 @@ impl State {
                         self.editor.spawn.direction,
                         &self.editor.objects,
                         &self.editor.timeline.taps.tap_times,
-                        self.editor.triggers(),
+                        &self.editor.triggers(),
                         self.editor.simulate_trigger_hitboxes(),
                     ));
                 if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
@@ -663,7 +663,7 @@ impl State {
                     self.editor.spawn.direction,
                     &self.editor.objects,
                     &self.editor.timeline.taps.tap_times,
-                    self.editor.triggers(),
+                    &self.editor.triggers(),
                     self.editor.simulate_trigger_hitboxes(),
                 ));
             if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
@@ -952,7 +952,7 @@ impl State {
                         self.editor.spawn.direction,
                         &self.editor.objects,
                         &self.editor.timeline.taps.tap_times,
-                        self.editor.triggers(),
+                        &self.editor.triggers(),
                         self.editor.simulate_trigger_hitboxes(),
                     ));
                 if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
@@ -1029,7 +1029,7 @@ impl State {
             spawn: self.editor.spawn.clone(),
             sky_color: self.session.editor_sky_color,
             tap_times: &self.editor.timeline.taps.tap_times,
-            triggers: self.editor.triggers(),
+            triggers: &self.editor.triggers(),
             simulate_trigger_hitboxes: self.editor.simulate_trigger_hitboxes(),
             timeline_seconds: (
                 self.editor.timeline.clock.time_seconds,

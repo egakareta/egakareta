@@ -432,7 +432,7 @@ fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_disabled(
             state.editor.spawn.direction,
             &state.editor.objects,
             &state.editor.timeline.taps.tap_times,
-            state.editor.triggers(),
+            &state.editor.triggers(),
             state.editor.simulate_trigger_hitboxes(),
             timeline_time_seconds,
         );
@@ -473,7 +473,7 @@ fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_enabled()
             state.editor.spawn.direction,
             &state.editor.objects,
             &state.editor.timeline.taps.tap_times,
-            state.editor.triggers(),
+            &state.editor.triggers(),
             state.editor.simulate_trigger_hitboxes(),
             timeline_time_seconds,
         );
@@ -517,7 +517,7 @@ fn editor_playtest_preserves_airborne_vertical_motion() {
             state.editor.spawn.direction,
             &state.editor.objects,
             &state.editor.timeline.taps.tap_times,
-            state.editor.triggers(),
+            &state.editor.triggers(),
             state.editor.simulate_trigger_hitboxes(),
             state.editor.timeline.clock.time_seconds,
         );

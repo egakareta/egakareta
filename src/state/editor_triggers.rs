@@ -7,14 +7,60 @@
 */
 use super::EditorSubsystem;
 use crate::types::{
-    timed_triggers_to_camera_triggers, CameraTrigger, TimedTrigger, TimedTriggerAction,
-    TimedTriggerTarget,
+    timed_triggers_to_camera_triggers, triggers_from_objects, CameraTrigger, LevelObject,
+    TimedTrigger, TimedTriggerAction, TimedTriggerTarget, CAMERA_TRIGGER_BLOCK_ID,
+    TRANSFORM_TRIGGER_BLOCK_ID,
 };
 
 pub(crate) struct EditorTriggerState {
     pub(crate) items: Vec<TimedTrigger>,
     pub(crate) selected_index: Option<usize>,
     pub(crate) simulate_trigger_hitboxes: bool,
+}
+
+fn trigger_block_id_from_action(action: &TimedTriggerAction) -> &'static str {
+    match action {
+        TimedTriggerAction::CameraPose { .. } | TimedTriggerAction::CameraFollow { .. } => {
+            CAMERA_TRIGGER_BLOCK_ID
+        }
+        TimedTriggerAction::TransformObjects { .. } => TRANSFORM_TRIGGER_BLOCK_ID,
+    }
+}
+
+fn camera_trigger_rotation_degrees(rotation: f32, pitch: f32) -> [f32; 3] {
+    [pitch.to_degrees(), rotation.to_degrees(), 0.0]
+}
+
+fn trigger_object_from_payload(trigger: TimedTrigger) -> LevelObject {
+    let (position, size, rotation_degrees) = match &trigger.action {
+        TimedTriggerAction::CameraPose {
+            target_position,
+            rotation,
+            pitch,
+            ..
+        } => (
+            *target_position,
+            [1.0, 1.0, 1.0],
+            camera_trigger_rotation_degrees(*rotation, *pitch),
+        ),
+        TimedTriggerAction::TransformObjects {
+            position,
+            rotation_degrees,
+            size,
+        } => (*position, *size, *rotation_degrees),
+        TimedTriggerAction::CameraFollow { .. } => {
+            ([0.0, 0.0, 0.0], [1.0, 1.0, 1.0], [0.0, 0.0, 0.0])
+        }
+    };
+
+    LevelObject {
+        position,
+        size,
+        rotation_degrees,
+        block_id: trigger_block_id_from_action(&trigger.action).to_string(),
+        color_tint: [1.0, 1.0, 1.0],
+        trigger: Some(trigger),
+    }
 }
 
 impl EditorTriggerState {
@@ -133,30 +179,19 @@ impl EditorSubsystem {
         }
     }
 
-    fn insert_trigger_sorted(&mut self, mut trigger: TimedTrigger) -> usize {
-        self.sanitize_trigger(&mut trigger);
-        let insert_index = self
-            .triggers
-            .items
-            .partition_point(|existing| existing.time_seconds < trigger.time_seconds);
-        self.triggers.items.insert(insert_index, trigger);
-        self.triggers.selected_index = Some(insert_index);
-        insert_index
-    }
-
-    pub(crate) fn triggers(&self) -> &[TimedTrigger] {
-        &self.triggers.items
+    pub(crate) fn triggers(&self) -> Vec<TimedTrigger> {
+        triggers_from_objects(&self.objects)
     }
 
     pub(crate) fn selected_trigger_index(&self) -> Option<usize> {
+        let triggers = self.triggers();
         self.triggers
             .selected_index
-            .filter(|index| *index < self.triggers.items.len())
+            .filter(|index| *index < triggers.len())
     }
 
     pub(crate) fn camera_trigger_markers(&self) -> Vec<(usize, CameraTrigger)> {
-        self.triggers
-            .items
+        self.triggers()
             .iter()
             .enumerate()
             .filter_map(|(index, trigger)| {
@@ -174,7 +209,7 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn has_object_transform_triggers(&self) -> bool {
-        self.triggers.items.iter().any(|trigger| {
+        self.triggers().iter().any(|trigger| {
             !matches!(trigger.target, TimedTriggerTarget::Camera)
                 && matches!(trigger.action, TimedTriggerAction::TransformObjects { .. })
         })
@@ -189,11 +224,22 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn set_triggers(&mut self, mut triggers: Vec<TimedTrigger>) {
+        // Sanitize
         for trigger in &mut triggers {
             self.sanitize_trigger(trigger);
         }
         triggers.sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
-        self.triggers.items = triggers;
+
+        // Remove existing trigger objects from objects list
+        self.objects.retain(|obj| obj.trigger.is_none());
+
+        // Add sanitized trigger objects
+        for trigger in triggers {
+            self.objects.push(trigger_object_from_payload(trigger));
+        }
+
+        // Sync cache for selected_index tracking
+        self.triggers.items = self.triggers();
         self.triggers.selected_index = self
             .triggers
             .selected_index
@@ -201,7 +247,23 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn add_trigger(&mut self, trigger: TimedTrigger) -> usize {
-        self.insert_trigger_sorted(trigger)
+        let mut trigger = trigger;
+        self.sanitize_trigger(&mut trigger);
+
+        let object_index = self.objects.len();
+        self.objects
+            .push(trigger_object_from_payload(trigger.clone()));
+
+        // Sync cache for selected_index tracking
+        self.triggers.items = self.triggers();
+        let cache_index = self
+            .triggers
+            .items
+            .iter()
+            .position(|t| t.time_seconds == trigger.time_seconds)
+            .unwrap_or(0);
+        self.triggers.selected_index = Some(cache_index);
+        object_index
     }
 
     pub(crate) fn set_trigger_selected(&mut self, selected: Option<usize>) {

@@ -258,7 +258,7 @@ impl State {
         let live_follow_sample = self
             .editor
             .resolve_live_follow_sample(live_follow_target, is_game_active);
-        let camera_triggers = timed_triggers_to_camera_triggers(self.editor.triggers());
+        let camera_triggers = timed_triggers_to_camera_triggers(&self.editor.triggers());
         if camera_triggers.is_empty() {
             return live_follow_sample;
         }
@@ -591,7 +591,7 @@ mod tests {
     fn evaluate_camera_track_interpolates_into_first_trigger_window() {
         pollster::block_on(async {
             let mut state = new_editor_state().await;
-            state.editor.triggers.items = vec![pose_trigger(
+            state.editor.set_triggers(vec![pose_trigger(
                 5.0,
                 [10.0, 1.0, -2.0],
                 0.8,
@@ -599,7 +599,7 @@ mod tests {
                 2.0,
                 false,
                 TimedTriggerEasing::Linear,
-            )];
+            )]);
 
             let live_target = Vec3::new(0.0, 0.0, 0.0);
             let live = state.editor.resolve_live_follow_sample(live_target, false);
@@ -620,10 +620,10 @@ mod tests {
     fn evaluate_camera_track_between_follow_segments_stays_live() {
         pollster::block_on(async {
             let mut state = new_editor_state().await;
-            state.editor.triggers.items = vec![
+            state.editor.set_triggers(vec![
                 follow_trigger(2.0, 1.0, false),
                 follow_trigger(4.0, 1.0, false),
-            ];
+            ]);
 
             let target = Vec3::new(1.0, 2.0, 3.0);
             let expected = state.editor.resolve_live_follow_sample(target, false);
@@ -638,7 +638,7 @@ mod tests {
     fn evaluate_camera_track_between_static_triggers_handles_pre_and_active_transition() {
         pollster::block_on(async {
             let mut state = new_editor_state().await;
-            state.editor.triggers.items = vec![
+            state.editor.set_triggers(vec![
                 pose_trigger(
                     2.0,
                     [0.0, 0.0, 0.0],
@@ -657,7 +657,7 @@ mod tests {
                     false,
                     TimedTriggerEasing::EaseIn,
                 ),
-            ];
+            ]);
 
             let live_target = Vec3::new(3.0, 0.0, 2.0);
             let previous_sample = CameraViewSample {
@@ -688,7 +688,7 @@ mod tests {
     fn evaluate_camera_track_after_last_trigger_uses_last_sample() {
         pollster::block_on(async {
             let mut state = new_editor_state().await;
-            state.editor.triggers.items = vec![pose_trigger(
+            state.editor.set_triggers(vec![pose_trigger(
                 1.0,
                 [4.0, 2.0, 1.0],
                 0.3,
@@ -696,7 +696,7 @@ mod tests {
                 0.5,
                 false,
                 TimedTriggerEasing::Linear,
-            )];
+            )]);
 
             let sample = state.evaluate_camera_track(50.0, Vec3::ZERO, false);
             let expected_target = Vec3::new(4.0, 2.0, 1.0);

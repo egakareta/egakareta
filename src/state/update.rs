@@ -148,7 +148,7 @@ impl State {
 
         Some(trigger_transformed_objects_at_time(
             base_objects,
-            self.editor.triggers(),
+            &self.editor.triggers(),
             time_seconds.max(0.0),
         ))
     }
@@ -434,7 +434,7 @@ impl State {
                     self.editor.spawn.direction,
                     &self.editor.objects,
                     &self.editor.timeline.taps.tap_times,
-                    self.editor.triggers(),
+                    &self.editor.triggers(),
                     self.editor.simulate_trigger_hitboxes(),
                 ));
             self.editor.timeline.scrub_runtime_revision = self.editor.timeline.simulation_revision;
@@ -595,7 +595,7 @@ impl State {
                                 self.editor.spawn.direction,
                                 &self.editor.objects,
                                 &self.editor.timeline.taps.tap_times,
-                                self.editor.triggers(),
+                                &self.editor.triggers(),
                                 self.editor.simulate_trigger_hitboxes(),
                             );
                             runtime.advance_to(clamped_time);
@@ -1321,7 +1321,7 @@ mod tests {
                 state.editor.spawn.direction,
                 &state.editor.objects,
                 &state.editor.timeline.taps.tap_times,
-                state.editor.triggers(),
+                &state.editor.triggers(),
                 state.editor.simulate_trigger_hitboxes(),
             );
             runtime.advance_to(6.0);
@@ -1389,7 +1389,7 @@ mod tests {
                     state.editor.spawn.direction,
                     &state.editor.objects,
                     &state.editor.timeline.taps.tap_times,
-                    state.editor.triggers(),
+                    &state.editor.triggers(),
                     state.editor.simulate_trigger_hitboxes(),
                 ));
 
