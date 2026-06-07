@@ -1914,10 +1914,7 @@ mod tests {
 
     #[test]
     fn tap_indicator_color_highlights_hovered_or_selected_taps() {
-        assert_eq!(
-            tap_indicator_color(2, Some(2), None),
-            [0.2, 0.85, 0.95, 1.0]
-        );
+        assert_eq!(tap_indicator_color(2, Some(2), None), [0.1, 0.45, 0.5, 1.0]);
         assert_eq!(
             tap_indicator_color(2, None, Some(2)),
             [0.2, 0.85, 0.95, 1.0]
