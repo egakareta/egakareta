@@ -44,8 +44,6 @@ struct BinaryLevelPayloadV1 {
     timing_points: Vec<TimingPoint>,
     timeline_time_seconds: f32,
     timeline_duration_seconds: f32,
-    #[serde(default, rename = "triggers", skip_serializing)]
-    _legacy_triggers: Vec<TimedTrigger>,
     simulate_trigger_hitboxes: bool,
     #[serde(default)]
     menu_preview_camera: Option<LevelPreviewCameraMetadata>,
@@ -196,7 +194,6 @@ pub(crate) fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<V
         timing_points: metadata.timing_points.clone(),
         timeline_time_seconds: metadata.timeline_time_seconds,
         timeline_duration_seconds: metadata.timeline_duration_seconds,
-        _legacy_triggers: Vec::new(),
         simulate_trigger_hitboxes: metadata.simulate_trigger_hitboxes,
         menu_preview_camera: metadata.menu_preview_camera.clone(),
         level_extra_entries: map_to_entries(&metadata.extra)?,
@@ -930,7 +927,6 @@ mod tests {
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 0.0,
-            _legacy_triggers: Vec::new(),
             simulate_trigger_hitboxes: false,
             menu_preview_camera: None,
             level_extra_entries: Vec::new(),
@@ -1012,7 +1008,6 @@ mod tests {
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 0.0,
-            _legacy_triggers: Vec::new(),
             simulate_trigger_hitboxes: false,
             menu_preview_camera: None,
             level_extra_entries: Vec::new(),

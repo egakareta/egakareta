@@ -177,6 +177,7 @@ fn render_profile_tag(profile: &BlockRenderProfile) -> u8 {
         BlockRenderProfile::SpeedPortal => 3,
         BlockRenderProfile::Neon => 5,
         BlockRenderProfile::Gem => 7,
+        BlockRenderProfile::TransformTrigger => 9,
     }
 }
 

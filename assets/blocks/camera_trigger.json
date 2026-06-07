@@ -1,7 +1,7 @@
 {
     "id": "core/camera_trigger",
     "display_name": "Camera Trigger",
-    "category": "tech",
+    "category": "trigger",
     "render": {
         "profile": "neon",
         "color_top": [0.2, 0.75, 1.0, 0.85],
@@ -11,5 +11,5 @@
         "collision": "pass_through",
         "support_surface": false
     },
-    "placeable": false
+    "placeable": true
 }

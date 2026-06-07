@@ -154,13 +154,15 @@ enum BlockCatalogCategory {
     Building,
     Danger,
     Tech,
+    Trigger,
 }
 
-const BLOCK_CATALOG_CATEGORIES: [BlockCatalogCategory; 4] = [
+const BLOCK_CATALOG_CATEGORIES: [BlockCatalogCategory; 5] = [
     BlockCatalogCategory::All,
     BlockCatalogCategory::Building,
     BlockCatalogCategory::Danger,
     BlockCatalogCategory::Tech,
+    BlockCatalogCategory::Trigger,
 ];
 const PLACE_BLOCK_CATALOG_COLUMNS: usize = 9;
 const PLACE_BLOCK_CATALOG_ROWS: usize = 4;
@@ -173,6 +175,7 @@ impl BlockCatalogCategory {
             Self::Building => "Building",
             Self::Danger => "Danger",
             Self::Tech => "Tech",
+            Self::Trigger => "Trigger",
         }
     }
 }
@@ -187,6 +190,7 @@ fn block_matches_catalog_category(block: &BlockDefinition, category: BlockCatalo
         BlockCatalogCategory::Building => block.category == BlockCategory::Building,
         BlockCatalogCategory::Danger => block.category == BlockCategory::Danger,
         BlockCatalogCategory::Tech => block.category == BlockCategory::Tech,
+        BlockCatalogCategory::Trigger => block.category == BlockCategory::Trigger,
     }
 }
 

@@ -715,7 +715,7 @@ fn transform_trigger_countdown_progress(
     1.0 - (remaining / window_seconds).clamp(0.0, 1.0)
 }
 
-fn object_center(position: [f32; 3], size: [f32; 3]) -> [f32; 3] {
+pub(crate) fn object_center(position: [f32; 3], size: [f32; 3]) -> [f32; 3] {
     [
         position[0] + size[0] * 0.5,
         position[1] + size[1] * 0.5,
@@ -723,7 +723,7 @@ fn object_center(position: [f32; 3], size: [f32; 3]) -> [f32; 3] {
     ]
 }
 
-fn transform_marker_rotation(rotation_degrees: [f32; 3]) -> Quat {
+pub(crate) fn transform_marker_rotation(rotation_degrees: [f32; 3]) -> Quat {
     Quat::from_euler(
         EulerRot::XYZ,
         rotation_degrees[0].to_radians(),
@@ -732,7 +732,7 @@ fn transform_marker_rotation(rotation_degrees: [f32; 3]) -> Quat {
     )
 }
 
-fn append_xz_ring(
+pub(crate) fn append_xz_ring(
     vertices: &mut Vec<Vertex>,
     center: [f32; 3],
     radius: f32,
@@ -764,7 +764,7 @@ fn append_xz_ring(
     }
 }
 
-fn append_oriented_box_edges(
+pub(crate) fn append_oriented_box_edges(
     vertices: &mut Vec<Vertex>,
     position: [f32; 3],
     size: [f32; 3],
@@ -811,7 +811,7 @@ fn append_oriented_box_edges(
     }
 }
 
-fn append_cylinder_segment(
+pub(crate) fn append_cylinder_segment(
     vertices: &mut Vec<Vertex>,
     start: [f32; 3],
     end: [f32; 3],
