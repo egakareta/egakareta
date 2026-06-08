@@ -20,7 +20,10 @@ pub(crate) use transitions::*;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata, TimingPoint};
+    use crate::types::{
+        LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata, TimedTriggerAction,
+        TimedTriggerTarget, TimingPoint, TRANSFORM_TRIGGER_BLOCK_ID,
+    };
 
     fn assert_near_solver_hits_target(
         spawn: [f32; 3],
@@ -216,6 +219,36 @@ mod tests {
     }
 
     #[test]
+    fn creates_transform_trigger_block_with_empty_target_trigger() {
+        let block = create_block_at_cursor(
+            [1.0, 2.0, 3.0],
+            TRANSFORM_TRIGGER_BLOCK_ID,
+            [2.0, 0.25, 1.0],
+            [0.0, 90.0, 0.0],
+        );
+
+        let trigger = block
+            .trigger
+            .expect("transform trigger block should carry a trigger");
+        match trigger.target {
+            TimedTriggerTarget::Objects { object_ids } => assert!(object_ids.is_empty()),
+            TimedTriggerTarget::Camera => panic!("expected object target"),
+        }
+        match trigger.action {
+            TimedTriggerAction::TransformObjects {
+                position,
+                rotation_degrees,
+                size,
+            } => {
+                assert_eq!(position, [1.0, 2.0, 3.0]);
+                assert_eq!(rotation_degrees, [0.0, 90.0, 0.0]);
+                assert_eq!(size, [2.0, 0.25, 1.0]);
+            }
+            _ => panic!("expected transform action"),
+        }
+    }
+
+    #[test]
     fn removes_topmost_block_at_cursor_cell() {
         let mut objects = vec![
             LevelObject {
@@ -224,6 +257,7 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             },
             LevelObject {
                 position: [0.0, 1.0, 0.0],
@@ -231,6 +265,7 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/grass".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             },
         ];
 
@@ -265,7 +300,6 @@ mod tests {
             timing_points: Vec::new(),
             timeline_time_seconds: 0.5,
             timeline_duration_seconds: 16.0,
-            triggers: Vec::new(),
             simulate_trigger_hitboxes: false,
             menu_preview_camera: None,
             objects: vec![LevelObject {
@@ -274,6 +308,7 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             }],
             extra: serde_json::Map::new(),
         };
@@ -335,6 +370,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }];
 
         assert!(playtest_return_objects(true, &objects).is_some());
@@ -352,6 +388,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/speedportal".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }];
 
         // Advance timeline past the portal (e.g., 10 units / BASE_PLAYER_SPEED seconds)
@@ -403,7 +440,6 @@ mod tests {
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 16.0,
-            triggers: Vec::new(),
             simulate_trigger_hitboxes: false,
             menu_preview_camera: None,
             objects: vec![LevelObject {
@@ -412,6 +448,7 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             }],
             extra: serde_json::Map::new(),
         };
@@ -568,6 +605,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }];
         let target = [0.5, 0.0, 3.5];
         let time = derive_timeline_time_for_world_target_near_time(
@@ -852,6 +890,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }];
 
         let previews = derive_timing_division_tap_previews(

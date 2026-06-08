@@ -721,12 +721,41 @@ impl EditorSubsystem {
                 .gizmo_drag
                 .as_ref()
                 .is_some_and(|drag| self.gizmo_drag_trigger_start(drag).is_some());
+            // The dragged block(s) may be a transform trigger block on the
+            // grid (not the virtual trigger target). When the user moves,
+            // resizes, or rotates the trigger block itself, the source ring
+            // and connector line should follow the block pose live.
+            let dragging_transform_trigger_block = self
+                .runtime
+                .interaction
+                .gizmo_drag
+                .as_ref()
+                .is_some_and(|drag| {
+                    drag.start_blocks.iter().any(|b| {
+                        self.objects
+                            .get(b.index)
+                            .is_some_and(|o| o.is_transform_trigger())
+                    })
+                });
+            // Check if any dragged blocks are sources of transform triggers
+            let dragged_indices: Vec<usize> = self
+                .runtime
+                .interaction
+                .gizmo_drag
+                .as_ref()
+                .map(|drag| drag.start_blocks.iter().map(|b| b.index).collect())
+                .unwrap_or_default();
+            let dragging_transform_trigger_source =
+                self.any_block_is_transform_trigger_source(&dragged_indices);
             if is_move || capture_active || trigger_drag {
                 self.mark_dirty(EditorDirtyFlags {
                     rebuild_cursor: is_move,
                     rebuild_block_mesh: trigger_drag,
                     rebuild_hitbox_visualization: trigger_drag,
-                    rebuild_transform_trigger_markers: capture_active || trigger_drag,
+                    rebuild_transform_trigger_markers: capture_active
+                        || trigger_drag
+                        || dragging_transform_trigger_block
+                        || dragging_transform_trigger_source,
                     rebuild_preview_player: trigger_drag,
                     ..EditorDirtyFlags::default()
                 });
@@ -816,6 +845,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }
     }
 
@@ -1443,13 +1473,12 @@ mod tests {
             );
             let world_axis = start_quat * Vec3::X;
 
-            let axis_dir = world_axis;
             let delta = compute_rotation_delta_degrees(
                 &state,
                 start_mouse,
                 current_mouse,
                 center_screen,
-                axis_dir,
+                world_axis,
             );
             assert!(delta.abs() > 1.0, "delta should be non-trivial");
 
@@ -1678,6 +1707,67 @@ mod tests {
             approx_eq(actual[0], expected[0], 0.5);
             approx_eq(actual[1], expected[1], 0.5);
             approx_eq(actual[2], expected[2], 0.5);
+        });
+    }
+
+    #[test]
+    fn drag_gizmo_move_transform_trigger_source_sets_dirty_flag() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.editor.config.snap_to_grid = false;
+            state.editor.ui.mode = EditorMode::Move;
+            // Create a regular block that will be the source of a transform trigger
+            state.editor.objects = vec![test_block()];
+            // Add a transform trigger that targets object 0
+            state.editor.set_triggers(vec![TimedTrigger {
+                time_seconds: 1.0,
+                duration_seconds: 1.0,
+                easing: TimedTriggerEasing::Linear,
+                target: TimedTriggerTarget::Objects {
+                    object_ids: vec![0],
+                },
+                action: TimedTriggerAction::TransformObjects {
+                    position: [5.0, 0.0, 0.0],
+                    rotation_degrees: [0.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
+                },
+            }]);
+
+            let viewport = Vec2::new(1280.0, 720.0);
+            let center = Vec3::new(0.5, 0.5, 0.5);
+            let origin_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center projects");
+            let axis_screen = state
+                .editor
+                .world_to_screen_v(center + Vec3::X, viewport)
+                .expect("axis projects");
+            let axis_dir = (axis_screen - origin_screen).normalize();
+            let target = origin_screen + axis_dir * 40.0;
+
+            let block = state.editor.objects[0].clone();
+            state.editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+                axis: GizmoAxis::X,
+                kind: GizmoDragKind::Move,
+                start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
+                start_center_screen: [origin_screen.x, origin_screen.y],
+                start_center_world: center.to_array(),
+                start_blocks: vec![start_block_for_index(0, &block)],
+            });
+
+            state.editor.runtime.dirty = EditorDirtyFlags::default();
+            assert!(state.editor.drag_gizmo_from_screen(
+                target.x as f64,
+                target.y as f64,
+                viewport,
+                AppPhase::Editor,
+            ));
+            assert!(
+                state.editor.runtime.dirty.rebuild_transform_trigger_markers,
+                "Moving a transform trigger source block should mark transform trigger markers dirty"
+            );
         });
     }
 }

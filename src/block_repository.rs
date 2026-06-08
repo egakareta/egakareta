@@ -122,6 +122,7 @@ pub(crate) enum BlockCategory {
     Building,
     Danger,
     Tech,
+    Trigger,
 }
 
 impl BlockDefinition {
@@ -267,7 +268,7 @@ pub(crate) struct BlockTextureLayers {
     pub(crate) bottom: u32,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum BlockRenderProfile {
     Solid,
@@ -275,6 +276,7 @@ pub(crate) enum BlockRenderProfile {
     SpeedPortal,
     Neon,
     Gem,
+    TransformTrigger,
 }
 
 #[derive(Clone, Default, Deserialize, Serialize)]

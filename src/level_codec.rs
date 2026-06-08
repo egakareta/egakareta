@@ -44,7 +44,6 @@ struct BinaryLevelPayloadV1 {
     timing_points: Vec<TimingPoint>,
     timeline_time_seconds: f32,
     timeline_duration_seconds: f32,
-    triggers: Vec<TimedTrigger>,
     simulate_trigger_hitboxes: bool,
     #[serde(default)]
     menu_preview_camera: Option<LevelPreviewCameraMetadata>,
@@ -63,6 +62,8 @@ struct BinaryLevelPayloadV1 {
     object_sizes: Vec<[f32; 3]>,
     object_rotations: Vec<[f32; 3]>,
     object_color_tints: Vec<[f32; 3]>,
+    #[serde(default)]
+    object_triggers: Vec<Option<TimedTrigger>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -99,6 +100,11 @@ pub(crate) fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<V
     let mut object_sizes = Vec::with_capacity(metadata.objects.len());
     let mut object_rotations = Vec::with_capacity(metadata.objects.len());
     let mut object_color_tints = Vec::with_capacity(metadata.objects.len());
+    let object_triggers = metadata
+        .objects
+        .iter()
+        .map(|object| object.trigger.clone())
+        .collect::<Vec<_>>();
 
     let mut compact_positions = Vec::<[i32; 3]>::new();
     let mut compact_mask = vec![0u8; metadata.objects.len().div_ceil(8)];
@@ -188,7 +194,6 @@ pub(crate) fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<V
         timing_points: metadata.timing_points.clone(),
         timeline_time_seconds: metadata.timeline_time_seconds,
         timeline_duration_seconds: metadata.timeline_duration_seconds,
-        triggers: metadata.triggers.clone(),
         simulate_trigger_hitboxes: metadata.simulate_trigger_hitboxes,
         menu_preview_camera: metadata.menu_preview_camera.clone(),
         level_extra_entries: map_to_entries(&metadata.extra)?,
@@ -202,6 +207,7 @@ pub(crate) fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<V
         object_sizes,
         object_rotations,
         object_color_tints,
+        object_triggers,
     };
 
     let payload_bytes = serde_cbor::to_vec(&payload).map_err(|error| error.to_string())?;
@@ -314,6 +320,13 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
     let palette_indices = rle_decode_palette_indices(&payload.object_runs)?;
     let object_count = palette_indices.len();
     let mut objects = Vec::with_capacity(object_count);
+    let object_triggers = if payload.object_triggers.is_empty() {
+        vec![None; object_count]
+    } else if payload.object_triggers.len() == object_count {
+        payload.object_triggers
+    } else {
+        return Err("Object trigger stream length mismatch in binary payload".to_string());
+    };
 
     if payload.object_compact_mask.is_empty() {
         if payload.object_positions.len() != object_count
@@ -336,6 +349,7 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
                 rotation_degrees: payload.object_rotations[index],
                 block_id: block_id.clone(),
                 color_tint: payload.object_color_tints[index],
+                trigger: object_triggers[index].clone(),
             };
             object.normalize_block_id();
             objects.push(object);
@@ -382,6 +396,7 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
                     rotation_degrees: [0.0, 0.0, 0.0],
                     block_id: block_id.clone(),
                     color_tint: [1.0, 1.0, 1.0],
+                    trigger: object_triggers[index].clone(),
                 }
             } else {
                 let object = LevelObject {
@@ -402,6 +417,7 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
                         .object_color_tints
                         .get(full_cursor)
                         .ok_or_else(|| "Full object color cursor overflow".to_string())?,
+                    trigger: object_triggers[index].clone(),
                 };
                 full_cursor += 1;
                 object
@@ -432,7 +448,6 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
         timing_points: payload.timing_points,
         timeline_time_seconds: payload.timeline_time_seconds,
         timeline_duration_seconds: payload.timeline_duration_seconds,
-        triggers: payload.triggers,
         simulate_trigger_hitboxes: payload.simulate_trigger_hitboxes,
         menu_preview_camera: payload.menu_preview_camera,
         objects,
@@ -441,6 +456,10 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
 }
 
 fn quantize_compact_position(object: &LevelObject) -> Option<[i32; 3]> {
+    if object.trigger.is_some() {
+        return None;
+    }
+
     if object.size != [1.0, 1.0, 1.0]
         || object.rotation_degrees != [0.0, 0.0, 0.0]
         || object.color_tint != [1.0, 1.0, 1.0]
@@ -680,6 +699,7 @@ mod tests {
                 size: [2.0, 2.0, 2.0],
                 rotation_degrees: [0.0, 90.0, 0.0],
                 color_tint: [0.8, 0.7, 0.6],
+                trigger: None,
             },
             LevelObject {
                 block_id: "core/stone".to_string(),
@@ -687,6 +707,7 @@ mod tests {
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             },
             LevelObject {
                 block_id: "core/grass".to_string(),
@@ -694,6 +715,7 @@ mod tests {
                 size: [3.0, 1.0, 3.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             },
         ];
 
@@ -717,6 +739,7 @@ mod tests {
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             },
             LevelObject {
                 block_id: "core/grass".to_string(),
@@ -724,6 +747,7 @@ mod tests {
                 size: [2.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             },
         ];
 
@@ -751,6 +775,7 @@ mod tests {
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }];
 
         let encoded_v2 = encode_level_metadata_binary(&metadata).expect("encode v2");
@@ -773,6 +798,7 @@ mod tests {
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             },
             LevelObject {
                 block_id: "core/grass".to_string(),
@@ -780,6 +806,7 @@ mod tests {
                 size: [2.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             },
         ];
 
@@ -803,6 +830,7 @@ mod tests {
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         };
         assert_eq!(quantize_compact_position(&object), Some([3, -2, 9]));
 
@@ -899,7 +927,6 @@ mod tests {
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 0.0,
-            triggers: Vec::new(),
             simulate_trigger_hitboxes: false,
             menu_preview_camera: None,
             level_extra_entries: Vec::new(),
@@ -913,6 +940,7 @@ mod tests {
             object_sizes: Vec::new(),
             object_rotations: Vec::new(),
             object_color_tints: Vec::new(),
+            object_triggers: Vec::new(),
         };
         let payload_bytes = serde_cbor::to_vec(&payload).expect("serialize");
         let compressed = zstd::bulk::compress(&payload_bytes, 1).expect("compress");
@@ -980,7 +1008,6 @@ mod tests {
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 0.0,
-            triggers: Vec::new(),
             simulate_trigger_hitboxes: false,
             menu_preview_camera: None,
             level_extra_entries: Vec::new(),
@@ -997,6 +1024,7 @@ mod tests {
             object_sizes: vec![[1.0, 1.0, 1.0]],
             object_rotations: vec![[0.0, 0.0, 0.0]],
             object_color_tints: vec![[1.0, 1.0, 1.0]],
+            object_triggers: Vec::new(),
         };
 
         let bytes = encode_v2_uncompressed_for_test(&payload);

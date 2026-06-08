@@ -12,8 +12,9 @@ use crate::block_repository::{
     resolve_block_definition, resolve_block_texture_layers, BlockIconCamera, BlockRenderProfile,
 };
 use crate::mesh::shapes::{append_prism_with_layers, PrismFaceColors, PrismTextureLayers};
+use crate::mesh::{append_transform_trigger_visual_vertices, TransformTriggerVisualStyle};
 use crate::mesh::{build_block_geometry, MeshGeometry};
-use crate::types::{CameraUniform, ColorSpaceUniform, LevelObject};
+use crate::types::{CameraUniform, ColorSpaceUniform, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID};
 
 use super::super::State;
 
@@ -137,6 +138,10 @@ fn build_block_icon_geometry(block_id: &str, dimetric: bool) -> MeshGeometry {
     }
 
     let block = resolve_block_definition(block_id);
+    if block.id == TRANSFORM_TRIGGER_BLOCK_ID {
+        return build_transform_trigger_icon_geometry();
+    }
+
     let layers = resolve_block_texture_layers(block_id);
     let colors = PrismFaceColors::new_with_outline(
         block.render.color_top,
@@ -158,6 +163,27 @@ fn build_block_icon_geometry(block_id: &str, dimetric: bool) -> MeshGeometry {
             vertex.set_render_profile(LIQUID_PROFILE_TAG);
         }
     }
+
+    MeshGeometry::from_vertices(vertices)
+}
+
+fn build_transform_trigger_icon_geometry() -> MeshGeometry {
+    let mut vertices = Vec::new();
+    append_transform_trigger_visual_vertices(
+        &mut vertices,
+        [0.08, 0.08, 0.08],
+        [0.84, 0.84, 0.84],
+        [0.0, 0.0, 0.0],
+        &TransformTriggerVisualStyle {
+            frame_color: [0.18, 1.0, 0.74, 0.95],
+            arrow_color: [1.0, 0.95, 0.16, 0.98],
+            ring_color: [0.42, 0.66, 1.0, 0.92],
+            frame_radius: 0.035,
+            shaft_radius: 0.055,
+            cone_radius: 0.16,
+            ring_thickness: 0.055,
+        },
+    );
 
     MeshGeometry::from_vertices(vertices)
 }
@@ -441,6 +467,21 @@ mod tests {
                 .iter()
                 .all(|vertex| vertex.render_profile == 0.0),
             "expected non-liquid dimetric icon vertices to keep the default render profile"
+        );
+    }
+
+    #[test]
+    fn transform_trigger_dimetric_icon_uses_visible_marker_geometry() {
+        assert!(uses_dimetric_icon_projection("core/transform_trigger"));
+
+        let vertices = build_block_icon_vertices("core/transform_trigger", true);
+        assert!(
+            vertices.len() > 36,
+            "expected transform trigger icon to use marker geometry, not the fallback prism"
+        );
+        assert!(
+            vertices.iter().any(|vertex| vertex.color[3] > 0.5),
+            "expected transform trigger icon to contain visible vertices"
         );
     }
 }

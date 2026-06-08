@@ -69,7 +69,7 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) waveform_loading: bool,
     pub(crate) waveform_complete: bool,
     pub(crate) bpm_tap_result: Option<f32>,
-    pub(crate) triggers: &'a [TimedTrigger],
+    pub(crate) triggers: Vec<TimedTrigger>,
     pub(crate) trigger_selected_index: Option<usize>,
     pub(crate) simulate_trigger_hitboxes: bool,
     pub(crate) camera_position: [f32; 3],

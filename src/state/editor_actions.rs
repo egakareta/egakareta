@@ -609,7 +609,7 @@ impl State {
                         self.editor.spawn.direction,
                         &self.editor.objects,
                         &self.editor.timeline.taps.tap_times,
-                        self.editor.triggers(),
+                        &self.editor.triggers(),
                         self.editor.simulate_trigger_hitboxes(),
                     ));
                 if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
@@ -663,7 +663,7 @@ impl State {
                     self.editor.spawn.direction,
                     &self.editor.objects,
                     &self.editor.timeline.taps.tap_times,
-                    self.editor.triggers(),
+                    &self.editor.triggers(),
                     self.editor.simulate_trigger_hitboxes(),
                 ));
             if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
@@ -733,7 +733,9 @@ impl State {
         {
             self.sync_editor_objects();
             self.rebuild_editor_cursor_vertices();
-            if self.editor_transform_trigger_capture_active() {
+            if self.editor_transform_trigger_capture_active()
+                || self.editor.has_selected_transform_trigger_block()
+            {
                 self.mark_editor_dirty(EditorDirtyFlags {
                     rebuild_transform_trigger_markers: true,
                     ..EditorDirtyFlags::default()
@@ -769,7 +771,9 @@ impl State {
                 self.rebuild_editor_cursor_vertices();
                 self.rebuild_editor_gizmo_vertices();
                 self.rebuild_editor_selection_outline_vertices();
-                if self.editor_transform_trigger_capture_active() {
+                if self.editor_transform_trigger_capture_active()
+                    || self.editor.has_selected_transform_trigger_block()
+                {
                     self.mark_editor_dirty(EditorDirtyFlags {
                         rebuild_transform_trigger_markers: true,
                         ..EditorDirtyFlags::default()
@@ -952,7 +956,7 @@ impl State {
                         self.editor.spawn.direction,
                         &self.editor.objects,
                         &self.editor.timeline.taps.tap_times,
-                        self.editor.triggers(),
+                        &self.editor.triggers(),
                         self.editor.simulate_trigger_hitboxes(),
                     ));
                 if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
@@ -1029,7 +1033,7 @@ impl State {
             spawn: self.editor.spawn.clone(),
             sky_color: self.session.editor_sky_color,
             tap_times: &self.editor.timeline.taps.tap_times,
-            triggers: self.editor.triggers(),
+            triggers: &self.editor.triggers(),
             simulate_trigger_hitboxes: self.editor.simulate_trigger_hitboxes(),
             timeline_seconds: (
                 self.editor.timeline.clock.time_seconds,
@@ -1161,6 +1165,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }
     }
 

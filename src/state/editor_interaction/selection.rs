@@ -8,7 +8,7 @@
 use super::super::{
     EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart, EditorSubsystem, State,
 };
-use crate::types::{AppPhase, EditorInteractionChange, EditorMode};
+use crate::types::{AppPhase, EditorInteractionChange};
 use glam::{EulerRot, Mat3, Vec2, Vec3};
 
 const MARQUEE_DRAG_THRESHOLD_PX: f64 = 4.0;
@@ -55,8 +55,7 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn begin_marquee_selection(&mut self, x: f64, y: f64, phase: AppPhase) -> bool {
-        let allows_marquee =
-            self.ui.mode.is_selection_mode() || self.ui.mode == EditorMode::Trigger;
+        let allows_marquee = self.ui.mode.is_selection_mode();
         if phase != AppPhase::Editor || self.ui.right_dragging || !allows_marquee {
             return false;
         }
@@ -66,8 +65,7 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn update_marquee_selection(&mut self, x: f64, y: f64, phase: AppPhase) -> bool {
-        let allows_marquee =
-            self.ui.mode.is_selection_mode() || self.ui.mode == EditorMode::Trigger;
+        let allows_marquee = self.ui.mode.is_selection_mode();
         if phase != AppPhase::Editor || self.ui.right_dragging || !allows_marquee {
             return false;
         }
@@ -242,8 +240,7 @@ impl EditorSubsystem {
         viewport: Vec2,
         phase: AppPhase,
     ) -> bool {
-        let allows_marquee =
-            self.ui.mode.is_selection_mode() || self.ui.mode == EditorMode::Trigger;
+        let allows_marquee = self.ui.mode.is_selection_mode();
         if phase != AppPhase::Editor || !allows_marquee {
             self.ui.marquee_start_screen = None;
             self.ui.marquee_current_screen = None;
@@ -490,8 +487,35 @@ impl EditorSubsystem {
 
         if self.drag_selection(x, y, viewport) {
             self.sync_objects_for_drag();
+            // When a transform trigger block is being moved on the grid via
+            // click-and-drag, the source ring + connector line must follow
+            // the block pose live.
+            let dragging_transform_trigger_block = self
+                .runtime
+                .interaction
+                .block_drag
+                .as_ref()
+                .is_some_and(|drag| {
+                    drag.start_blocks.iter().any(|b| {
+                        self.objects
+                            .get(b.index)
+                            .is_some_and(|o| o.is_transform_trigger())
+                    })
+                });
+            // Check if any dragged blocks are sources of transform triggers
+            let dragged_indices: Vec<usize> = self
+                .runtime
+                .interaction
+                .block_drag
+                .as_ref()
+                .map(|drag| drag.start_blocks.iter().map(|b| b.index).collect())
+                .unwrap_or_default();
+            let dragging_transform_trigger_source =
+                self.any_block_is_transform_trigger_source(&dragged_indices);
             self.mark_dirty(EditorDirtyFlags {
                 rebuild_cursor: true,
+                rebuild_transform_trigger_markers: dragging_transform_trigger_block
+                    || dragging_transform_trigger_source,
                 ..EditorDirtyFlags::default()
             });
             true
@@ -558,47 +582,25 @@ impl EditorSubsystem {
             return EditorInteractionChange::None;
         };
 
-        let trigger_mode = self.ui.mode == EditorMode::Trigger;
         let mut changed = EditorInteractionChange::None;
 
         {
             puffin::profile_scope!("SelectApply");
-            if let Some(hit_trigger_index) = pick.hit_trigger_index {
-                if additive && self.selected_trigger_index() == Some(hit_trigger_index) {
+            if let Some(hit_index) = pick.hit_block_index {
+                if !additive {
                     self.set_trigger_selected(None);
-                } else {
-                    self.set_trigger_selected(Some(hit_trigger_index));
                 }
-
-                if !additive || trigger_mode {
-                    self.clear_block_selection();
-                } else {
-                    self.ui.hovered_block_index = None;
-                }
-                changed = EditorInteractionChange::Hover;
-            } else if let Some(hit_index) = pick.hit_block_index {
-                if trigger_mode {
-                    if !additive {
-                        self.set_trigger_selected(None);
-                    }
-                    self.clear_block_selection();
-                    changed = EditorInteractionChange::Hover;
-                } else {
-                    if !additive {
-                        self.set_trigger_selected(None);
-                    }
-                    if additive {
-                        if self.ui.selected_block_indices.contains(&hit_index) {
-                            self.remove_block_from_selection(hit_index);
-                        } else {
-                            self.add_block_to_selection(hit_index);
-                        }
+                if additive {
+                    if self.ui.selected_block_indices.contains(&hit_index) {
+                        self.remove_block_from_selection(hit_index);
                     } else {
-                        self.replace_block_selection(vec![hit_index]);
+                        self.add_block_to_selection(hit_index);
                     }
-                    self.ui.hovered_block_index = Some(hit_index);
-                    changed = EditorInteractionChange::Hover;
+                } else {
+                    self.replace_block_selection(vec![hit_index]);
                 }
+                self.ui.hovered_block_index = Some(hit_index);
+                changed = EditorInteractionChange::Hover;
             } else if !additive {
                 self.clear_block_selection();
                 self.set_trigger_selected(None);
@@ -688,9 +690,7 @@ impl State {
         });
 
         let mode = self.editor.mode();
-        if self.phase == AppPhase::Editor
-            && (mode.is_selection_mode() || mode == EditorMode::Trigger)
-        {
+        if self.phase == AppPhase::Editor && mode.is_selection_mode() {
             self.editor
                 .select_block_from_screen(x, y, viewport_size, self.phase);
             return true;
@@ -745,6 +745,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }
     }
 
@@ -1457,6 +1458,65 @@ mod tests {
             );
             assert_eq!(state.editor.ui.selected_block_index, Some(1));
             assert_eq!(state.editor.ui.selected_block_indices, vec![1]);
+        });
+    }
+
+    #[test]
+    fn drag_selection_transform_trigger_source_sets_dirty_flag() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let viewport = default_viewport();
+
+            state.editor.ui.mode = EditorMode::Select;
+            state.editor.config.snap_to_grid = false;
+            state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
+
+            // Add a transform trigger that targets object 0
+            state.editor.set_triggers(vec![crate::types::TimedTrigger {
+                time_seconds: 1.0,
+                duration_seconds: 1.0,
+                easing: crate::types::TimedTriggerEasing::Linear,
+                target: crate::types::TimedTriggerTarget::Objects {
+                    object_ids: vec![0],
+                },
+                action: crate::types::TimedTriggerAction::TransformObjects {
+                    position: [5.0, 0.0, 0.0],
+                    rotation_degrees: [0.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
+                },
+            }]);
+
+            let center = Vec3::new(0.5, 0.5, 0.5);
+            let origin_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center should project to screen");
+
+            state.editor.runtime.interaction.block_drag = Some(EditorBlockDrag {
+                start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
+                start_center_world: [center.x, center.y, center.z],
+                start_drag_world: [center.x, center.y, center.z],
+                start_cursor: [center.x, center.y, center.z],
+                start_blocks: vec![EditorDragBlockStart {
+                    index: 0,
+                    position: state.editor.objects[0].position,
+                    size: state.editor.objects[0].size,
+                    rotation_degrees: state.editor.objects[0].rotation_degrees,
+                }],
+            });
+
+            state.editor.runtime.dirty = EditorDirtyFlags::default();
+
+            assert!(state.editor.drag_selection_from_screen(
+                origin_screen.x as f64 + 40.0,
+                origin_screen.y as f64,
+                viewport,
+                AppPhase::Editor,
+            ));
+            assert!(
+                state.editor.runtime.dirty.rebuild_transform_trigger_markers,
+                "Moving a transform trigger source block should mark transform trigger markers dirty"
+            );
         });
     }
 }

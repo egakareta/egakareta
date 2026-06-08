@@ -25,6 +25,7 @@ pub(crate) fn build_editor_cursor_vertices(
         rotation_degrees,
         block_id: block_id.to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        trigger: None,
     };
 
     let mut vertices = build_block_geometry_for_object(&object).to_triangle_vertices();
@@ -64,6 +65,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: block_id.to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }
     }
 
@@ -128,6 +130,7 @@ mod tests {
             rotation_degrees,
             block_id: "core/speedportal".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         })
         .to_triangle_vertices();
 

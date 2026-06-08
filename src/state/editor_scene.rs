@@ -22,6 +22,7 @@ use crate::mesh::{
     build_editor_gizmo_vertices, build_editor_hitbox_visualization_vertices,
     build_editor_hover_outline_vertices, build_editor_selection_outline_vertices,
     build_editor_tap_cursor_vertices, build_editor_transform_origin_outline_vertices,
+    build_editor_transform_trigger_target_outline_vertices,
     build_practice_checkpoint_flag_geometry, build_spawn_marker_vertices,
     build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices,
     build_transform_trigger_marker_vertices, GizmoParams, MeshGeometry,
@@ -30,7 +31,7 @@ use crate::mesh::{
 use crate::state::render::EditorOutlineInstance;
 use crate::types::{
     AppPhase, EditorMode, EditorPlaceMode, GizmoPart, LevelObject, SpawnDirection, TimedTrigger,
-    TimedTriggerAction, TimedTriggerTarget, TimingPoint, Vertex,
+    TimedTriggerAction, TimedTriggerTarget, TimingPoint, Vertex, TRANSFORM_TRIGGER_BLOCK_ID,
 };
 
 const SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD: usize = 700;
@@ -82,6 +83,108 @@ fn append_transform_capture_origin_outlines(
     }
 }
 
+fn transform_trigger_target_indices_for_block(
+    objects: &[LevelObject],
+    trigger_block_index: usize,
+) -> Vec<usize> {
+    let Some(trigger) = objects
+        .get(trigger_block_index)
+        .and_then(|object| object.trigger.as_ref())
+    else {
+        return Vec::new();
+    };
+
+    if !matches!(trigger.action, TimedTriggerAction::TransformObjects { .. }) {
+        return Vec::new();
+    }
+
+    let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
+        return Vec::new();
+    };
+
+    let mut target_indices = object_ids
+        .iter()
+        .filter_map(|object_id| usize::try_from(*object_id).ok())
+        .filter(|index| *index < objects.len())
+        .collect::<Vec<_>>();
+    target_indices.sort_unstable();
+    target_indices.dedup();
+    target_indices
+}
+
+fn append_transform_trigger_target_outline_instance(
+    mask_vertices: &mut Vec<Vertex>,
+    outline_vertices: &mut Vec<Vertex>,
+    instances: &mut Vec<EditorOutlineInstance>,
+    object: &LevelObject,
+) {
+    append_outline_instance(
+        mask_vertices,
+        outline_vertices,
+        instances,
+        object,
+        build_editor_transform_trigger_target_outline_vertices(
+            object.position,
+            object.size,
+            object.rotation_degrees,
+            2.5,
+        ),
+    );
+}
+
+fn append_transform_trigger_target_outline_instances(
+    objects: &[LevelObject],
+    trigger_block_indices: impl IntoIterator<Item = usize>,
+    mask_vertices: &mut Vec<Vertex>,
+    outline_vertices: &mut Vec<Vertex>,
+    instances: &mut Vec<EditorOutlineInstance>,
+) {
+    let mut target_indices = trigger_block_indices
+        .into_iter()
+        .flat_map(|index| transform_trigger_target_indices_for_block(objects, index))
+        .collect::<Vec<_>>();
+    target_indices.sort_unstable();
+    target_indices.dedup();
+
+    for target_index in target_indices {
+        if let Some(object) = objects.get(target_index) {
+            append_transform_trigger_target_outline_instance(
+                mask_vertices,
+                outline_vertices,
+                instances,
+                object,
+            );
+        }
+    }
+}
+
+fn append_hovered_transform_trigger_target_outlines(
+    objects: &[LevelObject],
+    hovered_block_index: Option<usize>,
+    stencil_geometry: &mut MeshGeometry,
+    outline_vertices: &mut Vec<Vertex>,
+) {
+    let mut target_indices = hovered_block_index
+        .into_iter()
+        .flat_map(|index| transform_trigger_target_indices_for_block(objects, index))
+        .collect::<Vec<_>>();
+    target_indices.sort_unstable();
+    target_indices.dedup();
+
+    for target_index in target_indices {
+        let Some(object) = objects.get(target_index) else {
+            continue;
+        };
+        stencil_geometry.append_geometry(build_block_geometry_for_object(object));
+        outline_vertices.extend(build_editor_transform_trigger_target_outline_vertices(
+            object.position,
+            object.size,
+            object.rotation_degrees,
+            2.5,
+        ));
+    }
+}
+
 fn transform_trigger_markers_for_triggers(
     objects: &[LevelObject],
     triggers: &[TimedTrigger],
@@ -109,17 +212,10 @@ fn transform_trigger_markers_for_triggers(
             trigger.time_seconds,
         );
 
-        for object_id in object_ids {
-            let Ok(object_index) = usize::try_from(*object_id) else {
-                continue;
-            };
-            let Some(source_object) = source_objects.get(object_index) else {
-                continue;
-            };
-
+        if object_ids.is_empty() {
             markers.push(TransformTriggerMarker {
-                source_position: source_object.position,
-                source_size: source_object.size,
+                source_position: None,
+                source_size: None,
                 target_position: *position,
                 target_rotation_degrees: *rotation_degrees,
                 target_size: *size,
@@ -127,6 +223,26 @@ fn transform_trigger_markers_for_triggers(
                 duration_seconds: trigger.duration_seconds,
                 is_selected: selected_trigger_index == Some(trigger_index),
             });
+        } else {
+            for object_id in object_ids {
+                let Ok(object_index) = usize::try_from(*object_id) else {
+                    continue;
+                };
+                let Some(source_object) = source_objects.get(object_index) else {
+                    continue;
+                };
+
+                markers.push(TransformTriggerMarker {
+                    source_position: Some(source_object.position),
+                    source_size: Some(source_object.size),
+                    target_position: *position,
+                    target_rotation_degrees: *rotation_degrees,
+                    target_size: *size,
+                    time_seconds: trigger.time_seconds,
+                    duration_seconds: trigger.duration_seconds,
+                    is_selected: selected_trigger_index == Some(trigger_index),
+                });
+            }
         }
     }
 
@@ -176,8 +292,8 @@ fn transform_trigger_markers_for_capture(
         };
 
         markers.push(TransformTriggerMarker {
-            source_position: source_object.position,
-            source_size: source_object.size,
+            source_position: Some(source_object.position),
+            source_size: Some(source_object.size),
             target_position: current_object.position,
             target_rotation_degrees: current_object.rotation_degrees,
             target_size: current_object.size,
@@ -248,6 +364,7 @@ impl EditorSubsystem {
             self.selected_block_default_size(),
             self.config.selected_block_rotation_degrees,
         );
+        let placed_transform_trigger = new_block.block_id == TRANSFORM_TRIGGER_BLOCK_ID;
         let can_append_mesh = self.can_append_block_mesh_after_placement();
 
         self.record_history_state();
@@ -266,10 +383,17 @@ impl EditorSubsystem {
                 sync_game_objects: true,
                 append_block_mesh: true,
                 rebuild_selection_overlays: place_mode == EditorPlaceMode::SelectPlaced,
+                rebuild_transform_trigger_markers: placed_transform_trigger,
                 ..EditorDirtyFlags::default()
             });
         } else {
             self.sync_objects();
+            if placed_transform_trigger {
+                self.mark_dirty(EditorDirtyFlags {
+                    rebuild_transform_trigger_markers: true,
+                    ..EditorDirtyFlags::default()
+                });
+            }
         }
         placed_index
     }
@@ -288,7 +412,7 @@ impl EditorSubsystem {
             &self.timeline.taps.tap_times,
             time_seconds,
             &self.objects,
-            self.triggers(),
+            &self.triggers(),
             self.simulate_trigger_hitboxes(),
         )
     }
@@ -331,7 +455,7 @@ impl State {
             return has_object_transform_triggers.then(|| {
                 trigger_transformed_objects_at_time(
                     &self.editor.objects,
-                    self.editor.triggers(),
+                    &self.editor.triggers(),
                     self.editor.timeline.clock.time_seconds,
                 )
             });
@@ -355,7 +479,7 @@ impl State {
 
         Some(trigger_transformed_objects_at_time(
             &self.editor.objects,
-            self.editor.triggers(),
+            &self.editor.triggers(),
             self.editor.timeline.clock.time_seconds,
         ))
     }
@@ -623,20 +747,24 @@ impl State {
 
         let mut indices_to_outline = Vec::new();
         let mut outline_mask = vec![false; object_count];
-
-        if let Some(index) = self
+        let hovered_block_index = self
             .editor
             .ui
             .hovered_block_index
-            .filter(|index| *index < self.editor.objects.len())
-        {
+            .filter(|index| *index < self.editor.objects.len());
+
+        if let Some(index) = hovered_block_index {
             if !selected_mask[index] {
                 outline_mask[index] = true;
                 indices_to_outline.push(index);
             }
         }
 
-        if indices_to_outline.is_empty() {
+        let has_transform_trigger_targets = hovered_block_index.is_some_and(|index| {
+            !transform_trigger_target_indices_for_block(&self.editor.objects, index).is_empty()
+        });
+
+        if indices_to_outline.is_empty() && !has_transform_trigger_targets {
             self.render.meshes.editor_hover_stencil.clear();
             self.render.meshes.editor_hover_outline.clear();
             return;
@@ -654,6 +782,13 @@ impl State {
             ));
             stencil_geometry.append_geometry(build_block_geometry_for_object(obj));
         }
+
+        append_hovered_transform_trigger_target_outlines(
+            &self.editor.objects,
+            hovered_block_index,
+            &mut stencil_geometry,
+            &mut all_vertices,
+        );
 
         self.render
             .meshes
@@ -786,6 +921,7 @@ impl State {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             };
             let mask_vertices =
                 build_block_geometry_for_object(&bounds_object).to_triangle_vertices();
@@ -805,6 +941,13 @@ impl State {
                 &mut outline_vertices,
                 &mut instances,
                 self.editor.runtime.transform_trigger_capture.as_ref(),
+            );
+            append_transform_trigger_target_outline_instances(
+                &self.editor.objects,
+                selected_indices.iter().copied(),
+                &mut mask_vertices,
+                &mut outline_vertices,
+                &mut instances,
             );
             self.render
                 .meshes
@@ -850,6 +993,13 @@ impl State {
             &mut outline_vertices,
             &mut instances,
             self.editor.runtime.transform_trigger_capture.as_ref(),
+        );
+        append_transform_trigger_target_outline_instances(
+            &self.editor.objects,
+            self.selected_block_indices_normalized(),
+            &mut mask_vertices,
+            &mut outline_vertices,
+            &mut instances,
         );
         self.render
             .meshes
@@ -948,7 +1098,7 @@ impl State {
         if !capture_active {
             markers = transform_trigger_markers_for_triggers(
                 &self.editor.objects,
-                self.editor.triggers(),
+                &self.editor.triggers(),
                 selected_trigger_index,
             );
         }
@@ -957,7 +1107,7 @@ impl State {
         if let Some(capture) = self.editor.runtime.transform_trigger_capture.as_ref() {
             markers.extend(transform_trigger_markers_for_capture(
                 &self.editor.objects,
-                self.editor.triggers(),
+                &self.editor.triggers(),
                 capture.time_seconds,
                 &capture.original_objects,
             ));
@@ -1373,7 +1523,7 @@ impl State {
             self.editor_runtime_objects_for_render().unwrap_or_else(|| {
                 trigger_transformed_objects_at_time(
                     &self.editor.objects,
-                    self.editor.triggers(),
+                    &self.editor.triggers(),
                     self.editor.timeline.clock.time_seconds,
                 )
             })
@@ -1446,6 +1596,7 @@ fn editor_preview_player_hitbox(position: [f32; 3]) -> LevelObject {
         rotation_degrees: [0.0, 0.0, 0.0],
         block_id: "core/void".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        trigger: None,
     }
 }
 
@@ -1506,6 +1657,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }
     }
 
@@ -1675,7 +1827,7 @@ mod tests {
                     state.editor.spawn.direction,
                     &state.editor.objects,
                     &state.editor.timeline.taps.tap_times,
-                    state.editor.triggers(),
+                    &state.editor.triggers(),
                     state.editor.simulate_trigger_hitboxes(),
                 ));
 
@@ -1872,10 +2024,36 @@ mod tests {
         let markers = transform_trigger_markers_for_triggers(&objects, &triggers, Some(1));
 
         assert_eq!(markers.len(), 2);
-        assert_eq!(markers[0].source_position, [0.0, 0.0, 0.0]);
-        approx_eq(markers[1].source_position[0], 4.0, 1e-6);
-        approx_eq(markers[1].source_size[0], 1.5, 1e-6);
+        assert_eq!(markers[0].source_position, Some([0.0, 0.0, 0.0]));
+        approx_eq(markers[1].source_position.unwrap()[0], 4.0, 1e-6);
+        approx_eq(markers[1].source_size.unwrap()[0], 1.5, 1e-6);
         assert!(markers[1].is_selected);
+    }
+
+    #[test]
+    fn transform_trigger_marker_without_sources_still_draws_target() {
+        let triggers = vec![TimedTrigger {
+            time_seconds: 1.0,
+            duration_seconds: 4.0,
+            easing: TimedTriggerEasing::Linear,
+            target: TimedTriggerTarget::Objects {
+                object_ids: Vec::new(),
+            },
+            action: TimedTriggerAction::TransformObjects {
+                position: [8.0, 0.0, 0.0],
+                rotation_degrees: [0.0, 90.0, 0.0],
+                size: [2.0, 1.0, 1.0],
+            },
+        }];
+
+        let markers = transform_trigger_markers_for_triggers(&[], &triggers, Some(0));
+
+        assert_eq!(markers.len(), 1);
+        assert_eq!(markers[0].source_position, None);
+        assert_eq!(markers[0].source_size, None);
+        assert_eq!(markers[0].target_position, [8.0, 0.0, 0.0]);
+        assert_eq!(markers[0].target_size, [2.0, 1.0, 1.0]);
+        assert!(markers[0].is_selected);
     }
 
     #[test]
@@ -1905,8 +2083,8 @@ mod tests {
         );
 
         assert_eq!(markers.len(), 1);
-        approx_eq(markers[0].source_position[0], 4.0, 1e-6);
-        approx_eq(markers[0].source_size[0], 2.0, 1e-6);
+        approx_eq(markers[0].source_position.unwrap()[0], 4.0, 1e-6);
+        approx_eq(markers[0].source_size.unwrap()[0], 2.0, 1e-6);
         assert_eq!(markers[0].target_position, [12.0, 0.0, 0.0]);
         assert_eq!(markers[0].target_size, [2.0, 1.0, 1.0]);
         assert!(markers[0].is_selected);
@@ -2060,6 +2238,26 @@ mod tests {
             assert_eq!(state.editor.objects[0].size, [2.0, 0.25, 1.0]);
             assert_eq!(state.editor.objects[0].rotation_degrees, [0.0, 90.0, 0.0]);
             assert_eq!(state.editor.objects[0].block_id, "core/speedportal");
+        });
+    }
+
+    #[test]
+    fn placing_transform_trigger_marks_target_marker_rebuild_dirty() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.config.selected_block_id =
+                crate::types::TRANSFORM_TRIGGER_BLOCK_ID.to_string();
+            state.editor.ui.cursor = [2.0, 0.0, 4.0];
+            state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
+
+            state
+                .editor
+                .add_block_at_cursor(crate::types::EditorPlaceMode::Stamp);
+
+            assert_eq!(state.editor.objects.len(), 1);
+            assert!(state.editor.objects[0].trigger.is_some());
+            assert!(state.editor.runtime.dirty.rebuild_transform_trigger_markers);
         });
     }
 

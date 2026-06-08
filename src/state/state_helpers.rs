@@ -46,6 +46,17 @@ impl EditorSubsystem {
         self.normalized_block_selection_indices()
     }
 
+    /// Returns `true` when any currently-selected block is a transform
+    /// trigger block. Used by editor actions to know when a mutation
+    /// requires refreshing the transform trigger marker overlay.
+    pub(crate) fn has_selected_transform_trigger_block(&self) -> bool {
+        self.selected_indices_normalized().into_iter().any(|index| {
+            self.objects
+                .get(index)
+                .is_some_and(|o| o.is_transform_trigger())
+        })
+    }
+
     pub(crate) fn normalize_block_selection(&mut self) {
         let indices = self.normalized_block_selection_indices();
         self.ui.selected_block_index = self
@@ -171,6 +182,7 @@ impl EditorSubsystem {
                 rotation_degrees: *rotation_degrees,
                 block_id: crate::block_repository::DEFAULT_BLOCK_ID.to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             },
         ))
     }
@@ -182,26 +194,48 @@ impl EditorSubsystem {
         size: [f32; 3],
         rotation_degrees: [f32; 3],
     ) -> bool {
-        let Some(trigger) = self.triggers.items.get_mut(trigger_index) else {
+        // Find the trigger object by scanning objects for the Nth trigger
+        let mut found = 0usize;
+        let mut object_index = None;
+        for (idx, obj) in self.objects.iter().enumerate() {
+            if obj.trigger.is_some() {
+                if found == trigger_index {
+                    object_index = Some(idx);
+                    break;
+                }
+                found += 1;
+            }
+        }
+        let Some(obj_index) = object_index else {
             return false;
         };
-        let TimedTriggerAction::TransformObjects {
-            position: target_position,
-            rotation_degrees: target_rotation_degrees,
-            size: target_size,
-        } = &mut trigger.action
-        else {
+        let Some(obj) = self.objects.get_mut(obj_index) else {
             return false;
         };
 
-        *target_position = [position[0], position[1].max(0.0), position[2]];
-        *target_size = [size[0].max(0.01), size[1].max(0.01), size[2].max(0.01)];
-        *target_rotation_degrees = rotation_degrees;
+        let clamped_position = [position[0], position[1].max(0.0), position[2]];
+        obj.position = clamped_position;
+        obj.size = [size[0].max(0.01), size[1].max(0.01), size[2].max(0.01)];
+        obj.rotation_degrees = rotation_degrees;
+
+        // Keep cache in sync
+        if let Some(trigger) = self.triggers.items.get_mut(trigger_index) {
+            if let TimedTriggerAction::TransformObjects {
+                position: target_position,
+                rotation_degrees: target_rotation_degrees,
+                size: target_size,
+            } = &mut trigger.action
+            {
+                *target_position = clamped_position;
+                *target_size = obj.size;
+                *target_rotation_degrees = rotation_degrees;
+            }
+        }
 
         self.ui.cursor = [
-            target_position[0],
-            target_position[1].max(0.0),
-            target_position[2],
+            clamped_position[0],
+            clamped_position[1].max(0.0),
+            clamped_position[2],
         ];
         true
     }
@@ -331,6 +365,7 @@ mod tests {
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }
     }
 

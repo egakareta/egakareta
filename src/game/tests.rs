@@ -25,6 +25,7 @@ fn test_ground_detection_normal() {
         rotation_degrees: [0.0, 0.0, 0.0],
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        trigger: None,
     });
     game.rebuild_behavior_cache();
 
@@ -42,6 +43,7 @@ fn test_ground_detection_includes_block_edges() {
         rotation_degrees: [0.0, 0.0, 0.0],
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        trigger: None,
     });
     game.rebuild_behavior_cache();
 
@@ -62,6 +64,7 @@ fn player_stays_grounded_when_footprint_overlaps_platform_edge() {
         rotation_degrees: [0.0, 0.0, 0.0],
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        trigger: None,
     });
     game.rebuild_behavior_cache();
 
@@ -84,6 +87,7 @@ fn test_ground_detection_under_overhang() {
         rotation_degrees: [0.0, 0.0, 0.0],
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        trigger: None,
     });
     // Overhang block at height 3
     game.objects.push(LevelObject {
@@ -92,6 +96,7 @@ fn test_ground_detection_under_overhang() {
         rotation_degrees: [0.0, 0.0, 0.0],
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        trigger: None,
     });
     game.rebuild_behavior_cache();
 
@@ -130,6 +135,7 @@ fn rotated_object_contains_expected_points() {
         rotation_degrees: [0.0, 90.0, 0.0],
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        trigger: None,
     };
 
     assert!(object_xz_contains(&obj, 1.0, 0.5));
@@ -144,6 +150,7 @@ fn rotated_overlap_uses_oriented_bounds() {
         rotation_degrees: [0.0, 45.0, 0.0],
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        trigger: None,
     };
 
     assert!(aabb_overlaps_object_xz(0.9, 1.1, 0.3, 0.5, &obj));
@@ -159,6 +166,7 @@ fn rotated_ground_detection_works() {
         rotation_degrees: [0.0, 90.0, 0.0],
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        trigger: None,
     });
     game.rebuild_behavior_cache();
 
@@ -180,6 +188,7 @@ fn speed_portal_overlap_removes_portal_and_boosts_speed() {
         rotation_degrees: [0.0, 30.0, 0.0],
         block_id: "core/speedportal".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        trigger: None,
     });
     game.rebuild_behavior_cache();
     game.update(0.0);
@@ -200,6 +209,7 @@ fn gem_overlap_collects_and_tracks_progress() {
         rotation_degrees: [0.0, 0.0, 0.0],
         block_id: "core/gem".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        trigger: None,
     });
     game.rebuild_behavior_cache();
     game.initialize_level_progress_from_objects();
@@ -334,6 +344,7 @@ fn timeline_trigger_hitbox_mode_does_not_resurrect_consumed_portals() {
         rotation_degrees: [0.0, 0.0, 0.0],
         block_id: "core/speedportal".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        trigger: None,
     }];
 
     let triggers = vec![TimedTrigger {
@@ -372,6 +383,7 @@ fn timeline_state_with_disabled_trigger_hitboxes_matches_plain_simulation() {
         rotation_degrees: [0.0, 0.0, 0.0],
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        trigger: None,
     }];
 
     let triggers = vec![TimedTrigger {

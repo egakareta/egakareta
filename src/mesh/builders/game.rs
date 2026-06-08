@@ -33,8 +33,8 @@ pub(crate) struct PracticeCheckpointFlagInstance {
 }
 
 pub(crate) struct TransformTriggerMarker {
-    pub(crate) source_position: [f32; 3],
-    pub(crate) source_size: [f32; 3],
+    pub(crate) source_position: Option<[f32; 3]>,
+    pub(crate) source_size: Option<[f32; 3]>,
     pub(crate) target_position: [f32; 3],
     pub(crate) target_rotation_degrees: [f32; 3],
     pub(crate) target_size: [f32; 3],
@@ -620,7 +620,10 @@ fn append_transform_trigger_marker(
     marker: &TransformTriggerMarker,
     current_time_seconds: f32,
 ) {
-    let source_center = object_center(marker.source_position, marker.source_size);
+    let source_center = marker
+        .source_position
+        .zip(marker.source_size)
+        .map(|(pos, size)| object_center(pos, size));
     let target_center = object_center(marker.target_position, marker.target_size);
     let progress = transform_trigger_countdown_progress(
         marker.time_seconds,
@@ -637,22 +640,25 @@ fn append_transform_trigger_marker(
     } else {
         [0.64, 0.22, 1.0, 0.9]
     };
-    append_xz_ring(
-        vertices,
-        source_center,
-        ring_radius.max(0.12),
-        0.055,
-        ring_color,
-    );
 
-    let connector_color = [0.72, 0.42, 1.0, 0.72];
-    append_cylinder_segment(
-        vertices,
-        source_center,
-        target_center,
-        0.035,
-        connector_color,
-    );
+    if let Some(source_center) = source_center {
+        append_xz_ring(
+            vertices,
+            source_center,
+            ring_radius.max(0.12),
+            0.055,
+            ring_color,
+        );
+
+        let connector_color = [0.72, 0.42, 1.0, 0.72];
+        append_cylinder_segment(
+            vertices,
+            source_center,
+            target_center,
+            0.035,
+            connector_color,
+        );
+    }
 
     let rotation = transform_marker_rotation(marker.target_rotation_degrees);
     let forward = (rotation * Vec3::Z).normalize_or_zero();
@@ -715,7 +721,7 @@ fn transform_trigger_countdown_progress(
     1.0 - (remaining / window_seconds).clamp(0.0, 1.0)
 }
 
-fn object_center(position: [f32; 3], size: [f32; 3]) -> [f32; 3] {
+pub(crate) fn object_center(position: [f32; 3], size: [f32; 3]) -> [f32; 3] {
     [
         position[0] + size[0] * 0.5,
         position[1] + size[1] * 0.5,
@@ -723,7 +729,7 @@ fn object_center(position: [f32; 3], size: [f32; 3]) -> [f32; 3] {
     ]
 }
 
-fn transform_marker_rotation(rotation_degrees: [f32; 3]) -> Quat {
+pub(crate) fn transform_marker_rotation(rotation_degrees: [f32; 3]) -> Quat {
     Quat::from_euler(
         EulerRot::XYZ,
         rotation_degrees[0].to_radians(),
@@ -732,7 +738,7 @@ fn transform_marker_rotation(rotation_degrees: [f32; 3]) -> Quat {
     )
 }
 
-fn append_xz_ring(
+pub(crate) fn append_xz_ring(
     vertices: &mut Vec<Vertex>,
     center: [f32; 3],
     radius: f32,
@@ -764,7 +770,7 @@ fn append_xz_ring(
     }
 }
 
-fn append_oriented_box_edges(
+pub(crate) fn append_oriented_box_edges(
     vertices: &mut Vec<Vertex>,
     position: [f32; 3],
     size: [f32; 3],
@@ -811,7 +817,7 @@ fn append_oriented_box_edges(
     }
 }
 
-fn append_cylinder_segment(
+pub(crate) fn append_cylinder_segment(
     vertices: &mut Vec<Vertex>,
     start: [f32; 3],
     end: [f32; 3],
@@ -995,8 +1001,8 @@ mod tests {
     #[test]
     fn transform_trigger_marker_contains_countdown_ring_connector_arrow_and_scale_cage() {
         let marker = TransformTriggerMarker {
-            source_position: [0.0, 0.0, 0.0],
-            source_size: [1.0, 1.0, 1.0],
+            source_position: Some([0.0, 0.0, 0.0]),
+            source_size: Some([1.0, 1.0, 1.0]),
             target_position: [3.0, 0.0, 2.0],
             target_rotation_degrees: [0.0, 90.0, 0.0],
             target_size: [2.0, 1.5, 0.75],

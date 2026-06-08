@@ -10,6 +10,11 @@ use rayon::prelude::*;
 use crate::block_repository::{
     resolve_block_definition, resolve_block_texture_layers, BlockRenderProfile,
 };
+use crate::mesh::advanced_shapes::append_cone;
+use crate::mesh::builders::game::{
+    append_cylinder_segment, append_oriented_box_edges, append_xz_ring, object_center,
+    transform_marker_rotation,
+};
 use crate::mesh::egmesh::{append_egmesh_geometry, resolve_egmesh};
 use crate::mesh::geometry::MeshGeometry;
 use crate::mesh::noise::pseudo_random_noise;
@@ -18,6 +23,7 @@ use crate::mesh::shapes::{append_prism_with_layers, PrismFaceColors, PrismTextur
 use crate::mesh::transforms::rotate_vertices_around_euler;
 use crate::platform::parallel::rayon_is_ready;
 use crate::types::{LevelObject, Vertex};
+use glam::Vec3;
 
 const LIQUID_PROFILE_TAG: f32 = 1.0;
 const GEM_PROFILE_TAG: f32 = 4.0;
@@ -132,6 +138,16 @@ struct BlockColors {
     outline: [f32; 4],
 }
 
+pub(crate) struct TransformTriggerVisualStyle {
+    pub(crate) frame_color: [f32; 4],
+    pub(crate) arrow_color: [f32; 4],
+    pub(crate) ring_color: [f32; 4],
+    pub(crate) frame_radius: f32,
+    pub(crate) shaft_radius: f32,
+    pub(crate) cone_radius: f32,
+    pub(crate) ring_thickness: f32,
+}
+
 impl BlockColors {
     fn apply_noise(&mut self, factor: f32) {
         for i in 0..3 {
@@ -208,7 +224,10 @@ fn append_block_geometry_inner(
         obj.position[1] + obj.size[1] * 0.5,
         obj.position[2] + obj.size[2] * 0.5,
     ];
-    if let Some(mesh_path) = block.assets.mesh.as_deref() {
+
+    if block.render.profile == BlockRenderProfile::TransformTrigger {
+        build_transform_trigger_block_vertices(object_vertices, obj, &colors);
+    } else if let Some(mesh_path) = block.assets.mesh.as_deref() {
         if let Some(mesh) = resolve_egmesh(mesh_path) {
             append_egmesh_geometry(object_geometry, obj, mesh, colors.top, texture_layers.side);
         } else if let Some(mesh) = resolve_obj_mesh(mesh_path) {
@@ -280,7 +299,9 @@ fn apply_block_profile_tags(
                 vertex.color_outline = [center[0], center[1], center[2], phase_seed];
             }
         }
-        BlockRenderProfile::Solid | BlockRenderProfile::SpeedPortal => {}
+        BlockRenderProfile::Solid
+        | BlockRenderProfile::SpeedPortal
+        | BlockRenderProfile::TransformTrigger => {}
     }
 }
 
@@ -291,4 +312,98 @@ fn apply_color_tint(color: [f32; 4], tint_rgb: [f32; 3]) -> [f32; 4] {
         color[2] * tint_rgb[2].clamp(0.0, 1.0),
         color[3],
     ]
+}
+
+fn build_transform_trigger_block_vertices(
+    vertices: &mut Vec<Vertex>,
+    obj: &LevelObject,
+    colors: &BlockColors,
+) {
+    let style = TransformTriggerVisualStyle {
+        frame_color: colors.side,
+        arrow_color: colors.top,
+        ring_color: colors.top,
+        frame_radius: 0.035,
+        shaft_radius: 0.06,
+        cone_radius: 0.18,
+        ring_thickness: 0.05,
+    };
+
+    append_transform_trigger_visual_vertices(
+        vertices,
+        obj.position,
+        obj.size,
+        obj.rotation_degrees,
+        &style,
+    );
+}
+
+pub(crate) fn append_transform_trigger_visual_vertices(
+    vertices: &mut Vec<Vertex>,
+    position: [f32; 3],
+    size: [f32; 3],
+    rotation_degrees: [f32; 3],
+    style: &TransformTriggerVisualStyle,
+) {
+    let center = Vec3::from_array(object_center(position, size));
+    let rotation = transform_marker_rotation(rotation_degrees);
+    append_transform_trigger_visual_vertices_with_rotation(
+        vertices, position, size, center, rotation, style,
+    );
+}
+
+pub(crate) fn append_transform_trigger_visual_vertices_with_rotation(
+    vertices: &mut Vec<Vertex>,
+    position: [f32; 3],
+    size: [f32; 3],
+    center: Vec3,
+    rotation: glam::Quat,
+    style: &TransformTriggerVisualStyle,
+) {
+    let forward = (rotation * Vec3::Z).normalize_or_zero();
+    let arrow_direction = if forward.length_squared() > f32::EPSILON {
+        forward
+    } else {
+        Vec3::Z
+    };
+
+    let extent = size.iter().copied().fold(0.0_f32, f32::max).max(0.75);
+
+    append_oriented_box_edges(
+        vertices,
+        position,
+        size,
+        rotation,
+        style.frame_radius,
+        style.frame_color,
+    );
+
+    let arrow_base = center - arrow_direction * (extent * 0.3);
+    let arrow_shaft_end = center + arrow_direction * (extent * 0.42);
+    let arrow_tip = arrow_shaft_end + arrow_direction * 0.45;
+
+    append_cylinder_segment(
+        vertices,
+        arrow_base.to_array(),
+        arrow_shaft_end.to_array(),
+        style.shaft_radius,
+        style.arrow_color,
+    );
+    append_cone(
+        vertices,
+        arrow_shaft_end.to_array(),
+        arrow_tip.to_array(),
+        style.cone_radius,
+        style.arrow_color,
+    );
+
+    let ring_radius = extent * 0.42;
+    let ring_center = [center.x, center.y, center.z];
+    append_xz_ring(
+        vertices,
+        ring_center,
+        ring_radius,
+        style.ring_thickness,
+        style.ring_color,
+    );
 }

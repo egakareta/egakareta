@@ -267,7 +267,7 @@ mod tests {
             waveform_loading: false,
             waveform_complete: false,
             bpm_tap_result,
-            triggers,
+            triggers: triggers.to_vec(),
             trigger_selected_index: None,
             simulate_trigger_hitboxes: false,
             camera_position: [0.0, 0.0, 0.0],

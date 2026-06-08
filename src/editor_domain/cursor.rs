@@ -5,7 +5,10 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use crate::types::LevelObject;
+use crate::types::{
+    LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+    TRANSFORM_TRIGGER_BLOCK_ID,
+};
 
 pub(crate) fn create_block_at_cursor(
     cursor: [f32; 3],
@@ -13,12 +16,27 @@ pub(crate) fn create_block_at_cursor(
     default_size: [f32; 3],
     rotation_degrees: [f32; 3],
 ) -> LevelObject {
+    let trigger = (block_id == TRANSFORM_TRIGGER_BLOCK_ID).then(|| TimedTrigger {
+        time_seconds: 0.0,
+        duration_seconds: 1.0,
+        easing: TimedTriggerEasing::EaseInOut,
+        target: TimedTriggerTarget::Objects {
+            object_ids: Vec::new(),
+        },
+        action: TimedTriggerAction::TransformObjects {
+            position: cursor,
+            rotation_degrees,
+            size: default_size,
+        },
+    });
+
     LevelObject {
         position: cursor,
         size: default_size,
         rotation_degrees,
         block_id: block_id.to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        trigger,
     }
 }
 

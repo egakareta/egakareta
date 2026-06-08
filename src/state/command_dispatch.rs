@@ -163,19 +163,8 @@ impl State {
                 transition_seconds,
             } => self.set_editor_camera_orientation(rotation, pitch, transition_seconds),
             AppCommand::EditorAddCameraTrigger => self.editor_add_camera_trigger(),
-            AppCommand::EditorAddTrigger(trigger) => self.editor_add_trigger(trigger),
-            AppCommand::EditorCaptureSelectedCameraTrigger => {
-                self.editor_capture_selected_camera_trigger()
-            }
-            AppCommand::EditorApplySelectedCameraTrigger => {
-                self.editor_apply_selected_camera_trigger()
-            }
-            AppCommand::EditorRemoveTrigger(index) => self.editor_remove_trigger(index),
             AppCommand::EditorSetTriggerSelected(selected) => {
                 self.set_editor_trigger_selected(selected)
-            }
-            AppCommand::EditorUpdateTrigger(index, trigger) => {
-                self.editor_update_trigger(index, trigger)
             }
             AppCommand::EditorSetSimulateTriggerHitboxes(enabled) => {
                 self.set_editor_simulate_trigger_hitboxes(enabled)
@@ -915,13 +904,6 @@ impl State {
                     None
                 }
             }
-            "mode_trigger" => {
-                if self.is_editor() && just_pressed {
-                    Some(AppCommand::EditorSetMode(EditorMode::Trigger))
-                } else {
-                    None
-                }
-            }
             "tab_compose" => {
                 if self.is_editor() && just_pressed {
                     Some(AppCommand::EditorSetMode(EditorMode::Place))
@@ -1174,7 +1156,8 @@ mod tests {
     use crate::types::{
         camera_triggers_to_timed_triggers, AppPhase, CameraTrigger, CameraTriggerMode, EditorMode,
         KeyChord, LevelObject, MusicMetadata, SettingsSection, TimedTrigger, TimedTriggerAction,
-        TimedTriggerEasing, TimedTriggerTarget, TimingPoint,
+        TimedTriggerEasing, TimedTriggerTarget, TimingPoint, CAMERA_TRIGGER_BLOCK_ID,
+        TRANSFORM_TRIGGER_BLOCK_ID,
     };
     use glam::{Vec2, Vec3};
 
@@ -1226,9 +1209,6 @@ mod tests {
 
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Tapping));
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Tapping);
-
-            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Trigger));
-            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Trigger);
         });
     }
 
@@ -1385,6 +1365,7 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             }];
             state.editor.ui.selected_block_indices = vec![0];
             state.editor.timeline.taps.tap_times = vec![1.25];
@@ -1498,6 +1479,7 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             }];
             state.editor_playtest();
 
@@ -1548,6 +1530,7 @@ mod tests {
                     rotation_degrees: [0.0, 0.0, 0.0],
                     block_id: "core/stone".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
+                    trigger: None,
                 },
                 LevelObject {
                     position: [1.0, 0.0, 0.0],
@@ -1555,6 +1538,7 @@ mod tests {
                     rotation_degrees: [0.0, 0.0, 0.0],
                     block_id: "core/grass".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
+                    trigger: None,
                 },
             ];
             state.editor.ui.mode = EditorMode::Move;
@@ -1647,6 +1631,7 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/grass".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             }];
             state.dispatch(AppCommand::EditorSetMode(EditorMode::Move));
             state.dispatch(AppCommand::EditorSetBlockId("core/stone".to_string()));
@@ -1682,6 +1667,7 @@ mod tests {
                     rotation_degrees: [0.0, 0.0, 0.0],
                     block_id: "core/stone".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
+                    trigger: None,
                 },
                 LevelObject {
                     position: [50.0, 4.0, 70.0],
@@ -1689,6 +1675,7 @@ mod tests {
                     rotation_degrees: [0.0, 0.0, 0.0],
                     block_id: "core/grass".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
+                    trigger: None,
                 },
             ];
             state.editor.ui.selected_block_index = Some(0);
@@ -1961,7 +1948,7 @@ mod tests {
                 pressed: true,
                 just_pressed: true,
             });
-            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Trigger);
+            assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Rotate);
         });
     }
 
@@ -2139,6 +2126,7 @@ mod tests {
                     rotation_degrees: [0.0, 0.0, 0.0],
                     block_id: "core/stone".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
+                    trigger: None,
                 },
                 crate::types::LevelObject {
                     position: [2.0, 0.0, 0.0],
@@ -2146,6 +2134,7 @@ mod tests {
                     rotation_degrees: [0.0, 0.0, 0.0],
                     block_id: "core/stone".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
+                    trigger: None,
                 },
             ];
 
@@ -2192,6 +2181,7 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             }];
 
             // Ensure we are not hovering anything initially
@@ -2277,6 +2267,7 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             }];
 
             let viewport = Vec2::new(
@@ -2576,7 +2567,7 @@ mod tests {
     }
 
     #[test]
-    fn test_select_mode_click_selects_camera_trigger_marker() {
+    fn test_select_mode_click_selects_camera_trigger_block() {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
@@ -2584,7 +2575,9 @@ mod tests {
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
 
             let camera_offset = state.editor.camera_offset();
-            let target = state.editor.editor_camera_target() + (-camera_offset.normalize() * 8.0);
+            let target = state.editor.editor_camera_target()
+                + (-camera_offset.normalize() * 8.0)
+                + Vec3::Y * 4.0;
             let camera_trigger = CameraTrigger {
                 time_seconds: 1.0,
                 mode: CameraTriggerMode::Static,
@@ -2595,21 +2588,32 @@ mod tests {
                 rotation: state.editor.camera.editor_rotation,
                 pitch: state.editor.camera.editor_pitch,
             };
-            state
-                .editor
-                .set_triggers(camera_triggers_to_timed_triggers(std::slice::from_ref(
-                    &camera_trigger,
-                )));
-            state.editor.set_trigger_selected(None);
+            let trigger_index = state.editor.objects.len();
+            let trigger =
+                camera_triggers_to_timed_triggers(std::slice::from_ref(&camera_trigger)).remove(0);
 
-            let marker_eye = state.editor.camera_trigger_marker_eye(&camera_trigger);
+            state.editor.objects.push(LevelObject {
+                position: camera_trigger.target_position,
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [
+                    camera_trigger.pitch.to_degrees(),
+                    camera_trigger.rotation.to_degrees(),
+                    0.0,
+                ],
+                block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+                trigger: Some(trigger),
+            });
             let viewport = Vec2::new(
                 state.render.gpu.config.width as f32,
                 state.render.gpu.config.height as f32,
             );
             let marker_screen = state
                 .editor
-                .world_to_screen_v(marker_eye, viewport)
+                .world_to_screen_v(
+                    Vec3::from_array(camera_trigger.target_position) + Vec3::splat(0.5),
+                    viewport,
+                )
                 .expect("camera marker should project to the screen");
 
             state.process_input_event(InputEvent::PointerMoved {
@@ -2625,12 +2629,14 @@ mod tests {
                 pressed: false,
             });
 
-            assert_eq!(state.editor.selected_trigger_index(), Some(0));
+            assert_eq!(state.editor.ui.selected_block_index, Some(trigger_index));
+            assert_eq!(state.editor.ui.selected_block_indices, vec![trigger_index]);
+            assert_eq!(state.editor.selected_trigger_index(), None);
         });
     }
 
     #[test]
-    fn test_select_mode_marquee_selects_camera_trigger_marker() {
+    fn test_select_mode_marquee_selects_camera_trigger_block() {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
@@ -2638,7 +2644,9 @@ mod tests {
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
 
             let camera_offset = state.editor.camera_offset();
-            let target = state.editor.editor_camera_target() + (-camera_offset.normalize() * 8.0);
+            let target = state.editor.editor_camera_target()
+                + (-camera_offset.normalize() * 8.0)
+                + Vec3::Y * 4.0;
             let camera_trigger = CameraTrigger {
                 time_seconds: 1.0,
                 mode: CameraTriggerMode::Static,
@@ -2649,21 +2657,32 @@ mod tests {
                 rotation: state.editor.camera.editor_rotation,
                 pitch: state.editor.camera.editor_pitch,
             };
-            state
-                .editor
-                .set_triggers(camera_triggers_to_timed_triggers(std::slice::from_ref(
-                    &camera_trigger,
-                )));
-            state.editor.set_trigger_selected(None);
+            let trigger_index = state.editor.objects.len();
+            let trigger =
+                camera_triggers_to_timed_triggers(std::slice::from_ref(&camera_trigger)).remove(0);
 
-            let marker_eye = state.editor.camera_trigger_marker_eye(&camera_trigger);
+            state.editor.objects.push(LevelObject {
+                position: camera_trigger.target_position,
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [
+                    camera_trigger.pitch.to_degrees(),
+                    camera_trigger.rotation.to_degrees(),
+                    0.0,
+                ],
+                block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+                trigger: Some(trigger),
+            });
             let viewport = Vec2::new(
                 state.render.gpu.config.width as f32,
                 state.render.gpu.config.height as f32,
             );
             let marker_screen = state
                 .editor
-                .world_to_screen_v(marker_eye, viewport)
+                .world_to_screen_v(
+                    Vec3::from_array(camera_trigger.target_position) + Vec3::splat(0.5),
+                    viewport,
+                )
                 .expect("camera marker should project to the screen");
 
             let start_x = marker_screen.x as f64 - 24.0;
@@ -2685,31 +2704,40 @@ mod tests {
                 pressed: false,
             });
 
-            assert_eq!(state.editor.selected_trigger_index(), Some(0));
+            assert_eq!(state.editor.ui.selected_block_index, Some(trigger_index));
+            assert_eq!(state.editor.ui.selected_block_indices, vec![trigger_index]);
+            assert_eq!(state.editor.selected_trigger_index(), None);
         });
     }
 
     #[test]
-    fn test_select_mode_click_selects_transform_trigger_target() {
+    fn test_select_mode_click_selects_transform_trigger_block() {
         pollster::block_on(async {
             use crate::commands::InputEvent;
 
             let mut state = new_editor_state().await;
             state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
-            state.editor.set_triggers(vec![TimedTrigger {
-                time_seconds: 1.0,
-                duration_seconds: 1.0,
-                easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Objects {
-                    object_ids: vec![0],
-                },
-                action: TimedTriggerAction::TransformObjects {
-                    position: [2.0, 0.0, 0.0],
-                    rotation_degrees: [0.0, 0.0, 0.0],
-                    size: [1.0, 1.0, 1.0],
-                },
-            }]);
-            state.editor.set_trigger_selected(None);
+            let trigger_index = state.editor.objects.len();
+            state.editor.objects.push(LevelObject {
+                position: [2.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+                trigger: Some(TimedTrigger {
+                    time_seconds: 1.0,
+                    duration_seconds: 1.0,
+                    easing: TimedTriggerEasing::Linear,
+                    target: TimedTriggerTarget::Objects {
+                        object_ids: vec![0],
+                    },
+                    action: TimedTriggerAction::TransformObjects {
+                        position: [2.0, 0.0, 0.0],
+                        rotation_degrees: [0.0, 0.0, 0.0],
+                        size: [1.0, 1.0, 1.0],
+                    },
+                }),
+            });
 
             let viewport = Vec2::new(
                 state.render.gpu.config.width as f32,
@@ -2734,53 +2762,9 @@ mod tests {
                 pressed: false,
             });
 
-            assert_eq!(state.editor.selected_trigger_index(), Some(0));
-            assert!(state.editor.ui.selected_block_index.is_none());
-            assert!(state.editor.ui.selected_block_indices.is_empty());
-        });
-    }
-
-    #[test]
-    fn test_trigger_mode_click_does_not_select_blocks() {
-        pollster::block_on(async {
-            use crate::commands::InputEvent;
-
-            let mut state = new_editor_state().await;
-            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Trigger));
-
-            state.editor.objects.push(crate::types::LevelObject {
-                position: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
-                block_id: "core/stone".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-            });
-
-            let viewport = Vec2::new(
-                state.render.gpu.config.width as f32,
-                state.render.gpu.config.height as f32,
-            );
-            let block_center = glam::Vec3::new(0.5, 0.5, 0.5);
-            let block_screen = state
-                .editor
-                .world_to_screen_v(block_center, viewport)
-                .expect("block center should project to the screen");
-
-            state.process_input_event(InputEvent::PointerMoved {
-                x: block_screen.x as f64,
-                y: block_screen.y as f64,
-            });
-            state.process_input_event(InputEvent::MouseButton {
-                button: 0,
-                pressed: true,
-            });
-            state.process_input_event(InputEvent::MouseButton {
-                button: 0,
-                pressed: false,
-            });
-
-            assert!(state.editor.ui.selected_block_index.is_none());
-            assert!(state.editor.ui.selected_block_indices.is_empty());
+            assert_eq!(state.editor.ui.selected_block_index, Some(trigger_index));
+            assert_eq!(state.editor.ui.selected_block_indices, vec![trigger_index]);
+            assert_eq!(state.editor.selected_trigger_index(), None);
         });
     }
 
@@ -2971,6 +2955,7 @@ mod tests {
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
             }];
             state.editor.ui.selected_block_index = Some(0);
             assert!(state.has_block_selection());
@@ -3223,10 +3208,7 @@ mod tests {
                 state.command_for_keybind_action("mode_rotate", true),
                 Some(AppCommand::EditorSetMode(EditorMode::Rotate))
             );
-            assert_eq!(
-                state.command_for_keybind_action("mode_trigger", true),
-                Some(AppCommand::EditorSetMode(EditorMode::Trigger))
-            );
+            assert_eq!(state.command_for_keybind_action("mode_trigger", true), None);
             assert_eq!(
                 state.command_for_keybind_action("tab_compose", true),
                 Some(AppCommand::EditorSetMode(EditorMode::Place))
@@ -3299,6 +3281,7 @@ mod tests {
                 rotation_degrees: [5.0, 10.0, 15.0],
                 block_id: "core/lava".to_string(),
                 color_tint: [0.2, 0.4, 0.8],
+                trigger: None,
             };
             state.dispatch(AppCommand::EditorUpdateSelectedBlock(updated.clone()));
             assert_eq!(state.editor.objects[0].position, updated.position);
@@ -3422,36 +3405,6 @@ mod tests {
             });
             assert_eq!(state.render.gpu.config.width, 1024);
             assert_eq!(state.render.gpu.config.height, 576);
-
-            let trigger = TimedTrigger {
-                time_seconds: 0.5,
-                duration_seconds: 0.0,
-                easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Objects {
-                    object_ids: vec![0],
-                },
-                action: TimedTriggerAction::TransformObjects {
-                    position: [1.0, 0.0, 0.0],
-                    rotation_degrees: [0.0, 0.0, 0.0],
-                    size: [1.0, 1.0, 1.0],
-                },
-            };
-            state.dispatch(AppCommand::EditorAddTrigger(trigger.clone()));
-            assert_eq!(state.editor_triggers().len(), 1);
-
-            state.dispatch(AppCommand::EditorUpdateTrigger(
-                0,
-                TimedTrigger {
-                    time_seconds: 0.75,
-                    ..trigger
-                },
-            ));
-            assert_eq!(state.editor_triggers()[0].time_seconds, 0.75);
-
-            state.dispatch(AppCommand::EditorSetTriggerSelected(Some(0)));
-            assert_eq!(state.editor_selected_trigger_index(), Some(0));
-            state.dispatch(AppCommand::EditorRemoveTrigger(0));
-            assert!(state.editor_triggers().is_empty());
 
             state.dispatch(AppCommand::EditorSetSimulateTriggerHitboxes(true));
             assert!(state.editor_simulate_trigger_hitboxes());

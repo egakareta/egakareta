@@ -59,17 +59,15 @@ impl EditorSubsystem {
         let mut hit_tap_index: Option<usize> = None;
         let mut hit_tap_division: Option<EditorTapDivisionPick> = None;
         let mut cursor_override: Option<[f32; 3]> = None;
+        let ground_t = if ray_dir.y.abs() > f32::EPSILON {
+            let t = -ray_origin.y / ray_dir.y;
+            (t >= 0.0).then_some(t)
+        } else {
+            None
+        };
 
         {
             puffin::profile_scope!("PickRaycast");
-
-            if ray_dir.y.abs() > f32::EPSILON {
-                let t = -ray_origin.y / ray_dir.y;
-                if t >= 0.0 {
-                    min_t = t;
-                    hit_found = true;
-                }
-            }
 
             if self.ui.mode == EditorMode::Tapping {
                 if let Some((tap_index, tap_t, tap_position)) =
@@ -131,10 +129,9 @@ impl EditorSubsystem {
                 if let Some((t, _normal)) =
                     self.ray_intersect_rotated_block(ray_origin, ray_dir, &target)
                 {
-                    if t <= min_t + 0.02 {
+                    if t < min_t {
                         min_t = t;
                         hit_found = true;
-                        hit_block_index = None;
                         hit_trigger_index = Some(trigger_index);
                         hit_tap_index = None;
                         hit_tap_division = None;
@@ -175,6 +172,14 @@ impl EditorSubsystem {
                         cursor_override = None;
                     }
                 }
+            }
+        }
+
+        if !hit_found {
+            if let Some(t) = ground_t {
+                min_t = t;
+                hit_found = true;
+                best_hit_normal = Vec3::Y;
             }
         }
 
@@ -593,6 +598,7 @@ fn transform_trigger_target_object(action: &TimedTriggerAction) -> Option<LevelO
         rotation_degrees: *rotation_degrees,
         block_id: crate::block_repository::DEFAULT_BLOCK_ID.to_string(),
         color_tint: [1.0, 1.0, 1.0],
+        trigger: None,
     })
 }
 
@@ -610,6 +616,7 @@ mod tests {
             rotation_degrees,
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
         }
     }
 
