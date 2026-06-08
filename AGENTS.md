@@ -45,12 +45,14 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 
 ## 3. Code Architecture & Layout
 
-- `src/commands.rs`: `AppCommand` is the central action dispatch pattern. Every user intent (keyboard shortcut, UI button, mouse click) becomes an `AppCommand` variant, routed through `State::dispatch()`. This decouples input from execution and enables replay/macro/test harness support.
+- `src/commands.rs`: `AppCommand` is the central action dispatch pattern. Every user intent (keyboard shortcut, UI button, mouse click) becomes an `AppCommand` variant, routed through `State::dispatch()`. This decouples input from execution and enables replay/macro/test harness support. **New editor commands** should use `AppCommand::Editor(EditorCommand)` with the sub-enum in `src/state/editor_command.rs` — this keeps editor features self-contained within `src/state/`.
 - `src/level_codec.rs`: Binary level format (`EGB1` magic, versioned). Handles encoding/decoding `LevelMetadata` ↔ compressed binary (Zstd, CBOR). Supports `ObjectRun` run-length encoding for compact object streams.
 - `src/import_export_service.rs`: Public API for level import/export: JSON ↔ binary conversion, `.egz` archive handling, format normalization.
 - `src/game/`: Core Engine (headless, no I/O). Must remain completely decoupled from rendering and I/O. It only operates on `GameState` and `LevelObject` data. This allows headless simulation in tests and the editor preview.
 - `src/platform/`: Platform Abstraction Layer
 - `src/state/`: Application State & Editor Logic
+- `src/state/editor_command.rs`: `EditorCommand` sub-enum for all editor-specific commands. New editor features should add variants here, not in `AppCommand`.
+- `src/state/command_dispatch.rs`: `State::dispatch()` routes `AppCommand`; `State::dispatch_editor()` routes `EditorCommand`.
 - `src/editor_domain/`: Editor Domain Logic
 - `src/editor_ui/`: Egui UI Components
 - `src/mesh/`: Mesh Generation
@@ -97,7 +99,7 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 ### Type Definitions & Math
 
 - Use `glam` for all linear algebra and math structures (e.g., `Vec3`, `Mat4`). Ensure types derive `bytemuck::Pod, bytemuck::Zeroable` when pushed to WebGPU buffers.
-- For serialization, heavily utilize `serde`. Define defaults and skipping logic cleanly as standalone functions (refer to `src/types.rs` for examples like `fn default_spawn_position() -> [f32; 3]`).
+- For serialization, heavily utilize `serde`. Use the `serde_default!` macro family in `src/types.rs` to define defaults (see "Adding a New Serde Field" below).
 - Use arrays like `[f32; 3]` for positions/colors when serializing to JSON, rather than glam types directly.
 
 ## 5. Testing Style & Conventions
@@ -118,6 +120,22 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 
 - State construction is `async` (e.g., `State::new_test().await`). Use `pollster::block_on(...)` to run async tests synchronously.
 - Editor tests use `enter_editor_phase("name")` with minimal test data when built-in level metadata is not needed. Avoid `start_editor(0)` (which loads full built-in data) unless specifically testing built-in levels — it makes tests multi-second.
+
+### Test Fixtures & Helpers
+
+- Use `crate::test_utils::stone(x, y, z)` to create a stone `LevelObject` at position (x, y, z).
+- Use `crate::test_utils::block(id, x, y, z)` for blocks with custom IDs.
+- Use `crate::test_utils::gem(x, y, z)` for gem blocks.
+- Use `crate::test_utils::sized(id, x, y, z, sx, sy, sz)` for blocks with custom size.
+- Use `crate::test_utils::rotated(id, x, y, z, rx, ry, rz)` for blocks with custom rotation.
+- Use the `editor_test!` macro from `crate::test_utils` to eliminate `pollster::block_on` + `State::new_test()` + `AppPhase::Editor` boilerplate.
+
+### Adding a New Serde Field
+
+- Use the `serde_default!` family of macros in `src/types.rs` instead of writing separate `default_*` and `is_default_*` functions:
+    - `serde_default!(default_foo: u32 = 42)` — for integers, booleans, enums, strings
+    - `serde_default_float!(default_bar: f32 = 1.0)` — for float epsilon comparison
+    - `serde_default_array!(default_pos: [f32; 3] = [0.0, 0.0, 0.0])` — for float arrays
 
 ### Test Data
 

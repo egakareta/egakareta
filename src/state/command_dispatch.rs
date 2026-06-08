@@ -8,11 +8,9 @@
 use super::runtime::EditorDirtyFlags;
 use super::State;
 use crate::commands::AppCommand;
-use crate::editor_domain::{timing_division_time_in_direction, TimingDivisionDirection};
+use crate::editor_domain::TimingDivisionDirection;
+use crate::state::editor_command::EditorCommand;
 use crate::types::{normalize_binding_key, AppPhase, EditorMode, KeyChord};
-use glam::{Vec2, Vec3};
-
-const FALLBACK_TIMELINE_SHIFT_SECONDS: f32 = 0.1;
 
 impl State {
     /// Central dispatcher: every `AppCommand` is routed here.
@@ -266,6 +264,281 @@ impl State {
 
             // ── Editor – escape context ─────────────────────────────
             AppCommand::EditorEscape => self.handle_editor_escape(),
+
+            // ── EditorCommand sub-enum ─────────────────────────────
+            AppCommand::Editor(cmd) => self.dispatch_editor(cmd),
+        }
+    }
+
+    /// Route `EditorCommand` variants to their handler methods.
+    ///
+    /// This is the **new** dispatch path for editor commands.
+    /// Prefer adding new editor commands to `EditorCommand` instead of
+    /// `AppCommand` — it keeps editor features self-contained within
+    /// the `state/` module.
+    pub(crate) fn dispatch_editor(&mut self, cmd: EditorCommand) {
+        match cmd {
+            // ── Mode switching ──────────────────────────────────────
+            EditorCommand::SetMode(mode) => {
+                self.dispatch(AppCommand::EditorSetMode(mode));
+            }
+            EditorCommand::SetBlockId(id) => {
+                self.dispatch(AppCommand::EditorSetBlockId(id));
+            }
+            EditorCommand::SelectRecentBlock(index) => {
+                self.dispatch(AppCommand::EditorSelectRecentBlock(index));
+            }
+            EditorCommand::PickSelectedBlock => {
+                self.dispatch(AppCommand::EditorPickSelectedBlock);
+            }
+            EditorCommand::PickBlockAt { x, y } => {
+                self.dispatch(AppCommand::EditorPickBlockAt { x, y });
+            }
+
+            // ── Snap ────────────────────────────────────────────────
+            EditorCommand::SetSnapToGrid(snap) => {
+                self.dispatch(AppCommand::EditorSetSnapToGrid(snap));
+            }
+            EditorCommand::SetSnapStep(step) => {
+                self.dispatch(AppCommand::EditorSetSnapStep(step));
+            }
+            EditorCommand::SetSnapRotation(snap) => {
+                self.dispatch(AppCommand::EditorSetSnapRotation(snap));
+            }
+            EditorCommand::SetSnapRotationStep(step) => {
+                self.dispatch(AppCommand::EditorSetSnapRotationStep(step));
+            }
+
+            // ── Block ops ───────────────────────────────────────────
+            EditorCommand::RemoveBlock => {
+                self.editor_remove_block();
+            }
+            EditorCommand::DuplicateBlock => {
+                self.editor_duplicate_selected_block_in_place();
+            }
+            EditorCommand::CopyBlock => {
+                self.editor_copy_block();
+            }
+            EditorCommand::PasteBlock => {
+                self.editor_paste_block();
+            }
+            EditorCommand::UpdateSelectedBlock(obj) => {
+                self.dispatch(AppCommand::EditorUpdateSelectedBlock(obj));
+            }
+
+            // ── Selection / Transform ───────────────────────────────
+            EditorCommand::NudgeSelected { dx, dy } => {
+                self.editor_nudge_selected_blocks(dx, dy);
+            }
+            EditorCommand::SnapSelectionToGrid => {
+                self.editor_snap_selection_to_grid();
+            }
+            EditorCommand::FocusCameraTarget => {
+                self.editor_focus_camera_target();
+            }
+            EditorCommand::BeginTransformTriggerCapture => {
+                self.begin_editor_transform_trigger_capture();
+            }
+            EditorCommand::CommitTransformTriggerCapture => {
+                self.commit_editor_transform_trigger_capture();
+            }
+            EditorCommand::CancelTransformTriggerCapture => {
+                self.cancel_editor_transform_trigger_capture();
+            }
+
+            // ── Timeline / Playback ─────────────────────────────────
+            EditorCommand::ToggleTimelinePlayback => {
+                self.toggle_editor_timeline_playback();
+            }
+            EditorCommand::ShiftTimeline(delta) => {
+                self.editor_shift_timeline_time(delta);
+            }
+            EditorCommand::SetTimelineTime(time) => {
+                self.set_editor_timeline_time_seconds(time);
+            }
+            EditorCommand::SetTimelineDuration(duration) => {
+                self.set_editor_timeline_duration_seconds(duration);
+            }
+            EditorCommand::AddTap => {
+                self.editor_add_tap();
+            }
+            EditorCommand::RemoveTap => {
+                self.editor_remove_tap();
+            }
+            EditorCommand::RemoveTapAt(time) => {
+                self.editor_remove_tap_at(time);
+            }
+            EditorCommand::SetSelectedTap(index) => {
+                self.editor_set_selected_tap_index(index);
+            }
+            EditorCommand::SetSelectedTapTime(time) => {
+                self.editor_set_selected_tap_time(time);
+            }
+            EditorCommand::ClearTaps => {
+                self.editor_clear_taps();
+            }
+            EditorCommand::SetPlaybackSpeed(speed) => {
+                self.set_editor_playback_speed(speed);
+            }
+            EditorCommand::SetWaveformZoom(zoom) => {
+                self.set_editor_waveform_zoom(zoom);
+            }
+            EditorCommand::SetWaveformScroll(scroll) => {
+                self.set_editor_waveform_scroll(scroll);
+            }
+            EditorCommand::Playtest => {
+                self.editor_playtest();
+            }
+
+            // ── Timing Points ───────────────────────────────────────
+            EditorCommand::AddTimingPoint { time_seconds, bpm } => {
+                self.editor_add_timing_point(time_seconds, bpm);
+            }
+            EditorCommand::RemoveTimingPoint(idx) => {
+                self.editor_remove_timing_point(idx);
+            }
+            EditorCommand::SetTimingPointTime(idx, time) => {
+                self.editor_update_timing_point_time(idx, time);
+            }
+            EditorCommand::SetTimingPointBpm(idx, bpm) => {
+                self.editor_update_timing_point_bpm(idx, bpm);
+            }
+            EditorCommand::SetTimingPointTimeSignature(idx, num, den) => {
+                self.editor_update_timing_point_time_signature(idx, num, den);
+            }
+            EditorCommand::SetTimingSelected(selected) => {
+                self.set_editor_timing_selected_index(selected);
+            }
+
+            // ── BPM Tapping ─────────────────────────────────────────
+            EditorCommand::BpmTap => {
+                self.editor_bpm_tap();
+            }
+            EditorCommand::BpmTapReset => {
+                self.editor_bpm_tap_reset();
+            }
+
+            // ── Spawn ───────────────────────────────────────────────
+            EditorCommand::SetSpawnHere => {
+                self.force_editor_cursor_from_pointer();
+                self.editor_set_spawn_here();
+            }
+            EditorCommand::RotateSpawnDirection => {
+                self.editor_rotate_spawn_direction();
+            }
+            EditorCommand::RotatePlacementPreview => {
+                self.editor_rotate_placement_preview();
+            }
+
+            // ── History ─────────────────────────────────────────────
+            EditorCommand::Undo => self.editor_undo(),
+            EditorCommand::Redo => self.editor_redo(),
+
+            // ── Zoom / Camera ───────────────────────────────────────
+            EditorCommand::AdjustZoom(delta) => self.adjust_editor_zoom(delta),
+            EditorCommand::SetCameraOrientation {
+                rotation,
+                pitch,
+                transition_seconds,
+            } => self.set_editor_camera_orientation(rotation, pitch, transition_seconds),
+            EditorCommand::AddCameraTrigger => self.editor_add_camera_trigger(),
+            EditorCommand::SetTriggerSelected(selected) => {
+                self.set_editor_trigger_selected(selected);
+            }
+            EditorCommand::SetSimulateTriggerHitboxes(enabled) => {
+                self.set_editor_simulate_trigger_hitboxes(enabled);
+            }
+
+            // ── Misc ────────────────────────────────────────────────
+            EditorCommand::ToggleHitboxVisualization => {
+                self.toggle_editor_hitbox_visualization();
+            }
+            EditorCommand::TogglePerfOverlay => self.toggle_perf_overlay(),
+            EditorCommand::ExportBlockObj => self.trigger_selected_block_obj_export(),
+
+            // ── UI / Session ────────────────────────────────────────
+            EditorCommand::LoadLevel(name) => self.load_builtin_level_into_editor(&name),
+            EditorCommand::RenameLevel(name) => self.set_editor_level_name(name),
+            EditorCommand::ExportLevel => self.trigger_level_export(),
+            EditorCommand::SetShowMetadata(show) => self.set_editor_show_metadata(show),
+            EditorCommand::ToggleSettings => {
+                self.set_editor_show_settings(!self.editor_show_settings());
+            }
+            EditorCommand::SetShowSettings(show) => self.set_editor_show_settings(show),
+            EditorCommand::SetSettingsSection(section) => {
+                self.set_editor_settings_section(section);
+            }
+            EditorCommand::SetGraphicsBackend(backend) => {
+                self.set_preferred_graphics_backend(backend);
+            }
+            EditorCommand::SetAudioBackend(backend) => {
+                self.set_preferred_audio_backend(backend);
+            }
+            EditorCommand::SetUiScaleMultiplier(multiplier) => {
+                self.set_ui_scale_multiplier(multiplier);
+            }
+            EditorCommand::SetKeybindCapture(action) => {
+                self.set_editor_keybind_capture_action(action);
+            }
+            EditorCommand::SetKeybind {
+                action,
+                slot,
+                chord,
+            } => {
+                self.set_keybind_for_action(action, slot, chord);
+            }
+            EditorCommand::ClearKeybindSlot { action, slot } => {
+                self.clear_keybind_slot_for_action(&action, slot);
+            }
+            EditorCommand::ResetKeybind(action) => self.reset_keybind_for_action(&action),
+            EditorCommand::ResetKeybinds => self.reset_essential_keybinds(),
+            EditorCommand::CompleteImport => self.complete_import(),
+            EditorCommand::UpdateMusic(metadata) => self.set_editor_music_metadata(metadata),
+            EditorCommand::UpdateCreatorMetadata(metadata) => {
+                self.set_editor_creator_metadata(metadata);
+            }
+            EditorCommand::UpdateSkyColor(color) => self.set_editor_sky_color(color),
+            EditorCommand::TriggerAudioImport => self.trigger_audio_import(),
+            EditorCommand::CaptureMenuPreviewCamera => {
+                self.editor_capture_menu_preview_camera();
+            }
+            EditorCommand::UseAutoMenuPreviewCamera => {
+                self.editor_use_auto_menu_preview_camera();
+            }
+
+            // ── Keyboard State Routing ──────────────────────────────
+            EditorCommand::SetShiftHeld(held) => self.set_editor_shift_held(held),
+            EditorCommand::SetCtrlHeld(held) => self.set_editor_ctrl_held(held),
+            EditorCommand::SetAltHeld(held) => self.set_editor_alt_held(held),
+            EditorCommand::SetPanUpHeld(held) => self.set_editor_pan_up_held(held),
+            EditorCommand::SetPanDownHeld(held) => self.set_editor_pan_down_held(held),
+            EditorCommand::SetPanLeftHeld(held) => self.set_editor_pan_left_held(held),
+            EditorCommand::SetPanRightHeld(held) => self.set_editor_pan_right_held(held),
+
+            // ── Pointer / Input Routing ─────────────────────────────
+            EditorCommand::MouseButton { button, pressed } => {
+                self.dispatch(AppCommand::EditorMouseButton { button, pressed });
+            }
+            EditorCommand::PrimaryClick { x, y } => {
+                self.dispatch(AppCommand::EditorPrimaryClick { x, y });
+            }
+            EditorCommand::PointerMoved { x, y } => {
+                self.dispatch(AppCommand::EditorPointerMoved { x, y });
+            }
+            EditorCommand::UpdateCursorFromScreen { x, y } => {
+                self.force_editor_cursor_from_screen(x, y);
+            }
+            EditorCommand::CameraDrag { dx, dy } => {
+                self.drag_editor_camera_by_pixels(dx, dy);
+            }
+
+            // ── Place Window ────────────────────────────────────────
+            EditorCommand::TogglePlaceWindow => {
+                self.set_editor_show_place_window(!self.editor_show_place_window());
+            }
+
+            // ── Escape Context ──────────────────────────────────────
+            EditorCommand::Escape => self.handle_editor_escape(),
         }
     }
 
@@ -936,155 +1209,6 @@ impl State {
         )
     }
 
-    fn select_recent_block(&mut self, index: usize) {
-        let block_ids: Vec<String> = self
-            .editor
-            .config
-            .recent_block_ids
-            .iter()
-            .filter_map(|id| {
-                let block = crate::block_repository::resolve_block_definition(id);
-                if block.placeable {
-                    Some(id.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-        if let Some(id) = block_ids.get(index) {
-            self.set_editor_block_id(id.clone());
-            if self.editor.timeline.playback.playing {
-                self.set_editor_playback_effective_mode(EditorMode::Place);
-            } else {
-                self.set_editor_mode(EditorMode::Place);
-            }
-        }
-    }
-
-    fn timeline_shift_to_division_command(
-        &self,
-        direction: TimingDivisionDirection,
-    ) -> Option<AppCommand> {
-        let current_time = self.editor.timeline.clock.time_seconds;
-        if let Some(target_time) = timing_division_time_in_direction(
-            current_time,
-            &self.editor.timing.timing_points,
-            self.editor.timeline.clock.duration_seconds,
-            direction,
-        ) {
-            return Some(AppCommand::EditorShiftTimeline(target_time - current_time));
-        }
-
-        let fallback_delta = match direction {
-            TimingDivisionDirection::Forward => FALLBACK_TIMELINE_SHIFT_SECONDS,
-            TimingDivisionDirection::Backward => -FALLBACK_TIMELINE_SHIFT_SECONDS,
-        };
-        Some(AppCommand::EditorShiftTimeline(fallback_delta))
-    }
-
-    fn editor_pick_selected_block_for_place(&mut self) -> bool {
-        if !self.is_editor() {
-            return false;
-        }
-
-        let selected_indices = self.editor.selected_indices_normalized();
-        let block_index = self
-            .editor
-            .ui
-            .selected_block_index
-            .filter(|index| selected_indices.contains(index))
-            .or_else(|| selected_indices.first().copied());
-
-        let Some(block_id) = block_index
-            .and_then(|index| self.editor.objects.get(index))
-            .map(|object| object.block_id.clone())
-        else {
-            return false;
-        };
-
-        if self.editor.timeline.playback.playing {
-            self.set_editor_playback_effective_mode(EditorMode::Place);
-        } else {
-            self.set_editor_mode(EditorMode::Place);
-        }
-        self.set_editor_block_id(block_id);
-        true
-    }
-
-    pub(crate) fn editor_pick_block_at_screen(&mut self, x: f64, y: f64) -> bool {
-        if !self.is_editor() || self.editor_pointer_over_ui_input(x, y) {
-            return false;
-        }
-
-        let viewport_size = Vec2::new(
-            self.render.gpu.config.width as f32,
-            self.render.gpu.config.height as f32,
-        );
-        let Some(block_id) = self
-            .editor
-            .pick_from_screen(x, y, viewport_size)
-            .and_then(|pick| pick.hit_block_index)
-            .and_then(|index| self.editor.objects.get(index))
-            .map(|object| object.block_id.clone())
-        else {
-            return false;
-        };
-
-        if self.editor.timeline.playback.playing {
-            self.set_editor_playback_effective_mode(EditorMode::Place);
-        } else {
-            self.set_editor_mode(EditorMode::Place);
-        }
-        self.set_editor_block_id(block_id);
-        true
-    }
-
-    fn editor_focus_camera_target(&mut self) -> bool {
-        if !self.is_editor() {
-            return false;
-        }
-
-        if self.editor_effective_mode_for_playback() == EditorMode::Tapping {
-            if let Some((_, _, position)) = self.editor.selected_tap() {
-                self.set_editor_camera_focus(tap_focus_point(position), None);
-                return true;
-            }
-        }
-
-        if let Some((min, size)) = self.editor.selected_group_bounds() {
-            self.set_editor_camera_focus(block_bounds_center(min, size), None);
-            return true;
-        }
-
-        if let Some((_, _, position)) = self.editor.selected_tap() {
-            self.set_editor_camera_focus(tap_focus_point(position), None);
-            return true;
-        }
-
-        let (eye, target) = self.editor_preview_camera_view();
-        let orientation = camera_orientation_from_eye_target(eye, target);
-        self.set_editor_camera_focus(target, orientation);
-        true
-    }
-
-    fn set_editor_camera_focus(&mut self, target: [f32; 3], orientation: Option<(f32, f32)>) {
-        self.editor.camera.transition = None;
-        self.editor.camera.editor_pan = [target[0], target[2]];
-        self.editor.camera.editor_target_z = target[1];
-        if let Some((rotation, pitch)) = orientation {
-            self.editor.camera.editor_rotation = rotation;
-            self.editor.camera.editor_pitch =
-                pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
-        }
-        self.editor.mark_dirty(EditorDirtyFlags {
-            rebuild_selection_overlays: true,
-            rebuild_cursor: true,
-            rebuild_tap_indicators: true,
-            rebuild_preview_player: true,
-            ..EditorDirtyFlags::default()
-        });
-    }
-
     /// Process a unified `InputEvent`.
     pub fn process_input_event(&mut self, event: crate::commands::InputEvent) {
         use crate::commands::InputEvent;
@@ -1116,37 +1240,6 @@ impl State {
             }
         }
     }
-
-    // ── helpers for command mapping ──────────────────────────────────
-
-    /// Whether any blocks are currently selected in the editor.
-    fn has_block_selection(&self) -> bool {
-        !self.editor.selected_indices_normalized().is_empty()
-    }
-}
-
-fn block_bounds_center(position: [f32; 3], size: [f32; 3]) -> [f32; 3] {
-    [
-        position[0] + size[0] * 0.5,
-        position[1] + size[1] * 0.5,
-        position[2] + size[2] * 0.5,
-    ]
-}
-
-fn tap_focus_point(position: [f32; 3]) -> [f32; 3] {
-    [position[0] + 0.5, position[1], position[2] + 0.5]
-}
-
-fn camera_orientation_from_eye_target(eye: [f32; 3], target: [f32; 3]) -> Option<(f32, f32)> {
-    let offset = Vec3::from_array(eye) - Vec3::from_array(target);
-    let horizontal = Vec3::new(offset.x, 0.0, offset.z).length();
-    if horizontal <= f32::EPSILON && offset.y.abs() <= f32::EPSILON {
-        return None;
-    }
-
-    let rotation = (-offset.x).atan2(-offset.z);
-    let pitch = offset.y.atan2(horizontal);
-    Some((rotation, pitch))
 }
 
 #[cfg(test)]
@@ -1188,26 +1281,41 @@ mod tests {
     fn test_command_routing_editor_modes() {
         pollster::block_on(async {
             let mut state = new_editor_state().await;
+            use crate::state::editor_command::EditorCommand;
 
-            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Select));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                crate::types::EditorMode::Select,
+            )));
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Select);
 
-            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Move));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                crate::types::EditorMode::Move,
+            )));
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Move);
 
-            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Scale));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                crate::types::EditorMode::Scale,
+            )));
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Scale);
 
-            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Rotate));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                crate::types::EditorMode::Rotate,
+            )));
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Rotate);
 
-            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Timing));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                crate::types::EditorMode::Timing,
+            )));
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Timing);
 
-            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Place));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                crate::types::EditorMode::Place,
+            )));
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Place);
 
-            state.dispatch(AppCommand::EditorSetMode(crate::types::EditorMode::Tapping));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                crate::types::EditorMode::Tapping,
+            )));
             assert_eq!(state.editor.ui.mode, crate::types::EditorMode::Tapping);
         });
     }

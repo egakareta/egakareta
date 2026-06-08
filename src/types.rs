@@ -15,6 +15,64 @@ use crate::block_repository::{normalize_block_id, DEFAULT_BLOCK_ID};
 pub(crate) const CAMERA_TRIGGER_BLOCK_ID: &str = "core/camera_trigger";
 pub(crate) const TRANSFORM_TRIGGER_BLOCK_ID: &str = "core/transform_trigger";
 
+// ── Serde default helpers ───────────────────────────────────────────────
+// Reduces the boilerplate of writing `fn default_X() -> T` +
+// `fn is_default_X(v: &T) -> bool` pairs for every serde field.
+//
+// Usage in serde structs:
+//   #[serde(default = "default_X", skip_serializing_if = "is_default_X")]
+
+macro_rules! serde_default {
+    // For types that support `==` (integers, booleans, enums, strings).
+    ($default_name:ident : $ty:ty = $value:expr) => {
+        #[allow(dead_code)]
+        fn $default_name() -> $ty {
+            $value
+        }
+        paste::paste! {
+            #[allow(dead_code)]
+            fn [<is_ $default_name>](value: &$ty) -> bool {
+                *value == $value
+            }
+        }
+    };
+}
+
+macro_rules! serde_default_float {
+    // For f32/f64 where float epsilon comparison is needed.
+    ($default_name:ident : $ty:ty = $value:expr) => {
+        #[allow(dead_code)]
+        fn $default_name() -> $ty {
+            $value
+        }
+        paste::paste! {
+            #[allow(dead_code)]
+            fn [<is_ $default_name>](value: &$ty) -> bool {
+                (*value - $value).abs() <= 1e-6
+            }
+        }
+    };
+}
+
+macro_rules! serde_default_array {
+    // For [f32; N] arrays where element-wise epsilon comparison is needed.
+    ($default_name:ident : [$ty:ty; $n:literal] = $value:expr) => {
+        #[allow(dead_code)]
+        fn $default_name() -> [$ty; $n] {
+            $value
+        }
+        paste::paste! {
+            #[allow(dead_code)]
+            fn [<is_ $default_name>](value: &[$ty; $n]) -> bool {
+                value
+                    .iter()
+                    .zip($value.iter())
+                    .all(|(a, b)| (*a - *b).abs() <= 1e-6)
+            }
+        }
+    };
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EditorInteractionChange {
     None,
@@ -130,222 +188,35 @@ pub(crate) const APP_SETTINGS_VERSION: u32 = 3;
 pub(crate) const DEFAULT_MENU_PREVIEW_CAMERA_POSITION: [f32; 3] = [22.657694, 15.0, -10.565456];
 pub(crate) const DEFAULT_MENU_PREVIEW_CAMERA_TARGET: [f32; 3] = [0.0, 0.0, 0.0];
 
-fn default_level_format_version() -> u32 {
-    CURRENT_LEVEL_FORMAT_VERSION
-}
+serde_default!(default_level_format_version: u32 = CURRENT_LEVEL_FORMAT_VERSION);
+serde_default!(default_music_source: String = "music.mp3".to_string());
+serde_default_array!(default_spawn_position: [f32; 3] = [0.0, 0.0, 0.0]);
+serde_default_array!(default_preview_camera_position_zero: [f32; 3] = [0.0, 0.0, 0.0]);
+serde_default_array!(default_preview_camera_target_zero: [f32; 3] = [0.0, 0.0, 0.0]);
 
-fn is_default_level_format_version(value: &u32) -> bool {
-    *value == CURRENT_LEVEL_FORMAT_VERSION
-}
+serde_default_float!(default_timeline_time_seconds: f32 = 0.0);
+serde_default_float!(default_timeline_duration_seconds: f32 = 16.0);
+serde_default_array!(default_camera_trigger_target_position: [f32; 3] = [0.0, 0.0, 0.0]);
+serde_default_float!(default_camera_trigger_rotation: f32 = -45.0f32.to_radians());
+serde_default_float!(default_camera_trigger_pitch: f32 = 45.0f32.to_radians());
+serde_default_float!(default_camera_trigger_transition_interval_seconds: f32 = 1.0);
+serde_default!(default_camera_trigger_use_full_segment_transition: bool = false);
+serde_default_float!(default_timed_trigger_duration_seconds: f32 = 0.0);
+serde_default!(default_simulate_trigger_hitboxes: bool = false);
 
-fn default_music_source() -> String {
-    "music.mp3".to_string()
-}
+serde_default!(default_timed_trigger_target: TimedTriggerTarget = TimedTriggerTarget::Camera);
+serde_default_array!(default_block_rotation_degrees: [f32; 3] = [0.0, 0.0, 0.0]);
+serde_default_array!(default_level_object_position: [f32; 3] = [0.0, 0.0, 0.0]);
+serde_default_array!(default_level_object_size: [f32; 3] = [1.0, 1.0, 1.0]);
+serde_default!(default_level_object_block_id: String = DEFAULT_BLOCK_ID.to_string());
+serde_default_array!(default_level_object_color_tint: [f32; 3] = [1.0, 1.0, 1.0]);
 
-fn is_default_music_source(value: &String) -> bool {
-    value == "music.mp3"
-}
-
-fn default_spawn_position() -> [f32; 3] {
-    [0.0, 0.0, 0.0]
-}
-
-fn default_preview_camera_position_zero() -> [f32; 3] {
-    [0.0, 0.0, 0.0]
-}
-
-fn default_preview_camera_target_zero() -> [f32; 3] {
-    [0.0, 0.0, 0.0]
-}
-
-fn is_zero_position(value: &[f32; 3]) -> bool {
-    value.iter().all(|component| component.abs() <= 1e-6)
-}
-
-fn is_default_spawn_position(value: &[f32; 3]) -> bool {
-    is_zero_position(value)
-}
-
-fn is_default_preview_camera_position(value: &[f32; 3]) -> bool {
-    is_zero_position(value)
-}
-
-fn is_default_preview_camera_target(value: &[f32; 3]) -> bool {
-    is_zero_position(value)
-}
-
-fn default_timeline_time_seconds() -> f32 {
-    0.0
-}
-
-fn is_default_timeline_time_seconds(value: &f32) -> bool {
-    value.abs() <= 1e-6
-}
-
-fn default_timeline_duration_seconds() -> f32 {
-    16.0
-}
-
-fn is_default_timeline_duration_seconds(value: &f32) -> bool {
-    (value - default_timeline_duration_seconds()).abs() <= 1e-6
-}
-
-fn default_camera_trigger_target_position() -> [f32; 3] {
-    [0.0, 0.0, 0.0]
-}
-
-fn is_default_camera_trigger_target_position(value: &[f32; 3]) -> bool {
-    value.iter().all(|component| component.abs() <= 1e-6)
-}
-
-fn default_camera_trigger_rotation() -> f32 {
-    -45.0f32.to_radians()
-}
-
-fn is_default_camera_trigger_rotation(value: &f32) -> bool {
-    (*value - default_camera_trigger_rotation()).abs() <= 1e-6
-}
-
-fn default_camera_trigger_pitch() -> f32 {
-    45.0f32.to_radians()
-}
-
-fn is_default_camera_trigger_pitch(value: &f32) -> bool {
-    (*value - default_camera_trigger_pitch()).abs() <= 1e-6
-}
-
-fn default_camera_trigger_transition_interval_seconds() -> f32 {
-    1.0
-}
-
-fn is_default_camera_trigger_transition_interval_seconds(value: &f32) -> bool {
-    (*value - default_camera_trigger_transition_interval_seconds()).abs() <= 1e-6
-}
-
-fn default_camera_trigger_use_full_segment_transition() -> bool {
-    false
-}
-
-fn is_default_camera_trigger_use_full_segment_transition(value: &bool) -> bool {
-    !*value
-}
-
-fn default_timed_trigger_duration_seconds() -> f32 {
-    0.0
-}
-
-fn is_default_timed_trigger_duration_seconds(value: &f32) -> bool {
-    value.abs() <= 1e-6
-}
-
-fn default_simulate_trigger_hitboxes() -> bool {
-    false
-}
-
-fn is_default_simulate_trigger_hitboxes(value: &bool) -> bool {
-    !*value
-}
-
-fn default_timed_trigger_target() -> TimedTriggerTarget {
-    TimedTriggerTarget::Camera
-}
-
-fn is_default_timed_trigger_target(value: &TimedTriggerTarget) -> bool {
-    matches!(value, TimedTriggerTarget::Camera)
-}
-
-fn default_block_rotation_degrees() -> [f32; 3] {
-    [0.0, 0.0, 0.0]
-}
-
-fn is_default_block_rotation_degrees(value: &[f32; 3]) -> bool {
-    value.iter().all(|component| component.abs() <= 1e-6)
-}
-
-fn default_level_object_position() -> [f32; 3] {
-    [0.0, 0.0, 0.0]
-}
-
-fn is_default_level_object_position(value: &[f32; 3]) -> bool {
-    value.iter().all(|component| component.abs() <= 1e-6)
-}
-
-fn default_level_object_size() -> [f32; 3] {
-    [1.0, 1.0, 1.0]
-}
-
-fn is_default_level_object_size(value: &[f32; 3]) -> bool {
-    value
-        .iter()
-        .all(|component| (*component - 1.0).abs() <= 1e-6)
-}
-
-fn default_level_object_block_id() -> String {
-    DEFAULT_BLOCK_ID.to_string()
-}
-
-fn is_default_level_object_block_id(value: &String) -> bool {
-    value == DEFAULT_BLOCK_ID
-}
-
-fn default_level_object_color_tint() -> [f32; 3] {
-    [1.0, 1.0, 1.0]
-}
-
-fn is_default_level_object_color_tint(value: &[f32; 3]) -> bool {
-    value
-        .iter()
-        .zip(default_level_object_color_tint())
-        .all(|(component, default)| (*component - default).abs() <= 1e-6)
-}
-
-fn default_app_settings_version() -> u32 {
-    APP_SETTINGS_VERSION
-}
-
-fn is_default_app_settings_version(value: &u32) -> bool {
-    *value == APP_SETTINGS_VERSION
-}
-
-fn default_editor_selected_block_id() -> String {
-    DEFAULT_BLOCK_ID.to_string()
-}
-
-fn is_default_editor_selected_block_id(value: &String) -> bool {
-    value == DEFAULT_BLOCK_ID
-}
-
-fn default_editor_snap_to_grid_setting() -> bool {
-    true
-}
-
-fn is_default_editor_snap_to_grid_setting(value: &bool) -> bool {
-    *value
-}
-
-fn default_editor_snap_step_setting() -> f32 {
-    1.0
-}
-
-fn is_default_editor_snap_step_setting(value: &f32) -> bool {
-    (*value - 1.0).abs() <= 1e-6
-}
-
-fn default_editor_rotation_snap_setting() -> bool {
-    true
-}
-
-fn is_default_editor_rotation_snap_setting(value: &bool) -> bool {
-    *value
-}
-
-fn default_editor_rotation_snap_step_setting() -> f32 {
-    15.0
-}
-
-fn is_default_editor_rotation_snap_step_setting(value: &f32) -> bool {
-    (*value - 15.0).abs() <= 1e-6
-}
+serde_default!(default_app_settings_version: u32 = APP_SETTINGS_VERSION);
+serde_default!(default_editor_selected_block_id: String = DEFAULT_BLOCK_ID.to_string());
+serde_default!(default_editor_snap_to_grid_setting: bool = true);
+serde_default_float!(default_editor_snap_step_setting: f32 = 1.0);
+serde_default!(default_editor_rotation_snap_setting: bool = true);
+serde_default_float!(default_editor_rotation_snap_step_setting: f32 = 15.0);
 
 fn default_graphics_backend_setting() -> String {
     #[cfg(target_arch = "wasm32")]
@@ -363,21 +234,8 @@ fn is_default_graphics_backend_setting(value: &String) -> bool {
     value == &default_graphics_backend_setting()
 }
 
-fn default_audio_backend_setting() -> String {
-    "Default".to_string()
-}
-
-fn is_default_audio_backend_setting(value: &String) -> bool {
-    value == "Default"
-}
-
-fn default_ui_scale_multiplier_setting() -> f32 {
-    1.0
-}
-
-fn is_default_ui_scale_multiplier_setting(value: &f32) -> bool {
-    (*value - 1.0).abs() <= 1e-6
-}
+serde_default!(default_audio_backend_setting: String = "Default".to_string());
+serde_default_float!(default_ui_scale_multiplier_setting: f32 = 1.0);
 
 fn default_app_keybinds() -> Vec<KeybindBinding> {
     default_essential_keybinds()
@@ -519,17 +377,9 @@ fn is_default_music_metadata(value: &MusicMetadata) -> bool {
         && value.extra.is_empty()
 }
 
-fn is_default_level_stars(value: &f32) -> bool {
-    value.abs() <= f32::EPSILON
-}
+serde_default_float!(default_level_stars: f32 = 0.0);
 
-fn default_level_tags() -> Vec<String> {
-    Vec::new()
-}
-
-fn is_default_level_tags(value: &[String]) -> bool {
-    value.is_empty()
-}
+serde_default!(default_level_tags: Vec<String> = Vec::<String>::new());
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct LevelCreatorMetadata {
@@ -558,21 +408,8 @@ pub(crate) struct TimingPoint {
     pub(crate) time_signature_denominator: u32,
 }
 
-fn default_time_signature_numerator() -> u32 {
-    4
-}
-
-fn default_time_signature_denominator() -> u32 {
-    4
-}
-
-fn is_default_time_signature_numerator(value: &u32) -> bool {
-    *value == 4
-}
-
-fn is_default_time_signature_denominator(value: &u32) -> bool {
-    *value == 4
-}
+serde_default!(default_time_signature_numerator: u32 = 4);
+serde_default!(default_time_signature_denominator: u32 = 4);
 
 #[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
@@ -926,7 +763,10 @@ pub(crate) struct LevelMetadata {
     pub(crate) creator: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) description: Option<String>,
-    #[serde(default, skip_serializing_if = "is_default_level_stars")]
+    #[serde(
+        default = "default_level_stars",
+        skip_serializing_if = "is_default_level_stars"
+    )]
     pub(crate) stars: f32,
     #[serde(
         default = "default_level_tags",
@@ -975,12 +815,12 @@ pub(crate) struct LevelMetadata {
 pub(crate) struct LevelPreviewCameraMetadata {
     #[serde(
         default = "default_preview_camera_position_zero",
-        skip_serializing_if = "is_default_preview_camera_position"
+        skip_serializing_if = "is_default_preview_camera_position_zero"
     )]
     pub(crate) position: [f32; 3],
     #[serde(
         default = "default_preview_camera_target_zero",
-        skip_serializing_if = "is_default_preview_camera_target"
+        skip_serializing_if = "is_default_preview_camera_target_zero"
     )]
     pub(crate) target: [f32; 3],
 }

@@ -5,21 +5,23 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use glam::Vec2;
+use glam::{Vec2, Vec3};
 
 use super::{EditorDirtyFlags, EditorSubsystem, State, TAP_CLICK_SCREEN_EPSILON_PIXELS};
+use crate::commands::AppCommand;
 use crate::editor_domain::{
     add_tap_with_indicator, build_editor_playtest_transition, derive_tap_indicator_positions,
     derive_timeline_time_for_world_target_near_time, derive_timing_division_tap_previews,
     playtest_return_objects, remove_topmost_block_at_cursor,
     timeline_axis_aligned_segment_split_fraction, timeline_turn_corner_position,
-    toggle_spawn_direction, EditorPlaytestTransitionParams, TapDivisionPreview,
-    TapDivisionPreviewRange, TimelineNearSearch,
+    timing_division_time_in_direction, toggle_spawn_direction, EditorPlaytestTransitionParams,
+    TapDivisionPreview, TapDivisionPreviewRange, TimelineNearSearch, TimingDivisionDirection,
 };
 use crate::game::{GameState, TimelineSimulationRuntime};
 use crate::types::{AppPhase, EditorMode, EditorTapDivisionPick};
 
 const TAP_CLICK_ADD_EPSILON_SECONDS: f32 = 0.001;
+const FALLBACK_TIMELINE_SHIFT_SECONDS: f32 = 0.1;
 
 fn distance_sq(left: [f32; 3], right: [f32; 3]) -> f32 {
     let dx = left[0] - right[0];
@@ -1149,6 +1151,189 @@ impl State {
             self.rebuild_editor_cursor_vertices();
         }
     }
+
+    // ── Editor command helpers (moved from command_dispatch) ─────────
+
+    /// Select the Nth recent placeable block and switch to Place mode.
+    pub(super) fn select_recent_block(&mut self, index: usize) {
+        let block_ids: Vec<String> = self
+            .editor
+            .config
+            .recent_block_ids
+            .iter()
+            .filter_map(|id| {
+                let block = crate::block_repository::resolve_block_definition(id);
+                if block.placeable {
+                    Some(id.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if let Some(id) = block_ids.get(index) {
+            self.set_editor_block_id(id.clone());
+            if self.editor.timeline.playback.playing {
+                self.set_editor_playback_effective_mode(EditorMode::Place);
+            } else {
+                self.set_editor_mode(EditorMode::Place);
+            }
+        }
+    }
+
+    pub(super) fn timeline_shift_to_division_command(
+        &self,
+        direction: TimingDivisionDirection,
+    ) -> Option<AppCommand> {
+        let current_time = self.editor.timeline.clock.time_seconds;
+        if let Some(target_time) = timing_division_time_in_direction(
+            current_time,
+            &self.editor.timing.timing_points,
+            self.editor.timeline.clock.duration_seconds,
+            direction,
+        ) {
+            return Some(AppCommand::EditorShiftTimeline(target_time - current_time));
+        }
+
+        let fallback_delta = match direction {
+            TimingDivisionDirection::Forward => FALLBACK_TIMELINE_SHIFT_SECONDS,
+            TimingDivisionDirection::Backward => -FALLBACK_TIMELINE_SHIFT_SECONDS,
+        };
+        Some(AppCommand::EditorShiftTimeline(fallback_delta))
+    }
+
+    pub(super) fn editor_pick_selected_block_for_place(&mut self) -> bool {
+        if !self.is_editor() {
+            return false;
+        }
+
+        let selected_indices = self.editor.selected_indices_normalized();
+        let block_index = self
+            .editor
+            .ui
+            .selected_block_index
+            .filter(|index| selected_indices.contains(index))
+            .or_else(|| selected_indices.first().copied());
+
+        let Some(block_id) = block_index
+            .and_then(|index| self.editor.objects.get(index))
+            .map(|object| object.block_id.clone())
+        else {
+            return false;
+        };
+
+        if self.editor.timeline.playback.playing {
+            self.set_editor_playback_effective_mode(EditorMode::Place);
+        } else {
+            self.set_editor_mode(EditorMode::Place);
+        }
+        self.set_editor_block_id(block_id);
+        true
+    }
+
+    pub(crate) fn editor_pick_block_at_screen(&mut self, x: f64, y: f64) -> bool {
+        if !self.is_editor() || self.editor_pointer_over_ui_input(x, y) {
+            return false;
+        }
+
+        let viewport_size = Vec2::new(
+            self.render.gpu.config.width as f32,
+            self.render.gpu.config.height as f32,
+        );
+        let Some(block_id) = self
+            .editor
+            .pick_from_screen(x, y, viewport_size)
+            .and_then(|pick| pick.hit_block_index)
+            .and_then(|index| self.editor.objects.get(index))
+            .map(|object| object.block_id.clone())
+        else {
+            return false;
+        };
+
+        if self.editor.timeline.playback.playing {
+            self.set_editor_playback_effective_mode(EditorMode::Place);
+        } else {
+            self.set_editor_mode(EditorMode::Place);
+        }
+        self.set_editor_block_id(block_id);
+        true
+    }
+
+    pub(super) fn editor_focus_camera_target(&mut self) -> bool {
+        if !self.is_editor() {
+            return false;
+        }
+
+        if self.editor_effective_mode_for_playback() == EditorMode::Tapping {
+            if let Some((_, _, position)) = self.editor.selected_tap() {
+                self.set_editor_camera_focus(tap_focus_point(position), None);
+                return true;
+            }
+        }
+
+        if let Some((min, size)) = self.editor.selected_group_bounds() {
+            self.set_editor_camera_focus(block_bounds_center(min, size), None);
+            return true;
+        }
+
+        if let Some((_, _, position)) = self.editor.selected_tap() {
+            self.set_editor_camera_focus(tap_focus_point(position), None);
+            return true;
+        }
+
+        let (eye, target) = self.editor_preview_camera_view();
+        let orientation = camera_orientation_from_eye_target(eye, target);
+        self.set_editor_camera_focus(target, orientation);
+        true
+    }
+
+    fn set_editor_camera_focus(&mut self, target: [f32; 3], orientation: Option<(f32, f32)>) {
+        self.editor.camera.transition = None;
+        self.editor.camera.editor_pan = [target[0], target[2]];
+        self.editor.camera.editor_target_z = target[1];
+        if let Some((rotation, pitch)) = orientation {
+            self.editor.camera.editor_rotation = rotation;
+            self.editor.camera.editor_pitch =
+                pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
+        }
+        self.editor.mark_dirty(EditorDirtyFlags {
+            rebuild_selection_overlays: true,
+            rebuild_cursor: true,
+            rebuild_tap_indicators: true,
+            rebuild_preview_player: true,
+            ..EditorDirtyFlags::default()
+        });
+    }
+
+    /// Whether any blocks are currently selected in the editor.
+    pub(super) fn has_block_selection(&self) -> bool {
+        !self.editor.selected_indices_normalized().is_empty()
+    }
+}
+
+// ── Free functions (moved from command_dispatch) ──────────────────────
+
+fn block_bounds_center(position: [f32; 3], size: [f32; 3]) -> [f32; 3] {
+    [
+        position[0] + size[0] * 0.5,
+        position[1] + size[1] * 0.5,
+        position[2] + size[2] * 0.5,
+    ]
+}
+
+fn tap_focus_point(position: [f32; 3]) -> [f32; 3] {
+    [position[0] + 0.5, position[1], position[2] + 0.5]
+}
+
+fn camera_orientation_from_eye_target(eye: [f32; 3], target: [f32; 3]) -> Option<(f32, f32)> {
+    let offset = Vec3::from_array(eye) - Vec3::from_array(target);
+    let horizontal = Vec3::new(offset.x, 0.0, offset.z).length();
+    if horizontal <= f32::EPSILON && offset.y.abs() <= f32::EPSILON {
+        return None;
+    }
+
+    let rotation = (-offset.x).atan2(-offset.z);
+    let pitch = offset.y.atan2(horizontal);
+    Some((rotation, pitch))
 }
 
 #[cfg(test)]

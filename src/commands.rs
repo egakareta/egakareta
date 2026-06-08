@@ -265,6 +265,11 @@ pub(crate) enum AppCommand {
     // ── Editor – escape context ─────────────────────────────
     /// Escape key context-sensitive (stop playback → reset timeline → back to menu).
     EditorEscape,
+
+    // ── EditorCommand sub-enum ────────────────────────────────────
+    /// Editor-specific command routed through `EditorCommand` sub-enum.
+    /// New editor commands should use this variant with `EditorCommand`.
+    Editor(crate::state::editor_command::EditorCommand),
 }
 
 /// Unified input event produced by platform adapters.

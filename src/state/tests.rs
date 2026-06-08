@@ -11,7 +11,7 @@ use crate::commands::AppCommand;
 use crate::editor_domain::{derive_tap_indicator_positions, derive_timeline_position};
 use crate::game::simulate_timeline_state_with_triggers;
 use crate::platform::audio::runtime_asset_source_key;
-use crate::test_utils::assert_approx_eq as approx_eq;
+use crate::test_utils::{assert_approx_eq as approx_eq, editor_test, stone};
 use crate::types::{
     AppPhase, EditorMode, GizmoAxis, GizmoDragKind, LevelObject, PhysicalSize, SpawnDirection,
     TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
@@ -24,30 +24,11 @@ async fn new_editor_state() -> State {
     state
 }
 
-#[test]
-fn test_marquee_no_redundant_selections_before_drag_started() {
-    pollster::block_on(async {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Select;
-
-        // Add two blocks
-        state.editor.objects.push(LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
-        });
-        state.editor.objects.push(LevelObject {
-            position: [5.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
-        });
+editor_test!(
+    test_marquee_no_redundant_selections_before_drag_started,
+    |state| {
+        state.editor.objects.push(stone(0.0, 0.0, 0.0));
+        state.editor.objects.push(stone(5.0, 0.0, 0.0));
 
         // 1. Just hovering over the first block (no mouse down)
         state.editor.ui.hovered_block_index = Some(0);
@@ -100,32 +81,14 @@ fn test_marquee_no_redundant_selections_before_drag_started() {
         state.editor.ui.marquee_current_screen = Some([200.0, 200.0]);
         let (_, _, is_active) = state.editor.marquee_selection_rect_screen().unwrap();
         assert!(is_active, "Marquee SHOULD be active now");
-    });
-}
+    }
+);
 
-#[test]
-fn selection_outline_builds_instances_per_selected_block() {
-    pollster::block_on(async {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Select;
-
-        state.editor.objects.push(LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
-        });
-        state.editor.objects.push(LevelObject {
-            position: [2.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
-        });
+editor_test!(
+    selection_outline_builds_instances_per_selected_block,
+    |state| {
+        state.editor.objects.push(stone(0.0, 0.0, 0.0));
+        state.editor.objects.push(stone(2.0, 0.0, 0.0));
 
         state.editor.ui.selected_block_index = Some(0);
         state.editor.ui.selected_block_indices = vec![0, 1];
@@ -165,8 +128,8 @@ fn selection_outline_builds_instances_per_selected_block() {
             .map(|draw_data| draw_data.count())
             .expect("selection mask mesh should exist");
         assert_eq!(total_mask, 72);
-    });
-}
+    }
+);
 
 #[test]
 fn selection_outline_uses_single_bounds_mesh_for_large_selections() {
