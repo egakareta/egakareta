@@ -20,7 +20,10 @@ pub(crate) use transitions::*;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata, TimingPoint};
+    use crate::types::{
+        LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata, TimedTriggerAction,
+        TimedTriggerTarget, TimingPoint, TRANSFORM_TRIGGER_BLOCK_ID,
+    };
 
     fn assert_near_solver_hits_target(
         spawn: [f32; 3],
@@ -213,6 +216,36 @@ mod tests {
         assert_eq!(block.position, [1.0, 2.0, 3.0]);
         assert_eq!(block.size, [2.0, 0.25, 1.0]);
         assert_eq!(block.block_id, "core/grass");
+    }
+
+    #[test]
+    fn creates_transform_trigger_block_with_empty_target_trigger() {
+        let block = create_block_at_cursor(
+            [1.0, 2.0, 3.0],
+            TRANSFORM_TRIGGER_BLOCK_ID,
+            [2.0, 0.25, 1.0],
+            [0.0, 90.0, 0.0],
+        );
+
+        let trigger = block
+            .trigger
+            .expect("transform trigger block should carry a trigger");
+        match trigger.target {
+            TimedTriggerTarget::Objects { object_ids } => assert!(object_ids.is_empty()),
+            TimedTriggerTarget::Camera => panic!("expected object target"),
+        }
+        match trigger.action {
+            TimedTriggerAction::TransformObjects {
+                position,
+                rotation_degrees,
+                size,
+            } => {
+                assert_eq!(position, [1.0, 2.0, 3.0]);
+                assert_eq!(rotation_degrees, [0.0, 90.0, 0.0]);
+                assert_eq!(size, [2.0, 0.25, 1.0]);
+            }
+            _ => panic!("expected transform action"),
+        }
     }
 
     #[test]

@@ -25,31 +25,27 @@ fn remove_replaced_transform_trigger_targets(
 ) -> Vec<TimedTrigger> {
     triggers
         .into_iter()
-        .filter_map(|mut trigger| {
+        .map(|mut trigger| {
             if (trigger.time_seconds - time_seconds).abs()
                 > TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS
                 || !matches!(trigger.action, TimedTriggerAction::TransformObjects { .. })
             {
-                return Some(trigger);
+                return trigger;
             }
 
             let TimedTriggerTarget::Objects { object_ids } = &mut trigger.target else {
-                return Some(trigger);
+                return trigger;
             };
 
             if !object_ids
                 .iter()
                 .any(|object_id| object_ids_to_replace.contains(object_id))
             {
-                return Some(trigger);
+                return trigger;
             }
 
             object_ids.retain(|object_id| !object_ids_to_replace.contains(object_id));
-            if object_ids.is_empty() {
-                None
-            } else {
-                Some(trigger)
-            }
+            trigger
         })
         .collect()
 }
@@ -1788,6 +1784,55 @@ mod tests {
             assert!(retained_object_two_multi_target);
             assert!(retained_object_two_standalone);
             assert!(retained_different_time_object_zero);
+        });
+    }
+
+    #[test]
+    fn transform_trigger_capture_commit_preserves_replaced_trigger_with_no_sources() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.phase = AppPhase::Editor;
+            state.editor.timeline.clock.time_seconds = 2.5;
+            state.editor.timeline.clock.duration_seconds = 8.0;
+            state.editor.objects = vec![test_level_object([0.0, 0.0, 0.0])];
+            state.editor.ui.selected_block_indices = vec![0];
+            state.editor.ui.selected_block_index = Some(0);
+            state
+                .editor
+                .set_triggers(vec![transform_trigger(2.5, vec![0], [10.0, 0.0, 0.0])]);
+
+            assert!(state.begin_editor_transform_trigger_capture());
+            state.editor.objects[0].position = [1.0, 2.0, 3.0];
+
+            assert!(state.commit_editor_transform_trigger_capture());
+
+            let mut found_target_only_trigger = false;
+            let mut found_replacement_trigger = false;
+
+            for trigger in &state.editor.triggers.items {
+                let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
+                    continue;
+                };
+                let TimedTriggerAction::TransformObjects { position, .. } = &trigger.action else {
+                    continue;
+                };
+
+                if (trigger.time_seconds - 2.5).abs() <= 1e-6 && object_ids.is_empty() {
+                    found_target_only_trigger = true;
+                    approx_eq(position[0], 10.0, 1e-6);
+                }
+
+                if (trigger.time_seconds - 2.5).abs() <= 1e-6 && object_ids == &[0] {
+                    found_replacement_trigger = true;
+                    approx_eq(position[0], 1.0, 1e-6);
+                    approx_eq(position[1], 2.0, 1e-6);
+                    approx_eq(position[2], 3.0, 1e-6);
+                }
+            }
+
+            assert!(found_target_only_trigger);
+            assert!(found_replacement_trigger);
         });
     }
 

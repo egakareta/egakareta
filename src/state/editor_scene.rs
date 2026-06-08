@@ -30,7 +30,7 @@ use crate::mesh::{
 use crate::state::render::EditorOutlineInstance;
 use crate::types::{
     AppPhase, EditorMode, EditorPlaceMode, GizmoPart, LevelObject, SpawnDirection, TimedTrigger,
-    TimedTriggerAction, TimedTriggerTarget, TimingPoint, Vertex,
+    TimedTriggerAction, TimedTriggerTarget, TimingPoint, Vertex, TRANSFORM_TRIGGER_BLOCK_ID,
 };
 
 const SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD: usize = 700;
@@ -109,17 +109,10 @@ fn transform_trigger_markers_for_triggers(
             trigger.time_seconds,
         );
 
-        for object_id in object_ids {
-            let Ok(object_index) = usize::try_from(*object_id) else {
-                continue;
-            };
-            let Some(source_object) = source_objects.get(object_index) else {
-                continue;
-            };
-
+        if object_ids.is_empty() {
             markers.push(TransformTriggerMarker {
-                source_position: source_object.position,
-                source_size: source_object.size,
+                source_position: None,
+                source_size: None,
                 target_position: *position,
                 target_rotation_degrees: *rotation_degrees,
                 target_size: *size,
@@ -127,6 +120,26 @@ fn transform_trigger_markers_for_triggers(
                 duration_seconds: trigger.duration_seconds,
                 is_selected: selected_trigger_index == Some(trigger_index),
             });
+        } else {
+            for object_id in object_ids {
+                let Ok(object_index) = usize::try_from(*object_id) else {
+                    continue;
+                };
+                let Some(source_object) = source_objects.get(object_index) else {
+                    continue;
+                };
+
+                markers.push(TransformTriggerMarker {
+                    source_position: Some(source_object.position),
+                    source_size: Some(source_object.size),
+                    target_position: *position,
+                    target_rotation_degrees: *rotation_degrees,
+                    target_size: *size,
+                    time_seconds: trigger.time_seconds,
+                    duration_seconds: trigger.duration_seconds,
+                    is_selected: selected_trigger_index == Some(trigger_index),
+                });
+            }
         }
     }
 
@@ -176,8 +189,8 @@ fn transform_trigger_markers_for_capture(
         };
 
         markers.push(TransformTriggerMarker {
-            source_position: source_object.position,
-            source_size: source_object.size,
+            source_position: Some(source_object.position),
+            source_size: Some(source_object.size),
             target_position: current_object.position,
             target_rotation_degrees: current_object.rotation_degrees,
             target_size: current_object.size,
@@ -248,6 +261,7 @@ impl EditorSubsystem {
             self.selected_block_default_size(),
             self.config.selected_block_rotation_degrees,
         );
+        let placed_transform_trigger = new_block.block_id == TRANSFORM_TRIGGER_BLOCK_ID;
         let can_append_mesh = self.can_append_block_mesh_after_placement();
 
         self.record_history_state();
@@ -266,10 +280,17 @@ impl EditorSubsystem {
                 sync_game_objects: true,
                 append_block_mesh: true,
                 rebuild_selection_overlays: place_mode == EditorPlaceMode::SelectPlaced,
+                rebuild_transform_trigger_markers: placed_transform_trigger,
                 ..EditorDirtyFlags::default()
             });
         } else {
             self.sync_objects();
+            if placed_transform_trigger {
+                self.mark_dirty(EditorDirtyFlags {
+                    rebuild_transform_trigger_markers: true,
+                    ..EditorDirtyFlags::default()
+                });
+            }
         }
         placed_index
     }
@@ -1875,10 +1896,36 @@ mod tests {
         let markers = transform_trigger_markers_for_triggers(&objects, &triggers, Some(1));
 
         assert_eq!(markers.len(), 2);
-        assert_eq!(markers[0].source_position, [0.0, 0.0, 0.0]);
-        approx_eq(markers[1].source_position[0], 4.0, 1e-6);
-        approx_eq(markers[1].source_size[0], 1.5, 1e-6);
+        assert_eq!(markers[0].source_position, Some([0.0, 0.0, 0.0]));
+        approx_eq(markers[1].source_position.unwrap()[0], 4.0, 1e-6);
+        approx_eq(markers[1].source_size.unwrap()[0], 1.5, 1e-6);
         assert!(markers[1].is_selected);
+    }
+
+    #[test]
+    fn transform_trigger_marker_without_sources_still_draws_target() {
+        let triggers = vec![TimedTrigger {
+            time_seconds: 1.0,
+            duration_seconds: 4.0,
+            easing: TimedTriggerEasing::Linear,
+            target: TimedTriggerTarget::Objects {
+                object_ids: Vec::new(),
+            },
+            action: TimedTriggerAction::TransformObjects {
+                position: [8.0, 0.0, 0.0],
+                rotation_degrees: [0.0, 90.0, 0.0],
+                size: [2.0, 1.0, 1.0],
+            },
+        }];
+
+        let markers = transform_trigger_markers_for_triggers(&[], &triggers, Some(0));
+
+        assert_eq!(markers.len(), 1);
+        assert_eq!(markers[0].source_position, None);
+        assert_eq!(markers[0].source_size, None);
+        assert_eq!(markers[0].target_position, [8.0, 0.0, 0.0]);
+        assert_eq!(markers[0].target_size, [2.0, 1.0, 1.0]);
+        assert!(markers[0].is_selected);
     }
 
     #[test]
@@ -1908,8 +1955,8 @@ mod tests {
         );
 
         assert_eq!(markers.len(), 1);
-        approx_eq(markers[0].source_position[0], 4.0, 1e-6);
-        approx_eq(markers[0].source_size[0], 2.0, 1e-6);
+        approx_eq(markers[0].source_position.unwrap()[0], 4.0, 1e-6);
+        approx_eq(markers[0].source_size.unwrap()[0], 2.0, 1e-6);
         assert_eq!(markers[0].target_position, [12.0, 0.0, 0.0]);
         assert_eq!(markers[0].target_size, [2.0, 1.0, 1.0]);
         assert!(markers[0].is_selected);
@@ -2063,6 +2110,26 @@ mod tests {
             assert_eq!(state.editor.objects[0].size, [2.0, 0.25, 1.0]);
             assert_eq!(state.editor.objects[0].rotation_degrees, [0.0, 90.0, 0.0]);
             assert_eq!(state.editor.objects[0].block_id, "core/speedportal");
+        });
+    }
+
+    #[test]
+    fn placing_transform_trigger_marks_target_marker_rebuild_dirty() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.config.selected_block_id =
+                crate::types::TRANSFORM_TRIGGER_BLOCK_ID.to_string();
+            state.editor.ui.cursor = [2.0, 0.0, 4.0];
+            state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
+
+            state
+                .editor
+                .add_block_at_cursor(crate::types::EditorPlaceMode::Stamp);
+
+            assert_eq!(state.editor.objects.len(), 1);
+            assert!(state.editor.objects[0].trigger.is_some());
+            assert!(state.editor.runtime.dirty.rebuild_transform_trigger_markers);
         });
     }
 
