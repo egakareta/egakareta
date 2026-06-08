@@ -138,6 +138,16 @@ struct BlockColors {
     outline: [f32; 4],
 }
 
+pub(crate) struct TransformTriggerVisualStyle {
+    pub(crate) frame_color: [f32; 4],
+    pub(crate) arrow_color: [f32; 4],
+    pub(crate) ring_color: [f32; 4],
+    pub(crate) frame_radius: f32,
+    pub(crate) shaft_radius: f32,
+    pub(crate) cone_radius: f32,
+    pub(crate) ring_thickness: f32,
+}
+
 impl BlockColors {
     fn apply_noise(&mut self, factor: f32) {
         for i in 0..3 {
@@ -309,8 +319,47 @@ fn build_transform_trigger_block_vertices(
     obj: &LevelObject,
     colors: &BlockColors,
 ) {
-    let center = Vec3::from_array(object_center(obj.position, obj.size));
-    let rotation = transform_marker_rotation(obj.rotation_degrees);
+    let style = TransformTriggerVisualStyle {
+        frame_color: colors.side,
+        arrow_color: colors.top,
+        ring_color: colors.top,
+        frame_radius: 0.035,
+        shaft_radius: 0.06,
+        cone_radius: 0.18,
+        ring_thickness: 0.05,
+    };
+
+    append_transform_trigger_visual_vertices(
+        vertices,
+        obj.position,
+        obj.size,
+        obj.rotation_degrees,
+        &style,
+    );
+}
+
+pub(crate) fn append_transform_trigger_visual_vertices(
+    vertices: &mut Vec<Vertex>,
+    position: [f32; 3],
+    size: [f32; 3],
+    rotation_degrees: [f32; 3],
+    style: &TransformTriggerVisualStyle,
+) {
+    let center = Vec3::from_array(object_center(position, size));
+    let rotation = transform_marker_rotation(rotation_degrees);
+    append_transform_trigger_visual_vertices_with_rotation(
+        vertices, position, size, center, rotation, style,
+    );
+}
+
+pub(crate) fn append_transform_trigger_visual_vertices_with_rotation(
+    vertices: &mut Vec<Vertex>,
+    position: [f32; 3],
+    size: [f32; 3],
+    center: Vec3,
+    rotation: glam::Quat,
+    style: &TransformTriggerVisualStyle,
+) {
     let forward = (rotation * Vec3::Z).normalize_or_zero();
     let arrow_direction = if forward.length_squared() > f32::EPSILON {
         forward
@@ -318,41 +367,43 @@ fn build_transform_trigger_block_vertices(
         Vec3::Z
     };
 
-    let extent = obj.size.iter().copied().fold(0.0_f32, f32::max).max(0.75);
+    let extent = size.iter().copied().fold(0.0_f32, f32::max).max(0.75);
 
-    // Wireframe box edges showing the block extent and rotation.
     append_oriented_box_edges(
         vertices,
-        obj.position,
-        obj.size,
+        position,
+        size,
         rotation,
-        0.035,
-        colors.side,
+        style.frame_radius,
+        style.frame_color,
     );
 
-    // Directional arrow through the center.
     let arrow_base = center - arrow_direction * (extent * 0.3);
     let arrow_shaft_end = center + arrow_direction * (extent * 0.42);
     let arrow_tip = arrow_shaft_end + arrow_direction * 0.45;
-    let arrow_color = colors.top;
 
     append_cylinder_segment(
         vertices,
         arrow_base.to_array(),
         arrow_shaft_end.to_array(),
-        0.06,
-        arrow_color,
+        style.shaft_radius,
+        style.arrow_color,
     );
     append_cone(
         vertices,
         arrow_shaft_end.to_array(),
         arrow_tip.to_array(),
-        0.18,
-        arrow_color,
+        style.cone_radius,
+        style.arrow_color,
     );
 
-    // Ring on the XZ plane at the vertical center.
     let ring_radius = extent * 0.42;
     let ring_center = [center.x, center.y, center.z];
-    append_xz_ring(vertices, ring_center, ring_radius, 0.05, colors.top);
+    append_xz_ring(
+        vertices,
+        ring_center,
+        ring_radius,
+        style.ring_thickness,
+        style.ring_color,
+    );
 }
