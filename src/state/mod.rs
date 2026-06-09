@@ -12,6 +12,7 @@ mod editor_actions;
 mod editor_camera;
 pub(crate) mod editor_command;
 mod editor_config_state;
+mod editor_dispatch;
 mod editor_interaction;
 mod editor_scene;
 mod editor_state;

@@ -5,7 +5,6 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::State;
 use crate::commands::AppCommand;
 use crate::state::editor_command::EditorCommand;
 use crate::test_utils::{editor_test, stone};
@@ -81,11 +80,9 @@ editor_test!(test_editor_nudge_respects_ctrl_override, |state| {
     );
 });
 
-#[test]
-fn test_editor_nudge_left_right_screen_direction_regression() {
-    pollster::block_on(async {
-        let mut state = State::new_test().await;
-        state.phase = crate::types::AppPhase::Editor;
+editor_test!(
+    test_editor_nudge_left_right_screen_direction_regression,
+    |state| {
         state.editor.config.snap_to_grid = true;
         state.editor.config.snap_step = 1.0;
 
@@ -97,7 +94,7 @@ fn test_editor_nudge_left_right_screen_direction_regression() {
             .set_editor_camera_orientation(0.0, std::f32::consts::FRAC_PI_4, None);
 
         let viewport = Vec2::new(1280.0, 720.0);
-        let screen_x = |state: &State| {
+        let screen_x = |state: &crate::state::State| {
             state
                 .editor
                 .world_to_screen_v(Vec3::from_array(state.editor.objects[0].position), viewport)
@@ -119,5 +116,5 @@ fn test_editor_nudge_left_right_screen_direction_regression() {
             screen_x(&state) < baseline_x,
             "Left nudge should move screen-left"
         );
-    });
-}
+    }
+);

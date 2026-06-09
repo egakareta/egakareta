@@ -205,7 +205,6 @@ mod tests {
         EditorPropertyPopup, PROPERTY_POPUP_MARGIN,
     };
     use crate::commands::AppCommand;
-    use crate::state::editor_command::EditorCommand;
     use crate::state::EditorUiViewModel;
     use crate::types::{
         AppSettings, EditorMode, MusicMetadata, SettingsSection, SpawnDirection, TimedTrigger,

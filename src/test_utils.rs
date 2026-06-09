@@ -48,6 +48,7 @@ pub(crate) fn block(id: &str, x: f32, y: f32, z: f32) -> LevelObject {
 }
 
 /// A gem block at `(x, y, z)`.
+#[allow(dead_code)]
 pub(crate) fn gem(x: f32, y: f32, z: f32) -> LevelObject {
     block("core/gem", x, y, z)
 }
@@ -62,7 +63,8 @@ pub(crate) fn sized(id: &str, x: f32, y: f32, z: f32, sx: f32, sy: f32, sz: f32)
     }
 }
 
-/// A block at `(x, y, z)` with custom rotation (degrees) and size.
+/// A block at `(x, y, z)` with custom rotation (degrees).
+#[allow(dead_code)]
 pub(crate) fn rotated(id: &str, x: f32, y: f32, z: f32, rx: f32, ry: f32, rz: f32) -> LevelObject {
     LevelObject {
         block_id: id.to_string(),

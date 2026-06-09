@@ -52,7 +52,8 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 - `src/platform/`: Platform Abstraction Layer
 - `src/state/`: Application State & Editor Logic
 - `src/state/editor_command.rs`: `EditorCommand` sub-enum for all editor-specific commands. New editor features should add variants here, not in `AppCommand`.
-- `src/state/command_dispatch.rs`: `State::dispatch()` routes `AppCommand`; `State::dispatch_editor()` routes `EditorCommand`.
+- `src/state/command_dispatch.rs`: `State::dispatch()` routes top-level `AppCommand` variants and input/keybind mapping.
+- `src/state/editor_dispatch.rs`: `State::dispatch_editor()` routes `EditorCommand` variants; add editor command match arms here.
 - `src/editor_domain/`: Editor Domain Logic
 - `src/editor_ui/`: Egui UI Components
 - `src/mesh/`: Mesh Generation

@@ -214,7 +214,6 @@ pub(crate) fn show_timing_mode_bottom_panel(
 mod tests {
     use super::show_timing_mode_bottom_panel;
     use crate::commands::AppCommand;
-    use crate::state::editor_command::EditorCommand;
     use crate::state::EditorUiViewModel;
     use crate::types::{
         AppSettings, EditorMode, MusicMetadata, SettingsSection, SpawnDirection, TimedTrigger,
