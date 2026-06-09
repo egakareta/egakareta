@@ -23,6 +23,7 @@ use crate::editor_ui::modes::tapping::{
 };
 use crate::editor_ui::modes::timing::show_timing_mode_bottom_panel;
 use crate::platform::io::{copy_text_to_clipboard, log_platform_error};
+use crate::state::editor_command::EditorCommand;
 use crate::state::EditorUiViewModel;
 use crate::types::{essential_keybind_actions, format_key_chord, EditorMode, SettingsSection};
 use crate::State;
@@ -315,12 +316,10 @@ fn push_context_cursor_command(
     } else {
         1.0
     };
-    commands.push(AppCommand::Editor(
-        crate::state::editor_command::EditorCommand::UpdateCursorFromScreen {
-            x: (menu_position.x * scale) as f64,
-            y: (menu_position.y * scale) as f64,
-        },
-    ));
+    commands.push(AppCommand::Editor(EditorCommand::UpdateCursorFromScreen {
+        x: (menu_position.x * scale) as f64,
+        y: (menu_position.y * scale) as f64,
+    }));
 }
 
 fn show_editor_context_menu(
@@ -383,7 +382,7 @@ fn show_editor_context_menu(
                     view.can_undo,
                     egui_phosphor::regular::ARROW_COUNTER_CLOCKWISE,
                     "Undo",
-                    AppCommand::Editor(crate::state::editor_command::EditorCommand::Undo),
+                    AppCommand::Editor(EditorCommand::Undo),
                     hint("undo").as_deref(),
                 );
                 close_menu |= context_menu_button(
@@ -392,7 +391,7 @@ fn show_editor_context_menu(
                     view.can_redo,
                     egui_phosphor::regular::ARROW_CLOCKWISE,
                     "Redo",
-                    AppCommand::Editor(crate::state::editor_command::EditorCommand::Redo),
+                    AppCommand::Editor(EditorCommand::Redo),
                     hint("redo").as_deref(),
                 );
 
@@ -428,12 +427,8 @@ fn show_editor_context_menu(
                         }
                     });
                     if cut_clicked {
-                        commands.push(AppCommand::Editor(
-                            crate::state::editor_command::EditorCommand::CopyBlock,
-                        ));
-                        commands.push(AppCommand::Editor(
-                            crate::state::editor_command::EditorCommand::RemoveBlock,
-                        ));
+                        commands.push(AppCommand::Editor(EditorCommand::CopyBlock));
+                        commands.push(AppCommand::Editor(EditorCommand::RemoveBlock));
                         close_menu = true;
                     }
                 }
@@ -443,7 +438,7 @@ fn show_editor_context_menu(
                     has_block_selection,
                     egui_phosphor::regular::COPY,
                     "Copy",
-                    AppCommand::Editor(crate::state::editor_command::EditorCommand::CopyBlock),
+                    AppCommand::Editor(EditorCommand::CopyBlock),
                     hint("copy").as_deref(),
                 );
                 close_menu |= context_menu_button(
@@ -452,14 +447,11 @@ fn show_editor_context_menu(
                     has_clipboard,
                     egui_phosphor::regular::CLIPBOARD_TEXT,
                     "Paste",
-                    AppCommand::Editor(crate::state::editor_command::EditorCommand::PasteBlock),
+                    AppCommand::Editor(EditorCommand::PasteBlock),
                     hint("paste").as_deref(),
                 );
                 if close_menu
-                    && commands.last()
-                        == Some(&AppCommand::Editor(
-                            crate::state::editor_command::EditorCommand::PasteBlock,
-                        ))
+                    && commands.last() == Some(&AppCommand::Editor(EditorCommand::PasteBlock))
                 {
                     let paste_command = commands.pop().expect("paste command was just pushed");
                     push_context_cursor_command(commands, menu_position, ctx.pixels_per_point());
@@ -471,7 +463,7 @@ fn show_editor_context_menu(
                     has_block_selection && !is_tapping,
                     egui_phosphor::regular::COPY_SIMPLE,
                     "Duplicate",
-                    AppCommand::Editor(crate::state::editor_command::EditorCommand::DuplicateBlock),
+                    AppCommand::Editor(EditorCommand::DuplicateBlock),
                     hint("duplicate").as_deref(),
                 );
 
@@ -482,11 +474,7 @@ fn show_editor_context_menu(
                         true,
                         egui_phosphor::regular::TRASH,
                         "Delete Tap",
-                        AppCommand::Editor(
-                            crate::state::editor_command::EditorCommand::RemoveTapAt(
-                                selected_tap.time_seconds,
-                            ),
-                        ),
+                        AppCommand::Editor(EditorCommand::RemoveTapAt(selected_tap.time_seconds)),
                         hint("remove_block").as_deref(),
                     );
                 } else {
@@ -496,9 +484,7 @@ fn show_editor_context_menu(
                         has_block_selection,
                         egui_phosphor::regular::TRASH,
                         "Delete",
-                        AppCommand::Editor(
-                            crate::state::editor_command::EditorCommand::RemoveBlock,
-                        ),
+                        AppCommand::Editor(EditorCommand::RemoveBlock),
                         hint("remove_block").as_deref(),
                     );
                 }
@@ -511,9 +497,7 @@ fn show_editor_context_menu(
                     has_block_selection || has_tap_selection,
                     egui_phosphor::regular::CORNERS_OUT,
                     "Snap to Grid",
-                    AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SnapSelectionToGrid,
-                    ),
+                    AppCommand::Editor(EditorCommand::SnapSelectionToGrid),
                     hint("snap_selection_to_grid").as_deref(),
                 );
                 close_menu |= context_menu_button(
@@ -522,9 +506,7 @@ fn show_editor_context_menu(
                     has_focus_target,
                     egui_phosphor::regular::CROSSHAIR,
                     "Focus View",
-                    AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::FocusCameraTarget,
-                    ),
+                    AppCommand::Editor(EditorCommand::FocusCameraTarget),
                     hint("focus_camera_target").as_deref(),
                 );
                 close_menu |= context_menu_button(
@@ -533,9 +515,7 @@ fn show_editor_context_menu(
                     has_block_selection,
                     egui_phosphor::regular::EYEDROPPER,
                     "Pick Block Type",
-                    AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::PickSelectedBlock,
-                    ),
+                    AppCommand::Editor(EditorCommand::PickSelectedBlock),
                     hint("pick_selected_block").as_deref(),
                 );
                 close_menu |= context_menu_button(
@@ -544,9 +524,7 @@ fn show_editor_context_menu(
                     has_block_selection && !is_tapping && !view.transform_trigger_capture_active,
                     egui_phosphor::regular::ARROWS_CLOCKWISE,
                     "Add Transform Trigger",
-                    AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::BeginTransformTriggerCapture,
-                    ),
+                    AppCommand::Editor(EditorCommand::BeginTransformTriggerCapture),
                     hint("add_transform_trigger").as_deref(),
                 );
                 close_menu |= context_menu_button(
@@ -555,7 +533,7 @@ fn show_editor_context_menu(
                     has_block_selection,
                     egui_phosphor::regular::EXPORT,
                     "Export OBJ",
-                    AppCommand::Editor(crate::state::editor_command::EditorCommand::ExportBlockObj),
+                    AppCommand::Editor(EditorCommand::ExportBlockObj),
                     hint("export_obj").as_deref(),
                 );
 
@@ -567,9 +545,7 @@ fn show_editor_context_menu(
                     true,
                     egui_phosphor::regular::CUBE,
                     "Block Catalog",
-                    AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::TogglePlaceWindow,
-                    ),
+                    AppCommand::Editor(EditorCommand::TogglePlaceWindow),
                     hint("toggle_place_window").as_deref(),
                 );
                 close_menu |= context_menu_button(
@@ -578,14 +554,11 @@ fn show_editor_context_menu(
                     true,
                     egui_phosphor::regular::MAP_PIN,
                     "Set Spawn Here",
-                    AppCommand::Editor(crate::state::editor_command::EditorCommand::SetSpawnHere),
+                    AppCommand::Editor(EditorCommand::SetSpawnHere),
                     hint("spawn_set").as_deref(),
                 );
                 if close_menu
-                    && commands.last()
-                        == Some(&AppCommand::Editor(
-                            crate::state::editor_command::EditorCommand::SetSpawnHere,
-                        ))
+                    && commands.last() == Some(&AppCommand::Editor(EditorCommand::SetSpawnHere))
                 {
                     let spawn_command = commands.pop().expect("spawn command was just pushed");
                     push_context_cursor_command(commands, menu_position, ctx.pixels_per_point());
@@ -597,9 +570,7 @@ fn show_editor_context_menu(
                     true,
                     egui_phosphor::regular::CAMERA,
                     "Add Camera Trigger",
-                    AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::AddCameraTrigger,
-                    ),
+                    AppCommand::Editor(EditorCommand::AddCameraTrigger),
                     hint("add_camera_trigger").as_deref(),
                 );
                 close_menu |= context_menu_button(
@@ -608,9 +579,7 @@ fn show_editor_context_menu(
                     true,
                     egui_phosphor::regular::SELECTION,
                     "Toggle Hitboxes",
-                    AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::ToggleHitboxVisualization,
-                    ),
+                    AppCommand::Editor(EditorCommand::ToggleHitboxVisualization),
                     hint("toggle_hitbox_visualization").as_deref(),
                 );
 
@@ -681,7 +650,7 @@ pub fn show_settings_sidebar(ctx: &egui::Context, state: &mut State) {
                             .clicked()
                         {
                             commands.push(crate::commands::AppCommand::Editor(
-                                crate::state::editor_command::EditorCommand::SetShowSettings(false),
+                                EditorCommand::SetShowSettings(false),
                             ));
                         }
                     });
@@ -695,9 +664,7 @@ pub fn show_settings_sidebar(ctx: &egui::Context, state: &mut State) {
                         .clicked()
                     {
                         commands.push(crate::commands::AppCommand::Editor(
-                            crate::state::editor_command::EditorCommand::SetSettingsSection(
-                                SettingsSection::Backends,
-                            ),
+                            EditorCommand::SetSettingsSection(SettingsSection::Backends),
                         ));
                     }
 
@@ -709,9 +676,7 @@ pub fn show_settings_sidebar(ctx: &egui::Context, state: &mut State) {
                         .clicked()
                     {
                         commands.push(crate::commands::AppCommand::Editor(
-                            crate::state::editor_command::EditorCommand::SetSettingsSection(
-                                SettingsSection::Keybinds,
-                            ),
+                            EditorCommand::SetSettingsSection(SettingsSection::Keybinds),
                         ));
                     }
                 });
@@ -739,9 +704,7 @@ pub fn show_settings_sidebar(ctx: &egui::Context, state: &mut State) {
                             });
                         if graphics_choice != configured_graphics_backend {
                             commands.push(crate::commands::AppCommand::Editor(
-                                crate::state::editor_command::EditorCommand::SetGraphicsBackend(
-                                    graphics_choice,
-                                ),
+                                EditorCommand::SetGraphicsBackend(graphics_choice),
                             ));
                         }
 
@@ -775,9 +738,7 @@ pub fn show_settings_sidebar(ctx: &egui::Context, state: &mut State) {
                             });
                         if audio_choice != configured_audio_backend {
                             commands.push(crate::commands::AppCommand::Editor(
-                                crate::state::editor_command::EditorCommand::SetAudioBackend(
-                                    audio_choice,
-                                ),
+                                EditorCommand::SetAudioBackend(audio_choice),
                             ));
                         }
 
@@ -794,9 +755,7 @@ pub fn show_settings_sidebar(ctx: &egui::Context, state: &mut State) {
                             .changed()
                         {
                             commands.push(crate::commands::AppCommand::Editor(
-                                crate::state::editor_command::EditorCommand::SetUiScaleMultiplier(
-                                    ui_scale_multiplier,
-                                ),
+                                EditorCommand::SetUiScaleMultiplier(ui_scale_multiplier),
                             ));
                         }
                     }
@@ -849,7 +808,7 @@ pub fn show_settings_sidebar(ctx: &egui::Context, state: &mut State) {
                                 ui.separator();
                                 if ui.button("Reset to Defaults").clicked() {
                                     commands.push(crate::commands::AppCommand::Editor(
-                                        crate::state::editor_command::EditorCommand::ResetKeybinds,
+                                        EditorCommand::ResetKeybinds,
                                     ));
                                 }
                             });
@@ -918,9 +877,9 @@ pub fn show_editor_ui(
                                 .on_hover_text("Close settings")
                                 .clicked()
                             {
-                                commands.push(crate::commands::AppCommand::Editor(crate::state::editor_command::EditorCommand::SetShowSettings(
-                                    false,
-                                )));
+                                commands.push(crate::commands::AppCommand::Editor(
+                                    EditorCommand::SetShowSettings(false),
+                                ));
                             }
                         });
                     });
@@ -932,9 +891,9 @@ pub fn show_editor_ui(
                             )
                             .clicked()
                         {
-                            commands.push(crate::commands::AppCommand::Editor(crate::state::editor_command::EditorCommand::SetSettingsSection(
-                                SettingsSection::Backends,
-                            )));
+                            commands.push(crate::commands::AppCommand::Editor(
+                                EditorCommand::SetSettingsSection(SettingsSection::Backends),
+                            ));
                         }
 
                         if ui
@@ -944,9 +903,9 @@ pub fn show_editor_ui(
                             )
                             .clicked()
                         {
-                            commands.push(crate::commands::AppCommand::Editor(crate::state::editor_command::EditorCommand::SetSettingsSection(
-                                SettingsSection::Keybinds,
-                            )));
+                            commands.push(crate::commands::AppCommand::Editor(
+                                EditorCommand::SetSettingsSection(SettingsSection::Keybinds),
+                            ));
                         }
                     });
 
@@ -972,11 +931,9 @@ pub fn show_editor_ui(
                                     }
                                 });
                             if graphics_choice != view.configured_graphics_backend {
-                                commands.push(
-                                    crate::commands::AppCommand::Editor(crate::state::editor_command::EditorCommand::SetGraphicsBackend(
-                                        graphics_choice,
-                                    )),
-                                );
+                                commands.push(crate::commands::AppCommand::Editor(
+                                    EditorCommand::SetGraphicsBackend(graphics_choice),
+                                ));
                             }
 
                             if view.settings_restart_required {
@@ -1008,9 +965,9 @@ pub fn show_editor_ui(
                                     }
                                 });
                             if audio_choice != view.configured_audio_backend {
-                                commands.push(crate::commands::AppCommand::Editor(crate::state::editor_command::EditorCommand::SetAudioBackend(
-                                    audio_choice,
-                                )));
+                                commands.push(crate::commands::AppCommand::Editor(
+                                    EditorCommand::SetAudioBackend(audio_choice),
+                                ));
                             }
 
                             ui.separator();
@@ -1026,11 +983,9 @@ pub fn show_editor_ui(
                                 )
                                 .changed()
                             {
-                                commands.push(
-                                    crate::commands::AppCommand::Editor(crate::state::editor_command::EditorCommand::SetUiScaleMultiplier(
-                                        ui_scale_multiplier,
-                                    )),
-                                );
+                                commands.push(crate::commands::AppCommand::Editor(
+                                    EditorCommand::SetUiScaleMultiplier(ui_scale_multiplier),
+                                ));
                             }
                         }
                         SettingsSection::Keybinds => {
@@ -1081,8 +1036,9 @@ pub fn show_editor_ui(
 
                                     ui.separator();
                                     if ui.button("Reset to Defaults").clicked() {
-                                        commands
-                                            .push(crate::commands::AppCommand::Editor(crate::state::editor_command::EditorCommand::ResetKeybinds));
+                                        commands.push(crate::commands::AppCommand::Editor(
+                                            EditorCommand::ResetKeybinds,
+                                        ));
                                     }
                                 });
                         }
@@ -1104,9 +1060,9 @@ pub fn show_editor_ui(
                 .clicked()
                 && !is_compose
             {
-                commands.push(crate::commands::AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::SetMode(EditorMode::Place),
-                ));
+                commands.push(crate::commands::AppCommand::Editor(EditorCommand::SetMode(
+                    EditorMode::Place,
+                )));
             }
             if ui
                 .selectable_label(is_timing, "Timing")
@@ -1117,9 +1073,9 @@ pub fn show_editor_ui(
                 .clicked()
                 && !is_timing
             {
-                commands.push(crate::commands::AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::SetMode(EditorMode::Timing),
-                ));
+                commands.push(crate::commands::AppCommand::Editor(EditorCommand::SetMode(
+                    EditorMode::Timing,
+                )));
             }
             if ui
                 .selectable_label(is_tapping, "Tapping")
@@ -1130,9 +1086,9 @@ pub fn show_editor_ui(
                 .clicked()
                 && !is_tapping
             {
-                commands.push(crate::commands::AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::SetMode(EditorMode::Tapping),
-                ));
+                commands.push(crate::commands::AppCommand::Editor(EditorCommand::SetMode(
+                    EditorMode::Tapping,
+                )));
             }
 
             ui.separator();
@@ -1148,9 +1104,7 @@ pub fn show_editor_ui(
                     for level in levels {
                         if ui.selectable_label(selected == level, level).clicked() {
                             commands.push(crate::commands::AppCommand::Editor(
-                                crate::state::editor_command::EditorCommand::LoadLevel(
-                                    level.clone(),
-                                ),
+                                EditorCommand::LoadLevel(level.clone()),
                             ));
                         }
                     }
@@ -1163,7 +1117,7 @@ pub fn show_editor_ui(
                 .clicked()
             {
                 commands.push(crate::commands::AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::ExportLevel,
+                    EditorCommand::ExportLevel,
                 ));
             }
 
@@ -1172,7 +1126,7 @@ pub fn show_editor_ui(
                 .clicked()
             {
                 commands.push(crate::commands::AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::CompleteImport,
+                    EditorCommand::CompleteImport,
                 ));
             }
 
@@ -1181,9 +1135,7 @@ pub fn show_editor_ui(
                 .clicked()
             {
                 commands.push(crate::commands::AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::SetShowMetadata(
-                        !view.show_metadata,
-                    ),
+                    EditorCommand::SetShowMetadata(!view.show_metadata),
                 ));
             }
 
@@ -1196,7 +1148,7 @@ pub fn show_editor_ui(
                 .clicked()
             {
                 commands.push(crate::commands::AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::ToggleSettings,
+                    EditorCommand::ToggleSettings,
                 ));
             }
 
@@ -1218,7 +1170,7 @@ pub fn show_editor_ui(
                     let mut name = view.level_name.unwrap_or("Untitled").to_string();
                     if ui.text_edit_singleline(&mut name).changed() {
                         commands.push(crate::commands::AppCommand::Editor(
-                            crate::state::editor_command::EditorCommand::RenameLevel(name),
+                            EditorCommand::RenameLevel(name),
                         ));
                     }
 
@@ -1240,7 +1192,7 @@ pub fn show_editor_ui(
                             .clicked()
                         {
                             commands.push(crate::commands::AppCommand::Editor(
-                                crate::state::editor_command::EditorCommand::TriggerAudioImport,
+                                EditorCommand::TriggerAudioImport,
                             ));
                         }
                     });
@@ -1265,7 +1217,7 @@ pub fn show_editor_ui(
 
                     if changed {
                         commands.push(crate::commands::AppCommand::Editor(
-                            crate::state::editor_command::EditorCommand::UpdateMusic(music),
+                            EditorCommand::UpdateMusic(music),
                         ));
                     }
 
@@ -1334,9 +1286,7 @@ pub fn show_editor_ui(
 
                     if creator_metadata_changed {
                         commands.push(crate::commands::AppCommand::Editor(
-                            crate::state::editor_command::EditorCommand::UpdateCreatorMetadata(
-                                creator_metadata,
-                            ),
+                            EditorCommand::UpdateCreatorMetadata(creator_metadata),
                         ));
                     }
 
@@ -1347,9 +1297,7 @@ pub fn show_editor_ui(
                         let mut sky_color = view.sky_color;
                         if ui.color_edit_button_rgb(&mut sky_color).changed() {
                             commands.push(crate::commands::AppCommand::Editor(
-                                crate::state::editor_command::EditorCommand::UpdateSkyColor(
-                                    sky_color,
-                                ),
+                                EditorCommand::UpdateSkyColor(sky_color),
                             ));
                         }
                     });
@@ -1369,10 +1317,8 @@ pub fn show_editor_ui(
                             .changed()
                         {
                             commands.push(crate::commands::AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SetSimulateTriggerHitboxes(
-                            simulate_hitboxes,
-                        ),
-                    ));
+                                EditorCommand::SetSimulateTriggerHitboxes(simulate_hitboxes),
+                            ));
                         }
                     });
 
@@ -1383,23 +1329,23 @@ pub fn show_editor_ui(
                     ));
                     ui.horizontal_wrapped(|ui| {
                         push_command_when_clicked(
-                    &mut commands,
-                    ui.button(format!(
-                        "{} Capture Current Camera",
-                        egui_phosphor::regular::CAMERA
-                    ))
-                    .clicked(),
-                    crate::commands::AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::CaptureMenuPreviewCamera,
-                    ),
-                );
+                            &mut commands,
+                            ui.button(format!(
+                                "{} Capture Current Camera",
+                                egui_phosphor::regular::CAMERA
+                            ))
+                            .clicked(),
+                            crate::commands::AppCommand::Editor(
+                                EditorCommand::CaptureMenuPreviewCamera,
+                            ),
+                        );
                         push_command_when_clicked(
-                    &mut commands,
-                    ui.button("Use Auto from Spawn").clicked(),
-                    crate::commands::AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::UseAutoMenuPreviewCamera,
-                    ),
-                );
+                            &mut commands,
+                            ui.button("Use Auto from Spawn").clicked(),
+                            crate::commands::AppCommand::Editor(
+                                EditorCommand::UseAutoMenuPreviewCamera,
+                            ),
+                        );
                     });
 
                     ui.separator();
@@ -1416,7 +1362,7 @@ pub fn show_editor_ui(
 
         if !metadata_open {
             commands.push(crate::commands::AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetShowMetadata(false),
+                EditorCommand::SetShowMetadata(false),
             ));
         }
     }
@@ -1473,18 +1419,14 @@ pub fn show_editor_ui(
                                         block_icon_texture_ids.get(block.id.as_str()).copied(),
                                     ) {
                                         commands.push(AppCommand::Editor(
-                                            crate::state::editor_command::EditorCommand::SetBlockId(
-                                                block.id.clone(),
-                                            ),
+                                            EditorCommand::SetBlockId(block.id.clone()),
                                         ));
+                                        commands.push(AppCommand::Editor(EditorCommand::SetMode(
+                                            EditorMode::Place,
+                                        )));
                                         commands.push(AppCommand::Editor(
-                                            crate::state::editor_command::EditorCommand::SetMode(
-                                                EditorMode::Place,
-                                            ),
+                                            EditorCommand::TogglePlaceWindow,
                                         ));
-                                        commands.push(AppCommand::Editor(
-                                    crate::state::editor_command::EditorCommand::TogglePlaceWindow,
-                                ));
                                     }
                                 } else {
                                     ui.allocate_exact_size(
@@ -1507,9 +1449,7 @@ pub fn show_editor_ui(
         }
 
         if !place_open {
-            commands.push(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::TogglePlaceWindow,
-            ));
+            commands.push(AppCommand::Editor(EditorCommand::TogglePlaceWindow));
         }
     }
 
@@ -1562,7 +1502,9 @@ pub fn show_editor_ui(
                             .on_hover_text("Cancel transform trigger")
                             .clicked()
                         {
-                            commands.push(AppCommand::Editor(crate::state::editor_command::EditorCommand::CancelTransformTriggerCapture));
+                            commands.push(AppCommand::Editor(
+                                EditorCommand::CancelTransformTriggerCapture,
+                            ));
                         }
                         ui.add_space(6.0);
                         if ui
@@ -1575,7 +1517,9 @@ pub fn show_editor_ui(
                             .on_hover_text("Create transform trigger")
                             .clicked()
                         {
-                            commands.push(AppCommand::Editor(crate::state::editor_command::EditorCommand::CommitTransformTriggerCapture));
+                            commands.push(AppCommand::Editor(
+                                EditorCommand::CommitTransformTriggerCapture,
+                            ));
                         }
                     } else {
                         let hotkey_hint = view.app_settings.hotkey_hint("toggle_place_window");
@@ -1597,7 +1541,7 @@ pub fn show_editor_ui(
                             .on_hover_text(format!("Place Block{}", hotkey_hint))
                             .clicked()
                         {
-                            commands.push(AppCommand::Editor(crate::state::editor_command::EditorCommand::TogglePlaceWindow));
+                            commands.push(AppCommand::Editor(EditorCommand::TogglePlaceWindow));
                         }
                     }
                 });
@@ -1710,9 +1654,7 @@ pub fn show_perf_overlay(ctx: &egui::Context, state: &mut State) {
         });
 
     if !profiler_open {
-        state.dispatch(AppCommand::Editor(
-            crate::state::editor_command::EditorCommand::TogglePerfOverlay,
-        ));
+        state.dispatch(AppCommand::Editor(EditorCommand::TogglePerfOverlay));
     }
 }
 
@@ -1783,10 +1725,10 @@ fn show_keybind_controls(
                 .clicked()
             {
                 commands.push(crate::commands::AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::ResetKeybind(action.to_string()),
+                    EditorCommand::ResetKeybind(action.to_string()),
                 ));
                 commands.push(crate::commands::AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::SetKeybindCapture(None),
+                    EditorCommand::SetKeybindCapture(None),
                 ));
             }
         });
@@ -1815,14 +1757,11 @@ fn show_keybind_controls(
             {
                 if is_capturing {
                     commands.push(crate::commands::AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SetKeybindCapture(None),
+                        EditorCommand::SetKeybindCapture(None),
                     ));
                 } else {
                     commands.push(crate::commands::AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SetKeybindCapture(Some((
-                            action.to_string(),
-                            slot,
-                        ))),
+                        EditorCommand::SetKeybindCapture(Some((action.to_string(), slot))),
                     ));
                 }
             }
@@ -1834,13 +1773,13 @@ fn show_keybind_controls(
                     .clicked()
             {
                 commands.push(crate::commands::AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::ClearKeybindSlot {
+                    EditorCommand::ClearKeybindSlot {
                         action: action.to_string(),
                         slot,
                     },
                 ));
                 commands.push(crate::commands::AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::SetKeybindCapture(None),
+                    EditorCommand::SetKeybindCapture(None),
                 ));
             }
         });
@@ -2196,26 +2135,22 @@ fn show_view_selector_cube(
             if dragging_cube {
                 let pointer_delta = ui.input(|input| input.pointer.delta());
                 if pointer_delta != egui::Vec2::ZERO {
-                    commands.push(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SetCameraOrientation {
-                            rotation: camera_rotation - pointer_delta.x * ROTATE_SPEED,
-                            pitch: camera_pitch + pointer_delta.y * PITCH_SPEED,
-                            transition_seconds: None,
-                        },
-                    ));
+                    commands.push(AppCommand::Editor(EditorCommand::SetCameraOrientation {
+                        rotation: camera_rotation - pointer_delta.x * ROTATE_SPEED,
+                        pitch: camera_pitch + pointer_delta.y * PITCH_SPEED,
+                        transition_seconds: None,
+                    }));
                 }
             }
 
             if response.clicked() && !dragging_cube {
                 if let Some(idx) = hovered_face {
                     let face = &rendered_faces[idx];
-                    commands.push(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SetCameraOrientation {
-                            rotation: face.rotation,
-                            pitch: face.pitch,
-                            transition_seconds: Some(0.25),
-                        },
-                    ));
+                    commands.push(AppCommand::Editor(EditorCommand::SetCameraOrientation {
+                        rotation: face.rotation,
+                        pitch: face.pitch,
+                        transition_seconds: Some(0.25),
+                    }));
                 }
             }
 
@@ -2243,6 +2178,7 @@ mod tests {
     };
     use crate::block_repository::resolve_block_definition;
     use crate::commands::AppCommand;
+    use crate::state::editor_command::EditorCommand;
     use crate::test_utils::approx_eq;
     use crate::types::{EditorMode, SettingsSection};
     use glam::{Mat3, Vec3};
@@ -2289,24 +2225,18 @@ mod tests {
         push_command_when_clicked(
             &mut commands,
             false,
-            AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::CaptureMenuPreviewCamera,
-            ),
+            AppCommand::Editor(EditorCommand::CaptureMenuPreviewCamera),
         );
         assert!(commands.is_empty());
 
         push_command_when_clicked(
             &mut commands,
             true,
-            AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::UseAutoMenuPreviewCamera,
-            ),
+            AppCommand::Editor(EditorCommand::UseAutoMenuPreviewCamera),
         );
         assert_eq!(
             commands,
-            vec![AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::UseAutoMenuPreviewCamera
-            )]
+            vec![AppCommand::Editor(EditorCommand::UseAutoMenuPreviewCamera)]
         );
     }
 
@@ -2511,9 +2441,7 @@ mod tests {
             };
 
             assert!(state.is_menu());
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::TogglePerfOverlay,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::TogglePerfOverlay));
 
             let ctx = egui::Context::default();
             let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
@@ -2538,11 +2466,9 @@ mod tests {
             };
 
             state.enter_editor_phase_for_test("MarqueeUiTest");
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(
-                    crate::types::EditorMode::Select,
-                ),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                crate::types::EditorMode::Select,
+            )));
 
             // Inject a marquee drag large enough to be considered active.
             state.process_input_event(crate::commands::InputEvent::MouseButton {
@@ -2574,23 +2500,15 @@ mod tests {
             state.enter_editor_phase_for_test("EditorUiCompositionTest");
             assert!(state.is_editor());
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Timing),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetShowSettings(true),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetSettingsSection(
-                    SettingsSection::Backends,
-                ),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetShowMetadata(true),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::TogglePerfOverlay,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Timing,
+            )));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetShowSettings(true)));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetSettingsSection(
+                SettingsSection::Backends,
+            )));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetShowMetadata(true)));
+            state.dispatch(AppCommand::Editor(EditorCommand::TogglePerfOverlay));
             run_editor_ui_once(&mut state);
 
             assert_eq!(state.editor_mode(), EditorMode::Timing);
@@ -2599,22 +2517,20 @@ mod tests {
             assert!(state.editor_show_metadata());
             assert!(state.perf_overlay_enabled());
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Place),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetSettingsSection(
-                    SettingsSection::Keybinds,
-                ),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Place,
+            )));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetSettingsSection(
+                SettingsSection::Keybinds,
+            )));
             run_editor_ui_once(&mut state);
 
             assert_eq!(state.editor_mode(), EditorMode::Place);
             assert_eq!(state.editor_settings_section(), SettingsSection::Keybinds);
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Tapping),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Tapping,
+            )));
             run_editor_ui_once(&mut state);
 
             assert_eq!(state.editor_mode(), EditorMode::Tapping);

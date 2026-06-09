@@ -738,6 +738,7 @@ mod tests {
 
     use super::{auto_menu_preview_camera_from_spawn, menu_preview_camera_for_metadata, State};
     use crate::commands::AppCommand;
+    use crate::state::editor_command::EditorCommand;
     use crate::types::{
         AppPhase, EditorStateParams, KeyChord, LevelCreatorMetadata, LevelMetadata, LevelObject,
         LevelPreviewCameraMetadata, MusicMetadata, SettingsSection, SpawnMetadata,
@@ -1106,9 +1107,7 @@ mod tests {
             let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::CaptureMenuPreviewCamera,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::CaptureMenuPreviewCamera));
             assert!(state
                 .current_editor_metadata()
                 .menu_preview_camera
@@ -1118,9 +1117,7 @@ mod tests {
                 position: [9.0, 8.0, 7.0],
                 target: [6.0, 5.0, 4.0],
             });
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::UseAutoMenuPreviewCamera,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::UseAutoMenuPreviewCamera));
             assert!(state
                 .current_editor_metadata()
                 .menu_preview_camera
@@ -1130,18 +1127,14 @@ mod tests {
             state.editor.camera.editor_pan = [2.0, -4.0];
             state.editor.camera.editor_target_z = 3.0;
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::CaptureMenuPreviewCamera,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::CaptureMenuPreviewCamera));
             let captured = state.current_editor_metadata().menu_preview_camera;
             assert_eq!(
                 captured.as_ref().map(|camera| camera.target),
                 Some([2.0, 3.0, -4.0])
             );
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::UseAutoMenuPreviewCamera,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::UseAutoMenuPreviewCamera));
             assert!(state
                 .current_editor_metadata()
                 .menu_preview_camera

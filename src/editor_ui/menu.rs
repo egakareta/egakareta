@@ -7,6 +7,7 @@
 */
 use crate::commands::AppCommand;
 use crate::editor_ui::components::show_shadowed_label;
+use crate::state::editor_command::EditorCommand;
 use crate::State;
 
 const MENU_FAVICON_PNG: &[u8] = include_bytes!("../../assets/darkicon.png");
@@ -528,9 +529,7 @@ pub fn show_menu_topbar_ui(root_ui: &mut egui::Ui, state: &mut State) {
                 ))
                 .clicked()
             {
-                commands.push(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::ToggleSettings,
-                ));
+                commands.push(AppCommand::Editor(EditorCommand::ToggleSettings));
             }
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

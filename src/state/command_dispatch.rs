@@ -557,15 +557,15 @@ impl State {
 
     fn map_modifier_key_to_command(&self, key: &str, pressed: bool) -> Option<AppCommand> {
         match key {
-            "Shift" | "ShiftLeft" | "ShiftRight" => Some(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetShiftHeld(pressed),
-            )),
-            "Control" | "ControlLeft" | "ControlRight" => Some(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetCtrlHeld(pressed),
-            )),
-            "Alt" | "AltLeft" | "AltRight" => Some(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetAltHeld(pressed),
-            )),
+            "Shift" | "ShiftLeft" | "ShiftRight" => {
+                Some(AppCommand::Editor(EditorCommand::SetShiftHeld(pressed)))
+            }
+            "Control" | "ControlLeft" | "ControlRight" => {
+                Some(AppCommand::Editor(EditorCommand::SetCtrlHeld(pressed)))
+            }
+            "Alt" | "AltLeft" | "AltRight" => {
+                Some(AppCommand::Editor(EditorCommand::SetAltHeld(pressed)))
+            }
             _ => None,
         }
     }
@@ -587,18 +587,18 @@ impl State {
 
             if key_match && (!pressed || modifiers_match) {
                 match binding.action.as_str() {
-                    "pan_up" => commands.push(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SetPanUpHeld(pressed),
-                    )),
-                    "pan_down" => commands.push(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SetPanDownHeld(pressed),
-                    )),
-                    "pan_left" => commands.push(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SetPanLeftHeld(pressed),
-                    )),
-                    "pan_right" => commands.push(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SetPanRightHeld(pressed),
-                    )),
+                    "pan_up" => {
+                        commands.push(AppCommand::Editor(EditorCommand::SetPanUpHeld(pressed)))
+                    }
+                    "pan_down" => {
+                        commands.push(AppCommand::Editor(EditorCommand::SetPanDownHeld(pressed)))
+                    }
+                    "pan_left" => {
+                        commands.push(AppCommand::Editor(EditorCommand::SetPanLeftHeld(pressed)))
+                    }
+                    "pan_right" => {
+                        commands.push(AppCommand::Editor(EditorCommand::SetPanRightHeld(pressed)))
+                    }
                     _ => {}
                 }
             }
@@ -678,27 +678,21 @@ impl State {
             "toggle_settings" => {
                 // Allow toggle in menu, editor, and paused states; block during active gameplay
                 if just_pressed && (self.phase != AppPhase::Playing || self.is_game_paused()) {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::ToggleSettings,
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::ToggleSettings))
                 } else {
                     None
                 }
             }
             "toggle_timeline_playback" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::ToggleTimelinePlayback,
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::ToggleTimelinePlayback))
                 } else {
                     None
                 }
             }
             "playtest" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::Playtest,
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::Playtest))
                 } else {
                     None
                 }
@@ -707,16 +701,10 @@ impl State {
                 if self.is_editor() && just_pressed {
                     if self.editor_effective_mode_for_playback() == EditorMode::Tapping {
                         self.editor.selected_tap().map(|(_, time_seconds, _)| {
-                            AppCommand::Editor(
-                                crate::state::editor_command::EditorCommand::RemoveTapAt(
-                                    time_seconds,
-                                ),
-                            )
+                            AppCommand::Editor(EditorCommand::RemoveTapAt(time_seconds))
                         })
                     } else {
-                        Some(AppCommand::Editor(
-                            crate::state::editor_command::EditorCommand::RemoveBlock,
-                        ))
+                        Some(AppCommand::Editor(EditorCommand::RemoveBlock))
                     }
                 } else {
                     None
@@ -724,87 +712,75 @@ impl State {
             }
             "copy" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::CopyBlock,
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::CopyBlock))
                 } else {
                     None
                 }
             }
             "paste" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::PasteBlock,
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::PasteBlock))
                 } else {
                     None
                 }
             }
             "duplicate" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::DuplicateBlock,
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::DuplicateBlock))
                 } else {
                     None
                 }
             }
             "undo" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::Undo,
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::Undo))
                 } else {
                     None
                 }
             }
             "redo" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::Redo,
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::Redo))
                 } else {
                     None
                 }
             }
             "nudge_up" => {
                 if self.is_editor() && self.has_block_selection() {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::NudgeSelected { dx: 0, dy: 1 },
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::NudgeSelected {
+                        dx: 0,
+                        dy: 1,
+                    }))
                 } else {
                     None
                 }
             }
             "nudge_down" => {
                 if self.is_editor() && self.has_block_selection() {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::NudgeSelected {
-                            dx: 0,
-                            dy: -1,
-                        },
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::NudgeSelected {
+                        dx: 0,
+                        dy: -1,
+                    }))
                 } else {
                     None
                 }
             }
             "nudge_left" => {
                 if self.is_editor() && self.has_block_selection() {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::NudgeSelected {
-                            dx: -1,
-                            dy: 0,
-                        },
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::NudgeSelected {
+                        dx: -1,
+                        dy: 0,
+                    }))
                 } else {
                     None
                 }
             }
             "nudge_right" => {
                 if self.is_editor() && self.has_block_selection() {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::NudgeSelected { dx: 1, dy: 0 },
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::NudgeSelected {
+                        dx: 1,
+                        dy: 0,
+                    }))
                 } else {
                     None
                 }
@@ -814,63 +790,49 @@ impl State {
                     && just_pressed
                     && (self.has_block_selection() || self.editor.selected_tap().is_some())
                 {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SnapSelectionToGrid,
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::SnapSelectionToGrid))
                 } else {
                     None
                 }
             }
             "pick_selected_block" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::PickSelectedBlock,
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::PickSelectedBlock))
                 } else {
                     None
                 }
             }
             "select_recent_block_1" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SelectRecentBlock(0),
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::SelectRecentBlock(0)))
                 } else {
                     None
                 }
             }
             "select_recent_block_2" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SelectRecentBlock(1),
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::SelectRecentBlock(1)))
                 } else {
                     None
                 }
             }
             "select_recent_block_3" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SelectRecentBlock(2),
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::SelectRecentBlock(2)))
                 } else {
                     None
                 }
             }
             "select_recent_block_4" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SelectRecentBlock(3),
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::SelectRecentBlock(3)))
                 } else {
                     None
                 }
             }
             "focus_camera_target" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::FocusCameraTarget,
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::FocusCameraTarget))
                 } else {
                     None
                 }
@@ -878,7 +840,7 @@ impl State {
             "add_transform_trigger" => {
                 if self.is_editor() && just_pressed && self.has_block_selection() {
                     Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::BeginTransformTriggerCapture,
+                        EditorCommand::BeginTransformTriggerCapture,
                     ))
                 } else {
                     None
@@ -900,27 +862,21 @@ impl State {
             }
             "escape" => {
                 if just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::Escape,
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::Escape))
                 } else {
                     None
                 }
             }
             "zoom_in" => {
                 if just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::AdjustZoom(1.0),
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::AdjustZoom(1.0)))
                 } else {
                     None
                 }
             }
             "zoom_out" => {
                 if just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::AdjustZoom(-1.0),
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::AdjustZoom(-1.0)))
                 } else {
                     None
                 }
@@ -934,9 +890,7 @@ impl State {
             }
             "toggle_place_window" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::TogglePlaceWindow,
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::TogglePlaceWindow))
                 } else {
                     None
                 }
@@ -978,9 +932,7 @@ impl State {
             }
             "spawn_set" => {
                 if just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SetSpawnHere,
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::SetSpawnHere))
                 } else {
                     None
                 }
@@ -988,13 +940,9 @@ impl State {
             "spawn_rotate" => {
                 if just_pressed {
                     if self.editor_effective_mode_for_playback() == EditorMode::Place {
-                        Some(AppCommand::Editor(
-                            crate::state::editor_command::EditorCommand::RotatePlacementPreview,
-                        ))
+                        Some(AppCommand::Editor(EditorCommand::RotatePlacementPreview))
                     } else {
-                        Some(AppCommand::Editor(
-                            crate::state::editor_command::EditorCommand::RotateSpawnDirection,
-                        ))
+                        Some(AppCommand::Editor(EditorCommand::RotateSpawnDirection))
                     }
                 } else {
                     None
@@ -1002,99 +950,89 @@ impl State {
             }
             "add_camera_trigger" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::AddCameraTrigger,
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::AddCameraTrigger))
                 } else {
                     None
                 }
             }
             "export_obj" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::ExportBlockObj,
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::ExportBlockObj))
                 } else {
                     None
                 }
             }
             "toggle_hitbox_visualization" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::ToggleHitboxVisualization,
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::ToggleHitboxVisualization))
                 } else {
                     None
                 }
             }
             "toggle_perf_overlay" => {
                 if just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::TogglePerfOverlay,
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::TogglePerfOverlay))
                 } else {
                     None
                 }
             }
             "mode_select" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SetMode(EditorMode::Select),
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::SetMode(
+                        EditorMode::Select,
+                    )))
                 } else {
                     None
                 }
             }
             "mode_move" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SetMode(EditorMode::Move),
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::SetMode(EditorMode::Move)))
                 } else {
                     None
                 }
             }
             "mode_scale" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SetMode(EditorMode::Scale),
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::SetMode(
+                        EditorMode::Scale,
+                    )))
                 } else {
                     None
                 }
             }
             "mode_rotate" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SetMode(EditorMode::Rotate),
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::SetMode(
+                        EditorMode::Rotate,
+                    )))
                 } else {
                     None
                 }
             }
             "tab_compose" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SetMode(EditorMode::Place),
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::SetMode(
+                        EditorMode::Place,
+                    )))
                 } else {
                     None
                 }
             }
             "tab_timing" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SetMode(EditorMode::Timing),
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::SetMode(
+                        EditorMode::Timing,
+                    )))
                 } else {
                     None
                 }
             }
             "tab_tapping" => {
                 if self.is_editor() && just_pressed {
-                    Some(AppCommand::Editor(
-                        crate::state::editor_command::EditorCommand::SetMode(EditorMode::Tapping),
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::SetMode(
+                        EditorMode::Tapping,
+                    )))
                 } else {
                     None
                 }
@@ -1239,9 +1177,9 @@ mod tests {
                 },
             );
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Tapping),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Tapping,
+            )));
 
             assert_eq!(state.editor.ui.mode, EditorMode::Tapping);
             assert_eq!(state.editor.timeline.tap_division_preview_cache_revision, 0);
@@ -1268,9 +1206,9 @@ mod tests {
             state.editor.camera.editor_pan = [4.0, 8.0];
             state.editor.camera.editor_target_z = 6.0;
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Tapping),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Tapping,
+            )));
 
             assert_eq!(state.editor.ui.mode, EditorMode::Tapping);
             assert_eq!(state.editor.camera.editor_pan, [4.0, 8.0]);
@@ -1289,9 +1227,9 @@ mod tests {
             state.editor.timeline.taps.tap_indicator_positions = vec![[42.0, 0.0, 42.0]];
             state.editor.timeline.taps.selected_index = Some(0);
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Tapping),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Tapping,
+            )));
 
             let expected = crate::editor_domain::derive_tap_indicator_positions(
                 state.editor.spawn.position,
@@ -1320,9 +1258,9 @@ mod tests {
                 state.editor.timeline.simulation_revision
             );
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Tapping),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Tapping,
+            )));
 
             assert_eq!(state.editor.ui.mode, EditorMode::Tapping);
             assert!(!state.editor.timeline.snapshot_cache.is_empty());
@@ -1342,12 +1280,10 @@ mod tests {
         pollster::block_on(async {
             let mut state = new_editor_state().await;
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Timing),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::ToggleTimelinePlayback,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Timing,
+            )));
+            state.dispatch(AppCommand::Editor(EditorCommand::ToggleTimelinePlayback));
             assert!(state.editor.timeline.playback.playing);
             assert_eq!(state.editor.ui.mode, EditorMode::Null);
             assert_eq!(
@@ -1355,9 +1291,9 @@ mod tests {
                 Some(EditorMode::Timing)
             );
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Place),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Place,
+            )));
 
             assert!(state.editor.timeline.playback.playing);
             assert_eq!(state.editor.ui.mode, EditorMode::Null);
@@ -1370,9 +1306,7 @@ mod tests {
                 EditorMode::Place
             );
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::ToggleTimelinePlayback,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::ToggleTimelinePlayback));
 
             assert!(!state.editor.timeline.playback.playing);
             assert_eq!(state.editor.ui.mode, EditorMode::Place);
@@ -1399,9 +1333,7 @@ mod tests {
             state.editor.timeline.clock.time_seconds = 2.0;
             state.editor.timeline.playback.playing = true;
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::Escape,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::Escape));
 
             assert!(state.editor.ui.selected_block_indices.is_empty());
             assert!(state.editor.ui.selected_block_index.is_none());
@@ -1409,9 +1341,7 @@ mod tests {
             assert!(state.editor.timeline.playback.playing);
             assert_eq!(state.editor.timeline.clock.time_seconds, 2.0);
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::Escape,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::Escape));
 
             assert!(!state.editor.timeline.playback.playing);
             assert_eq!(state.editor.timeline.clock.time_seconds, 2.0);
@@ -1426,16 +1356,12 @@ mod tests {
             state.session.playtesting_editor = false;
             state.gameplay.state.started = true;
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::Escape,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::Escape));
 
             assert_eq!(state.phase, AppPhase::Playing);
             assert!(state.is_game_paused());
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::Escape,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::Escape));
 
             assert_eq!(state.phase, AppPhase::Playing);
             assert!(!state.is_game_paused());
@@ -1516,9 +1442,7 @@ mod tests {
             }];
             state.editor_playtest();
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::Escape,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::Escape));
 
             assert_eq!(state.phase, AppPhase::Editor);
             assert!(!state.is_game_paused());
@@ -1549,16 +1473,14 @@ mod tests {
             let mut state = new_editor_state().await;
 
             let initial_z = state.editor.camera.editor_target_z;
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::AdjustZoom(0.5),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::AdjustZoom(0.5)));
             // Zooming in (positive delta) should move the camera target Z forward (if look direction has positive Z)
             // or at least change the position.
             assert!(state.editor.camera.editor_target_z != initial_z);
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetBlockId("core/lava".to_string()),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetBlockId(
+                "core/lava".to_string(),
+            )));
             assert_eq!(state.editor.config.selected_block_id, "core/lava");
             assert_eq!(state.editor.config.recent_block_ids[0], "core/lava");
 
@@ -1585,9 +1507,7 @@ mod tests {
             state.editor.ui.selected_block_indices = vec![0];
             state.editor.ui.hovered_block_index = Some(1);
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::PickSelectedBlock,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::PickSelectedBlock));
 
             assert_eq!(state.editor.ui.mode, EditorMode::Place);
             assert_eq!(state.editor.config.selected_block_id, "core/stone");
@@ -1597,9 +1517,7 @@ mod tests {
             state.editor.ui.selected_block_indices.clear();
             state.editor.ui.hovered_block_index = Some(1);
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::PickSelectedBlock,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::PickSelectedBlock));
 
             assert_eq!(state.editor.ui.mode, EditorMode::Move);
             assert_eq!(state.editor.config.selected_block_id, "core/stone");
@@ -1611,15 +1529,13 @@ mod tests {
         pollster::block_on(async {
             let mut state = new_editor_state().await;
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Place),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetBlockId("core/lava".to_string()),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::RotatePlacementPreview,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Place,
+            )));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetBlockId(
+                "core/lava".to_string(),
+            )));
+            state.dispatch(AppCommand::Editor(EditorCommand::RotatePlacementPreview));
             state.dispatch(AppCommand::TurnRight);
 
             assert_eq!(state.editor.objects.len(), 1);
@@ -1642,9 +1558,7 @@ mod tests {
             let command = state.command_for_keybind_action("spawn_rotate", true);
             assert_eq!(
                 command,
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::RotatePlacementPreview
-                ))
+                Some(AppCommand::Editor(EditorCommand::RotatePlacementPreview))
             );
             state.dispatch(command.unwrap());
 
@@ -1664,12 +1578,10 @@ mod tests {
         pollster::block_on(async {
             let mut state = new_editor_state().await;
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Place),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetShiftHeld(true),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Place,
+            )));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetShiftHeld(true)));
             state.dispatch(AppCommand::TurnRight);
 
             assert_eq!(state.editor.objects.len(), 1);
@@ -1691,12 +1603,10 @@ mod tests {
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
             }];
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Move),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetBlockId("core/stone".to_string()),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(EditorMode::Move)));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetBlockId(
+                "core/stone".to_string(),
+            )));
 
             let viewport = Vec2::new(
                 state.render.gpu.config.width as f32,
@@ -1707,12 +1617,10 @@ mod tests {
                 .world_to_screen_v(Vec3::new(0.5, 0.5, 0.5), viewport)
                 .expect("block center should project to the screen");
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::PickBlockAt {
-                    x: screen.x as f64,
-                    y: screen.y as f64,
-                },
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::PickBlockAt {
+                x: screen.x as f64,
+                y: screen.y as f64,
+            }));
 
             assert_eq!(state.editor.ui.mode, EditorMode::Place);
             assert_eq!(state.editor.config.selected_block_id, "core/grass");
@@ -1746,9 +1654,7 @@ mod tests {
             state.editor.ui.selected_block_indices = vec![0];
             state.editor.ui.hovered_block_index = Some(1);
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::FocusCameraTarget,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::FocusCameraTarget));
 
             assert_eq!(state.editor.camera.editor_pan, [11.0, 33.0]);
             assert_eq!(state.editor.camera.editor_target_z, 4.0);
@@ -1756,9 +1662,7 @@ mod tests {
             state.editor.ui.selected_block_index = None;
             state.editor.ui.selected_block_indices.clear();
             state.editor.timeline.preview.position = [7.0, 8.0, 9.0];
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::FocusCameraTarget,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::FocusCameraTarget));
 
             assert_eq!(state.editor.camera.editor_pan, [7.0, 9.0]);
             assert_eq!(state.editor.camera.editor_target_z, 8.0);
@@ -1769,9 +1673,7 @@ mod tests {
             state.editor.timeline.taps.tap_times = vec![1.25];
             state.editor.timeline.taps.tap_indicator_positions = vec![[5.0, 1.0, 6.0]];
             state.editor.timeline.taps.selected_index = Some(0);
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::FocusCameraTarget,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::FocusCameraTarget));
 
             assert_eq!(state.editor.camera.editor_pan, [5.5, 6.5]);
             assert_eq!(state.editor.camera.editor_target_z, 1.0);
@@ -1783,9 +1685,7 @@ mod tests {
             state.editor.timeline.taps.selected_index = None;
             state.editor.ui.pointer_screen = None;
             state.editor.timeline.preview.position = [7.0, 8.0, 9.0];
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::FocusCameraTarget,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::FocusCameraTarget));
 
             assert_eq!(state.editor.camera.editor_pan, [7.0, 9.0]);
             assert_eq!(state.editor.camera.editor_target_z, 8.0);
@@ -1800,9 +1700,7 @@ mod tests {
             let (pos_before, _) = state.editor_timeline_preview();
 
             // Shift timeline forward by 1 second
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::ShiftTimeline(1.0),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::ShiftTimeline(1.0)));
 
             let (pos_after, _) = state.editor_timeline_preview();
 
@@ -2039,11 +1937,9 @@ mod tests {
                 just_pressed: true,
             });
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(
-                    crate::types::EditorMode::Scale,
-                ),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                crate::types::EditorMode::Scale,
+            )));
             state.process_input_event(InputEvent::Key {
                 key: "1".to_string(),
                 pressed: true,
@@ -2073,11 +1969,9 @@ mod tests {
             use crate::commands::InputEvent;
 
             let mut state = new_editor_state().await;
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(
-                    crate::types::EditorMode::Scale,
-                ),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                crate::types::EditorMode::Scale,
+            )));
 
             state.process_input_event(InputEvent::Key {
                 key: "q".to_string(),
@@ -2198,11 +2092,9 @@ mod tests {
             use crate::commands::InputEvent;
 
             let mut state = new_editor_state().await;
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(
-                    crate::types::EditorMode::Select,
-                ),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                crate::types::EditorMode::Select,
+            )));
 
             state.editor.camera.editor_pan = [0.0, 0.0];
             state.editor.objects = vec![
@@ -2258,11 +2150,9 @@ mod tests {
             use crate::commands::InputEvent;
 
             let mut state = new_editor_state().await;
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(
-                    crate::types::EditorMode::Select,
-                ),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                crate::types::EditorMode::Select,
+            )));
 
             state.editor.camera.editor_pan = [0.0, 0.0];
             state.editor.objects = vec![crate::types::LevelObject {
@@ -2350,11 +2240,9 @@ mod tests {
             use crate::commands::InputEvent;
 
             let mut state = new_editor_state().await;
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(
-                    crate::types::EditorMode::Select,
-                ),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                crate::types::EditorMode::Select,
+            )));
             state.editor.objects = vec![LevelObject {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
@@ -2409,9 +2297,9 @@ mod tests {
             use crate::commands::InputEvent;
 
             let mut state = new_editor_state().await;
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Tapping),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Tapping,
+            )));
             state.editor.objects.clear();
             state.editor.timeline.clock.time_seconds = 0.0;
             state.editor.timeline.clock.duration_seconds = 4.0;
@@ -2477,9 +2365,9 @@ mod tests {
             use crate::commands::InputEvent;
 
             let mut state = new_editor_state().await;
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Tapping),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Tapping,
+            )));
             state.editor.objects.clear();
             state.editor.timeline.clock.time_seconds = 0.0;
             state.editor.timeline.clock.duration_seconds = 4.0;
@@ -2543,9 +2431,9 @@ mod tests {
             use crate::commands::InputEvent;
 
             let mut state = new_editor_state().await;
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Tapping),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Tapping,
+            )));
             state.editor.timeline.clock.time_seconds = 0.0;
             state.editor.timeline.clock.duration_seconds = 0.5;
             state.editor.timing.timing_points = vec![TimingPoint {
@@ -2634,9 +2522,9 @@ mod tests {
             use crate::commands::InputEvent;
 
             let mut state = new_editor_state().await;
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Tapping),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Tapping,
+            )));
             state.editor.timeline.clock.duration_seconds = 4.0;
             state.editor.config.snap_to_grid = true;
             state.editor.config.snap_step = 1.0;
@@ -2674,11 +2562,9 @@ mod tests {
             use crate::commands::InputEvent;
 
             let mut state = new_editor_state().await;
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(
-                    crate::types::EditorMode::Select,
-                ),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                crate::types::EditorMode::Select,
+            )));
 
             let camera_offset = state.editor.camera_offset();
             let target = state.editor.editor_camera_target()
@@ -2747,11 +2633,9 @@ mod tests {
             use crate::commands::InputEvent;
 
             let mut state = new_editor_state().await;
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(
-                    crate::types::EditorMode::Select,
-                ),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                crate::types::EditorMode::Select,
+            )));
 
             let camera_offset = state.editor.camera_offset();
             let target = state.editor.editor_camera_target()
@@ -2826,11 +2710,9 @@ mod tests {
             use crate::commands::InputEvent;
 
             let mut state = new_editor_state().await;
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(
-                    crate::types::EditorMode::Select,
-                ),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                crate::types::EditorMode::Select,
+            )));
             let trigger_index = state.editor.objects.len();
             state.editor.objects.push(LevelObject {
                 position: [2.0, 0.0, 0.0],
@@ -2896,15 +2778,11 @@ mod tests {
             assert_eq!(state.editor.objects.len(), initial_count + 1);
 
             // 3. Undo placement
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::Undo,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::Undo));
             assert_eq!(state.editor.objects.len(), initial_count);
 
             // 4. Redo placement
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::Redo,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::Redo));
             assert_eq!(state.editor.objects.len(), initial_count + 1);
         });
     }
@@ -2917,9 +2795,9 @@ mod tests {
             let initial_count = state.editor.objects.len();
 
             // Set a specific block type
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetBlockId("core/lava".to_string()),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetBlockId(
+                "core/lava".to_string(),
+            )));
 
             // Move cursor to a known position
             state.dispatch(AppCommand::NextLevel); // Move X+1
@@ -2945,16 +2823,12 @@ mod tests {
             );
 
             // Undo once
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::Undo,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::Undo));
             assert_eq!(state.editor.objects.len(), initial_count + 1);
             assert_eq!(state.editor.objects.last().unwrap().position, pos1);
 
             // Undo twice
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::Undo,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::Undo));
             assert_eq!(state.editor.objects.len(), initial_count);
         });
     }
@@ -3021,13 +2895,11 @@ mod tests {
             state.editor.ui.selected_block_indices = vec![0];
             state.editor.runtime.interaction.clipboard = None;
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetKeybind {
-                    action: "copy".to_string(),
-                    slot: 0,
-                    chord: crate::types::KeyChord::new("b", true, false, false),
-                },
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetKeybind {
+                action: "copy".to_string(),
+                slot: 0,
+                chord: crate::types::KeyChord::new("b", true, false, false),
+            }));
 
             state.process_input_event(InputEvent::Key {
                 key: "Control".to_string(),
@@ -3058,21 +2930,15 @@ mod tests {
 
             assert_eq!(
                 state.map_modifier_key_to_command("ShiftLeft", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::SetShiftHeld(true)
-                ))
+                Some(AppCommand::Editor(EditorCommand::SetShiftHeld(true)))
             );
             assert_eq!(
                 state.map_modifier_key_to_command("ControlRight", false),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::SetCtrlHeld(false)
-                ))
+                Some(AppCommand::Editor(EditorCommand::SetCtrlHeld(false)))
             );
             assert_eq!(
                 state.map_modifier_key_to_command("Alt", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::SetAltHeld(true)
-                ))
+                Some(AppCommand::Editor(EditorCommand::SetAltHeld(true)))
             );
             assert_eq!(state.map_modifier_key_to_command("m", true), None);
 
@@ -3102,9 +2968,7 @@ mod tests {
             state.editor.ui.alt_held = false;
             assert_eq!(
                 state.map_pan_key_to_commands("w", true),
-                vec![AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::SetPanUpHeld(true)
-                )]
+                vec![AppCommand::Editor(EditorCommand::SetPanUpHeld(true))]
             );
 
             state.editor.ui.ctrl_held = true;
@@ -3113,17 +2977,13 @@ mod tests {
             let released_pan = state.map_pan_key_to_commands("w", false);
             assert_eq!(
                 released_pan,
-                vec![AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::SetPanUpHeld(false)
-                )]
+                vec![AppCommand::Editor(EditorCommand::SetPanUpHeld(false))]
             );
 
             state.phase = AppPhase::Editor;
             assert_eq!(
                 state.command_for_keybind_action("toggle_settings", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::ToggleSettings
-                ))
+                Some(AppCommand::Editor(EditorCommand::ToggleSettings))
             );
             assert_eq!(
                 state.command_for_keybind_action("toggle_settings", false),
@@ -3132,21 +2992,15 @@ mod tests {
 
             assert_eq!(
                 state.command_for_keybind_action("toggle_timeline_playback", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::ToggleTimelinePlayback
-                ))
+                Some(AppCommand::Editor(EditorCommand::ToggleTimelinePlayback))
             );
             assert_eq!(
                 state.command_for_keybind_action("playtest", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::Playtest
-                ))
+                Some(AppCommand::Editor(EditorCommand::Playtest))
             );
             assert_eq!(
                 state.command_for_keybind_action("remove_block", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::RemoveBlock
-                ))
+                Some(AppCommand::Editor(EditorCommand::RemoveBlock))
             );
             state.editor.ui.mode = EditorMode::Tapping;
             state.editor.timeline.taps.tap_times = vec![1.25];
@@ -3154,67 +3008,59 @@ mod tests {
             state.editor.timeline.taps.selected_index = Some(0);
             assert_eq!(
                 state.command_for_keybind_action("remove_block", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::RemoveTapAt(1.25)
-                ))
+                Some(AppCommand::Editor(EditorCommand::RemoveTapAt(1.25)))
             );
             state.editor.ui.mode = EditorMode::Place;
             assert_eq!(
                 state.command_for_keybind_action("copy", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::CopyBlock
-                ))
+                Some(AppCommand::Editor(EditorCommand::CopyBlock))
             );
             assert_eq!(
                 state.command_for_keybind_action("paste", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::PasteBlock
-                ))
+                Some(AppCommand::Editor(EditorCommand::PasteBlock))
             );
             assert_eq!(
                 state.command_for_keybind_action("duplicate", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::DuplicateBlock
-                ))
+                Some(AppCommand::Editor(EditorCommand::DuplicateBlock))
             );
             assert_eq!(
                 state.command_for_keybind_action("undo", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::Undo
-                ))
+                Some(AppCommand::Editor(EditorCommand::Undo))
             );
             assert_eq!(
                 state.command_for_keybind_action("redo", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::Redo
-                ))
+                Some(AppCommand::Editor(EditorCommand::Redo))
             );
 
             assert_eq!(state.command_for_keybind_action("nudge_up", true), None);
             state.editor.ui.selected_block_index = Some(0);
             assert_eq!(
                 state.command_for_keybind_action("nudge_up", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::NudgeSelected { dx: 0, dy: 1 }
-                ))
+                Some(AppCommand::Editor(EditorCommand::NudgeSelected {
+                    dx: 0,
+                    dy: 1
+                }))
             );
             assert_eq!(
                 state.command_for_keybind_action("nudge_down", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::NudgeSelected { dx: 0, dy: -1 }
-                ))
+                Some(AppCommand::Editor(EditorCommand::NudgeSelected {
+                    dx: 0,
+                    dy: -1
+                }))
             );
             assert_eq!(
                 state.command_for_keybind_action("nudge_left", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::NudgeSelected { dx: -1, dy: 0 }
-                ))
+                Some(AppCommand::Editor(EditorCommand::NudgeSelected {
+                    dx: -1,
+                    dy: 0
+                }))
             );
             assert_eq!(
                 state.command_for_keybind_action("nudge_right", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::NudgeSelected { dx: 1, dy: 0 }
-                ))
+                Some(AppCommand::Editor(EditorCommand::NudgeSelected {
+                    dx: 1,
+                    dy: 0
+                }))
             );
             assert_eq!(
                 state.command_for_keybind_action("timeline_forward", true),
@@ -3223,9 +3069,7 @@ mod tests {
             state.editor.ui.selected_block_index = None;
             assert_eq!(
                 state.command_for_keybind_action("pick_selected_block", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::PickSelectedBlock
-                ))
+                Some(AppCommand::Editor(EditorCommand::PickSelectedBlock))
             );
             assert_eq!(
                 state.command_for_keybind_action("pick_selected_block", false),
@@ -3233,9 +3077,7 @@ mod tests {
             );
             assert_eq!(
                 state.command_for_keybind_action("focus_camera_target", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::FocusCameraTarget
-                ))
+                Some(AppCommand::Editor(EditorCommand::FocusCameraTarget))
             );
             assert_eq!(
                 state.command_for_keybind_action("focus_camera_target", false),
@@ -3256,25 +3098,22 @@ mod tests {
                     time_signature_denominator: 4,
                 },
             ];
-            let Some(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::ShiftTimeline(forward_delta),
-            )) = state.command_for_keybind_action("timeline_forward", true)
+            let Some(AppCommand::Editor(EditorCommand::ShiftTimeline(forward_delta))) =
+                state.command_for_keybind_action("timeline_forward", true)
             else {
                 panic!("timeline forward should shift to the next timing division");
             };
             assert!((forward_delta - 0.24).abs() < 0.0001);
 
-            let Some(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::ShiftTimeline(backward_delta),
-            )) = state.command_for_keybind_action("timeline_backward", true)
+            let Some(AppCommand::Editor(EditorCommand::ShiftTimeline(backward_delta))) =
+                state.command_for_keybind_action("timeline_backward", true)
             else {
                 panic!("timeline backward should shift to the previous timing division");
             };
             assert!((backward_delta + 0.01).abs() < 0.0001);
             state.editor.timeline.clock.time_seconds = 1.25;
-            let Some(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::ShiftTimeline(backward_delta),
-            )) = state.command_for_keybind_action("timeline_backward", true)
+            let Some(AppCommand::Editor(EditorCommand::ShiftTimeline(backward_delta))) =
+                state.command_for_keybind_action("timeline_backward", true)
             else {
                 panic!("timeline backward should keep moving from an exact timing division");
             };
@@ -3282,15 +3121,11 @@ mod tests {
             state.editor.timing.timing_points.clear();
             assert_eq!(
                 state.command_for_keybind_action("timeline_forward", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::ShiftTimeline(0.1)
-                ))
+                Some(AppCommand::Editor(EditorCommand::ShiftTimeline(0.1)))
             );
             assert_eq!(
                 state.command_for_keybind_action("timeline_backward", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::ShiftTimeline(-0.1)
-                ))
+                Some(AppCommand::Editor(EditorCommand::ShiftTimeline(-0.1)))
             );
             state.editor.timing.timing_points = vec![TimingPoint {
                 time_seconds: 0.0,
@@ -3301,36 +3136,26 @@ mod tests {
             state.editor.timeline.clock.time_seconds = 0.0;
             assert_eq!(
                 state.command_for_keybind_action("timeline_backward", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::ShiftTimeline(-0.1)
-                ))
+                Some(AppCommand::Editor(EditorCommand::ShiftTimeline(-0.1)))
             );
             state.editor.timeline.clock.time_seconds = state.editor.timeline.clock.duration_seconds;
             assert_eq!(
                 state.command_for_keybind_action("timeline_forward", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::ShiftTimeline(0.1)
-                ))
+                Some(AppCommand::Editor(EditorCommand::ShiftTimeline(0.1)))
             );
 
             assert_eq!(
                 state.command_for_keybind_action("escape", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::Escape
-                ))
+                Some(AppCommand::Editor(EditorCommand::Escape))
             );
             assert_eq!(state.command_for_keybind_action("escape", false), None);
             assert_eq!(
                 state.command_for_keybind_action("zoom_in", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::AdjustZoom(1.0)
-                ))
+                Some(AppCommand::Editor(EditorCommand::AdjustZoom(1.0)))
             );
             assert_eq!(
                 state.command_for_keybind_action("zoom_out", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::AdjustZoom(-1.0)
-                ))
+                Some(AppCommand::Editor(EditorCommand::AdjustZoom(-1.0)))
             );
 
             state.phase = AppPhase::Menu;
@@ -3354,86 +3179,72 @@ mod tests {
             state.phase = AppPhase::Editor;
             assert_eq!(
                 state.command_for_keybind_action("spawn_set", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::SetSpawnHere
-                ))
+                Some(AppCommand::Editor(EditorCommand::SetSpawnHere))
             );
             assert_eq!(
                 state.command_for_keybind_action("spawn_rotate", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::RotatePlacementPreview
-                ))
+                Some(AppCommand::Editor(EditorCommand::RotatePlacementPreview))
             );
 
             state.editor.ui.mode = EditorMode::Move;
             assert_eq!(
                 state.command_for_keybind_action("spawn_rotate", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::RotateSpawnDirection
-                ))
+                Some(AppCommand::Editor(EditorCommand::RotateSpawnDirection))
             );
 
             assert_eq!(
                 state.command_for_keybind_action("add_camera_trigger", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::AddCameraTrigger
-                ))
+                Some(AppCommand::Editor(EditorCommand::AddCameraTrigger))
             );
             assert_eq!(
                 state.command_for_keybind_action("export_obj", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::ExportBlockObj
-                ))
+                Some(AppCommand::Editor(EditorCommand::ExportBlockObj))
             );
             assert_eq!(
                 state.command_for_keybind_action("toggle_perf_overlay", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::TogglePerfOverlay
-                ))
+                Some(AppCommand::Editor(EditorCommand::TogglePerfOverlay))
             );
 
             assert_eq!(
                 state.command_for_keybind_action("mode_select", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::SetMode(EditorMode::Select)
-                ))
+                Some(AppCommand::Editor(EditorCommand::SetMode(
+                    EditorMode::Select
+                )))
             );
             assert_eq!(
                 state.command_for_keybind_action("mode_move", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::SetMode(EditorMode::Move)
-                ))
+                Some(AppCommand::Editor(EditorCommand::SetMode(EditorMode::Move)))
             );
             assert_eq!(
                 state.command_for_keybind_action("mode_scale", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::SetMode(EditorMode::Scale)
-                ))
+                Some(AppCommand::Editor(EditorCommand::SetMode(
+                    EditorMode::Scale
+                )))
             );
             assert_eq!(
                 state.command_for_keybind_action("mode_rotate", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::SetMode(EditorMode::Rotate)
-                ))
+                Some(AppCommand::Editor(EditorCommand::SetMode(
+                    EditorMode::Rotate
+                )))
             );
             assert_eq!(state.command_for_keybind_action("mode_trigger", true), None);
             assert_eq!(
                 state.command_for_keybind_action("tab_compose", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::SetMode(EditorMode::Place)
-                ))
+                Some(AppCommand::Editor(EditorCommand::SetMode(
+                    EditorMode::Place
+                )))
             );
             assert_eq!(
                 state.command_for_keybind_action("tab_timing", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::SetMode(EditorMode::Timing)
-                ))
+                Some(AppCommand::Editor(EditorCommand::SetMode(
+                    EditorMode::Timing
+                )))
             );
             assert_eq!(
                 state.command_for_keybind_action("tab_tapping", true),
-                Some(AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::SetMode(EditorMode::Tapping)
-                ))
+                Some(AppCommand::Editor(EditorCommand::SetMode(
+                    EditorMode::Tapping
+                )))
             );
             assert_eq!(
                 state.command_for_keybind_action("does_not_exist", true),
@@ -3447,12 +3258,9 @@ mod tests {
         pollster::block_on(async {
             let mut state = new_editor_state().await;
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetKeybindCapture(Some((
-                    "copy".to_string(),
-                    0,
-                ))),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetKeybindCapture(Some(
+                ("copy".to_string(), 0),
+            ))));
 
             state.process_keyboard_input("k", true, false);
             assert!(state.editor_keybind_capture_action().is_some());
@@ -3478,18 +3286,10 @@ mod tests {
         pollster::block_on(async {
             let mut state = new_editor_state().await;
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetSnapToGrid(true),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetSnapStep(0.5),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetSnapRotation(true),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetSnapRotationStep(30.0),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetSnapToGrid(true)));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetSnapStep(0.5)));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetSnapRotation(true)));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetSnapRotationStep(30.0)));
             assert!(state.editor.config.snap_to_grid);
             assert_eq!(state.editor.config.snap_step, 0.5);
             assert!(state.editor.config.snap_rotation);
@@ -3507,115 +3307,76 @@ mod tests {
                 color_tint: [0.2, 0.4, 0.8],
                 trigger: None,
             };
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::UpdateSelectedBlock(updated.clone()),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::UpdateSelectedBlock(
+                updated.clone(),
+            )));
             assert_eq!(state.editor.objects[0].position, updated.position);
             assert_eq!(state.editor.objects[0].size, updated.size);
             assert_eq!(state.editor.objects[0].block_id, updated.block_id);
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::CopyBlock,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::CopyBlock));
             assert!(state.editor.runtime.interaction.clipboard.is_some());
 
             let before_paste = state.editor.objects.len();
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::PasteBlock,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::PasteBlock));
             assert!(state.editor.objects.len() >= before_paste);
 
             let before_duplicate = state.editor.objects.len();
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::DuplicateBlock,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::DuplicateBlock));
             assert!(state.editor.objects.len() >= before_duplicate);
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::NudgeSelected { dx: 1, dy: 0 },
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::NudgeSelected {
+                dx: 1,
+                dy: 0,
+            }));
             assert!(!state.editor.objects.is_empty());
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::ToggleTimelinePlayback,
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::ToggleTimelinePlayback,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::ToggleTimelinePlayback));
+            state.dispatch(AppCommand::Editor(EditorCommand::ToggleTimelinePlayback));
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetTimelineDuration(4.0),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetTimelineTime(1.0),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::AddTap,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetTimelineDuration(4.0)));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetTimelineTime(1.0)));
+            state.dispatch(AppCommand::Editor(EditorCommand::AddTap));
             assert!(!state.editor.timeline.taps.tap_times.is_empty());
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::AddTap,
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::RemoveTapAt(1.0),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::AddTap));
+            state.dispatch(AppCommand::Editor(EditorCommand::RemoveTapAt(1.0)));
             assert!(state.editor.timeline.taps.tap_times.is_empty());
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::AddTap,
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::RemoveTap,
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::ClearTaps,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::AddTap));
+            state.dispatch(AppCommand::Editor(EditorCommand::RemoveTap));
+            state.dispatch(AppCommand::Editor(EditorCommand::ClearTaps));
             assert!(state.editor.timeline.taps.tap_times.is_empty());
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::AddTimingPoint {
-                    time_seconds: 0.5,
-                    bpm: 120.0,
-                },
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::AddTimingPoint {
+                time_seconds: 0.5,
+                bpm: 120.0,
+            }));
             assert!(!state.editor.timing.timing_points.is_empty());
+            state.dispatch(AppCommand::Editor(EditorCommand::SetTimingPointTime(
+                0, 0.75,
+            )));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetTimingPointBpm(
+                0, 140.0,
+            )));
             state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetTimingPointTime(0, 0.75),
+                EditorCommand::SetTimingPointTimeSignature(0, 3, 4),
             ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetTimingPointBpm(0, 140.0),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetTimingPointTimeSignature(0, 3, 4),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetTimingSelected(Some(0)),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetTimingSelected(Some(
+                0,
+            ))));
             assert_eq!(state.editor.timing.timing_selected_index, Some(0));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::RemoveTimingPoint(0),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::RemoveTimingPoint(0)));
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::BpmTap,
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::BpmTapReset,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::BpmTap));
+            state.dispatch(AppCommand::Editor(EditorCommand::BpmTapReset));
 
             state.editor.ui.cursor = [7.0, 0.0, 9.0];
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetSpawnHere,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetSpawnHere));
             assert_eq!(state.editor.spawn.position, [7.0, 0.0, 9.0]);
             let old_dir = state.editor.spawn.direction;
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::RotateSpawnDirection,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::RotateSpawnDirection));
             assert_ne!(state.editor.spawn.direction, old_dir);
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::RemoveBlock,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::RemoveBlock));
         });
     }
 
@@ -3624,83 +3385,51 @@ mod tests {
         pollster::block_on(async {
             let mut state = new_editor_state().await;
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetShowMetadata(true),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetShowMetadata(true)));
             assert!(state.editor_show_metadata());
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetShowSettings(true),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetShowSettings(true)));
             assert!(state.editor_show_settings());
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetSettingsSection(
-                    SettingsSection::Keybinds,
-                ),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetSettingsSection(
+                SettingsSection::Keybinds,
+            )));
             assert_eq!(state.editor_settings_section(), SettingsSection::Keybinds);
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::RenameLevel(
-                    "CmdDispatchLevel".to_string(),
-                ),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::RenameLevel(
+                "CmdDispatchLevel".to_string(),
+            )));
             assert_eq!(
                 state.editor_level_name().as_deref(),
                 Some("CmdDispatchLevel")
             );
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::UpdateMusic(MusicMetadata {
+            state.dispatch(AppCommand::Editor(EditorCommand::UpdateMusic(
+                MusicMetadata {
                     source: "dispatch.mp3".to_string(),
                     ..MusicMetadata::default()
-                }),
-            ));
+                },
+            )));
             assert_eq!(state.editor_music_metadata().source, "dispatch.mp3");
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetTimelineDuration(5.0),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetTimelineTime(1.25),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetTimelineDuration(5.0)));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetTimelineTime(1.25)));
             assert_eq!(state.editor_timeline_duration_seconds(), 5.0);
             assert_eq!(state.editor_timeline_time_seconds(), 1.25);
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetPlaybackSpeed(1.5),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetPlaybackSpeed(1.5)));
             assert_eq!(state.editor_playback_speed(), 1.5);
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetWaveformZoom(3.5),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetWaveformScroll(1.25),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetWaveformZoom(3.5)));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetWaveformScroll(1.25)));
             assert_eq!(state.editor_waveform_zoom(), 3.5);
             assert_eq!(state.editor_waveform_scroll(), 1.25);
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetShiftHeld(true),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetCtrlHeld(true),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetAltHeld(true),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetPanUpHeld(true),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetPanDownHeld(true),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetPanLeftHeld(true),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetPanRightHeld(true),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetShiftHeld(true)));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetCtrlHeld(true)));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetAltHeld(true)));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetPanUpHeld(true)));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetPanDownHeld(true)));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetPanLeftHeld(true)));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetPanRightHeld(true)));
             assert!(state.editor.ui.shift_held);
             assert!(state.editor.ui.ctrl_held);
             assert!(state.editor.ui.alt_held);
@@ -3717,53 +3446,42 @@ mod tests {
             assert_eq!(state.render.gpu.config.height, 576);
 
             state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetSimulateTriggerHitboxes(true),
+                EditorCommand::SetSimulateTriggerHitboxes(true),
             ));
             assert!(state.editor_simulate_trigger_hitboxes());
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::ToggleHitboxVisualization,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::ToggleHitboxVisualization));
             assert!(state.editor_hitbox_visualization_enabled());
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Timing),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Timing,
+            )));
             assert_eq!(state.editor_mode(), EditorMode::Timing);
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Place),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Place,
+            )));
             assert_eq!(state.editor_mode(), EditorMode::Place);
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetKeybindCapture(Some((
-                    "copy".to_string(),
-                    0,
-                ))),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetKeybindCapture(Some(
+                ("copy".to_string(), 0),
+            ))));
             assert!(state.editor_keybind_capture_action().is_some());
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetKeybind {
-                    action: "copy".to_string(),
-                    slot: 0,
-                    chord: KeyChord::new("x", true, false, false),
-                },
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetKeybind {
+                action: "copy".to_string(),
+                slot: 0,
+                chord: KeyChord::new("x", true, false, false),
+            }));
             assert!(!state.app_settings().keybinds_for_action("copy").is_empty());
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::ClearKeybindSlot {
-                    action: "copy".to_string(),
-                    slot: 0,
-                },
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::ResetKeybind("copy".to_string()),
-            ));
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::ResetKeybinds,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::ClearKeybindSlot {
+                action: "copy".to_string(),
+                slot: 0,
+            }));
+            state.dispatch(AppCommand::Editor(EditorCommand::ResetKeybind(
+                "copy".to_string(),
+            )));
+            state.dispatch(AppCommand::Editor(EditorCommand::ResetKeybinds));
         });
     }
 
@@ -3774,12 +3492,9 @@ mod tests {
 
             let mut state = new_editor_state().await;
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetKeybindCapture(Some((
-                    "copy".to_string(),
-                    0,
-                ))),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetKeybindCapture(Some(
+                ("copy".to_string(), 0),
+            ))));
             state.process_input_event(InputEvent::Key {
                 key: "Control".to_string(),
                 pressed: true,
@@ -3797,12 +3512,9 @@ mod tests {
                 .iter()
                 .any(|chord| chord.key == "k" && chord.ctrl));
 
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetKeybindCapture(Some((
-                    "paste".to_string(),
-                    0,
-                ))),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::SetKeybindCapture(Some(
+                ("paste".to_string(), 0),
+            ))));
             state.process_input_event(InputEvent::Key {
                 key: "Escape".to_string(),
                 pressed: true,

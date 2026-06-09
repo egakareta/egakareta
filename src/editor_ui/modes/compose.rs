@@ -14,6 +14,7 @@ use crate::commands::AppCommand;
 use crate::editor_ui::modes::shared::{
     show_editor_property_popup, show_mode_and_snap_controls, EditorPropertyPopup,
 };
+use crate::state::editor_command::EditorCommand;
 use crate::state::EditorUiViewModel;
 use crate::types::EditorMode;
 
@@ -72,12 +73,12 @@ pub(crate) fn show_recent_block_quick_strip(
             egui::Vec2::splat(COMPACT_PREVIEW_BUTTON_SIZE),
             COMPACT_PREVIEW_HEIGHT,
         ) {
-            commands.push(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetBlockId(block.id.clone()),
-            ));
-            commands.push(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Place),
-            ));
+            commands.push(AppCommand::Editor(EditorCommand::SetBlockId(
+                block.id.clone(),
+            )));
+            commands.push(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Place,
+            )));
         }
     }
     true
@@ -120,9 +121,7 @@ pub(crate) fn show_selected_block_properties_window(
                         .changed();
                     if changed {
                         commands.push(crate::commands::AppCommand::Editor(
-                            crate::state::editor_command::EditorCommand::UpdateSelectedBlock(
-                                selected.clone(),
-                            ),
+                            EditorCommand::UpdateSelectedBlock(selected.clone()),
                         ));
                     }
                 });
@@ -141,9 +140,7 @@ pub(crate) fn show_selected_block_properties_window(
                         .changed();
                     if changed {
                         commands.push(crate::commands::AppCommand::Editor(
-                            crate::state::editor_command::EditorCommand::UpdateSelectedBlock(
-                                selected.clone(),
-                            ),
+                            EditorCommand::UpdateSelectedBlock(selected.clone()),
                         ));
                     }
                 });
@@ -177,9 +174,7 @@ pub(crate) fn show_selected_block_properties_window(
                         .changed();
                     if changed {
                         commands.push(crate::commands::AppCommand::Editor(
-                            crate::state::editor_command::EditorCommand::UpdateSelectedBlock(
-                                selected.clone(),
-                            ),
+                            EditorCommand::UpdateSelectedBlock(selected.clone()),
                         ));
                     }
                 });
@@ -190,9 +185,7 @@ pub(crate) fn show_selected_block_properties_window(
                     if ui.color_edit_button_rgb(&mut color_tint).changed() {
                         selected.color_tint = color_tint;
                         commands.push(crate::commands::AppCommand::Editor(
-                            crate::state::editor_command::EditorCommand::UpdateSelectedBlock(
-                                selected.clone(),
-                            ),
+                            EditorCommand::UpdateSelectedBlock(selected.clone()),
                         ));
                     }
                 });

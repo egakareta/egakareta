@@ -1607,6 +1607,7 @@ impl State {
 mod tests {
     use crate::commands::AppCommand;
     use crate::game::TimelineSimulationRuntime;
+    use crate::state::editor_command::EditorCommand;
     use crate::types::SpawnDirection;
 
     use super::{
@@ -1728,9 +1729,7 @@ mod tests {
             ));
 
             let level_name = state.menu.state.levels[0].clone();
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::LoadLevel(level_name),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::LoadLevel(level_name)));
 
             assert!(
                 !state.editor.timeline.playback.playing,
@@ -1777,9 +1776,7 @@ mod tests {
             state.dispatch(AppCommand::TurnRight); // Place block
             state.editor.ui.selected_block_index = Some(0);
             state.editor.ui.selected_block_indices = vec![0];
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::CopyBlock,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::CopyBlock));
             assert!(state.editor.runtime.interaction.clipboard.is_some());
 
             // 2. Transition to playing: Should clear clipboard
@@ -1801,16 +1798,12 @@ mod tests {
             state.dispatch(AppCommand::TurnRight); // Place block -> adds to undo history
             state.editor.ui.selected_block_index = Some(0);
             state.editor.ui.selected_block_indices = vec![0];
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::CopyBlock,
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::CopyBlock));
             assert!(!state.editor.runtime.history.undo.is_empty());
             assert!(state.editor.runtime.interaction.clipboard.is_some());
 
             let level_name = state.menu.state.levels[0].clone();
-            state.dispatch(AppCommand::Editor(
-                crate::state::editor_command::EditorCommand::LoadLevel(level_name),
-            ));
+            state.dispatch(AppCommand::Editor(EditorCommand::LoadLevel(level_name)));
 
             assert!(
                 state.editor.runtime.history.undo.is_empty(),

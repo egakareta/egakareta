@@ -65,6 +65,7 @@ use crate::mesh::MeshGeometry;
 use crate::platform::services::AuthServiceMessage;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::platform::state_host::NativeWindow;
+use crate::state::editor_command::EditorCommand;
 use crate::types::{
     AppPhase, AppSettings, AuthSession, EditorMode, EditorState, LevelCreatorMetadata, LevelObject,
     LevelPreviewCameraMetadata, MenuState, MusicMetadata, PhysicalSize, SettingsSection,
@@ -515,7 +516,7 @@ impl State {
 
             if self.editor.ui.alt_held {
                 self.dispatch(crate::commands::AppCommand::Editor(
-                    crate::state::editor_command::EditorCommand::PickBlockAt { x, y },
+                    EditorCommand::PickBlockAt { x, y },
                 ));
                 return;
             }
