@@ -274,3 +274,135 @@ impl State {
         had_block_selection || had_tap_selection
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::State;
+    use crate::state::editor_command::EditorCommand;
+    use crate::test_utils::stone;
+    use crate::types::{AppPhase, EditorMode, SettingsSection};
+
+    async fn new_editor_state() -> State {
+        let mut state = State::new_test().await;
+        state.enter_editor_phase_for_test("EditorDispatchCoverage");
+        state
+    }
+
+    #[test]
+    fn dispatch_editor_routes_ui_session_and_input_commands() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+
+            state.dispatch_editor(EditorCommand::TogglePlaceWindow);
+            assert!(state.editor_show_place_window());
+            state.dispatch_editor(EditorCommand::TogglePlaceWindow);
+            assert!(!state.editor_show_place_window());
+
+            state.dispatch_editor(EditorCommand::SetShowSettings(true));
+            state.dispatch_editor(EditorCommand::ToggleSettings);
+            assert!(!state.editor_show_settings());
+
+            state.dispatch_editor(EditorCommand::SetSettingsSection(SettingsSection::Keybinds));
+            assert_eq!(state.editor_settings_section(), SettingsSection::Keybinds);
+
+            state.dispatch_editor(EditorCommand::SetShiftHeld(true));
+            state.dispatch_editor(EditorCommand::SetCtrlHeld(true));
+            state.dispatch_editor(EditorCommand::SetAltHeld(true));
+            state.dispatch_editor(EditorCommand::SetPanUpHeld(true));
+            state.dispatch_editor(EditorCommand::SetPanDownHeld(true));
+            state.dispatch_editor(EditorCommand::SetPanLeftHeld(true));
+            state.dispatch_editor(EditorCommand::SetPanRightHeld(true));
+
+            assert!(state.editor.ui.shift_held);
+            assert!(state.editor.ui.ctrl_held);
+            assert!(state.editor.ui.alt_held);
+            assert!(state.editor.ui.pan_up_held);
+            assert!(state.editor.ui.pan_down_held);
+            assert!(state.editor.ui.pan_left_held);
+            assert!(state.editor.ui.pan_right_held);
+
+            state.dispatch_editor(EditorCommand::MouseButton {
+                button: 0,
+                pressed: false,
+            });
+            state.dispatch_editor(EditorCommand::PrimaryClick { x: 10.0, y: 20.0 });
+            state.dispatch_editor(EditorCommand::PointerMoved { x: 11.0, y: 21.0 });
+            state.dispatch_editor(EditorCommand::CameraDrag { dx: 2.0, dy: -3.0 });
+        });
+    }
+
+    #[test]
+    fn dispatch_editor_routes_selection_timeline_and_escape_commands() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.objects = vec![stone(0.0, 0.0, 0.0)];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+
+            state.dispatch_editor(EditorCommand::CopyBlock);
+            assert!(state.editor.runtime.interaction.clipboard.is_some());
+
+            state.dispatch_editor(EditorCommand::UpdateSelectedBlock(
+                crate::test_utils::sized("core/grass", 2.0, 3.0, 4.0, 5.0, 6.0, 7.0),
+            ));
+            assert_eq!(state.editor.objects[0].block_id, "core/grass");
+            assert_eq!(state.editor.objects[0].position, [2.0, 3.0, 4.0]);
+            assert_eq!(state.editor.objects[0].size, [5.0, 6.0, 7.0]);
+
+            state.dispatch_editor(EditorCommand::NudgeSelected { dx: 1, dy: 0 });
+            state.dispatch_editor(EditorCommand::SnapSelectionToGrid);
+            state.dispatch_editor(EditorCommand::FocusCameraTarget);
+            state.dispatch_editor(EditorCommand::SetTimelineDuration(8.0));
+            state.dispatch_editor(EditorCommand::SetTimelineTime(1.25));
+            state.dispatch_editor(EditorCommand::AddTap);
+            state.dispatch_editor(EditorCommand::SetSelectedTap(Some(0)));
+            state.dispatch_editor(EditorCommand::SetSelectedTapTime(1.5));
+            state.dispatch_editor(EditorCommand::RemoveTapAt(1.5));
+            state.dispatch_editor(EditorCommand::AddTimingPoint {
+                time_seconds: 0.5,
+                bpm: 120.0,
+            });
+            state.dispatch_editor(EditorCommand::SetTimingSelected(Some(0)));
+            state.dispatch_editor(EditorCommand::SetTimingPointTime(0, 0.75));
+            state.dispatch_editor(EditorCommand::SetTimingPointBpm(0, 140.0));
+            state.dispatch_editor(EditorCommand::SetTimingPointTimeSignature(0, 3, 4));
+            state.dispatch_editor(EditorCommand::RemoveTimingPoint(0));
+
+            state.editor.ui.selected_block_indices = vec![0];
+            state.dispatch_editor(EditorCommand::Escape);
+            assert!(state.editor.ui.selected_block_indices.is_empty());
+
+            state.editor.timeline.clock.time_seconds = 2.0;
+            state.dispatch_editor(EditorCommand::Escape);
+            assert_eq!(state.editor.timeline.clock.time_seconds, 0.0);
+
+            state.dispatch_editor(EditorCommand::Escape);
+            assert_eq!(state.phase, AppPhase::Menu);
+        });
+    }
+
+    #[test]
+    fn dispatch_editor_routes_mode_and_pointer_pick_commands() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.objects = vec![stone(0.0, 0.0, 0.0)];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+
+            state.dispatch_editor(EditorCommand::SetMode(EditorMode::Tapping));
+            assert_eq!(state.editor.ui.mode, EditorMode::Tapping);
+            state.dispatch_editor(EditorCommand::SetMode(EditorMode::Timing));
+            assert_eq!(state.editor.ui.mode, EditorMode::Timing);
+            state.dispatch_editor(EditorCommand::SetMode(EditorMode::Select));
+            state.dispatch_editor(EditorCommand::PickSelectedBlock);
+            assert_eq!(state.editor.ui.mode, EditorMode::Select);
+
+            state.editor.ui.pointer_screen = Some([0.0, 0.0]);
+            state.dispatch_editor(EditorCommand::MouseButton {
+                button: 1,
+                pressed: true,
+            });
+            state.dispatch_editor(EditorCommand::PickBlockAt { x: 0.0, y: 0.0 });
+        });
+    }
+}

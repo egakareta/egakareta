@@ -107,3 +107,59 @@ macro_rules! editor_test {
 pub(crate) use editor_test;
 
 // ── Existing tests ──────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::{approx_eq, assert_approx_eq, block, gem, rotated, sized, stone};
+
+    #[test]
+    fn approx_eq_returns_true_within_epsilon() {
+        assert!(approx_eq(1.0, 1.000_5, 0.001));
+    }
+
+    #[test]
+    fn approx_eq_returns_false_outside_epsilon() {
+        assert!(!approx_eq(1.0, 1.01, 0.001));
+    }
+
+    #[test]
+    fn assert_approx_eq_does_not_panic_within_epsilon() {
+        assert_approx_eq(-42.0, -42.000_4, 0.001);
+    }
+
+    #[test]
+    #[should_panic(expected = "expected 3 ~= 4")]
+    fn assert_approx_eq_panics_outside_epsilon() {
+        assert_approx_eq(3.0, 4.0, 0.1);
+    }
+
+    #[test]
+    fn level_object_helpers_fill_expected_fields() {
+        let stone = stone(1.0, 2.0, 3.0);
+        assert_eq!(stone.block_id, "core/stone");
+        assert_eq!(stone.position, [1.0, 2.0, 3.0]);
+        assert_eq!(stone.size, [1.0, 1.0, 1.0]);
+
+        let lava = block("core/lava", 4.0, 5.0, 6.0);
+        assert_eq!(lava.block_id, "core/lava");
+        assert_eq!(lava.position, [4.0, 5.0, 6.0]);
+
+        let gem = gem(7.0, 8.0, 9.0);
+        assert_eq!(gem.block_id, "core/gem");
+        assert_eq!(gem.position, [7.0, 8.0, 9.0]);
+    }
+
+    #[test]
+    fn sized_and_rotated_helpers_override_only_requested_fields() {
+        let sized = sized("core/stone", 1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
+        assert_eq!(sized.position, [1.0, 2.0, 3.0]);
+        assert_eq!(sized.size, [4.0, 5.0, 6.0]);
+        assert_eq!(sized.rotation_degrees, [0.0, 0.0, 0.0]);
+
+        let rotated = rotated("core/grass", 7.0, 8.0, 9.0, 10.0, 20.0, 30.0);
+        assert_eq!(rotated.block_id, "core/grass");
+        assert_eq!(rotated.position, [7.0, 8.0, 9.0]);
+        assert_eq!(rotated.rotation_degrees, [10.0, 20.0, 30.0]);
+        assert_eq!(rotated.size, [1.0, 1.0, 1.0]);
+    }
+}
