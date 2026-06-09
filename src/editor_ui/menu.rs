@@ -528,7 +528,9 @@ pub fn show_menu_topbar_ui(root_ui: &mut egui::Ui, state: &mut State) {
                 ))
                 .clicked()
             {
-                commands.push(AppCommand::EditorToggleSettings);
+                commands.push(AppCommand::Editor(
+                    crate::state::editor_command::EditorCommand::ToggleSettings,
+                ));
             }
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

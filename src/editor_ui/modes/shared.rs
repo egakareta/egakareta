@@ -74,7 +74,9 @@ pub(crate) fn show_mode_and_snap_controls(
             ))
             .clicked()
         {
-            commands.push(AppCommand::EditorSetMode(EditorMode::Select));
+            commands.push(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Select),
+            ));
         }
         if ui
             .selectable_label(
@@ -87,7 +89,9 @@ pub(crate) fn show_mode_and_snap_controls(
             ))
             .clicked()
         {
-            commands.push(AppCommand::EditorSetMode(EditorMode::Move));
+            commands.push(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Move),
+            ));
         }
         if ui
             .selectable_label(
@@ -100,7 +104,9 @@ pub(crate) fn show_mode_and_snap_controls(
             ))
             .clicked()
         {
-            commands.push(AppCommand::EditorSetMode(EditorMode::Scale));
+            commands.push(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Scale),
+            ));
         }
         if ui
             .selectable_label(
@@ -113,7 +119,9 @@ pub(crate) fn show_mode_and_snap_controls(
             ))
             .clicked()
         {
-            commands.push(AppCommand::EditorSetMode(EditorMode::Rotate));
+            commands.push(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::SetMode(EditorMode::Rotate),
+            ));
         }
         ui.separator();
         let mut snap = view.snap_to_grid;
@@ -124,7 +132,9 @@ pub(crate) fn show_mode_and_snap_controls(
             )
             .changed()
         {
-            commands.push(AppCommand::EditorSetSnapToGrid(snap));
+            commands.push(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::SetSnapToGrid(snap),
+            ));
         }
 
         ui.label("Step:");
@@ -137,13 +147,17 @@ pub(crate) fn show_mode_and_snap_controls(
             )
             .changed()
         {
-            commands.push(AppCommand::EditorSetSnapStep(snap_step));
+            commands.push(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::SetSnapStep(snap_step),
+            ));
         }
 
         ui.separator();
         let mut snap_rotation = view.snap_rotation;
         if ui.checkbox(&mut snap_rotation, "Rotation Snap").changed() {
-            commands.push(AppCommand::EditorSetSnapRotation(snap_rotation));
+            commands.push(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::SetSnapRotation(snap_rotation),
+            ));
         }
 
         ui.label("Step:");
@@ -157,7 +171,11 @@ pub(crate) fn show_mode_and_snap_controls(
             )
             .changed()
         {
-            commands.push(AppCommand::EditorSetSnapRotationStep(snap_rotation_step));
+            commands.push(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::SetSnapRotationStep(
+                    snap_rotation_step,
+                ),
+            ));
         }
     });
 }

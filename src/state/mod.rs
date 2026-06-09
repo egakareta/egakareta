@@ -56,8 +56,7 @@ pub(crate) use perf::EditorPerfState;
 pub(crate) use render::draw::RenderSurfaceError;
 pub(crate) use render::RenderSubsystem;
 pub(crate) use runtime::{
-    EditorDirtyFlags, EditorGizmoState, EditorRuntimeState, EditorTransformTriggerCapture,
-    FrameRuntimeState,
+    EditorDirtyFlags, EditorRuntimeState, EditorTransformTriggerCapture, FrameRuntimeState,
 };
 pub(crate) use view_model::EditorUiViewModel;
 
@@ -183,7 +182,7 @@ impl EditorSubsystem {
             runtime: EditorRuntimeState {
                 dirty: EditorDirtyFlags::default(),
                 pending_block_mesh_appends: Vec::new(),
-                gizmo: EditorGizmoState {
+                gizmo: runtime::EditorGizmoState {
                     rebuild_accumulator: 0.0,
                     last_pan: [0.0, 0.0],
                     last_target_z: 0.0,
@@ -515,7 +514,9 @@ impl State {
             }
 
             if self.editor.ui.alt_held {
-                self.dispatch(crate::commands::AppCommand::EditorPickBlockAt { x, y });
+                self.dispatch(crate::commands::AppCommand::Editor(
+                    crate::state::editor_command::EditorCommand::PickBlockAt { x, y },
+                ));
                 return;
             }
 

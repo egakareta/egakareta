@@ -1191,14 +1191,20 @@ impl State {
             self.editor.timeline.clock.duration_seconds,
             direction,
         ) {
-            return Some(AppCommand::EditorShiftTimeline(target_time - current_time));
+            return Some(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::ShiftTimeline(
+                    target_time - current_time,
+                ),
+            ));
         }
 
         let fallback_delta = match direction {
             TimingDivisionDirection::Forward => FALLBACK_TIMELINE_SHIFT_SECONDS,
             TimingDivisionDirection::Backward => -FALLBACK_TIMELINE_SHIFT_SECONDS,
         };
-        Some(AppCommand::EditorShiftTimeline(fallback_delta))
+        Some(AppCommand::Editor(
+            crate::state::editor_command::EditorCommand::ShiftTimeline(fallback_delta),
+        ))
     }
 
     pub(super) fn editor_pick_selected_block_for_place(&mut self) -> bool {

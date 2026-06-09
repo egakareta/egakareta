@@ -1106,7 +1106,9 @@ mod tests {
             let mut state = State::new_test().await;
             state.phase = AppPhase::Menu;
 
-            state.dispatch(AppCommand::EditorCaptureMenuPreviewCamera);
+            state.dispatch(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::CaptureMenuPreviewCamera,
+            ));
             assert!(state
                 .current_editor_metadata()
                 .menu_preview_camera
@@ -1116,7 +1118,9 @@ mod tests {
                 position: [9.0, 8.0, 7.0],
                 target: [6.0, 5.0, 4.0],
             });
-            state.dispatch(AppCommand::EditorUseAutoMenuPreviewCamera);
+            state.dispatch(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::UseAutoMenuPreviewCamera,
+            ));
             assert!(state
                 .current_editor_metadata()
                 .menu_preview_camera
@@ -1126,14 +1130,18 @@ mod tests {
             state.editor.camera.editor_pan = [2.0, -4.0];
             state.editor.camera.editor_target_z = 3.0;
 
-            state.dispatch(AppCommand::EditorCaptureMenuPreviewCamera);
+            state.dispatch(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::CaptureMenuPreviewCamera,
+            ));
             let captured = state.current_editor_metadata().menu_preview_camera;
             assert_eq!(
                 captured.as_ref().map(|camera| camera.target),
                 Some([2.0, 3.0, -4.0])
             );
 
-            state.dispatch(AppCommand::EditorUseAutoMenuPreviewCamera);
+            state.dispatch(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::UseAutoMenuPreviewCamera,
+            ));
             assert!(state
                 .current_editor_metadata()
                 .menu_preview_camera

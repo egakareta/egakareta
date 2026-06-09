@@ -24,13 +24,17 @@ pub(crate) fn show_tapping_mode_bottom_panel(
             ))
             .clicked()
         {
-            commands.push(AppCommand::EditorAddTap);
+            commands.push(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::AddTap,
+            ));
         }
         if ui
             .button(format!("{} Clear all taps", egui_phosphor::regular::BROOM))
             .clicked()
         {
-            commands.push(AppCommand::EditorClearTaps);
+            commands.push(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::ClearTaps,
+            ));
         }
 
         ui.separator();
@@ -60,7 +64,9 @@ pub(crate) fn show_selected_tap_properties_window(
                         .button(format!("{} Delete", egui_phosphor::regular::TRASH))
                         .clicked()
                     {
-                        commands.push(AppCommand::EditorRemoveTap);
+                        commands.push(AppCommand::Editor(
+                            crate::state::editor_command::EditorCommand::RemoveTap,
+                        ));
                     }
                 });
 
@@ -75,7 +81,11 @@ pub(crate) fn show_selected_tap_properties_window(
                         )
                         .changed()
                     {
-                        commands.push(AppCommand::EditorSetSelectedTapTime(time_seconds));
+                        commands.push(AppCommand::Editor(
+                            crate::state::editor_command::EditorCommand::SetSelectedTapTime(
+                                time_seconds,
+                            ),
+                        ));
                     }
                 });
 

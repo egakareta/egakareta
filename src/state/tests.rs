@@ -827,7 +827,9 @@ fn editor_load_level_in_timing_mode_reloads_waveform_for_new_level() {
         state.editor.timing.waveform_samples = vec![0.25, -0.5, 0.75];
         state.editor.timing.waveform_sample_rate = 44_100;
 
-        state.dispatch(AppCommand::EditorLoadLevel(next_level.clone()));
+        state.dispatch(AppCommand::Editor(
+            crate::state::editor_command::EditorCommand::LoadLevel(next_level.clone()),
+        ));
 
         assert!(
             state.editor.timing.waveform_samples.is_empty(),
@@ -918,10 +920,12 @@ fn context_cursor_update_forces_cursor_in_select_mode_while_right_dragging() {
             .cursor;
         state.editor.ui.cursor = [99.0, 99.0, 99.0];
 
-        state.dispatch(AppCommand::EditorUpdateCursorFromScreen {
-            x: screen_x,
-            y: screen_y,
-        });
+        state.dispatch(AppCommand::Editor(
+            crate::state::editor_command::EditorCommand::UpdateCursorFromScreen {
+                x: screen_x,
+                y: screen_y,
+            },
+        ));
 
         assert_eq!(state.editor.ui.cursor, expected_cursor);
     });
@@ -949,7 +953,9 @@ fn spawn_hotkey_updates_spawn_from_pointer_in_select_mode() {
         state.editor.ui.cursor = [99.0, 99.0, 99.0];
         state.editor.ui.pointer_screen = Some([screen_x, screen_y]);
 
-        state.dispatch(AppCommand::EditorSetSpawnHere);
+        state.dispatch(AppCommand::Editor(
+            crate::state::editor_command::EditorCommand::SetSpawnHere,
+        ));
 
         assert_eq!(state.editor.spawn.position, expected_cursor);
     });
@@ -1182,7 +1188,9 @@ fn playback_shift_timeline_command_queues_debounced_audio_resync() {
         state.toggle_editor_timeline_playback();
         assert!(state.editor.timeline.playback.playing);
 
-        state.dispatch(AppCommand::EditorShiftTimeline(0.1));
+        state.dispatch(AppCommand::Editor(
+            crate::state::editor_command::EditorCommand::ShiftTimeline(0.1),
+        ));
 
         assert!((state.editor.timeline.clock.time_seconds - 0.6).abs() < 1e-5);
         assert_eq!(

@@ -104,9 +104,13 @@ fn timeline_bar_push_tap_click_commands(
         return false;
     };
 
-    commands.push(AppCommand::EditorSetTimelineTime(view.tap_times[index]));
+    commands.push(AppCommand::Editor(
+        crate::state::editor_command::EditorCommand::SetTimelineTime(view.tap_times[index]),
+    ));
     if timeline_bar_view_is_tapping(view) {
-        commands.push(AppCommand::EditorSetSelectedTap(Some(index)));
+        commands.push(AppCommand::Editor(
+            crate::state::editor_command::EditorCommand::SetSelectedTap(Some(index)),
+        ));
     }
     true
 }
@@ -128,7 +132,9 @@ pub(crate) fn show_timeline_bar(
     // Removed max_scroll/clamp to allow playhead to stay centered at start/end by going beyond 0..duration
     let centered_scroll = view.timeline_time_seconds - visible_duration * 0.5;
     if (centered_scroll - view.waveform_scroll).abs() > 0.0001 {
-        commands.push(AppCommand::EditorSetWaveformScroll(centered_scroll));
+        commands.push(AppCommand::Editor(
+            crate::state::editor_command::EditorCommand::SetWaveformScroll(centered_scroll),
+        ));
     }
     let view_start = centered_scroll;
     let view_end = view_start + visible_duration;
@@ -143,7 +149,9 @@ pub(crate) fn show_timeline_bar(
             .add_sized([80.0, ui.spacing().interact_size.y], drag_value)
             .changed()
         {
-            commands.push(AppCommand::EditorSetTimelineTime(time_seconds));
+            commands.push(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::SetTimelineTime(time_seconds),
+            ));
         }
 
         ui.add_space(4.0);
@@ -160,7 +168,9 @@ pub(crate) fn show_timeline_bar(
             .on_hover_text(format!("{} (Space)", play_tooltip))
             .clicked()
         {
-            commands.push(AppCommand::EditorToggleTimelinePlayback);
+            commands.push(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::ToggleTimelinePlayback,
+            ));
         }
         ui.add_space(4.0);
 
@@ -176,7 +186,9 @@ pub(crate) fn show_timeline_bar(
             .clicked()
         {
             let new_zoom = (timeline_zoom / 1.25).clamp(0.1, 10.0);
-            commands.push(AppCommand::EditorSetWaveformZoom(new_zoom));
+            commands.push(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::SetWaveformZoom(new_zoom),
+            ));
         }
         if ui
             .add_sized(
@@ -190,7 +202,9 @@ pub(crate) fn show_timeline_bar(
             .clicked()
         {
             let new_zoom = (timeline_zoom * 1.25).clamp(0.1, 10.0);
-            commands.push(AppCommand::EditorSetWaveformZoom(new_zoom));
+            commands.push(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::SetWaveformZoom(new_zoom),
+            ));
         }
         ui.add_space(4.0);
 
@@ -334,9 +348,13 @@ pub(crate) fn show_timeline_bar(
                 let time_per_pixel = visible_duration / rect.width().max(1.0);
                 let new_time = (view.timeline_time_seconds - pointer_delta_x * time_per_pixel)
                     .clamp(0.0, duration_seconds);
-                commands.push(AppCommand::EditorSetTimelineTime(new_time));
-                commands.push(AppCommand::EditorSetWaveformScroll(
-                    new_time - visible_duration * 0.5,
+                commands.push(AppCommand::Editor(
+                    crate::state::editor_command::EditorCommand::SetTimelineTime(new_time),
+                ));
+                commands.push(AppCommand::Editor(
+                    crate::state::editor_command::EditorCommand::SetWaveformScroll(
+                        new_time - visible_duration * 0.5,
+                    ),
                 ));
             }
         }
@@ -347,7 +365,9 @@ pub(crate) fn show_timeline_bar(
             if scroll_delta.y.abs() > 0.0 {
                 let zoom_factor = 1.0 + scroll_delta.y * 0.002;
                 let new_zoom = (timeline_zoom * zoom_factor).clamp(0.1, 10.0);
-                commands.push(AppCommand::EditorSetWaveformZoom(new_zoom));
+                commands.push(AppCommand::Editor(
+                    crate::state::editor_command::EditorCommand::SetWaveformZoom(new_zoom),
+                ));
             }
         }
 
@@ -360,7 +380,11 @@ pub(crate) fn show_timeline_bar(
                     view_start,
                     visible_duration,
                 ) {
-                    commands.push(AppCommand::EditorRemoveTapAt(view.tap_times[index]));
+                    commands.push(AppCommand::Editor(
+                        crate::state::editor_command::EditorCommand::RemoveTapAt(
+                            view.tap_times[index],
+                        ),
+                    ));
                 }
             }
         }
@@ -393,19 +417,29 @@ pub(crate) fn show_timeline_bar(
                     }
 
                     if let Some(index) = nearest_trigger_index.filter(|_| nearest_distance <= 8.0) {
-                        commands.push(AppCommand::EditorSetTriggerSelected(Some(index)));
-                        commands.push(AppCommand::EditorSetTimelineTime(
-                            view.triggers[index]
-                                .time_seconds
-                                .clamp(0.0, duration_seconds),
+                        commands.push(AppCommand::Editor(
+                            crate::state::editor_command::EditorCommand::SetTriggerSelected(Some(
+                                index,
+                            )),
+                        ));
+                        commands.push(AppCommand::Editor(
+                            crate::state::editor_command::EditorCommand::SetTimelineTime(
+                                view.triggers[index]
+                                    .time_seconds
+                                    .clamp(0.0, duration_seconds),
+                            ),
                         ));
                     } else {
                         let normalized_x =
                             ((pointer.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
                         let clicked_time = view_start + normalized_x * visible_duration;
-                        commands.push(AppCommand::EditorSetTriggerSelected(None));
-                        commands.push(AppCommand::EditorSetTimelineTime(
-                            clicked_time.clamp(0.0, duration_seconds),
+                        commands.push(AppCommand::Editor(
+                            crate::state::editor_command::EditorCommand::SetTriggerSelected(None),
+                        ));
+                        commands.push(AppCommand::Editor(
+                            crate::state::editor_command::EditorCommand::SetTimelineTime(
+                                clicked_time.clamp(0.0, duration_seconds),
+                            ),
                         ));
                     }
                 }
@@ -424,7 +458,9 @@ pub(crate) fn show_timeline_bar(
             ))
             .clicked()
         {
-            commands.push(AppCommand::EditorPlaytest);
+            commands.push(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::Playtest,
+            ));
         }
     });
 }
@@ -602,10 +638,12 @@ pub(crate) fn show_waveform_panel(
             .on_hover_text("Add timing point at playhead")
             .clicked()
         {
-            commands.push(AppCommand::EditorAddTimingPoint {
-                time_seconds: current_time,
-                bpm: 120.0,
-            });
+            commands.push(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::AddTimingPoint {
+                    time_seconds: current_time,
+                    bpm: 120.0,
+                },
+            ));
         }
     }
 
@@ -616,9 +654,13 @@ pub(crate) fn show_waveform_panel(
             let time_per_pixel = visible_duration / rect.width().max(1.0);
             let new_time = (view.timeline_time_seconds - pointer_delta_x * time_per_pixel)
                 .clamp(0.0, duration_seconds);
-            commands.push(AppCommand::EditorSetTimelineTime(new_time));
-            commands.push(AppCommand::EditorSetWaveformScroll(
-                new_time - visible_duration * 0.5,
+            commands.push(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::SetTimelineTime(new_time),
+            ));
+            commands.push(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::SetWaveformScroll(
+                    new_time - visible_duration * 0.5,
+                ),
             ));
         }
     }
@@ -629,7 +671,9 @@ pub(crate) fn show_waveform_panel(
         if scroll_delta.y.abs() > 0.0 {
             let zoom_factor = 1.0 + scroll_delta.y * 0.002;
             let new_zoom = (zoom * zoom_factor).clamp(0.1, 10.0);
-            commands.push(AppCommand::EditorSetWaveformZoom(new_zoom));
+            commands.push(AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::SetWaveformZoom(new_zoom),
+            ));
         }
     }
 }
@@ -847,7 +891,12 @@ mod tests {
             &mut commands,
         ));
 
-        assert_eq!(commands, vec![AppCommand::EditorSetTimelineTime(5.0)]);
+        assert_eq!(
+            commands,
+            vec![AppCommand::Editor(
+                crate::state::editor_command::EditorCommand::SetTimelineTime(5.0)
+            )]
+        );
     }
 
     #[test]
@@ -887,8 +936,12 @@ mod tests {
         assert_eq!(
             commands,
             vec![
-                AppCommand::EditorSetTimelineTime(5.0),
-                AppCommand::EditorSetSelectedTap(Some(1)),
+                AppCommand::Editor(
+                    crate::state::editor_command::EditorCommand::SetTimelineTime(5.0)
+                ),
+                AppCommand::Editor(crate::state::editor_command::EditorCommand::SetSelectedTap(
+                    Some(1)
+                )),
             ]
         );
     }
@@ -935,7 +988,9 @@ mod tests {
 
         assert_eq!(commands.len(), 1);
         match &commands[0] {
-            AppCommand::EditorSetWaveformScroll(value) => approx_eq(*value, 20.0, 0.001),
+            AppCommand::Editor(crate::state::editor_command::EditorCommand::SetWaveformScroll(
+                value,
+            )) => approx_eq(*value, 20.0, 0.001),
             other => panic!("expected scroll recenter command, got {other:?}"),
         }
     }
