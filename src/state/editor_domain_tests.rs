@@ -11,8 +11,14 @@
 //! They use `EditorSubsystem::new_test()` which requires no wgpu adapter.
 
 use super::EditorSubsystem;
-use crate::test_utils::stone;
+use crate::test_utils::{assert_approx_eq, stone};
 use crate::types::SpawnDirection;
+
+fn assert_vec3_approx_eq(actual: [f32; 3], expected: [f32; 3], eps: f32) {
+    assert_approx_eq(actual[0], expected[0], eps);
+    assert_approx_eq(actual[1], expected[1], eps);
+    assert_approx_eq(actual[2], expected[2], eps);
+}
 
 // ── Nudge ──────────────────────────────────────────────────────────────
 
@@ -25,12 +31,8 @@ fn nudge_moves_selected_blocks_by_world_delta() {
     editor.ui.selected_block_indices = vec![0];
 
     assert!(editor.nudge_selected(2.0, -1.0));
-    assert_eq!(editor.objects[0].position, [2.0, 0.0, -1.0]);
-    assert_eq!(
-        editor.objects[1].position,
-        [3.0, 0.0, 0.0],
-        "Unselected block should not move"
-    );
+    assert_vec3_approx_eq(editor.objects[0].position, [2.0, 0.0, -1.0], 1e-6);
+    assert_vec3_approx_eq(editor.objects[1].position, [3.0, 0.0, 0.0], 1e-6);
 }
 
 #[test]
@@ -39,7 +41,7 @@ fn nudge_returns_false_when_nothing_selected() {
     editor.objects.push(stone(0.0, 0.0, 0.0));
 
     assert!(!editor.nudge_selected(1.0, 0.0));
-    assert_eq!(editor.objects[0].position, [0.0, 0.0, 0.0]);
+    assert_vec3_approx_eq(editor.objects[0].position, [0.0, 0.0, 0.0], 1e-6);
 }
 
 #[test]
@@ -49,7 +51,7 @@ fn nudge_updates_cursor_to_selected_block_position() {
     editor.ui.selected_block_index = Some(0);
 
     editor.nudge_selected(5.0, -2.0);
-    assert_eq!(editor.ui.cursor, [6.0, 2.0, 1.0]);
+    assert_vec3_approx_eq(editor.ui.cursor, [6.0, 2.0, 1.0], 1e-6);
 }
 
 // ── Snap to grid ───────────────────────────────────────────────────────
@@ -62,7 +64,7 @@ fn snap_moves_blocks_to_nearest_grid_cell() {
     editor.ui.selected_block_index = Some(0);
 
     assert!(editor.snap_selected_blocks_to_grid());
-    assert_eq!(editor.objects[0].position, [0.0, 0.0, 1.0]);
+    assert_vec3_approx_eq(editor.objects[0].position, [0.0, 0.0, 1.0], 1e-6);
 }
 
 #[test]
@@ -73,7 +75,7 @@ fn snap_respects_custom_step_size() {
     editor.ui.selected_block_index = Some(0);
 
     assert!(editor.snap_selected_blocks_to_grid());
-    assert_eq!(editor.objects[0].position, [2.0, 0.0, 4.0]);
+    assert_vec3_approx_eq(editor.objects[0].position, [2.0, 0.0, 4.0], 1e-6);
 }
 
 #[test]
@@ -99,8 +101,8 @@ fn remove_selected_deletes_marked_blocks() {
 
     assert!(editor.remove_selected());
     assert_eq!(editor.objects.len(), 2);
-    assert_eq!(editor.objects[0].position, [0.0, 0.0, 0.0]);
-    assert_eq!(editor.objects[1].position, [2.0, 0.0, 0.0]);
+    assert_vec3_approx_eq(editor.objects[0].position, [0.0, 0.0, 0.0], 1e-6);
+    assert_vec3_approx_eq(editor.objects[1].position, [2.0, 0.0, 0.0], 1e-6);
 }
 
 #[test]
@@ -122,7 +124,7 @@ fn set_spawn_here_copies_cursor_position() {
     editor.ui.cursor = [5.0, 3.0, 7.0];
 
     editor.set_spawn_here();
-    assert_eq!(editor.spawn.position, [5.0, 3.0, 7.0]);
+    assert_vec3_approx_eq(editor.spawn.position, [5.0, 3.0, 7.0], 1e-6);
 }
 
 #[test]

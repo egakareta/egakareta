@@ -7,7 +7,7 @@
 */
 use crate::commands::AppCommand;
 use crate::state::editor_command::EditorCommand;
-use crate::test_utils::{editor_test, stone};
+use crate::test_utils::{assert_approx_eq, editor_test, stone};
 use glam::{Vec2, Vec3};
 
 editor_test!(test_editor_snap_override_with_ctrl, |state| {
@@ -64,20 +64,12 @@ editor_test!(test_editor_nudge_respects_ctrl_override, |state| {
     state.editor.ui.ctrl_held = false;
     state.editor_nudge_selected_blocks(1, 0);
     let after_first = state.editor.objects[0].position[0];
-    assert_eq!(
-        (after_first - start_x).abs(),
-        2.0,
-        "Should use snap step when snapping active"
-    );
+    assert_approx_eq((after_first - start_x).abs(), 2.0, 1e-6);
 
     state.editor.ui.ctrl_held = true;
     state.editor_nudge_selected_blocks(1, 0);
     let after_second = state.editor.objects[0].position[0];
-    assert_eq!(
-        (after_second - after_first).abs(),
-        1.0,
-        "Should use unit step when Ctrl overrides snap"
-    );
+    assert_approx_eq((after_second - after_first).abs(), 1.0, 1e-6);
 });
 
 editor_test!(

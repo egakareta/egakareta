@@ -860,10 +860,13 @@ mod tests {
             &mut commands,
         ));
 
-        assert_eq!(
-            commands,
-            vec![AppCommand::Editor(EditorCommand::SetTimelineTime(5.0))]
-        );
+        assert_eq!(commands.len(), 1);
+        match &commands[0] {
+            AppCommand::Editor(EditorCommand::SetTimelineTime(value)) => {
+                approx_eq(*value, 5.0, 0.001)
+            }
+            other => panic!("expected timeline seek command, got {other:?}"),
+        }
     }
 
     #[test]
@@ -900,12 +903,16 @@ mod tests {
             &mut commands,
         ));
 
+        assert_eq!(commands.len(), 2);
+        match &commands[0] {
+            AppCommand::Editor(EditorCommand::SetTimelineTime(value)) => {
+                approx_eq(*value, 5.0, 0.001)
+            }
+            other => panic!("expected timeline seek command, got {other:?}"),
+        }
         assert_eq!(
-            commands,
-            vec![
-                AppCommand::Editor(EditorCommand::SetTimelineTime(5.0)),
-                AppCommand::Editor(EditorCommand::SetSelectedTap(Some(1))),
-            ]
+            commands[1],
+            AppCommand::Editor(EditorCommand::SetSelectedTap(Some(1))),
         );
     }
 

@@ -1226,6 +1226,10 @@ impl State {
             return false;
         };
 
+        if !crate::block_repository::resolve_block_definition(&block_id).placeable {
+            return false;
+        }
+
         if self.editor.timeline.playback.playing {
             self.set_editor_playback_effective_mode(EditorMode::Place);
         } else {
@@ -1253,6 +1257,10 @@ impl State {
         else {
             return false;
         };
+
+        if !crate::block_repository::resolve_block_definition(&block_id).placeable {
+            return false;
+        }
 
         if self.editor.timeline.playback.playing {
             self.set_editor_playback_effective_mode(EditorMode::Place);

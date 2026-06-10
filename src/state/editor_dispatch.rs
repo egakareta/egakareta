@@ -244,9 +244,7 @@ impl State {
         }
 
         if self.editor.timeline.playback.playing {
-            self.editor.timeline.playback.playing = false;
-            self.editor.timeline.playback.runtime = None;
-            self.stop_audio();
+            self.toggle_editor_timeline_playback();
         } else if self.editor.timeline.clock.time_seconds > 0.001 {
             self.set_editor_timeline_time_seconds(0.0);
         } else {
