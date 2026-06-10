@@ -10,7 +10,9 @@ mod auth_state;
 mod command_dispatch;
 mod editor_actions;
 mod editor_camera;
+pub(crate) mod editor_command;
 mod editor_config_state;
+mod editor_dispatch;
 mod editor_interaction;
 mod editor_scene;
 mod editor_state;
@@ -27,6 +29,8 @@ mod state_helpers;
 mod update;
 mod view_model;
 
+#[cfg(test)]
+mod editor_domain_tests;
 #[cfg(test)]
 mod editor_snap_tests;
 #[cfg(test)]
@@ -62,6 +66,7 @@ use crate::mesh::MeshGeometry;
 use crate::platform::services::AuthServiceMessage;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::platform::state_host::NativeWindow;
+use crate::state::editor_command::EditorCommand;
 use crate::types::{
     AppPhase, AppSettings, AuthSession, EditorMode, EditorState, LevelCreatorMetadata, LevelObject,
     LevelPreviewCameraMetadata, MenuState, MusicMetadata, PhysicalSize, SettingsSection,
@@ -146,6 +151,61 @@ pub(crate) struct EditorSubsystem {
     pub(crate) selected_mask_cache: Option<Vec<bool>>,
     pub(crate) block_static_vertex_cache: MeshGeometry,
     pub(crate) block_static_vertex_cache_complete_len: Option<usize>,
+}
+
+#[cfg(test)]
+impl EditorSubsystem {
+    /// Construct a standalone `EditorSubsystem` for domain tests — no GPU required.
+    pub(crate) fn new_test() -> Self {
+        Self {
+            ui: EditorState::new(),
+            config: EditorConfigState {
+                selected_block_id: crate::block_repository::DEFAULT_BLOCK_ID.to_string(),
+                recent_block_ids: vec![crate::block_repository::DEFAULT_BLOCK_ID.to_string()],
+                snap_to_grid: true,
+                snap_step: 1.0,
+                snap_rotation: true,
+                snap_rotation_step_degrees: 15.0,
+                selected_block_rotation_degrees: [0.0, 0.0, 0.0],
+            },
+            objects: Vec::new(),
+            spawn: SpawnMetadata::default(),
+            camera: EditorCameraState {
+                editor_pan: [0.0, 0.0],
+                editor_target_z: 0.0,
+                editor_rotation: 45.0f32.to_radians(),
+                editor_pitch: 45.0f32.to_radians(),
+                playing_rotation: 45.0f32.to_radians(),
+                playing_pitch: 45.0f32.to_radians(),
+                transition: None,
+            },
+            triggers: EditorTriggerState::new(),
+            timeline: EditorTimelineState::new(),
+            runtime: EditorRuntimeState {
+                dirty: EditorDirtyFlags::default(),
+                pending_block_mesh_appends: Vec::new(),
+                gizmo: runtime::EditorGizmoState {
+                    rebuild_accumulator: 0.0,
+                    last_pan: [0.0, 0.0],
+                    last_target_z: 0.0,
+                    last_rotation: 0.0,
+                    last_pitch: 0.0,
+                },
+                drag_heavy_rebuild_accumulator: 0.0,
+                interaction: EditorInteractionState::new(),
+                history: EditorHistoryState {
+                    undo: Vec::new(),
+                    redo: Vec::new(),
+                },
+                transform_trigger_capture: None,
+            },
+            perf: EditorPerfState::new(),
+            timing: EditorTimingState::new(),
+            selected_mask_cache: None,
+            block_static_vertex_cache: MeshGeometry::default(),
+            block_static_vertex_cache_complete_len: None,
+        }
+    }
 }
 
 pub(crate) struct MenuSubsystem {
@@ -456,7 +516,9 @@ impl State {
             }
 
             if self.editor.ui.alt_held {
-                self.dispatch(crate::commands::AppCommand::EditorPickBlockAt { x, y });
+                self.dispatch(crate::commands::AppCommand::Editor(
+                    EditorCommand::PickBlockAt { x, y },
+                ));
                 return;
             }
 

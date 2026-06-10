@@ -11,7 +11,8 @@ use crate::commands::AppCommand;
 use crate::editor_domain::{derive_tap_indicator_positions, derive_timeline_position};
 use crate::game::simulate_timeline_state_with_triggers;
 use crate::platform::audio::runtime_asset_source_key;
-use crate::test_utils::assert_approx_eq as approx_eq;
+use crate::state::editor_command::EditorCommand;
+use crate::test_utils::{assert_approx_eq as approx_eq, block, editor_test, sized, stone};
 use crate::types::{
     AppPhase, EditorMode, GizmoAxis, GizmoDragKind, LevelObject, PhysicalSize, SpawnDirection,
     TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
@@ -24,30 +25,11 @@ async fn new_editor_state() -> State {
     state
 }
 
-#[test]
-fn test_marquee_no_redundant_selections_before_drag_started() {
-    pollster::block_on(async {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Select;
-
-        // Add two blocks
-        state.editor.objects.push(LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
-        });
-        state.editor.objects.push(LevelObject {
-            position: [5.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
-        });
+editor_test!(
+    test_marquee_no_redundant_selections_before_drag_started,
+    |state| {
+        state.editor.objects.push(stone(0.0, 0.0, 0.0));
+        state.editor.objects.push(stone(5.0, 0.0, 0.0));
 
         // 1. Just hovering over the first block (no mouse down)
         state.editor.ui.hovered_block_index = Some(0);
@@ -100,32 +82,14 @@ fn test_marquee_no_redundant_selections_before_drag_started() {
         state.editor.ui.marquee_current_screen = Some([200.0, 200.0]);
         let (_, _, is_active) = state.editor.marquee_selection_rect_screen().unwrap();
         assert!(is_active, "Marquee SHOULD be active now");
-    });
-}
+    }
+);
 
-#[test]
-fn selection_outline_builds_instances_per_selected_block() {
-    pollster::block_on(async {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Select;
-
-        state.editor.objects.push(LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
-        });
-        state.editor.objects.push(LevelObject {
-            position: [2.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
-        });
+editor_test!(
+    selection_outline_builds_instances_per_selected_block,
+    |state| {
+        state.editor.objects.push(stone(0.0, 0.0, 0.0));
+        state.editor.objects.push(stone(2.0, 0.0, 0.0));
 
         state.editor.ui.selected_block_index = Some(0);
         state.editor.ui.selected_block_indices = vec![0, 1];
@@ -165,8 +129,8 @@ fn selection_outline_builds_instances_per_selected_block() {
             .map(|draw_data| draw_data.count())
             .expect("selection mask mesh should exist");
         assert_eq!(total_mask, 72);
-    });
-}
+    }
+);
 
 #[test]
 fn selection_outline_uses_single_bounds_mesh_for_large_selections() {
@@ -336,14 +300,7 @@ fn supports_offset_spawn_with_tap() {
 
 #[test]
 fn falls_from_elevated_platform() {
-    let objects = [LevelObject {
-        position: [0.0, 2.0, 0.0],
-        size: [1.0, 1.0, 1.0],
-        rotation_degrees: [0.0, 0.0, 0.0],
-        block_id: "core/stone".to_string(),
-        color_tint: [1.0, 1.0, 1.0],
-        trigger: None,
-    }];
+    let objects = [stone(0.0, 2.0, 0.0)];
     let (position, direction) = derive_timeline_position(
         [0.0, 3.0, 0.0],
         SpawnDirection::Forward,
@@ -392,14 +349,7 @@ fn configure_trigger_policy_parity_scene(
     simulate_trigger_hitboxes: bool,
     timeline_time_seconds: f32,
 ) {
-    state.editor.objects = vec![LevelObject {
-        position: [8.0, 0.0, 8.0],
-        size: [1.0, 1.0, 1.0],
-        rotation_degrees: [0.0, 0.0, 0.0],
-        block_id: "core/speedportal".to_string(),
-        color_tint: [1.0, 1.0, 1.0],
-        trigger: None,
-    }];
+    state.editor.objects = vec![block("core/speedportal", 8.0, 0.0, 8.0)];
     state.editor.spawn.position = [0.0, 0.0, 0.0];
     state.editor.spawn.direction = SpawnDirection::Forward;
     state.editor.timeline.taps.tap_times.clear();
@@ -618,24 +568,7 @@ fn multi_selection_clicking_rendered_gizmo_starts_gizmo_drag_not_block_drag() {
         let mut state = new_editor_state().await;
         state.editor.ui.mode = EditorMode::Move;
 
-        state.editor.objects = vec![
-            LevelObject {
-                position: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
-                block_id: "core/stone".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
-            },
-            LevelObject {
-                position: [4.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
-                block_id: "core/stone".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
-            },
-        ];
+        state.editor.objects = vec![stone(0.0, 0.0, 0.0), stone(4.0, 0.0, 0.0)];
         state.editor.ui.selected_block_indices = vec![0, 1];
         state.sync_primary_selection_from_indices();
 
@@ -864,7 +797,9 @@ fn editor_load_level_in_timing_mode_reloads_waveform_for_new_level() {
         state.editor.timing.waveform_samples = vec![0.25, -0.5, 0.75];
         state.editor.timing.waveform_sample_rate = 44_100;
 
-        state.dispatch(AppCommand::EditorLoadLevel(next_level.clone()));
+        state.dispatch(AppCommand::Editor(EditorCommand::LoadLevel(
+            next_level.clone(),
+        )));
 
         assert!(
             state.editor.timing.waveform_samples.is_empty(),
@@ -955,10 +890,10 @@ fn context_cursor_update_forces_cursor_in_select_mode_while_right_dragging() {
             .cursor;
         state.editor.ui.cursor = [99.0, 99.0, 99.0];
 
-        state.dispatch(AppCommand::EditorUpdateCursorFromScreen {
+        state.dispatch(AppCommand::Editor(EditorCommand::UpdateCursorFromScreen {
             x: screen_x,
             y: screen_y,
-        });
+        }));
 
         assert_eq!(state.editor.ui.cursor, expected_cursor);
     });
@@ -986,7 +921,7 @@ fn spawn_hotkey_updates_spawn_from_pointer_in_select_mode() {
         state.editor.ui.cursor = [99.0, 99.0, 99.0];
         state.editor.ui.pointer_screen = Some([screen_x, screen_y]);
 
-        state.dispatch(AppCommand::EditorSetSpawnHere);
+        state.dispatch(AppCommand::Editor(EditorCommand::SetSpawnHere));
 
         assert_eq!(state.editor.spawn.position, expected_cursor);
     });
@@ -1004,14 +939,10 @@ fn test_handle_primary_click_shift_priority() {
         state.editor.ui.shift_held = true;
 
         // Add a block and select it
-        state.editor.objects.push(LevelObject {
-            position: [-5.0, -5.0, -5.0],
-            size: [10.0, 10.0, 10.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
-        });
+        state
+            .editor
+            .objects
+            .push(sized("core/stone", -5.0, -5.0, -5.0, 10.0, 10.0, 10.0));
         state.editor.ui.selected_block_indices.push(0);
 
         // Set camera to look at origin from above
@@ -1086,14 +1017,7 @@ fn editor_null_mode_clears_selection() {
     pollster::block_on(async {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
-        state.editor.objects.push(LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
-        });
+        state.editor.objects.push(stone(0.0, 0.0, 0.0));
         state.editor.ui.selected_block_index = Some(0);
         state.editor.set_mode(EditorMode::Place);
         assert_eq!(state.editor.ui.selected_block_index, Some(0));
@@ -1219,7 +1143,7 @@ fn playback_shift_timeline_command_queues_debounced_audio_resync() {
         state.toggle_editor_timeline_playback();
         assert!(state.editor.timeline.playback.playing);
 
-        state.dispatch(AppCommand::EditorShiftTimeline(0.1));
+        state.dispatch(AppCommand::Editor(EditorCommand::ShiftTimeline(0.1)));
 
         assert!((state.editor.timeline.clock.time_seconds - 0.6).abs() < 1e-5);
         assert_eq!(
@@ -1238,14 +1162,7 @@ fn test_gizmo_move_shaft_is_pickable() {
         state.phase = AppPhase::Editor;
         state.editor.set_mode(EditorMode::Move);
 
-        state.editor.objects.push(LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
-        });
+        state.editor.objects.push(stone(0.0, 0.0, 0.0));
         state.editor.ui.selected_block_indices.push(0);
         state.sync_editor_objects();
 
@@ -1315,14 +1232,7 @@ fn test_gizmo_hover_priority_suppresses_block_outline() {
         state.editor.set_mode(EditorMode::Move);
 
         // 1. Add a primary block and select it to show the gizmo
-        state.editor.objects.push(LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
-        });
+        state.editor.objects.push(stone(0.0, 0.0, 0.0));
         state.editor.ui.selected_block_indices.push(0);
         state.sync_editor_objects();
 
@@ -1351,18 +1261,11 @@ fn test_gizmo_hover_priority_suppresses_block_outline() {
 
         // 3. Add a second block exactly where the gizmo handle is projected
         // This ensures that a raycast from the mouse position *would* hit a block.
-        state.editor.objects.push(LevelObject {
-            position: [
-                move_x_handle_world.x - 0.5,
-                move_x_handle_world.y - 0.5,
-                move_x_handle_world.z - 0.5,
-            ],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
-        });
+        state.editor.objects.push(stone(
+            move_x_handle_world.x - 0.5,
+            move_x_handle_world.y - 0.5,
+            move_x_handle_world.z - 0.5,
+        ));
         state.sync_editor_objects();
 
         // 4. Verify that picking at the gizmo handle's screen coordinates hits the second block.

@@ -9,6 +9,7 @@ use crate::commands::AppCommand;
 use crate::editor_ui::modes::shared::{
     show_editor_property_popup, show_player_camera_status_row, EditorPropertyPopup,
 };
+use crate::state::editor_command::EditorCommand;
 use crate::state::EditorUiViewModel;
 
 pub(crate) fn show_tapping_mode_bottom_panel(
@@ -24,13 +25,13 @@ pub(crate) fn show_tapping_mode_bottom_panel(
             ))
             .clicked()
         {
-            commands.push(AppCommand::EditorAddTap);
+            commands.push(AppCommand::Editor(EditorCommand::AddTap));
         }
         if ui
             .button(format!("{} Clear all taps", egui_phosphor::regular::BROOM))
             .clicked()
         {
-            commands.push(AppCommand::EditorClearTaps);
+            commands.push(AppCommand::Editor(EditorCommand::ClearTaps));
         }
 
         ui.separator();
@@ -60,7 +61,7 @@ pub(crate) fn show_selected_tap_properties_window(
                         .button(format!("{} Delete", egui_phosphor::regular::TRASH))
                         .clicked()
                     {
-                        commands.push(AppCommand::EditorRemoveTap);
+                        commands.push(AppCommand::Editor(EditorCommand::RemoveTap));
                     }
                 });
 
@@ -75,7 +76,9 @@ pub(crate) fn show_selected_tap_properties_window(
                         )
                         .changed()
                     {
-                        commands.push(AppCommand::EditorSetSelectedTapTime(time_seconds));
+                        commands.push(AppCommand::Editor(EditorCommand::SetSelectedTapTime(
+                            time_seconds,
+                        )));
                     }
                 });
 
