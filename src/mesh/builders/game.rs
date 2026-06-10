@@ -893,12 +893,25 @@ pub(crate) fn build_camera_arrow_vertices(
     if alpha <= f32::EPSILON {
         return vertices;
     }
+    let shaft_len = 1.4;
+    let tip_len = 0.9;
     let shaft_start = [
-        eye[0] + forward[0],
-        eye[1] + forward[1],
-        eye[2] + forward[2],
+        eye[0] + forward[0] * 0.15,
+        eye[1] + forward[1] * 0.15,
+        eye[2] + forward[2] * 0.15,
     ];
-    append_cone(&mut vertices, eye, shaft_start, 0.5, arrow_color);
+    let shaft_end = [
+        shaft_start[0] + forward[0] * shaft_len,
+        shaft_start[1] + forward[1] * shaft_len,
+        shaft_start[2] + forward[2] * shaft_len,
+    ];
+    let tip = [
+        shaft_end[0] + forward[0] * tip_len,
+        shaft_end[1] + forward[1] * tip_len,
+        shaft_end[2] + forward[2] * tip_len,
+    ];
+    append_cylinder_segment(&mut vertices, shaft_start, shaft_end, 0.12, arrow_color);
+    append_cone(&mut vertices, shaft_end, tip, 0.35, arrow_color);
 
     vertices
 }
