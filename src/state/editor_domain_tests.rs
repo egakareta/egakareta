@@ -208,3 +208,102 @@ fn set_snap_step_clamps_minimum() {
         "Snap step should be clamped to at least 0.05"
     );
 }
+
+// ── Nudge edge cases ───────────────────────────────────────────────────
+
+#[test]
+fn nudge_moves_all_selected_blocks() {
+    let mut editor = EditorSubsystem::new_test();
+    editor.objects.push(stone(0.0, 0.0, 0.0));
+    editor.objects.push(stone(1.0, 0.0, 0.0));
+    editor.objects.push(stone(2.0, 0.0, 0.0));
+    editor.ui.selected_block_index = Some(0);
+    editor.ui.selected_block_indices = vec![0, 2];
+
+    assert!(editor.nudge_selected(3.0, -1.0));
+    assert_vec3_approx_eq(editor.objects[0].position, [3.0, 0.0, -1.0], 1e-6);
+    assert_vec3_approx_eq(editor.objects[1].position, [1.0, 0.0, 0.0], 1e-6);
+    assert_vec3_approx_eq(editor.objects[2].position, [5.0, 0.0, -1.0], 1e-6);
+}
+
+// ── Snap edge cases ────────────────────────────────────────────────────
+
+#[test]
+fn snap_returns_false_when_nothing_selected() {
+    let mut editor = EditorSubsystem::new_test();
+    editor.config.snap_step = 1.0;
+    editor.objects.push(stone(0.3, 0.0, 0.7));
+
+    assert!(!editor.snap_selected_blocks_to_grid());
+}
+
+// ── Remove edge cases ──────────────────────────────────────────────────
+
+#[test]
+fn remove_selected_returns_false_when_nothing_selected_and_cursor_empty() {
+    let mut editor = EditorSubsystem::new_test();
+    editor.objects.push(stone(0.0, 0.0, 0.0));
+    // Cursor far from any block so remove_topmost_block_at_cursor also fails
+    editor.ui.cursor = [100.0, 100.0, 100.0];
+
+    assert!(!editor.remove_selected());
+    assert_eq!(editor.objects.len(), 1);
+}
+
+// ── Rotation snap ──────────────────────────────────────────────────────
+
+#[test]
+fn effective_snap_rotation_overridden_by_ctrl() {
+    let mut editor = EditorSubsystem::new_test();
+    editor.config.snap_rotation = true;
+    editor.ui.ctrl_held = false;
+    assert!(editor.effective_snap_rotation());
+
+    editor.ui.ctrl_held = true;
+    assert!(!editor.effective_snap_rotation());
+}
+
+// ── Multi-select dedup ─────────────────────────────────────────────────
+
+#[test]
+fn selected_indices_normalized_sorted() {
+    let mut editor = EditorSubsystem::new_test();
+    editor.objects.push(stone(0.0, 0.0, 0.0));
+    editor.objects.push(stone(1.0, 0.0, 0.0));
+    editor.objects.push(stone(2.0, 0.0, 0.0));
+    editor.ui.selected_block_index = Some(2);
+    editor.ui.selected_block_indices = vec![2, 0, 1];
+
+    let indices = editor.selected_indices_normalized();
+    assert_eq!(indices, vec![0, 1, 2]);
+}
+
+// ── Spawn direction full cycle ─────────────────────────────────────────
+
+#[test]
+fn rotate_spawn_direction_full_cycle() {
+    let mut editor = EditorSubsystem::new_test();
+    let initial = editor.spawn.direction;
+
+    // Rotate through all directions and return to initial
+    for _ in 0..4 {
+        editor.rotate_spawn_direction();
+    }
+    assert_eq!(editor.spawn.direction, initial);
+}
+
+// ── Mode change ────────────────────────────────────────────────────────
+
+#[test]
+fn set_mode_updates_mode_field() {
+    let mut editor = EditorSubsystem::new_test();
+
+    editor.set_mode(crate::types::EditorMode::Move);
+    assert_eq!(editor.ui.mode, crate::types::EditorMode::Move);
+
+    editor.set_mode(crate::types::EditorMode::Scale);
+    assert_eq!(editor.ui.mode, crate::types::EditorMode::Scale);
+
+    editor.set_mode(crate::types::EditorMode::Rotate);
+    assert_eq!(editor.ui.mode, crate::types::EditorMode::Rotate);
+}

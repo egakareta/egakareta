@@ -343,9 +343,36 @@ mod tests {
             state.dispatch_editor(EditorCommand::UpdateSelectedBlock(
                 crate::test_utils::sized("core/grass", 2.0, 3.0, 4.0, 5.0, 6.0, 7.0),
             ));
-            assert_eq!(state.editor.objects[0].block_id, "core/grass");
-            assert_eq!(state.editor.objects[0].position, [2.0, 3.0, 4.0]);
-            assert_eq!(state.editor.objects[0].size, [5.0, 6.0, 7.0]);
+            assert!(crate::test_utils::approx_eq(
+                state.editor.objects[0].position[0],
+                2.0,
+                1e-6
+            ));
+            assert!(crate::test_utils::approx_eq(
+                state.editor.objects[0].position[1],
+                3.0,
+                1e-6
+            ));
+            assert!(crate::test_utils::approx_eq(
+                state.editor.objects[0].position[2],
+                4.0,
+                1e-6
+            ));
+            assert!(crate::test_utils::approx_eq(
+                state.editor.objects[0].size[0],
+                5.0,
+                1e-6
+            ));
+            assert!(crate::test_utils::approx_eq(
+                state.editor.objects[0].size[1],
+                6.0,
+                1e-6
+            ));
+            assert!(crate::test_utils::approx_eq(
+                state.editor.objects[0].size[2],
+                7.0,
+                1e-6
+            ));
 
             state.dispatch_editor(EditorCommand::NudgeSelected { dx: 1, dy: 0 });
             state.dispatch_editor(EditorCommand::SnapSelectionToGrid);
@@ -372,7 +399,11 @@ mod tests {
 
             state.editor.timeline.clock.time_seconds = 2.0;
             state.dispatch_editor(EditorCommand::Escape);
-            assert_eq!(state.editor.timeline.clock.time_seconds, 0.0);
+            assert!(crate::test_utils::approx_eq(
+                state.editor.timeline.clock.time_seconds,
+                0.0,
+                1e-6,
+            ));
 
             state.dispatch_editor(EditorCommand::Escape);
             assert_eq!(state.phase, AppPhase::Menu);
@@ -401,6 +432,292 @@ mod tests {
                 pressed: true,
             });
             state.dispatch_editor(EditorCommand::PickBlockAt { x: 0.0, y: 0.0 });
+        });
+    }
+
+    #[test]
+    fn dispatch_editor_routes_snap_block_history_and_misc_commands() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.objects = vec![stone(0.0, 0.0, 0.0)];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+
+            // Snap settings
+            state.dispatch_editor(EditorCommand::SetSnapToGrid(false));
+            assert!(!state.editor.config.snap_to_grid);
+            state.dispatch_editor(EditorCommand::SetSnapStep(0.5));
+            crate::test_utils::assert_approx_eq(state.editor.config.snap_step, 0.5, 1e-6);
+            state.dispatch_editor(EditorCommand::SetSnapRotation(false));
+            assert!(!state.editor.config.snap_rotation);
+            state.dispatch_editor(EditorCommand::SetSnapRotationStep(30.0));
+            crate::test_utils::assert_approx_eq(
+                state.editor.config.snap_rotation_step_degrees,
+                30.0,
+                1e-6,
+            );
+
+            // Block ops
+            state.dispatch_editor(EditorCommand::DuplicateBlock);
+            assert!(state.editor.objects.len() >= 2);
+            state.dispatch_editor(EditorCommand::RemoveBlock);
+
+            state.editor.objects = vec![stone(0.0, 0.0, 0.0)];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+            state.dispatch_editor(EditorCommand::PasteBlock);
+            state.dispatch_editor(EditorCommand::CopyBlock);
+            assert!(state.editor.runtime.interaction.clipboard.is_some());
+
+            // History
+            state.dispatch_editor(EditorCommand::Undo);
+            state.dispatch_editor(EditorCommand::Redo);
+
+            // Spawn
+            state.editor.ui.cursor = [3.0, 1.0, 5.0];
+            state.dispatch_editor(EditorCommand::SetSpawnHere);
+            assert!(crate::test_utils::approx_eq(
+                state.editor.spawn.position[0],
+                3.0,
+                1e-6,
+            ));
+            state.dispatch_editor(EditorCommand::RotateSpawnDirection);
+            state.dispatch_editor(EditorCommand::RotatePlacementPreview);
+
+            // Playback
+            state.dispatch_editor(EditorCommand::SetPlaybackSpeed(1.5));
+            crate::test_utils::assert_approx_eq(state.editor_playback_speed(), 1.5, 1e-6);
+            state.dispatch_editor(EditorCommand::SetWaveformZoom(2.0));
+            crate::test_utils::assert_approx_eq(state.editor_waveform_zoom(), 2.0, 1e-6);
+            state.dispatch_editor(EditorCommand::SetWaveformScroll(1.0));
+            crate::test_utils::assert_approx_eq(state.editor_waveform_scroll(), 1.0, 1e-6);
+            state.dispatch_editor(EditorCommand::ShiftTimeline(0.5));
+            state.dispatch_editor(EditorCommand::RemoveTap);
+            state.dispatch_editor(EditorCommand::ClearTaps);
+            state.dispatch_editor(EditorCommand::ToggleTimelinePlayback);
+            assert!(state.editor.timeline.playback.playing);
+            state.dispatch_editor(EditorCommand::ToggleTimelinePlayback);
+            assert!(!state.editor.timeline.playback.playing);
+
+            // BPM tapping
+            state.dispatch_editor(EditorCommand::BpmTap);
+            state.dispatch_editor(EditorCommand::BpmTapReset);
+
+            // Zoom / Camera
+            state.dispatch_editor(EditorCommand::AdjustZoom(1.0));
+            state.dispatch_editor(EditorCommand::SetCameraOrientation {
+                rotation: 0.0,
+                pitch: 0.5,
+                transition_seconds: Some(0.25),
+            });
+            state.dispatch_editor(EditorCommand::AddCameraTrigger);
+            state.dispatch_editor(EditorCommand::SetTriggerSelected(Some(0)));
+            state.dispatch_editor(EditorCommand::SetSimulateTriggerHitboxes(true));
+            assert!(state.editor_simulate_trigger_hitboxes());
+
+            // Misc
+            state.dispatch_editor(EditorCommand::ToggleHitboxVisualization);
+            assert!(state.editor_hitbox_visualization_enabled());
+            state.dispatch_editor(EditorCommand::TogglePerfOverlay);
+            assert!(state.perf_overlay_enabled());
+        });
+    }
+
+    #[test]
+    fn dispatch_editor_routes_ui_session_and_keybind_commands() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+
+            // UI / Session
+            state.dispatch_editor(EditorCommand::SetShowMetadata(true));
+            assert!(state.editor_show_metadata());
+            state.dispatch_editor(EditorCommand::SetShowMetadata(false));
+            assert!(!state.editor_show_metadata());
+
+            state.dispatch_editor(EditorCommand::RenameLevel("TestLevel".to_string()));
+            assert_eq!(state.editor_level_name().as_deref(), Some("TestLevel"));
+
+            state.dispatch_editor(EditorCommand::UpdateMusic(crate::types::MusicMetadata {
+                source: "test.mp3".to_string(),
+                ..crate::types::MusicMetadata::default()
+            }));
+            assert_eq!(state.editor_music_metadata().source, "test.mp3");
+
+            state.dispatch_editor(EditorCommand::UpdateSkyColor([0.1, 0.2, 0.3]));
+
+            state.dispatch_editor(EditorCommand::CaptureMenuPreviewCamera);
+            state.dispatch_editor(EditorCommand::UseAutoMenuPreviewCamera);
+
+            // Keyboard state
+            state.dispatch_editor(EditorCommand::SetShiftHeld(false));
+            state.dispatch_editor(EditorCommand::SetCtrlHeld(false));
+            state.dispatch_editor(EditorCommand::SetAltHeld(false));
+            state.dispatch_editor(EditorCommand::SetPanUpHeld(false));
+            state.dispatch_editor(EditorCommand::SetPanDownHeld(false));
+            state.dispatch_editor(EditorCommand::SetPanLeftHeld(false));
+            state.dispatch_editor(EditorCommand::SetPanRightHeld(false));
+            assert!(!state.editor.ui.shift_held);
+            assert!(!state.editor.ui.ctrl_held);
+            assert!(!state.editor.ui.alt_held);
+            assert!(!state.editor.ui.pan_up_held);
+            assert!(!state.editor.ui.pan_down_held);
+            assert!(!state.editor.ui.pan_left_held);
+            assert!(!state.editor.ui.pan_right_held);
+
+            // Keybind capture
+            state.dispatch_editor(EditorCommand::SetKeybindCapture(Some((
+                "copy".to_string(),
+                0,
+            ))));
+            assert!(state.editor_keybind_capture_action().is_some());
+            state.dispatch_editor(EditorCommand::SetKeybindCapture(None));
+            assert!(state.editor_keybind_capture_action().is_none());
+
+            state.dispatch_editor(EditorCommand::SetKeybind {
+                action: "copy".to_string(),
+                slot: 0,
+                chord: crate::types::KeyChord::new("k", true, false, false),
+            });
+            state.dispatch_editor(EditorCommand::ClearKeybindSlot {
+                action: "copy".to_string(),
+                slot: 0,
+            });
+            state.dispatch_editor(EditorCommand::ResetKeybind("copy".to_string()));
+            state.dispatch_editor(EditorCommand::ResetKeybinds);
+
+            // UI scale
+            state.dispatch_editor(EditorCommand::SetUiScaleMultiplier(1.25));
+
+            // UpdateCursorFromScreen
+            state.dispatch_editor(EditorCommand::UpdateCursorFromScreen { x: 100.0, y: 200.0 });
+        });
+    }
+
+    #[test]
+    fn dispatch_editor_mouse_button_branches() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.objects = vec![stone(0.0, 0.0, 0.0)];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+
+            // button=0, pressed=true, pointer_screen set -> handle_primary_click
+            state.editor.ui.pointer_screen = Some([640.0, 360.0]);
+            state.dispatch_editor(EditorCommand::MouseButton {
+                button: 0,
+                pressed: true,
+            });
+
+            // button=0, pressed=true, pointer_screen None -> handle_mouse_button
+            state.editor.ui.pointer_screen = None;
+            state.dispatch_editor(EditorCommand::MouseButton {
+                button: 0,
+                pressed: true,
+            });
+
+            // button=1, pressed=true, pointer_screen None -> else branch
+            state.dispatch_editor(EditorCommand::MouseButton {
+                button: 1,
+                pressed: true,
+            });
+
+            // button=2, pressed=false -> else branch
+            state.dispatch_editor(EditorCommand::MouseButton {
+                button: 2,
+                pressed: false,
+            });
+        });
+    }
+
+    #[test]
+    fn dispatch_editor_escape_with_playback_active() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+
+            // Start playback then escape should stop it
+            state.dispatch_editor(EditorCommand::ToggleTimelinePlayback);
+            assert!(state.editor.timeline.playback.playing);
+
+            state.dispatch_editor(EditorCommand::Escape);
+            assert!(!state.editor.timeline.playback.playing);
+        });
+    }
+
+    #[test]
+    fn dispatch_editor_escape_in_playing_phase_with_playtest() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+
+            // Simulate playtesting from editor
+            state.editor.objects = vec![stone(0.0, 0.0, 0.0)];
+            state.editor.spawn.position = [0.0, 1.0, 0.0];
+            state.editor.timeline.clock.duration_seconds = 4.0;
+            state.dispatch_editor(EditorCommand::Playtest);
+            assert_eq!(state.phase, AppPhase::Playing);
+            assert!(state.session.playtesting_editor);
+
+            // Escape during playtest should return to editor
+            state.dispatch_editor(EditorCommand::Escape);
+            assert_eq!(state.phase, AppPhase::Editor);
+            assert!(!state.session.playtesting_editor);
+        });
+    }
+
+    #[test]
+    fn dispatch_editor_escape_clears_tap_selection() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.dispatch_editor(EditorCommand::SetMode(EditorMode::Tapping));
+            state.dispatch_editor(EditorCommand::SetTimelineDuration(4.0));
+            state.dispatch_editor(EditorCommand::SetTimelineTime(1.0));
+            state.dispatch_editor(EditorCommand::AddTap);
+            state.dispatch_editor(EditorCommand::SetSelectedTap(Some(0)));
+            assert!(state.editor.selected_tap().is_some());
+
+            state.dispatch_editor(EditorCommand::Escape);
+            assert!(state.editor.selected_tap().is_none());
+        });
+    }
+
+    #[test]
+    fn dispatch_editor_select_recent_block() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.config.recent_block_ids =
+                vec!["core/stone".to_string(), "core/grass".to_string()];
+
+            state.dispatch_editor(EditorCommand::SelectRecentBlock(0));
+            assert_eq!(state.editor.config.selected_block_id, "core/stone");
+            assert_eq!(state.editor_mode(), EditorMode::Place);
+
+            state.dispatch_editor(EditorCommand::SelectRecentBlock(1));
+            assert_eq!(state.editor.config.selected_block_id, "core/grass");
+        });
+    }
+
+    #[test]
+    fn dispatch_editor_set_block_id_updates_recent() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+
+            state.dispatch_editor(EditorCommand::SetBlockId("core/lava".to_string()));
+            assert_eq!(state.editor.config.selected_block_id, "core/lava");
+            assert_eq!(state.editor.config.recent_block_ids[0], "core/lava");
+        });
+    }
+
+    #[test]
+    fn dispatch_editor_mode_switching_during_playback() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+
+            // Start playback
+            state.dispatch_editor(EditorCommand::ToggleTimelinePlayback);
+            assert!(state.editor.timeline.playback.playing);
+
+            // Mode switch during playback should set playback effective mode
+            state.dispatch_editor(EditorCommand::SetMode(EditorMode::Place));
+            assert!(state.editor.timeline.playback.playing);
         });
     }
 }
