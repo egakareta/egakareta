@@ -178,7 +178,11 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         color = linear_to_srgb(color);
     }
 
-    return vec4<f32>(color, input.color.a * texture_sample.a);
+    let final_color = vec4<f32>(color, input.color.a * texture_sample.a);
+    if final_color.a < 0.004 {
+        discard;
+    }
+    return final_color;
 }
 
 fn linear_to_srgb(value: vec3<f32>) -> vec3<f32> {
