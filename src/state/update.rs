@@ -169,14 +169,7 @@ impl State {
             return;
         };
 
-        let mut indices = consumed_indices;
-        indices.sort_unstable();
-        indices.dedup();
-        for index in indices.into_iter().rev() {
-            if index < base_objects.len() {
-                base_objects.remove(index);
-            }
-        }
+        crate::game::GameState::prune_consumed_indices_from_objects(base_objects, consumed_indices);
     }
 
     fn apply_playing_object_triggers(&mut self, time_seconds: f32) -> Option<Vec<LevelObject>> {

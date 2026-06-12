@@ -14,6 +14,12 @@ use crate::block_repository::{normalize_block_id, DEFAULT_BLOCK_ID};
 
 pub(crate) const CAMERA_TRIGGER_BLOCK_ID: &str = "core/camera_trigger";
 pub(crate) const TRANSFORM_TRIGGER_BLOCK_ID: &str = "core/transform_trigger";
+pub(crate) const DEFAULT_CAMERA_TRIGGER_ROTATION: f32 = -std::f32::consts::FRAC_PI_4;
+pub(crate) const DEFAULT_CAMERA_TRIGGER_PITCH: f32 = std::f32::consts::FRAC_PI_4;
+pub(crate) const DEFAULT_EDITOR_CAMERA_ROTATION: f32 = std::f32::consts::FRAC_PI_4;
+pub(crate) const DEFAULT_EDITOR_CAMERA_PITCH: f32 = std::f32::consts::FRAC_PI_4;
+pub(crate) const DEFAULT_PLAY_CAMERA_ROTATION: f32 = std::f32::consts::FRAC_PI_4;
+pub(crate) const DEFAULT_PLAY_CAMERA_PITCH: f32 = std::f32::consts::FRAC_PI_4;
 
 // ── Serde default helpers ───────────────────────────────────────────────
 // Reduces the boilerplate of writing `fn default_X() -> T` +
@@ -197,8 +203,8 @@ serde_default_array!(default_preview_camera_target_zero: [f32; 3] = [0.0, 0.0, 0
 serde_default_float!(default_timeline_time_seconds: f32 = 0.0);
 serde_default_float!(default_timeline_duration_seconds: f32 = 16.0);
 serde_default_array!(default_camera_trigger_target_position: [f32; 3] = [0.0, 0.0, 0.0]);
-serde_default_float!(default_camera_trigger_rotation: f32 = -45.0f32.to_radians());
-serde_default_float!(default_camera_trigger_pitch: f32 = 45.0f32.to_radians());
+serde_default_float!(default_camera_trigger_rotation: f32 = DEFAULT_CAMERA_TRIGGER_ROTATION);
+serde_default_float!(default_camera_trigger_pitch: f32 = DEFAULT_CAMERA_TRIGGER_PITCH);
 serde_default_float!(default_camera_trigger_transition_interval_seconds: f32 = 1.0);
 serde_default!(default_camera_trigger_use_full_segment_transition: bool = false);
 serde_default_float!(default_timed_trigger_duration_seconds: f32 = 0.0);

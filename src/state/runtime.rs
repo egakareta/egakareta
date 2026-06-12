@@ -38,6 +38,33 @@ impl EditorDirtyFlags {
         }
     }
 
+    pub(crate) fn camera_changed() -> Self {
+        Self {
+            rebuild_selection_overlays: true,
+            rebuild_cursor: true,
+            rebuild_tap_indicators: true,
+            rebuild_preview_player: true,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn block_geometry_changed() -> Self {
+        Self {
+            rebuild_block_mesh: true,
+            rebuild_selection_overlays: true,
+            rebuild_tap_indicators: true,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn selection_changed() -> Self {
+        Self {
+            rebuild_selection_overlays: true,
+            rebuild_tap_indicators: true,
+            ..Self::default()
+        }
+    }
+
     pub(crate) fn merge(&mut self, other: Self) {
         self.sync_game_objects |= other.sync_game_objects;
         self.rebuild_block_mesh |= other.rebuild_block_mesh;

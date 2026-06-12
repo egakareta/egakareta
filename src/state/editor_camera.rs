@@ -10,7 +10,8 @@ use glam::{Mat4, Vec2, Vec3};
 use super::{EditorSubsystem, State};
 use crate::types::{
     timed_triggers_to_camera_triggers, AppPhase, CameraTrigger, CameraTriggerMode, TimedTrigger,
-    TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+    TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, DEFAULT_EDITOR_CAMERA_PITCH,
+    DEFAULT_EDITOR_CAMERA_ROTATION, DEFAULT_PLAY_CAMERA_PITCH, DEFAULT_PLAY_CAMERA_ROTATION,
 };
 
 const EDITOR_CAMERA_BASE_DISTANCE: f32 = 24.0;
@@ -19,8 +20,6 @@ const MIN_EDITOR_PITCH: f32 = -89.9f32.to_radians();
 const MAX_EDITOR_PITCH: f32 = 89.9f32.to_radians();
 const MIN_PLAYING_PITCH: f32 = 0.1f32.to_radians();
 const DEFAULT_CAMERA_TRIGGER_TRANSITION_INTERVAL_SECONDS: f32 = 1.0;
-pub(crate) const DEFAULT_PLAY_CAMERA_ROTATION: f32 = std::f32::consts::FRAC_PI_4;
-pub(crate) const DEFAULT_PLAY_CAMERA_PITCH: f32 = std::f32::consts::FRAC_PI_4;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct CameraViewSample {
@@ -36,6 +35,20 @@ pub(crate) struct EditorCameraState {
     pub(crate) playing_rotation: f32,
     pub(crate) playing_pitch: f32,
     pub(crate) transition: Option<CameraTransition>,
+}
+
+impl Default for EditorCameraState {
+    fn default() -> Self {
+        Self {
+            editor_pan: [0.0, 0.0],
+            editor_target_z: 0.0,
+            editor_rotation: DEFAULT_EDITOR_CAMERA_ROTATION,
+            editor_pitch: DEFAULT_EDITOR_CAMERA_PITCH,
+            playing_rotation: DEFAULT_PLAY_CAMERA_ROTATION,
+            playing_pitch: DEFAULT_PLAY_CAMERA_PITCH,
+            transition: None,
+        }
+    }
 }
 
 pub(crate) struct CameraTransition {
@@ -342,13 +355,8 @@ impl State {
     pub fn adjust_editor_zoom(&mut self, delta: f32) {
         if self.phase == AppPhase::Editor {
             self.editor.adjust_zoom(delta);
-            self.editor.mark_dirty(crate::state::EditorDirtyFlags {
-                rebuild_selection_overlays: true,
-                rebuild_cursor: true,
-                rebuild_tap_indicators: true,
-                rebuild_preview_player: true,
-                ..Default::default()
-            });
+            self.editor
+                .mark_dirty(crate::state::EditorDirtyFlags::camera_changed());
         }
     }
 
@@ -358,13 +366,8 @@ impl State {
     pub fn pan_editor_camera_by_input(&mut self, screen_x: f32, screen_y: f32) {
         if self.phase == AppPhase::Editor {
             self.editor.pan_by_input(screen_x, screen_y);
-            self.editor.mark_dirty(crate::state::EditorDirtyFlags {
-                rebuild_selection_overlays: true,
-                rebuild_cursor: true,
-                rebuild_tap_indicators: true,
-                rebuild_preview_player: true,
-                ..Default::default()
-            });
+            self.editor
+                .mark_dirty(crate::state::EditorDirtyFlags::camera_changed());
         }
     }
 
@@ -373,13 +376,8 @@ impl State {
             let previous_pan = self.editor.camera.editor_pan;
             self.editor.update_pan_from_keys(frame_dt);
             if previous_pan != self.editor.camera.editor_pan {
-                self.editor.mark_dirty(crate::state::EditorDirtyFlags {
-                    rebuild_selection_overlays: true,
-                    rebuild_cursor: true,
-                    rebuild_tap_indicators: true,
-                    rebuild_preview_player: true,
-                    ..Default::default()
-                });
+                self.editor
+                    .mark_dirty(crate::state::EditorDirtyFlags::camera_changed());
             }
         }
     }

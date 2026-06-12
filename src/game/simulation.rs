@@ -168,14 +168,7 @@ impl TimelineSimulationRuntime {
             return;
         };
 
-        let mut indices = consumed_indices;
-        indices.sort_unstable();
-        indices.dedup();
-        for index in indices.into_iter().rev() {
-            if index < base_objects.len() {
-                base_objects.remove(index);
-            }
-        }
+        GameState::prune_consumed_indices_from_objects(base_objects, consumed_indices);
     }
 
     pub(crate) fn advance_to(&mut self, target_time_seconds: f32) {

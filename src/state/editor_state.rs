@@ -5,6 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use super::editor_actions::{snap_cell_to_step, snap_component_to_step};
 use super::{EditorDirtyFlags, EditorSubsystem, EditorTransformTriggerCapture, State};
 use crate::editor_domain::{
     add_tap_with_indicator, clear_taps_with_indicators, interpolate_timeline_sample_positions,
@@ -224,11 +225,7 @@ impl EditorSubsystem {
         {
             let snap_step = self.config.snap_step.max(0.05);
             let next_position = if self.effective_snap_to_grid() {
-                [
-                    (position[0] / snap_step).round() * snap_step,
-                    (position[1].max(0.0) / snap_step).round() * snap_step,
-                    (position[2] / snap_step).round() * snap_step,
-                ]
+                snap_cell_to_step(position, snap_step)
             } else {
                 [position[0], position[1].max(0.0), position[2]]
             };
@@ -249,11 +246,7 @@ impl EditorSubsystem {
         {
             let snap_step = self.config.snap_step.max(0.05);
             let snapped_size = if self.effective_snap_to_grid() {
-                [
-                    (size[0] / snap_step).round() * snap_step,
-                    (size[1] / snap_step).round() * snap_step,
-                    (size[2] / snap_step).round() * snap_step,
-                ]
+                size.map(|component| snap_component_to_step(component, snap_step))
             } else {
                 size
             };
@@ -1239,11 +1232,9 @@ impl State {
             self.set_editor_mode(EditorMode::Move);
         }
 
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_selection_overlays: true,
-            rebuild_cursor: true,
-            ..EditorDirtyFlags::default()
-        });
+        let mut dirty = EditorDirtyFlags::selection_changed();
+        dirty.rebuild_cursor = true;
+        self.mark_editor_dirty(dirty);
 
         true
     }
@@ -1309,17 +1300,13 @@ impl State {
         self.rebuild_editor_cursor_vertices();
         self.rebuild_editor_gizmo_vertices();
         self.rebuild_editor_selection_outline_vertices();
-        self.mark_editor_dirty(EditorDirtyFlags {
-            sync_game_objects: true,
-            rebuild_block_mesh: true,
-            rebuild_selection_overlays: true,
-            rebuild_tap_indicators: true,
-            rebuild_preview_player: true,
-            rebuild_cursor: true,
-            rebuild_hitbox_visualization: true,
-            rebuild_transform_trigger_markers: true,
-            ..EditorDirtyFlags::default()
-        });
+        let mut dirty = EditorDirtyFlags::block_geometry_changed();
+        dirty.sync_game_objects = true;
+        dirty.rebuild_preview_player = true;
+        dirty.rebuild_cursor = true;
+        dirty.rebuild_hitbox_visualization = true;
+        dirty.rebuild_transform_trigger_markers = true;
+        self.mark_editor_dirty(dirty);
 
         true
     }
@@ -1346,17 +1333,13 @@ impl State {
         self.rebuild_editor_cursor_vertices();
         self.rebuild_editor_gizmo_vertices();
         self.rebuild_editor_selection_outline_vertices();
-        self.mark_editor_dirty(EditorDirtyFlags {
-            sync_game_objects: true,
-            rebuild_block_mesh: true,
-            rebuild_selection_overlays: true,
-            rebuild_tap_indicators: true,
-            rebuild_preview_player: true,
-            rebuild_cursor: true,
-            rebuild_hitbox_visualization: true,
-            rebuild_transform_trigger_markers: true,
-            ..EditorDirtyFlags::default()
-        });
+        let mut dirty = EditorDirtyFlags::block_geometry_changed();
+        dirty.sync_game_objects = true;
+        dirty.rebuild_preview_player = true;
+        dirty.rebuild_cursor = true;
+        dirty.rebuild_hitbox_visualization = true;
+        dirty.rebuild_transform_trigger_markers = true;
+        self.mark_editor_dirty(dirty);
 
         true
     }

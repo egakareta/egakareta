@@ -259,8 +259,8 @@ impl State {
     }
 
     pub(super) fn reset_playing_camera_defaults(&mut self) {
-        self.editor.camera.playing_rotation = 45.0f32.to_radians();
-        self.editor.camera.playing_pitch = 45.0f32.to_radians();
+        self.editor.camera.playing_rotation = crate::types::DEFAULT_PLAY_CAMERA_ROTATION;
+        self.editor.camera.playing_pitch = crate::types::DEFAULT_PLAY_CAMERA_PITCH;
     }
 
     pub(super) fn enter_playing_phase(
@@ -313,8 +313,8 @@ impl State {
         self.editor.runtime.history.undo.clear();
         self.editor.runtime.history.redo.clear();
         self.clear_editor_pan_keys();
-        self.editor.camera.editor_rotation = 45.0f32.to_radians();
-        self.editor.camera.editor_pitch = 45.0f32.to_radians();
+        self.editor.camera.editor_rotation = crate::types::DEFAULT_EDITOR_CAMERA_ROTATION;
+        self.editor.camera.editor_pitch = crate::types::DEFAULT_EDITOR_CAMERA_PITCH;
         self.editor.camera.editor_target_z = 0.0;
         self.gameplay.state = GameState::new();
         self.render.meshes.trail.clear();
