@@ -22,7 +22,9 @@ use crate::mesh::obj::{append_obj_mesh, resolve_obj_mesh};
 use crate::mesh::shapes::{append_prism_with_layers, PrismFaceColors, PrismTextureLayers};
 use crate::mesh::transforms::rotate_vertices_around_euler;
 use crate::platform::parallel::rayon_is_ready;
-use crate::triggers::{camera_trigger_eye_from_object, camera_trigger_forward};
+use crate::triggers::{
+    camera_trigger_eye_from_object, camera_trigger_forward_from_rotation_degrees,
+};
 use crate::types::{LevelObject, Vertex};
 use glam::Vec3;
 
@@ -389,9 +391,8 @@ pub(crate) fn append_camera_trigger_visual_vertices(
     style: &CameraTriggerVisualStyle,
 ) {
     let eye = Vec3::from_array(position);
-    let forward = Vec3::from_array(camera_trigger_forward(
-        rotation_degrees[1].to_radians(),
-        rotation_degrees[0].to_radians(),
+    let forward = Vec3::from_array(camera_trigger_forward_from_rotation_degrees(
+        rotation_degrees,
     ));
     let arrow_direction = if forward.length_squared() > f32::EPSILON {
         forward

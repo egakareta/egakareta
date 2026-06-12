@@ -1797,7 +1797,9 @@ mod tests {
     };
     use crate::triggers::{
         apply_timed_triggers_to_objects, camera_trigger_eye_from_object,
-        camera_trigger_eye_from_target, camera_trigger_target_from_eye,
+        camera_trigger_eye_from_target, camera_trigger_forward,
+        camera_trigger_forward_from_rotation_degrees,
+        camera_trigger_rotation_pitch_from_rotation_degrees, camera_trigger_target_from_eye,
         camera_triggers_to_timed_triggers, default_camera_trigger_pitch,
         default_camera_trigger_rotation, default_camera_trigger_transition_interval_seconds,
         timed_triggers_to_camera_triggers, triggers_from_objects, CameraTrigger, CameraTriggerMode,
@@ -2182,6 +2184,59 @@ mod tests {
         }
         assert!((resolved[0].pitch - 30.0_f32.to_radians()).abs() <= 1e-6);
         assert!((resolved[0].rotation - 60.0_f32.to_radians()).abs() <= 1e-6);
+    }
+
+    #[test]
+    fn resolved_camera_trigger_normalizes_wrapped_pitch_rotation() {
+        let object = LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [-135.0, 0.0, 180.0],
+            block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+            trigger: camera_triggers_to_timed_triggers(&[CameraTrigger {
+                time_seconds: 1.2,
+                mode: CameraTriggerMode::Static,
+                easing: TimedTriggerEasing::Linear,
+                transition_interval_seconds: 1.0,
+                use_full_segment_transition: false,
+                target_position: [2.0, 3.0, 4.0],
+                rotation: 0.0,
+                pitch: 0.0,
+            }])
+            .into_iter()
+            .next(),
+        };
+        let metadata = LevelMetadata {
+            name: "Bridge".to_string(),
+            objects: vec![object],
+            ..LevelMetadata::default()
+        };
+
+        let resolved = timed_triggers_to_camera_triggers(&metadata.resolved_triggers());
+        let (expected_rotation, expected_pitch) =
+            camera_trigger_rotation_pitch_from_rotation_degrees([-135.0, 0.0, 180.0]);
+        let expected_forward = camera_trigger_forward_from_rotation_degrees([-135.0, 0.0, 180.0]);
+        let resolved_forward = camera_trigger_forward(resolved[0].rotation, resolved[0].pitch);
+        let resolved_eye = camera_trigger_eye_from_target(
+            resolved[0].target_position,
+            resolved[0].rotation,
+            resolved[0].pitch,
+        );
+
+        assert_eq!(resolved.len(), 1);
+        assert_approx_eq(resolved[0].rotation, expected_rotation);
+        assert_approx_eq(resolved[0].pitch, expected_pitch);
+        assert!(resolved_forward[1] < -0.6);
+        for (actual, expected) in resolved_forward.iter().zip(expected_forward) {
+            assert_approx_eq(*actual, expected);
+        }
+        for (actual, expected) in resolved_eye
+            .iter()
+            .zip(camera_trigger_eye_from_object(&metadata.objects[0]))
+        {
+            assert_approx_eq(*actual, expected);
+        }
     }
 
     #[test]

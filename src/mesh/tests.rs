@@ -14,7 +14,9 @@ mod tests {
     };
     use crate::mesh::egmesh::resolve_egmesh;
     use crate::mesh::obj::{append_obj_mesh, parse_obj_mesh, parse_obj_mesh_with_materials};
-    use crate::triggers::{camera_trigger_eye_from_object, camera_trigger_forward};
+    use crate::triggers::{
+        camera_trigger_eye_from_object, camera_trigger_forward_from_rotation_degrees,
+    };
     use crate::types::{GizmoPart, LevelObject, Vertex};
 
     fn bounds_xz(vertices: &[[f32; 3]]) -> (f32, f32, f32, f32) {
@@ -454,11 +456,39 @@ d 0.5
         };
         let vertices = build_block_geometry(std::slice::from_ref(&obj)).to_triangle_vertices();
         let eye = glam::Vec3::from_array(camera_trigger_eye_from_object(&obj));
-        let forward = glam::Vec3::from_array(camera_trigger_forward(
-            rotation_degrees[1].to_radians(),
-            rotation_degrees[0].to_radians(),
+        let forward = glam::Vec3::from_array(camera_trigger_forward_from_rotation_degrees(
+            rotation_degrees,
         ));
 
+        let max_forward = vertices
+            .iter()
+            .map(|vertex| (glam::Vec3::from_array(vertex.position) - eye).dot(forward))
+            .fold(f32::NEG_INFINITY, f32::max);
+        let max_backward = vertices
+            .iter()
+            .map(|vertex| (glam::Vec3::from_array(vertex.position) - eye).dot(-forward))
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        assert!(max_forward > 1.8);
+        assert!(max_backward < 0.7);
+    }
+
+    #[test]
+    fn camera_trigger_arrow_normalizes_wrapped_pitch_rotation() {
+        let rotation_degrees = [-135.0, 0.0, 180.0];
+        let obj = LevelObject {
+            position: [0.0, 0.0, 0.0],
+            rotation_degrees,
+            block_id: "core/camera_trigger".to_string(),
+            ..LevelObject::default()
+        };
+        let vertices = build_block_geometry(std::slice::from_ref(&obj)).to_triangle_vertices();
+        let eye = glam::Vec3::from_array(camera_trigger_eye_from_object(&obj));
+        let forward = glam::Vec3::from_array(camera_trigger_forward_from_rotation_degrees(
+            rotation_degrees,
+        ));
+
+        assert!(forward.y < -0.6);
         let max_forward = vertices
             .iter()
             .map(|vertex| (glam::Vec3::from_array(vertex.position) - eye).dot(forward))

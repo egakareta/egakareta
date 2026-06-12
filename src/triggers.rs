@@ -63,6 +63,33 @@ pub(crate) fn camera_trigger_forward(rotation: f32, pitch: f32) -> [f32; 3] {
     ]
 }
 
+pub(crate) fn camera_trigger_forward_from_rotation_degrees(rotation_degrees: [f32; 3]) -> [f32; 3] {
+    let (rotation, pitch) = camera_trigger_rotation_pitch_from_rotation_degrees(rotation_degrees);
+    camera_trigger_forward(rotation, pitch)
+}
+
+pub(crate) fn camera_trigger_rotation_pitch_from_rotation_degrees(
+    rotation_degrees: [f32; 3],
+) -> (f32, f32) {
+    let mut pitch_degrees = normalize_degrees(rotation_degrees[0]);
+    let mut rotation_degrees_y = normalize_degrees(rotation_degrees[1]);
+    if pitch_degrees > 90.0 {
+        pitch_degrees = 180.0 - pitch_degrees;
+        rotation_degrees_y += 180.0;
+    } else if pitch_degrees < -90.0 {
+        pitch_degrees += 180.0;
+        rotation_degrees_y += 180.0;
+    }
+    (
+        normalize_degrees(rotation_degrees_y).to_radians(),
+        pitch_degrees.to_radians(),
+    )
+}
+
+fn normalize_degrees(degrees: f32) -> f32 {
+    (degrees + 180.0).rem_euclid(360.0) - 180.0
+}
+
 pub(crate) fn default_camera_trigger_target_position() -> [f32; 3] {
     [0.0, 0.0, 0.0]
 }
@@ -477,17 +504,22 @@ pub(crate) fn triggers_from_objects(objects: &[LevelObject]) -> Vec<TimedTrigger
                     target_position: _,
                     rotation: _,
                     pitch: _,
-                } => TimedTriggerAction::CameraPose {
-                    transition_interval_seconds,
-                    use_full_segment_transition,
-                    target_position: camera_trigger_target_from_eye(
-                        camera_trigger_eye_from_object(object),
-                        object.rotation_degrees[1].to_radians(),
-                        object.rotation_degrees[0].to_radians(),
-                    ),
-                    rotation: object.rotation_degrees[1].to_radians(),
-                    pitch: object.rotation_degrees[0].to_radians(),
-                },
+                } => {
+                    let (rotation, pitch) = camera_trigger_rotation_pitch_from_rotation_degrees(
+                        object.rotation_degrees,
+                    );
+                    TimedTriggerAction::CameraPose {
+                        transition_interval_seconds,
+                        use_full_segment_transition,
+                        target_position: camera_trigger_target_from_eye(
+                            camera_trigger_eye_from_object(object),
+                            rotation,
+                            pitch,
+                        ),
+                        rotation,
+                        pitch,
+                    }
+                }
                 TimedTriggerAction::CameraFollow {
                     transition_interval_seconds,
                     use_full_segment_transition,
