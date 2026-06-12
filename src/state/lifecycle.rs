@@ -656,15 +656,7 @@ impl State {
                 },
                 objects: Vec::new(),
                 spawn: SpawnMetadata::default(),
-                camera: EditorCameraState {
-                    editor_pan: [0.0, 0.0],
-                    editor_target_z: 0.0,
-                    editor_rotation: 45.0f32.to_radians(),
-                    editor_pitch: 45.0f32.to_radians(),
-                    playing_rotation: 45.0f32.to_radians(),
-                    playing_pitch: 45.0f32.to_radians(),
-                    transition: None,
-                },
+                camera: EditorCameraState::default(),
                 triggers: EditorTriggerState::new(),
                 timeline: EditorTimelineState::new(),
                 runtime: EditorRuntimeState {
@@ -1564,15 +1556,7 @@ impl State {
                 },
                 objects: Vec::new(),
                 spawn: SpawnMetadata::default(),
-                camera: EditorCameraState {
-                    editor_pan: [0.0, 0.0],
-                    editor_target_z: 0.0,
-                    editor_rotation: 45.0f32.to_radians(),
-                    editor_pitch: 45.0f32.to_radians(),
-                    playing_rotation: 45.0f32.to_radians(),
-                    playing_pitch: 45.0f32.to_radians(),
-                    transition: None,
-                },
+                camera: EditorCameraState::default(),
                 triggers: EditorTriggerState::new(),
                 timeline: EditorTimelineState::new(),
                 runtime: EditorRuntimeState {

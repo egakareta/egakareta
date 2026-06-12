@@ -13,6 +13,7 @@
 
 #![warn(missing_docs)]
 mod audio_service;
+mod auth_types;
 #[cfg(feature = "benchmarks")]
 pub mod bench_support;
 mod block_repository;
@@ -28,6 +29,7 @@ mod platform;
 mod state;
 #[cfg(test)]
 mod test_utils;
+mod triggers;
 mod types;
 
 pub use editor_ui::{

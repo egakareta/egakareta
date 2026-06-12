@@ -29,9 +29,10 @@ use crate::mesh::{
     PracticeCheckpointFlagInstance,
 };
 use crate::state::render::EditorOutlineInstance;
+use crate::triggers::{TimedTrigger, TimedTriggerAction, TimedTriggerTarget};
 use crate::types::{
-    AppPhase, EditorMode, EditorPlaceMode, GizmoPart, LevelObject, SpawnDirection, TimedTrigger,
-    TimedTriggerAction, TimedTriggerTarget, TimingPoint, Vertex, TRANSFORM_TRIGGER_BLOCK_ID,
+    AppPhase, EditorMode, EditorPlaceMode, GizmoPart, LevelObject, SpawnDirection, TimingPoint,
+    Vertex, TRANSFORM_TRIGGER_BLOCK_ID,
 };
 
 const SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD: usize = 700;
@@ -333,24 +334,13 @@ impl EditorSubsystem {
 
     pub(crate) fn sync_objects_for_drag(&mut self) {
         self.normalize_block_selection();
-        self.mark_dirty(EditorDirtyFlags {
-            sync_game_objects: true,
-            rebuild_block_mesh: true,
-            rebuild_selection_overlays: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.mark_dirty(EditorDirtyFlags::drag_object_sync());
     }
 
     pub(crate) fn sync_objects_after_drag_release(&mut self) {
         self.normalize_block_selection();
         self.invalidate_samples();
-        self.mark_dirty(EditorDirtyFlags {
-            sync_game_objects: true,
-            rebuild_selection_overlays: true,
-            rebuild_preview_player: true,
-            rebuild_cursor: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.mark_dirty(EditorDirtyFlags::drag_release_sync());
     }
 
     pub(crate) fn selected_block_default_size(&self) -> [f32; 3] {
@@ -379,20 +369,14 @@ impl EditorSubsystem {
         if can_append_mesh {
             self.invalidate_samples();
             self.runtime.pending_block_mesh_appends.push(placed_index);
-            self.mark_dirty(EditorDirtyFlags {
-                sync_game_objects: true,
-                append_block_mesh: true,
-                rebuild_selection_overlays: place_mode == EditorPlaceMode::SelectPlaced,
-                rebuild_transform_trigger_markers: placed_transform_trigger,
-                ..EditorDirtyFlags::default()
-            });
+            self.mark_dirty(EditorDirtyFlags::appended_block(
+                place_mode == EditorPlaceMode::SelectPlaced,
+                placed_transform_trigger,
+            ));
         } else {
             self.sync_objects();
             if placed_transform_trigger {
-                self.mark_dirty(EditorDirtyFlags {
-                    rebuild_transform_trigger_markers: true,
-                    ..EditorDirtyFlags::default()
-                });
+                self.mark_dirty(EditorDirtyFlags::trigger_markers_changed());
             }
         }
         placed_index
@@ -1502,10 +1486,7 @@ impl State {
         self.editor.timeline.preview.position = position;
         self.editor.timeline.preview.direction = direction;
         self.render.meshes.editor_preview_player.clear();
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_hitbox_visualization: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.mark_editor_dirty(EditorDirtyFlags::hitbox_visualization_changed());
     }
 
     pub(super) fn rebuild_editor_hitbox_visualization_vertices(&mut self) {
@@ -1645,10 +1626,10 @@ mod tests {
     };
     use crate::mesh::builders::game::build_colored_tap_indicator_vertices;
     use crate::state::render::MeshDrawData;
-    use crate::types::{
-        AppPhase, EditorMode, LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
-        TimedTriggerTarget, TimingPoint,
+    use crate::triggers::{
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
     };
+    use crate::types::{AppPhase, EditorMode, LevelObject, TimingPoint};
 
     fn block(position: [f32; 3], size: [f32; 3]) -> LevelObject {
         LevelObject {

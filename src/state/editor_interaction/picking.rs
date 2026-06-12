@@ -6,9 +6,8 @@
 
 */
 use super::super::EditorSubsystem;
-use crate::types::{
-    EditorMode, EditorPickResult, EditorTapDivisionPick, LevelObject, TimedTriggerAction,
-};
+use crate::triggers::TimedTriggerAction;
+use crate::types::{EditorMode, EditorPickResult, EditorTapDivisionPick, LevelObject};
 use glam::{EulerRot, Mat3, Vec2, Vec3, Vec4};
 
 const CAMERA_TRIGGER_BALL_PICK_RADIUS: f32 = 0.55;

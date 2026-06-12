@@ -194,13 +194,8 @@ impl State {
             .drag_camera_by_pixels(dx, dy, self.phase, is_game_active);
 
         if self.phase == AppPhase::Editor {
-            self.editor.mark_dirty(crate::state::EditorDirtyFlags {
-                rebuild_selection_overlays: true,
-                rebuild_cursor: true,
-                rebuild_tap_indicators: true,
-                rebuild_preview_player: true,
-                ..Default::default()
-            });
+            self.editor
+                .mark_dirty(crate::state::EditorDirtyFlags::camera_changed());
         }
     }
 
@@ -213,25 +208,15 @@ impl State {
         if self.phase == AppPhase::Editor {
             self.editor
                 .set_editor_camera_orientation(rotation, pitch, transition_seconds);
-            self.editor.mark_dirty(crate::state::EditorDirtyFlags {
-                rebuild_selection_overlays: true,
-                rebuild_cursor: true,
-                rebuild_tap_indicators: true,
-                rebuild_preview_player: true,
-                ..Default::default()
-            });
+            self.editor
+                .mark_dirty(crate::state::EditorDirtyFlags::camera_changed());
         }
     }
 
     pub(crate) fn update_editor_camera_transition(&mut self, frame_dt: f32) {
         if self.phase == AppPhase::Editor && self.editor.update_camera_transition(frame_dt) {
-            self.editor.mark_dirty(crate::state::EditorDirtyFlags {
-                rebuild_selection_overlays: true,
-                rebuild_cursor: true,
-                rebuild_tap_indicators: true,
-                rebuild_preview_player: true,
-                ..Default::default()
-            });
+            self.editor
+                .mark_dirty(crate::state::EditorDirtyFlags::camera_changed());
         }
     }
 }

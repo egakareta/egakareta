@@ -7,11 +7,11 @@
 */
 use std::sync::mpsc::Sender;
 
+use crate::auth_types::AuthSession;
 use crate::platform::io::{
     log_platform_error, pick_audio_file, pick_level_file, save_audio_to_storage, save_level_export,
 };
 use crate::platform::task::spawn_background;
-use crate::types::AuthSession;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum AuthServiceMessage {
@@ -130,7 +130,7 @@ pub(crate) fn trigger_auth_sign_out(
 mod test_hooks {
     use std::sync::{Mutex, OnceLock};
 
-    use crate::types::AuthSession;
+    use crate::auth_types::AuthSession;
 
     #[derive(Clone, Default)]
     pub(crate) struct ServiceHooks {
@@ -191,7 +191,7 @@ mod tests {
 
     use web_time::Duration;
 
-    use crate::types::{AuthSession, AuthSessionTokens, AuthUser};
+    use crate::auth_types::{AuthSession, AuthSessionTokens, AuthUser};
 
     use super::{
         test_hooks, trigger_audio_import, trigger_auth_refresh, trigger_auth_sign_in,

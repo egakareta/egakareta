@@ -7,7 +7,8 @@
 */
 use super::{EditorSubsystem, State};
 use crate::game::GameState;
-use crate::types::{AppPhase, EditorMode, LevelObject, TimedTriggerAction};
+use crate::triggers::TimedTriggerAction;
+use crate::types::{AppPhase, EditorMode, LevelObject};
 
 impl EditorSubsystem {
     pub(crate) fn clear_pan_keys(&mut self) {
@@ -220,15 +221,12 @@ impl EditorSubsystem {
 
         // Keep cache in sync
         if let Some(trigger) = self.triggers.items.get_mut(trigger_index) {
-            if let TimedTriggerAction::TransformObjects {
-                position: target_position,
-                rotation_degrees: target_rotation_degrees,
-                size: target_size,
-            } = &mut trigger.action
-            {
-                *target_position = clamped_position;
-                *target_size = obj.size;
-                *target_rotation_degrees = rotation_degrees;
+            if matches!(trigger.action, TimedTriggerAction::TransformObjects { .. }) {
+                trigger.action = TimedTriggerAction::TransformObjects {
+                    position: clamped_position,
+                    rotation_degrees,
+                    size: obj.size,
+                };
             }
         }
 
@@ -259,8 +257,8 @@ impl State {
     }
 
     pub(super) fn reset_playing_camera_defaults(&mut self) {
-        self.editor.camera.playing_rotation = 45.0f32.to_radians();
-        self.editor.camera.playing_pitch = 45.0f32.to_radians();
+        self.editor.camera.playing_rotation = crate::types::DEFAULT_PLAY_CAMERA_ROTATION;
+        self.editor.camera.playing_pitch = crate::types::DEFAULT_PLAY_CAMERA_PITCH;
     }
 
     pub(super) fn enter_playing_phase(
@@ -313,8 +311,8 @@ impl State {
         self.editor.runtime.history.undo.clear();
         self.editor.runtime.history.redo.clear();
         self.clear_editor_pan_keys();
-        self.editor.camera.editor_rotation = 45.0f32.to_radians();
-        self.editor.camera.editor_pitch = 45.0f32.to_radians();
+        self.editor.camera.editor_rotation = crate::types::DEFAULT_EDITOR_CAMERA_ROTATION;
+        self.editor.camera.editor_pitch = crate::types::DEFAULT_EDITOR_CAMERA_PITCH;
         self.editor.camera.editor_target_z = 0.0;
         self.gameplay.state = GameState::new();
         self.render.meshes.trail.clear();

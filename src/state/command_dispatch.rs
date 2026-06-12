@@ -735,11 +735,13 @@ mod tests {
     use super::State;
     use crate::commands::AppCommand;
     use crate::state::editor_command::EditorCommand;
+    use crate::triggers::{
+        camera_triggers_to_timed_triggers, CameraTrigger, CameraTriggerMode, TimedTrigger,
+        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+    };
     use crate::types::{
-        camera_triggers_to_timed_triggers, AppPhase, CameraTrigger, CameraTriggerMode, EditorMode,
-        KeyChord, LevelObject, MusicMetadata, SettingsSection, TimedTrigger, TimedTriggerAction,
-        TimedTriggerEasing, TimedTriggerTarget, TimingPoint, CAMERA_TRIGGER_BLOCK_ID,
-        TRANSFORM_TRIGGER_BLOCK_ID,
+        AppPhase, EditorMode, KeyChord, LevelObject, MusicMetadata, SettingsSection, TimingPoint,
+        CAMERA_TRIGGER_BLOCK_ID, TRANSFORM_TRIGGER_BLOCK_ID,
     };
     use glam::{Vec2, Vec3};
 

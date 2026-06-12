@@ -169,14 +169,7 @@ impl State {
             return;
         };
 
-        let mut indices = consumed_indices;
-        indices.sort_unstable();
-        indices.dedup();
-        for index in indices.into_iter().rev() {
-            if index < base_objects.len() {
-                base_objects.remove(index);
-            }
-        }
+        crate::game::GameState::prune_consumed_indices_from_objects(base_objects, consumed_indices);
     }
 
     fn apply_playing_object_triggers(&mut self, time_seconds: f32) -> Option<Vec<LevelObject>> {
@@ -557,12 +550,9 @@ impl State {
                     self.editor.timeline.clock.time_seconds = clamped_time;
 
                     if simulate_preview && self.editor.has_object_transform_triggers() {
-                        self.mark_editor_dirty(super::EditorDirtyFlags {
-                            rebuild_block_mesh: true,
-                            rebuild_hitbox_visualization: true,
-                            rebuild_transform_trigger_markers: true,
-                            ..super::EditorDirtyFlags::default()
-                        });
+                        self.mark_editor_dirty(
+                            super::EditorDirtyFlags::timeline_trigger_preview_changed(),
+                        );
                     }
 
                     if simulate_preview {
@@ -575,11 +565,9 @@ impl State {
                                 let snapshot = runtime.snapshot();
                                 self.push_gem_shatter_events(events);
                                 if consumed_gems {
-                                    self.mark_editor_dirty(super::EditorDirtyFlags {
-                                        rebuild_block_mesh: true,
-                                        rebuild_hitbox_visualization: true,
-                                        ..super::EditorDirtyFlags::default()
-                                    });
+                                    self.mark_editor_dirty(
+                                        super::EditorDirtyFlags::block_mesh_and_hitboxes_changed(),
+                                    );
                                 }
                                 self.apply_editor_timeline_preview_state(
                                     snapshot.position,
@@ -604,11 +592,9 @@ impl State {
                             self.push_gem_shatter_events(events);
                             let snapshot = runtime.snapshot();
                             if consumed_gems {
-                                self.mark_editor_dirty(super::EditorDirtyFlags {
-                                    rebuild_block_mesh: true,
-                                    rebuild_hitbox_visualization: true,
-                                    ..super::EditorDirtyFlags::default()
-                                });
+                                self.mark_editor_dirty(
+                                    super::EditorDirtyFlags::block_mesh_and_hitboxes_changed(),
+                                );
                             }
                             self.apply_editor_timeline_preview_state(
                                 snapshot.position,
@@ -666,11 +652,9 @@ impl State {
                     self.editor.timeline.playback.pending_seek_time_seconds = None;
                     self.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
                     if simulate_preview {
-                        self.mark_editor_dirty(super::EditorDirtyFlags {
-                            rebuild_block_mesh: true,
-                            rebuild_hitbox_visualization: true,
-                            ..super::EditorDirtyFlags::default()
-                        });
+                        self.mark_editor_dirty(
+                            super::EditorDirtyFlags::block_mesh_and_hitboxes_changed(),
+                        );
                     }
                     self.stop_audio();
                 }
@@ -968,10 +952,10 @@ impl State {
 mod tests {
     use super::State;
     use crate::game::{GameState, TimelineSimulationRuntime};
-    use crate::types::{
-        AppPhase, Direction, EditorMode, LevelObject, SpawnDirection, TimedTrigger,
-        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, TimingPoint,
+    use crate::triggers::{
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
     };
+    use crate::types::{AppPhase, Direction, EditorMode, LevelObject, SpawnDirection, TimingPoint};
 
     fn sample_object() -> LevelObject {
         LevelObject {

@@ -11,7 +11,8 @@ use crate::mesh::advanced_shapes::{append_cone, append_sphere};
 use crate::mesh::obj::{resolve_obj_mesh, ObjMaterial, ObjMesh};
 use crate::mesh::shapes::{append_prism, append_quad};
 use crate::mesh::MeshGeometry;
-use crate::types::{CameraTrigger, CameraTriggerMode, Direction, Vertex};
+use crate::triggers::{CameraTrigger, CameraTriggerMode};
+use crate::types::{Direction, Vertex};
 use glam::{EulerRot, Quat, Vec2, Vec3};
 
 const GEM_SHATTER_DURATION_SECONDS: f32 = 0.48;

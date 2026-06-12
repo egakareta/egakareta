@@ -6,10 +6,13 @@
 
 */
 use super::EditorSubsystem;
+use crate::triggers::{
+    timed_triggers_to_camera_triggers, triggers_from_objects, CameraTrigger, TimedTrigger,
+    TimedTriggerAction, TimedTriggerTarget,
+};
 use crate::types::{
-    timed_triggers_to_camera_triggers, triggers_from_objects, CameraTrigger, LevelObject,
-    TimedTrigger, TimedTriggerAction, TimedTriggerTarget, CAMERA_TRIGGER_BLOCK_ID,
-    TRANSFORM_TRIGGER_BLOCK_ID,
+    LevelObject, CAMERA_TRIGGER_BLOCK_ID, DEFAULT_CAMERA_TRIGGER_PITCH,
+    DEFAULT_CAMERA_TRIGGER_ROTATION, TRANSFORM_TRIGGER_BLOCK_ID,
 };
 
 pub(crate) struct EditorTriggerState {
@@ -157,11 +160,11 @@ impl EditorSubsystem {
                 });
 
                 if !rotation.is_finite() {
-                    *rotation = -45.0f32.to_radians();
+                    *rotation = DEFAULT_CAMERA_TRIGGER_ROTATION;
                 }
 
                 if !pitch.is_finite() {
-                    *pitch = 45.0f32.to_radians();
+                    *pitch = DEFAULT_CAMERA_TRIGGER_PITCH;
                 } else {
                     *pitch = pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
                 }
@@ -299,7 +302,7 @@ impl EditorSubsystem {
 mod tests {
     use super::EditorSubsystem;
     use crate::state::State;
-    use crate::types::{
+    use crate::triggers::{
         CameraTriggerMode, TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
     };
 
