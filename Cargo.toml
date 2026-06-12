@@ -44,7 +44,7 @@ image = { version = "0.25", default-features = false, features = [
 ] }
 async-trait = "0.1"
 winit = "0.30"
-cpal = { version = "0.17", features = ["wasm-bindgen", "audioworklet"] }
+cpal = { version = "0.18", features = ["wasm-bindgen", "audioworklet"] }
 rodio = { version = "0.22", default-features = false, features = [
     "mp3",
     "playback",
@@ -133,7 +133,7 @@ winres = "0.1"
 zstd = "0.13"
 
 [dev-dependencies]
-criterion = "0.7"
+criterion = "0.8"
 naga = { version = "29", features = ["wgsl-in"] }
 tempfile = "3"
 
