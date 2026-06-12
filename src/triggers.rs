@@ -33,6 +33,14 @@ pub(crate) fn camera_trigger_eye_from_target(
     ]
 }
 
+pub(crate) fn camera_trigger_eye_from_object(object: &LevelObject) -> [f32; 3] {
+    [
+        object.position[0] + object.size[0] * 0.5,
+        object.position[1] + object.size[1] * 0.5,
+        object.position[2] + object.size[2] * 0.5,
+    ]
+}
+
 pub(crate) fn camera_trigger_target_from_eye(
     eye_position: [f32; 3],
     rotation: f32,
@@ -473,7 +481,7 @@ pub(crate) fn triggers_from_objects(objects: &[LevelObject]) -> Vec<TimedTrigger
                     transition_interval_seconds,
                     use_full_segment_transition,
                     target_position: camera_trigger_target_from_eye(
-                        object.position,
+                        camera_trigger_eye_from_object(object),
                         object.rotation_degrees[1].to_radians(),
                         object.rotation_degrees[0].to_radians(),
                     ),

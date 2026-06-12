@@ -743,8 +743,9 @@ mod tests {
     use crate::commands::AppCommand;
     use crate::state::editor_command::EditorCommand;
     use crate::triggers::{
-        camera_triggers_to_timed_triggers, CameraTrigger, CameraTriggerMode, TimedTrigger,
-        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+        camera_trigger_eye_from_target, camera_triggers_to_timed_triggers, CameraTrigger,
+        CameraTriggerMode, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
+        TimedTriggerTarget,
     };
     use crate::types::{
         AppPhase, EditorMode, KeyChord, LevelObject, MusicMetadata, SettingsSection, TimingPoint,
@@ -756,6 +757,10 @@ mod tests {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
         state
+    }
+
+    fn camera_trigger_block_position_from_eye(eye: [f32; 3]) -> [f32; 3] {
+        [eye[0] - 0.5, eye[1] - 0.5, eye[2] - 0.5]
     }
 
     #[test]
@@ -2242,9 +2247,14 @@ mod tests {
             let trigger_index = state.editor.objects.len();
             let trigger =
                 camera_triggers_to_timed_triggers(std::slice::from_ref(&camera_trigger)).remove(0);
+            let camera_eye = camera_trigger_eye_from_target(
+                camera_trigger.target_position,
+                camera_trigger.rotation,
+                camera_trigger.pitch,
+            );
 
             state.editor.objects.push(LevelObject {
-                position: camera_trigger.target_position,
+                position: camera_trigger_block_position_from_eye(camera_eye),
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [
                     camera_trigger.pitch.to_degrees(),
@@ -2261,7 +2271,7 @@ mod tests {
             );
             let marker_screen = state
                 .editor
-                .world_to_screen_v(Vec3::from_array(camera_trigger.target_position), viewport)
+                .world_to_screen_v(Vec3::from_array(camera_eye), viewport)
                 .expect("camera marker should project to the screen");
 
             state.process_input_event(InputEvent::PointerMoved {
@@ -2310,9 +2320,14 @@ mod tests {
             let trigger_index = state.editor.objects.len();
             let trigger =
                 camera_triggers_to_timed_triggers(std::slice::from_ref(&camera_trigger)).remove(0);
+            let camera_eye = camera_trigger_eye_from_target(
+                camera_trigger.target_position,
+                camera_trigger.rotation,
+                camera_trigger.pitch,
+            );
 
             state.editor.objects.push(LevelObject {
-                position: camera_trigger.target_position,
+                position: camera_trigger_block_position_from_eye(camera_eye),
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [
                     camera_trigger.pitch.to_degrees(),
@@ -2329,7 +2344,7 @@ mod tests {
             );
             let marker_screen = state
                 .editor
-                .world_to_screen_v(Vec3::from_array(camera_trigger.target_position), viewport)
+                .world_to_screen_v(Vec3::from_array(camera_eye), viewport)
                 .expect("camera marker should project to the screen");
 
             let start_x = marker_screen.x as f64 - 24.0;

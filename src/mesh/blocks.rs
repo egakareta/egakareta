@@ -22,7 +22,7 @@ use crate::mesh::obj::{append_obj_mesh, resolve_obj_mesh};
 use crate::mesh::shapes::{append_prism_with_layers, PrismFaceColors, PrismTextureLayers};
 use crate::mesh::transforms::rotate_vertices_around_euler;
 use crate::platform::parallel::rayon_is_ready;
-use crate::triggers::camera_trigger_forward;
+use crate::triggers::{camera_trigger_eye_from_object, camera_trigger_forward};
 use crate::types::{LevelObject, Vertex};
 use glam::Vec3;
 
@@ -341,7 +341,12 @@ fn build_camera_trigger_block_vertices(
         cone_radius: 0.16,
     };
 
-    append_camera_trigger_visual_vertices(vertices, obj.position, obj.rotation_degrees, &style);
+    append_camera_trigger_visual_vertices(
+        vertices,
+        camera_trigger_eye_from_object(obj),
+        obj.rotation_degrees,
+        &style,
+    );
 }
 
 fn apply_color_tint(color: [f32; 4], tint_rgb: [f32; 3]) -> [f32; 4] {

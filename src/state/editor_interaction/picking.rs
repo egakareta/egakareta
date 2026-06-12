@@ -6,7 +6,7 @@
 
 */
 use super::super::EditorSubsystem;
-use crate::triggers::{camera_trigger_forward, TimedTriggerAction};
+use crate::triggers::{camera_trigger_eye_from_object, camera_trigger_forward, TimedTriggerAction};
 use crate::types::{
     EditorMode, EditorPickResult, EditorTapDivisionPick, LevelObject, CAMERA_TRIGGER_BLOCK_ID,
 };
@@ -483,7 +483,7 @@ impl EditorSubsystem {
         ray_dir: Vec3,
         obj: &crate::types::LevelObject,
     ) -> Option<(f32, Vec3)> {
-        let eye = Vec3::from_array(obj.position);
+        let eye = Vec3::from_array(camera_trigger_eye_from_object(obj));
         let forward = Vec3::from_array(camera_trigger_forward(
             obj.rotation_degrees[1].to_radians(),
             obj.rotation_degrees[0].to_radians(),
@@ -728,7 +728,7 @@ mod tests {
                 trigger: None,
             };
 
-            let ray_origin = Vec3::new(0.0, 5.0, super::CAMERA_TRIGGER_ARROW_PICK_OFFSET);
+            let ray_origin = Vec3::new(0.5, 5.0, 0.5 + super::CAMERA_TRIGGER_ARROW_PICK_OFFSET);
             let ray_dir = -Vec3::Y;
 
             assert!(state

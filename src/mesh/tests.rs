@@ -14,7 +14,7 @@ mod tests {
     };
     use crate::mesh::egmesh::resolve_egmesh;
     use crate::mesh::obj::{append_obj_mesh, parse_obj_mesh, parse_obj_mesh_with_materials};
-    use crate::triggers::camera_trigger_forward;
+    use crate::triggers::{camera_trigger_eye_from_object, camera_trigger_forward};
     use crate::types::{GizmoPart, LevelObject, Vertex};
 
     fn bounds_xz(vertices: &[[f32; 3]]) -> (f32, f32, f32, f32) {
@@ -404,6 +404,7 @@ d 0.5
             block_id: "core/camera_trigger".to_string(),
             ..LevelObject::default()
         };
+        let eye = camera_trigger_eye_from_object(&obj);
 
         let vertices = build_block_geometry(std::slice::from_ref(&obj)).to_triangle_vertices();
 
@@ -415,7 +416,7 @@ d 0.5
         assert!(vertices.iter().all(|vertex| {
             vertex.color_outline[0..3]
                 .iter()
-                .zip(obj.position)
+                .zip(eye)
                 .all(|(actual, expected)| (*actual - expected).abs() <= 1e-6)
         }));
         let min_x = vertices
@@ -435,10 +436,10 @@ d 0.5
             .map(|vertex| vertex.position[2])
             .fold(f32::NEG_INFINITY, f32::max);
 
-        assert!(min_x < 2.5);
-        assert!(max_x > 3.5);
-        assert!(min_z < 5.1);
-        assert!(max_z > 6.8);
+        assert!(min_x < 3.0);
+        assert!(max_x > 4.0);
+        assert!(min_z < 5.6);
+        assert!(max_z > 7.3);
     }
 
     #[test]
@@ -452,7 +453,7 @@ d 0.5
             ..LevelObject::default()
         };
         let vertices = build_block_geometry(std::slice::from_ref(&obj)).to_triangle_vertices();
-        let eye = glam::Vec3::from_array(position);
+        let eye = glam::Vec3::from_array(camera_trigger_eye_from_object(&obj));
         let forward = glam::Vec3::from_array(camera_trigger_forward(
             rotation_degrees[1].to_radians(),
             rotation_degrees[0].to_radians(),

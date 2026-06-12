@@ -1796,12 +1796,12 @@ mod tests {
         CAMERA_TRIGGER_BLOCK_ID, TRANSFORM_TRIGGER_BLOCK_ID,
     };
     use crate::triggers::{
-        apply_timed_triggers_to_objects, camera_trigger_eye_from_target,
-        camera_trigger_target_from_eye, camera_triggers_to_timed_triggers,
-        default_camera_trigger_pitch, default_camera_trigger_rotation,
-        default_camera_trigger_transition_interval_seconds, timed_triggers_to_camera_triggers,
-        triggers_from_objects, CameraTrigger, CameraTriggerMode, TimedTrigger, TimedTriggerAction,
-        TimedTriggerEasing, TimedTriggerTarget,
+        apply_timed_triggers_to_objects, camera_trigger_eye_from_object,
+        camera_trigger_eye_from_target, camera_trigger_target_from_eye,
+        camera_triggers_to_timed_triggers, default_camera_trigger_pitch,
+        default_camera_trigger_rotation, default_camera_trigger_transition_interval_seconds,
+        timed_triggers_to_camera_triggers, triggers_from_objects, CameraTrigger, CameraTriggerMode,
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
     };
     use serde_json::json;
 
@@ -2162,10 +2162,11 @@ mod tests {
 
         let resolved = timed_triggers_to_camera_triggers(&metadata.resolved_triggers());
         let expected_target = camera_trigger_target_from_eye(
-            [9.0, 8.0, 7.0],
+            camera_trigger_eye_from_object(&metadata.objects[0]),
             60.0_f32.to_radians(),
             30.0_f32.to_radians(),
         );
+        let expected_eye = camera_trigger_eye_from_object(&metadata.objects[0]);
         let resolved_eye = camera_trigger_eye_from_target(
             resolved[0].target_position,
             resolved[0].rotation,
@@ -2176,7 +2177,7 @@ mod tests {
         for (actual, expected) in resolved[0].target_position.iter().zip(expected_target) {
             assert_approx_eq(*actual, expected);
         }
-        for (actual, expected) in resolved_eye.iter().zip([9.0, 8.0, 7.0]) {
+        for (actual, expected) in resolved_eye.iter().zip(expected_eye) {
             assert_approx_eq(*actual, expected);
         }
         assert!((resolved[0].pitch - 30.0_f32.to_radians()).abs() <= 1e-6);

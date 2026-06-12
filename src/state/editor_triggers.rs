@@ -35,6 +35,14 @@ fn camera_trigger_rotation_degrees(rotation: f32, pitch: f32) -> [f32; 3] {
     [pitch.to_degrees(), rotation.to_degrees(), 0.0]
 }
 
+fn camera_trigger_object_position_from_eye(eye: [f32; 3], size: [f32; 3]) -> [f32; 3] {
+    [
+        eye[0] - size[0] * 0.5,
+        eye[1] - size[1] * 0.5,
+        eye[2] - size[2] * 0.5,
+    ]
+}
+
 fn trigger_object_from_payload(trigger: TimedTrigger) -> LevelObject {
     let (position, size, rotation_degrees) = match &trigger.action {
         TimedTriggerAction::CameraPose {
@@ -42,28 +50,36 @@ fn trigger_object_from_payload(trigger: TimedTrigger) -> LevelObject {
             rotation,
             pitch,
             ..
-        } => (
-            camera_trigger_eye_from_target(*target_position, *rotation, *pitch),
-            [1.0, 1.0, 1.0],
-            camera_trigger_rotation_degrees(*rotation, *pitch),
-        ),
+        } => {
+            let size = [1.0, 1.0, 1.0];
+            let eye = camera_trigger_eye_from_target(*target_position, *rotation, *pitch);
+            (
+                camera_trigger_object_position_from_eye(eye, size),
+                size,
+                camera_trigger_rotation_degrees(*rotation, *pitch),
+            )
+        }
         TimedTriggerAction::TransformObjects {
             position,
             rotation_degrees,
             size,
         } => (*position, *size, *rotation_degrees),
-        TimedTriggerAction::CameraFollow { .. } => (
-            camera_trigger_eye_from_target(
+        TimedTriggerAction::CameraFollow { .. } => {
+            let size = [1.0, 1.0, 1.0];
+            let eye = camera_trigger_eye_from_target(
                 default_camera_trigger_target_position(),
                 DEFAULT_CAMERA_TRIGGER_ROTATION,
                 DEFAULT_CAMERA_TRIGGER_PITCH,
-            ),
-            [1.0, 1.0, 1.0],
-            camera_trigger_rotation_degrees(
-                DEFAULT_CAMERA_TRIGGER_ROTATION,
-                DEFAULT_CAMERA_TRIGGER_PITCH,
-            ),
-        ),
+            );
+            (
+                camera_trigger_object_position_from_eye(eye, size),
+                size,
+                camera_trigger_rotation_degrees(
+                    DEFAULT_CAMERA_TRIGGER_ROTATION,
+                    DEFAULT_CAMERA_TRIGGER_PITCH,
+                ),
+            )
+        }
     };
 
     LevelObject {
@@ -313,7 +329,8 @@ mod tests {
     use super::EditorSubsystem;
     use crate::state::State;
     use crate::triggers::{
-        CameraTriggerMode, TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+        camera_trigger_eye_from_object, camera_trigger_eye_from_target, CameraTriggerMode,
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
     };
 
     fn object_move_trigger(time_seconds: f32) -> TimedTrigger {
@@ -484,6 +501,37 @@ mod tests {
                     assert!((pitch - 89.9f32.to_radians()).abs() <= 1e-6);
                 }
                 _ => panic!("expected camera pose"),
+            }
+        });
+    }
+
+    #[test]
+    fn set_triggers_centers_camera_trigger_object_on_eye() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            let trigger = camera_pose_trigger(0.0);
+            let TimedTriggerAction::CameraPose {
+                target_position,
+                rotation,
+                pitch,
+                ..
+            } = trigger.action
+            else {
+                panic!("expected camera pose");
+            };
+            let expected_eye = camera_trigger_eye_from_target(target_position, rotation, pitch);
+
+            state.editor.set_triggers(vec![trigger]);
+
+            let object = state
+                .editor
+                .objects
+                .iter()
+                .find(|object| object.trigger.is_some())
+                .expect("expected camera trigger object");
+            let actual_eye = camera_trigger_eye_from_object(object);
+            for (actual, expected) in actual_eye.iter().zip(expected_eye) {
+                assert!((*actual - expected).abs() <= 1e-6);
             }
         });
     }
