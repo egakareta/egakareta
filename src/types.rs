@@ -650,7 +650,6 @@ pub(crate) struct LevelObject {
     pub(crate) rotation_degrees: [f32; 3],
     #[serde(
         default = "default_level_object_block_id",
-        alias = "kind",
         deserialize_with = "deserialize_level_object_block_id",
         skip_serializing_if = "is_default_level_object_block_id"
     )]
@@ -1823,7 +1822,7 @@ mod tests {
         let json = r#"{
             "position":[1.0,2.0,3.0],
             "size":[4.0,5.0,6.0],
-            "kind":"standard"
+            "block_id":"core/stone"
         }"#;
 
         let object: LevelObject = serde_json::from_str(json).expect("valid level object");
@@ -1835,11 +1834,11 @@ mod tests {
     #[test]
     fn level_metadata_parses_objects_without_rotation_field() {
         let json = r#"{
-            "name":"Compat",
+            "name":"Current",
             "music":{"source":"music.mp3"},
             "spawn":{"position":[0.0,0.0,0.0],"direction":"forward"},
             "objects":[
-                {"position":[0.0,0.0,0.0],"size":[1.0,1.0,1.0],"kind":"grass"}
+                {"position":[0.0,0.0,0.0],"size":[1.0,1.0,1.0],"block_id":"core/grass"}
             ]
         }"#;
 
