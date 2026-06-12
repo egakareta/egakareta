@@ -377,8 +377,11 @@ impl State {
     pub(super) fn update_editor_pan_from_keys(&mut self, frame_dt: f32) {
         if self.phase == AppPhase::Editor {
             let previous_pan = self.editor.camera.editor_pan;
+            let previous_target_z = self.editor.camera.editor_target_z;
             self.editor.update_pan_from_keys(frame_dt);
-            if previous_pan != self.editor.camera.editor_pan {
+            if previous_pan != self.editor.camera.editor_pan
+                || previous_target_z != self.editor.camera.editor_target_z
+            {
                 self.editor
                     .mark_dirty(crate::state::EditorDirtyFlags::camera_changed());
             }
