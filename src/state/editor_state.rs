@@ -940,7 +940,8 @@ impl State {
         if changed
             && self.phase == AppPhase::Editor
             && !is_effectively_timing
-            && self.editor.has_object_transform_triggers()
+            && (self.editor.has_object_transform_triggers()
+                || self.editor.has_camera_timeline_triggers())
         {
             puffin::profile_scope!("SeekDirtyBlockMesh");
             self.mark_editor_dirty(EditorDirtyFlags::timeline_trigger_preview_changed());

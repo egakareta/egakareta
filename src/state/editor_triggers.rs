@@ -244,6 +244,10 @@ impl EditorSubsystem {
         })
     }
 
+    pub(crate) fn has_camera_timeline_triggers(&self) -> bool {
+        self.triggers().iter().any(Self::is_camera_track_trigger)
+    }
+
     /// Returns `true` when any of the given block indices are referenced as
     /// source objects by at least one transform trigger. Used to decide when
     /// the transform trigger marker overlay must be rebuilt after a block

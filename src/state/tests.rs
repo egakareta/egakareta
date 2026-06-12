@@ -1372,6 +1372,35 @@ fn compose_mode_timeline_scrub_runs_simulation_and_mesh_dirty() {
 }
 
 #[test]
+fn camera_trigger_timeline_scrub_marks_block_mesh_dirty() {
+    pollster::block_on(async {
+        let mut state = State::new_test().await;
+
+        state.phase = AppPhase::Editor;
+        state.editor.set_mode(EditorMode::Place);
+
+        state.editor.set_triggers(vec![TimedTrigger {
+            time_seconds: 1.0,
+            duration_seconds: 0.0,
+            easing: TimedTriggerEasing::Linear,
+            target: TimedTriggerTarget::Camera,
+            action: TimedTriggerAction::CameraPose {
+                transition_interval_seconds: 1.0,
+                use_full_segment_transition: false,
+                target_position: [0.0, 0.0, 0.0],
+                rotation: 0.0,
+                pitch: 0.0,
+            },
+        }]);
+
+        state.editor.runtime.dirty = EditorDirtyFlags::default();
+        state.set_editor_timeline_time_seconds(0.5);
+
+        assert!(state.editor.runtime.dirty.rebuild_block_mesh);
+    });
+}
+
+#[test]
 fn state_navigation_resize_and_phase_queries_cover_core_branches() {
     pollster::block_on(async {
         let mut state = State::new_test().await;

@@ -16,7 +16,8 @@ use crate::editor_domain::{create_block_at_cursor, derive_timeline_elapsed_secon
 use crate::game::trigger_transformed_objects_at_time;
 use crate::mesh::TransformTriggerMarker;
 use crate::mesh::{
-    build_block_geometry, build_block_geometry_for_object, build_block_geometry_from_refs,
+    build_block_geometry, build_block_geometry_at_time, build_block_geometry_for_object,
+    build_block_geometry_from_refs, build_block_geometry_from_refs_at_time,
     build_camera_arrow_vertices, build_colored_tap_indicator_vertices,
     build_editor_cursor_vertices, build_editor_gizmo_vertices,
     build_editor_hitbox_visualization_vertices, build_editor_hover_outline_vertices,
@@ -1140,7 +1141,14 @@ impl State {
         if self.phase == AppPhase::Editor {
             self.rebuild_editor_block_vertices_split();
         } else {
-            let geometry = build_block_geometry(&self.gameplay.state.objects);
+            let geometry = if self.editor.has_camera_timeline_triggers() {
+                build_block_geometry_at_time(
+                    &self.gameplay.state.objects,
+                    self.gameplay.state.elapsed_seconds,
+                )
+            } else {
+                build_block_geometry(&self.gameplay.state.objects)
+            };
             self.render.meshes.blocks.replace_with_geometry(
                 &self.render.gpu.device,
                 "Block Vertex Buffer",
@@ -1212,7 +1220,14 @@ impl State {
                     static_objects.push(object);
                 }
             }
-            build_block_geometry_from_refs(&static_objects)
+            if self.editor.has_camera_timeline_triggers() {
+                build_block_geometry_from_refs_at_time(
+                    &static_objects,
+                    Some(self.editor.timeline.clock.time_seconds),
+                )
+            } else {
+                build_block_geometry_from_refs(&static_objects)
+            }
         };
 
         let selected_vertices = {
@@ -1223,7 +1238,14 @@ impl State {
                     selected_objects.push(object);
                 }
             }
-            build_block_geometry_from_refs(&selected_objects)
+            if self.editor.has_camera_timeline_triggers() {
+                build_block_geometry_from_refs_at_time(
+                    &selected_objects,
+                    Some(self.editor.timeline.clock.time_seconds),
+                )
+            } else {
+                build_block_geometry_from_refs(&selected_objects)
+            }
         };
 
         let has_selected_blocks = selected_mask.iter().any(|selected| *selected);
@@ -1370,7 +1392,14 @@ impl State {
                 }
             }
 
-            build_block_geometry_from_refs(&selected_objects)
+            if self.editor.has_camera_timeline_triggers() {
+                build_block_geometry_from_refs_at_time(
+                    &selected_objects,
+                    Some(self.editor.timeline.clock.time_seconds),
+                )
+            } else {
+                build_block_geometry_from_refs(&selected_objects)
+            }
         };
 
         {

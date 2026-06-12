@@ -13,7 +13,7 @@ use crate::game::{
     advance_simulation_time, trigger_transformed_objects_at_time, TimelineSimulationRuntime,
 };
 use crate::mesh::{
-    build_block_geometry, build_gem_shatter_vertices, build_trail_vertices,
+    build_block_geometry_at_time, build_gem_shatter_vertices, build_trail_vertices,
     build_trail_vertices_with_alpha, gem_shatter_duration_seconds, GemShatterInstance,
 };
 use crate::platform::state_host::PlatformInstant;
@@ -549,7 +549,10 @@ impl State {
                     let old_time = self.editor.timeline.clock.time_seconds;
                     self.editor.timeline.clock.time_seconds = clamped_time;
 
-                    if simulate_preview && self.editor.has_object_transform_triggers() {
+                    if simulate_preview
+                        && (self.editor.has_object_transform_triggers()
+                            || self.editor.has_camera_timeline_triggers())
+                    {
                         self.mark_editor_dirty(
                             super::EditorDirtyFlags::timeline_trigger_preview_changed(),
                         );
@@ -759,9 +762,13 @@ impl State {
         let render_objects = trigger_render_objects
             .as_deref()
             .unwrap_or(&self.gameplay.state.objects);
-        if self.gameplay.state.has_animated_blocks() || trigger_render_objects.is_some() {
+        if self.gameplay.state.has_animated_blocks()
+            || trigger_render_objects.is_some()
+            || self.editor.has_camera_timeline_triggers()
+        {
             puffin::profile_scope!("PlayingAnimatedBlockMesh");
-            let animated_geometry = build_block_geometry(render_objects);
+            let animated_geometry =
+                build_block_geometry_at_time(render_objects, self.gameplay.state.elapsed_seconds);
             self.render.meshes.blocks.replace_with_geometry(
                 &self.render.gpu.device,
                 "Block Vertex Buffer",

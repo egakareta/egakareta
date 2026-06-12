@@ -23,7 +23,8 @@ use crate::mesh::shapes::{append_prism_with_layers, PrismFaceColors, PrismTextur
 use crate::mesh::transforms::rotate_vertices_around_euler;
 use crate::platform::parallel::rayon_is_ready;
 use crate::triggers::{
-    camera_trigger_eye_from_object, camera_trigger_forward_from_rotation_degrees,
+    camera_trigger_eye_from_object, camera_trigger_forward_from_rotation_degrees, TimedTrigger,
+    TimedTriggerAction, TimedTriggerTarget,
 };
 use crate::types::{LevelObject, Vertex};
 use glam::Vec3;
@@ -37,16 +38,32 @@ const VERTICES_PER_PRISM: usize = 36;
 
 pub(crate) fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
     puffin::profile_scope!("BuildBlockVertices");
-    build_block_geometry_from_slice(objects).to_triangle_vertices()
+    build_block_geometry_from_slice(objects, None).to_triangle_vertices()
 }
 
 pub(crate) fn build_block_geometry(objects: &[LevelObject]) -> MeshGeometry {
     puffin::profile_scope!("BuildBlockGeometry");
-    build_block_geometry_from_slice(objects)
+    build_block_geometry_from_slice(objects, None)
+}
+
+pub(crate) fn build_block_geometry_at_time(
+    objects: &[LevelObject],
+    current_time_seconds: f32,
+) -> MeshGeometry {
+    puffin::profile_scope!("BuildBlockGeometryAtTime");
+    build_block_geometry_from_slice(objects, Some(current_time_seconds))
 }
 
 pub(crate) fn build_block_geometry_from_refs(objects: &[&LevelObject]) -> MeshGeometry {
     puffin::profile_scope!("BuildBlockGeometryRefs");
+    build_block_geometry_from_refs_at_time(objects, None)
+}
+
+pub(crate) fn build_block_geometry_from_refs_at_time(
+    objects: &[&LevelObject],
+    current_time_seconds: Option<f32>,
+) -> MeshGeometry {
+    puffin::profile_scope!("BuildBlockGeometryRefsAtTime");
     if should_build_geometry_in_parallel(objects.len()) {
         puffin::profile_scope!("BuildBlockGeometryRefsParallel");
         let chunk_geometries: Vec<MeshGeometry> = objects
@@ -56,25 +73,30 @@ pub(crate) fn build_block_geometry_from_refs(objects: &[&LevelObject]) -> MeshGe
                 geometry.vertices.reserve(chunk.len() * VERTICES_PER_PRISM);
                 let mut scratch = Vec::with_capacity(VERTICES_PER_PRISM);
                 for object in chunk {
-                    append_block_geometry_with_scratch(&mut geometry, object, &mut scratch);
+                    append_block_geometry_with_scratch(
+                        &mut geometry,
+                        object,
+                        &mut scratch,
+                        current_time_seconds,
+                    );
                 }
                 geometry
             })
             .collect();
         merge_object_geometries(chunk_geometries)
     } else {
-        build_block_geometry_impl(objects.iter().copied())
+        build_block_geometry_impl(objects.iter().copied(), current_time_seconds)
     }
 }
 
 pub(crate) fn build_block_geometry_for_object(object: &LevelObject) -> MeshGeometry {
     puffin::profile_scope!("BuildBlockGeometryOne");
     let mut geometry = MeshGeometry::default();
-    append_block_geometry(&mut geometry, object);
+    append_block_geometry(&mut geometry, object, None);
     geometry
 }
 
-fn build_block_geometry_impl<'a, I>(objects: I) -> MeshGeometry
+fn build_block_geometry_impl<'a, I>(objects: I, current_time_seconds: Option<f32>) -> MeshGeometry
 where
     I: Iterator<Item = &'a LevelObject>,
 {
@@ -86,13 +108,21 @@ where
         .reserve(lower.saturating_mul(VERTICES_PER_PRISM));
     let mut scratch = Vec::with_capacity(VERTICES_PER_PRISM);
     for obj in objects {
-        append_block_geometry_with_scratch(&mut all_geometry, obj, &mut scratch);
+        append_block_geometry_with_scratch(
+            &mut all_geometry,
+            obj,
+            &mut scratch,
+            current_time_seconds,
+        );
     }
 
     all_geometry
 }
 
-fn build_block_geometry_from_slice(objects: &[LevelObject]) -> MeshGeometry {
+fn build_block_geometry_from_slice(
+    objects: &[LevelObject],
+    current_time_seconds: Option<f32>,
+) -> MeshGeometry {
     if should_build_geometry_in_parallel(objects.len()) {
         puffin::profile_scope!("BuildBlockGeometryParallel");
         let chunk_geometries: Vec<MeshGeometry> = objects
@@ -102,14 +132,19 @@ fn build_block_geometry_from_slice(objects: &[LevelObject]) -> MeshGeometry {
                 geometry.vertices.reserve(chunk.len() * VERTICES_PER_PRISM);
                 let mut scratch = Vec::with_capacity(VERTICES_PER_PRISM);
                 for object in chunk {
-                    append_block_geometry_with_scratch(&mut geometry, object, &mut scratch);
+                    append_block_geometry_with_scratch(
+                        &mut geometry,
+                        object,
+                        &mut scratch,
+                        current_time_seconds,
+                    );
                 }
                 geometry
             })
             .collect();
         merge_object_geometries(chunk_geometries)
     } else {
-        build_block_geometry_impl(objects.iter())
+        build_block_geometry_impl(objects.iter(), current_time_seconds)
     }
 }
 
@@ -180,7 +215,11 @@ impl BlockColors {
     }
 }
 
-fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
+fn append_block_geometry(
+    all_geometry: &mut MeshGeometry,
+    obj: &LevelObject,
+    current_time_seconds: Option<f32>,
+) {
     let mut object_geometry = MeshGeometry::default();
     let mut object_vertices = Vec::new();
     append_block_geometry_inner(
@@ -188,6 +227,7 @@ fn append_block_geometry(all_geometry: &mut MeshGeometry, obj: &LevelObject) {
         obj,
         &mut object_vertices,
         &mut object_geometry,
+        current_time_seconds,
     );
 }
 
@@ -197,10 +237,17 @@ fn append_block_geometry_with_scratch(
     all_geometry: &mut MeshGeometry,
     obj: &LevelObject,
     scratch_vertices: &mut Vec<Vertex>,
+    current_time_seconds: Option<f32>,
 ) {
     scratch_vertices.clear();
     let mut object_geometry = MeshGeometry::default();
-    append_block_geometry_inner(all_geometry, obj, scratch_vertices, &mut object_geometry);
+    append_block_geometry_inner(
+        all_geometry,
+        obj,
+        scratch_vertices,
+        &mut object_geometry,
+        current_time_seconds,
+    );
 }
 
 fn append_block_geometry_inner(
@@ -208,6 +255,7 @@ fn append_block_geometry_inner(
     obj: &LevelObject,
     object_vertices: &mut Vec<Vertex>,
     object_geometry: &mut MeshGeometry,
+    current_time_seconds: Option<f32>,
 ) {
     let x_min = obj.position[0];
     let x_max = obj.position[0] + obj.size[0];
@@ -241,7 +289,7 @@ fn append_block_geometry_inner(
     ];
 
     if block.render.profile == BlockRenderProfile::CameraTrigger {
-        build_camera_trigger_block_vertices(object_vertices, obj, &colors);
+        build_camera_trigger_block_vertices(object_vertices, obj, &colors, current_time_seconds);
         all_geometry.append_vertices_from_slice(object_vertices);
         return;
     }
@@ -331,11 +379,20 @@ fn build_camera_trigger_block_vertices(
     vertices: &mut Vec<Vertex>,
     obj: &LevelObject,
     colors: &BlockColors,
+    current_time_seconds: Option<f32>,
 ) {
+    let base_ring_radius = 0.52;
+    let progress = current_time_seconds
+        .and_then(|time_seconds| {
+            obj.trigger
+                .as_ref()
+                .and_then(|trigger| camera_trigger_countdown_progress(trigger, time_seconds))
+        })
+        .unwrap_or(0.0);
     let style = CameraTriggerVisualStyle {
         ring_color: colors.side,
         arrow_color: colors.top,
-        ring_radius: 0.52,
+        ring_radius: camera_trigger_countdown_ring_radius(base_ring_radius, progress),
         ring_tube_radius: 0.035,
         shaft_length: 1.15,
         shaft_radius: 0.055,
@@ -349,6 +406,43 @@ fn build_camera_trigger_block_vertices(
         obj.rotation_degrees,
         &style,
     );
+}
+
+fn camera_trigger_countdown_progress(
+    trigger: &TimedTrigger,
+    current_time_seconds: f32,
+) -> Option<f32> {
+    if !current_time_seconds.is_finite()
+        || !trigger.time_seconds.is_finite()
+        || !matches!(trigger.target, TimedTriggerTarget::Camera)
+    {
+        return None;
+    }
+
+    let transition_interval_seconds = match trigger.action {
+        TimedTriggerAction::CameraPose {
+            transition_interval_seconds,
+            ..
+        }
+        | TimedTriggerAction::CameraFollow {
+            transition_interval_seconds,
+            ..
+        } => transition_interval_seconds,
+        TimedTriggerAction::TransformObjects { .. } => return None,
+    };
+
+    if current_time_seconds >= trigger.time_seconds {
+        return Some(1.0);
+    }
+
+    let window_seconds = transition_interval_seconds.max(1.0);
+    let remaining = trigger.time_seconds - current_time_seconds.max(0.0);
+    Some(1.0 - (remaining / window_seconds).clamp(0.0, 1.0))
+}
+
+fn camera_trigger_countdown_ring_radius(base_radius: f32, progress: f32) -> f32 {
+    let progress = progress.clamp(0.0, 1.0);
+    (base_radius - progress * base_radius * 0.67).max(base_radius * 0.33)
 }
 
 fn apply_color_tint(color: [f32; 4], tint_rgb: [f32; 3]) -> [f32; 4] {
@@ -542,4 +636,65 @@ pub(crate) fn append_transform_trigger_visual_vertices_with_rotation(
         style.ring_thickness,
         style.ring_color,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::CAMERA_TRIGGER_BLOCK_ID;
+
+    fn camera_trigger_object(time_seconds: f32, transition_interval_seconds: f32) -> LevelObject {
+        LevelObject {
+            block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
+            trigger: Some(TimedTrigger {
+                time_seconds,
+                duration_seconds: 0.0,
+                easing: crate::triggers::TimedTriggerEasing::Linear,
+                target: TimedTriggerTarget::Camera,
+                action: TimedTriggerAction::CameraPose {
+                    transition_interval_seconds,
+                    use_full_segment_transition: false,
+                    target_position: [0.0, 0.0, 0.0],
+                    rotation: 0.0,
+                    pitch: 0.0,
+                },
+            }),
+            ..LevelObject::default()
+        }
+    }
+
+    fn ring_outer_radius(vertices: &[Vertex], center: [f32; 3], ring_color: [f32; 4]) -> f32 {
+        vertices
+            .iter()
+            .filter(|vertex| vertex.color == ring_color)
+            .map(|vertex| {
+                let dx = vertex.position[0] - center[0];
+                let dy = vertex.position[1] - center[1];
+                let dz = vertex.position[2] - center[2];
+                (dx * dx + dy * dy + dz * dz).sqrt()
+            })
+            .fold(0.0_f32, f32::max)
+    }
+
+    #[test]
+    fn camera_trigger_ring_shrinks_as_activation_approaches() {
+        let object = camera_trigger_object(4.0, 2.0);
+        let colors = BlockColors {
+            top: [0.9, 0.8, 0.2, 1.0],
+            side: [0.2, 0.7, 1.0, 1.0],
+            bottom: [0.0, 0.0, 0.0, 1.0],
+            outline: [1.0, 1.0, 1.0, 1.0],
+        };
+        let mut early = Vec::new();
+        let mut late = Vec::new();
+
+        build_camera_trigger_block_vertices(&mut early, &object, &colors, Some(2.0));
+        build_camera_trigger_block_vertices(&mut late, &object, &colors, Some(4.0));
+
+        let center = camera_trigger_eye_from_object(&object);
+        assert!(
+            ring_outer_radius(&late, center, colors.side)
+                < ring_outer_radius(&early, center, colors.side)
+        );
+    }
 }
