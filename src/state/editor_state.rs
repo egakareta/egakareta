@@ -48,6 +48,23 @@ fn remove_replaced_transform_trigger_targets(
         .collect()
 }
 
+fn object_index_after_trigger_object_removal(
+    objects: &[LevelObject],
+    object_index: usize,
+) -> Option<u32> {
+    let object = objects.get(object_index)?;
+    if object.trigger.is_some() {
+        return None;
+    }
+
+    let remapped_index = objects[..=object_index]
+        .iter()
+        .filter(|object| object.trigger.is_none())
+        .count()
+        .checked_sub(1)?;
+    u32::try_from(remapped_index).ok()
+}
+
 impl EditorSubsystem {
     pub(crate) fn set_pan_up_held(&mut self, held: bool) {
         self.ui.pan_up_held = held;
@@ -1262,7 +1279,9 @@ impl State {
             let Some(final_object) = self.editor.objects.get(*index).cloned() else {
                 continue;
             };
-            let Ok(object_id) = u32::try_from(*index) else {
+            let Some(object_id) =
+                object_index_after_trigger_object_removal(&self.editor.objects, *index)
+            else {
                 continue;
             };
             replaced_object_ids.push(object_id);
@@ -1573,6 +1592,17 @@ mod tests {
         }
     }
 
+    fn transform_trigger_object(time_seconds: f32, target_ids: Vec<u32>) -> LevelObject {
+        LevelObject {
+            position: [9.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+            trigger: Some(transform_trigger(time_seconds, target_ids, [9.0, 0.0, 0.0])),
+        }
+    }
+
     #[test]
     fn transform_trigger_capture_cancel_restores_original_blocks() {
         pollster::block_on(async {
@@ -1691,6 +1721,52 @@ mod tests {
                 }
                 _ => panic!("expected transform objects action"),
             }
+        });
+    }
+
+    #[test]
+    fn transform_trigger_capture_commit_targets_block_after_existing_trigger_object() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.phase = AppPhase::Editor;
+            state.editor.timeline.clock.time_seconds = 2.5;
+            state.editor.timeline.clock.duration_seconds = 8.0;
+            state.editor.objects = vec![
+                test_level_object([0.0, 0.0, 0.0]),
+                transform_trigger_object(1.0, vec![0]),
+                test_level_object([4.0, 0.0, 0.0]),
+            ];
+            state.editor.sync_trigger_cache_from_objects();
+            state.editor.ui.selected_block_indices = vec![2];
+            state.editor.ui.selected_block_index = Some(2);
+
+            assert!(state.begin_editor_transform_trigger_capture());
+            state.editor.objects[2].position = [5.0, 6.0, 7.0];
+            assert!(state.commit_editor_transform_trigger_capture());
+
+            assert_eq!(state.editor.objects.len(), 4);
+            assert_object_pose(&state.editor.objects[1], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+
+            let mut found_retargeted_capture = false;
+            for trigger in &state.editor.triggers.items {
+                let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
+                    continue;
+                };
+                if (trigger.time_seconds - 2.5).abs() <= 1e-6 {
+                    assert_eq!(object_ids, &[1]);
+                    found_retargeted_capture = true;
+                    let TimedTriggerAction::TransformObjects { position, .. } = &trigger.action
+                    else {
+                        panic!("expected transform trigger action");
+                    };
+                    approx_eq(position[0], 5.0, 1e-6);
+                    approx_eq(position[1], 6.0, 1e-6);
+                    approx_eq(position[2], 7.0, 1e-6);
+                }
+            }
+
+            assert!(found_retargeted_capture);
         });
     }
 
