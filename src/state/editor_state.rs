@@ -889,6 +889,23 @@ impl State {
         }
     }
 
+    pub(crate) fn set_editor_selected_block_trigger(&mut self, trigger: Option<TimedTrigger>) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        self.record_editor_history_state();
+        self.sync_primary_selection_from_indices();
+        self.editor.set_selected_block_trigger(trigger);
+
+        if self.editor.ui.selected_block_index.is_some() {
+            self.sync_editor_objects();
+            self.rebuild_editor_gizmo_vertices();
+            self.rebuild_editor_selection_outline_vertices();
+            self.mark_editor_dirty(EditorDirtyFlags::trigger_markers_changed());
+        }
+    }
+
     /// Returns the unique identifier of the currently selected block type in the editor.
     pub fn editor_selected_block_id(&self) -> &str {
         self.editor.selected_block_id()

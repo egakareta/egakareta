@@ -323,6 +323,28 @@ impl EditorSubsystem {
         object_index
     }
 
+    pub(crate) fn set_selected_block_trigger(&mut self, trigger: Option<TimedTrigger>) {
+        let mut trigger = trigger;
+        if let Some(trigger) = &mut trigger {
+            self.sanitize_trigger(trigger);
+        }
+
+        let Some(index) = self
+            .ui
+            .selected_block_index
+            .filter(|index| *index < self.objects.len())
+        else {
+            return;
+        };
+
+        self.objects[index].trigger = trigger;
+        self.triggers.items = self.triggers();
+        self.triggers.selected_index = self
+            .triggers
+            .selected_index
+            .filter(|index| *index < self.triggers.items.len());
+    }
+
     pub(crate) fn set_trigger_selected(&mut self, selected: Option<usize>) {
         self.triggers.selected_index = selected.filter(|index| *index < self.triggers.items.len());
     }

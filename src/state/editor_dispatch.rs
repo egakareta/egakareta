@@ -58,6 +58,7 @@ impl State {
                 self.set_editor_selected_block_id(obj.block_id);
                 self.set_editor_selected_block_rotation(obj.rotation_degrees);
                 self.set_editor_selected_block_color_tint(obj.color_tint);
+                self.set_editor_selected_block_trigger(obj.trigger);
             }
 
             EditorCommand::NudgeSelected { dx, dy } => {
@@ -277,7 +278,12 @@ mod tests {
     use super::State;
     use crate::state::editor_command::EditorCommand;
     use crate::test_utils::stone;
-    use crate::types::{AppPhase, EditorMode, SettingsSection};
+    use crate::triggers::{
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+    };
+    use crate::types::{
+        AppPhase, EditorMode, LevelObject, SettingsSection, TRANSFORM_TRIGGER_BLOCK_ID,
+    };
 
     async fn new_editor_state() -> State {
         let mut state = State::new_test().await;
@@ -406,6 +412,62 @@ mod tests {
 
             state.dispatch_editor(EditorCommand::Escape);
             assert_eq!(state.phase, AppPhase::Menu);
+        });
+    }
+
+    #[test]
+    fn update_selected_block_persists_trigger_fields() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.objects = vec![LevelObject {
+                position: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+                trigger: Some(TimedTrigger {
+                    time_seconds: 0.0,
+                    duration_seconds: 1.0,
+                    easing: TimedTriggerEasing::Linear,
+                    target: TimedTriggerTarget::Objects {
+                        object_ids: vec![1],
+                    },
+                    action: TimedTriggerAction::TransformObjects {
+                        position: [0.0, 0.0, 0.0],
+                        rotation_degrees: [0.0, 0.0, 0.0],
+                        size: [1.0, 1.0, 1.0],
+                    },
+                }),
+            }];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+
+            let mut selected = state.editor.objects[0].clone();
+            let trigger = selected
+                .trigger
+                .as_mut()
+                .expect("trigger block has payload");
+            trigger.time_seconds = 0.75;
+            trigger.duration_seconds = 2.5;
+            trigger.easing = TimedTriggerEasing::EaseOut;
+
+            state.dispatch_editor(EditorCommand::UpdateSelectedBlock(selected));
+
+            let trigger = state.editor.objects[0]
+                .trigger
+                .as_ref()
+                .expect("updated block keeps trigger payload");
+            assert!(crate::test_utils::approx_eq(
+                trigger.time_seconds,
+                0.75,
+                1e-6
+            ));
+            assert!(crate::test_utils::approx_eq(
+                trigger.duration_seconds,
+                2.5,
+                1e-6
+            ));
+            assert_eq!(trigger.easing, TimedTriggerEasing::EaseOut);
         });
     }
 
