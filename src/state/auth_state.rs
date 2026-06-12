@@ -6,10 +6,21 @@
 
 */
 use super::State;
+use crate::auth_types::AuthSession;
 use crate::platform::services::{
     trigger_auth_refresh, trigger_auth_sign_in, trigger_auth_sign_out, AuthServiceMessage,
 };
-use crate::types::AuthSession;
+
+pub(crate) struct AuthSubsystem {
+    pub(crate) session: Option<AuthSession>,
+    pub(crate) pending: bool,
+    pub(crate) message: Option<String>,
+    pub(crate) refresh_started: bool,
+    pub(crate) channel: (
+        std::sync::mpsc::Sender<AuthServiceMessage>,
+        std::sync::mpsc::Receiver<AuthServiceMessage>,
+    ),
+}
 
 impl State {
     pub(crate) fn auth_display_name(&self) -> Option<&str> {
@@ -155,7 +166,7 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{AuthProfile, AuthSessionTokens, AuthUser};
+    use crate::auth_types::{AuthProfile, AuthSessionTokens, AuthUser};
 
     fn test_auth_session(username: Option<&str>, email: Option<&str>) -> AuthSession {
         AuthSession {

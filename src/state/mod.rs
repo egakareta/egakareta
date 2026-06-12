@@ -43,6 +43,7 @@ use std::collections::VecDeque;
 pub(crate) const TAP_CLICK_SCREEN_EPSILON_PIXELS: f64 = 0.5;
 
 pub(crate) use audio_state::{AudioState, AudioSubsystem};
+pub(crate) use auth_state::AuthSubsystem;
 pub(crate) use editor_camera::EditorCameraState;
 pub(crate) use editor_config_state::EditorConfigState;
 pub(crate) use editor_interaction::{
@@ -63,12 +64,11 @@ pub(crate) use view_model::EditorUiViewModel;
 
 use crate::game::{GameCheckpointState, GameState};
 use crate::mesh::MeshGeometry;
-use crate::platform::services::AuthServiceMessage;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::platform::state_host::NativeWindow;
 use crate::state::editor_command::EditorCommand;
 use crate::types::{
-    AppPhase, AppSettings, AuthSession, EditorMode, EditorState, LevelCreatorMetadata, LevelObject,
+    AppPhase, AppSettings, EditorMode, EditorState, LevelCreatorMetadata, LevelObject,
     LevelPreviewCameraMetadata, MenuState, MusicMetadata, PhysicalSize, SettingsSection,
     SpawnMetadata,
 };
@@ -84,17 +84,6 @@ pub(crate) struct GameplaySubsystem {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct TimedGameplayTurn {
     pub(crate) time_seconds: f32,
-}
-
-pub(crate) struct AuthSubsystem {
-    pub(crate) session: Option<AuthSession>,
-    pub(crate) pending: bool,
-    pub(crate) message: Option<String>,
-    pub(crate) refresh_started: bool,
-    pub(crate) channel: (
-        std::sync::mpsc::Sender<AuthServiceMessage>,
-        std::sync::mpsc::Receiver<AuthServiceMessage>,
-    ),
 }
 
 /// Bundles all session-related state into a single subsystem.
