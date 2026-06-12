@@ -1386,7 +1386,16 @@ impl State {
     pub(crate) fn set_editor_trigger_selected(&mut self, selected: Option<usize>) {
         if self.phase == AppPhase::Editor {
             self.editor.set_trigger_selected(selected);
+            if let Some(object_index) = selected.and_then(|trigger_index| {
+                self.editor
+                    .trigger_object_index_for_trigger_index(trigger_index)
+            }) {
+                self.editor.replace_block_selection(vec![object_index]);
+                self.editor.ui.hovered_block_index = Some(object_index);
+                self.sync_primary_selection_from_indices();
+            }
             self.mark_editor_dirty(EditorDirtyFlags::trigger_selection_changed());
+            self.mark_editor_dirty(EditorDirtyFlags::selection_overlay_changed());
         }
     }
 

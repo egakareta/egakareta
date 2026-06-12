@@ -291,6 +291,29 @@ mod tests {
         state
     }
 
+    fn transform_trigger_object(time_seconds: f32, position: [f32; 3]) -> LevelObject {
+        LevelObject {
+            position,
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+            trigger: Some(TimedTrigger {
+                time_seconds,
+                duration_seconds: 1.0,
+                easing: TimedTriggerEasing::Linear,
+                target: TimedTriggerTarget::Objects {
+                    object_ids: Vec::new(),
+                },
+                action: TimedTriggerAction::TransformObjects {
+                    position,
+                    rotation_degrees: [0.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
+                },
+            }),
+        }
+    }
+
     #[test]
     fn dispatch_editor_routes_ui_session_and_input_commands() {
         pollster::block_on(async {
@@ -468,6 +491,28 @@ mod tests {
                 1e-6
             ));
             assert_eq!(trigger.easing, TimedTriggerEasing::EaseOut);
+        });
+    }
+
+    #[test]
+    fn set_trigger_selected_selects_matching_trigger_block() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.objects = vec![
+                stone(0.0, 0.0, 0.0),
+                transform_trigger_object(2.0, [2.0, 0.0, 0.0]),
+                transform_trigger_object(1.0, [1.0, 0.0, 0.0]),
+            ];
+
+            state.dispatch_editor(EditorCommand::SetTriggerSelected(Some(0)));
+            assert_eq!(state.editor.selected_trigger_index(), Some(0));
+            assert_eq!(state.editor.ui.selected_block_index, Some(2));
+            assert_eq!(state.editor.ui.selected_block_indices, vec![2]);
+
+            state.dispatch_editor(EditorCommand::SetTriggerSelected(Some(1)));
+            assert_eq!(state.editor.selected_trigger_index(), Some(1));
+            assert_eq!(state.editor.ui.selected_block_index, Some(1));
+            assert_eq!(state.editor.ui.selected_block_indices, vec![1]);
         });
     }
 

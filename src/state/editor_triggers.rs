@@ -219,6 +219,29 @@ impl EditorSubsystem {
             .filter(|index| *index < triggers.len())
     }
 
+    pub(crate) fn trigger_object_index_for_trigger_index(
+        &self,
+        trigger_index: usize,
+    ) -> Option<usize> {
+        let mut indexed_triggers = self
+            .objects
+            .iter()
+            .enumerate()
+            .filter_map(|(object_index, object)| {
+                let trigger = triggers_from_objects(std::slice::from_ref(object))
+                    .into_iter()
+                    .next()?;
+                Some((object_index, trigger))
+            })
+            .collect::<Vec<_>>();
+
+        indexed_triggers
+            .sort_by(|left, right| f32::total_cmp(&left.1.time_seconds, &right.1.time_seconds));
+        indexed_triggers
+            .get(trigger_index)
+            .map(|(object_index, _)| *object_index)
+    }
+
     pub(crate) fn camera_trigger_markers(&self) -> Vec<(usize, CameraTrigger)> {
         self.triggers()
             .iter()
@@ -346,7 +369,8 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn set_trigger_selected(&mut self, selected: Option<usize>) {
-        self.triggers.selected_index = selected.filter(|index| *index < self.triggers.items.len());
+        let trigger_count = self.triggers().len();
+        self.triggers.selected_index = selected.filter(|index| *index < trigger_count);
     }
 }
 
