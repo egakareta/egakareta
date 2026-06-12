@@ -48,7 +48,6 @@ pub(crate) struct EditorUiViewModel<'a> {
     pub(crate) recent_block_ids: &'a [String],
     pub(crate) selected_block: Option<LevelObject>,
     pub(crate) selected_block_count: usize,
-    pub(crate) transform_trigger_capture_active: bool,
     pub(crate) clipboard_block_count: usize,
     pub(crate) can_undo: bool,
     pub(crate) can_redo: bool,
@@ -134,7 +133,6 @@ impl State {
             recent_block_ids: &self.editor.config.recent_block_ids,
             selected_block: self.editor_selected_block(),
             selected_block_count: selected_block_indices.len(),
-            transform_trigger_capture_active: self.editor_transform_trigger_capture_active(),
             clipboard_block_count: self
                 .editor
                 .runtime

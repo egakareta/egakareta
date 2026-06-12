@@ -38,10 +38,6 @@ impl EditorSubsystem {
     }
 
     pub(super) fn record_history_state(&mut self) {
-        if self.runtime.transform_trigger_capture.is_some() {
-            return;
-        }
-
         self.record_history_state_force();
     }
 

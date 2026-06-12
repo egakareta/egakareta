@@ -22,7 +22,6 @@ use crate::mesh::{
     build_editor_cursor_vertices, build_editor_gizmo_vertices,
     build_editor_hitbox_visualization_vertices, build_editor_hover_outline_vertices,
     build_editor_selection_outline_vertices, build_editor_tap_cursor_vertices,
-    build_editor_transform_origin_outline_vertices,
     build_editor_transform_trigger_target_outline_vertices,
     build_practice_checkpoint_flag_geometry, build_spawn_marker_vertices,
     build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices,
@@ -123,32 +122,6 @@ fn append_outline_instance(
         mask_vertices: mask_start..mask_end,
         outline_vertices: outline_start..outline_end,
     });
-}
-
-fn append_transform_capture_origin_outlines(
-    mask_vertices: &mut Vec<Vertex>,
-    outline_vertices: &mut Vec<Vertex>,
-    instances: &mut Vec<EditorOutlineInstance>,
-    capture: Option<&super::EditorTransformTriggerCapture>,
-) {
-    let Some(capture) = capture else {
-        return;
-    };
-
-    for (_, object) in &capture.original_objects {
-        append_outline_instance(
-            mask_vertices,
-            outline_vertices,
-            instances,
-            object,
-            build_editor_transform_origin_outline_vertices(
-                object.position,
-                object.size,
-                object.rotation_degrees,
-                2.5,
-            ),
-        );
-    }
 }
 
 fn transform_trigger_target_indices_for_block(
@@ -332,46 +305,6 @@ fn transform_trigger_marker_source_objects<'a>(
             time_seconds,
         ))
     }
-}
-
-fn transform_trigger_markers_for_capture(
-    objects: &[LevelObject],
-    triggers: &[TimedTrigger],
-    capture_time_seconds: f32,
-    original_objects: &[(usize, LevelObject)],
-) -> Vec<TransformTriggerMarker> {
-    let mut source_base_objects = objects.to_vec();
-    for (object_index, original_object) in original_objects {
-        if let Some(object) = source_base_objects.get_mut(*object_index) {
-            *object = original_object.clone();
-        }
-    }
-
-    let source_objects =
-        trigger_transformed_objects_at_time(&source_base_objects, triggers, capture_time_seconds);
-    let mut markers = Vec::new();
-
-    for (object_index, _) in original_objects {
-        let Some(source_object) = source_objects.get(*object_index) else {
-            continue;
-        };
-        let Some(current_object) = objects.get(*object_index) else {
-            continue;
-        };
-
-        markers.push(TransformTriggerMarker {
-            source_position: Some(source_object.position),
-            source_size: Some(source_object.size),
-            target_position: current_object.position,
-            target_rotation_degrees: current_object.rotation_degrees,
-            target_size: current_object.size,
-            time_seconds: capture_time_seconds,
-            duration_seconds: 1.0,
-            is_selected: true,
-        });
-    }
-
-    markers
 }
 
 fn editor_static_mesh_spare_capacity(geometry: &MeshGeometry, object_count: usize) -> (u32, u32) {
@@ -986,12 +919,6 @@ impl State {
                 mask_vertices: 0..mask_vertices.len() as u32,
                 outline_vertices: 0..outline_vertices.len() as u32,
             }];
-            append_transform_capture_origin_outlines(
-                &mut mask_vertices,
-                &mut outline_vertices,
-                &mut instances,
-                self.editor.runtime.transform_trigger_capture.as_ref(),
-            );
             append_transform_trigger_target_outline_instances(
                 &self.editor.objects,
                 selected_indices.iter().copied(),
@@ -1037,12 +964,6 @@ impl State {
                 );
             }
         }
-        append_transform_capture_origin_outlines(
-            &mut mask_vertices,
-            &mut outline_vertices,
-            &mut instances,
-            self.editor.runtime.transform_trigger_capture.as_ref(),
-        );
         append_transform_trigger_target_outline_instances(
             &self.editor.objects,
             self.selected_block_indices_normalized(),
@@ -1094,28 +1015,11 @@ impl State {
             return;
         }
 
-        let selected_trigger_index = self.editor.selected_trigger_index();
-        let capture_active = self.editor.runtime.transform_trigger_capture.is_some();
-        let mut markers = Vec::new();
-
-        // Hide finalized markers while defining a new transform trigger target.
-        if !capture_active {
-            markers = transform_trigger_markers_for_triggers(
-                &self.editor.objects,
-                &self.editor.triggers(),
-                selected_trigger_index,
-            );
-        }
-
-        // Show preview markers for in-progress transform trigger captures.
-        if let Some(capture) = self.editor.runtime.transform_trigger_capture.as_ref() {
-            markers.extend(transform_trigger_markers_for_capture(
-                &self.editor.objects,
-                &self.editor.triggers(),
-                capture.time_seconds,
-                &capture.original_objects,
-            ));
-        }
+        let markers = transform_trigger_markers_for_triggers(
+            &self.editor.objects,
+            &self.editor.triggers(),
+            self.editor.selected_trigger_index(),
+        );
 
         if markers.is_empty() {
             self.render.meshes.transform_trigger_markers.clear();
@@ -1669,9 +1573,9 @@ fn tap_indicator_color(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_editor_object_outline_vertices, tap_division_marker_indicators, tap_indicator_color,
-        transform_trigger_markers_for_capture, transform_trigger_markers_for_triggers,
-        EditorObjectOutlineStyle, State, EDITOR_SELECTION_OUTLINE_COLOR,
+        build_editor_object_outline_vertices, tap_indicator_color,
+        transform_trigger_markers_for_triggers, EditorObjectOutlineStyle, State,
+        EDITOR_SELECTION_OUTLINE_COLOR,
     };
     use crate::mesh::blocks::build_block_geometry_for_object;
     use crate::mesh::builders::game::build_colored_tap_indicator_vertices;
@@ -1679,7 +1583,7 @@ mod tests {
     use crate::triggers::{
         TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
     };
-    use crate::types::{AppPhase, EditorMode, LevelObject, TimingPoint};
+    use crate::types::{AppPhase, EditorMode, LevelObject};
 
     fn block(position: [f32; 3], size: [f32; 3]) -> LevelObject {
         LevelObject {
@@ -2110,73 +2014,6 @@ mod tests {
         assert_eq!(markers[0].target_position, [8.0, 0.0, 0.0]);
         assert_eq!(markers[0].target_size, [2.0, 1.0, 1.0]);
         assert!(markers[0].is_selected);
-    }
-
-    #[test]
-    fn transform_trigger_capture_marker_source_uses_trigger_time_state() {
-        let original_object = block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        let current_target_object = block([12.0, 0.0, 0.0], [2.0, 1.0, 1.0]);
-        let objects = vec![current_target_object];
-        let triggers = vec![TimedTrigger {
-            time_seconds: 1.0,
-            duration_seconds: 4.0,
-            easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Objects {
-                object_ids: vec![0],
-            },
-            action: TimedTriggerAction::TransformObjects {
-                position: [8.0, 0.0, 0.0],
-                rotation_degrees: [0.0, 90.0, 0.0],
-                size: [3.0, 1.0, 1.0],
-            },
-        }];
-
-        let markers = transform_trigger_markers_for_capture(
-            &objects,
-            &triggers,
-            3.0,
-            &[(0, original_object)],
-        );
-
-        assert_eq!(markers.len(), 1);
-        approx_eq(markers[0].source_position.unwrap()[0], 4.0, 1e-6);
-        approx_eq(markers[0].source_size.unwrap()[0], 2.0, 1e-6);
-        assert_eq!(markers[0].target_position, [12.0, 0.0, 0.0]);
-        assert_eq!(markers[0].target_size, [2.0, 1.0, 1.0]);
-        assert!(markers[0].is_selected);
-    }
-
-    #[test]
-    fn tap_indicator_color_highlights_hovered_or_selected_taps() {
-        assert_eq!(tap_indicator_color(2, Some(2), None), [0.1, 0.45, 0.5, 1.0]);
-        assert_eq!(
-            tap_indicator_color(2, None, Some(2)),
-            [0.2, 0.85, 0.95, 1.0]
-        );
-        assert_eq!(
-            tap_indicator_color(2, Some(1), Some(3)),
-            [0.0, 0.0, 0.0, 1.0]
-        );
-    }
-
-    #[test]
-    fn tap_division_marker_indicators_marks_only_taps_on_timing_divisions() {
-        let timing_points = vec![TimingPoint {
-            time_seconds: 0.0,
-            bpm: 120.0,
-            time_signature_numerator: 4,
-            time_signature_denominator: 4,
-        }];
-        let markers = tap_division_marker_indicators(
-            &[0.5, 0.75, 1.0],
-            &[[1.0, 0.0, 1.0], [2.0, 0.0, 2.0], [3.0, 0.0, 3.0]],
-            &timing_points,
-            2.0,
-        );
-
-        assert_eq!(markers.len(), 2);
-        assert_eq!(markers[0], ([1.0, 0.0, 1.0], [0.0, 0.0, 0.0, 1.0]));
-        assert_eq!(markers[1], ([3.0, 0.0, 3.0], [0.0, 0.0, 0.0, 1.0]));
     }
 
     #[test]

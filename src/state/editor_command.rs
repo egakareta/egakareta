@@ -60,12 +60,8 @@ pub(crate) enum EditorCommand {
     SnapSelectionToGrid,
     /// Focus the editor camera on the selected or preview target.
     FocusCameraTarget,
-    /// Begin authoring transform-object triggers from the selected blocks.
-    BeginTransformTriggerCapture,
-    /// Commit the active transform-object trigger capture.
-    CommitTransformTriggerCapture,
-    /// Cancel the active transform-object trigger capture.
-    CancelTransformTriggerCapture,
+    /// Add transform-object triggers for the selected blocks.
+    AddTransformTrigger,
 
     // ── Timeline / Playback ─────────────────────────────────────────
     /// Toggle timeline playback.

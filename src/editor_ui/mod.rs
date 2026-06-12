@@ -505,10 +505,10 @@ fn show_editor_context_menu(
                 close_menu |= context_menu_button(
                     ui,
                     commands,
-                    has_block_selection && !is_tapping && !view.transform_trigger_capture_active,
+                    has_block_selection && !is_tapping,
                     egui_phosphor::regular::ARROWS_CLOCKWISE,
                     "Add Transform Trigger",
-                    AppCommand::Editor(EditorCommand::BeginTransformTriggerCapture),
+                    AppCommand::Editor(EditorCommand::AddTransformTrigger),
                     hint("add_transform_trigger").as_deref(),
                 );
                 close_menu |= context_menu_button(
@@ -1435,11 +1435,11 @@ pub fn show_editor_ui(
                         });
                 });
 
-        ctx.data_mut(|data| data.insert_persisted(place_category_id, selected_place_category));
-
         if let Some(place_response) = place_response {
             ui_input_blocking_rects.push(rect_to_input_bounds(place_response.response.rect));
         }
+
+        ctx.data_mut(|data| data.insert_persisted(place_category_id, selected_place_category));
 
         if !place_open {
             commands.push(AppCommand::Editor(EditorCommand::TogglePlaceWindow));
@@ -1466,7 +1466,6 @@ pub fn show_editor_ui(
                     );
                 }
 
-                // Shared timeline bar with beat lines
                 show_timeline_bar(ui, &view, duration_seconds, &mut commands);
             });
         });
@@ -1484,58 +1483,26 @@ pub fn show_editor_ui(
             .show(ctx, |ui| {
                 let button_size = egui::Vec2::splat(56.0);
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Max), |ui| {
-                    if view.transform_trigger_capture_active {
-                        if ui
-                            .add_sized(
-                                button_size,
-                                egui::Button::new(
-                                    egui::RichText::new(egui_phosphor::regular::X).size(28.0),
-                                ),
-                            )
-                            .on_hover_text("Cancel transform trigger")
-                            .clicked()
-                        {
-                            commands.push(AppCommand::Editor(
-                                EditorCommand::CancelTransformTriggerCapture,
-                            ));
-                        }
+                    let hotkey_hint = view.app_settings.hotkey_hint("toggle_place_window");
+                    if show_recent_block_quick_strip(
+                        ui,
+                        &view,
+                        block_icon_texture_ids,
+                        &mut commands,
+                    ) {
                         ui.add_space(6.0);
-                        if ui
-                            .add_sized(
-                                button_size,
-                                egui::Button::new(
-                                    egui::RichText::new(egui_phosphor::regular::CHECK).size(28.0),
-                                ),
-                            )
-                            .on_hover_text("Create transform trigger")
-                            .clicked()
-                        {
-                            commands.push(AppCommand::Editor(
-                                EditorCommand::CommitTransformTriggerCapture,
-                            ));
-                        }
-                    } else {
-                        let hotkey_hint = view.app_settings.hotkey_hint("toggle_place_window");
-                        if show_recent_block_quick_strip(
-                            ui,
-                            &view,
-                            block_icon_texture_ids,
-                            &mut commands,
-                        ) {
-                            ui.add_space(6.0);
-                        }
-                        if ui
-                            .add_sized(
-                                button_size,
-                                egui::Button::new(
-                                    egui::RichText::new(egui_phosphor::regular::PLUS).size(28.0),
-                                ),
-                            )
-                            .on_hover_text(format!("Place Block{}", hotkey_hint))
-                            .clicked()
-                        {
-                            commands.push(AppCommand::Editor(EditorCommand::TogglePlaceWindow));
-                        }
+                    }
+                    if ui
+                        .add_sized(
+                            button_size,
+                            egui::Button::new(
+                                egui::RichText::new(egui_phosphor::regular::PLUS).size(28.0),
+                            ),
+                        )
+                        .on_hover_text(format!("Place Block{}", hotkey_hint))
+                        .clicked()
+                    {
+                        commands.push(AppCommand::Editor(EditorCommand::TogglePlaceWindow));
                     }
                 });
             });

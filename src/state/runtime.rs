@@ -8,7 +8,7 @@
 use super::editor_interaction::EditorInteractionState;
 use super::history::EditorHistoryState;
 use crate::platform::state_host::PlatformInstant;
-use crate::types::{EditorMode, LevelObject, LineUniform};
+use crate::types::{LevelObject, LineUniform};
 
 #[derive(Clone, Copy, Default, Debug)]
 pub(crate) struct EditorDirtyFlags {
@@ -48,26 +48,9 @@ impl EditorDirtyFlags {
         }
     }
 
-    pub(crate) fn block_geometry_changed() -> Self {
-        Self {
-            rebuild_block_mesh: true,
-            rebuild_selection_overlays: true,
-            rebuild_tap_indicators: true,
-            ..Self::default()
-        }
-    }
-
     pub(crate) fn block_mesh_changed() -> Self {
         Self {
             rebuild_block_mesh: true,
-            ..Self::default()
-        }
-    }
-
-    pub(crate) fn selection_changed() -> Self {
-        Self {
-            rebuild_selection_overlays: true,
-            rebuild_tap_indicators: true,
             ..Self::default()
         }
     }
@@ -238,13 +221,6 @@ pub(crate) struct EditorRuntimeState {
     pub(crate) drag_heavy_rebuild_accumulator: f32,
     pub(crate) interaction: EditorInteractionState,
     pub(crate) history: EditorHistoryState,
-    pub(crate) transform_trigger_capture: Option<EditorTransformTriggerCapture>,
-}
-
-pub(crate) struct EditorTransformTriggerCapture {
-    pub(crate) time_seconds: f32,
-    pub(crate) original_objects: Vec<(usize, LevelObject)>,
-    pub(crate) previous_mode: EditorMode,
 }
 
 pub(crate) struct EditorFrameState {

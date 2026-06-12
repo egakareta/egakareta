@@ -70,14 +70,8 @@ impl State {
             EditorCommand::FocusCameraTarget => {
                 self.editor_focus_camera_target();
             }
-            EditorCommand::BeginTransformTriggerCapture => {
-                self.begin_editor_transform_trigger_capture();
-            }
-            EditorCommand::CommitTransformTriggerCapture => {
-                self.commit_editor_transform_trigger_capture();
-            }
-            EditorCommand::CancelTransformTriggerCapture => {
-                self.cancel_editor_transform_trigger_capture();
+            EditorCommand::AddTransformTrigger => {
+                self.add_editor_transform_trigger();
             }
 
             EditorCommand::ToggleTimelinePlayback => self.toggle_editor_timeline_playback(),
@@ -234,10 +228,6 @@ impl State {
 
         if !self.is_editor() {
             self.back_to_menu();
-            return;
-        }
-
-        if self.cancel_editor_transform_trigger_capture() {
             return;
         }
 

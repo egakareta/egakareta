@@ -488,9 +488,7 @@ impl State {
             }
             "add_transform_trigger" => {
                 if self.is_editor() && just_pressed && self.has_block_selection() {
-                    Some(AppCommand::Editor(
-                        EditorCommand::BeginTransformTriggerCapture,
-                    ))
+                    Some(AppCommand::Editor(EditorCommand::AddTransformTrigger))
                 } else {
                     None
                 }
