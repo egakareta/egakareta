@@ -453,10 +453,7 @@ impl State {
         match button {
             0 => {
                 self.editor.set_left_mouse_down(pressed);
-                self.mark_editor_dirty(EditorDirtyFlags {
-                    rebuild_selection_overlays: true,
-                    ..EditorDirtyFlags::default()
-                });
+                self.mark_editor_dirty(EditorDirtyFlags::selection_overlay_changed());
                 if !pressed {
                     if let Some(pointer) = self.editor.ui.pointer_screen {
                         self.finish_editor_marquee_selection(pointer[0], pointer[1]);
@@ -498,10 +495,7 @@ impl State {
         }
         self.editor.set_pointer_screen(Some([x, y]));
         self.editor.set_left_mouse_down(true);
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_selection_overlays: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.mark_editor_dirty(EditorDirtyFlags::selection_overlay_changed());
         if self.phase == AppPhase::Editor {
             if self.editor_pointer_over_ui_input(x, y) {
                 return;

@@ -817,6 +817,31 @@ pub(crate) struct LevelMetadata {
     pub(crate) extra: serde_json::Map<String, serde_json::Value>,
 }
 
+impl Default for LevelMetadata {
+    fn default() -> Self {
+        Self {
+            format_version: CURRENT_LEVEL_FORMAT_VERSION,
+            name: "Untitled".to_string(),
+            creator: None,
+            description: None,
+            stars: default_level_stars(),
+            tags: default_level_tags(),
+            version: None,
+            music: MusicMetadata::default(),
+            spawn: SpawnMetadata::default(),
+            sky_color: default_sky_color(),
+            tap_times: Vec::new(),
+            timing_points: Vec::new(),
+            timeline_time_seconds: default_timeline_time_seconds(),
+            timeline_duration_seconds: default_timeline_duration_seconds(),
+            simulate_trigger_hitboxes: default_simulate_trigger_hitboxes(),
+            menu_preview_camera: None,
+            objects: Vec::new(),
+            extra: serde_json::Map::new(),
+        }
+    }
+}
+
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub(crate) struct LevelPreviewCameraMetadata {
     #[serde(
@@ -2522,22 +2547,7 @@ mod tests {
     #[test]
     fn resolved_triggers_return_trigger_data_for_camera_conversion() {
         let metadata = LevelMetadata {
-            format_version: 1,
             name: "Bridge".to_string(),
-            creator: None,
-            description: None,
-            stars: 0.0,
-            tags: Vec::new(),
-            version: None,
-            music: MusicMetadata::default(),
-            spawn: SpawnMetadata::default(),
-            sky_color: crate::types::default_sky_color(),
-            tap_times: Vec::new(),
-            timing_points: Vec::new(),
-            timeline_time_seconds: 0.0,
-            timeline_duration_seconds: 16.0,
-            simulate_trigger_hitboxes: false,
-            menu_preview_camera: None,
             objects: vec![LevelObject {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
@@ -2557,7 +2567,7 @@ mod tests {
                 .into_iter()
                 .next(),
             }],
-            extra: serde_json::Map::new(),
+            ..LevelMetadata::default()
         };
         let mut metadata = metadata;
         metadata.objects[0].position = [9.0, 8.0, 7.0];

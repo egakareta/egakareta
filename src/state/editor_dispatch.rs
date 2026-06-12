@@ -258,10 +258,8 @@ impl State {
 
         if had_block_selection {
             self.editor.clear_block_selection();
-            self.editor.mark_dirty(EditorDirtyFlags {
-                rebuild_selection_overlays: true,
-                ..EditorDirtyFlags::default()
-            });
+            self.editor
+                .mark_dirty(EditorDirtyFlags::selection_overlay_changed());
         }
 
         if had_tap_selection {

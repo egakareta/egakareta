@@ -12,7 +12,7 @@ use crate::commands::AppCommand;
 use crate::editor_domain::{
     add_tap_with_indicator, build_editor_playtest_transition, derive_tap_indicator_positions,
     derive_timeline_time_for_world_target_near_time, derive_timing_division_tap_previews,
-    playtest_return_objects, remove_topmost_block_at_cursor,
+    playtest_return_objects, remove_topmost_block_at_cursor, snap_cell_to_step,
     timeline_axis_aligned_segment_split_fraction, timeline_turn_corner_position,
     timing_division_time_in_direction, toggle_spawn_direction, EditorPlaytestTransitionParams,
     TapDivisionPreview, TapDivisionPreviewRange, TimelineNearSearch, TimingDivisionDirection,
@@ -23,18 +23,6 @@ use crate::types::{AppPhase, EditorMode, EditorTapDivisionPick};
 
 const TAP_CLICK_ADD_EPSILON_SECONDS: f32 = 0.001;
 const FALLBACK_TIMELINE_SHIFT_SECONDS: f32 = 0.1;
-
-pub(crate) fn snap_component_to_step(component: f32, step: f32) -> f32 {
-    (component / step).round() * step
-}
-
-pub(crate) fn snap_cell_to_step(position: [f32; 3], step: f32) -> [f32; 3] {
-    [
-        snap_component_to_step(position[0], step),
-        snap_component_to_step(position[1].max(0.0), step),
-        snap_component_to_step(position[2], step),
-    ]
-}
 
 fn distance_sq(left: [f32; 3], right: [f32; 3]) -> f32 {
     let dx = left[0] - right[0];
@@ -496,12 +484,9 @@ impl State {
             self.editor.ui.cursor = cursor;
             self.rebuild_editor_cursor_vertices();
         }
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_tap_indicators: true,
-            rebuild_preview_player: true,
-            rebuild_cursor: cursor_override.is_some(),
-            ..EditorDirtyFlags::default()
-        });
+        self.mark_editor_dirty(EditorDirtyFlags::tap_preview_changed(
+            cursor_override.is_some(),
+        ));
     }
 
     pub(super) fn editor_handle_tapping_click_from_screen(&mut self, x: f64, y: f64) -> bool {
@@ -675,10 +660,7 @@ impl State {
         }
 
         if old_mode != mode && self.editor.has_object_transform_triggers() {
-            self.mark_editor_dirty(EditorDirtyFlags {
-                rebuild_block_mesh: true,
-                ..EditorDirtyFlags::default()
-            });
+            self.mark_editor_dirty(EditorDirtyFlags::block_mesh_changed());
         }
     }
 
@@ -739,10 +721,7 @@ impl State {
             if self.editor_transform_trigger_capture_active()
                 || self.editor.has_selected_transform_trigger_block()
             {
-                self.mark_editor_dirty(EditorDirtyFlags {
-                    rebuild_transform_trigger_markers: true,
-                    ..EditorDirtyFlags::default()
-                });
+                self.mark_editor_dirty(EditorDirtyFlags::trigger_markers_changed());
             }
             return true;
         }
@@ -777,10 +756,7 @@ impl State {
                 if self.editor_transform_trigger_capture_active()
                     || self.editor.has_selected_transform_trigger_block()
                 {
-                    self.mark_editor_dirty(EditorDirtyFlags {
-                        rebuild_transform_trigger_markers: true,
-                        ..EditorDirtyFlags::default()
-                    });
+                    self.mark_editor_dirty(EditorDirtyFlags::trigger_markers_changed());
                 }
                 return true;
             }
@@ -945,11 +921,7 @@ impl State {
             self.editor.timeline.playback.pending_seek_time_seconds = None;
             self.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
 
-            self.mark_editor_dirty(EditorDirtyFlags {
-                rebuild_block_mesh: true,
-                rebuild_tap_indicators: true,
-                ..EditorDirtyFlags::default()
-            });
+            self.mark_editor_dirty(EditorDirtyFlags::playback_mode_changed());
             if last_mode == EditorMode::Timing {
                 self.editor.timeline.playback.runtime = None;
             } else {
@@ -988,11 +960,7 @@ impl State {
             self.editor.set_mode(EditorMode::Place);
         }
 
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_block_mesh: true,
-            rebuild_tap_indicators: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.mark_editor_dirty(EditorDirtyFlags::playback_mode_changed());
         self.stop_audio();
     }
 
@@ -1306,13 +1274,7 @@ impl State {
             self.editor.camera.editor_pitch =
                 pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
         }
-        self.editor.mark_dirty(EditorDirtyFlags {
-            rebuild_selection_overlays: true,
-            rebuild_cursor: true,
-            rebuild_tap_indicators: true,
-            rebuild_preview_player: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.editor.mark_dirty(EditorDirtyFlags::camera_changed());
     }
 
     /// Whether any blocks are currently selected in the editor.

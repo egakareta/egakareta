@@ -226,11 +226,9 @@ impl EditorSubsystem {
             }
         }
 
-        self.mark_dirty(EditorDirtyFlags {
-            rebuild_selection_overlays: true,
-            rebuild_cursor: self.ui.selected_block_index.is_some(),
-            ..EditorDirtyFlags::default()
-        });
+        self.mark_dirty(EditorDirtyFlags::selection_cursor_changed(
+            self.ui.selected_block_index.is_some(),
+        ));
     }
 
     pub(crate) fn finish_marquee_selection(
@@ -574,10 +572,7 @@ impl EditorSubsystem {
 
             {
                 puffin::profile_scope!("SelectMarkDirty");
-                self.mark_dirty(EditorDirtyFlags {
-                    rebuild_selection_overlays: true,
-                    ..EditorDirtyFlags::default()
-                });
+                self.mark_dirty(EditorDirtyFlags::selection_overlay_changed());
             }
             return EditorInteractionChange::None;
         };
@@ -625,11 +620,10 @@ impl EditorSubsystem {
 
         {
             puffin::profile_scope!("SelectMarkDirty");
-            self.mark_dirty(EditorDirtyFlags {
-                rebuild_selection_overlays: true,
-                rebuild_cursor: matches!(changed, EditorInteractionChange::Cursor),
-                ..EditorDirtyFlags::default()
-            });
+            self.mark_dirty(EditorDirtyFlags::selection_cursor_changed(matches!(
+                changed,
+                EditorInteractionChange::Cursor
+            )));
         }
 
         changed
@@ -640,10 +634,8 @@ impl State {
     pub(crate) fn begin_editor_marquee_selection(&mut self, x: f64, y: f64) -> bool {
         let handled = self.editor.begin_marquee_selection(x, y, self.phase);
         if handled {
-            self.editor.mark_dirty(EditorDirtyFlags {
-                rebuild_selection_overlays: true,
-                ..EditorDirtyFlags::default()
-            });
+            self.editor
+                .mark_dirty(EditorDirtyFlags::selection_overlay_changed());
         }
         handled
     }
@@ -659,10 +651,8 @@ impl State {
                 let additive = self.editor.ui.shift_held;
                 self.editor.apply_marquee_selection(viewport_size, additive);
             }
-            self.editor.mark_dirty(EditorDirtyFlags {
-                rebuild_selection_overlays: true,
-                ..EditorDirtyFlags::default()
-            });
+            self.editor
+                .mark_dirty(EditorDirtyFlags::selection_overlay_changed());
         }
         handled
     }
@@ -684,10 +674,8 @@ impl State {
             return true;
         }
 
-        self.editor.mark_dirty(EditorDirtyFlags {
-            rebuild_selection_overlays: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.editor
+            .mark_dirty(EditorDirtyFlags::selection_overlay_changed());
 
         let mode = self.editor.mode();
         if self.phase == AppPhase::Editor && mode.is_selection_mode() {

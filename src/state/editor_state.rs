@@ -5,11 +5,10 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::editor_actions::{snap_cell_to_step, snap_component_to_step};
 use super::{EditorDirtyFlags, EditorSubsystem, EditorTransformTriggerCapture, State};
 use crate::editor_domain::{
     add_tap_with_indicator, clear_taps_with_indicators, interpolate_timeline_sample_positions,
-    remove_tap_with_indicator,
+    remove_tap_with_indicator, snap_cell_to_step, snap_component_to_step,
 };
 use crate::game::TimelineSimulationRuntime;
 use crate::types::{
@@ -671,11 +670,9 @@ impl State {
         self.editor.sync_tap_indicators_to_spawn();
         self.rebuild_editor_timeline_snapshot_cache_if_needed();
 
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_tap_indicators: true,
-            rebuild_cursor: true,
-            ..EditorDirtyFlags::default()
-        });
+        let mut dirty = EditorDirtyFlags::tap_timeline_changed();
+        dirty.rebuild_cursor = true;
+        self.mark_editor_dirty(dirty);
     }
 
     pub(crate) fn editor_mode(&self) -> EditorMode {
@@ -795,10 +792,7 @@ impl State {
             self.rebuild_editor_gizmo_vertices();
             self.rebuild_editor_selection_outline_vertices();
             if self.editor.has_selected_transform_trigger_block() {
-                self.mark_editor_dirty(EditorDirtyFlags {
-                    rebuild_transform_trigger_markers: true,
-                    ..EditorDirtyFlags::default()
-                });
+                self.mark_editor_dirty(EditorDirtyFlags::trigger_markers_changed());
             }
         }
     }
@@ -823,10 +817,7 @@ impl State {
             self.rebuild_editor_gizmo_vertices();
             self.rebuild_editor_selection_outline_vertices();
             if self.editor.has_selected_transform_trigger_block() {
-                self.mark_editor_dirty(EditorDirtyFlags {
-                    rebuild_transform_trigger_markers: true,
-                    ..EditorDirtyFlags::default()
-                });
+                self.mark_editor_dirty(EditorDirtyFlags::trigger_markers_changed());
             }
         }
     }
@@ -847,10 +838,7 @@ impl State {
             self.rebuild_editor_gizmo_vertices();
             self.rebuild_editor_selection_outline_vertices();
             if self.editor.has_selected_transform_trigger_block() {
-                self.mark_editor_dirty(EditorDirtyFlags {
-                    rebuild_transform_trigger_markers: true,
-                    ..EditorDirtyFlags::default()
-                });
+                self.mark_editor_dirty(EditorDirtyFlags::trigger_markers_changed());
             }
         }
     }
@@ -871,10 +859,7 @@ impl State {
             self.rebuild_editor_gizmo_vertices();
             self.rebuild_editor_selection_outline_vertices();
             if self.editor.has_selected_transform_trigger_block() {
-                self.mark_editor_dirty(EditorDirtyFlags {
-                    rebuild_transform_trigger_markers: true,
-                    ..EditorDirtyFlags::default()
-                });
+                self.mark_editor_dirty(EditorDirtyFlags::trigger_markers_changed());
             }
         }
     }
@@ -960,18 +945,10 @@ impl State {
             && self.editor.has_object_transform_triggers()
         {
             puffin::profile_scope!("SeekDirtyBlockMesh");
-            self.mark_editor_dirty(EditorDirtyFlags {
-                rebuild_block_mesh: true,
-                rebuild_hitbox_visualization: true,
-                rebuild_transform_trigger_markers: true,
-                ..EditorDirtyFlags::default()
-            });
+            self.mark_editor_dirty(EditorDirtyFlags::timeline_trigger_preview_changed());
         }
         if changed && self.phase == AppPhase::Editor && self.editor_mode() == EditorMode::Tapping {
-            self.mark_editor_dirty(EditorDirtyFlags {
-                rebuild_tap_indicators: true,
-                ..EditorDirtyFlags::default()
-            });
+            self.mark_editor_dirty(EditorDirtyFlags::tap_timeline_changed());
         }
         if changed {
             if self.phase == AppPhase::Editor && self.editor.timeline.playback.playing {
@@ -1120,10 +1097,7 @@ impl State {
         self.editor.set_timeline_duration_seconds(duration_seconds);
         self.editor.invalidate_samples();
         self.resync_editor_timeline_playback_audio();
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_tap_indicators: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.mark_editor_dirty(EditorDirtyFlags::tap_timeline_changed());
     }
 
     /// Adds a tap event at the current timeline position.
@@ -1181,13 +1155,7 @@ impl State {
             .capture_current_camera_trigger(self.editor.timeline.clock.time_seconds);
         self.editor.add_trigger(trigger);
         self.sync_editor_objects();
-        self.mark_editor_dirty(EditorDirtyFlags {
-            sync_game_objects: true,
-            rebuild_block_mesh: true,
-            rebuild_selection_overlays: true,
-            rebuild_hitbox_visualization: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.mark_editor_dirty(EditorDirtyFlags::trigger_object_added());
     }
 
     pub(crate) fn editor_transform_trigger_capture_active(&self) -> bool {
@@ -1371,10 +1339,7 @@ impl State {
         }
 
         self.editor.ui.show_hitbox_visualization = !self.editor.ui.show_hitbox_visualization;
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_hitbox_visualization: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.mark_editor_dirty(EditorDirtyFlags::hitbox_visualization_changed());
     }
 
     pub(crate) fn editor_selected_trigger_index(&self) -> Option<usize> {
@@ -1384,11 +1349,7 @@ impl State {
     pub(crate) fn set_editor_trigger_selected(&mut self, selected: Option<usize>) {
         if self.phase == AppPhase::Editor {
             self.editor.set_trigger_selected(selected);
-            self.mark_editor_dirty(EditorDirtyFlags {
-                rebuild_selection_overlays: true,
-                rebuild_transform_trigger_markers: true,
-                ..EditorDirtyFlags::default()
-            });
+            self.mark_editor_dirty(EditorDirtyFlags::trigger_selection_changed());
         }
     }
 
@@ -1404,12 +1365,7 @@ impl State {
         self.record_editor_history_state();
         self.editor.set_simulate_trigger_hitboxes(enabled);
         self.editor.invalidate_samples();
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_preview_player: true,
-            rebuild_block_mesh: true,
-            rebuild_hitbox_visualization: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.mark_editor_dirty(EditorDirtyFlags::simulate_trigger_hitboxes_changed());
     }
 
     pub(crate) fn editor_playback_speed(&self) -> f32 {

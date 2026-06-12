@@ -57,10 +57,143 @@ impl EditorDirtyFlags {
         }
     }
 
+    pub(crate) fn block_mesh_changed() -> Self {
+        Self {
+            rebuild_block_mesh: true,
+            ..Self::default()
+        }
+    }
+
     pub(crate) fn selection_changed() -> Self {
         Self {
             rebuild_selection_overlays: true,
             rebuild_tap_indicators: true,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn selection_overlay_changed() -> Self {
+        Self {
+            rebuild_selection_overlays: true,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn selection_cursor_changed(rebuild_cursor: bool) -> Self {
+        Self {
+            rebuild_selection_overlays: true,
+            rebuild_cursor,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn tap_timeline_changed() -> Self {
+        Self {
+            rebuild_tap_indicators: true,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn tap_preview_changed(rebuild_cursor: bool) -> Self {
+        Self {
+            rebuild_tap_indicators: true,
+            rebuild_preview_player: true,
+            rebuild_cursor,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn playback_mode_changed() -> Self {
+        Self {
+            rebuild_block_mesh: true,
+            rebuild_tap_indicators: true,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn trigger_markers_changed() -> Self {
+        Self {
+            rebuild_transform_trigger_markers: true,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn trigger_selection_changed() -> Self {
+        Self {
+            rebuild_selection_overlays: true,
+            rebuild_transform_trigger_markers: true,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn hitbox_visualization_changed() -> Self {
+        Self {
+            rebuild_hitbox_visualization: true,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn block_mesh_and_hitboxes_changed() -> Self {
+        Self {
+            rebuild_block_mesh: true,
+            rebuild_hitbox_visualization: true,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn timeline_trigger_preview_changed() -> Self {
+        Self {
+            rebuild_block_mesh: true,
+            rebuild_hitbox_visualization: true,
+            rebuild_transform_trigger_markers: true,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn trigger_object_added() -> Self {
+        Self {
+            sync_game_objects: true,
+            rebuild_block_mesh: true,
+            rebuild_selection_overlays: true,
+            rebuild_hitbox_visualization: true,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn simulate_trigger_hitboxes_changed() -> Self {
+        Self {
+            rebuild_preview_player: true,
+            rebuild_block_mesh: true,
+            rebuild_hitbox_visualization: true,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn drag_object_sync() -> Self {
+        Self {
+            sync_game_objects: true,
+            rebuild_block_mesh: true,
+            rebuild_selection_overlays: true,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn drag_release_sync() -> Self {
+        Self {
+            sync_game_objects: true,
+            rebuild_selection_overlays: true,
+            rebuild_preview_player: true,
+            rebuild_cursor: true,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn appended_block(select_placed: bool, transform_trigger: bool) -> Self {
+        Self {
+            sync_game_objects: true,
+            append_block_mesh: true,
+            rebuild_selection_overlays: select_placed,
+            rebuild_transform_trigger_markers: transform_trigger,
             ..Self::default()
         }
     }

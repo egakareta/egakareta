@@ -7,12 +7,14 @@
 */
 pub(crate) mod cursor;
 pub(crate) mod session;
+pub(crate) mod snap;
 pub(crate) mod tap_management;
 pub(crate) mod timeline;
 pub(crate) mod transitions;
 
 pub(crate) use cursor::*;
 pub(crate) use session::*;
+pub(crate) use snap::*;
 pub(crate) use tap_management::*;
 pub(crate) use timeline::*;
 pub(crate) use transitions::*;
@@ -278,7 +280,6 @@ mod tests {
     #[test]
     fn initializes_editor_session_from_metadata() {
         let metadata = LevelMetadata {
-            format_version: 1,
             name: "Test".to_string(),
             creator: Some("Tester".to_string()),
             description: Some("Session init metadata".to_string()),
@@ -291,17 +292,12 @@ mod tests {
                 author: None,
                 extra: serde_json::Map::new(),
             },
-            sky_color: crate::types::default_sky_color(),
             spawn: SpawnMetadata {
                 position: [2.0, 3.0, 1.0],
                 direction: crate::types::SpawnDirection::Right,
             },
             tap_times: vec![0.8, 0.2],
-            timing_points: Vec::new(),
             timeline_time_seconds: 0.5,
-            timeline_duration_seconds: 16.0,
-            simulate_trigger_hitboxes: false,
-            menu_preview_camera: None,
             objects: vec![LevelObject {
                 position: [4.0, 6.0, 0.0],
                 size: [1.0, 1.0, 1.0],
@@ -310,7 +306,7 @@ mod tests {
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
             }],
-            extra: serde_json::Map::new(),
+            ..LevelMetadata::default()
         };
 
         let init = editor_session_init_from_metadata(Some(metadata));
@@ -418,13 +414,7 @@ mod tests {
     #[test]
     fn builds_playing_transition_from_metadata() {
         let metadata = LevelMetadata {
-            format_version: 1,
             name: "Starter".to_string(),
-            creator: None,
-            description: None,
-            stars: 0.0,
-            tags: Vec::new(),
-            version: None,
             music: MusicMetadata {
                 source: "audio.mp3".to_string(),
                 title: None,
@@ -436,12 +426,6 @@ mod tests {
                 position: [3.0, 4.0, 1.0],
                 direction: crate::types::SpawnDirection::Right,
             },
-            tap_times: vec![],
-            timing_points: Vec::new(),
-            timeline_time_seconds: 0.0,
-            timeline_duration_seconds: 16.0,
-            simulate_trigger_hitboxes: false,
-            menu_preview_camera: None,
             objects: vec![LevelObject {
                 position: [1.0, 2.0, 0.0],
                 size: [1.0, 1.0, 1.0],
@@ -450,7 +434,7 @@ mod tests {
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
             }],
-            extra: serde_json::Map::new(),
+            ..LevelMetadata::default()
         };
 
         let transition = build_playing_transition_from_metadata(metadata);
