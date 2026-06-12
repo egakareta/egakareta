@@ -22,9 +22,10 @@ pub(crate) use transitions::*;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::triggers::{TimedTriggerAction, TimedTriggerTarget};
     use crate::types::{
-        LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata, TimedTriggerAction,
-        TimedTriggerTarget, TimingPoint, TRANSFORM_TRIGGER_BLOCK_ID,
+        LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata, TimingPoint,
+        TRANSFORM_TRIGGER_BLOCK_ID,
     };
 
     fn assert_near_solver_hits_target(

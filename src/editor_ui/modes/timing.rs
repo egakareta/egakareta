@@ -215,9 +215,9 @@ mod tests {
     use super::show_timing_mode_bottom_panel;
     use crate::commands::AppCommand;
     use crate::state::EditorUiViewModel;
+    use crate::triggers::TimedTrigger;
     use crate::types::{
-        AppSettings, EditorMode, MusicMetadata, SettingsSection, SpawnDirection, TimedTrigger,
-        TimingPoint,
+        AppSettings, EditorMode, MusicMetadata, SettingsSection, SpawnDirection, TimingPoint,
     };
 
     fn make_view<'a>(

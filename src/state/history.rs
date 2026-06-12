@@ -298,9 +298,8 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{
-        AppPhase, LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerTarget,
-    };
+    use crate::triggers::{TimedTrigger, TimedTriggerAction, TimedTriggerTarget};
+    use crate::types::{AppPhase, LevelObject};
 
     fn test_block(position: [f32; 3]) -> LevelObject {
         LevelObject {

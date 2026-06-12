@@ -11,9 +11,9 @@ mod gizmo;
 mod picking;
 mod selection;
 
+use crate::triggers::TimedTrigger;
 use crate::types::{
     EditorMode, EditorTapDivisionPick, GizmoAxis, GizmoDragKind, LevelObject, SpawnMetadata,
-    TimedTrigger,
 };
 
 #[derive(Clone)]

@@ -6,9 +6,10 @@
 
 */
 use super::State;
+use crate::triggers::TimedTrigger;
 use crate::types::{
     AppSettings, EditorMode, LevelCreatorMetadata, LevelObject, MusicMetadata, SettingsSection,
-    SpawnDirection, TimedTrigger, TimingPoint,
+    SpawnDirection, TimingPoint,
 };
 
 #[derive(Clone, Copy)]

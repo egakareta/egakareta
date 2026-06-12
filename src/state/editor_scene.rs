@@ -29,9 +29,10 @@ use crate::mesh::{
     PracticeCheckpointFlagInstance,
 };
 use crate::state::render::EditorOutlineInstance;
+use crate::triggers::{TimedTrigger, TimedTriggerAction, TimedTriggerTarget};
 use crate::types::{
-    AppPhase, EditorMode, EditorPlaceMode, GizmoPart, LevelObject, SpawnDirection, TimedTrigger,
-    TimedTriggerAction, TimedTriggerTarget, TimingPoint, Vertex, TRANSFORM_TRIGGER_BLOCK_ID,
+    AppPhase, EditorMode, EditorPlaceMode, GizmoPart, LevelObject, SpawnDirection, TimingPoint,
+    Vertex, TRANSFORM_TRIGGER_BLOCK_ID,
 };
 
 const SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD: usize = 700;
@@ -1625,10 +1626,10 @@ mod tests {
     };
     use crate::mesh::builders::game::build_colored_tap_indicator_vertices;
     use crate::state::render::MeshDrawData;
-    use crate::types::{
-        AppPhase, EditorMode, LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
-        TimedTriggerTarget, TimingPoint,
+    use crate::triggers::{
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
     };
+    use crate::types::{AppPhase, EditorMode, LevelObject, TimingPoint};
 
     fn block(position: [f32; 3], size: [f32; 3]) -> LevelObject {
         LevelObject {

@@ -11,10 +11,8 @@ use crate::editor_domain::{
     remove_tap_with_indicator, snap_cell_to_step, snap_component_to_step,
 };
 use crate::game::TimelineSimulationRuntime;
-use crate::types::{
-    AppPhase, EditorMode, GameCursor, LevelObject, SpawnDirection, TimedTrigger,
-    TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, TimingPoint,
-};
+use crate::triggers::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
+use crate::types::{AppPhase, EditorMode, GameCursor, LevelObject, SpawnDirection, TimingPoint};
 
 const TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS: f32 = 0.001;
 
@@ -1483,9 +1481,11 @@ mod tests {
     use super::State;
     use crate::game::TimelineSimulationRuntime;
     use crate::test_utils::assert_approx_eq as approx_eq;
+    use crate::triggers::{
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+    };
     use crate::types::{
         AppPhase, EditorMode, GameCursor, GizmoAxis, GizmoDragKind, LevelObject, SpawnDirection,
-        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
         TRANSFORM_TRIGGER_BLOCK_ID,
     };
 

@@ -5,10 +5,8 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use crate::types::{
-    LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
-    TRANSFORM_TRIGGER_BLOCK_ID,
-};
+use crate::triggers::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
+use crate::types::{LevelObject, TRANSFORM_TRIGGER_BLOCK_ID};
 
 pub(crate) fn create_block_at_cursor(
     cursor: [f32; 3],

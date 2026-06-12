@@ -11,8 +11,7 @@ use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 
 use crate::block_repository::{normalize_block_id, DEFAULT_BLOCK_ID};
-
-pub(crate) use crate::triggers::*;
+use crate::triggers::{triggers_from_objects, TimedTrigger, TimedTriggerAction};
 
 pub(crate) const CAMERA_TRIGGER_BLOCK_ID: &str = "core/camera_trigger";
 pub(crate) const TRANSFORM_TRIGGER_BLOCK_ID: &str = "core/transform_trigger";
@@ -1792,14 +1791,16 @@ pub(crate) struct GridUniform {
 #[cfg(test)]
 mod tests {
     use super::{
+        EditorStateParams, GameCursor, LevelCreatorMetadata, LevelMetadata, LevelObject,
+        LevelPreviewCameraMetadata, MusicMetadata, SpawnDirection, SpawnMetadata, Vertex,
+        CAMERA_TRIGGER_BLOCK_ID, TRANSFORM_TRIGGER_BLOCK_ID,
+    };
+    use crate::triggers::{
         apply_timed_triggers_to_objects, camera_triggers_to_timed_triggers,
         default_camera_trigger_pitch, default_camera_trigger_rotation,
         default_camera_trigger_transition_interval_seconds, timed_triggers_to_camera_triggers,
-        triggers_from_objects, CameraTrigger, CameraTriggerMode, EditorStateParams, GameCursor,
-        LevelCreatorMetadata, LevelMetadata, LevelObject, LevelPreviewCameraMetadata,
-        MusicMetadata, SpawnDirection, SpawnMetadata, TimedTrigger, TimedTriggerAction,
-        TimedTriggerEasing, TimedTriggerTarget, Vertex, CAMERA_TRIGGER_BLOCK_ID,
-        TRANSFORM_TRIGGER_BLOCK_ID,
+        triggers_from_objects, CameraTrigger, CameraTriggerMode, TimedTrigger, TimedTriggerAction,
+        TimedTriggerEasing, TimedTriggerTarget,
     };
     use serde_json::json;
 

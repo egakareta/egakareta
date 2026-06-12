@@ -1460,19 +1460,21 @@ mod tests {
             state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
 
             // Add a transform trigger that targets object 0
-            state.editor.set_triggers(vec![crate::types::TimedTrigger {
-                time_seconds: 1.0,
-                duration_seconds: 1.0,
-                easing: crate::types::TimedTriggerEasing::Linear,
-                target: crate::types::TimedTriggerTarget::Objects {
-                    object_ids: vec![0],
-                },
-                action: crate::types::TimedTriggerAction::TransformObjects {
-                    position: [5.0, 0.0, 0.0],
-                    rotation_degrees: [0.0, 0.0, 0.0],
-                    size: [1.0, 1.0, 1.0],
-                },
-            }]);
+            state
+                .editor
+                .set_triggers(vec![crate::triggers::TimedTrigger {
+                    time_seconds: 1.0,
+                    duration_seconds: 1.0,
+                    easing: crate::triggers::TimedTriggerEasing::Linear,
+                    target: crate::triggers::TimedTriggerTarget::Objects {
+                        object_ids: vec![0],
+                    },
+                    action: crate::triggers::TimedTriggerAction::TransformObjects {
+                        position: [5.0, 0.0, 0.0],
+                        rotation_degrees: [0.0, 0.0, 0.0],
+                        size: [1.0, 1.0, 1.0],
+                    },
+                }]);
 
             let center = Vec3::new(0.5, 0.5, 0.5);
             let origin_screen = state

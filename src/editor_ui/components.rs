@@ -302,10 +302,10 @@ pub(crate) fn show_timeline_bar(
             let x =
                 rect.left() + (trigger.time_seconds - view_start) / visible_duration * rect.width();
             let fill = match &trigger.action {
-                crate::types::TimedTriggerAction::CameraFollow { .. } => {
+                crate::triggers::TimedTriggerAction::CameraFollow { .. } => {
                     egui::Color32::from_rgb(110, 210, 140)
                 }
-                crate::types::TimedTriggerAction::CameraPose { .. } => {
+                crate::triggers::TimedTriggerAction::CameraPose { .. } => {
                     egui::Color32::from_rgb(255, 210, 90)
                 }
                 _ => egui::Color32::from_rgb(110, 140, 255),
@@ -651,9 +651,11 @@ mod tests {
     use super::*;
     use crate::state::EditorUiViewModel;
     use crate::test_utils::assert_approx_eq as approx_eq;
+    use crate::triggers::{
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+    };
     use crate::types::{
-        AppSettings, EditorMode, MusicMetadata, SettingsSection, SpawnDirection, TimedTrigger,
-        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, TimingPoint,
+        AppSettings, EditorMode, MusicMetadata, SettingsSection, SpawnDirection, TimingPoint,
     };
 
     fn make_view<'a>(

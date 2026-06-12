@@ -407,28 +407,37 @@ pub(crate) fn triggers_from_objects(objects: &[LevelObject]) -> Vec<TimedTrigger
         .iter()
         .filter_map(|object| {
             let mut trigger = object.trigger.clone()?;
-            match &mut trigger.action {
+            trigger.action = match trigger.action {
                 TimedTriggerAction::TransformObjects {
-                    position,
-                    rotation_degrees,
-                    size,
-                } => {
-                    *position = object.position;
-                    *rotation_degrees = object.rotation_degrees;
-                    *size = object.size;
-                }
+                    position: _,
+                    rotation_degrees: _,
+                    size: _,
+                } => TimedTriggerAction::TransformObjects {
+                    position: object.position,
+                    rotation_degrees: object.rotation_degrees,
+                    size: object.size,
+                },
                 TimedTriggerAction::CameraPose {
-                    target_position,
-                    rotation,
-                    pitch,
-                    ..
-                } => {
-                    *target_position = object.position;
-                    *pitch = object.rotation_degrees[0].to_radians();
-                    *rotation = object.rotation_degrees[1].to_radians();
-                }
-                TimedTriggerAction::CameraFollow { .. } => {}
-            }
+                    transition_interval_seconds,
+                    use_full_segment_transition,
+                    target_position: _,
+                    rotation: _,
+                    pitch: _,
+                } => TimedTriggerAction::CameraPose {
+                    transition_interval_seconds,
+                    use_full_segment_transition,
+                    target_position: object.position,
+                    rotation: object.rotation_degrees[1].to_radians(),
+                    pitch: object.rotation_degrees[0].to_radians(),
+                },
+                TimedTriggerAction::CameraFollow {
+                    transition_interval_seconds,
+                    use_full_segment_transition,
+                } => TimedTriggerAction::CameraFollow {
+                    transition_interval_seconds,
+                    use_full_segment_transition,
+                },
+            };
             Some(trigger)
         })
         .filter(|trigger| trigger.time_seconds.is_finite())

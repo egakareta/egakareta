@@ -832,10 +832,10 @@ impl State {
 mod tests {
     use super::super::super::{EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag, State};
     use crate::test_utils::assert_approx_eq as approx_eq;
-    use crate::types::{
-        AppPhase, EditorMode, GizmoAxis, GizmoDragKind, LevelObject, TimedTrigger,
-        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+    use crate::triggers::{
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
     };
+    use crate::types::{AppPhase, EditorMode, GizmoAxis, GizmoDragKind, LevelObject};
     use glam::{Vec2, Vec3};
 
     fn test_block() -> LevelObject {

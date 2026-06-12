@@ -7,7 +7,8 @@
 */
 use super::{EditorSubsystem, State};
 use crate::game::GameState;
-use crate::types::{AppPhase, EditorMode, LevelObject, TimedTriggerAction};
+use crate::triggers::TimedTriggerAction;
+use crate::types::{AppPhase, EditorMode, LevelObject};
 
 impl EditorSubsystem {
     pub(crate) fn clear_pan_keys(&mut self) {
@@ -220,15 +221,12 @@ impl EditorSubsystem {
 
         // Keep cache in sync
         if let Some(trigger) = self.triggers.items.get_mut(trigger_index) {
-            if let TimedTriggerAction::TransformObjects {
-                position: target_position,
-                rotation_degrees: target_rotation_degrees,
-                size: target_size,
-            } = &mut trigger.action
-            {
-                *target_position = clamped_position;
-                *target_size = obj.size;
-                *target_rotation_degrees = rotation_degrees;
+            if matches!(trigger.action, TimedTriggerAction::TransformObjects { .. }) {
+                trigger.action = TimedTriggerAction::TransformObjects {
+                    position: clamped_position,
+                    rotation_degrees,
+                    size: obj.size,
+                };
             }
         }
 

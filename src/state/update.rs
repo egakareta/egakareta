@@ -952,10 +952,10 @@ impl State {
 mod tests {
     use super::State;
     use crate::game::{GameState, TimelineSimulationRuntime};
-    use crate::types::{
-        AppPhase, Direction, EditorMode, LevelObject, SpawnDirection, TimedTrigger,
-        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, TimingPoint,
+    use crate::triggers::{
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
     };
+    use crate::types::{AppPhase, Direction, EditorMode, LevelObject, SpawnDirection, TimingPoint};
 
     fn sample_object() -> LevelObject {
         LevelObject {

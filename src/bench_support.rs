@@ -11,10 +11,8 @@ use std::hint::black_box;
 
 use crate::game::{trigger_transformed_objects_at_time, TimelineSimulationRuntime};
 use crate::mesh::build_block_geometry;
-use crate::types::{
-    LevelObject, SpawnDirection, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
-    TimedTriggerTarget,
-};
+use crate::triggers::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
+use crate::types::{LevelObject, SpawnDirection};
 
 /// Summary of a benchmarked hot-path operation.
 #[derive(Clone, Copy, Debug)]

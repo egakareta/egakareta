@@ -6,9 +6,10 @@
 
 */
 use crate::editor_domain::timeline::derive_timeline_state_with_triggers;
+use crate::triggers::TimedTrigger;
 use crate::types::{
-    LevelMetadata, LevelObject, SpawnDirection, SpawnMetadata, TimedTrigger,
-    DEFAULT_PLAY_CAMERA_PITCH, DEFAULT_PLAY_CAMERA_ROTATION,
+    LevelMetadata, LevelObject, SpawnDirection, SpawnMetadata, DEFAULT_PLAY_CAMERA_PITCH,
+    DEFAULT_PLAY_CAMERA_ROTATION,
 };
 
 pub(crate) struct EditorPlaytestTransition {

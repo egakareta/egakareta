@@ -7,9 +7,10 @@
 */
 use serde::{Deserialize, Serialize};
 
+use crate::triggers::TimedTrigger;
 use crate::types::{
     default_sky_color, LevelMetadata, LevelObject, LevelPreviewCameraMetadata, MusicMetadata,
-    SpawnMetadata, TimedTrigger, TimingPoint,
+    SpawnMetadata, TimingPoint,
 };
 
 const LEVEL_MAGIC: [u8; 4] = *b"EGB1";

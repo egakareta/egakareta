@@ -8,10 +8,13 @@
 use glam::{Mat4, Vec2, Vec3};
 
 use super::{EditorSubsystem, State};
+use crate::triggers::{
+    timed_triggers_to_camera_triggers, CameraTrigger, CameraTriggerMode, TimedTrigger,
+    TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+};
 use crate::types::{
-    timed_triggers_to_camera_triggers, AppPhase, CameraTrigger, CameraTriggerMode, TimedTrigger,
-    TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, DEFAULT_EDITOR_CAMERA_PITCH,
-    DEFAULT_EDITOR_CAMERA_ROTATION, DEFAULT_PLAY_CAMERA_PITCH, DEFAULT_PLAY_CAMERA_ROTATION,
+    AppPhase, DEFAULT_EDITOR_CAMERA_PITCH, DEFAULT_EDITOR_CAMERA_ROTATION,
+    DEFAULT_PLAY_CAMERA_PITCH, DEFAULT_PLAY_CAMERA_ROTATION,
 };
 
 const EDITOR_CAMERA_BASE_DISTANCE: f32 = 24.0;
@@ -404,11 +407,11 @@ mod tests {
         playing_camera_offset_for_angles, CameraViewSample, State, DEFAULT_PLAY_CAMERA_PITCH,
         DEFAULT_PLAY_CAMERA_ROTATION, MIN_PLAYING_PITCH,
     };
-    use crate::types::AppPhase;
-    use crate::types::{
+    use crate::triggers::{
         CameraTrigger, CameraTriggerMode, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
         TimedTriggerTarget,
     };
+    use crate::types::AppPhase;
     use glam::Vec3;
 
     fn assert_vec3_close(actual: Vec3, expected: Vec3) {

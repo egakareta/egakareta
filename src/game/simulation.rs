@@ -6,9 +6,8 @@
 
 */
 use super::state::{ConsumedObjectEvent, GameState};
-use crate::types::{
-    apply_timed_triggers_to_objects, Direction, LevelObject, SpawnDirection, TimedTrigger,
-};
+use crate::triggers::{apply_timed_triggers_to_objects, TimedTrigger};
+use crate::types::{Direction, LevelObject, SpawnDirection};
 
 pub(crate) struct TimelineSimulationState {
     pub(crate) position: [f32; 3],
