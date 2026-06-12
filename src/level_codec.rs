@@ -66,6 +66,45 @@ struct BinaryLevelPayloadV1 {
     object_triggers: Vec<Option<TimedTrigger>>,
 }
 
+#[cfg(test)]
+impl Default for BinaryLevelPayloadV1 {
+    fn default() -> Self {
+        Self {
+            format_version: 1,
+            name: "test level".to_string(),
+            creator: None,
+            description: None,
+            stars: 0.0,
+            tags: Vec::new(),
+            version: None,
+            music_source: "music.mp3".to_string(),
+            music_title: None,
+            music_author: None,
+            music_extra_entries: Vec::new(),
+            spawn: SpawnMetadata::default(),
+            sky_color: default_sky_color(),
+            tap_times: Vec::new(),
+            timing_points: Vec::new(),
+            timeline_time_seconds: 0.0,
+            timeline_duration_seconds: 0.0,
+            simulate_trigger_hitboxes: false,
+            menu_preview_camera: None,
+            level_extra_entries: Vec::new(),
+            palette: Vec::new(),
+            object_runs: Vec::new(),
+            object_compact_mask: Vec::new(),
+            grid_min: [0, 0, 0],
+            grid_dims: [0, 0, 0],
+            object_linear_indices: Vec::new(),
+            object_positions: Vec::new(),
+            object_sizes: Vec::new(),
+            object_rotations: Vec::new(),
+            object_color_tints: Vec::new(),
+            object_triggers: Vec::new(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct ObjectRun {
     palette_index: u16,
@@ -862,37 +901,8 @@ mod tests {
     #[test]
     fn rejects_unsupported_codec_version() {
         let payload = BinaryLevelPayloadV1 {
-            format_version: 1,
             name: "unsupported".to_string(),
-            creator: None,
-            description: None,
-            stars: 0.0,
-            tags: Vec::new(),
-            version: None,
-            music_source: "music.mp3".to_string(),
-            music_title: None,
-            music_author: None,
-            music_extra_entries: Vec::new(),
-            spawn: crate::types::SpawnMetadata::default(),
-            sky_color: crate::types::default_sky_color(),
-            tap_times: Vec::new(),
-            timing_points: Vec::new(),
-            timeline_time_seconds: 0.0,
-            timeline_duration_seconds: 0.0,
-            simulate_trigger_hitboxes: false,
-            menu_preview_camera: None,
-            level_extra_entries: Vec::new(),
-            palette: Vec::new(),
-            object_runs: Vec::new(),
-            object_compact_mask: Vec::new(),
-            grid_min: [0, 0, 0],
-            grid_dims: [0, 0, 0],
-            object_linear_indices: Vec::new(),
-            object_positions: Vec::new(),
-            object_sizes: Vec::new(),
-            object_rotations: Vec::new(),
-            object_color_tints: Vec::new(),
-            object_triggers: Vec::new(),
+            ..BinaryLevelPayloadV1::default()
         };
         let payload_bytes = serde_cbor::to_vec(&payload).expect("serialize");
         let compressed = zstd::bulk::compress(&payload_bytes, 1).expect("compress");
@@ -941,40 +951,16 @@ mod tests {
     #[test]
     fn rejects_payload_with_palette_index_out_of_range() {
         let payload = BinaryLevelPayloadV1 {
-            format_version: 1,
             name: "bad palette".to_string(),
-            creator: None,
-            description: None,
-            stars: 0.0,
-            tags: Vec::new(),
-            version: None,
-            music_source: "music.mp3".to_string(),
-            music_title: None,
-            music_author: None,
-            music_extra_entries: Vec::new(),
-            spawn: crate::types::SpawnMetadata::default(),
-            sky_color: crate::types::default_sky_color(),
-            tap_times: Vec::new(),
-            timing_points: Vec::new(),
-            timeline_time_seconds: 0.0,
-            timeline_duration_seconds: 0.0,
-            simulate_trigger_hitboxes: false,
-            menu_preview_camera: None,
-            level_extra_entries: Vec::new(),
-            palette: Vec::new(),
             object_runs: vec![ObjectRun {
                 palette_index: 0,
                 run_length: 1,
             }],
-            object_compact_mask: Vec::new(),
-            grid_min: [0, 0, 0],
-            grid_dims: [0, 0, 0],
-            object_linear_indices: Vec::new(),
             object_positions: vec![[0.0, 0.0, 0.0]],
             object_sizes: vec![[1.0, 1.0, 1.0]],
             object_rotations: vec![[0.0, 0.0, 0.0]],
             object_color_tints: vec![[1.0, 1.0, 1.0]],
-            object_triggers: Vec::new(),
+            ..BinaryLevelPayloadV1::default()
         };
 
         let bytes = encode_v2_uncompressed_for_test(&payload);
