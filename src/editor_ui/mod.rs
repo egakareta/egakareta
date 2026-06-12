@@ -561,6 +561,15 @@ fn show_editor_context_menu(
                     ui,
                     commands,
                     true,
+                    egui_phosphor::regular::CAMERA_ROTATE,
+                    "Add Camera Follow Trigger",
+                    AppCommand::Editor(EditorCommand::AddCameraFollowTrigger),
+                    hint("add_camera_follow_trigger").as_deref(),
+                );
+                close_menu |= context_menu_button(
+                    ui,
+                    commands,
+                    true,
                     egui_phosphor::regular::SELECTION,
                     "Toggle Hitboxes",
                     AppCommand::Editor(EditorCommand::ToggleHitboxVisualization),

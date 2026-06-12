@@ -1156,6 +1156,27 @@ impl State {
         self.mark_editor_dirty(EditorDirtyFlags::trigger_object_added());
     }
 
+    pub(crate) fn editor_add_camera_follow_trigger(&mut self) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        self.record_editor_history_state();
+        let trigger = TimedTrigger {
+            time_seconds: self.editor.timeline.clock.time_seconds,
+            duration_seconds: 0.0,
+            easing: TimedTriggerEasing::Linear,
+            target: TimedTriggerTarget::Camera,
+            action: TimedTriggerAction::CameraFollow {
+                transition_interval_seconds: 1.0,
+                use_full_segment_transition: false,
+            },
+        };
+        self.editor.add_trigger(trigger);
+        self.sync_editor_objects();
+        self.mark_editor_dirty(EditorDirtyFlags::trigger_object_added());
+    }
+
     pub(crate) fn editor_transform_trigger_capture_active(&self) -> bool {
         self.editor.runtime.transform_trigger_capture.is_some()
     }

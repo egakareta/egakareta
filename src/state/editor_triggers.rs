@@ -7,6 +7,7 @@
 */
 use super::EditorSubsystem;
 use crate::triggers::{
+    camera_trigger_eye_from_target, default_camera_trigger_target_position,
     timed_triggers_to_camera_triggers, triggers_from_objects, CameraTrigger, TimedTrigger,
     TimedTriggerAction, TimedTriggerTarget,
 };
@@ -42,7 +43,7 @@ fn trigger_object_from_payload(trigger: TimedTrigger) -> LevelObject {
             pitch,
             ..
         } => (
-            *target_position,
+            camera_trigger_eye_from_target(*target_position, *rotation, *pitch),
             [1.0, 1.0, 1.0],
             camera_trigger_rotation_degrees(*rotation, *pitch),
         ),
@@ -51,9 +52,18 @@ fn trigger_object_from_payload(trigger: TimedTrigger) -> LevelObject {
             rotation_degrees,
             size,
         } => (*position, *size, *rotation_degrees),
-        TimedTriggerAction::CameraFollow { .. } => {
-            ([0.0, 0.0, 0.0], [1.0, 1.0, 1.0], [0.0, 0.0, 0.0])
-        }
+        TimedTriggerAction::CameraFollow { .. } => (
+            camera_trigger_eye_from_target(
+                default_camera_trigger_target_position(),
+                DEFAULT_CAMERA_TRIGGER_ROTATION,
+                DEFAULT_CAMERA_TRIGGER_PITCH,
+            ),
+            [1.0, 1.0, 1.0],
+            camera_trigger_rotation_degrees(
+                DEFAULT_CAMERA_TRIGGER_ROTATION,
+                DEFAULT_CAMERA_TRIGGER_PITCH,
+            ),
+        ),
     };
 
     LevelObject {

@@ -142,6 +142,8 @@ pub(crate) enum EditorCommand {
     },
     /// Capture a new camera trigger from the current editor camera at the playhead.
     AddCameraTrigger,
+    /// Add a camera-follow trigger at the current playhead, returning to default tracking mode.
+    AddCameraFollowTrigger,
     /// Select or deselect a trigger in the UI.
     SetTriggerSelected(Option<usize>),
     /// Set whether timed object triggers move gameplay hitboxes during play.

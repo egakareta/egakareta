@@ -9,6 +9,52 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::{LevelObject, DEFAULT_CAMERA_TRIGGER_PITCH, DEFAULT_CAMERA_TRIGGER_ROTATION};
 
+pub(crate) const CAMERA_TRIGGER_VIEW_DISTANCE: f32 = 24.0;
+
+pub(crate) fn camera_trigger_offset(rotation: f32, pitch: f32) -> [f32; 3] {
+    let horizontal_distance = CAMERA_TRIGGER_VIEW_DISTANCE * pitch.cos();
+    [
+        -rotation.sin() * horizontal_distance,
+        pitch.sin() * CAMERA_TRIGGER_VIEW_DISTANCE,
+        -rotation.cos() * horizontal_distance,
+    ]
+}
+
+pub(crate) fn camera_trigger_eye_from_target(
+    target_position: [f32; 3],
+    rotation: f32,
+    pitch: f32,
+) -> [f32; 3] {
+    let offset = camera_trigger_offset(rotation, pitch);
+    [
+        target_position[0] + offset[0],
+        target_position[1] + offset[1],
+        target_position[2] + offset[2],
+    ]
+}
+
+pub(crate) fn camera_trigger_target_from_eye(
+    eye_position: [f32; 3],
+    rotation: f32,
+    pitch: f32,
+) -> [f32; 3] {
+    let offset = camera_trigger_offset(rotation, pitch);
+    [
+        eye_position[0] - offset[0],
+        eye_position[1] - offset[1],
+        eye_position[2] - offset[2],
+    ]
+}
+
+pub(crate) fn camera_trigger_forward(rotation: f32, pitch: f32) -> [f32; 3] {
+    let offset = camera_trigger_offset(rotation, pitch);
+    [
+        -offset[0] / CAMERA_TRIGGER_VIEW_DISTANCE,
+        -offset[1] / CAMERA_TRIGGER_VIEW_DISTANCE,
+        -offset[2] / CAMERA_TRIGGER_VIEW_DISTANCE,
+    ]
+}
+
 pub(crate) fn default_camera_trigger_target_position() -> [f32; 3] {
     [0.0, 0.0, 0.0]
 }
@@ -426,7 +472,11 @@ pub(crate) fn triggers_from_objects(objects: &[LevelObject]) -> Vec<TimedTrigger
                 } => TimedTriggerAction::CameraPose {
                     transition_interval_seconds,
                     use_full_segment_transition,
-                    target_position: object.position,
+                    target_position: camera_trigger_target_from_eye(
+                        object.position,
+                        object.rotation_degrees[1].to_radians(),
+                        object.rotation_degrees[0].to_radians(),
+                    ),
                     rotation: object.rotation_degrees[1].to_radians(),
                     pitch: object.rotation_degrees[0].to_radians(),
                 },

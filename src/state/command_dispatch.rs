@@ -604,6 +604,13 @@ impl State {
                     None
                 }
             }
+            "add_camera_follow_trigger" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::Editor(EditorCommand::AddCameraFollowTrigger))
+                } else {
+                    None
+                }
+            }
             "export_obj" => {
                 if self.is_editor() && just_pressed {
                     Some(AppCommand::Editor(EditorCommand::ExportBlockObj))
@@ -2847,6 +2854,10 @@ mod tests {
             assert_eq!(
                 state.command_for_keybind_action("add_camera_trigger", true),
                 Some(AppCommand::Editor(EditorCommand::AddCameraTrigger))
+            );
+            assert_eq!(
+                state.command_for_keybind_action("add_camera_follow_trigger", true),
+                Some(AppCommand::Editor(EditorCommand::AddCameraFollowTrigger))
             );
             assert_eq!(
                 state.command_for_keybind_action("export_obj", true),

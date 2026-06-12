@@ -14,6 +14,7 @@ mod tests {
     };
     use crate::mesh::egmesh::resolve_egmesh;
     use crate::mesh::obj::{append_obj_mesh, parse_obj_mesh, parse_obj_mesh_with_materials};
+    use crate::triggers::camera_trigger_forward;
     use crate::types::{GizmoPart, LevelObject, Vertex};
 
     fn bounds_xz(vertices: &[[f32; 3]]) -> (f32, f32, f32, f32) {
@@ -393,6 +394,81 @@ d 0.5
             .as_ref()
             .is_some_and(|indices| !indices.is_empty()));
         assert_eq!(geometry.to_triangle_vertices().len(), mesh.indices.len());
+    }
+
+    #[test]
+    fn camera_trigger_profile_builds_eye_ring_and_direction_arrow() {
+        let obj = LevelObject {
+            position: [3.0, 4.0, 5.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            block_id: "core/camera_trigger".to_string(),
+            ..LevelObject::default()
+        };
+
+        let vertices = build_block_geometry(std::slice::from_ref(&obj)).to_triangle_vertices();
+
+        assert!(!vertices.is_empty());
+        assert_ne!(vertices.len(), 36);
+        assert!(vertices
+            .iter()
+            .all(|vertex| (vertex.render_profile - 6.0).abs() <= f32::EPSILON));
+        assert!(vertices.iter().all(|vertex| {
+            vertex.color_outline[0..3]
+                .iter()
+                .zip(obj.position)
+                .all(|(actual, expected)| (*actual - expected).abs() <= 1e-6)
+        }));
+        let min_x = vertices
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::INFINITY, f32::min);
+        let max_x = vertices
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+        let min_z = vertices
+            .iter()
+            .map(|vertex| vertex.position[2])
+            .fold(f32::INFINITY, f32::min);
+        let max_z = vertices
+            .iter()
+            .map(|vertex| vertex.position[2])
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        assert!(min_x < 2.5);
+        assert!(max_x > 3.5);
+        assert!(min_z < 5.1);
+        assert!(max_z > 6.8);
+    }
+
+    #[test]
+    fn camera_trigger_arrow_matches_camera_pose_direction() {
+        let position = [3.0, 4.0, 5.0];
+        let rotation_degrees = [30.0, 60.0, 0.0];
+        let obj = LevelObject {
+            position,
+            rotation_degrees,
+            block_id: "core/camera_trigger".to_string(),
+            ..LevelObject::default()
+        };
+        let vertices = build_block_geometry(std::slice::from_ref(&obj)).to_triangle_vertices();
+        let eye = glam::Vec3::from_array(position);
+        let forward = glam::Vec3::from_array(camera_trigger_forward(
+            rotation_degrees[1].to_radians(),
+            rotation_degrees[0].to_radians(),
+        ));
+
+        let max_forward = vertices
+            .iter()
+            .map(|vertex| (glam::Vec3::from_array(vertex.position) - eye).dot(forward))
+            .fold(f32::NEG_INFINITY, f32::max);
+        let max_backward = vertices
+            .iter()
+            .map(|vertex| (glam::Vec3::from_array(vertex.position) - eye).dot(-forward))
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        assert!(max_forward > 1.8);
+        assert!(max_backward < 0.7);
     }
 
     #[test]

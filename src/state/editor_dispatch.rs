@@ -137,6 +137,7 @@ impl State {
                 transition_seconds,
             } => self.set_editor_camera_orientation(rotation, pitch, transition_seconds),
             EditorCommand::AddCameraTrigger => self.editor_add_camera_trigger(),
+            EditorCommand::AddCameraFollowTrigger => self.editor_add_camera_follow_trigger(),
             EditorCommand::SetTriggerSelected(selected) => {
                 self.set_editor_trigger_selected(selected)
             }
@@ -509,6 +510,7 @@ mod tests {
                 transition_seconds: Some(0.25),
             });
             state.dispatch_editor(EditorCommand::AddCameraTrigger);
+            state.dispatch_editor(EditorCommand::AddCameraFollowTrigger);
             state.dispatch_editor(EditorCommand::SetTriggerSelected(Some(0)));
             state.dispatch_editor(EditorCommand::SetSimulateTriggerHitboxes(true));
             assert!(state.editor_simulate_trigger_hitboxes());

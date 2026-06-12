@@ -17,11 +17,11 @@ use crate::game::trigger_transformed_objects_at_time;
 use crate::mesh::TransformTriggerMarker;
 use crate::mesh::{
     build_block_geometry, build_block_geometry_for_object, build_block_geometry_from_refs,
-    build_camera_arrow_vertices, build_camera_trigger_marker_vertices,
-    build_colored_tap_indicator_vertices, build_editor_cursor_vertices,
-    build_editor_gizmo_vertices, build_editor_hitbox_visualization_vertices,
-    build_editor_hover_outline_vertices, build_editor_selection_outline_vertices,
-    build_editor_tap_cursor_vertices, build_editor_transform_origin_outline_vertices,
+    build_camera_arrow_vertices, build_colored_tap_indicator_vertices,
+    build_editor_cursor_vertices, build_editor_gizmo_vertices,
+    build_editor_hitbox_visualization_vertices, build_editor_hover_outline_vertices,
+    build_editor_selection_outline_vertices, build_editor_tap_cursor_vertices,
+    build_editor_transform_origin_outline_vertices,
     build_editor_transform_trigger_target_outline_vertices,
     build_practice_checkpoint_flag_geometry, build_spawn_marker_vertices,
     build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices,
@@ -1019,52 +1019,7 @@ impl State {
 
     pub(super) fn rebuild_camera_trigger_marker_vertices(&mut self) {
         puffin::profile_scope!("CameraTriggerMarkerMesh");
-        if self.phase != AppPhase::Editor {
-            self.render.meshes.camera_trigger_markers.clear();
-            return;
-        }
-
-        let markers = self.editor.camera_trigger_markers();
-        if markers.is_empty() {
-            self.render.meshes.camera_trigger_markers.clear();
-            return;
-        }
-
-        let camera_triggers = markers
-            .iter()
-            .map(|(_, camera_trigger)| camera_trigger.clone())
-            .collect::<Vec<_>>();
-        let selected_camera_trigger_index =
-            self.editor
-                .selected_trigger_index()
-                .and_then(|selected_trigger_index| {
-                    markers
-                        .iter()
-                        .position(|(trigger_index, _)| *trigger_index == selected_trigger_index)
-                });
-
-        let current_camera_eye = if self.editor_is_playing() {
-            let (e, _) = self.editor_preview_camera_view();
-            Some(Vec3::from_array(e))
-        } else {
-            let target = self.editor.editor_camera_target();
-            let offset = self.editor_camera_offset();
-            Some(target + offset)
-        };
-
-        let vertices = build_camera_trigger_marker_vertices(
-            &camera_triggers,
-            selected_camera_trigger_index,
-            current_camera_eye,
-        );
-        self.render
-            .meshes
-            .camera_trigger_markers
-            .replace_with_vertices(
-                &self.render.gpu.device,
-                "Camera Trigger Marker Vertex Buffer",
-                &vertices,
-            );
+        self.render.meshes.camera_trigger_markers.clear();
     }
 
     pub(super) fn rebuild_transform_trigger_marker_vertices(&mut self) {
@@ -1856,7 +1811,7 @@ mod tests {
     }
 
     #[test]
-    fn camera_trigger_and_tap_indicator_meshes_clear_or_build_by_phase_and_data() {
+    fn camera_trigger_overlay_mesh_clears_while_tap_indicators_build_by_phase_and_data() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
 
@@ -1886,7 +1841,7 @@ mod tests {
                 .meshes
                 .camera_trigger_markers
                 .draw_data()
-                .is_some());
+                .is_none());
 
             state.phase = AppPhase::Menu;
             state.rebuild_tap_indicator_vertices();

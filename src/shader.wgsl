@@ -7,6 +7,7 @@
  */
 struct CameraData {
     view_proj: mat4x4<f32>,
+    camera_position: vec4<f32>,
 };
 
 struct LineData {
@@ -52,6 +53,7 @@ struct VertexOutput {
     @location(3) texture_layer: f32,
     @location(4) color_outline: vec4<f32>,
     @location(5) render_profile: f32,
+    @location(6) world_position: vec3<f32>,
 };
 
 @vertex
@@ -123,6 +125,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     out.texture_layer = input.texture_layer;
     out.color_outline = input.color_outline;
     out.render_profile = input.render_profile;
+    out.world_position = rotated_pos + offset;
     return out;
 }
 
@@ -137,6 +140,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let texture_layer = max(i32(round(input.texture_layer)), 0);
     let liquid_profile = step(0.5, input.render_profile) * (1.0 - step(1.5, input.render_profile));
     let gem_profile = step(3.5, input.render_profile) * (1.0 - step(4.5, input.render_profile));
+    let camera_trigger_profile = step(5.5, input.render_profile) * (1.0 - step(6.5, input.render_profile));
     let wave_a = sin((input.uv.x * 8.0 + input.uv.y * 11.0) + u_color_space.flags.y * 2.8);
     let wave_b = cos((input.uv.x * 13.0 - input.uv.y * 7.0) - u_color_space.flags.y * 3.6);
     let liquid_uv_offset = vec2<f32>(wave_a, wave_b) * (0.017 * liquid_profile);
@@ -178,7 +182,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         color = linear_to_srgb(color);
     }
 
-    let final_color = vec4<f32>(color, input.color.a * texture_sample.a);
+    let camera_trigger_distance = distance(u_camera.camera_position.xyz, input.color_outline.xyz);
+    let camera_trigger_fade = smoothstep(0.75, 3.0, camera_trigger_distance);
+    let profile_fade = mix(1.0, camera_trigger_fade, camera_trigger_profile);
+    let final_color = vec4<f32>(color, input.color.a * texture_sample.a * profile_fade);
     if final_color.a < 0.004 {
         discard;
     }

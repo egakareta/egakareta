@@ -885,6 +885,7 @@ impl State {
         let view_proj = proj * view;
         let camera_uniform = CameraUniform {
             view_proj: view_proj.to_cols_array_2d(),
+            camera_position: [eye.x, eye.y, eye.z, 0.0],
         };
 
         {
@@ -908,6 +909,7 @@ impl State {
         let view_proj = proj * view;
         let camera_uniform = CameraUniform {
             view_proj: view_proj.to_cols_array_2d(),
+            camera_position: [eye.x, eye.y, eye.z, 0.0],
         };
 
         self.render.gpu.queue.write_buffer(
@@ -938,6 +940,7 @@ impl State {
         let view_proj = proj * view;
         let camera_uniform = CameraUniform {
             view_proj: view_proj.to_cols_array_2d(),
+            camera_position: [eye.x, eye.y, eye.z, 0.0],
         };
 
         self.render.gpu.queue.write_buffer(

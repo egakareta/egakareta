@@ -7,11 +7,10 @@
 */
 use std::collections::HashMap;
 
-use crate::mesh::advanced_shapes::{append_cone, append_sphere};
+use crate::mesh::advanced_shapes::append_cone;
 use crate::mesh::obj::{resolve_obj_mesh, ObjMaterial, ObjMesh};
 use crate::mesh::shapes::{append_prism, append_quad};
 use crate::mesh::MeshGeometry;
-use crate::triggers::{CameraTrigger, CameraTriggerMode};
 use crate::types::{Direction, Vertex};
 use glam::{EulerRot, Quat, Vec2, Vec3};
 
@@ -518,88 +517,6 @@ fn append_flat_xz_segment(
         [start.x - normal.x, y, start.y - normal.y],
         color,
     );
-}
-
-pub(crate) fn build_camera_trigger_marker_vertices(
-    camera_triggers: &[CameraTrigger],
-    selected_index: Option<usize>,
-    current_camera_eye: Option<Vec3>,
-) -> Vec<Vertex> {
-    puffin::profile_scope!("BuildCameraTriggerMarkerVertices");
-    const CAMERA_BASE_DISTANCE: f32 = 24.0;
-    const HIDE_DISTANCE_SQUARED: f32 = 0.5 * 0.5;
-
-    let mut vertices = Vec::new();
-
-    for (index, camera_trigger) in camera_triggers.iter().enumerate() {
-        let is_selected = selected_index == Some(index);
-        let distance = CAMERA_BASE_DISTANCE;
-
-        let (sin_rotation, cos_rotation) = camera_trigger.rotation.sin_cos();
-        let (sin_pitch, cos_pitch) = camera_trigger.pitch.sin_cos();
-
-        // Mirrors the editor camera pose: camera triggers are rendered at camera eye position.
-        let offset = [
-            -cos_pitch * sin_rotation * distance,
-            sin_pitch * distance,
-            -cos_pitch * cos_rotation * distance,
-        ];
-        let eye = [
-            camera_trigger.target_position[0] + offset[0],
-            camera_trigger.target_position[1] + offset[1],
-            camera_trigger.target_position[2] + offset[2],
-        ];
-
-        // Skip rendering if the camera is inside the trigger marker.
-        if let Some(cam_eye) = current_camera_eye {
-            let camera_trigger_eye_vec = Vec3::from_array(eye);
-            if cam_eye.distance_squared(camera_trigger_eye_vec) < HIDE_DISTANCE_SQUARED {
-                continue;
-            }
-        }
-
-        let forward = if distance > f32::EPSILON {
-            [
-                -offset[0] / distance,
-                -offset[1] / distance,
-                -offset[2] / distance,
-            ]
-        } else {
-            [0.0, 0.0, 1.0]
-        };
-
-        let (ball_color, arrow_color) = if is_selected {
-            ([1.0, 0.9, 0.25, 0.95], [1.0, 0.8, 0.1, 0.95])
-        } else if matches!(camera_trigger.mode, CameraTriggerMode::Follow) {
-            ([0.95, 0.4, 0.2, 0.85], [1.0, 0.55, 0.25, 0.9])
-        } else {
-            ([0.2, 0.75, 1.0, 0.85], [0.25, 0.85, 1.0, 0.9])
-        };
-
-        let ball_radius = if is_selected { 0.42 } else { 0.34 };
-        append_sphere(&mut vertices, eye, ball_radius, ball_color);
-
-        let shaft_start = [
-            eye[0] + forward[0] * (ball_radius * 1.05),
-            eye[1] + forward[1] * (ball_radius * 1.05),
-            eye[2] + forward[2] * (ball_radius * 1.05),
-        ];
-        let shaft_end = [
-            shaft_start[0] + forward[0] * 1.2,
-            shaft_start[1] + forward[1] * 1.2,
-            shaft_start[2] + forward[2] * 1.2,
-        ];
-        let tip = [
-            shaft_end[0] + forward[0] * 0.6,
-            shaft_end[1] + forward[1] * 0.6,
-            shaft_end[2] + forward[2] * 0.6,
-        ];
-
-        append_cone(&mut vertices, shaft_start, shaft_end, 0.09, arrow_color);
-        append_cone(&mut vertices, shaft_end, tip, 0.22, arrow_color);
-    }
-
-    vertices
 }
 
 pub(crate) fn build_transform_trigger_marker_vertices(

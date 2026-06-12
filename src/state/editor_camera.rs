@@ -9,15 +9,15 @@ use glam::{Mat4, Vec2, Vec3};
 
 use super::{EditorSubsystem, State};
 use crate::triggers::{
-    timed_triggers_to_camera_triggers, CameraTrigger, CameraTriggerMode, TimedTrigger,
-    TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+    camera_trigger_eye_from_target, camera_trigger_forward, timed_triggers_to_camera_triggers,
+    CameraTrigger, CameraTriggerMode, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
+    TimedTriggerTarget, CAMERA_TRIGGER_VIEW_DISTANCE,
 };
 use crate::types::{
     AppPhase, DEFAULT_EDITOR_CAMERA_PITCH, DEFAULT_EDITOR_CAMERA_ROTATION,
     DEFAULT_PLAY_CAMERA_PITCH, DEFAULT_PLAY_CAMERA_ROTATION,
 };
 
-const EDITOR_CAMERA_BASE_DISTANCE: f32 = 24.0;
 const PLAY_CAMERA_DISTANCE: f32 = 28.28;
 const MIN_EDITOR_PITCH: f32 = -89.9f32.to_radians();
 const MAX_EDITOR_PITCH: f32 = 89.9f32.to_radians();
@@ -74,9 +74,8 @@ fn offset_from_rotation_pitch(rotation: f32, pitch: f32, distance: f32) -> Vec3 
 }
 
 fn editor_camera_offset_for_pose(rotation: f32, pitch: f32) -> Vec3 {
-    let distance = EDITOR_CAMERA_BASE_DISTANCE;
     let pitch = pitch.clamp(MIN_EDITOR_PITCH, MAX_EDITOR_PITCH);
-    offset_from_rotation_pitch(rotation, pitch, distance)
+    offset_from_rotation_pitch(rotation, pitch, CAMERA_TRIGGER_VIEW_DISTANCE)
 }
 
 fn playing_camera_offset_for_angles(rotation: f32, pitch: f32) -> Vec3 {
@@ -125,18 +124,18 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn camera_trigger_marker_eye(&self, camera_trigger: &CameraTrigger) -> Vec3 {
-        Vec3::from_array(camera_trigger.target_position)
-            + editor_camera_offset_for_pose(camera_trigger.rotation, camera_trigger.pitch)
+        Vec3::from_array(camera_trigger_eye_from_target(
+            camera_trigger.target_position,
+            camera_trigger.rotation,
+            camera_trigger.pitch,
+        ))
     }
 
     pub(crate) fn camera_trigger_marker_forward(&self, camera_trigger: &CameraTrigger) -> Vec3 {
-        let eye = self.camera_trigger_marker_eye(camera_trigger);
-        let to_target = Vec3::from_array(camera_trigger.target_position) - eye;
-        if to_target.length_squared() <= f32::EPSILON {
-            Vec3::Z
-        } else {
-            to_target.normalize()
-        }
+        Vec3::from_array(camera_trigger_forward(
+            camera_trigger.rotation,
+            camera_trigger.pitch,
+        ))
     }
 
     pub(crate) fn editor_camera_target(&self) -> Vec3 {
