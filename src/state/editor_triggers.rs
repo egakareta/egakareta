@@ -212,6 +212,14 @@ impl EditorSubsystem {
         triggers_from_objects(&self.objects)
     }
 
+    pub(crate) fn sync_trigger_cache_from_objects(&mut self) {
+        self.triggers.items = self.triggers();
+        self.triggers.selected_index = self
+            .triggers
+            .selected_index
+            .filter(|index| *index < self.triggers.items.len());
+    }
+
     pub(crate) fn selected_trigger_index(&self) -> Option<usize> {
         let triggers = self.triggers();
         self.triggers
@@ -318,12 +326,7 @@ impl EditorSubsystem {
             self.objects.push(trigger_object_from_payload(trigger));
         }
 
-        // Sync cache for selected_index tracking
-        self.triggers.items = self.triggers();
-        self.triggers.selected_index = self
-            .triggers
-            .selected_index
-            .filter(|index| *index < self.triggers.items.len());
+        self.sync_trigger_cache_from_objects();
     }
 
     pub(crate) fn add_trigger(&mut self, trigger: TimedTrigger) -> usize {
@@ -334,8 +337,7 @@ impl EditorSubsystem {
         self.objects
             .push(trigger_object_from_payload(trigger.clone()));
 
-        // Sync cache for selected_index tracking
-        self.triggers.items = self.triggers();
+        self.sync_trigger_cache_from_objects();
         let cache_index = self
             .triggers
             .items
@@ -361,11 +363,7 @@ impl EditorSubsystem {
         };
 
         self.objects[index].trigger = trigger;
-        self.triggers.items = self.triggers();
-        self.triggers.selected_index = self
-            .triggers
-            .selected_index
-            .filter(|index| *index < self.triggers.items.len());
+        self.sync_trigger_cache_from_objects();
     }
 
     pub(crate) fn set_trigger_selected(&mut self, selected: Option<usize>) {
@@ -642,6 +640,30 @@ mod tests {
             assert!(!state.editor.simulate_trigger_hitboxes());
             state.editor.set_simulate_trigger_hitboxes(true);
             assert!(state.editor.simulate_trigger_hitboxes());
+        });
+    }
+
+    #[test]
+    fn removing_trigger_block_syncs_cache_so_deleted_triggers_do_not_reappear() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.objects.clear();
+            state
+                .editor
+                .set_triggers(vec![object_move_trigger(0.0), object_move_trigger(1.0)]);
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+
+            assert!(state.editor.remove_selected());
+            assert_eq!(state.editor.triggers().len(), 1);
+            assert_eq!(state.editor.triggers.items.len(), 1);
+
+            let retained_triggers = std::mem::take(&mut state.editor.triggers.items);
+            state.editor.set_triggers(retained_triggers);
+            assert_eq!(state.editor.triggers().len(), 1);
+
+            state.editor.add_trigger(object_move_trigger(2.0));
+            assert_eq!(state.editor.triggers().len(), 2);
         });
     }
 }

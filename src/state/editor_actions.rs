@@ -427,11 +427,13 @@ impl EditorSubsystem {
             }
             self.clear_block_selection();
             self.invalidate_samples();
+            self.sync_trigger_cache_from_objects();
             return true;
         }
 
         if remove_topmost_block_at_cursor(&mut self.objects, self.ui.cursor) {
             self.invalidate_samples();
+            self.sync_trigger_cache_from_objects();
             return true;
         }
 
