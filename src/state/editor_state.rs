@@ -1314,17 +1314,24 @@ impl State {
                 &replaced_object_ids,
             );
             self.editor.set_triggers(retained_triggers);
+            let mut created_trigger_indices = Vec::with_capacity(triggers.len());
             for trigger in triggers {
-                self.editor.add_trigger(trigger);
+                created_trigger_indices.push(self.editor.add_trigger(trigger));
             }
-        }
 
-        self.set_editor_mode(capture.previous_mode);
+            self.set_editor_mode(capture.previous_mode);
+            self.editor.replace_block_selection(created_trigger_indices);
+            self.editor.ui.hovered_block_index = self.editor.ui.selected_block_index;
+            self.sync_primary_selection_from_indices();
+        } else {
+            self.set_editor_mode(capture.previous_mode);
+        }
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
         self.rebuild_editor_gizmo_vertices();
         self.rebuild_editor_selection_outline_vertices();
         let mut dirty = EditorDirtyFlags::block_geometry_changed();
+        dirty.rebuild_selection_overlays = true;
         dirty.sync_game_objects = true;
         dirty.rebuild_preview_player = true;
         dirty.rebuild_cursor = true;
@@ -1665,6 +1672,8 @@ mod tests {
             assert_eq!(state.editor.objects[3].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
             assert_object_pose(&state.editor.objects[3], [5.0, 6.0, 7.0], [1.0, 3.0, 2.0]);
             assert_eq!(state.editor.objects[3].rotation_degrees, [15.0, 0.0, 90.0]);
+            assert_eq!(state.editor.ui.selected_block_index, Some(2));
+            assert_eq!(state.editor.ui.selected_block_indices, vec![2, 3]);
 
             let mut triggers = state.editor.triggers.items.clone();
             triggers.sort_by_key(|trigger| match &trigger.target {
@@ -1747,6 +1756,8 @@ mod tests {
 
             assert_eq!(state.editor.objects.len(), 4);
             assert_object_pose(&state.editor.objects[1], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+            assert_eq!(state.editor.ui.selected_block_index, Some(3));
+            assert_eq!(state.editor.ui.selected_block_indices, vec![3]);
 
             let mut found_retargeted_capture = false;
             for trigger in &state.editor.triggers.items {
