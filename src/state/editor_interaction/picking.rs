@@ -6,8 +6,10 @@
 
 */
 use super::super::EditorSubsystem;
-use crate::triggers::TimedTriggerAction;
-use crate::types::{EditorMode, EditorPickResult, EditorTapDivisionPick, LevelObject};
+use crate::triggers::{camera_trigger_forward, TimedTriggerAction};
+use crate::types::{
+    EditorMode, EditorPickResult, EditorTapDivisionPick, LevelObject, CAMERA_TRIGGER_BLOCK_ID,
+};
 use glam::{EulerRot, Mat3, Vec2, Vec3, Vec4};
 
 const CAMERA_TRIGGER_BALL_PICK_RADIUS: f32 = 0.55;
@@ -97,6 +99,24 @@ impl EditorSubsystem {
             }
 
             for (index, obj) in self.objects.iter().enumerate() {
+                if obj.block_id == CAMERA_TRIGGER_BLOCK_ID {
+                    if let Some((t, normal)) =
+                        self.ray_intersect_camera_trigger_block(ray_origin, ray_dir, obj)
+                    {
+                        if t < min_t {
+                            min_t = t;
+                            hit_found = true;
+                            hit_block_index = Some(index);
+                            hit_trigger_index = None;
+                            hit_tap_index = None;
+                            hit_tap_division = None;
+                            cursor_override = None;
+                            best_hit_normal = normal;
+                        }
+                    }
+                    continue;
+                }
+
                 if !Self::ray_may_hit_block_bounds(ray_origin, ray_dir, obj, min_t) {
                     continue;
                 }
@@ -457,6 +477,39 @@ impl EditorSubsystem {
         closest_distance_sq <= radius * radius
     }
 
+    fn ray_intersect_camera_trigger_block(
+        &self,
+        ray_origin: Vec3,
+        ray_dir: Vec3,
+        obj: &crate::types::LevelObject,
+    ) -> Option<(f32, Vec3)> {
+        let eye = Vec3::from_array(obj.position);
+        let forward = Vec3::from_array(camera_trigger_forward(
+            obj.rotation_degrees[1].to_radians(),
+            obj.rotation_degrees[0].to_radians(),
+        ));
+        let arrow_direction = if forward.length_squared() > f32::EPSILON {
+            forward.normalize()
+        } else {
+            Vec3::Z
+        };
+
+        let mut marker_t =
+            self.ray_intersect_sphere(ray_origin, ray_dir, eye, CAMERA_TRIGGER_BALL_PICK_RADIUS);
+
+        let arrow_center = eye + arrow_direction * CAMERA_TRIGGER_ARROW_PICK_OFFSET;
+        if let Some(arrow_t) = self.ray_intersect_sphere(
+            ray_origin,
+            ray_dir,
+            arrow_center,
+            CAMERA_TRIGGER_ARROW_PICK_RADIUS,
+        ) {
+            marker_t = Some(marker_t.map_or(arrow_t, |best| best.min(arrow_t)));
+        }
+
+        marker_t.map(|t| (t, Vec3::Y))
+    }
+
     fn ray_intersect_sphere(
         &self,
         ray_origin: Vec3,
@@ -659,6 +712,33 @@ mod tests {
                 &block,
             );
             assert!(miss.is_none());
+        });
+    }
+
+    #[test]
+    fn camera_trigger_block_pick_uses_arrow_visual_outside_old_cube_bounds() {
+        pollster::block_on(async {
+            let state = State::new_test().await;
+            let camera_trigger = LevelObject {
+                position: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                block_id: "core/camera_trigger".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
+            };
+
+            let ray_origin = Vec3::new(0.0, 5.0, super::CAMERA_TRIGGER_ARROW_PICK_OFFSET);
+            let ray_dir = -Vec3::Y;
+
+            assert!(state
+                .editor
+                .ray_intersect_rotated_block(ray_origin, ray_dir, &camera_trigger)
+                .is_none());
+            assert!(state
+                .editor
+                .ray_intersect_camera_trigger_block(ray_origin, ray_dir, &camera_trigger)
+                .is_some());
         });
     }
 

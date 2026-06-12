@@ -2261,10 +2261,7 @@ mod tests {
             );
             let marker_screen = state
                 .editor
-                .world_to_screen_v(
-                    Vec3::from_array(camera_trigger.target_position) + Vec3::splat(0.5),
-                    viewport,
-                )
+                .world_to_screen_v(Vec3::from_array(camera_trigger.target_position), viewport)
                 .expect("camera marker should project to the screen");
 
             state.process_input_event(InputEvent::PointerMoved {
@@ -2332,10 +2329,7 @@ mod tests {
             );
             let marker_screen = state
                 .editor
-                .world_to_screen_v(
-                    Vec3::from_array(camera_trigger.target_position) + Vec3::splat(0.5),
-                    viewport,
-                )
+                .world_to_screen_v(Vec3::from_array(camera_trigger.target_position), viewport)
                 .expect("camera marker should project to the screen");
 
             let start_x = marker_screen.x as f64 - 24.0;

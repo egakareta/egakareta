@@ -10,7 +10,7 @@ use std::borrow::Cow;
 use glam::Vec3;
 
 use super::{EditorDirtyFlags, EditorSubsystem, State};
-use crate::block_repository::resolve_block_definition;
+use crate::block_repository::{resolve_block_definition, BlockRenderProfile};
 use crate::editor_domain::tap_time_is_timing_division;
 use crate::editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds_with_triggers};
 use crate::game::trigger_transformed_objects_at_time;
@@ -36,6 +36,72 @@ use crate::types::{
 };
 
 const SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD: usize = 700;
+const EDITOR_SELECTION_OUTLINE_COLOR: [f32; 4] = [0.098, 0.6, 1.0, 1.0];
+const EDITOR_HOVER_OUTLINE_COLOR: [f32; 4] = [0.698, 0.898, 1.0, 1.0];
+
+#[derive(Clone, Copy)]
+enum EditorObjectOutlineStyle {
+    Selection,
+    Hover,
+}
+
+impl EditorObjectOutlineStyle {
+    fn color(self) -> [f32; 4] {
+        match self {
+            Self::Selection => EDITOR_SELECTION_OUTLINE_COLOR,
+            Self::Hover => EDITOR_HOVER_OUTLINE_COLOR,
+        }
+    }
+}
+
+fn is_camera_trigger_block(object: &LevelObject) -> bool {
+    resolve_block_definition(&object.block_id).render.profile == BlockRenderProfile::CameraTrigger
+}
+
+fn build_camera_trigger_visual_outline_vertices(
+    object: &LevelObject,
+    color: [f32; 4],
+    line_width: f32,
+) -> Vec<Vertex> {
+    let mut vertices = build_block_geometry_for_object(object).to_triangle_vertices();
+    let outline_width_pixels = (line_width * 1.35).max(1.0);
+    for vertex in &mut vertices {
+        vertex.color = color;
+        vertex.color_outline = [
+            object.position[0],
+            object.position[1],
+            object.position[2],
+            outline_width_pixels,
+        ];
+        vertex.render_profile = 3.0;
+    }
+    vertices
+}
+
+fn build_editor_object_outline_vertices(
+    object: &LevelObject,
+    style: EditorObjectOutlineStyle,
+    line_width: f32,
+) -> Vec<Vertex> {
+    if is_camera_trigger_block(object) {
+        return build_camera_trigger_visual_outline_vertices(object, style.color(), line_width);
+    }
+
+    match style {
+        EditorObjectOutlineStyle::Selection => build_editor_selection_outline_vertices(
+            object.position,
+            object.size,
+            object.rotation_degrees,
+            line_width,
+        ),
+        EditorObjectOutlineStyle::Hover => build_editor_hover_outline_vertices(
+            object.position,
+            object.size,
+            object.rotation_degrees,
+            line_width,
+        ),
+    }
+}
 
 fn append_outline_instance(
     mask_vertices: &mut Vec<Vertex>,
@@ -758,10 +824,9 @@ impl State {
         let mut stencil_geometry = MeshGeometry::default();
         for index in indices_to_outline {
             let obj = &self.editor.objects[index];
-            all_vertices.append(&mut build_editor_hover_outline_vertices(
-                obj.position,
-                obj.size,
-                obj.rotation_degrees,
+            all_vertices.append(&mut build_editor_object_outline_vertices(
+                obj,
+                EditorObjectOutlineStyle::Hover,
                 3.0,
             ));
             stencil_geometry.append_geometry(build_block_geometry_for_object(obj));
@@ -963,10 +1028,9 @@ impl State {
                     &mut outline_vertices,
                     &mut instances,
                     obj,
-                    build_editor_selection_outline_vertices(
-                        obj.position,
-                        obj.size,
-                        obj.rotation_degrees,
+                    build_editor_object_outline_vertices(
+                        obj,
+                        EditorObjectOutlineStyle::Selection,
                         2.0,
                     ),
                 );
@@ -1576,9 +1640,11 @@ fn tap_indicator_color(
 #[cfg(test)]
 mod tests {
     use super::{
-        tap_division_marker_indicators, tap_indicator_color, transform_trigger_markers_for_capture,
-        transform_trigger_markers_for_triggers, State,
+        build_editor_object_outline_vertices, tap_division_marker_indicators, tap_indicator_color,
+        transform_trigger_markers_for_capture, transform_trigger_markers_for_triggers,
+        EditorObjectOutlineStyle, State, EDITOR_SELECTION_OUTLINE_COLOR,
     };
+    use crate::mesh::blocks::build_block_geometry_for_object;
     use crate::mesh::builders::game::build_colored_tap_indicator_vertices;
     use crate::state::render::MeshDrawData;
     use crate::triggers::{
@@ -1601,6 +1667,31 @@ mod tests {
         match draw_data {
             MeshDrawData::Vertices { count, .. } | MeshDrawData::Indexed { count, .. } => count,
         }
+    }
+
+    #[test]
+    fn camera_trigger_selection_outline_uses_visual_mesh_instead_of_cube_hull() {
+        let object = LevelObject {
+            position: [3.0, 4.0, 5.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            block_id: "core/camera_trigger".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
+        };
+
+        let visual_vertices = build_block_geometry_for_object(&object).to_triangle_vertices();
+        let outline_vertices =
+            build_editor_object_outline_vertices(&object, EditorObjectOutlineStyle::Selection, 2.0);
+
+        assert_ne!(visual_vertices.len(), 36);
+        assert_eq!(outline_vertices.len(), visual_vertices.len());
+        assert!(outline_vertices
+            .iter()
+            .all(|vertex| vertex.color == EDITOR_SELECTION_OUTLINE_COLOR));
+        assert!(outline_vertices
+            .iter()
+            .all(|vertex| (vertex.render_profile - 3.0).abs() <= f32::EPSILON));
     }
 
     fn approx_eq(a: f32, b: f32, eps: f32) {
