@@ -15,6 +15,7 @@ pub(crate) const MAX_TIMELINE_DURATION_SECONDS: f32 = 600.0;
 pub(crate) const DEFAULT_TIMELINE_WINDOW_SECONDS: f32 = 20.0;
 const TIMELINE_TAP_HIT_RADIUS_PIXELS: f32 = 8.0;
 const TIMELINE_CURRENT_TAP_EPSILON_SECONDS: f32 = 0.0001;
+const TIMELINE_CONTROL_HEIGHT_SCALE: f32 = 1.5;
 
 pub(crate) fn show_shadowed_label(
     ui: &mut egui::Ui,
@@ -120,6 +121,38 @@ fn timeline_bar_tap_is_current(tap_time: f32, timeline_time_seconds: f32) -> boo
     (tap_time - timeline_time_seconds).abs() <= TIMELINE_CURRENT_TAP_EPSILON_SECONDS
 }
 
+fn format_timeline_time_seconds(time_seconds: f64) -> String {
+    let total_milliseconds = (time_seconds.max(0.0) * 1000.0).round() as u64;
+    let minutes = total_milliseconds / 60_000;
+    let seconds = (total_milliseconds / 1000) % 60;
+    let milliseconds = total_milliseconds % 1000;
+
+    format!("{minutes:02}:{seconds:02}:{milliseconds:03}")
+}
+
+fn parse_timeline_time_seconds(text: &str) -> Option<f64> {
+    let text = text.trim();
+    let text = text
+        .strip_prefix(egui_phosphor::regular::CLOCK)
+        .unwrap_or(text);
+    let text = text.trim();
+    let parts: Vec<&str> = text.split(':').collect();
+
+    match parts.as_slice() {
+        [minutes, seconds, milliseconds] => {
+            let minutes = minutes.trim().parse::<u64>().ok()?;
+            let seconds = seconds.trim().parse::<u64>().ok()?;
+            let milliseconds = milliseconds.trim().parse::<u64>().ok()?;
+            if seconds >= 60 || milliseconds >= 1000 {
+                return None;
+            }
+            Some(minutes as f64 * 60.0 + seconds as f64 + milliseconds as f64 / 1000.0)
+        }
+        [seconds] => seconds.trim().parse::<f64>().ok(),
+        _ => None,
+    }
+}
+
 pub(crate) fn show_timeline_bar(
     ui: &mut egui::Ui,
     view: &EditorUiViewModel<'_>,
@@ -141,13 +174,16 @@ pub(crate) fn show_timeline_bar(
     let view_end = view_start + visible_duration;
 
     ui.horizontal(|ui| {
-        ui.label(format!("{} Time:", egui_phosphor::regular::CLOCK));
+        let timeline_control_height = ui.spacing().interact_size.y * TIMELINE_CONTROL_HEIGHT_SCALE;
         let mut time_seconds = view.timeline_time_seconds;
         let drag_value = egui::DragValue::new(&mut time_seconds)
             .speed(0.01)
-            .range(0.0..=duration_seconds);
+            .range(0.0..=duration_seconds)
+            .prefix(format!("{} ", egui_phosphor::regular::CLOCK))
+            .custom_formatter(|value, _| format_timeline_time_seconds(value))
+            .custom_parser(parse_timeline_time_seconds);
         if ui
-            .add_sized([80.0, ui.spacing().interact_size.y], drag_value)
+            .add_sized([112.0, timeline_control_height], drag_value)
             .changed()
         {
             commands.push(AppCommand::Editor(EditorCommand::SetTimelineTime(
@@ -155,8 +191,7 @@ pub(crate) fn show_timeline_bar(
             )));
         }
 
-        ui.add_space(4.0);
-        let button_size = egui::vec2(22.0, ui.spacing().interact_size.y);
+        let button_size = egui::vec2(timeline_control_height.max(22.0), timeline_control_height);
 
         let play_icon = if view.playing {
             egui_phosphor::regular::PAUSE
@@ -171,7 +206,6 @@ pub(crate) fn show_timeline_bar(
         {
             commands.push(AppCommand::Editor(EditorCommand::ToggleTimelinePlayback));
         }
-        ui.add_space(4.0);
 
         if ui
             .add_sized(
@@ -206,7 +240,7 @@ pub(crate) fn show_timeline_bar(
         let playtest_button_width = 72.0;
         let available_width =
             (ui.available_width() - playtest_button_width - ui.spacing().item_spacing.x).max(0.0);
-        let timeline_height = 18.0;
+        let timeline_height = timeline_control_height;
         let (rect, response) = ui.allocate_exact_size(
             egui::vec2(available_width, timeline_height),
             egui::Sense::click_and_drag(),
@@ -434,7 +468,7 @@ pub(crate) fn show_timeline_bar(
         ui.add_space(4.0);
         if ui
             .add_sized(
-                [playtest_button_width, ui.spacing().interact_size.y],
+                [playtest_button_width, timeline_control_height],
                 egui::Button::new(format!("{} Test", egui_phosphor::regular::GAME_CONTROLLER)),
             )
             .on_hover_text(format!(
@@ -934,6 +968,23 @@ mod tests {
         assert!(timeline_bar_tap_is_current(5.0, 5.0));
         assert!(timeline_bar_tap_is_current(5.0, 5.00005));
         assert!(!timeline_bar_tap_is_current(5.0, 5.001));
+    }
+
+    #[test]
+    fn timeline_time_formatter_uses_minutes_seconds_milliseconds() {
+        assert_eq!(format_timeline_time_seconds(0.0), "00:00:000");
+        assert_eq!(format_timeline_time_seconds(62.345), "01:02:345");
+        assert_eq!(format_timeline_time_seconds(599.9996), "10:00:000");
+    }
+
+    #[test]
+    fn timeline_time_parser_accepts_formatted_and_seconds_input() {
+        let formatted = parse_timeline_time_seconds("01:02:345").expect("formatted time");
+        assert!((formatted - 62.345).abs() <= 0.001);
+        let seconds = parse_timeline_time_seconds("12.5").expect("seconds fallback");
+        assert!((seconds - 12.5).abs() <= 0.001);
+        assert!(parse_timeline_time_seconds("00:60:000").is_none());
+        assert!(parse_timeline_time_seconds("00:00:1000").is_none());
     }
 
     #[test]
