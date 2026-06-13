@@ -12,10 +12,18 @@ use crate::types::{LevelObject, DEFAULT_CAMERA_TRIGGER_PITCH, DEFAULT_CAMERA_TRI
 pub(crate) const CAMERA_TRIGGER_VIEW_DISTANCE: f32 = 24.0;
 
 pub(crate) fn camera_trigger_offset(rotation: f32, pitch: f32) -> [f32; 3] {
-    let horizontal_distance = CAMERA_TRIGGER_VIEW_DISTANCE * pitch.cos();
+    camera_trigger_offset_with_distance(rotation, pitch, CAMERA_TRIGGER_VIEW_DISTANCE)
+}
+
+pub(crate) fn camera_trigger_offset_with_distance(
+    rotation: f32,
+    pitch: f32,
+    distance: f32,
+) -> [f32; 3] {
+    let horizontal_distance = distance * pitch.cos();
     [
         -rotation.sin() * horizontal_distance,
-        pitch.sin() * CAMERA_TRIGGER_VIEW_DISTANCE,
+        pitch.sin() * distance,
         -rotation.cos() * horizontal_distance,
     ]
 }
@@ -26,6 +34,20 @@ pub(crate) fn camera_trigger_eye_from_target(
     pitch: f32,
 ) -> [f32; 3] {
     let offset = camera_trigger_offset(rotation, pitch);
+    [
+        target_position[0] + offset[0],
+        target_position[1] + offset[1],
+        target_position[2] + offset[2],
+    ]
+}
+
+pub(crate) fn camera_trigger_eye_from_target_with_distance(
+    target_position: [f32; 3],
+    rotation: f32,
+    pitch: f32,
+    distance: f32,
+) -> [f32; 3] {
+    let offset = camera_trigger_offset_with_distance(rotation, pitch, distance);
     [
         target_position[0] + offset[0],
         target_position[1] + offset[1],
@@ -55,11 +77,20 @@ pub(crate) fn camera_trigger_target_from_eye(
 }
 
 pub(crate) fn camera_trigger_forward(rotation: f32, pitch: f32) -> [f32; 3] {
-    let offset = camera_trigger_offset(rotation, pitch);
+    camera_trigger_forward_with_distance(rotation, pitch, CAMERA_TRIGGER_VIEW_DISTANCE)
+}
+
+pub(crate) fn camera_trigger_forward_with_distance(
+    rotation: f32,
+    pitch: f32,
+    distance: f32,
+) -> [f32; 3] {
+    let distance = distance.max(0.001);
+    let offset = camera_trigger_offset_with_distance(rotation, pitch, distance);
     [
-        -offset[0] / CAMERA_TRIGGER_VIEW_DISTANCE,
-        -offset[1] / CAMERA_TRIGGER_VIEW_DISTANCE,
-        -offset[2] / CAMERA_TRIGGER_VIEW_DISTANCE,
+        -offset[0] / distance,
+        -offset[1] / distance,
+        -offset[2] / distance,
     ]
 }
 
@@ -115,6 +146,14 @@ pub(crate) fn default_camera_trigger_pitch() -> f32 {
 
 pub(crate) fn is_default_camera_trigger_pitch(value: &f32) -> bool {
     (*value - DEFAULT_CAMERA_TRIGGER_PITCH).abs() <= 1e-6
+}
+
+pub(crate) fn default_camera_trigger_distance() -> f32 {
+    CAMERA_TRIGGER_VIEW_DISTANCE
+}
+
+pub(crate) fn is_default_camera_trigger_distance(value: &f32) -> bool {
+    (*value - CAMERA_TRIGGER_VIEW_DISTANCE).abs() <= 1e-6
 }
 
 pub(crate) fn default_camera_trigger_transition_interval_seconds() -> f32 {
@@ -198,6 +237,11 @@ pub(crate) struct CameraTrigger {
     )]
     pub(crate) target_position: [f32; 3],
     #[serde(
+        default = "default_camera_trigger_distance",
+        skip_serializing_if = "is_default_camera_trigger_distance"
+    )]
+    pub(crate) distance: f32,
+    #[serde(
         default = "default_camera_trigger_rotation",
         skip_serializing_if = "is_default_camera_trigger_rotation"
     )]
@@ -262,6 +306,21 @@ pub(crate) enum TimedTriggerAction {
             skip_serializing_if = "is_default_camera_trigger_use_full_segment_transition"
         )]
         use_full_segment_transition: bool,
+        #[serde(
+            default = "default_camera_trigger_distance",
+            skip_serializing_if = "is_default_camera_trigger_distance"
+        )]
+        distance: f32,
+        #[serde(
+            default = "default_camera_trigger_rotation",
+            skip_serializing_if = "is_default_camera_trigger_rotation"
+        )]
+        rotation: f32,
+        #[serde(
+            default = "default_camera_trigger_pitch",
+            skip_serializing_if = "is_default_camera_trigger_pitch"
+        )]
+        pitch: f32,
     },
 }
 
@@ -293,6 +352,9 @@ pub(crate) fn camera_triggers_to_timed_triggers(
             CameraTriggerMode::Follow => TimedTriggerAction::CameraFollow {
                 transition_interval_seconds: camera_trigger.transition_interval_seconds,
                 use_full_segment_transition: camera_trigger.use_full_segment_transition,
+                distance: camera_trigger.distance,
+                rotation: camera_trigger.rotation,
+                pitch: camera_trigger.pitch,
             },
             CameraTriggerMode::Static => TimedTriggerAction::CameraPose {
                 transition_interval_seconds: camera_trigger.transition_interval_seconds,
@@ -339,6 +401,7 @@ pub(crate) fn timed_triggers_to_camera_triggers(triggers: &[TimedTrigger]) -> Ve
                     transition_interval_seconds,
                     use_full_segment_transition,
                     target_position,
+                    distance: default_camera_trigger_distance(),
                     rotation,
                     pitch,
                 });
@@ -346,6 +409,9 @@ pub(crate) fn timed_triggers_to_camera_triggers(triggers: &[TimedTrigger]) -> Ve
             TimedTriggerAction::CameraFollow {
                 transition_interval_seconds,
                 use_full_segment_transition,
+                distance,
+                rotation,
+                pitch,
             } => {
                 camera_triggers.push(CameraTrigger {
                     time_seconds: trigger.time_seconds,
@@ -354,8 +420,9 @@ pub(crate) fn timed_triggers_to_camera_triggers(triggers: &[TimedTrigger]) -> Ve
                     transition_interval_seconds,
                     use_full_segment_transition,
                     target_position: default_camera_trigger_target_position(),
-                    rotation: default_camera_trigger_rotation(),
-                    pitch: default_camera_trigger_pitch(),
+                    distance,
+                    rotation,
+                    pitch,
                 });
             }
             TimedTriggerAction::TransformObjects { .. } => {}
@@ -523,9 +590,15 @@ pub(crate) fn triggers_from_objects(objects: &[LevelObject]) -> Vec<TimedTrigger
                 TimedTriggerAction::CameraFollow {
                     transition_interval_seconds,
                     use_full_segment_transition,
+                    distance,
+                    rotation,
+                    pitch,
                 } => TimedTriggerAction::CameraFollow {
                     transition_interval_seconds,
                     use_full_segment_transition,
+                    distance,
+                    rotation,
+                    pitch,
                 },
             };
             Some(trigger)

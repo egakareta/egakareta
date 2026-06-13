@@ -698,7 +698,8 @@ mod tests {
     use crate::state::EditorUiViewModel;
     use crate::test_utils::assert_approx_eq as approx_eq;
     use crate::triggers::{
-        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+        default_camera_trigger_distance, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
+        TimedTriggerTarget,
     };
     use crate::types::{
         AppSettings, EditorMode, MusicMetadata, SettingsSection, SpawnDirection, TimingPoint,
@@ -1048,6 +1049,9 @@ mod tests {
                 action: TimedTriggerAction::CameraFollow {
                     transition_interval_seconds: 1.0,
                     use_full_segment_transition: false,
+                    distance: default_camera_trigger_distance(),
+                    rotation: crate::types::DEFAULT_CAMERA_TRIGGER_ROTATION,
+                    pitch: crate::types::DEFAULT_CAMERA_TRIGGER_PITCH,
                 },
             },
             TimedTrigger {

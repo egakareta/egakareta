@@ -741,9 +741,9 @@ mod tests {
     use crate::commands::AppCommand;
     use crate::state::editor_command::EditorCommand;
     use crate::triggers::{
-        camera_trigger_eye_from_target, camera_triggers_to_timed_triggers, CameraTrigger,
-        CameraTriggerMode, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
-        TimedTriggerTarget,
+        camera_trigger_eye_from_target, camera_triggers_to_timed_triggers,
+        default_camera_trigger_distance, CameraTrigger, CameraTriggerMode, TimedTrigger,
+        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
     };
     use crate::types::{
         AppPhase, EditorMode, KeyChord, LevelObject, MusicMetadata, SettingsSection, TimingPoint,
@@ -2239,6 +2239,7 @@ mod tests {
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 target_position: target.to_array(),
+                distance: default_camera_trigger_distance(),
                 rotation: state.editor.camera.editor_rotation,
                 pitch: state.editor.camera.editor_pitch,
             };
@@ -2312,6 +2313,7 @@ mod tests {
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 target_position: target.to_array(),
+                distance: default_camera_trigger_distance(),
                 rotation: state.editor.camera.editor_rotation,
                 pitch: state.editor.camera.editor_pitch,
             };

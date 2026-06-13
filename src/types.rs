@@ -1800,10 +1800,11 @@ mod tests {
         camera_trigger_eye_from_target, camera_trigger_forward,
         camera_trigger_forward_from_rotation_degrees,
         camera_trigger_rotation_pitch_from_rotation_degrees, camera_trigger_target_from_eye,
-        camera_triggers_to_timed_triggers, default_camera_trigger_pitch,
-        default_camera_trigger_rotation, default_camera_trigger_transition_interval_seconds,
-        timed_triggers_to_camera_triggers, triggers_from_objects, CameraTrigger, CameraTriggerMode,
-        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+        camera_triggers_to_timed_triggers, default_camera_trigger_distance,
+        default_camera_trigger_pitch, default_camera_trigger_rotation,
+        default_camera_trigger_transition_interval_seconds, timed_triggers_to_camera_triggers,
+        triggers_from_objects, CameraTrigger, CameraTriggerMode, TimedTrigger, TimedTriggerAction,
+        TimedTriggerEasing, TimedTriggerTarget,
     };
     use serde_json::json;
 
@@ -2082,6 +2083,7 @@ mod tests {
             transition_interval_seconds: default_camera_trigger_transition_interval_seconds(),
             use_full_segment_transition: false,
             target_position: [0.0, 0.0, 0.0],
+            distance: default_camera_trigger_distance(),
             rotation: default_camera_trigger_rotation(),
             pitch: default_camera_trigger_pitch(),
         };
@@ -2097,6 +2099,34 @@ mod tests {
     }
 
     #[test]
+    fn camera_follow_trigger_defaults_missing_orbit_fields() {
+        let trigger: TimedTrigger = serde_json::from_value(json!({
+            "time_seconds": 1.25,
+            "action": {
+                "kind": "camera_follow"
+            }
+        }))
+        .expect("deserialize camera follow trigger");
+
+        match trigger.action {
+            TimedTriggerAction::CameraFollow {
+                transition_interval_seconds,
+                use_full_segment_transition,
+                distance,
+                rotation,
+                pitch,
+            } => {
+                assert_eq!(transition_interval_seconds, 1.0);
+                assert!(!use_full_segment_transition);
+                assert_eq!(distance, default_camera_trigger_distance());
+                assert_eq!(rotation, default_camera_trigger_rotation());
+                assert_eq!(pitch, default_camera_trigger_pitch());
+            }
+            _ => panic!("expected camera follow action"),
+        }
+    }
+
+    #[test]
     fn converts_camera_triggers_to_triggers_and_back() {
         let camera_triggers = vec![
             CameraTrigger {
@@ -2106,6 +2136,7 @@ mod tests {
                 transition_interval_seconds: 0.4,
                 use_full_segment_transition: true,
                 target_position: [0.0, 0.0, 0.0],
+                distance: 18.0,
                 rotation: default_camera_trigger_rotation(),
                 pitch: default_camera_trigger_pitch(),
             },
@@ -2116,6 +2147,7 @@ mod tests {
                 transition_interval_seconds: 0.25,
                 use_full_segment_transition: false,
                 target_position: [1.0, 2.0, 3.0],
+                distance: default_camera_trigger_distance(),
                 rotation: 0.8,
                 pitch: 0.2,
             },
@@ -2150,6 +2182,7 @@ mod tests {
                     transition_interval_seconds: 1.0,
                     use_full_segment_transition: false,
                     target_position: [2.0, 3.0, 4.0],
+                    distance: default_camera_trigger_distance(),
                     rotation: 0.4,
                     pitch: 0.6,
                 }])
@@ -2201,6 +2234,7 @@ mod tests {
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 target_position: [2.0, 3.0, 4.0],
+                distance: default_camera_trigger_distance(),
                 rotation: 0.0,
                 pitch: 0.0,
             }])

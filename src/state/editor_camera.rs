@@ -123,6 +123,24 @@ impl EditorSubsystem {
         }
     }
 
+    fn follow_camera_view_for_trigger(
+        camera_trigger: &CameraTrigger,
+        live_follow_target: Vec3,
+    ) -> CameraViewSample {
+        let pitch = camera_trigger
+            .pitch
+            .clamp(MIN_PLAYING_PITCH, MAX_EDITOR_PITCH);
+        CameraViewSample {
+            eye: live_follow_target
+                + offset_from_rotation_pitch(
+                    camera_trigger.rotation,
+                    pitch,
+                    camera_trigger.distance.max(0.01),
+                ),
+            target: live_follow_target,
+        }
+    }
+
     pub(crate) fn camera_trigger_marker_eye(&self, camera_trigger: &CameraTrigger) -> Vec3 {
         Vec3::from_array(camera_trigger_eye_from_target(
             camera_trigger.target_position,
@@ -257,7 +275,10 @@ impl State {
         live_follow_sample: CameraViewSample,
     ) -> CameraViewSample {
         match camera_trigger.mode {
-            CameraTriggerMode::Follow => live_follow_sample,
+            CameraTriggerMode::Follow => EditorSubsystem::follow_camera_view_for_trigger(
+                camera_trigger,
+                live_follow_sample.target,
+            ),
             CameraTriggerMode::Static => {
                 EditorSubsystem::static_camera_view_for_trigger(camera_trigger)
             }
@@ -315,10 +336,6 @@ impl State {
         let next = &camera_triggers[next_index];
         let start_sample = self.resolve_camera_trigger_sample(previous, live_follow_sample);
         let end_sample = self.resolve_camera_trigger_sample(next, live_follow_sample);
-
-        if previous.mode == CameraTriggerMode::Follow && next.mode == CameraTriggerMode::Follow {
-            return live_follow_sample;
-        }
 
         let transition_start = if next.use_full_segment_transition {
             previous.time_seconds
@@ -406,14 +423,15 @@ impl State {
 mod tests {
     use super::{
         eased_alpha, editor_camera_offset_for_pose, interpolate_camera_samples,
-        playing_camera_offset_for_angles, CameraViewSample, State, DEFAULT_PLAY_CAMERA_PITCH,
-        DEFAULT_PLAY_CAMERA_ROTATION, MIN_PLAYING_PITCH,
+        offset_from_rotation_pitch, playing_camera_offset_for_angles, CameraViewSample, State,
+        DEFAULT_PLAY_CAMERA_PITCH, DEFAULT_PLAY_CAMERA_ROTATION, MIN_PLAYING_PITCH,
     };
     use crate::triggers::{
-        CameraTrigger, CameraTriggerMode, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
-        TimedTriggerTarget,
+        default_camera_trigger_distance, CameraTrigger, CameraTriggerMode, TimedTrigger,
+        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
     };
     use crate::types::AppPhase;
+    use crate::types::{DEFAULT_CAMERA_TRIGGER_PITCH, DEFAULT_CAMERA_TRIGGER_ROTATION};
     use glam::Vec3;
 
     fn assert_vec3_close(actual: Vec3, expected: Vec3) {
@@ -460,6 +478,24 @@ mod tests {
         transition_interval_seconds: f32,
         use_full_segment_transition: bool,
     ) -> TimedTrigger {
+        follow_trigger_with_orbit(
+            time_seconds,
+            transition_interval_seconds,
+            use_full_segment_transition,
+            default_camera_trigger_distance(),
+            DEFAULT_CAMERA_TRIGGER_ROTATION,
+            DEFAULT_CAMERA_TRIGGER_PITCH,
+        )
+    }
+
+    fn follow_trigger_with_orbit(
+        time_seconds: f32,
+        transition_interval_seconds: f32,
+        use_full_segment_transition: bool,
+        distance: f32,
+        rotation: f32,
+        pitch: f32,
+    ) -> TimedTrigger {
         TimedTrigger {
             time_seconds,
             duration_seconds: 0.0,
@@ -468,6 +504,9 @@ mod tests {
             action: TimedTriggerAction::CameraFollow {
                 transition_interval_seconds,
                 use_full_segment_transition,
+                distance,
+                rotation,
+                pitch,
             },
         }
     }
@@ -522,6 +561,7 @@ mod tests {
             transition_interval_seconds: 1.0,
             use_full_segment_transition: false,
             target_position: [0.0, 0.0, 0.0],
+            distance: default_camera_trigger_distance(),
             rotation: 0.0,
             pitch: 0.0,
         };
@@ -620,7 +660,7 @@ mod tests {
     }
 
     #[test]
-    fn evaluate_camera_track_between_follow_segments_stays_live() {
+    fn evaluate_camera_track_between_follow_segments_uses_follow_orbit() {
         pollster::block_on(async {
             let mut state = new_editor_state().await;
             state.editor.set_triggers(vec![
@@ -629,11 +669,36 @@ mod tests {
             ]);
 
             let target = Vec3::new(1.0, 2.0, 3.0);
-            let expected = state.editor.resolve_live_follow_sample(target, false);
+            let expected = CameraViewSample {
+                eye: target
+                    + offset_from_rotation_pitch(
+                        DEFAULT_CAMERA_TRIGGER_ROTATION,
+                        DEFAULT_CAMERA_TRIGGER_PITCH,
+                        default_camera_trigger_distance(),
+                    ),
+                target,
+            };
             let sample = state.evaluate_camera_track(3.0, target, false);
 
             assert_vec3_close(sample.eye, expected.eye);
             assert_vec3_close(sample.target, expected.target);
+        });
+    }
+
+    #[test]
+    fn evaluate_camera_track_uses_custom_follow_orbit() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.set_triggers(vec![follow_trigger_with_orbit(
+                0.0, 1.0, false, 12.0, 0.25, 0.35,
+            )]);
+
+            let target = Vec3::new(4.0, 1.0, -2.0);
+            let sample = state.evaluate_camera_track(1.0, target, false);
+            let expected_eye = target + offset_from_rotation_pitch(0.25, 0.35, 12.0);
+
+            assert_vec3_close(sample.eye, expected_eye);
+            assert_vec3_close(sample.target, target);
         });
     }
 

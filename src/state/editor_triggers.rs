@@ -6,8 +6,10 @@
 
 */
 use super::EditorSubsystem;
+use crate::editor_domain::interpolate_timeline_sample_positions;
 use crate::triggers::{
-    camera_trigger_eye_from_target, default_camera_trigger_target_position,
+    camera_trigger_eye_from_target, camera_trigger_eye_from_target_with_distance,
+    default_camera_trigger_distance, default_camera_trigger_target_position,
     timed_triggers_to_camera_triggers, triggers_from_objects, CameraTrigger, TimedTrigger,
     TimedTriggerAction, TimedTriggerTarget,
 };
@@ -63,20 +65,23 @@ fn trigger_object_from_payload(trigger: TimedTrigger) -> LevelObject {
             rotation_degrees,
             size,
         } => (*position, *size, *rotation_degrees),
-        TimedTriggerAction::CameraFollow { .. } => {
+        TimedTriggerAction::CameraFollow {
+            distance,
+            rotation,
+            pitch,
+            ..
+        } => {
             let size = [1.0, 1.0, 1.0];
-            let eye = camera_trigger_eye_from_target(
+            let eye = camera_trigger_eye_from_target_with_distance(
                 default_camera_trigger_target_position(),
-                DEFAULT_CAMERA_TRIGGER_ROTATION,
-                DEFAULT_CAMERA_TRIGGER_PITCH,
+                *rotation,
+                *pitch,
+                *distance,
             );
             (
                 camera_trigger_object_position_from_eye(eye, size),
                 size,
-                camera_trigger_rotation_degrees(
-                    DEFAULT_CAMERA_TRIGGER_ROTATION,
-                    DEFAULT_CAMERA_TRIGGER_PITCH,
-                ),
+                camera_trigger_rotation_degrees(*rotation, *pitch),
             )
         }
     };
@@ -195,6 +200,9 @@ impl EditorSubsystem {
             }
             TimedTriggerAction::CameraFollow {
                 transition_interval_seconds,
+                distance,
+                rotation,
+                pitch,
                 ..
             } => {
                 if !transition_interval_seconds.is_finite() {
@@ -202,8 +210,76 @@ impl EditorSubsystem {
                 } else {
                     *transition_interval_seconds = transition_interval_seconds.max(0.0);
                 }
+
+                if !distance.is_finite() {
+                    *distance = default_camera_trigger_distance();
+                } else {
+                    *distance = distance.max(0.01);
+                }
+
+                if !rotation.is_finite() {
+                    *rotation = DEFAULT_CAMERA_TRIGGER_ROTATION;
+                }
+
+                if !pitch.is_finite() {
+                    *pitch = DEFAULT_CAMERA_TRIGGER_PITCH;
+                } else {
+                    *pitch = pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
+                }
             }
         }
+    }
+
+    pub(crate) fn sync_camera_follow_trigger_object_pose(
+        object: &mut LevelObject,
+        trigger: &TimedTrigger,
+        target_position: [f32; 3],
+    ) {
+        let TimedTriggerAction::CameraFollow {
+            distance,
+            rotation,
+            pitch,
+            ..
+        } = trigger.action
+        else {
+            return;
+        };
+
+        let size = [1.0, 1.0, 1.0];
+        let eye = camera_trigger_eye_from_target_with_distance(
+            target_position,
+            rotation,
+            pitch,
+            distance,
+        );
+        object.size = size;
+        object.position = camera_trigger_object_position_from_eye(eye, size);
+        object.rotation_degrees = camera_trigger_rotation_degrees(rotation, pitch);
+    }
+
+    fn timeline_position_for_camera_trigger_marker(&self, time_seconds: f32) -> Option<[f32; 3]> {
+        let cache = &self.timeline.snapshot_cache;
+        if cache.is_empty()
+            || self.timeline.snapshot_cache_revision != self.timeline.simulation_revision
+        {
+            return None;
+        }
+
+        let step_seconds = self.timeline.snapshot_cache_step_seconds.max(1.0 / 480.0);
+        let max_index = cache.len().saturating_sub(1);
+        let sample_position = (time_seconds.max(0.0) / step_seconds).clamp(0.0, max_index as f32);
+        let lower_index = sample_position.floor() as usize;
+        let upper_index = (lower_index + 1).min(max_index);
+        let alpha = (sample_position - lower_index as f32).clamp(0.0, 1.0);
+        let lower = &cache[lower_index];
+        let upper = &cache[upper_index];
+        Some(interpolate_timeline_sample_positions(
+            lower.position,
+            lower.direction,
+            upper.position,
+            upper.direction,
+            alpha,
+        ))
     }
 
     pub(crate) fn triggers(&self) -> Vec<TimedTrigger> {
@@ -257,10 +333,21 @@ impl EditorSubsystem {
                     return None;
                 }
 
-                let camera_trigger =
+                let mut camera_trigger =
                     timed_triggers_to_camera_triggers(std::slice::from_ref(trigger))
                         .into_iter()
                         .next()?;
+                if let Some(target_position) = self
+                    .timeline_position_for_camera_trigger_marker(camera_trigger.time_seconds)
+                    .filter(|_| {
+                        matches!(
+                            camera_trigger.mode,
+                            crate::triggers::CameraTriggerMode::Follow
+                        )
+                    })
+                {
+                    camera_trigger.target_position = target_position;
+                }
                 Some((index, camera_trigger))
             })
             .collect()
@@ -355,6 +442,13 @@ impl EditorSubsystem {
         };
 
         self.objects[index].trigger = trigger;
+        if let Some(trigger) = self.objects[index].trigger.clone() {
+            Self::sync_camera_follow_trigger_object_pose(
+                &mut self.objects[index],
+                &trigger,
+                default_camera_trigger_target_position(),
+            );
+        }
         self.sync_trigger_selection_from_objects();
     }
 
@@ -389,9 +483,11 @@ mod tests {
     use super::EditorSubsystem;
     use crate::state::State;
     use crate::triggers::{
-        camera_trigger_eye_from_object, camera_trigger_eye_from_target, CameraTriggerMode,
-        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+        camera_trigger_eye_from_object, camera_trigger_eye_from_target,
+        default_camera_trigger_distance, CameraTriggerMode, TimedTrigger, TimedTriggerAction,
+        TimedTriggerEasing, TimedTriggerTarget,
     };
+    use crate::types::{DEFAULT_CAMERA_TRIGGER_PITCH, DEFAULT_CAMERA_TRIGGER_ROTATION};
 
     fn object_move_trigger(time_seconds: f32) -> TimedTrigger {
         TimedTrigger {
@@ -438,6 +534,9 @@ mod tests {
             action: TimedTriggerAction::CameraFollow {
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
+                distance: default_camera_trigger_distance(),
+                rotation: DEFAULT_CAMERA_TRIGGER_ROTATION,
+                pitch: DEFAULT_CAMERA_TRIGGER_PITCH,
             },
             ..camera_pose_trigger(1.0)
         };
@@ -527,6 +626,9 @@ mod tests {
                     action: TimedTriggerAction::CameraFollow {
                         transition_interval_seconds: -3.0,
                         use_full_segment_transition: true,
+                        distance: f32::NAN,
+                        rotation: f32::NAN,
+                        pitch: 99.0,
                     },
                 },
             ]);
@@ -540,9 +642,15 @@ mod tests {
                 TimedTriggerAction::CameraFollow {
                     transition_interval_seconds,
                     use_full_segment_transition,
+                    distance,
+                    rotation,
+                    pitch,
                 } => {
                     assert_eq!(transition_interval_seconds, 0.0);
                     assert!(use_full_segment_transition);
+                    assert_eq!(distance, default_camera_trigger_distance());
+                    assert_eq!(rotation, DEFAULT_CAMERA_TRIGGER_ROTATION);
+                    assert!((pitch - 89.9f32.to_radians()).abs() <= 1e-6);
                 }
                 _ => panic!("expected camera follow"),
             }
@@ -609,6 +717,9 @@ mod tests {
                     action: TimedTriggerAction::CameraFollow {
                         transition_interval_seconds: 1.5,
                         use_full_segment_transition: false,
+                        distance: default_camera_trigger_distance(),
+                        rotation: DEFAULT_CAMERA_TRIGGER_ROTATION,
+                        pitch: DEFAULT_CAMERA_TRIGGER_PITCH,
                     },
                     ..camera_pose_trigger(1.0)
                 },

@@ -108,8 +108,9 @@ pub(crate) fn show_selected_block_properties_window(
         EditorPropertyPopup::above_bottom_bar("selected_block_properties", bottom_bar_height),
         |ui| {
             ui.vertical(|ui| {
-                if show_position_controls(ui, &mut selected)
-                    || show_rotation_controls(ui, &mut selected)
+                if !selected_has_camera_follow_trigger(&selected)
+                    && (show_position_controls(ui, &mut selected)
+                        || show_rotation_controls(ui, &mut selected))
                 {
                     push_selected_block_update(commands, &selected);
                 }
@@ -145,6 +146,13 @@ fn selected_has_transform_trigger(selected: &LevelObject) -> bool {
     matches!(
         selected.trigger.as_ref().map(|trigger| &trigger.action),
         Some(TimedTriggerAction::TransformObjects { .. })
+    )
+}
+
+fn selected_has_camera_follow_trigger(selected: &LevelObject) -> bool {
+    matches!(
+        selected.trigger.as_ref().map(|trigger| &trigger.action),
+        Some(TimedTriggerAction::CameraFollow { .. })
     )
 }
 
@@ -274,14 +282,24 @@ fn show_trigger_action_controls(ui: &mut egui::Ui, trigger: &mut TimedTrigger) -
             transition_interval_seconds,
             use_full_segment_transition,
             ..
-        }
-        | TimedTriggerAction::CameraFollow {
-            transition_interval_seconds,
-            use_full_segment_transition,
         } => show_camera_trigger_controls(
             ui,
             transition_interval_seconds,
             use_full_segment_transition,
+        ),
+        TimedTriggerAction::CameraFollow {
+            transition_interval_seconds,
+            use_full_segment_transition,
+            distance,
+            rotation,
+            pitch,
+        } => show_camera_follow_trigger_controls(
+            ui,
+            transition_interval_seconds,
+            use_full_segment_transition,
+            distance,
+            rotation,
+            pitch,
         ),
         TimedTriggerAction::TransformObjects { .. } => show_transform_trigger_summary(ui, trigger),
     }
@@ -309,6 +327,65 @@ fn show_camera_trigger_controls(
         .horizontal(|ui| ui.checkbox(use_full_segment_transition, "Use full segment"))
         .inner
         .changed();
+    changed
+}
+
+fn show_camera_follow_trigger_controls(
+    ui: &mut egui::Ui,
+    transition_interval_seconds: &mut f32,
+    use_full_segment_transition: &mut bool,
+    distance: &mut f32,
+    rotation: &mut f32,
+    pitch: &mut f32,
+) -> bool {
+    let mut changed = false;
+    changed |= ui
+        .horizontal(|ui| {
+            ui.label("Camera:");
+            let mut row_changed = false;
+            row_changed |= ui
+                .add(
+                    egui::DragValue::new(distance)
+                        .speed(0.1)
+                        .range(0.01..=200.0)
+                        .prefix("Distance "),
+                )
+                .changed();
+
+            let mut rotation_degrees = rotation.to_degrees();
+            if ui
+                .add(
+                    egui::DragValue::new(&mut rotation_degrees)
+                        .speed(0.5)
+                        .prefix("Rotation ")
+                        .suffix("°"),
+                )
+                .changed()
+            {
+                *rotation = rotation_degrees.to_radians();
+                row_changed = true;
+            }
+
+            let mut pitch_degrees = pitch.to_degrees();
+            if ui
+                .add(
+                    egui::DragValue::new(&mut pitch_degrees)
+                        .speed(0.5)
+                        .range(-89.9..=89.9)
+                        .prefix("Pitch ")
+                        .suffix("°"),
+                )
+                .changed()
+            {
+                *pitch = pitch_degrees.to_radians();
+                row_changed = true;
+            }
+
+            row_changed
+        })
+        .inner;
+    changed |=
+        show_camera_trigger_controls(ui, transition_interval_seconds, use_full_segment_transition);
     changed
 }
 
@@ -531,19 +608,21 @@ fn scale_channel(value: u8, factor: f32) -> u8 {
 mod tests {
     use super::{
         atlas_average_color, block_preview_colors, scale_channel, scale_rgb,
-        show_block_preview_button, show_place_block_properties_window,
-        show_selected_block_properties_window, FALLBACK_SIDE_COLOR, FALLBACK_TOP_COLOR,
-        TOP_LIGHTEN_FACTOR,
+        selected_has_camera_follow_trigger, show_block_preview_button,
+        show_place_block_properties_window, show_selected_block_properties_window,
+        FALLBACK_SIDE_COLOR, FALLBACK_TOP_COLOR, TOP_LIGHTEN_FACTOR,
     };
     use crate::block_repository::{
         all_placeable_blocks, block_texture_atlas, resolve_block_texture_layers,
     };
     use crate::state::EditorUiViewModel;
     use crate::triggers::{
-        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+        default_camera_trigger_distance, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
+        TimedTriggerTarget,
     };
     use crate::types::{
         AppSettings, EditorMode, LevelObject, MusicMetadata, SettingsSection, SpawnDirection,
+        CAMERA_TRIGGER_BLOCK_ID, DEFAULT_CAMERA_TRIGGER_PITCH, DEFAULT_CAMERA_TRIGGER_ROTATION,
         TRANSFORM_TRIGGER_BLOCK_ID,
     };
 
@@ -744,5 +823,48 @@ mod tests {
         });
 
         assert!(commands.is_empty());
+    }
+
+    #[test]
+    fn selected_block_properties_identifies_camera_follow_triggers() {
+        let mut camera_follow = crate::test_utils::stone(0.0, 0.0, 0.0);
+        camera_follow.block_id = CAMERA_TRIGGER_BLOCK_ID.to_string();
+        camera_follow.trigger = Some(TimedTrigger {
+            time_seconds: 1.0,
+            duration_seconds: 0.0,
+            easing: TimedTriggerEasing::Linear,
+            target: TimedTriggerTarget::Camera,
+            action: TimedTriggerAction::CameraFollow {
+                transition_interval_seconds: 1.0,
+                use_full_segment_transition: false,
+                distance: default_camera_trigger_distance(),
+                rotation: DEFAULT_CAMERA_TRIGGER_ROTATION,
+                pitch: DEFAULT_CAMERA_TRIGGER_PITCH,
+            },
+        });
+
+        let transform_trigger = LevelObject {
+            position: [1.0, 0.0, 1.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 90.0, 0.0],
+            block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+            trigger: Some(TimedTrigger {
+                time_seconds: 0.5,
+                duration_seconds: 1.0,
+                easing: TimedTriggerEasing::EaseInOut,
+                target: TimedTriggerTarget::Objects {
+                    object_ids: vec![0],
+                },
+                action: TimedTriggerAction::TransformObjects {
+                    position: [1.0, 0.0, 1.0],
+                    rotation_degrees: [0.0, 90.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
+                },
+            }),
+        };
+
+        assert!(selected_has_camera_follow_trigger(&camera_follow));
+        assert!(!selected_has_camera_follow_trigger(&transform_trigger));
     }
 }

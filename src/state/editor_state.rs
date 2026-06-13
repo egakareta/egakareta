@@ -11,8 +11,14 @@ use crate::editor_domain::{
     remove_tap_with_indicator, snap_cell_to_step, snap_component_to_step,
 };
 use crate::game::TimelineSimulationRuntime;
-use crate::triggers::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
-use crate::types::{AppPhase, EditorMode, GameCursor, LevelObject, SpawnDirection, TimingPoint};
+use crate::triggers::{
+    default_camera_trigger_distance, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
+    TimedTriggerTarget,
+};
+use crate::types::{
+    AppPhase, EditorMode, GameCursor, LevelObject, SpawnDirection, TimingPoint,
+    DEFAULT_CAMERA_TRIGGER_PITCH, DEFAULT_CAMERA_TRIGGER_ROTATION,
+};
 
 const TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS: f32 = 0.001;
 
@@ -914,6 +920,7 @@ impl State {
         self.record_editor_history_state();
         self.sync_primary_selection_from_indices();
         self.editor.set_selected_block_trigger(trigger);
+        self.sync_editor_camera_follow_trigger_object_poses();
 
         if self.editor.ui.selected_block_index.is_some() {
             self.sync_editor_objects();
@@ -948,6 +955,71 @@ impl State {
         self.editor.tap_times()
     }
 
+    fn editor_timeline_position_at_seconds(&mut self, time_seconds: f32) -> [f32; 3] {
+        self.rebuild_editor_timeline_snapshot_cache_if_needed();
+
+        let cache = &self.editor.timeline.snapshot_cache;
+        if cache.is_empty() {
+            return self.editor.timeline.preview.position;
+        }
+
+        let duration_seconds = self.editor.timeline.clock.duration_seconds;
+        let step_seconds = self
+            .editor
+            .timeline
+            .snapshot_cache_step_seconds
+            .max(1.0 / 480.0);
+        let target_time = time_seconds.clamp(0.0, duration_seconds);
+        let max_index = cache.len().saturating_sub(1);
+        let sample_position = (target_time / step_seconds).clamp(0.0, max_index as f32);
+        let lower_index = sample_position.floor() as usize;
+        let upper_index = (lower_index + 1).min(max_index);
+        let alpha = (sample_position - lower_index as f32).clamp(0.0, 1.0);
+
+        let lower = &cache[lower_index];
+        let upper = &cache[upper_index];
+        interpolate_timeline_sample_positions(
+            lower.position,
+            lower.direction,
+            upper.position,
+            upper.direction,
+            alpha,
+        )
+    }
+
+    fn sync_editor_camera_follow_trigger_object_poses(&mut self) -> bool {
+        if self.phase != AppPhase::Editor {
+            return false;
+        }
+
+        let follow_trigger_objects = self
+            .editor
+            .objects
+            .iter()
+            .enumerate()
+            .filter_map(|(index, object)| {
+                let trigger = object.trigger.clone()?;
+                matches!(trigger.action, TimedTriggerAction::CameraFollow { .. })
+                    .then_some((index, trigger))
+            })
+            .collect::<Vec<_>>();
+
+        let mut changed = false;
+        for (index, trigger) in follow_trigger_objects {
+            let target_position = self.editor_timeline_position_at_seconds(trigger.time_seconds);
+            if let Some(object) = self.editor.objects.get_mut(index) {
+                EditorSubsystem::sync_camera_follow_trigger_object_pose(
+                    object,
+                    &trigger,
+                    target_position,
+                );
+                changed = true;
+            }
+        }
+
+        changed
+    }
+
     /// Returns the smoothed frames-per-second (FPS) measurement for the editor.
     pub fn editor_fps(&self) -> f32 {
         self.editor.fps()
@@ -976,6 +1048,7 @@ impl State {
         if self.phase == AppPhase::Editor && !is_effectively_timing {
             puffin::profile_scope!("SeekPreview");
             self.apply_editor_timeline_preview_from_cache();
+            self.sync_editor_camera_follow_trigger_object_poses();
             if let Some((editor_pan, editor_target_z)) = editor_camera {
                 self.editor.camera.editor_pan = editor_pan;
                 self.editor.camera.editor_target_z = editor_target_z;
@@ -1215,9 +1288,13 @@ impl State {
             action: TimedTriggerAction::CameraFollow {
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
+                distance: default_camera_trigger_distance(),
+                rotation: DEFAULT_CAMERA_TRIGGER_ROTATION,
+                pitch: DEFAULT_CAMERA_TRIGGER_PITCH,
             },
         };
         self.editor.add_trigger(trigger);
+        self.sync_editor_camera_follow_trigger_object_poses();
         self.sync_editor_objects();
         self.mark_editor_dirty(EditorDirtyFlags::trigger_object_added());
     }
