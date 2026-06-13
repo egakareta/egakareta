@@ -967,9 +967,19 @@ impl State {
         puffin::profile_scope!("TimelineSeek");
         let is_effectively_timing = self.editor_is_effectively_timing_mode();
         let changed = self.editor.set_timeline_time_seconds(time_seconds);
+        let preserve_editor_camera =
+            self.phase == AppPhase::Editor && !is_effectively_timing && self.editor.ui.ctrl_held;
+        let editor_camera = preserve_editor_camera.then_some((
+            self.editor.camera.editor_pan,
+            self.editor.camera.editor_target_z,
+        ));
         if self.phase == AppPhase::Editor && !is_effectively_timing {
             puffin::profile_scope!("SeekPreview");
             self.apply_editor_timeline_preview_from_cache();
+            if let Some((editor_pan, editor_target_z)) = editor_camera {
+                self.editor.camera.editor_pan = editor_pan;
+                self.editor.camera.editor_target_z = editor_target_z;
+            }
         }
         if changed
             && self.phase == AppPhase::Editor
@@ -2143,6 +2153,47 @@ mod tests {
                 state.editor.timeline.preview.direction,
                 SpawnDirection::Forward
             );
+            assert_eq!(state.editor.camera.editor_pan, original_pan);
+            assert_eq!(state.editor.camera.editor_target_z, original_target_z);
+        });
+    }
+
+    #[test]
+    fn timeline_seek_tracks_preview_by_default() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.timeline.clock.duration_seconds = 1.0;
+            state.editor.camera.editor_pan = [8.0, -6.0];
+            state.editor.camera.editor_target_z = 3.0;
+
+            state.set_editor_timeline_time_seconds(0.125);
+
+            let preview_position = state.editor.timeline.preview.position;
+            assert_eq!(state.editor_timeline_time_seconds(), 0.125);
+            assert_eq!(
+                state.editor.camera.editor_pan,
+                [preview_position[0] + 0.5, preview_position[2] + 0.5]
+            );
+            assert_eq!(state.editor.camera.editor_target_z, preview_position[1]);
+        });
+    }
+
+    #[test]
+    fn timeline_seek_preserves_editor_camera_focus_when_ctrl_is_held() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.timeline.clock.duration_seconds = 1.0;
+            state.editor.camera.editor_pan = [8.0, -6.0];
+            state.editor.camera.editor_target_z = 3.0;
+            state.editor.ui.ctrl_held = true;
+            let original_pan = state.editor.camera.editor_pan;
+            let original_target_z = state.editor.camera.editor_target_z;
+
+            state.set_editor_timeline_time_seconds(0.125);
+
+            assert_eq!(state.editor_timeline_time_seconds(), 0.125);
             assert_eq!(state.editor.camera.editor_pan, original_pan);
             assert_eq!(state.editor.camera.editor_target_z, original_target_z);
         });
