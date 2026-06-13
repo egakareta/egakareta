@@ -654,6 +654,11 @@ impl State {
                     self.editor.timeline.playback.runtime = None;
                     self.editor.timeline.playback.pending_seek_time_seconds = None;
                     self.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
+                    if let Some(last_mode) = self.editor.runtime.interaction.last_mode.take() {
+                        self.editor.set_mode(last_mode);
+                    } else {
+                        self.editor.set_mode(EditorMode::Place);
+                    }
                     if simulate_preview {
                         self.mark_editor_dirty(
                             super::EditorDirtyFlags::block_mesh_and_hitboxes_changed(),

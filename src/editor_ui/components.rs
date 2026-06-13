@@ -215,10 +215,16 @@ pub(crate) fn show_timeline_bar(
         let painter = ui.painter();
         let center_y = rect.center().y;
         let stroke = egui::Stroke::new(1.0, egui::Color32::from_gray(160));
+        // Clip the horizontal line to the duration end point if visible
+        let line_end_x = if duration_seconds >= view_start && duration_seconds <= view_end {
+            rect.left() + (duration_seconds - view_start) / visible_duration * rect.width()
+        } else {
+            rect.right()
+        };
         painter.line_segment(
             [
                 egui::pos2(rect.left(), center_y),
-                egui::pos2(rect.right(), center_y),
+                egui::pos2(line_end_x, center_y),
             ],
             stroke,
         );
@@ -479,7 +485,8 @@ pub(crate) fn show_waveform_panel(
         let end_sample = end_sample.min(waveform_samples.len());
 
         if end_sample > start_sample {
-            let waveform_color = egui::Color32::from_rgba_premultiplied(100, 160, 255, 120);
+            let waveform_color = egui::Color32::from_rgba_premultiplied(100, 160, 255, 255);
+            let waveform_color_past = egui::Color32::from_rgba_premultiplied(80, 140, 235, 255);
             let center_y = rect.center().y;
             let half_height = rect.height() * 0.4;
 
@@ -497,12 +504,17 @@ pub(crate) fn show_waveform_panel(
                 let bar_height = amplitude * half_height;
 
                 if bar_height > 0.5 {
+                    let color = if sample_time > duration_seconds {
+                        waveform_color_past
+                    } else {
+                        waveform_color
+                    };
                     painter.line_segment(
                         [
                             egui::pos2(x, center_y - bar_height),
                             egui::pos2(x, center_y + bar_height),
                         ],
-                        egui::Stroke::new(pixel_per_sample.max(1.0), waveform_color),
+                        egui::Stroke::new(pixel_per_sample.max(1.0), color),
                     );
                 }
             }
