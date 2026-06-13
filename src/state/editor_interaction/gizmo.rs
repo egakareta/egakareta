@@ -17,6 +17,91 @@ const GIZMO_RESIZE_PICK_RADIUS_PIXELS: f32 = 32.0;
 const GIZMO_ROTATE_PICK_RADIUS_PIXELS: f32 = 18.0;
 
 impl EditorSubsystem {
+    fn selected_gizmo_rotation(&self) -> glam::Quat {
+        let rotation_degrees = self
+            .selected_indices_normalized()
+            .first()
+            .and_then(|&index| self.objects.get(index))
+            .map(|obj| obj.rotation_degrees)
+            .or_else(|| {
+                self.selected_transform_trigger_target()
+                    .map(|(_, target)| target.rotation_degrees)
+            })
+            .unwrap_or([0.0, 0.0, 0.0]);
+
+        glam::Quat::from_euler(
+            glam::EulerRot::XYZ,
+            rotation_degrees[0].to_radians(),
+            rotation_degrees[1].to_radians(),
+            rotation_degrees[2].to_radians(),
+        )
+    }
+
+    fn drag_gizmo_rotation(
+        drag: &EditorGizmoDrag,
+        trigger_start: Option<&EditorDragBlockStart>,
+    ) -> glam::Quat {
+        let rotation_source = trigger_start.or_else(|| drag.start_blocks.first());
+        rotation_source
+            .map(|b| {
+                glam::Quat::from_euler(
+                    glam::EulerRot::XYZ,
+                    b.rotation_degrees[0].to_radians(),
+                    b.rotation_degrees[1].to_radians(),
+                    b.rotation_degrees[2].to_radians(),
+                )
+            })
+            .unwrap_or_default()
+    }
+
+    fn rotation_from_degrees(rotation_degrees: [f32; 3]) -> glam::Quat {
+        glam::Quat::from_euler(
+            glam::EulerRot::XYZ,
+            rotation_degrees[0].to_radians(),
+            rotation_degrees[1].to_radians(),
+            rotation_degrees[2].to_radians(),
+        )
+    }
+
+    fn resize_from_drag_start(
+        start: EditorDragBlockStart,
+        axis: GizmoAxis,
+        world_delta: f32,
+        snap_enabled: bool,
+        snap_step: f32,
+        min_size: f32,
+    ) -> ([f32; 3], [f32; 3]) {
+        let (axis_index, local_axis, handle_sign) = match axis {
+            GizmoAxis::X => (0, Vec3::X, 1.0),
+            GizmoAxis::Y => (1, Vec3::Y, 1.0),
+            GizmoAxis::Z => (2, Vec3::Z, 1.0),
+            GizmoAxis::XNeg => (0, Vec3::X, -1.0),
+            GizmoAxis::YNeg => (1, Vec3::Y, -1.0),
+            GizmoAxis::ZNeg => (2, Vec3::Z, -1.0),
+        };
+
+        let mut next_size = start.size;
+        let mut axis_size = start.size[axis_index] + world_delta * handle_sign;
+        if snap_enabled {
+            axis_size = (axis_size / snap_step).round() * snap_step;
+        }
+        next_size[axis_index] = axis_size.max(min_size);
+
+        let rotation = Self::rotation_from_degrees(start.rotation_degrees);
+        let rotated_axis = rotation * local_axis;
+        let start_position = Vec3::from(start.position);
+        let start_size = Vec3::from(start.size);
+        let start_center = start_position + start_size * 0.5;
+        let opposite_face_sign = -handle_sign;
+        let anchored_face =
+            start_center + rotated_axis * (opposite_face_sign * start.size[axis_index] * 0.5);
+        let next_center =
+            anchored_face - rotated_axis * (opposite_face_sign * next_size[axis_index] * 0.5);
+        let next_position = next_center - Vec3::from(next_size) * 0.5;
+
+        (next_position.to_array(), next_size)
+    }
+
     fn gizmo_drag_trigger_start(&self, drag: &EditorGizmoDrag) -> Option<EditorDragBlockStart> {
         if !self.selected_indices_normalized().is_empty() {
             return None;
@@ -24,6 +109,27 @@ impl EditorSubsystem {
         let (trigger_index, _) = self.selected_transform_trigger_target()?;
         let start = drag.start_blocks.first().copied()?;
         (start.index == trigger_index).then_some(start)
+    }
+
+    fn move_delta_for_drag(
+        axis_dir: Vec3,
+        world_delta: f32,
+        snap_enabled: bool,
+        snap_step: f32,
+        min_start_y: f32,
+    ) -> Vec3 {
+        let mut scalar_delta = world_delta;
+        if snap_enabled {
+            scalar_delta = (scalar_delta / snap_step).round() * snap_step;
+        }
+
+        let mut delta = axis_dir * scalar_delta;
+        if delta.y < 0.0 && min_start_y + delta.y < 0.0 && axis_dir.y.abs() > f32::EPSILON {
+            scalar_delta = -min_start_y / axis_dir.y;
+            delta = axis_dir * scalar_delta;
+        }
+
+        delta
     }
 
     pub(crate) fn drag_gizmo(&mut self, x: f64, y: f64, viewport: Vec2) -> bool {
@@ -53,21 +159,9 @@ impl EditorSubsystem {
         };
 
         let trigger_start = self.gizmo_drag_trigger_start(&drag);
+        let gizmo_rotation = Self::drag_gizmo_rotation(&drag, trigger_start.as_ref());
 
-        if drag.kind == GizmoDragKind::Rotate {
-            let rotation_source = trigger_start.as_ref().or_else(|| drag.start_blocks.first());
-            let rotation = rotation_source
-                .map(|b| {
-                    glam::Quat::from_euler(
-                        glam::EulerRot::XYZ,
-                        b.rotation_degrees[0].to_radians(),
-                        b.rotation_degrees[1].to_radians(),
-                        b.rotation_degrees[2].to_radians(),
-                    )
-                })
-                .unwrap_or_default();
-            axis_dir = rotation * axis_dir;
-        }
+        axis_dir = gizmo_rotation * axis_dir;
 
         let Some(origin_screen) = self.world_to_screen_v(center, viewport) else {
             self.runtime.interaction.gizmo_drag = Some(drag);
@@ -95,39 +189,28 @@ impl EditorSubsystem {
             GizmoDragKind::Move => {
                 let snap_enabled = self.effective_snap_to_grid();
                 let snap_step = self.config.snap_step.max(0.05);
-                // Clamp Y-axis delta so the lowest block stops at y=0 instead
-                // of each block being clamped independently (which compresses
-                // stacked blocks into the same position).
-                let clamped_delta = if matches!(drag.axis, GizmoAxis::Y | GizmoAxis::YNeg) {
-                    let min_start_y = drag
-                        .start_blocks
+                let min_start_y = if let Some(start) = trigger_start {
+                    start.position[1]
+                } else {
+                    drag.start_blocks
                         .iter()
                         .map(|b| b.position[1])
-                        .fold(f32::INFINITY, f32::min);
-                    let min_next_y = min_start_y + world_delta;
-                    if min_next_y < 0.0 {
-                        world_delta - min_next_y
-                    } else {
-                        world_delta
-                    }
-                } else {
-                    world_delta
+                        .fold(f32::INFINITY, f32::min)
                 };
+                let delta = Self::move_delta_for_drag(
+                    axis_dir,
+                    world_delta,
+                    snap_enabled,
+                    snap_step,
+                    min_start_y,
+                );
                 let mut first_cursor: Option<[f32; 3]> = None;
                 if let Some(start) = trigger_start {
                     let mut next = start.position;
-                    match drag.axis {
-                        GizmoAxis::X | GizmoAxis::XNeg => next[0] += clamped_delta,
-                        GizmoAxis::Y | GizmoAxis::YNeg => next[1] += clamped_delta,
-                        GizmoAxis::Z | GizmoAxis::ZNeg => next[2] += clamped_delta,
-                    }
-                    if snap_enabled {
-                        next[0] = (next[0] / snap_step).round() * snap_step;
-                        next[1] = (next[1].max(0.0) / snap_step).round() * snap_step;
-                        next[2] = (next[2] / snap_step).round() * snap_step;
-                    } else {
-                        next[1] = next[1].max(0.0);
-                    }
+                    next[0] += delta.x;
+                    next[1] += delta.y;
+                    next[2] += delta.z;
+                    next[1] = next[1].max(0.0);
                     if self.set_transform_trigger_target(
                         start.index,
                         next,
@@ -140,18 +223,10 @@ impl EditorSubsystem {
                     for block in &drag.start_blocks {
                         if let Some(obj) = self.objects.get_mut(block.index) {
                             let mut next = block.position;
-                            match drag.axis {
-                                GizmoAxis::X | GizmoAxis::XNeg => next[0] += clamped_delta,
-                                GizmoAxis::Y | GizmoAxis::YNeg => next[1] += clamped_delta,
-                                GizmoAxis::Z | GizmoAxis::ZNeg => next[2] += clamped_delta,
-                            }
-                            if snap_enabled {
-                                next[0] = (next[0] / snap_step).round() * snap_step;
-                                next[1] = (next[1].max(0.0) / snap_step).round() * snap_step;
-                                next[2] = (next[2] / snap_step).round() * snap_step;
-                            } else {
-                                next[1] = next[1].max(0.0);
-                            }
+                            next[0] += delta.x;
+                            next[1] += delta.y;
+                            next[2] += delta.z;
+                            next[1] = next[1].max(0.0);
                             obj.position = next;
                             if first_cursor.is_none() {
                                 first_cursor = Some(next);
@@ -172,69 +247,14 @@ impl EditorSubsystem {
                 let snap_step = self.config.snap_step.max(0.05);
                 let min_size = if snap_enabled { snap_step } else { 0.25 };
                 if let Some(start) = trigger_start {
-                    let mut next_position = start.position;
-                    let mut next_size = start.size;
-                    match drag.axis {
-                        GizmoAxis::X => {
-                            let mut s = start.size[0] + world_delta;
-                            if snap_enabled {
-                                s = (s / snap_step).round() * snap_step;
-                            }
-                            next_size[0] = s.max(min_size);
-                        }
-                        GizmoAxis::Y => {
-                            let mut s = start.size[1] + world_delta;
-                            if snap_enabled {
-                                s = (s / snap_step).round() * snap_step;
-                            }
-                            next_size[1] = s.max(min_size);
-                        }
-                        GizmoAxis::Z => {
-                            let mut s = start.size[2] + world_delta;
-                            if snap_enabled {
-                                s = (s / snap_step).round() * snap_step;
-                            }
-                            next_size[2] = s.max(min_size);
-                        }
-                        GizmoAxis::XNeg => {
-                            let mut s = start.size[0] - world_delta;
-                            let mut p = start.position[0] + world_delta;
-                            let right_edge = start.position[0] + start.size[0];
-                            if snap_enabled {
-                                p = (p / snap_step).round() * snap_step;
-                                s = (right_edge - p).max(min_size);
-                                p = right_edge - s;
-                            } else {
-                                s = s.max(min_size);
-                                p = right_edge - s;
-                            }
-                            next_position[0] = p;
-                            next_size[0] = s;
-                        }
-                        GizmoAxis::YNeg => {
-                            let mut p = start.position[1] + world_delta;
-                            let top_edge = start.position[1] + start.size[1];
-                            if snap_enabled {
-                                p = (p / snap_step).round() * snap_step;
-                            }
-                            p = p.max(0.0);
-                            let s = (top_edge - p).max(min_size);
-                            p = top_edge - s;
-                            next_position[1] = p;
-                            next_size[1] = s;
-                        }
-                        GizmoAxis::ZNeg => {
-                            let mut p = start.position[2] + world_delta;
-                            let upper_edge = start.position[2] + start.size[2];
-                            if snap_enabled {
-                                p = (p / snap_step).round() * snap_step;
-                            }
-                            let s = (upper_edge - p).max(min_size);
-                            p = upper_edge - s;
-                            next_position[2] = p;
-                            next_size[2] = s;
-                        }
-                    }
+                    let (next_position, next_size) = Self::resize_from_drag_start(
+                        start,
+                        drag.axis,
+                        world_delta,
+                        snap_enabled,
+                        snap_step,
+                        min_size,
+                    );
                     self.set_transform_trigger_target(
                         start.index,
                         next_position,
@@ -244,67 +264,16 @@ impl EditorSubsystem {
                 } else {
                     for block in &drag.start_blocks {
                         if let Some(obj) = self.objects.get_mut(block.index) {
-                            match drag.axis {
-                                GizmoAxis::X => {
-                                    let mut s = block.size[0] + world_delta;
-                                    if snap_enabled {
-                                        s = (s / snap_step).round() * snap_step;
-                                    }
-                                    obj.size[0] = s.max(min_size);
-                                }
-                                GizmoAxis::Y => {
-                                    let mut s = block.size[1] + world_delta;
-                                    if snap_enabled {
-                                        s = (s / snap_step).round() * snap_step;
-                                    }
-                                    obj.size[1] = s.max(min_size);
-                                }
-                                GizmoAxis::Z => {
-                                    let mut s = block.size[2] + world_delta;
-                                    if snap_enabled {
-                                        s = (s / snap_step).round() * snap_step;
-                                    }
-                                    obj.size[2] = s.max(min_size);
-                                }
-                                GizmoAxis::XNeg => {
-                                    let mut s = block.size[0] - world_delta;
-                                    let mut p = block.position[0] + world_delta;
-                                    let right_edge = block.position[0] + block.size[0];
-                                    if snap_enabled {
-                                        p = (p / snap_step).round() * snap_step;
-                                        s = (right_edge - p).max(min_size);
-                                        p = right_edge - s;
-                                    } else {
-                                        s = s.max(min_size);
-                                        p = right_edge - s;
-                                    }
-                                    obj.position[0] = p;
-                                    obj.size[0] = s;
-                                }
-                                GizmoAxis::YNeg => {
-                                    let mut p = block.position[1] + world_delta;
-                                    let top_edge = block.position[1] + block.size[1];
-                                    if snap_enabled {
-                                        p = (p / snap_step).round() * snap_step;
-                                    }
-                                    p = p.max(0.0);
-                                    let s = (top_edge - p).max(min_size);
-                                    p = top_edge - s;
-                                    obj.position[1] = p;
-                                    obj.size[1] = s;
-                                }
-                                GizmoAxis::ZNeg => {
-                                    let mut p = block.position[2] + world_delta;
-                                    let upper_edge = block.position[2] + block.size[2];
-                                    if snap_enabled {
-                                        p = (p / snap_step).round() * snap_step;
-                                    }
-                                    let s = (upper_edge - p).max(min_size);
-                                    p = upper_edge - s;
-                                    obj.position[2] = p;
-                                    obj.size[2] = s;
-                                }
-                            }
+                            let (next_position, next_size) = Self::resize_from_drag_start(
+                                *block,
+                                drag.axis,
+                                world_delta,
+                                snap_enabled,
+                                snap_step,
+                                min_size,
+                            );
+                            obj.position = next_position;
+                            obj.size = next_size;
                         }
                     }
                 }
@@ -420,6 +389,7 @@ impl EditorSubsystem {
         let axis_lengths = self.gizmo_axis_lengths_world(center, 100.0, viewport_size);
         let resize_offsets = self.gizmo_axis_lengths_world(center, 9.0, viewport_size);
         let pointer = Vec2::new(x as f32, y as f32);
+        let rotation = self.selected_gizmo_rotation();
 
         let mut candidates: Vec<(GizmoDragKind, GizmoAxis, Vec3, f32)> = Vec::new();
         if allow_move {
@@ -437,6 +407,7 @@ impl EditorSubsystem {
                     GizmoAxis::Z | GizmoAxis::ZNeg => axis_lengths[2],
                 };
                 let sign = if neg { -1.0 } else { 1.0 };
+                let dir = rotation * dir;
                 let tip = center + dir * axis_len * sign;
                 let base = center + dir * 0.01 * sign;
                 let mid = (tip + base) * 0.5;
@@ -462,56 +433,45 @@ impl EditorSubsystem {
         }
 
         if allow_scale {
-            candidates.extend_from_slice(&[
+            for &(axis, dir, distance) in &[
                 (
-                    GizmoDragKind::Resize,
                     GizmoAxis::X,
-                    Vec3::new(
-                        bounds_position[0] + bounds_size[0] + resize_offsets[0],
-                        center.y,
-                        center.z,
-                    ),
-                    GIZMO_RESIZE_PICK_RADIUS_PIXELS,
+                    Vec3::X,
+                    bounds_size[0] * 0.5 + resize_offsets[0],
                 ),
                 (
-                    GizmoDragKind::Resize,
                     GizmoAxis::Y,
-                    Vec3::new(
-                        center.x,
-                        bounds_position[1] + bounds_size[1] + resize_offsets[1],
-                        center.z,
-                    ),
-                    GIZMO_RESIZE_PICK_RADIUS_PIXELS,
+                    Vec3::Y,
+                    bounds_size[1] * 0.5 + resize_offsets[1],
                 ),
                 (
-                    GizmoDragKind::Resize,
                     GizmoAxis::Z,
-                    Vec3::new(
-                        center.x,
-                        center.y,
-                        bounds_position[2] + bounds_size[2] + resize_offsets[2],
-                    ),
-                    GIZMO_RESIZE_PICK_RADIUS_PIXELS,
+                    Vec3::Z,
+                    bounds_size[2] * 0.5 + resize_offsets[2],
                 ),
                 (
-                    GizmoDragKind::Resize,
                     GizmoAxis::XNeg,
-                    Vec3::new(bounds_position[0] - resize_offsets[0], center.y, center.z),
-                    GIZMO_RESIZE_PICK_RADIUS_PIXELS,
+                    Vec3::X,
+                    -(bounds_size[0] * 0.5 + resize_offsets[0]),
                 ),
                 (
-                    GizmoDragKind::Resize,
                     GizmoAxis::YNeg,
-                    Vec3::new(center.x, bounds_position[1] - resize_offsets[1], center.z),
-                    GIZMO_RESIZE_PICK_RADIUS_PIXELS,
+                    Vec3::Y,
+                    -(bounds_size[1] * 0.5 + resize_offsets[1]),
                 ),
                 (
-                    GizmoDragKind::Resize,
                     GizmoAxis::ZNeg,
-                    Vec3::new(center.x, center.y, bounds_position[2] - resize_offsets[2]),
-                    GIZMO_RESIZE_PICK_RADIUS_PIXELS,
+                    Vec3::Z,
+                    -(bounds_size[2] * 0.5 + resize_offsets[2]),
                 ),
-            ]);
+            ] {
+                candidates.push((
+                    GizmoDragKind::Resize,
+                    axis,
+                    center + (rotation * dir) * distance,
+                    GIZMO_RESIZE_PICK_RADIUS_PIXELS,
+                ));
+            }
         }
 
         if allow_rotate {
@@ -856,6 +816,21 @@ mod tests {
         }
     }
 
+    fn local_face_center(block: &LevelObject, axis: Vec3, face_sign: f32) -> Vec3 {
+        let rotation = glam::Quat::from_euler(
+            glam::EulerRot::XYZ,
+            block.rotation_degrees[0].to_radians(),
+            block.rotation_degrees[1].to_radians(),
+            block.rotation_degrees[2].to_radians(),
+        );
+        let position = Vec3::from(block.position);
+        let size = Vec3::from(block.size);
+        let center = position + size * 0.5;
+        let axis_size = axis.abs().dot(size);
+
+        center + (rotation * axis) * face_sign * axis_size * 0.5
+    }
+
     #[test]
     fn pick_gizmo_handle_returns_none_when_mode_has_no_gizmo() {
         pollster::block_on(async {
@@ -908,6 +883,93 @@ mod tests {
             assert!(state.editor.objects[0].position[0] > 0.0);
             approx_eq(state.editor.objects[0].position[1], 0.0, 1e-4);
             approx_eq(state.editor.objects[0].position[2], 0.0, 1e-4);
+        });
+    }
+
+    #[test]
+    fn drag_gizmo_move_uses_rotated_axis() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.editor.config.snap_to_grid = false;
+            let mut block = test_block();
+            block.rotation_degrees = [0.0, 90.0, 0.0];
+            state.editor.objects = vec![block];
+
+            let viewport = Vec2::new(1280.0, 720.0);
+            let center = Vec3::new(0.5, 0.5, 0.5);
+            let axis = glam::Quat::from_rotation_y(90.0_f32.to_radians()) * Vec3::X;
+            let origin_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center projects");
+            let axis_screen = state
+                .editor
+                .world_to_screen_v(center + axis, viewport)
+                .expect("axis projects");
+            let axis_dir = (axis_screen - origin_screen).normalize();
+            let target = origin_screen + axis_dir * 40.0;
+
+            let block = state.editor.objects[0].clone();
+            state.editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+                axis: GizmoAxis::X,
+                kind: GizmoDragKind::Move,
+                start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
+                start_center_screen: [origin_screen.x, origin_screen.y],
+                start_center_world: center.to_array(),
+                start_blocks: vec![start_block_for_index(0, &block)],
+            });
+
+            assert!(state
+                .editor
+                .drag_gizmo(target.x as f64, target.y as f64, viewport));
+            approx_eq(state.editor.objects[0].position[0], 0.0, 1e-4);
+            approx_eq(state.editor.objects[0].position[1], 0.0, 1e-4);
+            assert!(state.editor.objects[0].position[2] < -0.1);
+        });
+    }
+
+    #[test]
+    fn drag_gizmo_move_snap_preserves_rotated_axis() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.editor.config.snap_to_grid = true;
+            state.editor.config.snap_step = 1.0;
+            let mut block = test_block();
+            block.rotation_degrees = [0.0, 45.0, 0.0];
+            state.editor.objects = vec![block];
+
+            let viewport = Vec2::new(1280.0, 720.0);
+            let center = Vec3::new(0.5, 0.5, 0.5);
+            let axis = glam::Quat::from_rotation_y(45.0_f32.to_radians()) * Vec3::X;
+            let origin_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center projects");
+            let axis_screen = state
+                .editor
+                .world_to_screen_v(center + axis, viewport)
+                .expect("axis projects");
+
+            let block = state.editor.objects[0].clone();
+            state.editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+                axis: GizmoAxis::X,
+                kind: GizmoDragKind::Move,
+                start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
+                start_center_screen: [origin_screen.x, origin_screen.y],
+                start_center_world: center.to_array(),
+                start_blocks: vec![start_block_for_index(0, &block)],
+            });
+
+            assert!(state
+                .editor
+                .drag_gizmo(axis_screen.x as f64, axis_screen.y as f64, viewport));
+
+            let position = state.editor.objects[0].position;
+            approx_eq(position[0], std::f32::consts::FRAC_1_SQRT_2, 1e-4);
+            approx_eq(position[1], 0.0, 1e-4);
+            approx_eq(position[2], -std::f32::consts::FRAC_1_SQRT_2, 1e-4);
         });
     }
 
@@ -1008,6 +1070,102 @@ mod tests {
             let object = &state.editor.objects[0];
             assert!(object.size[0] >= 0.25);
             approx_eq(object.position[0] + object.size[0], 1.0, 1e-3);
+        });
+    }
+
+    #[test]
+    fn drag_gizmo_resize_rotated_positive_axis_preserves_opposite_face() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.editor.config.snap_to_grid = false;
+            let mut block = test_block();
+            block.position = [2.0, 1.0, 3.0];
+            block.size = [2.0, 1.0, 1.0];
+            block.rotation_degrees = [0.0, 90.0, 0.0];
+            let anchored_face_before = local_face_center(&block, Vec3::X, -1.0);
+            state.editor.objects = vec![block];
+
+            let viewport = Vec2::new(1280.0, 720.0);
+            let center = Vec3::new(3.0, 1.5, 3.5);
+            let axis = glam::Quat::from_rotation_y(90.0_f32.to_radians()) * Vec3::X;
+            let origin_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center projects");
+            let axis_screen = state
+                .editor
+                .world_to_screen_v(center + axis, viewport)
+                .expect("axis projects");
+
+            let block = state.editor.objects[0].clone();
+            state.editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+                axis: GizmoAxis::X,
+                kind: GizmoDragKind::Resize,
+                start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
+                start_center_screen: [origin_screen.x, origin_screen.y],
+                start_center_world: center.to_array(),
+                start_blocks: vec![start_block_for_index(0, &block)],
+            });
+
+            assert!(state
+                .editor
+                .drag_gizmo(axis_screen.x as f64, axis_screen.y as f64, viewport,));
+
+            let object = &state.editor.objects[0];
+            assert!(object.size[0] > 2.9);
+            let anchored_face_after = local_face_center(object, Vec3::X, -1.0);
+            approx_eq(anchored_face_after.x, anchored_face_before.x, 1e-3);
+            approx_eq(anchored_face_after.y, anchored_face_before.y, 1e-3);
+            approx_eq(anchored_face_after.z, anchored_face_before.z, 1e-3);
+        });
+    }
+
+    #[test]
+    fn drag_gizmo_resize_rotated_negative_axis_preserves_opposite_face() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.editor.config.snap_to_grid = false;
+            let mut block = test_block();
+            block.position = [2.0, 1.0, 3.0];
+            block.size = [2.0, 1.0, 1.0];
+            block.rotation_degrees = [0.0, 90.0, 0.0];
+            let anchored_face_before = local_face_center(&block, Vec3::X, 1.0);
+            state.editor.objects = vec![block];
+
+            let viewport = Vec2::new(1280.0, 720.0);
+            let center = Vec3::new(3.0, 1.5, 3.5);
+            let axis = glam::Quat::from_rotation_y(90.0_f32.to_radians()) * Vec3::X;
+            let origin_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center projects");
+            let axis_screen = state
+                .editor
+                .world_to_screen_v(center + axis, viewport)
+                .expect("axis projects");
+
+            let block = state.editor.objects[0].clone();
+            state.editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+                axis: GizmoAxis::XNeg,
+                kind: GizmoDragKind::Resize,
+                start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
+                start_center_screen: [origin_screen.x, origin_screen.y],
+                start_center_world: center.to_array(),
+                start_blocks: vec![start_block_for_index(0, &block)],
+            });
+
+            assert!(state
+                .editor
+                .drag_gizmo(axis_screen.x as f64, axis_screen.y as f64, viewport,));
+
+            let object = &state.editor.objects[0];
+            assert!(object.size[0] < 1.1);
+            let anchored_face_after = local_face_center(object, Vec3::X, 1.0);
+            approx_eq(anchored_face_after.x, anchored_face_before.x, 1e-3);
+            approx_eq(anchored_face_after.y, anchored_face_before.y, 1e-3);
+            approx_eq(anchored_face_after.z, anchored_face_before.z, 1e-3);
         });
     }
 

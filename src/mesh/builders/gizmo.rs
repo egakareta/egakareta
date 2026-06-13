@@ -8,7 +8,7 @@
 use crate::mesh::advanced_shapes::{append_cone, append_sphere};
 use crate::mesh::shapes::append_prism;
 use crate::types::{GizmoPart, Vertex};
-use glam::Vec3;
+use glam::{Quat, Vec3};
 
 const ROTATE_RING_SEGMENTS: usize = 72;
 const ROTATE_RING_TUBE_SEGMENTS: usize = 12;
@@ -51,6 +51,7 @@ pub(crate) fn build_editor_gizmo_vertices(
         position[1] + size[1] * 0.5,
         position[2] + size[2] * 0.5,
     ];
+    let rotation = rotation_from_degrees(rotation_degrees);
 
     let color_x_normal = [0.804, 0.0, 0.0, 0.6];
     let color_x_active = [1.0, 0.0, 0.0, 1.0];
@@ -60,6 +61,7 @@ pub(crate) fn build_editor_gizmo_vertices(
     let color_z_active = [0.0, 0.0, 1.0, 1.0];
 
     if show_move_handles {
+        let move_vertices_start = vertices.len();
         // X move arms
         for neg in [false, true] {
             let variant = if neg {
@@ -242,6 +244,8 @@ pub(crate) fn build_editor_gizmo_vertices(
                 color,
             );
         }
+
+        rotate_appended_vertices(&mut vertices, move_vertices_start, center, rotation);
     }
 
     // Resize handles
@@ -249,6 +253,7 @@ pub(crate) fn build_editor_gizmo_vertices(
     let inner_color = [0.0, 0.0, 0.0, 0.025];
 
     if show_scale_handles {
+        let scale_vertices_start = vertices.len();
         // X resize
         for neg in [false, true] {
             let variant = if neg {
@@ -344,6 +349,8 @@ pub(crate) fn build_editor_gizmo_vertices(
             append_sphere(&mut vertices, pos, current_radius, color);
             append_sphere(&mut vertices, pos, inner_resize_radius, inner_color);
         }
+
+        rotate_appended_vertices(&mut vertices, scale_vertices_start, center, rotation);
     }
 
     if show_rotate_handles {
@@ -380,6 +387,32 @@ pub(crate) fn build_editor_gizmo_vertices(
     vertices
 }
 
+fn rotation_from_degrees(rotation_degrees: [f32; 3]) -> Quat {
+    Quat::from_euler(
+        glam::EulerRot::XYZ,
+        rotation_degrees[0].to_radians(),
+        rotation_degrees[1].to_radians(),
+        rotation_degrees[2].to_radians(),
+    )
+}
+
+fn rotate_appended_vertices(
+    vertices: &mut [Vertex],
+    start: usize,
+    center: [f32; 3],
+    rotation: Quat,
+) {
+    if rotation.is_near_identity() {
+        return;
+    }
+
+    let center = Vec3::from_array(center);
+    for vertex in vertices.iter_mut().skip(start) {
+        let local = Vec3::from_array(vertex.position) - center;
+        vertex.position = (center + rotation * local).to_array();
+    }
+}
+
 fn append_rotation_ring(
     vertices: &mut Vec<Vertex>,
     center: [f32; 3],
@@ -389,12 +422,7 @@ fn append_rotation_ring(
     tube_radius: f32,
     color: [f32; 4],
 ) {
-    let rotation = glam::Quat::from_euler(
-        glam::EulerRot::XYZ,
-        rotation_degrees[0].to_radians(),
-        rotation_degrees[1].to_radians(),
-        rotation_degrees[2].to_radians(),
-    );
+    let rotation = rotation_from_degrees(rotation_degrees);
 
     for i in 0..ROTATE_RING_SEGMENTS {
         let next_i = (i + 1) % ROTATE_RING_SEGMENTS;

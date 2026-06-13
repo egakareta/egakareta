@@ -211,6 +211,47 @@ mod tests {
     }
 
     #[test]
+    fn gizmo_move_and_scale_handles_follow_rotation() {
+        let center = glam::Vec3::new(0.5, 0.5, 0.5);
+        let vertices = build_editor_gizmo_vertices(GizmoParams {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 90.0, 0.0],
+            axis_lengths: [4.0, 4.0, 4.0],
+            axis_width: 0.2,
+            resize_radius: 0.2,
+            resize_offsets: [0.3, 0.3, 0.3],
+            show_move_handles: true,
+            show_scale_handles: true,
+            show_rotate_handles: false,
+            hovered_part: None,
+            dragged_part: None,
+        });
+
+        let red_vertices: Vec<glam::Vec3> = vertices
+            .iter()
+            .filter(|vertex| vertex.color[0] > 0.7 && vertex.color[1] < 0.1)
+            .map(|vertex| glam::Vec3::from_array(vertex.position))
+            .collect();
+        assert!(!red_vertices.is_empty());
+
+        let max_local_x = red_vertices
+            .iter()
+            .map(|position| (*position - center).dot(-glam::Vec3::Z))
+            .fold(f32::NEG_INFINITY, f32::max);
+        let max_world_x = red_vertices
+            .iter()
+            .map(|position| position.x)
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        assert!(max_local_x > 3.5, "red X handles should rotate toward -Z");
+        assert!(
+            max_world_x < 0.9,
+            "red X handles should no longer extend on world X"
+        );
+    }
+
+    #[test]
     fn hover_outline_vertices_are_opaque_light_blue() {
         let vertices = build_editor_hover_outline_vertices(
             [0.0, 0.0, 0.0],
