@@ -549,8 +549,6 @@ fn append_transform_trigger_marker(
         current_time_seconds,
     );
 
-    let selected_boost = if marker.is_selected { 0.1 } else { 0.0 };
-    let ring_radius = 0.46 - progress * 0.31 + selected_boost;
     let ring_color = if current_time_seconds >= marker.time_seconds {
         [1.0, 0.52, 0.18, 0.88]
     } else if marker.is_selected {
@@ -563,8 +561,8 @@ fn append_transform_trigger_marker(
         append_xz_ring(
             vertices,
             source_center,
-            ring_radius.max(0.12),
-            0.055,
+            (0.46 - progress * 0.42).max(0.04),
+            0.04,
             ring_color,
         );
 
@@ -625,6 +623,7 @@ fn append_transform_trigger_marker(
     );
 }
 
+/// Returns a value from 0.0 to 1.0 representing the progress of the countdown, where 1.0 means the trigger is ready to activate.
 fn transform_trigger_countdown_progress(
     time_seconds: f32,
     duration_seconds: f32,
@@ -656,6 +655,9 @@ pub(crate) fn transform_marker_rotation(rotation_degrees: [f32; 3]) -> Quat {
     )
 }
 
+/// Appends vertices for a flat ring on the XZ plane, centered at `center`.
+/// `radius` is the distance from the center to the middle of the ring.
+/// `thickness` is the total width of the ring. The inner radius will be `radius - thickness/2` and the outer radius will be `radius + thickness/2`.
 pub(crate) fn append_xz_ring(
     vertices: &mut Vec<Vertex>,
     center: [f32; 3],
