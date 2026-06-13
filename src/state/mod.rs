@@ -43,6 +43,7 @@ use std::collections::VecDeque;
 pub(crate) const TAP_CLICK_SCREEN_EPSILON_PIXELS: f64 = 0.5;
 
 pub(crate) use audio_state::{AudioState, AudioSubsystem};
+pub(crate) use auth_state::AuthSubsystem;
 pub(crate) use editor_camera::EditorCameraState;
 pub(crate) use editor_config_state::EditorConfigState;
 pub(crate) use editor_interaction::{
@@ -56,19 +57,16 @@ pub(crate) use history::EditorHistoryState;
 pub(crate) use perf::EditorPerfState;
 pub(crate) use render::draw::RenderSurfaceError;
 pub(crate) use render::RenderSubsystem;
-pub(crate) use runtime::{
-    EditorDirtyFlags, EditorRuntimeState, EditorTransformTriggerCapture, FrameRuntimeState,
-};
+pub(crate) use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
 pub(crate) use view_model::EditorUiViewModel;
 
 use crate::game::{GameCheckpointState, GameState};
 use crate::mesh::MeshGeometry;
-use crate::platform::services::AuthServiceMessage;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::platform::state_host::NativeWindow;
 use crate::state::editor_command::EditorCommand;
 use crate::types::{
-    AppPhase, AppSettings, AuthSession, EditorMode, EditorState, LevelCreatorMetadata, LevelObject,
+    AppPhase, AppSettings, EditorMode, EditorState, LevelCreatorMetadata, LevelObject,
     LevelPreviewCameraMetadata, MenuState, MusicMetadata, PhysicalSize, SettingsSection,
     SpawnMetadata,
 };
@@ -84,17 +82,6 @@ pub(crate) struct GameplaySubsystem {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct TimedGameplayTurn {
     pub(crate) time_seconds: f32,
-}
-
-pub(crate) struct AuthSubsystem {
-    pub(crate) session: Option<AuthSession>,
-    pub(crate) pending: bool,
-    pub(crate) message: Option<String>,
-    pub(crate) refresh_started: bool,
-    pub(crate) channel: (
-        std::sync::mpsc::Sender<AuthServiceMessage>,
-        std::sync::mpsc::Receiver<AuthServiceMessage>,
-    ),
 }
 
 /// Bundles all session-related state into a single subsystem.
@@ -170,15 +157,7 @@ impl EditorSubsystem {
             },
             objects: Vec::new(),
             spawn: SpawnMetadata::default(),
-            camera: EditorCameraState {
-                editor_pan: [0.0, 0.0],
-                editor_target_z: 0.0,
-                editor_rotation: 45.0f32.to_radians(),
-                editor_pitch: 45.0f32.to_radians(),
-                playing_rotation: 45.0f32.to_radians(),
-                playing_pitch: 45.0f32.to_radians(),
-                transition: None,
-            },
+            camera: EditorCameraState::default(),
             triggers: EditorTriggerState::new(),
             timeline: EditorTimelineState::new(),
             runtime: EditorRuntimeState {
@@ -197,7 +176,6 @@ impl EditorSubsystem {
                     undo: Vec::new(),
                     redo: Vec::new(),
                 },
-                transform_trigger_capture: None,
             },
             perf: EditorPerfState::new(),
             timing: EditorTimingState::new(),
@@ -461,10 +439,7 @@ impl State {
         match button {
             0 => {
                 self.editor.set_left_mouse_down(pressed);
-                self.mark_editor_dirty(EditorDirtyFlags {
-                    rebuild_selection_overlays: true,
-                    ..EditorDirtyFlags::default()
-                });
+                self.mark_editor_dirty(EditorDirtyFlags::selection_overlay_changed());
                 if !pressed {
                     if let Some(pointer) = self.editor.ui.pointer_screen {
                         self.finish_editor_marquee_selection(pointer[0], pointer[1]);
@@ -506,10 +481,7 @@ impl State {
         }
         self.editor.set_pointer_screen(Some([x, y]));
         self.editor.set_left_mouse_down(true);
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_selection_overlays: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.mark_editor_dirty(EditorDirtyFlags::selection_overlay_changed());
         if self.phase == AppPhase::Editor {
             if self.editor_pointer_over_ui_input(x, y) {
                 return;

@@ -178,6 +178,7 @@ fn render_profile_tag(profile: &BlockRenderProfile) -> u8 {
         BlockRenderProfile::Neon => 5,
         BlockRenderProfile::Gem => 7,
         BlockRenderProfile::TransformTrigger => 9,
+        BlockRenderProfile::CameraTrigger => 11,
     }
 }
 
@@ -259,6 +260,8 @@ mod tests {
         assert_eq!(render_profile_tag(&BlockRenderProfile::SpeedPortal), 3);
         assert_eq!(render_profile_tag(&BlockRenderProfile::Neon), 5);
         assert_eq!(render_profile_tag(&BlockRenderProfile::Gem), 7);
+        assert_eq!(render_profile_tag(&BlockRenderProfile::TransformTrigger), 9);
+        assert_eq!(render_profile_tag(&BlockRenderProfile::CameraTrigger), 11);
     }
 
     #[test]

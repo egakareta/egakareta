@@ -148,36 +148,26 @@ const KEYBIND_CONTENT_MIN_WIDTH: f32 =
     KEYBIND_ACTION_LABEL_WIDTH + KEYBIND_CONTROLS_MIN_WIDTH + 12.0;
 const EDITOR_CONTEXT_MENU_WIDTH: f32 = 220.0;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-enum BlockCatalogCategory {
-    #[default]
-    All,
-    Building,
-    Danger,
-    Tech,
-    Trigger,
-}
+type BlockCatalogCategory = Option<BlockCategory>;
 
 const BLOCK_CATALOG_CATEGORIES: [BlockCatalogCategory; 5] = [
-    BlockCatalogCategory::All,
-    BlockCatalogCategory::Building,
-    BlockCatalogCategory::Danger,
-    BlockCatalogCategory::Tech,
-    BlockCatalogCategory::Trigger,
+    None,
+    Some(BlockCategory::Building),
+    Some(BlockCategory::Danger),
+    Some(BlockCategory::Tech),
+    Some(BlockCategory::Trigger),
 ];
 const PLACE_BLOCK_CATALOG_COLUMNS: usize = 9;
 const PLACE_BLOCK_CATALOG_ROWS: usize = 4;
 const PLACE_BLOCK_CATALOG_CELL_SIZE: f32 = 72.0;
 
-impl BlockCatalogCategory {
-    fn label(self) -> &'static str {
-        match self {
-            Self::All => "All",
-            Self::Building => "Building",
-            Self::Danger => "Danger",
-            Self::Tech => "Tech",
-            Self::Trigger => "Trigger",
-        }
+fn block_catalog_category_label(category: BlockCatalogCategory) -> &'static str {
+    match category {
+        None => "All",
+        Some(BlockCategory::Building) => "Building",
+        Some(BlockCategory::Danger) => "Danger",
+        Some(BlockCategory::Tech) => "Tech",
+        Some(BlockCategory::Trigger) => "Trigger",
     }
 }
 
@@ -186,13 +176,7 @@ fn is_compact_editor_ui(viewport_width: f32) -> bool {
 }
 
 fn block_matches_catalog_category(block: &BlockDefinition, category: BlockCatalogCategory) -> bool {
-    match category {
-        BlockCatalogCategory::All => true,
-        BlockCatalogCategory::Building => block.category == BlockCategory::Building,
-        BlockCatalogCategory::Danger => block.category == BlockCategory::Danger,
-        BlockCatalogCategory::Tech => block.category == BlockCategory::Tech,
-        BlockCatalogCategory::Trigger => block.category == BlockCategory::Trigger,
-    }
+    category.is_none_or(|block_category| block.category == block_category)
 }
 
 fn settings_sidebar_default_width(viewport_width: f32) -> f32 {
@@ -521,10 +505,10 @@ fn show_editor_context_menu(
                 close_menu |= context_menu_button(
                     ui,
                     commands,
-                    has_block_selection && !is_tapping && !view.transform_trigger_capture_active,
+                    has_block_selection && !is_tapping,
                     egui_phosphor::regular::ARROWS_CLOCKWISE,
                     "Add Transform Trigger",
-                    AppCommand::Editor(EditorCommand::BeginTransformTriggerCapture),
+                    AppCommand::Editor(EditorCommand::AddTransformTrigger),
                     hint("add_transform_trigger").as_deref(),
                 );
                 close_menu |= context_menu_button(
@@ -572,6 +556,15 @@ fn show_editor_context_menu(
                     "Add Camera Trigger",
                     AppCommand::Editor(EditorCommand::AddCameraTrigger),
                     hint("add_camera_trigger").as_deref(),
+                );
+                close_menu |= context_menu_button(
+                    ui,
+                    commands,
+                    true,
+                    egui_phosphor::regular::CAMERA_ROTATE,
+                    "Add Camera Follow Trigger",
+                    AppCommand::Editor(EditorCommand::AddCameraFollowTrigger),
+                    hint("add_camera_follow_trigger").as_deref(),
                 );
                 close_menu |= context_menu_button(
                     ui,
@@ -1388,7 +1381,7 @@ pub fn show_editor_ui(
                             ui.selectable_value(
                                 &mut selected_place_category,
                                 category,
-                                category.label(),
+                                block_catalog_category_label(category),
                             );
                         }
                     });
@@ -1442,11 +1435,11 @@ pub fn show_editor_ui(
                         });
                 });
 
-        ctx.data_mut(|data| data.insert_persisted(place_category_id, selected_place_category));
-
         if let Some(place_response) = place_response {
             ui_input_blocking_rects.push(rect_to_input_bounds(place_response.response.rect));
         }
+
+        ctx.data_mut(|data| data.insert_persisted(place_category_id, selected_place_category));
 
         if !place_open {
             commands.push(AppCommand::Editor(EditorCommand::TogglePlaceWindow));
@@ -1473,7 +1466,6 @@ pub fn show_editor_ui(
                     );
                 }
 
-                // Shared timeline bar with beat lines
                 show_timeline_bar(ui, &view, duration_seconds, &mut commands);
             });
         });
@@ -1491,58 +1483,26 @@ pub fn show_editor_ui(
             .show(ctx, |ui| {
                 let button_size = egui::Vec2::splat(56.0);
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Max), |ui| {
-                    if view.transform_trigger_capture_active {
-                        if ui
-                            .add_sized(
-                                button_size,
-                                egui::Button::new(
-                                    egui::RichText::new(egui_phosphor::regular::X).size(28.0),
-                                ),
-                            )
-                            .on_hover_text("Cancel transform trigger")
-                            .clicked()
-                        {
-                            commands.push(AppCommand::Editor(
-                                EditorCommand::CancelTransformTriggerCapture,
-                            ));
-                        }
+                    let hotkey_hint = view.app_settings.hotkey_hint("toggle_place_window");
+                    if show_recent_block_quick_strip(
+                        ui,
+                        &view,
+                        block_icon_texture_ids,
+                        &mut commands,
+                    ) {
                         ui.add_space(6.0);
-                        if ui
-                            .add_sized(
-                                button_size,
-                                egui::Button::new(
-                                    egui::RichText::new(egui_phosphor::regular::CHECK).size(28.0),
-                                ),
-                            )
-                            .on_hover_text("Create transform trigger")
-                            .clicked()
-                        {
-                            commands.push(AppCommand::Editor(
-                                EditorCommand::CommitTransformTriggerCapture,
-                            ));
-                        }
-                    } else {
-                        let hotkey_hint = view.app_settings.hotkey_hint("toggle_place_window");
-                        if show_recent_block_quick_strip(
-                            ui,
-                            &view,
-                            block_icon_texture_ids,
-                            &mut commands,
-                        ) {
-                            ui.add_space(6.0);
-                        }
-                        if ui
-                            .add_sized(
-                                button_size,
-                                egui::Button::new(
-                                    egui::RichText::new(egui_phosphor::regular::PLUS).size(28.0),
-                                ),
-                            )
-                            .on_hover_text(format!("Place Block{}", hotkey_hint))
-                            .clicked()
-                        {
-                            commands.push(AppCommand::Editor(EditorCommand::TogglePlaceWindow));
-                        }
+                    }
+                    if ui
+                        .add_sized(
+                            button_size,
+                            egui::Button::new(
+                                egui::RichText::new(egui_phosphor::regular::PLUS).size(28.0),
+                            ),
+                        )
+                        .on_hover_text(format!("Place Block{}", hotkey_hint))
+                        .clicked()
+                    {
+                        commands.push(AppCommand::Editor(EditorCommand::TogglePlaceWindow));
                     }
                 });
             });
@@ -2174,9 +2134,9 @@ mod tests {
         block_matches_catalog_category, combined_ui_scale_factor, is_compact_editor_ui,
         marquee_screen_pos_to_egui_pos, perf_overlay_window_order, push_command_when_clicked,
         responsive_ui_scale_multiplier, settings_sidebar_default_width, show_editor_ui,
-        show_perf_overlay, sort_quad_by_angle, BlockCatalogCategory, VIEW_CUBE_FACES,
+        show_perf_overlay, sort_quad_by_angle, VIEW_CUBE_FACES,
     };
-    use crate::block_repository::resolve_block_definition;
+    use crate::block_repository::{resolve_block_definition, BlockCategory};
     use crate::commands::AppCommand;
     use crate::state::editor_command::EditorCommand;
     use crate::test_utils::approx_eq;
@@ -2387,36 +2347,33 @@ mod tests {
 
         assert!(block_matches_catalog_category(
             stone,
-            BlockCatalogCategory::Building
+            Some(BlockCategory::Building)
         ));
         assert!(block_matches_catalog_category(
             lava,
-            BlockCatalogCategory::Danger
+            Some(BlockCategory::Danger)
         ));
         assert!(block_matches_catalog_category(
             void,
-            BlockCatalogCategory::Danger
+            Some(BlockCategory::Danger)
         ));
         assert!(block_matches_catalog_category(
             speed_portal,
-            BlockCatalogCategory::Tech
+            Some(BlockCategory::Tech)
         ));
         assert!(block_matches_catalog_category(
             torch,
-            BlockCatalogCategory::Tech
+            Some(BlockCategory::Tech)
         ));
 
+        assert!(block_matches_catalog_category(lava, None));
         assert!(block_matches_catalog_category(
             lava,
-            BlockCatalogCategory::All
-        ));
-        assert!(block_matches_catalog_category(
-            lava,
-            BlockCatalogCategory::Danger
+            Some(BlockCategory::Danger)
         ));
         assert!(!block_matches_catalog_category(
             lava,
-            BlockCatalogCategory::Building
+            Some(BlockCategory::Building)
         ));
     }
 

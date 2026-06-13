@@ -8,7 +8,8 @@
 use std::collections::HashMap;
 
 use crate::audio_service::PersistentWaveformCacheEntry;
-use crate::types::{AppSettings, AuthSession};
+use crate::auth_types::AuthSession;
+use crate::types::AppSettings;
 
 #[cfg(target_arch = "wasm32")]
 const AUDIO_DB_NAME: &str = "egakareta-audio";
@@ -634,17 +635,17 @@ mod tests {
         pollster::block_on(async {
             let _env = TestEnv::new();
             let session = AuthSession {
-                session: crate::types::AuthSessionTokens {
+                session: crate::auth_types::AuthSessionTokens {
                     access_token: "access".to_string(),
                     refresh_token: "refresh".to_string(),
                     expires_at: Some(123),
                     token_type: "bearer".to_string(),
                 },
-                user: crate::types::AuthUser {
+                user: crate::auth_types::AuthUser {
                     id: "user-id".to_string(),
                     email: Some("player@example.com".to_string()),
                 },
-                profile: Some(crate::types::AuthProfile {
+                profile: Some(crate::auth_types::AuthProfile {
                     id: "user-id".to_string(),
                     username: Some("player".to_string()),
                     avatar_url: None,

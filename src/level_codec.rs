@@ -7,13 +7,13 @@
 */
 use serde::{Deserialize, Serialize};
 
+use crate::triggers::TimedTrigger;
 use crate::types::{
     default_sky_color, LevelMetadata, LevelObject, LevelPreviewCameraMetadata, MusicMetadata,
-    SpawnMetadata, TimedTrigger, TimingPoint,
+    SpawnMetadata, TimingPoint,
 };
 
 const LEVEL_MAGIC: [u8; 4] = *b"EGB1";
-const LEVEL_CODEC_V1: u16 = 1;
 const LEVEL_CODEC_VERSION: u16 = 2;
 const COMPRESSION_NONE: u8 = 0;
 const COMPRESSION_ZSTD: u8 = 1;
@@ -64,6 +64,45 @@ struct BinaryLevelPayloadV1 {
     object_color_tints: Vec<[f32; 3]>,
     #[serde(default)]
     object_triggers: Vec<Option<TimedTrigger>>,
+}
+
+#[cfg(test)]
+impl Default for BinaryLevelPayloadV1 {
+    fn default() -> Self {
+        Self {
+            format_version: 1,
+            name: "test level".to_string(),
+            creator: None,
+            description: None,
+            stars: 0.0,
+            tags: Vec::new(),
+            version: None,
+            music_source: "music.mp3".to_string(),
+            music_title: None,
+            music_author: None,
+            music_extra_entries: Vec::new(),
+            spawn: SpawnMetadata::default(),
+            sky_color: default_sky_color(),
+            tap_times: Vec::new(),
+            timing_points: Vec::new(),
+            timeline_time_seconds: 0.0,
+            timeline_duration_seconds: 0.0,
+            simulate_trigger_hitboxes: false,
+            menu_preview_camera: None,
+            level_extra_entries: Vec::new(),
+            palette: Vec::new(),
+            object_runs: Vec::new(),
+            object_compact_mask: Vec::new(),
+            grid_min: [0, 0, 0],
+            grid_dims: [0, 0, 0],
+            object_linear_indices: Vec::new(),
+            object_positions: Vec::new(),
+            object_sizes: Vec::new(),
+            object_rotations: Vec::new(),
+            object_color_tints: Vec::new(),
+            object_triggers: Vec::new(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -244,40 +283,15 @@ pub(crate) fn decode_level_metadata_binary(bytes: &[u8]) -> Result<LevelMetadata
 
     let version = u16::from_le_bytes([bytes[4], bytes[5]]);
     let payload = match version {
-        LEVEL_CODEC_V1 => decode_payload_v1(bytes)?,
         LEVEL_CODEC_VERSION => decode_payload_v2(bytes)?,
         _ => {
             return Err(format!(
-                "Unsupported level codec version {version}; expected {LEVEL_CODEC_V1} or {LEVEL_CODEC_VERSION}"
+                "Unsupported level codec version {version}; expected {LEVEL_CODEC_VERSION}"
             ));
         }
     };
 
     decode_payload(payload)
-}
-
-fn decode_payload_v1(bytes: &[u8]) -> Result<BinaryLevelPayloadV1, String> {
-    let compression = bytes[6];
-    let payload_len = u32::from_le_bytes([bytes[7], bytes[8], bytes[9], bytes[10]]) as usize;
-    let expected_total = 11usize
-        .checked_add(payload_len)
-        .ok_or_else(|| "Level payload size overflow".to_string())?;
-
-    if bytes.len() != expected_total {
-        return Err("Level payload length mismatch".to_string());
-    }
-
-    let payload_bytes = match compression {
-        COMPRESSION_NONE => bytes[11..].to_vec(),
-        COMPRESSION_ZSTD => {
-            return Err(
-                "zstd-compressed legacy payload missing decompressed-size header".to_string(),
-            );
-        }
-        _ => return Err("Unsupported level compression algorithm".to_string()),
-    };
-
-    serde_cbor::from_slice(&payload_bytes).map_err(|error| error.to_string())
 }
 
 fn decode_payload_v2(bytes: &[u8]) -> Result<BinaryLevelPayloadV1, String> {
@@ -678,7 +692,7 @@ mod tests {
         map_to_entries, position_to_linear_index, quantize_compact_position,
         rle_decode_palette_indices, rle_encode_palette_indices, set_compact_bit,
         BinaryLevelPayloadV1, MetadataEntry, ObjectRun, COMPRESSION_NONE, COMPRESSION_ZSTD,
-        LEVEL_CODEC_V1, LEVEL_CODEC_VERSION, LEVEL_MAGIC,
+        LEVEL_CODEC_VERSION, LEVEL_MAGIC,
     };
     use crate::level_repository::load_builtin_level_metadata;
     use crate::types::LevelObject;
@@ -761,29 +775,6 @@ mod tests {
         assert_eq!(payload.object_sizes.len(), 1);
 
         let decoded = decode_level_metadata_binary(&encoded).expect("decode");
-        assert_eq!(decoded.objects, metadata.objects);
-    }
-
-    #[test]
-    fn decodes_legacy_v1_uncompressed_payload() {
-        let mut metadata =
-            load_builtin_level_metadata("Golden Haze").expect("missing built-in level");
-        metadata.name = "Legacy Decode".to_string();
-        metadata.objects = vec![LevelObject {
-            block_id: "core/stone".to_string(),
-            position: [2.0, 3.0, 4.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
-        }];
-
-        let encoded_v2 = encode_level_metadata_binary(&metadata).expect("encode v2");
-        let payload = decode_v2_payload_for_test(&encoded_v2);
-        let legacy_bytes = encode_v1_uncompressed_for_test(&payload);
-
-        let decoded = decode_level_metadata_binary(&legacy_bytes).expect("decode v1");
-        assert_eq!(decoded.name, metadata.name);
         assert_eq!(decoded.objects, metadata.objects);
     }
 
@@ -908,57 +899,26 @@ mod tests {
     }
 
     #[test]
-    fn rejects_v1_zstd_payload_without_decompressed_size_header() {
+    fn rejects_unsupported_codec_version() {
         let payload = BinaryLevelPayloadV1 {
-            format_version: 1,
-            name: "legacy".to_string(),
-            creator: None,
-            description: None,
-            stars: 0.0,
-            tags: Vec::new(),
-            version: None,
-            music_source: "music.mp3".to_string(),
-            music_title: None,
-            music_author: None,
-            music_extra_entries: Vec::new(),
-            spawn: crate::types::SpawnMetadata::default(),
-            sky_color: crate::types::default_sky_color(),
-            tap_times: Vec::new(),
-            timing_points: Vec::new(),
-            timeline_time_seconds: 0.0,
-            timeline_duration_seconds: 0.0,
-            simulate_trigger_hitboxes: false,
-            menu_preview_camera: None,
-            level_extra_entries: Vec::new(),
-            palette: Vec::new(),
-            object_runs: Vec::new(),
-            object_compact_mask: Vec::new(),
-            grid_min: [0, 0, 0],
-            grid_dims: [0, 0, 0],
-            object_linear_indices: Vec::new(),
-            object_positions: Vec::new(),
-            object_sizes: Vec::new(),
-            object_rotations: Vec::new(),
-            object_color_tints: Vec::new(),
-            object_triggers: Vec::new(),
+            name: "unsupported".to_string(),
+            ..BinaryLevelPayloadV1::default()
         };
         let payload_bytes = serde_cbor::to_vec(&payload).expect("serialize");
         let compressed = zstd::bulk::compress(&payload_bytes, 1).expect("compress");
 
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&LEVEL_MAGIC);
-        bytes.extend_from_slice(&LEVEL_CODEC_V1.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
         bytes.push(COMPRESSION_ZSTD);
         bytes.extend_from_slice(&(compressed.len() as u32).to_le_bytes());
         bytes.extend_from_slice(&compressed);
 
         let error = match decode_level_metadata_binary(&bytes) {
-            Ok(_) => panic!(
-                "Expected decode to fail for v1 zstd payload without decompressed-size header"
-            ),
+            Ok(_) => panic!("Expected decode to fail for unsupported codec version"),
             Err(error) => error,
         };
-        assert!(error.contains("missing decompressed-size header"));
+        assert!(error.contains("Unsupported level codec version 1; expected 2"));
     }
 
     #[test]
@@ -991,40 +951,16 @@ mod tests {
     #[test]
     fn rejects_payload_with_palette_index_out_of_range() {
         let payload = BinaryLevelPayloadV1 {
-            format_version: 1,
             name: "bad palette".to_string(),
-            creator: None,
-            description: None,
-            stars: 0.0,
-            tags: Vec::new(),
-            version: None,
-            music_source: "music.mp3".to_string(),
-            music_title: None,
-            music_author: None,
-            music_extra_entries: Vec::new(),
-            spawn: crate::types::SpawnMetadata::default(),
-            sky_color: crate::types::default_sky_color(),
-            tap_times: Vec::new(),
-            timing_points: Vec::new(),
-            timeline_time_seconds: 0.0,
-            timeline_duration_seconds: 0.0,
-            simulate_trigger_hitboxes: false,
-            menu_preview_camera: None,
-            level_extra_entries: Vec::new(),
-            palette: Vec::new(),
             object_runs: vec![ObjectRun {
                 palette_index: 0,
                 run_length: 1,
             }],
-            object_compact_mask: Vec::new(),
-            grid_min: [0, 0, 0],
-            grid_dims: [0, 0, 0],
-            object_linear_indices: Vec::new(),
             object_positions: vec![[0.0, 0.0, 0.0]],
             object_sizes: vec![[1.0, 1.0, 1.0]],
             object_rotations: vec![[0.0, 0.0, 0.0]],
             object_color_tints: vec![[1.0, 1.0, 1.0]],
-            object_triggers: Vec::new(),
+            ..BinaryLevelPayloadV1::default()
         };
 
         let bytes = encode_v2_uncompressed_for_test(&payload);
@@ -1060,22 +996,6 @@ mod tests {
         };
 
         serde_cbor::from_slice(&payload_bytes).expect("deserialize payload")
-    }
-
-    fn encode_v1_uncompressed_for_test(payload: &BinaryLevelPayloadV1) -> Vec<u8> {
-        let payload_bytes = serde_cbor::to_vec(payload).expect("serialize payload");
-
-        let mut encoded = Vec::with_capacity(4 + 2 + 1 + 4 + payload_bytes.len());
-        encoded.extend_from_slice(&LEVEL_MAGIC);
-        encoded.extend_from_slice(&LEVEL_CODEC_V1.to_le_bytes());
-        encoded.push(COMPRESSION_NONE);
-        encoded.extend_from_slice(
-            &u32::try_from(payload_bytes.len())
-                .expect("payload size")
-                .to_le_bytes(),
-        );
-        encoded.extend_from_slice(&payload_bytes);
-        encoded
     }
 
     fn encode_v2_uncompressed_for_test(payload: &BinaryLevelPayloadV1) -> Vec<u8> {

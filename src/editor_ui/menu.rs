@@ -608,7 +608,7 @@ fn get_current_time_str() -> String {
 #[cfg(test)]
 mod tests {
     use super::show_menu_topbar_ui;
-    use crate::types::{AuthProfile, AuthSession, AuthSessionTokens, AuthUser};
+    use crate::auth_types::{AuthProfile, AuthSession, AuthSessionTokens, AuthUser};
 
     fn test_auth_session(username: Option<&str>) -> AuthSession {
         AuthSession {

@@ -29,9 +29,7 @@ pub fn parse_level_binary_import(data: &[u8]) -> Result<LevelMetadata, String> {
     decode_level_metadata_binary(data)
 }
 
-/// Converts legacy JSON level metadata into binary metadata bytes.
-///
-/// This helper is intended for one-time migration tooling.
+/// Converts JSON level metadata into binary metadata bytes.
 pub fn convert_level_json_to_binary(json: &str) -> Result<Vec<u8>, String> {
     let metadata = parse_level_metadata_json(json)?;
     encode_level_metadata_binary(&metadata)
@@ -146,13 +144,13 @@ mod tests {
     #[test]
     fn convert_level_json_to_binary_normalizes_block_ids() {
         let json = r#"{
-            "name": "Legacy",
+            "name": "Current",
             "music": { "source": "audio.mp3" },
             "objects": [
                 {
                     "position": [0.0, 0.0, 0.0],
                     "size": [1.0, 1.0, 1.0],
-                    "kind": "stone"
+                    "block_id": "stone"
                 }
             ]
         }"#;

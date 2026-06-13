@@ -13,7 +13,7 @@ use crate::game::{
     advance_simulation_time, trigger_transformed_objects_at_time, TimelineSimulationRuntime,
 };
 use crate::mesh::{
-    build_block_geometry, build_gem_shatter_vertices, build_trail_vertices,
+    build_block_geometry_at_time, build_gem_shatter_vertices, build_trail_vertices,
     build_trail_vertices_with_alpha, gem_shatter_duration_seconds, GemShatterInstance,
 };
 use crate::platform::state_host::PlatformInstant;
@@ -169,14 +169,7 @@ impl State {
             return;
         };
 
-        let mut indices = consumed_indices;
-        indices.sort_unstable();
-        indices.dedup();
-        for index in indices.into_iter().rev() {
-            if index < base_objects.len() {
-                base_objects.remove(index);
-            }
-        }
+        crate::game::GameState::prune_consumed_indices_from_objects(base_objects, consumed_indices);
     }
 
     fn apply_playing_object_triggers(&mut self, time_seconds: f32) -> Option<Vec<LevelObject>> {
@@ -556,13 +549,13 @@ impl State {
                     let old_time = self.editor.timeline.clock.time_seconds;
                     self.editor.timeline.clock.time_seconds = clamped_time;
 
-                    if simulate_preview && self.editor.has_object_transform_triggers() {
-                        self.mark_editor_dirty(super::EditorDirtyFlags {
-                            rebuild_block_mesh: true,
-                            rebuild_hitbox_visualization: true,
-                            rebuild_transform_trigger_markers: true,
-                            ..super::EditorDirtyFlags::default()
-                        });
+                    if simulate_preview
+                        && (self.editor.has_object_transform_triggers()
+                            || self.editor.has_camera_timeline_triggers())
+                    {
+                        self.mark_editor_dirty(
+                            super::EditorDirtyFlags::timeline_trigger_preview_changed(),
+                        );
                     }
 
                     if simulate_preview {
@@ -575,11 +568,9 @@ impl State {
                                 let snapshot = runtime.snapshot();
                                 self.push_gem_shatter_events(events);
                                 if consumed_gems {
-                                    self.mark_editor_dirty(super::EditorDirtyFlags {
-                                        rebuild_block_mesh: true,
-                                        rebuild_hitbox_visualization: true,
-                                        ..super::EditorDirtyFlags::default()
-                                    });
+                                    self.mark_editor_dirty(
+                                        super::EditorDirtyFlags::block_mesh_and_hitboxes_changed(),
+                                    );
                                 }
                                 self.apply_editor_timeline_preview_state(
                                     snapshot.position,
@@ -604,11 +595,9 @@ impl State {
                             self.push_gem_shatter_events(events);
                             let snapshot = runtime.snapshot();
                             if consumed_gems {
-                                self.mark_editor_dirty(super::EditorDirtyFlags {
-                                    rebuild_block_mesh: true,
-                                    rebuild_hitbox_visualization: true,
-                                    ..super::EditorDirtyFlags::default()
-                                });
+                                self.mark_editor_dirty(
+                                    super::EditorDirtyFlags::block_mesh_and_hitboxes_changed(),
+                                );
                             }
                             self.apply_editor_timeline_preview_state(
                                 snapshot.position,
@@ -665,12 +654,15 @@ impl State {
                     self.editor.timeline.playback.runtime = None;
                     self.editor.timeline.playback.pending_seek_time_seconds = None;
                     self.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
+                    if let Some(last_mode) = self.editor.runtime.interaction.last_mode.take() {
+                        self.editor.set_mode(last_mode);
+                    } else {
+                        self.editor.set_mode(EditorMode::Place);
+                    }
                     if simulate_preview {
-                        self.mark_editor_dirty(super::EditorDirtyFlags {
-                            rebuild_block_mesh: true,
-                            rebuild_hitbox_visualization: true,
-                            ..super::EditorDirtyFlags::default()
-                        });
+                        self.mark_editor_dirty(
+                            super::EditorDirtyFlags::block_mesh_and_hitboxes_changed(),
+                        );
                     }
                     self.stop_audio();
                 }
@@ -775,9 +767,13 @@ impl State {
         let render_objects = trigger_render_objects
             .as_deref()
             .unwrap_or(&self.gameplay.state.objects);
-        if self.gameplay.state.has_animated_blocks() || trigger_render_objects.is_some() {
+        if self.gameplay.state.has_animated_blocks()
+            || trigger_render_objects.is_some()
+            || self.editor.has_camera_timeline_triggers()
+        {
             puffin::profile_scope!("PlayingAnimatedBlockMesh");
-            let animated_geometry = build_block_geometry(render_objects);
+            let animated_geometry =
+                build_block_geometry_at_time(render_objects, self.gameplay.state.elapsed_seconds);
             self.render.meshes.blocks.replace_with_geometry(
                 &self.render.gpu.device,
                 "Block Vertex Buffer",
@@ -901,6 +897,7 @@ impl State {
         let view_proj = proj * view;
         let camera_uniform = CameraUniform {
             view_proj: view_proj.to_cols_array_2d(),
+            camera_position: [eye.x, eye.y, eye.z, 0.0],
         };
 
         {
@@ -924,6 +921,7 @@ impl State {
         let view_proj = proj * view;
         let camera_uniform = CameraUniform {
             view_proj: view_proj.to_cols_array_2d(),
+            camera_position: [eye.x, eye.y, eye.z, 0.0],
         };
 
         self.render.gpu.queue.write_buffer(
@@ -954,6 +952,7 @@ impl State {
         let view_proj = proj * view;
         let camera_uniform = CameraUniform {
             view_proj: view_proj.to_cols_array_2d(),
+            camera_position: [eye.x, eye.y, eye.z, 0.0],
         };
 
         self.render.gpu.queue.write_buffer(
@@ -968,10 +967,10 @@ impl State {
 mod tests {
     use super::State;
     use crate::game::{GameState, TimelineSimulationRuntime};
-    use crate::types::{
-        AppPhase, Direction, EditorMode, LevelObject, SpawnDirection, TimedTrigger,
-        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, TimingPoint,
+    use crate::triggers::{
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
     };
+    use crate::types::{AppPhase, Direction, EditorMode, LevelObject, SpawnDirection, TimingPoint};
 
     fn sample_object() -> LevelObject {
         LevelObject {

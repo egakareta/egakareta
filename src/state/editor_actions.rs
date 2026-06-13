@@ -12,35 +12,93 @@ use crate::commands::AppCommand;
 use crate::editor_domain::{
     add_tap_with_indicator, build_editor_playtest_transition, derive_tap_indicator_positions,
     derive_timeline_time_for_world_target_near_time, derive_timing_division_tap_previews,
-    playtest_return_objects, remove_topmost_block_at_cursor,
+    playtest_return_objects, remove_topmost_block_at_cursor, snap_cell_to_step,
     timeline_axis_aligned_segment_split_fraction, timeline_turn_corner_position,
-    timing_division_time_in_direction, toggle_spawn_direction, EditorPlaytestTransitionParams,
-    TapDivisionPreview, TapDivisionPreviewRange, TimelineNearSearch, TimingDivisionDirection,
+    timing_division_time_in_direction, toggle_spawn_direction, topmost_block_index_at_cursor,
+    EditorPlaytestTransitionParams, TapDivisionPreview, TapDivisionPreviewRange,
+    TimelineNearSearch, TimingDivisionDirection,
 };
 use crate::game::{GameState, TimelineSimulationRuntime};
 use crate::state::editor_command::EditorCommand;
-use crate::types::{AppPhase, EditorMode, EditorTapDivisionPick};
+use crate::triggers::{TimedTriggerAction, TimedTriggerTarget};
+use crate::types::{AppPhase, EditorMode, EditorTapDivisionPick, LevelObject};
 
 const TAP_CLICK_ADD_EPSILON_SECONDS: f32 = 0.001;
 const FALLBACK_TIMELINE_SHIFT_SECONDS: f32 = 0.1;
+
+fn compact_object_ids_for_removed_indices(
+    objects: &[LevelObject],
+    removed_indices: &[usize],
+) -> Vec<u32> {
+    let mut removed_indices = removed_indices
+        .iter()
+        .copied()
+        .filter(|index| *index < objects.len())
+        .collect::<Vec<_>>();
+    removed_indices.sort_unstable();
+    removed_indices.dedup();
+
+    let mut removed_object_ids = Vec::new();
+    let mut compact_object_id = 0_u32;
+    for (index, object) in objects.iter().enumerate() {
+        let is_targetable_object = object.trigger.is_none();
+        if removed_indices.binary_search(&index).is_ok() && is_targetable_object {
+            removed_object_ids.push(compact_object_id);
+        }
+        if is_targetable_object {
+            compact_object_id = compact_object_id.saturating_add(1);
+        }
+    }
+
+    removed_object_ids
+}
+
+fn dereference_removed_transform_trigger_targets(
+    objects: &mut [LevelObject],
+    removed_object_ids: &[u32],
+) {
+    if removed_object_ids.is_empty() {
+        return;
+    }
+
+    let mut removed_object_ids = removed_object_ids.to_vec();
+    removed_object_ids.sort_unstable();
+    removed_object_ids.dedup();
+
+    for object in objects {
+        let Some(trigger) = object.trigger.as_mut() else {
+            continue;
+        };
+        if !matches!(trigger.action, TimedTriggerAction::TransformObjects { .. }) {
+            continue;
+        }
+        let TimedTriggerTarget::Objects { object_ids } = &mut trigger.target else {
+            continue;
+        };
+
+        let mut remapped_object_ids = object_ids
+            .iter()
+            .copied()
+            .filter_map(|object_id| {
+                if removed_object_ids.binary_search(&object_id).is_ok() {
+                    return None;
+                }
+                let removed_before =
+                    removed_object_ids.partition_point(|removed_id| *removed_id < object_id) as u32;
+                Some(object_id.saturating_sub(removed_before))
+            })
+            .collect::<Vec<_>>();
+        remapped_object_ids.sort_unstable();
+        remapped_object_ids.dedup();
+        *object_ids = remapped_object_ids;
+    }
+}
 
 fn distance_sq(left: [f32; 3], right: [f32; 3]) -> f32 {
     let dx = left[0] - right[0];
     let dy = left[1] - right[1];
     let dz = left[2] - right[2];
     dx * dx + dy * dy + dz * dz
-}
-
-fn snap_component_to_step(component: f32, step: f32) -> f32 {
-    (component / step).round() * step
-}
-
-fn snap_cell_to_step(position: [f32; 3], step: f32) -> [f32; 3] {
-    [
-        snap_component_to_step(position[0], step),
-        snap_component_to_step(position[1].max(0.0), step),
-        snap_component_to_step(position[2], step),
-    ]
 }
 
 fn closest_point_on_segment(start: [f32; 3], end: [f32; 3], target: [f32; 3]) -> ([f32; 3], f32) {
@@ -432,6 +490,9 @@ impl EditorSubsystem {
     pub(crate) fn remove_selected(&mut self) -> bool {
         let selected_indices = self.selected_indices_normalized();
         if !selected_indices.is_empty() {
+            let removed_object_ids =
+                compact_object_ids_for_removed_indices(&self.objects, &selected_indices);
+            dereference_removed_transform_trigger_targets(&mut self.objects, &removed_object_ids);
             for index in selected_indices.into_iter().rev() {
                 if index < self.objects.len() {
                     self.objects.remove(index);
@@ -439,11 +500,17 @@ impl EditorSubsystem {
             }
             self.clear_block_selection();
             self.invalidate_samples();
+            self.sync_trigger_selection_from_objects();
             return true;
         }
 
-        if remove_topmost_block_at_cursor(&mut self.objects, self.ui.cursor) {
+        if let Some(index) = topmost_block_index_at_cursor(&self.objects, self.ui.cursor) {
+            let removed_object_ids =
+                compact_object_ids_for_removed_indices(&self.objects, &[index]);
+            dereference_removed_transform_trigger_targets(&mut self.objects, &removed_object_ids);
+            remove_topmost_block_at_cursor(&mut self.objects, self.ui.cursor);
             self.invalidate_samples();
+            self.sync_trigger_selection_from_objects();
             return true;
         }
 
@@ -496,12 +563,9 @@ impl State {
             self.editor.ui.cursor = cursor;
             self.rebuild_editor_cursor_vertices();
         }
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_tap_indicators: true,
-            rebuild_preview_player: true,
-            rebuild_cursor: cursor_override.is_some(),
-            ..EditorDirtyFlags::default()
-        });
+        self.mark_editor_dirty(EditorDirtyFlags::tap_preview_changed(
+            cursor_override.is_some(),
+        ));
     }
 
     pub(super) fn editor_handle_tapping_click_from_screen(&mut self, x: f64, y: f64) -> bool {
@@ -675,10 +739,7 @@ impl State {
         }
 
         if old_mode != mode && self.editor.has_object_transform_triggers() {
-            self.mark_editor_dirty(EditorDirtyFlags {
-                rebuild_block_mesh: true,
-                ..EditorDirtyFlags::default()
-            });
+            self.mark_editor_dirty(EditorDirtyFlags::block_mesh_changed());
         }
     }
 
@@ -736,13 +797,8 @@ impl State {
         {
             self.sync_editor_objects();
             self.rebuild_editor_cursor_vertices();
-            if self.editor_transform_trigger_capture_active()
-                || self.editor.has_selected_transform_trigger_block()
-            {
-                self.mark_editor_dirty(EditorDirtyFlags {
-                    rebuild_transform_trigger_markers: true,
-                    ..EditorDirtyFlags::default()
-                });
+            if self.editor.has_selected_transform_trigger_block() {
+                self.mark_editor_dirty(EditorDirtyFlags::trigger_markers_changed());
             }
             return true;
         }
@@ -774,13 +830,8 @@ impl State {
                 self.rebuild_editor_cursor_vertices();
                 self.rebuild_editor_gizmo_vertices();
                 self.rebuild_editor_selection_outline_vertices();
-                if self.editor_transform_trigger_capture_active()
-                    || self.editor.has_selected_transform_trigger_block()
-                {
-                    self.mark_editor_dirty(EditorDirtyFlags {
-                        rebuild_transform_trigger_markers: true,
-                        ..EditorDirtyFlags::default()
-                    });
+                if self.editor.has_selected_transform_trigger_block() {
+                    self.mark_editor_dirty(EditorDirtyFlags::trigger_markers_changed());
                 }
                 return true;
             }
@@ -945,11 +996,7 @@ impl State {
             self.editor.timeline.playback.pending_seek_time_seconds = None;
             self.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
 
-            self.mark_editor_dirty(EditorDirtyFlags {
-                rebuild_block_mesh: true,
-                rebuild_tap_indicators: true,
-                ..EditorDirtyFlags::default()
-            });
+            self.mark_editor_dirty(EditorDirtyFlags::playback_mode_changed());
             if last_mode == EditorMode::Timing {
                 self.editor.timeline.playback.runtime = None;
             } else {
@@ -988,11 +1035,7 @@ impl State {
             self.editor.set_mode(EditorMode::Place);
         }
 
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_block_mesh: true,
-            rebuild_tap_indicators: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.mark_editor_dirty(EditorDirtyFlags::playback_mode_changed());
         self.stop_audio();
     }
 
@@ -1063,13 +1106,11 @@ impl State {
         self.session.playtest_audio_start_seconds = Some(transition.playtest_audio_start_seconds);
         self.session.playing_sky_color = transition.sky_color;
         self.gameplay.state = GameState::new();
-        self.gameplay.state.objects = transition.objects;
-        self.gameplay.state.rebuild_behavior_cache();
-        self.gameplay
-            .state
-            .set_level_duration_seconds(transition.level_duration_seconds);
         self.session.playing_trigger_hitboxes = self.editor.simulate_trigger_hitboxes();
-        self.session.playing_trigger_base_objects = Some(self.gameplay.state.objects.clone());
+        self.apply_playing_transition_objects(
+            transition.objects,
+            transition.level_duration_seconds,
+        );
         self.apply_spawn_exact_to_game(
             transition.spawn_position,
             transition.spawn_direction,
@@ -1308,13 +1349,7 @@ impl State {
             self.editor.camera.editor_pitch =
                 pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
         }
-        self.editor.mark_dirty(EditorDirtyFlags {
-            rebuild_selection_overlays: true,
-            rebuild_cursor: true,
-            rebuild_tap_indicators: true,
-            rebuild_preview_player: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.editor.mark_dirty(EditorDirtyFlags::camera_changed());
     }
 
     /// Whether any blocks are currently selected in the editor.
@@ -1354,7 +1389,12 @@ mod tests {
     use super::State;
     use crate::editor_domain::derive_tap_indicator_positions;
     use crate::game::TimelineSimulationRuntime;
-    use crate::types::{AppPhase, EditorMode, LevelObject, SpawnDirection, TimingPoint};
+    use crate::triggers::{
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+    };
+    use crate::types::{
+        AppPhase, EditorMode, LevelObject, SpawnDirection, TimingPoint, TRANSFORM_TRIGGER_BLOCK_ID,
+    };
 
     fn test_block(position: [f32; 3]) -> LevelObject {
         LevelObject {
@@ -1364,6 +1404,20 @@ mod tests {
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+        }
+    }
+
+    fn test_transform_trigger(object_ids: Vec<u32>) -> TimedTrigger {
+        TimedTrigger {
+            time_seconds: 0.0,
+            duration_seconds: 1.0,
+            easing: TimedTriggerEasing::EaseInOut,
+            target: TimedTriggerTarget::Objects { object_ids },
+            action: TimedTriggerAction::TransformObjects {
+                position: [9.0, 0.0, 0.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+            },
         }
     }
 
@@ -1388,6 +1442,67 @@ mod tests {
             state.editor_redo();
             assert_eq!(state.editor.objects.len(), 1);
             assert_eq!(state.editor.objects[0].position, [2.0, 0.0, 0.0]);
+        });
+    }
+
+    #[test]
+    fn remove_block_dereferences_deleted_transform_trigger_target() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.objects = vec![
+                test_block([0.0, 0.0, 0.0]),
+                test_block([2.0, 0.0, 0.0]),
+                test_block([4.0, 0.0, 0.0]),
+            ];
+            state
+                .editor
+                .set_triggers(vec![test_transform_trigger(vec![1])]);
+            state.editor.ui.selected_block_index = Some(1);
+            state.editor.ui.selected_block_indices = vec![1];
+
+            state.editor_remove_block();
+
+            assert_eq!(state.editor.objects.len(), 3);
+            assert_eq!(state.editor.objects[2].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
+            let triggers = state.editor.triggers();
+            let trigger = triggers.first().expect("trigger remains");
+            assert_eq!(
+                trigger.target,
+                TimedTriggerTarget::Objects {
+                    object_ids: Vec::new(),
+                }
+            );
+        });
+    }
+
+    #[test]
+    fn remove_block_remaps_transform_trigger_targets_after_deleted_block() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.objects = vec![
+                test_block([0.0, 0.0, 0.0]),
+                test_block([2.0, 0.0, 0.0]),
+                test_block([4.0, 0.0, 0.0]),
+            ];
+            state
+                .editor
+                .set_triggers(vec![test_transform_trigger(vec![2])]);
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+
+            state.editor_remove_block();
+
+            assert_eq!(state.editor.objects[1].position, [4.0, 0.0, 0.0]);
+            let triggers = state.editor.triggers();
+            let trigger = triggers.first().expect("trigger remains");
+            assert_eq!(
+                trigger.target,
+                TimedTriggerTarget::Objects {
+                    object_ids: vec![1],
+                }
+            );
         });
     }
 

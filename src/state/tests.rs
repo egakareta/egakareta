@@ -13,9 +13,9 @@ use crate::game::simulate_timeline_state_with_triggers;
 use crate::platform::audio::runtime_asset_source_key;
 use crate::state::editor_command::EditorCommand;
 use crate::test_utils::{assert_approx_eq as approx_eq, block, editor_test, sized, stone};
+use crate::triggers::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
 use crate::types::{
     AppPhase, EditorMode, GizmoAxis, GizmoDragKind, LevelObject, PhysicalSize, SpawnDirection,
-    TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
 };
 use glam::{Vec2, Vec3};
 
@@ -353,14 +353,14 @@ fn configure_trigger_policy_parity_scene(
     state.editor.spawn.position = [0.0, 0.0, 0.0];
     state.editor.spawn.direction = SpawnDirection::Forward;
     state.editor.timeline.taps.tap_times.clear();
-    state.editor.set_triggers(vec![crate::types::TimedTrigger {
+    state.editor.set_triggers(vec![TimedTrigger {
         time_seconds: 0.0,
         duration_seconds: 0.0,
-        easing: crate::types::TimedTriggerEasing::Linear,
-        target: crate::types::TimedTriggerTarget::Objects {
+        easing: TimedTriggerEasing::Linear,
+        target: TimedTriggerTarget::Objects {
             object_ids: vec![0],
         },
-        action: crate::types::TimedTriggerAction::TransformObjects {
+        action: TimedTriggerAction::TransformObjects {
             position: [0.0, 0.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
@@ -1368,6 +1368,35 @@ fn compose_mode_timeline_scrub_runs_simulation_and_mesh_dirty() {
         assert!(state.editor.runtime.dirty.rebuild_block_mesh);
         // 2. Snapshot cache is NOT empty (simulation was run for preview)
         assert!(!state.editor.timeline.snapshot_cache.is_empty());
+    });
+}
+
+#[test]
+fn camera_trigger_timeline_scrub_marks_block_mesh_dirty() {
+    pollster::block_on(async {
+        let mut state = State::new_test().await;
+
+        state.phase = AppPhase::Editor;
+        state.editor.set_mode(EditorMode::Place);
+
+        state.editor.set_triggers(vec![TimedTrigger {
+            time_seconds: 1.0,
+            duration_seconds: 0.0,
+            easing: TimedTriggerEasing::Linear,
+            target: TimedTriggerTarget::Camera,
+            action: TimedTriggerAction::CameraPose {
+                transition_interval_seconds: 1.0,
+                use_full_segment_transition: false,
+                target_position: [0.0, 0.0, 0.0],
+                rotation: 0.0,
+                pitch: 0.0,
+            },
+        }]);
+
+        state.editor.runtime.dirty = EditorDirtyFlags::default();
+        state.set_editor_timeline_time_seconds(0.5);
+
+        assert!(state.editor.runtime.dirty.rebuild_block_mesh);
     });
 }
 

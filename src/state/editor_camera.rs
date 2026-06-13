@@ -8,19 +8,21 @@
 use glam::{Mat4, Vec2, Vec3};
 
 use super::{EditorSubsystem, State};
+use crate::triggers::{
+    camera_trigger_eye_from_target, camera_trigger_forward, timed_triggers_to_camera_triggers,
+    CameraTrigger, CameraTriggerMode, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
+    TimedTriggerTarget, CAMERA_TRIGGER_VIEW_DISTANCE,
+};
 use crate::types::{
-    timed_triggers_to_camera_triggers, AppPhase, CameraTrigger, CameraTriggerMode, TimedTrigger,
-    TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+    AppPhase, DEFAULT_EDITOR_CAMERA_PITCH, DEFAULT_EDITOR_CAMERA_ROTATION,
+    DEFAULT_PLAY_CAMERA_PITCH, DEFAULT_PLAY_CAMERA_ROTATION,
 };
 
-const EDITOR_CAMERA_BASE_DISTANCE: f32 = 24.0;
 const PLAY_CAMERA_DISTANCE: f32 = 28.28;
 const MIN_EDITOR_PITCH: f32 = -89.9f32.to_radians();
 const MAX_EDITOR_PITCH: f32 = 89.9f32.to_radians();
 const MIN_PLAYING_PITCH: f32 = 0.1f32.to_radians();
 const DEFAULT_CAMERA_TRIGGER_TRANSITION_INTERVAL_SECONDS: f32 = 1.0;
-pub(crate) const DEFAULT_PLAY_CAMERA_ROTATION: f32 = std::f32::consts::FRAC_PI_4;
-pub(crate) const DEFAULT_PLAY_CAMERA_PITCH: f32 = std::f32::consts::FRAC_PI_4;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct CameraViewSample {
@@ -36,6 +38,20 @@ pub(crate) struct EditorCameraState {
     pub(crate) playing_rotation: f32,
     pub(crate) playing_pitch: f32,
     pub(crate) transition: Option<CameraTransition>,
+}
+
+impl Default for EditorCameraState {
+    fn default() -> Self {
+        Self {
+            editor_pan: [0.0, 0.0],
+            editor_target_z: 0.0,
+            editor_rotation: DEFAULT_EDITOR_CAMERA_ROTATION,
+            editor_pitch: DEFAULT_EDITOR_CAMERA_PITCH,
+            playing_rotation: DEFAULT_PLAY_CAMERA_ROTATION,
+            playing_pitch: DEFAULT_PLAY_CAMERA_PITCH,
+            transition: None,
+        }
+    }
 }
 
 pub(crate) struct CameraTransition {
@@ -58,9 +74,8 @@ fn offset_from_rotation_pitch(rotation: f32, pitch: f32, distance: f32) -> Vec3 
 }
 
 fn editor_camera_offset_for_pose(rotation: f32, pitch: f32) -> Vec3 {
-    let distance = EDITOR_CAMERA_BASE_DISTANCE;
     let pitch = pitch.clamp(MIN_EDITOR_PITCH, MAX_EDITOR_PITCH);
-    offset_from_rotation_pitch(rotation, pitch, distance)
+    offset_from_rotation_pitch(rotation, pitch, CAMERA_TRIGGER_VIEW_DISTANCE)
 }
 
 fn playing_camera_offset_for_angles(rotation: f32, pitch: f32) -> Vec3 {
@@ -109,18 +124,18 @@ impl EditorSubsystem {
     }
 
     pub(crate) fn camera_trigger_marker_eye(&self, camera_trigger: &CameraTrigger) -> Vec3 {
-        Vec3::from_array(camera_trigger.target_position)
-            + editor_camera_offset_for_pose(camera_trigger.rotation, camera_trigger.pitch)
+        Vec3::from_array(camera_trigger_eye_from_target(
+            camera_trigger.target_position,
+            camera_trigger.rotation,
+            camera_trigger.pitch,
+        ))
     }
 
     pub(crate) fn camera_trigger_marker_forward(&self, camera_trigger: &CameraTrigger) -> Vec3 {
-        let eye = self.camera_trigger_marker_eye(camera_trigger);
-        let to_target = Vec3::from_array(camera_trigger.target_position) - eye;
-        if to_target.length_squared() <= f32::EPSILON {
-            Vec3::Z
-        } else {
-            to_target.normalize()
-        }
+        Vec3::from_array(camera_trigger_forward(
+            camera_trigger.rotation,
+            camera_trigger.pitch,
+        ))
     }
 
     pub(crate) fn editor_camera_target(&self) -> Vec3 {
@@ -342,13 +357,8 @@ impl State {
     pub fn adjust_editor_zoom(&mut self, delta: f32) {
         if self.phase == AppPhase::Editor {
             self.editor.adjust_zoom(delta);
-            self.editor.mark_dirty(crate::state::EditorDirtyFlags {
-                rebuild_selection_overlays: true,
-                rebuild_cursor: true,
-                rebuild_tap_indicators: true,
-                rebuild_preview_player: true,
-                ..Default::default()
-            });
+            self.editor
+                .mark_dirty(crate::state::EditorDirtyFlags::camera_changed());
         }
     }
 
@@ -358,28 +368,21 @@ impl State {
     pub fn pan_editor_camera_by_input(&mut self, screen_x: f32, screen_y: f32) {
         if self.phase == AppPhase::Editor {
             self.editor.pan_by_input(screen_x, screen_y);
-            self.editor.mark_dirty(crate::state::EditorDirtyFlags {
-                rebuild_selection_overlays: true,
-                rebuild_cursor: true,
-                rebuild_tap_indicators: true,
-                rebuild_preview_player: true,
-                ..Default::default()
-            });
+            self.editor
+                .mark_dirty(crate::state::EditorDirtyFlags::camera_changed());
         }
     }
 
     pub(super) fn update_editor_pan_from_keys(&mut self, frame_dt: f32) {
         if self.phase == AppPhase::Editor {
             let previous_pan = self.editor.camera.editor_pan;
+            let previous_target_z = self.editor.camera.editor_target_z;
             self.editor.update_pan_from_keys(frame_dt);
-            if previous_pan != self.editor.camera.editor_pan {
-                self.editor.mark_dirty(crate::state::EditorDirtyFlags {
-                    rebuild_selection_overlays: true,
-                    rebuild_cursor: true,
-                    rebuild_tap_indicators: true,
-                    rebuild_preview_player: true,
-                    ..Default::default()
-                });
+            if previous_pan != self.editor.camera.editor_pan
+                || previous_target_z != self.editor.camera.editor_target_z
+            {
+                self.editor
+                    .mark_dirty(crate::state::EditorDirtyFlags::camera_changed());
             }
         }
     }
@@ -406,11 +409,11 @@ mod tests {
         playing_camera_offset_for_angles, CameraViewSample, State, DEFAULT_PLAY_CAMERA_PITCH,
         DEFAULT_PLAY_CAMERA_ROTATION, MIN_PLAYING_PITCH,
     };
-    use crate::types::AppPhase;
-    use crate::types::{
+    use crate::triggers::{
         CameraTrigger, CameraTriggerMode, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
         TimedTriggerTarget,
     };
+    use crate::types::AppPhase;
     use glam::Vec3;
 
     fn assert_vec3_close(actual: Vec3, expected: Vec3) {
@@ -574,7 +577,7 @@ mod tests {
     fn evaluate_camera_track_without_triggers_returns_live_follow() {
         pollster::block_on(async {
             let mut state = new_editor_state().await;
-            state.editor.triggers.items.clear();
+            state.editor.set_triggers(Vec::new());
             state.editor.camera.playing_rotation = 0.6;
             state.editor.camera.playing_pitch = 0.4;
 

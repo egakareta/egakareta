@@ -277,6 +277,7 @@ pub(crate) enum BlockRenderProfile {
     Neon,
     Gem,
     TransformTrigger,
+    CameraTrigger,
 }
 
 #[derive(Clone, Default, Deserialize, Serialize)]

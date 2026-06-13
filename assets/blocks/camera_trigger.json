@@ -3,9 +3,10 @@
     "display_name": "Camera Trigger",
     "category": "trigger",
     "render": {
-        "profile": "neon",
-        "color_top": [0.2, 0.75, 1.0, 0.85],
-        "color_side": [0.12, 0.42, 0.8, 0.65]
+        "profile": "camera_trigger",
+        "color_top": [1.0, 0.9, 0.24, 0.96],
+        "color_side": [0.2, 0.75, 1.0, 0.9],
+        "color_bottom": [0.0, 0.0, 0.0, 0.0]
     },
     "behavior": {
         "collision": "pass_through",

@@ -28,6 +28,20 @@ use crate::types::{
 use glam::Vec3;
 
 impl State {
+    pub(super) fn apply_playing_transition_objects(
+        &mut self,
+        objects: Vec<crate::types::LevelObject>,
+        level_duration_seconds: f32,
+    ) {
+        self.gameplay.state.objects = objects;
+        self.gameplay.state.rebuild_behavior_cache();
+        self.gameplay.state.initialize_level_progress_from_objects();
+        self.gameplay
+            .state
+            .set_level_duration_seconds(level_duration_seconds);
+        self.session.playing_trigger_base_objects = Some(self.gameplay.state.objects.clone());
+    }
+
     pub(super) fn start_level(&mut self, index: usize) {
         let level_name = self.menu.state.levels[index].clone();
 
@@ -44,13 +58,10 @@ impl State {
             let transition = build_playing_transition_from_metadata(metadata);
             log::debug!("Starting level: {}", transition.level_name);
             self.session.playing_sky_color = transition.sky_color;
-            self.gameplay.state.objects = transition.objects;
-            self.gameplay.state.rebuild_behavior_cache();
-            self.gameplay.state.initialize_level_progress_from_objects();
-            self.gameplay
-                .state
-                .set_level_duration_seconds(transition.level_duration_seconds);
-            self.session.playing_trigger_base_objects = Some(self.gameplay.state.objects.clone());
+            self.apply_playing_transition_objects(
+                transition.objects,
+                transition.level_duration_seconds,
+            );
             self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction, None);
         }
 
@@ -96,14 +107,11 @@ impl State {
             self.session.playtest_audio_start_seconds =
                 Some(transition.playtest_audio_start_seconds);
             self.session.playing_sky_color = transition.sky_color;
-            self.gameplay.state.objects = transition.objects;
-            self.gameplay.state.rebuild_behavior_cache();
-            self.gameplay.state.initialize_level_progress_from_objects();
-            self.gameplay
-                .state
-                .set_level_duration_seconds(transition.level_duration_seconds);
             self.session.playing_trigger_hitboxes = self.editor.simulate_trigger_hitboxes();
-            self.session.playing_trigger_base_objects = Some(self.gameplay.state.objects.clone());
+            self.apply_playing_transition_objects(
+                transition.objects,
+                transition.level_duration_seconds,
+            );
             self.apply_spawn_exact_to_game(
                 transition.spawn_position,
                 transition.spawn_direction,
@@ -120,14 +128,10 @@ impl State {
                 self.session.playing_trigger_hitboxes = metadata.simulate_trigger_hitboxes;
                 let transition = build_playing_transition_from_metadata(metadata);
                 self.session.playing_sky_color = transition.sky_color;
-                self.gameplay.state.objects = transition.objects;
-                self.gameplay.state.rebuild_behavior_cache();
-                self.gameplay.state.initialize_level_progress_from_objects();
-                self.gameplay
-                    .state
-                    .set_level_duration_seconds(transition.level_duration_seconds);
-                self.session.playing_trigger_base_objects =
-                    Some(self.gameplay.state.objects.clone());
+                self.apply_playing_transition_objects(
+                    transition.objects,
+                    transition.level_duration_seconds,
+                );
                 self.apply_spawn_to_game(
                     transition.spawn_position,
                     transition.spawn_direction,

@@ -11,9 +11,16 @@ use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 
 use crate::block_repository::{normalize_block_id, DEFAULT_BLOCK_ID};
+use crate::triggers::{triggers_from_objects, TimedTrigger, TimedTriggerAction};
 
 pub(crate) const CAMERA_TRIGGER_BLOCK_ID: &str = "core/camera_trigger";
 pub(crate) const TRANSFORM_TRIGGER_BLOCK_ID: &str = "core/transform_trigger";
+pub(crate) const DEFAULT_CAMERA_TRIGGER_ROTATION: f32 = -std::f32::consts::FRAC_PI_4;
+pub(crate) const DEFAULT_CAMERA_TRIGGER_PITCH: f32 = std::f32::consts::FRAC_PI_4;
+pub(crate) const DEFAULT_EDITOR_CAMERA_ROTATION: f32 = std::f32::consts::FRAC_PI_4;
+pub(crate) const DEFAULT_EDITOR_CAMERA_PITCH: f32 = std::f32::consts::FRAC_PI_4;
+pub(crate) const DEFAULT_PLAY_CAMERA_ROTATION: f32 = std::f32::consts::FRAC_PI_4;
+pub(crate) const DEFAULT_PLAY_CAMERA_PITCH: f32 = std::f32::consts::FRAC_PI_4;
 
 // ── Serde default helpers ───────────────────────────────────────────────
 // Reduces the boilerplate of writing `fn default_X() -> T` +
@@ -196,15 +203,7 @@ serde_default_array!(default_preview_camera_target_zero: [f32; 3] = [0.0, 0.0, 0
 
 serde_default_float!(default_timeline_time_seconds: f32 = 0.0);
 serde_default_float!(default_timeline_duration_seconds: f32 = 16.0);
-serde_default_array!(default_camera_trigger_target_position: [f32; 3] = [0.0, 0.0, 0.0]);
-serde_default_float!(default_camera_trigger_rotation: f32 = -45.0f32.to_radians());
-serde_default_float!(default_camera_trigger_pitch: f32 = 45.0f32.to_radians());
-serde_default_float!(default_camera_trigger_transition_interval_seconds: f32 = 1.0);
-serde_default!(default_camera_trigger_use_full_segment_transition: bool = false);
-serde_default_float!(default_timed_trigger_duration_seconds: f32 = 0.0);
 serde_default!(default_simulate_trigger_hitboxes: bool = false);
-
-serde_default!(default_timed_trigger_target: TimedTriggerTarget = TimedTriggerTarget::Camera);
 serde_default_array!(default_block_rotation_degrees: [f32; 3] = [0.0, 0.0, 0.0]);
 serde_default_array!(default_level_object_position: [f32; 3] = [0.0, 0.0, 0.0]);
 serde_default_array!(default_level_object_size: [f32; 3] = [1.0, 1.0, 1.0]);
@@ -411,344 +410,6 @@ pub(crate) struct TimingPoint {
 serde_default!(default_time_signature_numerator: u32 = 4);
 serde_default!(default_time_signature_denominator: u32 = 4);
 
-#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum CameraTriggerMode {
-    Follow,
-    #[default]
-    Static,
-}
-
-fn is_default_camera_trigger_mode(value: &CameraTriggerMode) -> bool {
-    matches!(value, CameraTriggerMode::Static)
-}
-
-#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum TimedTriggerEasing {
-    #[default]
-    Linear,
-    EaseIn,
-    EaseOut,
-    EaseInOut,
-}
-
-fn is_default_camera_trigger_easing(value: &TimedTriggerEasing) -> bool {
-    matches!(value, TimedTriggerEasing::Linear)
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
-pub(crate) struct CameraTrigger {
-    pub(crate) time_seconds: f32,
-    #[serde(default, skip_serializing_if = "is_default_camera_trigger_mode")]
-    pub(crate) mode: CameraTriggerMode,
-    #[serde(default, skip_serializing_if = "is_default_camera_trigger_easing")]
-    pub(crate) easing: TimedTriggerEasing,
-    #[serde(
-        default = "default_camera_trigger_transition_interval_seconds",
-        skip_serializing_if = "is_default_camera_trigger_transition_interval_seconds"
-    )]
-    pub(crate) transition_interval_seconds: f32,
-    #[serde(
-        default = "default_camera_trigger_use_full_segment_transition",
-        skip_serializing_if = "is_default_camera_trigger_use_full_segment_transition"
-    )]
-    pub(crate) use_full_segment_transition: bool,
-    #[serde(
-        default = "default_camera_trigger_target_position",
-        skip_serializing_if = "is_default_camera_trigger_target_position"
-    )]
-    pub(crate) target_position: [f32; 3],
-    #[serde(
-        default = "default_camera_trigger_rotation",
-        skip_serializing_if = "is_default_camera_trigger_rotation"
-    )]
-    pub(crate) rotation: f32,
-    #[serde(
-        default = "default_camera_trigger_pitch",
-        skip_serializing_if = "is_default_camera_trigger_pitch"
-    )]
-    pub(crate) pitch: f32,
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub(crate) enum TimedTriggerTarget {
-    Camera,
-    Objects { object_ids: Vec<u32> },
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub(crate) enum TimedTriggerAction {
-    TransformObjects {
-        position: [f32; 3],
-        rotation_degrees: [f32; 3],
-        size: [f32; 3],
-    },
-    CameraPose {
-        #[serde(
-            default = "default_camera_trigger_transition_interval_seconds",
-            skip_serializing_if = "is_default_camera_trigger_transition_interval_seconds"
-        )]
-        transition_interval_seconds: f32,
-        #[serde(
-            default = "default_camera_trigger_use_full_segment_transition",
-            skip_serializing_if = "is_default_camera_trigger_use_full_segment_transition"
-        )]
-        use_full_segment_transition: bool,
-        #[serde(
-            default = "default_camera_trigger_target_position",
-            skip_serializing_if = "is_default_camera_trigger_target_position"
-        )]
-        target_position: [f32; 3],
-        #[serde(
-            default = "default_camera_trigger_rotation",
-            skip_serializing_if = "is_default_camera_trigger_rotation"
-        )]
-        rotation: f32,
-        #[serde(
-            default = "default_camera_trigger_pitch",
-            skip_serializing_if = "is_default_camera_trigger_pitch"
-        )]
-        pitch: f32,
-    },
-    CameraFollow {
-        #[serde(
-            default = "default_camera_trigger_transition_interval_seconds",
-            skip_serializing_if = "is_default_camera_trigger_transition_interval_seconds"
-        )]
-        transition_interval_seconds: f32,
-        #[serde(
-            default = "default_camera_trigger_use_full_segment_transition",
-            skip_serializing_if = "is_default_camera_trigger_use_full_segment_transition"
-        )]
-        use_full_segment_transition: bool,
-    },
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
-pub(crate) struct TimedTrigger {
-    pub(crate) time_seconds: f32,
-    #[serde(
-        default = "default_timed_trigger_duration_seconds",
-        skip_serializing_if = "is_default_timed_trigger_duration_seconds"
-    )]
-    pub(crate) duration_seconds: f32,
-    #[serde(default, skip_serializing_if = "is_default_camera_trigger_easing")]
-    pub(crate) easing: TimedTriggerEasing,
-    #[serde(
-        default = "default_timed_trigger_target",
-        skip_serializing_if = "is_default_timed_trigger_target"
-    )]
-    pub(crate) target: TimedTriggerTarget,
-    pub(crate) action: TimedTriggerAction,
-}
-
-#[cfg(test)]
-pub(crate) fn camera_triggers_to_timed_triggers(
-    camera_triggers: &[CameraTrigger],
-) -> Vec<TimedTrigger> {
-    let mut triggers = Vec::with_capacity(camera_triggers.len());
-    for camera_trigger in camera_triggers {
-        let action = match camera_trigger.mode {
-            CameraTriggerMode::Follow => TimedTriggerAction::CameraFollow {
-                transition_interval_seconds: camera_trigger.transition_interval_seconds,
-                use_full_segment_transition: camera_trigger.use_full_segment_transition,
-            },
-            CameraTriggerMode::Static => TimedTriggerAction::CameraPose {
-                transition_interval_seconds: camera_trigger.transition_interval_seconds,
-                use_full_segment_transition: camera_trigger.use_full_segment_transition,
-                target_position: camera_trigger.target_position,
-                rotation: camera_trigger.rotation,
-                pitch: camera_trigger.pitch,
-            },
-        };
-
-        triggers.push(TimedTrigger {
-            time_seconds: camera_trigger.time_seconds,
-            duration_seconds: 0.0,
-            easing: camera_trigger.easing,
-            target: TimedTriggerTarget::Camera,
-            action,
-        });
-    }
-
-    triggers.sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
-    triggers
-}
-
-pub(crate) fn timed_triggers_to_camera_triggers(triggers: &[TimedTrigger]) -> Vec<CameraTrigger> {
-    let mut camera_triggers = Vec::new();
-
-    for trigger in triggers {
-        if !matches!(trigger.target, TimedTriggerTarget::Camera) {
-            continue;
-        }
-
-        match trigger.action {
-            TimedTriggerAction::CameraPose {
-                transition_interval_seconds,
-                use_full_segment_transition,
-                target_position,
-                rotation,
-                pitch,
-            } => {
-                camera_triggers.push(CameraTrigger {
-                    time_seconds: trigger.time_seconds,
-                    mode: CameraTriggerMode::Static,
-                    easing: trigger.easing,
-                    transition_interval_seconds,
-                    use_full_segment_transition,
-                    target_position,
-                    rotation,
-                    pitch,
-                });
-            }
-            TimedTriggerAction::CameraFollow {
-                transition_interval_seconds,
-                use_full_segment_transition,
-            } => {
-                camera_triggers.push(CameraTrigger {
-                    time_seconds: trigger.time_seconds,
-                    mode: CameraTriggerMode::Follow,
-                    easing: trigger.easing,
-                    transition_interval_seconds,
-                    use_full_segment_transition,
-                    target_position: default_camera_trigger_target_position(),
-                    rotation: default_camera_trigger_rotation(),
-                    pitch: default_camera_trigger_pitch(),
-                });
-            }
-            TimedTriggerAction::TransformObjects { .. } => {}
-        }
-    }
-
-    camera_triggers.retain(|trigger| trigger.time_seconds.is_finite());
-    camera_triggers.sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
-    camera_triggers
-}
-
-fn timed_trigger_eased_alpha(easing: TimedTriggerEasing, alpha: f32) -> f32 {
-    let alpha = alpha.clamp(0.0, 1.0);
-    match easing {
-        TimedTriggerEasing::Linear => alpha,
-        TimedTriggerEasing::EaseIn => alpha * alpha,
-        TimedTriggerEasing::EaseOut => 1.0 - (1.0 - alpha) * (1.0 - alpha),
-        TimedTriggerEasing::EaseInOut => {
-            if alpha < 0.5 {
-                2.0 * alpha * alpha
-            } else {
-                1.0 - ((-2.0 * alpha + 2.0).powi(2) * 0.5)
-            }
-        }
-    }
-}
-
-fn timed_trigger_progress(trigger: &TimedTrigger, time_seconds: f32) -> Option<f32> {
-    let time_seconds = time_seconds.max(0.0);
-    if !trigger.time_seconds.is_finite() {
-        return None;
-    }
-
-    if trigger.duration_seconds <= 1e-6 {
-        return (time_seconds + 1e-6 >= trigger.time_seconds).then_some(1.0);
-    }
-
-    let start = trigger.time_seconds;
-    let end = start + trigger.duration_seconds.max(0.0);
-    if time_seconds + 1e-6 < start {
-        return None;
-    }
-
-    if time_seconds >= end {
-        return Some(1.0);
-    }
-
-    let alpha = (time_seconds - start) / trigger.duration_seconds.max(1e-6);
-    Some(timed_trigger_eased_alpha(trigger.easing, alpha))
-}
-
-pub(crate) fn apply_timed_triggers_to_objects(
-    base_objects: &[LevelObject],
-    triggers: &[TimedTrigger],
-    time_seconds: f32,
-) -> Vec<LevelObject> {
-    let mut objects = base_objects.to_vec();
-    if objects.is_empty() || triggers.is_empty() {
-        return objects;
-    }
-
-    // Triggers are stored sorted by time_seconds (set_triggers / insert_trigger_sorted).
-    // Iterate directly. No per-call sort or allocation for target indices.
-    for trigger in triggers {
-        if !trigger.time_seconds.is_finite() {
-            continue;
-        }
-
-        let Some(progress) = timed_trigger_progress(trigger, time_seconds) else {
-            continue;
-        };
-        let object_count = objects.len();
-
-        match &trigger.target {
-            TimedTriggerTarget::Camera => {}
-            TimedTriggerTarget::Objects { object_ids } => {
-                // Apply transforms directly without allocating a target-index Vec.
-                // Dedup is handled inline via a small seen-set.
-                let mut seen: Vec<u32> = Vec::new();
-                for &object_id in object_ids {
-                    if object_id as usize >= object_count {
-                        continue;
-                    }
-                    if seen.contains(&object_id) {
-                        continue;
-                    }
-                    seen.push(object_id);
-                    apply_trigger_action_to_object(
-                        &mut objects[object_id as usize],
-                        &trigger.action,
-                        progress,
-                    );
-                }
-            }
-        }
-    }
-
-    objects
-}
-
-fn apply_trigger_action_to_object(
-    object: &mut LevelObject,
-    action: &TimedTriggerAction,
-    progress: f32,
-) {
-    match action {
-        TimedTriggerAction::TransformObjects {
-            position,
-            rotation_degrees,
-            size,
-        } => {
-            for (current, target) in object.position.iter_mut().zip(position.iter()) {
-                *current += (*target - *current) * progress;
-            }
-            for (current, target) in object
-                .rotation_degrees
-                .iter_mut()
-                .zip(rotation_degrees.iter())
-            {
-                *current += (*target - *current) * progress;
-            }
-            for (current, target) in object.size.iter_mut().zip(size.iter()) {
-                let current_value = (*current).max(0.01);
-                let target_value = (*target).max(0.01);
-                *current = current_value + (target_value - current_value) * progress;
-            }
-        }
-        TimedTriggerAction::CameraPose { .. } | TimedTriggerAction::CameraFollow { .. } => {}
-    }
-}
-
 #[derive(Deserialize, Serialize, Clone)]
 /// Represents the metadata for a level, including music, spawn, timing, and objects.
 /// This struct is serialized to/from JSON for level files.
@@ -809,6 +470,31 @@ pub(crate) struct LevelMetadata {
     pub(crate) objects: Vec<LevelObject>,
     #[serde(flatten)]
     pub(crate) extra: serde_json::Map<String, serde_json::Value>,
+}
+
+impl Default for LevelMetadata {
+    fn default() -> Self {
+        Self {
+            format_version: CURRENT_LEVEL_FORMAT_VERSION,
+            name: "Untitled".to_string(),
+            creator: None,
+            description: None,
+            stars: default_level_stars(),
+            tags: default_level_tags(),
+            version: None,
+            music: MusicMetadata::default(),
+            spawn: SpawnMetadata::default(),
+            sky_color: default_sky_color(),
+            tap_times: Vec::new(),
+            timing_points: Vec::new(),
+            timeline_time_seconds: default_timeline_time_seconds(),
+            timeline_duration_seconds: default_timeline_duration_seconds(),
+            simulate_trigger_hitboxes: default_simulate_trigger_hitboxes(),
+            menu_preview_camera: None,
+            objects: Vec::new(),
+            extra: serde_json::Map::new(),
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
@@ -964,7 +650,6 @@ pub(crate) struct LevelObject {
     pub(crate) rotation_degrees: [f32; 3],
     #[serde(
         default = "default_level_object_block_id",
-        alias = "kind",
         deserialize_with = "deserialize_level_object_block_id",
         skip_serializing_if = "is_default_level_object_block_id"
     )]
@@ -997,41 +682,6 @@ impl LevelObject {
     }
 }
 
-pub(crate) fn triggers_from_objects(objects: &[LevelObject]) -> Vec<TimedTrigger> {
-    let mut triggers = objects
-        .iter()
-        .filter_map(|object| {
-            let mut trigger = object.trigger.clone()?;
-            match &mut trigger.action {
-                TimedTriggerAction::TransformObjects {
-                    position,
-                    rotation_degrees,
-                    size,
-                } => {
-                    *position = object.position;
-                    *rotation_degrees = object.rotation_degrees;
-                    *size = object.size;
-                }
-                TimedTriggerAction::CameraPose {
-                    target_position,
-                    rotation,
-                    pitch,
-                    ..
-                } => {
-                    *target_position = object.position;
-                    *pitch = object.rotation_degrees[0].to_radians();
-                    *rotation = object.rotation_degrees[1].to_radians();
-                }
-                TimedTriggerAction::CameraFollow { .. } => {}
-            }
-            Some(trigger)
-        })
-        .filter(|trigger| trigger.time_seconds.is_finite())
-        .collect::<Vec<_>>();
-    triggers.sort_by(|left, right| f32::total_cmp(&left.time_seconds, &right.time_seconds));
-    triggers
-}
-
 impl Default for LevelObject {
     fn default() -> Self {
         Self {
@@ -1053,42 +703,6 @@ pub(crate) enum AppPhase {
     Playing,
     Editor,
     GameOver,
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
-pub(crate) struct AuthSessionTokens {
-    pub(crate) access_token: String,
-    pub(crate) refresh_token: String,
-    pub(crate) expires_at: Option<u64>,
-    pub(crate) token_type: String,
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
-pub(crate) struct AuthUser {
-    pub(crate) id: String,
-    pub(crate) email: Option<String>,
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
-pub(crate) struct AuthProfile {
-    pub(crate) id: String,
-    pub(crate) username: Option<String>,
-    pub(crate) avatar_url: Option<String>,
-    pub(crate) country: String,
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
-pub(crate) struct AuthSession {
-    pub(crate) session: AuthSessionTokens,
-    pub(crate) user: AuthUser,
-    pub(crate) profile: Option<AuthProfile>,
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
-pub(crate) struct AuthErrorResponse {
-    pub(crate) error: String,
-    #[serde(default)]
-    pub(crate) code: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -2152,6 +1766,7 @@ pub(crate) struct LineUniform {
 /// Contains the view-projection matrix for 3D rendering.
 pub(crate) struct CameraUniform {
     pub(crate) view_proj: [[f32; 4]; 4],
+    pub(crate) camera_position: [f32; 4],
 }
 
 #[repr(C)]
@@ -2176,14 +1791,19 @@ pub(crate) struct GridUniform {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_timed_triggers_to_objects, camera_triggers_to_timed_triggers,
-        default_camera_trigger_pitch, default_camera_trigger_rotation,
-        default_camera_trigger_transition_interval_seconds, timed_triggers_to_camera_triggers,
-        triggers_from_objects, CameraTrigger, CameraTriggerMode, EditorStateParams, GameCursor,
-        LevelCreatorMetadata, LevelMetadata, LevelObject, LevelPreviewCameraMetadata,
-        MusicMetadata, SpawnDirection, SpawnMetadata, TimedTrigger, TimedTriggerAction,
-        TimedTriggerEasing, TimedTriggerTarget, Vertex, CAMERA_TRIGGER_BLOCK_ID,
-        TRANSFORM_TRIGGER_BLOCK_ID,
+        EditorStateParams, GameCursor, LevelCreatorMetadata, LevelMetadata, LevelObject,
+        LevelPreviewCameraMetadata, MusicMetadata, SpawnDirection, SpawnMetadata, Vertex,
+        CAMERA_TRIGGER_BLOCK_ID, TRANSFORM_TRIGGER_BLOCK_ID,
+    };
+    use crate::triggers::{
+        apply_timed_triggers_to_objects, camera_trigger_eye_from_object,
+        camera_trigger_eye_from_target, camera_trigger_forward,
+        camera_trigger_forward_from_rotation_degrees,
+        camera_trigger_rotation_pitch_from_rotation_degrees, camera_trigger_target_from_eye,
+        camera_triggers_to_timed_triggers, default_camera_trigger_pitch,
+        default_camera_trigger_rotation, default_camera_trigger_transition_interval_seconds,
+        timed_triggers_to_camera_triggers, triggers_from_objects, CameraTrigger, CameraTriggerMode,
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
     };
     use serde_json::json;
 
@@ -2206,7 +1826,7 @@ mod tests {
         let json = r#"{
             "position":[1.0,2.0,3.0],
             "size":[4.0,5.0,6.0],
-            "kind":"standard"
+            "block_id":"core/stone"
         }"#;
 
         let object: LevelObject = serde_json::from_str(json).expect("valid level object");
@@ -2218,11 +1838,11 @@ mod tests {
     #[test]
     fn level_metadata_parses_objects_without_rotation_field() {
         let json = r#"{
-            "name":"Compat",
+            "name":"Current",
             "music":{"source":"music.mp3"},
             "spawn":{"position":[0.0,0.0,0.0],"direction":"forward"},
             "objects":[
-                {"position":[0.0,0.0,0.0],"size":[1.0,1.0,1.0],"kind":"grass"}
+                {"position":[0.0,0.0,0.0],"size":[1.0,1.0,1.0],"block_id":"core/grass"}
             ]
         }"#;
 
@@ -2516,22 +2136,7 @@ mod tests {
     #[test]
     fn resolved_triggers_return_trigger_data_for_camera_conversion() {
         let metadata = LevelMetadata {
-            format_version: 1,
             name: "Bridge".to_string(),
-            creator: None,
-            description: None,
-            stars: 0.0,
-            tags: Vec::new(),
-            version: None,
-            music: MusicMetadata::default(),
-            spawn: SpawnMetadata::default(),
-            sky_color: crate::types::default_sky_color(),
-            tap_times: Vec::new(),
-            timing_points: Vec::new(),
-            timeline_time_seconds: 0.0,
-            timeline_duration_seconds: 16.0,
-            simulate_trigger_hitboxes: false,
-            menu_preview_camera: None,
             objects: vec![LevelObject {
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
@@ -2551,18 +2156,87 @@ mod tests {
                 .into_iter()
                 .next(),
             }],
-            extra: serde_json::Map::new(),
+            ..LevelMetadata::default()
         };
         let mut metadata = metadata;
         metadata.objects[0].position = [9.0, 8.0, 7.0];
         metadata.objects[0].rotation_degrees = [30.0, 60.0, 0.0];
 
         let resolved = timed_triggers_to_camera_triggers(&metadata.resolved_triggers());
+        let expected_target = camera_trigger_target_from_eye(
+            camera_trigger_eye_from_object(&metadata.objects[0]),
+            60.0_f32.to_radians(),
+            30.0_f32.to_radians(),
+        );
+        let expected_eye = camera_trigger_eye_from_object(&metadata.objects[0]);
+        let resolved_eye = camera_trigger_eye_from_target(
+            resolved[0].target_position,
+            resolved[0].rotation,
+            resolved[0].pitch,
+        );
         assert_eq!(resolved.len(), 1);
         assert!((resolved[0].time_seconds - 1.2).abs() <= 1e-6);
-        assert_eq!(resolved[0].target_position, [9.0, 8.0, 7.0]);
+        for (actual, expected) in resolved[0].target_position.iter().zip(expected_target) {
+            assert_approx_eq(*actual, expected);
+        }
+        for (actual, expected) in resolved_eye.iter().zip(expected_eye) {
+            assert_approx_eq(*actual, expected);
+        }
         assert!((resolved[0].pitch - 30.0_f32.to_radians()).abs() <= 1e-6);
         assert!((resolved[0].rotation - 60.0_f32.to_radians()).abs() <= 1e-6);
+    }
+
+    #[test]
+    fn resolved_camera_trigger_normalizes_wrapped_pitch_rotation() {
+        let object = LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [-135.0, 0.0, 180.0],
+            block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+            trigger: camera_triggers_to_timed_triggers(&[CameraTrigger {
+                time_seconds: 1.2,
+                mode: CameraTriggerMode::Static,
+                easing: TimedTriggerEasing::Linear,
+                transition_interval_seconds: 1.0,
+                use_full_segment_transition: false,
+                target_position: [2.0, 3.0, 4.0],
+                rotation: 0.0,
+                pitch: 0.0,
+            }])
+            .into_iter()
+            .next(),
+        };
+        let metadata = LevelMetadata {
+            name: "Bridge".to_string(),
+            objects: vec![object],
+            ..LevelMetadata::default()
+        };
+
+        let resolved = timed_triggers_to_camera_triggers(&metadata.resolved_triggers());
+        let (expected_rotation, expected_pitch) =
+            camera_trigger_rotation_pitch_from_rotation_degrees([-135.0, 0.0, 180.0]);
+        let expected_forward = camera_trigger_forward_from_rotation_degrees([-135.0, 0.0, 180.0]);
+        let resolved_forward = camera_trigger_forward(resolved[0].rotation, resolved[0].pitch);
+        let resolved_eye = camera_trigger_eye_from_target(
+            resolved[0].target_position,
+            resolved[0].rotation,
+            resolved[0].pitch,
+        );
+
+        assert_eq!(resolved.len(), 1);
+        assert_approx_eq(resolved[0].rotation, expected_rotation);
+        assert_approx_eq(resolved[0].pitch, expected_pitch);
+        assert!(resolved_forward[1] < -0.6);
+        for (actual, expected) in resolved_forward.iter().zip(expected_forward) {
+            assert_approx_eq(*actual, expected);
+        }
+        for (actual, expected) in resolved_eye
+            .iter()
+            .zip(camera_trigger_eye_from_object(&metadata.objects[0]))
+        {
+            assert_approx_eq(*actual, expected);
+        }
     }
 
     #[test]

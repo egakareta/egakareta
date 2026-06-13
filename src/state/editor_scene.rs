@@ -10,18 +10,18 @@ use std::borrow::Cow;
 use glam::Vec3;
 
 use super::{EditorDirtyFlags, EditorSubsystem, State};
-use crate::block_repository::resolve_block_definition;
+use crate::block_repository::{resolve_block_definition, BlockRenderProfile};
 use crate::editor_domain::tap_time_is_timing_division;
 use crate::editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds_with_triggers};
 use crate::game::trigger_transformed_objects_at_time;
 use crate::mesh::TransformTriggerMarker;
 use crate::mesh::{
-    build_block_geometry, build_block_geometry_for_object, build_block_geometry_from_refs,
-    build_camera_arrow_vertices, build_camera_trigger_marker_vertices,
-    build_colored_tap_indicator_vertices, build_editor_cursor_vertices,
-    build_editor_gizmo_vertices, build_editor_hitbox_visualization_vertices,
-    build_editor_hover_outline_vertices, build_editor_selection_outline_vertices,
-    build_editor_tap_cursor_vertices, build_editor_transform_origin_outline_vertices,
+    build_block_geometry, build_block_geometry_at_time, build_block_geometry_for_object,
+    build_block_geometry_from_refs, build_block_geometry_from_refs_at_time,
+    build_camera_arrow_vertices, build_colored_tap_indicator_vertices,
+    build_editor_cursor_vertices, build_editor_gizmo_vertices,
+    build_editor_hitbox_visualization_vertices, build_editor_hover_outline_vertices,
+    build_editor_selection_outline_vertices, build_editor_tap_cursor_vertices,
     build_editor_transform_trigger_target_outline_vertices,
     build_practice_checkpoint_flag_geometry, build_spawn_marker_vertices,
     build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices,
@@ -29,12 +29,79 @@ use crate::mesh::{
     PracticeCheckpointFlagInstance,
 };
 use crate::state::render::EditorOutlineInstance;
+use crate::triggers::{TimedTrigger, TimedTriggerAction, TimedTriggerTarget};
 use crate::types::{
-    AppPhase, EditorMode, EditorPlaceMode, GizmoPart, LevelObject, SpawnDirection, TimedTrigger,
-    TimedTriggerAction, TimedTriggerTarget, TimingPoint, Vertex, TRANSFORM_TRIGGER_BLOCK_ID,
+    AppPhase, EditorMode, EditorPlaceMode, GizmoPart, LevelObject, SpawnDirection, TimingPoint,
+    Vertex, TRANSFORM_TRIGGER_BLOCK_ID,
 };
 
 const SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD: usize = 700;
+const EDITOR_SELECTION_OUTLINE_COLOR: [f32; 4] = [0.098, 0.6, 1.0, 1.0];
+const EDITOR_HOVER_OUTLINE_COLOR: [f32; 4] = [0.698, 0.898, 1.0, 1.0];
+
+#[derive(Clone, Copy)]
+enum EditorObjectOutlineStyle {
+    Selection,
+    Hover,
+}
+
+impl EditorObjectOutlineStyle {
+    fn color(self) -> [f32; 4] {
+        match self {
+            Self::Selection => EDITOR_SELECTION_OUTLINE_COLOR,
+            Self::Hover => EDITOR_HOVER_OUTLINE_COLOR,
+        }
+    }
+}
+
+fn is_camera_trigger_block(object: &LevelObject) -> bool {
+    resolve_block_definition(&object.block_id).render.profile == BlockRenderProfile::CameraTrigger
+}
+
+fn build_camera_trigger_visual_outline_vertices(
+    object: &LevelObject,
+    color: [f32; 4],
+    line_width: f32,
+) -> Vec<Vertex> {
+    let mut vertices = build_block_geometry_for_object(object).to_triangle_vertices();
+    let outline_width_pixels = (line_width * 1.35).max(1.0);
+    for vertex in &mut vertices {
+        vertex.color = color;
+        vertex.color_outline = [
+            object.position[0],
+            object.position[1],
+            object.position[2],
+            outline_width_pixels,
+        ];
+        vertex.render_profile = 3.0;
+    }
+    vertices
+}
+
+fn build_editor_object_outline_vertices(
+    object: &LevelObject,
+    style: EditorObjectOutlineStyle,
+    line_width: f32,
+) -> Vec<Vertex> {
+    if is_camera_trigger_block(object) {
+        return build_camera_trigger_visual_outline_vertices(object, style.color(), line_width);
+    }
+
+    match style {
+        EditorObjectOutlineStyle::Selection => build_editor_selection_outline_vertices(
+            object.position,
+            object.size,
+            object.rotation_degrees,
+            line_width,
+        ),
+        EditorObjectOutlineStyle::Hover => build_editor_hover_outline_vertices(
+            object.position,
+            object.size,
+            object.rotation_degrees,
+            line_width,
+        ),
+    }
+}
 
 fn append_outline_instance(
     mask_vertices: &mut Vec<Vertex>,
@@ -55,32 +122,6 @@ fn append_outline_instance(
         mask_vertices: mask_start..mask_end,
         outline_vertices: outline_start..outline_end,
     });
-}
-
-fn append_transform_capture_origin_outlines(
-    mask_vertices: &mut Vec<Vertex>,
-    outline_vertices: &mut Vec<Vertex>,
-    instances: &mut Vec<EditorOutlineInstance>,
-    capture: Option<&super::EditorTransformTriggerCapture>,
-) {
-    let Some(capture) = capture else {
-        return;
-    };
-
-    for (_, object) in &capture.original_objects {
-        append_outline_instance(
-            mask_vertices,
-            outline_vertices,
-            instances,
-            object,
-            build_editor_transform_origin_outline_vertices(
-                object.position,
-                object.size,
-                object.rotation_degrees,
-                2.5,
-            ),
-        );
-    }
 }
 
 fn transform_trigger_target_indices_for_block(
@@ -266,46 +307,6 @@ fn transform_trigger_marker_source_objects<'a>(
     }
 }
 
-fn transform_trigger_markers_for_capture(
-    objects: &[LevelObject],
-    triggers: &[TimedTrigger],
-    capture_time_seconds: f32,
-    original_objects: &[(usize, LevelObject)],
-) -> Vec<TransformTriggerMarker> {
-    let mut source_base_objects = objects.to_vec();
-    for (object_index, original_object) in original_objects {
-        if let Some(object) = source_base_objects.get_mut(*object_index) {
-            *object = original_object.clone();
-        }
-    }
-
-    let source_objects =
-        trigger_transformed_objects_at_time(&source_base_objects, triggers, capture_time_seconds);
-    let mut markers = Vec::new();
-
-    for (object_index, _) in original_objects {
-        let Some(source_object) = source_objects.get(*object_index) else {
-            continue;
-        };
-        let Some(current_object) = objects.get(*object_index) else {
-            continue;
-        };
-
-        markers.push(TransformTriggerMarker {
-            source_position: Some(source_object.position),
-            source_size: Some(source_object.size),
-            target_position: current_object.position,
-            target_rotation_degrees: current_object.rotation_degrees,
-            target_size: current_object.size,
-            time_seconds: capture_time_seconds,
-            duration_seconds: 1.0,
-            is_selected: true,
-        });
-    }
-
-    markers
-}
-
 fn editor_static_mesh_spare_capacity(geometry: &MeshGeometry, object_count: usize) -> (u32, u32) {
     let object_room = object_count.min(512).saturating_mul(36);
     let vertex_growth_room = geometry.vertex_count() / 8;
@@ -333,24 +334,13 @@ impl EditorSubsystem {
 
     pub(crate) fn sync_objects_for_drag(&mut self) {
         self.normalize_block_selection();
-        self.mark_dirty(EditorDirtyFlags {
-            sync_game_objects: true,
-            rebuild_block_mesh: true,
-            rebuild_selection_overlays: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.mark_dirty(EditorDirtyFlags::drag_object_sync());
     }
 
     pub(crate) fn sync_objects_after_drag_release(&mut self) {
         self.normalize_block_selection();
         self.invalidate_samples();
-        self.mark_dirty(EditorDirtyFlags {
-            sync_game_objects: true,
-            rebuild_selection_overlays: true,
-            rebuild_preview_player: true,
-            rebuild_cursor: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.mark_dirty(EditorDirtyFlags::drag_release_sync());
     }
 
     pub(crate) fn selected_block_default_size(&self) -> [f32; 3] {
@@ -379,20 +369,14 @@ impl EditorSubsystem {
         if can_append_mesh {
             self.invalidate_samples();
             self.runtime.pending_block_mesh_appends.push(placed_index);
-            self.mark_dirty(EditorDirtyFlags {
-                sync_game_objects: true,
-                append_block_mesh: true,
-                rebuild_selection_overlays: place_mode == EditorPlaceMode::SelectPlaced,
-                rebuild_transform_trigger_markers: placed_transform_trigger,
-                ..EditorDirtyFlags::default()
-            });
+            self.mark_dirty(EditorDirtyFlags::appended_block(
+                place_mode == EditorPlaceMode::SelectPlaced,
+                placed_transform_trigger,
+            ));
         } else {
             self.sync_objects();
             if placed_transform_trigger {
-                self.mark_dirty(EditorDirtyFlags {
-                    rebuild_transform_trigger_markers: true,
-                    ..EditorDirtyFlags::default()
-                });
+                self.mark_dirty(EditorDirtyFlags::trigger_markers_changed());
             }
         }
         placed_index
@@ -774,10 +758,9 @@ impl State {
         let mut stencil_geometry = MeshGeometry::default();
         for index in indices_to_outline {
             let obj = &self.editor.objects[index];
-            all_vertices.append(&mut build_editor_hover_outline_vertices(
-                obj.position,
-                obj.size,
-                obj.rotation_degrees,
+            all_vertices.append(&mut build_editor_object_outline_vertices(
+                obj,
+                EditorObjectOutlineStyle::Hover,
                 3.0,
             ));
             stencil_geometry.append_geometry(build_block_geometry_for_object(obj));
@@ -936,12 +919,6 @@ impl State {
                 mask_vertices: 0..mask_vertices.len() as u32,
                 outline_vertices: 0..outline_vertices.len() as u32,
             }];
-            append_transform_capture_origin_outlines(
-                &mut mask_vertices,
-                &mut outline_vertices,
-                &mut instances,
-                self.editor.runtime.transform_trigger_capture.as_ref(),
-            );
             append_transform_trigger_target_outline_instances(
                 &self.editor.objects,
                 selected_indices.iter().copied(),
@@ -979,21 +956,14 @@ impl State {
                     &mut outline_vertices,
                     &mut instances,
                     obj,
-                    build_editor_selection_outline_vertices(
-                        obj.position,
-                        obj.size,
-                        obj.rotation_degrees,
+                    build_editor_object_outline_vertices(
+                        obj,
+                        EditorObjectOutlineStyle::Selection,
                         2.0,
                     ),
                 );
             }
         }
-        append_transform_capture_origin_outlines(
-            &mut mask_vertices,
-            &mut outline_vertices,
-            &mut instances,
-            self.editor.runtime.transform_trigger_capture.as_ref(),
-        );
         append_transform_trigger_target_outline_instances(
             &self.editor.objects,
             self.selected_block_indices_normalized(),
@@ -1035,52 +1005,7 @@ impl State {
 
     pub(super) fn rebuild_camera_trigger_marker_vertices(&mut self) {
         puffin::profile_scope!("CameraTriggerMarkerMesh");
-        if self.phase != AppPhase::Editor {
-            self.render.meshes.camera_trigger_markers.clear();
-            return;
-        }
-
-        let markers = self.editor.camera_trigger_markers();
-        if markers.is_empty() {
-            self.render.meshes.camera_trigger_markers.clear();
-            return;
-        }
-
-        let camera_triggers = markers
-            .iter()
-            .map(|(_, camera_trigger)| camera_trigger.clone())
-            .collect::<Vec<_>>();
-        let selected_camera_trigger_index =
-            self.editor
-                .selected_trigger_index()
-                .and_then(|selected_trigger_index| {
-                    markers
-                        .iter()
-                        .position(|(trigger_index, _)| *trigger_index == selected_trigger_index)
-                });
-
-        let current_camera_eye = if self.editor_is_playing() {
-            let (e, _) = self.editor_preview_camera_view();
-            Some(Vec3::from_array(e))
-        } else {
-            let target = self.editor.editor_camera_target();
-            let offset = self.editor_camera_offset();
-            Some(target + offset)
-        };
-
-        let vertices = build_camera_trigger_marker_vertices(
-            &camera_triggers,
-            selected_camera_trigger_index,
-            current_camera_eye,
-        );
-        self.render
-            .meshes
-            .camera_trigger_markers
-            .replace_with_vertices(
-                &self.render.gpu.device,
-                "Camera Trigger Marker Vertex Buffer",
-                &vertices,
-            );
+        self.render.meshes.camera_trigger_markers.clear();
     }
 
     pub(super) fn rebuild_transform_trigger_marker_vertices(&mut self) {
@@ -1090,28 +1015,11 @@ impl State {
             return;
         }
 
-        let selected_trigger_index = self.editor.selected_trigger_index();
-        let capture_active = self.editor.runtime.transform_trigger_capture.is_some();
-        let mut markers = Vec::new();
-
-        // Hide finalized markers while defining a new transform trigger target.
-        if !capture_active {
-            markers = transform_trigger_markers_for_triggers(
-                &self.editor.objects,
-                &self.editor.triggers(),
-                selected_trigger_index,
-            );
-        }
-
-        // Show preview markers for in-progress transform trigger captures.
-        if let Some(capture) = self.editor.runtime.transform_trigger_capture.as_ref() {
-            markers.extend(transform_trigger_markers_for_capture(
-                &self.editor.objects,
-                &self.editor.triggers(),
-                capture.time_seconds,
-                &capture.original_objects,
-            ));
-        }
+        let markers = transform_trigger_markers_for_triggers(
+            &self.editor.objects,
+            &self.editor.triggers(),
+            self.editor.selected_trigger_index(),
+        );
 
         if markers.is_empty() {
             self.render.meshes.transform_trigger_markers.clear();
@@ -1137,7 +1045,14 @@ impl State {
         if self.phase == AppPhase::Editor {
             self.rebuild_editor_block_vertices_split();
         } else {
-            let geometry = build_block_geometry(&self.gameplay.state.objects);
+            let geometry = if self.editor.has_camera_timeline_triggers() {
+                build_block_geometry_at_time(
+                    &self.gameplay.state.objects,
+                    self.gameplay.state.elapsed_seconds,
+                )
+            } else {
+                build_block_geometry(&self.gameplay.state.objects)
+            };
             self.render.meshes.blocks.replace_with_geometry(
                 &self.render.gpu.device,
                 "Block Vertex Buffer",
@@ -1209,7 +1124,14 @@ impl State {
                     static_objects.push(object);
                 }
             }
-            build_block_geometry_from_refs(&static_objects)
+            if self.editor.has_camera_timeline_triggers() {
+                build_block_geometry_from_refs_at_time(
+                    &static_objects,
+                    Some(self.editor.timeline.clock.time_seconds),
+                )
+            } else {
+                build_block_geometry_from_refs(&static_objects)
+            }
         };
 
         let selected_vertices = {
@@ -1220,7 +1142,14 @@ impl State {
                     selected_objects.push(object);
                 }
             }
-            build_block_geometry_from_refs(&selected_objects)
+            if self.editor.has_camera_timeline_triggers() {
+                build_block_geometry_from_refs_at_time(
+                    &selected_objects,
+                    Some(self.editor.timeline.clock.time_seconds),
+                )
+            } else {
+                build_block_geometry_from_refs(&selected_objects)
+            }
         };
 
         let has_selected_blocks = selected_mask.iter().any(|selected| *selected);
@@ -1367,7 +1296,14 @@ impl State {
                 }
             }
 
-            build_block_geometry_from_refs(&selected_objects)
+            if self.editor.has_camera_timeline_triggers() {
+                build_block_geometry_from_refs_at_time(
+                    &selected_objects,
+                    Some(self.editor.timeline.clock.time_seconds),
+                )
+            } else {
+                build_block_geometry_from_refs(&selected_objects)
+            }
         };
 
         {
@@ -1502,10 +1438,7 @@ impl State {
         self.editor.timeline.preview.position = position;
         self.editor.timeline.preview.direction = direction;
         self.render.meshes.editor_preview_player.clear();
-        self.mark_editor_dirty(EditorDirtyFlags {
-            rebuild_hitbox_visualization: true,
-            ..EditorDirtyFlags::default()
-        });
+        self.mark_editor_dirty(EditorDirtyFlags::hitbox_visualization_changed());
     }
 
     pub(super) fn rebuild_editor_hitbox_visualization_vertices(&mut self) {
@@ -1640,15 +1573,17 @@ fn tap_indicator_color(
 #[cfg(test)]
 mod tests {
     use super::{
-        tap_division_marker_indicators, tap_indicator_color, transform_trigger_markers_for_capture,
-        transform_trigger_markers_for_triggers, State,
+        build_editor_object_outline_vertices, tap_indicator_color,
+        transform_trigger_markers_for_triggers, EditorObjectOutlineStyle, State,
+        EDITOR_SELECTION_OUTLINE_COLOR,
     };
+    use crate::mesh::blocks::build_block_geometry_for_object;
     use crate::mesh::builders::game::build_colored_tap_indicator_vertices;
     use crate::state::render::MeshDrawData;
-    use crate::types::{
-        AppPhase, EditorMode, LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
-        TimedTriggerTarget, TimingPoint,
+    use crate::triggers::{
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
     };
+    use crate::types::{AppPhase, EditorMode, LevelObject};
 
     fn block(position: [f32; 3], size: [f32; 3]) -> LevelObject {
         LevelObject {
@@ -1665,6 +1600,31 @@ mod tests {
         match draw_data {
             MeshDrawData::Vertices { count, .. } | MeshDrawData::Indexed { count, .. } => count,
         }
+    }
+
+    #[test]
+    fn camera_trigger_selection_outline_uses_visual_mesh_instead_of_cube_hull() {
+        let object = LevelObject {
+            position: [3.0, 4.0, 5.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            block_id: "core/camera_trigger".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
+        };
+
+        let visual_vertices = build_block_geometry_for_object(&object).to_triangle_vertices();
+        let outline_vertices =
+            build_editor_object_outline_vertices(&object, EditorObjectOutlineStyle::Selection, 2.0);
+
+        assert_ne!(visual_vertices.len(), 36);
+        assert_eq!(outline_vertices.len(), visual_vertices.len());
+        assert!(outline_vertices
+            .iter()
+            .all(|vertex| vertex.color == EDITOR_SELECTION_OUTLINE_COLOR));
+        assert!(outline_vertices
+            .iter()
+            .all(|vertex| (vertex.render_profile - 3.0).abs() <= f32::EPSILON));
     }
 
     fn approx_eq(a: f32, b: f32, eps: f32) {
@@ -1875,7 +1835,7 @@ mod tests {
     }
 
     #[test]
-    fn camera_trigger_and_tap_indicator_meshes_clear_or_build_by_phase_and_data() {
+    fn camera_trigger_overlay_mesh_clears_while_tap_indicators_build_by_phase_and_data() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
 
@@ -1905,7 +1865,7 @@ mod tests {
                 .meshes
                 .camera_trigger_markers
                 .draw_data()
-                .is_some());
+                .is_none());
 
             state.phase = AppPhase::Menu;
             state.rebuild_tap_indicator_vertices();
@@ -2054,73 +2014,6 @@ mod tests {
         assert_eq!(markers[0].target_position, [8.0, 0.0, 0.0]);
         assert_eq!(markers[0].target_size, [2.0, 1.0, 1.0]);
         assert!(markers[0].is_selected);
-    }
-
-    #[test]
-    fn transform_trigger_capture_marker_source_uses_trigger_time_state() {
-        let original_object = block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        let current_target_object = block([12.0, 0.0, 0.0], [2.0, 1.0, 1.0]);
-        let objects = vec![current_target_object];
-        let triggers = vec![TimedTrigger {
-            time_seconds: 1.0,
-            duration_seconds: 4.0,
-            easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Objects {
-                object_ids: vec![0],
-            },
-            action: TimedTriggerAction::TransformObjects {
-                position: [8.0, 0.0, 0.0],
-                rotation_degrees: [0.0, 90.0, 0.0],
-                size: [3.0, 1.0, 1.0],
-            },
-        }];
-
-        let markers = transform_trigger_markers_for_capture(
-            &objects,
-            &triggers,
-            3.0,
-            &[(0, original_object)],
-        );
-
-        assert_eq!(markers.len(), 1);
-        approx_eq(markers[0].source_position.unwrap()[0], 4.0, 1e-6);
-        approx_eq(markers[0].source_size.unwrap()[0], 2.0, 1e-6);
-        assert_eq!(markers[0].target_position, [12.0, 0.0, 0.0]);
-        assert_eq!(markers[0].target_size, [2.0, 1.0, 1.0]);
-        assert!(markers[0].is_selected);
-    }
-
-    #[test]
-    fn tap_indicator_color_highlights_hovered_or_selected_taps() {
-        assert_eq!(tap_indicator_color(2, Some(2), None), [0.1, 0.45, 0.5, 1.0]);
-        assert_eq!(
-            tap_indicator_color(2, None, Some(2)),
-            [0.2, 0.85, 0.95, 1.0]
-        );
-        assert_eq!(
-            tap_indicator_color(2, Some(1), Some(3)),
-            [0.0, 0.0, 0.0, 1.0]
-        );
-    }
-
-    #[test]
-    fn tap_division_marker_indicators_marks_only_taps_on_timing_divisions() {
-        let timing_points = vec![TimingPoint {
-            time_seconds: 0.0,
-            bpm: 120.0,
-            time_signature_numerator: 4,
-            time_signature_denominator: 4,
-        }];
-        let markers = tap_division_marker_indicators(
-            &[0.5, 0.75, 1.0],
-            &[[1.0, 0.0, 1.0], [2.0, 0.0, 2.0], [3.0, 0.0, 3.0]],
-            &timing_points,
-            2.0,
-        );
-
-        assert_eq!(markers.len(), 2);
-        assert_eq!(markers[0], ([1.0, 0.0, 1.0], [0.0, 0.0, 0.0, 1.0]));
-        assert_eq!(markers[1], ([3.0, 0.0, 3.0], [0.0, 0.0, 0.0, 1.0]));
     }
 
     #[test]

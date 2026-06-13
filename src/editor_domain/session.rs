@@ -5,9 +5,10 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use crate::triggers::TimedTrigger;
 use crate::types::{
     default_sky_color, LevelCreatorMetadata, LevelMetadata, LevelObject,
-    LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata, TimedTrigger, TimingPoint,
+    LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata, TimingPoint,
 };
 
 pub(crate) struct EditorSessionInit {
