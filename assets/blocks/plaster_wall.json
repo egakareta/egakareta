@@ -1,0 +1,17 @@
+{
+    "id": "core/plaster_wall",
+    "display_name": "Plaster Wall",
+    "category": "building",
+    "assets": {
+        "texture": "plaster_wall.png"
+    },
+    "render": {
+        "profile": "solid",
+        "icon_dimetric_projection": true
+    },
+    "behavior": {
+        "collision": "solid",
+        "support_surface": true
+    },
+    "placeable": true
+}

@@ -3,15 +3,15 @@
     "display_name": "Painted Pot",
     "category": "building",
     "assets": {
-        "texture": "painted_pot.png"
+        "mesh": "painted_pot.obj"
     },
     "render": {
         "profile": "solid",
-        "icon_dimetric_projection": true,
-        "color_top": [1.0, 0.98, 0.92, 1.0],
-        "color_side": [0.92, 0.78, 0.58, 1.0],
-        "color_bottom": [0.48, 0.24, 0.17, 1.0],
-        "color_outline": [0.18, 0.08, 0.06, 0.3]
+        "icon_dimetric_projection": false,
+        "icon_camera": {
+            "position": [4.0, 0.5, 0.5],
+            "orthographic_half_extent": 0.7
+        }
     },
     "behavior": {
         "collision": "pass_through",

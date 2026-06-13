@@ -1,0 +1,17 @@
+{
+    "id": "core/wood_shingle_roof",
+    "display_name": "Wood Shingle Roof",
+    "category": "building",
+    "assets": {
+        "texture": "wood_shingle_roof.png"
+    },
+    "render": {
+        "profile": "solid",
+        "icon_dimetric_projection": true
+    },
+    "behavior": {
+        "collision": "solid",
+        "support_surface": true
+    },
+    "placeable": true
+}

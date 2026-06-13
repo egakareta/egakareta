@@ -1,0 +1,17 @@
+{
+    "id": "core/thatched_roof",
+    "display_name": "Thatched Roof",
+    "category": "building",
+    "assets": {
+        "texture": "thatched_roof.png"
+    },
+    "render": {
+        "profile": "solid",
+        "icon_dimetric_projection": true
+    },
+    "behavior": {
+        "collision": "solid",
+        "support_surface": true
+    },
+    "placeable": true
+}

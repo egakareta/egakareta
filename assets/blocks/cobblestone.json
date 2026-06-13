@@ -1,0 +1,17 @@
+{
+    "id": "core/cobblestone",
+    "display_name": "Cobblestone",
+    "category": "building",
+    "assets": {
+        "texture": "cobblestone.png"
+    },
+    "render": {
+        "profile": "solid",
+        "icon_dimetric_projection": true
+    },
+    "behavior": {
+        "collision": "solid",
+        "support_surface": true
+    },
+    "placeable": true
+}

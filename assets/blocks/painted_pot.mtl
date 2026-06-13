@@ -1,0 +1,49 @@
+# painted_pot.mtl - hand-painted terracotta material set
+
+newmtl terracotta
+Kd 0.720 0.320 0.120
+Ka 0.050 0.050 0.050
+Ks 0.120 0.100 0.080
+Ns 48.0
+d 1.000
+illum 2
+
+newmtl cream_paint
+Kd 0.920 0.820 0.580
+Ka 0.050 0.050 0.050
+Ks 0.120 0.100 0.080
+Ns 56.0
+d 1.000
+illum 2
+
+newmtl teal_paint
+Kd 0.020 0.400 0.450
+Ka 0.050 0.050 0.050
+Ks 0.120 0.100 0.080
+Ns 56.0
+d 1.000
+illum 2
+
+newmtl red_paint
+Kd 0.720 0.130 0.070
+Ka 0.050 0.050 0.050
+Ks 0.120 0.100 0.080
+Ns 56.0
+d 1.000
+illum 2
+
+newmtl yellow_paint
+Kd 0.950 0.700 0.120
+Ka 0.050 0.050 0.050
+Ks 0.120 0.100 0.080
+Ns 56.0
+d 1.000
+illum 2
+
+newmtl dark_paint
+Kd 0.120 0.070 0.040
+Ka 0.050 0.050 0.050
+Ks 0.120 0.100 0.080
+Ns 52.0
+d 1.000
+illum 2

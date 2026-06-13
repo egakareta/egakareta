@@ -1,0 +1,17 @@
+{
+    "id": "core/timber_beam",
+    "display_name": "Timber Beam",
+    "category": "building",
+    "assets": {
+        "texture": "timber_beam.png"
+    },
+    "render": {
+        "profile": "solid",
+        "icon_dimetric_projection": true
+    },
+    "behavior": {
+        "collision": "solid",
+        "support_surface": true
+    },
+    "placeable": true
+}
