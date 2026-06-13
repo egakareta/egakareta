@@ -691,6 +691,24 @@ impl State {
                     None
                 }
             }
+            "toggle_grid_snap" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::Editor(EditorCommand::SetSnapToGrid(
+                        !self.editor.config.snap_to_grid,
+                    )))
+                } else {
+                    None
+                }
+            }
+            "toggle_rotation_snap" => {
+                if self.is_editor() && just_pressed {
+                    Some(AppCommand::Editor(EditorCommand::SetSnapRotation(
+                        !self.editor.config.snap_rotation,
+                    )))
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }

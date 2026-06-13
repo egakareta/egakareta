@@ -1214,6 +1214,18 @@ pub(crate) fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
         },
         KeybindActionMetadata {
             group: "Editor",
+            action: "toggle_grid_snap",
+            label: "Toggle Grid Snap",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
+            action: "toggle_rotation_snap",
+            label: "Toggle Rotation Snap",
+            capacity: 1,
+        },
+        KeybindActionMetadata {
+            group: "Editor",
             action: "pick_selected_block",
             label: "Pick Selected Block",
             capacity: 1,
@@ -1504,6 +1516,10 @@ pub(crate) fn default_essential_keybinds() -> Vec<KeybindBinding> {
         KeybindBinding {
             action: "snap_selection_to_grid".to_string(),
             chord: KeyChord::new("g", false, false, false),
+        },
+        KeybindBinding {
+            action: "toggle_grid_snap".to_string(),
+            chord: KeyChord::new("g", true, false, false),
         },
         KeybindBinding {
             action: "pick_selected_block".to_string(),

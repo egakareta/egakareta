@@ -15,9 +15,10 @@ use crate::block_repository::{BlockCategory, BlockDefinition};
 use crate::commands::AppCommand;
 use crate::editor_ui::components::{show_timeline_bar, show_waveform_panel, timeline_metrics};
 use crate::editor_ui::modes::compose::{
-    show_block_preview_button, show_compose_mode_bottom_panel, show_place_block_properties_window,
-    show_recent_block_quick_strip, show_selected_block_properties_window,
+    show_block_preview_button, show_place_block_properties_window, show_recent_block_quick_strip,
+    show_selected_block_properties_window,
 };
+use crate::editor_ui::modes::shared::show_mode_selector_popup;
 use crate::editor_ui::modes::tapping::{
     show_selected_tap_properties_window, show_tapping_mode_bottom_panel,
 };
@@ -1456,14 +1457,6 @@ pub fn show_editor_ui(
                     show_timing_mode_bottom_panel(ui, &view, duration_seconds, &mut commands);
                 } else if is_tapping {
                     show_tapping_mode_bottom_panel(ui, &view, &mut commands);
-                } else {
-                    show_compose_mode_bottom_panel(
-                        ui,
-                        &view,
-                        block_icon_texture_ids,
-                        duration_seconds,
-                        &mut commands,
-                    );
                 }
 
                 show_timeline_bar(ui, &view, duration_seconds, &mut commands);
@@ -1509,6 +1502,8 @@ pub fn show_editor_ui(
 
         show_selected_block_properties_window(ctx, &view, bottom_bar_height, &mut commands);
         show_place_block_properties_window(ctx, &view, bottom_bar_height);
+        let top_bar_height = top_bar_response.response.rect.height();
+        show_mode_selector_popup(ctx, &view, top_bar_height, &mut commands);
     }
 
     // Selected tap properties floating window

@@ -11,9 +11,7 @@ use crate::block_repository::{
     block_texture_atlas, resolve_block_definition, resolve_block_texture_layers,
 };
 use crate::commands::AppCommand;
-use crate::editor_ui::modes::shared::{
-    show_editor_property_popup, show_mode_and_snap_controls, EditorPropertyPopup,
-};
+use crate::editor_ui::modes::shared::{show_editor_property_popup, EditorPropertyPopup};
 use crate::state::editor_command::EditorCommand;
 use crate::state::EditorUiViewModel;
 use crate::triggers::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
@@ -37,16 +35,6 @@ const FALLBACK_TOP_COLOR: egui::Color32 = egui::Color32::from_rgb(170, 170, 170)
 const FALLBACK_SIDE_COLOR: egui::Color32 = egui::Color32::from_rgb(140, 140, 140);
 const TOP_LIGHTEN_FACTOR: f32 = 1.05;
 const ATLAS_AVERAGE_MAX_SAMPLES: usize = 1024;
-
-pub(crate) fn show_compose_mode_bottom_panel(
-    ui: &mut egui::Ui,
-    view: &EditorUiViewModel<'_>,
-    _block_icon_texture_ids: &HashMap<String, egui::TextureId>,
-    _duration_seconds: f32,
-    commands: &mut Vec<AppCommand>,
-) {
-    show_mode_and_snap_controls(ui, view, commands);
-}
 
 pub(crate) fn show_recent_block_quick_strip(
     ui: &mut egui::Ui,
