@@ -7,6 +7,7 @@
 */
 use rayon::prelude::*;
 
+use crate::block_geometry::visual_cuboids;
 use crate::block_repository::{
     resolve_block_definition, resolve_block_texture_layers, BlockRenderProfile,
 };
@@ -311,18 +312,34 @@ fn append_block_geometry_inner(
             colors.bottom,
             colors.outline,
         );
-
-        append_prism_with_layers(
-            object_vertices,
-            [x_min, y_min, z_min],
-            [x_max, y_max, z_max],
-            prism_colors,
-            PrismTextureLayers::new(
-                texture_layers.top,
-                texture_layers.side,
-                texture_layers.bottom,
-            ),
-        );
+        let visual_cuboids = visual_cuboids(obj);
+        if visual_cuboids.is_empty() {
+            append_prism_with_layers(
+                object_vertices,
+                [x_min, y_min, z_min],
+                [x_max, y_max, z_max],
+                prism_colors,
+                PrismTextureLayers::new(
+                    texture_layers.top,
+                    texture_layers.side,
+                    texture_layers.bottom,
+                ),
+            );
+        } else {
+            for cuboid in visual_cuboids {
+                append_prism_with_layers(
+                    object_vertices,
+                    cuboid.min,
+                    cuboid.max,
+                    prism_colors,
+                    PrismTextureLayers::new(
+                        texture_layers.top,
+                        texture_layers.side,
+                        texture_layers.bottom,
+                    ),
+                );
+            }
+        }
     }
 
     if !object_vertices.is_empty() {

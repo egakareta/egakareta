@@ -7,8 +7,9 @@
 */
 #[cfg(test)]
 use super::physics::object_xz_contains;
-use super::physics::{aabb_overlaps_object_xz, BASE_PLAYER_SPEED};
+use super::physics::{aabb_overlaps_cuboid_xz, BASE_PLAYER_SPEED};
 use super::spatial::SpatialGrid;
+use crate::block_geometry::effective_hitbox_cuboids;
 use crate::block_repository::{resolve_block_definition, BlockCollision};
 use crate::types::{Direction, LevelObject, PlayerLevelProgress, SpawnDirection};
 
@@ -315,18 +316,19 @@ impl GameState {
             puffin::profile_scope!("GameCollisionScan");
             for i in query_indices {
                 let obj = &self.objects[i];
-                let o_min_y = obj.position[1];
-                let o_max_y = obj.position[1] + obj.size[1];
                 let behavior = self
                     .cached_behaviors
                     .get(i)
                     .copied()
                     .unwrap_or_else(|| CachedBlockBehavior::from_block_id(&obj.block_id));
 
-                if aabb_overlaps_object_xz(s_min_x, s_max_x, s_min_z, s_max_z, obj)
-                    && s_max_y > o_min_y
-                    && s_min_y < o_max_y
-                {
+                let overlaps_hitbox = effective_hitbox_cuboids(obj).into_iter().any(|cuboid| {
+                    aabb_overlaps_cuboid_xz(s_min_x, s_max_x, s_min_z, s_max_z, obj, cuboid)
+                        && s_max_y > cuboid.min[1]
+                        && s_min_y < cuboid.max[1]
+                });
+
+                if overlaps_hitbox {
                     match behavior.collision {
                         BlockCollision::Portal => {
                             hit_portals.push(i);
@@ -593,13 +595,15 @@ impl GameState {
             if !is_support {
                 continue;
             }
-            if aabb_overlaps_object_xz(min_x, max_x, min_z, max_z, obj) {
-                let top = obj.position[1] + obj.size[1];
-                if top <= max_y {
-                    top_surface = match top_surface {
-                        Some(existing) if existing > top => Some(existing),
-                        _ => Some(top),
-                    };
+            for cuboid in effective_hitbox_cuboids(obj) {
+                if aabb_overlaps_cuboid_xz(min_x, max_x, min_z, max_z, obj, cuboid) {
+                    let top = cuboid.top();
+                    if top <= max_y {
+                        top_surface = match top_surface {
+                            Some(existing) if existing > top => Some(existing),
+                            _ => Some(top),
+                        };
+                    }
                 }
             }
         }

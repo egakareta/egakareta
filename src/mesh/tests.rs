@@ -7,6 +7,7 @@
 */
 #[cfg(test)]
 mod tests {
+    use crate::block_geometry::effective_hitbox_cuboids;
     use crate::mesh::blocks::{build_block_geometry, build_block_vertices};
     use crate::mesh::builders::{
         build_editor_gizmo_vertices, build_editor_hitbox_visualization_vertices,
@@ -67,6 +68,21 @@ mod tests {
         assert!(vertices.iter().all(|vertex| vertex.color[0] == 0.0
             && vertex.color[1] == 0.0
             && vertex.color[2] == 0.0));
+    }
+
+    #[test]
+    fn wooden_fence_builds_multiple_cuboids() {
+        let obj = LevelObject {
+            block_id: "core/wooden_fence".to_string(),
+            ..LevelObject::default()
+        };
+
+        let vertices = build_block_vertices(std::slice::from_ref(&obj));
+
+        assert_eq!(vertices.len(), 3 * 36);
+        assert_eq!(effective_hitbox_cuboids(&obj).len(), 3);
+        assert!(vertices.iter().any(|vertex| vertex.position[0] == 0.0));
+        assert!(vertices.iter().any(|vertex| vertex.position[1] == 1.0));
     }
 
     #[test]

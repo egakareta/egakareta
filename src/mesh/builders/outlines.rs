@@ -5,6 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use crate::block_geometry::effective_hitbox_cuboids;
 use crate::block_repository::{resolve_block_definition, BlockCollision};
 use crate::mesh::shapes::append_prism;
 use crate::mesh::transforms::rotate_vertices_around_euler;
@@ -144,7 +145,16 @@ pub(crate) fn build_editor_hitbox_visualization_vertices(
             BlockCollision::PassThrough => continue,
         };
 
-        append_hitbox_outline_vertices(&mut vertices, object, outline_color, 0.035);
+        let mut hitbox_object = object.clone();
+        for cuboid in effective_hitbox_cuboids(object) {
+            hitbox_object.position = cuboid.min;
+            hitbox_object.size = [
+                cuboid.max[0] - cuboid.min[0],
+                cuboid.max[1] - cuboid.min[1],
+                cuboid.max[2] - cuboid.min[2],
+            ];
+            append_hitbox_outline_vertices(&mut vertices, &hitbox_object, outline_color, 0.035);
+        }
     }
 
     if let Some(player) = player_hitbox {

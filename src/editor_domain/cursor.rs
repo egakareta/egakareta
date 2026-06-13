@@ -7,6 +7,7 @@
 */
 use crate::triggers::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
 use crate::types::{LevelObject, TRANSFORM_TRIGGER_BLOCK_ID};
+use crate::{block_geometry::effective_hitbox_cuboids, game::physics::object_xz_contains};
 
 pub(crate) fn create_block_at_cursor(
     cursor: [f32; 3],
@@ -46,12 +47,12 @@ pub(crate) fn topmost_block_index_at_cursor(
     let mut top_height = f32::NEG_INFINITY;
 
     for (index, obj) in objects.iter().enumerate() {
-        let occupies_x =
-            cursor[0] + 0.5 >= obj.position[0] && cursor[0] + 0.5 <= obj.position[0] + obj.size[0];
-        let occupies_z =
-            cursor[2] + 0.5 >= obj.position[2] && cursor[2] + 0.5 <= obj.position[2] + obj.size[2];
-        if occupies_x && occupies_z {
-            let top = obj.position[1] + obj.size[1];
+        if object_xz_contains(obj, cursor[0] + 0.5, cursor[2] + 0.5) {
+            let top = effective_hitbox_cuboids(obj)
+                .into_iter()
+                .filter(|cuboid| cuboid.max[1].is_finite())
+                .map(|cuboid| cuboid.max[1])
+                .fold(f32::NEG_INFINITY, f32::max);
             if top > top_height {
                 top_height = top;
                 top_index = Some(index);

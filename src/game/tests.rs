@@ -156,6 +156,40 @@ fn rotated_overlap_uses_oriented_bounds() {
 }
 
 #[test]
+fn wooden_fence_collision_uses_json_hitboxes() {
+    let obj = LevelObject {
+        position: [0.0, 0.0, 0.0],
+        size: [1.0, 1.0, 1.0],
+        rotation_degrees: [0.0, 0.0, 0.0],
+        block_id: "core/wooden_fence".to_string(),
+        color_tint: [1.0, 1.0, 1.0],
+        trigger: None,
+    };
+
+    assert!(object_xz_contains(&obj, 0.5, 0.5));
+    assert!(!object_xz_contains(&obj, 0.5, 0.2));
+    assert!(aabb_overlaps_object_xz(0.45, 0.55, 0.45, 0.55, &obj));
+    assert!(!aabb_overlaps_object_xz(0.45, 0.55, 0.1, 0.2, &obj));
+}
+
+#[test]
+fn wooden_fence_support_height_uses_hitbox_top() {
+    let mut game = GameState::new();
+    game.objects.push(LevelObject {
+        position: [0.0, 0.0, 0.0],
+        size: [1.0, 1.0, 1.0],
+        rotation_degrees: [0.0, 0.0, 0.0],
+        block_id: "core/wooden_fence".to_string(),
+        color_tint: [1.0, 1.0, 1.0],
+        trigger: None,
+    });
+    game.rebuild_behavior_cache();
+
+    assert_eq!(game.top_surface_y_at(0.5, 0.5, 2.0), Some(1.0));
+    assert_eq!(game.top_surface_y_at(0.5, 0.2, 2.0), Some(0.0));
+}
+
+#[test]
 fn rotated_ground_detection_works() {
     let mut game = GameState::new();
     game.objects.push(LevelObject {

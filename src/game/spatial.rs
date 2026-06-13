@@ -5,8 +5,8 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use crate::block_geometry::{effective_hitbox_cuboids, rotated_cuboid_aabb_xz};
 use crate::types::LevelObject;
-use glam::{EulerRot, Mat3};
 use std::collections::HashMap;
 
 pub(crate) const GRID_CELL_SIZE: f32 = 4.0;
@@ -22,28 +22,22 @@ impl SpatialGrid {
     }
 
     pub(crate) fn insert_object(&mut self, index: usize, obj: &LevelObject) {
-        let center_x = obj.position[0] + obj.size[0] * 0.5;
-        let center_z = obj.position[2] + obj.size[2] * 0.5;
-        let half_x = obj.size[0] * 0.5;
-        let half_y = obj.size[1] * 0.5;
-        let half_z = obj.size[2] * 0.5;
-        let rotation = Mat3::from_euler(
-            EulerRot::XYZ,
-            obj.rotation_degrees[0].to_radians(),
-            obj.rotation_degrees[1].to_radians(),
-            obj.rotation_degrees[2].to_radians(),
-        );
-        let matrix = rotation.to_cols_array_2d();
+        let mut min_x = f32::INFINITY;
+        let mut max_x = f32::NEG_INFINITY;
+        let mut min_z = f32::INFINITY;
+        let mut max_z = f32::NEG_INFINITY;
+        for cuboid in effective_hitbox_cuboids(obj) {
+            let [cuboid_min_x, cuboid_max_x, cuboid_min_z, cuboid_max_z] =
+                rotated_cuboid_aabb_xz(obj, cuboid);
+            min_x = min_x.min(cuboid_min_x);
+            max_x = max_x.max(cuboid_max_x);
+            min_z = min_z.min(cuboid_min_z);
+            max_z = max_z.max(cuboid_max_z);
+        }
 
-        let extent_x =
-            matrix[0][0].abs() * half_x + matrix[1][0].abs() * half_y + matrix[2][0].abs() * half_z;
-        let extent_z =
-            matrix[0][2].abs() * half_x + matrix[1][2].abs() * half_y + matrix[2][2].abs() * half_z;
-
-        let min_x = center_x - extent_x;
-        let max_x = center_x + extent_x;
-        let min_z = center_z - extent_z;
-        let max_z = center_z + extent_z;
+        if !min_x.is_finite() || !max_x.is_finite() || !min_z.is_finite() || !max_z.is_finite() {
+            return;
+        }
 
         let start_x = (min_x / GRID_CELL_SIZE).floor() as i32;
         let end_x = (max_x / GRID_CELL_SIZE).floor() as i32;

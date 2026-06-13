@@ -235,7 +235,6 @@ pub(crate) fn show_timeline_bar(
             let new_zoom = (timeline_zoom * 1.25).clamp(0.1, 10.0);
             commands.push(AppCommand::Editor(EditorCommand::SetWaveformZoom(new_zoom)));
         }
-        ui.add_space(4.0);
 
         let playtest_button_width = 72.0;
         let available_width =

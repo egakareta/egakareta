@@ -16,6 +16,7 @@ mod audio_service;
 mod auth_types;
 #[cfg(feature = "benchmarks")]
 pub mod bench_support;
+mod block_geometry;
 mod block_repository;
 mod commands;
 mod editor_domain;

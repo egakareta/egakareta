@@ -6,6 +6,7 @@
 
 */
 use super::super::EditorSubsystem;
+use crate::block_geometry::{effective_hitbox_cuboids, object_center, object_rotation};
 use crate::triggers::{
     camera_trigger_eye_from_object, camera_trigger_forward_from_rotation_degrees,
     TimedTriggerAction,
@@ -13,7 +14,7 @@ use crate::triggers::{
 use crate::types::{
     EditorMode, EditorPickResult, EditorTapDivisionPick, LevelObject, CAMERA_TRIGGER_BLOCK_ID,
 };
-use glam::{EulerRot, Mat3, Vec2, Vec3, Vec4};
+use glam::{Vec2, Vec3, Vec4};
 
 const CAMERA_TRIGGER_BALL_PICK_RADIUS: f32 = 0.55;
 const CAMERA_TRIGGER_ARROW_PICK_RADIUS: f32 = 0.55;
@@ -552,88 +553,96 @@ impl EditorSubsystem {
         ray_dir: Vec3,
         obj: &crate::types::LevelObject,
     ) -> Option<(f32, Vec3)> {
-        let center = Vec3::new(
-            obj.position[0] + obj.size[0] * 0.5,
-            obj.position[1] + obj.size[1] * 0.5,
-            obj.position[2] + obj.size[2] * 0.5,
-        );
-        let half = Vec3::new(obj.size[0] * 0.5, obj.size[1] * 0.5, obj.size[2] * 0.5);
-        let rotation = Mat3::from_euler(
-            EulerRot::XYZ,
-            obj.rotation_degrees[0].to_radians(),
-            obj.rotation_degrees[1].to_radians(),
-            obj.rotation_degrees[2].to_radians(),
-        );
+        let center = object_center(obj);
+        let rotation = object_rotation(obj);
         let inv_rotation = rotation.transpose();
 
-        let local_origin = inv_rotation * (ray_origin - center);
+        let local_origin_world = center + inv_rotation * (ray_origin - center);
         let local_dir = inv_rotation * ray_dir;
+        let mut best_hit: Option<(f32, Vec3)> = None;
 
-        let min = -half;
-        let max = half;
-        let mut t_min = f32::NEG_INFINITY;
-        let mut t_max = f32::INFINITY;
-        let mut normal_enter = Vec3::ZERO;
-        let mut normal_exit = Vec3::ZERO;
-
-        for axis in 0..3 {
-            let origin_component = local_origin[axis];
-            let dir_component = local_dir[axis];
-            let min_component = min[axis];
-            let max_component = max[axis];
-
-            if dir_component.abs() <= f32::EPSILON {
-                if origin_component < min_component || origin_component > max_component {
-                    return None;
+        for cuboid in effective_hitbox_cuboids(obj) {
+            let min = Vec3::from(cuboid.min);
+            let max = Vec3::from(cuboid.max);
+            if let Some((t_hit, normal_local)) =
+                ray_intersect_aabb(local_origin_world, local_dir, min, max)
+            {
+                if best_hit.map(|(best_t, _)| t_hit < best_t).unwrap_or(true) {
+                    best_hit = Some((t_hit, rotation * normal_local));
                 }
-                continue;
             }
+        }
 
-            let mut t1 = (min_component - origin_component) / dir_component;
-            let mut t2 = (max_component - origin_component) / dir_component;
+        best_hit
+    }
+}
 
-            let axis_dir = match axis {
-                0 => Vec3::X,
-                1 => Vec3::Y,
-                _ => Vec3::Z,
-            };
+fn ray_intersect_aabb(
+    local_origin: Vec3,
+    local_dir: Vec3,
+    min: Vec3,
+    max: Vec3,
+) -> Option<(f32, Vec3)> {
+    let mut t_min = f32::NEG_INFINITY;
+    let mut t_max = f32::INFINITY;
+    let mut normal_enter = Vec3::ZERO;
+    let mut normal_exit = Vec3::ZERO;
 
-            let mut n1 = -axis_dir;
-            let mut n2 = axis_dir;
+    for axis in 0..3 {
+        let origin_component = local_origin[axis];
+        let dir_component = local_dir[axis];
+        let min_component = min[axis];
+        let max_component = max[axis];
 
-            if t1 > t2 {
-                std::mem::swap(&mut t1, &mut t2);
-                std::mem::swap(&mut n1, &mut n2);
-            }
-
-            if t1 > t_min {
-                t_min = t1;
-                normal_enter = n1;
-            }
-            if t2 < t_max {
-                t_max = t2;
-                normal_exit = n2;
-            }
-
-            if t_min > t_max {
+        if dir_component.abs() <= f32::EPSILON {
+            if origin_component < min_component || origin_component > max_component {
                 return None;
             }
+            continue;
         }
 
-        if t_max < 0.0 {
-            return None;
-        }
+        let mut t1 = (min_component - origin_component) / dir_component;
+        let mut t2 = (max_component - origin_component) / dir_component;
 
-        let (t_hit, normal_local) = if t_min >= 0.0 {
-            (t_min, normal_enter)
-        } else {
-            (t_max, normal_exit)
+        let axis_dir = match axis {
+            0 => Vec3::X,
+            1 => Vec3::Y,
+            _ => Vec3::Z,
         };
 
-        let normal = rotation * normal_local;
+        let mut n1 = -axis_dir;
+        let mut n2 = axis_dir;
 
-        Some((t_hit, normal))
+        if t1 > t2 {
+            std::mem::swap(&mut t1, &mut t2);
+            std::mem::swap(&mut n1, &mut n2);
+        }
+
+        if t1 > t_min {
+            t_min = t1;
+            normal_enter = n1;
+        }
+        if t2 < t_max {
+            t_max = t2;
+            normal_exit = n2;
+        }
+
+        if t_min > t_max {
+            return None;
+        }
     }
+
+    if t_max < 0.0 {
+        return None;
+    }
+
+    let (t_hit, normal_local) = if t_min >= 0.0 {
+        (t_min, normal_enter)
+    } else {
+        (t_max, normal_exit)
+    };
+
+    Some((t_hit, normal_local))
 }
 
 fn transform_trigger_target_object(action: &TimedTriggerAction) -> Option<LevelObject> {
@@ -714,6 +723,31 @@ mod tests {
                 &block,
             );
             assert!(miss.is_none());
+        });
+    }
+
+    #[test]
+    fn ray_intersect_rotated_block_uses_json_hitboxes() {
+        pollster::block_on(async {
+            let state = State::new_test().await;
+            let fence = LevelObject {
+                block_id: "core/wooden_fence".to_string(),
+                ..LevelObject::default()
+            };
+
+            let rail_hit = state.editor.ray_intersect_rotated_block(
+                Vec3::new(0.5, 0.5, -5.0),
+                Vec3::Z,
+                &fence,
+            );
+            assert!(rail_hit.is_some());
+
+            let gap_miss = state.editor.ray_intersect_rotated_block(
+                Vec3::new(0.2, 0.5, -5.0),
+                Vec3::Z,
+                &fence,
+            );
+            assert!(gap_miss.is_none());
         });
     }
 

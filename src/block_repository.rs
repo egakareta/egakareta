@@ -100,6 +100,26 @@ fn sanitize_block_size(size: [f32; 3]) -> [f32; 3] {
     })
 }
 
+fn sanitize_cuboid_bounds(from: [f32; 3], to: [f32; 3]) -> Option<([f32; 3], [f32; 3])> {
+    let mut min = [0.0; 3];
+    let mut max = [0.0; 3];
+    for axis in 0..3 {
+        let a = if from[axis].is_finite() {
+            from[axis]
+        } else {
+            0.0
+        }
+        .clamp(0.0, 16.0);
+        let b = if to[axis].is_finite() { to[axis] } else { 0.0 }.clamp(0.0, 16.0);
+        min[axis] = a.min(b);
+        max[axis] = a.max(b);
+        if (max[axis] - min[axis]).abs() <= f32::EPSILON {
+            return None;
+        }
+    }
+    Some((min, max))
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct BlockDefinition {
     pub(crate) id: String,
@@ -112,8 +132,31 @@ pub(crate) struct BlockDefinition {
     pub(crate) render: BlockRender,
     #[serde(default)]
     pub(crate) behavior: BlockBehavior,
+    #[serde(default)]
+    pub(crate) geometry: BlockGeometry,
     #[serde(default = "default_placeable")]
     pub(crate) placeable: bool,
+}
+
+#[derive(Clone, Deserialize, Serialize, Default)]
+pub(crate) struct BlockGeometry {
+    #[serde(default)]
+    pub(crate) elements: Vec<BlockCuboid>,
+    #[serde(default)]
+    pub(crate) hitboxes: Vec<BlockCuboid>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+pub(crate) struct BlockCuboid {
+    pub(crate) from: [f32; 3],
+    pub(crate) to: [f32; 3],
+}
+
+impl BlockCuboid {
+    fn normalized(self) -> Option<Self> {
+        let (from, to) = sanitize_cuboid_bounds(self.from, self.to)?;
+        Some(Self { from, to })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -139,6 +182,18 @@ impl BlockDefinition {
             self.display_name = self.id.clone();
         }
         self.render.default_size = sanitize_block_size(self.render.default_size);
+        self.geometry.elements = self
+            .geometry
+            .elements
+            .into_iter()
+            .filter_map(BlockCuboid::normalized)
+            .collect();
+        self.geometry.hitboxes = self
+            .geometry
+            .hitboxes
+            .into_iter()
+            .filter_map(BlockCuboid::normalized)
+            .collect();
         Some(self)
     }
 
@@ -406,6 +461,7 @@ impl BlockCatalog {
             assets: BlockAssets::default(),
             render: BlockRender::default(),
             behavior: BlockBehavior::default(),
+            geometry: BlockGeometry::default(),
             placeable: true,
         }
     }
@@ -623,7 +679,7 @@ mod tests {
     use super::{
         all_placeable_blocks, block_texture_atlas, normalize_block_id, resolve_block_definition,
         resolve_block_texture_layers, BlockAssets, BlockBehavior, BlockCategory, BlockCollision,
-        BlockDefinition, BlockRender, BlockRenderProfile,
+        BlockCuboid, BlockDefinition, BlockGeometry, BlockRender, BlockRenderProfile,
     };
 
     #[test]
@@ -675,6 +731,7 @@ mod tests {
             assets: BlockAssets::default(),
             render: BlockRender::default(),
             behavior: BlockBehavior::default(),
+            geometry: BlockGeometry::default(),
             placeable: true,
         }
         .normalize()
@@ -689,6 +746,7 @@ mod tests {
             assets: BlockAssets::default(),
             render: BlockRender::default(),
             behavior: BlockBehavior::default(),
+            geometry: BlockGeometry::default(),
             placeable: true,
         }
         .normalize();
@@ -757,11 +815,50 @@ mod tests {
                 ..BlockRender::default()
             },
             behavior: BlockBehavior::default(),
+            geometry: BlockGeometry::default(),
             placeable: true,
         }
         .normalize()
         .expect("normalize");
         assert_eq!(normalized.default_size(), [1.0, 0.01, 3.0]);
+    }
+
+    #[test]
+    fn block_geometry_cuboids_are_loaded_and_normalized() {
+        let fence = resolve_block_definition("core/wooden_fence");
+        assert_eq!(fence.geometry.elements.len(), 3);
+        assert_eq!(fence.geometry.hitboxes.len(), 3);
+        assert_eq!(fence.geometry.elements[0].from, [6.0, 0.0, 6.0]);
+        assert_eq!(fence.geometry.elements[0].to, [10.0, 16.0, 10.0]);
+
+        let normalized = BlockDefinition {
+            id: "debug/cuboids".to_string(),
+            display_name: "Cuboids".to_string(),
+            category: BlockCategory::Building,
+            assets: BlockAssets::default(),
+            render: BlockRender::default(),
+            behavior: BlockBehavior::default(),
+            geometry: BlockGeometry {
+                elements: vec![
+                    BlockCuboid {
+                        from: [20.0, 8.0, -4.0],
+                        to: [4.0, 8.0, 18.0],
+                    },
+                    BlockCuboid {
+                        from: [16.0, 16.0, 16.0],
+                        to: [0.0, 0.0, 0.0],
+                    },
+                ],
+                hitboxes: Vec::new(),
+            },
+            placeable: true,
+        }
+        .normalize()
+        .expect("normalize");
+
+        assert_eq!(normalized.geometry.elements.len(), 1);
+        assert_eq!(normalized.geometry.elements[0].from, [0.0, 0.0, 0.0]);
+        assert_eq!(normalized.geometry.elements[0].to, [16.0, 16.0, 16.0]);
     }
 
     #[test]

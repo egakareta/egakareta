@@ -8,6 +8,7 @@
 use glam::{EulerRot, Mat3, Mat4, Vec3};
 use wgpu::util::DeviceExt;
 
+use crate::block_geometry::visual_cuboids;
 use crate::block_repository::{
     resolve_block_definition, resolve_block_texture_layers, BlockIconCamera, BlockRenderProfile,
 };
@@ -160,14 +161,31 @@ fn build_block_icon_geometry(block_id: &str, dimetric: bool) -> MeshGeometry {
         block.render.color_outline,
     );
 
-    let mut vertices = Vec::with_capacity(36);
-    append_prism_with_layers(
-        &mut vertices,
-        [0.0, 0.0, 0.0],
-        [1.0, 1.0, 1.0],
-        colors,
-        PrismTextureLayers::new(layers.top, layers.side, layers.bottom),
-    );
+    let icon_object = LevelObject {
+        block_id: block_id.to_string(),
+        ..LevelObject::default()
+    };
+    let cuboids = visual_cuboids(&icon_object);
+    let mut vertices = Vec::with_capacity(cuboids.len().max(1) * 36);
+    if cuboids.is_empty() {
+        append_prism_with_layers(
+            &mut vertices,
+            [0.0, 0.0, 0.0],
+            [1.0, 1.0, 1.0],
+            colors,
+            PrismTextureLayers::new(layers.top, layers.side, layers.bottom),
+        );
+    } else {
+        for cuboid in cuboids {
+            append_prism_with_layers(
+                &mut vertices,
+                cuboid.min,
+                cuboid.max,
+                colors,
+                PrismTextureLayers::new(layers.top, layers.side, layers.bottom),
+            );
+        }
+    }
     if matches!(block.render.profile, BlockRenderProfile::Liquid) {
         for vertex in &mut vertices {
             vertex.set_render_profile(LIQUID_PROFILE_TAG);
@@ -500,6 +518,12 @@ mod tests {
                 .all(|vertex| vertex.render_profile == 0.0),
             "expected non-liquid dimetric icon vertices to keep the default render profile"
         );
+    }
+
+    #[test]
+    fn dimetric_cuboid_block_icon_uses_all_elements() {
+        let vertices = build_block_icon_vertices("core/wooden_fence", true);
+        assert_eq!(vertices.len(), 3 * 36);
     }
 
     #[test]
