@@ -5,10 +5,8 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use crate::types::{
-    LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
-    TRANSFORM_TRIGGER_BLOCK_ID,
-};
+use crate::triggers::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
+use crate::types::{LevelObject, TRANSFORM_TRIGGER_BLOCK_ID};
 
 pub(crate) fn create_block_at_cursor(
     cursor: [f32; 3],
@@ -40,10 +38,10 @@ pub(crate) fn create_block_at_cursor(
     }
 }
 
-pub(crate) fn remove_topmost_block_at_cursor(
-    objects: &mut Vec<LevelObject>,
+pub(crate) fn topmost_block_index_at_cursor(
+    objects: &[LevelObject],
     cursor: [f32; 3],
-) -> bool {
+) -> Option<usize> {
     let mut top_index: Option<usize> = None;
     let mut top_height = f32::NEG_INFINITY;
 
@@ -61,10 +59,17 @@ pub(crate) fn remove_topmost_block_at_cursor(
         }
     }
 
-    if let Some(index) = top_index {
-        objects.remove(index);
-        true
-    } else {
-        false
-    }
+    top_index
+}
+
+pub(crate) fn remove_topmost_block_at_cursor(
+    objects: &mut Vec<LevelObject>,
+    cursor: [f32; 3],
+) -> bool {
+    let Some(index) = topmost_block_index_at_cursor(objects, cursor) else {
+        return false;
+    };
+
+    objects.remove(index);
+    true
 }

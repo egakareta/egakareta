@@ -203,6 +203,7 @@ fn default_line_uniform() -> LineUniform {
 fn default_camera_uniform() -> CameraUniform {
     CameraUniform {
         view_proj: Mat4::IDENTITY.to_cols_array_2d(),
+        camera_position: [0.0, 0.0, 0.0, 0.0],
     }
 }
 
@@ -656,15 +657,7 @@ impl State {
                 },
                 objects: Vec::new(),
                 spawn: SpawnMetadata::default(),
-                camera: EditorCameraState {
-                    editor_pan: [0.0, 0.0],
-                    editor_target_z: 0.0,
-                    editor_rotation: 45.0f32.to_radians(),
-                    editor_pitch: 45.0f32.to_radians(),
-                    playing_rotation: 45.0f32.to_radians(),
-                    playing_pitch: 45.0f32.to_radians(),
-                    transition: None,
-                },
+                camera: EditorCameraState::default(),
                 triggers: EditorTriggerState::new(),
                 timeline: EditorTimelineState::new(),
                 runtime: EditorRuntimeState {
@@ -683,7 +676,6 @@ impl State {
                         undo: Vec::new(),
                         redo: Vec::new(),
                     },
-                    transform_trigger_capture: None,
                 },
                 perf: EditorPerfState::new(),
                 timing: EditorTimingState::new(),
@@ -862,7 +854,7 @@ impl State {
                 label: Some("Camera Bind Group Layout"),
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -1564,15 +1556,7 @@ impl State {
                 },
                 objects: Vec::new(),
                 spawn: SpawnMetadata::default(),
-                camera: EditorCameraState {
-                    editor_pan: [0.0, 0.0],
-                    editor_target_z: 0.0,
-                    editor_rotation: 45.0f32.to_radians(),
-                    editor_pitch: 45.0f32.to_radians(),
-                    playing_rotation: 45.0f32.to_radians(),
-                    playing_pitch: 45.0f32.to_radians(),
-                    transition: None,
-                },
+                camera: EditorCameraState::default(),
                 triggers: EditorTriggerState::new(),
                 timeline: EditorTimelineState::new(),
                 runtime: EditorRuntimeState {
@@ -1591,7 +1575,6 @@ impl State {
                         undo: Vec::new(),
                         redo: Vec::new(),
                     },
-                    transform_trigger_capture: None,
                 },
                 perf: EditorPerfState::new(),
                 timing: EditorTimingState::new(),

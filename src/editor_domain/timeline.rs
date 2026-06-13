@@ -8,7 +8,8 @@
 use crate::game::{
     simulate_timeline_state, simulate_timeline_state_with_triggers, TimelineSimulationRuntime,
 };
-use crate::types::{LevelObject, SpawnDirection, TimedTrigger, TimingPoint};
+use crate::triggers::TimedTrigger;
+use crate::types::{LevelObject, SpawnDirection, TimingPoint};
 
 use super::TAP_EPSILON_SECONDS;
 

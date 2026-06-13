@@ -53,8 +53,6 @@ pub(crate) fn get_builtin_audio(level_name: &str, music_source: &str) -> Option<
 }
 
 /// Parses level metadata from a JSON string.
-///
-/// This is retained for one-time migration utilities.
 pub(crate) fn parse_level_metadata_json(json: &str) -> Result<LevelMetadata, String> {
     let mut metadata: LevelMetadata =
         serde_json::from_str(json).map_err(|error| error.to_string())?;
@@ -180,15 +178,15 @@ mod tests {
     }
 
     #[test]
-    fn parses_json_metadata_and_normalizes_legacy_block_kind() {
+    fn parses_json_metadata_and_normalizes_block_id() {
         let json = r#"{
-            "name": "Legacy",
+            "name": "Current",
             "music": { "source": "audio.mp3" },
             "objects": [
                 {
                     "position": [0.0, 0.0, 0.0],
                     "size": [1.0, 1.0, 1.0],
-                    "kind": "stone"
+                    "block_id": "stone"
                 }
             ]
         }"#;

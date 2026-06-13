@@ -831,6 +831,7 @@ mod tests {
         });
         let camera = CameraUniform {
             view_proj: Mat4::IDENTITY.to_cols_array_2d(),
+            camera_position: [0.0, 0.0, 0.0, 0.0],
         };
         state.queue().write_buffer(
             &state.render.gpu.camera_uniform_buffer,

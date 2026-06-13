@@ -14,7 +14,7 @@ use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use web_time::Instant as PlatformInstant;
 
-use crate::types::{AuthErrorResponse, AuthSession};
+use crate::auth_types::{AuthErrorResponse, AuthSession};
 
 #[derive(Serialize)]
 struct RefreshRequest<'a> {

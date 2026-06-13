@@ -6,14 +6,17 @@
 
 */
 use super::EditorSubsystem;
+use crate::triggers::{
+    camera_trigger_eye_from_target, default_camera_trigger_target_position,
+    timed_triggers_to_camera_triggers, triggers_from_objects, CameraTrigger, TimedTrigger,
+    TimedTriggerAction, TimedTriggerTarget,
+};
 use crate::types::{
-    timed_triggers_to_camera_triggers, triggers_from_objects, CameraTrigger, LevelObject,
-    TimedTrigger, TimedTriggerAction, TimedTriggerTarget, CAMERA_TRIGGER_BLOCK_ID,
-    TRANSFORM_TRIGGER_BLOCK_ID,
+    LevelObject, CAMERA_TRIGGER_BLOCK_ID, DEFAULT_CAMERA_TRIGGER_PITCH,
+    DEFAULT_CAMERA_TRIGGER_ROTATION, TRANSFORM_TRIGGER_BLOCK_ID,
 };
 
 pub(crate) struct EditorTriggerState {
-    pub(crate) items: Vec<TimedTrigger>,
     pub(crate) selected_index: Option<usize>,
     pub(crate) simulate_trigger_hitboxes: bool,
 }
@@ -31,6 +34,14 @@ fn camera_trigger_rotation_degrees(rotation: f32, pitch: f32) -> [f32; 3] {
     [pitch.to_degrees(), rotation.to_degrees(), 0.0]
 }
 
+fn camera_trigger_object_position_from_eye(eye: [f32; 3], size: [f32; 3]) -> [f32; 3] {
+    [
+        eye[0] - size[0] * 0.5,
+        eye[1] - size[1] * 0.5,
+        eye[2] - size[2] * 0.5,
+    ]
+}
+
 fn trigger_object_from_payload(trigger: TimedTrigger) -> LevelObject {
     let (position, size, rotation_degrees) = match &trigger.action {
         TimedTriggerAction::CameraPose {
@@ -38,18 +49,35 @@ fn trigger_object_from_payload(trigger: TimedTrigger) -> LevelObject {
             rotation,
             pitch,
             ..
-        } => (
-            *target_position,
-            [1.0, 1.0, 1.0],
-            camera_trigger_rotation_degrees(*rotation, *pitch),
-        ),
+        } => {
+            let size = [1.0, 1.0, 1.0];
+            let eye = camera_trigger_eye_from_target(*target_position, *rotation, *pitch);
+            (
+                camera_trigger_object_position_from_eye(eye, size),
+                size,
+                camera_trigger_rotation_degrees(*rotation, *pitch),
+            )
+        }
         TimedTriggerAction::TransformObjects {
             position,
             rotation_degrees,
             size,
         } => (*position, *size, *rotation_degrees),
         TimedTriggerAction::CameraFollow { .. } => {
-            ([0.0, 0.0, 0.0], [1.0, 1.0, 1.0], [0.0, 0.0, 0.0])
+            let size = [1.0, 1.0, 1.0];
+            let eye = camera_trigger_eye_from_target(
+                default_camera_trigger_target_position(),
+                DEFAULT_CAMERA_TRIGGER_ROTATION,
+                DEFAULT_CAMERA_TRIGGER_PITCH,
+            );
+            (
+                camera_trigger_object_position_from_eye(eye, size),
+                size,
+                camera_trigger_rotation_degrees(
+                    DEFAULT_CAMERA_TRIGGER_ROTATION,
+                    DEFAULT_CAMERA_TRIGGER_PITCH,
+                ),
+            )
         }
     };
 
@@ -66,7 +94,6 @@ fn trigger_object_from_payload(trigger: TimedTrigger) -> LevelObject {
 impl EditorTriggerState {
     pub(crate) fn new() -> Self {
         Self {
-            items: Vec::new(),
             selected_index: None,
             simulate_trigger_hitboxes: false,
         }
@@ -157,11 +184,11 @@ impl EditorSubsystem {
                 });
 
                 if !rotation.is_finite() {
-                    *rotation = -45.0f32.to_radians();
+                    *rotation = DEFAULT_CAMERA_TRIGGER_ROTATION;
                 }
 
                 if !pitch.is_finite() {
-                    *pitch = 45.0f32.to_radians();
+                    *pitch = DEFAULT_CAMERA_TRIGGER_PITCH;
                 } else {
                     *pitch = pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
                 }
@@ -183,11 +210,42 @@ impl EditorSubsystem {
         triggers_from_objects(&self.objects)
     }
 
+    pub(crate) fn sync_trigger_selection_from_objects(&mut self) {
+        let trigger_count = self.triggers().len();
+        self.triggers.selected_index = self
+            .triggers
+            .selected_index
+            .filter(|index| *index < trigger_count);
+    }
+
     pub(crate) fn selected_trigger_index(&self) -> Option<usize> {
         let triggers = self.triggers();
         self.triggers
             .selected_index
             .filter(|index| *index < triggers.len())
+    }
+
+    pub(crate) fn trigger_object_index_for_trigger_index(
+        &self,
+        trigger_index: usize,
+    ) -> Option<usize> {
+        let mut indexed_triggers = self
+            .objects
+            .iter()
+            .enumerate()
+            .filter_map(|(object_index, object)| {
+                let trigger = triggers_from_objects(std::slice::from_ref(object))
+                    .into_iter()
+                    .next()?;
+                Some((object_index, trigger))
+            })
+            .collect::<Vec<_>>();
+
+        indexed_triggers
+            .sort_by(|left, right| f32::total_cmp(&left.1.time_seconds, &right.1.time_seconds));
+        indexed_triggers
+            .get(trigger_index)
+            .map(|(object_index, _)| *object_index)
     }
 
     pub(crate) fn camera_trigger_markers(&self) -> Vec<(usize, CameraTrigger)> {
@@ -215,6 +273,10 @@ impl EditorSubsystem {
         })
     }
 
+    pub(crate) fn has_camera_timeline_triggers(&self) -> bool {
+        self.triggers().iter().any(Self::is_camera_track_trigger)
+    }
+
     /// Returns `true` when any of the given block indices are referenced as
     /// source objects by at least one transform trigger. Used to decide when
     /// the transform trigger marker overlay must be rebuilt after a block
@@ -223,7 +285,7 @@ impl EditorSubsystem {
         if indices.is_empty() {
             return false;
         }
-        self.triggers.items.iter().any(|trigger| {
+        self.triggers().iter().any(|trigger| {
             if !matches!(trigger.action, TimedTriggerAction::TransformObjects { .. }) {
                 return false;
             }
@@ -262,12 +324,7 @@ impl EditorSubsystem {
             self.objects.push(trigger_object_from_payload(trigger));
         }
 
-        // Sync cache for selected_index tracking
-        self.triggers.items = self.triggers();
-        self.triggers.selected_index = self
-            .triggers
-            .selected_index
-            .filter(|index| *index < self.triggers.items.len());
+        self.sync_trigger_selection_from_objects();
     }
 
     pub(crate) fn add_trigger(&mut self, trigger: TimedTrigger) -> usize {
@@ -278,20 +335,52 @@ impl EditorSubsystem {
         self.objects
             .push(trigger_object_from_payload(trigger.clone()));
 
-        // Sync cache for selected_index tracking
-        self.triggers.items = self.triggers();
-        let cache_index = self
-            .triggers
-            .items
-            .iter()
-            .position(|t| t.time_seconds == trigger.time_seconds)
-            .unwrap_or(0);
-        self.triggers.selected_index = Some(cache_index);
+        self.sync_trigger_selection_from_objects();
+        self.triggers.selected_index = self.trigger_index_for_object_index(object_index);
         object_index
     }
 
+    pub(crate) fn set_selected_block_trigger(&mut self, trigger: Option<TimedTrigger>) {
+        let mut trigger = trigger;
+        if let Some(trigger) = &mut trigger {
+            self.sanitize_trigger(trigger);
+        }
+
+        let Some(index) = self
+            .ui
+            .selected_block_index
+            .filter(|index| *index < self.objects.len())
+        else {
+            return;
+        };
+
+        self.objects[index].trigger = trigger;
+        self.sync_trigger_selection_from_objects();
+    }
+
     pub(crate) fn set_trigger_selected(&mut self, selected: Option<usize>) {
-        self.triggers.selected_index = selected.filter(|index| *index < self.triggers.items.len());
+        let trigger_count = self.triggers().len();
+        self.triggers.selected_index = selected.filter(|index| *index < trigger_count);
+    }
+
+    fn trigger_index_for_object_index(&self, target_object_index: usize) -> Option<usize> {
+        let mut indexed_triggers = self
+            .objects
+            .iter()
+            .enumerate()
+            .filter_map(|(object_index, object)| {
+                let trigger = triggers_from_objects(std::slice::from_ref(object))
+                    .into_iter()
+                    .next()?;
+                Some((object_index, trigger))
+            })
+            .collect::<Vec<_>>();
+
+        indexed_triggers
+            .sort_by(|left, right| f32::total_cmp(&left.1.time_seconds, &right.1.time_seconds));
+        indexed_triggers
+            .iter()
+            .position(|(object_index, _)| *object_index == target_object_index)
     }
 }
 
@@ -299,8 +388,9 @@ impl EditorSubsystem {
 mod tests {
     use super::EditorSubsystem;
     use crate::state::State;
-    use crate::types::{
-        CameraTriggerMode, TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+    use crate::triggers::{
+        camera_trigger_eye_from_object, camera_trigger_eye_from_target, CameraTriggerMode,
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
     };
 
     fn object_move_trigger(time_seconds: f32) -> TimedTrigger {
@@ -466,11 +556,44 @@ mod tests {
                     ..
                 } => {
                     assert_eq!(transition_interval_seconds, 1.0);
-                    assert_eq!(target_position, [0.0, 2.0, 0.0]);
+                    for (actual, expected) in target_position.iter().zip([0.0, 2.0, 0.0]) {
+                        assert!((*actual - expected).abs() <= 1e-5);
+                    }
                     assert_eq!(rotation, -45.0f32.to_radians());
                     assert!((pitch - 89.9f32.to_radians()).abs() <= 1e-6);
                 }
                 _ => panic!("expected camera pose"),
+            }
+        });
+    }
+
+    #[test]
+    fn set_triggers_centers_camera_trigger_object_on_eye() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            let trigger = camera_pose_trigger(0.0);
+            let TimedTriggerAction::CameraPose {
+                target_position,
+                rotation,
+                pitch,
+                ..
+            } = trigger.action
+            else {
+                panic!("expected camera pose");
+            };
+            let expected_eye = camera_trigger_eye_from_target(target_position, rotation, pitch);
+
+            state.editor.set_triggers(vec![trigger]);
+
+            let object = state
+                .editor
+                .objects
+                .iter()
+                .find(|object| object.trigger.is_some())
+                .expect("expected camera trigger object");
+            let actual_eye = camera_trigger_eye_from_object(object);
+            for (actual, expected) in actual_eye.iter().zip(expected_eye) {
+                assert!((*actual - expected).abs() <= 1e-6);
             }
         });
     }
@@ -531,6 +654,33 @@ mod tests {
             assert!(!state.editor.simulate_trigger_hitboxes());
             state.editor.set_simulate_trigger_hitboxes(true);
             assert!(state.editor.simulate_trigger_hitboxes());
+        });
+    }
+
+    #[test]
+    fn derived_triggers_use_trigger_block_pose_as_source_of_truth() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.objects.clear();
+            state.editor.set_triggers(vec![object_move_trigger(0.0)]);
+
+            assert_eq!(state.editor.triggers().len(), 1);
+            state.editor.objects[0].position = [9.0, 8.0, 7.0];
+            state.editor.objects[0].size = [2.0, 3.0, 4.0];
+            state.editor.objects[0].rotation_degrees = [10.0, 20.0, 30.0];
+
+            let trigger = state.editor.triggers().remove(0);
+            let TimedTriggerAction::TransformObjects {
+                position,
+                rotation_degrees,
+                size,
+            } = trigger.action
+            else {
+                panic!("expected transform trigger");
+            };
+            assert_eq!(position, [9.0, 8.0, 7.0]);
+            assert_eq!(rotation_degrees, [10.0, 20.0, 30.0]);
+            assert_eq!(size, [2.0, 3.0, 4.0]);
         });
     }
 }

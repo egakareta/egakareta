@@ -714,7 +714,6 @@ impl EditorSubsystem {
             self.sync_objects_for_drag();
             let is_move = self.runtime.interaction.gizmo_drag.as_ref().map(|d| d.kind)
                 == Some(GizmoDragKind::Move);
-            let capture_active = self.runtime.transform_trigger_capture.is_some();
             let trigger_drag = self
                 .runtime
                 .interaction
@@ -747,13 +746,12 @@ impl EditorSubsystem {
                 .unwrap_or_default();
             let dragging_transform_trigger_source =
                 self.any_block_is_transform_trigger_source(&dragged_indices);
-            if is_move || capture_active || trigger_drag {
+            if is_move || trigger_drag {
                 self.mark_dirty(EditorDirtyFlags {
                     rebuild_cursor: is_move,
                     rebuild_block_mesh: trigger_drag,
                     rebuild_hitbox_visualization: trigger_drag,
-                    rebuild_transform_trigger_markers: capture_active
-                        || trigger_drag
+                    rebuild_transform_trigger_markers: trigger_drag
                         || dragging_transform_trigger_block
                         || dragging_transform_trigger_source,
                     rebuild_preview_player: trigger_drag,
@@ -832,10 +830,10 @@ impl State {
 mod tests {
     use super::super::super::{EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag, State};
     use crate::test_utils::assert_approx_eq as approx_eq;
-    use crate::types::{
-        AppPhase, EditorMode, GizmoAxis, GizmoDragKind, LevelObject, TimedTrigger,
-        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+    use crate::triggers::{
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
     };
+    use crate::types::{AppPhase, EditorMode, GizmoAxis, GizmoDragKind, LevelObject};
     use glam::{Vec2, Vec3};
 
     fn test_block() -> LevelObject {

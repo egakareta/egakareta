@@ -6,7 +6,11 @@
 
 */
 use crate::editor_domain::timeline::derive_timeline_state_with_triggers;
-use crate::types::{LevelMetadata, LevelObject, SpawnDirection, SpawnMetadata, TimedTrigger};
+use crate::triggers::TimedTrigger;
+use crate::types::{
+    LevelMetadata, LevelObject, SpawnDirection, SpawnMetadata, DEFAULT_PLAY_CAMERA_PITCH,
+    DEFAULT_PLAY_CAMERA_ROTATION,
+};
 
 pub(crate) struct EditorPlaytestTransition {
     pub(crate) objects: Vec<LevelObject>,
@@ -91,8 +95,8 @@ pub(crate) fn build_editor_playtest_transition(
         playtest_audio_start_seconds: state.elapsed_seconds,
         level_duration_seconds: timeline_duration_seconds,
         playing_level_name: level_name.map(|name| name.to_string()),
-        camera_rotation: 45.0f32.to_radians(),
-        camera_pitch: 45.0f32.to_radians(),
+        camera_rotation: DEFAULT_PLAY_CAMERA_ROTATION,
+        camera_pitch: DEFAULT_PLAY_CAMERA_PITCH,
     }
 }
 

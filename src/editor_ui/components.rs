@@ -215,10 +215,16 @@ pub(crate) fn show_timeline_bar(
         let painter = ui.painter();
         let center_y = rect.center().y;
         let stroke = egui::Stroke::new(1.0, egui::Color32::from_gray(160));
+        // Clip the horizontal line to the duration end point if visible
+        let line_end_x = if duration_seconds >= view_start && duration_seconds <= view_end {
+            rect.left() + (duration_seconds - view_start) / visible_duration * rect.width()
+        } else {
+            rect.right()
+        };
         painter.line_segment(
             [
                 egui::pos2(rect.left(), center_y),
-                egui::pos2(rect.right(), center_y),
+                egui::pos2(line_end_x, center_y),
             ],
             stroke,
         );
@@ -302,10 +308,10 @@ pub(crate) fn show_timeline_bar(
             let x =
                 rect.left() + (trigger.time_seconds - view_start) / visible_duration * rect.width();
             let fill = match &trigger.action {
-                crate::types::TimedTriggerAction::CameraFollow { .. } => {
+                crate::triggers::TimedTriggerAction::CameraFollow { .. } => {
                     egui::Color32::from_rgb(110, 210, 140)
                 }
-                crate::types::TimedTriggerAction::CameraPose { .. } => {
+                crate::triggers::TimedTriggerAction::CameraPose { .. } => {
                     egui::Color32::from_rgb(255, 210, 90)
                 }
                 _ => egui::Color32::from_rgb(110, 140, 255),
@@ -479,7 +485,8 @@ pub(crate) fn show_waveform_panel(
         let end_sample = end_sample.min(waveform_samples.len());
 
         if end_sample > start_sample {
-            let waveform_color = egui::Color32::from_rgba_premultiplied(100, 160, 255, 120);
+            let waveform_color = egui::Color32::from_rgba_premultiplied(100, 160, 255, 255);
+            let waveform_color_past = egui::Color32::from_rgba_premultiplied(80, 140, 235, 255);
             let center_y = rect.center().y;
             let half_height = rect.height() * 0.4;
 
@@ -497,12 +504,17 @@ pub(crate) fn show_waveform_panel(
                 let bar_height = amplitude * half_height;
 
                 if bar_height > 0.5 {
+                    let color = if sample_time > duration_seconds {
+                        waveform_color_past
+                    } else {
+                        waveform_color
+                    };
                     painter.line_segment(
                         [
                             egui::pos2(x, center_y - bar_height),
                             egui::pos2(x, center_y + bar_height),
                         ],
-                        egui::Stroke::new(pixel_per_sample.max(1.0), waveform_color),
+                        egui::Stroke::new(pixel_per_sample.max(1.0), color),
                     );
                 }
             }
@@ -651,9 +663,11 @@ mod tests {
     use super::*;
     use crate::state::EditorUiViewModel;
     use crate::test_utils::assert_approx_eq as approx_eq;
+    use crate::triggers::{
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+    };
     use crate::types::{
-        AppSettings, EditorMode, MusicMetadata, SettingsSection, SpawnDirection, TimedTrigger,
-        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, TimingPoint,
+        AppSettings, EditorMode, MusicMetadata, SettingsSection, SpawnDirection, TimingPoint,
     };
 
     fn make_view<'a>(
@@ -699,7 +713,6 @@ mod tests {
             recent_block_ids: &[],
             selected_block: None,
             selected_block_count: 0,
-            transform_trigger_capture_active: false,
             clipboard_block_count: 0,
             can_undo: false,
             can_redo: false,

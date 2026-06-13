@@ -206,9 +206,9 @@ mod tests {
     };
     use crate::commands::AppCommand;
     use crate::state::EditorUiViewModel;
+    use crate::triggers::TimedTrigger;
     use crate::types::{
-        AppSettings, EditorMode, MusicMetadata, SettingsSection, SpawnDirection, TimedTrigger,
-        TimingPoint,
+        AppSettings, EditorMode, MusicMetadata, SettingsSection, SpawnDirection, TimingPoint,
     };
 
     fn make_view<'a>(
@@ -248,7 +248,6 @@ mod tests {
             recent_block_ids: &[],
             selected_block: None,
             selected_block_count: 0,
-            transform_trigger_capture_active: false,
             clipboard_block_count: 0,
             can_undo: false,
             can_redo: false,

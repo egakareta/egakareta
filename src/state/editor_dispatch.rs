@@ -25,6 +25,9 @@ impl State {
                 } else {
                     self.set_editor_mode(mode);
                 }
+                if old_mode == EditorMode::Tapping && mode != EditorMode::Tapping {
+                    self.clear_editor_tap_selection();
+                }
                 if mode == EditorMode::Tapping && old_mode != EditorMode::Tapping {
                     self.refresh_editor_tapping_preview_on_mode_entry();
                 }
@@ -58,6 +61,7 @@ impl State {
                 self.set_editor_selected_block_id(obj.block_id);
                 self.set_editor_selected_block_rotation(obj.rotation_degrees);
                 self.set_editor_selected_block_color_tint(obj.color_tint);
+                self.set_editor_selected_block_trigger(obj.trigger);
             }
 
             EditorCommand::NudgeSelected { dx, dy } => {
@@ -69,14 +73,8 @@ impl State {
             EditorCommand::FocusCameraTarget => {
                 self.editor_focus_camera_target();
             }
-            EditorCommand::BeginTransformTriggerCapture => {
-                self.begin_editor_transform_trigger_capture();
-            }
-            EditorCommand::CommitTransformTriggerCapture => {
-                self.commit_editor_transform_trigger_capture();
-            }
-            EditorCommand::CancelTransformTriggerCapture => {
-                self.cancel_editor_transform_trigger_capture();
+            EditorCommand::AddTransformTrigger => {
+                self.add_editor_transform_trigger();
             }
 
             EditorCommand::ToggleTimelinePlayback => self.toggle_editor_timeline_playback(),
@@ -137,6 +135,7 @@ impl State {
                 transition_seconds,
             } => self.set_editor_camera_orientation(rotation, pitch, transition_seconds),
             EditorCommand::AddCameraTrigger => self.editor_add_camera_trigger(),
+            EditorCommand::AddCameraFollowTrigger => self.editor_add_camera_follow_trigger(),
             EditorCommand::SetTriggerSelected(selected) => {
                 self.set_editor_trigger_selected(selected)
             }
@@ -235,10 +234,6 @@ impl State {
             return;
         }
 
-        if self.cancel_editor_transform_trigger_capture() {
-            return;
-        }
-
         if self.clear_editor_selection_for_escape() {
             return;
         }
@@ -258,18 +253,24 @@ impl State {
 
         if had_block_selection {
             self.editor.clear_block_selection();
-            self.editor.mark_dirty(EditorDirtyFlags {
-                rebuild_selection_overlays: true,
-                ..EditorDirtyFlags::default()
-            });
+            self.editor
+                .mark_dirty(EditorDirtyFlags::selection_overlay_changed());
         }
 
+        if had_tap_selection {
+            self.clear_editor_tap_selection();
+        }
+
+        had_block_selection || had_tap_selection
+    }
+
+    fn clear_editor_tap_selection(&mut self) -> bool {
+        let had_tap_selection = self.editor.selected_tap().is_some();
         if had_tap_selection {
             self.editor.set_selected_tap_index(None);
             self.rebuild_tap_indicator_vertices();
         }
-
-        had_block_selection || had_tap_selection
+        had_tap_selection
     }
 }
 
@@ -278,12 +279,40 @@ mod tests {
     use super::State;
     use crate::state::editor_command::EditorCommand;
     use crate::test_utils::stone;
-    use crate::types::{AppPhase, EditorMode, SettingsSection};
+    use crate::triggers::{
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+    };
+    use crate::types::{
+        AppPhase, EditorMode, LevelObject, SettingsSection, TRANSFORM_TRIGGER_BLOCK_ID,
+    };
 
     async fn new_editor_state() -> State {
         let mut state = State::new_test().await;
         state.enter_editor_phase_for_test("EditorDispatchCoverage");
         state
+    }
+
+    fn transform_trigger_object(time_seconds: f32, position: [f32; 3]) -> LevelObject {
+        LevelObject {
+            position,
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+            trigger: Some(TimedTrigger {
+                time_seconds,
+                duration_seconds: 1.0,
+                easing: TimedTriggerEasing::Linear,
+                target: TimedTriggerTarget::Objects {
+                    object_ids: Vec::new(),
+                },
+                action: TimedTriggerAction::TransformObjects {
+                    position,
+                    rotation_degrees: [0.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
+                },
+            }),
+        }
     }
 
     #[test]
@@ -411,6 +440,84 @@ mod tests {
     }
 
     #[test]
+    fn update_selected_block_persists_trigger_fields() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.objects = vec![LevelObject {
+                position: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+                trigger: Some(TimedTrigger {
+                    time_seconds: 0.0,
+                    duration_seconds: 1.0,
+                    easing: TimedTriggerEasing::Linear,
+                    target: TimedTriggerTarget::Objects {
+                        object_ids: vec![1],
+                    },
+                    action: TimedTriggerAction::TransformObjects {
+                        position: [0.0, 0.0, 0.0],
+                        rotation_degrees: [0.0, 0.0, 0.0],
+                        size: [1.0, 1.0, 1.0],
+                    },
+                }),
+            }];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+
+            let mut selected = state.editor.objects[0].clone();
+            let trigger = selected
+                .trigger
+                .as_mut()
+                .expect("trigger block has payload");
+            trigger.time_seconds = 0.75;
+            trigger.duration_seconds = 2.5;
+            trigger.easing = TimedTriggerEasing::EaseOut;
+
+            state.dispatch_editor(EditorCommand::UpdateSelectedBlock(selected));
+
+            let trigger = state.editor.objects[0]
+                .trigger
+                .as_ref()
+                .expect("updated block keeps trigger payload");
+            assert!(crate::test_utils::approx_eq(
+                trigger.time_seconds,
+                0.75,
+                1e-6
+            ));
+            assert!(crate::test_utils::approx_eq(
+                trigger.duration_seconds,
+                2.5,
+                1e-6
+            ));
+            assert_eq!(trigger.easing, TimedTriggerEasing::EaseOut);
+        });
+    }
+
+    #[test]
+    fn set_trigger_selected_selects_matching_trigger_block() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.objects = vec![
+                stone(0.0, 0.0, 0.0),
+                transform_trigger_object(2.0, [2.0, 0.0, 0.0]),
+                transform_trigger_object(1.0, [1.0, 0.0, 0.0]),
+            ];
+
+            state.dispatch_editor(EditorCommand::SetTriggerSelected(Some(0)));
+            assert_eq!(state.editor.selected_trigger_index(), Some(0));
+            assert_eq!(state.editor.ui.selected_block_index, Some(2));
+            assert_eq!(state.editor.ui.selected_block_indices, vec![2]);
+
+            state.dispatch_editor(EditorCommand::SetTriggerSelected(Some(1)));
+            assert_eq!(state.editor.selected_trigger_index(), Some(1));
+            assert_eq!(state.editor.ui.selected_block_index, Some(1));
+            assert_eq!(state.editor.ui.selected_block_indices, vec![1]);
+        });
+    }
+
+    #[test]
     fn dispatch_editor_routes_mode_and_pointer_pick_commands() {
         pollster::block_on(async {
             let mut state = new_editor_state().await;
@@ -511,6 +618,7 @@ mod tests {
                 transition_seconds: Some(0.25),
             });
             state.dispatch_editor(EditorCommand::AddCameraTrigger);
+            state.dispatch_editor(EditorCommand::AddCameraFollowTrigger);
             state.dispatch_editor(EditorCommand::SetTriggerSelected(Some(0)));
             state.dispatch_editor(EditorCommand::SetSimulateTriggerHitboxes(true));
             assert!(state.editor_simulate_trigger_hitboxes());
@@ -675,6 +783,22 @@ mod tests {
             assert!(state.editor.selected_tap().is_some());
 
             state.dispatch_editor(EditorCommand::Escape);
+            assert!(state.editor.selected_tap().is_none());
+        });
+    }
+
+    #[test]
+    fn dispatch_editor_clears_tap_selection_when_leaving_tapping_tab() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.dispatch_editor(EditorCommand::SetMode(EditorMode::Tapping));
+            state.dispatch_editor(EditorCommand::SetTimelineDuration(4.0));
+            state.dispatch_editor(EditorCommand::SetTimelineTime(1.0));
+            state.dispatch_editor(EditorCommand::AddTap);
+            state.dispatch_editor(EditorCommand::SetSelectedTap(Some(0)));
+            assert!(state.editor.selected_tap().is_some());
+
+            state.dispatch_editor(EditorCommand::SetMode(EditorMode::Timing));
             assert!(state.editor.selected_tap().is_none());
         });
     }

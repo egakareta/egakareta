@@ -474,6 +474,20 @@ impl GameState {
         std::mem::take(&mut self.consumed_object_events)
     }
 
+    pub(crate) fn prune_consumed_indices_from_objects(
+        objects: &mut Vec<LevelObject>,
+        consumed_indices: Vec<usize>,
+    ) {
+        let mut indices = consumed_indices;
+        indices.sort_unstable();
+        indices.dedup();
+        for index in indices.into_iter().rev() {
+            if index < objects.len() {
+                objects.remove(index);
+            }
+        }
+    }
+
     fn remaining_level_time(&self) -> f32 {
         if self.level_duration_seconds.is_finite() {
             (self.level_duration_seconds - self.elapsed_seconds).max(0.0)

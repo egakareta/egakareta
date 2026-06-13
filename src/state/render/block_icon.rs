@@ -12,9 +12,15 @@ use crate::block_repository::{
     resolve_block_definition, resolve_block_texture_layers, BlockIconCamera, BlockRenderProfile,
 };
 use crate::mesh::shapes::{append_prism_with_layers, PrismFaceColors, PrismTextureLayers};
-use crate::mesh::{append_transform_trigger_visual_vertices, TransformTriggerVisualStyle};
+use crate::mesh::{
+    append_camera_trigger_visual_vertices, append_transform_trigger_visual_vertices,
+    CameraTriggerVisualStyle, TransformTriggerVisualStyle,
+};
 use crate::mesh::{build_block_geometry, MeshGeometry};
-use crate::types::{CameraUniform, ColorSpaceUniform, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID};
+use crate::types::{
+    CameraUniform, ColorSpaceUniform, LevelObject, CAMERA_TRIGGER_BLOCK_ID,
+    TRANSFORM_TRIGGER_BLOCK_ID,
+};
 
 use super::super::State;
 
@@ -138,6 +144,10 @@ fn build_block_icon_geometry(block_id: &str, dimetric: bool) -> MeshGeometry {
     }
 
     let block = resolve_block_definition(block_id);
+    if block.id == CAMERA_TRIGGER_BLOCK_ID {
+        return build_camera_trigger_icon_geometry();
+    }
+
     if block.id == TRANSFORM_TRIGGER_BLOCK_ID {
         return build_transform_trigger_icon_geometry();
     }
@@ -163,6 +173,27 @@ fn build_block_icon_geometry(block_id: &str, dimetric: bool) -> MeshGeometry {
             vertex.set_render_profile(LIQUID_PROFILE_TAG);
         }
     }
+
+    MeshGeometry::from_vertices(vertices)
+}
+
+fn build_camera_trigger_icon_geometry() -> MeshGeometry {
+    let mut vertices = Vec::new();
+    append_camera_trigger_visual_vertices(
+        &mut vertices,
+        [0.5, 0.5, 0.5],
+        [0.0, 0.0, 0.0],
+        &CameraTriggerVisualStyle {
+            ring_color: [0.2, 0.75, 1.0, 0.95],
+            arrow_color: [1.0, 0.9, 0.24, 0.98],
+            ring_radius: 0.28,
+            ring_tube_radius: 0.025,
+            shaft_length: 0.42,
+            shaft_radius: 0.035,
+            cone_length: 0.22,
+            cone_radius: 0.095,
+        },
+    );
 
     MeshGeometry::from_vertices(vertices)
 }
@@ -273,6 +304,7 @@ impl State {
         let view_proj = camera.projection * view;
         let camera_uniform = CameraUniform {
             view_proj: view_proj.to_cols_array_2d(),
+            camera_position: [camera.eye.x, camera.eye.y, camera.eye.z, 0.0],
         };
         let camera_uniform_buffer =
             self.render

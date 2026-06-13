@@ -11,10 +11,8 @@ use super::simulation::{
 };
 use super::state::GameState;
 use crate::test_utils::assert_approx_eq as approx_eq;
-use crate::types::{
-    LevelObject, SpawnDirection, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
-    TimedTriggerTarget,
-};
+use crate::triggers::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
+use crate::types::{LevelObject, SpawnDirection};
 
 #[test]
 fn test_ground_detection_normal() {

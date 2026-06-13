@@ -16,7 +16,8 @@ use crate::editor_ui::modes::shared::{
 };
 use crate::state::editor_command::EditorCommand;
 use crate::state::EditorUiViewModel;
-use crate::types::EditorMode;
+use crate::triggers::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
+use crate::types::{EditorMode, LevelObject};
 
 const RECENT_BLOCK_STRIP_LIMIT: usize = 4;
 const COMPACT_PREVIEW_BUTTON_SIZE: f32 = 40.0;
@@ -107,91 +108,229 @@ pub(crate) fn show_selected_block_properties_window(
         EditorPropertyPopup::above_bottom_bar("selected_block_properties", bottom_bar_height),
         |ui| {
             ui.vertical(|ui| {
-                ui.horizontal(|ui| {
-                    ui.label("Position:");
-                    let mut changed = false;
-                    changed |= ui
-                        .add(egui::DragValue::new(&mut selected.position[0]).prefix("X "))
-                        .changed();
-                    changed |= ui
-                        .add(egui::DragValue::new(&mut selected.position[1]).prefix("Y "))
-                        .changed();
-                    changed |= ui
-                        .add(egui::DragValue::new(&mut selected.position[2]).prefix("Z "))
-                        .changed();
-                    if changed {
-                        commands.push(crate::commands::AppCommand::Editor(
-                            EditorCommand::UpdateSelectedBlock(selected.clone()),
-                        ));
-                    }
-                });
+                if show_position_controls(ui, &mut selected)
+                    || show_rotation_controls(ui, &mut selected)
+                {
+                    push_selected_block_update(commands, &selected);
+                }
 
-                ui.horizontal(|ui| {
-                    ui.label("Size:");
-                    let mut changed = false;
-                    changed |= ui
-                        .add(egui::DragValue::new(&mut selected.size[0]).prefix("W "))
-                        .changed();
-                    changed |= ui
-                        .add(egui::DragValue::new(&mut selected.size[1]).prefix("H "))
-                        .changed();
-                    changed |= ui
-                        .add(egui::DragValue::new(&mut selected.size[2]).prefix("D "))
-                        .changed();
-                    if changed {
-                        commands.push(crate::commands::AppCommand::Editor(
-                            EditorCommand::UpdateSelectedBlock(selected.clone()),
-                        ));
+                if selected.trigger.is_some() {
+                    if selected_has_transform_trigger(&selected)
+                        && show_size_controls(ui, &mut selected)
+                    {
+                        push_selected_block_update(commands, &selected);
                     }
-                });
 
-                ui.horizontal(|ui| {
-                    ui.label("Rotation:");
-                    let mut changed: bool = false;
-                    changed |= ui
-                        .add(
-                            egui::DragValue::new(&mut selected.rotation_degrees[0])
-                                .speed(0.5)
-                                .prefix("X ")
-                                .suffix("°"),
-                        )
-                        .changed();
-                    changed |= ui
-                        .add(
-                            egui::DragValue::new(&mut selected.rotation_degrees[1])
-                                .speed(0.5)
-                                .prefix("Y ")
-                                .suffix("°"),
-                        )
-                        .changed();
-                    changed |= ui
-                        .add(
-                            egui::DragValue::new(&mut selected.rotation_degrees[2])
-                                .speed(0.5)
-                                .prefix("Z ")
-                                .suffix("°"),
-                        )
-                        .changed();
-                    if changed {
-                        commands.push(crate::commands::AppCommand::Editor(
-                            EditorCommand::UpdateSelectedBlock(selected.clone()),
-                        ));
+                    let mut trigger_changed = false;
+                    if let Some(trigger) = selected.trigger.as_mut() {
+                        trigger_changed = show_trigger_controls(ui, trigger);
                     }
-                });
-
-                ui.horizontal(|ui| {
-                    ui.label("Color:");
-                    let mut color_tint = selected.color_tint;
-                    if ui.color_edit_button_rgb(&mut color_tint).changed() {
-                        selected.color_tint = color_tint;
-                        commands.push(crate::commands::AppCommand::Editor(
-                            EditorCommand::UpdateSelectedBlock(selected.clone()),
-                        ));
+                    if trigger_changed {
+                        push_selected_block_update(commands, &selected);
                     }
-                });
+                } else {
+                    if show_size_controls(ui, &mut selected) {
+                        push_selected_block_update(commands, &selected);
+                    }
+                    if show_color_controls(ui, &mut selected) {
+                        push_selected_block_update(commands, &selected);
+                    }
+                }
             });
         },
     );
+}
+
+fn selected_has_transform_trigger(selected: &LevelObject) -> bool {
+    matches!(
+        selected.trigger.as_ref().map(|trigger| &trigger.action),
+        Some(TimedTriggerAction::TransformObjects { .. })
+    )
+}
+
+fn push_selected_block_update(commands: &mut Vec<AppCommand>, selected: &LevelObject) {
+    commands.push(AppCommand::Editor(EditorCommand::UpdateSelectedBlock(
+        selected.clone(),
+    )));
+}
+
+fn show_position_controls(ui: &mut egui::Ui, selected: &mut LevelObject) -> bool {
+    ui.horizontal(|ui| {
+        ui.label("Position:");
+        show_vector_drag_values(ui, &mut selected.position, ["X ", "Y ", "Z "])
+    })
+    .inner
+}
+
+fn show_size_controls(ui: &mut egui::Ui, selected: &mut LevelObject) -> bool {
+    ui.horizontal(|ui| {
+        ui.label("Size:");
+        show_vector_drag_values(ui, &mut selected.size, ["W ", "H ", "D "])
+    })
+    .inner
+}
+
+fn show_rotation_controls(ui: &mut egui::Ui, selected: &mut LevelObject) -> bool {
+    ui.horizontal(|ui| {
+        ui.label("Rotation:");
+        show_rotation_drag_values(ui, &mut selected.rotation_degrees)
+    })
+    .inner
+}
+
+fn show_color_controls(ui: &mut egui::Ui, selected: &mut LevelObject) -> bool {
+    ui.horizontal(|ui| {
+        ui.label("Color:");
+        let mut color_tint = selected.color_tint;
+        let changed = ui.color_edit_button_rgb(&mut color_tint).changed();
+        if changed {
+            selected.color_tint = color_tint;
+        }
+        changed
+    })
+    .inner
+}
+
+fn show_vector_drag_values(ui: &mut egui::Ui, values: &mut [f32; 3], prefixes: [&str; 3]) -> bool {
+    let mut changed = false;
+    for (value, prefix) in values.iter_mut().zip(prefixes) {
+        changed |= ui.add(egui::DragValue::new(value).prefix(prefix)).changed();
+    }
+    changed
+}
+
+fn show_rotation_drag_values(ui: &mut egui::Ui, values: &mut [f32; 3]) -> bool {
+    let mut changed = false;
+    for (value, prefix) in values.iter_mut().zip(["X ", "Y ", "Z "]) {
+        changed |= ui
+            .add(
+                egui::DragValue::new(value)
+                    .speed(0.5)
+                    .prefix(prefix)
+                    .suffix("°"),
+            )
+            .changed();
+    }
+    changed
+}
+
+fn show_trigger_controls(ui: &mut egui::Ui, trigger: &mut TimedTrigger) -> bool {
+    let mut changed = false;
+    changed |= ui
+        .horizontal(|ui| {
+            ui.label("Trigger:");
+            let mut row_changed = false;
+            row_changed |= ui
+                .add(
+                    egui::DragValue::new(&mut trigger.time_seconds)
+                        .speed(0.05)
+                        .prefix("Time ")
+                        .suffix("s"),
+                )
+                .changed();
+            row_changed |= ui
+                .add(
+                    egui::DragValue::new(&mut trigger.duration_seconds)
+                        .speed(0.05)
+                        .prefix("Duration ")
+                        .suffix("s"),
+                )
+                .changed();
+            row_changed
+        })
+        .inner;
+
+    changed |= show_trigger_easing_control(ui, trigger);
+    changed |= show_trigger_action_controls(ui, trigger);
+    changed
+}
+
+fn show_trigger_easing_control(ui: &mut egui::Ui, trigger: &mut TimedTrigger) -> bool {
+    ui.horizontal(|ui| {
+        ui.label("Easing:");
+        let mut changed = false;
+        egui::ComboBox::from_id_salt("selected_block_trigger_easing")
+            .selected_text(trigger_easing_label(trigger.easing))
+            .show_ui(ui, |ui| {
+                for easing in [
+                    TimedTriggerEasing::Linear,
+                    TimedTriggerEasing::EaseIn,
+                    TimedTriggerEasing::EaseOut,
+                    TimedTriggerEasing::EaseInOut,
+                ] {
+                    changed |= ui
+                        .selectable_value(&mut trigger.easing, easing, trigger_easing_label(easing))
+                        .changed();
+                }
+            });
+        changed
+    })
+    .inner
+}
+
+fn show_trigger_action_controls(ui: &mut egui::Ui, trigger: &mut TimedTrigger) -> bool {
+    match &mut trigger.action {
+        TimedTriggerAction::CameraPose {
+            transition_interval_seconds,
+            use_full_segment_transition,
+            ..
+        }
+        | TimedTriggerAction::CameraFollow {
+            transition_interval_seconds,
+            use_full_segment_transition,
+        } => show_camera_trigger_controls(
+            ui,
+            transition_interval_seconds,
+            use_full_segment_transition,
+        ),
+        TimedTriggerAction::TransformObjects { .. } => show_transform_trigger_summary(ui, trigger),
+    }
+}
+
+fn show_camera_trigger_controls(
+    ui: &mut egui::Ui,
+    transition_interval_seconds: &mut f32,
+    use_full_segment_transition: &mut bool,
+) -> bool {
+    let mut changed = false;
+    changed |= ui
+        .horizontal(|ui| {
+            ui.label("Camera:");
+            ui.add(
+                egui::DragValue::new(transition_interval_seconds)
+                    .speed(0.05)
+                    .prefix("Blend ")
+                    .suffix("s"),
+            )
+            .changed()
+        })
+        .inner;
+    changed |= ui
+        .horizontal(|ui| ui.checkbox(use_full_segment_transition, "Use full segment"))
+        .inner
+        .changed();
+    changed
+}
+
+fn show_transform_trigger_summary(ui: &mut egui::Ui, trigger: &TimedTrigger) -> bool {
+    let target_count = match &trigger.target {
+        TimedTriggerTarget::Objects { object_ids } => object_ids.len(),
+        TimedTriggerTarget::Camera => 0,
+    };
+    ui.horizontal(|ui| {
+        ui.label("Targets:");
+        ui.label(target_count.to_string());
+    });
+    false
+}
+
+fn trigger_easing_label(easing: TimedTriggerEasing) -> &'static str {
+    match easing {
+        TimedTriggerEasing::Linear => "Linear",
+        TimedTriggerEasing::EaseIn => "Ease In",
+        TimedTriggerEasing::EaseOut => "Ease Out",
+        TimedTriggerEasing::EaseInOut => "Ease In Out",
+    }
 }
 
 pub(crate) fn show_place_block_properties_window(
@@ -392,14 +531,21 @@ fn scale_channel(value: u8, factor: f32) -> u8 {
 mod tests {
     use super::{
         atlas_average_color, block_preview_colors, scale_channel, scale_rgb,
-        show_block_preview_button, show_place_block_properties_window, FALLBACK_SIDE_COLOR,
-        FALLBACK_TOP_COLOR, TOP_LIGHTEN_FACTOR,
+        show_block_preview_button, show_place_block_properties_window,
+        show_selected_block_properties_window, FALLBACK_SIDE_COLOR, FALLBACK_TOP_COLOR,
+        TOP_LIGHTEN_FACTOR,
     };
     use crate::block_repository::{
         all_placeable_blocks, block_texture_atlas, resolve_block_texture_layers,
     };
     use crate::state::EditorUiViewModel;
-    use crate::types::{AppSettings, EditorMode, MusicMetadata, SettingsSection, SpawnDirection};
+    use crate::triggers::{
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+    };
+    use crate::types::{
+        AppSettings, EditorMode, LevelObject, MusicMetadata, SettingsSection, SpawnDirection,
+        TRANSFORM_TRIGGER_BLOCK_ID,
+    };
 
     fn make_view<'a>(
         app_settings: &'a AppSettings,
@@ -435,7 +581,6 @@ mod tests {
             recent_block_ids: &[],
             selected_block: None,
             selected_block_count: 0,
-            transform_trigger_capture_active: false,
             clipboard_block_count: 0,
             can_undo: false,
             can_redo: false,
@@ -560,5 +705,44 @@ mod tests {
             show_place_block_properties_window(&ctx, &place_view, 48.0);
             show_place_block_properties_window(&ctx, &select_view, 48.0);
         });
+    }
+
+    #[test]
+    fn show_selected_block_properties_window_handles_normal_and_trigger_blocks() {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let mut normal_view = make_view(&app_settings, &music_metadata, EditorMode::Select);
+        normal_view.selected_block = Some(crate::test_utils::stone(1.0, 2.0, 3.0));
+
+        let mut trigger_view = make_view(&app_settings, &music_metadata, EditorMode::Select);
+        trigger_view.selected_block = Some(LevelObject {
+            position: [1.0, 0.0, 1.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 90.0, 0.0],
+            block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+            trigger: Some(TimedTrigger {
+                time_seconds: 0.5,
+                duration_seconds: 1.0,
+                easing: TimedTriggerEasing::EaseInOut,
+                target: TimedTriggerTarget::Objects {
+                    object_ids: vec![0],
+                },
+                action: TimedTriggerAction::TransformObjects {
+                    position: [1.0, 0.0, 1.0],
+                    rotation_degrees: [0.0, 90.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
+                },
+            }),
+        });
+
+        let ctx = egui::Context::default();
+        let mut commands = Vec::new();
+        let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
+            show_selected_block_properties_window(&ctx, &normal_view, 48.0, &mut commands);
+            show_selected_block_properties_window(&ctx, &trigger_view, 48.0, &mut commands);
+        });
+
+        assert!(commands.is_empty());
     }
 }
