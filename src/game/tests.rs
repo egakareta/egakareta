@@ -190,6 +190,23 @@ fn wooden_fence_support_height_uses_hitbox_top() {
 }
 
 #[test]
+fn missing_hitboxes_fall_back_to_geometry_elements() {
+    let mut game = GameState::new();
+    game.objects.push(LevelObject {
+        position: [0.0, 0.0, 0.0],
+        size: [1.0, 1.0, 1.0],
+        rotation_degrees: [0.0, 0.0, 0.0],
+        block_id: "core/wooden_fence".to_string(),
+        color_tint: [1.0, 1.0, 1.0],
+        trigger: None,
+    });
+    game.rebuild_behavior_cache();
+
+    assert!(object_xz_contains(&game.objects[0], 0.5, 0.5));
+    assert!(!object_xz_contains(&game.objects[0], 0.5, 0.2));
+}
+
+#[test]
 fn rotated_ground_detection_works() {
     let mut game = GameState::new();
     game.objects.push(LevelObject {
