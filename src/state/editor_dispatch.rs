@@ -25,6 +25,9 @@ impl State {
                 } else {
                     self.set_editor_mode(mode);
                 }
+                if old_mode == EditorMode::Tapping && mode != EditorMode::Tapping {
+                    self.clear_editor_tap_selection();
+                }
                 if mode == EditorMode::Tapping && old_mode != EditorMode::Tapping {
                     self.refresh_editor_tapping_preview_on_mode_entry();
                 }
@@ -255,11 +258,19 @@ impl State {
         }
 
         if had_tap_selection {
-            self.editor.set_selected_tap_index(None);
-            self.rebuild_tap_indicator_vertices();
+            self.clear_editor_tap_selection();
         }
 
         had_block_selection || had_tap_selection
+    }
+
+    fn clear_editor_tap_selection(&mut self) -> bool {
+        let had_tap_selection = self.editor.selected_tap().is_some();
+        if had_tap_selection {
+            self.editor.set_selected_tap_index(None);
+            self.rebuild_tap_indicator_vertices();
+        }
+        had_tap_selection
     }
 }
 
@@ -772,6 +783,22 @@ mod tests {
             assert!(state.editor.selected_tap().is_some());
 
             state.dispatch_editor(EditorCommand::Escape);
+            assert!(state.editor.selected_tap().is_none());
+        });
+    }
+
+    #[test]
+    fn dispatch_editor_clears_tap_selection_when_leaving_tapping_tab() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.dispatch_editor(EditorCommand::SetMode(EditorMode::Tapping));
+            state.dispatch_editor(EditorCommand::SetTimelineDuration(4.0));
+            state.dispatch_editor(EditorCommand::SetTimelineTime(1.0));
+            state.dispatch_editor(EditorCommand::AddTap);
+            state.dispatch_editor(EditorCommand::SetSelectedTap(Some(0)));
+            assert!(state.editor.selected_tap().is_some());
+
+            state.dispatch_editor(EditorCommand::SetMode(EditorMode::Timing));
             assert!(state.editor.selected_tap().is_none());
         });
     }
