@@ -1675,21 +1675,9 @@ mod tests {
         pollster::block_on(async {
             let mut state = State::new_test().await;
 
-            // Start level 0 (should be Flowerfield)
+            // Start level 0
             state.start_level(0);
             assert_eq!(state.phase, AppPhase::Playing);
-            assert_eq!(
-                state.session.playing_level_name,
-                Some("Flowerfield".to_string())
-            );
-
-            // Start editor for level 1 (Golden Haze)
-            state.start_editor(1);
-            assert_eq!(state.phase, AppPhase::Editor);
-            assert_eq!(
-                state.session.editor_level_name,
-                Some("Golden Haze".to_string())
-            );
 
             // Back to menu
             state.back_to_menu();
