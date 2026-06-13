@@ -20,10 +20,10 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 
 ### Build & Run
 
-- **Development Server:** `bun scripts/dev.ts` runs wasm-pack and wrangler.
+- **Development Server:** `bun run dev` (`bun scripts/dev.ts`)
     - `wrangler pages dev` serving from `./dist` on `http://127.0.0.1:8788`. If this is running, you have access to local Cloudflare services (KV, R2, D1, Durable Objects, and Workflows) for this app via the Explorer API.
     - Fetch the OpenAPI schema from http://127.0.0.1:8788/cdn-cgi/explorer/api to discover available operations. Use these endpoints to list, query, and manage local resources during development.
-- **Web Build:** `bun run build` — prepares `./dist` with wasm-pack and `scripts/dist.ts`.
+- **Web Build:** `bun run build` (`bun scripts/build.ts`)
 - **CLI Tool:** The `egb` binary (`src/bin/egb.rs`) is a standalone level metadata conversion helper (JSON ↔ binary `.egb`). Build it with `cargo build --bin egb`.
 
 ### Linting & Formatting

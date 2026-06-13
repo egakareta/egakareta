@@ -1,7 +1,7 @@
 {
     "name": "egakareta",
     "scripts": {
-        "build": "wasm-pack build -t web -d target/pkg && bun scripts/dist.ts",
+        "build": "bun scripts/build.ts",
         "format:cargo": "cargo fmt",
         "format:prettier": "prettier --write .",
         "format": "bun run format:cargo && bun run format:prettier",
@@ -16,7 +16,7 @@
         "license:add": "license-check-and-add add -f .github/license/config.json",
         "license:check": "license-check-and-add check -f .github/license/config.json",
         "dev:setup": "supabase start && until supabase status; do sleep 2; done && supabase status -o env > .env.local && bun typegen",
-        "dev:build": "nodemon --exec \"bun run build\"",
+        "dev:build": "nodemon --exec \"bun run build --profiling\"",
         "dev:wrangler": "wrangler pages dev",
         "dev": "bun scripts/dev.ts",
         "prepare": "lefthook install"

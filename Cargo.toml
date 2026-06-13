@@ -122,7 +122,7 @@ web-sys = { version = "0.3", features = [
     "Navigator",
 ] }
 
-[package.metadata.wasm-pack.profile.release]
+[package.metadata.wasm-pack.profile.profiling]
 wasm-opt = false
 
 [build-dependencies]
