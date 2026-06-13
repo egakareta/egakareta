@@ -38,15 +38,13 @@ pub(crate) fn show_timing_mode_bottom_panel(
         ui.separator();
 
         let mut duration = view.timeline_duration_seconds;
-        ui.label(format!(
-            "{} Duration (s):",
-            egui_phosphor::regular::HOURGLASS
-        ));
+        ui.label(format!("{} Duration:", egui_phosphor::regular::HOURGLASS));
         if ui
             .add(
                 egui::DragValue::new(&mut duration)
                     .speed(0.1)
-                    .range(MIN_TIMELINE_DURATION_SECONDS..=MAX_TIMELINE_DURATION_SECONDS),
+                    .range(MIN_TIMELINE_DURATION_SECONDS..=MAX_TIMELINE_DURATION_SECONDS)
+                    .suffix("s"),
             )
             .changed()
         {
