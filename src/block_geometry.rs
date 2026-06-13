@@ -52,9 +52,25 @@ pub(crate) fn hitbox_cuboids(object: &LevelObject) -> Vec<WorldCuboid> {
 pub(crate) fn effective_hitbox_cuboids(object: &LevelObject) -> Vec<WorldCuboid> {
     let hitboxes = hitbox_cuboids(object);
     if hitboxes.is_empty() {
-        visual_cuboids(object)
+        let visual_cuboids = visual_cuboids(object);
+        if visual_cuboids.is_empty() {
+            vec![full_object_cuboid(object)]
+        } else {
+            visual_cuboids
+        }
     } else {
         hitboxes
+    }
+}
+
+pub(crate) fn full_object_cuboid(object: &LevelObject) -> WorldCuboid {
+    WorldCuboid {
+        min: object.position,
+        max: [
+            object.position[0] + object.size[0],
+            object.position[1] + object.size[1],
+            object.position[2] + object.size[2],
+        ],
     }
 }
 
