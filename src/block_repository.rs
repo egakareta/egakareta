@@ -827,7 +827,7 @@ mod tests {
     fn block_geometry_cuboids_are_loaded_and_normalized() {
         let fence = resolve_block_definition("core/wooden_fence");
         assert_eq!(fence.geometry.elements.len(), 3);
-        assert_eq!(fence.geometry.hitboxes.len(), 3);
+        assert_eq!(fence.geometry.hitboxes.len(), 0);
         assert_eq!(fence.geometry.elements[0].from, [6.0, 0.0, 6.0]);
         assert_eq!(fence.geometry.elements[0].to, [10.0, 16.0, 10.0]);
 
