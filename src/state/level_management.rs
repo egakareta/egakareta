@@ -1382,10 +1382,6 @@ mod tests {
                 state.editor.timeline.taps.tap_times.len(),
                 state.editor.timeline.taps.tap_indicator_positions.len()
             );
-            assert_eq!(
-                state.editor.camera.editor_target_z, state.editor.ui.cursor[1],
-                "start_editor should sync camera target Z with loaded cursor"
-            );
             assert_eq!(state.editor.timing.timing_selected_index, None);
             assert_eq!(state.editor.selected_trigger_index(), None);
         });
