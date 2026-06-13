@@ -185,7 +185,7 @@ fn build_camera_trigger_icon_geometry() -> MeshGeometry {
         [0.0, 0.0, 0.0],
         &CameraTriggerVisualStyle {
             ring_color: [0.2, 0.75, 1.0, 0.95],
-            arrow_color: [1.0, 0.9, 0.24, 0.98],
+            arrow_color: [0.2, 0.9, 0.3, 0.98],
             ring_radius: 0.28,
             ring_tube_radius: 0.025,
             shaft_length: 0.42,

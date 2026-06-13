@@ -4,7 +4,7 @@
     "category": "trigger",
     "render": {
         "profile": "camera_trigger",
-        "color_top": [1.0, 0.9, 0.24, 0.96],
+        "color_top": [0.2, 0.9, 0.3, 0.96],
         "color_side": [0.2, 0.75, 1.0, 0.9],
         "color_bottom": [0.0, 0.0, 0.0, 0.0]
     },
