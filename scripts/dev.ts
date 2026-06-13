@@ -8,8 +8,8 @@
 /// <reference types="bun-types" />
 
 const commands = [
-    ["dev:build", ["bun", "dev:build"]],
-    ["dev:wrangler", ["bun", "dev:wrangler"]],
+    ["dev:build", ["nodemon", "--exec", "bun run build --profiling"]],
+    ["dev:wrangler", ["bunx", "wrangler", "pages", "dev"]],
 ] as const;
 
 const processes = commands.map(([name, command]) => ({

@@ -16,8 +16,6 @@
         "license:add": "license-check-and-add add -f .github/license/config.json",
         "license:check": "license-check-and-add check -f .github/license/config.json",
         "dev:setup": "supabase start && until supabase status; do sleep 2; done && supabase status -o env > .env.local && bun typegen",
-        "dev:build": "nodemon --exec \"bun run build --profiling\"",
-        "dev:wrangler": "wrangler pages dev",
         "dev": "bun scripts/dev.ts",
         "prepare": "lefthook install"
     },
