@@ -14,15 +14,85 @@ use crate::editor_domain::{
     derive_timeline_time_for_world_target_near_time, derive_timing_division_tap_previews,
     playtest_return_objects, remove_topmost_block_at_cursor, snap_cell_to_step,
     timeline_axis_aligned_segment_split_fraction, timeline_turn_corner_position,
-    timing_division_time_in_direction, toggle_spawn_direction, EditorPlaytestTransitionParams,
-    TapDivisionPreview, TapDivisionPreviewRange, TimelineNearSearch, TimingDivisionDirection,
+    timing_division_time_in_direction, toggle_spawn_direction, topmost_block_index_at_cursor,
+    EditorPlaytestTransitionParams, TapDivisionPreview, TapDivisionPreviewRange,
+    TimelineNearSearch, TimingDivisionDirection,
 };
 use crate::game::{GameState, TimelineSimulationRuntime};
 use crate::state::editor_command::EditorCommand;
-use crate::types::{AppPhase, EditorMode, EditorTapDivisionPick};
+use crate::triggers::{TimedTriggerAction, TimedTriggerTarget};
+use crate::types::{AppPhase, EditorMode, EditorTapDivisionPick, LevelObject};
 
 const TAP_CLICK_ADD_EPSILON_SECONDS: f32 = 0.001;
 const FALLBACK_TIMELINE_SHIFT_SECONDS: f32 = 0.1;
+
+fn compact_object_ids_for_removed_indices(
+    objects: &[LevelObject],
+    removed_indices: &[usize],
+) -> Vec<u32> {
+    let mut removed_indices = removed_indices
+        .iter()
+        .copied()
+        .filter(|index| *index < objects.len())
+        .collect::<Vec<_>>();
+    removed_indices.sort_unstable();
+    removed_indices.dedup();
+
+    let mut removed_object_ids = Vec::new();
+    let mut compact_object_id = 0_u32;
+    for (index, object) in objects.iter().enumerate() {
+        let is_targetable_object = object.trigger.is_none();
+        if removed_indices.binary_search(&index).is_ok() && is_targetable_object {
+            removed_object_ids.push(compact_object_id);
+        }
+        if is_targetable_object {
+            compact_object_id = compact_object_id.saturating_add(1);
+        }
+    }
+
+    removed_object_ids
+}
+
+fn dereference_removed_transform_trigger_targets(
+    objects: &mut [LevelObject],
+    removed_object_ids: &[u32],
+) {
+    if removed_object_ids.is_empty() {
+        return;
+    }
+
+    let mut removed_object_ids = removed_object_ids.to_vec();
+    removed_object_ids.sort_unstable();
+    removed_object_ids.dedup();
+
+    for object in objects {
+        let Some(trigger) = object.trigger.as_mut() else {
+            continue;
+        };
+        if !matches!(trigger.action, TimedTriggerAction::TransformObjects { .. }) {
+            continue;
+        }
+        let TimedTriggerTarget::Objects { object_ids } = &mut trigger.target else {
+            continue;
+        };
+
+        let mut remapped_object_ids = object_ids
+            .iter()
+            .copied()
+            .filter_map(|object_id| {
+                if removed_object_ids.binary_search(&object_id).is_ok() {
+                    return None;
+                }
+                let removed_before =
+                    removed_object_ids.partition_point(|removed_id| *removed_id < object_id) as u32;
+                Some(object_id.saturating_sub(removed_before))
+            })
+            .collect::<Vec<_>>();
+        remapped_object_ids.sort_unstable();
+        remapped_object_ids.dedup();
+        *object_ids = remapped_object_ids;
+    }
+}
 
 fn distance_sq(left: [f32; 3], right: [f32; 3]) -> f32 {
     let dx = left[0] - right[0];
@@ -420,6 +490,9 @@ impl EditorSubsystem {
     pub(crate) fn remove_selected(&mut self) -> bool {
         let selected_indices = self.selected_indices_normalized();
         if !selected_indices.is_empty() {
+            let removed_object_ids =
+                compact_object_ids_for_removed_indices(&self.objects, &selected_indices);
+            dereference_removed_transform_trigger_targets(&mut self.objects, &removed_object_ids);
             for index in selected_indices.into_iter().rev() {
                 if index < self.objects.len() {
                     self.objects.remove(index);
@@ -431,7 +504,11 @@ impl EditorSubsystem {
             return true;
         }
 
-        if remove_topmost_block_at_cursor(&mut self.objects, self.ui.cursor) {
+        if let Some(index) = topmost_block_index_at_cursor(&self.objects, self.ui.cursor) {
+            let removed_object_ids =
+                compact_object_ids_for_removed_indices(&self.objects, &[index]);
+            dereference_removed_transform_trigger_targets(&mut self.objects, &removed_object_ids);
+            remove_topmost_block_at_cursor(&mut self.objects, self.ui.cursor);
             self.invalidate_samples();
             self.sync_trigger_cache_from_objects();
             return true;
@@ -1312,7 +1389,12 @@ mod tests {
     use super::State;
     use crate::editor_domain::derive_tap_indicator_positions;
     use crate::game::TimelineSimulationRuntime;
-    use crate::types::{AppPhase, EditorMode, LevelObject, SpawnDirection, TimingPoint};
+    use crate::triggers::{
+        TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+    };
+    use crate::types::{
+        AppPhase, EditorMode, LevelObject, SpawnDirection, TimingPoint, TRANSFORM_TRIGGER_BLOCK_ID,
+    };
 
     fn test_block(position: [f32; 3]) -> LevelObject {
         LevelObject {
@@ -1322,6 +1404,20 @@ mod tests {
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+        }
+    }
+
+    fn test_transform_trigger(object_ids: Vec<u32>) -> TimedTrigger {
+        TimedTrigger {
+            time_seconds: 0.0,
+            duration_seconds: 1.0,
+            easing: TimedTriggerEasing::EaseInOut,
+            target: TimedTriggerTarget::Objects { object_ids },
+            action: TimedTriggerAction::TransformObjects {
+                position: [9.0, 0.0, 0.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+            },
         }
     }
 
@@ -1346,6 +1442,75 @@ mod tests {
             state.editor_redo();
             assert_eq!(state.editor.objects.len(), 1);
             assert_eq!(state.editor.objects[0].position, [2.0, 0.0, 0.0]);
+        });
+    }
+
+    #[test]
+    fn remove_block_dereferences_deleted_transform_trigger_target() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.objects = vec![
+                test_block([0.0, 0.0, 0.0]),
+                test_block([2.0, 0.0, 0.0]),
+                test_block([4.0, 0.0, 0.0]),
+            ];
+            state
+                .editor
+                .set_triggers(vec![test_transform_trigger(vec![1])]);
+            state.editor.ui.selected_block_index = Some(1);
+            state.editor.ui.selected_block_indices = vec![1];
+
+            state.editor_remove_block();
+
+            assert_eq!(state.editor.objects.len(), 3);
+            assert_eq!(state.editor.objects[2].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
+            let trigger = state
+                .editor
+                .triggers
+                .items
+                .first()
+                .expect("trigger remains");
+            assert_eq!(
+                trigger.target,
+                TimedTriggerTarget::Objects {
+                    object_ids: Vec::new(),
+                }
+            );
+        });
+    }
+
+    #[test]
+    fn remove_block_remaps_transform_trigger_targets_after_deleted_block() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.objects = vec![
+                test_block([0.0, 0.0, 0.0]),
+                test_block([2.0, 0.0, 0.0]),
+                test_block([4.0, 0.0, 0.0]),
+            ];
+            state
+                .editor
+                .set_triggers(vec![test_transform_trigger(vec![2])]);
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+
+            state.editor_remove_block();
+
+            assert_eq!(state.editor.objects[1].position, [4.0, 0.0, 0.0]);
+            let trigger = state
+                .editor
+                .triggers
+                .items
+                .first()
+                .expect("trigger remains");
+            assert_eq!(
+                trigger.target,
+                TimedTriggerTarget::Objects {
+                    object_ids: vec![1],
+                }
+            );
         });
     }
 
