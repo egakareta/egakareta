@@ -17,7 +17,6 @@ use crate::types::{
 };
 
 pub(crate) struct EditorTriggerState {
-    pub(crate) items: Vec<TimedTrigger>,
     pub(crate) selected_index: Option<usize>,
     pub(crate) simulate_trigger_hitboxes: bool,
 }
@@ -95,7 +94,6 @@ fn trigger_object_from_payload(trigger: TimedTrigger) -> LevelObject {
 impl EditorTriggerState {
     pub(crate) fn new() -> Self {
         Self {
-            items: Vec::new(),
             selected_index: None,
             simulate_trigger_hitboxes: false,
         }
@@ -212,12 +210,12 @@ impl EditorSubsystem {
         triggers_from_objects(&self.objects)
     }
 
-    pub(crate) fn sync_trigger_cache_from_objects(&mut self) {
-        self.triggers.items = self.triggers();
+    pub(crate) fn sync_trigger_selection_from_objects(&mut self) {
+        let trigger_count = self.triggers().len();
         self.triggers.selected_index = self
             .triggers
             .selected_index
-            .filter(|index| *index < self.triggers.items.len());
+            .filter(|index| *index < trigger_count);
     }
 
     pub(crate) fn selected_trigger_index(&self) -> Option<usize> {
@@ -287,7 +285,7 @@ impl EditorSubsystem {
         if indices.is_empty() {
             return false;
         }
-        self.triggers.items.iter().any(|trigger| {
+        self.triggers().iter().any(|trigger| {
             if !matches!(trigger.action, TimedTriggerAction::TransformObjects { .. }) {
                 return false;
             }
@@ -326,7 +324,7 @@ impl EditorSubsystem {
             self.objects.push(trigger_object_from_payload(trigger));
         }
 
-        self.sync_trigger_cache_from_objects();
+        self.sync_trigger_selection_from_objects();
     }
 
     pub(crate) fn add_trigger(&mut self, trigger: TimedTrigger) -> usize {
@@ -337,14 +335,8 @@ impl EditorSubsystem {
         self.objects
             .push(trigger_object_from_payload(trigger.clone()));
 
-        self.sync_trigger_cache_from_objects();
-        let cache_index = self
-            .triggers
-            .items
-            .iter()
-            .position(|t| t.time_seconds == trigger.time_seconds)
-            .unwrap_or(0);
-        self.triggers.selected_index = Some(cache_index);
+        self.sync_trigger_selection_from_objects();
+        self.triggers.selected_index = self.trigger_index_for_object_index(object_index);
         object_index
     }
 
@@ -363,12 +355,32 @@ impl EditorSubsystem {
         };
 
         self.objects[index].trigger = trigger;
-        self.sync_trigger_cache_from_objects();
+        self.sync_trigger_selection_from_objects();
     }
 
     pub(crate) fn set_trigger_selected(&mut self, selected: Option<usize>) {
         let trigger_count = self.triggers().len();
         self.triggers.selected_index = selected.filter(|index| *index < trigger_count);
+    }
+
+    fn trigger_index_for_object_index(&self, target_object_index: usize) -> Option<usize> {
+        let mut indexed_triggers = self
+            .objects
+            .iter()
+            .enumerate()
+            .filter_map(|(object_index, object)| {
+                let trigger = triggers_from_objects(std::slice::from_ref(object))
+                    .into_iter()
+                    .next()?;
+                Some((object_index, trigger))
+            })
+            .collect::<Vec<_>>();
+
+        indexed_triggers
+            .sort_by(|left, right| f32::total_cmp(&left.1.time_seconds, &right.1.time_seconds));
+        indexed_triggers
+            .iter()
+            .position(|(object_index, _)| *object_index == target_object_index)
     }
 }
 
@@ -544,7 +556,9 @@ mod tests {
                     ..
                 } => {
                     assert_eq!(transition_interval_seconds, 1.0);
-                    assert_eq!(target_position, [0.0, 2.0, 0.0]);
+                    for (actual, expected) in target_position.iter().zip([0.0, 2.0, 0.0]) {
+                        assert!((*actual - expected).abs() <= 1e-5);
+                    }
                     assert_eq!(rotation, -45.0f32.to_radians());
                     assert!((pitch - 89.9f32.to_radians()).abs() <= 1e-6);
                 }
@@ -644,26 +658,29 @@ mod tests {
     }
 
     #[test]
-    fn removing_trigger_block_syncs_cache_so_deleted_triggers_do_not_reappear() {
+    fn derived_triggers_use_trigger_block_pose_as_source_of_truth() {
         pollster::block_on(async {
             let mut state = new_editor_state().await;
             state.editor.objects.clear();
-            state
-                .editor
-                .set_triggers(vec![object_move_trigger(0.0), object_move_trigger(1.0)]);
-            state.editor.ui.selected_block_index = Some(0);
-            state.editor.ui.selected_block_indices = vec![0];
+            state.editor.set_triggers(vec![object_move_trigger(0.0)]);
 
-            assert!(state.editor.remove_selected());
             assert_eq!(state.editor.triggers().len(), 1);
-            assert_eq!(state.editor.triggers.items.len(), 1);
+            state.editor.objects[0].position = [9.0, 8.0, 7.0];
+            state.editor.objects[0].size = [2.0, 3.0, 4.0];
+            state.editor.objects[0].rotation_degrees = [10.0, 20.0, 30.0];
 
-            let retained_triggers = std::mem::take(&mut state.editor.triggers.items);
-            state.editor.set_triggers(retained_triggers);
-            assert_eq!(state.editor.triggers().len(), 1);
-
-            state.editor.add_trigger(object_move_trigger(2.0));
-            assert_eq!(state.editor.triggers().len(), 2);
+            let trigger = state.editor.triggers().remove(0);
+            let TimedTriggerAction::TransformObjects {
+                position,
+                rotation_degrees,
+                size,
+            } = trigger.action
+            else {
+                panic!("expected transform trigger");
+            };
+            assert_eq!(position, [9.0, 8.0, 7.0]);
+            assert_eq!(rotation_degrees, [10.0, 20.0, 30.0]);
+            assert_eq!(size, [2.0, 3.0, 4.0]);
         });
     }
 }

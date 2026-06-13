@@ -577,7 +577,7 @@ mod tests {
     fn evaluate_camera_track_without_triggers_returns_live_follow() {
         pollster::block_on(async {
             let mut state = new_editor_state().await;
-            state.editor.triggers.items.clear();
+            state.editor.set_triggers(Vec::new());
             state.editor.camera.playing_rotation = 0.6;
             state.editor.camera.playing_pitch = 0.4;
 

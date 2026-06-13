@@ -500,7 +500,7 @@ impl EditorSubsystem {
             }
             self.clear_block_selection();
             self.invalidate_samples();
-            self.sync_trigger_cache_from_objects();
+            self.sync_trigger_selection_from_objects();
             return true;
         }
 
@@ -510,7 +510,7 @@ impl EditorSubsystem {
             dereference_removed_transform_trigger_targets(&mut self.objects, &removed_object_ids);
             remove_topmost_block_at_cursor(&mut self.objects, self.ui.cursor);
             self.invalidate_samples();
-            self.sync_trigger_cache_from_objects();
+            self.sync_trigger_selection_from_objects();
             return true;
         }
 
@@ -1465,12 +1465,8 @@ mod tests {
 
             assert_eq!(state.editor.objects.len(), 3);
             assert_eq!(state.editor.objects[2].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
-            let trigger = state
-                .editor
-                .triggers
-                .items
-                .first()
-                .expect("trigger remains");
+            let triggers = state.editor.triggers();
+            let trigger = triggers.first().expect("trigger remains");
             assert_eq!(
                 trigger.target,
                 TimedTriggerTarget::Objects {
@@ -1499,12 +1495,8 @@ mod tests {
             state.editor_remove_block();
 
             assert_eq!(state.editor.objects[1].position, [4.0, 0.0, 0.0]);
-            let trigger = state
-                .editor
-                .triggers
-                .items
-                .first()
-                .expect("trigger remains");
+            let triggers = state.editor.triggers();
+            let trigger = triggers.first().expect("trigger remains");
             assert_eq!(
                 trigger.target,
                 TimedTriggerTarget::Objects {

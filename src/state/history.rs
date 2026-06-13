@@ -31,7 +31,6 @@ impl EditorSubsystem {
             tap_indicator_positions: self.timeline.taps.tap_indicator_positions.clone(),
             selected_tap_index: self.timeline.taps.selected_index,
             timing_points: self.timing.timing_points.clone(),
-            triggers: self.triggers.items.clone(),
             selected_trigger_index: self.triggers.selected_index,
             simulate_trigger_hitboxes: self.triggers.simulate_trigger_hitboxes,
         }
@@ -71,11 +70,11 @@ impl EditorSubsystem {
             .filter(|index| *index < self.timeline.taps.tap_times.len());
         self.timing.timing_points = snapshot.timing_points;
         self.timing.mark_timing_points_changed();
-        self.triggers.items = snapshot.triggers;
         self.triggers.simulate_trigger_hitboxes = snapshot.simulate_trigger_hitboxes;
+        let trigger_count = self.triggers().len();
         self.triggers.selected_index = snapshot
             .selected_trigger_index
-            .filter(|index| *index < self.triggers.items.len());
+            .filter(|index| *index < trigger_count);
 
         self.timeline
             .taps
@@ -106,12 +105,7 @@ impl EditorSubsystem {
             .clock
             .time_seconds
             .min(self.timeline.clock.duration_seconds);
-        self.triggers
-            .items
-            .retain(|trigger| trigger.time_seconds.is_finite());
-        self.triggers
-            .items
-            .sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
+        self.sync_trigger_selection_from_objects();
 
         self.runtime.interaction.gizmo_drag = None;
         self.runtime.interaction.block_drag = None;
@@ -294,7 +288,6 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::triggers::{TimedTrigger, TimedTriggerAction, TimedTriggerTarget};
     use crate::types::{AppPhase, LevelObject};
 
     fn test_block(position: [f32; 3]) -> LevelObject {
@@ -351,41 +344,6 @@ mod tests {
             snapshot.timeline_time_seconds = -10.0;
             snapshot.timeline_duration_seconds = 0.0; // Should be clamped to 0.1
             snapshot.tap_times = vec![5.0, -1.0, f32::NAN, 2.0];
-            snapshot.triggers = vec![
-                TimedTrigger {
-                    time_seconds: 5.0,
-                    target: TimedTriggerTarget::Camera,
-                    action: TimedTriggerAction::TransformObjects {
-                        position: [0.0, 0.0, 0.0],
-                        rotation_degrees: [0.0, 0.0, 0.0],
-                        size: [1.0, 1.0, 1.0],
-                    },
-                    easing: Default::default(),
-                    duration_seconds: 0.0,
-                },
-                TimedTrigger {
-                    time_seconds: f32::NAN,
-                    target: TimedTriggerTarget::Camera,
-                    action: TimedTriggerAction::TransformObjects {
-                        position: [0.0, 0.0, 0.0],
-                        rotation_degrees: [0.0, 0.0, 0.0],
-                        size: [1.0, 1.0, 1.0],
-                    },
-                    easing: Default::default(),
-                    duration_seconds: 0.0,
-                },
-                TimedTrigger {
-                    time_seconds: 1.0,
-                    target: TimedTriggerTarget::Camera,
-                    action: TimedTriggerAction::TransformObjects {
-                        position: [0.0, 0.0, 0.0],
-                        rotation_degrees: [0.0, 0.0, 0.0],
-                        size: [1.0, 1.0, 1.0],
-                    },
-                    easing: Default::default(),
-                    duration_seconds: 0.0,
-                },
-            ];
 
             state.editor.apply_history_snapshot(snapshot);
 
@@ -395,11 +353,6 @@ mod tests {
             // Tap times: -1.0 and NAN removed, 5.0 clamped by duration 0.1, 2.0 clamped by duration 0.1
             // Wait, duration is 0.1, so all tap times > 0.1 are removed by retain(|tap| *tap <= duration)
             assert_eq!(state.editor.timeline.taps.tap_times.len(), 0);
-
-            // Triggers: NAN removed, others sorted
-            assert_eq!(state.editor.triggers.items.len(), 2);
-            assert_eq!(state.editor.triggers.items[0].time_seconds, 1.0);
-            assert_eq!(state.editor.triggers.items[1].time_seconds, 5.0);
         });
     }
 

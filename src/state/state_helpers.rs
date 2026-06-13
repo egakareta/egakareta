@@ -165,7 +165,8 @@ impl EditorSubsystem {
 
     pub(crate) fn selected_transform_trigger_target(&self) -> Option<(usize, LevelObject)> {
         let index = self.selected_trigger_index()?;
-        let trigger = self.triggers.items.get(index)?;
+        let triggers = self.triggers();
+        let trigger = triggers.get(index)?;
         let TimedTriggerAction::TransformObjects {
             position,
             rotation_degrees,
@@ -218,17 +219,6 @@ impl EditorSubsystem {
         obj.position = clamped_position;
         obj.size = [size[0].max(0.01), size[1].max(0.01), size[2].max(0.01)];
         obj.rotation_degrees = rotation_degrees;
-
-        // Keep cache in sync
-        if let Some(trigger) = self.triggers.items.get_mut(trigger_index) {
-            if matches!(trigger.action, TimedTriggerAction::TransformObjects { .. }) {
-                trigger.action = TimedTriggerAction::TransformObjects {
-                    position: clamped_position,
-                    rotation_degrees,
-                    size: obj.size,
-                };
-            }
-        }
 
         self.ui.cursor = [
             clamped_position[0],

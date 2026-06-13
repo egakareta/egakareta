@@ -11,7 +11,6 @@ mod gizmo;
 mod picking;
 mod selection;
 
-use crate::triggers::TimedTrigger;
 use crate::types::{
     EditorMode, EditorTapDivisionPick, GizmoAxis, GizmoDragKind, LevelObject, SpawnMetadata,
 };
@@ -59,7 +58,6 @@ pub(crate) struct EditorHistorySnapshot {
     pub(crate) tap_indicator_positions: Vec<[f32; 3]>,
     pub(crate) selected_tap_index: Option<usize>,
     pub(crate) timing_points: Vec<crate::types::TimingPoint>,
-    pub(crate) triggers: Vec<TimedTrigger>,
     pub(crate) selected_trigger_index: Option<usize>,
     pub(crate) simulate_trigger_hitboxes: bool,
 }

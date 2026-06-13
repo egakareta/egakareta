@@ -1246,7 +1246,7 @@ impl State {
             .map(|(object_id, _)| *object_id)
             .collect::<Vec<_>>();
         let retained_triggers = remove_replaced_transform_trigger_targets(
-            std::mem::take(&mut self.editor.triggers.items),
+            self.editor.triggers(),
             time_seconds,
             &replaced_object_ids,
         );
@@ -1526,13 +1526,13 @@ mod tests {
 
             state.phase = AppPhase::Editor;
             state.editor.objects = vec![transform_trigger_object(1.0, vec![0])];
-            state.editor.sync_trigger_cache_from_objects();
+            state.editor.sync_trigger_selection_from_objects();
             state.editor.ui.selected_block_indices = vec![0];
             state.editor.ui.selected_block_index = Some(0);
 
             assert!(!state.add_editor_transform_trigger());
             assert_eq!(state.editor.objects.len(), 1);
-            assert_eq!(state.editor.triggers.items.len(), 1);
+            assert_eq!(state.editor.triggers().len(), 1);
         });
     }
 
@@ -1566,7 +1566,7 @@ mod tests {
             assert_eq!(state.editor.ui.selected_block_index, Some(2));
             assert_eq!(state.editor.ui.selected_block_indices, vec![2, 3]);
 
-            let mut triggers = state.editor.triggers.items.clone();
+            let mut triggers = state.editor.triggers();
             triggers.sort_by_key(|trigger| match &trigger.target {
                 TimedTriggerTarget::Objects { object_ids } => object_ids[0],
                 TimedTriggerTarget::Camera => u32::MAX,
@@ -1637,7 +1637,7 @@ mod tests {
                 transform_trigger_object(1.0, vec![0]),
                 test_level_object([4.0, 0.0, 0.0]),
             ];
-            state.editor.sync_trigger_cache_from_objects();
+            state.editor.sync_trigger_selection_from_objects();
             state.editor.ui.selected_block_indices = vec![2];
             state.editor.ui.selected_block_index = Some(2);
 
@@ -1649,7 +1649,7 @@ mod tests {
             assert_eq!(state.editor.ui.selected_block_indices, vec![3]);
 
             let mut found_retargeted_capture = false;
-            for trigger in &state.editor.triggers.items {
+            for trigger in &state.editor.triggers() {
                 let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
                     continue;
                 };
@@ -1667,6 +1667,53 @@ mod tests {
             }
 
             assert!(found_retargeted_capture);
+        });
+    }
+
+    #[test]
+    fn add_transform_trigger_preserves_existing_moved_trigger_object_pose() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.phase = AppPhase::Editor;
+            state.editor.timeline.clock.time_seconds = 2.5;
+            state.editor.timeline.clock.duration_seconds = 8.0;
+            state.editor.objects = vec![
+                test_level_object([0.0, 0.0, 0.0]),
+                test_level_object([4.0, 0.0, 0.0]),
+            ];
+            state
+                .editor
+                .set_triggers(vec![transform_trigger(2.5, vec![0], [8.0, 0.0, 0.0])]);
+            state.editor.objects[2].position = [12.0, 1.0, 3.0];
+            state.editor.objects[2].size = [2.0, 3.0, 4.0];
+            state.editor.objects[2].rotation_degrees = [10.0, 20.0, 30.0];
+            state.editor.ui.selected_block_indices = vec![1];
+            state.editor.ui.selected_block_index = Some(1);
+
+            assert!(state.add_editor_transform_trigger());
+
+            assert_object_pose(&state.editor.objects[2], [12.0, 1.0, 3.0], [2.0, 3.0, 4.0]);
+            assert_eq!(state.editor.objects[2].rotation_degrees, [10.0, 20.0, 30.0]);
+            let triggers = state.editor.triggers();
+            let existing_trigger = triggers
+                .iter()
+                .find(|trigger| match &trigger.target {
+                    TimedTriggerTarget::Objects { object_ids } => object_ids == &[0],
+                    TimedTriggerTarget::Camera => false,
+                })
+                .expect("existing transform trigger remains");
+            let TimedTriggerAction::TransformObjects {
+                position,
+                rotation_degrees,
+                size,
+            } = &existing_trigger.action
+            else {
+                panic!("expected transform trigger action");
+            };
+            assert_eq!(position, &[12.0, 1.0, 3.0]);
+            assert_eq!(rotation_degrees, &[10.0, 20.0, 30.0]);
+            assert_eq!(size, &[2.0, 3.0, 4.0]);
         });
     }
 
@@ -1700,7 +1747,7 @@ mod tests {
             let mut retained_object_two_standalone = false;
             let mut retained_different_time_object_zero = false;
 
-            for trigger in &state.editor.triggers.items {
+            for trigger in &state.editor.triggers() {
                 let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
                     continue;
                 };
@@ -1766,7 +1813,7 @@ mod tests {
             let mut found_target_only_trigger = false;
             let mut found_replacement_trigger = false;
 
-            for trigger in &state.editor.triggers.items {
+            for trigger in &state.editor.triggers() {
                 let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
                     continue;
                 };
@@ -1804,7 +1851,7 @@ mod tests {
 
             state.process_keyboard_input("t", true, true);
             assert_object_pose(&state.editor.objects[0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-            assert_eq!(state.editor.triggers.items.len(), 1);
+            assert_eq!(state.editor.triggers().len(), 1);
             assert_eq!(state.editor.ui.selected_block_indices, vec![1]);
             assert_eq!(state.editor.objects[1].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
         });

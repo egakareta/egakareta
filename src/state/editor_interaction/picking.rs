@@ -140,7 +140,7 @@ impl EditorSubsystem {
                 }
             }
 
-            for (trigger_index, trigger) in self.triggers.items.iter().enumerate() {
+            for (trigger_index, trigger) in self.triggers().iter().enumerate() {
                 let Some(target) = transform_trigger_target_object(&trigger.action) else {
                     continue;
                 };
