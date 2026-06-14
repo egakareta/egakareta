@@ -89,19 +89,17 @@ fn editor_timeline_scrub_benchmarks(c: &mut Criterion) {
                 "single_step_backward_from_21s_4096_objects_hitboxes_{simulate_trigger_hitboxes}"
             ),
             |b| {
-                b.iter_batched(
-                    || {
-                        TimelineScrubBenchmarkState::new(
-                            black_box(4_096),
-                            black_box(256),
-                            black_box(16),
-                            black_box(simulate_trigger_hitboxes),
-                            black_box(21.5),
-                        )
-                    },
-                    |mut state| state.scrub_backward(black_box(0.1)),
-                    BatchSize::SmallInput,
-                )
+                let mut state = TimelineScrubBenchmarkState::new(
+                    black_box(4_096),
+                    black_box(256),
+                    black_box(16),
+                    black_box(simulate_trigger_hitboxes),
+                    black_box(21.5),
+                );
+                b.iter(|| {
+                    state.reset_time(black_box(21.5));
+                    state.scrub_backward(black_box(0.1))
+                })
             },
         );
         group.bench_function(
@@ -109,19 +107,17 @@ fn editor_timeline_scrub_benchmarks(c: &mut Criterion) {
                 "single_step_forward_from_21s_4096_objects_hitboxes_{simulate_trigger_hitboxes}"
             ),
             |b| {
-                b.iter_batched(
-                    || {
-                        TimelineScrubBenchmarkState::new(
-                            black_box(4_096),
-                            black_box(256),
-                            black_box(16),
-                            black_box(simulate_trigger_hitboxes),
-                            black_box(21.5),
-                        )
-                    },
-                    |mut state| state.scrub_forward(black_box(0.1)),
-                    BatchSize::SmallInput,
-                )
+                let mut state = TimelineScrubBenchmarkState::new(
+                    black_box(4_096),
+                    black_box(256),
+                    black_box(16),
+                    black_box(simulate_trigger_hitboxes),
+                    black_box(21.5),
+                );
+                b.iter(|| {
+                    state.reset_time(black_box(21.5));
+                    state.scrub_forward(black_box(0.1))
+                })
             },
         );
     }

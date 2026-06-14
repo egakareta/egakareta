@@ -427,6 +427,8 @@ impl EditorSubsystem {
         self.timeline.simulation_revision = self.timeline.simulation_revision.wrapping_add(1);
         self.timeline.snapshot_cache_revision = 0;
         self.timeline.snapshot_cache.clear();
+        self.timeline.trail_point_cache.clear();
+        self.timeline.trail_segment_start_cache.clear();
         self.timeline.scrub_runtime = None;
         self.timeline.scrub_runtime_revision = 0;
     }
@@ -441,14 +443,19 @@ impl EditorSubsystem {
             let keep_count = keep_count.min(self.timeline.snapshot_cache.len());
             if keep_count > 0 {
                 self.timeline.snapshot_cache.truncate(keep_count);
+                self.truncate_cached_timeline_trail_to_snapshot_prefix();
                 // Mark as partial so rebuild can continue from the retained prefix
                 self.timeline.snapshot_cache_revision = 0;
             } else {
                 self.timeline.snapshot_cache.clear();
+                self.timeline.trail_point_cache.clear();
+                self.timeline.trail_segment_start_cache.clear();
                 self.timeline.snapshot_cache_revision = 0;
             }
         } else {
             self.timeline.snapshot_cache.clear();
+            self.timeline.trail_point_cache.clear();
+            self.timeline.trail_segment_start_cache.clear();
             self.timeline.snapshot_cache_revision = 0;
         }
 
@@ -461,6 +468,21 @@ impl EditorSubsystem {
         } else {
             self.timeline.scrub_runtime_revision = 0;
         }
+    }
+
+    fn truncate_cached_timeline_trail_to_snapshot_prefix(&mut self) {
+        let Some(snapshot) = self.timeline.snapshot_cache.last() else {
+            self.timeline.trail_point_cache.clear();
+            self.timeline.trail_segment_start_cache.clear();
+            return;
+        };
+
+        self.timeline
+            .trail_point_cache
+            .truncate(snapshot.trail_point_count);
+        self.timeline
+            .trail_segment_start_cache
+            .truncate(snapshot.trail_segment_count);
     }
 
     pub(crate) fn timeline_preview(&self) -> ([f32; 3], SpawnDirection) {
@@ -1141,7 +1163,7 @@ impl State {
         self.apply_editor_timeline_preview_state(position, direction);
     }
 
-    fn rebuild_editor_timeline_snapshot_cache_if_needed(&mut self) {
+    pub(super) fn rebuild_editor_timeline_snapshot_cache_if_needed(&mut self) {
         if self.editor.timeline.snapshot_cache_revision == self.editor.timeline.simulation_revision
             && !self.editor.timeline.snapshot_cache.is_empty()
         {
@@ -1166,6 +1188,8 @@ impl State {
                 existing_count
             } else {
                 self.editor.timeline.snapshot_cache.clear();
+                self.editor.timeline.trail_point_cache.clear();
+                self.editor.timeline.trail_segment_start_cache.clear();
                 0
             };
 
@@ -1184,6 +1208,8 @@ impl State {
             runtime.advance_to(resume_time);
         }
 
+        let mut trail_segment_lengths = self.editor_timeline_cached_trail_segment_lengths();
+
         self.editor
             .timeline
             .snapshot_cache
@@ -1191,11 +1217,19 @@ impl State {
         for index in resume_index..total_sample_count.max(1) {
             let sample_time = (index as f32 * step_seconds).min(duration_seconds);
             runtime.advance_to(sample_time);
+            self.append_editor_timeline_trail_cache(
+                runtime.trail_segments(),
+                &mut trail_segment_lengths,
+            );
             let snapshot = runtime.snapshot();
             self.editor.timeline.snapshot_cache.push(
                 crate::state::editor_timeline::EditorTimelineSnapshot {
                     position: snapshot.position,
                     direction: snapshot.direction,
+                    is_grounded: snapshot.is_grounded,
+                    game_over: runtime.game_over(),
+                    trail_segment_count: self.editor.timeline.trail_segment_start_cache.len(),
+                    trail_point_count: self.editor.timeline.trail_point_cache.len(),
                 },
             );
         }
@@ -1203,6 +1237,57 @@ impl State {
         self.editor.timeline.snapshot_cache_revision = self.editor.timeline.simulation_revision;
         self.editor.timeline.scrub_runtime = None;
         self.editor.timeline.scrub_runtime_revision = 0;
+    }
+
+    fn append_editor_timeline_trail_cache(
+        &mut self,
+        trail_segments: &[Vec<[f32; 3]>],
+        cached_segment_lengths: &mut Vec<usize>,
+    ) {
+        for (segment_index, segment) in trail_segments.iter().enumerate() {
+            if segment_index >= cached_segment_lengths.len() {
+                self.editor
+                    .timeline
+                    .trail_segment_start_cache
+                    .push(self.editor.timeline.trail_point_cache.len());
+                self.editor
+                    .timeline
+                    .trail_point_cache
+                    .extend(segment.iter().copied());
+                cached_segment_lengths.push(segment.len());
+                continue;
+            }
+
+            let cached_len = cached_segment_lengths[segment_index];
+            if segment.len() > cached_len {
+                self.editor
+                    .timeline
+                    .trail_point_cache
+                    .extend(segment[cached_len..].iter().copied());
+                cached_segment_lengths[segment_index] = segment.len();
+            }
+        }
+    }
+
+    fn editor_timeline_cached_trail_segment_lengths(&self) -> Vec<usize> {
+        let point_count = self.editor.timeline.trail_point_cache.len();
+        self.editor
+            .timeline
+            .trail_segment_start_cache
+            .iter()
+            .enumerate()
+            .map(|(segment_index, start)| {
+                let end = self
+                    .editor
+                    .timeline
+                    .trail_segment_start_cache
+                    .get(segment_index + 1)
+                    .copied()
+                    .unwrap_or(point_count)
+                    .min(point_count);
+                end.saturating_sub((*start).min(point_count))
+            })
+            .collect()
     }
 
     /// Sets the total duration of the editor timeline.
@@ -2094,18 +2179,34 @@ mod tests {
                 crate::state::editor_timeline::EditorTimelineSnapshot {
                     position: [0.0, 0.0, 0.0],
                     direction: SpawnDirection::Forward,
+                    is_grounded: true,
+                    game_over: false,
+                    trail_segment_count: 0,
+                    trail_point_count: 0,
                 },
                 crate::state::editor_timeline::EditorTimelineSnapshot {
                     position: [0.5, 0.0, 0.0],
                     direction: SpawnDirection::Forward,
+                    is_grounded: true,
+                    game_over: false,
+                    trail_segment_count: 0,
+                    trail_point_count: 0,
                 },
                 crate::state::editor_timeline::EditorTimelineSnapshot {
                     position: [1.0, 0.0, 0.0],
                     direction: SpawnDirection::Forward,
+                    is_grounded: true,
+                    game_over: false,
+                    trail_segment_count: 0,
+                    trail_point_count: 0,
                 },
                 crate::state::editor_timeline::EditorTimelineSnapshot {
                     position: [1.5, 0.0, 0.0],
                     direction: SpawnDirection::Right,
+                    is_grounded: true,
+                    game_over: false,
+                    trail_segment_count: 0,
+                    trail_point_count: 0,
                 },
             ];
             state.editor.timeline.snapshot_cache_revision = 123;

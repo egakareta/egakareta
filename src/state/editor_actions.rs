@@ -1831,10 +1831,18 @@ mod tests {
                 crate::state::editor_timeline::EditorTimelineSnapshot {
                     position: [1.44, 0.0, 1.5],
                     direction: SpawnDirection::Right,
+                    is_grounded: true,
+                    game_over: false,
+                    trail_segment_count: 0,
+                    trail_point_count: 0,
                 },
                 crate::state::editor_timeline::EditorTimelineSnapshot {
                     position: [1.5, 0.0, 1.56],
                     direction: SpawnDirection::Forward,
+                    is_grounded: true,
+                    game_over: false,
+                    trail_segment_count: 0,
+                    trail_point_count: 0,
                 },
             ];
 

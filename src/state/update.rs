@@ -18,7 +18,7 @@ use crate::mesh::{
 };
 use crate::platform::state_host::PlatformInstant;
 use crate::types::{
-    AppPhase, CameraUniform, ColorSpaceUniform, Direction, EditorMode, LevelObject,
+    AppPhase, CameraUniform, ColorSpaceUniform, Direction, EditorMode, LevelObject, SpawnDirection,
 };
 
 impl State {
@@ -411,39 +411,124 @@ impl State {
             .time_seconds
             .clamp(0.0, self.editor.timeline.clock.duration_seconds.max(0.0));
 
-        let needs_reset = match self.editor.timeline.scrub_runtime.as_ref() {
-            Some(runtime) => {
-                self.editor.timeline.scrub_runtime_revision
-                    != self.editor.timeline.simulation_revision
-                    || target_time + 1e-6 < runtime.elapsed_seconds()
-            }
-            None => true,
-        };
-
-        if needs_reset {
-            self.editor.timeline.scrub_runtime =
-                Some(TimelineSimulationRuntime::new_with_triggers(
-                    self.editor.spawn.position,
-                    self.editor.spawn.direction,
-                    &self.editor.objects,
-                    &self.editor.timeline.taps.tap_times,
-                    &self.editor.triggers(),
-                    self.editor.simulate_trigger_hitboxes(),
-                ));
-            self.editor.timeline.scrub_runtime_revision = self.editor.timeline.simulation_revision;
-        }
-
-        let Some(runtime) = self.editor.timeline.scrub_runtime.as_mut() else {
-            self.render.meshes.trail.clear();
-            return;
-        };
-
-        runtime.advance_to(target_time);
-        let trail_vertices = Self::build_editor_playback_trail_vertices(runtime);
+        self.rebuild_editor_timeline_snapshot_cache_if_needed();
+        let trail_vertices = self.build_editor_scrub_trail_vertices_from_cache(target_time);
         self.render
             .meshes
             .trail
             .write_streaming_vertices(&self.render.gpu.queue, &trail_vertices);
+    }
+
+    fn build_editor_scrub_trail_vertices_from_cache(
+        &self,
+        target_time: f32,
+    ) -> Vec<crate::types::Vertex> {
+        const EDITOR_SCRUB_TRAIL_ALPHA: f32 = 0.45;
+        const POSITION_EPSILON: f32 = 0.001;
+        const MAX_RENDERED_EDITOR_TRAIL_POINTS: usize = 1024;
+
+        let cache = &self.editor.timeline.snapshot_cache;
+        if cache.is_empty() {
+            return Vec::new();
+        }
+
+        let step_seconds = self
+            .editor
+            .timeline
+            .snapshot_cache_step_seconds
+            .max(1.0 / 480.0);
+        let max_index = cache.len().saturating_sub(1);
+        let target_index = ((target_time.max(0.0) / step_seconds).floor() as usize).min(max_index);
+        let snapshot = &cache[target_index];
+        let trail_segments = self.cached_editor_trail_segments_for_snapshot(snapshot);
+        let recent_segments =
+            Self::recent_trail_segments(&trail_segments, MAX_RENDERED_EDITOR_TRAIL_POINTS);
+
+        let mut trail_vertices = Vec::new();
+        for (segment_index, segment) in recent_segments {
+            if segment.is_empty() {
+                continue;
+            }
+
+            let is_last_segment = segment_index + 1 == trail_segments.len();
+            trail_vertices.extend(build_trail_vertices_with_alpha(
+                segment,
+                snapshot.game_over,
+                EDITOR_SCRUB_TRAIL_ALPHA,
+            ));
+
+            if !is_last_segment || !snapshot.is_grounded {
+                continue;
+            }
+
+            let Some(last_point) = segment.last() else {
+                continue;
+            };
+
+            let dx = snapshot.position[0] - last_point[0];
+            let dy = snapshot.position[1] - last_point[1];
+            let dz = snapshot.position[2] - last_point[2];
+            if dx.abs() > POSITION_EPSILON
+                || dy.abs() > POSITION_EPSILON
+                || dz.abs() > POSITION_EPSILON
+            {
+                trail_vertices.extend(build_trail_vertices_with_alpha(
+                    &[*last_point, snapshot.position],
+                    snapshot.game_over,
+                    EDITOR_SCRUB_TRAIL_ALPHA,
+                ));
+            }
+        }
+
+        if !snapshot.is_grounded {
+            let head_length = 0.22;
+            let dir = match snapshot.direction {
+                SpawnDirection::Forward => [0.0, 1.0],
+                SpawnDirection::Right => [1.0, 0.0],
+            };
+            let head_start = [
+                snapshot.position[0] - dir[0] * head_length,
+                snapshot.position[1],
+                snapshot.position[2] - dir[1] * head_length,
+            ];
+            let head_points = [head_start, snapshot.position];
+            trail_vertices.extend(build_trail_vertices_with_alpha(
+                &head_points,
+                snapshot.game_over,
+                EDITOR_SCRUB_TRAIL_ALPHA,
+            ));
+        }
+
+        trail_vertices
+    }
+
+    fn cached_editor_trail_segments_for_snapshot(
+        &self,
+        snapshot: &crate::state::editor_timeline::EditorTimelineSnapshot,
+    ) -> Vec<Vec<[f32; 3]>> {
+        let mut segments = Vec::new();
+        let segment_count = snapshot
+            .trail_segment_count
+            .min(self.editor.timeline.trail_segment_start_cache.len());
+        let point_count = snapshot
+            .trail_point_count
+            .min(self.editor.timeline.trail_point_cache.len());
+
+        for segment_index in 0..segment_count {
+            let start = self.editor.timeline.trail_segment_start_cache[segment_index];
+            let end = if segment_index + 1 < segment_count {
+                self.editor.timeline.trail_segment_start_cache[segment_index + 1]
+            } else {
+                point_count
+            }
+            .min(point_count);
+
+            if start < end {
+                segments.push(self.editor.timeline.trail_point_cache[start..end].to_vec());
+            }
+        }
+
+        segments
     }
 
     /// Advances the application state by one frame.
@@ -1191,6 +1276,61 @@ mod tests {
     }
 
     #[test]
+    fn scrub_trail_uses_sparse_trail_cache_not_dense_snapshots() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.timeline.snapshot_cache_step_seconds = 1.0 / 240.0;
+            state.editor.timeline.trail_point_cache = vec![[0.0, 0.0, 0.0], [24.0, 0.0, 0.0]];
+            state.editor.timeline.trail_segment_start_cache = vec![0];
+            state.editor.timeline.snapshot_cache = (0..=2_000)
+                .map(
+                    |index| crate::state::editor_timeline::EditorTimelineSnapshot {
+                        position: [index as f32 * 0.1, 0.0, 0.0],
+                        direction: SpawnDirection::Forward,
+                        is_grounded: true,
+                        game_over: false,
+                        trail_segment_count: 1,
+                        trail_point_count: 2,
+                    },
+                )
+                .collect();
+
+            let vertices = state.build_editor_scrub_trail_vertices_from_cache(2_000.0 / 240.0);
+
+            assert!(
+                vertices.len() < 120,
+                "dense timeline samples must not be emitted as trail geometry"
+            );
+        });
+    }
+
+    #[test]
+    fn scrub_trail_draws_grounded_head_from_fresh_cache() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Editor;
+            state.editor.objects.clear();
+            state.editor.spawn.position = [0.0, 0.0, 0.0];
+            state.editor.spawn.direction = SpawnDirection::Forward;
+            state.editor.timeline.clock.duration_seconds = 2.0;
+            state.editor.invalidate_samples();
+            state.rebuild_editor_timeline_snapshot_cache_if_needed();
+
+            let vertices = state.build_editor_scrub_trail_vertices_from_cache(0.5);
+
+            assert!(
+                !state.editor.timeline.trail_point_cache.is_empty(),
+                "fresh cache should store the initial trail anchor"
+            );
+            assert!(
+                !vertices.is_empty(),
+                "grounded scrub trail should draw before a fall or turn creates a new segment"
+            );
+        });
+    }
+
+    #[test]
     fn perf_overlay_toggle_controls_visibility() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
@@ -1302,42 +1442,28 @@ mod tests {
     }
 
     #[test]
-    fn update_editor_scrub_trail_mesh_creates_and_resets_runtime_when_needed() {
+    fn update_editor_scrub_trail_mesh_uses_snapshot_cache_without_runtime() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
 
+            state.phase = AppPhase::Editor;
             state.editor.timeline.clock.duration_seconds = 8.0;
             state.editor.timeline.clock.time_seconds = 3.0;
             state.editor.timeline.scrub_runtime = None;
             state.editor.timeline.simulation_revision = 2;
+            state.editor.invalidate_samples();
 
             state.update_editor_scrub_trail_mesh();
-            assert!(state.editor.timeline.scrub_runtime.is_some());
-            assert_eq!(state.editor.timeline.scrub_runtime_revision, 2);
-
-            let mut runtime = TimelineSimulationRuntime::new_with_triggers(
-                state.editor.spawn.position,
-                state.editor.spawn.direction,
-                &state.editor.objects,
-                &state.editor.timeline.taps.tap_times,
-                &state.editor.triggers(),
-                state.editor.simulate_trigger_hitboxes(),
+            assert!(state.editor.timeline.scrub_runtime.is_none());
+            assert_eq!(
+                state.editor.timeline.snapshot_cache_revision,
+                state.editor.timeline.simulation_revision
             );
-            runtime.advance_to(6.0);
-            state.editor.timeline.scrub_runtime = Some(runtime);
-            state.editor.timeline.scrub_runtime_revision =
-                state.editor.timeline.simulation_revision;
+
             state.editor.timeline.clock.time_seconds = 2.0;
 
             state.update_editor_scrub_trail_mesh();
-            let elapsed = state
-                .editor
-                .timeline
-                .scrub_runtime
-                .as_ref()
-                .map(|runtime| runtime.elapsed_seconds())
-                .unwrap_or_default();
-            assert!(elapsed <= 2.000_1);
+            assert!(state.editor.timeline.scrub_runtime.is_none());
         });
     }
 

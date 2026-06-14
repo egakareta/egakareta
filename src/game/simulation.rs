@@ -6,7 +6,9 @@
 
 */
 use super::state::{ConsumedObjectEvent, GameState};
-use crate::triggers::{apply_timed_triggers_to_objects, TimedTrigger};
+use crate::triggers::{
+    apply_timed_triggers_to_objects, apply_timed_triggers_to_objects_into, TimedTrigger,
+};
 use crate::types::{Direction, LevelObject, SpawnDirection};
 
 pub(crate) struct TimelineSimulationState {
@@ -24,6 +26,7 @@ pub(crate) struct TimelineSimulationRuntime {
     tap_index: usize,
     triggers: Vec<TimedTrigger>,
     trigger_base_objects: Option<Vec<LevelObject>>,
+    trigger_transformed_objects: Vec<LevelObject>,
     simulate_trigger_hitboxes: bool,
     elapsed_seconds: f32,
     simulation_dt: f32,
@@ -121,6 +124,7 @@ impl TimelineSimulationRuntime {
             tap_index: 0,
             triggers: sorted_triggers,
             trigger_base_objects: simulate_trigger_hitboxes.then(|| objects.to_vec()),
+            trigger_transformed_objects: Vec::new(),
             simulate_trigger_hitboxes,
             elapsed_seconds: 0.0,
             simulation_dt: simulation_dt.clamp(1.0 / 240.0, 1.0 / 30.0),
@@ -148,9 +152,15 @@ impl TimelineSimulationRuntime {
             return;
         };
 
-        self.game.objects =
-            trigger_transformed_objects_at_time(base_objects, &self.triggers, up_to_time.max(0.0));
-        self.game.rebuild_behavior_cache();
+        apply_timed_triggers_to_objects_into(
+            base_objects,
+            &self.triggers,
+            up_to_time.max(0.0),
+            &mut self.trigger_transformed_objects,
+        );
+        let objects = std::mem::take(&mut self.trigger_transformed_objects);
+        self.trigger_transformed_objects =
+            self.game.replace_objects_for_transform_hitboxes(objects);
     }
 
     fn sync_trigger_base_with_consumed(&mut self) {

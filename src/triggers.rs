@@ -480,8 +480,32 @@ pub(crate) fn apply_timed_triggers_to_objects(
     time_seconds: f32,
 ) -> Vec<LevelObject> {
     let mut objects = base_objects.to_vec();
+    apply_timed_triggers_to_objects_in_place(&mut objects, triggers, time_seconds);
+    objects
+}
+
+pub(crate) fn apply_timed_triggers_to_objects_into(
+    base_objects: &[LevelObject],
+    triggers: &[TimedTrigger],
+    time_seconds: f32,
+    objects: &mut Vec<LevelObject>,
+) {
+    if objects.len() == base_objects.len() {
+        objects.clone_from_slice(base_objects);
+    } else {
+        objects.clear();
+        objects.extend_from_slice(base_objects);
+    }
+    apply_timed_triggers_to_objects_in_place(objects, triggers, time_seconds);
+}
+
+fn apply_timed_triggers_to_objects_in_place(
+    objects: &mut [LevelObject],
+    triggers: &[TimedTrigger],
+    time_seconds: f32,
+) {
     if objects.is_empty() || triggers.is_empty() {
-        return objects;
+        return;
     }
 
     for trigger in triggers {
@@ -515,8 +539,6 @@ pub(crate) fn apply_timed_triggers_to_objects(
             }
         }
     }
-
-    objects
 }
 
 fn apply_trigger_action_to_object(

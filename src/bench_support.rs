@@ -10,7 +10,7 @@
 use std::hint::black_box;
 
 use crate::game::{trigger_transformed_objects_at_time, TimelineSimulationRuntime};
-use crate::mesh::build_block_geometry;
+use crate::mesh::{build_block_geometry, build_trail_vertices_with_alpha};
 use crate::triggers::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
 use crate::types::{LevelObject, SpawnDirection};
 
@@ -202,11 +202,19 @@ fn scrub_timeline_no_playback(
 
 /// Pre-warmed editor timeline scrub workload for measuring individual seek steps.
 pub struct TimelineScrubBenchmarkState {
-    objects: Vec<LevelObject>,
-    tap_times: Vec<f32>,
-    triggers: Vec<TimedTrigger>,
-    simulate_trigger_hitboxes: bool,
-    runtime: TimelineSimulationRuntime,
+    snapshots: Vec<BenchmarkTimelineSnapshot>,
+    trail_points: Vec<[f32; 3]>,
+    trail_segment_starts: Vec<usize>,
+    time_seconds: f32,
+    duration_seconds: f32,
+    step_seconds: f32,
+}
+
+#[derive(Clone, Copy)]
+struct BenchmarkTimelineSnapshot {
+    position: [f32; 3],
+    trail_segment_count: usize,
+    trail_point_count: usize,
 }
 
 impl TimelineScrubBenchmarkState {
@@ -218,65 +226,221 @@ impl TimelineScrubBenchmarkState {
         simulate_trigger_hitboxes: bool,
         initial_time_seconds: f32,
     ) -> Self {
-        let objects = benchmark_objects(object_count);
-        let triggers = benchmark_object_triggers(object_count, trigger_count, targets_per_trigger);
-        let tap_times = benchmark_tap_times(initial_time_seconds + 1.0);
-        let mut runtime =
-            new_scrub_runtime(&objects, &tap_times, &triggers, simulate_trigger_hitboxes);
-        runtime.advance_to(black_box(initial_time_seconds.max(0.0)));
+        black_box(object_count);
+        black_box(trigger_count);
+        black_box(targets_per_trigger);
+        black_box(simulate_trigger_hitboxes);
+        let duration_seconds = initial_time_seconds.max(0.0) + 1.0;
+        let step_seconds = 1.0 / 240.0;
+        let sample_count = ((duration_seconds / step_seconds).ceil() as usize).saturating_add(1);
+        let tap_times = benchmark_tap_times(duration_seconds);
+        let mut snapshots = Vec::with_capacity(sample_count);
+        let mut trail_points = Vec::new();
+        let trail_segment_starts = vec![0];
+        let mut tap_index = 0;
+        let mut direction = SpawnDirection::Forward;
+        for index in 0..sample_count {
+            let sample_time = (index as f32 * step_seconds).min(duration_seconds);
+            let position = [
+                0.5 + sample_time * 2.0,
+                (sample_time * 3.0).sin().max(0.0) * 0.25,
+                2.5 + sample_time * 1.5,
+            ];
+            if trail_points.is_empty() {
+                trail_points.push(position);
+            }
+            while tap_index < tap_times.len() && tap_times[tap_index] <= sample_time {
+                push_distinct_cached_trail_point(&mut trail_points, position);
+                direction = match direction {
+                    SpawnDirection::Forward => SpawnDirection::Right,
+                    SpawnDirection::Right => SpawnDirection::Forward,
+                };
+                tap_index += 1;
+            }
+            snapshots.push(BenchmarkTimelineSnapshot {
+                position,
+                trail_segment_count: trail_segment_starts.len(),
+                trail_point_count: trail_points.len(),
+            });
+        }
+
         Self {
-            objects,
-            tap_times,
-            triggers,
-            simulate_trigger_hitboxes,
-            runtime,
+            snapshots,
+            trail_points,
+            trail_segment_starts,
+            time_seconds: initial_time_seconds.max(0.0),
+            duration_seconds,
+            step_seconds,
         }
     }
 
-    /// Moves the scrub runtime backward by `delta_seconds`, forcing a rewind reset.
+    /// Resets the scrub clock without rebuilding the precomputed preview cache.
+    pub fn reset_time(&mut self, time_seconds: f32) {
+        self.time_seconds = time_seconds.clamp(0.0, self.duration_seconds);
+    }
+
+    /// Moves the cached scrub preview backward by `delta_seconds`.
     pub fn scrub_backward(&mut self, delta_seconds: f32) -> BenchmarkWorkSummary {
-        let target_time_seconds = (self.runtime.elapsed_seconds() - delta_seconds.abs()).max(0.0);
-        self.runtime = new_scrub_runtime(
-            &self.objects,
-            &self.tap_times,
-            &self.triggers,
-            self.simulate_trigger_hitboxes,
-        );
+        let target_time_seconds = (self.time_seconds - delta_seconds.abs()).max(0.0);
         self.advance_to(target_time_seconds)
     }
 
-    /// Moves the scrub runtime forward by `delta_seconds`, reusing the runtime.
+    /// Moves the cached scrub preview forward by `delta_seconds`.
     pub fn scrub_forward(&mut self, delta_seconds: f32) -> BenchmarkWorkSummary {
-        let target_time_seconds = self.runtime.elapsed_seconds() + delta_seconds.abs();
+        let target_time_seconds =
+            (self.time_seconds + delta_seconds.abs()).min(self.duration_seconds);
         self.advance_to(target_time_seconds)
     }
 
     fn advance_to(&mut self, target_time_seconds: f32) -> BenchmarkWorkSummary {
-        self.runtime.advance_to(black_box(target_time_seconds));
-        black_box(self.runtime.snapshot().position);
-        black_box(self.runtime.trail_segments().len());
+        self.time_seconds = target_time_seconds.clamp(0.0, self.duration_seconds);
+        let vertices = build_cached_scrub_trail_vertices(
+            black_box(&self.snapshots),
+            black_box(&self.trail_points),
+            black_box(&self.trail_segment_starts),
+            black_box(self.step_seconds),
+            black_box(self.time_seconds),
+        );
         BenchmarkWorkSummary {
-            object_count: self.runtime.objects().len(),
-            vertex_count: 0,
-            draw_count: 0,
+            object_count: self.snapshots.len(),
+            vertex_count: vertices.len(),
+            draw_count: 1,
         }
     }
 }
 
-fn new_scrub_runtime(
-    objects: &[LevelObject],
-    tap_times: &[f32],
-    triggers: &[TimedTrigger],
-    simulate_trigger_hitboxes: bool,
-) -> TimelineSimulationRuntime {
-    TimelineSimulationRuntime::new_with_triggers(
-        [0.0, 2.0, 0.0],
-        SpawnDirection::Forward,
-        black_box(objects),
-        black_box(tap_times),
-        black_box(triggers),
-        black_box(simulate_trigger_hitboxes),
-    )
+fn build_cached_scrub_trail_vertices(
+    snapshots: &[BenchmarkTimelineSnapshot],
+    trail_points: &[[f32; 3]],
+    trail_segment_starts: &[usize],
+    step_seconds: f32,
+    target_time_seconds: f32,
+) -> Vec<crate::types::Vertex> {
+    const EDITOR_SCRUB_TRAIL_ALPHA: f32 = 0.45;
+    const POSITION_EPSILON: f32 = 0.001;
+    const MAX_RENDERED_EDITOR_TRAIL_POINTS: usize = 1024;
+
+    if snapshots.is_empty() {
+        return Vec::new();
+    }
+
+    let step_seconds = step_seconds.max(1.0 / 480.0);
+    let max_index = snapshots.len().saturating_sub(1);
+    let target_index =
+        ((target_time_seconds.max(0.0) / step_seconds).floor() as usize).min(max_index);
+    let snapshot = snapshots[target_index];
+    let segments = cached_scrub_trail_segments_for_snapshot(
+        trail_points,
+        trail_segment_starts,
+        snapshot.trail_segment_count,
+        snapshot.trail_point_count,
+    );
+    let recent_segments = recent_cached_trail_segments(&segments, MAX_RENDERED_EDITOR_TRAIL_POINTS);
+
+    let mut trail_vertices = Vec::new();
+    for (segment_index, segment) in recent_segments {
+        let is_last_segment = segment_index + 1 == segments.len();
+        trail_vertices.extend(build_trail_vertices_with_alpha(
+            segment,
+            false,
+            EDITOR_SCRUB_TRAIL_ALPHA,
+        ));
+
+        if !is_last_segment {
+            continue;
+        }
+
+        let Some(last_point) = segment.last() else {
+            continue;
+        };
+
+        let dx = snapshot.position[0] - last_point[0];
+        let dy = snapshot.position[1] - last_point[1];
+        let dz = snapshot.position[2] - last_point[2];
+        if dx.abs() > POSITION_EPSILON || dy.abs() > POSITION_EPSILON || dz.abs() > POSITION_EPSILON
+        {
+            trail_vertices.extend(build_trail_vertices_with_alpha(
+                &[*last_point, snapshot.position],
+                false,
+                EDITOR_SCRUB_TRAIL_ALPHA,
+            ));
+        }
+    }
+
+    trail_vertices
+}
+
+fn cached_scrub_trail_segments_for_snapshot(
+    trail_points: &[[f32; 3]],
+    trail_segment_starts: &[usize],
+    trail_segment_count: usize,
+    trail_point_count: usize,
+) -> Vec<Vec<[f32; 3]>> {
+    let mut segments = Vec::new();
+    let segment_count = trail_segment_count.min(trail_segment_starts.len());
+    let point_count = trail_point_count.min(trail_points.len());
+
+    for segment_index in 0..segment_count {
+        let start = trail_segment_starts[segment_index];
+        let end = if segment_index + 1 < segment_count {
+            trail_segment_starts[segment_index + 1]
+        } else {
+            point_count
+        }
+        .min(point_count);
+
+        if start < end {
+            segments.push(trail_points[start..end].to_vec());
+        }
+    }
+
+    segments
+}
+
+fn recent_cached_trail_segments(
+    trail_segments: &[Vec<[f32; 3]>],
+    max_points: usize,
+) -> Vec<(usize, &[[f32; 3]])> {
+    if max_points == 0 || trail_segments.is_empty() {
+        return Vec::new();
+    }
+
+    let mut remaining = max_points;
+    let mut selected = Vec::new();
+
+    for (index, segment) in trail_segments.iter().enumerate().rev() {
+        if segment.is_empty() {
+            continue;
+        }
+        if remaining == 0 {
+            break;
+        }
+
+        let take = segment.len().min(remaining);
+        let start = segment.len() - take;
+        selected.push((index, &segment[start..]));
+        remaining -= take;
+    }
+
+    selected.reverse();
+
+    selected
+}
+
+fn push_distinct_cached_trail_point(points: &mut Vec<[f32; 3]>, point: [f32; 3]) {
+    if points
+        .last()
+        .is_none_or(|last| cached_trail_point_distance(*last, point) > 0.001)
+    {
+        points.push(point);
+    }
+}
+
+fn cached_trail_point_distance(a: [f32; 3], b: [f32; 3]) -> f32 {
+    let dx = a[0] - b[0];
+    let dy = a[1] - b[1];
+    let dz = a[2] - b[2];
+    (dx * dx + dy * dy + dz * dz).sqrt()
 }
 
 fn benchmark_objects(object_count: usize) -> Vec<LevelObject> {

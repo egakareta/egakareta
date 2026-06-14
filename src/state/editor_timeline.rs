@@ -12,6 +12,10 @@ use crate::types::SpawnDirection;
 pub(crate) struct EditorTimelineSnapshot {
     pub(crate) position: [f32; 3],
     pub(crate) direction: SpawnDirection,
+    pub(crate) is_grounded: bool,
+    pub(crate) game_over: bool,
+    pub(crate) trail_segment_count: usize,
+    pub(crate) trail_point_count: usize,
 }
 
 pub(crate) struct EditorTimelinePlaybackState {
@@ -46,6 +50,8 @@ pub(crate) struct EditorTimelineState {
     pub(crate) snapshot_cache_revision: u64,
     pub(crate) snapshot_cache_step_seconds: f32,
     pub(crate) snapshot_cache: Vec<EditorTimelineSnapshot>,
+    pub(crate) trail_point_cache: Vec<[f32; 3]>,
+    pub(crate) trail_segment_start_cache: Vec<usize>,
     pub(crate) scrub_runtime_revision: u64,
     pub(crate) scrub_runtime: Option<TimelineSimulationRuntime>,
     pub(crate) tap_division_preview_cache_revision: u64,
@@ -81,6 +87,8 @@ impl EditorTimelineState {
             snapshot_cache_revision: 0,
             snapshot_cache_step_seconds: 1.0 / 240.0,
             snapshot_cache: Vec::new(),
+            trail_point_cache: Vec::new(),
+            trail_segment_start_cache: Vec::new(),
             scrub_runtime_revision: 0,
             scrub_runtime: None,
             tap_division_preview_cache_revision: 0,

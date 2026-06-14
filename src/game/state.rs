@@ -171,6 +171,26 @@ impl GameState {
         }
     }
 
+    pub(crate) fn replace_objects_for_transform_hitboxes(
+        &mut self,
+        mut objects: Vec<LevelObject>,
+    ) -> Vec<LevelObject> {
+        let can_reuse_behaviors = self.cached_behaviors.len() == objects.len()
+            && self
+                .objects
+                .iter()
+                .zip(objects.iter())
+                .all(|(current, next)| current.block_id == next.block_id);
+
+        std::mem::swap(&mut self.objects, &mut objects);
+        if can_reuse_behaviors {
+            self.rebuild_spatial_grid();
+        } else {
+            self.rebuild_behavior_cache();
+        }
+        objects
+    }
+
     fn apply_spawn_internal(
         &mut self,
         position: [f32; 3],
