@@ -10,7 +10,7 @@ use std::hint::black_box;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use egakareta_lib::bench_support::{
     advance_timeline_preview, rebuild_full_block_mesh, rebuild_transformed_block_mesh,
-    transform_objects_only,
+    transform_objects_only, TimelineScrubBenchmarkState,
 };
 
 fn editor_mesh_rebuild_benchmarks(c: &mut Criterion) {
@@ -81,10 +81,58 @@ fn timeline_preview_benchmarks(c: &mut Criterion) {
     group.finish();
 }
 
+fn editor_timeline_scrub_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("editor_timeline_scrub_no_playback");
+    for simulate_trigger_hitboxes in [false, true] {
+        group.bench_function(
+            format!(
+                "single_step_backward_from_21s_4096_objects_hitboxes_{simulate_trigger_hitboxes}"
+            ),
+            |b| {
+                b.iter_batched(
+                    || {
+                        TimelineScrubBenchmarkState::new(
+                            black_box(4_096),
+                            black_box(256),
+                            black_box(16),
+                            black_box(simulate_trigger_hitboxes),
+                            black_box(21.5),
+                        )
+                    },
+                    |mut state| state.scrub_backward(black_box(0.1)),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+        group.bench_function(
+            format!(
+                "single_step_forward_from_21s_4096_objects_hitboxes_{simulate_trigger_hitboxes}"
+            ),
+            |b| {
+                b.iter_batched(
+                    || {
+                        TimelineScrubBenchmarkState::new(
+                            black_box(4_096),
+                            black_box(256),
+                            black_box(16),
+                            black_box(simulate_trigger_hitboxes),
+                            black_box(21.5),
+                        )
+                    },
+                    |mut state| state.scrub_forward(black_box(0.1)),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+    }
+    group.finish();
+}
+
 criterion_group!(
     perf_hot_paths,
     editor_mesh_rebuild_benchmarks,
     trigger_transform_benchmarks,
-    timeline_preview_benchmarks
+    timeline_preview_benchmarks,
+    editor_timeline_scrub_benchmarks
 );
 criterion_main!(perf_hot_paths);

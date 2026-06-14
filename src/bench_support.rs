@@ -108,6 +108,177 @@ pub fn advance_timeline_preview(
     }
 }
 
+/// Scrubs the editor timeline while playback is disabled.
+///
+/// This mirrors the forward-only scrub trail runtime used by the editor: rewinding
+/// resets the runtime and advances it from the level start to the requested time.
+pub fn scrub_timeline_backward_no_playback(
+    object_count: usize,
+    trigger_count: usize,
+    targets_per_trigger: usize,
+    simulate_trigger_hitboxes: bool,
+    start_time_seconds: f32,
+    scrub_delta_seconds: f32,
+    scrub_steps: usize,
+) -> BenchmarkWorkSummary {
+    scrub_timeline_no_playback(
+        object_count,
+        trigger_count,
+        targets_per_trigger,
+        simulate_trigger_hitboxes,
+        start_time_seconds,
+        -scrub_delta_seconds.abs(),
+        scrub_steps,
+    )
+}
+
+/// Scrubs the editor timeline forward while playback is disabled.
+pub fn scrub_timeline_forward_no_playback(
+    object_count: usize,
+    trigger_count: usize,
+    targets_per_trigger: usize,
+    simulate_trigger_hitboxes: bool,
+    start_time_seconds: f32,
+    scrub_delta_seconds: f32,
+    scrub_steps: usize,
+) -> BenchmarkWorkSummary {
+    scrub_timeline_no_playback(
+        object_count,
+        trigger_count,
+        targets_per_trigger,
+        simulate_trigger_hitboxes,
+        start_time_seconds,
+        scrub_delta_seconds.abs(),
+        scrub_steps,
+    )
+}
+
+fn scrub_timeline_no_playback(
+    object_count: usize,
+    trigger_count: usize,
+    targets_per_trigger: usize,
+    simulate_trigger_hitboxes: bool,
+    start_time_seconds: f32,
+    scrub_delta_seconds: f32,
+    scrub_steps: usize,
+) -> BenchmarkWorkSummary {
+    let objects = benchmark_objects(object_count);
+    let triggers = benchmark_object_triggers(object_count, trigger_count, targets_per_trigger);
+    let max_target_time =
+        start_time_seconds + scrub_delta_seconds.max(0.0) * scrub_steps.saturating_sub(1) as f32;
+    let tap_times = benchmark_tap_times(max_target_time.max(start_time_seconds));
+    let mut runtime: Option<TimelineSimulationRuntime> = None;
+
+    for step in 0..scrub_steps {
+        let target_time_seconds = (start_time_seconds + scrub_delta_seconds * step as f32).max(0.0);
+        let needs_reset = match runtime.as_ref() {
+            Some(runtime) => target_time_seconds + 1e-6 < runtime.elapsed_seconds(),
+            None => true,
+        };
+
+        if needs_reset {
+            runtime = Some(TimelineSimulationRuntime::new_with_triggers(
+                [0.0, 2.0, 0.0],
+                SpawnDirection::Forward,
+                black_box(&objects),
+                black_box(&tap_times),
+                black_box(&triggers),
+                black_box(simulate_trigger_hitboxes),
+            ));
+        }
+
+        let runtime = runtime.as_mut().expect("scrub runtime initialized");
+        runtime.advance_to(black_box(target_time_seconds));
+        black_box(runtime.snapshot().position);
+        black_box(runtime.trail_segments().len());
+    }
+
+    BenchmarkWorkSummary {
+        object_count: objects.len(),
+        vertex_count: 0,
+        draw_count: 0,
+    }
+}
+
+/// Pre-warmed editor timeline scrub workload for measuring individual seek steps.
+pub struct TimelineScrubBenchmarkState {
+    objects: Vec<LevelObject>,
+    tap_times: Vec<f32>,
+    triggers: Vec<TimedTrigger>,
+    simulate_trigger_hitboxes: bool,
+    runtime: TimelineSimulationRuntime,
+}
+
+impl TimelineScrubBenchmarkState {
+    /// Builds an offline editor scrub runtime and advances it to `initial_time_seconds`.
+    pub fn new(
+        object_count: usize,
+        trigger_count: usize,
+        targets_per_trigger: usize,
+        simulate_trigger_hitboxes: bool,
+        initial_time_seconds: f32,
+    ) -> Self {
+        let objects = benchmark_objects(object_count);
+        let triggers = benchmark_object_triggers(object_count, trigger_count, targets_per_trigger);
+        let tap_times = benchmark_tap_times(initial_time_seconds + 1.0);
+        let mut runtime =
+            new_scrub_runtime(&objects, &tap_times, &triggers, simulate_trigger_hitboxes);
+        runtime.advance_to(black_box(initial_time_seconds.max(0.0)));
+        Self {
+            objects,
+            tap_times,
+            triggers,
+            simulate_trigger_hitboxes,
+            runtime,
+        }
+    }
+
+    /// Moves the scrub runtime backward by `delta_seconds`, forcing a rewind reset.
+    pub fn scrub_backward(&mut self, delta_seconds: f32) -> BenchmarkWorkSummary {
+        let target_time_seconds = (self.runtime.elapsed_seconds() - delta_seconds.abs()).max(0.0);
+        self.runtime = new_scrub_runtime(
+            &self.objects,
+            &self.tap_times,
+            &self.triggers,
+            self.simulate_trigger_hitboxes,
+        );
+        self.advance_to(target_time_seconds)
+    }
+
+    /// Moves the scrub runtime forward by `delta_seconds`, reusing the runtime.
+    pub fn scrub_forward(&mut self, delta_seconds: f32) -> BenchmarkWorkSummary {
+        let target_time_seconds = self.runtime.elapsed_seconds() + delta_seconds.abs();
+        self.advance_to(target_time_seconds)
+    }
+
+    fn advance_to(&mut self, target_time_seconds: f32) -> BenchmarkWorkSummary {
+        self.runtime.advance_to(black_box(target_time_seconds));
+        black_box(self.runtime.snapshot().position);
+        black_box(self.runtime.trail_segments().len());
+        BenchmarkWorkSummary {
+            object_count: self.runtime.objects().len(),
+            vertex_count: 0,
+            draw_count: 0,
+        }
+    }
+}
+
+fn new_scrub_runtime(
+    objects: &[LevelObject],
+    tap_times: &[f32],
+    triggers: &[TimedTrigger],
+    simulate_trigger_hitboxes: bool,
+) -> TimelineSimulationRuntime {
+    TimelineSimulationRuntime::new_with_triggers(
+        [0.0, 2.0, 0.0],
+        SpawnDirection::Forward,
+        black_box(objects),
+        black_box(tap_times),
+        black_box(triggers),
+        black_box(simulate_trigger_hitboxes),
+    )
+}
+
 fn benchmark_objects(object_count: usize) -> Vec<LevelObject> {
     let side = (object_count as f32).sqrt().ceil() as usize;
     (0..object_count)
