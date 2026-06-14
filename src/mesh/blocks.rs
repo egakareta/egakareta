@@ -327,11 +327,15 @@ fn append_block_geometry_inner(
             );
         } else {
             for cuboid in visual_cuboids {
+                let cuboid_colors = cuboid
+                    .color_tint
+                    .map(|color_tint| prism_colors.tinted(color_tint))
+                    .unwrap_or(prism_colors);
                 append_prism_with_layers(
                     object_vertices,
                     cuboid.min,
                     cuboid.max,
-                    prism_colors,
+                    cuboid_colors,
                     PrismTextureLayers::new(
                         texture_layers.top,
                         texture_layers.side,

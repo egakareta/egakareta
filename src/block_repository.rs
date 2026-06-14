@@ -120,6 +120,16 @@ fn sanitize_cuboid_bounds(from: [f32; 3], to: [f32; 3]) -> Option<([f32; 3], [f3
     Some((min, max))
 }
 
+fn sanitize_color_tint(color_tint: [f32; 3]) -> [f32; 3] {
+    color_tint.map(|component| {
+        if component.is_finite() {
+            component.clamp(0.0, 1.0)
+        } else {
+            1.0
+        }
+    })
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct BlockDefinition {
     pub(crate) id: String,
@@ -150,12 +160,18 @@ pub(crate) struct BlockGeometry {
 pub(crate) struct BlockCuboid {
     pub(crate) from: [f32; 3],
     pub(crate) to: [f32; 3],
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) color_tint: Option<[f32; 3]>,
 }
 
 impl BlockCuboid {
     fn normalized(self) -> Option<Self> {
         let (from, to) = sanitize_cuboid_bounds(self.from, self.to)?;
-        Some(Self { from, to })
+        Some(Self {
+            from,
+            to,
+            color_tint: self.color_tint.map(sanitize_color_tint),
+        })
     }
 }
 
@@ -843,10 +859,12 @@ mod tests {
                     BlockCuboid {
                         from: [20.0, 8.0, -4.0],
                         to: [4.0, 8.0, 18.0],
+                        color_tint: None,
                     },
                     BlockCuboid {
                         from: [16.0, 16.0, 16.0],
                         to: [0.0, 0.0, 0.0],
+                        color_tint: Some([-0.5, 0.4, f32::NAN]),
                     },
                 ],
                 hitboxes: Vec::new(),
@@ -859,6 +877,24 @@ mod tests {
         assert_eq!(normalized.geometry.elements.len(), 1);
         assert_eq!(normalized.geometry.elements[0].from, [0.0, 0.0, 0.0]);
         assert_eq!(normalized.geometry.elements[0].to, [16.0, 16.0, 16.0]);
+        assert_eq!(
+            normalized.geometry.elements[0].color_tint,
+            Some([0.0, 0.4, 1.0])
+        );
+    }
+
+    #[test]
+    fn block_geometry_cuboid_color_tint_deserializes() {
+        let cuboid: BlockCuboid = serde_json::from_str(
+            r#"{
+                "from": [0.0, 0.0, 0.0],
+                "to": [16.0, 16.0, 16.0],
+                "color_tint": [0.25, 0.5, 0.75]
+            }"#,
+        )
+        .expect("cuboid json");
+
+        assert_eq!(cuboid.color_tint, Some([0.25, 0.5, 0.75]));
     }
 
     #[test]

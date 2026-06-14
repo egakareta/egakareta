@@ -14,6 +14,7 @@ use crate::types::LevelObject;
 pub(crate) struct WorldCuboid {
     pub(crate) min: [f32; 3],
     pub(crate) max: [f32; 3],
+    pub(crate) color_tint: Option<[f32; 3]>,
 }
 
 impl WorldCuboid {
@@ -71,6 +72,7 @@ pub(crate) fn full_object_cuboid(object: &LevelObject) -> WorldCuboid {
             object.position[1] + object.size[1],
             object.position[2] + object.size[2],
         ],
+        color_tint: None,
     }
 }
 
@@ -114,6 +116,7 @@ fn cuboids_from_definition(object: &LevelObject, cuboids: &[BlockCuboid]) -> Vec
         .map(|cuboid| WorldCuboid {
             min: block_local_to_world(object, cuboid.from),
             max: block_local_to_world(object, cuboid.to),
+            color_tint: cuboid.color_tint,
         })
         .collect()
 }
@@ -179,4 +182,33 @@ fn convex_hull(mut points: Vec<Vec2>) -> Vec<Vec2> {
 
 fn cross(a: Vec2, b: Vec2) -> f32 {
     a.x * b.y - a.y * b.x
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::block_repository::BlockCuboid;
+    use crate::types::LevelObject;
+
+    #[test]
+    fn cuboids_from_definition_preserves_color_tint() {
+        let object = LevelObject {
+            position: [10.0, 20.0, 30.0],
+            size: [2.0, 4.0, 6.0],
+            ..LevelObject::default()
+        };
+        let cuboids = cuboids_from_definition(
+            &object,
+            &[BlockCuboid {
+                from: [4.0, 8.0, 12.0],
+                to: [12.0, 16.0, 16.0],
+                color_tint: Some([0.25, 0.5, 0.75]),
+            }],
+        );
+
+        assert_eq!(cuboids.len(), 1);
+        assert_eq!(cuboids[0].min, [10.5, 22.0, 34.5]);
+        assert_eq!(cuboids[0].max, [11.5, 24.0, 36.0]);
+        assert_eq!(cuboids[0].color_tint, Some([0.25, 0.5, 0.75]));
+    }
 }

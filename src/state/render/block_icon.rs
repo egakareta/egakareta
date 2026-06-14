@@ -177,11 +177,15 @@ fn build_block_icon_geometry(block_id: &str, dimetric: bool) -> MeshGeometry {
         );
     } else {
         for cuboid in cuboids {
+            let cuboid_colors = cuboid
+                .color_tint
+                .map(|color_tint| colors.tinted(color_tint))
+                .unwrap_or(colors);
             append_prism_with_layers(
                 &mut vertices,
                 cuboid.min,
                 cuboid.max,
-                colors,
+                cuboid_colors,
                 PrismTextureLayers::new(layers.top, layers.side, layers.bottom),
             );
         }

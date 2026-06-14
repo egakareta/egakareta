@@ -29,6 +29,24 @@ impl PrismFaceColors {
             outline,
         }
     }
+
+    pub(crate) fn tinted(self, tint_rgb: [f32; 3]) -> Self {
+        Self {
+            top: apply_color_tint(self.top, tint_rgb),
+            side: apply_color_tint(self.side, tint_rgb),
+            bottom: apply_color_tint(self.bottom, tint_rgb),
+            outline: apply_color_tint(self.outline, tint_rgb),
+        }
+    }
+}
+
+fn apply_color_tint(color: [f32; 4], tint_rgb: [f32; 3]) -> [f32; 4] {
+    [
+        color[0] * tint_rgb[0].clamp(0.0, 1.0),
+        color[1] * tint_rgb[1].clamp(0.0, 1.0),
+        color[2] * tint_rgb[2].clamp(0.0, 1.0),
+        color[3],
+    ]
 }
 
 #[derive(Copy, Clone)]
@@ -437,6 +455,22 @@ mod tests {
             [2.0, 0.0], // x=2 is Right, so U=2
             "Tiled +Z Top-Right",
         );
+    }
+
+    #[test]
+    fn prism_face_colors_apply_tint_to_rgb_only() {
+        let colors = PrismFaceColors::new_with_outline(
+            [0.8, 0.6, 0.4, 0.2],
+            [0.7, 0.5, 0.3, 0.4],
+            [0.6, 0.4, 0.2, 0.6],
+            [0.5, 0.3, 0.1, 0.8],
+        )
+        .tinted([0.5, 0.25, 2.0]);
+
+        assert_eq!(colors.top, [0.4, 0.15, 0.4, 0.2]);
+        assert_eq!(colors.side, [0.35, 0.125, 0.3, 0.4]);
+        assert_eq!(colors.bottom, [0.3, 0.1, 0.2, 0.6]);
+        assert_eq!(colors.outline, [0.25, 0.075, 0.1, 0.8]);
     }
 
     #[test]
