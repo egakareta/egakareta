@@ -2,25 +2,118 @@
     "id": "core/speedportal",
     "display_name": "Speed Portal",
     "category": "tech",
-    "assets": {
-        "mesh": "speedportal.obj"
-    },
     "render": {
         "profile": "neon",
         "icon_dimetric_projection": false,
         "icon_camera": {
-            "position": [0.5, 4.0, 0.5],
-            "rotation": [-90.0, 0.0, -90.0],
+            "position": [0.5, 4, 0.5],
+            "rotation": [-90, 0, -90],
             "orthographic_half_extent": 0.6
         },
-        "color_top": [1.0, 1.0, 0.0, 1.0],
-        "default_size": [2.0, 0.25, 1.0]
+        "color_top": [1, 1, 0, 0.5],
+        "default_size": [2, 0.25, 1]
     },
     "behavior": {
         "collision": "portal",
         "speed_multiplier": 1.5,
         "support_surface": false,
         "consumed_on_overlap": true
+    },
+    "geometry": {
+        "elements": [
+            {
+                "from": [0, 0, 11],
+                "to": [1, 16, 16]
+            },
+            {
+                "from": [1, 0, 10],
+                "to": [2, 16, 15]
+            },
+            {
+                "from": [2, 0, 9],
+                "to": [3, 16, 14]
+            },
+            {
+                "from": [3, 0, 3],
+                "to": [4, 16, 13]
+            },
+            {
+                "from": [4, 0, 4],
+                "to": [5, 16, 12]
+            },
+            {
+                "from": [5, 0, 5],
+                "to": [6, 16, 11]
+            },
+            {
+                "from": [6, 0, 6],
+                "to": [7, 16, 10]
+            },
+            {
+                "from": [7, 0, 7],
+                "to": [8, 16, 9]
+            },
+            {
+                "from": [0, 0, 0],
+                "to": [1, 16, 5]
+            },
+            {
+                "from": [1, 0, 1],
+                "to": [2, 16, 6]
+            },
+            {
+                "from": [2, 0, 2],
+                "to": [3, 16, 7]
+            },
+            {
+                "from": [8, 0, 11],
+                "to": [9, 16, 16]
+            },
+            {
+                "from": [9, 0, 10],
+                "to": [10, 16, 15]
+            },
+            {
+                "from": [10, 0, 9],
+                "to": [11, 16, 14]
+            },
+            {
+                "from": [11, 0, 3],
+                "to": [12, 16, 13]
+            },
+            {
+                "from": [12, 0, 4],
+                "to": [13, 16, 12]
+            },
+            {
+                "from": [13, 0, 5],
+                "to": [14, 16, 11]
+            },
+            {
+                "from": [14, 0, 6],
+                "to": [15, 16, 10]
+            },
+            {
+                "from": [15, 0, 7],
+                "to": [16, 16, 9]
+            },
+            {
+                "from": [8, 0, 0],
+                "to": [9, 16, 5]
+            },
+            {
+                "from": [9, 0, 1],
+                "to": [10, 16, 6]
+            },
+            {
+                "from": [10, 0, 2],
+                "to": [11, 16, 7]
+            }
+        ],
+        "hitbox": {
+            "from": [0, 0, 0],
+            "to": [16, 16, 16]
+        }
     },
     "placeable": true
 }
