@@ -1,0 +1,655 @@
+<!--
+Copyright (c) egakareta <team@egakareta.com>.
+Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+See LICENSE and COMMERCIAL.md for details.
+-->
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Cuboid Geometry JSON Viewer</title>
+        <style>
+            :root {
+                color-scheme: dark;
+                --bg: #0b1020;
+                --panel: #121a33;
+                --panel2: #17203d;
+                --text: #e8eeff;
+                --muted: #94a3c7;
+                --accent: #8af7ff;
+                --bad: #ff6b8b;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+
+            body {
+                margin: 0;
+                height: 100vh;
+                overflow: hidden;
+                font-family:
+                    ui-sans-serif,
+                    system-ui,
+                    -apple-system,
+                    BlinkMacSystemFont,
+                    "Segoe UI",
+                    sans-serif;
+                background: radial-gradient(
+                    circle at top left,
+                    #1a2855,
+                    var(--bg) 48%
+                );
+                color: var(--text);
+                display: grid;
+                grid-template-columns: 380px 1fr;
+            }
+
+            aside {
+                min-width: 0;
+                height: 100vh;
+                padding: 16px;
+                background: rgba(18, 26, 51, 0.92);
+                border-right: 1px solid rgba(255, 255, 255, 0.08);
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+                backdrop-filter: blur(10px);
+            }
+
+            h1 {
+                font-size: 18px;
+                margin: 0;
+                letter-spacing: 0.2px;
+            }
+
+            .hint {
+                color: var(--muted);
+                font-size: 13px;
+                line-height: 1.45;
+            }
+
+            textarea {
+                width: 100%;
+                flex: 1;
+                min-height: 220px;
+                resize: none;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 12px;
+                padding: 12px;
+                background: #070b18;
+                color: #dfe8ff;
+                font:
+                    12px/1.45 ui-monospace,
+                    SFMono-Regular,
+                    Menlo,
+                    Consolas,
+                    monospace;
+                outline: none;
+            }
+
+            textarea:focus {
+                border-color: rgba(138, 247, 255, 0.7);
+                box-shadow: 0 0 0 3px rgba(138, 247, 255, 0.1);
+            }
+
+            .row {
+                display: flex;
+                gap: 8px;
+                align-items: center;
+                flex-wrap: wrap;
+            }
+
+            button,
+            label.file {
+                border: 0;
+                border-radius: 999px;
+                padding: 10px 13px;
+                color: #06101f;
+                background: var(--accent);
+                font-weight: 700;
+                cursor: pointer;
+                font-size: 13px;
+            }
+
+            button.secondary,
+            label.file {
+                color: var(--text);
+                background: var(--panel2);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+            }
+
+            input[type="file"] {
+                display: none;
+            }
+
+            .check {
+                display: inline-flex;
+                gap: 7px;
+                align-items: center;
+                color: var(--muted);
+                font-size: 13px;
+                user-select: none;
+            }
+
+            .stats {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+            }
+
+            .stat {
+                background: rgba(255, 255, 255, 0.045);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 12px;
+                padding: 10px;
+                min-width: 0;
+            }
+
+            .stat b {
+                display: block;
+                font-size: 11px;
+                color: var(--muted);
+                margin-bottom: 4px;
+                font-weight: 600;
+            }
+
+            .stat span {
+                font-size: 13px;
+                overflow-wrap: anywhere;
+            }
+
+            #status {
+                color: var(--muted);
+                font-size: 13px;
+                min-height: 20px;
+            }
+
+            #status.error {
+                color: var(--bad);
+            }
+
+            main {
+                position: relative;
+                min-width: 0;
+            }
+
+            #viewer {
+                width: 100%;
+                height: 100vh;
+                display: block;
+            }
+
+            .badge {
+                position: absolute;
+                left: 14px;
+                bottom: 14px;
+                padding: 9px 11px;
+                border-radius: 999px;
+                background: rgba(7, 11, 24, 0.62);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                color: var(--muted);
+                font-size: 12px;
+                backdrop-filter: blur(8px);
+                pointer-events: none;
+            }
+
+            @media (max-width: 820px) {
+                body {
+                    grid-template-columns: 1fr;
+                    grid-template-rows: 46vh 54vh;
+                    overflow: auto;
+                }
+                aside {
+                    height: 46vh;
+                    border-right: 0;
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+                }
+                main,
+                #viewer {
+                    height: 54vh;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <script type="importmap">
+            {
+                "imports": {
+                    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+                }
+            }
+        </script>
+        <aside>
+            <h1>Cuboid Geometry JSON Viewer</h1>
+            <div class="hint">
+                Paste or load a JSON file. Only these fields are used:
+                <code>id</code>, <code>render.default_size</code>,
+                <code>geometry.elements</code>, and
+                <code>geometry.hitbox</code>.
+            </div>
+
+            <textarea id="jsonInput" spellcheck="false"></textarea>
+
+            <div class="row">
+                <label class="check"
+                    ><input id="showHitbox" type="checkbox" checked />
+                    hitbox</label
+                >
+                <label class="check"
+                    ><input id="showEdges" type="checkbox" checked />
+                    edges</label
+                >
+                <label class="check"
+                    ><input id="showGrid" type="checkbox" checked /> grid</label
+                >
+            </div>
+
+            <div id="status"></div>
+
+            <div class="stats">
+                <div class="stat"><b>ID</b><span id="statId">-</span></div>
+                <div class="stat">
+                    <b>ELEMENTS</b><span id="statCount">-</span>
+                </div>
+                <div class="stat">
+                    <b>DEFAULT SIZE</b><span id="statSize">-</span>
+                </div>
+                <div class="stat">
+                    <b>HITBOX</b><span id="statHitbox">-</span>
+                </div>
+            </div>
+        </aside>
+
+        <main>
+            <canvas id="viewer"></canvas>
+            <div class="badge">
+                Left drag: orbit · Right drag: pan · Wheel: zoom
+            </div>
+        </main>
+
+        <script type="module">
+            import * as THREE from "three";
+            import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+            const sampleJson = {
+                id: "core/speedportal",
+                display_name: "Speed Portal",
+                category: "tech",
+                render: {
+                    profile: "neon",
+                    icon_dimetric_projection: false,
+                    icon_camera: {
+                        position: [0.5, 4.0, 0.5],
+                        rotation: [-90.0, 0.0, -90.0],
+                        orthographic_half_extent: 0.6,
+                    },
+                    color_top: [1.0, 1.0, 0.0, 1.0],
+                    default_size: [2.0, 0.25, 1.0],
+                },
+                behavior: {
+                    collision: "portal",
+                    speed_multiplier: 1.5,
+                    support_surface: false,
+                    consumed_on_overlap: true,
+                },
+                geometry: {
+                    elements: [
+                        { from: [0.0, 0.0, 11.1], to: [1.1, 16.0, 16.0] },
+                        { from: [1.1, 0.0, 9.6], to: [2.3, 16.0, 16.0] },
+                        { from: [2.3, 0.0, 8.1], to: [3.4, 16.0, 14.9] },
+                        { from: [3.4, 0.0, 6.6], to: [4.6, 16.0, 13.4] },
+                        { from: [4.6, 0.0, 5.6], to: [5.7, 16.0, 12.4] },
+                        { from: [5.7, 0.0, 5.1], to: [6.9, 16.0, 10.9] },
+                        { from: [0.0, 0.0, 0.0], to: [1.1, 16.0, 4.9] },
+                        { from: [1.1, 0.0, 0.0], to: [2.3, 16.0, 6.4] },
+                        { from: [2.3, 0.0, 1.1], to: [3.4, 16.0, 7.9] },
+                        { from: [3.4, 0.0, 2.6], to: [4.6, 16.0, 9.4] },
+                        { from: [4.6, 0.0, 3.6], to: [5.7, 16.0, 10.4] },
+                        { from: [5.7, 0.0, 5.1], to: [6.9, 16.0, 10.9] },
+                        { from: [9.1, 0.0, 11.1], to: [10.3, 16.0, 16.0] },
+                        { from: [10.3, 0.0, 9.6], to: [11.4, 16.0, 16.0] },
+                        { from: [11.4, 0.0, 8.1], to: [12.6, 16.0, 14.9] },
+                        { from: [12.6, 0.0, 6.6], to: [13.7, 16.0, 13.4] },
+                        { from: [13.7, 0.0, 5.6], to: [14.9, 16.0, 12.4] },
+                        { from: [14.9, 0.0, 5.1], to: [16.0, 16.0, 10.9] },
+                        { from: [9.1, 0.0, 0.0], to: [10.3, 16.0, 4.9] },
+                        { from: [10.3, 0.0, 0.0], to: [11.4, 16.0, 6.4] },
+                        { from: [11.4, 0.0, 1.1], to: [12.6, 16.0, 7.9] },
+                        { from: [12.6, 0.0, 2.6], to: [13.7, 16.0, 9.4] },
+                        { from: [13.7, 0.0, 3.6], to: [14.9, 16.0, 10.4] },
+                        { from: [14.9, 0.0, 5.1], to: [16.0, 16.0, 10.9] },
+                    ],
+                    hitbox: { from: [0.0, 0.0, 0.0], to: [16.0, 16.0, 16.0] },
+                },
+                placeable: true,
+            };
+
+            const input = document.getElementById("jsonInput");
+            const statusEl = document.getElementById("status");
+            const showHitboxEl = document.getElementById("showHitbox");
+            const showEdgesEl = document.getElementById("showEdges");
+            const showGridEl = document.getElementById("showGrid");
+
+            const statId = document.getElementById("statId");
+            const statCount = document.getElementById("statCount");
+            const statSize = document.getElementById("statSize");
+            const statHitbox = document.getElementById("statHitbox");
+
+            input.value = JSON.stringify(sampleJson, null, 2);
+
+            const canvas = document.getElementById("viewer");
+            const renderer = new THREE.WebGLRenderer({
+                canvas,
+                antialias: true,
+                alpha: true,
+            });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0b1020);
+
+            const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
+            const controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+
+            const root = new THREE.Group();
+            const edgesRoot = new THREE.Group();
+            const hitboxRoot = new THREE.Group();
+            const gridRoot = new THREE.Group();
+
+            scene.add(root, edgesRoot, hitboxRoot, gridRoot);
+
+            const ambient = new THREE.AmbientLight(0xffffff, 0.75);
+            const key = new THREE.DirectionalLight(0xffffff, 1.2);
+            key.position.set(5, 10, 7);
+            scene.add(ambient, key);
+
+            const faceMaterial = new THREE.MeshStandardMaterial({
+                color: 0x35d7ff,
+                roughness: 0.38,
+                metalness: 0.08,
+                transparent: true,
+                opacity: 0.88,
+            });
+
+            const edgeMaterial = new THREE.LineBasicMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.55,
+            });
+
+            const hitboxMaterial = new THREE.LineBasicMaterial({
+                color: 0xffcc33,
+                transparent: true,
+                opacity: 0.95,
+            });
+
+            function setStatus(message, error = false) {
+                statusEl.textContent = message;
+                statusEl.className = error ? "error" : "";
+            }
+
+            function isVec3(value) {
+                return (
+                    Array.isArray(value) &&
+                    value.length === 3 &&
+                    value.every(Number.isFinite)
+                );
+            }
+
+            function clearGroup(group) {
+                while (group.children.length) {
+                    const child = group.children.pop();
+                    child.traverse?.((obj) => {
+                        obj.geometry?.dispose?.();
+                        if (Array.isArray(obj.material))
+                            obj.material.forEach((m) => m.dispose?.());
+                        else obj.material?.dispose?.();
+                    });
+                }
+            }
+
+            function extractUsedFields(data) {
+                const used = {
+                    id: data?.id ?? "(no id)",
+                    defaultSize: data?.render?.default_size ?? [1, 1, 1],
+                    elements: data?.geometry?.elements ?? [],
+                    hitbox: data?.geometry?.hitbox ?? null,
+                };
+
+                if (!isVec3(used.defaultSize)) {
+                    throw new Error(
+                        "render.default_size must be an array of 3 numbers.",
+                    );
+                }
+
+                if (!Array.isArray(used.elements)) {
+                    throw new Error("geometry.elements must be an array.");
+                }
+
+                for (let i = 0; i < used.elements.length; i++) {
+                    const el = used.elements[i];
+                    if (!isVec3(el?.from) || !isVec3(el?.to)) {
+                        throw new Error(
+                            `geometry.elements[${i}] must have numeric from/to vec3 arrays.`,
+                        );
+                    }
+                }
+
+                if (
+                    used.hitbox &&
+                    (!isVec3(used.hitbox.from) || !isVec3(used.hitbox.to))
+                ) {
+                    throw new Error(
+                        "geometry.hitbox must have numeric from/to vec3 arrays.",
+                    );
+                }
+
+                return used;
+            }
+
+            function cuboidInfo(from, to, scale) {
+                const min = [
+                    Math.min(from[0], to[0]) * scale[0],
+                    Math.min(from[1], to[1]) * scale[1],
+                    Math.min(from[2], to[2]) * scale[2],
+                ];
+                const max = [
+                    Math.max(from[0], to[0]) * scale[0],
+                    Math.max(from[1], to[1]) * scale[1],
+                    Math.max(from[2], to[2]) * scale[2],
+                ];
+                const size = [
+                    max[0] - min[0],
+                    max[1] - min[1],
+                    max[2] - min[2],
+                ];
+                const center = [
+                    (min[0] + max[0]) / 2,
+                    (min[1] + max[1]) / 2,
+                    (min[2] + max[2]) / 2,
+                ];
+                return { min, max, size, center };
+            }
+
+            function makeCuboid(from, to, scale, material) {
+                const info = cuboidInfo(from, to, scale);
+                const geom = new THREE.BoxGeometry(
+                    info.size[0],
+                    info.size[1],
+                    info.size[2],
+                );
+                const mesh = new THREE.Mesh(geom, material);
+                mesh.position.set(
+                    info.center[0],
+                    info.center[1],
+                    info.center[2],
+                );
+                return { mesh, info };
+            }
+
+            function addEdgesFor(mesh, targetGroup, material) {
+                const edges = new THREE.EdgesGeometry(mesh.geometry);
+                const line = new THREE.LineSegments(edges, material);
+                line.position.copy(mesh.position);
+                line.rotation.copy(mesh.rotation);
+                line.scale.copy(mesh.scale);
+                targetGroup.add(line);
+                return line;
+            }
+
+            function resetCameraToBox(box) {
+                const center = new THREE.Vector3();
+                const size = new THREE.Vector3();
+                box.getCenter(center);
+                box.getSize(size);
+
+                const maxDim = Math.max(size.x, size.y, size.z, 1);
+                const dist = maxDim * 1.65;
+
+                camera.position.set(
+                    center.x + dist,
+                    center.y + dist * 0.72,
+                    center.z + dist,
+                );
+                camera.near = Math.max(maxDim / 1000, 0.01);
+                camera.far = maxDim * 100;
+                camera.updateProjectionMatrix();
+
+                controls.target.copy(center);
+                controls.update();
+            }
+
+            function rebuildGrid(box) {
+                clearGroup(gridRoot);
+                const size = new THREE.Vector3();
+                const center = new THREE.Vector3();
+                box.getSize(size);
+                box.getCenter(center);
+
+                const gridSize = Math.max(size.x, size.z, 1) * 1.25;
+                const divisions = Math.min(
+                    64,
+                    Math.max(8, Math.round(gridSize)),
+                );
+                const grid = new THREE.GridHelper(gridSize, divisions);
+                grid.position.set(center.x, box.min.y, center.z);
+                gridRoot.add(grid);
+            }
+
+            let hasAutoFramedOnce = false;
+            function renderJson({ preserveCamera = true } = {}) {
+                const previousCameraPosition = camera.position.clone();
+                const previousTarget = controls.target.clone();
+
+                try {
+                    const raw = JSON.parse(input.value);
+                    const data = extractUsedFields(raw);
+                    const scale = data.defaultSize.map((v) => v / 16);
+
+                    clearGroup(root);
+                    clearGroup(edgesRoot);
+                    clearGroup(hitboxRoot);
+                    clearGroup(gridRoot);
+
+                    let combinedBox = new THREE.Box3();
+                    let validCount = 0;
+
+                    for (const element of data.elements) {
+                        const { mesh } = makeCuboid(
+                            element.from,
+                            element.to,
+                            scale,
+                            faceMaterial,
+                        );
+                        root.add(mesh);
+                        addEdgesFor(mesh, edgesRoot, edgeMaterial);
+                        combinedBox.expandByObject(mesh);
+                        validCount++;
+                    }
+
+                    if (data.hitbox) {
+                        const { mesh } = makeCuboid(
+                            data.hitbox.from,
+                            data.hitbox.to,
+                            scale,
+                            new THREE.MeshBasicMaterial({ visible: false }),
+                        );
+                        const helper = new THREE.Box3Helper(
+                            new THREE.Box3().setFromObject(mesh),
+                            hitboxMaterial.color,
+                        );
+                        helper.material = hitboxMaterial;
+                        hitboxRoot.add(mesh, helper);
+                        combinedBox.expandByObject(mesh);
+                    }
+
+                    if (combinedBox.isEmpty()) {
+                        combinedBox = new THREE.Box3(
+                            new THREE.Vector3(-1, -1, -1),
+                            new THREE.Vector3(1, 1, 1),
+                        );
+                    }
+
+                    rebuildGrid(combinedBox);
+
+                    if (!preserveCamera || !hasAutoFramedOnce) {
+                        resetCameraToBox(combinedBox);
+                        hasAutoFramedOnce = true;
+                    } else {
+                        camera.position.copy(previousCameraPosition);
+                        controls.target.copy(previousTarget);
+                        controls.update();
+                    }
+
+                    statId.textContent = data.id;
+                    statCount.textContent = String(validCount);
+                    statSize.textContent = `[${data.defaultSize.join(", ")}]`;
+                    statHitbox.textContent = data.hitbox
+                        ? `[${data.hitbox.from.join(", ")}] → [${data.hitbox.to.join(", ")}]`
+                        : "none";
+
+                    setStatus(
+                        `Rendered ${validCount} cuboid${validCount === 1 ? "" : "s"}.`,
+                    );
+                    syncVisibility();
+                } catch (err) {
+                    setStatus(err.message || String(err), true);
+                }
+            }
+
+            function syncVisibility() {
+                hitboxRoot.visible = showHitboxEl.checked;
+                edgesRoot.visible = showEdgesEl.checked;
+                gridRoot.visible = showGridEl.checked;
+            }
+
+            function resize() {
+                const rect = canvas.getBoundingClientRect();
+                renderer.setSize(rect.width, rect.height, false);
+                camera.aspect = rect.width / Math.max(rect.height, 1);
+                camera.updateProjectionMatrix();
+            }
+
+            input.addEventListener("input", renderJson);
+            for (const el of [showHitboxEl, showEdgesEl, showGridEl]) {
+                el.addEventListener("change", syncVisibility);
+            }
+
+            window.addEventListener("resize", resize);
+
+            function animate() {
+                resize();
+                controls.update();
+                renderer.render(scene, camera);
+                requestAnimationFrame(animate);
+            }
+
+            renderJson();
+            animate();
+        </script>
+    </body>
+</html>

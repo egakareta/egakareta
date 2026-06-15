@@ -8,7 +8,7 @@
 /// <reference types="bun-types" />
 
 const commands = [
-    ["dev:build", ["nodemon", "--exec", "bun run build --profiling"]],
+    ["dev:build", ["nodemon", "--exec", "bun run build", "--profiling"]],
     ["dev:wrangler", ["bunx", "wrangler", "pages", "dev"]],
 ] as const;
 

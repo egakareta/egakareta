@@ -16,6 +16,19 @@ const rootDir = path.resolve(
     "..",
 );
 
+// Create dist folder if it doesn't exist
+const distPath = path.join(rootDir, "dist");
+if (!fs.existsSync(distPath)) {
+    fs.mkdirSync(distPath);
+}
+
+if (process.argv.includes("--profiling")) {
+    // Copy scripts/tools folder to dist for profiling tools
+    const toolsSrcPath = path.join(rootDir, "scripts", "tools");
+    const toolsDestPath = path.join(distPath, "tools");
+    fs.cpSync(toolsSrcPath, toolsDestPath, { recursive: true });
+}
+
 // Build the WASM package using wasm-pack
 const proc = Bun.spawn(
     [
@@ -56,12 +69,6 @@ proc.exited.then((exitCode) => {
 
 async function createDist() {
     const start = Date.now();
-
-    // Create dist folder if it doesn't exist
-    const distPath = path.join(rootDir, "dist");
-    if (!fs.existsSync(distPath)) {
-        fs.mkdirSync(distPath);
-    }
 
     // Remove old pkg folder if it exists, then move the new one from target
     try {

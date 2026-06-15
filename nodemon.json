@@ -1,5 +1,5 @@
 {
-    "watch": ["src", "assets", "index.html", "scripts/build.ts"],
+    "watch": ["src", "assets", "index.html", "scripts"],
     "delay": 400,
     "ext": "*"
 }
