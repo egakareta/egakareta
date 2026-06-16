@@ -438,13 +438,13 @@ d 0.5
     }
 
     #[test]
-    fn generated_speedportal_egmesh_builds_indexed_geometry() {
-        let mesh = resolve_egmesh("speedportal.obj").expect("speedportal egmesh should resolve");
+    fn generated_gem_egmesh_builds_indexed_geometry() {
+        let mesh = resolve_egmesh("gem.obj").expect("gem egmesh should resolve");
         assert!(!mesh.vertices.is_empty());
         assert!(!mesh.indices.is_empty());
 
         let obj = LevelObject {
-            block_id: "core/speedportal".to_string(),
+            block_id: "core/gem".to_string(),
             ..LevelObject::default()
         };
         let geometry = build_block_geometry(std::slice::from_ref(&obj));

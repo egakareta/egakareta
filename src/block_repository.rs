@@ -819,7 +819,7 @@ mod tests {
     #[test]
     fn block_default_size_is_loaded_and_sanitized() {
         let speed_portal = resolve_block_definition("core/speedportal");
-        assert_eq!(speed_portal.default_size(), [2.0, 0.25, 1.0]);
+        assert_eq!(speed_portal.default_size(), [2.0, 1.0, 1.0]);
 
         let normalized = BlockDefinition {
             id: "debug/flat".to_string(),

@@ -2128,7 +2128,7 @@ mod tests {
 
             assert_eq!(state.editor.objects.len(), 1);
             assert_eq!(state.editor.objects[0].position, [2.0, 0.0, 4.0]);
-            assert_eq!(state.editor.objects[0].size, [2.0, 0.25, 1.0]);
+            assert_eq!(state.editor.objects[0].size, [2.0, 1.0, 1.0]);
             assert_eq!(state.editor.objects[0].rotation_degrees, [0.0, 90.0, 0.0]);
             assert_eq!(state.editor.objects[0].block_id, "core/speedportal");
         });
