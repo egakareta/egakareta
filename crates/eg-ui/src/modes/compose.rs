@@ -597,100 +597,29 @@ mod tests {
         show_place_block_properties_window, show_selected_block_properties_window,
         FALLBACK_SIDE_COLOR, FALLBACK_TOP_COLOR, TOP_LIGHTEN_FACTOR,
     };
+    use crate::test_utils::editor_view_model;
     use eg_blocks::{all_placeable_blocks, block_texture_atlas, resolve_block_texture_layers};
-    use eg_state::state::EditorUiViewModel;
     use eg_types::{
         default_camera_trigger_distance, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
         TimedTriggerTarget,
     };
     use eg_types::{
-        AppSettings, EditorMode, LevelObject, MusicMetadata, SettingsSection, SpawnDirection,
-        CAMERA_TRIGGER_BLOCK_ID, DEFAULT_CAMERA_TRIGGER_PITCH, DEFAULT_CAMERA_TRIGGER_ROTATION,
-        TRANSFORM_TRIGGER_BLOCK_ID,
+        AppSettings, EditorMode, LevelObject, MusicMetadata, CAMERA_TRIGGER_BLOCK_ID,
+        DEFAULT_CAMERA_TRIGGER_PITCH, DEFAULT_CAMERA_TRIGGER_ROTATION, TRANSFORM_TRIGGER_BLOCK_ID,
     };
 
-    fn make_view<'a>(
+    fn make_compose_view<'a>(
         app_settings: &'a AppSettings,
         music_metadata: &'a MusicMetadata,
         mode: EditorMode,
-    ) -> EditorUiViewModel<'a> {
-        EditorUiViewModel {
-            is_editor: true,
-            is_menu: false,
-            is_game_paused: false,
-            is_practice_mode_enabled: false,
-            mode,
-            last_mode: Some(mode),
-            available_levels: &[],
-            level_name: Some("Compose Test"),
-            menu_level_name: None,
-            menu_selected_level_progress: None,
-            show_metadata: false,
-            show_place_window: false,
-            show_settings: false,
-            settings_section: SettingsSection::Backends,
-            keybind_capture_action: None,
-            music_metadata,
-            creator_metadata: eg_types::LevelCreatorMetadata::default(),
-            sky_color: eg_types::default_sky_color(),
-            app_settings,
-            configured_graphics_backend: "Auto",
-            configured_audio_backend: "Default",
-            graphics_backend_locked: false,
-            audio_backend_locked: false,
-            graphics_backend_options: &[],
-            audio_backend_options: &[],
-            settings_restart_required: false,
-            auth_display_name: None,
-            auth_pending: false,
-            auth_message: None,
-            perf_overlay_enabled: false,
-            perf_graphics_backend: String::new(),
-            perf_audio_backend: String::new(),
-            perf_has_latest_frame: false,
-            snap_to_grid: true,
-            snap_step: 1.0,
-            snap_rotation: true,
-            snap_rotation_step_degrees: 15.0,
-            selected_block_id: "core/stone",
-            place_preview_position: [2.0, 1.0, 3.0],
-            place_preview_size: [1.0, 2.0, 1.0],
-            recent_block_ids: &[],
-            selected_block: None,
-            selected_block_count: 0,
-            clipboard_block_count: 0,
-            can_undo: false,
-            can_redo: false,
-            playing: false,
-            timeline_time_seconds: 0.0,
-            timeline_duration_seconds: 16.0,
-            tap_times: &[],
-            selected_tap: None,
-            timeline_preview_position: [0.0, 0.0, 0.0],
-            timeline_preview_direction: SpawnDirection::Forward,
-            timing_points: &[],
-            playback_speed: 1.0,
-            timing_selected_index: None,
-            waveform_zoom: 1.0,
-            waveform_scroll: 0.0,
-            waveform_samples: &[],
-            waveform_sample_rate: 0,
-            waveform_window_size: 256,
-            waveform_loading: false,
-            waveform_complete: false,
-            bpm_tap_result: None,
-            triggers: vec![],
-            trigger_selected_index: None,
-            simulate_trigger_hitboxes: false,
-            camera_position: [0.0, 0.0, 0.0],
-            camera_preview_position: [0.0, 0.0, 0.0],
-            camera_preview_target: [0.0, 0.0, 0.0],
-            camera_rotation: 0.0,
-            camera_pitch: 0.0,
-            fps: 60.0,
-            marquee_selection_rect_screen: None,
-            object_count: 0,
-        }
+    ) -> eg_state::state::EditorUiViewModel<'a> {
+        let mut view = editor_view_model(app_settings, music_metadata);
+        view.mode = mode;
+        view.last_mode = Some(mode);
+        view.level_name = Some("Compose Test");
+        view.place_preview_position = [2.0, 1.0, 3.0];
+        view.place_preview_size = [1.0, 2.0, 1.0];
+        view
     }
 
     #[test]
@@ -774,8 +703,8 @@ mod tests {
     fn show_place_block_properties_window_handles_place_and_other_modes() {
         let app_settings = AppSettings::default();
         let music_metadata = MusicMetadata::default();
-        let place_view = make_view(&app_settings, &music_metadata, EditorMode::Place);
-        let select_view = make_view(&app_settings, &music_metadata, EditorMode::Select);
+        let place_view = make_compose_view(&app_settings, &music_metadata, EditorMode::Place);
+        let select_view = make_compose_view(&app_settings, &music_metadata, EditorMode::Select);
         let ctx = egui::Context::default();
 
         let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
@@ -788,10 +717,11 @@ mod tests {
     fn show_selected_block_properties_window_handles_normal_and_trigger_blocks() {
         let app_settings = AppSettings::default();
         let music_metadata = MusicMetadata::default();
-        let mut normal_view = make_view(&app_settings, &music_metadata, EditorMode::Select);
+        let mut normal_view = make_compose_view(&app_settings, &music_metadata, EditorMode::Select);
         normal_view.selected_block = Some(crate::test_utils::stone(1.0, 2.0, 3.0));
 
-        let mut trigger_view = make_view(&app_settings, &music_metadata, EditorMode::Select);
+        let mut trigger_view =
+            make_compose_view(&app_settings, &music_metadata, EditorMode::Select);
         trigger_view.selected_block = Some(LevelObject {
             position: [1.0, 0.0, 1.0],
             size: [1.0, 1.0, 1.0],

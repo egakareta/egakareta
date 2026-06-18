@@ -694,15 +694,12 @@ pub(crate) fn show_waveform_panel(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::assert_approx_eq as approx_eq;
-    use eg_state::state::EditorUiViewModel;
+    use crate::test_utils::{assert_approx_eq as approx_eq, editor_view_model};
     use eg_types::{
         default_camera_trigger_distance, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
         TimedTriggerTarget,
     };
-    use eg_types::{
-        AppSettings, EditorMode, MusicMetadata, SettingsSection, SpawnDirection, TimingPoint,
-    };
+    use eg_types::{AppSettings, EditorMode, MusicMetadata, TimingPoint};
 
     fn make_view<'a>(
         app_settings: &'a AppSettings,
@@ -717,84 +714,24 @@ mod tests {
         waveform_scroll: f32,
         playing: bool,
         trigger_selected_index: Option<usize>,
-    ) -> EditorUiViewModel<'a> {
-        EditorUiViewModel {
-            is_editor: true,
-            is_menu: false,
-            is_game_paused: false,
-            is_practice_mode_enabled: false,
-            mode: EditorMode::Timing,
-            last_mode: Some(EditorMode::Timing),
-            available_levels: &[],
-            level_name: Some("Test Level"),
-            menu_level_name: None,
-            menu_selected_level_progress: None,
-            show_metadata: false,
-            show_place_window: false,
-            show_settings: false,
-            settings_section: SettingsSection::Backends,
-            keybind_capture_action: None,
-            music_metadata,
-            creator_metadata: eg_types::LevelCreatorMetadata::default(),
-            sky_color: eg_types::default_sky_color(),
-            app_settings,
-            configured_graphics_backend: "Auto",
-            configured_audio_backend: "Default",
-            graphics_backend_locked: false,
-            audio_backend_locked: false,
-            graphics_backend_options: &[],
-            audio_backend_options: &[],
-            settings_restart_required: false,
-            auth_display_name: None,
-            auth_pending: false,
-            auth_message: None,
-            perf_overlay_enabled: false,
-            perf_graphics_backend: String::new(),
-            perf_audio_backend: String::new(),
-            perf_has_latest_frame: false,
-            snap_to_grid: true,
-            snap_step: 1.0,
-            snap_rotation: true,
-            snap_rotation_step_degrees: 15.0,
-            selected_block_id: "core/stone",
-            place_preview_position: [0.0, 0.0, 0.0],
-            place_preview_size: [1.0, 1.0, 1.0],
-            recent_block_ids: &[],
-            selected_block: None,
-            selected_block_count: 0,
-            clipboard_block_count: 0,
-            can_undo: false,
-            can_redo: false,
-            playing,
-            timeline_time_seconds,
-            timeline_duration_seconds,
-            tap_times,
-            selected_tap: None,
-            timeline_preview_position: [0.0, 0.0, 0.0],
-            timeline_preview_direction: SpawnDirection::Forward,
-            timing_points,
-            playback_speed: 1.0,
-            timing_selected_index: None,
-            waveform_zoom,
-            waveform_scroll,
-            waveform_samples,
-            waveform_sample_rate: 44_100,
-            waveform_window_size: 256,
-            waveform_loading: false,
-            waveform_complete: true,
-            bpm_tap_result: None,
-            triggers: triggers.to_vec(),
-            trigger_selected_index,
-            simulate_trigger_hitboxes: false,
-            camera_position: [0.0, 0.0, 0.0],
-            camera_preview_position: [0.0, 0.0, 0.0],
-            camera_preview_target: [0.0, 0.0, 0.0],
-            camera_rotation: 0.0,
-            camera_pitch: 0.0,
-            fps: 120.0,
-            marquee_selection_rect_screen: None,
-            object_count: 0,
-        }
+    ) -> eg_state::state::EditorUiViewModel<'a> {
+        let mut view = editor_view_model(app_settings, music_metadata);
+        view.mode = EditorMode::Timing;
+        view.last_mode = Some(EditorMode::Timing);
+        view.playing = playing;
+        view.timeline_time_seconds = timeline_time_seconds;
+        view.timeline_duration_seconds = timeline_duration_seconds;
+        view.tap_times = tap_times;
+        view.timing_points = timing_points;
+        view.waveform_zoom = waveform_zoom;
+        view.waveform_scroll = waveform_scroll;
+        view.waveform_samples = waveform_samples;
+        view.waveform_sample_rate = 44_100;
+        view.waveform_complete = true;
+        view.triggers = triggers.to_vec();
+        view.trigger_selected_index = trigger_selected_index;
+        view.fps = 120.0;
+        view
     }
 
     #[test]

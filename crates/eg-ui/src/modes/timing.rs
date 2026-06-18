@@ -212,12 +212,11 @@ pub(crate) fn show_timing_mode_bottom_panel(
 #[cfg(test)]
 mod tests {
     use super::show_timing_mode_bottom_panel;
+    use crate::test_utils::editor_view_model;
     use eg_state::commands::AppCommand;
     use eg_state::state::EditorUiViewModel;
     use eg_types::TimedTrigger;
-    use eg_types::{
-        AppSettings, EditorMode, MusicMetadata, SettingsSection, SpawnDirection, TimingPoint,
-    };
+    use eg_types::{AppSettings, EditorMode, MusicMetadata, TimingPoint};
 
     fn make_view<'a>(
         app_settings: &'a AppSettings,
@@ -227,83 +226,18 @@ mod tests {
         timing_selected_index: Option<usize>,
         bpm_tap_result: Option<f32>,
     ) -> EditorUiViewModel<'a> {
-        EditorUiViewModel {
-            is_editor: true,
-            is_menu: false,
-            is_game_paused: false,
-            is_practice_mode_enabled: false,
-            mode: EditorMode::Timing,
-            last_mode: Some(EditorMode::Timing),
-            available_levels: &[],
-            level_name: Some("Test Level"),
-            menu_level_name: None,
-            menu_selected_level_progress: None,
-            show_metadata: false,
-            show_place_window: false,
-            show_settings: false,
-            settings_section: SettingsSection::Backends,
-            keybind_capture_action: None,
-            music_metadata,
-            creator_metadata: eg_types::LevelCreatorMetadata::default(),
-            sky_color: eg_types::default_sky_color(),
-            app_settings,
-            configured_graphics_backend: "Auto",
-            configured_audio_backend: "Default",
-            graphics_backend_locked: false,
-            audio_backend_locked: false,
-            graphics_backend_options: &[],
-            audio_backend_options: &[],
-            settings_restart_required: false,
-            auth_display_name: None,
-            auth_pending: false,
-            auth_message: None,
-            perf_overlay_enabled: false,
-            perf_graphics_backend: String::new(),
-            perf_audio_backend: String::new(),
-            perf_has_latest_frame: false,
-            snap_to_grid: true,
-            snap_step: 1.0,
-            snap_rotation: true,
-            snap_rotation_step_degrees: 15.0,
-            selected_block_id: "core/stone",
-            place_preview_position: [0.0, 0.0, 0.0],
-            place_preview_size: [1.0, 1.0, 1.0],
-            recent_block_ids: &[],
-            selected_block: None,
-            selected_block_count: 0,
-            clipboard_block_count: 0,
-            can_undo: false,
-            can_redo: false,
-            playing: false,
-            timeline_time_seconds: 2.5,
-            timeline_duration_seconds: 16.0,
-            tap_times: &[],
-            selected_tap: None,
-            timeline_preview_position: [1.0, 2.0, 3.0],
-            timeline_preview_direction: SpawnDirection::Forward,
-            timing_points,
-            playback_speed: 1.0,
-            timing_selected_index,
-            waveform_zoom: 1.0,
-            waveform_scroll: 0.0,
-            waveform_samples: &[],
-            waveform_sample_rate: 0,
-            waveform_window_size: 256,
-            waveform_loading: false,
-            waveform_complete: false,
-            bpm_tap_result,
-            triggers: triggers.to_vec(),
-            trigger_selected_index: None,
-            simulate_trigger_hitboxes: false,
-            camera_position: [0.0, 0.0, 0.0],
-            camera_preview_position: [0.0, 1.0, 2.0],
-            camera_preview_target: [0.0, 0.0, 0.0],
-            camera_rotation: 0.0,
-            camera_pitch: 0.0,
-            fps: 120.0,
-            marquee_selection_rect_screen: None,
-            object_count: 0,
-        }
+        let mut view = editor_view_model(app_settings, music_metadata);
+        view.mode = EditorMode::Timing;
+        view.last_mode = Some(EditorMode::Timing);
+        view.timeline_time_seconds = 2.5;
+        view.timeline_preview_position = [1.0, 2.0, 3.0];
+        view.timing_points = timing_points;
+        view.timing_selected_index = timing_selected_index;
+        view.bpm_tap_result = bpm_tap_result;
+        view.triggers = triggers.to_vec();
+        view.camera_preview_position = [0.0, 1.0, 2.0];
+        view.fps = 120.0;
+        view
     }
 
     #[test]
