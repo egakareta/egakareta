@@ -1,50 +1,84 @@
 # Copyright (c) egakareta <team@egakareta.com>.
 # Licensed under the GNU AGPLv3 or a proprietary Commercial License.
 # See LICENSE and COMMERCIAL.md for details.
-[package]
-name = "egakareta"
+[workspace]
+members = [
+    "crates/eg-app",
+    "crates/eg-audio",
+    "crates/eg-types",
+    "crates/eg-block-geometry",
+    "crates/eg-blocks",
+    "crates/eg-codec",
+    "crates/eg-editor-domain",
+    "crates/eg-game",
+    "crates/eg-level",
+    "crates/eg-mesh",
+    "crates/eg-platform",
+    "crates/eg-render",
+    "crates/eg-state",
+    "crates/eg-ui",
+    "crates/egb",
+]
+resolver = "2"
+default-members = ["crates/eg-app"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
 description = "Feel the beat, follow the line."
 repository = "https://github.com/egakareta/egakareta"
-license = "MIT"
-default-run = "egakareta"
+license = "AGPL-3.0-only"
 
-[lib]
-name = "egakareta_lib"
-crate-type = ["cdylib", "rlib"]
-
-[features]
-benchmarks = []
-
-[dependencies]
-wgpu = { version = "29.0.3", features = ["webgpu", "webgl"] }
-pollster = "0.4"
-log = "0.4"
+[workspace.dependencies]
+async-trait = "0.1"
+arboard = "3.6"
 bytemuck = { version = "1.25", features = ["derive"] }
-glam = { version = "0.33", features = ["bytemuck"] }
-web-time = "1.1"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-serde_cbor = "0.11"
-sha2 = "0.11"
-zstd = "0.13"
-include_dir = "0.7"
-zip = { version = "8.6", default-features = false, features = ["deflate"] }
+console_error_panic_hook = "0.1"
+console_log = "1.0.0"
+cpal = { version = "0.17", features = ["wasm-bindgen", "audioworklet"] }
+criterion = "0.7"
+directories = "6.0"
+eg-audio = { path = "crates/eg-audio" }
+eg-block-geometry = { path = "crates/eg-block-geometry" }
+eg-blocks = { path = "crates/eg-blocks" }
+eg-codec = { path = "crates/eg-codec" }
+eg-editor-domain = { path = "crates/eg-editor-domain" }
+eg-game = { path = "crates/eg-game" }
+eg-level = { path = "crates/eg-level" }
+eg-mesh = { path = "crates/eg-mesh" }
+eg-platform = { path = "crates/eg-platform" }
+eg-render = { path = "crates/eg-render" }
+eg-state = { path = "crates/eg-state" }
+eg-types = { path = "crates/eg-types" }
+eg-ui = { path = "crates/eg-ui" }
 egui = "0.34.3"
-egui-wgpu = "0.34.3"
 egui-phosphor = "0.12.0"
+egui-wgpu = "0.34.3"
+egui-winit = { version = "0.34.3", default-features = false }
+env_logger = "0.11"
+glam = { version = "0.33", features = ["bytemuck"] }
+gloo-console = "0.4"
+gloo-file = "0.4"
+gloo-net = "0.7"
+gloo-utils = "0.3"
+image = { version = "0.25", default-features = false }
+include_dir = "0.7"
+js-sys = "0.3"
+log = "0.4"
+naga = { version = "29", features = ["wgsl-in"] }
+parking_lot_core = { version = "0.9.12", features = ["nightly"] }
+paste = "1.0.15"
+pollster = "0.4"
 puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "7e08a533f9debfb7d051547263d2ab84c666314f" }
 puffin_egui = { git = "https://github.com/EmbarkStudios/puffin", rev = "7e08a533f9debfb7d051547263d2ab84c666314f" }
-rfd = "0.17"
 rayon = "1"
-image = { version = "0.25", default-features = false, features = [
-    "ico",
-    "png",
+reqwest = { version = "0.12", default-features = false, features = [
+    "blocking",
+    "json",
+    "rustls-tls",
 ] }
-async-trait = "0.1"
-winit = "0.30"
-cpal = { version = "0.17", features = ["wasm-bindgen", "audioworklet"] }
+rexie = "0.6"
+rfd = "0.17"
 rodio = { version = "0.22", default-features = false, features = [
     "mp3",
     "playback",
@@ -52,6 +86,10 @@ rodio = { version = "0.22", default-features = false, features = [
     "wasm-bindgen",
     "wav",
 ] }
+serde = { version = "1", features = ["derive"] }
+serde_cbor = "0.11"
+serde_json = "1"
+sha2 = "0.11"
 symphonia = { version = "0.6", default-features = false, features = [
     "mp3",
     "ogg",
@@ -59,85 +97,23 @@ symphonia = { version = "0.6", default-features = false, features = [
     "vorbis",
     "wav",
 ] }
-paste = "1.0.15"
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-arboard = "3.6"
-directories = "6.0"
-egui-winit = "0.34.3"
-env_logger = "0.11"
-reqwest = { version = "0.12", default-features = false, features = [
-    "blocking",
-    "json",
-    "rustls-tls",
-] }
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-console_error_panic_hook = "0.1"
-console_log = "1.0.0"
-egui-winit = { version = "0.34.2", default-features = false } # default features include arboard, which doesnt have wasm support yet https://github.com/1Password/arboard/pull/160
-gloo-net = "0.7"
-gloo-console = "0.4"
-gloo-file = "0.4"
-gloo-utils = "0.3"
-js-sys = "0.3"
-parking_lot_core = { version = "0.9.12", features = ["nightly"] }
-puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "7e08a533f9debfb7d051547263d2ab84c666314f", features = [
-    "web",
-] }
-rexie = "0.6"
+tempfile = "3"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 wasm-bindgen-rayon = "1"
 web-sys = { version = "0.3", features = [
     "Clipboard",
-    "console",
-    "Window",
     "Document",
     "Element",
-    "HtmlCanvasElement",
-    "EventTarget",
-    "Event",
-    "MouseEvent",
-    "WheelEvent",
-    "KeyboardEvent",
-    "TouchEvent",
-    "TouchList",
-    "Touch",
-    "Performance",
-    "HtmlAudioElement",
-    "AudioContext",
-    "AudioBuffer",
-    "DomTokenList",
-    "HtmlElement",
     "HtmlAnchorElement",
-    "IdbFactory",
-    "IdbDatabase",
-    "IdbObjectStore",
-    "IdbRequest",
-    "IdbOpenDbRequest",
-    "IdbTransaction",
-    "IdbTransactionMode",
-    "DomStringList",
+    "HtmlCanvasElement",
+    "Location",
     "Navigator",
+    "Window",
 ] }
-
-[package.metadata.wasm-pack.profile.profiling]
-wasm-opt = false
-
-[build-dependencies]
-serde = { version = "1", features = ["derive"] }
-serde_cbor = "0.11"
-serde_json = "1"
+web-time = "1.1"
+wgpu = { version = "29.0.3", features = ["webgpu", "webgl"] }
+winit = "0.30"
 winres = "0.1"
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
 zstd = "0.13"
-
-[dev-dependencies]
-criterion = "0.7"
-naga = { version = "29", features = ["wgsl-in"] }
-tempfile = "3"
-
-[[bench]]
-name = "perf_hot_paths"
-harness = false
-required-features = ["benchmarks"]

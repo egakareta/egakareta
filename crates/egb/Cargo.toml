@@ -1,0 +1,21 @@
+# Copyright (c) egakareta <team@egakareta.com>.
+# Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+# See LICENSE and COMMERCIAL.md for details.
+[package]
+name = "egb"
+version = "0.1.0"
+edition = "2021"
+description = "Level metadata conversion helper for egakareta."
+repository = "https://github.com/egakareta/egakareta"
+license = "AGPL-3.0-only"
+
+[[bin]]
+name = "egb"
+path = "src/main.rs"
+
+[dependencies]
+eg-level = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tempfile = { workspace = true }

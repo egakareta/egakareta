@@ -902,58 +902,258 @@ dependencies = [
 ]
 
 [[package]]
-name = "egakareta"
+name = "eg-app"
 version = "0.1.0"
 dependencies = [
- "arboard",
- "async-trait",
- "bytemuck",
  "console_error_panic_hook",
  "console_log",
- "cpal",
  "criterion",
- "directories",
+ "eg-game",
+ "eg-mesh",
+ "eg-platform",
+ "eg-render",
+ "eg-state",
+ "eg-types",
+ "eg-ui",
  "egui",
  "egui-phosphor",
  "egui-wgpu",
  "egui-winit",
  "env_logger",
- "glam",
  "gloo-console",
- "gloo-file",
- "gloo-net",
- "gloo-utils",
  "image",
- "include_dir",
  "js-sys",
  "log",
  "naga",
  "parking_lot_core",
- "paste",
  "pollster",
  "puffin",
- "puffin_egui",
- "rayon",
- "reqwest",
- "rexie",
- "rfd",
- "rodio",
  "serde",
  "serde_cbor",
  "serde_json",
- "sha2",
- "symphonia 0.6.0",
  "tempfile",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-rayon",
  "web-sys",
+ "winit",
+ "winres",
+ "zstd",
+]
+
+[[package]]
+name = "eg-audio"
+version = "0.1.0"
+dependencies = [
+ "cpal",
+ "eg-level",
+ "eg-platform",
+ "eg-types",
+ "js-sys",
+ "log",
+ "rodio",
+ "sha2",
+ "symphonia 0.6.0",
+ "wasm-bindgen",
+ "web-sys",
+ "web-time",
+]
+
+[[package]]
+name = "eg-block-geometry"
+version = "0.1.0"
+dependencies = [
+ "eg-blocks",
+ "eg-types",
+ "glam",
+]
+
+[[package]]
+name = "eg-blocks"
+version = "0.1.0"
+dependencies = [
+ "eg-types",
+ "image",
+ "include_dir",
+ "log",
+ "serde_json",
+]
+
+[[package]]
+name = "eg-codec"
+version = "0.1.0"
+dependencies = [
+ "eg-types",
+ "serde",
+ "serde_cbor",
+ "serde_json",
+ "zstd",
+]
+
+[[package]]
+name = "eg-editor-domain"
+version = "0.1.0"
+dependencies = [
+ "eg-block-geometry",
+ "eg-game",
+ "eg-types",
+ "serde_json",
+]
+
+[[package]]
+name = "eg-game"
+version = "0.1.0"
+dependencies = [
+ "eg-block-geometry",
+ "eg-blocks",
+ "eg-types",
+ "glam",
+ "puffin",
+]
+
+[[package]]
+name = "eg-level"
+version = "0.1.0"
+dependencies = [
+ "eg-codec",
+ "eg-types",
+ "include_dir",
+ "serde_json",
+ "zip",
+]
+
+[[package]]
+name = "eg-mesh"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "eg-block-geometry",
+ "eg-blocks",
+ "eg-types",
+ "glam",
+ "include_dir",
+ "log",
+ "puffin",
+ "rayon",
+ "serde",
+ "serde_cbor",
+ "wgpu",
+ "zstd",
+]
+
+[[package]]
+name = "eg-platform"
+version = "0.1.0"
+dependencies = [
+ "arboard",
+ "async-trait",
+ "directories",
+ "eg-level",
+ "eg-types",
+ "gloo-console",
+ "gloo-file",
+ "gloo-net",
+ "gloo-utils",
+ "js-sys",
+ "log",
+ "pollster",
+ "rayon",
+ "reqwest",
+ "rexie",
+ "rfd",
+ "serde",
+ "serde_cbor",
+ "serde_json",
+ "tempfile",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
  "web-time",
  "wgpu",
  "winit",
- "winres",
- "zip",
- "zstd",
+]
+
+[[package]]
+name = "eg-render"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "eg-block-geometry",
+ "eg-blocks",
+ "eg-mesh",
+ "eg-types",
+ "egui",
+ "egui-wgpu",
+ "glam",
+ "naga",
+ "pollster",
+ "puffin",
+ "wgpu",
+]
+
+[[package]]
+name = "eg-state"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "eg-audio",
+ "eg-block-geometry",
+ "eg-blocks",
+ "eg-editor-domain",
+ "eg-game",
+ "eg-level",
+ "eg-mesh",
+ "eg-platform",
+ "eg-render",
+ "eg-types",
+ "egui",
+ "egui-wgpu",
+ "glam",
+ "js-sys",
+ "log",
+ "pollster",
+ "puffin",
+ "serde_json",
+ "tempfile",
+ "web-time",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
+name = "eg-types"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "paste",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "eg-ui"
+version = "0.1.0"
+dependencies = [
+ "eg-blocks",
+ "eg-state",
+ "eg-types",
+ "egui",
+ "egui-phosphor",
+ "glam",
+ "image",
+ "js-sys",
+ "pollster",
+ "puffin",
+ "puffin_egui",
+]
+
+[[package]]
+name = "egb"
+version = "0.1.0"
+dependencies = [
+ "eg-level",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

@@ -1,0 +1,25 @@
+# Copyright (c) egakareta <team@egakareta.com>.
+# Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+# See LICENSE and COMMERCIAL.md for details.
+[package]
+name = "eg-mesh"
+version = "0.1.0"
+edition = "2021"
+description = "Mesh generation for egakareta."
+repository = "https://github.com/egakareta/egakareta"
+license = "AGPL-3.0-only"
+
+[dependencies]
+bytemuck = { workspace = true }
+eg-block-geometry = { workspace = true }
+eg-blocks = { workspace = true }
+eg-types = { workspace = true }
+glam = { workspace = true }
+include_dir = { workspace = true }
+log = { workspace = true }
+puffin = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+serde_cbor = { workspace = true }
+wgpu = { workspace = true }
+zstd = { workspace = true }

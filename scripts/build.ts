@@ -11,6 +11,12 @@ import fs from "fs";
 import path from "path";
 import url from "url";
 
+const WASM_ATOMICS_WARNING_LINES = [
+    "warning: unstable feature specified for `-Ctarget-feature`: `atomics`",
+    "  |",
+    "  = note: this feature is not stably supported; its behavior can change in the future",
+];
+
 const rootDir = path.resolve(
     path.dirname(url.fileURLToPath(import.meta.url)),
     "..",
@@ -35,18 +41,21 @@ const proc = Bun.spawn(
         "bunx",
         "wasm-pack",
         "build",
+        "crates/eg-app",
         "-t",
         "web",
         "-d",
-        "target/pkg",
+        "../../target/pkg",
         ...process.argv.slice(2),
     ],
     {
         stdin: "inherit",
         stdout: "inherit",
-        stderr: "inherit",
+        stderr: "pipe",
     },
 );
+
+const stderrTask = forwardFilteredWasmPackStderr(proc.stderr);
 
 // Ensure the build process is killed if this script is terminated
 let shuttingDown = false;
@@ -58,14 +67,87 @@ function shutdown() {
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
-proc.exited.then((exitCode) => {
+(async () => {
+    const [exitCode] = await Promise.all([proc.exited, stderrTask]);
+
     if (exitCode !== 0) {
         console.error(`wasm-pack exited with code ${exitCode}`);
         process.exit(exitCode || 1);
     } else {
         createDist();
     }
-});
+})();
+
+async function forwardFilteredWasmPackStderr(
+    stderr: ReadableStream<Uint8Array> | null,
+) {
+    if (!stderr) {
+        return;
+    }
+
+    const decoder = new TextDecoder();
+    const reader = stderr.getReader();
+    let bufferedText = "";
+    let candidateLines: string[] = [];
+    let skippingAtomicsWarningSpacing = false;
+
+    const flushCandidateLines = () => {
+        while (candidateLines.length > 0) {
+            const matchesAtomicsWarningPrefix = candidateLines.every(
+                (line, index) =>
+                    line.replace(/\r?\n$/, "") ===
+                    WASM_ATOMICS_WARNING_LINES[index],
+            );
+
+            if (matchesAtomicsWarningPrefix) {
+                if (
+                    candidateLines.length === WASM_ATOMICS_WARNING_LINES.length
+                ) {
+                    candidateLines = [];
+                    skippingAtomicsWarningSpacing = true;
+                }
+                return;
+            }
+
+            process.stderr.write(candidateLines.shift() ?? "");
+        }
+    };
+
+    const handleLine = (line: string) => {
+        if (skippingAtomicsWarningSpacing) {
+            if (line.trim() === "") {
+                return;
+            }
+            skippingAtomicsWarningSpacing = false;
+        }
+
+        candidateLines.push(line);
+        flushCandidateLines();
+    };
+
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) {
+            break;
+        }
+
+        bufferedText += decoder.decode(value, { stream: true });
+        let lineEnd = bufferedText.indexOf("\n");
+        while (lineEnd !== -1) {
+            handleLine(bufferedText.slice(0, lineEnd + 1));
+            bufferedText = bufferedText.slice(lineEnd + 1);
+            lineEnd = bufferedText.indexOf("\n");
+        }
+    }
+
+    bufferedText += decoder.decode();
+    if (bufferedText) {
+        handleLine(bufferedText);
+    }
+    for (const line of candidateLines) {
+        process.stderr.write(line);
+    }
+}
 
 async function createDist() {
     const start = Date.now();

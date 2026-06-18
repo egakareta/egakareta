@@ -1,0 +1,17 @@
+# Copyright (c) egakareta <team@egakareta.com>.
+# Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+# See LICENSE and COMMERCIAL.md for details.
+[package]
+name = "eg-blocks"
+version = "0.1.0"
+edition = "2021"
+description = "Block catalog and texture atlas loading for egakareta."
+repository = "https://github.com/egakareta/egakareta"
+license = "AGPL-3.0-only"
+
+[dependencies]
+eg-types = { workspace = true }
+image = { workspace = true, features = ["ico", "png"] }
+include_dir = { workspace = true }
+log = { workspace = true }
+serde_json = { workspace = true }

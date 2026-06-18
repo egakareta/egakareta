@@ -1,0 +1,1551 @@
+/*
+
+* Copyright (c) egakareta <team@egakareta.com>.
+* Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+* See LICENSE and COMMERCIAL.md for details.
+
+*/
+use super::State;
+use eg_editor_domain::{
+    build_editor_playtest_transition, build_playing_transition_from_metadata,
+    derive_tap_indicator_positions, editor_session_init_from_metadata,
+    EditorPlaytestTransitionParams,
+};
+use eg_game::GameState;
+use eg_level::{
+    build_level_binary_export, build_level_export, load_builtin_level_metadata,
+    parse_level_binary_import, parse_level_egz_import,
+};
+use eg_mesh::build_block_obj;
+use eg_platform::io::{log_platform_error, read_editor_music_bytes};
+use eg_platform::services::{trigger_level_export, trigger_level_import};
+use eg_types::{
+    default_sky_color, EditorStateParams, LevelCreatorMetadata, LevelMetadata, LevelObject,
+    LevelPreviewCameraMetadata, MusicMetadata, SpawnDirection, SpawnMetadata,
+};
+use eg_types::{
+    AppPhase, AppSettings, EditorMode, KeyChord, SettingsSection,
+    DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
+};
+use glam::Vec3;
+
+impl State {
+    pub(super) fn apply_playing_transition_objects(
+        &mut self,
+        objects: Vec<LevelObject>,
+        level_duration_seconds: f32,
+    ) {
+        self.gameplay.state.objects = objects;
+        self.gameplay.state.rebuild_behavior_cache();
+        self.gameplay.state.initialize_level_progress_from_objects();
+        self.gameplay
+            .state
+            .set_level_duration_seconds(level_duration_seconds);
+        self.session.playing_trigger_base_objects = Some(self.gameplay.state.objects.clone());
+    }
+
+    pub(super) fn start_level(&mut self, index: usize) {
+        let level_name = self.menu.state.levels[index].clone();
+
+        self.gameplay.state = GameState::new();
+        self.enter_playing_phase(Some(level_name.clone()), false);
+
+        self.stop_audio();
+
+        if let Some(metadata) = self.load_level_metadata(&level_name) {
+            self.preload_runtime_audio(&level_name, &metadata.music.source);
+            self.editor.set_triggers(metadata.resolved_triggers());
+            self.editor.set_trigger_selected(None);
+            self.session.playing_trigger_hitboxes = metadata.simulate_trigger_hitboxes;
+            let transition = build_playing_transition_from_metadata(metadata);
+            log::debug!("Starting level: {}", transition.level_name);
+            self.session.playing_sky_color = transition.sky_color;
+            self.apply_playing_transition_objects(
+                transition.objects,
+                transition.level_duration_seconds,
+            );
+            self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction, None);
+        }
+
+        self.rebuild_block_vertices();
+        self.rebuild_editor_cursor_vertices();
+        self.rebuild_spawn_marker_vertices();
+    }
+
+    pub(super) fn restart_level(&mut self) {
+        self.session.game_paused = false;
+        self.session.practice_mode_enabled = false;
+        self.session.practice_checkpoints.clear();
+        self.gameplay.death_sfx_played = false;
+        self.rebuild_practice_checkpoint_vertices();
+        self.stop_audio();
+        self.clear_pending_gameplay_inputs();
+        self.gameplay.state = GameState::new();
+
+        if self.session.playtesting_editor {
+            let transition = build_editor_playtest_transition(EditorPlaytestTransitionParams {
+                objects: &self.editor.objects,
+                level_name: self.session.editor_level_name.as_deref(),
+                spawn: self.editor.spawn.clone(),
+                sky_color: self.session.editor_sky_color,
+                tap_times: &self.editor.timeline.taps.tap_times,
+                triggers: &self.editor.triggers(),
+                simulate_trigger_hitboxes: self.editor.simulate_trigger_hitboxes(),
+                timeline_seconds: (
+                    self.editor.timeline.clock.time_seconds,
+                    self.editor.timeline.clock.duration_seconds,
+                ),
+            });
+            let metadata = self.current_editor_metadata();
+            let level_name = transition
+                .playing_level_name
+                .clone()
+                .unwrap_or_else(|| "Untitled".to_string());
+            self.warmup_audio_at_seconds(
+                &level_name,
+                &metadata,
+                transition.playtest_audio_start_seconds,
+            );
+            self.session.playtest_audio_start_seconds =
+                Some(transition.playtest_audio_start_seconds);
+            self.session.playing_sky_color = transition.sky_color;
+            self.session.playing_trigger_hitboxes = self.editor.simulate_trigger_hitboxes();
+            self.apply_playing_transition_objects(
+                transition.objects,
+                transition.level_duration_seconds,
+            );
+            self.apply_spawn_exact_to_game(
+                transition.spawn_position,
+                transition.spawn_direction,
+                Some(transition.spawn_speed),
+            );
+            self.gameplay.state.vertical_velocity = transition.spawn_vertical_velocity;
+            self.gameplay.state.is_grounded = transition.spawn_is_grounded;
+            self.gameplay.state.elapsed_seconds = transition.playtest_audio_start_seconds;
+        } else if let Some(level_name) = self.session.playing_level_name.clone() {
+            self.session.playtest_audio_start_seconds = None;
+            if let Some(metadata) = self.load_level_metadata(&level_name) {
+                self.editor.set_triggers(metadata.resolved_triggers());
+                self.editor.set_trigger_selected(None);
+                self.session.playing_trigger_hitboxes = metadata.simulate_trigger_hitboxes;
+                let transition = build_playing_transition_from_metadata(metadata);
+                self.session.playing_sky_color = transition.sky_color;
+                self.apply_playing_transition_objects(
+                    transition.objects,
+                    transition.level_duration_seconds,
+                );
+                self.apply_spawn_to_game(
+                    transition.spawn_position,
+                    transition.spawn_direction,
+                    None,
+                );
+            }
+        }
+
+        self.gameplay.state.started = false;
+        self.reset_playing_camera_defaults();
+        self.rebuild_block_vertices();
+    }
+
+    pub(super) fn respawn_from_practice_checkpoint(&mut self) -> bool {
+        if self.phase != AppPhase::Playing
+            || self.session.playtesting_editor
+            || !self.session.practice_mode_enabled
+        {
+            return false;
+        }
+
+        let Some(checkpoint) = self.session.practice_checkpoints.last().cloned() else {
+            self.restart_level();
+            self.session.practice_mode_enabled = true;
+            self.session.practice_checkpoints.clear();
+            return true;
+        };
+
+        self.stop_audio();
+        self.clear_pending_gameplay_inputs();
+        self.gameplay
+            .state
+            .restore_checkpoint_state(&checkpoint.gameplay);
+        self.gameplay.death_sfx_played = false;
+        self.session.playing_trigger_base_objects = checkpoint.trigger_base_objects;
+
+        if let Some(level_name) = self.session.playing_level_name.clone() {
+            if let Some(metadata) = self.load_level_metadata(&level_name) {
+                self.warmup_audio_at_seconds(
+                    &level_name,
+                    &metadata,
+                    self.gameplay.state.elapsed_seconds,
+                );
+            }
+        }
+
+        self.rebuild_block_vertices();
+        true
+    }
+
+    pub(super) fn start_editor(&mut self, index: usize) {
+        let level_name = self.menu.state.levels[index].clone();
+        self.stop_audio();
+
+        self.enter_editor_phase(level_name.clone());
+
+        let init = editor_session_init_from_metadata(self.load_level_metadata(&level_name));
+        self.editor.objects = init.objects;
+        self.editor.spawn = init.spawn;
+        self.session.editor_music_metadata = init.music;
+        self.session.editor_creator_metadata = init.creator_metadata;
+        self.session.editor_sky_color = init.sky_color;
+        self.editor.timeline.taps.tap_times = init.tap_times;
+        self.editor.timing.timing_points = init.timing_points;
+        self.editor.timing.mark_timing_points_changed();
+        self.editor.timing.timing_selected_index = None;
+        self.editor.set_triggers(init.triggers);
+        self.editor.set_trigger_selected(None);
+        self.editor
+            .set_simulate_trigger_hitboxes(init.simulate_trigger_hitboxes);
+        self.session.editor_menu_preview_camera = init.menu_preview_camera;
+        self.editor.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
+            self.editor.spawn.position,
+            self.editor.spawn.direction,
+            &self.editor.timeline.taps.tap_times,
+            &self.editor.objects,
+        );
+        self.editor.timeline.clock.time_seconds = init.timeline_time_seconds;
+        self.editor.timeline.clock.duration_seconds = init.timeline_duration_seconds;
+        self.editor.ui.cursor = init.cursor;
+        self.editor.camera.editor_pan = init.camera_pan;
+        self.editor.camera.editor_target_z = init.cursor[1];
+
+        self.sync_editor_objects();
+        self.set_editor_timeline_time_seconds(self.editor.timeline.clock.time_seconds);
+        self.rebuild_spawn_marker_vertices();
+    }
+
+    pub(super) fn load_level_metadata(&self, level_name: &str) -> Option<LevelMetadata> {
+        load_builtin_level_metadata(level_name)
+    }
+
+    /// Exports the current editor level to the egakareta zip (.egz) format.
+    ///
+    /// This format bundles level metadata with the required audio file into a single binary blob.
+    pub fn export_level_egz(&self) -> Result<Vec<u8>, String> {
+        let metadata = self.current_editor_metadata();
+        let audio_bytes = self
+            .audio
+            .state
+            .editor
+            .local_audio_cache
+            .get(&metadata.music.source)
+            .cloned()
+            .or_else(|| {
+                read_editor_music_bytes(
+                    self.session.editor_level_name.as_deref(),
+                    &metadata.music.source,
+                )
+            });
+
+        build_level_export(&metadata, audio_bytes)
+    }
+
+    /// Imports a level from the egakareta Zip (.egz) binary format.
+    ///
+    /// This replaces the current editor level and caches any bundled audio data.
+    pub fn import_level_egz(&mut self, data: &[u8]) -> Result<(), String> {
+        let (metadata, audio_bytes) = parse_level_egz_import(data)?;
+        if let Some(bytes) = audio_bytes {
+            self.audio
+                .state
+                .editor
+                .local_audio_cache
+                .insert(metadata.music.source.clone(), bytes);
+        }
+        self.apply_imported_level_metadata(metadata);
+        Ok(())
+    }
+
+    /// Exports the current editor level metadata to binary bytes.
+    pub fn export_level(&self) -> Result<Vec<u8>, String> {
+        build_level_binary_export(&self.current_editor_metadata())
+    }
+
+    /// Imports level metadata from a binary payload.
+    ///
+    /// This replaces the current editor level metadata.
+    pub fn import_level(&mut self, data: &[u8]) -> Result<(), String> {
+        let metadata = parse_level_binary_import(data)?;
+        self.apply_imported_level_metadata(metadata);
+
+        Ok(())
+    }
+
+    pub(super) fn current_editor_metadata(&self) -> LevelMetadata {
+        LevelMetadata::from_editor_state(EditorStateParams {
+            name: self
+                .session
+                .editor_level_name
+                .clone()
+                .unwrap_or_else(|| "Untitled".to_string()),
+            creator_metadata: self.session.editor_creator_metadata.clone(),
+            music: self.session.editor_music_metadata.clone(),
+            spawn: self.editor.spawn.clone(),
+            sky_color: self.session.editor_sky_color,
+            tap_times: self.editor.timeline.taps.tap_times.clone(),
+            timing_points: self.editor.timing.timing_points.clone(),
+            timeline_time_seconds: self.editor.timeline.clock.time_seconds,
+            timeline_duration_seconds: self.editor.timeline.clock.duration_seconds,
+            simulate_trigger_hitboxes: self.editor.simulate_trigger_hitboxes(),
+            menu_preview_camera: self.session.editor_menu_preview_camera.clone(),
+            objects: self.editor.objects.clone(),
+        })
+    }
+
+    pub fn apply_imported_level_metadata(&mut self, metadata: LevelMetadata) {
+        let level_name = metadata.name.clone();
+        let init = editor_session_init_from_metadata(Some(metadata));
+
+        self.editor.objects = init.objects;
+        self.editor.clear_block_selection();
+        self.editor.spawn = init.spawn;
+        self.editor.timeline.taps.tap_times = init.tap_times;
+        self.editor.timing.timing_points = init.timing_points;
+        self.editor.timing.mark_timing_points_changed();
+        self.editor
+            .timing
+            .timing_points
+            .sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
+        self.editor.timing.timing_selected_index = None;
+        self.editor.set_triggers(init.triggers);
+        self.editor.set_trigger_selected(None);
+        self.editor
+            .set_simulate_trigger_hitboxes(init.simulate_trigger_hitboxes);
+        self.session.editor_menu_preview_camera = init.menu_preview_camera;
+        self.session.editor_creator_metadata = init.creator_metadata;
+        self.session.editor_sky_color = init.sky_color;
+        self.editor.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
+            self.editor.spawn.position,
+            self.editor.spawn.direction,
+            &self.editor.timeline.taps.tap_times,
+            &self.editor.objects,
+        );
+        self.editor.timeline.clock.time_seconds = init.timeline_time_seconds;
+        self.editor.timeline.clock.duration_seconds = init.timeline_duration_seconds;
+        self.session.editor_level_name = Some(level_name);
+        self.session.editor_music_metadata = init.music;
+        self.editor.ui.cursor = init.cursor;
+        self.editor.camera.editor_pan = init.camera_pan;
+        self.editor.camera.editor_target_z = init.cursor[1];
+
+        self.editor.runtime.history.undo.clear();
+        self.editor.runtime.history.redo.clear();
+
+        self.sync_editor_objects();
+        self.set_editor_timeline_time_seconds(self.editor.timeline.clock.time_seconds);
+        self.rebuild_spawn_marker_vertices();
+    }
+
+    /// Loads a built-in level by name into the editor.
+    ///
+    /// This stops any active audio and resets the editor's internal state
+    /// before performing the import.
+    pub fn load_builtin_level_into_editor(&mut self, name: &str) {
+        if let Some(metadata) = self.load_level_metadata(name) {
+            self.stop_audio();
+            self.editor.timeline.playback.playing = false;
+            self.editor.timeline.playback.runtime = None;
+            self.editor.runtime.interaction.clipboard = None;
+            self.apply_imported_level_metadata(metadata);
+            self.session.editor_level_name = Some(name.to_string());
+
+            if self.editor_mode() == EditorMode::Timing {
+                self.load_waveform_for_current_audio();
+            }
+        }
+    }
+
+    /// Returns the name of the level currently being edited.
+    pub fn editor_level_name(&self) -> Option<String> {
+        self.session.editor_level_name.clone()
+    }
+
+    /// Sets the name for the level currently being edited.
+    pub fn set_editor_level_name(&mut self, name: String) {
+        self.session.editor_level_name = Some(name);
+    }
+
+    pub fn editor_music_metadata(&self) -> &MusicMetadata {
+        &self.session.editor_music_metadata
+    }
+
+    pub fn set_editor_music_metadata(&mut self, metadata: MusicMetadata) {
+        self.session.editor_music_metadata = metadata;
+    }
+
+    pub fn editor_creator_metadata(&self) -> &LevelCreatorMetadata {
+        &self.session.editor_creator_metadata
+    }
+
+    pub fn set_editor_creator_metadata(&mut self, metadata: LevelCreatorMetadata) {
+        self.session.editor_creator_metadata = metadata;
+    }
+
+    pub fn editor_sky_color(&self) -> [f32; 3] {
+        self.session.editor_sky_color
+    }
+
+    pub fn set_editor_sky_color(&mut self, color: [f32; 3]) {
+        self.session.editor_sky_color = color.map(|component| component.clamp(0.0, 1.0));
+    }
+
+    pub fn editor_capture_menu_preview_camera(&mut self) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        let target = Vec3::new(
+            self.editor.camera.editor_pan[0],
+            self.editor.camera.editor_target_z,
+            self.editor.camera.editor_pan[1],
+        );
+        let position = (target + self.editor_camera_offset()).to_array();
+        self.session.editor_menu_preview_camera = Some(LevelPreviewCameraMetadata {
+            position,
+            target: target.to_array(),
+        });
+    }
+
+    pub fn editor_use_auto_menu_preview_camera(&mut self) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+        self.session.editor_menu_preview_camera = None;
+    }
+
+    pub(super) fn refresh_menu_level_preview_if_needed(&mut self) {
+        if self.phase != AppPhase::Menu {
+            return;
+        }
+
+        if self.menu.state.preview_level_index == Some(self.menu.state.selected_level) {
+            return;
+        }
+
+        self.menu.state.preview_level_index = Some(self.menu.state.selected_level);
+
+        let Some(level_name) = self.menu.state.levels.get(self.menu.state.selected_level) else {
+            self.reset_menu_preview_to_default_scene();
+            return;
+        };
+
+        let Some(metadata) = self.load_level_metadata(level_name) else {
+            self.reset_menu_preview_to_default_scene();
+            return;
+        };
+
+        let (position, target) = menu_preview_camera_for_metadata(&metadata);
+        self.gameplay.state.objects = metadata.objects;
+        self.gameplay.state.rebuild_behavior_cache();
+        self.menu.state.preview_sky_color = metadata.sky_color;
+        self.menu.state.preview_camera_position = position;
+        self.menu.state.preview_camera_target = target;
+        self.rebuild_block_vertices();
+    }
+
+    fn reset_menu_preview_to_default_scene(&mut self) {
+        self.gameplay.state.objects = eg_game::create_menu_scene();
+        self.gameplay.state.rebuild_behavior_cache();
+        self.menu.state.preview_sky_color = default_sky_color();
+        self.menu.state.preview_camera_position = DEFAULT_MENU_PREVIEW_CAMERA_POSITION;
+        self.menu.state.preview_camera_target = DEFAULT_MENU_PREVIEW_CAMERA_TARGET;
+        self.rebuild_block_vertices();
+    }
+
+    pub fn editor_show_settings(&self) -> bool {
+        self.session.editor_show_settings
+    }
+
+    pub fn set_editor_show_settings(&mut self, show: bool) {
+        self.session.editor_show_settings = show;
+        if !show {
+            self.session.editor_keybind_capture_action = None;
+        }
+    }
+
+    pub fn editor_settings_section(&self) -> SettingsSection {
+        self.session.editor_settings_section
+    }
+
+    pub fn set_editor_settings_section(&mut self, section: SettingsSection) {
+        self.session.editor_settings_section = section;
+    }
+
+    pub fn editor_keybind_capture_action(&self) -> Option<&(String, usize)> {
+        self.session.editor_keybind_capture_action.as_ref()
+    }
+
+    pub fn set_editor_keybind_capture_action(&mut self, action: Option<(String, usize)>) {
+        self.session.editor_keybind_capture_action = action;
+    }
+
+    pub fn app_settings(&self) -> &AppSettings {
+        &self.session.app_settings
+    }
+
+    pub fn menu_selected_level_progress(&self) -> Option<eg_types::PlayerLevelProgress> {
+        let level_name = self.menu_level_name()?;
+        self.session
+            .app_settings
+            .level_progress
+            .get(level_name)
+            .copied()
+    }
+
+    pub fn record_current_level_progress(&mut self) {
+        if self.session.playtesting_editor {
+            return;
+        }
+
+        let Some(level_name) = self.session.playing_level_name.clone() else {
+            return;
+        };
+
+        let progress = self.gameplay.state.level_progress();
+        if self
+            .session
+            .app_settings
+            .update_level_progress(&level_name, progress)
+        {
+            self.persist_app_settings();
+        }
+    }
+
+    pub fn available_graphics_backends(&self) -> &[String] {
+        &self.session.available_graphics_backends
+    }
+
+    pub fn available_audio_backends(&self) -> &[String] {
+        &self.session.available_audio_backends
+    }
+
+    pub fn settings_restart_required(&self) -> bool {
+        self.session.settings_restart_required
+    }
+
+    pub fn set_preferred_graphics_backend(&mut self, backend_name: String) {
+        if self.session.app_settings.graphics_backend == backend_name {
+            return;
+        }
+
+        self.session.app_settings.graphics_backend = backend_name;
+        self.session.settings_restart_required = true;
+        self.persist_app_settings();
+    }
+
+    pub fn set_preferred_audio_backend(&mut self, backend_name: String) {
+        if !self
+            .audio
+            .state
+            .runtime
+            .set_preferred_backend_name(&backend_name)
+        {
+            return;
+        }
+
+        self.session.app_settings.audio_backend = backend_name;
+        self.persist_app_settings();
+    }
+
+    pub fn set_ui_scale_multiplier(&mut self, multiplier: f32) {
+        let clamped = AppSettings::clamp_ui_scale_multiplier(multiplier);
+        if (self.session.app_settings.ui_scale_multiplier - clamped).abs() <= 1e-6 {
+            return;
+        }
+        self.session.app_settings.ui_scale_multiplier = clamped;
+        self.persist_app_settings();
+    }
+
+    pub fn set_keybind_for_action(&mut self, action: String, slot: usize, chord: KeyChord) {
+        self.session
+            .app_settings
+            .set_keybind_at_slot(&action, slot, chord);
+        self.persist_app_settings();
+    }
+
+    pub fn clear_keybind_slot_for_action(&mut self, action: &str, slot: usize) {
+        self.session.app_settings.clear_keybind_slot(action, slot);
+        self.persist_app_settings();
+    }
+
+    pub fn reset_keybind_for_action(&mut self, action: &str) {
+        self.session.app_settings.reset_keybind(action);
+        self.persist_app_settings();
+    }
+
+    pub fn reset_essential_keybinds(&mut self) {
+        self.session.app_settings.reset_essential_keybinds();
+        self.persist_app_settings();
+    }
+
+    pub fn persist_app_settings(&self) {
+        let settings = self.session.app_settings.clone();
+        eg_platform::task::spawn_background(async move {
+            if let Err(error) = eg_platform::io::save_app_settings_to_storage(&settings).await {
+                eg_platform::io::log_platform_error(&format!(
+                    "Failed to persist app settings: {error}"
+                ));
+            }
+        });
+    }
+
+    pub fn editor_show_metadata(&self) -> bool {
+        self.session.editor_show_metadata
+    }
+
+    pub fn set_editor_show_metadata(&mut self, show: bool) {
+        self.session.editor_show_metadata = show;
+    }
+
+    pub fn editor_show_place_window(&self) -> bool {
+        self.session.editor_show_place_window
+    }
+
+    pub fn set_editor_show_place_window(&mut self, show: bool) {
+        self.session.editor_show_place_window = show;
+    }
+
+    /// Returns a list of all level names available in the application's built-in repository.
+    pub fn available_levels(&self) -> &[String] {
+        &self.menu.state.levels
+    }
+
+    /// Returns the name of the currently selected level in the menu.
+    pub fn menu_level_name(&self) -> Option<&str> {
+        self.menu
+            .state
+            .levels
+            .get(self.menu.state.selected_level)
+            .map(|s| s.as_str())
+    }
+
+    /// Triggers a platform-specific export of the current level as an `.egz` file.
+    pub fn trigger_level_export(&self) {
+        match self.export_level_egz() {
+            Ok(data) => {
+                let filename = format!(
+                    "{}.egz",
+                    self.editor_level_name()
+                        .unwrap_or_else(|| "level".to_string())
+                );
+
+                trigger_level_export(&filename, &data);
+            }
+            Err(e) => {
+                log_platform_error(&format!("Export failed: {}", e));
+            }
+        }
+    }
+
+    /// Triggers a platform-specific export of the currently selected block as an `.obj` 3D model.
+    ///
+    /// This is useful for exporting custom block geometry for use in other 3D software.
+    pub fn trigger_selected_block_obj_export(&self) {
+        if self.phase != AppPhase::Editor {
+            return;
+        }
+
+        let Some(block) = self.editor_selected_block() else {
+            log_platform_error("OBJ export failed: no selected block");
+            return;
+        };
+
+        let sanitized_id = block
+            .block_id
+            .chars()
+            .map(|character| {
+                if character.is_ascii_alphanumeric() || character == '-' || character == '_' {
+                    character
+                } else {
+                    '_'
+                }
+            })
+            .collect::<String>();
+
+        let object_name = if sanitized_id.is_empty() {
+            "block".to_string()
+        } else {
+            sanitized_id
+        };
+
+        let filename = format!("{}_selected.obj", object_name);
+        let obj = build_block_obj(&block, &object_name);
+
+        trigger_level_export(&filename, obj.as_bytes());
+    }
+
+    pub fn update_level_imports(&mut self) {
+        while let Ok(bytes) = self.session.editor_level_import_channel.1.try_recv() {
+            match self.import_level_egz(&bytes) {
+                Ok(()) => continue,
+                Err(egz_error) => {
+                    if let Err(binary_error) = self.import_level(&bytes) {
+                        log_platform_error(&format!(
+                            "Level import failed (.egz parse error: {egz_error}; binary parse error: {binary_error})"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Triggers the level import file picker and starts async import when a file is selected.
+    pub fn complete_import(&mut self) {
+        trigger_level_import(self.session.editor_level_import_channel.0.clone());
+    }
+}
+
+fn menu_preview_camera_for_metadata(metadata: &LevelMetadata) -> ([f32; 3], [f32; 3]) {
+    metadata
+        .menu_preview_camera
+        .as_ref()
+        .map(|preview| (preview.position, preview.target))
+        .unwrap_or_else(|| auto_menu_preview_camera_from_spawn(&metadata.spawn))
+}
+
+fn auto_menu_preview_camera_from_spawn(spawn: &SpawnMetadata) -> ([f32; 3], [f32; 3]) {
+    // Tuned to keep a broad, readable menu composition:
+    // - target a little ahead/above the spawn so the route direction is visible
+    // - place camera behind and to the side with elevated height for coverage
+    const PREVIEW_TARGET_FORWARD_DISTANCE: f32 = 10.0;
+    const PREVIEW_TARGET_HEIGHT_OFFSET: f32 = 1.0;
+    const PREVIEW_CAMERA_BACK_DISTANCE: f32 = 20.0;
+    const PREVIEW_CAMERA_SIDE_OFFSET: f32 = 12.0;
+    const PREVIEW_CAMERA_HEIGHT_OFFSET: f32 = 14.0;
+
+    let spawn_position = Vec3::from_array(spawn.position);
+    let forward = match spawn.direction {
+        SpawnDirection::Forward => Vec3::new(0.0, 0.0, 1.0),
+        SpawnDirection::Right => Vec3::new(1.0, 0.0, 0.0),
+    };
+    let side = Vec3::new(forward.z, 0.0, -forward.x);
+    let target = spawn_position
+        + forward * PREVIEW_TARGET_FORWARD_DISTANCE
+        + Vec3::new(0.0, PREVIEW_TARGET_HEIGHT_OFFSET, 0.0);
+    let eye = spawn_position - forward * PREVIEW_CAMERA_BACK_DISTANCE
+        + side * PREVIEW_CAMERA_SIDE_OFFSET
+        + Vec3::new(0.0, PREVIEW_CAMERA_HEIGHT_OFFSET, 0.0);
+    (eye.to_array(), target.to_array())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::{auto_menu_preview_camera_from_spawn, menu_preview_camera_for_metadata, State};
+    use crate::commands::AppCommand;
+    use crate::state::editor_command::EditorCommand;
+    use eg_types::{
+        default_sky_color, EditorStateParams, LevelCreatorMetadata, LevelMetadata, LevelObject,
+        LevelPreviewCameraMetadata, MusicMetadata, SpawnDirection, SpawnMetadata,
+    };
+    use eg_types::{
+        AppPhase, KeyChord, SettingsSection, DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
+        DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
+    };
+
+    struct ArtifactCleanup {
+        paths: Vec<String>,
+    }
+
+    impl ArtifactCleanup {
+        fn new(paths: Vec<String>) -> Self {
+            for path in &paths {
+                let _ = fs::remove_file(path);
+            }
+            Self { paths }
+        }
+    }
+
+    impl Drop for ArtifactCleanup {
+        fn drop(&mut self) {
+            for path in &self.paths {
+                let _ = fs::remove_file(path);
+            }
+        }
+    }
+
+    fn test_object(position: [f32; 3], block_id: &str) -> LevelObject {
+        LevelObject {
+            position,
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            block_id: block_id.to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
+        }
+    }
+
+    #[test]
+    fn level_binary_export_import_roundtrip_restores_editor_state() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.enter_editor_phase("RoundtripSource".to_string());
+
+            state.set_editor_level_name("RoundtripSource".to_string());
+            state.set_editor_music_metadata(MusicMetadata {
+                source: "roundtrip.mp3".to_string(),
+                ..MusicMetadata::default()
+            });
+            state.set_editor_creator_metadata(LevelCreatorMetadata {
+                creator: Some("Roundtrip Author".to_string()),
+                description: None,
+                stars: 6.5,
+                tags: vec!["binary".to_string(), "roundtrip".to_string()],
+                version: Some("1.0".to_string()),
+            });
+            state.editor.objects = vec![test_object([2.0, 1.0, 3.0], "core/grass")];
+            state.editor.spawn.position = [3.0, 0.0, 4.0];
+            state.editor.timeline.taps.tap_times = vec![0.25, 0.5];
+            state.editor.timeline.clock.time_seconds = 0.5;
+            state.editor.timeline.clock.duration_seconds = 12.0;
+
+            let expected = state.current_editor_metadata();
+            let exported = state
+                .export_level()
+                .expect("export should produce binary payload");
+
+            state.editor.objects.clear();
+            state.editor.spawn.position = [99.0, 0.0, 99.0];
+            state.set_editor_level_name("Mutated".to_string());
+
+            state
+                .import_level(&exported)
+                .expect("import should restore metadata from binary payload");
+
+            let actual = state.current_editor_metadata();
+            assert_eq!(actual.name, expected.name);
+            assert_eq!(actual.music.source, expected.music.source);
+            assert_eq!(actual.creator, expected.creator);
+            assert_eq!(actual.stars, expected.stars);
+            assert_eq!(actual.tags, expected.tags);
+            assert_eq!(actual.version, expected.version);
+            assert_eq!(actual.spawn.position, expected.spawn.position);
+            assert_eq!(actual.tap_times, expected.tap_times);
+            assert_eq!(actual.timeline_time_seconds, expected.timeline_time_seconds);
+            assert_eq!(
+                actual.timeline_duration_seconds,
+                expected.timeline_duration_seconds
+            );
+            assert_eq!(actual.objects.len(), expected.objects.len());
+            assert_eq!(actual.objects[0].block_id, expected.objects[0].block_id);
+        });
+    }
+
+    #[test]
+    fn apply_metadata_supports_create_update_and_delete_like_replacement() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.enter_editor_phase("CrudSeed".to_string());
+
+            let mut created = state.current_editor_metadata();
+            created.name = "CrudCreate".to_string();
+            created.music.source = "crud.mp3".to_string();
+            created.objects = vec![test_object([1.0, 0.0, 1.0], "core/stone")];
+            created.tap_times = vec![0.75];
+            state.apply_imported_level_metadata(created);
+
+            assert_eq!(state.editor_level_name().as_deref(), Some("CrudCreate"));
+            assert_eq!(state.current_editor_metadata().music.source, "crud.mp3");
+            assert_eq!(state.editor.objects.len(), 1);
+
+            state.set_editor_level_name("CrudUpdate".to_string());
+            assert_eq!(state.editor_level_name().as_deref(), Some("CrudUpdate"));
+
+            let mut deleted = state.current_editor_metadata();
+            deleted.objects.clear();
+            deleted.tap_times.clear();
+            state.apply_imported_level_metadata(deleted);
+
+            assert!(state.editor.objects.is_empty());
+            assert!(state.editor.timeline.taps.tap_times.is_empty());
+        });
+    }
+
+    #[test]
+    fn loading_unknown_builtin_level_is_noop() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.enter_editor_phase("KnownLevel".to_string());
+            state.editor.objects = vec![test_object([1.0, 0.0, 1.0], "core/stone")];
+            state.editor.spawn.position = [3.0, 0.0, 2.0];
+            state.editor.spawn.direction = SpawnDirection::Right;
+
+            let before_name = state.editor_level_name();
+            let before_objects = state.editor.objects.clone();
+            let before_spawn = state.editor.spawn.clone();
+
+            state.load_builtin_level_into_editor("__missing_builtin_level__");
+
+            assert_eq!(state.editor_level_name(), before_name);
+            assert_eq!(state.editor.objects, before_objects);
+            assert_eq!(state.editor.spawn.position, before_spawn.position);
+            assert_eq!(state.editor.spawn.direction, before_spawn.direction);
+        });
+    }
+
+    #[test]
+    fn settings_and_editor_visibility_accessors_roundtrip() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.set_editor_show_metadata(true);
+            assert!(state.editor_show_metadata());
+
+            state.set_editor_show_settings(true);
+            assert!(state.editor_show_settings());
+
+            state.set_editor_settings_section(SettingsSection::Keybinds);
+            assert_eq!(state.editor_settings_section(), SettingsSection::Keybinds);
+
+            state.set_editor_keybind_capture_action(Some(("editor.copy".to_string(), 0)));
+            assert_eq!(
+                state.editor_keybind_capture_action(),
+                Some(&("editor.copy".to_string(), 0))
+            );
+
+            state.set_editor_show_settings(false);
+            assert!(!state.editor_show_settings());
+            assert_eq!(state.editor_keybind_capture_action(), None);
+        });
+    }
+
+    #[test]
+    fn graphics_and_keybind_preference_mutations_update_state() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            let original_graphics = state.app_settings().graphics_backend.clone();
+            let original_restart_required = state.settings_restart_required();
+
+            state.set_preferred_graphics_backend(original_graphics.clone());
+            assert_eq!(state.app_settings().graphics_backend, original_graphics);
+            assert_eq!(state.settings_restart_required(), original_restart_required);
+
+            state.set_preferred_graphics_backend("ManualTestBackend".to_string());
+            assert_eq!(state.app_settings().graphics_backend, "ManualTestBackend");
+            assert!(state.settings_restart_required());
+
+            state.set_ui_scale_multiplier(0.1);
+            assert!((state.app_settings().ui_scale_multiplier - 0.5).abs() <= 1e-6);
+            state.set_ui_scale_multiplier(8.0);
+            assert!((state.app_settings().ui_scale_multiplier - 3.0).abs() <= 1e-6);
+            state.set_ui_scale_multiplier(1.25);
+            assert!((state.app_settings().ui_scale_multiplier - 1.25).abs() <= 1e-6);
+
+            let before_keybinds = state
+                .app_settings()
+                .keybinds_for_action("editor.copy")
+                .len();
+            state.set_keybind_for_action(
+                "editor.copy".to_string(),
+                0,
+                KeyChord::new("K", true, false, false),
+            );
+            let after_set = state
+                .app_settings()
+                .keybinds_for_action("editor.copy")
+                .len();
+            assert!(after_set >= 1);
+
+            state.clear_keybind_slot_for_action("editor.copy", 0);
+            let after_clear = state
+                .app_settings()
+                .keybinds_for_action("editor.copy")
+                .len();
+            assert!(after_clear <= after_set);
+
+            state.reset_keybind_for_action("editor.copy");
+            let after_reset = state
+                .app_settings()
+                .keybinds_for_action("editor.copy")
+                .len();
+            assert!(after_reset >= 1 || before_keybinds == 0);
+        });
+    }
+
+    #[test]
+    fn available_levels_menu_name_and_phase_guarded_obj_export_paths_are_safe() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            assert!(!state.available_levels().is_empty());
+            assert!(state.menu_level_name().is_some());
+
+            state.phase = AppPhase::Menu;
+            state.trigger_selected_block_obj_export();
+
+            state.enter_editor_phase("ObjExportGuards".to_string());
+            state.editor.ui.selected_block_index = None;
+            state.trigger_selected_block_obj_export();
+        });
+    }
+
+    #[test]
+    fn menu_preview_refresh_uses_selected_level_scene_and_camera() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Menu;
+            state.menu.state.selected_level = 0;
+            state.menu.state.preview_level_index = None;
+
+            let level_name = state.menu.state.levels[0].clone();
+            let metadata = state
+                .load_level_metadata(&level_name)
+                .expect("selected level metadata should exist");
+
+            state.refresh_menu_level_preview_if_needed();
+
+            assert_eq!(state.menu.state.preview_level_index, Some(0));
+            assert_eq!(state.gameplay.state.objects, metadata.objects);
+
+            let expected_camera = metadata
+                .menu_preview_camera
+                .as_ref()
+                .map(|preview| (preview.position, preview.target))
+                .unwrap_or_else(|| auto_menu_preview_camera_from_spawn(&metadata.spawn));
+            assert_eq!(state.menu.state.preview_camera_position, expected_camera.0);
+            assert_eq!(state.menu.state.preview_camera_target, expected_camera.1);
+            assert_eq!(state.menu.state.preview_sky_color, metadata.sky_color);
+
+            state.refresh_menu_level_preview_if_needed();
+            assert_eq!(state.menu.state.preview_level_index, Some(0));
+        });
+    }
+
+    #[test]
+    fn menu_preview_refresh_uses_default_scene_for_unavailable_levels() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.enter_editor_phase("PreviewGuard".to_string());
+            state.menu.state.preview_level_index = None;
+
+            state.refresh_menu_level_preview_if_needed();
+            assert_eq!(state.menu.state.preview_level_index, None);
+
+            state.phase = AppPhase::Menu;
+            state.menu.state.selected_level = state.menu.state.levels.len();
+
+            state.refresh_menu_level_preview_if_needed();
+            assert_eq!(
+                state.menu.state.preview_level_index,
+                Some(state.menu.state.selected_level)
+            );
+            assert_eq!(
+                state.menu.state.preview_camera_position,
+                DEFAULT_MENU_PREVIEW_CAMERA_POSITION
+            );
+            assert_eq!(
+                state.menu.state.preview_camera_target,
+                DEFAULT_MENU_PREVIEW_CAMERA_TARGET
+            );
+            assert_eq!(state.menu.state.preview_sky_color, default_sky_color());
+            assert_eq!(state.gameplay.state.objects, eg_game::create_menu_scene());
+
+            state.menu.state.levels = vec!["__missing_preview_level__".to_string()];
+            state.menu.state.selected_level = 0;
+            state.menu.state.preview_level_index = None;
+            state.gameplay.state.objects.clear();
+
+            state.refresh_menu_level_preview_if_needed();
+            assert_eq!(state.menu.state.preview_level_index, Some(0));
+            assert_eq!(state.gameplay.state.objects, eg_game::create_menu_scene());
+            assert_eq!(
+                state.menu.state.preview_camera_position,
+                DEFAULT_MENU_PREVIEW_CAMERA_POSITION
+            );
+            assert_eq!(
+                state.menu.state.preview_camera_target,
+                DEFAULT_MENU_PREVIEW_CAMERA_TARGET
+            );
+            assert_eq!(state.menu.state.preview_sky_color, default_sky_color());
+        });
+    }
+
+    #[test]
+    fn menu_preview_camera_for_metadata_prefers_manual_camera() {
+        let metadata = LevelMetadata::from_editor_state(EditorStateParams {
+            name: "ManualPreview".to_string(),
+            creator_metadata: LevelCreatorMetadata::default(),
+            music: MusicMetadata::default(),
+            spawn: SpawnMetadata::default(),
+            sky_color: default_sky_color(),
+            tap_times: Vec::new(),
+            timing_points: Vec::new(),
+            timeline_time_seconds: 0.0,
+            timeline_duration_seconds: 16.0,
+            simulate_trigger_hitboxes: false,
+            menu_preview_camera: Some(LevelPreviewCameraMetadata {
+                position: [1.0, 2.0, 3.0],
+                target: [4.0, 5.0, 6.0],
+            }),
+            objects: Vec::new(),
+        });
+
+        assert_eq!(
+            menu_preview_camera_for_metadata(&metadata),
+            ([1.0, 2.0, 3.0], [4.0, 5.0, 6.0])
+        );
+    }
+
+    #[test]
+    fn menu_preview_camera_commands_are_phase_guarded_and_dispatchable() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Menu;
+
+            state.dispatch(AppCommand::Editor(EditorCommand::CaptureMenuPreviewCamera));
+            assert!(state
+                .current_editor_metadata()
+                .menu_preview_camera
+                .is_none());
+
+            state.session.editor_menu_preview_camera = Some(LevelPreviewCameraMetadata {
+                position: [9.0, 8.0, 7.0],
+                target: [6.0, 5.0, 4.0],
+            });
+            state.dispatch(AppCommand::Editor(EditorCommand::UseAutoMenuPreviewCamera));
+            assert!(state
+                .current_editor_metadata()
+                .menu_preview_camera
+                .is_some());
+
+            state.enter_editor_phase("DispatchPreviewCamera".to_string());
+            state.editor.camera.editor_pan = [2.0, -4.0];
+            state.editor.camera.editor_target_z = 3.0;
+
+            state.dispatch(AppCommand::Editor(EditorCommand::CaptureMenuPreviewCamera));
+            let captured = state.current_editor_metadata().menu_preview_camera;
+            assert_eq!(
+                captured.as_ref().map(|camera| camera.target),
+                Some([2.0, 3.0, -4.0])
+            );
+
+            state.dispatch(AppCommand::Editor(EditorCommand::UseAutoMenuPreviewCamera));
+            assert!(state
+                .current_editor_metadata()
+                .menu_preview_camera
+                .is_none());
+        });
+    }
+
+    #[test]
+    fn capture_and_clear_menu_preview_camera_updates_editor_metadata() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.enter_editor_phase("PreviewCamera".to_string());
+            state.editor.camera.editor_pan = [5.0, -3.0];
+            state.editor.camera.editor_target_z = 2.0;
+            state.editor.camera.editor_rotation = 30.0f32.to_radians();
+            state.editor.camera.editor_pitch = 40.0f32.to_radians();
+
+            state.editor_capture_menu_preview_camera();
+            let captured = state.current_editor_metadata().menu_preview_camera;
+            assert!(captured.is_some());
+
+            let manual_camera = captured.expect("manual camera should be captured");
+            assert_eq!(manual_camera.target, [5.0, 2.0, -3.0]);
+
+            state.editor_use_auto_menu_preview_camera();
+            assert!(state
+                .current_editor_metadata()
+                .menu_preview_camera
+                .is_none());
+
+            let expected = menu_preview_camera_for_metadata(&state.current_editor_metadata());
+            let auto = auto_menu_preview_camera_from_spawn(&state.editor.spawn);
+            assert_eq!(expected, auto);
+        });
+    }
+
+    #[test]
+    fn auto_menu_preview_camera_positions_follow_spawn_direction() {
+        let (forward_eye, forward_target) = auto_menu_preview_camera_from_spawn(&SpawnMetadata {
+            position: [2.0, 3.0, 4.0],
+            direction: SpawnDirection::Forward,
+        });
+        assert_eq!(forward_eye, [14.0, 17.0, -16.0]);
+        assert_eq!(forward_target, [2.0, 4.0, 14.0]);
+
+        let (right_eye, right_target) = auto_menu_preview_camera_from_spawn(&SpawnMetadata {
+            position: [2.0, 3.0, 4.0],
+            direction: SpawnDirection::Right,
+        });
+        assert_eq!(right_eye, [-18.0, 17.0, -8.0]);
+        assert_eq!(right_target, [12.0, 4.0, 4.0]);
+    }
+
+    #[test]
+    fn start_level_and_restart_level_initialize_playing_session_state() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.start_level(0);
+            assert_eq!(state.phase, AppPhase::Playing);
+            assert!(state.session.playing_level_name.is_some());
+            assert!(!state.gameplay.state.objects.is_empty());
+            assert!(state.session.playing_trigger_base_objects.is_some());
+
+            state.gameplay.state.started = true;
+            state.gameplay.state.elapsed_seconds = 12.0;
+            state.restart_level();
+
+            assert_eq!(state.phase, AppPhase::Playing);
+            assert!(!state.gameplay.state.started);
+            assert!(state.gameplay.state.elapsed_seconds >= 0.0);
+            assert!(!state.gameplay.state.objects.is_empty());
+        });
+    }
+
+    #[test]
+    fn practice_checkpoint_respawns_and_restart_exits_practice_mode() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Playing;
+            state.session.playtesting_editor = false;
+            state.session.practice_mode_enabled = true;
+            state.gameplay.state.objects = vec![test_object([0.0, 0.0, 0.0], "core/stone")];
+            state.gameplay.state.rebuild_behavior_cache();
+            state
+                .gameplay
+                .state
+                .initialize_level_progress_from_objects();
+            state.gameplay.state.started = true;
+            state.gameplay.state.position = [4.0, 2.0, 6.0];
+            state.gameplay.state.elapsed_seconds = 3.5;
+            state
+                .session
+                .practice_checkpoints
+                .push(super::super::PracticeCheckpoint {
+                    gameplay: state.gameplay.state.checkpoint_state(),
+                    trigger_base_objects: state.session.playing_trigger_base_objects.clone(),
+                });
+
+            state.gameplay.state.position = [20.0, -8.0, 20.0];
+            state.gameplay.state.elapsed_seconds = 9.0;
+            state.gameplay.state.game_over = true;
+
+            assert!(state.respawn_from_practice_checkpoint());
+            assert_eq!(state.gameplay.state.position, [4.0, 2.0, 6.0]);
+            assert_eq!(state.gameplay.state.elapsed_seconds, 3.5);
+            assert!(!state.gameplay.state.started);
+            assert!(!state.gameplay.state.game_over);
+            assert!(state.session.practice_mode_enabled);
+
+            state.restart_level();
+            assert!(!state.session.practice_mode_enabled);
+            assert!(state.session.practice_checkpoints.is_empty());
+        });
+    }
+
+    #[test]
+    fn removing_practice_checkpoint_falls_back_to_previous_latest() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Playing;
+            state.session.playtesting_editor = false;
+            state.session.practice_mode_enabled = true;
+            state.gameplay.state.objects = vec![test_object([0.0, 0.0, 0.0], "core/stone")];
+            state.gameplay.state.rebuild_behavior_cache();
+            state.gameplay.state.started = true;
+
+            state.gameplay.state.position = [2.0, 2.0, 2.0];
+            state.gameplay.state.elapsed_seconds = 2.0;
+            state.dispatch(crate::commands::AppCommand::GameSetPracticeCheckpoint);
+
+            state.gameplay.state.position = [5.0, 2.0, 5.0];
+            state.gameplay.state.elapsed_seconds = 5.0;
+            state.dispatch(crate::commands::AppCommand::GameSetPracticeCheckpoint);
+
+            assert_eq!(state.practice_checkpoint_count(), 2);
+            assert_eq!(state.practice_checkpoint_time_seconds(), Some(5.0));
+
+            state.dispatch(crate::commands::AppCommand::GameRemovePracticeCheckpoint);
+
+            assert_eq!(state.practice_checkpoint_count(), 1);
+            assert_eq!(state.practice_checkpoint_time_seconds(), Some(2.0));
+
+            state.gameplay.state.position = [20.0, -8.0, 20.0];
+            state.gameplay.state.elapsed_seconds = 9.0;
+            state.gameplay.state.game_over = true;
+
+            assert!(state.respawn_from_practice_checkpoint());
+            assert_eq!(state.gameplay.state.position, [2.0, 2.0, 2.0]);
+            assert_eq!(state.gameplay.state.elapsed_seconds, 2.0);
+        });
+    }
+
+    #[test]
+    fn practice_checkpoint_commands_sync_flag_mesh() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.phase = AppPhase::Playing;
+            state.session.playtesting_editor = false;
+            state.session.practice_mode_enabled = true;
+            state.gameplay.state.started = true;
+
+            state.gameplay.state.position = [2.0, 1.0, 2.0];
+            state.dispatch(crate::commands::AppCommand::GameSetPracticeCheckpoint);
+            assert!(state
+                .render
+                .meshes
+                .practice_checkpoints
+                .draw_data()
+                .is_some());
+
+            state.dispatch(crate::commands::AppCommand::GameRemovePracticeCheckpoint);
+            assert!(state
+                .render
+                .meshes
+                .practice_checkpoints
+                .draw_data()
+                .is_none());
+        });
+    }
+
+    #[test]
+    fn practice_death_before_checkpoint_restarts_at_zero_but_stays_in_practice() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.start_level(0);
+            state.session.practice_mode_enabled = true;
+            state.session.practice_checkpoints.clear();
+            state.gameplay.state.started = true;
+            state.gameplay.state.elapsed_seconds = 4.0;
+            state.gameplay.state.game_over = true;
+
+            assert!(state.respawn_from_practice_checkpoint());
+            assert!(state.session.practice_mode_enabled);
+            assert!(state.session.practice_checkpoints.is_empty());
+            assert!(!state.gameplay.state.started);
+            assert!(!state.gameplay.state.game_over);
+            assert_eq!(state.gameplay.state.elapsed_seconds, 0.0);
+        });
+    }
+
+    #[test]
+    fn practice_game_over_input_before_checkpoint_keeps_practice_mode() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.start_level(0);
+            state.session.practice_mode_enabled = true;
+            state.session.practice_checkpoints.clear();
+            state.gameplay.state.started = true;
+            state.gameplay.state.elapsed_seconds = 4.0;
+            state.gameplay.state.game_over = true;
+
+            state.turn_right();
+
+            assert!(state.session.practice_mode_enabled);
+            assert!(!state.gameplay.state.started);
+            assert!(!state.gameplay.state.game_over);
+            assert_eq!(state.gameplay.state.elapsed_seconds, 0.0);
+        });
+    }
+
+    #[test]
+    fn start_editor_loads_builtin_metadata_into_editor_session() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let expected_level_name = state.menu.state.levels[0].clone();
+            let expected_metadata = state
+                .load_level_metadata(&expected_level_name)
+                .expect("selected level metadata should exist");
+
+            state.start_editor(0);
+
+            assert_eq!(state.phase, AppPhase::Editor);
+            assert_eq!(state.editor_level_name(), Some(expected_level_name));
+            assert_eq!(state.editor_sky_color(), expected_metadata.sky_color);
+            assert!(state.editor.timeline.clock.duration_seconds > 0.0);
+            assert!(!state.editor.objects.is_empty());
+            assert_eq!(
+                state.editor.timeline.taps.tap_times.len(),
+                state.editor.timeline.taps.tap_indicator_positions.len()
+            );
+            assert_eq!(state.editor.timing.timing_selected_index, None);
+            assert_eq!(state.editor.selected_trigger_index(), None);
+        });
+    }
+
+    #[test]
+    fn egz_export_import_roundtrip_preserves_metadata_and_embedded_audio() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.enter_editor_phase("EgzRoundtripSeed".to_string());
+            state.editor.objects = vec![test_object([2.0, 0.0, 2.0], "core/grass")];
+
+            state.set_editor_level_name("EgzRoundtrip".to_string());
+            state.set_editor_music_metadata(MusicMetadata {
+                source: "unit-test-audio.mp3".to_string(),
+                ..MusicMetadata::default()
+            });
+            state.set_editor_creator_metadata(LevelCreatorMetadata {
+                creator: None,
+                description: Some("Bundled export metadata".to_string()),
+                stars: 8.25,
+                tags: vec!["test".to_string(), "archive".to_string()],
+                version: None,
+            });
+            state
+                .audio
+                .state
+                .editor
+                .local_audio_cache
+                .insert("unit-test-audio.mp3".to_string(), vec![1, 2, 3, 4, 5, 6]);
+
+            let expected = state.current_editor_metadata();
+            let exported = state
+                .export_level_egz()
+                .expect("egz export should succeed when metadata is valid");
+
+            state.editor.objects.clear();
+            state
+                .audio
+                .state
+                .editor
+                .local_audio_cache
+                .remove("unit-test-audio.mp3");
+
+            state
+                .import_level_egz(&exported)
+                .expect("egz import should restore metadata and embedded audio");
+
+            let actual = state.current_editor_metadata();
+            assert_eq!(actual.name, expected.name);
+            assert_eq!(actual.music.source, expected.music.source);
+            assert_eq!(actual.description, expected.description);
+            assert_eq!(actual.stars, expected.stars);
+            assert_eq!(actual.tags, expected.tags);
+            assert_eq!(actual.spawn.position, expected.spawn.position);
+            assert!(!state.editor.objects.is_empty());
+            assert!(state
+                .audio
+                .state
+                .editor
+                .local_audio_cache
+                .contains_key("unit-test-audio.mp3"));
+        });
+    }
+
+    #[test]
+    fn method_pointer_paths_cover_level_management_runtime_branches() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.enter_editor_phase("MethodPointer".to_string());
+            state.editor.objects = vec![test_object([0.0, 0.0, 0.0], "core/stone")];
+            state.set_editor_music_metadata(MusicMetadata {
+                source: "method-pointer-audio.mp3".to_string(),
+                ..MusicMetadata::default()
+            });
+            state
+                .audio
+                .state
+                .editor
+                .local_audio_cache
+                .insert("method-pointer-audio.mp3".to_string(), vec![7, 8, 9, 10]);
+
+            let level_export_filename = format!(
+                "{}.egz",
+                state
+                    .editor_level_name()
+                    .unwrap_or_else(|| "level".to_string())
+            );
+            let obj_export_filename = "core_stone_selected.obj".to_string();
+            let _artifact_cleanup =
+                ArtifactCleanup::new(vec![level_export_filename, obj_export_filename]);
+
+            let set_capture: fn(&mut State, Option<(String, usize)>) =
+                State::set_editor_keybind_capture_action;
+            set_capture(&mut state, Some(("editor.copy".to_string(), 1)));
+            assert_eq!(
+                state.editor_keybind_capture_action(),
+                Some(&("editor.copy".to_string(), 1))
+            );
+
+            let restart: fn(&mut State) = State::restart_level;
+            state.phase = AppPhase::Playing;
+            state.session.playtesting_editor = false;
+            state.session.playing_level_name = state.menu.state.levels.first().cloned();
+            state.gameplay.state.started = true;
+            restart(&mut state);
+            assert!(!state.gameplay.state.started);
+
+            let set_graphics_backend: fn(&mut State, String) =
+                State::set_preferred_graphics_backend;
+            let baseline_graphics = state.app_settings().graphics_backend.clone();
+            set_graphics_backend(&mut state, baseline_graphics.clone());
+            set_graphics_backend(&mut state, "CoverageBackend".to_string());
+            assert_eq!(state.app_settings().graphics_backend, "CoverageBackend");
+
+            let set_audio_backend: fn(&mut State, String) = State::set_preferred_audio_backend;
+            set_audio_backend(&mut state, "definitely-invalid-backend".to_string());
+            if let Some(backend) = state.available_audio_backends().first().cloned() {
+                set_audio_backend(&mut state, backend);
+            }
+
+            let clear_keybind: fn(&mut State, &str, usize) = State::clear_keybind_slot_for_action;
+            let reset_keybind: fn(&mut State, &str) = State::reset_keybind_for_action;
+            let reset_essential: fn(&mut State) = State::reset_essential_keybinds;
+            clear_keybind(&mut state, "editor.copy", 0);
+            reset_keybind(&mut state, "editor.copy");
+            reset_essential(&mut state);
+
+            let export_egz: fn(&State) -> Result<Vec<u8>, String> = State::export_level_egz;
+            let import_egz: fn(&mut State, &[u8]) -> Result<(), String> = State::import_level_egz;
+            let egz_bytes = export_egz(&state).expect("egz export should succeed");
+            import_egz(&mut state, &egz_bytes).expect("egz import should succeed");
+
+            let trigger_export: fn(&State) = State::trigger_level_export;
+            trigger_export(&state);
+
+            let trigger_obj_export: fn(&State) = State::trigger_selected_block_obj_export;
+            state.phase = AppPhase::Menu;
+            trigger_obj_export(&state);
+
+            state.phase = AppPhase::Editor;
+            state.editor.ui.selected_block_index = None;
+            trigger_obj_export(&state);
+
+            state.editor.objects = vec![test_object([0.0, 0.0, 0.0], "core/stone")];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+            trigger_obj_export(&state);
+        });
+    }
+
+    #[test]
+    fn update_level_imports_applies_egz_payload_from_channel() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            state.enter_editor_phase("QueuedImport".to_string());
+            state.set_editor_level_name("QueuedImportSource".to_string());
+
+            let bytes = state
+                .export_level_egz()
+                .expect("egz export should succeed for queued import");
+            state.set_editor_level_name("MutatedAfterQueue".to_string());
+            state
+                .session
+                .editor_level_import_channel
+                .0
+                .send(bytes)
+                .expect("channel send should succeed");
+
+            state.update_level_imports();
+
+            assert_eq!(
+                state.editor_level_name().as_deref(),
+                Some("QueuedImportSource")
+            );
+        });
+    }
+}

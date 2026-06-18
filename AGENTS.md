@@ -24,7 +24,7 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
     - `wrangler pages dev` serving from `./dist` on `http://127.0.0.1:8788`. If this is running, you have access to local Cloudflare services (KV, R2, D1, Durable Objects, and Workflows) for this app via the Explorer API.
     - Fetch the OpenAPI schema from http://127.0.0.1:8788/cdn-cgi/explorer/api to discover available operations. Use these endpoints to list, query, and manage local resources during development.
 - **Web Build:** `bun run build` (`bun scripts/build.ts`)
-- **CLI Tool:** The `egb` binary (`src/bin/egb.rs`) is a standalone level metadata conversion helper (JSON ↔ binary `.egb`). Build it with `cargo build --bin egb`.
+- **CLI Tool:** The `egb` binary (`crates/egb/src/main.rs`) is a standalone level metadata conversion helper (JSON ↔ binary `.egb`). Build it with `cargo build -p egb`.
 
 ### Linting & Formatting
 
@@ -45,29 +45,29 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 
 ## 3. Code Architecture & Layout
 
-- `src/commands.rs`: `AppCommand` is the central action dispatch pattern. Every user intent (keyboard shortcut, UI button, mouse click) becomes an `AppCommand` variant, routed through `State::dispatch()`. This decouples input from execution and enables replay/macro/test harness support. **New editor commands** should use `AppCommand::Editor(EditorCommand)` with the sub-enum in `src/state/editor_command.rs` — this keeps editor features self-contained within `src/state/`.
-- `src/level_codec.rs`: Binary level format (`EGB1` magic, versioned). Handles encoding/decoding `LevelMetadata` ↔ compressed binary (Zstd, CBOR). Supports `ObjectRun` run-length encoding for compact object streams.
-- `src/import_export_service.rs`: Public API for level import/export: JSON ↔ binary conversion, `.egz` archive handling, format normalization.
-- `src/game/`: Core Engine (headless, no I/O). Must remain completely decoupled from rendering and I/O. It only operates on `GameState` and `LevelObject` data. This allows headless simulation in tests and the editor preview.
-- `src/platform/`: Platform Abstraction Layer
-- `src/state/`: Application State & Editor Logic
-- `src/state/editor_command.rs`: `EditorCommand` sub-enum for all editor-specific commands. New editor features should add variants here, not in `AppCommand`.
-- `src/state/command_dispatch.rs`: `State::dispatch()` routes top-level `AppCommand` variants and input/keybind mapping.
-- `src/state/editor_dispatch.rs`: `State::dispatch_editor()` routes `EditorCommand` variants; add editor command match arms here.
-- `src/editor_domain/`: Editor Domain Logic
-- `src/editor_ui/`: Egui UI Components
-- `src/mesh/`: Mesh Generation
-- `src/bin/egb.rs`: A standalone CLI tool for level metadata conversion:
+- `crates/eg-state/src/commands.rs`: `AppCommand` is the central action dispatch pattern. Every user intent (keyboard shortcut, UI button, mouse click) becomes an `AppCommand` variant, routed through `State::dispatch()`. This decouples input from execution and enables replay/macro/test harness support. **New editor commands** should use `AppCommand::Editor(EditorCommand)` with the sub-enum in `crates/eg-state/src/state/editor_command.rs` — this keeps editor features self-contained within `eg-state`.
+- `crates/eg-codec/src/lib.rs`: Binary level format (`EGB1` magic, versioned). Handles encoding/decoding `LevelMetadata` ↔ compressed binary (Zstd, CBOR). Supports `ObjectRun` run-length encoding for compact object streams.
+- `crates/eg-level/src/import_export.rs`: Public API for level import/export: JSON ↔ binary conversion, `.egz` archive handling, format normalization.
+- `crates/eg-game/src/`: Core Engine (headless, no I/O). Must remain completely decoupled from rendering and I/O. It only operates on `GameState` and `LevelObject` data. This allows headless simulation in tests and the editor preview.
+- `crates/eg-platform/src/`: Platform services shared by app/state/audio code.
+- `crates/eg-state/src/`: Application State & Editor Logic
+- `crates/eg-state/src/state/editor_command.rs`: `EditorCommand` sub-enum for all editor-specific commands. New editor features should add variants here, not in `AppCommand`.
+- `crates/eg-state/src/state/command_dispatch.rs`: `State::dispatch()` routes top-level `AppCommand` variants and input/keybind mapping.
+- `crates/eg-state/src/state/editor_dispatch.rs`: `State::dispatch_editor()` routes `EditorCommand` variants; add editor command match arms here.
+- `crates/eg-editor-domain/src/`: Editor Domain Logic
+- `crates/eg-ui/src/`: Egui UI Components
+- `crates/eg-mesh/src/`: Mesh Generation
+- `crates/egb/src/main.rs`: A standalone CLI tool for level metadata conversion:
     - `egb decode <input.egb> [output.json]` — binary → JSON
     - `egb encode <input.json> [output.egb]` — JSON → binary
-    - `tests/egb_tests.rs`: Integration tests.
+    - `crates/egb/tests/egb_tests.rs`: Integration tests.
 - `assets/blocks/`: Block files. Embedded at compile time via `include_dir!`.
 - `assets/levels/`: Built-in level directories. Each contains level metadata and audio files.
 
 ### Other Files
 
-- `src/shader.wgsl` — The core WebGPU shader. Compiled at build time. Defines vertex/fragment shaders for block rendering with texture arrays, color spaces, and line uniforms.
-- `build.rs` — Build script that bakes `wrangler.jsonc` environment variables into the binary for the configured build environment.
+- `crates/eg-render/src/shader.wgsl` — The core WebGPU shader. Compiled at build time. Defines vertex/fragment shaders for block rendering with texture arrays, color spaces, and line uniforms.
+- `crates/eg-app/build.rs` — Build script that bakes `wrangler.jsonc` environment variables into the binary for the configured build environment and generates build-time mesh assets.
 - `wrangler.jsonc` — Cloudflare Pages configuration with environment-specific vars.
 - `functions/` — Cloudflare Pages Functions (TypeScript serverless backend, Supabase integration).
 
@@ -107,10 +107,10 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 
 ### Test Organization
 
-- Unit tests go in `#[cfg(test)] mod tests { ... }` at the bottom of each source file, or in an adjacent `tests.rs` file (e.g., `src/game/tests.rs`, `src/mesh/tests.rs`).
-- Integration tests for the `egb` binary live in `tests/egb_tests.rs`.
-- Editor snapshot tests live in `src/state/editor_snap_tests.rs`.
-- Shader compilation tests live in `src/state/shader_tests.rs`.
+- Unit tests go in `#[cfg(test)] mod tests { ... }` at the bottom of each source file, or in an adjacent `tests.rs` file (e.g., `crates/eg-game/src/tests.rs`, `crates/eg-mesh/src/tests.rs`).
+- Integration tests for the `egb` binary live in `crates/egb/tests/egb_tests.rs`.
+- Editor snapshot tests live in `crates/eg-state/src/state/editor_snap_tests.rs`.
+- Shader compilation tests live in `crates/eg-render/src/shader_tests.rs`.
 
 ### Floating Point Assertions
 
@@ -149,9 +149,9 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 
 ## 6. Development Workflow Guidelines
 
-1. **Understand First:** Before modifying logic, always read `Cargo.toml` and `package.json` to understand the build chain. Check `src/types.rs` or `src/game/mod.rs` to see how the subsystem fits together.
+1. **Understand First:** Before modifying logic, always read `Cargo.toml` and `package.json` to understand the build chain. Check the relevant crate under `crates/` to see how the subsystem fits together.
 2. **Self-Verification:** Before finalizing a task, ensure the code builds (`bun run build`) and passes all strict lints (`bun run lint`). Unverified code will fail the CI.
-3. **Reference Existing Code:** If implementing UI, review existing `egui` implementations in `src/editor_ui/`. For core mechanics, review `src/game/physics.rs`.
+3. **Reference Existing Code:** If implementing UI, review existing `egui` implementations in `crates/eg-ui/src/`. For core mechanics, review `crates/eg-game/src/physics.rs`.
 4. **No Unrelated Formatting Changes:** Never format or refactor code outside the immediate scope of the feature or bug fix. Let `bun run format` handle consistency.
 5. **Security & Integrity:** Never commit secrets, local debug paths, or bypassing comments like `#[allow(dead_code)]` unless absolutely unavoidable and well-justified.
 6. **Overwrite Database:** This project has not been released. If you need to make breaking changes to the database schema, do not worry about migration scripts. You can simply update the schema and reset the database as needed during development. Same goes for `CURRENT_LEVEL_FORMAT_VERSION`, do not worry about backward compatibility for now.

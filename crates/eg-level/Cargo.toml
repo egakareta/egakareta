@@ -1,0 +1,17 @@
+# Copyright (c) egakareta <team@egakareta.com>.
+# Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+# See LICENSE and COMMERCIAL.md for details.
+[package]
+name = "eg-level"
+version = "0.1.0"
+edition = "2021"
+description = "Level repository and import/export services for egakareta."
+repository = "https://github.com/egakareta/egakareta"
+license = "AGPL-3.0-only"
+
+[dependencies]
+eg-codec = { workspace = true }
+eg-types = { workspace = true }
+include_dir = { workspace = true }
+serde_json = { workspace = true }
+zip = { workspace = true }

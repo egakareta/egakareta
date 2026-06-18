@@ -1,0 +1,513 @@
+/*
+
+* Copyright (c) egakareta <team@egakareta.com>.
+* Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+* See LICENSE and COMMERCIAL.md for details.
+
+*/
+use eg_state::commands::AppCommand;
+use eg_state::state::editor_command::EditorCommand;
+use eg_state::state::EditorUiViewModel;
+use eg_types::{EditorMode, SpawnDirection};
+
+const PROPERTY_POPUP_MARGIN: f32 = 12.0;
+const MODE_SELECTOR_WIDTH: f32 = 48.0;
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct EditorPropertyPopup {
+    id: egui::Id,
+    anchor: egui::Align2,
+    offset: egui::Vec2,
+    order: egui::Order,
+    min_width: f32,
+}
+
+impl EditorPropertyPopup {
+    pub(crate) fn above_bottom_bar(
+        id_source: impl std::hash::Hash,
+        bottom_bar_height: f32,
+    ) -> Self {
+        Self {
+            id: egui::Id::new(id_source),
+            anchor: egui::Align2::LEFT_BOTTOM,
+            offset: egui::Vec2::new(
+                PROPERTY_POPUP_MARGIN,
+                -PROPERTY_POPUP_MARGIN - bottom_bar_height,
+            ),
+            order: egui::Order::Foreground,
+            min_width: 220.0,
+        }
+    }
+
+    pub(crate) fn top_left(id_source: impl std::hash::Hash, top_bar_height: f32) -> Self {
+        Self {
+            id: egui::Id::new(id_source),
+            anchor: egui::Align2::LEFT_TOP,
+            offset: egui::Vec2::new(
+                PROPERTY_POPUP_MARGIN,
+                PROPERTY_POPUP_MARGIN + top_bar_height,
+            ),
+            order: egui::Order::Foreground,
+            min_width: 0.0,
+        }
+    }
+
+    pub(crate) fn top_left_right_of(id_source: impl std::hash::Hash, top_bar_height: f32) -> Self {
+        Self {
+            id: egui::Id::new(id_source),
+            anchor: egui::Align2::LEFT_TOP,
+            offset: egui::Vec2::new(
+                PROPERTY_POPUP_MARGIN + MODE_SELECTOR_WIDTH + PROPERTY_POPUP_MARGIN,
+                PROPERTY_POPUP_MARGIN + top_bar_height,
+            ),
+            order: egui::Order::Foreground,
+            min_width: 0.0,
+        }
+    }
+}
+
+pub(crate) fn show_editor_property_popup(
+    ctx: &egui::Context,
+    popup: EditorPropertyPopup,
+    add_contents: impl FnOnce(&mut egui::Ui),
+) {
+    egui::Area::new(popup.id)
+        .anchor(popup.anchor, popup.offset)
+        .order(popup.order)
+        .show(ctx, |ui| {
+            egui::Frame::popup(&ctx.global_style()).show(ui, |ui| {
+                ui.set_min_width(popup.min_width);
+                add_contents(ui);
+            });
+        });
+}
+
+pub(crate) fn show_mode_selector_popup(
+    ctx: &egui::Context,
+    view: &EditorUiViewModel<'_>,
+    top_bar_height: f32,
+    commands: &mut Vec<AppCommand>,
+) {
+    let popup = EditorPropertyPopup::top_left("mode_selector_popup", top_bar_height);
+    show_editor_property_popup(ctx, popup, |ui| {
+        ui.spacing_mut().button_padding = egui::Vec2::new(8.0, 6.0);
+        let mode = view.mode;
+        let big_icon = |icon: &str| egui::RichText::new(icon).size(20.0);
+        if ui
+            .selectable_label(
+                mode == EditorMode::Select,
+                big_icon(egui_phosphor::regular::CURSOR_CLICK),
+            )
+            .on_hover_text(format!(
+                "Select{}",
+                view.app_settings.hotkey_hint("mode_select")
+            ))
+            .clicked()
+        {
+            commands.push(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Select,
+            )));
+        }
+        if ui
+            .selectable_label(
+                mode == EditorMode::Move,
+                big_icon(egui_phosphor::regular::ARROWS_OUT),
+            )
+            .on_hover_text(format!(
+                "Move{}",
+                view.app_settings.hotkey_hint("mode_move")
+            ))
+            .clicked()
+        {
+            commands.push(AppCommand::Editor(EditorCommand::SetMode(EditorMode::Move)));
+        }
+        if ui
+            .selectable_label(
+                mode == EditorMode::Scale,
+                big_icon(egui_phosphor::regular::CORNERS_OUT),
+            )
+            .on_hover_text(format!(
+                "Scale{}",
+                view.app_settings.hotkey_hint("mode_scale")
+            ))
+            .clicked()
+        {
+            commands.push(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Scale,
+            )));
+        }
+        if ui
+            .selectable_label(
+                mode == EditorMode::Rotate,
+                big_icon(egui_phosphor::regular::ARROWS_CLOCKWISE),
+            )
+            .on_hover_text(format!(
+                "Rotate{}",
+                view.app_settings.hotkey_hint("mode_rotate")
+            ))
+            .clicked()
+        {
+            commands.push(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Rotate,
+            )));
+        }
+    });
+
+    let mode = view.mode;
+    if mode == EditorMode::Move || mode == EditorMode::Scale || mode == EditorMode::Rotate {
+        let secondary =
+            EditorPropertyPopup::top_left_right_of("mode_secondary_popup", top_bar_height);
+        show_editor_property_popup(ctx, secondary, |ui| {
+            ui.spacing_mut().button_padding = egui::Vec2::new(4.0, 2.0);
+            match mode {
+                EditorMode::Move | EditorMode::Scale => {
+                    show_grid_snap_controls(ui, view, commands);
+                }
+                EditorMode::Rotate => {
+                    show_rotation_snap_controls(ui, view, commands);
+                }
+                _ => {}
+            }
+        });
+    }
+}
+
+fn show_grid_snap_controls(
+    ui: &mut egui::Ui,
+    view: &EditorUiViewModel<'_>,
+    commands: &mut Vec<AppCommand>,
+) {
+    ui.horizontal(|ui| {
+        let mut snap = view.snap_to_grid;
+        let saved_icon_width = ui.spacing().icon_width;
+        ui.spacing_mut().icon_width = ui.spacing().interact_size.y;
+        let checkbox = ui.add(egui::Checkbox::without_text(&mut snap));
+        ui.spacing_mut().icon_width = saved_icon_width;
+        let changed = checkbox.changed();
+        checkbox.on_hover_text(format!(
+            "Grid Snap{}",
+            view.app_settings.hotkey_hint("toggle_grid_snap")
+        ));
+        if changed {
+            commands.push(AppCommand::Editor(EditorCommand::SetSnapToGrid(snap)));
+        }
+        let mut snap_step = view.snap_step;
+        let drag: egui::Response = ui
+            .add(
+                egui::DragValue::new(&mut snap_step)
+                    .speed(0.05)
+                    .range(0.05..=100.0)
+                    .prefix(format!("{} ", egui_phosphor::regular::GRID_FOUR)),
+            )
+            .on_hover_text("Grid Snap Step");
+        if drag.changed() {
+            commands.push(AppCommand::Editor(EditorCommand::SetSnapStep(snap_step)));
+        }
+    });
+}
+
+fn show_rotation_snap_controls(
+    ui: &mut egui::Ui,
+    view: &EditorUiViewModel<'_>,
+    commands: &mut Vec<AppCommand>,
+) {
+    ui.horizontal(|ui| {
+        let mut snap_rotation = view.snap_rotation;
+        let saved_icon_width = ui.spacing().icon_width;
+        ui.spacing_mut().icon_width = ui.spacing().interact_size.y;
+        let checkbox = ui.add(egui::Checkbox::without_text(&mut snap_rotation));
+        ui.spacing_mut().icon_width = saved_icon_width;
+        let changed = checkbox.changed();
+        checkbox.on_hover_text(format!(
+            "Rotation Snap{}",
+            view.app_settings.hotkey_hint("toggle_rotation_snap")
+        ));
+        if changed {
+            commands.push(AppCommand::Editor(EditorCommand::SetSnapRotation(
+                snap_rotation,
+            )));
+        }
+
+        let mut snap_rotation_step = view.snap_rotation_step_degrees;
+        let drag = ui
+            .add(
+                egui::DragValue::new(&mut snap_rotation_step)
+                    .speed(0.5)
+                    .range(1.0..=180.0)
+                    .prefix(format!("{} ", egui_phosphor::regular::ARROWS_CLOCKWISE))
+                    .suffix("°"),
+            )
+            .on_hover_text("Rotation Snap Step");
+        if drag.changed() {
+            commands.push(AppCommand::Editor(EditorCommand::SetSnapRotationStep(
+                snap_rotation_step,
+            )));
+        }
+    });
+}
+
+pub(crate) fn show_player_camera_status_row(ui: &mut egui::Ui, view: &EditorUiViewModel<'_>) {
+    let position = view.timeline_preview_position;
+    let direction = view.timeline_preview_direction;
+    let direction_label = match direction {
+        SpawnDirection::Forward => "Forward",
+        SpawnDirection::Right => "Right",
+    };
+    ui.horizontal(|ui| {
+        ui.label(format!(
+            "Player: ({:.1}, {:.1}, {:.1}) | {}",
+            position[0], position[1], position[2], direction_label
+        ));
+        ui.separator();
+        ui.label(format!(
+            "Player Camera: ({:.1}, {:.1}, {:.1}) -> ({:.1}, {:.1}, {:.1})",
+            view.camera_preview_position[0],
+            view.camera_preview_position[1],
+            view.camera_preview_position[2],
+            view.camera_preview_target[0],
+            view.camera_preview_target[1],
+            view.camera_preview_target[2],
+        ));
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        show_editor_property_popup, show_mode_selector_popup, show_player_camera_status_row,
+        EditorPropertyPopup, PROPERTY_POPUP_MARGIN,
+    };
+    use eg_state::commands::AppCommand;
+    use eg_state::state::EditorUiViewModel;
+    use eg_types::TimedTrigger;
+    use eg_types::{
+        AppSettings, EditorMode, MusicMetadata, SettingsSection, SpawnDirection, TimingPoint,
+    };
+
+    fn make_view<'a>(
+        app_settings: &'a AppSettings,
+        music_metadata: &'a MusicMetadata,
+        timing_points: &'a [TimingPoint],
+        triggers: &'a [TimedTrigger],
+        preview_direction: SpawnDirection,
+        mode: EditorMode,
+    ) -> EditorUiViewModel<'a> {
+        EditorUiViewModel {
+            is_editor: true,
+            is_menu: false,
+            is_game_paused: false,
+            is_practice_mode_enabled: false,
+            mode,
+            last_mode: Some(mode),
+            available_levels: &[],
+            level_name: Some("Shared Test"),
+            menu_level_name: None,
+            menu_selected_level_progress: None,
+            show_metadata: false,
+            show_place_window: false,
+            show_settings: false,
+            settings_section: SettingsSection::Backends,
+            keybind_capture_action: None,
+            music_metadata,
+            creator_metadata: eg_types::LevelCreatorMetadata::default(),
+            sky_color: eg_types::default_sky_color(),
+            app_settings,
+            configured_graphics_backend: "Auto",
+            configured_audio_backend: "Default",
+            graphics_backend_options: &[],
+            audio_backend_options: &[],
+            settings_restart_required: false,
+            auth_display_name: None,
+            auth_pending: false,
+            auth_message: None,
+            perf_overlay_enabled: false,
+            perf_graphics_backend: String::new(),
+            perf_audio_backend: String::new(),
+            perf_has_latest_frame: false,
+            snap_to_grid: true,
+            snap_step: 1.0,
+            snap_rotation: true,
+            snap_rotation_step_degrees: 15.0,
+            selected_block_id: "core/stone",
+            place_preview_position: [0.0, 0.0, 0.0],
+            place_preview_size: [1.0, 1.0, 1.0],
+            recent_block_ids: &[],
+            selected_block: None,
+            selected_block_count: 0,
+            clipboard_block_count: 0,
+            can_undo: false,
+            can_redo: false,
+            playing: false,
+            timeline_time_seconds: 1.0,
+            timeline_duration_seconds: 16.0,
+            tap_times: &[],
+            selected_tap: None,
+            timeline_preview_position: [2.0, 1.0, 0.0],
+            timeline_preview_direction: preview_direction,
+            timing_points,
+            playback_speed: 1.0,
+            timing_selected_index: None,
+            waveform_zoom: 1.0,
+            waveform_scroll: 0.0,
+            waveform_samples: &[],
+            waveform_sample_rate: 0,
+            waveform_window_size: 256,
+            waveform_loading: false,
+            waveform_complete: false,
+            bpm_tap_result: None,
+            triggers: triggers.to_vec(),
+            trigger_selected_index: None,
+            simulate_trigger_hitboxes: false,
+            camera_position: [9.0, 8.0, 7.0],
+            camera_preview_position: [3.0, 2.0, 1.0],
+            camera_preview_target: [0.0, 0.0, 0.0],
+            camera_rotation: 0.0,
+            camera_pitch: 0.0,
+            fps: 90.0,
+            marquee_selection_rect_screen: None,
+            object_count: 0,
+        }
+    }
+
+    #[test]
+    fn property_popup_runs_content_closure_with_bottom_bar_offset() {
+        let popup = EditorPropertyPopup::above_bottom_bar("test_property_popup", 48.0);
+        assert_eq!(popup.anchor, egui::Align2::LEFT_BOTTOM);
+        assert_eq!(popup.offset.x, PROPERTY_POPUP_MARGIN);
+        assert_eq!(popup.offset.y, -PROPERTY_POPUP_MARGIN - 48.0);
+
+        let ctx = egui::Context::default();
+        let mut rendered = false;
+        let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
+            show_editor_property_popup(&ctx, popup, |ui| {
+                rendered = true;
+                ui.label("Property popup");
+            });
+        });
+
+        assert!(rendered);
+    }
+
+    #[test]
+    fn show_player_camera_status_row_renders_for_forward_and_right_directions() {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let forward_view = make_view(
+            &app_settings,
+            &music_metadata,
+            &[],
+            &[],
+            SpawnDirection::Forward,
+            EditorMode::Select,
+        );
+        let right_view = make_view(
+            &app_settings,
+            &music_metadata,
+            &[],
+            &[],
+            SpawnDirection::Right,
+            EditorMode::Select,
+        );
+
+        let ctx = egui::Context::default();
+        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+            egui::CentralPanel::default().show_inside(root_ui, |ui| {
+                show_player_camera_status_row(ui, &forward_view);
+                show_player_camera_status_row(ui, &right_view);
+            });
+        });
+    }
+
+    #[test]
+    fn mode_selector_popup_uses_top_left_anchor_and_renders_modes() {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let view = make_view(
+            &app_settings,
+            &music_metadata,
+            &[],
+            &[],
+            SpawnDirection::Forward,
+            EditorMode::Select,
+        );
+        let mut commands = Vec::<AppCommand>::new();
+
+        let ctx = egui::Context::default();
+        let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
+            show_mode_selector_popup(&ctx, &view, 28.0, &mut commands);
+        });
+
+        assert!(commands.is_empty());
+    }
+
+    #[test]
+    fn mode_selector_popup_shows_secondary_for_move_mode() {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let view = make_view(
+            &app_settings,
+            &music_metadata,
+            &[],
+            &[],
+            SpawnDirection::Forward,
+            EditorMode::Move,
+        );
+        let mut commands = Vec::<AppCommand>::new();
+
+        let ctx = egui::Context::default();
+        let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
+            show_mode_selector_popup(&ctx, &view, 28.0, &mut commands);
+        });
+    }
+
+    #[test]
+    fn mode_selector_popup_shows_secondary_for_scale_mode() {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let view = make_view(
+            &app_settings,
+            &music_metadata,
+            &[],
+            &[],
+            SpawnDirection::Forward,
+            EditorMode::Scale,
+        );
+        let mut commands = Vec::<AppCommand>::new();
+
+        let ctx = egui::Context::default();
+        let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
+            show_mode_selector_popup(&ctx, &view, 28.0, &mut commands);
+        });
+    }
+
+    #[test]
+    fn mode_selector_popup_shows_secondary_for_rotate_mode() {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let view = make_view(
+            &app_settings,
+            &music_metadata,
+            &[],
+            &[],
+            SpawnDirection::Forward,
+            EditorMode::Rotate,
+        );
+        let mut commands = Vec::<AppCommand>::new();
+
+        let ctx = egui::Context::default();
+        let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
+            show_mode_selector_popup(&ctx, &view, 28.0, &mut commands);
+        });
+    }
+
+    #[test]
+    fn top_left_right_of_positions_to_the_right() {
+        let popup = EditorPropertyPopup::top_left_right_of("test_right_popup", 28.0);
+        assert_eq!(popup.anchor, egui::Align2::LEFT_TOP);
+        assert!(
+            popup.offset.x > PROPERTY_POPUP_MARGIN,
+            "Secondary popup offset should be beyond the primary popup"
+        );
+        assert_eq!(popup.offset.y, PROPERTY_POPUP_MARGIN + 28.0);
+    }
+}
