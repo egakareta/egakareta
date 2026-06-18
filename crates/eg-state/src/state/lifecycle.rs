@@ -634,6 +634,8 @@ impl State {
                 editor_keybind_capture_action: None,
                 editor_level_import_channel: std::sync::mpsc::channel(),
                 settings_restart_required: false,
+                graphics_backend_locked: false,
+                audio_backend_locked: false,
                 available_graphics_backends,
                 available_audio_backends,
                 app_settings: app_settings.clone(),
@@ -1380,11 +1382,15 @@ impl State {
             }
         }
 
+        let graphics_backend_locked = graphics_backend_override.is_some();
         if let Some(graphics_backend) = graphics_backend_override {
             app_settings.graphics_backend = graphics_backend;
         }
+
+        let mut audio_backend_locked = false;
         if let Some(audio_backend) = audio_backend_override {
             if let Some(audio_backend) = eg_audio::audio::canonical_backend_name(&audio_backend) {
+                audio_backend_locked = true;
                 app_settings.audio_backend = audio_backend;
             } else {
                 log::warn!("Ignoring unsupported audio backend query override: {audio_backend}");
@@ -1529,6 +1535,8 @@ impl State {
                 editor_keybind_capture_action: None,
                 editor_level_import_channel: std::sync::mpsc::channel(),
                 settings_restart_required: false,
+                graphics_backend_locked,
+                audio_backend_locked,
                 available_graphics_backends,
                 available_audio_backends,
                 app_settings: app_settings.clone(),

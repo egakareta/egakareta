@@ -99,6 +99,8 @@ pub struct SessionSubsystem {
         std::sync::mpsc::Receiver<Vec<u8>>,
     ),
     pub settings_restart_required: bool,
+    pub graphics_backend_locked: bool,
+    pub audio_backend_locked: bool,
     pub available_graphics_backends: Vec<String>,
     pub available_audio_backends: Vec<String>,
     pub app_settings: AppSettings,

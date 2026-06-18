@@ -249,6 +249,8 @@ mod tests {
             app_settings,
             configured_graphics_backend: "Auto",
             configured_audio_backend: "Default",
+            graphics_backend_locked: false,
+            audio_backend_locked: false,
             graphics_backend_options: &[],
             audio_backend_options: &[],
             settings_restart_required: false,

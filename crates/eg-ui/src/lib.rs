@@ -625,6 +625,8 @@ pub fn show_settings_sidebar(
     let app_settings = view.app_settings.clone();
     let configured_graphics_backend = view.configured_graphics_backend.to_string();
     let configured_audio_backend = view.configured_audio_backend.to_string();
+    let graphics_backend_locked = view.graphics_backend_locked;
+    let audio_backend_locked = view.audio_backend_locked;
     let graphics_backend_options = view.graphics_backend_options.to_vec();
     let audio_backend_options = view.audio_backend_options.to_vec();
     let settings_restart_required = view.settings_restart_required;
@@ -691,19 +693,23 @@ pub fn show_settings_sidebar(
                             egui_phosphor::regular::DESKTOP
                         ));
                         let mut graphics_choice = configured_graphics_backend.clone();
-                        egui::ComboBox::from_id_salt("settings_graphics_backend")
-                            .selected_text(graphics_choice.as_str())
-                            .show_ui(ui, |ui| {
-                                for backend in &graphics_backend_options {
-                                    if ui
-                                        .selectable_label(graphics_choice == *backend, backend)
-                                        .clicked()
-                                    {
-                                        graphics_choice = backend.clone();
+                        ui.add_enabled_ui(!graphics_backend_locked, |ui| {
+                            egui::ComboBox::from_id_salt("settings_graphics_backend")
+                                .selected_text(graphics_choice.as_str())
+                                .show_ui(ui, |ui| {
+                                    for backend in &graphics_backend_options {
+                                        if ui
+                                            .selectable_label(graphics_choice == *backend, backend)
+                                            .clicked()
+                                        {
+                                            graphics_choice = backend.clone();
+                                        }
                                     }
-                                }
-                            });
-                        if graphics_choice != configured_graphics_backend {
+                                });
+                        });
+                        if !graphics_backend_locked
+                            && graphics_choice != configured_graphics_backend
+                        {
                             commands.push(AppCommand::Editor(EditorCommand::SetGraphicsBackend(
                                 graphics_choice,
                             )));
@@ -725,19 +731,21 @@ pub fn show_settings_sidebar(
                             egui_phosphor::regular::SPEAKER_HIGH
                         ));
                         let mut audio_choice = configured_audio_backend.clone();
-                        egui::ComboBox::from_id_salt("settings_audio_backend")
-                            .selected_text(audio_choice.as_str())
-                            .show_ui(ui, |ui| {
-                                for backend in &audio_backend_options {
-                                    if ui
-                                        .selectable_label(audio_choice == *backend, backend)
-                                        .clicked()
-                                    {
-                                        audio_choice = backend.clone();
+                        ui.add_enabled_ui(!audio_backend_locked, |ui| {
+                            egui::ComboBox::from_id_salt("settings_audio_backend")
+                                .selected_text(audio_choice.as_str())
+                                .show_ui(ui, |ui| {
+                                    for backend in &audio_backend_options {
+                                        if ui
+                                            .selectable_label(audio_choice == *backend, backend)
+                                            .clicked()
+                                        {
+                                            audio_choice = backend.clone();
+                                        }
                                     }
-                                }
-                            });
-                        if audio_choice != configured_audio_backend {
+                                });
+                        });
+                        if !audio_backend_locked && audio_choice != configured_audio_backend {
                             commands.push(AppCommand::Editor(EditorCommand::SetAudioBackend(
                                 audio_choice,
                             )));
@@ -913,19 +921,26 @@ pub fn show_editor_ui(
                                 egui_phosphor::regular::DESKTOP
                             ));
                             let mut graphics_choice = view.configured_graphics_backend.to_string();
-                            egui::ComboBox::from_id_salt("settings_graphics_backend")
-                                .selected_text(graphics_choice.as_str())
-                                .show_ui(ui, |ui| {
-                                    for backend in view.graphics_backend_options {
-                                        if ui
-                                            .selectable_label(graphics_choice == *backend, backend)
-                                            .clicked()
-                                        {
-                                            graphics_choice = backend.clone();
+                            ui.add_enabled_ui(!view.graphics_backend_locked, |ui| {
+                                egui::ComboBox::from_id_salt("settings_graphics_backend")
+                                    .selected_text(graphics_choice.as_str())
+                                    .show_ui(ui, |ui| {
+                                        for backend in view.graphics_backend_options {
+                                            if ui
+                                                .selectable_label(
+                                                    graphics_choice == *backend,
+                                                    backend,
+                                                )
+                                                .clicked()
+                                            {
+                                                graphics_choice = backend.clone();
+                                            }
                                         }
-                                    }
-                                });
-                            if graphics_choice != view.configured_graphics_backend {
+                                    });
+                            });
+                            if !view.graphics_backend_locked
+                                && graphics_choice != view.configured_graphics_backend
+                            {
                                 commands.push(AppCommand::Editor(
                                     EditorCommand::SetGraphicsBackend(graphics_choice),
                                 ));
@@ -947,19 +962,23 @@ pub fn show_editor_ui(
                                 egui_phosphor::regular::SPEAKER_HIGH
                             ));
                             let mut audio_choice = view.configured_audio_backend.to_string();
-                            egui::ComboBox::from_id_salt("settings_audio_backend")
-                                .selected_text(audio_choice.as_str())
-                                .show_ui(ui, |ui| {
-                                    for backend in view.audio_backend_options {
-                                        if ui
-                                            .selectable_label(audio_choice == *backend, backend)
-                                            .clicked()
-                                        {
-                                            audio_choice = backend.clone();
+                            ui.add_enabled_ui(!view.audio_backend_locked, |ui| {
+                                egui::ComboBox::from_id_salt("settings_audio_backend")
+                                    .selected_text(audio_choice.as_str())
+                                    .show_ui(ui, |ui| {
+                                        for backend in view.audio_backend_options {
+                                            if ui
+                                                .selectable_label(audio_choice == *backend, backend)
+                                                .clicked()
+                                            {
+                                                audio_choice = backend.clone();
+                                            }
                                         }
-                                    }
-                                });
-                            if audio_choice != view.configured_audio_backend {
+                                    });
+                            });
+                            if !view.audio_backend_locked
+                                && audio_choice != view.configured_audio_backend
+                            {
                                 commands.push(AppCommand::Editor(EditorCommand::SetAudioBackend(
                                     audio_choice,
                                 )));

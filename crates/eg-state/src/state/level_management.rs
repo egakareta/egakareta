@@ -531,7 +531,19 @@ impl State {
         self.session.settings_restart_required
     }
 
+    pub fn graphics_backend_locked(&self) -> bool {
+        self.session.graphics_backend_locked
+    }
+
+    pub fn audio_backend_locked(&self) -> bool {
+        self.session.audio_backend_locked
+    }
+
     pub fn set_preferred_graphics_backend(&mut self, backend_name: String) {
+        if self.session.graphics_backend_locked {
+            return;
+        }
+
         if self.session.app_settings.graphics_backend == backend_name {
             return;
         }
@@ -542,6 +554,10 @@ impl State {
     }
 
     pub fn set_preferred_audio_backend(&mut self, backend_name: String) {
+        if self.session.audio_backend_locked {
+            return;
+        }
+
         if !self
             .audio
             .state
@@ -969,6 +985,25 @@ mod tests {
                 .keybinds_for_action("editor.copy")
                 .len();
             assert!(after_reset >= 1 || before_keybinds == 0);
+        });
+    }
+
+    #[test]
+    fn locked_backend_preferences_ignore_mutations() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.session.graphics_backend_locked = true;
+            let original_graphics = state.app_settings().graphics_backend.clone();
+            state.set_preferred_graphics_backend("ManualTestBackend".to_string());
+            assert_eq!(state.app_settings().graphics_backend, original_graphics);
+            assert!(!state.settings_restart_required());
+
+            state.session.audio_backend_locked = true;
+            state.session.app_settings.audio_backend = "LockedAudio".to_string();
+            let original_audio = state.app_settings().audio_backend.clone();
+            state.set_preferred_audio_backend("Default".to_string());
+            assert_eq!(state.app_settings().audio_backend, original_audio);
         });
     }
 
