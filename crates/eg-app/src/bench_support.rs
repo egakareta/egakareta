@@ -445,7 +445,8 @@ fn cached_trail_point_distance(a: [f32; 3], b: [f32; 3]) -> f32 {
     (dx * dx + dy * dy + dz * dz).sqrt()
 }
 
-fn benchmark_objects(object_count: usize) -> Vec<LevelObject> {
+/// Builds a synthetic list of plain editor blocks for benchmark workloads.
+pub fn benchmark_objects(object_count: usize) -> Vec<LevelObject> {
     let side = (object_count as f32).sqrt().ceil() as usize;
     (0..object_count)
         .map(|index| {
@@ -463,7 +464,8 @@ fn benchmark_objects(object_count: usize) -> Vec<LevelObject> {
         .collect()
 }
 
-fn benchmark_object_triggers(
+/// Builds synthetic transform triggers for benchmark workloads.
+pub fn benchmark_object_triggers(
     object_count: usize,
     trigger_count: usize,
     targets_per_trigger: usize,
@@ -504,7 +506,8 @@ fn benchmark_object_triggers(
         .collect()
 }
 
-fn benchmark_tap_times(target_time_seconds: f32) -> Vec<f32> {
+/// Builds evenly spaced tap times up to `target_time_seconds`.
+pub fn benchmark_tap_times(target_time_seconds: f32) -> Vec<f32> {
     let tap_count = (target_time_seconds.max(0.0) * 2.0).ceil() as usize;
     (0..tap_count)
         .map(|index| 0.25 + index as f32 * 0.5)
