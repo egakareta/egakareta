@@ -67,7 +67,7 @@ pub fn save_level_export(filename: &str, data: &[u8]) -> Result<(), String> {
             .dyn_into::<HtmlAnchorElement>()
             .map_err(|error| format!("Failed to cast anchor: {:?}", error))?;
 
-        anchor.set_href(&url.to_string());
+        anchor.set_href(&url);
         anchor.set_download(filename);
         anchor.click();
 

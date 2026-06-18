@@ -1054,7 +1054,10 @@ impl State {
     pub fn set_editor_timeline_time_seconds(&mut self, time_seconds: f32) {
         puffin::profile_scope!("TimelineSeek");
         let is_effectively_timing = self.editor_is_effectively_timing_mode();
-        let changed = self.editor.set_timeline_time_seconds(time_seconds);
+        let changed = {
+            puffin::profile_scope!("TimelineSeekSetClock");
+            self.editor.set_timeline_time_seconds(time_seconds)
+        };
         let preserve_editor_camera =
             self.phase == AppPhase::Editor && !is_effectively_timing && self.editor.ui.ctrl_held;
         let editor_camera = preserve_editor_camera.then_some((
@@ -1110,48 +1113,59 @@ impl State {
         }
 
         puffin::profile_scope!("PreviewSolveTimeline");
-        self.rebuild_editor_timeline_snapshot_cache_if_needed();
-
-        let duration_seconds = self.editor.timeline.clock.duration_seconds;
-        let step_seconds = self
-            .editor
-            .timeline
-            .snapshot_cache_step_seconds
-            .max(1.0 / 480.0);
-        let cache_len = self.editor.timeline.snapshot_cache.len();
-        if cache_len == 0 {
-            return;
+        {
+            puffin::profile_scope!("PreviewSnapshotCacheEnsure");
+            self.rebuild_editor_timeline_snapshot_cache_if_needed();
         }
 
-        let target_time = self
-            .editor
-            .timeline
-            .clock
-            .time_seconds
-            .clamp(0.0, duration_seconds);
-        let max_index = cache_len.saturating_sub(1);
-        let sample_position = (target_time / step_seconds).clamp(0.0, max_index as f32);
-        let lower_index = sample_position.floor() as usize;
-        let upper_index = (lower_index + 1).min(max_index);
-        let alpha = (sample_position - lower_index as f32).clamp(0.0, 1.0);
+        let (position, direction) = {
+            puffin::profile_scope!("PreviewSnapshotCacheLookup");
+            let duration_seconds = self.editor.timeline.clock.duration_seconds;
+            let step_seconds = self
+                .editor
+                .timeline
+                .snapshot_cache_step_seconds
+                .max(1.0 / 480.0);
+            let cache_len = self.editor.timeline.snapshot_cache.len();
+            if cache_len == 0 {
+                return;
+            }
 
-        let lower = &self.editor.timeline.snapshot_cache[lower_index];
-        let upper = &self.editor.timeline.snapshot_cache[upper_index];
+            let target_time = self
+                .editor
+                .timeline
+                .clock
+                .time_seconds
+                .clamp(0.0, duration_seconds);
+            let max_index = cache_len.saturating_sub(1);
+            let sample_position = (target_time / step_seconds).clamp(0.0, max_index as f32);
+            let lower_index = sample_position.floor() as usize;
+            let upper_index = (lower_index + 1).min(max_index);
+            let alpha = (sample_position - lower_index as f32).clamp(0.0, 1.0);
 
-        let position = interpolate_timeline_sample_positions(
-            lower.position,
-            lower.direction,
-            upper.position,
-            upper.direction,
-            alpha,
-        );
-        let direction = if alpha < 0.5 {
-            lower.direction
-        } else {
-            upper.direction
+            let lower = &self.editor.timeline.snapshot_cache[lower_index];
+            let upper = &self.editor.timeline.snapshot_cache[upper_index];
+
+            let position = interpolate_timeline_sample_positions(
+                lower.position,
+                lower.direction,
+                upper.position,
+                upper.direction,
+                alpha,
+            );
+            let direction = if alpha < 0.5 {
+                lower.direction
+            } else {
+                upper.direction
+            };
+
+            (position, direction)
         };
 
-        self.apply_editor_timeline_preview_state(position, direction);
+        {
+            puffin::profile_scope!("PreviewApplyState");
+            self.apply_editor_timeline_preview_state(position, direction);
+        }
     }
 
     pub(super) fn rebuild_editor_timeline_snapshot_cache_if_needed(&mut self) {
@@ -1184,19 +1198,25 @@ impl State {
                 0
             };
 
-        let mut runtime = TimelineSimulationRuntime::new_with_triggers(
-            self.editor.spawn.position,
-            self.editor.spawn.direction,
-            &self.editor.objects,
-            &self.editor.timeline.taps.tap_times,
-            &self.editor.triggers(),
-            self.editor.simulate_trigger_hitboxes(),
-        );
+        let mut runtime = {
+            puffin::profile_scope!("TimelineSamplesRuntimeBuild");
+            TimelineSimulationRuntime::new_with_triggers(
+                self.editor.spawn.position,
+                self.editor.spawn.direction,
+                &self.editor.objects,
+                &self.editor.timeline.taps.tap_times,
+                &self.editor.triggers(),
+                self.editor.simulate_trigger_hitboxes(),
+            )
+        };
 
         // Fast-forward runtime to the resume point
         if resume_index > 0 {
             let resume_time = ((resume_index - 1) as f32 * step_seconds).min(duration_seconds);
-            runtime.advance_to(resume_time);
+            {
+                puffin::profile_scope!("TimelineSamplesResumeCatchUp");
+                runtime.advance_to(resume_time);
+            }
         }
 
         let mut trail_segment_lengths = self.editor_timeline_cached_trail_segment_lengths();
@@ -1205,24 +1225,27 @@ impl State {
             .timeline
             .snapshot_cache
             .reserve(total_sample_count.saturating_sub(existing_count));
-        for index in resume_index..total_sample_count.max(1) {
-            let sample_time = (index as f32 * step_seconds).min(duration_seconds);
-            runtime.advance_to(sample_time);
-            self.append_editor_timeline_trail_cache(
-                runtime.trail_segments(),
-                &mut trail_segment_lengths,
-            );
-            let snapshot = runtime.snapshot();
-            self.editor.timeline.snapshot_cache.push(
-                crate::state::editor_timeline::EditorTimelineSnapshot {
-                    position: snapshot.position,
-                    direction: snapshot.direction,
-                    is_grounded: snapshot.is_grounded,
-                    game_over: runtime.game_over(),
-                    trail_segment_count: self.editor.timeline.trail_segment_start_cache.len(),
-                    trail_point_count: self.editor.timeline.trail_point_cache.len(),
-                },
-            );
+        {
+            puffin::profile_scope!("TimelineSamplesSampleLoop");
+            for index in resume_index..total_sample_count.max(1) {
+                let sample_time = (index as f32 * step_seconds).min(duration_seconds);
+                runtime.advance_to(sample_time);
+                self.append_editor_timeline_trail_cache(
+                    runtime.trail_segments(),
+                    &mut trail_segment_lengths,
+                );
+                let snapshot = runtime.snapshot();
+                self.editor.timeline.snapshot_cache.push(
+                    crate::state::editor_timeline::EditorTimelineSnapshot {
+                        position: snapshot.position,
+                        direction: snapshot.direction,
+                        is_grounded: snapshot.is_grounded,
+                        game_over: runtime.game_over(),
+                        trail_segment_count: self.editor.timeline.trail_segment_start_cache.len(),
+                        trail_point_count: self.editor.timeline.trail_point_cache.len(),
+                    },
+                );
+            }
         }
 
         self.editor.timeline.snapshot_cache_revision = self.editor.timeline.simulation_revision;

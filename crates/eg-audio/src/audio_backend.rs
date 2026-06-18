@@ -193,22 +193,6 @@ impl RodioBackendInner {
         self._output_device.as_ref()
     }
 
-    fn resume(&mut self) {
-        #[cfg(target_arch = "wasm32")]
-        {
-            // On WASM, initializing the device inside a user interaction (like a click)
-            // allows the AudioContext to start in the "running" state.
-            if self._output_device.is_none() {
-                let _ = self.ensure_device();
-            } else {
-                // Re-checking the device here keeps resume idempotent and gives browsers
-                // another chance to unlock playback after user interaction policies change.
-                let _ = self.ensure_device();
-                log::trace!("AudioBackend: resume requested on existing output device");
-            }
-        }
-    }
-
     fn pause_playback(&mut self) {
         if let Some(started_at) = self.playback_started_at {
             self.playback_start_offset_seconds +=
@@ -221,7 +205,7 @@ impl RodioBackendInner {
     }
 
     fn resume_playback(&mut self) {
-        self.resume();
+        self.ensure_device();
         if let Some(player) = &self.current_player {
             player.set_speed(self.playback_speed);
             player.play();
@@ -626,8 +610,8 @@ impl AudioBackend {
         }
     }
 
-    pub fn resume(&mut self) {
-        self.inner.borrow_mut().resume();
+    pub fn ensure_device(&mut self) {
+        self.inner.borrow_mut().ensure_device();
     }
 
     pub fn resume_playback(&mut self) {

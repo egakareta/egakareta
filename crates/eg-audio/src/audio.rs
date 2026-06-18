@@ -196,8 +196,8 @@ impl PlatformAudio {
         self.backend.play_sfx(asset_bytes);
     }
 
-    pub fn resume(&mut self) {
-        self.backend.resume();
+    pub fn ensure_device(&mut self) {
+        self.backend.ensure_device();
     }
 
     pub fn resume_playback(&mut self) {

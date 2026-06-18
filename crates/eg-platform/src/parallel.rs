@@ -47,6 +47,26 @@ where
     }
 }
 
+pub fn spawn_worker_bound<F>(job: F)
+where
+    F: FnOnce() + Send + 'static,
+{
+    #[cfg(target_arch = "wasm32")]
+    {
+        request_rayon_init();
+        if rayon_is_ready() {
+            rayon::spawn(job);
+        } else {
+            schedule_worker_bound_when_rayon_ready(Box::new(job), 0);
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::thread::spawn(job);
+    }
+}
+
 #[cfg(target_arch = "wasm32")]
 fn request_rayon_init() {
     use wasm_bindgen::JsCast;
@@ -75,7 +95,7 @@ fn schedule_cpu_bound_when_rayon_ready(job: Box<dyn FnOnce() + Send>, attempt: u
     use wasm_bindgen::JsCast;
 
     if rayon_is_ready() {
-        rayon::spawn(move || job());
+        rayon::spawn(job);
         return;
     }
 
@@ -103,6 +123,41 @@ fn schedule_cpu_bound_when_rayon_ready(job: Box<dyn FnOnce() + Send>, attempt: u
         16,
     ) {
         log::warn!("Failed to schedule CPU job for Rayon readiness: {:?}", err);
+    }
+
+    callback.forget();
+}
+
+#[cfg(target_arch = "wasm32")]
+fn schedule_worker_bound_when_rayon_ready(job: Box<dyn FnOnce() + Send>, attempt: u32) {
+    use wasm_bindgen::JsCast;
+
+    if rayon_is_ready() {
+        rayon::spawn(job);
+        return;
+    }
+
+    if attempt > 0 && attempt.is_multiple_of(120) {
+        log::warn!("Waiting for Rayon worker pool before starting worker-bound job");
+    }
+
+    let Some(window) = web_sys::window() else {
+        log::warn!("Cannot start worker-bound job before Rayon is ready without a window");
+        return;
+    };
+
+    let callback = wasm_bindgen::closure::Closure::<dyn FnMut()>::once(move || {
+        schedule_worker_bound_when_rayon_ready(job, attempt + 1);
+    });
+
+    if let Err(err) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+        callback.as_ref().unchecked_ref(),
+        16,
+    ) {
+        log::warn!(
+            "Failed to schedule worker-bound job for Rayon readiness: {:?}",
+            err
+        );
     }
 
     callback.forget();

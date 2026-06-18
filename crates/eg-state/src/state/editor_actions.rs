@@ -983,6 +983,7 @@ impl State {
     }
 
     pub(super) fn toggle_editor_timeline_playback(&mut self) {
+        puffin::profile_scope!("ToggleTimelinePlayback");
         if self.phase != AppPhase::Editor {
             return;
         }
@@ -990,53 +991,71 @@ impl State {
         self.editor.timeline.playback.playing = !self.editor.timeline.playback.playing;
 
         if self.editor.timeline.playback.playing {
+            puffin::profile_scope!("TimelinePlaybackStart");
             let last_mode = self.editor.ui.mode;
-            self.editor.runtime.interaction.last_mode = Some(last_mode);
-            self.editor.set_mode(EditorMode::Null);
-            self.editor.timeline.playback.pending_seek_time_seconds = None;
-            self.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
+            {
+                puffin::profile_scope!("TimelinePlaybackStartSetup");
+                self.editor.runtime.interaction.last_mode = Some(last_mode);
+                self.editor.set_mode(EditorMode::Null);
+                self.editor.timeline.playback.pending_seek_time_seconds = None;
+                self.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
 
-            self.mark_editor_dirty(EditorDirtyFlags::playback_mode_changed());
-            if last_mode == EditorMode::Timing {
+                self.mark_editor_dirty(EditorDirtyFlags::playback_mode_changed());
+            }
+            let start_seconds = if last_mode == EditorMode::Timing {
                 self.editor.timeline.playback.runtime = None;
+                self.editor_timeline_elapsed_seconds(self.editor.timeline.clock.time_seconds)
             } else {
-                self.editor.timeline.playback.runtime =
-                    Some(TimelineSimulationRuntime::new_with_triggers(
+                let mut runtime = {
+                    puffin::profile_scope!("TimelinePlaybackRuntimeBuild");
+                    TimelineSimulationRuntime::new_with_triggers(
                         self.editor.spawn.position,
                         self.editor.spawn.direction,
                         &self.editor.objects,
                         &self.editor.timeline.taps.tap_times,
                         &self.editor.triggers(),
                         self.editor.simulate_trigger_hitboxes(),
-                    ));
-                if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
+                    )
+                };
+                {
+                    puffin::profile_scope!("TimelinePlaybackCatchUp");
                     runtime.advance_to(self.editor.timeline.clock.time_seconds);
                 }
-            }
+                let start_seconds = runtime.elapsed_seconds();
+                self.editor.timeline.playback.runtime = Some(runtime);
+                start_seconds
+            };
 
-            let metadata = self.current_editor_metadata();
             let level_name = self
                 .session
                 .editor_level_name
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string());
-            let start_seconds =
-                self.editor_timeline_elapsed_seconds(self.editor.timeline.clock.time_seconds);
-            self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
+            let music_source = self.session.editor_music_metadata.source.clone();
+            {
+                puffin::profile_scope!("TimelinePlaybackAudioStart");
+                self.start_audio_source_at_seconds(&level_name, &music_source, start_seconds);
+            }
             return;
         }
 
-        self.editor.timeline.playback.runtime = None;
-        self.editor.timeline.playback.pending_seek_time_seconds = None;
-        self.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
-        if let Some(last_mode) = self.editor.runtime.interaction.last_mode.take() {
-            self.editor.set_mode(last_mode);
-        } else {
-            self.editor.set_mode(EditorMode::Place);
-        }
+        {
+            puffin::profile_scope!("TimelinePlaybackStopSetup");
+            self.editor.timeline.playback.runtime = None;
+            self.editor.timeline.playback.pending_seek_time_seconds = None;
+            self.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
+            if let Some(last_mode) = self.editor.runtime.interaction.last_mode.take() {
+                self.editor.set_mode(last_mode);
+            } else {
+                self.editor.set_mode(EditorMode::Place);
+            }
 
-        self.mark_editor_dirty(EditorDirtyFlags::playback_mode_changed());
-        self.stop_audio();
+            self.mark_editor_dirty(EditorDirtyFlags::playback_mode_changed());
+        }
+        {
+            puffin::profile_scope!("TimelinePlaybackAudioStop");
+            self.stop_audio();
+        }
     }
 
     /// Removes the currently selected block from the editor.

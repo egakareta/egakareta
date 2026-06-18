@@ -170,8 +170,8 @@ impl State {
         self.audio.state.runtime.resume_playback();
     }
 
-    pub fn resume_audio(&mut self) {
-        self.audio.state.runtime.resume();
+    pub fn ensure_device(&mut self) {
+        self.audio.state.runtime.ensure_device();
     }
 
     pub fn start_audio(&mut self, level_name: &str, metadata: &LevelMetadata) {
@@ -184,22 +184,25 @@ impl State {
         metadata: &LevelMetadata,
         start_seconds: f32,
     ) {
-        let source_key = runtime_asset_source_key(level_name, &metadata.music.source);
+        let music_source = metadata.music.source.clone();
+        self.start_audio_source_at_seconds(level_name, &music_source, start_seconds);
+    }
+
+    pub(super) fn start_audio_source_at_seconds(
+        &mut self,
+        level_name: &str,
+        music_source: &str,
+        start_seconds: f32,
+    ) {
+        let source_key = runtime_asset_source_key(level_name, music_source);
         self.update_runtime_audio_preloads();
 
         if self.phase == eg_types::AppPhase::Editor || self.session.playtesting_editor {
-            if let Some(bytes) = self
-                .audio
-                .state
-                .editor
-                .local_audio_cache
-                .get(&metadata.music.source)
-            {
-                self.audio.state.runtime.start_with_bytes_at(
-                    &metadata.music.source,
-                    bytes,
-                    start_seconds,
-                );
+            if let Some(bytes) = self.audio.state.editor.local_audio_cache.get(music_source) {
+                self.audio
+                    .state
+                    .runtime
+                    .start_with_bytes_at(music_source, bytes, start_seconds);
                 return;
             }
         }
@@ -213,7 +216,7 @@ impl State {
         {
             self.audio.state.runtime.start_preloaded_asset_at(
                 level_name,
-                &metadata.music.source,
+                music_source,
                 bytes,
                 start_seconds,
             );
@@ -221,7 +224,7 @@ impl State {
             self.audio
                 .state
                 .runtime
-                .start_at(level_name, &metadata.music.source, start_seconds);
+                .start_at(level_name, music_source, start_seconds);
         }
     }
 
