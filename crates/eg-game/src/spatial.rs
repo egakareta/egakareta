@@ -51,13 +51,28 @@ impl SpatialGrid {
         }
     }
 
+    /// Query the grid for objects whose AABBs intersect the given AABB, and return their indices.
+    /// This is a convenience wrapper around `query_aabb_into` that allocates a new Vec for the results.
     pub fn query_aabb(&self, min_x: f32, max_x: f32, min_z: f32, max_z: f32) -> Vec<usize> {
+        let mut results = Vec::new();
+        self.query_aabb_into(min_x, max_x, min_z, max_z, &mut results);
+        results
+    }
+
+    /// Query the grid for objects whose AABBs intersect the given AABB, and append their indices to `results`.
+    pub fn query_aabb_into(
+        &self,
+        min_x: f32,
+        max_x: f32,
+        min_z: f32,
+        max_z: f32,
+        results: &mut Vec<usize>,
+    ) {
         let start_x = (min_x / GRID_CELL_SIZE).floor() as i32;
         let end_x = (max_x / GRID_CELL_SIZE).floor() as i32;
         let start_z = (min_z / GRID_CELL_SIZE).floor() as i32;
         let end_z = (max_z / GRID_CELL_SIZE).floor() as i32;
 
-        let mut results = Vec::new();
         // Use a small fixed-size buffer or HashSet if we expect many overlapping cells,
         // but for a player-sized AABB, it usually hits 1-4 cells.
         for gx in start_x..=end_x {
@@ -71,7 +86,6 @@ impl SpatialGrid {
                 }
             }
         }
-        results
     }
 
     #[cfg(test)]

@@ -89,6 +89,7 @@ pub struct GameState {
     progress: PlayerLevelProgress,
     consumed_object_indices: Vec<usize>,
     consumed_object_events: Vec<ConsumedObjectEvent>,
+    query_indices: Vec<usize>,
 }
 
 pub fn center_spawn_position(position: [f32; 3]) -> [f32; 3] {
@@ -120,6 +121,7 @@ impl GameState {
             progress: PlayerLevelProgress::default(),
             consumed_object_indices: Vec::new(),
             consumed_object_events: Vec::new(),
+            query_indices: Vec::new(),
         }
     }
 
@@ -326,15 +328,21 @@ impl GameState {
         let s_min_y = y + PLAYER_FOOTPRINT_TOLERANCE;
         let s_max_y = y + PLAYER_HEIGHT - PLAYER_FOOTPRINT_TOLERANCE;
 
-        let query_indices = {
+        {
             puffin::profile_scope!("GameCollisionQuery");
-            self.spatial_grid
-                .query_aabb(s_min_x, s_max_x, s_min_z, s_max_z)
-        };
+            self.query_indices.clear();
+            self.spatial_grid.query_aabb_into(
+                s_min_x,
+                s_max_x,
+                s_min_z,
+                s_max_z,
+                &mut self.query_indices,
+            );
+        }
 
         {
             puffin::profile_scope!("GameCollisionScan");
-            for i in query_indices {
+            for &i in &self.query_indices {
                 let obj = &self.objects[i];
                 let behavior = self
                     .cached_behaviors
@@ -441,7 +449,16 @@ impl GameState {
 
         let support_height = {
             puffin::profile_scope!("GameSupportScan");
-            self.top_surface_y_under_aabb(
+            self.query_indices.clear();
+            self.spatial_grid.query_aabb_into(
+                s_min_x,
+                s_max_x,
+                s_min_z,
+                s_max_z,
+                &mut self.query_indices,
+            );
+            self.top_surface_y_under_indices(
+                &self.query_indices,
                 s_min_x,
                 s_max_x,
                 s_min_z,
@@ -598,10 +615,22 @@ impl GameState {
         max_z: f32,
         max_y: f32,
     ) -> Option<f32> {
-        let mut top_surface: Option<f32> = Some(0.0);
         let query_indices = self.spatial_grid.query_aabb(min_x, max_x, min_z, max_z);
+        self.top_surface_y_under_indices(&query_indices, min_x, max_x, min_z, max_z, max_y)
+    }
 
-        for i in query_indices {
+    fn top_surface_y_under_indices(
+        &self,
+        query_indices: &[usize],
+        min_x: f32,
+        max_x: f32,
+        min_z: f32,
+        max_z: f32,
+        max_y: f32,
+    ) -> Option<f32> {
+        let mut top_surface: Option<f32> = Some(0.0);
+
+        for &i in query_indices {
             let obj = &self.objects[i];
             let is_support = self
                 .cached_behaviors
