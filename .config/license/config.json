@@ -5,11 +5,12 @@
         ".wrangler/**",
         "assets/**",
         "supabase/**",
+        "**/lcov.info",
         "**/*.md",
         "**/*.lock",
         "**/*-env.d.ts",
         "**/*_types.ts",
-        ".*"
+        "**/.*"
     ],
     "licenseFormats": {
         "ts|js|rs": {
@@ -25,7 +26,7 @@
             }
         }
     },
-    "license": ".github/license/header.txt",
+    "license": ".config/license/header.txt",
     "defaultFormat": {
         "eachLine": {
             "prepend": " * "

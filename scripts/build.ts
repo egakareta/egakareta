@@ -28,12 +28,7 @@ if (!fs.existsSync(distPath)) {
     fs.mkdirSync(distPath);
 }
 
-if (process.argv.includes("--profiling")) {
-    // Copy scripts/tools folder to dist for profiling tools
-    const toolsSrcPath = path.join(rootDir, "scripts", "tools");
-    const toolsDestPath = path.join(distPath, "tools");
-    fs.cpSync(toolsSrcPath, toolsDestPath, { recursive: true });
-}
+fs.cpSync(path.join(rootDir, "web"), path.join(distPath), { recursive: true });
 
 // Build the WASM package using wasm-pack
 const proc = Bun.spawn(
@@ -162,12 +157,6 @@ async function createDist() {
             path.join(distPath, "pkg"),
         );
     } catch (err) {}
-
-    // Copy index.html to dist
-    fs.copyFileSync(
-        path.join(rootDir, "index.html"),
-        path.join(distPath, "index.html"),
-    );
 
     // Copy assets folder to dist
     const assetsSrcPath = path.join(rootDir, "assets");

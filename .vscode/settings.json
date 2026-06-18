@@ -1,6 +1,8 @@
 {
     "rust-analyzer.diagnostics.disabled": ["inactive-code"],
     "rust-analyzer.testExplorer": true,
+    "prettier.configPath": ".config/.prettierrc",
+    "prettier.ignorePath": ".config/.prettierignore",
     "files.exclude": {
         "**/.git": true,
         "**/.svn": true,
@@ -8,6 +10,9 @@
         "**/.DS_Store": true,
         "**/Thumbs.db": true,
         "**/.wrangler": true,
-        "**/node_modules": true
+        "**/node_modules": true,
+        "**/.editorconfig": true,
+        "**/dist": true,
+        "lcov.info": true
     }
 }
