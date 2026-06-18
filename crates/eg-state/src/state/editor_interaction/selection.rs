@@ -13,6 +13,20 @@ use glam::{EulerRot, Mat3, Vec2, Vec3};
 
 const MARQUEE_DRAG_THRESHOLD_PX: f64 = 4.0;
 const CAMERA_TRIGGER_MARQUEE_RADIUS_PX: f32 = 16.0;
+const BLOCK_FACE_CORNER_INDICES: [[usize; 4]; 6] = [
+    [0, 2, 3, 1],
+    [4, 5, 7, 6],
+    [0, 1, 5, 4],
+    [2, 6, 7, 3],
+    [0, 4, 6, 2],
+    [1, 3, 7, 5],
+];
+
+#[derive(Clone, Copy)]
+struct ProjectedBlockScreenGeometry {
+    bounds: (Vec2, Vec2),
+    corners: [Option<Vec2>; 8],
+}
 
 fn unsnapped_drag_y_position(start_y: f32, raw_y: f32, snap_step: f32) -> f32 {
     if start_y.abs() <= f32::EPSILON && raw_y < snap_step * 0.5 {
@@ -93,21 +107,23 @@ impl EditorSubsystem {
 
         let mut hits = Vec::new();
         for index in 0..self.objects.len() {
-            let Some((obj_min, obj_max)) = self.rotated_block_screen_bounds(index, viewport) else {
+            let Some(geometry) = self.projected_block_screen_geometry(index, viewport) else {
                 continue;
             };
-            let overlaps = obj_max.x >= rect_min.x
-                && obj_min.x <= rect_max.x
-                && obj_max.y >= rect_min.y
-                && obj_min.y <= rect_max.y;
-            if overlaps {
+            if screen_bounds_overlap_rect(geometry.bounds, rect_min, rect_max)
+                && projected_block_overlaps_rect(&geometry, rect_min, rect_max)
+            {
                 hits.push(index);
             }
         }
         hits
     }
 
-    fn rotated_block_screen_bounds(&self, index: usize, viewport: Vec2) -> Option<(Vec2, Vec2)> {
+    fn projected_block_screen_geometry(
+        &self,
+        index: usize,
+        viewport: Vec2,
+    ) -> Option<ProjectedBlockScreenGeometry> {
         let obj = self.objects.get(index)?;
 
         let center = Vec3::new(
@@ -124,14 +140,18 @@ impl EditorSubsystem {
         );
 
         let mut bounds: Option<(Vec2, Vec2)> = None;
+        let mut corners = [None; 8];
+        let mut corner_index = 0;
         for sx in [-1.0, 1.0] {
             for sy in [-1.0, 1.0] {
                 for sz in [-1.0, 1.0] {
                     let local = Vec3::new(half.x * sx, half.y * sy, half.z * sz);
                     let world = center + rotation * local;
-                    if let Some(screen) = self.world_to_screen_v(world, viewport) {
+                    corners[corner_index] = self.world_to_screen_v(world, viewport);
+                    if let Some(screen) = corners[corner_index] {
                         grow_screen_bounds(&mut bounds, screen);
                     }
+                    corner_index += 1;
                 }
             }
         }
@@ -140,7 +160,7 @@ impl EditorSubsystem {
             grow_screen_bounds(&mut bounds, center_screen);
         }
 
-        bounds
+        bounds.map(|bounds| ProjectedBlockScreenGeometry { bounds, corners })
     }
 
     fn marquee_trigger_hit(&self, rect_min: Vec2, rect_max: Vec2, viewport: Vec2) -> Option<usize> {
@@ -718,10 +738,152 @@ fn grow_screen_bounds(bounds: &mut Option<(Vec2, Vec2)>, point: Vec2) {
     }
 }
 
+fn screen_bounds_overlap_rect(bounds: (Vec2, Vec2), rect_min: Vec2, rect_max: Vec2) -> bool {
+    let (obj_min, obj_max) = bounds;
+    obj_max.x >= rect_min.x
+        && obj_min.x <= rect_max.x
+        && obj_max.y >= rect_min.y
+        && obj_min.y <= rect_max.y
+}
+
+fn projected_block_overlaps_rect(
+    geometry: &ProjectedBlockScreenGeometry,
+    rect_min: Vec2,
+    rect_max: Vec2,
+) -> bool {
+    let mut checked_projected_face = false;
+
+    for face_indices in BLOCK_FACE_CORNER_INDICES {
+        let Some(face) = projected_face_corners(geometry, face_indices) else {
+            continue;
+        };
+        checked_projected_face = true;
+        if polygon_overlaps_rect(&face, rect_min, rect_max) {
+            return true;
+        }
+    }
+
+    !checked_projected_face && screen_bounds_overlap_rect(geometry.bounds, rect_min, rect_max)
+}
+
+fn projected_face_corners(
+    geometry: &ProjectedBlockScreenGeometry,
+    indices: [usize; 4],
+) -> Option<[Vec2; 4]> {
+    Some([
+        geometry.corners[indices[0]]?,
+        geometry.corners[indices[1]]?,
+        geometry.corners[indices[2]]?,
+        geometry.corners[indices[3]]?,
+    ])
+}
+
+fn polygon_overlaps_rect(polygon: &[Vec2; 4], rect_min: Vec2, rect_max: Vec2) -> bool {
+    if polygon
+        .iter()
+        .any(|point| point_in_rect(*point, rect_min, rect_max))
+    {
+        return true;
+    }
+
+    let rect_corners = [
+        rect_min,
+        Vec2::new(rect_max.x, rect_min.y),
+        rect_max,
+        Vec2::new(rect_min.x, rect_max.y),
+    ];
+    if rect_corners
+        .iter()
+        .any(|point| point_in_polygon(*point, polygon))
+    {
+        return true;
+    }
+
+    let rect_edges = [
+        (rect_corners[0], rect_corners[1]),
+        (rect_corners[1], rect_corners[2]),
+        (rect_corners[2], rect_corners[3]),
+        (rect_corners[3], rect_corners[0]),
+    ];
+
+    for edge_start_index in 0..polygon.len() {
+        let edge_start = polygon[edge_start_index];
+        let edge_end = polygon[(edge_start_index + 1) % polygon.len()];
+        if rect_edges.iter().any(|(rect_start, rect_end)| {
+            segments_intersect(edge_start, edge_end, *rect_start, *rect_end)
+        }) {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn point_in_rect(point: Vec2, rect_min: Vec2, rect_max: Vec2) -> bool {
+    point.x >= rect_min.x && point.x <= rect_max.x && point.y >= rect_min.y && point.y <= rect_max.y
+}
+
+fn point_in_polygon(point: Vec2, polygon: &[Vec2; 4]) -> bool {
+    let mut inside = false;
+    let mut previous = polygon.len() - 1;
+
+    for current in 0..polygon.len() {
+        let a = polygon[current];
+        let b = polygon[previous];
+        if point_on_segment(point, a, b) {
+            return true;
+        }
+        if (a.y > point.y) != (b.y > point.y) {
+            let intersection_x = (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x;
+            if point.x < intersection_x {
+                inside = !inside;
+            }
+        }
+        previous = current;
+    }
+
+    inside
+}
+
+fn segments_intersect(a: Vec2, b: Vec2, c: Vec2, d: Vec2) -> bool {
+    let ab_c = cross_2d(b - a, c - a);
+    let ab_d = cross_2d(b - a, d - a);
+    let cd_a = cross_2d(d - c, a - c);
+    let cd_b = cross_2d(d - c, b - c);
+
+    if ab_c.abs() <= f32::EPSILON && point_on_segment(c, a, b) {
+        return true;
+    }
+    if ab_d.abs() <= f32::EPSILON && point_on_segment(d, a, b) {
+        return true;
+    }
+    if cd_a.abs() <= f32::EPSILON && point_on_segment(a, c, d) {
+        return true;
+    }
+    if cd_b.abs() <= f32::EPSILON && point_on_segment(b, c, d) {
+        return true;
+    }
+
+    (ab_c > 0.0) != (ab_d > 0.0) && (cd_a > 0.0) != (cd_b > 0.0)
+}
+
+fn point_on_segment(point: Vec2, a: Vec2, b: Vec2) -> bool {
+    cross_2d(b - a, point - a).abs() <= f32::EPSILON
+        && point.x >= a.x.min(b.x)
+        && point.x <= a.x.max(b.x)
+        && point.y >= a.y.min(b.y)
+        && point.y <= a.y.max(b.y)
+}
+
+fn cross_2d(a: Vec2, b: Vec2) -> f32 {
+    a.x * b.y - a.y * b.x
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::super::State;
     use super::super::super::{EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart};
+    use super::{projected_block_overlaps_rect, screen_bounds_overlap_rect};
     use crate::test_utils::assert_approx_eq as approx_eq;
     use eg_types::{AppPhase, EditorInteractionChange, EditorMode, LevelObject};
     use glam::{Vec2, Vec3};
@@ -976,6 +1138,52 @@ mod tests {
             assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
             assert_eq!(state.editor.ui.selected_block_index, Some(0));
             assert_eq!(state.editor.ui.hovered_block_index, Some(0));
+        });
+    }
+
+    #[test]
+    fn marquee_selection_ignores_empty_area_inside_large_projected_bounds() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let viewport = default_viewport();
+
+            let mut large_block = test_block([-6.0, 0.0, -6.0]);
+            large_block.size = [12.0, 8.0, 12.0];
+            large_block.rotation_degrees = [0.0, 45.0, 0.0];
+            state.editor.objects = vec![large_block];
+
+            let geometry = state
+                .editor
+                .projected_block_screen_geometry(0, viewport)
+                .expect("large block should project to screen");
+            let (bounds_min, bounds_max) = geometry.bounds;
+            let bounds_size = bounds_max - bounds_min;
+            let rect_half_size = 3.0;
+
+            let mut empty_rect = None;
+            'find_rect: for y_step in 1..10 {
+                for x_step in 1..10 {
+                    let candidate = Vec2::new(
+                        bounds_min.x + bounds_size.x * x_step as f32 / 10.0,
+                        bounds_min.y + bounds_size.y * y_step as f32 / 10.0,
+                    );
+                    let rect_min = candidate - Vec2::splat(rect_half_size);
+                    let rect_max = candidate + Vec2::splat(rect_half_size);
+                    if screen_bounds_overlap_rect(geometry.bounds, rect_min, rect_max)
+                        && !projected_block_overlaps_rect(&geometry, rect_min, rect_max)
+                    {
+                        empty_rect = Some((rect_min, rect_max));
+                        break 'find_rect;
+                    }
+                }
+            }
+
+            let (rect_min, rect_max) =
+                empty_rect.expect("large projected bounds should include empty marquee space");
+            state.editor.ui.marquee_start_screen = Some([rect_min.x as f64, rect_min.y as f64]);
+            state.editor.ui.marquee_current_screen = Some([rect_max.x as f64, rect_max.y as f64]);
+
+            assert!(state.editor.marquee_overlapping_blocks(viewport).is_empty());
         });
     }
 
