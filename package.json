@@ -14,7 +14,7 @@
         "test": "cargo test --workspace -- -Zunstable-options --format=terse",
         "test:egb": "cargo test -p egb",
         "test:coverage": "cargo llvm-cov --workspace --no-report -- -Zunstable-options --report-time && cargo llvm-cov report --lcov --output-path lcov.info && cargo llvm-cov report",
-        "test:functions": "vitest run",
+        "test:functions": "vitest run --config .config/vitest.config.mts",
         "test:db": "supabase test db",
         "license:add": "license-check-and-add add -f .config/license/config.json",
         "license:check": "license-check-and-add check -f .config/license/config.json",
