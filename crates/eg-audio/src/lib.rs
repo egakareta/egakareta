@@ -10,5 +10,4 @@
 #![allow(missing_docs)]
 
 pub mod audio;
-pub mod audio_backend;
 pub mod service;

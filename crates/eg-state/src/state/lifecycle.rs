@@ -513,7 +513,7 @@ impl State {
 
         let local_audio_cache = std::collections::HashMap::new();
         let available_graphics_backends = discover_graphics_backends();
-        let available_audio_backends = eg_audio::audio::available_backend_names();
+        let available_audio_backends = eg_audio::audio::available_host_labels();
         let mut audio_state = AudioState::new(local_audio_cache);
         let _ = audio_state
             .runtime
@@ -1417,7 +1417,7 @@ impl State {
             eg_platform::io::load_all_local_audio().await
         };
         let available_graphics_backends = discover_graphics_backends();
-        let available_audio_backends = eg_audio::audio::available_backend_names();
+        let available_audio_backends = eg_audio::audio::available_host_labels();
         let mut audio_state = AudioState::new(local_audio_cache);
         let _ = audio_state
             .runtime

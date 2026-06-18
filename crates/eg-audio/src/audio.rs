@@ -5,18 +5,136 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use crate::audio_backend::AudioBackend;
+use std::io::Cursor;
+use std::str::FromStr;
+#[cfg(target_arch = "wasm32")]
+use std::sync::atomic::{AtomicBool, Ordering};
 
-pub fn available_backend_names() -> Vec<String> {
-    AudioBackend::available_backend_names()
+#[cfg(target_arch = "wasm32")]
+static RAYON_INIT_SCHEDULED_AFTER_AUDIO: AtomicBool = AtomicBool::new(false);
+
+fn host_label(host_id: cpal::HostId) -> String {
+    format!("{:?}", host_id)
+}
+
+fn parse_host_id_by_label(label: &str) -> Option<cpal::HostId> {
+    let trimmed = label.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("Default") {
+        return None;
+    }
+
+    if let Ok(host_id) = cpal::HostId::from_str(trimmed) {
+        return Some(host_id);
+    }
+
+    if let Some(host_id) = cpal::available_hosts()
+        .into_iter()
+        .find(|host_id| host_label(*host_id).eq_ignore_ascii_case(trimmed))
+    {
+        return Some(host_id);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        if host_label(cpal::HostId::AudioWorklet).eq_ignore_ascii_case(trimmed) {
+            return Some(cpal::HostId::AudioWorklet);
+        }
+    }
+
+    None
+}
+
+fn select_host(preferred_host: Option<cpal::HostId>) -> cpal::Host {
+    if let Some(host_id) = preferred_host {
+        if let Ok(host) = cpal::host_from_id(host_id) {
+            return host;
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Ok(host) = cpal::host_from_id(cpal::HostId::AudioWorklet) {
+            return host;
+        }
+    }
+
+    cpal::default_host()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn schedule_rayon_after_audio_worklet() {
+    use wasm_bindgen::JsCast;
+
+    if RAYON_INIT_SCHEDULED_AFTER_AUDIO.swap(true, Ordering::AcqRel) {
+        return;
+    }
+
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+
+    let callback = wasm_bindgen::closure::Closure::<dyn FnMut()>::once(move || {
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+
+        let Ok(init_rayon) = js_sys::Reflect::get(
+            &window,
+            &wasm_bindgen::JsValue::from_str("__EGAKARETA_INIT_RAYON"),
+        ) else {
+            log::warn!("Rayon worker pool initializer is unavailable");
+            return;
+        };
+
+        if let Some(init_rayon) = init_rayon.dyn_ref::<js_sys::Function>() {
+            if let Err(err) = init_rayon.call0(&wasm_bindgen::JsValue::NULL) {
+                log::warn!("Failed to start Rayon worker pool: {:?}", err);
+            }
+        }
+    });
+
+    if let Err(err) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+        callback.as_ref().unchecked_ref(),
+        750,
+    ) {
+        log::warn!("Failed to schedule Rayon worker pool startup: {:?}", err);
+    }
+
+    callback.forget();
+}
+
+pub fn available_host_labels() -> Vec<String> {
+    let mut labels = vec!["Default".to_string()];
+
+    for host_id in cpal::available_hosts() {
+        labels.push(host_label(host_id));
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        if cpal::host_from_id(cpal::HostId::AudioWorklet).is_ok() {
+            let worklet = host_label(cpal::HostId::AudioWorklet);
+            if !labels.iter().any(|entry| entry == &worklet) {
+                labels.push(worklet);
+            }
+        }
+    }
+
+    labels.sort();
+    labels.dedup();
+    labels
 }
 
 pub fn canonical_backend_name(backend_name: &str) -> Option<String> {
-    AudioBackend::canonical_backend_name(backend_name)
-}
+    let trimmed = backend_name.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed.eq_ignore_ascii_case("Default") {
+        return Some("Default".to_string());
+    }
 
-pub struct PlatformAudio {
-    backend: AudioBackend,
+    parse_host_id_by_label(trimmed).map(host_label)
 }
 
 pub fn runtime_asset_source_key(level_name: &str, music_source: &str) -> String {
@@ -65,19 +183,441 @@ pub struct WaveformDecodeSummary {
     pub peak_count: usize,
 }
 
-impl PlatformAudio {
+pub struct AudioBackend {
+    _output_device: Option<rodio::MixerDeviceSink>,
+    device_tried: bool,
+    preferred_host: Option<cpal::HostId>,
+    current_player: Option<rodio::Player>,
+    current_audio_source: Option<String>,
+    playback_started_at: Option<web_time::Instant>,
+    playback_start_offset_seconds: f32,
+    playback_speed: f32,
+    active_sfx: Vec<rodio::Player>,
+    backend_name: String,
+}
+
+impl AudioBackend {
     pub fn new() -> Self {
+        let host_id = select_host(None).id();
+
         Self {
-            backend: AudioBackend::new(),
+            _output_device: None,
+            device_tried: false,
+            preferred_host: None,
+            current_player: None,
+            current_audio_source: None,
+            playback_started_at: None,
+            playback_start_offset_seconds: 0.0,
+            playback_speed: 1.0,
+            active_sfx: Vec::new(),
+            backend_name: host_id.to_string(),
         }
     }
 
-    pub fn stop(&mut self) {
-        self.backend.stop();
+    pub fn ensure_device(&mut self) -> Option<&rodio::MixerDeviceSink> {
+        if self._output_device.is_some() {
+            return self._output_device.as_ref();
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.device_tried {
+            return None;
+        }
+        self.device_tried = true;
+
+        log::info!("Initializing audio backend on demand");
+
+        use cpal::traits::HostTrait;
+        log::info!("Available hosts: {:?}", cpal::available_hosts());
+        let host = select_host(self.preferred_host);
+        let host_id = host.id();
+
+        log::info!("Selected audio host: {:?}", host_id);
+        self.backend_name = host_id.to_string();
+
+        self._output_device = match host.default_output_device() {
+            Some(device) => {
+                use cpal::traits::DeviceTrait;
+                if let Ok(name) = device.id() {
+                    log::info!("Audio device: {}", name);
+                    self.backend_name = format!("{:?} ({})", host_id, name);
+                }
+                match rodio::DeviceSinkBuilder::from_device(device).and_then(|b| b.open_stream()) {
+                    Ok(sink) => {
+                        log::info!("Audio stream opened successfully");
+                        #[cfg(target_arch = "wasm32")]
+                        if host_id == cpal::HostId::AudioWorklet {
+                            schedule_rayon_after_audio_worklet();
+                        }
+                        Some(sink)
+                    }
+                    Err(err) => {
+                        log::warn!("Failed to open audio stream: {}", err);
+                        None
+                    }
+                }
+            }
+            None => {
+                log::warn!("No default audio output device found");
+                None
+            }
+        };
+
+        self._output_device.as_ref()
     }
 
     pub fn pause(&mut self) {
-        self.backend.pause();
+        if let Some(started_at) = self.playback_started_at {
+            self.playback_start_offset_seconds +=
+                started_at.elapsed().as_secs_f32() * self.playback_speed;
+        }
+        if let Some(player) = &self.current_player {
+            player.pause();
+        }
+        self.playback_started_at = None;
+    }
+
+    pub fn resume(&mut self) {
+        self.ensure_device();
+        if let Some(player) = &self.current_player {
+            player.set_speed(self.playback_speed);
+            player.play();
+            self.playback_started_at = Some(web_time::Instant::now());
+        } else {
+            #[cfg(test)]
+            if self.current_audio_source.is_some() {
+                self.playback_started_at = Some(web_time::Instant::now());
+            }
+        }
+    }
+
+    fn set_new_sink(
+        &mut self,
+        source_key: String,
+        decoded: rodio::Decoder<Cursor<Vec<u8>>>,
+        start_seconds: f32,
+        autoplay: bool,
+        _context: &str,
+    ) {
+        use web_time::Duration;
+
+        let Some(device) = self.ensure_device() else {
+            #[cfg(test)]
+            {
+                self.current_audio_source = Some(source_key);
+                if autoplay {
+                    self.playback_started_at = Some(web_time::Instant::now());
+                    self.playback_start_offset_seconds = start_seconds;
+                } else {
+                    self.playback_started_at = None;
+                    self.playback_start_offset_seconds = 0.0;
+                }
+            }
+            return;
+        };
+
+        log::trace!("RodioBackendInner: creating new player");
+        let (player, output) = rodio::Player::new();
+        log::trace!("RodioBackendInner: adding output to mixer");
+        device.mixer().add(output);
+
+        log::trace!("RodioBackendInner: appending decoded source");
+        use rodio::Source;
+        if start_seconds > 0.001 {
+            log::trace!("RodioBackendInner: skipping to {:.3}s", start_seconds);
+            player.append(decoded.skip_duration(Duration::from_secs_f32(start_seconds)));
+        } else {
+            player.append(decoded);
+        }
+
+        player.set_speed(self.playback_speed);
+        if cfg!(test) {
+            player.set_volume(0.0);
+        }
+        if autoplay {
+            player.play();
+            self.playback_started_at = Some(web_time::Instant::now());
+            self.playback_start_offset_seconds = start_seconds;
+        } else {
+            player.pause();
+            self.playback_started_at = None;
+            self.playback_start_offset_seconds = 0.0;
+        }
+        self.current_player = Some(player);
+        self.current_audio_source = Some(source_key);
+    }
+
+    pub fn set_preferred_backend_name(&mut self, backend_name: &str) -> bool {
+        let parsed = parse_host_id_by_label(backend_name);
+        if !backend_name.trim().is_empty()
+            && !backend_name.eq_ignore_ascii_case("Default")
+            && parsed.is_none()
+        {
+            return false;
+        }
+
+        if self.preferred_host == parsed {
+            return true;
+        }
+
+        self.preferred_host = parsed;
+        if let Some(player) = self.current_player.take() {
+            player.stop();
+        }
+        for player in self.active_sfx.drain(..) {
+            player.stop();
+        }
+        self.current_audio_source = None;
+        self.playback_started_at = None;
+        self.playback_start_offset_seconds = 0.0;
+        self._output_device = None;
+        self.device_tried = false;
+        self.backend_name = if let Some(host_id) = self.preferred_host {
+            host_label(host_id)
+        } else {
+            "Default".to_string()
+        };
+
+        true
+    }
+
+    pub fn stop(&mut self) {
+        if let Some(player) = &self.current_player {
+            player.pause();
+        }
+        self.playback_started_at = None;
+        self.playback_start_offset_seconds = 0.0;
+    }
+
+    pub fn can_reuse_source(&self, source_key: &str) -> bool {
+        self.current_audio_source.as_deref() == Some(source_key)
+    }
+
+    pub fn seek_and_play(&mut self, start_seconds: f32) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        {
+            // Player::try_seek blocks the main thread on WASM, leading to a deadlock.
+            // We disable reuse on WASM to force a fresh sink which uses non-blocking skip_duration.
+            let _ = start_seconds;
+            return false;
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            use web_time::Duration;
+
+            if let Some(player) = &self.current_player {
+                if let Err(err) = player.try_seek(Duration::from_secs_f32(start_seconds)) {
+                    log::warn!(
+                        "Failed to seek reused audio to {:.3}s: {:?}",
+                        start_seconds,
+                        err
+                    );
+                    return false;
+                }
+                player.set_speed(self.playback_speed);
+                player.play();
+                self.playback_started_at = Some(web_time::Instant::now());
+                self.playback_start_offset_seconds = start_seconds;
+                true
+            } else {
+                #[cfg(test)]
+                if self.current_audio_source.is_some() {
+                    self.playback_started_at = Some(web_time::Instant::now());
+                    self.playback_start_offset_seconds = start_seconds;
+                    return true;
+                }
+                false
+            }
+        }
+    }
+
+    pub fn replace_with_bytes(
+        &mut self,
+        source_key: String,
+        music_source: &str,
+        bytes: &[u8],
+        start_seconds: f32,
+    ) {
+        self.replace_with_bytes_internal(source_key, music_source, bytes, start_seconds, true);
+    }
+
+    pub fn warmup_with_bytes(
+        &mut self,
+        source_key: String,
+        music_source: &str,
+        bytes: &[u8],
+        start_seconds: f32,
+    ) {
+        self.replace_with_bytes_internal(source_key, music_source, bytes, start_seconds, false);
+    }
+
+    fn replace_with_bytes_internal(
+        &mut self,
+        source_key: String,
+        music_source: &str,
+        bytes: &[u8],
+        start_seconds: f32,
+        autoplay: bool,
+    ) {
+        if let Some(player) = self.current_player.take() {
+            player.stop();
+        }
+        self.current_audio_source = None;
+
+        log::trace!("RodioAudioBackend: decoding {} bytes", bytes.len());
+        match rodio::Decoder::new(Cursor::new(bytes.to_vec())) {
+            Ok(decoded) => {
+                log::trace!("RodioAudioBackend: decoding successful");
+                let context = format!("imported audio '{}'", music_source);
+                self.set_new_sink(source_key, decoded, start_seconds, autoplay, &context);
+            }
+            Err(err) => {
+                log::warn!(
+                    "Failed to decode imported level music '{}': {}",
+                    music_source,
+                    err
+                );
+            }
+        }
+    }
+
+    pub fn replace_with_asset(
+        &mut self,
+        source_key: String,
+        level_name: &str,
+        music_source: &str,
+        start_seconds: f32,
+    ) {
+        self.replace_with_asset_internal(source_key, level_name, music_source, start_seconds, true);
+    }
+
+    pub fn warmup_with_asset(
+        &mut self,
+        source_key: String,
+        level_name: &str,
+        music_source: &str,
+        start_seconds: f32,
+    ) {
+        self.replace_with_asset_internal(
+            source_key,
+            level_name,
+            music_source,
+            start_seconds,
+            false,
+        );
+    }
+
+    fn replace_with_asset_internal(
+        &mut self,
+        source_key: String,
+        level_name: &str,
+        music_source: &str,
+        start_seconds: f32,
+        autoplay: bool,
+    ) {
+        {
+            if let Some(player) = self.current_player.take() {
+                player.stop();
+            }
+            self.current_audio_source = None;
+        }
+
+        let audio_path = format!("assets/levels/{}/{}", level_name, music_source);
+
+        log::trace!("RodioAudioBackend: loading asset {}", audio_path);
+        let audio_bytes = match eg_level::get_builtin_audio(level_name, music_source) {
+            Some(bytes) => bytes.to_vec(),
+            None => {
+                log::warn!("Failed to read level music '{}'", audio_path);
+                return;
+            }
+        };
+
+        log::trace!(
+            "RodioAudioBackend: decoding {} bytes from asset",
+            audio_bytes.len()
+        );
+        let cursor = Cursor::new(audio_bytes);
+        match rodio::Decoder::new(cursor) {
+            Ok(decoded) => {
+                log::trace!("RodioAudioBackend: asset decoding successful");
+                self.set_new_sink(source_key, decoded, start_seconds, autoplay, &audio_path);
+            }
+            Err(err) => {
+                log::warn!("Failed to decode level music '{}': {}", audio_path, err);
+            }
+        }
+    }
+
+    pub fn playback_time_seconds(&self) -> Option<f32> {
+        match self.current_player.as_ref() {
+            Some(player) => {
+                if player.empty() {
+                    return None;
+                }
+            }
+            None => {
+                #[cfg(not(test))]
+                {
+                    return None;
+                }
+            }
+        }
+
+        let started_at = self.playback_started_at?;
+        Some(
+            self.playback_start_offset_seconds
+                + started_at.elapsed().as_secs_f32() * self.playback_speed,
+        )
+    }
+
+    pub fn is_playing(&self) -> bool {
+        if let Some(player) = self.current_player.as_ref() {
+            return !player.empty();
+        }
+        #[cfg(test)]
+        {
+            return self.playback_started_at.is_some();
+        }
+        #[cfg(not(test))]
+        {
+            false
+        }
+    }
+
+    pub fn set_speed(&mut self, speed: f32) {
+        let clamped_speed = speed.clamp(0.25, 2.0);
+        if let Some(started_at) = self.playback_started_at {
+            let elapsed_real = started_at.elapsed().as_secs_f32();
+            self.playback_start_offset_seconds += elapsed_real * self.playback_speed;
+            self.playback_started_at = Some(web_time::Instant::now());
+        }
+        self.playback_speed = clamped_speed;
+        if let Some(player) = &self.current_player {
+            player.set_speed(clamped_speed);
+        }
+    }
+
+    pub fn play_sfx(&mut self, asset_bytes: &'static [u8]) {
+        self.active_sfx.retain(|player| !player.empty());
+
+        if let Ok(decoded) = rodio::Decoder::new(Cursor::new(asset_bytes)) {
+            if let Some(device) = self.ensure_device() {
+                let (player, output) = rodio::Player::new();
+                if cfg!(test) {
+                    player.set_volume(0.0);
+                }
+                device.mixer().add(output);
+                player.append(decoded);
+                player.play();
+                self.active_sfx.push(player);
+            }
+        }
+    }
+
+    pub fn backend_name(&self) -> String {
+        self.backend_name.clone()
     }
 
     fn start_with_source_key_at(
@@ -88,14 +628,13 @@ impl PlatformAudio {
         start_seconds: f32,
     ) {
         let start_seconds = start_seconds.max(0.0);
-        self.backend.stop();
+        self.stop();
 
-        if self.backend.can_reuse_source(&source_key) && self.backend.seek_and_play(start_seconds) {
+        if self.can_reuse_source(&source_key) && self.seek_and_play(start_seconds) {
             return;
         }
 
-        self.backend
-            .replace_with_bytes(source_key, music_source, bytes, start_seconds);
+        self.replace_with_bytes(source_key, music_source, bytes, start_seconds);
     }
 
     pub fn start_with_bytes_at(&mut self, music_source: &str, bytes: &[u8], start_seconds: f32) {
@@ -110,14 +649,13 @@ impl PlatformAudio {
     pub fn warmup_with_bytes_at(&mut self, music_source: &str, bytes: &[u8], start_seconds: f32) {
         let source_key = runtime_bytes_source_key(music_source);
         let start_seconds = start_seconds.max(0.0);
-        self.backend.stop();
+        self.stop();
 
-        if self.backend.can_reuse_source(&source_key) {
+        if self.can_reuse_source(&source_key) {
             return;
         }
 
-        self.backend
-            .warmup_with_bytes(source_key, music_source, bytes, start_seconds);
+        self.warmup_with_bytes(source_key, music_source, bytes, start_seconds);
     }
 
     pub fn start_preloaded_asset_at(
@@ -144,76 +682,41 @@ impl PlatformAudio {
     ) {
         let source_key = runtime_asset_source_key(level_name, music_source);
         let start_seconds = start_seconds.max(0.0);
-        self.backend.stop();
+        self.stop();
 
-        if self.backend.can_reuse_source(&source_key) {
+        if self.can_reuse_source(&source_key) {
             return;
         }
 
-        self.backend
-            .warmup_with_bytes(source_key, music_source, bytes, start_seconds);
+        self.warmup_with_bytes(source_key, music_source, bytes, start_seconds);
     }
 
     pub fn start_at(&mut self, level_name: &str, music_source: &str, start_seconds: f32) {
         let source_key = runtime_asset_source_key(level_name, music_source);
         let start_seconds = start_seconds.max(0.0);
-        self.backend.stop();
+        self.stop();
 
-        if self.backend.can_reuse_source(&source_key) && self.backend.seek_and_play(start_seconds) {
+        if self.can_reuse_source(&source_key) && self.seek_and_play(start_seconds) {
             return;
         }
 
-        self.backend
-            .replace_with_asset(source_key, level_name, music_source, start_seconds);
+        self.replace_with_asset(source_key, level_name, music_source, start_seconds);
     }
 
     pub fn warmup_at(&mut self, level_name: &str, music_source: &str, start_seconds: f32) {
         let source_key = runtime_asset_source_key(level_name, music_source);
         let start_seconds = start_seconds.max(0.0);
-        self.backend.stop();
+        self.stop();
 
-        if self.backend.can_reuse_source(&source_key) {
+        if self.can_reuse_source(&source_key) {
             return;
         }
 
-        self.backend
-            .warmup_with_asset(source_key, level_name, music_source, start_seconds);
-    }
-
-    pub fn playback_time_seconds(&self) -> Option<f32> {
-        self.backend.playback_time_seconds()
-    }
-
-    pub fn is_playing(&self) -> bool {
-        self.backend.is_playing()
-    }
-
-    pub fn set_speed(&mut self, speed: f32) {
-        self.backend.set_speed(speed.clamp(0.25, 2.0));
-    }
-
-    pub fn play_sfx(&mut self, asset_bytes: &'static [u8]) {
-        self.backend.play_sfx(asset_bytes);
-    }
-
-    pub fn ensure_device(&mut self) {
-        self.backend.ensure_device();
-    }
-
-    pub fn resume_playback(&mut self) {
-        self.backend.resume_playback();
-    }
-
-    pub fn backend_name(&self) -> String {
-        self.backend.backend_name()
-    }
-
-    pub fn set_preferred_backend_name(&mut self, backend_name: &str) -> bool {
-        self.backend.set_preferred_backend_name(backend_name)
+        self.warmup_with_asset(source_key, level_name, music_source, start_seconds);
     }
 }
 
-impl Default for PlatformAudio {
+impl Default for AudioBackend {
     fn default() -> Self {
         Self::new()
     }
@@ -347,10 +850,152 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::audio::AudioBackend;
+
     use super::accumulate_interleaved_samples;
     use super::accumulate_waveform_frame_peak;
     use super::decode_audio_to_waveform;
     use super::decode_audio_to_waveform_streaming;
+
+    use super::{available_host_labels, host_label, parse_host_id_by_label, select_host};
+
+    fn tiny_wav_bytes() -> Vec<u8> {
+        // Minimal PCM WAV: mono, 16-bit, 44.1kHz, one zero sample.
+        vec![
+            b'R', b'I', b'F', b'F', 38, 0, 0, 0, b'W', b'A', b'V', b'E', b'f', b'm', b't', b' ',
+            16, 0, 0, 0, 1, 0, 1, 0, 68, 172, 0, 0, 136, 88, 1, 0, 2, 0, 16, 0, b'd', b'a', b't',
+            b'a', 2, 0, 0, 0, 0, 0,
+        ]
+    }
+
+    #[test]
+    fn parse_host_id_by_label_handles_default_and_case_insensitive_labels() {
+        assert_eq!(parse_host_id_by_label(""), None);
+        assert_eq!(parse_host_id_by_label("   "), None);
+        assert_eq!(parse_host_id_by_label("Default"), None);
+        assert_eq!(parse_host_id_by_label("default"), None);
+
+        if let Some(host_id) = cpal::available_hosts().into_iter().next() {
+            let lower = host_label(host_id).to_lowercase();
+            assert_eq!(parse_host_id_by_label(&lower), Some(host_id));
+        }
+    }
+
+    #[test]
+    fn select_host_returns_default_or_requested_available_host() {
+        let selected_default = select_host(None).id();
+        assert_eq!(selected_default, cpal::default_host().id());
+
+        if let Some(host_id) = cpal::available_hosts().into_iter().next() {
+            let selected = select_host(Some(host_id)).id();
+            assert_eq!(selected, host_id);
+        }
+    }
+
+    #[test]
+    fn available_host_labels_are_sorted_unique_and_include_default() {
+        let labels = available_host_labels();
+        assert!(labels.iter().any(|label| label == "Default"));
+
+        let mut expected = labels.clone();
+        expected.sort();
+        expected.dedup();
+        assert_eq!(labels, expected);
+    }
+
+    #[test]
+    fn set_preferred_backend_name_rejects_unknown_label() {
+        let mut backend = AudioBackend::new();
+        let before = backend.backend_name();
+
+        assert!(!backend.set_preferred_backend_name("definitely-not-a-real-backend"));
+        assert_eq!(backend.backend_name(), before);
+    }
+
+    #[test]
+    fn set_preferred_backend_name_default_resets_runtime_state() {
+        let mut backend: AudioBackend = AudioBackend::new();
+        let Some(host_id) = cpal::available_hosts().into_iter().next() else {
+            return;
+        };
+
+        {
+            backend.current_audio_source = Some("bytes:test".to_string());
+            backend.playback_started_at = Some(web_time::Instant::now());
+            backend.playback_start_offset_seconds = 4.0;
+            backend.device_tried = true;
+        }
+
+        assert!(backend.set_preferred_backend_name(&host_label(host_id)));
+
+        assert_eq!(backend.current_audio_source, None);
+        assert_eq!(backend.playback_started_at, None);
+        assert_eq!(backend.playback_start_offset_seconds, 0.0);
+        assert!(!backend.device_tried);
+        assert_eq!(backend.backend_name, host_label(host_id));
+    }
+
+    #[test]
+    fn replace_with_bytes_invalid_payload_does_not_mark_source_reusable() {
+        let mut backend = AudioBackend::new();
+        backend.replace_with_bytes("bytes:bad".to_string(), "bad.bin", &[1, 2, 3], 0.0);
+
+        assert!(!backend.can_reuse_source("bytes:bad"));
+        assert!(!backend.is_playing());
+    }
+
+    #[test]
+    fn replace_and_warmup_with_valid_bytes_update_test_playback_state() {
+        let mut backend = AudioBackend::new();
+        let wav = tiny_wav_bytes();
+
+        backend.replace_with_bytes("bytes:play".to_string(), "tone.wav", &wav, 1.25);
+        assert!(backend.can_reuse_source("bytes:play"));
+        assert!(backend.is_playing());
+        assert!(backend.playback_time_seconds().is_some());
+
+        backend.warmup_with_bytes("bytes:warm".to_string(), "tone.wav", &wav, 0.5);
+        assert!(backend.can_reuse_source("bytes:warm"));
+        assert_eq!(backend.playback_time_seconds(), None);
+    }
+
+    #[test]
+    fn seek_and_play_uses_test_fallback_without_active_player() {
+        let mut backend = AudioBackend::new();
+        {
+            backend.current_audio_source = Some("bytes:reuse".to_string());
+            backend.current_player = None;
+        }
+
+        assert!(backend.seek_and_play(2.5));
+        assert!(backend.is_playing());
+        let playback_time = backend.playback_time_seconds().unwrap_or(0.0);
+        assert!(playback_time >= 2.5);
+    }
+
+    #[test]
+    fn stop_and_set_speed_manage_playback_tracking() {
+        use web_time::Duration;
+
+        let mut backend = AudioBackend::new();
+        {
+            backend.current_audio_source = Some("bytes:speed".to_string());
+            backend.playback_started_at =
+                Some(web_time::Instant::now() - Duration::from_millis(10));
+            backend.playback_start_offset_seconds = 1.0;
+            backend.playback_speed = 2.0;
+        }
+
+        backend.set_speed(0.5);
+        {
+            assert_eq!(backend.playback_speed, 0.5);
+            assert!(backend.playback_start_offset_seconds >= 1.0);
+        }
+
+        backend.stop();
+        assert!(!backend.is_playing());
+        assert_eq!(backend.playback_time_seconds(), None);
+    }
 
     #[test]
     fn interleaved_stereo_accumulates_per_frame_not_per_channel() {

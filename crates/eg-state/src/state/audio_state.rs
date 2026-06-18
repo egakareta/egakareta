@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_audio::audio::{runtime_asset_source_key, PlatformAudio};
+use eg_audio::audio::{runtime_asset_source_key, AudioBackend};
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{Receiver, Sender};
 
@@ -60,7 +60,7 @@ pub struct EditorAudioState {
 }
 
 pub struct AudioState {
-    pub runtime: PlatformAudio,
+    pub runtime: AudioBackend,
     pub runtime_preload: RuntimeAudioPreloadState,
     pub editor: EditorAudioState,
 }
@@ -72,7 +72,7 @@ pub struct AudioSubsystem {
 impl AudioState {
     pub fn new(local_audio_cache: HashMap<String, Vec<u8>>) -> Self {
         Self {
-            runtime: PlatformAudio::new(),
+            runtime: AudioBackend::new(),
             runtime_preload: RuntimeAudioPreloadState {
                 preloaded_audio: HashMap::new(),
                 preloading_source_keys: HashSet::new(),
@@ -144,7 +144,7 @@ impl Default for EditorAudioState {
 impl Default for AudioState {
     fn default() -> Self {
         Self {
-            runtime: PlatformAudio::new(),
+            runtime: AudioBackend::new(),
             runtime_preload: RuntimeAudioPreloadState::default(),
             editor: EditorAudioState::default(),
         }
@@ -167,7 +167,7 @@ impl State {
     }
 
     pub fn resume_game_audio(&mut self) {
-        self.audio.state.runtime.resume_playback();
+        self.audio.state.runtime.resume();
     }
 
     pub fn ensure_device(&mut self) {
