@@ -1,5 +1,5 @@
 {
-    "watch": ["src", "crates", "assets", "index.html", "scripts"],
+    "watch": ["src", "crates", "assets", "index.html", "scripts", "web"],
     "delay": 400,
     "ext": "*"
 }
