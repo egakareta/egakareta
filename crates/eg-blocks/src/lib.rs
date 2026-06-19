@@ -513,6 +513,19 @@ mod tests {
     }
 
     #[test]
+    fn practice_checkpoint_flag_is_passthrough_cuboid_block() {
+        let flag = resolve_block_definition("core/practice_checkpoint_flag");
+        assert_eq!(flag.id, "core/practice_checkpoint_flag");
+        assert!(matches!(
+            flag.behavior.collision,
+            BlockCollision::PassThrough
+        ));
+        assert!(!flag.behavior.support_surface);
+        assert_eq!(flag.geometry.elements.len(), 6);
+        assert!(flag.placeable);
+    }
+
+    #[test]
     fn block_default_size_is_loaded_and_sanitized() {
         let speed_portal = resolve_block_definition("core/speedportal");
         assert_eq!(speed_portal.default_size(), [2.0, 1.0, 1.0]);

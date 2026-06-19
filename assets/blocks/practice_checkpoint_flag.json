@@ -1,0 +1,55 @@
+{
+    "id": "core/practice_checkpoint_flag",
+    "display_name": "Practice Checkpoint Flag",
+    "category": "tech",
+    "assets": {
+        "texture": "plaster_wall.png"
+    },
+    "render": {
+        "profile": "solid",
+        "icon_dimetric_projection": true,
+        "default_size": [0.45, 1.0, 0.85],
+        "color_top": [1.0, 1.0, 1.0, 1.0],
+        "color_side": [1.0, 1.0, 1.0, 1.0],
+        "color_bottom": [1.0, 1.0, 1.0, 1.0]
+    },
+    "behavior": {
+        "collision": "pass_through",
+        "support_surface": false
+    },
+    "geometry": {
+        "elements": [
+            {
+                "from": [2.0, 0.0, 2.0],
+                "to": [14.0, 1.4, 14.0],
+                "color_tint": [0.46, 0.35, 0.18]
+            },
+            {
+                "from": [7.2, 0.8, 7.2],
+                "to": [8.8, 15.2, 8.8],
+                "color_tint": [0.92, 0.83, 0.58]
+            },
+            {
+                "from": [6.0, 14.4, 6.0],
+                "to": [10.0, 16.0, 10.0],
+                "color_tint": [1.0, 0.87, 0.24]
+            },
+            {
+                "from": [8.2, 11.4, 8.5],
+                "to": [9.2, 14.8, 16.0],
+                "color_tint": [1.0, 0.87, 0.24]
+            },
+            {
+                "from": [8.2, 8.6, 8.5],
+                "to": [9.2, 11.4, 16.0],
+                "color_tint": [1.0, 0.58, 0.33]
+            },
+            {
+                "from": [8.2, 5.8, 8.5],
+                "to": [9.2, 8.6, 16.0],
+                "color_tint": [1.0, 0.3, 0.42]
+            }
+        ]
+    },
+    "placeable": true
+}

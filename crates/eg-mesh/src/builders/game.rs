@@ -5,20 +5,18 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use std::collections::HashMap;
-
 use crate::advanced_shapes::append_cone;
-use crate::obj::{resolve_obj_mesh, ObjMaterial, ObjMesh};
+use crate::blocks::build_block_geometry;
 use crate::shapes::{append_prism, append_quad};
 use crate::MeshGeometry;
 use crate::Vertex;
-use eg_types::Direction;
+use eg_types::{Direction, LevelObject};
 use glam::{EulerRot, Quat, Vec2, Vec3};
 
 const GEM_SHATTER_DURATION_SECONDS: f32 = 0.48;
 const GEM_SHATTER_SHARD_COUNT: usize = 14;
-const PRACTICE_CHECKPOINT_FLAG_MESH: &str = "practice_checkpoint_flag.obj";
-const PRACTICE_CHECKPOINT_FLAG_SCALE: f32 = 0.4;
+const PRACTICE_CHECKPOINT_FLAG_BLOCK_ID: &str = "core/practice_checkpoint_flag";
+const PRACTICE_CHECKPOINT_FLAG_SIZE: [f32; 3] = [0.45, 1.0, 0.85];
 
 pub struct GemShatterInstance {
     pub position: [f32; 3],
@@ -247,138 +245,30 @@ pub fn build_practice_checkpoint_flag_geometry(
     checkpoints: &[PracticeCheckpointFlagInstance],
 ) -> MeshGeometry {
     puffin::profile_scope!("BuildPracticeCheckpointFlags");
-    let mut geometry = MeshGeometry::default();
+    let objects = checkpoints
+        .iter()
+        .map(practice_checkpoint_flag_object)
+        .collect::<Vec<_>>();
+    build_block_geometry(&objects)
+}
 
-    for checkpoint in checkpoints {
-        append_practice_checkpoint_flag(&mut geometry, checkpoint);
+fn practice_checkpoint_flag_object(checkpoint: &PracticeCheckpointFlagInstance) -> LevelObject {
+    let rotation_degrees = match checkpoint.direction {
+        Direction::Forward => [0.0, 0.0, 0.0],
+        Direction::Right => [0.0, 90.0, 0.0],
+    };
+    LevelObject {
+        block_id: PRACTICE_CHECKPOINT_FLAG_BLOCK_ID.to_string(),
+        position: [
+            checkpoint.position[0] - PRACTICE_CHECKPOINT_FLAG_SIZE[0] * 0.5,
+            checkpoint.position[1] + 1.0,
+            checkpoint.position[2],
+        ],
+        size: PRACTICE_CHECKPOINT_FLAG_SIZE,
+        rotation_degrees,
+        color_tint: [1.0, 1.0, 1.0],
+        ..LevelObject::default()
     }
-
-    geometry
-}
-
-fn append_practice_checkpoint_flag(
-    geometry: &mut MeshGeometry,
-    checkpoint: &PracticeCheckpointFlagInstance,
-) {
-    let Some(mesh) = resolve_obj_mesh(PRACTICE_CHECKPOINT_FLAG_MESH) else {
-        return;
-    };
-    let flag_top = if checkpoint.is_latest {
-        [1.0, 0.87, 0.24, 1.0]
-    } else {
-        [0.25, 0.78, 1.0, 0.92]
-    };
-    let flag_bottom = if checkpoint.is_latest {
-        [1.0, 0.3, 0.42, 1.0]
-    } else {
-        [0.24, 0.42, 1.0, 0.78]
-    };
-
-    append_practice_checkpoint_flag_mesh(
-        geometry,
-        mesh,
-        Vec3::from_array(checkpoint.position),
-        checkpoint.direction,
-        flag_top,
-        flag_bottom,
-    );
-}
-
-#[derive(Hash, PartialEq, Eq)]
-struct PracticeCheckpointFlagVertexKey {
-    position_index: usize,
-    texcoord_index: Option<usize>,
-    normal_index: Option<usize>,
-    material_index: Option<usize>,
-}
-
-fn append_practice_checkpoint_flag_mesh(
-    geometry: &mut MeshGeometry,
-    mesh: &ObjMesh,
-    anchor: Vec3,
-    direction: Direction,
-    flag_top: [f32; 4],
-    flag_bottom: [f32; 4],
-) {
-    let mut vertices = Vec::new();
-    let mut indices = Vec::with_capacity(mesh.faces.len() * 3);
-    let mut lookup = HashMap::<PracticeCheckpointFlagVertexKey, u32>::new();
-
-    for face in &mesh.faces {
-        for corner in face {
-            let key = PracticeCheckpointFlagVertexKey {
-                position_index: corner.position_index,
-                texcoord_index: corner.texcoord_index,
-                normal_index: corner.normal_index,
-                material_index: corner.material_index,
-            };
-            if let Some(index) = lookup.get(&key) {
-                indices.push(*index);
-                continue;
-            }
-
-            let Some(raw_position) = mesh.positions.get(corner.position_index) else {
-                continue;
-            };
-            let material = corner
-                .material_index
-                .and_then(|index| mesh.materials.get(index));
-            let color = practice_checkpoint_flag_material_color(material, flag_top, flag_bottom);
-            let position = transform_practice_checkpoint_flag_position(
-                Vec3::from_array(*raw_position),
-                anchor,
-                direction,
-            );
-
-            let Ok(index) = u32::try_from(vertices.len()) else {
-                return;
-            };
-            vertices.push(Vertex::untextured(position.to_array(), color));
-            lookup.insert(key, index);
-            indices.push(index);
-        }
-    }
-
-    geometry.append_indexed(vertices, &indices);
-}
-
-fn transform_practice_checkpoint_flag_position(
-    local_position: Vec3,
-    anchor: Vec3,
-    direction: Direction,
-) -> Vec3 {
-    let oriented = match direction {
-        Direction::Forward => local_position,
-        Direction::Right => Vec3::new(local_position.z, local_position.y, -local_position.x),
-    };
-    anchor + (oriented * PRACTICE_CHECKPOINT_FLAG_SCALE) + Vec3::new(0.0, 1.0, 0.0)
-}
-
-fn practice_checkpoint_flag_material_color(
-    material: Option<&ObjMaterial>,
-    flag_top: [f32; 4],
-    flag_bottom: [f32; 4],
-) -> [f32; 4] {
-    match material.map(|material| material.name.as_str()) {
-        Some("pole") => [0.92, 0.83, 0.58, 1.0],
-        Some("base") => [0.46, 0.35, 0.18, 1.0],
-        Some("cap") => flag_top,
-        Some("flag_band_top") => mix_practice_checkpoint_flag_color(flag_top, flag_bottom, 0.17),
-        Some("flag_band_mid") => mix_practice_checkpoint_flag_color(flag_top, flag_bottom, 0.5),
-        Some("flag_band_bottom") => mix_practice_checkpoint_flag_color(flag_top, flag_bottom, 0.83),
-        _ => material
-            .map(|material| material.color.diffuse)
-            .unwrap_or([1.0, 1.0, 1.0, 1.0]),
-    }
-}
-
-fn mix_practice_checkpoint_flag_color(top: [f32; 4], bottom: [f32; 4], progress: f32) -> [f32; 4] {
-    [
-        top[0] + (bottom[0] - top[0]) * progress,
-        top[1] + (bottom[1] - top[1]) * progress,
-        top[2] + (bottom[2] - top[2]) * progress,
-        top[3] + (bottom[3] - top[3]) * progress,
-    ]
 }
 
 pub fn build_colored_tap_indicator_vertices(indicators: &[([f32; 3], [f32; 4])]) -> Vec<Vertex> {
@@ -896,7 +786,7 @@ mod tests {
     }
 
     #[test]
-    fn practice_checkpoint_flags_use_compact_indexed_geometry() {
+    fn practice_checkpoint_flags_use_cuboid_block_geometry() {
         let geometry = build_practice_checkpoint_flag_geometry(&[
             PracticeCheckpointFlagInstance {
                 position: [2.0, 1.0, 3.0],
@@ -911,16 +801,22 @@ mod tests {
         ]);
 
         assert!(!geometry.vertices.is_empty());
-        assert!(geometry
-            .indices
-            .as_ref()
-            .is_some_and(|indices| !indices.is_empty()));
-        assert!(geometry.vertex_count() < 160);
-        assert!(geometry.draw_count() < 900);
+        assert!(geometry.indices.is_none());
+        assert_eq!(geometry.vertex_count(), 2 * 6 * PRISM_VERTEX_COUNT);
+        let past_flag_vertices = geometry
+            .vertices
+            .iter()
+            .filter(|vertex| vertex.position[0] < 3.0)
+            .collect::<Vec<_>>();
+        assert!(past_flag_vertices.iter().any(|vertex| {
+            vertex.color[0] > 0.8 && vertex.color[1] < 0.4 && vertex.color[2] < 0.5
+        }));
+        assert!(past_flag_vertices.iter().all(|vertex| {
+            !(vertex.color[2] > 0.8 && vertex.color[0] < 0.5 && vertex.color[1] < 0.8)
+        }));
         let max_latest_flag_y = geometry
             .vertices
             .iter()
-            .filter(|vertex| vertex.color[0] > 0.8)
             .map(|vertex| vertex.position[1])
             .fold(f32::NEG_INFINITY, f32::max);
         assert!(max_latest_flag_y > 3.9);
