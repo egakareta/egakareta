@@ -16,7 +16,7 @@ pub(crate) mod components;
 pub(crate) mod menu;
 pub(crate) mod modes;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::components::{show_timeline_bar, show_waveform_panel, timeline_metrics};
 use crate::modes::compose::{
@@ -603,6 +603,265 @@ fn show_editor_context_menu(
     }
 }
 
+fn show_settings_sidebar_area(
+    ctx: &egui::Context,
+    view: &EditorUiViewModel<'_>,
+    commands: &mut Vec<AppCommand>,
+) -> egui::InnerResponse<()> {
+    let viewport_width = ctx.content_rect().width();
+    let viewport_height = ctx.content_rect().height();
+    let sidebar_width = settings_sidebar_default_width(viewport_width);
+
+    egui::Area::new("editor_settings_sidebar_overlay".into())
+        .order(egui::Order::Foreground)
+        .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
+        .show(ctx, |ui| {
+            egui::Frame::side_top_panel(ui.style()).show(ui, |ui| {
+                show_settings_sidebar_panel(ui, view, commands, sidebar_width, viewport_height);
+            });
+        })
+}
+
+fn show_settings_sidebar_panel(
+    ui: &mut egui::Ui,
+    view: &EditorUiViewModel<'_>,
+    commands: &mut Vec<AppCommand>,
+    sidebar_width: f32,
+    viewport_height: f32,
+) {
+    ui.set_width(sidebar_width);
+    ui.set_min_height(viewport_height);
+
+    show_settings_sidebar_header(ui, commands);
+    show_settings_section_tabs(ui, view.settings_section, commands);
+
+    ui.separator();
+
+    match view.settings_section {
+        SettingsSection::Backends => show_backend_settings(ui, view, commands),
+        SettingsSection::Keybinds => show_keybind_settings(ui, view, commands),
+    }
+}
+
+fn show_settings_sidebar_header(ui: &mut egui::Ui, commands: &mut Vec<AppCommand>) {
+    ui.horizontal(|ui| {
+        ui.heading(format!("{} Settings", egui_phosphor::regular::GEAR));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let close_button_size =
+                egui::vec2(ui.spacing().interact_size.y, ui.spacing().interact_size.y);
+            if ui
+                .add_sized(
+                    close_button_size,
+                    egui::Button::new(egui_phosphor::regular::X).frame(false),
+                )
+                .on_hover_text("Close settings")
+                .clicked()
+            {
+                commands.push(AppCommand::Editor(EditorCommand::SetShowSettings(false)));
+            }
+        });
+    });
+}
+
+fn show_settings_section_tabs(
+    ui: &mut egui::Ui,
+    settings_section: SettingsSection,
+    commands: &mut Vec<AppCommand>,
+) {
+    ui.horizontal(|ui| {
+        show_settings_section_tab(
+            ui,
+            settings_section,
+            SettingsSection::Backends,
+            format!("{} Backends", egui_phosphor::regular::MONITOR),
+            commands,
+        );
+        show_settings_section_tab(
+            ui,
+            settings_section,
+            SettingsSection::Keybinds,
+            format!("{} Keybinds", egui_phosphor::regular::KEYBOARD),
+            commands,
+        );
+    });
+}
+
+fn show_settings_section_tab(
+    ui: &mut egui::Ui,
+    current_section: SettingsSection,
+    tab_section: SettingsSection,
+    label: String,
+    commands: &mut Vec<AppCommand>,
+) {
+    if ui
+        .selectable_label(current_section == tab_section, label)
+        .clicked()
+    {
+        commands.push(AppCommand::Editor(EditorCommand::SetSettingsSection(
+            tab_section,
+        )));
+    }
+}
+
+fn show_backend_settings(
+    ui: &mut egui::Ui,
+    view: &EditorUiViewModel<'_>,
+    commands: &mut Vec<AppCommand>,
+) {
+    show_backend_selector(
+        ui,
+        commands,
+        BackendSelector {
+            label: format!("{} Graphics backend", egui_phosphor::regular::DESKTOP),
+            id_salt: "settings_graphics_backend",
+            configured_backend: view.configured_graphics_backend,
+            backend_options: view.graphics_backend_options,
+            locked: view.graphics_backend_locked,
+        },
+        EditorCommand::SetGraphicsBackend,
+    );
+
+    if view.settings_restart_required {
+        ui.colored_label(
+            egui::Color32::from_rgb(255, 196, 96),
+            format!(
+                "{} Graphics backend change will apply after restart.",
+                egui_phosphor::regular::WARNING
+            ),
+        );
+    }
+
+    ui.separator();
+    show_backend_selector(
+        ui,
+        commands,
+        BackendSelector {
+            label: format!("{} Audio backend", egui_phosphor::regular::SPEAKER_HIGH),
+            id_salt: "settings_audio_backend",
+            configured_backend: view.configured_audio_backend,
+            backend_options: view.audio_backend_options,
+            locked: view.audio_backend_locked,
+        },
+        EditorCommand::SetAudioBackend,
+    );
+
+    ui.separator();
+    show_ui_scale_setting(ui, view, commands);
+}
+
+struct BackendSelector<'a> {
+    label: String,
+    id_salt: &'static str,
+    configured_backend: &'a str,
+    backend_options: &'a [String],
+    locked: bool,
+}
+
+fn show_backend_selector(
+    ui: &mut egui::Ui,
+    commands: &mut Vec<AppCommand>,
+    selector: BackendSelector<'_>,
+    command: impl FnOnce(String) -> EditorCommand,
+) {
+    ui.label(selector.label);
+
+    let mut backend_choice = selector.configured_backend.to_string();
+    ui.add_enabled_ui(!selector.locked, |ui| {
+        egui::ComboBox::from_id_salt(selector.id_salt)
+            .selected_text(backend_choice.as_str())
+            .show_ui(ui, |ui| {
+                for backend in selector.backend_options {
+                    if ui
+                        .selectable_label(backend_choice == backend.as_str(), backend)
+                        .clicked()
+                    {
+                        backend_choice = backend.clone();
+                    }
+                }
+            });
+    });
+
+    if !selector.locked && backend_choice != selector.configured_backend {
+        commands.push(AppCommand::Editor(command(backend_choice)));
+    }
+}
+
+fn show_ui_scale_setting(
+    ui: &mut egui::Ui,
+    view: &EditorUiViewModel<'_>,
+    commands: &mut Vec<AppCommand>,
+) {
+    ui.label(format!("{} UI Scale", egui_phosphor::regular::GEAR));
+    let mut ui_scale_multiplier = view.app_settings.normalized_ui_scale_multiplier();
+    if ui
+        .add(
+            egui::DragValue::new(&mut ui_scale_multiplier)
+                .speed(0.05)
+                .range(0.5..=3.0)
+                .suffix("x"),
+        )
+        .changed()
+    {
+        commands.push(AppCommand::Editor(EditorCommand::SetUiScaleMultiplier(
+            ui_scale_multiplier,
+        )));
+    }
+}
+
+fn show_keybind_settings(
+    ui: &mut egui::Ui,
+    view: &EditorUiViewModel<'_>,
+    commands: &mut Vec<AppCommand>,
+) {
+    let mut grouped_actions: BTreeMap<&'static str, Vec<&'static eg_types::KeybindActionMetadata>> =
+        BTreeMap::new();
+    for metadata in essential_keybind_actions() {
+        grouped_actions
+            .entry(metadata.group)
+            .or_default()
+            .push(metadata);
+    }
+
+    let default_keybinds = eg_types::default_essential_keybinds();
+
+    egui::ScrollArea::both()
+        .id_salt("keybinds_scroll")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            ui.set_min_width(KEYBIND_CONTENT_MIN_WIDTH);
+
+            for (group, actions) in grouped_actions {
+                ui.collapsing(group, |ui| {
+                    for metadata in actions {
+                        let action = metadata.action;
+
+                        let current_chords = view.app_settings.keybinds_for_action(action);
+                        let default_chords: Vec<_> = default_keybinds
+                            .iter()
+                            .filter(|b| b.action == action)
+                            .map(|b| &b.chord)
+                            .collect();
+
+                        show_keybind_action_row(
+                            ui,
+                            commands,
+                            metadata,
+                            &current_chords,
+                            &default_chords,
+                            view.keybind_capture_action,
+                        );
+                        ui.separator();
+                    }
+                });
+            }
+
+            ui.separator();
+            if ui.button("Reset to Defaults").clicked() {
+                commands.push(AppCommand::Editor(EditorCommand::ResetKeybinds));
+            }
+        });
+}
+
 /// Shows the settings sidebar overlay. Works in menu, editor, and paused phases.
 /// Hidden during active gameplay.
 /// Renders from `EditorUiViewModel` and queues commands for the caller to dispatch.
@@ -619,210 +878,7 @@ pub fn show_settings_sidebar(
         return;
     }
 
-    let viewport_width = ctx.content_rect().width();
-    let viewport_height = ctx.content_rect().height();
-    let settings_section = view.settings_section;
-    let app_settings = view.app_settings.clone();
-    let configured_graphics_backend = view.configured_graphics_backend.to_string();
-    let configured_audio_backend = view.configured_audio_backend.to_string();
-    let graphics_backend_locked = view.graphics_backend_locked;
-    let audio_backend_locked = view.audio_backend_locked;
-    let graphics_backend_options = view.graphics_backend_options.to_vec();
-    let audio_backend_options = view.audio_backend_options.to_vec();
-    let settings_restart_required = view.settings_restart_required;
-    let keybind_capture = view.keybind_capture_action.cloned();
-
-    let sidebar_width = settings_sidebar_default_width(viewport_width);
-    egui::Area::new("editor_settings_sidebar_overlay".into())
-        .order(egui::Order::Foreground)
-        .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
-        .show(ctx, |ui| {
-            egui::Frame::side_top_panel(ui.style()).show(ui, |ui| {
-                ui.set_width(sidebar_width);
-                ui.set_min_height(viewport_height);
-                ui.horizontal(|ui| {
-                    ui.heading(format!("{} Settings", egui_phosphor::regular::GEAR));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let close_button_size =
-                            egui::vec2(ui.spacing().interact_size.y, ui.spacing().interact_size.y);
-                        if ui
-                            .add_sized(
-                                close_button_size,
-                                egui::Button::new(egui_phosphor::regular::X).frame(false),
-                            )
-                            .on_hover_text("Close settings")
-                            .clicked()
-                        {
-                            commands
-                                .push(AppCommand::Editor(EditorCommand::SetShowSettings(false)));
-                        }
-                    });
-                });
-                ui.horizontal(|ui| {
-                    if ui
-                        .selectable_label(
-                            settings_section == SettingsSection::Backends,
-                            format!("{} Backends", egui_phosphor::regular::MONITOR),
-                        )
-                        .clicked()
-                    {
-                        commands.push(AppCommand::Editor(EditorCommand::SetSettingsSection(
-                            SettingsSection::Backends,
-                        )));
-                    }
-
-                    if ui
-                        .selectable_label(
-                            settings_section == SettingsSection::Keybinds,
-                            format!("{} Keybinds", egui_phosphor::regular::KEYBOARD),
-                        )
-                        .clicked()
-                    {
-                        commands.push(AppCommand::Editor(EditorCommand::SetSettingsSection(
-                            SettingsSection::Keybinds,
-                        )));
-                    }
-                });
-
-                ui.separator();
-
-                match settings_section {
-                    SettingsSection::Backends => {
-                        ui.label(format!(
-                            "{} Graphics backend",
-                            egui_phosphor::regular::DESKTOP
-                        ));
-                        let mut graphics_choice = configured_graphics_backend.clone();
-                        ui.add_enabled_ui(!graphics_backend_locked, |ui| {
-                            egui::ComboBox::from_id_salt("settings_graphics_backend")
-                                .selected_text(graphics_choice.as_str())
-                                .show_ui(ui, |ui| {
-                                    for backend in &graphics_backend_options {
-                                        if ui
-                                            .selectable_label(graphics_choice == *backend, backend)
-                                            .clicked()
-                                        {
-                                            graphics_choice = backend.clone();
-                                        }
-                                    }
-                                });
-                        });
-                        if !graphics_backend_locked
-                            && graphics_choice != configured_graphics_backend
-                        {
-                            commands.push(AppCommand::Editor(EditorCommand::SetGraphicsBackend(
-                                graphics_choice,
-                            )));
-                        }
-
-                        if settings_restart_required {
-                            ui.colored_label(
-                                egui::Color32::from_rgb(255, 196, 96),
-                                format!(
-                                    "{} Graphics backend change will apply after restart.",
-                                    egui_phosphor::regular::WARNING
-                                ),
-                            );
-                        }
-
-                        ui.separator();
-                        ui.label(format!(
-                            "{} Audio backend",
-                            egui_phosphor::regular::SPEAKER_HIGH
-                        ));
-                        let mut audio_choice = configured_audio_backend.clone();
-                        ui.add_enabled_ui(!audio_backend_locked, |ui| {
-                            egui::ComboBox::from_id_salt("settings_audio_backend")
-                                .selected_text(audio_choice.as_str())
-                                .show_ui(ui, |ui| {
-                                    for backend in &audio_backend_options {
-                                        if ui
-                                            .selectable_label(audio_choice == *backend, backend)
-                                            .clicked()
-                                        {
-                                            audio_choice = backend.clone();
-                                        }
-                                    }
-                                });
-                        });
-                        if !audio_backend_locked && audio_choice != configured_audio_backend {
-                            commands.push(AppCommand::Editor(EditorCommand::SetAudioBackend(
-                                audio_choice,
-                            )));
-                        }
-
-                        ui.separator();
-                        ui.label(format!("{} UI Scale", egui_phosphor::regular::GEAR));
-                        let mut ui_scale_multiplier = app_settings.normalized_ui_scale_multiplier();
-                        if ui
-                            .add(
-                                egui::DragValue::new(&mut ui_scale_multiplier)
-                                    .speed(0.05)
-                                    .range(0.5..=3.0)
-                                    .suffix("x"),
-                            )
-                            .changed()
-                        {
-                            commands.push(AppCommand::Editor(EditorCommand::SetUiScaleMultiplier(
-                                ui_scale_multiplier,
-                            )));
-                        }
-                    }
-                    SettingsSection::Keybinds => {
-                        let mut grouped_actions: std::collections::BTreeMap<
-                            &'static str,
-                            Vec<&'static eg_types::KeybindActionMetadata>,
-                        > = std::collections::BTreeMap::new();
-                        for metadata in essential_keybind_actions() {
-                            grouped_actions
-                                .entry(metadata.group)
-                                .or_default()
-                                .push(metadata);
-                        }
-
-                        let default_keybinds = eg_types::default_essential_keybinds();
-
-                        egui::ScrollArea::both()
-                            .id_salt("keybinds_scroll")
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
-                                ui.set_min_width(KEYBIND_CONTENT_MIN_WIDTH);
-
-                                for (group, actions) in grouped_actions {
-                                    ui.collapsing(group, |ui| {
-                                        for metadata in actions {
-                                            let action = metadata.action;
-
-                                            let current_chords =
-                                                app_settings.keybinds_for_action(action);
-                                            let default_chords: Vec<_> = default_keybinds
-                                                .iter()
-                                                .filter(|b| b.action == action)
-                                                .map(|b| &b.chord)
-                                                .collect();
-
-                                            show_keybind_action_row(
-                                                ui,
-                                                commands,
-                                                metadata,
-                                                &current_chords,
-                                                &default_chords,
-                                                keybind_capture.as_ref(),
-                                            );
-                                            ui.separator();
-                                        }
-                                    });
-                                }
-
-                                ui.separator();
-                                if ui.button("Reset to Defaults").clicked() {
-                                    commands.push(AppCommand::Editor(EditorCommand::ResetKeybinds));
-                                }
-                            });
-                    }
-                }
-            });
-        });
+    show_settings_sidebar_area(ctx, view, commands);
 }
 
 /// Shows the editor UI using egui.
@@ -853,211 +909,10 @@ pub fn show_editor_ui(
     let is_compose = mode.is_compose_mode() && !is_timing;
     let content_rect = ctx.content_rect();
     let viewport_width = content_rect.width();
-    let viewport_height = content_rect.height();
     let is_compact_ui = is_compact_editor_ui(viewport_width);
 
     if view.show_settings {
-        let sidebar_width = settings_sidebar_default_width(viewport_width);
-        let settings_response = egui::Area::new("editor_settings_sidebar_overlay".into())
-            .order(egui::Order::Foreground)
-            .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
-            .show(ctx, |ui| {
-                egui::Frame::side_top_panel(ui.style()).show(ui, |ui| {
-                    ui.set_width(sidebar_width);
-                    ui.set_min_height(viewport_height);
-                    ui.horizontal(|ui| {
-                        ui.heading(format!("{} Settings", egui_phosphor::regular::GEAR));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let close_button_size = egui::vec2(
-                                ui.spacing().interact_size.y,
-                                ui.spacing().interact_size.y,
-                            );
-                            if ui
-                                .add_sized(
-                                    close_button_size,
-                                    egui::Button::new(egui_phosphor::regular::X).frame(false),
-                                )
-                                .on_hover_text("Close settings")
-                                .clicked()
-                            {
-                                commands.push(AppCommand::Editor(EditorCommand::SetShowSettings(
-                                    false,
-                                )));
-                            }
-                        });
-                    });
-                    ui.horizontal(|ui| {
-                        if ui
-                            .selectable_label(
-                                view.settings_section == SettingsSection::Backends,
-                                format!("{} Backends", egui_phosphor::regular::MONITOR),
-                            )
-                            .clicked()
-                        {
-                            commands.push(AppCommand::Editor(EditorCommand::SetSettingsSection(
-                                SettingsSection::Backends,
-                            )));
-                        }
-
-                        if ui
-                            .selectable_label(
-                                view.settings_section == SettingsSection::Keybinds,
-                                format!("{} Keybinds", egui_phosphor::regular::KEYBOARD),
-                            )
-                            .clicked()
-                        {
-                            commands.push(AppCommand::Editor(EditorCommand::SetSettingsSection(
-                                SettingsSection::Keybinds,
-                            )));
-                        }
-                    });
-
-                    ui.separator();
-
-                    match view.settings_section {
-                        SettingsSection::Backends => {
-                            ui.label(format!(
-                                "{} Graphics backend",
-                                egui_phosphor::regular::DESKTOP
-                            ));
-                            let mut graphics_choice = view.configured_graphics_backend.to_string();
-                            ui.add_enabled_ui(!view.graphics_backend_locked, |ui| {
-                                egui::ComboBox::from_id_salt("settings_graphics_backend")
-                                    .selected_text(graphics_choice.as_str())
-                                    .show_ui(ui, |ui| {
-                                        for backend in view.graphics_backend_options {
-                                            if ui
-                                                .selectable_label(
-                                                    graphics_choice == *backend,
-                                                    backend,
-                                                )
-                                                .clicked()
-                                            {
-                                                graphics_choice = backend.clone();
-                                            }
-                                        }
-                                    });
-                            });
-                            if !view.graphics_backend_locked
-                                && graphics_choice != view.configured_graphics_backend
-                            {
-                                commands.push(AppCommand::Editor(
-                                    EditorCommand::SetGraphicsBackend(graphics_choice),
-                                ));
-                            }
-
-                            if view.settings_restart_required {
-                                ui.colored_label(
-                                    egui::Color32::from_rgb(255, 196, 96),
-                                    format!(
-                                        "{} Graphics backend change will apply after restart.",
-                                        egui_phosphor::regular::WARNING
-                                    ),
-                                );
-                            }
-
-                            ui.separator();
-                            ui.label(format!(
-                                "{} Audio backend",
-                                egui_phosphor::regular::SPEAKER_HIGH
-                            ));
-                            let mut audio_choice = view.configured_audio_backend.to_string();
-                            ui.add_enabled_ui(!view.audio_backend_locked, |ui| {
-                                egui::ComboBox::from_id_salt("settings_audio_backend")
-                                    .selected_text(audio_choice.as_str())
-                                    .show_ui(ui, |ui| {
-                                        for backend in view.audio_backend_options {
-                                            if ui
-                                                .selectable_label(audio_choice == *backend, backend)
-                                                .clicked()
-                                            {
-                                                audio_choice = backend.clone();
-                                            }
-                                        }
-                                    });
-                            });
-                            if !view.audio_backend_locked
-                                && audio_choice != view.configured_audio_backend
-                            {
-                                commands.push(AppCommand::Editor(EditorCommand::SetAudioBackend(
-                                    audio_choice,
-                                )));
-                            }
-
-                            ui.separator();
-                            ui.label(format!("{} UI Scale", egui_phosphor::regular::GEAR));
-                            let mut ui_scale_multiplier =
-                                view.app_settings.normalized_ui_scale_multiplier();
-                            if ui
-                                .add(
-                                    egui::DragValue::new(&mut ui_scale_multiplier)
-                                        .speed(0.05)
-                                        .range(0.5..=3.0)
-                                        .suffix("x"),
-                                )
-                                .changed()
-                            {
-                                commands.push(AppCommand::Editor(
-                                    EditorCommand::SetUiScaleMultiplier(ui_scale_multiplier),
-                                ));
-                            }
-                        }
-                        SettingsSection::Keybinds => {
-                            let mut grouped_actions: std::collections::BTreeMap<
-                                &'static str,
-                                Vec<&'static eg_types::KeybindActionMetadata>,
-                            > = std::collections::BTreeMap::new();
-                            for metadata in essential_keybind_actions() {
-                                grouped_actions
-                                    .entry(metadata.group)
-                                    .or_default()
-                                    .push(metadata);
-                            }
-
-                            let default_keybinds = eg_types::default_essential_keybinds();
-
-                            egui::ScrollArea::both()
-                                .id_salt("keybinds_scroll")
-                                .auto_shrink([false, false])
-                                .show(ui, |ui| {
-                                    ui.set_min_width(KEYBIND_CONTENT_MIN_WIDTH);
-
-                                    for (group, actions) in grouped_actions {
-                                        ui.collapsing(group, |ui| {
-                                            for metadata in actions {
-                                                let action = metadata.action;
-
-                                                let current_chords =
-                                                    view.app_settings.keybinds_for_action(action);
-                                                let default_chords: Vec<_> = default_keybinds
-                                                    .iter()
-                                                    .filter(|b| b.action == action)
-                                                    .map(|b| &b.chord)
-                                                    .collect();
-
-                                                show_keybind_action_row(
-                                                    ui,
-                                                    &mut commands,
-                                                    metadata,
-                                                    &current_chords,
-                                                    &default_chords,
-                                                    view.keybind_capture_action,
-                                                );
-                                                ui.separator();
-                                            }
-                                        });
-                                    }
-
-                                    ui.separator();
-                                    if ui.button("Reset to Defaults").clicked() {
-                                        commands
-                                            .push(AppCommand::Editor(EditorCommand::ResetKeybinds));
-                                    }
-                                });
-                        }
-                    }
-                });
-            });
+        let settings_response = show_settings_sidebar_area(ctx, &view, &mut commands);
         ui_input_blocking_rects.push(rect_to_input_bounds(settings_response.response.rect));
     }
 
