@@ -5,10 +5,12 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use rodio::Source;
 use std::io::Cursor;
 use std::str::FromStr;
 #[cfg(target_arch = "wasm32")]
 use std::sync::atomic::{AtomicBool, Ordering};
+use web_time::Duration;
 
 #[cfg(target_arch = "wasm32")]
 static RAYON_INIT_SCHEDULED_AFTER_AUDIO: AtomicBool = AtomicBool::new(false);
@@ -184,11 +186,14 @@ pub struct WaveformDecodeSummary {
 }
 
 pub struct AudioBackend {
-    _output_device: Option<rodio::MixerDeviceSink>,
+    output_device: Option<rodio::MixerDeviceSink>,
     device_tried: bool,
     preferred_host: Option<cpal::HostId>,
     current_player: Option<rodio::Player>,
     current_audio_source: Option<String>,
+    /// Cached, fully-decoded PCM for the current source keyed by its source key.
+    /// Reused across seeks so we never re-decode and never need a blocking seek.
+    decoded_cache: Option<(String, rodio::buffer::SamplesBuffer)>,
     playback_started_at: Option<web_time::Instant>,
     playback_start_offset_seconds: f32,
     playback_speed: f32,
@@ -201,11 +206,12 @@ impl AudioBackend {
         let host_id = select_host(None).id();
 
         Self {
-            _output_device: None,
+            output_device: None,
             device_tried: false,
             preferred_host: None,
             current_player: None,
             current_audio_source: None,
+            decoded_cache: None,
             playback_started_at: None,
             playback_start_offset_seconds: 0.0,
             playback_speed: 1.0,
@@ -214,9 +220,11 @@ impl AudioBackend {
         }
     }
 
+    /// Ensure that the audio output device is initialized and available.
+    /// Returns a reference to the device sink if available, or None if initialization failed.
     pub fn ensure_device(&mut self) -> Option<&rodio::MixerDeviceSink> {
-        if self._output_device.is_some() {
-            return self._output_device.as_ref();
+        if self.output_device.is_some() {
+            return self.output_device.as_ref();
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -235,7 +243,7 @@ impl AudioBackend {
         log::info!("Selected audio host: {:?}", host_id);
         self.backend_name = host_id.to_string();
 
-        self._output_device = match host.default_output_device() {
+        self.output_device = match host.default_output_device() {
             Some(device) => {
                 use cpal::traits::DeviceTrait;
                 if let Ok(name) = device.id() {
@@ -263,9 +271,10 @@ impl AudioBackend {
             }
         };
 
-        self._output_device.as_ref()
+        self.output_device.as_ref()
     }
 
+    /// Pause the current playback, if any, and update playback_start_offset_seconds.
     pub fn pause(&mut self) {
         if let Some(started_at) = self.playback_started_at {
             self.playback_start_offset_seconds +=
@@ -277,6 +286,8 @@ impl AudioBackend {
         self.playback_started_at = None;
     }
 
+    /// Resume playback from the current position, if a player is available.
+    /// If no player is available, this will do nothing.
     pub fn resume(&mut self) {
         self.ensure_device();
         if let Some(player) = &self.current_player {
@@ -291,15 +302,41 @@ impl AudioBackend {
         }
     }
 
-    fn set_new_sink(
+    /// Decode compressed audio bytes into an in-memory PCM buffer.
+    ///
+    /// The decode happens once; the resulting [`rodio::buffer::SamplesBuffer`] is
+    /// cheap to clone and supports instant, non-blocking in-memory seeking. This
+    /// lets us reuse already-decoded audio when seeking instead of relying on
+    /// [`rodio::Player::try_seek`], which blocks the calling thread and therefore
+    /// cannot run on the WASM main thread.
+    fn decode_to_buffer(bytes: &[u8]) -> Option<rodio::buffer::SamplesBuffer> {
+        use rodio::Source;
+        let decoded = rodio::Decoder::new(Cursor::new(bytes.to_vec())).ok()?;
+        let channels = decoded.channels();
+        let sample_rate = decoded.sample_rate();
+        let samples: Vec<f32> = decoded.collect();
+        Some(rodio::buffer::SamplesBuffer::new(
+            channels,
+            sample_rate,
+            samples,
+        ))
+    }
+
+    /// Build a fresh player from an in-memory PCM buffer, seeking to `start_seconds`
+    /// before playback. Seeking is performed on the buffer itself (an in-memory
+    /// index jump), so this never blocks and works identically on native and WASM.
+    /// If autoplay is true, playback starts immediately; otherwise it is paused.
+    fn play_buffer(
         &mut self,
         source_key: String,
-        decoded: rodio::Decoder<Cursor<Vec<u8>>>,
+        mut buffer: rodio::buffer::SamplesBuffer,
         start_seconds: f32,
         autoplay: bool,
-        _context: &str,
     ) {
-        use web_time::Duration;
+        if start_seconds > 0.001 {
+            log::trace!("RodioBackendInner: seeking buffer to {:.3}s", start_seconds);
+            let _ = buffer.try_seek(Duration::from_secs_f32(start_seconds));
+        }
 
         let Some(device) = self.ensure_device() else {
             #[cfg(test)]
@@ -321,14 +358,8 @@ impl AudioBackend {
         log::trace!("RodioBackendInner: adding output to mixer");
         device.mixer().add(output);
 
-        log::trace!("RodioBackendInner: appending decoded source");
-        use rodio::Source;
-        if start_seconds > 0.001 {
-            log::trace!("RodioBackendInner: skipping to {:.3}s", start_seconds);
-            player.append(decoded.skip_duration(Duration::from_secs_f32(start_seconds)));
-        } else {
-            player.append(decoded);
-        }
+        log::trace!("RodioBackendInner: appending buffered source");
+        player.append(buffer);
 
         player.set_speed(self.playback_speed);
         if cfg!(test) {
@@ -347,6 +378,8 @@ impl AudioBackend {
         self.current_audio_source = Some(source_key);
     }
 
+    /// Set the preferred audio backend by name. If the name is valid and available, it will be set as the preferred backend.
+    /// Returns true if the backend was successfully set, false if the name was invalid or unavailable.
     pub fn set_preferred_backend_name(&mut self, backend_name: &str) -> bool {
         let parsed = parse_host_id_by_label(backend_name);
         if !backend_name.trim().is_empty()
@@ -370,7 +403,7 @@ impl AudioBackend {
         self.current_audio_source = None;
         self.playback_started_at = None;
         self.playback_start_offset_seconds = 0.0;
-        self._output_device = None;
+        self.output_device = None;
         self.device_tried = false;
         self.backend_name = if let Some(host_id) = self.preferred_host {
             host_label(host_id)
@@ -381,6 +414,7 @@ impl AudioBackend {
         true
     }
 
+    /// Stop the current playback and reset the playback state.
     pub fn stop(&mut self) {
         if let Some(player) = &self.current_player {
             player.pause();
@@ -389,49 +423,44 @@ impl AudioBackend {
         self.playback_start_offset_seconds = 0.0;
     }
 
+    /// Check if the current audio source can be reused based on the provided source key.
     pub fn can_reuse_source(&self, source_key: &str) -> bool {
         self.current_audio_source.as_deref() == Some(source_key)
     }
 
+    /// Seek to `start_seconds` and play, reusing already-decoded PCM when available.
+    ///
+    /// Reuse rebuilds a player from the cached in-memory buffer (an instant,
+    /// non-blocking seek) rather than calling [`rodio::Player::try_seek`], which
+    /// blocks the calling thread and is therefore unusable on the WASM main thread.
+    /// Returns `false` when no cached PCM matches the current source, signalling the
+    /// caller to decode it fresh.
     pub fn seek_and_play(&mut self, start_seconds: f32) -> bool {
-        #[cfg(target_arch = "wasm32")]
-        {
-            // Player::try_seek blocks the main thread on WASM, leading to a deadlock.
-            // We disable reuse on WASM to force a fresh sink which uses non-blocking skip_duration.
-            let _ = start_seconds;
-            return false;
-        }
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            use web_time::Duration;
-
-            if let Some(player) = &self.current_player {
-                if let Err(err) = player.try_seek(Duration::from_secs_f32(start_seconds)) {
-                    log::warn!(
-                        "Failed to seek reused audio to {:.3}s: {:?}",
-                        start_seconds,
-                        err
-                    );
-                    return false;
+        if let Some(source_key) = self.current_audio_source.clone() {
+            let cached = match &self.decoded_cache {
+                Some((key, buffer)) if key == &source_key => Some(buffer.clone()),
+                _ => None,
+            };
+            if let Some(buffer) = cached {
+                if let Some(player) = self.current_player.take() {
+                    player.stop();
                 }
-                player.set_speed(self.playback_speed);
-                player.play();
-                self.playback_started_at = Some(web_time::Instant::now());
-                self.playback_start_offset_seconds = start_seconds;
-                true
-            } else {
-                #[cfg(test)]
-                if self.current_audio_source.is_some() {
-                    self.playback_started_at = Some(web_time::Instant::now());
-                    self.playback_start_offset_seconds = start_seconds;
-                    return true;
-                }
-                false
+                self.play_buffer(source_key, buffer, start_seconds, true);
+                return true;
             }
         }
+
+        #[cfg(test)]
+        if self.current_audio_source.is_some() {
+            self.playback_started_at = Some(web_time::Instant::now());
+            self.playback_start_offset_seconds = start_seconds;
+            return true;
+        }
+
+        false
     }
 
+    /// Replace the current audio source with the provided bytes, starting at the specified time, and start playback immediately.
     pub fn replace_with_bytes(
         &mut self,
         source_key: String,
@@ -439,76 +468,26 @@ impl AudioBackend {
         bytes: &[u8],
         start_seconds: f32,
     ) {
-        self.replace_with_bytes_internal(source_key, music_source, bytes, start_seconds, true);
-    }
-
-    pub fn warmup_with_bytes(
-        &mut self,
-        source_key: String,
-        music_source: &str,
-        bytes: &[u8],
-        start_seconds: f32,
-    ) {
-        self.replace_with_bytes_internal(source_key, music_source, bytes, start_seconds, false);
-    }
-
-    fn replace_with_bytes_internal(
-        &mut self,
-        source_key: String,
-        music_source: &str,
-        bytes: &[u8],
-        start_seconds: f32,
-        autoplay: bool,
-    ) {
         if let Some(player) = self.current_player.take() {
             player.stop();
         }
         self.current_audio_source = None;
 
         log::trace!("RodioAudioBackend: decoding {} bytes", bytes.len());
-        match rodio::Decoder::new(Cursor::new(bytes.to_vec())) {
-            Ok(decoded) => {
+        match Self::decode_to_buffer(bytes) {
+            Some(buffer) => {
                 log::trace!("RodioAudioBackend: decoding successful");
-                let context = format!("imported audio '{}'", music_source);
-                self.set_new_sink(source_key, decoded, start_seconds, autoplay, &context);
+                self.decoded_cache = Some((source_key.clone(), buffer.clone()));
+                self.play_buffer(source_key, buffer, start_seconds, true);
             }
-            Err(err) => {
-                log::warn!(
-                    "Failed to decode imported level music '{}': {}",
-                    music_source,
-                    err
-                );
+            None => {
+                log::warn!("Failed to decode imported level music '{}'", music_source);
             }
         }
     }
 
-    pub fn replace_with_asset(
-        &mut self,
-        source_key: String,
-        level_name: &str,
-        music_source: &str,
-        start_seconds: f32,
-    ) {
-        self.replace_with_asset_internal(source_key, level_name, music_source, start_seconds, true);
-    }
-
-    pub fn warmup_with_asset(
-        &mut self,
-        source_key: String,
-        level_name: &str,
-        music_source: &str,
-        start_seconds: f32,
-    ) {
-        self.replace_with_asset_internal(
-            source_key,
-            level_name,
-            music_source,
-            start_seconds,
-            false,
-        );
-    }
-
-    fn replace_with_asset_internal(
+    /// Replace the current audio source with an asset from the specified level, starting at the specified time, and start playback immediately.
+    fn replace_with_asset(
         &mut self,
         source_key: String,
         level_name: &str,
@@ -538,18 +517,19 @@ impl AudioBackend {
             "RodioAudioBackend: decoding {} bytes from asset",
             audio_bytes.len()
         );
-        let cursor = Cursor::new(audio_bytes);
-        match rodio::Decoder::new(cursor) {
-            Ok(decoded) => {
+        match Self::decode_to_buffer(&audio_bytes) {
+            Some(buffer) => {
                 log::trace!("RodioAudioBackend: asset decoding successful");
-                self.set_new_sink(source_key, decoded, start_seconds, autoplay, &audio_path);
+                self.decoded_cache = Some((source_key.clone(), buffer.clone()));
+                self.play_buffer(source_key, buffer, start_seconds, autoplay);
             }
-            Err(err) => {
-                log::warn!("Failed to decode level music '{}': {}", audio_path, err);
+            None => {
+                log::warn!("Failed to decode level music '{}'", audio_path);
             }
         }
     }
 
+    /// Get the current playback time in seconds, accounting for the playback speed and any offset. Returns None if no playback is active.
     pub fn playback_time_seconds(&self) -> Option<f32> {
         match self.current_player.as_ref() {
             Some(player) => {
@@ -572,6 +552,7 @@ impl AudioBackend {
         )
     }
 
+    /// Check if the audio backend is currently playing any audio. Returns true if playback is active, false otherwise.
     pub fn is_playing(&self) -> bool {
         if let Some(player) = self.current_player.as_ref() {
             return !player.empty();
@@ -586,6 +567,7 @@ impl AudioBackend {
         }
     }
 
+    /// Set the playback speed for the current audio source. The speed is clamped between 0.25x and 2.0x. If playback is active, the current position is adjusted to account for the new speed.
     pub fn set_speed(&mut self, speed: f32) {
         let clamped_speed = speed.clamp(0.25, 2.0);
         if let Some(started_at) = self.playback_started_at {
@@ -599,6 +581,7 @@ impl AudioBackend {
         }
     }
 
+    /// Play a sound effect from the provided asset bytes. The sound effect will be played immediately and will not affect the current music playback.
     pub fn play_sfx(&mut self, asset_bytes: &'static [u8]) {
         self.active_sfx.retain(|player| !player.empty());
 
@@ -616,10 +599,13 @@ impl AudioBackend {
         }
     }
 
+    /// Get the name of the currently selected audio backend. This may include the host and device name if available.
     pub fn backend_name(&self) -> String {
         self.backend_name.clone()
     }
 
+    /// Start playing audio from a specific source key at the given time.
+    /// If the source can be reused, it will seek to the specified time and play; otherwise, it will replace the current source with the new one.
     fn start_with_source_key_at(
         &mut self,
         source_key: String,
@@ -637,6 +623,7 @@ impl AudioBackend {
         self.replace_with_bytes(source_key, music_source, bytes, start_seconds);
     }
 
+    /// Start playing audio from the provided bytes at the specified time. This will replace the current audio source with the new one and start playback immediately.
     pub fn start_with_bytes_at(&mut self, music_source: &str, bytes: &[u8], start_seconds: f32) {
         self.start_with_source_key_at(
             runtime_bytes_source_key(music_source),
@@ -646,6 +633,7 @@ impl AudioBackend {
         );
     }
 
+    /// Warm up the audio system with the provided bytes at the specified time. This will replace the current audio source with the new one but will not start playback.
     pub fn warmup_with_bytes_at(&mut self, music_source: &str, bytes: &[u8], start_seconds: f32) {
         let source_key = runtime_bytes_source_key(music_source);
         let start_seconds = start_seconds.max(0.0);
@@ -655,9 +643,11 @@ impl AudioBackend {
             return;
         }
 
-        self.warmup_with_bytes(source_key, music_source, bytes, start_seconds);
+        self.replace_with_bytes(source_key, music_source, bytes, start_seconds);
     }
 
+    /// Start playing a preloaded asset at the specified time.
+    /// If the asset can be reused, it will seek to the specified time and play; otherwise, it will replace the current source with the new one.
     pub fn start_preloaded_asset_at(
         &mut self,
         level_name: &str,
@@ -673,6 +663,8 @@ impl AudioBackend {
         );
     }
 
+    /// Warm up a preloaded asset at the specified time. This will replace the current audio source with the new one but will not start playback.
+    /// If the asset can be reused, it will not replace the current source.
     pub fn warmup_preloaded_asset_at(
         &mut self,
         level_name: &str,
@@ -688,9 +680,11 @@ impl AudioBackend {
             return;
         }
 
-        self.warmup_with_bytes(source_key, music_source, bytes, start_seconds);
+        self.replace_with_bytes(source_key, music_source, bytes, start_seconds);
     }
 
+    /// Start playing a level asset at the specified time. This will replace the current audio source with the new one and start playback immediately.
+    /// If the asset can be reused, it will seek to the specified time and play; otherwise, it will replace the current source with the new one.
     pub fn start_at(&mut self, level_name: &str, music_source: &str, start_seconds: f32) {
         let source_key = runtime_asset_source_key(level_name, music_source);
         let start_seconds = start_seconds.max(0.0);
@@ -700,9 +694,11 @@ impl AudioBackend {
             return;
         }
 
-        self.replace_with_asset(source_key, level_name, music_source, start_seconds);
+        self.replace_with_asset(source_key, level_name, music_source, start_seconds, true);
     }
 
+    /// Warm up a level asset at the specified time. This will replace the current audio source with the new one but will not start playback.
+    /// If the asset can be reused, it will not replace the current source.
     pub fn warmup_at(&mut self, level_name: &str, music_source: &str, start_seconds: f32) {
         let source_key = runtime_asset_source_key(level_name, music_source);
         let start_seconds = start_seconds.max(0.0);
@@ -712,7 +708,7 @@ impl AudioBackend {
             return;
         }
 
-        self.warmup_with_asset(source_key, level_name, music_source, start_seconds);
+        self.replace_with_asset(source_key, level_name, music_source, start_seconds, false);
     }
 }
 
@@ -945,7 +941,7 @@ mod tests {
     }
 
     #[test]
-    fn replace_and_warmup_with_valid_bytes_update_test_playback_state() {
+    fn replace_with_valid_bytes_tracks_and_reuses_playback_state() {
         let mut backend = AudioBackend::new();
         let wav = tiny_wav_bytes();
 
@@ -954,9 +950,31 @@ mod tests {
         assert!(backend.is_playing());
         assert!(backend.playback_time_seconds().is_some());
 
-        backend.warmup_with_bytes("bytes:warm".to_string(), "tone.wav", &wav, 0.5);
+        // Decoding a new key replaces the reusable source and caches its PCM.
+        backend.replace_with_bytes("bytes:warm".to_string(), "tone.wav", &wav, 0.5);
         assert!(backend.can_reuse_source("bytes:warm"));
+
+        // Stopping clears playback tracking deterministically.
+        backend.stop();
         assert_eq!(backend.playback_time_seconds(), None);
+    }
+
+    #[test]
+    fn seek_and_play_reuses_cached_pcm_without_redecode() {
+        let mut backend = AudioBackend::new();
+        let wav = tiny_wav_bytes();
+
+        backend.replace_with_bytes("bytes:song".to_string(), "tone.wav", &wav, 0.0);
+        assert!(backend.decoded_cache.is_some());
+        assert!(backend.can_reuse_source("bytes:song"));
+
+        // Same source key -> reuse the cached buffer (no re-decode, non-blocking seek).
+        assert!(backend.seek_and_play(0.25));
+        assert_eq!(
+            backend.decoded_cache.as_ref().map(|(key, _)| key.as_str()),
+            Some("bytes:song")
+        );
+        assert!(backend.can_reuse_source("bytes:song"));
     }
 
     #[test]
