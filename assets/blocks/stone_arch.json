@@ -1,0 +1,57 @@
+{
+    "id": "core/stone_arch",
+    "display_name": "Stone Arch",
+    "category": "building",
+    "assets": {
+        "texture": "castle_brick.png"
+    },
+    "render": {
+        "profile": "solid",
+        "icon_dimetric_projection": true,
+        "color_top": [0.94, 0.94, 0.9, 1.0],
+        "color_side": [0.68, 0.68, 0.64, 1.0],
+        "color_bottom": [0.44, 0.44, 0.4, 1.0],
+        "color_outline": [0.0, 0.0, 0.0, 0.16]
+    },
+    "behavior": {
+        "collision": "solid",
+        "support_surface": true
+    },
+    "geometry": {
+        "elements": [
+            { "from": [0.0, 0.0, 0.0], "to": [4.0, 13.0, 16.0] },
+            { "from": [12.0, 0.0, 0.0], "to": [16.0, 13.0, 16.0] },
+            {
+                "from": [0.0, 13.0, 0.0],
+                "to": [16.0, 16.0, 16.0],
+                "color_tint": [0.82, 0.82, 0.78]
+            },
+            {
+                "from": [4.0, 11.0, 0.0],
+                "to": [6.0, 13.0, 16.0],
+                "color_tint": [0.74, 0.74, 0.7]
+            },
+            {
+                "from": [10.0, 11.0, 0.0],
+                "to": [12.0, 13.0, 16.0],
+                "color_tint": [0.74, 0.74, 0.7]
+            },
+            {
+                "from": [6.0, 10.0, 0.0],
+                "to": [10.0, 12.0, 16.0],
+                "color_tint": [0.68, 0.68, 0.64]
+            },
+            {
+                "from": [0.0, 0.0, 0.0],
+                "to": [5.0, 2.0, 16.0],
+                "color_tint": [0.58, 0.58, 0.54]
+            },
+            {
+                "from": [11.0, 0.0, 0.0],
+                "to": [16.0, 2.0, 16.0],
+                "color_tint": [0.58, 0.58, 0.54]
+            }
+        ]
+    },
+    "placeable": true
+}

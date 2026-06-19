@@ -1,0 +1,70 @@
+{
+    "id": "core/iron_banded_door",
+    "display_name": "Iron-Banded Door",
+    "category": "building",
+    "assets": {
+        "texture": "timber_beam.png"
+    },
+    "render": {
+        "profile": "solid",
+        "icon_dimetric_projection": true,
+        "color_top": [0.8, 0.56, 0.34, 1.0],
+        "color_side": [0.48, 0.28, 0.13, 1.0],
+        "color_bottom": [0.22, 0.12, 0.06, 1.0],
+        "color_outline": [0.04, 0.02, 0.01, 0.35]
+    },
+    "behavior": {
+        "collision": "solid",
+        "support_surface": true
+    },
+    "geometry": {
+        "elements": [
+            {
+                "from": [1.0, 0.0, 5.0],
+                "to": [15.0, 16.0, 11.0],
+                "color_tint": [0.72, 0.43, 0.2]
+            },
+            {
+                "from": [0.0, 0.0, 4.8],
+                "to": [2.0, 16.0, 11.2],
+                "color_tint": [0.36, 0.2, 0.08]
+            },
+            {
+                "from": [14.0, 0.0, 4.8],
+                "to": [16.0, 16.0, 11.2],
+                "color_tint": [0.36, 0.2, 0.08]
+            },
+            {
+                "from": [2.0, 13.5, 4.5],
+                "to": [14.0, 16.0, 11.5],
+                "color_tint": [0.42, 0.24, 0.1]
+            },
+            {
+                "from": [2.0, 0.0, 4.5],
+                "to": [14.0, 2.0, 11.5],
+                "color_tint": [0.42, 0.24, 0.1]
+            },
+            {
+                "from": [7.4, 0.0, 4.4],
+                "to": [8.6, 16.0, 11.6],
+                "color_tint": [0.28, 0.16, 0.07]
+            },
+            {
+                "from": [0.0, 4.0, 4.2],
+                "to": [16.0, 5.4, 11.8],
+                "color_tint": [0.26, 0.26, 0.26]
+            },
+            {
+                "from": [0.0, 10.6, 4.2],
+                "to": [16.0, 12.0, 11.8],
+                "color_tint": [0.26, 0.26, 0.26]
+            },
+            {
+                "from": [11.4, 7.0, 3.8],
+                "to": [13.2, 8.8, 5.3],
+                "color_tint": [0.18, 0.18, 0.18]
+            }
+        ]
+    },
+    "placeable": true
+}

@@ -1,0 +1,65 @@
+{
+    "id": "core/portcullis",
+    "display_name": "Portcullis",
+    "category": "building",
+    "assets": {
+        "texture": "timber_beam.png"
+    },
+    "render": {
+        "profile": "solid",
+        "icon_dimetric_projection": true,
+        "color_top": [0.7, 0.7, 0.68, 1.0],
+        "color_side": [0.42, 0.42, 0.4, 1.0],
+        "color_bottom": [0.2, 0.2, 0.2, 1.0],
+        "color_outline": [0.0, 0.0, 0.0, 0.28]
+    },
+    "behavior": {
+        "collision": "pass_through",
+        "support_surface": false
+    },
+    "geometry": {
+        "elements": [
+            {
+                "from": [0.0, 13.0, 6.7],
+                "to": [16.0, 16.0, 9.3],
+                "color_tint": [0.42, 0.42, 0.4]
+            },
+            {
+                "from": [0.0, 1.0, 6.9],
+                "to": [16.0, 2.4, 9.1],
+                "color_tint": [0.34, 0.34, 0.33]
+            },
+            {
+                "from": [1.0, 0.0, 6.6],
+                "to": [2.2, 16.0, 9.4],
+                "color_tint": [0.52, 0.52, 0.5]
+            },
+            {
+                "from": [4.5, 0.0, 6.6],
+                "to": [5.7, 16.0, 9.4],
+                "color_tint": [0.52, 0.52, 0.5]
+            },
+            {
+                "from": [7.4, 0.0, 6.6],
+                "to": [8.6, 16.0, 9.4],
+                "color_tint": [0.52, 0.52, 0.5]
+            },
+            {
+                "from": [10.3, 0.0, 6.6],
+                "to": [11.5, 16.0, 9.4],
+                "color_tint": [0.52, 0.52, 0.5]
+            },
+            {
+                "from": [13.8, 0.0, 6.6],
+                "to": [15.0, 16.0, 9.4],
+                "color_tint": [0.52, 0.52, 0.5]
+            },
+            {
+                "from": [0.0, 8.0, 7.0],
+                "to": [16.0, 9.2, 9.0],
+                "color_tint": [0.3, 0.3, 0.29]
+            }
+        ]
+    },
+    "placeable": true
+}

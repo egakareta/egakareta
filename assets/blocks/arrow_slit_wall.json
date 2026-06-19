@@ -1,0 +1,39 @@
+{
+    "id": "core/arrow_slit_wall",
+    "display_name": "Arrow Slit Wall",
+    "category": "building",
+    "assets": {
+        "texture": "castle_brick.png"
+    },
+    "render": {
+        "profile": "solid",
+        "icon_dimetric_projection": true,
+        "color_top": [0.92, 0.92, 0.9, 1.0],
+        "color_side": [0.72, 0.72, 0.7, 1.0],
+        "color_bottom": [0.48, 0.48, 0.46, 1.0],
+        "color_outline": [0.0, 0.0, 0.0, 0.16]
+    },
+    "behavior": {
+        "collision": "solid",
+        "support_surface": true
+    },
+    "geometry": {
+        "elements": [
+            { "from": [0.0, 0.0, 0.0], "to": [6.0, 16.0, 16.0] },
+            { "from": [10.0, 0.0, 0.0], "to": [16.0, 16.0, 16.0] },
+            { "from": [6.0, 0.0, 0.0], "to": [10.0, 5.0, 16.0] },
+            { "from": [6.0, 12.0, 0.0], "to": [10.0, 16.0, 16.0] },
+            {
+                "from": [5.0, 5.0, 0.0],
+                "to": [11.0, 6.0, 16.0],
+                "color_tint": [0.7, 0.7, 0.68]
+            },
+            {
+                "from": [5.0, 11.0, 0.0],
+                "to": [11.0, 12.0, 16.0],
+                "color_tint": [0.64, 0.64, 0.62]
+            }
+        ]
+    },
+    "placeable": true
+}
