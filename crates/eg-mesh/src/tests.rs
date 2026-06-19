@@ -12,7 +12,6 @@ mod tests {
         build_editor_gizmo_vertices, build_editor_hitbox_visualization_vertices,
         build_editor_hover_outline_vertices, build_editor_selection_outline_vertices, GizmoParams,
     };
-    use crate::obj::{append_obj_mesh, parse_obj_mesh, parse_obj_mesh_with_materials};
     use crate::{GizmoPart, Vertex};
     use eg_block_geometry::effective_hitbox_cuboids;
     use eg_types::LevelObject;
@@ -370,69 +369,6 @@ mod tests {
                 .all(|component| (component.abs() - 1.0).abs() <= 1e-6 || component.abs() <= 1e-6)
                 && (vertex.color_outline[3] - 2.7).abs() <= 1e-6
         }));
-    }
-
-    #[test]
-    fn obj_parser_supports_uvs_and_normals() {
-        let obj = r#"
-v 0 0 0
-v 1 0 0
-v 0 1 0
-vt 0 0
-vt 1 0
-vt 0 1
-vn 0 0 1
-f 1/1/1 2/2/1 3/3/1
-"#;
-
-        let mesh = parse_obj_mesh(obj).expect("valid mesh");
-        assert_eq!(mesh.positions.len(), 3);
-        assert_eq!(mesh.texcoords.len(), 3);
-        assert_eq!(mesh.normals.len(), 1);
-        assert_eq!(mesh.faces.len(), 1);
-        assert_eq!(mesh.faces[0][0].texcoord_index, Some(0));
-        assert_eq!(mesh.faces[0][0].normal_index, Some(0));
-    }
-
-    #[test]
-    fn obj_parser_applies_mtl_materials_to_faces() {
-        let obj = r#"
-mtllib flag.mtl
-v 0 0 0
-v 1 0 0
-v 0 1 0
-usemtl cloth
-f 1 2 3
-"#;
-        let mtl = r#"
-newmtl cloth
-Kd 0.4 0.8 0.5
-d 0.5
-"#;
-
-        let mesh = parse_obj_mesh_with_materials(obj, &[("flag.mtl", mtl)]).expect("valid mesh");
-
-        assert_eq!(mesh.materials.len(), 1);
-        assert_eq!(mesh.materials[0].name, "cloth");
-        assert_eq!(mesh.materials[0].color.diffuse, [0.4, 0.8, 0.5, 0.5]);
-        assert_eq!(mesh.faces[0][0].material_index, Some(0));
-
-        let mut vertices = Vec::new();
-        append_obj_mesh(
-            &mut vertices,
-            &LevelObject::default(),
-            &mesh,
-            [0.5, 0.25, 1.0, 0.8],
-            0,
-        );
-
-        assert!(!vertices.is_empty());
-        for vertex in vertices {
-            assert!((vertex.color[0] - 0.2).abs() <= 1e-6);
-            assert!((vertex.color[1] - 0.2).abs() <= 1e-6);
-            assert!((vertex.color[2] - 0.5).abs() <= 1e-6);
-            assert!((vertex.color[3] - 0.4).abs() <= 1e-6);
-        }
     }
 
     #[test]

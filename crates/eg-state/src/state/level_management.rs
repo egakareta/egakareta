@@ -1439,9 +1439,9 @@ mod tests {
                     .editor_level_name()
                     .unwrap_or_else(|| "level".to_string())
             );
-            let obj_export_filename = "core_stone_selected.obj".to_string();
+            let artifact_export_filename = "core_stone_selected.export".to_string();
             let _artifact_cleanup =
-                ArtifactCleanup::new(vec![level_export_filename, obj_export_filename]);
+                ArtifactCleanup::new(vec![level_export_filename, artifact_export_filename]);
 
             let set_capture: fn(&mut State, Option<(String, usize)>) =
                 State::set_editor_keybind_capture_action;

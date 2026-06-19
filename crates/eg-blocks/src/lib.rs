@@ -614,7 +614,6 @@ mod tests {
     fn gem_block_uses_json_geometry_and_inline_animation() {
         let gem = resolve_block_definition("core/gem");
 
-        assert_eq!(gem.assets.mesh, None);
         assert_eq!(gem.geometry.elements.len(), 5);
         assert_eq!(gem.geometry.hitboxes.len(), 1);
 

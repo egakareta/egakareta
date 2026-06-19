@@ -12,10 +12,8 @@ use crate::builders::game::{
     append_cylinder_segment, append_oriented_box_edges, append_xz_ring, object_center,
     transform_marker_rotation,
 };
-use crate::egmesh::{append_egmesh_geometry, resolve_egmesh};
 use crate::geometry::MeshGeometry;
 use crate::noise::pseudo_random_noise;
-use crate::obj::{append_obj_mesh, resolve_obj_mesh};
 use crate::shapes::{append_prism_with_layers, PrismFaceColors, PrismTextureLayers};
 use crate::transforms::rotate_vertices_around_euler;
 use crate::Vertex;
@@ -295,12 +293,6 @@ fn append_block_geometry_inner(
 
     if block.render.profile == BlockRenderProfile::TransformTrigger {
         build_transform_trigger_block_vertices(object_vertices, obj, &colors);
-    } else if let Some(mesh_path) = block.assets.mesh.as_deref() {
-        if let Some(mesh) = resolve_egmesh(mesh_path) {
-            append_egmesh_geometry(object_geometry, obj, mesh, colors.top, texture_layers.side);
-        } else if let Some(mesh) = resolve_obj_mesh(mesh_path) {
-            append_obj_mesh(object_vertices, obj, mesh, colors.top, texture_layers.side);
-        }
     }
 
     if object_geometry.vertices.is_empty() && object_vertices.is_empty() {
@@ -352,7 +344,6 @@ fn append_block_geometry_inner(
         return;
     }
 
-    // egmesh path: profile tags applied to object_geometry vertices.
     apply_block_profile_tags(&mut object_geometry.vertices, block, &colors, center);
     all_geometry.append_geometry(std::mem::take(object_geometry));
 }

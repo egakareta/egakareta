@@ -165,11 +165,9 @@ impl Vertex {
 pub mod advanced_shapes;
 pub mod blocks;
 pub mod builders;
-pub mod egmesh;
 pub mod geometry;
 pub mod lighting;
 pub mod noise;
-pub mod obj;
 pub mod shapes;
 #[cfg(test)]
 mod tests;
@@ -178,4 +176,3 @@ pub mod transforms;
 pub use blocks::*;
 pub use builders::*;
 pub use geometry::*;
-pub use obj::*;

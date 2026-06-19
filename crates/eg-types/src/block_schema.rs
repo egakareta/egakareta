@@ -229,7 +229,7 @@ impl BlockDefinition {
     }
 }
 
-/// Optional mesh, icon, and texture asset references for a block.
+/// Optional icon and texture asset references for a block.
 #[derive(Clone, Deserialize, Serialize, Default)]
 pub struct BlockAssets {
     /// Shared texture for all faces.
@@ -244,9 +244,6 @@ pub struct BlockAssets {
     /// Bottom-face texture override.
     #[serde(default)]
     pub texture_bottom: Option<String>,
-    /// Optional custom mesh asset path.
-    #[serde(default)]
-    pub mesh: Option<String>,
     /// Optional custom icon asset path.
     #[serde(default)]
     pub icon: Option<String>,

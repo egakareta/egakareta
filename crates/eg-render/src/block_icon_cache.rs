@@ -133,7 +133,6 @@ fn block_icon_signature(block: &BlockDefinition) -> u64 {
     layers.top.hash(&mut hasher);
     layers.side.hash(&mut hasher);
     layers.bottom.hash(&mut hasher);
-    block.assets.mesh.hash(&mut hasher);
     block.assets.icon.hash(&mut hasher);
     hash_cuboids(&block.geometry.elements, &mut hasher);
     hash_cuboids(&block.geometry.hitboxes, &mut hasher);
@@ -316,7 +315,7 @@ mod tests {
     }
 
     #[test]
-    fn block_icon_signature_changes_when_profile_or_mesh_changes() {
+    fn block_icon_signature_changes_when_profile_or_projection_changes() {
         let block = all_placeable_blocks()
             .iter()
             .find(|block| block.placeable)
@@ -331,13 +330,6 @@ mod tests {
         assert_ne!(
             block_icon_signature(&block),
             block_icon_signature(&with_profile_change)
-        );
-
-        let mut with_mesh_change = block.clone();
-        with_mesh_change.assets.mesh = Some("custom_debug_mesh".to_string());
-        assert_ne!(
-            block_icon_signature(&block),
-            block_icon_signature(&with_mesh_change)
         );
 
         let mut with_projection_change = block.clone();

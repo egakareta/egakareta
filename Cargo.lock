@@ -1031,14 +1031,10 @@ dependencies = [
  "eg-blocks",
  "eg-types",
  "glam",
- "include_dir",
  "log",
  "puffin",
  "rayon",
- "serde",
- "serde_cbor",
  "wgpu",
- "zstd",
 ]
 
 [[package]]
