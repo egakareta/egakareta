@@ -1,6 +1,6 @@
 {
-    "id": "core/iron_banded_door",
-    "display_name": "Iron-Banded Door",
+    "id": "core/wooden_door",
+    "display_name": "Wooden Door",
     "category": "building",
     "assets": {
         "texture": "timber_beam.png"
