@@ -12,7 +12,6 @@ mod tests {
         build_editor_gizmo_vertices, build_editor_hitbox_visualization_vertices,
         build_editor_hover_outline_vertices, build_editor_selection_outline_vertices, GizmoParams,
     };
-    use crate::egmesh::resolve_egmesh;
     use crate::obj::{append_obj_mesh, parse_obj_mesh, parse_obj_mesh_with_materials};
     use crate::{GizmoPart, Vertex};
     use eg_block_geometry::effective_hitbox_cuboids;
@@ -437,21 +436,31 @@ d 0.5
     }
 
     #[test]
-    fn generated_gem_egmesh_builds_indexed_geometry() {
-        let mesh = resolve_egmesh("gem.obj").expect("gem egmesh should resolve");
-        assert!(!mesh.vertices.is_empty());
-        assert!(!mesh.indices.is_empty());
-
+    fn gem_block_uses_cuboid_geometry_and_idle_animation_tags() {
         let obj = LevelObject {
             block_id: "core/gem".to_string(),
             ..LevelObject::default()
         };
         let geometry = build_block_geometry(std::slice::from_ref(&obj));
-        assert!(geometry
-            .indices
-            .as_ref()
-            .is_some_and(|indices| !indices.is_empty()));
-        assert_eq!(geometry.to_triangle_vertices().len(), mesh.indices.len());
+        assert!(geometry.indices.is_none());
+
+        let vertices = geometry.to_triangle_vertices();
+        assert_eq!(vertices.len(), 5 * 36);
+        assert!(vertices
+            .iter()
+            .all(|vertex| (vertex.render_profile - 4.0).abs() <= f32::EPSILON));
+        assert!(vertices.iter().all(|vertex| {
+            (vertex.animation_anchor[0] - 0.5).abs() <= 1e-6
+                && (vertex.animation_anchor[1] - 0.5).abs() <= 1e-6
+                && (vertex.animation_anchor[2] - 0.5).abs() <= 1e-6
+                && (vertex.animation_params[0] - 2.0).abs() <= 1e-6
+                && (vertex.animation_params[1] - 1.6).abs() <= 1e-6
+                && (vertex.animation_params[2] - 2.0).abs() <= 1e-6
+                && (vertex.animation_params[3] - 0.055).abs() <= 1e-6
+                && (vertex.animation_params2[0] - 2.4).abs() <= 1e-6
+                && (vertex.animation_params2[1] - 0.025).abs() <= 1e-6
+                && (vertex.animation_params2[2] - 3.2).abs() <= 1e-6
+        }));
     }
 
     #[test]

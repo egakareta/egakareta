@@ -150,8 +150,6 @@ pub enum EditorCommand {
     ToggleHitboxVisualization,
     /// Toggle the performance overlay.
     TogglePerfOverlay,
-    /// Export the selected block as OBJ.
-    ExportBlockObj,
 
     // ── UI / Session ────────────────────────────────────────────────
     /// Load a level from a builtin resource name.

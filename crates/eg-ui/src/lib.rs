@@ -517,15 +517,6 @@ fn show_editor_context_menu(
                     AppCommand::Editor(EditorCommand::AddTransformTrigger),
                     hint("add_transform_trigger").as_deref(),
                 );
-                close_menu |= context_menu_button(
-                    ui,
-                    commands,
-                    has_block_selection,
-                    egui_phosphor::regular::EXPORT,
-                    "Export OBJ",
-                    AppCommand::Editor(EditorCommand::ExportBlockObj),
-                    hint("export_obj").as_deref(),
-                );
 
                 ui.separator();
 

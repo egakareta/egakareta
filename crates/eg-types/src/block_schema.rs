@@ -65,6 +65,46 @@ fn default_noise() -> f32 {
     0.0
 }
 
+fn default_spin_speed() -> f32 {
+    0.0
+}
+
+fn default_bob_amplitude() -> f32 {
+    0.0
+}
+
+fn default_bob_frequency() -> f32 {
+    1.0
+}
+
+fn default_pulse_amplitude() -> f32 {
+    0.0
+}
+
+fn default_pulse_frequency() -> f32 {
+    1.0
+}
+
+fn default_effect_duration_seconds() -> f32 {
+    0.48
+}
+
+fn default_effect_shard_count() -> u32 {
+    14
+}
+
+fn default_effect_speed_scale() -> f32 {
+    1.0
+}
+
+fn default_effect_gravity_scale() -> f32 {
+    1.0
+}
+
+fn default_effect_wobble_scale() -> f32 {
+    1.0
+}
+
 fn default_icon_dimetric_projection() -> bool {
     true
 }
@@ -113,6 +153,18 @@ fn sanitize_color_tint(color_tint: [f32; 3]) -> [f32; 3] {
     })
 }
 
+fn sanitize_finite(value: f32, fallback: f32) -> f32 {
+    if value.is_finite() {
+        value
+    } else {
+        fallback
+    }
+}
+
+fn sanitize_nonnegative(value: f32, fallback: f32) -> f32 {
+    sanitize_finite(value, fallback).max(0.0)
+}
+
 /// JSON-backed definition for a placeable or gameplay block.
 #[derive(Clone, Deserialize, Serialize)]
 pub struct BlockDefinition {
@@ -135,6 +187,9 @@ pub struct BlockDefinition {
     /// Optional custom geometry and hitboxes.
     #[serde(default)]
     pub geometry: BlockGeometry,
+    /// Optional inline animation and visual effect metadata.
+    #[serde(default)]
+    pub animation: BlockAnimation,
     /// Whether the block is visible in editor placement UI.
     #[serde(default = "default_placeable")]
     pub placeable: bool,
@@ -164,6 +219,7 @@ impl BlockDefinition {
             .into_iter()
             .filter_map(BlockCuboid::normalized)
             .collect();
+        self.animation = self.animation.normalized();
         Some(self)
     }
 
@@ -227,6 +283,263 @@ impl BlockCuboid {
             to,
             color_tint: self.color_tint.map(sanitize_color_tint),
         })
+    }
+}
+
+/// Inline animation and visual effect metadata for a block definition.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+pub struct BlockAnimation {
+    /// Idle, shader-side motion applied while the block is visible.
+    #[serde(default)]
+    pub idle: BlockIdleAnimation,
+    /// Effect spawned when gameplay consumes this block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_consumed: Option<BlockEffect>,
+    /// Effect spawned by future break/destruction actions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_break: Option<BlockEffect>,
+}
+
+impl BlockAnimation {
+    fn normalized(mut self) -> Self {
+        self.idle = self.idle.normalized();
+        self.on_consumed = self.on_consumed.map(BlockEffect::normalized);
+        self.on_break = self.on_break.map(BlockEffect::normalized);
+        self
+    }
+}
+
+/// Shader-side idle animation presets for a block.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+pub struct BlockIdleAnimation {
+    /// Optional center-based spin animation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spin: Option<BlockSpinAnimation>,
+    /// Optional axis-aligned bob animation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bob: Option<BlockBobAnimation>,
+    /// Optional center-based pulse/scale animation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pulse: Option<BlockPulseAnimation>,
+    /// How per-object animation phase is seeded.
+    #[serde(default)]
+    pub phase_seed: BlockAnimationPhaseSeed,
+}
+
+impl BlockIdleAnimation {
+    fn normalized(mut self) -> Self {
+        self.spin = self.spin.map(BlockSpinAnimation::normalized);
+        self.bob = self.bob.map(BlockBobAnimation::normalized);
+        self.pulse = self.pulse.map(BlockPulseAnimation::normalized);
+        self
+    }
+
+    pub fn has_motion(&self) -> bool {
+        self.spin
+            .as_ref()
+            .is_some_and(BlockSpinAnimation::is_active)
+            || self.bob.as_ref().is_some_and(BlockBobAnimation::is_active)
+            || self
+                .pulse
+                .as_ref()
+                .is_some_and(BlockPulseAnimation::is_active)
+    }
+}
+
+/// Axis used by shader-side block animations.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BlockAnimationAxis {
+    /// X-axis motion or rotation.
+    X,
+    /// Y-axis motion or rotation.
+    #[default]
+    Y,
+    /// Z-axis motion or rotation.
+    Z,
+}
+
+/// How repeated blocks receive idle animation phase offsets.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BlockAnimationPhaseSeed {
+    /// Every instance starts with the same phase.
+    None,
+    /// Seed phase from world position so repeated blocks do not move identically.
+    #[default]
+    Position,
+}
+
+/// Center-based spin animation.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+pub struct BlockSpinAnimation {
+    /// Rotation axis.
+    #[serde(default)]
+    pub axis: BlockAnimationAxis,
+    /// Angular speed in radians per second.
+    #[serde(default = "default_spin_speed")]
+    pub speed: f32,
+}
+
+impl BlockSpinAnimation {
+    fn normalized(mut self) -> Self {
+        self.speed = sanitize_finite(self.speed, default_spin_speed());
+        self
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.speed.abs() > f32::EPSILON
+    }
+}
+
+impl Default for BlockSpinAnimation {
+    fn default() -> Self {
+        Self {
+            axis: BlockAnimationAxis::Y,
+            speed: default_spin_speed(),
+        }
+    }
+}
+
+/// Axis-aligned sinusoidal bob animation.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+pub struct BlockBobAnimation {
+    /// Translation axis.
+    #[serde(default)]
+    pub axis: BlockAnimationAxis,
+    /// Translation amplitude in world units.
+    #[serde(default = "default_bob_amplitude")]
+    pub amplitude: f32,
+    /// Frequency multiplier in radians per second.
+    #[serde(default = "default_bob_frequency")]
+    pub frequency: f32,
+}
+
+impl BlockBobAnimation {
+    fn normalized(mut self) -> Self {
+        self.amplitude = sanitize_nonnegative(self.amplitude, default_bob_amplitude());
+        self.frequency = sanitize_nonnegative(self.frequency, default_bob_frequency());
+        self
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.amplitude > f32::EPSILON && self.frequency > f32::EPSILON
+    }
+}
+
+impl Default for BlockBobAnimation {
+    fn default() -> Self {
+        Self {
+            axis: BlockAnimationAxis::Y,
+            amplitude: default_bob_amplitude(),
+            frequency: default_bob_frequency(),
+        }
+    }
+}
+
+/// Center-based sinusoidal scale animation.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+pub struct BlockPulseAnimation {
+    /// Scale amplitude as a fraction of local size.
+    #[serde(default = "default_pulse_amplitude")]
+    pub amplitude: f32,
+    /// Frequency multiplier in radians per second.
+    #[serde(default = "default_pulse_frequency")]
+    pub frequency: f32,
+}
+
+impl BlockPulseAnimation {
+    fn normalized(mut self) -> Self {
+        self.amplitude = sanitize_nonnegative(self.amplitude, default_pulse_amplitude()).min(0.95);
+        self.frequency = sanitize_nonnegative(self.frequency, default_pulse_frequency());
+        self
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.amplitude > f32::EPSILON && self.frequency > f32::EPSILON
+    }
+}
+
+impl Default for BlockPulseAnimation {
+    fn default() -> Self {
+        Self {
+            amplitude: default_pulse_amplitude(),
+            frequency: default_pulse_frequency(),
+        }
+    }
+}
+
+/// Runtime visual effect preset for block events.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BlockEffectPreset {
+    /// Triangular shards burst outward and fade.
+    #[default]
+    Shatter,
+}
+
+/// Color source for a block visual effect.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BlockEffectColorMode {
+    /// Derive effect color from the consumed object's `color_tint`.
+    #[default]
+    Tint,
+    /// Derive effect color from the block render colors.
+    Render,
+}
+
+/// Visual effect metadata for consumed or broken blocks.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+pub struct BlockEffect {
+    /// Effect generator preset.
+    #[serde(default)]
+    pub preset: BlockEffectPreset,
+    /// Effect lifetime in seconds.
+    #[serde(default = "default_effect_duration_seconds")]
+    pub duration_seconds: f32,
+    /// Number of generated shards for shatter-style effects.
+    #[serde(default = "default_effect_shard_count")]
+    pub shard_count: u32,
+    /// Outward burst speed scale.
+    #[serde(default = "default_effect_speed_scale")]
+    pub speed_scale: f32,
+    /// Gravity scale applied to shards.
+    #[serde(default = "default_effect_gravity_scale")]
+    pub gravity_scale: f32,
+    /// Tangential wobble scale applied to shards.
+    #[serde(default = "default_effect_wobble_scale")]
+    pub wobble_scale: f32,
+    /// Color source for generated shards.
+    #[serde(default)]
+    pub color_mode: BlockEffectColorMode,
+}
+
+impl BlockEffect {
+    fn normalized(mut self) -> Self {
+        self.duration_seconds =
+            sanitize_nonnegative(self.duration_seconds, default_effect_duration_seconds())
+                .max(0.01);
+        self.shard_count = self.shard_count.clamp(1, 128);
+        self.speed_scale = sanitize_nonnegative(self.speed_scale, default_effect_speed_scale());
+        self.gravity_scale =
+            sanitize_nonnegative(self.gravity_scale, default_effect_gravity_scale());
+        self.wobble_scale = sanitize_nonnegative(self.wobble_scale, default_effect_wobble_scale());
+        self
+    }
+}
+
+impl Default for BlockEffect {
+    fn default() -> Self {
+        Self {
+            preset: BlockEffectPreset::Shatter,
+            duration_seconds: default_effect_duration_seconds(),
+            shard_count: default_effect_shard_count(),
+            speed_scale: default_effect_speed_scale(),
+            gravity_scale: default_effect_gravity_scale(),
+            wobble_scale: default_effect_wobble_scale(),
+            color_mode: BlockEffectColorMode::Tint,
+        }
     }
 }
 
@@ -388,6 +701,7 @@ pub fn fallback_block_definition() -> BlockDefinition {
         render: BlockRender::default(),
         behavior: BlockBehavior::default(),
         geometry: BlockGeometry::default(),
+        animation: BlockAnimation::default(),
         placeable: true,
     }
 }

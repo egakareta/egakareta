@@ -23,7 +23,8 @@ use eg_block_geometry::visual_cuboids;
 use eg_blocks::{resolve_block_definition, resolve_block_texture_layers};
 use eg_types::{
     camera_trigger_eye_from_object, camera_trigger_forward_from_rotation_degrees,
-    BlockRenderProfile, LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerTarget,
+    BlockAnimationAxis, BlockAnimationPhaseSeed, BlockDefinition, BlockRenderProfile, LevelObject,
+    TimedTrigger, TimedTriggerAction, TimedTriggerTarget,
 };
 use glam::Vec3;
 
@@ -346,28 +347,23 @@ fn append_block_geometry_inner(
     if !object_vertices.is_empty() {
         rotate_vertices_around_euler(object_vertices, center, obj.rotation_degrees);
         // Apply profile tags directly to the vertex buffer before appending.
-        apply_block_profile_tags(object_vertices, &block.render.profile, &colors, center);
+        apply_block_profile_tags(object_vertices, block, &colors, center);
         all_geometry.append_vertices_from_slice(object_vertices);
         return;
     }
 
     // egmesh path: profile tags applied to object_geometry vertices.
-    apply_block_profile_tags(
-        &mut object_geometry.vertices,
-        &block.render.profile,
-        &colors,
-        center,
-    );
+    apply_block_profile_tags(&mut object_geometry.vertices, block, &colors, center);
     all_geometry.append_geometry(std::mem::take(object_geometry));
 }
 
 fn apply_block_profile_tags(
     vertices: &mut [Vertex],
-    profile: &BlockRenderProfile,
+    block: &BlockDefinition,
     colors: &BlockColors,
     center: [f32; 3],
 ) {
-    match profile {
+    match &block.render.profile {
         BlockRenderProfile::Neon => {
             for vertex in vertices.iter_mut() {
                 vertex.color = colors.top;
@@ -379,17 +375,60 @@ fn apply_block_profile_tags(
             }
         }
         BlockRenderProfile::Gem => {
-            let phase_seed =
-                pseudo_random_noise(center[0], center[1], center[2]) * std::f32::consts::TAU;
             for vertex in vertices.iter_mut() {
                 vertex.set_render_profile(GEM_PROFILE_TAG);
-                vertex.color_outline = [center[0], center[1], center[2], phase_seed];
             }
         }
         BlockRenderProfile::Solid
         | BlockRenderProfile::SpeedPortal
         | BlockRenderProfile::TransformTrigger
         | BlockRenderProfile::CameraTrigger => {}
+    }
+
+    apply_idle_animation_tags(vertices, block, center);
+}
+
+fn apply_idle_animation_tags(vertices: &mut [Vertex], block: &BlockDefinition, center: [f32; 3]) {
+    let idle = &block.animation.idle;
+    if !idle.has_motion() {
+        return;
+    }
+
+    let phase_seed = match idle.phase_seed {
+        BlockAnimationPhaseSeed::None => 0.0,
+        BlockAnimationPhaseSeed::Position => {
+            pseudo_random_noise(center[0], center[1], center[2]) * std::f32::consts::TAU
+        }
+    };
+    let spin = idle.spin.filter(|animation| animation.is_active());
+    let bob = idle.bob.filter(|animation| animation.is_active());
+    let pulse = idle.pulse.filter(|animation| animation.is_active());
+    let animation_anchor = [center[0], center[1], center[2], phase_seed];
+    let animation_params = [
+        spin.map(|animation| animation_axis_tag(animation.axis))
+            .unwrap_or(0.0),
+        spin.map(|animation| animation.speed).unwrap_or(0.0),
+        bob.map(|animation| animation_axis_tag(animation.axis))
+            .unwrap_or(0.0),
+        bob.map(|animation| animation.amplitude).unwrap_or(0.0),
+    ];
+    let animation_params2 = [
+        bob.map(|animation| animation.frequency).unwrap_or(0.0),
+        pulse.map(|animation| animation.amplitude).unwrap_or(0.0),
+        pulse.map(|animation| animation.frequency).unwrap_or(0.0),
+        0.0,
+    ];
+
+    for vertex in vertices.iter_mut() {
+        vertex.set_animation(animation_anchor, animation_params, animation_params2);
+    }
+}
+
+fn animation_axis_tag(axis: BlockAnimationAxis) -> f32 {
+    match axis {
+        BlockAnimationAxis::X => 1.0,
+        BlockAnimationAxis::Y => 2.0,
+        BlockAnimationAxis::Z => 3.0,
     }
 }
 

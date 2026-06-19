@@ -2,9 +2,7 @@
     "id": "core/gem",
     "display_name": "Gem",
     "category": "tech",
-    "assets": {
-        "mesh": "gem.obj"
-    },
+    "assets": {},
     "render": {
         "profile": "gem",
         "icon_dimetric_projection": false,
@@ -21,6 +19,48 @@
         "support_surface": false,
         "consumed_on_overlap": true,
         "gem_value": 1
+    },
+    "geometry": {
+        "elements": [
+            {
+                "from": [2.0, 14.0, 2.0],
+                "to": [14.0, 16.0, 14.0]
+            },
+            {
+                "from": [0.0, 9.0, 0],
+                "to": [16, 14.0, 16]
+            },
+            {
+                "from": [2.0, 9.0, 2.0],
+                "to": [14.0, 6.0, 14.0]
+            },
+            {
+                "from": [4.0, 3.0, 4.0],
+                "to": [12.0, 6.0, 12.0]
+            },
+            {
+                "from": [6.0, 0.0, 6.0],
+                "to": [10.0, 3.0, 10.0]
+            }
+        ],
+        "hitboxes": [{ "from": [0.0, 0.0, 0.0], "to": [16.0, 16.0, 16.0] }]
+    },
+    "animation": {
+        "idle": {
+            "phase_seed": "position",
+            "spin": { "axis": "y", "speed": 1.6 },
+            "bob": { "axis": "y", "amplitude": 0.055, "frequency": 2.4 },
+            "pulse": { "amplitude": 0.025, "frequency": 3.2 }
+        },
+        "on_consumed": {
+            "preset": "shatter",
+            "duration_seconds": 0.48,
+            "shard_count": 14,
+            "speed_scale": 1.0,
+            "gravity_scale": 1.0,
+            "wobble_scale": 1.0,
+            "color_mode": "tint"
+        }
     },
     "placeable": true
 }

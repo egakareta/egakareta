@@ -103,6 +103,30 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 - For serialization, heavily utilize `serde`. Use the `serde_default!` macro family in `src/types.rs` to define defaults (see "Adding a New Serde Field" below).
 - Use arrays like `[f32; 3]` for positions/colors when serializing to JSON, rather than glam types directly.
 
+### Block Asset Authoring
+
+Built-in block definitions live in `assets/blocks/*.json`. Prefer JSON `geometry.elements` for cuboid or voxel-style shapes. Each cuboid uses 0..16 block-local coordinates:
+
+```json
+"geometry": {
+	"elements": [{ "from": [4, 0, 4], "to": [12, 16, 12] }],
+	"hitboxes": [{ "from": [3, 0, 3], "to": [13, 16, 13] }]
+}
+```
+
+Blocks can define inline `animation` metadata for reusable idle motion and event effects. Use `idle.spin`, `idle.bob`, and `idle.pulse` for shader-side motion, and `on_consumed` or `on_break` for burst effects:
+
+```json
+"animation": {
+	"idle": {
+		"phase_seed": "position",
+		"spin": { "axis": "y", "speed": 1.6 },
+		"bob": { "axis": "y", "amplitude": 0.055, "frequency": 2.4 }
+	},
+	"on_consumed": { "preset": "shatter", "duration_seconds": 0.48 }
+}
+```
+
 ## 5. Testing Style & Conventions
 
 ### Test Organization

@@ -7,18 +7,20 @@
 */
 use glam::{Mat4, Vec3};
 
-use super::runtime::GemShatterEffect;
+use super::runtime::BlockVisualEffect;
 use super::State;
+use eg_blocks::resolve_block_definition;
 use eg_game::{
     advance_simulation_time, trigger_transformed_objects_at_time, TimelineSimulationRuntime,
 };
 use eg_mesh::{
-    build_block_geometry_at_time, build_gem_shatter_vertices, build_trail_vertices,
-    build_trail_vertices_with_alpha, gem_shatter_duration_seconds, GemShatterInstance,
+    build_block_effect_vertices, build_block_geometry_at_time, build_trail_vertices,
+    build_trail_vertices_with_alpha, BlockEffectInstance,
 };
 use eg_platform::state_host::PlatformInstant;
 use eg_types::{
-    AppPhase, CameraUniform, ColorSpaceUniform, Direction, EditorMode, LevelObject, SpawnDirection,
+    AppPhase, BlockEffectColorMode, CameraUniform, ColorSpaceUniform, Direction, EditorMode,
+    LevelObject, SpawnDirection,
 };
 
 const DEAD_SFX: &[u8] = include_bytes!(concat!(
@@ -44,22 +46,32 @@ impl State {
         self.audio.state.runtime.play_sfx(DEAD_SFX);
     }
 
-    fn push_gem_shatter_events(&mut self, events: Vec<eg_game::ConsumedObjectEvent>) {
-        self.frame_runtime.player_render.gem_shatter_effects.extend(
-            events
-                .iter()
-                .map(|event| GemShatterEffect::from_object(&event.object)),
-        );
+    fn push_block_effect_events(&mut self, events: Vec<eg_game::ConsumedObjectEvent>) {
+        self.frame_runtime
+            .player_render
+            .gem_shatter_effects
+            .extend(events.iter().filter_map(|event| {
+                let block = resolve_block_definition(&event.object.block_id);
+                let effect = block.animation.on_consumed?;
+                let color = match effect.color_mode {
+                    BlockEffectColorMode::Tint => event.object.color_tint,
+                    BlockEffectColorMode::Render => [
+                        block.render.color_top[0],
+                        block.render.color_top[1],
+                        block.render.color_top[2],
+                    ],
+                };
+                Some(BlockVisualEffect::from_object(&event.object, effect, color))
+            }));
     }
 
-    fn update_gem_shatter_effect_mesh(&mut self, frame_dt: f32) {
-        puffin::profile_scope!("GemShatterEffectMesh");
+    fn update_block_effect_mesh(&mut self, frame_dt: f32) {
+        puffin::profile_scope!("BlockEffectMesh");
         let effects = &mut self.frame_runtime.player_render.gem_shatter_effects;
         for effect in effects.iter_mut() {
             effect.age_seconds += frame_dt.max(0.0);
         }
-        let duration = gem_shatter_duration_seconds();
-        effects.retain(|effect| effect.age_seconds < duration);
+        effects.retain(|effect| effect.age_seconds < effect.effect.duration_seconds);
 
         if effects.is_empty() {
             self.render.meshes.gem_shatter_effects.clear();
@@ -68,14 +80,15 @@ impl State {
 
         let instances = effects
             .iter()
-            .map(|effect| GemShatterInstance {
+            .map(|effect| BlockEffectInstance {
                 position: effect.position,
                 size: effect.size,
-                color_tint: effect.color_tint,
+                color: effect.color,
+                effect: effect.effect,
                 age_seconds: effect.age_seconds,
             })
             .collect::<Vec<_>>();
-        let vertices = build_gem_shatter_vertices(&instances);
+        let vertices = build_block_effect_vertices(&instances);
         self.render
             .meshes
             .gem_shatter_effects
@@ -248,7 +261,7 @@ impl State {
                 if !events.is_empty() && trigger_render_objects.is_none() {
                     *trigger_render_objects = Some(self.gameplay.state.objects.clone());
                 }
-                self.push_gem_shatter_events(events);
+                self.push_block_effect_events(events);
                 self.prune_playing_trigger_base_objects_from_consumed();
                 should_continue =
                     !self.gameplay.state.game_over && !self.gameplay.state.level_complete;
@@ -661,7 +674,7 @@ impl State {
                                 let events = runtime.take_consumed_object_events();
                                 let consumed_gems = !events.is_empty();
                                 let snapshot = runtime.snapshot();
-                                self.push_gem_shatter_events(events);
+                                self.push_block_effect_events(events);
                                 if consumed_gems {
                                     self.mark_editor_dirty(
                                         super::EditorDirtyFlags::block_mesh_and_hitboxes_changed(),
@@ -687,7 +700,7 @@ impl State {
                             runtime.advance_to(clamped_time);
                             let events = runtime.take_consumed_object_events();
                             let consumed_gems = !events.is_empty();
-                            self.push_gem_shatter_events(events);
+                            self.push_block_effect_events(events);
                             let snapshot = runtime.snapshot();
                             if consumed_gems {
                                 self.mark_editor_dirty(
@@ -736,7 +749,7 @@ impl State {
                 if simulate_preview {
                     self.update_editor_playback_trail_mesh();
                 }
-                self.update_gem_shatter_effect_mesh(frame_dt);
+                self.update_block_effect_mesh(frame_dt);
 
                 if clamped_time >= self.editor.timeline.clock.duration_seconds
                     || !self.audio.state.runtime.is_playing()
@@ -853,7 +866,7 @@ impl State {
             self.advance_playing_state_to_time(target_time, FIXED_DT)
         };
         self.frame_runtime.editor.accumulator = 0.0;
-        self.update_gem_shatter_effect_mesh(frame_dt);
+        self.update_block_effect_mesh(frame_dt);
 
         let render_objects = trigger_render_objects
             .as_deref()

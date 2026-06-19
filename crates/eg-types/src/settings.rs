@@ -662,12 +662,6 @@ pub fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
         },
         KeybindActionMetadata {
             group: "Debug",
-            action: "export_obj",
-            label: "Export Block as OBJ",
-            capacity: 1,
-        },
-        KeybindActionMetadata {
-            group: "Debug",
             action: "toggle_perf_overlay",
             label: "Toggle Performance Overlay",
             capacity: 1,
@@ -918,10 +912,6 @@ pub fn default_essential_keybinds() -> Vec<KeybindBinding> {
         KeybindBinding {
             action: "toggle_hitbox_visualization".to_string(),
             chord: KeyChord::new("h", true, false, false),
-        },
-        KeybindBinding {
-            action: "export_obj".to_string(),
-            chord: KeyChord::new("o", true, true, true),
         },
         KeybindBinding {
             action: "toggle_perf_overlay".to_string(),

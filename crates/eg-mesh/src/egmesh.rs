@@ -179,16 +179,6 @@ pub fn append_egmesh_geometry(
 fn egmeshes() -> &'static HashMap<String, EgMesh> {
     EGMESHES.get_or_init(|| {
         let mut meshes = HashMap::new();
-        for (key, bytes) in generated_egmesh_assets() {
-            match decode_egmesh(bytes) {
-                Ok(mesh) => {
-                    meshes.entry(normalize_mesh_key(key)).or_insert(mesh);
-                }
-                Err(error) => {
-                    log::warn!("Failed to decode egmesh asset {key}: {error}");
-                }
-            }
-        }
         for (key, obj_mesh) in obj_meshes() {
             meshes
                 .entry(normalize_mesh_key(key))
@@ -196,10 +186,6 @@ fn egmeshes() -> &'static HashMap<String, EgMesh> {
         }
         meshes
     })
-}
-
-fn generated_egmesh_assets() -> &'static [(&'static str, &'static [u8])] {
-    &[]
 }
 
 fn normalize_mesh_key(mesh_path: &str) -> String {

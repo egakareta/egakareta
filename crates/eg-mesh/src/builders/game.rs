@@ -10,20 +10,22 @@ use crate::blocks::build_block_geometry;
 use crate::shapes::{append_prism, append_quad};
 use crate::MeshGeometry;
 use crate::Vertex;
-use eg_types::{Direction, LevelObject};
+use eg_types::{BlockEffect, BlockEffectPreset, Direction, LevelObject};
 use glam::{EulerRot, Quat, Vec2, Vec3};
 
 const GEM_SHATTER_DURATION_SECONDS: f32 = 0.48;
-const GEM_SHATTER_SHARD_COUNT: usize = 14;
 const PRACTICE_CHECKPOINT_FLAG_BLOCK_ID: &str = "core/practice_checkpoint_flag";
 const PRACTICE_CHECKPOINT_FLAG_SIZE: [f32; 3] = [0.45, 1.0, 0.85];
 
-pub struct GemShatterInstance {
+pub struct BlockEffectInstance {
     pub position: [f32; 3],
     pub size: [f32; 3],
-    pub color_tint: [f32; 3],
+    pub color: [f32; 3],
+    pub effect: BlockEffect,
     pub age_seconds: f32,
 }
+
+pub type GemShatterInstance = BlockEffectInstance;
 
 pub struct PracticeCheckpointFlagInstance {
     pub position: [f32; 3],
@@ -47,16 +49,24 @@ pub fn gem_shatter_duration_seconds() -> f32 {
 }
 
 pub fn build_gem_shatter_vertices(effects: &[GemShatterInstance]) -> Vec<Vertex> {
+    build_block_effect_vertices(effects)
+}
+
+pub fn build_block_effect_vertices(effects: &[BlockEffectInstance]) -> Vec<Vertex> {
     puffin::profile_scope!("BuildGemShatterVertices");
     let mut vertices = Vec::new();
     for effect in effects {
-        append_gem_shatter_effect(&mut vertices, effect);
+        match effect.effect.preset {
+            BlockEffectPreset::Shatter => append_shatter_effect(&mut vertices, effect),
+        }
     }
     vertices
 }
 
-fn append_gem_shatter_effect(vertices: &mut Vec<Vertex>, effect: &GemShatterInstance) {
-    let t = (effect.age_seconds / GEM_SHATTER_DURATION_SECONDS).clamp(0.0, 1.0);
+fn append_shatter_effect(vertices: &mut Vec<Vertex>, effect: &BlockEffectInstance) {
+    let duration = effect.effect.duration_seconds.max(0.01);
+    let shard_count = effect.effect.shard_count.max(1) as usize;
+    let t = (effect.age_seconds / duration).clamp(0.0, 1.0);
     let ease = 1.0 - (1.0 - t) * (1.0 - t);
     let fade = (1.0 - t).clamp(0.0, 1.0);
     let center = Vec3::new(
@@ -70,22 +80,26 @@ fn append_gem_shatter_effect(vertices: &mut Vec<Vertex>, effect: &GemShatterInst
         .max(0.2)
         * 0.5;
     let base_color = [
-        (0.25 + 0.75 * effect.color_tint[0]).clamp(0.0, 1.0),
-        (0.55 + 0.45 * effect.color_tint[1]).clamp(0.0, 1.0),
-        (0.95 * effect.color_tint[2]).clamp(0.2, 1.0),
+        (0.25 + 0.75 * effect.color[0]).clamp(0.0, 1.0),
+        (0.55 + 0.45 * effect.color[1]).clamp(0.0, 1.0),
+        (0.95 * effect.color[2]).clamp(0.2, 1.0),
         (0.9 * fade).clamp(0.0, 1.0),
     ];
 
-    for shard in 0..GEM_SHATTER_SHARD_COUNT {
-        let angle = shard as f32 * std::f32::consts::TAU / GEM_SHATTER_SHARD_COUNT as f32;
+    for shard in 0..shard_count {
+        let angle = shard as f32 * std::f32::consts::TAU / shard_count as f32;
         let vertical_phase = ((shard * 37) % 11) as f32 / 10.0;
         let outward = Vec3::new(angle.cos(), vertical_phase * 0.9 + 0.25, angle.sin()).normalize();
         let tangent = Vec3::new(-angle.sin(), 0.0, angle.cos()).normalize();
         let upish = outward.cross(tangent).normalize_or_zero();
-        let burst = base_radius * (0.25 + ease * (1.55 + vertical_phase * 0.55));
-        let gravity = Vec3::Y * (-0.55 * t * t * base_radius);
-        let wobble =
-            tangent * ((t * std::f32::consts::TAU + shard as f32).sin() * 0.08 * base_radius);
+        let burst = base_radius
+            * (0.25 + ease * (1.55 + vertical_phase * 0.55) * effect.effect.speed_scale);
+        let gravity = Vec3::Y * (-0.55 * t * t * base_radius * effect.effect.gravity_scale);
+        let wobble = tangent
+            * ((t * std::f32::consts::TAU + shard as f32).sin()
+                * 0.08
+                * base_radius
+                * effect.effect.wobble_scale);
         let shard_center = center + outward * burst + gravity + wobble;
         let shard_size = base_radius * (0.1 + 0.04 * (shard % 3) as f32) * (1.0 - t * 0.35);
         let sparkle = if shard % 4 == 0 { 1.18 } else { 1.0 };
@@ -724,14 +738,14 @@ pub fn build_camera_arrow_vertices(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_gem_shatter_vertices, build_practice_checkpoint_flag_geometry,
+        build_block_effect_vertices, build_practice_checkpoint_flag_geometry,
         build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices,
         build_trail_vertices, build_trail_vertices_with_alpha,
-        build_transform_trigger_marker_vertices, gem_shatter_duration_seconds, GemShatterInstance,
-        PracticeCheckpointFlagInstance, TransformTriggerMarker,
+        build_transform_trigger_marker_vertices, PracticeCheckpointFlagInstance,
+        TransformTriggerMarker,
     };
     use crate::Vertex;
-    use eg_types::Direction;
+    use eg_types::{BlockEffect, Direction};
 
     const PRISM_VERTEX_COUNT: usize = 36;
 
@@ -765,21 +779,24 @@ mod tests {
     }
 
     #[test]
-    fn gem_shatter_vertices_emit_fading_shards() {
-        let fresh = build_gem_shatter_vertices(&[GemShatterInstance {
+    fn block_effect_vertices_emit_fading_shards() {
+        let effect = BlockEffect::default();
+        let fresh = build_block_effect_vertices(&[super::BlockEffectInstance {
             position: [1.0, 2.0, 3.0],
             size: [0.72, 0.86, 0.72],
-            color_tint: [0.8, 0.9, 1.0],
+            color: [0.8, 0.9, 1.0],
+            effect,
             age_seconds: 0.0,
         }]);
-        let fading = build_gem_shatter_vertices(&[GemShatterInstance {
+        let fading = build_block_effect_vertices(&[super::BlockEffectInstance {
             position: [1.0, 2.0, 3.0],
             size: [0.72, 0.86, 0.72],
-            color_tint: [0.8, 0.9, 1.0],
-            age_seconds: gem_shatter_duration_seconds() * 0.75,
+            color: [0.8, 0.9, 1.0],
+            effect,
+            age_seconds: effect.duration_seconds * 0.75,
         }]);
 
-        assert_eq!(fresh.len(), 14 * 3);
+        assert_eq!(fresh.len(), effect.shard_count as usize * 3);
         assert_eq!(fading.len(), fresh.len());
         assert!(fresh.iter().all(|vertex| vertex.color[3] > 0.8));
         assert!(fading.iter().all(|vertex| vertex.color[3] < 0.3));

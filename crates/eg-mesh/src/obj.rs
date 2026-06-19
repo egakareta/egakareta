@@ -489,36 +489,3 @@ pub fn append_obj_mesh(
         }
     }
 }
-
-pub fn build_block_obj(level_object: &LevelObject, object_name: &str) -> String {
-    use crate::blocks::build_block_vertices;
-    let vertices = build_block_vertices(std::slice::from_ref(level_object));
-    build_obj_from_vertices(&vertices, object_name)
-}
-
-fn build_obj_from_vertices(vertices: &[Vertex], object_name: &str) -> String {
-    use std::fmt::Write as _;
-    let mut output = String::new();
-    let _ = writeln!(&mut output, "# egakareta block export");
-    let _ = writeln!(&mut output, "o {}", object_name);
-
-    for vertex in vertices {
-        let _ = writeln!(
-            &mut output,
-            "v {:.6} {:.6} {:.6}",
-            vertex.position[0], vertex.position[1], vertex.position[2]
-        );
-    }
-
-    for i in (0..vertices.len()).step_by(3) {
-        if i + 2 >= vertices.len() {
-            break;
-        }
-        let a = i + 1;
-        let b = i + 2;
-        let c = i + 3;
-        let _ = writeln!(&mut output, "f {} {} {}", a, b, c);
-    }
-
-    output
-}

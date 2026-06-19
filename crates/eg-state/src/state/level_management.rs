@@ -16,7 +16,6 @@ use eg_level::{
     build_level_binary_export, build_level_export, load_builtin_level_metadata,
     parse_level_binary_import, parse_level_egz_import,
 };
-use eg_mesh::build_block_obj;
 use eg_platform::io::{log_platform_error, read_editor_music_bytes};
 use eg_platform::services::{trigger_level_export, trigger_level_import};
 use eg_types::{
@@ -661,43 +660,6 @@ impl State {
         }
     }
 
-    /// Triggers a platform-specific export of the currently selected block as an `.obj` 3D model.
-    ///
-    /// This is useful for exporting custom block geometry for use in other 3D software.
-    pub fn trigger_selected_block_obj_export(&self) {
-        if self.phase != AppPhase::Editor {
-            return;
-        }
-
-        let Some(block) = self.editor_selected_block() else {
-            log_platform_error("OBJ export failed: no selected block");
-            return;
-        };
-
-        let sanitized_id = block
-            .block_id
-            .chars()
-            .map(|character| {
-                if character.is_ascii_alphanumeric() || character == '-' || character == '_' {
-                    character
-                } else {
-                    '_'
-                }
-            })
-            .collect::<String>();
-
-        let object_name = if sanitized_id.is_empty() {
-            "block".to_string()
-        } else {
-            sanitized_id
-        };
-
-        let filename = format!("{}_selected.obj", object_name);
-        let obj = build_block_obj(&block, &object_name);
-
-        trigger_level_export(&filename, obj.as_bytes());
-    }
-
     pub fn update_level_imports(&mut self) {
         while let Ok(bytes) = self.session.editor_level_import_channel.1.try_recv() {
             match self.import_level_egz(&bytes) {
@@ -1004,23 +966,6 @@ mod tests {
             let original_audio = state.app_settings().audio_backend.clone();
             state.set_preferred_audio_backend("Default".to_string());
             assert_eq!(state.app_settings().audio_backend, original_audio);
-        });
-    }
-
-    #[test]
-    fn available_levels_menu_name_and_phase_guarded_obj_export_paths_are_safe() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-
-            assert!(!state.available_levels().is_empty());
-            assert!(state.menu_level_name().is_some());
-
-            state.phase = AppPhase::Menu;
-            state.trigger_selected_block_obj_export();
-
-            state.enter_editor_phase("ObjExportGuards".to_string());
-            state.editor.ui.selected_block_index = None;
-            state.trigger_selected_block_obj_export();
         });
     }
 
@@ -1541,19 +1486,6 @@ mod tests {
 
             let trigger_export: fn(&State) = State::trigger_level_export;
             trigger_export(&state);
-
-            let trigger_obj_export: fn(&State) = State::trigger_selected_block_obj_export;
-            state.phase = AppPhase::Menu;
-            trigger_obj_export(&state);
-
-            state.phase = AppPhase::Editor;
-            state.editor.ui.selected_block_index = None;
-            trigger_obj_export(&state);
-
-            state.editor.objects = vec![test_object([0.0, 0.0, 0.0], "core/stone")];
-            state.editor.ui.selected_block_index = Some(0);
-            state.editor.ui.selected_block_indices = vec![0];
-            trigger_obj_export(&state);
         });
     }
 

@@ -43,6 +43,9 @@ struct VertexInput {
     @location(4) texture_layer: f32,
     @location(5) color_outline: vec4<f32>,
     @location(6) render_profile: f32,
+    @location(7) animation_anchor: vec4<f32>,
+    @location(8) animation_params: vec4<f32>,
+    @location(9) animation_params2: vec4<f32>,
 };
 
 struct VertexOutput {
@@ -61,19 +64,55 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     var out: VertexOutput;
 
     var world_position = input.position;
-    let gem_profile = step(3.5, input.render_profile) * (1.0 - step(4.5, input.render_profile));
-    if gem_profile > 0.5 {
-        let anchor = input.color_outline.xyz;
-        let local = input.position - anchor;
-        let angle = u_color_space.flags.y * 1.6 + input.color_outline.w;
-        let c_gem = cos(angle);
-        let s_gem = sin(angle);
-        let bob = sin(u_color_space.flags.y * 2.4 + input.color_outline.w) * 0.055;
-        world_position = anchor + vec3<f32>(
-            local.x * c_gem - local.z * s_gem,
-            local.y + bob,
-            local.x * s_gem + local.z * c_gem
-        );
+    let animation_strength = abs(input.animation_params.y)
+        + abs(input.animation_params.w)
+        + abs(input.animation_params2.y);
+    if animation_strength > 0.000001 {
+        let anchor = input.animation_anchor.xyz;
+        var local = input.position - anchor;
+        let phase = input.animation_anchor.w;
+
+        let pulse = sin(u_color_space.flags.y * input.animation_params2.z + phase)
+            * input.animation_params2.y;
+        local = local * max(0.05, 1.0 + pulse);
+
+        let spin_axis = round(input.animation_params.x);
+        let angle = u_color_space.flags.y * input.animation_params.y + phase;
+        let c_spin = cos(angle);
+        let s_spin = sin(angle);
+        if spin_axis > 0.5 && spin_axis < 1.5 {
+            local = vec3<f32>(
+                local.x,
+                local.y * c_spin - local.z * s_spin,
+                local.y * s_spin + local.z * c_spin
+            );
+        } else if spin_axis > 1.5 && spin_axis < 2.5 {
+            local = vec3<f32>(
+                local.x * c_spin - local.z * s_spin,
+                local.y,
+                local.x * s_spin + local.z * c_spin
+            );
+        } else if spin_axis > 2.5 && spin_axis < 3.5 {
+            local = vec3<f32>(
+                local.x * c_spin - local.y * s_spin,
+                local.x * s_spin + local.y * c_spin,
+                local.z
+            );
+        }
+
+        var bob = vec3<f32>(0.0, 0.0, 0.0);
+        let bob_axis = round(input.animation_params.z);
+        let bob_amount = sin(u_color_space.flags.y * input.animation_params2.x + phase)
+            * input.animation_params.w;
+        if bob_axis > 0.5 && bob_axis < 1.5 {
+            bob.x = bob_amount;
+        } else if bob_axis > 1.5 && bob_axis < 2.5 {
+            bob.y = bob_amount;
+        } else if bob_axis > 2.5 && bob_axis < 3.5 {
+            bob.z = bob_amount;
+        }
+
+        world_position = anchor + local + bob;
     }
 
     let c = cos(u_line.rotation);

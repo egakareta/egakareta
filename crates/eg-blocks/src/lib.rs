@@ -383,7 +383,7 @@ fn assert_approx_eq(left: f32, right: f32, epsilon: f32) {
 
 #[cfg(test)]
 mod tests {
-    use eg_types::{BlockAssets, BlockBehavior, BlockGeometry, BlockRender};
+    use eg_types::{BlockAnimation, BlockAssets, BlockBehavior, BlockGeometry, BlockRender};
 
     use super::assert_approx_eq;
     use super::{
@@ -444,6 +444,7 @@ mod tests {
             render: BlockRender::default(),
             behavior: BlockBehavior::default(),
             geometry: BlockGeometry::default(),
+            animation: BlockAnimation::default(),
             placeable: true,
         }
         .normalize()
@@ -459,6 +460,7 @@ mod tests {
             render: BlockRender::default(),
             behavior: BlockBehavior::default(),
             geometry: BlockGeometry::default(),
+            animation: BlockAnimation::default(),
             placeable: true,
         }
         .normalize();
@@ -541,6 +543,7 @@ mod tests {
             },
             behavior: BlockBehavior::default(),
             geometry: BlockGeometry::default(),
+            animation: BlockAnimation::default(),
             placeable: true,
         }
         .normalize()
@@ -578,6 +581,7 @@ mod tests {
                 ],
                 hitboxes: Vec::new(),
             },
+            animation: BlockAnimation::default(),
             placeable: true,
         }
         .normalize()
@@ -604,6 +608,27 @@ mod tests {
         .expect("cuboid json");
 
         assert_eq!(cuboid.color_tint, Some([0.25, 0.5, 0.75]));
+    }
+
+    #[test]
+    fn gem_block_uses_json_geometry_and_inline_animation() {
+        let gem = resolve_block_definition("core/gem");
+
+        assert_eq!(gem.assets.mesh, None);
+        assert_eq!(gem.geometry.elements.len(), 5);
+        assert_eq!(gem.geometry.hitboxes.len(), 1);
+
+        let spin = gem.animation.idle.spin.expect("gem spin animation");
+        assert_approx_eq(spin.speed, 1.6, 1e-6);
+        let bob = gem.animation.idle.bob.expect("gem bob animation");
+        assert_approx_eq(bob.amplitude, 0.055, 1e-6);
+        assert_approx_eq(bob.frequency, 2.4, 1e-6);
+        let pulse = gem.animation.idle.pulse.expect("gem pulse animation");
+        assert_approx_eq(pulse.amplitude, 0.025, 1e-6);
+        assert_approx_eq(pulse.frequency, 3.2, 1e-6);
+        let consumed = gem.animation.on_consumed.expect("gem consumed effect");
+        assert_eq!(consumed.shard_count, 14);
+        assert_approx_eq(consumed.duration_seconds, 0.48, 1e-6);
     }
 
     #[test]

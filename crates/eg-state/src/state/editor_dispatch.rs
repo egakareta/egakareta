@@ -145,7 +145,6 @@ impl State {
 
             EditorCommand::ToggleHitboxVisualization => self.toggle_editor_hitbox_visualization(),
             EditorCommand::TogglePerfOverlay => self.toggle_perf_overlay(),
-            EditorCommand::ExportBlockObj => self.trigger_selected_block_obj_export(),
 
             EditorCommand::LoadLevel(name) => self.load_builtin_level_into_editor(&name),
             EditorCommand::RenameLevel(name) => self.set_editor_level_name(name),

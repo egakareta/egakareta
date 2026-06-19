@@ -9,7 +9,10 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use eg_blocks::{all_placeable_blocks, resolve_block_texture_layers};
-use eg_types::{BlockDefinition, BlockRenderProfile};
+use eg_types::{
+    BlockAnimationAxis, BlockAnimationPhaseSeed, BlockCuboid, BlockDefinition,
+    BlockEffectColorMode, BlockEffectPreset, BlockRenderProfile,
+};
 use egui::TextureId;
 use egui_wgpu::Renderer as EguiRenderer;
 
@@ -132,6 +135,9 @@ fn block_icon_signature(block: &BlockDefinition) -> u64 {
     layers.bottom.hash(&mut hasher);
     block.assets.mesh.hash(&mut hasher);
     block.assets.icon.hash(&mut hasher);
+    hash_cuboids(&block.geometry.elements, &mut hasher);
+    hash_cuboids(&block.geometry.hitboxes, &mut hasher);
+    hash_animation(block, &mut hasher);
     render_profile_tag(&block.render.profile).hash(&mut hasher);
     block.render.icon_dimetric_projection.hash(&mut hasher);
     hash_optional_f32_array(block.render.icon_camera.position, &mut hasher);
@@ -157,6 +163,95 @@ fn block_icon_signature(block: &BlockDefinition) -> u64 {
     }
     block.render.noise.to_bits().hash(&mut hasher);
     hasher.finish()
+}
+
+fn hash_cuboids(cuboids: &[BlockCuboid], hasher: &mut DefaultHasher) {
+    cuboids.len().hash(hasher);
+    for cuboid in cuboids {
+        for value in cuboid.from {
+            value.to_bits().hash(hasher);
+        }
+        for value in cuboid.to {
+            value.to_bits().hash(hasher);
+        }
+        cuboid.color_tint.is_some().hash(hasher);
+        if let Some(color_tint) = cuboid.color_tint {
+            for value in color_tint {
+                value.to_bits().hash(hasher);
+            }
+        }
+    }
+}
+
+fn hash_animation(block: &BlockDefinition, hasher: &mut DefaultHasher) {
+    hash_optional_spin(block.animation.idle.spin, hasher);
+    hash_optional_bob(block.animation.idle.bob, hasher);
+    hash_optional_pulse(block.animation.idle.pulse, hasher);
+    hash_phase_seed(block.animation.idle.phase_seed, hasher);
+    hash_optional_effect(block.animation.on_consumed, hasher);
+    hash_optional_effect(block.animation.on_break, hasher);
+}
+
+fn hash_axis(axis: BlockAnimationAxis, hasher: &mut DefaultHasher) {
+    match axis {
+        BlockAnimationAxis::X => 1_u8,
+        BlockAnimationAxis::Y => 2_u8,
+        BlockAnimationAxis::Z => 3_u8,
+    }
+    .hash(hasher);
+}
+
+fn hash_phase_seed(phase_seed: BlockAnimationPhaseSeed, hasher: &mut DefaultHasher) {
+    match phase_seed {
+        BlockAnimationPhaseSeed::None => 0_u8,
+        BlockAnimationPhaseSeed::Position => 1_u8,
+    }
+    .hash(hasher);
+}
+
+fn hash_optional_spin(value: Option<eg_types::BlockSpinAnimation>, hasher: &mut DefaultHasher) {
+    value.is_some().hash(hasher);
+    if let Some(value) = value {
+        hash_axis(value.axis, hasher);
+        value.speed.to_bits().hash(hasher);
+    }
+}
+
+fn hash_optional_bob(value: Option<eg_types::BlockBobAnimation>, hasher: &mut DefaultHasher) {
+    value.is_some().hash(hasher);
+    if let Some(value) = value {
+        hash_axis(value.axis, hasher);
+        value.amplitude.to_bits().hash(hasher);
+        value.frequency.to_bits().hash(hasher);
+    }
+}
+
+fn hash_optional_pulse(value: Option<eg_types::BlockPulseAnimation>, hasher: &mut DefaultHasher) {
+    value.is_some().hash(hasher);
+    if let Some(value) = value {
+        value.amplitude.to_bits().hash(hasher);
+        value.frequency.to_bits().hash(hasher);
+    }
+}
+
+fn hash_optional_effect(value: Option<eg_types::BlockEffect>, hasher: &mut DefaultHasher) {
+    value.is_some().hash(hasher);
+    if let Some(value) = value {
+        match value.preset {
+            BlockEffectPreset::Shatter => 1_u8,
+        }
+        .hash(hasher);
+        value.duration_seconds.to_bits().hash(hasher);
+        value.shard_count.hash(hasher);
+        value.speed_scale.to_bits().hash(hasher);
+        value.gravity_scale.to_bits().hash(hasher);
+        value.wobble_scale.to_bits().hash(hasher);
+        match value.color_mode {
+            BlockEffectColorMode::Tint => 1_u8,
+            BlockEffectColorMode::Render => 2_u8,
+        }
+        .hash(hasher);
+    }
 }
 
 fn hash_optional_f32_array(value: Option<[f32; 3]>, hasher: &mut DefaultHasher) {
@@ -190,7 +285,9 @@ fn render_profile_tag(profile: &BlockRenderProfile) -> u8 {
 #[cfg(test)]
 mod tests {
     use eg_blocks::all_placeable_blocks;
-    use eg_types::BlockRenderProfile;
+    use eg_types::{
+        BlockAnimationAxis, BlockBobAnimation, BlockCuboid, BlockEffect, BlockRenderProfile,
+    };
 
     use super::{block_icon_signature, render_profile_tag};
 
@@ -268,5 +365,37 @@ mod tests {
         assert_eq!(render_profile_tag(&BlockRenderProfile::Gem), 7);
         assert_eq!(render_profile_tag(&BlockRenderProfile::TransformTrigger), 9);
         assert_eq!(render_profile_tag(&BlockRenderProfile::CameraTrigger), 11);
+    }
+
+    #[test]
+    fn block_icon_signature_changes_when_geometry_or_animation_changes() {
+        let block = all_placeable_blocks()
+            .iter()
+            .find(|block| block.placeable)
+            .expect("expected at least one placeable block")
+            .clone();
+
+        let mut with_geometry_change = block.clone();
+        with_geometry_change.geometry.elements.push(BlockCuboid {
+            from: [1.0, 1.0, 1.0],
+            to: [2.0, 2.0, 2.0],
+            color_tint: None,
+        });
+        assert_ne!(
+            block_icon_signature(&block),
+            block_icon_signature(&with_geometry_change)
+        );
+
+        let mut with_animation_change = block.clone();
+        with_animation_change.animation.idle.bob = Some(BlockBobAnimation {
+            axis: BlockAnimationAxis::Y,
+            amplitude: 0.25,
+            frequency: 1.5,
+        });
+        with_animation_change.animation.on_consumed = Some(BlockEffect::default());
+        assert_ne!(
+            block_icon_signature(&block),
+            block_icon_signature(&with_animation_change)
+        );
     }
 }

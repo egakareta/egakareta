@@ -8,7 +8,7 @@
 use super::editor_interaction::EditorInteractionState;
 use super::history::EditorHistoryState;
 use eg_platform::state_host::PlatformInstant;
-use eg_types::{LevelObject, LineUniform};
+use eg_types::{BlockEffect, LevelObject, LineUniform};
 
 #[derive(Clone, Copy, Default, Debug)]
 pub struct EditorDirtyFlags {
@@ -228,19 +228,21 @@ pub struct EditorFrameState {
     pub accumulator: f32,
 }
 
-pub struct GemShatterEffect {
+pub struct BlockVisualEffect {
     pub position: [f32; 3],
     pub size: [f32; 3],
-    pub color_tint: [f32; 3],
+    pub color: [f32; 3],
+    pub effect: BlockEffect,
     pub age_seconds: f32,
 }
 
-impl GemShatterEffect {
-    pub fn from_object(object: &LevelObject) -> Self {
+impl BlockVisualEffect {
+    pub fn from_object(object: &LevelObject, effect: BlockEffect, color: [f32; 3]) -> Self {
         Self {
             position: object.position,
             size: object.size,
-            color_tint: object.color_tint,
+            color,
+            effect,
             age_seconds: 0.0,
         }
     }
@@ -248,7 +250,7 @@ impl GemShatterEffect {
 
 pub struct PlayerRenderState {
     pub line_uniform: LineUniform,
-    pub gem_shatter_effects: Vec<GemShatterEffect>,
+    pub gem_shatter_effects: Vec<BlockVisualEffect>,
 }
 
 pub struct FrameRuntimeState {

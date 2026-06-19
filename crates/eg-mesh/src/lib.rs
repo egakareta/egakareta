@@ -73,6 +73,9 @@ pub struct Vertex {
     pub texture_layer: f32,
     pub color_outline: [f32; 4],
     pub render_profile: f32,
+    pub animation_anchor: [f32; 4],
+    pub animation_params: [f32; 4],
+    pub animation_params2: [f32; 4],
 }
 
 impl Vertex {
@@ -85,6 +88,9 @@ impl Vertex {
             texture_layer: -1.0,
             color_outline: [0.0, 0.0, 0.0, 0.0],
             render_profile: 0.0,
+            animation_anchor: [0.0, 0.0, 0.0, 0.0],
+            animation_params: [0.0, 0.0, 0.0, 0.0],
+            animation_params2: [0.0, 0.0, 0.0, 0.0],
         }
     }
 
@@ -97,6 +103,9 @@ impl Vertex {
             texture_layer: texture_layer as f32,
             color_outline: [0.0, 0.0, 0.0, 0.0],
             render_profile: 0.0,
+            animation_anchor: [0.0, 0.0, 0.0, 0.0],
+            animation_params: [0.0, 0.0, 0.0, 0.0],
+            animation_params2: [0.0, 0.0, 0.0, 0.0],
         }
     }
 
@@ -116,6 +125,9 @@ impl Vertex {
             texture_layer: texture_layer as f32,
             color_outline,
             render_profile: 0.0,
+            animation_anchor: [0.0, 0.0, 0.0, 0.0],
+            animation_params: [0.0, 0.0, 0.0, 0.0],
+            animation_params2: [0.0, 0.0, 0.0, 0.0],
         }
     }
 
@@ -123,15 +135,24 @@ impl Vertex {
         self.render_profile = render_profile;
     }
 
+    pub fn set_animation(&mut self, anchor: [f32; 4], params: [f32; 4], params2: [f32; 4]) {
+        self.animation_anchor = anchor;
+        self.animation_params = params;
+        self.animation_params2 = params2;
+    }
+
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        const ATTRS: [wgpu::VertexAttribute; 7] = wgpu::vertex_attr_array![
+        const ATTRS: [wgpu::VertexAttribute; 10] = wgpu::vertex_attr_array![
             0 => Float32x3,
             1 => Float32x4,
             2 => Float32x2,
             3 => Float32x2,
             4 => Float32,
             5 => Float32x4,
-            6 => Float32
+            6 => Float32,
+            7 => Float32x4,
+            8 => Float32x4,
+            9 => Float32x4
         ];
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as u64,
