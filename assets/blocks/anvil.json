@@ -1,0 +1,71 @@
+{
+    "id": "core/anvil",
+    "display_name": "Anvil",
+    "category": "building",
+    "assets": {
+        "texture": "castle_brick.png"
+    },
+    "render": {
+        "profile": "solid",
+        "icon_dimetric_projection": true,
+        "color_top": [0.74, 0.74, 0.72, 1.0],
+        "color_side": [0.42, 0.42, 0.42, 1.0],
+        "color_bottom": [0.18, 0.18, 0.18, 1.0],
+        "color_outline": [0.0, 0.0, 0.0, 0.32]
+    },
+    "behavior": {
+        "collision": "solid",
+        "support_surface": true
+    },
+    "geometry": {
+        "elements": [
+            {
+                "from": [2.0, 0.0, 4.0],
+                "to": [14.0, 1.5, 12.0],
+                "color_tint": [0.24, 0.24, 0.24]
+            },
+            {
+                "from": [3.0, 1.5, 5.0],
+                "to": [13.0, 3.0, 11.0],
+                "color_tint": [0.34, 0.34, 0.34]
+            },
+            {
+                "from": [5.0, 3.0, 5.5],
+                "to": [11.0, 7.0, 10.5],
+                "color_tint": [0.42, 0.42, 0.42]
+            },
+            {
+                "from": [2.0, 7.0, 3.0],
+                "to": [14.0, 10.0, 13.0],
+                "color_tint": [0.56, 0.56, 0.54]
+            },
+            {
+                "from": [0.0, 8.0, 6.0],
+                "to": [2.0, 9.5, 10.0],
+                "color_tint": [0.5, 0.5, 0.48]
+            },
+            {
+                "from": [1.5, 7.6, 5.0],
+                "to": [4.0, 10.0, 11.0],
+                "color_tint": [0.52, 0.52, 0.5]
+            },
+            {
+                "from": [12.0, 8.0, 5.0],
+                "to": [16.0, 10.5, 11.0],
+                "color_tint": [0.62, 0.62, 0.6]
+            },
+            {
+                "from": [12.8, 10.5, 5.7],
+                "to": [14.4, 12.2, 7.3],
+                "color_tint": [0.18, 0.18, 0.18]
+            },
+            {
+                "from": [8.5, 10.05, 7.0],
+                "to": [10.8, 10.45, 9.3],
+                "color_tint": [0.08, 0.08, 0.08]
+            }
+        ],
+        "hitboxes": [{ "from": [0.0, 0.0, 3.0], "to": [16.0, 12.2, 13.0] }]
+    },
+    "placeable": true
+}
