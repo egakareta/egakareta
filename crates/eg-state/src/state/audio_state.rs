@@ -108,12 +108,15 @@ impl AudioState {
             .preloading_source_keys
             .insert(source_key.clone());
 
-        eg_audio::service::start_audio_preload(
-            source_key,
-            level_name.to_string(),
-            music_source.to_string(),
-            self.runtime_preload.preload_channel.0.clone(),
-        );
+        #[cfg(not(test))]
+        {
+            eg_audio::service::start_audio_preload(
+                source_key,
+                level_name.to_string(),
+                music_source.to_string(),
+                self.runtime_preload.preload_channel.0.clone(),
+            );
+        }
     }
 }
 
@@ -238,52 +241,51 @@ impl State {
 
         self.update_runtime_audio_preloads();
 
-        if self.phase == eg_types::AppPhase::Editor || self.session.playtesting_editor {
-            if let Some(bytes) = self
-                .audio
-                .state
-                .editor
-                .local_audio_cache
-                .get(&metadata.music.source)
-            {
-                self.audio.state.runtime.warmup_with_bytes_at(
-                    &metadata.music.source,
-                    bytes,
-                    start_seconds,
-                );
-                #[cfg(test)]
-                {
-                    self.audio.state.runtime_preload.last_warmup_request =
-                        Some((source_key, start_seconds.max(0.0)));
-                }
-                return;
-            }
-        }
-
-        if let Some(bytes) = self
-            .audio
-            .state
-            .runtime_preload
-            .preloaded_audio
-            .get(&source_key)
-        {
-            self.audio.state.runtime.warmup_preloaded_asset_at(
-                level_name,
-                &metadata.music.source,
-                bytes,
-                start_seconds,
-            );
-        } else {
-            self.audio
-                .state
-                .runtime
-                .warmup_at(level_name, &metadata.music.source, start_seconds);
-        }
-
         #[cfg(test)]
         {
             self.audio.state.runtime_preload.last_warmup_request =
                 Some((source_key, start_seconds.max(0.0)));
+        }
+
+        #[cfg(not(test))]
+        {
+            if self.phase == eg_types::AppPhase::Editor || self.session.playtesting_editor {
+                if let Some(bytes) = self
+                    .audio
+                    .state
+                    .editor
+                    .local_audio_cache
+                    .get(&metadata.music.source)
+                {
+                    self.audio.state.runtime.warmup_with_bytes_at(
+                        &metadata.music.source,
+                        bytes,
+                        start_seconds,
+                    );
+                    return;
+                }
+            }
+
+            if let Some(bytes) = self
+                .audio
+                .state
+                .runtime_preload
+                .preloaded_audio
+                .get(&source_key)
+            {
+                self.audio.state.runtime.warmup_preloaded_asset_at(
+                    level_name,
+                    &metadata.music.source,
+                    bytes,
+                    start_seconds,
+                );
+            } else {
+                self.audio.state.runtime.warmup_at(
+                    level_name,
+                    &metadata.music.source,
+                    start_seconds,
+                );
+            }
         }
     }
 

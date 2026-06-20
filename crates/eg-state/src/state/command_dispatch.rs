@@ -1526,6 +1526,8 @@ mod tests {
             for key in [" ", "Space"] {
                 let mut state = State::new_test().await;
                 state.phase = AppPhase::Menu;
+                state.menu.state.levels = vec!["SpaceAliasTest".to_string()];
+                state.menu.state.selected_level = 0;
 
                 state.process_input_event(InputEvent::Key {
                     key: key.to_string(),

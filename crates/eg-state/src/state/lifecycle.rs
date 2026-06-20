@@ -1597,8 +1597,9 @@ impl State {
 mod tests {
     use crate::commands::AppCommand;
     use crate::state::editor_command::EditorCommand;
+    use crate::test_utils::tiny_wav_bytes;
     use eg_game::TimelineSimulationRuntime;
-    use eg_types::SpawnDirection;
+    use eg_types::{MusicMetadata, SpawnDirection};
 
     use super::{
         block_texture_array_layer_count, editor_ghost_trail_depth_stencil_state,
@@ -1682,11 +1683,9 @@ mod tests {
         pollster::block_on(async {
             let mut state = State::new_test().await;
 
-            // Start level 0
-            state.start_level(0);
+            state.enter_playing_phase(Some("LifecycleTest".to_string()), false);
             assert_eq!(state.phase, AppPhase::Playing);
 
-            // Back to menu
             state.back_to_menu();
             assert_eq!(state.phase, AppPhase::Menu);
         });
@@ -1728,9 +1727,21 @@ mod tests {
     fn test_lifecycle_audio_start_marks_playing_in_tests() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
+            let music_source = "unit-test-audio.wav".to_string();
 
-            state.start_level(0);
-            // Gameplay audio starts on first input while in Playing phase.
+            state.enter_editor_phase("AudioStartTest".to_string());
+            state.set_editor_music_metadata(MusicMetadata {
+                source: music_source.clone(),
+                ..MusicMetadata::default()
+            });
+            state
+                .audio
+                .state
+                .editor
+                .local_audio_cache
+                .insert(music_source, tiny_wav_bytes());
+            state.editor_playtest();
+
             state.turn_right();
 
             assert!(

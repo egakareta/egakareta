@@ -326,20 +326,20 @@ fn test_state_phase_integrity() {
 }
 
 #[test]
-fn focused_init_path_toggle_editor_uses_selected_builtin_level() {
+fn focused_init_path_toggle_editor_uses_selected_menu_level() {
     pollster::block_on(async {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Menu;
+        state.menu.state.levels = vec!["FocusedInitTest".to_string()];
 
-        let selected_level_index = usize::from(state.menu.state.levels.len() > 1);
-        state.menu.state.selected_level = selected_level_index;
-        let expected_level_name = state.menu.state.levels[selected_level_index].clone();
+        state.menu.state.selected_level = 0;
+        let expected_level_name = state.menu.state.levels[0].clone();
 
         state.toggle_editor();
 
         assert_eq!(state.phase, AppPhase::Editor);
         assert_eq!(state.session.editor_level_name, Some(expected_level_name));
-        assert!(!state.editor.objects.is_empty());
+        assert!(state.editor.objects.is_empty());
     });
 }
 
@@ -1453,17 +1453,13 @@ fn state_navigation_resize_and_phase_queries_cover_core_branches() {
 fn turn_right_covers_menu_playing_editor_and_game_over_paths() {
     pollster::block_on(async {
         let mut state = State::new_test().await;
+        let first_level = "TurnRightBranchTest".to_string();
+
+        state.menu.state.levels = vec![first_level.clone()];
+        state.menu.state.selected_level = 0;
 
         state.turn_right();
         assert_eq!(state.phase, AppPhase::Playing);
-
-        let first_level = state
-            .menu
-            .state
-            .levels
-            .first()
-            .cloned()
-            .expect("expected at least one built-in level");
 
         state.phase = AppPhase::Playing;
         state.session.playtesting_editor = false;

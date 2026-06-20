@@ -1325,7 +1325,7 @@ mod tests {
     fn practice_death_before_checkpoint_restarts_at_zero_but_stays_in_practice() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
-            state.start_level(0);
+            state.enter_playing_phase(Some("PracticeTest".to_string()), false);
             state.session.practice_mode_enabled = true;
             state.session.practice_checkpoints.clear();
             state.gameplay.state.started = true;
@@ -1345,7 +1345,7 @@ mod tests {
     fn practice_game_over_input_before_checkpoint_keeps_practice_mode() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
-            state.start_level(0);
+            state.enter_playing_phase(Some("PracticeInputTest".to_string()), false);
             state.session.practice_mode_enabled = true;
             state.session.practice_checkpoints.clear();
             state.gameplay.state.started = true;

@@ -72,6 +72,14 @@ pub fn rotated(id: &str, x: f32, y: f32, z: f32, rx: f32, ry: f32, rz: f32) -> L
     }
 }
 
+pub fn tiny_wav_bytes() -> Vec<u8> {
+    vec![
+        b'R', b'I', b'F', b'F', 38, 0, 0, 0, b'W', b'A', b'V', b'E', b'f', b'm', b't', b' ', 16, 0,
+        0, 0, 1, 0, 1, 0, 68, 172, 0, 0, 136, 88, 1, 0, 2, 0, 16, 0, b'd', b'a', b't', b'a', 2, 0,
+        0, 0, 0, 0,
+    ]
+}
+
 /// Ergonomic macro for editor tests. Eliminates `pollster::block_on` and
 /// `State::new_test()` boilerplate.
 ///
@@ -110,7 +118,7 @@ pub(crate) use editor_test;
 
 #[cfg(test)]
 mod tests {
-    use super::{approx_eq, assert_approx_eq, block, gem, rotated, sized, stone};
+    use super::{approx_eq, assert_approx_eq, block, gem, rotated, sized, stone, tiny_wav_bytes};
 
     #[test]
     fn approx_eq_returns_true_within_epsilon() {
@@ -161,5 +169,12 @@ mod tests {
         assert_eq!(rotated.position, [7.0, 8.0, 9.0]);
         assert_eq!(rotated.rotation_degrees, [10.0, 20.0, 30.0]);
         assert_eq!(rotated.size, [1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn tiny_wav_fixture_is_valid_riff_data() {
+        let bytes = tiny_wav_bytes();
+        assert_eq!(&bytes[0..4], b"RIFF");
+        assert_eq!(&bytes[8..12], b"WAVE");
     }
 }
