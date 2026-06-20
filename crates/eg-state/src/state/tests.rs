@@ -825,6 +825,58 @@ fn editor_load_level_in_timing_mode_reloads_waveform_for_new_level() {
 }
 
 #[test]
+fn editor_clipboard_survives_builtin_level_switch() {
+    pollster::block_on(async {
+        let mut state = new_editor_state().await;
+        let next_level = state
+            .menu
+            .state
+            .levels
+            .first()
+            .cloned()
+            .expect("test requires at least one built-in level");
+
+        state.editor.objects = vec![stone(2.0, 1.0, 3.0)];
+        state.editor.ui.selected_block_index = Some(0);
+        state.editor.ui.selected_block_indices = vec![0];
+        state.editor_copy_block();
+
+        state.load_builtin_level_into_editor(&next_level);
+
+        assert!(state.editor.runtime.interaction.clipboard.is_some());
+        state.editor.ui.cursor = [8.0, 2.0, 9.0];
+        let before_paste = state.editor.objects.len();
+        state.editor_paste_block();
+
+        assert_eq!(state.editor.objects.len(), before_paste + 1);
+        assert_eq!(state.editor.objects[before_paste].position, [8.0, 2.0, 9.0]);
+    });
+}
+
+#[test]
+fn editor_clipboard_survives_exit_and_reentry() {
+    pollster::block_on(async {
+        let mut state = new_editor_state().await;
+
+        state.editor.objects = vec![stone(1.0, 0.0, 1.0)];
+        state.editor.ui.selected_block_index = Some(0);
+        state.editor.ui.selected_block_indices = vec![0];
+        state.editor_copy_block();
+
+        state.back_to_menu();
+        state.start_editor(0);
+
+        assert!(state.editor.runtime.interaction.clipboard.is_some());
+        state.editor.ui.cursor = [4.0, 0.0, 5.0];
+        let before_paste = state.editor.objects.len();
+        state.editor_paste_block();
+
+        assert_eq!(state.editor.objects.len(), before_paste + 1);
+        assert_eq!(state.editor.objects[before_paste].position, [4.0, 0.0, 5.0]);
+    });
+}
+
+#[test]
 fn setting_timeline_duration_does_not_delete_taps() {
     pollster::block_on(async {
         let mut state = new_editor_state().await;

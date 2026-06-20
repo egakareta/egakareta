@@ -359,7 +359,6 @@ impl State {
             self.stop_audio();
             self.editor.timeline.playback.playing = false;
             self.editor.timeline.playback.runtime = None;
-            self.editor.runtime.interaction.clipboard = None;
             self.apply_imported_level_metadata(metadata);
             self.session.editor_level_name = Some(name.to_string());
 
