@@ -6,6 +6,8 @@
 
 */
 use super::super::EditorSubsystem;
+use std::collections::HashMap;
+
 use eg_block_geometry::{effective_hitbox_cuboids, object_center, object_rotation};
 use eg_types::{
     camera_trigger_eye_from_object, camera_trigger_forward_from_rotation_degrees,
@@ -19,6 +21,320 @@ use glam::{Vec2, Vec3, Vec4};
 const CAMERA_TRIGGER_BALL_PICK_RADIUS: f32 = 0.55;
 const CAMERA_TRIGGER_ARROW_PICK_RADIUS: f32 = 0.55;
 const CAMERA_TRIGGER_ARROW_PICK_OFFSET: f32 = 1.4;
+const PICK_GRID_CELL_SIZE: f32 = 8.0;
+const PICK_GRID_MAX_CELLS_PER_OBJECT: usize = 4096;
+
+pub(crate) struct EditorPickSpatialIndex {
+    cells: HashMap<[i32; 3], Vec<usize>>,
+    large_objects: Vec<usize>,
+    visited: Vec<u32>,
+    query_mark: u32,
+    object_count: usize,
+    world_min: Vec3,
+    world_max: Vec3,
+    dirty: bool,
+}
+
+impl Default for EditorPickSpatialIndex {
+    fn default() -> Self {
+        Self {
+            cells: HashMap::new(),
+            large_objects: Vec::new(),
+            visited: Vec::new(),
+            query_mark: 0,
+            object_count: 0,
+            world_min: Vec3::ZERO,
+            world_max: Vec3::ZERO,
+            dirty: true,
+        }
+    }
+}
+
+impl EditorPickSpatialIndex {
+    pub(crate) fn invalidate(&mut self) {
+        self.dirty = true;
+    }
+
+    fn ensure_current(&mut self, objects: &[LevelObject]) {
+        if !self.dirty && self.object_count == objects.len() && self.visited.len() == objects.len()
+        {
+            return;
+        }
+
+        self.rebuild(objects);
+    }
+
+    fn rebuild(&mut self, objects: &[LevelObject]) {
+        puffin::profile_scope!("PickSpatialIndexRebuild");
+        self.cells.clear();
+        self.large_objects.clear();
+        self.visited.resize(objects.len(), 0);
+        self.object_count = objects.len();
+        self.world_min = Vec3::splat(f32::INFINITY);
+        self.world_max = Vec3::splat(f32::NEG_INFINITY);
+
+        for (index, object) in objects.iter().enumerate() {
+            let Some((min, max)) = object_pick_bounds(object) else {
+                continue;
+            };
+
+            self.world_min = self.world_min.min(min);
+            self.world_max = self.world_max.max(max);
+
+            let min_cell = Self::cell_coords(min);
+            let max_cell = Self::cell_coords(max);
+            let Some(cell_count) = cell_range_count(min_cell, max_cell) else {
+                self.large_objects.push(index);
+                continue;
+            };
+
+            if cell_count > PICK_GRID_MAX_CELLS_PER_OBJECT {
+                self.large_objects.push(index);
+                continue;
+            }
+
+            for x in min_cell[0]..=max_cell[0] {
+                for y in min_cell[1]..=max_cell[1] {
+                    for z in min_cell[2]..=max_cell[2] {
+                        self.cells.entry([x, y, z]).or_default().push(index);
+                    }
+                }
+            }
+        }
+
+        if !self.world_min.is_finite() || !self.world_max.is_finite() {
+            self.world_min = Vec3::ZERO;
+            self.world_max = Vec3::ZERO;
+        }
+        self.dirty = false;
+    }
+
+    fn query_ray(&mut self, ray_origin: Vec3, ray_dir: Vec3, max_t: f32) -> Vec<usize> {
+        puffin::profile_scope!("PickSpatialIndexQuery");
+        let mut candidates = Vec::new();
+        if self.object_count == 0 {
+            return candidates;
+        }
+
+        self.begin_query();
+        let query_mark = self.query_mark;
+        for &index in &self.large_objects {
+            add_pick_candidate(index, query_mark, &mut self.visited, &mut candidates);
+        }
+
+        if self.cells.is_empty() || !self.world_min.is_finite() || !self.world_max.is_finite() {
+            return candidates;
+        }
+
+        let Some((entry_t, exit_t)) =
+            ray_intersect_aabb_interval(ray_origin, ray_dir, self.world_min, self.world_max)
+        else {
+            return candidates;
+        };
+
+        let t_start = entry_t.max(0.0);
+        let t_end = exit_t.min(max_t);
+        if t_end < t_start {
+            return candidates;
+        }
+
+        let min_cell = Self::cell_coords(self.world_min);
+        let max_cell = Self::cell_coords(self.world_max);
+        let start_position = ray_origin + ray_dir * t_start;
+        let mut cell = clamp_cell(Self::cell_coords(start_position), min_cell, max_cell);
+        let mut step = [0; 3];
+        let mut t_max = [f32::INFINITY; 3];
+        let mut t_delta = [f32::INFINITY; 3];
+
+        for axis in 0..3 {
+            let dir_component = ray_dir[axis];
+            if dir_component > f32::EPSILON {
+                step[axis] = 1;
+                let boundary = (cell[axis] + 1) as f32 * PICK_GRID_CELL_SIZE;
+                t_max[axis] = (boundary - ray_origin[axis]) / dir_component;
+                t_delta[axis] = PICK_GRID_CELL_SIZE / dir_component;
+            } else if dir_component < -f32::EPSILON {
+                step[axis] = -1;
+                let boundary = cell[axis] as f32 * PICK_GRID_CELL_SIZE;
+                t_max[axis] = (boundary - ray_origin[axis]) / dir_component;
+                t_delta[axis] = -PICK_GRID_CELL_SIZE / dir_component;
+            }
+        }
+
+        let mut t = t_start;
+        while t <= t_end {
+            add_cell_pick_candidates(
+                &self.cells,
+                cell,
+                query_mark,
+                &mut self.visited,
+                &mut candidates,
+            );
+
+            let axis = min_axis(t_max);
+            if !t_max[axis].is_finite() || t_max[axis] > t_end {
+                break;
+            }
+
+            cell[axis] += step[axis];
+            if cell[axis] < min_cell[axis] || cell[axis] > max_cell[axis] {
+                break;
+            }
+            t = t_max[axis];
+            t_max[axis] += t_delta[axis];
+        }
+
+        candidates
+    }
+
+    fn begin_query(&mut self) {
+        if self.query_mark == u32::MAX {
+            self.visited.fill(0);
+            self.query_mark = 1;
+        } else {
+            self.query_mark += 1;
+        }
+    }
+
+    fn cell_coords(position: Vec3) -> [i32; 3] {
+        [
+            (position.x / PICK_GRID_CELL_SIZE).floor() as i32,
+            (position.y / PICK_GRID_CELL_SIZE).floor() as i32,
+            (position.z / PICK_GRID_CELL_SIZE).floor() as i32,
+        ]
+    }
+}
+
+fn add_cell_pick_candidates(
+    cells: &HashMap<[i32; 3], Vec<usize>>,
+    cell: [i32; 3],
+    query_mark: u32,
+    visited: &mut [u32],
+    candidates: &mut Vec<usize>,
+) {
+    let Some(indices) = cells.get(&cell) else {
+        return;
+    };
+
+    for &index in indices {
+        add_pick_candidate(index, query_mark, visited, candidates);
+    }
+}
+
+fn add_pick_candidate(
+    index: usize,
+    query_mark: u32,
+    visited: &mut [u32],
+    candidates: &mut Vec<usize>,
+) {
+    let Some(visited) = visited.get_mut(index) else {
+        return;
+    };
+    if *visited == query_mark {
+        return;
+    }
+
+    *visited = query_mark;
+    candidates.push(index);
+}
+
+fn object_pick_bounds(object: &LevelObject) -> Option<(Vec3, Vec3)> {
+    if object.block_id == CAMERA_TRIGGER_BLOCK_ID {
+        let eye = Vec3::from_array(camera_trigger_eye_from_object(object));
+        let forward = Vec3::from_array(camera_trigger_forward_from_rotation_degrees(
+            object.rotation_degrees,
+        ));
+        let arrow_direction = if forward.length_squared() > f32::EPSILON {
+            forward.normalize()
+        } else {
+            Vec3::Z
+        };
+        let arrow_center = eye + arrow_direction * CAMERA_TRIGGER_ARROW_PICK_OFFSET;
+        let radius = CAMERA_TRIGGER_BALL_PICK_RADIUS.max(CAMERA_TRIGGER_ARROW_PICK_RADIUS);
+        let min = (eye - Vec3::splat(radius)).min(arrow_center - Vec3::splat(radius));
+        let max = (eye + Vec3::splat(radius)).max(arrow_center + Vec3::splat(radius));
+        return (min.is_finite() && max.is_finite()).then_some((min, max));
+    }
+
+    let half = Vec3::new(
+        object.size[0].abs() * 0.5,
+        object.size[1].abs() * 0.5,
+        object.size[2].abs() * 0.5,
+    );
+    let radius = half.length();
+    if radius <= f32::EPSILON {
+        return None;
+    }
+
+    let center = object_center(object);
+    let extent = Vec3::splat(radius);
+    let min = center - extent;
+    let max = center + extent;
+    (min.is_finite() && max.is_finite()).then_some((min, max))
+}
+
+fn cell_range_count(min_cell: [i32; 3], max_cell: [i32; 3]) -> Option<usize> {
+    let x = usize::try_from(max_cell[0].checked_sub(min_cell[0])?.checked_add(1)?).ok()?;
+    let y = usize::try_from(max_cell[1].checked_sub(min_cell[1])?.checked_add(1)?).ok()?;
+    let z = usize::try_from(max_cell[2].checked_sub(min_cell[2])?.checked_add(1)?).ok()?;
+    x.checked_mul(y)?.checked_mul(z)
+}
+
+fn clamp_cell(cell: [i32; 3], min_cell: [i32; 3], max_cell: [i32; 3]) -> [i32; 3] {
+    [
+        cell[0].clamp(min_cell[0], max_cell[0]),
+        cell[1].clamp(min_cell[1], max_cell[1]),
+        cell[2].clamp(min_cell[2], max_cell[2]),
+    ]
+}
+
+fn min_axis(values: [f32; 3]) -> usize {
+    if values[0] <= values[1] && values[0] <= values[2] {
+        0
+    } else if values[1] <= values[2] {
+        1
+    } else {
+        2
+    }
+}
+
+fn ray_intersect_aabb_interval(
+    ray_origin: Vec3,
+    ray_dir: Vec3,
+    min: Vec3,
+    max: Vec3,
+) -> Option<(f32, f32)> {
+    let mut t_min = f32::NEG_INFINITY;
+    let mut t_max = f32::INFINITY;
+
+    for axis in 0..3 {
+        let origin_component = ray_origin[axis];
+        let dir_component = ray_dir[axis];
+        let min_component = min[axis];
+        let max_component = max[axis];
+
+        if dir_component.abs() <= f32::EPSILON {
+            if origin_component < min_component || origin_component > max_component {
+                return None;
+            }
+            continue;
+        }
+
+        let inv_dir = 1.0 / dir_component;
+        let mut t1 = (min_component - origin_component) * inv_dir;
+        let mut t2 = (max_component - origin_component) * inv_dir;
+        if t1 > t2 {
+            std::mem::swap(&mut t1, &mut t2);
+        }
+        t_min = t_min.max(t1);
+        t_max = t_max.min(t2);
+        if t_min > t_max {
+            return None;
+        }
+    }
+
+    (t_max >= 0.0).then_some((t_min, t_max))
+}
 
 impl EditorSubsystem {
     pub fn pick_from_screen(
@@ -102,7 +418,15 @@ impl EditorSubsystem {
                 }
             }
 
-            for (index, obj) in self.objects.iter().enumerate() {
+            let object_indices = self.pick_candidate_object_indices(
+                ray_origin,
+                ray_dir,
+                ground_t.unwrap_or(f32::INFINITY),
+            );
+            for index in object_indices {
+                let Some(obj) = self.objects.get(index) else {
+                    continue;
+                };
                 if obj.block_id == CAMERA_TRIGGER_BLOCK_ID {
                     if let Some((t, normal)) =
                         self.ray_intersect_camera_trigger_block(ray_origin, ray_dir, obj)
@@ -229,7 +553,7 @@ impl EditorSubsystem {
     }
 
     pub fn pick_block_cursor_from_screen_excluding(
-        &self,
+        &mut self,
         x: f64,
         y: f64,
         viewport_size: Vec2,
@@ -243,7 +567,7 @@ impl EditorSubsystem {
     /// hit position (without the cursor nudge). Used for drag positioning where
     /// the 0.01 surface offset would cause blocks to float above surfaces.
     pub fn pick_block_surface_from_screen_excluding(
-        &self,
+        &mut self,
         x: f64,
         y: f64,
         viewport_size: Vec2,
@@ -254,7 +578,7 @@ impl EditorSubsystem {
     }
 
     fn pick_block_surface_from_ray_excluding(
-        &self,
+        &mut self,
         ray_origin: Vec3,
         ray_dir: Vec3,
         excluded_indices: &[usize],
@@ -262,7 +586,10 @@ impl EditorSubsystem {
         let mut min_t = f32::INFINITY;
         let mut hit_found = false;
 
-        for (index, obj) in self.objects.iter().enumerate() {
+        for index in self.pick_candidate_object_indices(ray_origin, ray_dir, f32::INFINITY) {
+            let Some(obj) = self.objects.get(index) else {
+                continue;
+            };
             if excluded_indices.contains(&index)
                 || !Self::ray_may_hit_block_bounds(ray_origin, ray_dir, obj, min_t)
             {
@@ -286,7 +613,7 @@ impl EditorSubsystem {
     }
 
     fn pick_block_cursor_from_ray_excluding(
-        &self,
+        &mut self,
         ray_origin: Vec3,
         ray_dir: Vec3,
         excluded_indices: &[usize],
@@ -295,7 +622,10 @@ impl EditorSubsystem {
         let mut best_hit_normal = Vec3::Y;
         let mut hit_found = false;
 
-        for (index, obj) in self.objects.iter().enumerate() {
+        for index in self.pick_candidate_object_indices(ray_origin, ray_dir, f32::INFINITY) {
+            let Some(obj) = self.objects.get(index) else {
+                continue;
+            };
             if excluded_indices.contains(&index)
                 || !Self::ray_may_hit_block_bounds(ray_origin, ray_dir, obj, min_t)
             {
@@ -346,6 +676,17 @@ impl EditorSubsystem {
         };
 
         [next_cursor[0], next_cursor[1].max(0.0), next_cursor[2]]
+    }
+
+    fn pick_candidate_object_indices(
+        &mut self,
+        ray_origin: Vec3,
+        ray_dir: Vec3,
+        max_t: f32,
+    ) -> Vec<usize> {
+        self.pick_spatial_index.ensure_current(&self.objects);
+        self.pick_spatial_index
+            .query_ray(ray_origin, ray_dir, max_t)
     }
 
     fn ray_intersect_tap_indicator(

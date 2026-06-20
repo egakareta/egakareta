@@ -316,6 +316,7 @@ impl EditorSubsystem {
         self.normalize_block_selection();
         self.sync_trigger_selection_from_objects();
         self.invalidate_samples();
+        self.pick_spatial_index.invalidate();
         self.selected_mask_cache = None;
         self.block_static_vertex_cache.clear();
         self.block_static_vertex_cache_complete_len = None;
@@ -325,12 +326,14 @@ impl EditorSubsystem {
 
     pub fn sync_objects_for_drag(&mut self) {
         self.normalize_block_selection();
+        self.pick_spatial_index.invalidate();
         self.mark_dirty(EditorDirtyFlags::drag_object_sync());
     }
 
     pub fn sync_objects_after_drag_release(&mut self) {
         self.normalize_block_selection();
         self.invalidate_samples();
+        self.pick_spatial_index.invalidate();
         self.mark_dirty(EditorDirtyFlags::drag_release_sync());
     }
 
@@ -351,6 +354,7 @@ impl EditorSubsystem {
         self.record_history_state();
         let placed_index = self.objects.len();
         self.objects.push(new_block);
+        self.pick_spatial_index.invalidate();
         if place_mode == EditorPlaceMode::SelectPlaced {
             self.replace_block_selection(vec![placed_index]);
             self.ui.hovered_block_index = Some(placed_index);

@@ -500,6 +500,7 @@ impl EditorSubsystem {
             }
             self.clear_block_selection();
             self.invalidate_samples();
+            self.pick_spatial_index.invalidate();
             self.sync_trigger_selection_from_objects();
             return true;
         }
@@ -510,6 +511,7 @@ impl EditorSubsystem {
             dereference_removed_transform_trigger_targets(&mut self.objects, &removed_object_ids);
             remove_topmost_block_at_cursor(&mut self.objects, self.ui.cursor);
             self.invalidate_samples();
+            self.pick_spatial_index.invalidate();
             self.sync_trigger_selection_from_objects();
             return true;
         }

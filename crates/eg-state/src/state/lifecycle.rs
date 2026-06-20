@@ -11,9 +11,9 @@ use super::runtime::{
 };
 use super::{
     AudioState, AudioSubsystem, AuthSubsystem, EditorCameraState, EditorConfigState,
-    EditorHistoryState, EditorInteractionState, EditorPerfState, EditorSubsystem,
-    EditorTimelineState, EditorTimingState, EditorTriggerState, GameplaySubsystem, MenuSubsystem,
-    SessionSubsystem, State,
+    EditorHistoryState, EditorInteractionState, EditorPerfState, EditorPickSpatialIndex,
+    EditorSubsystem, EditorTimelineState, EditorTimingState, EditorTriggerState, GameplaySubsystem,
+    MenuSubsystem, SessionSubsystem, State,
 };
 use crate::state::RenderSubsystem;
 use eg_render::{GpuContext, InstancedMeshSlot, MeshSlot, SceneMeshes, DEPTH_FORMAT};
@@ -695,6 +695,7 @@ impl State {
                 selected_mask_cache: None,
                 block_static_vertex_cache: MeshGeometry::default(),
                 block_static_vertex_cache_complete_len: None,
+                pick_spatial_index: EditorPickSpatialIndex::default(),
             },
         }
     }
@@ -1634,6 +1635,7 @@ impl State {
                 selected_mask_cache: None,
                 block_static_vertex_cache: MeshGeometry::default(),
                 block_static_vertex_cache_complete_len: None,
+                pick_spatial_index: EditorPickSpatialIndex::default(),
             },
         })
     }

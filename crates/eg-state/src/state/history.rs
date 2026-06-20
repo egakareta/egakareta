@@ -112,6 +112,7 @@ impl EditorSubsystem {
         self.runtime.interaction.block_drag = None;
 
         self.invalidate_samples();
+        self.pick_spatial_index.invalidate();
     }
 
     pub(super) fn undo(&mut self) -> bool {
@@ -194,6 +195,7 @@ impl EditorSubsystem {
         self.ui.hovered_block_index = self.ui.selected_block_index;
         self.sync_trigger_selection_from_objects();
         self.invalidate_samples();
+        self.pick_spatial_index.invalidate();
         true
     }
 
@@ -234,6 +236,7 @@ impl EditorSubsystem {
         self.ui.hovered_block_index = self.ui.selected_block_index;
         self.sync_trigger_selection_from_objects();
         self.invalidate_samples();
+        self.pick_spatial_index.invalidate();
         true
     }
 }

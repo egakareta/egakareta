@@ -44,6 +44,7 @@ pub use audio_state::{AudioState, AudioSubsystem};
 pub use auth_state::AuthSubsystem;
 pub use editor_camera::EditorCameraState;
 pub use editor_config_state::EditorConfigState;
+use editor_interaction::EditorPickSpatialIndex;
 pub use editor_interaction::{
     EditorBlockDrag, EditorClipboard, EditorDragBlockStart, EditorGizmoDrag, EditorHistorySnapshot,
     EditorInteractionState, EditorPendingTapClick,
@@ -137,6 +138,7 @@ pub struct EditorSubsystem {
     pub selected_mask_cache: Option<Vec<bool>>,
     pub block_static_vertex_cache: MeshGeometry,
     pub block_static_vertex_cache_complete_len: Option<usize>,
+    pub(crate) pick_spatial_index: EditorPickSpatialIndex,
 }
 
 #[cfg(test)]
@@ -181,6 +183,7 @@ impl EditorSubsystem {
             selected_mask_cache: None,
             block_static_vertex_cache: MeshGeometry::default(),
             block_static_vertex_cache_complete_len: None,
+            pick_spatial_index: EditorPickSpatialIndex::default(),
         }
     }
 }

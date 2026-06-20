@@ -11,6 +11,8 @@ mod gizmo;
 mod picking;
 mod selection;
 
+pub(crate) use picking::EditorPickSpatialIndex;
+
 use eg_mesh::{GizmoAxis, GizmoDragKind};
 use eg_types::{EditorMode, EditorTapDivisionPick, LevelObject, SpawnMetadata};
 

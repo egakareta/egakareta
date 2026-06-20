@@ -410,6 +410,8 @@ impl EditorSubsystem {
             }
         }
 
+        self.pick_spatial_index.invalidate();
+
         if let Some(next_position) = first_cursor {
             self.ui.cursor = [
                 next_position[0],
