@@ -79,7 +79,7 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 - Use `web_time::Instant` (aliased as `PlatformInstant`) instead of `std::time::Instant` everywhere.
 - The `crate-type` in `Cargo.toml` is `["cdylib", "rlib"]` — `cdylib` for WASM, `rlib` for native testing.
 - For any `cfg`-gated struct fields, declare them in **all** branches (use empty tuples or `Option` on the non-applicable target) so the struct layout is consistent.
-- WASM storage uses IndexedDB via `rexie`. Native storage uses `directories` for app data paths.
+- Use `opfs` for both WASM and native file I/O.
 - WASM file export triggers a browser download via an anchor element click. Native writes to disk with `std::fs`.
 - WASM logging uses `gloo_console`. Native uses the `log` crate + `env_logger`.
 - WASM panics are routed through `console_error_panic_hook`.

@@ -7,24 +7,19 @@
 */
 use std::collections::HashMap;
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::OnceLock;
+
 use eg_types::AppSettings;
 use eg_types::AuthSession;
 use eg_types::PersistentWaveformCacheEntry;
 
-#[cfg(target_arch = "wasm32")]
-const AUDIO_DB_NAME: &str = "eg-audio";
-#[cfg(target_arch = "wasm32")]
-const AUDIO_STORE_NAME: &str = "audio";
-#[cfg(target_arch = "wasm32")]
-const SETTINGS_DB_NAME: &str = "egakareta-settings";
-#[cfg(target_arch = "wasm32")]
-const SETTINGS_STORE_NAME: &str = "settings";
-#[cfg(target_arch = "wasm32")]
-const SETTINGS_KEY: &str = "app";
-#[cfg(target_arch = "wasm32")]
-const AUTH_SESSION_KEY: &str = "auth_session";
-#[cfg(target_arch = "wasm32")]
-const WAVEFORM_CACHE_KEY_PREFIX: &str = "waveform:";
+const AUDIO_DIR_NAME: &str = "audio";
+const WAVEFORM_DIR_NAME: &str = "waveforms";
+const SETTINGS_FILE_NAME: &str = "settings.json";
+const AUTH_SESSION_FILE_NAME: &str = "auth_session.json";
+#[cfg(not(target_arch = "wasm32"))]
+const NATIVE_APP_DIR_NAME: &str = "egakareta";
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
@@ -97,405 +92,210 @@ pub async fn clear_auth_session() -> Result<(), String> {
     clear_platform_auth_session().await
 }
 
-#[cfg(target_arch = "wasm32")]
-async fn open_audio_db() -> Result<rexie::Rexie, String> {
-    use rexie::{ObjectStore, Rexie};
+fn opfs_error(context: &str, error: impl std::fmt::Debug) -> String {
+    format!("OPFS {context} failed: {error:?}")
+}
 
-    Rexie::builder(AUDIO_DB_NAME)
-        .version(1)
-        .add_object_store(ObjectStore::new(AUDIO_STORE_NAME))
-        .build()
-        .await
-        .map_err(|err| format!("IndexedDB open failed: {:?}", err))
+#[cfg(not(target_arch = "wasm32"))]
+fn native_opfs_runtime() -> &'static tokio::runtime::Runtime {
+    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("failed to create native OPFS runtime")
+    })
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn open_settings_db() -> Result<rexie::Rexie, String> {
-    use rexie::{ObjectStore, Rexie};
-
-    Rexie::builder(SETTINGS_DB_NAME)
-        .version(1)
-        .add_object_store(ObjectStore::new(SETTINGS_STORE_NAME))
-        .build()
-        .await
-        .map_err(|err| format!("IndexedDB settings open failed: {:?}", err))
+async fn run_opfs<T, Error>(
+    future: impl std::future::Future<Output = Result<T, Error>>,
+    context: &str,
+) -> Result<T, String>
+where
+    Error: std::fmt::Debug,
+{
+    future.await.map_err(|error| opfs_error(context, error))
 }
 
-#[cfg(target_arch = "wasm32")]
-async fn load_platform_app_settings() -> Result<AppSettings, String> {
-    use rexie::TransactionMode;
-    use wasm_bindgen::JsValue;
+#[cfg(not(target_arch = "wasm32"))]
+async fn run_opfs<T, Error>(
+    future: impl std::future::Future<Output = Result<T, Error>>,
+    context: &str,
+) -> Result<T, String>
+where
+    Error: std::fmt::Debug,
+{
+    native_opfs_runtime()
+        .block_on(future)
+        .map_err(|error| opfs_error(context, error))
+}
 
-    let db = open_settings_db().await?;
-    let tx = db
-        .transaction(&[SETTINGS_STORE_NAME], TransactionMode::ReadOnly)
-        .map_err(|err| format!("IndexedDB settings transaction failed: {:?}", err))?;
-    let store = tx
-        .store(SETTINGS_STORE_NAME)
-        .map_err(|err| format!("IndexedDB settings store open failed: {:?}", err))?;
-
-    let value = store
-        .get(JsValue::from_str(SETTINGS_KEY))
-        .await
-        .map_err(|err| format!("IndexedDB settings read failed: {:?}", err))?;
-
-    tx.done().await.map_err(|err| {
-        format!(
-            "IndexedDB settings transaction completion failed: {:?}",
-            err
-        )
-    })?;
-
-    let Some(value) = value else {
-        return Ok(AppSettings::default());
-    };
-
-    if value.is_undefined() || value.is_null() {
-        return Ok(AppSettings::default());
+async fn opfs_root_dir() -> Result<opfs::persistent::DirectoryHandle, String> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        run_opfs(opfs::persistent::app_specific_dir(), "root open").await
     }
 
-    let Some(settings_json) = value.as_string() else {
-        return Ok(AppSettings::default());
-    };
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use opfs::DirectoryHandle as _;
 
-    serde_json::from_str(&settings_json).map_err(|err| format!("Settings JSON parse failed: {err}"))
-}
-
-#[cfg(target_arch = "wasm32")]
-async fn save_platform_app_settings(settings: &AppSettings) -> Result<(), String> {
-    use rexie::TransactionMode;
-    use wasm_bindgen::JsValue;
-
-    let settings_json = serde_json::to_string_pretty(settings)
-        .map_err(|err| format!("Settings JSON encode failed: {err}"))?;
-
-    let db = open_settings_db().await?;
-    let tx = db
-        .transaction(&[SETTINGS_STORE_NAME], TransactionMode::ReadWrite)
-        .map_err(|err| format!("IndexedDB settings transaction failed: {:?}", err))?;
-    let store = tx
-        .store(SETTINGS_STORE_NAME)
-        .map_err(|err| format!("IndexedDB settings store open failed: {:?}", err))?;
-
-    store
-        .put(
-            &JsValue::from_str(&settings_json),
-            Some(&JsValue::from_str(SETTINGS_KEY)),
-        )
-        .await
-        .map_err(|err| format!("IndexedDB settings write failed: {:?}", err))?;
-
-    tx.done()
-        .await
-        .map_err(|err| format!("IndexedDB settings commit failed: {:?}", err))?;
-
-    Ok(())
-}
-
-#[cfg(target_arch = "wasm32")]
-async fn load_platform_auth_session() -> Result<Option<AuthSession>, String> {
-    use rexie::TransactionMode;
-    use wasm_bindgen::JsValue;
-
-    let db = open_settings_db().await?;
-    let tx = db
-        .transaction(&[SETTINGS_STORE_NAME], TransactionMode::ReadOnly)
-        .map_err(|err| format!("IndexedDB auth transaction failed: {:?}", err))?;
-    let store = tx
-        .store(SETTINGS_STORE_NAME)
-        .map_err(|err| format!("IndexedDB auth store open failed: {:?}", err))?;
-    let value = store
-        .get(JsValue::from_str(AUTH_SESSION_KEY))
-        .await
-        .map_err(|err| format!("IndexedDB auth read failed: {:?}", err))?;
-
-    tx.done()
-        .await
-        .map_err(|err| format!("IndexedDB auth transaction completion failed: {:?}", err))?;
-
-    let Some(value) = value else {
-        return Ok(None);
-    };
-    if value.is_undefined() || value.is_null() {
-        return Ok(None);
-    }
-
-    let Some(session_json) = value.as_string() else {
-        return Ok(None);
-    };
-
-    serde_json::from_str(&session_json)
-        .map(Some)
-        .map_err(|err| format!("Auth session JSON parse failed: {err}"))
-}
-
-#[cfg(target_arch = "wasm32")]
-async fn save_platform_auth_session(session: &AuthSession) -> Result<(), String> {
-    use rexie::TransactionMode;
-    use wasm_bindgen::JsValue;
-
-    let session_json = serde_json::to_string_pretty(session)
-        .map_err(|err| format!("Auth session JSON encode failed: {err}"))?;
-    let db = open_settings_db().await?;
-    let tx = db
-        .transaction(&[SETTINGS_STORE_NAME], TransactionMode::ReadWrite)
-        .map_err(|err| format!("IndexedDB auth transaction failed: {:?}", err))?;
-    let store = tx
-        .store(SETTINGS_STORE_NAME)
-        .map_err(|err| format!("IndexedDB auth store open failed: {:?}", err))?;
-
-    store
-        .put(
-            &JsValue::from_str(&session_json),
-            Some(&JsValue::from_str(AUTH_SESSION_KEY)),
-        )
-        .await
-        .map_err(|err| format!("IndexedDB auth write failed: {:?}", err))?;
-    tx.done()
-        .await
-        .map_err(|err| format!("IndexedDB auth commit failed: {:?}", err))?;
-
-    Ok(())
-}
-
-#[cfg(target_arch = "wasm32")]
-async fn clear_platform_auth_session() -> Result<(), String> {
-    use rexie::TransactionMode;
-    use wasm_bindgen::JsValue;
-
-    let db = open_settings_db().await?;
-    let tx = db
-        .transaction(&[SETTINGS_STORE_NAME], TransactionMode::ReadWrite)
-        .map_err(|err| format!("IndexedDB auth transaction failed: {:?}", err))?;
-    let store = tx
-        .store(SETTINGS_STORE_NAME)
-        .map_err(|err| format!("IndexedDB auth store open failed: {:?}", err))?;
-    store
-        .delete(JsValue::from_str(AUTH_SESSION_KEY))
-        .await
-        .map_err(|err| format!("IndexedDB auth delete failed: {:?}", err))?;
-    tx.done()
-        .await
-        .map_err(|err| format!("IndexedDB auth commit failed: {:?}", err))?;
-
-    Ok(())
-}
-
-#[cfg(target_arch = "wasm32")]
-#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
-#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl AudioStorage for PlatformAudioStorage {
-    async fn save_audio(&self, filename: &str, data: &[u8]) -> Result<(), String> {
-        use rexie::TransactionMode;
-        use wasm_bindgen::JsValue;
-
-        let db = open_audio_db().await?;
-        let tx = db
-            .transaction(&[AUDIO_STORE_NAME], TransactionMode::ReadWrite)
-            .map_err(|err| format!("IndexedDB transaction failed: {:?}", err))?;
-        let store = tx
-            .store(AUDIO_STORE_NAME)
-            .map_err(|err| format!("IndexedDB store open failed: {:?}", err))?;
-
-        let value = js_sys::Uint8Array::from(data);
-        store
-            .put(&value.into(), Some(&JsValue::from_str(filename)))
-            .await
-            .map_err(|err| format!("IndexedDB write failed: {:?}", err))?;
-        tx.done()
-            .await
-            .map_err(|err| format!("IndexedDB commit failed: {:?}", err))?;
-
-        Ok(())
-    }
-
-    async fn load_all_audio(&self) -> HashMap<String, Vec<u8>> {
-        HashMap::new()
-    }
-
-    fn read_editor_music_bytes(
-        &self,
-        level_name: Option<&str>,
-        music_source: &str,
-    ) -> Option<Vec<u8>> {
-        let _ = (level_name, music_source);
-        None
-    }
-
-    async fn save_waveform(
-        &self,
-        cache_key: &str,
-        entry: &PersistentWaveformCacheEntry,
-    ) -> Result<(), String> {
-        use rexie::TransactionMode;
-        use wasm_bindgen::JsValue;
-
-        let encoded = encode_waveform_entry(entry)?;
-        let db = open_audio_db().await?;
-        let tx = db
-            .transaction(&[AUDIO_STORE_NAME], TransactionMode::ReadWrite)
-            .map_err(|err| format!("IndexedDB waveform transaction failed: {:?}", err))?;
-        let store = tx
-            .store(AUDIO_STORE_NAME)
-            .map_err(|err| format!("IndexedDB waveform store open failed: {:?}", err))?;
-
-        let value = js_sys::Uint8Array::from(encoded.as_slice());
-        let storage_key = format!("{WAVEFORM_CACHE_KEY_PREFIX}{cache_key}");
-        store
-            .put(&value.into(), Some(&JsValue::from_str(&storage_key)))
-            .await
-            .map_err(|err| format!("IndexedDB waveform write failed: {:?}", err))?;
-        tx.done()
-            .await
-            .map_err(|err| format!("IndexedDB waveform commit failed: {:?}", err))?;
-
-        Ok(())
-    }
-
-    async fn load_waveform(&self, cache_key: &str) -> Option<PersistentWaveformCacheEntry> {
-        use rexie::TransactionMode;
-        use wasm_bindgen::JsValue;
-
-        let db = open_audio_db().await.ok()?;
-        let tx = db
-            .transaction(&[AUDIO_STORE_NAME], TransactionMode::ReadOnly)
-            .ok()?;
-        let store = tx.store(AUDIO_STORE_NAME).ok()?;
-        let storage_key = format!("{WAVEFORM_CACHE_KEY_PREFIX}{cache_key}");
-        let value = store.get(JsValue::from_str(&storage_key)).await.ok()??;
-        let _ = tx.done().await;
-        if value.is_undefined() || value.is_null() {
-            return None;
+        if let Ok(root) = std::env::var("EGAKARETA_STORAGE_ROOT") {
+            let root = std::path::PathBuf::from(root);
+            std::fs::create_dir_all(&root).map_err(|error| opfs_error("root create", error))?;
+            return Ok(opfs::persistent::DirectoryHandle::from(root));
         }
 
-        let array = js_sys::Uint8Array::new(&value);
-        let mut bytes = vec![0; array.length() as usize];
-        array.copy_to(bytes.as_mut_slice());
-        decode_waveform_entry(&bytes).ok()
+        let root = run_opfs(opfs::persistent::app_specific_dir(), "root open").await?;
+        run_opfs(
+            root.get_directory_handle_with_options(
+                NATIVE_APP_DIR_NAME,
+                &opfs::GetDirectoryHandleOptions { create: true },
+            ),
+            "app directory open",
+        )
+        .await
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn storage_root_dir() -> Result<std::path::PathBuf, String> {
-    if let Ok(root) = std::env::var("EGAKARETA_STORAGE_ROOT") {
-        return Ok(std::path::PathBuf::from(root));
-    }
-    let dirs = directories::ProjectDirs::from("com", "egakareta", "egakareta")
-        .ok_or_else(|| "Failed to resolve application data directory".to_string())?;
-    Ok(dirs.data_local_dir().to_path_buf())
+async fn opfs_subdir(name: &str) -> Result<opfs::persistent::DirectoryHandle, String> {
+    use opfs::DirectoryHandle as _;
+
+    let root = opfs_root_dir().await?;
+    run_opfs(
+        root.get_directory_handle_with_options(
+            name,
+            &opfs::GetDirectoryHandleOptions { create: true },
+        ),
+        "directory open",
+    )
+    .await
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn audio_storage_dir() -> Result<std::path::PathBuf, String> {
-    Ok(storage_root_dir()?.join("user_audio"))
+async fn opfs_read_file(
+    dir: &opfs::persistent::DirectoryHandle,
+    filename: &str,
+) -> Result<Option<Vec<u8>>, String> {
+    use opfs::DirectoryHandle as _;
+    use opfs::FileHandle as _;
+
+    let file =
+        dir.get_file_handle_with_options(filename, &opfs::GetFileHandleOptions { create: false });
+    let file = match file {
+        future => match run_opfs(future, "file open").await {
+            Ok(file) => file,
+            Err(_) => return Ok(None),
+        },
+    };
+
+    run_opfs(file.read(), "file read").await.map(Some)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn waveform_storage_dir() -> Result<std::path::PathBuf, String> {
-    Ok(storage_root_dir()?.join("waveforms"))
+async fn opfs_write_file(
+    dir: &opfs::persistent::DirectoryHandle,
+    filename: &str,
+    data: &[u8],
+) -> Result<(), String> {
+    use opfs::DirectoryHandle as _;
+    use opfs::FileHandle as _;
+    use opfs::WritableFileStream as _;
+
+    let mut file = run_opfs(
+        dir.get_file_handle_with_options(filename, &opfs::GetFileHandleOptions { create: true }),
+        "file open",
+    )
+    .await?;
+    let mut writer = run_opfs(
+        file.create_writable_with_options(&opfs::CreateWritableOptions {
+            keep_existing_data: false,
+        }),
+        "file writable open",
+    )
+    .await?;
+    run_opfs(writer.write_at_cursor_pos(data), "file write").await?;
+    run_opfs(writer.close(), "file close").await
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn waveform_storage_path(cache_key: &str) -> Result<std::path::PathBuf, String> {
-    Ok(waveform_storage_dir()?.join(format!("{cache_key}.cbor")))
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn settings_file_path() -> Result<std::path::PathBuf, String> {
-    Ok(storage_root_dir()?.join("settings.json"))
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn auth_session_file_path() -> Result<std::path::PathBuf, String> {
-    Ok(storage_root_dir()?.join("auth_session.json"))
-}
-
-#[cfg(not(target_arch = "wasm32"))]
 async fn load_platform_app_settings() -> Result<AppSettings, String> {
-    let path = settings_file_path()?;
-    if !path.exists() {
+    let root = opfs_root_dir().await?;
+    let Some(settings_bytes) = opfs_read_file(&root, SETTINGS_FILE_NAME).await? else {
         return Ok(AppSettings::default());
-    }
+    };
+    let settings_json = String::from_utf8(settings_bytes)
+        .map_err(|err| format!("Settings JSON decode failed: {err}"))?;
 
-    let settings_json = std::fs::read_to_string(path).map_err(|err| err.to_string())?;
     serde_json::from_str(&settings_json).map_err(|err| format!("Settings JSON parse failed: {err}"))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 async fn save_platform_app_settings(settings: &AppSettings) -> Result<(), String> {
-    let path = settings_file_path()?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-
     let settings_json = serde_json::to_string_pretty(settings)
         .map_err(|err| format!("Settings JSON encode failed: {err}"))?;
-    std::fs::write(path, settings_json).map_err(|err| err.to_string())
+    let root = opfs_root_dir().await?;
+    opfs_write_file(&root, SETTINGS_FILE_NAME, settings_json.as_bytes()).await
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 async fn load_platform_auth_session() -> Result<Option<AuthSession>, String> {
-    let path = auth_session_file_path()?;
-    if !path.exists() {
+    let root = opfs_root_dir().await?;
+    let Some(session_bytes) = opfs_read_file(&root, AUTH_SESSION_FILE_NAME).await? else {
         return Ok(None);
-    }
+    };
+    let session_json = String::from_utf8(session_bytes)
+        .map_err(|err| format!("Auth session JSON decode failed: {err}"))?;
 
-    let session_json = std::fs::read_to_string(path).map_err(|err| err.to_string())?;
     serde_json::from_str(&session_json)
         .map(Some)
         .map_err(|err| format!("Auth session JSON parse failed: {err}"))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 async fn save_platform_auth_session(session: &AuthSession) -> Result<(), String> {
-    let path = auth_session_file_path()?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-
     let session_json = serde_json::to_string_pretty(session)
         .map_err(|err| format!("Auth session JSON encode failed: {err}"))?;
-    std::fs::write(path, session_json).map_err(|err| err.to_string())
+    let root = opfs_root_dir().await?;
+    opfs_write_file(&root, AUTH_SESSION_FILE_NAME, session_json.as_bytes()).await
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 async fn clear_platform_auth_session() -> Result<(), String> {
-    let path = auth_session_file_path()?;
-    if path.exists() {
-        std::fs::remove_file(path).map_err(|err| err.to_string())?;
-    }
+    use opfs::DirectoryHandle as _;
+
+    let mut root = opfs_root_dir().await?;
+    let _ = run_opfs(
+        root.remove_entry(AUTH_SESSION_FILE_NAME),
+        "auth session remove",
+    )
+    .await;
     Ok(())
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl AudioStorage for PlatformAudioStorage {
     async fn save_audio(&self, filename: &str, data: &[u8]) -> Result<(), String> {
-        let mut path = audio_storage_dir()?;
-        std::fs::create_dir_all(&path).map_err(|e| e.to_string())?;
-        path.push(filename);
-        std::fs::write(path, data).map_err(|e| e.to_string())?;
-        Ok(())
+        let audio_dir = opfs_subdir(AUDIO_DIR_NAME).await?;
+        opfs_write_file(&audio_dir, filename, data).await
     }
 
     async fn load_all_audio(&self) -> HashMap<String, Vec<u8>> {
+        use futures::StreamExt;
+        use opfs::DirectoryEntry;
+        use opfs::DirectoryHandle as _;
+        use opfs::FileHandle as _;
+
         let mut audio_map = HashMap::new();
-        let path = match audio_storage_dir() {
-            Ok(path) => path,
-            Err(_) => return audio_map,
+        let Ok(audio_dir) = opfs_subdir(AUDIO_DIR_NAME).await else {
+            return audio_map;
+        };
+        let Ok(entries) = run_opfs(audio_dir.entries(), "directory entries").await else {
+            return audio_map;
         };
 
-        if let Ok(entries) = std::fs::read_dir(path) {
-            for entry in entries.flatten() {
-                if let Ok(file_type) = entry.file_type() {
-                    if file_type.is_file() {
-                        let filename = entry.file_name().to_string_lossy().to_string();
-                        if let Ok(bytes) = std::fs::read(entry.path()) {
-                            audio_map.insert(filename, bytes);
-                        }
-                    }
-                }
+        futures::pin_mut!(entries);
+        while let Some(entry) = entries.next().await {
+            let Ok((filename, DirectoryEntry::File(file))) = entry else {
+                continue;
+            };
+            if let Ok(bytes) = run_opfs(file.read(), "file read").await {
+                audio_map.insert(filename, bytes);
             }
         }
 
@@ -507,15 +307,26 @@ impl AudioStorage for PlatformAudioStorage {
         level_name: Option<&str>,
         music_source: &str,
     ) -> Option<Vec<u8>> {
+        #[cfg(not(target_arch = "wasm32"))]
         if let Some(name) = level_name {
             if let Some(bytes) = eg_level::get_builtin_audio(name, music_source) {
                 return Some(bytes.to_vec());
             }
         }
 
-        let mut path = audio_storage_dir().ok()?;
-        path.push(music_source);
-        std::fs::read(path).ok()
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            return pollster::block_on(async {
+                let audio_dir = opfs_subdir(AUDIO_DIR_NAME).await.ok()?;
+                opfs_read_file(&audio_dir, music_source).await.ok()?
+            });
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (level_name, music_source);
+            None
+        }
     }
 
     async fn save_waveform(
@@ -523,17 +334,16 @@ impl AudioStorage for PlatformAudioStorage {
         cache_key: &str,
         entry: &PersistentWaveformCacheEntry,
     ) -> Result<(), String> {
-        let path = waveform_storage_path(cache_key)?;
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-        }
         let encoded = encode_waveform_entry(entry)?;
-        std::fs::write(path, encoded).map_err(|error| error.to_string())
+        let waveform_dir = opfs_subdir(WAVEFORM_DIR_NAME).await?;
+        opfs_write_file(&waveform_dir, &format!("{cache_key}.cbor"), &encoded).await
     }
 
     async fn load_waveform(&self, cache_key: &str) -> Option<PersistentWaveformCacheEntry> {
-        let path = waveform_storage_path(cache_key).ok()?;
-        let bytes = std::fs::read(path).ok()?;
+        let waveform_dir = opfs_subdir(WAVEFORM_DIR_NAME).await.ok()?;
+        let bytes = opfs_read_file(&waveform_dir, &format!("{cache_key}.cbor"))
+            .await
+            .ok()??;
         decode_waveform_entry(&bytes).ok()
     }
 }
@@ -572,31 +382,34 @@ mod tests {
     }
 
     #[test]
-    fn resolves_audio_storage_directory() {
-        let _env = TestEnv::new();
-        let dir = audio_storage_dir().expect("audio storage dir should resolve");
-        assert!(dir.to_string_lossy().contains("user_audio"));
+    fn opfs_root_uses_storage_override() {
+        pollster::block_on(async {
+            let _env = TestEnv::new();
+            let root = opfs_root_dir().await.expect("opfs root should resolve");
+
+            opfs_write_file(&root, "probe.txt", b"probe")
+                .await
+                .expect("failed to write probe");
+            let loaded = opfs_read_file(&root, "probe.txt")
+                .await
+                .expect("failed to read probe")
+                .expect("probe should exist");
+
+            assert_eq!(loaded, b"probe");
+        });
     }
 
     #[test]
-    fn resolves_settings_file_path() {
-        let _env = TestEnv::new();
-        let path = settings_file_path().expect("settings file should resolve");
-        assert!(path.to_string_lossy().contains("settings.json"));
-    }
-
-    #[test]
-    fn resolves_auth_session_file_path() {
-        let _env = TestEnv::new();
-        let path = auth_session_file_path().expect("auth session file should resolve");
-        assert!(path.to_string_lossy().contains("auth_session.json"));
-    }
-
-    #[test]
-    fn resolves_waveform_storage_directory() {
-        let _env = TestEnv::new();
-        let dir = waveform_storage_dir().expect("waveform storage dir should resolve");
-        assert!(dir.to_string_lossy().contains("waveforms"));
+    fn opfs_subdirectories_are_created() {
+        pollster::block_on(async {
+            let _env = TestEnv::new();
+            opfs_subdir(AUDIO_DIR_NAME)
+                .await
+                .expect("audio directory should resolve");
+            opfs_subdir(WAVEFORM_DIR_NAME)
+                .await
+                .expect("waveform directory should resolve");
+        });
     }
 
     #[test]
