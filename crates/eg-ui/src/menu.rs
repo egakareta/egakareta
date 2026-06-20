@@ -10,6 +10,9 @@ use eg_state::commands::AppCommand;
 use eg_state::state::editor_command::EditorCommand;
 use eg_state::state::EditorUiViewModel;
 
+const MENU_TEXTURE_MAX_DIMENSION: u32 = 256;
+const MENU_TOPBAR_VERTICAL_PADDING: f32 = 2.0;
+
 const MENU_FAVICON_PNG: &[u8] = include_bytes!(concat!(
     env!("EGAKARETA_WORKSPACE_ROOT"),
     "/assets/darkicon.png"
@@ -22,6 +25,10 @@ const MENU_PLAY_BUTTON_FILLED_PNG: &[u8] = include_bytes!(concat!(
     env!("EGAKARETA_WORKSPACE_ROOT"),
     "/assets/circularplaybuttonfilled.png"
 ));
+const MENU_EDIT_BUTTON_PNG: &[u8] = include_bytes!(concat!(
+    env!("EGAKARETA_WORKSPACE_ROOT"),
+    "/assets/circulareditbutton.png"
+));
 const MENU_GEM_ICON_SVG: &str = include_str!(concat!(
     env!("EGAKARETA_WORKSPACE_ROOT"),
     "/assets/gem_icon.svg"
@@ -32,27 +39,79 @@ fn load_png_texture(
     name: &'static str,
     png_bytes: &'static [u8],
 ) -> Option<egui::TextureHandle> {
-    let decoded = image::load_from_memory(png_bytes).ok()?;
-    let rgba = decoded.to_rgba8();
-    let size = [rgba.width() as usize, rgba.height() as usize];
-    let color_image = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
+    let color_image = load_png_color_image(png_bytes)?;
 
     Some(ctx.load_texture(name, color_image, egui::TextureOptions::LINEAR))
 }
 
-/// Loads the menu favicon texture from embedded PNG data.
-pub fn load_menu_favicon_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+fn load_png_color_image(png_bytes: &'static [u8]) -> Option<egui::ColorImage> {
+    let decoded = image::load_from_memory(png_bytes).ok()?;
+    let rgba = downsample_menu_texture(decoded.to_rgba8());
+    let size = [rgba.width() as usize, rgba.height() as usize];
+
+    Some(egui::ColorImage::from_rgba_unmultiplied(
+        size,
+        rgba.as_raw(),
+    ))
+}
+
+fn downsample_menu_texture(rgba: image::RgbaImage) -> image::RgbaImage {
+    let (width, height) = rgba.dimensions();
+    let max_dimension = width.max(height);
+
+    if max_dimension <= MENU_TEXTURE_MAX_DIMENSION {
+        return rgba;
+    }
+
+    let scale = MENU_TEXTURE_MAX_DIMENSION as f32 / max_dimension as f32;
+    let scaled_width = ((width as f32 * scale).round() as u32).max(1);
+    let scaled_height = ((height as f32 * scale).round() as u32).max(1);
+
+    image::imageops::resize(
+        &rgba,
+        scaled_width,
+        scaled_height,
+        image::imageops::FilterType::Lanczos3,
+    )
+}
+
+/// Loaded texture handles used by the menu UI.
+#[derive(Default)]
+pub struct MenuTextures {
+    /// Favicon/title texture for the menu header.
+    pub favicon: Option<egui::TextureHandle>,
+    /// Main menu play button texture.
+    pub play_button: Option<egui::TextureHandle>,
+    /// Filled overlay texture for the hovered play button.
+    pub play_button_filled: Option<egui::TextureHandle>,
+    /// Main menu edit button texture.
+    pub edit_button: Option<egui::TextureHandle>,
+}
+
+/// Loads all embedded menu textures into egui handles.
+pub fn load_menu_textures(ctx: &egui::Context) -> MenuTextures {
+    MenuTextures {
+        favicon: load_menu_favicon_texture(ctx),
+        play_button: load_menu_play_button_texture(ctx),
+        play_button_filled: load_menu_play_button_filled_texture(ctx),
+        edit_button: load_menu_edit_button_texture(ctx),
+    }
+}
+
+fn load_menu_favicon_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
     load_png_texture(ctx, "menu_favicon", MENU_FAVICON_PNG)
 }
 
-/// Loads the main menu play button texture from embedded PNG data.
-pub fn load_menu_play_button_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+fn load_menu_play_button_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
     load_png_texture(ctx, "menu_play_button", MENU_PLAY_BUTTON_PNG)
 }
 
-/// Loads the filled main menu play button texture from embedded PNG data.
-pub fn load_menu_play_button_filled_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+fn load_menu_play_button_filled_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
     load_png_texture(ctx, "menu_play_button_filled", MENU_PLAY_BUTTON_FILLED_PNG)
+}
+
+fn load_menu_edit_button_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
+    load_png_texture(ctx, "menu_edit_button", MENU_EDIT_BUTTON_PNG)
 }
 
 const MENU_LEVEL_TITLE_FONT_SIZE: f32 = 86.0;
@@ -68,6 +127,9 @@ const MENU_LEVEL_PROGRESS_TEXT_GAP: f32 = 10.0;
 const MENU_LEVEL_PROGRESS_GEM_SIZE: f32 = 24.0;
 const MENU_PLAY_BUTTON_MIN_SIZE: f32 = 88.0;
 const MENU_PLAY_BUTTON_MAX_SIZE: f32 = 128.0;
+const MENU_PLAY_BUTTON_GAP: f32 = 18.0;
+const MENU_PLAY_BUTTON_HOVER_SCALE: f32 = 1.08;
+const MENU_EDIT_BUTTON_SCALE: f32 = 0.78;
 const PAUSE_MENU_SIDE_BUTTON_SIZE: f32 = 70.0;
 const PAUSE_MENU_PLAY_BUTTON_SIZE: f32 = 90.0;
 const PAUSE_MENU_BUTTON_SPACING: f32 = 14.0;
@@ -121,6 +183,7 @@ pub fn show_menu_play_ui(
     commands: &mut Vec<AppCommand>,
     play_button: Option<&egui::TextureHandle>,
     play_button_filled: Option<&egui::TextureHandle>,
+    edit_button: Option<&egui::TextureHandle>,
 ) {
     if !view.is_menu {
         return;
@@ -139,33 +202,34 @@ pub fn show_menu_play_ui(
         .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, offset_y))
         .show(ctx, |ui| {
             if let Some(play_button) = play_button {
-                let (rect, response) = ui.allocate_exact_size(
-                    egui::vec2(button_size, button_size),
-                    egui::Sense::click(),
-                );
-                let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
-                let hover_alpha = ctx.animate_bool(response.id, response.hovered());
-
-                if ui.is_rect_visible(rect) {
-                    ui.painter().image(
-                        play_button.id(),
-                        rect,
-                        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-                        egui::Color32::WHITE,
-                    );
-
-                    if let Some(play_button_filled) = play_button_filled {
-                        ui.painter().image(
-                            play_button_filled.id(),
-                            rect,
-                            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-                            egui::Color32::from_white_alpha((hover_alpha * 255.0).round() as u8),
-                        );
-                    }
+                if show_centered_menu_image_button(
+                    ctx,
+                    ui,
+                    play_button,
+                    play_button_filled,
+                    button_size,
+                )
+                .clicked()
+                {
+                    commands.push(AppCommand::TurnRight);
                 }
 
-                if response.clicked() {
-                    commands.push(AppCommand::TurnRight);
+                if let Some(edit_button) = edit_button {
+                    let edit_button_size = button_size * MENU_EDIT_BUTTON_SCALE;
+                    let edit_center_x =
+                        button_size * 0.5 + MENU_PLAY_BUTTON_GAP + edit_button_size * 0.5;
+                    if show_offset_menu_image_button(
+                        ctx,
+                        ui,
+                        edit_button,
+                        None,
+                        edit_button_size,
+                        egui::vec2(edit_center_x, 0.0),
+                    )
+                    .clicked()
+                    {
+                        commands.push(AppCommand::ToggleEditor);
+                    }
                 }
                 return;
             }
@@ -189,6 +253,66 @@ pub fn show_menu_play_ui(
                 commands.push(AppCommand::TurnRight);
             }
         });
+}
+
+fn show_centered_menu_image_button(
+    ctx: &egui::Context,
+    ui: &mut egui::Ui,
+    texture: &egui::TextureHandle,
+    hover_overlay: Option<&egui::TextureHandle>,
+    button_size: f32,
+) -> egui::Response {
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(button_size, button_size), egui::Sense::click());
+    show_menu_image_button_at_rect(ctx, ui, texture, hover_overlay, rect, response)
+}
+
+fn show_offset_menu_image_button(
+    ctx: &egui::Context,
+    ui: &mut egui::Ui,
+    texture: &egui::TextureHandle,
+    hover_overlay: Option<&egui::TextureHandle>,
+    button_size: f32,
+    center_offset: egui::Vec2,
+) -> egui::Response {
+    let center = ui.min_rect().center() + center_offset;
+    let rect = egui::Rect::from_center_size(center, egui::vec2(button_size, button_size));
+    let response = ui.interact(rect, ui.next_auto_id(), egui::Sense::click());
+    show_menu_image_button_at_rect(ctx, ui, texture, hover_overlay, rect, response)
+}
+
+fn show_menu_image_button_at_rect(
+    ctx: &egui::Context,
+    ui: &mut egui::Ui,
+    texture: &egui::TextureHandle,
+    hover_overlay: Option<&egui::TextureHandle>,
+    rect: egui::Rect,
+    response: egui::Response,
+) -> egui::Response {
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let hover_alpha = ctx.animate_bool(response.id, response.hovered());
+    let hover_scale = egui::lerp(1.0..=MENU_PLAY_BUTTON_HOVER_SCALE, hover_alpha);
+    let paint_rect = egui::Rect::from_center_size(rect.center(), rect.size() * hover_scale);
+
+    if ui.is_rect_visible(rect) {
+        ui.painter().image(
+            texture.id(),
+            paint_rect,
+            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+
+        if let Some(hover_overlay) = hover_overlay {
+            ui.painter().image(
+                hover_overlay.id(),
+                paint_rect,
+                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                egui::Color32::from_white_alpha((hover_alpha * 255.0).round() as u8),
+            );
+        }
+    }
+
+    response
 }
 
 /// Shows the in-game pause menu overlay for real gameplay sessions.
@@ -354,9 +478,7 @@ pub fn show_practice_checkpoint_ui(
 }
 
 fn show_menu_level_progress_row(ui: &mut egui::Ui, view: &EditorUiViewModel<'_>) {
-    let Some(progress) = view.menu_selected_level_progress else {
-        return;
-    };
+    let progress = view.menu_selected_level_progress.unwrap_or_default();
 
     let percent_text = format!("{:.0}%", progress.progress_percent);
     let gems_text = format!("{}/{}", progress.gems_collected, progress.gems_max);
@@ -537,6 +659,7 @@ pub fn show_menu_topbar_ui(
     let ctx = root_ui.ctx().clone();
 
     egui::Panel::top("menu_top_bar").show_inside(root_ui, |ui| {
+        ui.add_space(MENU_TOPBAR_VERTICAL_PADDING);
         ui.horizontal_wrapped(|ui| {
             ui.add_space(4.0);
             ui.label(egui_phosphor::regular::CLOCK);
@@ -592,6 +715,7 @@ pub fn show_menu_topbar_ui(
                 });
             });
         });
+        ui.add_space(MENU_TOPBAR_VERTICAL_PADDING);
     });
 
     if let Some(message) = view.auth_message {
@@ -624,7 +748,10 @@ fn get_current_time_str() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::show_menu_topbar_ui;
+    use super::{
+        downsample_menu_texture, load_png_color_image, show_menu_topbar_ui, MENU_EDIT_BUTTON_PNG,
+        MENU_PLAY_BUTTON_PNG, MENU_TEXTURE_MAX_DIMENSION,
+    };
     use eg_state::commands::AppCommand;
     use eg_types::{AuthProfile, AuthSession, AuthSessionTokens, AuthUser};
 
@@ -657,6 +784,33 @@ mod tests {
             show_menu_topbar_ui(root_ui, &view, &mut commands);
         });
         commands
+    }
+
+    #[test]
+    fn oversized_menu_texture_is_prefiltered_to_max_dimension() {
+        let rgba = image::RgbaImage::from_pixel(1024, 512, image::Rgba([255, 255, 255, 255]));
+
+        let resized = downsample_menu_texture(rgba);
+
+        assert_eq!(resized.dimensions(), (MENU_TEXTURE_MAX_DIMENSION, 128));
+    }
+
+    #[test]
+    fn embedded_play_button_texture_is_prefiltered_before_upload() {
+        let color_image = load_png_color_image(MENU_PLAY_BUTTON_PNG).expect("valid menu PNG");
+
+        assert!(
+            color_image.size[0].max(color_image.size[1]) <= MENU_TEXTURE_MAX_DIMENSION as usize
+        );
+    }
+
+    #[test]
+    fn embedded_edit_button_texture_is_prefiltered_before_upload() {
+        let color_image = load_png_color_image(MENU_EDIT_BUTTON_PNG).expect("valid menu PNG");
+
+        assert!(
+            color_image.size[0].max(color_image.size[1]) <= MENU_TEXTURE_MAX_DIMENSION as usize
+        );
     }
 
     #[test]

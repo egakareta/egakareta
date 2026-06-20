@@ -17,7 +17,7 @@ use crate::{
 use eg_render::block_icon_cache::BlockIconCache;
 use eg_render::RenderSurfaceError;
 use eg_state::state::State;
-use eg_ui::combined_ui_scale_factor;
+use eg_ui::{combined_ui_scale_factor, MenuTextures};
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 
 /// The main frame pipeline that orchestrates UI rendering and game updates.
@@ -28,9 +28,7 @@ use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 pub struct FramePipeline {
     egui_ctx: egui::Context,
     egui_renderer: EguiRenderer,
-    menu_favicon: Option<egui::TextureHandle>,
-    menu_play_button: Option<egui::TextureHandle>,
-    menu_play_button_filled: Option<egui::TextureHandle>,
+    menu_textures: MenuTextures,
     block_icon_cache: BlockIconCache,
 }
 
@@ -39,16 +37,12 @@ impl FramePipeline {
     pub fn new(
         egui_ctx: egui::Context,
         egui_renderer: EguiRenderer,
-        menu_favicon: Option<egui::TextureHandle>,
-        menu_play_button: Option<egui::TextureHandle>,
-        menu_play_button_filled: Option<egui::TextureHandle>,
+        menu_textures: MenuTextures,
     ) -> Self {
         Self {
             egui_ctx,
             egui_renderer,
-            menu_favicon,
-            menu_play_button,
-            menu_play_button_filled,
+            menu_textures,
             block_icon_cache: BlockIconCache::new(),
         }
     }
@@ -105,12 +99,13 @@ impl FramePipeline {
                         &ctx,
                         &view,
                         &mut ui_commands,
-                        self.menu_play_button.as_ref(),
-                        self.menu_play_button_filled.as_ref(),
+                        self.menu_textures.play_button.as_ref(),
+                        self.menu_textures.play_button_filled.as_ref(),
+                        self.menu_textures.edit_button.as_ref(),
                     );
                     show_practice_checkpoint_ui(&ctx, &view, &mut ui_commands);
                     show_pause_menu_ui(&ctx, &view, &mut ui_commands);
-                    if let Some(favicon) = &self.menu_favicon {
+                    if let Some(favicon) = &self.menu_textures.favicon {
                         show_menu_favicon_ui(&ctx, &view, favicon);
                     }
                     drop(view);
@@ -185,6 +180,7 @@ impl FramePipeline {
 mod tests {
     use super::FramePipeline;
     use eg_state::state::State;
+    use eg_ui::MenuTextures;
 
     const SORA_TTF: &[u8] = include_bytes!(concat!(
         env!("EGAKARETA_WORKSPACE_ROOT"),
@@ -228,7 +224,7 @@ mod tests {
             let egui_ctx = egui::Context::default();
             configure_test_fonts(&egui_ctx);
             let renderer = state.create_egui_renderer();
-            let mut pipeline = FramePipeline::new(egui_ctx, renderer, None, None, None);
+            let mut pipeline = FramePipeline::new(egui_ctx, renderer, MenuTextures::default());
 
             let output = pipeline.run_frame(&mut state, egui::RawInput::default());
 
@@ -249,7 +245,11 @@ mod tests {
                 egui::ColorImage::new([2, 2], vec![egui::Color32::WHITE; 4]),
                 egui::TextureOptions::LINEAR,
             );
-            let mut pipeline = FramePipeline::new(egui_ctx, renderer, Some(favicon), None, None);
+            let menu_textures = MenuTextures {
+                favicon: Some(favicon),
+                ..Default::default()
+            };
+            let mut pipeline = FramePipeline::new(egui_ctx, renderer, menu_textures);
 
             let output = pipeline.run_frame(&mut state, egui::RawInput::default());
 
@@ -274,13 +274,12 @@ mod tests {
                 egui::ColorImage::new([2, 2], vec![egui::Color32::WHITE; 4]),
                 egui::TextureOptions::LINEAR,
             );
-            let mut pipeline = FramePipeline::new(
-                egui_ctx,
-                renderer,
-                None,
-                Some(play_button),
-                Some(filled_play_button),
-            );
+            let menu_textures = MenuTextures {
+                play_button: Some(play_button),
+                play_button_filled: Some(filled_play_button),
+                ..Default::default()
+            };
+            let mut pipeline = FramePipeline::new(egui_ctx, renderer, menu_textures);
 
             let output = pipeline.run_frame(&mut state, egui::RawInput::default());
 

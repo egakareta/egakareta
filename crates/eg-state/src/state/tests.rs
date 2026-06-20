@@ -730,43 +730,48 @@ fn editor_playtest_nonzero_timeline_handoff_stays_synced_after_first_input() {
 }
 
 #[test]
-fn editor_playtest_warms_audio_before_first_input() {
+fn start_editor_warms_audio_before_playtest() {
     pollster::block_on(async {
-        let mut state = new_editor_state().await;
+        let mut state = State::new_test().await;
+        let level_index = 0;
+        let level_name = state.menu.state.levels[level_index].clone();
+        let music_source = state
+            .load_level_metadata(&level_name)
+            .expect("selected level metadata should exist")
+            .music
+            .source;
 
-        let level_name = state
-            .session
-            .editor_level_name
-            .clone()
-            .unwrap_or_else(|| "Untitled".to_string());
-        let music_source = state.session.editor_music_metadata.source.clone();
+        state.start_editor(level_index);
 
-        let target_time = 0.85;
-        state.editor.timeline.clock.time_seconds = target_time;
-        let expected_elapsed = state.editor_timeline_elapsed_seconds(target_time);
-
-        state.editor_playtest();
-
-        let warmup = state
+        let editor_warmup = state
             .audio
             .state
             .runtime_preload
             .last_warmup_request
             .clone()
-            .expect("playtest should warm up runtime audio before first input");
-        let (source_key, warmup_seconds) = warmup;
+            .expect("entering the editor should warm up runtime audio before playtest");
+        let (source_key, warmup_seconds) = editor_warmup.clone();
         assert_eq!(
             source_key,
             runtime_asset_source_key(&level_name, &music_source),
-            "warmup should target the active playtest source"
+            "warmup should target the active editor source"
         );
         assert!(
-            (warmup_seconds - expected_elapsed).abs() < 0.02,
-            "warmup should use precomputed timeline elapsed seconds"
+            warmup_seconds.abs() < f32::EPSILON,
+            "editor entry warmup should decode PCM at the beginning of the track"
+        );
+
+        state.editor.timeline.clock.time_seconds = 0.85;
+        state.editor_playtest();
+
+        assert_eq!(
+            state.audio.state.runtime_preload.last_warmup_request,
+            Some(editor_warmup),
+            "playtest should reuse the editor-entry PCM warmup instead of warming on transition"
         );
         assert!(
             !state.gameplay.state.started,
-            "warmup must happen before first input starts gameplay"
+            "gameplay should still wait for first input after entering playtest"
         );
     });
 }

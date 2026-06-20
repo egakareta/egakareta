@@ -5,10 +5,8 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use crate::load_menu_textures;
 use crate::platform::pipeline::FramePipeline;
-use crate::{
-    load_menu_favicon_texture, load_menu_play_button_filled_texture, load_menu_play_button_texture,
-};
 use eg_state::state::State;
 
 const SORA_TTF: &[u8] = include_bytes!(concat!(
@@ -59,16 +57,8 @@ impl Runtime {
         egui_ctx.set_fonts(fonts);
 
         let egui_renderer = state.create_egui_renderer();
-        let menu_favicon = load_menu_favicon_texture(&egui_ctx);
-        let menu_play_button = load_menu_play_button_texture(&egui_ctx);
-        let menu_play_button_filled = load_menu_play_button_filled_texture(&egui_ctx);
-        let pipeline = FramePipeline::new(
-            egui_ctx,
-            egui_renderer,
-            menu_favicon,
-            menu_play_button,
-            menu_play_button_filled,
-        );
+        let menu_textures = load_menu_textures(&egui_ctx);
+        let pipeline = FramePipeline::new(egui_ctx, egui_renderer, menu_textures);
 
         Self { state, pipeline }
     }

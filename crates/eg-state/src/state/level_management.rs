@@ -53,6 +53,7 @@ impl State {
 
         if let Some(metadata) = self.load_level_metadata(&level_name) {
             self.preload_runtime_audio(&level_name, &metadata.music.source);
+            self.warmup_audio_at_seconds(&level_name, &metadata, 0.0);
             self.editor.set_triggers(metadata.resolved_triggers());
             self.editor.set_trigger_selected(None);
             self.session.playing_trigger_hitboxes = metadata.simulate_trigger_hitboxes;
@@ -189,7 +190,13 @@ impl State {
 
         self.enter_editor_phase(level_name.clone());
 
-        let init = editor_session_init_from_metadata(self.load_level_metadata(&level_name));
+        let metadata = self.load_level_metadata(&level_name);
+        if let Some(metadata) = metadata.as_ref() {
+            self.preload_runtime_audio(&level_name, &metadata.music.source);
+            self.warmup_audio_at_seconds(&level_name, metadata, 0.0);
+        }
+
+        let init = editor_session_init_from_metadata(metadata);
         self.editor.objects = init.objects;
         self.editor.spawn = init.spawn;
         self.session.editor_music_metadata = init.music;
@@ -721,6 +728,7 @@ mod tests {
     use super::{auto_menu_preview_camera_from_spawn, menu_preview_camera_for_metadata, State};
     use crate::commands::AppCommand;
     use crate::state::editor_command::EditorCommand;
+    use eg_audio::audio::runtime_asset_source_key;
     use eg_types::{
         default_sky_color, EditorStateParams, LevelCreatorMetadata, LevelMetadata, LevelObject,
         LevelPreviewCameraMetadata, MusicMetadata, SpawnDirection, SpawnMetadata,
@@ -1167,12 +1175,34 @@ mod tests {
     fn start_level_and_restart_level_initialize_playing_session_state() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
+            let expected_level_name = state.menu.state.levels[0].clone();
+            let expected_music_source = state
+                .load_level_metadata(&expected_level_name)
+                .expect("selected level metadata should exist")
+                .music
+                .source;
 
             state.start_level(0);
             assert_eq!(state.phase, AppPhase::Playing);
             assert!(state.session.playing_level_name.is_some());
             assert!(!state.gameplay.state.objects.is_empty());
             assert!(state.session.playing_trigger_base_objects.is_some());
+            assert!(!state.gameplay.state.started);
+
+            let warmup = state
+                .audio
+                .state
+                .runtime_preload
+                .last_warmup_request
+                .clone()
+                .expect("starting a level should warm up runtime audio before first input");
+            assert_eq!(
+                warmup,
+                (
+                    runtime_asset_source_key(&expected_level_name, &expected_music_source),
+                    0.0
+                )
+            );
 
             state.gameplay.state.started = true;
             state.gameplay.state.elapsed_seconds = 12.0;
