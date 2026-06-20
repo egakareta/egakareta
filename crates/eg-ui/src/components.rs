@@ -183,7 +183,15 @@ pub(crate) fn show_timeline_bar(
             .custom_formatter(|value, _| format_timeline_time_seconds(value))
             .custom_parser(parse_timeline_time_seconds);
         if ui
-            .add_sized([112.0, timeline_control_height], drag_value)
+            .scope(|ui| {
+                let visuals = ui.visuals_mut();
+                visuals.widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+                visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+                visuals.widgets.hovered.weak_bg_fill = egui::Color32::TRANSPARENT;
+                visuals.widgets.active.weak_bg_fill = egui::Color32::TRANSPARENT;
+                ui.add_sized([112.0, timeline_control_height], drag_value)
+            })
+            .inner
             .changed()
         {
             commands.push(AppCommand::Editor(EditorCommand::SetTimelineTime(
@@ -200,8 +208,12 @@ pub(crate) fn show_timeline_bar(
         };
         let play_tooltip = if view.playing { "Pause" } else { "Play" };
         if ui
-            .add_sized(button_size, egui::Button::new(play_icon))
-            .on_hover_text(format!("{} (Space)", play_tooltip))
+            .add_sized(button_size, egui::Button::new(play_icon).frame(false))
+            .on_hover_text(format!(
+                "{}{}",
+                play_tooltip,
+                view.app_settings.hotkey_hint("toggle_timeline_playback")
+            ))
             .clicked()
         {
             commands.push(AppCommand::Editor(EditorCommand::ToggleTimelinePlayback));
@@ -210,7 +222,7 @@ pub(crate) fn show_timeline_bar(
         if ui
             .add_sized(
                 button_size,
-                egui::Button::new(egui_phosphor::regular::MAGNIFYING_GLASS_MINUS),
+                egui::Button::new(egui_phosphor::regular::MAGNIFYING_GLASS_MINUS).frame(false),
             )
             .on_hover_text(format!(
                 "Zoom Out{}",
@@ -224,7 +236,7 @@ pub(crate) fn show_timeline_bar(
         if ui
             .add_sized(
                 button_size,
-                egui::Button::new(egui_phosphor::regular::MAGNIFYING_GLASS_PLUS),
+                egui::Button::new(egui_phosphor::regular::MAGNIFYING_GLASS_PLUS).frame(false),
             )
             .on_hover_text(format!(
                 "Zoom In{}",
@@ -468,7 +480,8 @@ pub(crate) fn show_timeline_bar(
         if ui
             .add_sized(
                 [playtest_button_width, timeline_control_height],
-                egui::Button::new(format!("{} Test", egui_phosphor::regular::GAME_CONTROLLER)),
+                egui::Button::new(format!("{} Test", egui_phosphor::regular::GAME_CONTROLLER))
+                    .frame(false),
             )
             .on_hover_text(format!(
                 "Start playtesting{}",

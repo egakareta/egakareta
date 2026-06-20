@@ -1316,7 +1316,6 @@ pub fn show_editor_ui(
             )
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
-                let button_size = egui::Vec2::splat(56.0);
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Max), |ui| {
                     let hotkey_hint = view.app_settings.hotkey_hint("toggle_place_window");
                     if show_recent_block_quick_strip(
@@ -1327,18 +1326,19 @@ pub fn show_editor_ui(
                     ) {
                         ui.add_space(6.0);
                     }
-                    if ui
-                        .add_sized(
-                            button_size,
-                            egui::Button::new(
+
+                    egui::Frame::popup(&ctx.global_style()).show(ui, |ui| {
+                        if ui
+                            .selectable_label(
+                                view.show_place_window,
                                 egui::RichText::new(egui_phosphor::regular::PLUS).size(28.0),
-                            ),
-                        )
-                        .on_hover_text(format!("Place Block{}", hotkey_hint))
-                        .clicked()
-                    {
-                        commands.push(AppCommand::Editor(EditorCommand::TogglePlaceWindow));
-                    }
+                            )
+                            .on_hover_text(format!("Place Block{}", hotkey_hint))
+                            .clicked()
+                        {
+                            commands.push(AppCommand::Editor(EditorCommand::TogglePlaceWindow));
+                        }
+                    });
                 });
             });
 
