@@ -1234,7 +1234,6 @@ pub fn show_editor_ui(
                     egui::Grid::new("editor_place_block_catalog_grid")
                         .num_columns(PLACE_BLOCK_CATALOG_COLUMNS)
                         .show(ui, |ui| {
-                            let current = view.selected_block_id;
                             let blocks: Vec<_> = eg_blocks::all_placeable_blocks()
                                 .iter()
                                 .filter(|block| {
@@ -1253,7 +1252,6 @@ pub fn show_editor_ui(
                                     if show_block_preview_button(
                                         ui,
                                         block,
-                                        current == block.id,
                                         block_icon_texture_ids.get(block.id.as_str()).copied(),
                                     ) {
                                         commands.push(AppCommand::Editor(

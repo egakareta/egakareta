@@ -486,9 +486,58 @@ pub struct LevelObject {
     pub trigger: Option<TimedTrigger>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LevelObjectTransformFieldVisibility {
+    pub position: bool,
+    pub rotation: bool,
+    pub size: bool,
+}
+
+impl LevelObjectTransformFieldVisibility {
+    pub const fn all() -> Self {
+        Self {
+            position: true,
+            rotation: true,
+            size: true,
+        }
+    }
+
+    pub const fn none() -> Self {
+        Self {
+            position: false,
+            rotation: false,
+            size: false,
+        }
+    }
+
+    pub const fn intersection(self, other: Self) -> Self {
+        Self {
+            position: self.position && other.position,
+            rotation: self.rotation && other.rotation,
+            size: self.size && other.size,
+        }
+    }
+}
+
 impl LevelObject {
     pub fn normalize_block_id(&mut self) {
         self.block_id = normalize_level_block_id(&self.block_id);
+    }
+
+    pub fn transform_field_visibility(&self) -> LevelObjectTransformFieldVisibility {
+        match self.trigger.as_ref().map(|trigger| &trigger.action) {
+            Some(TimedTriggerAction::CameraFollow { .. }) => {
+                LevelObjectTransformFieldVisibility::none()
+            }
+            Some(TimedTriggerAction::CameraPose { .. }) => LevelObjectTransformFieldVisibility {
+                position: true,
+                rotation: true,
+                size: false,
+            },
+            Some(TimedTriggerAction::TransformObjects { .. }) | None => {
+                LevelObjectTransformFieldVisibility::all()
+            }
+        }
     }
 
     pub fn is_transform_trigger(&self) -> bool {

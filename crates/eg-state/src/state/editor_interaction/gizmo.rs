@@ -9,7 +9,7 @@ use super::super::{
     EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag, EditorSubsystem, State,
 };
 use eg_mesh::{GizmoAxis, GizmoDragKind};
-use eg_types::AppPhase;
+use eg_types::{AppPhase, LevelObjectTransformFieldVisibility};
 use glam::{Vec2, Vec3};
 
 const GIZMO_MOVE_PICK_RADIUS_PIXELS: f32 = 40.0;
@@ -35,6 +35,26 @@ impl EditorSubsystem {
             rotation_degrees[1].to_radians(),
             rotation_degrees[2].to_radians(),
         )
+    }
+
+    pub(crate) fn visible_gizmo_handles(&self) -> LevelObjectTransformFieldVisibility {
+        let indices = self.selected_indices_normalized();
+        if indices.is_empty() {
+            return if self.selected_transform_trigger_target().is_some() {
+                LevelObjectTransformFieldVisibility::all()
+            } else {
+                LevelObjectTransformFieldVisibility::none()
+            };
+        }
+
+        indices
+            .into_iter()
+            .filter_map(|index| self.objects.get(index))
+            .map(|object| object.transform_field_visibility())
+            .fold(
+                LevelObjectTransformFieldVisibility::all(),
+                |visibility, next| visibility.intersection(next),
+            )
     }
 
     fn drag_gizmo_rotation(
@@ -372,9 +392,10 @@ impl EditorSubsystem {
         viewport_size: Vec2,
     ) -> Option<(GizmoDragKind, GizmoAxis)> {
         let mode = self.ui.mode;
-        let allow_move = mode.shows_move_gizmo();
-        let allow_scale = mode.shows_scale_gizmo();
-        let allow_rotate = mode.shows_rotate_gizmo();
+        let visible_handles = self.visible_gizmo_handles();
+        let allow_move = mode.shows_move_gizmo() && visible_handles.position;
+        let allow_scale = mode.shows_scale_gizmo() && visible_handles.size;
+        let allow_rotate = mode.shows_rotate_gizmo() && visible_handles.rotation;
         if !allow_move && !allow_scale && !allow_rotate {
             return None;
         }
@@ -838,6 +859,90 @@ mod tests {
             let viewport = Vec2::new(1280.0, 720.0);
             let hit = state.editor.pick_gizmo_handle(640.0, 360.0, viewport);
             assert!(hit.is_none());
+        });
+    }
+
+    #[test]
+    fn pick_gizmo_handle_honors_selected_block_field_visibility() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+            let viewport = Vec2::new(1280.0, 720.0);
+            let center = Vec3::new(0.5, 0.5, 0.5);
+            let center_screen = state
+                .editor
+                .world_to_screen_v(center, viewport)
+                .expect("center projects");
+
+            let camera_pose = TimedTrigger {
+                time_seconds: 0.0,
+                duration_seconds: 1.0,
+                easing: TimedTriggerEasing::Linear,
+                target: TimedTriggerTarget::Camera,
+                action: TimedTriggerAction::CameraPose {
+                    transition_interval_seconds: 1.0,
+                    use_full_segment_transition: false,
+                    target_position: [0.0, 0.0, 0.0],
+                    rotation: 0.0,
+                    pitch: 0.0,
+                },
+            };
+            let camera_follow = TimedTrigger {
+                action: TimedTriggerAction::CameraFollow {
+                    transition_interval_seconds: 1.0,
+                    use_full_segment_transition: false,
+                    distance: 8.0,
+                    rotation: 0.0,
+                    pitch: 0.0,
+                },
+                ..camera_pose.clone()
+            };
+
+            let mut selected = test_block();
+            selected.trigger = Some(camera_pose);
+            state.editor.objects = vec![selected];
+            state.editor.ui.selected_block_index = Some(0);
+            state.editor.ui.selected_block_indices = vec![0];
+
+            state.editor.ui.mode = EditorMode::Scale;
+            let scale_lengths = state.editor.gizmo_axis_lengths_world(center, 9.0, viewport);
+            let scale_world = Vec3::new(1.0 + scale_lengths[0], center.y, center.z);
+            let scale_screen = state
+                .editor
+                .world_to_screen_v(scale_world, viewport)
+                .expect("scale handle projects");
+            assert_eq!(
+                state.editor.pick_gizmo_handle(
+                    scale_screen.x as f64,
+                    scale_screen.y as f64,
+                    viewport
+                ),
+                None,
+                "camera pose blocks hide size fields, so resize gizmos should be hidden"
+            );
+
+            state.editor.ui.mode = EditorMode::Move;
+            assert!(matches!(
+                state.editor.pick_gizmo_handle(
+                    center_screen.x as f64,
+                    center_screen.y as f64,
+                    viewport
+                ),
+                Some((GizmoDragKind::Move, _))
+            ));
+
+            state.editor.objects[0].trigger = Some(camera_follow);
+            for mode in [EditorMode::Move, EditorMode::Scale, EditorMode::Rotate] {
+                state.editor.ui.mode = mode;
+                assert_eq!(
+                    state.editor.pick_gizmo_handle(
+                        center_screen.x as f64,
+                        center_screen.y as f64,
+                        viewport
+                    ),
+                    None,
+                    "camera follow blocks hide transform fields, so gizmos should be hidden"
+                );
+            }
         });
     }
 

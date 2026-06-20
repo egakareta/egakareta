@@ -57,7 +57,6 @@ pub(crate) fn show_recent_block_quick_strip(
         if show_block_preview_button_sized(
             ui,
             block,
-            view.selected_block_id == block.id,
             block_icon_texture_ids.get(block.id.as_str()).copied(),
             egui::Vec2::splat(COMPACT_PREVIEW_BUTTON_SIZE),
             COMPACT_PREVIEW_HEIGHT,
@@ -96,17 +95,20 @@ pub(crate) fn show_selected_block_properties_window(
         EditorPropertyPopup::above_bottom_bar("selected_block_properties", bottom_bar_height),
         |ui| {
             ui.vertical(|ui| {
-                if !selected_has_camera_follow_trigger(&selected)
-                    && (show_position_controls(ui, &mut selected)
-                        || show_rotation_controls(ui, &mut selected))
-                {
+                let field_visibility = selected.transform_field_visibility();
+                let mut transform_changed = false;
+                if field_visibility.position {
+                    transform_changed |= show_position_controls(ui, &mut selected);
+                }
+                if field_visibility.rotation {
+                    transform_changed |= show_rotation_controls(ui, &mut selected);
+                }
+                if transform_changed {
                     push_selected_block_update(commands, &selected);
                 }
 
                 if selected.trigger.is_some() {
-                    if selected_has_transform_trigger(&selected)
-                        && show_size_controls(ui, &mut selected)
-                    {
+                    if field_visibility.size && show_size_controls(ui, &mut selected) {
                         push_selected_block_update(commands, &selected);
                     }
 
@@ -118,7 +120,7 @@ pub(crate) fn show_selected_block_properties_window(
                         push_selected_block_update(commands, &selected);
                     }
                 } else {
-                    if show_size_controls(ui, &mut selected) {
+                    if field_visibility.size && show_size_controls(ui, &mut selected) {
                         push_selected_block_update(commands, &selected);
                     }
                     if show_color_controls(ui, &mut selected) {
@@ -128,20 +130,6 @@ pub(crate) fn show_selected_block_properties_window(
             });
         },
     );
-}
-
-fn selected_has_transform_trigger(selected: &LevelObject) -> bool {
-    matches!(
-        selected.trigger.as_ref().map(|trigger| &trigger.action),
-        Some(TimedTriggerAction::TransformObjects { .. })
-    )
-}
-
-fn selected_has_camera_follow_trigger(selected: &LevelObject) -> bool {
-    matches!(
-        selected.trigger.as_ref().map(|trigger| &trigger.action),
-        Some(TimedTriggerAction::CameraFollow { .. })
-    )
 }
 
 fn push_selected_block_update(commands: &mut Vec<AppCommand>, selected: &LevelObject) {
@@ -434,31 +422,22 @@ pub(crate) fn show_place_block_properties_window(
 pub(crate) fn show_block_preview_button(
     ui: &mut egui::Ui,
     block: &eg_types::BlockDefinition,
-    selected: bool,
     icon_texture_id: Option<egui::TextureId>,
 ) -> bool {
     let button_size = egui::vec2(PREVIEW_BUTTON_WIDTH, PREVIEW_BUTTON_HEIGHT);
-    show_block_preview_button_sized(
-        ui,
-        block,
-        selected,
-        icon_texture_id,
-        button_size,
-        PREVIEW_HEIGHT,
-    )
+    show_block_preview_button_sized(ui, block, icon_texture_id, button_size, PREVIEW_HEIGHT)
 }
 
 fn show_block_preview_button_sized(
     ui: &mut egui::Ui,
     block: &eg_types::BlockDefinition,
-    selected: bool,
     icon_texture_id: Option<egui::TextureId>,
     button_size: egui::Vec2,
     preview_height: f32,
 ) -> bool {
     let (rect, response) = ui.allocate_exact_size(button_size, egui::Sense::click());
 
-    let visuals = ui.style().interact_selectable(&response, selected);
+    let visuals = ui.style().interact_selectable(&response, false);
     ui.painter().rect(
         rect,
         4.0,
@@ -593,9 +572,9 @@ fn scale_channel(value: u8, factor: f32) -> u8 {
 mod tests {
     use super::{
         atlas_average_color, block_preview_colors, scale_channel, scale_rgb,
-        selected_has_camera_follow_trigger, show_block_preview_button,
-        show_place_block_properties_window, show_selected_block_properties_window,
-        FALLBACK_SIDE_COLOR, FALLBACK_TOP_COLOR, TOP_LIGHTEN_FACTOR,
+        show_block_preview_button, show_place_block_properties_window,
+        show_selected_block_properties_window, FALLBACK_SIDE_COLOR, FALLBACK_TOP_COLOR,
+        TOP_LIGHTEN_FACTOR,
     };
     use crate::test_utils::editor_view_model;
     use eg_blocks::{all_placeable_blocks, block_texture_atlas, resolve_block_texture_layers};
@@ -689,9 +668,9 @@ mod tests {
 
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
             egui::CentralPanel::default().show_inside(root_ui, |ui| {
-                clicked_without_texture = show_block_preview_button(ui, block, false, None);
+                clicked_without_texture = show_block_preview_button(ui, block, None);
                 clicked_with_texture =
-                    show_block_preview_button(ui, block, true, Some(egui::TextureId::Managed(1)));
+                    show_block_preview_button(ui, block, Some(egui::TextureId::Managed(1)));
             });
         });
 
@@ -792,7 +771,13 @@ mod tests {
             }),
         };
 
-        assert!(selected_has_camera_follow_trigger(&camera_follow));
-        assert!(!selected_has_camera_follow_trigger(&transform_trigger));
+        assert_eq!(
+            camera_follow.transform_field_visibility(),
+            eg_types::LevelObjectTransformFieldVisibility::none()
+        );
+        assert_eq!(
+            transform_trigger.transform_field_visibility(),
+            eg_types::LevelObjectTransformFieldVisibility::all()
+        );
     }
 }

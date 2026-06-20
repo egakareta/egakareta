@@ -793,7 +793,13 @@ impl State {
     pub(super) fn rebuild_editor_gizmo_vertices(&mut self) {
         puffin::profile_scope!("EditorGizmoMesh");
         let mode = self.editor.ui.mode;
-        if self.phase != AppPhase::Editor || !mode.shows_gizmo() {
+        let visible_handles = self.editor.visible_gizmo_handles();
+        let show_move_handles = mode.shows_move_gizmo() && visible_handles.position;
+        let show_scale_handles = mode.shows_scale_gizmo() && visible_handles.size;
+        let show_rotate_handles = mode.shows_rotate_gizmo() && visible_handles.rotation;
+        if self.phase != AppPhase::Editor
+            || (!show_move_handles && !show_scale_handles && !show_rotate_handles)
+        {
             self.render.meshes.editor_gizmo.clear();
             return;
         }
@@ -849,9 +855,9 @@ impl State {
             axis_width,
             resize_radius,
             resize_offsets,
-            show_move_handles: mode.shows_move_gizmo(),
-            show_scale_handles: mode.shows_scale_gizmo(),
-            show_rotate_handles: mode.shows_rotate_gizmo(),
+            show_move_handles,
+            show_scale_handles,
+            show_rotate_handles,
             hovered_part,
             dragged_part,
         });
