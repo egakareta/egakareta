@@ -954,11 +954,11 @@ mod tests {
             AppPhase::Editor,
             EditorMode::Timing
         ));
-        assert!(should_draw_floor_and_grid(
+        assert!(!should_draw_floor_and_grid(
             AppPhase::Playing,
             EditorMode::Place
         ));
-        assert!(should_draw_floor_and_grid(
+        assert!(!should_draw_floor_and_grid(
             AppPhase::GameOver,
             EditorMode::Place
         ));

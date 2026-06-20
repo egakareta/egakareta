@@ -117,7 +117,7 @@ pub fn apply_gamma_correction_if_enabled(
 }
 
 pub fn should_draw_floor_and_grid(phase: AppPhase, mode: EditorMode) -> bool {
-    phase != AppPhase::Menu && mode != EditorMode::Timing
+    phase == AppPhase::Editor && mode != EditorMode::Timing
 }
 
 pub fn smoothstep(edge0: f32, edge1: f32, value: f32) -> f32 {
@@ -761,5 +761,21 @@ mod tests {
         assert!(input.should_skip_world());
         assert!(!input.should_draw_editor_overlays());
         assert!(!input.should_draw_editor_cursor());
+    }
+
+    #[test]
+    fn render_frame_input_hides_grid_outside_editor() {
+        let input = RenderFrameInput {
+            phase: AppPhase::Playing,
+            editor_mode: EditorMode::Place,
+            game_over: false,
+            sky_color: [0.25, 0.5, 0.75],
+            grid_center: [0.0, 0.0],
+            apply_gamma_correction: false,
+        };
+
+        assert!(!input.should_draw_floor_and_grid());
+        assert!(!input.should_skip_world());
+        assert!(!input.should_draw_editor_overlays());
     }
 }
