@@ -54,8 +54,6 @@ pub enum EditorCommand {
     UpdateSelectedBlock(LevelObject),
 
     // ── Selection / Transform ───────────────────────────────────────
-    /// Nudge selected blocks by the given screen-relative offset.
-    NudgeSelected { dx: i32, dy: i32 },
     /// Snap selected blocks or tap to the nearest grid cell.
     SnapSelectionToGrid,
     /// Focus the editor camera on the selected or preview target.

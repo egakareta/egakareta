@@ -402,46 +402,6 @@ impl State {
                     None
                 }
             }
-            "nudge_up" => {
-                if self.is_editor() && self.has_block_selection() {
-                    Some(AppCommand::Editor(EditorCommand::NudgeSelected {
-                        dx: 0,
-                        dy: 1,
-                    }))
-                } else {
-                    None
-                }
-            }
-            "nudge_down" => {
-                if self.is_editor() && self.has_block_selection() {
-                    Some(AppCommand::Editor(EditorCommand::NudgeSelected {
-                        dx: 0,
-                        dy: -1,
-                    }))
-                } else {
-                    None
-                }
-            }
-            "nudge_left" => {
-                if self.is_editor() && self.has_block_selection() {
-                    Some(AppCommand::Editor(EditorCommand::NudgeSelected {
-                        dx: -1,
-                        dy: 0,
-                    }))
-                } else {
-                    None
-                }
-            }
-            "nudge_right" => {
-                if self.is_editor() && self.has_block_selection() {
-                    Some(AppCommand::Editor(EditorCommand::NudgeSelected {
-                        dx: 1,
-                        dy: 0,
-                    }))
-                } else {
-                    None
-                }
-            }
             "snap_selection_to_grid" => {
                 if self.is_editor()
                     && just_pressed
@@ -502,14 +462,14 @@ impl State {
                 }
             }
             "timeline_forward" => {
-                if self.is_editor() && !self.has_block_selection() {
+                if self.is_editor() {
                     self.timeline_shift_to_division_command(TimingDivisionDirection::Forward)
                 } else {
                     None
                 }
             }
             "timeline_backward" => {
-                if self.is_editor() && !self.has_block_selection() {
+                if self.is_editor() {
                     self.timeline_shift_to_division_command(TimingDivisionDirection::Backward)
                 } else {
                     None
@@ -2721,41 +2681,6 @@ mod tests {
                 Some(AppCommand::Editor(EditorCommand::Redo))
             );
 
-            assert_eq!(state.command_for_keybind_action("nudge_up", true), None);
-            state.editor.ui.selected_block_index = Some(0);
-            assert_eq!(
-                state.command_for_keybind_action("nudge_up", true),
-                Some(AppCommand::Editor(EditorCommand::NudgeSelected {
-                    dx: 0,
-                    dy: 1
-                }))
-            );
-            assert_eq!(
-                state.command_for_keybind_action("nudge_down", true),
-                Some(AppCommand::Editor(EditorCommand::NudgeSelected {
-                    dx: 0,
-                    dy: -1
-                }))
-            );
-            assert_eq!(
-                state.command_for_keybind_action("nudge_left", true),
-                Some(AppCommand::Editor(EditorCommand::NudgeSelected {
-                    dx: -1,
-                    dy: 0
-                }))
-            );
-            assert_eq!(
-                state.command_for_keybind_action("nudge_right", true),
-                Some(AppCommand::Editor(EditorCommand::NudgeSelected {
-                    dx: 1,
-                    dy: 0
-                }))
-            );
-            assert_eq!(
-                state.command_for_keybind_action("timeline_forward", true),
-                None
-            );
-            state.editor.ui.selected_block_index = None;
             assert_eq!(
                 state.command_for_keybind_action("pick_selected_block", true),
                 Some(AppCommand::Editor(EditorCommand::PickSelectedBlock))
@@ -3013,12 +2938,6 @@ mod tests {
             let before_duplicate = state.editor.objects.len();
             state.dispatch(AppCommand::Editor(EditorCommand::DuplicateBlock));
             assert!(state.editor.objects.len() >= before_duplicate);
-
-            state.dispatch(AppCommand::Editor(EditorCommand::NudgeSelected {
-                dx: 1,
-                dy: 0,
-            }));
-            assert!(!state.editor.objects.is_empty());
 
             state.dispatch(AppCommand::Editor(EditorCommand::ToggleTimelinePlayback));
             state.dispatch(AppCommand::Editor(EditorCommand::ToggleTimelinePlayback));

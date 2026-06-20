@@ -261,10 +261,6 @@ impl EditorSubsystem {
 }
 
 impl State {
-    pub(super) fn editor_camera_axes_xy(&self) -> (Vec2, Vec2) {
-        self.editor.camera_axes_xy()
-    }
-
     pub(super) fn editor_camera_offset(&self) -> Vec3 {
         self.editor.camera_offset()
     }

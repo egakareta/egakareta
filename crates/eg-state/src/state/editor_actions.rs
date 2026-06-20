@@ -743,69 +743,6 @@ impl State {
         }
     }
 
-    pub(super) fn editor_nudge_selected_blocks(&mut self, dx: i32, dy: i32) -> bool {
-        if self.phase != AppPhase::Editor || (dx == 0 && dy == 0) {
-            return false;
-        }
-
-        let (camera_right_xy, camera_up_xy) = self.editor_camera_axes_xy();
-        let nearest_cardinal = |axis: Vec2| -> [i32; 2] {
-            let candidates = [
-                (Vec2::new(1.0, 0.0), [1, 0]),
-                (Vec2::new(-1.0, 0.0), [-1, 0]),
-                (Vec2::new(0.0, 1.0), [0, 1]),
-                (Vec2::new(0.0, -1.0), [0, -1]),
-            ];
-
-            let mut best = candidates[0];
-            let mut best_dot = axis.dot(best.0);
-            for candidate in candidates.into_iter().skip(1) {
-                let candidate_dot = axis.dot(candidate.0);
-                if candidate_dot > best_dot {
-                    best = candidate;
-                    best_dot = candidate_dot;
-                }
-            }
-            best.1
-        };
-
-        let right_world = nearest_cardinal(-camera_right_xy);
-        let up_world = nearest_cardinal(camera_up_xy);
-        let world_dx = right_world[0] * dx + up_world[0] * dy;
-        let world_dy = right_world[1] * dx + up_world[1] * dy;
-
-        let (world_dx, world_dy) = if world_dx.abs() > world_dy.abs() {
-            (world_dx.signum(), 0)
-        } else if world_dy.abs() > world_dx.abs() {
-            (0, world_dy.signum())
-        } else if world_dx != 0 {
-            (world_dx.signum(), 0)
-        } else {
-            (0, world_dy.signum())
-        };
-
-        let nudge_step = if self.editor.effective_snap_to_grid() {
-            self.editor.config.snap_step.max(0.05)
-        } else {
-            1.0
-        };
-
-        self.record_editor_history_state();
-        if self
-            .editor
-            .nudge_selected(world_dx as f32 * nudge_step, world_dy as f32 * nudge_step)
-        {
-            self.sync_editor_objects();
-            self.rebuild_editor_cursor_vertices();
-            if self.editor.has_selected_transform_trigger_block() {
-                self.mark_editor_dirty(EditorDirtyFlags::trigger_markers_changed());
-            }
-            return true;
-        }
-
-        false
-    }
-
     pub(super) fn editor_snap_selection_to_grid(&mut self) -> bool {
         if self.phase != AppPhase::Editor {
             return false;
@@ -1941,27 +1878,6 @@ mod tests {
             state.toggle_editor_timeline_playback();
             assert!(!state.editor.timeline.playback.playing);
             assert_eq!(state.editor.ui.mode, EditorMode::Place);
-        });
-    }
-
-    #[test]
-    fn editor_nudge_selected_blocks_honors_guards_and_moves_when_possible() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
-            state.editor.ui.selected_block_indices = vec![0];
-            state.editor.ui.selected_block_index = Some(0);
-
-            state.phase = AppPhase::Menu;
-            assert!(!state.editor_nudge_selected_blocks(1, 0));
-
-            state.phase = AppPhase::Editor;
-            assert!(!state.editor_nudge_selected_blocks(0, 0));
-
-            let before = state.editor.objects[0].position;
-            assert!(state.editor_nudge_selected_blocks(1, 0));
-            let after = state.editor.objects[0].position;
-            assert_ne!(before, after);
         });
     }
 }

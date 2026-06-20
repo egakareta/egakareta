@@ -530,30 +530,6 @@ pub fn essential_keybind_actions() -> &'static [KeybindActionMetadata] {
         },
         KeybindActionMetadata {
             group: "Editor",
-            action: "nudge_up",
-            label: "Nudge Block Up",
-            capacity: 1,
-        },
-        KeybindActionMetadata {
-            group: "Editor",
-            action: "nudge_down",
-            label: "Nudge Block Down",
-            capacity: 1,
-        },
-        KeybindActionMetadata {
-            group: "Editor",
-            action: "nudge_left",
-            label: "Nudge Block Left",
-            capacity: 1,
-        },
-        KeybindActionMetadata {
-            group: "Editor",
-            action: "nudge_right",
-            label: "Nudge Block Right",
-            capacity: 1,
-        },
-        KeybindActionMetadata {
-            group: "Editor",
             action: "snap_selection_to_grid",
             label: "Snap Selection to Grid",
             capacity: 1,
@@ -836,22 +812,6 @@ pub fn default_essential_keybinds() -> Vec<KeybindBinding> {
         KeybindBinding {
             action: "pan_right".to_string(),
             chord: KeyChord::new("d", false, false, false),
-        },
-        KeybindBinding {
-            action: "nudge_up".to_string(),
-            chord: KeyChord::new("ArrowUp", false, false, false),
-        },
-        KeybindBinding {
-            action: "nudge_down".to_string(),
-            chord: KeyChord::new("ArrowDown", false, false, false),
-        },
-        KeybindBinding {
-            action: "nudge_left".to_string(),
-            chord: KeyChord::new("ArrowLeft", false, false, false),
-        },
-        KeybindBinding {
-            action: "nudge_right".to_string(),
-            chord: KeyChord::new("ArrowRight", false, false, false),
         },
         KeybindBinding {
             action: "snap_selection_to_grid".to_string(),

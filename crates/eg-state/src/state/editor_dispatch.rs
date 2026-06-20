@@ -64,9 +64,6 @@ impl State {
                 self.set_editor_selected_block_trigger(obj.trigger);
             }
 
-            EditorCommand::NudgeSelected { dx, dy } => {
-                self.editor_nudge_selected_blocks(dx, dy);
-            }
             EditorCommand::SnapSelectionToGrid => {
                 self.editor_snap_selection_to_grid();
             }
@@ -400,7 +397,6 @@ mod tests {
                 1e-6
             ));
 
-            state.dispatch_editor(EditorCommand::NudgeSelected { dx: 1, dy: 0 });
             state.dispatch_editor(EditorCommand::SnapSelectionToGrid);
             state.dispatch_editor(EditorCommand::FocusCameraTarget);
             state.dispatch_editor(EditorCommand::SetTimelineDuration(8.0));
