@@ -314,6 +314,7 @@ impl EditorSubsystem {
 
     pub fn sync_objects(&mut self) {
         self.normalize_block_selection();
+        self.sync_trigger_selection_from_objects();
         self.invalidate_samples();
         self.selected_mask_cache = None;
         self.block_static_vertex_cache.clear();

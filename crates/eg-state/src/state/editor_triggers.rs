@@ -21,6 +21,7 @@ use eg_types::{
 pub struct EditorTriggerState {
     pub selected_index: Option<usize>,
     pub simulate_trigger_hitboxes: bool,
+    pub object_indices: Vec<usize>,
 }
 
 fn trigger_block_id_from_action(action: &TimedTriggerAction) -> &'static str {
@@ -101,6 +102,7 @@ impl EditorTriggerState {
         Self {
             selected_index: None,
             simulate_trigger_hitboxes: false,
+            object_indices: Vec::new(),
         }
     }
 }
@@ -288,11 +290,27 @@ impl EditorSubsystem {
         ))
     }
 
+    fn sync_trigger_object_indices(&mut self) {
+        self.triggers.object_indices = self
+            .objects
+            .iter()
+            .enumerate()
+            .filter_map(|(index, object)| object.trigger.is_some().then_some(index))
+            .collect();
+    }
+
     pub fn triggers(&self) -> Vec<TimedTrigger> {
-        triggers_from_objects(&self.objects)
+        let trigger_objects = self
+            .triggers
+            .object_indices
+            .iter()
+            .filter_map(|index| self.objects.get(*index).cloned())
+            .collect::<Vec<_>>();
+        triggers_from_objects(&trigger_objects)
     }
 
     pub fn sync_trigger_selection_from_objects(&mut self) {
+        self.sync_trigger_object_indices();
         let trigger_count = self.triggers().len();
         self.triggers.selected_index = self
             .triggers
@@ -485,7 +503,18 @@ mod tests {
         default_camera_trigger_distance, CameraTriggerMode, TimedTrigger, TimedTriggerAction,
         TimedTriggerEasing, TimedTriggerTarget,
     };
-    use eg_types::{DEFAULT_CAMERA_TRIGGER_PITCH, DEFAULT_CAMERA_TRIGGER_ROTATION};
+    use eg_types::{LevelObject, DEFAULT_CAMERA_TRIGGER_PITCH, DEFAULT_CAMERA_TRIGGER_ROTATION};
+
+    fn test_block(x: f32) -> LevelObject {
+        LevelObject {
+            position: [x, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            block_id: eg_types::DEFAULT_BLOCK_ID.to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
+        }
+    }
 
     fn object_move_trigger(time_seconds: f32) -> TimedTrigger {
         TimedTrigger {
@@ -790,6 +819,24 @@ mod tests {
             assert_eq!(position, [9.0, 8.0, 7.0]);
             assert_eq!(rotation_degrees, [10.0, 20.0, 30.0]);
             assert_eq!(size, [2.0, 3.0, 4.0]);
+        });
+    }
+
+    #[test]
+    fn trigger_queries_skip_non_trigger_objects_after_index_sync() {
+        pollster::block_on(async {
+            let mut state = new_editor_state().await;
+            state.editor.objects = (0..10_000).map(|index| test_block(index as f32)).collect();
+            state.editor.set_triggers(vec![camera_pose_trigger(1.0)]);
+            state.editor.objects.push(test_block(10_001.0));
+
+            assert_eq!(state.editor.triggers().len(), 1);
+            assert!(state.editor.has_camera_timeline_triggers());
+
+            state.editor.sync_objects();
+
+            assert_eq!(state.editor.triggers().len(), 1);
+            assert!(state.editor.has_camera_timeline_triggers());
         });
     }
 }

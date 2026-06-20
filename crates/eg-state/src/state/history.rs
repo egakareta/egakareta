@@ -71,6 +71,7 @@ impl EditorSubsystem {
         self.timing.timing_points = snapshot.timing_points;
         self.timing.mark_timing_points_changed();
         self.triggers.simulate_trigger_hitboxes = snapshot.simulate_trigger_hitboxes;
+        self.sync_trigger_selection_from_objects();
         let trigger_count = self.triggers().len();
         self.triggers.selected_index = snapshot
             .selected_trigger_index
@@ -191,6 +192,7 @@ impl EditorSubsystem {
         self.ui.selected_block_indices = new_indices;
         self.sync_primary_selection_from_indices();
         self.ui.hovered_block_index = self.ui.selected_block_index;
+        self.sync_trigger_selection_from_objects();
         self.invalidate_samples();
         true
     }
@@ -230,6 +232,7 @@ impl EditorSubsystem {
         self.ui.selected_block_indices = new_indices;
         self.sync_primary_selection_from_indices();
         self.ui.hovered_block_index = self.ui.selected_block_index;
+        self.sync_trigger_selection_from_objects();
         self.invalidate_samples();
         true
     }
