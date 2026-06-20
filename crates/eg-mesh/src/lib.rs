@@ -208,6 +208,7 @@ impl BlockInstance {
 pub mod advanced_shapes;
 pub mod blocks;
 pub mod builders;
+pub mod chunked;
 pub mod geometry;
 pub mod lighting;
 pub mod noise;
@@ -218,4 +219,5 @@ pub mod transforms;
 
 pub use blocks::*;
 pub use builders::*;
+pub use chunked::*;
 pub use geometry::*;

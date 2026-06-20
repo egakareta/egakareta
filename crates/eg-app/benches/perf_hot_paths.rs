@@ -11,8 +11,8 @@ use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use eg_state::state::{editor_command::EditorCommand, State};
 use eg_types::EditorMode;
 use egakareta_lib::bench_support::{
-    advance_timeline_preview, rebuild_full_block_mesh, rebuild_transformed_block_mesh,
-    transform_objects_only, TimelineScrubBenchmarkState,
+    advance_timeline_preview, rebuild_chunked_dense_block_mesh, rebuild_full_block_mesh,
+    rebuild_transformed_block_mesh, transform_objects_only, TimelineScrubBenchmarkState,
 };
 
 fn build_editor_playback_start_state() -> State {
@@ -31,6 +31,16 @@ fn editor_mesh_rebuild_benchmarks(c: &mut Criterion) {
     for object_count in [256, 1_024, 4_096] {
         group.bench_function(format!("{object_count}_stone_blocks"), |b| {
             b.iter(|| rebuild_full_block_mesh(black_box(object_count)))
+        });
+    }
+    group.finish();
+}
+
+fn chunked_greedy_mesh_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("chunked_greedy_dense_block_mesh");
+    for object_count in [4_096, 16_384, 65_536] {
+        group.bench_function(format!("{object_count}_dense_stone_blocks"), |b| {
+            b.iter(|| rebuild_chunked_dense_block_mesh(black_box(object_count)))
         });
     }
     group.finish();
@@ -164,6 +174,7 @@ fn editor_timeline_scrub_benchmarks(c: &mut Criterion) {
 criterion_group!(
     perf_hot_paths,
     editor_mesh_rebuild_benchmarks,
+    chunked_greedy_mesh_benchmarks,
     trigger_transform_benchmarks,
     timeline_preview_benchmarks,
     editor_playback_start_benchmarks,

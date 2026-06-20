@@ -16,13 +16,13 @@ use eg_editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds_w
 use eg_game::trigger_transformed_objects_at_time;
 use eg_mesh::{
     build_block_geometry_for_object, build_block_geometry_from_refs,
-    build_block_geometry_from_refs_at_time, build_block_instance_batches,
-    build_block_instance_batches_at_time, build_block_instance_batches_from_refs,
-    build_block_instance_batches_from_refs_at_time, build_camera_arrow_vertices,
-    build_colored_tap_indicator_vertices, build_editor_cursor_vertices,
-    build_editor_gizmo_vertices, build_editor_hitbox_visualization_vertices,
-    build_editor_hover_outline_vertices, build_editor_selection_outline_vertices,
-    build_editor_tap_cursor_vertices, build_editor_transform_trigger_target_outline_vertices,
+    build_block_geometry_from_refs_at_time, build_camera_arrow_vertices, build_chunked_block_mesh,
+    build_chunked_block_mesh_at_time, build_chunked_block_mesh_from_refs,
+    build_chunked_block_mesh_from_refs_at_time, build_colored_tap_indicator_vertices,
+    build_editor_cursor_vertices, build_editor_gizmo_vertices,
+    build_editor_hitbox_visualization_vertices, build_editor_hover_outline_vertices,
+    build_editor_selection_outline_vertices, build_editor_tap_cursor_vertices,
+    build_editor_transform_trigger_target_outline_vertices,
     build_practice_checkpoint_flag_geometry, build_spawn_marker_vertices,
     build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices,
     build_transform_trigger_marker_vertices, GizmoParams, GizmoPart, MeshGeometry,
@@ -307,16 +307,6 @@ fn transform_trigger_marker_source_objects<'a>(
     }
 }
 
-fn editor_static_mesh_spare_capacity(geometry: &MeshGeometry, object_count: usize) -> (u32, u32) {
-    let object_room = object_count.min(512).saturating_mul(36);
-    let vertex_growth_room = geometry.vertex_count() / 8;
-    let index_growth_room = geometry.draw_count() / 8;
-    (
-        vertex_growth_room.max(object_room).max(4096) as u32,
-        index_growth_room.max(object_room).max(4096) as u32,
-    )
-}
-
 impl EditorSubsystem {
     pub fn mark_dirty(&mut self, dirty: EditorDirtyFlags) {
         self.runtime.dirty.merge(dirty);
@@ -542,15 +532,9 @@ impl State {
                 self.rebuild_block_vertices();
             }
         } else if dirty.append_block_mesh {
-            puffin::profile_scope!("DirtyBlockMeshAppend");
-            let pending_appends =
-                std::mem::take(&mut self.editor.runtime.pending_block_mesh_appends);
-            for index in pending_appends {
-                if !self.append_editor_static_block_vertices(index) {
-                    self.rebuild_block_vertices();
-                    break;
-                }
-            }
+            puffin::profile_scope!("DirtyBlockMeshAppendChunked");
+            self.editor.runtime.pending_block_mesh_appends.clear();
+            self.rebuild_block_vertices();
         }
 
         if dirty.rebuild_selection_overlays {
@@ -1056,24 +1040,22 @@ impl State {
             // vertex buffer. Camera/transform triggers and other special visuals stay
             // on the fallback mesh path.
             let result = if self.editor.has_camera_timeline_triggers() {
-                build_block_instance_batches_at_time(
+                build_chunked_block_mesh_at_time(
                     &self.gameplay.state.objects,
                     self.gameplay.state.elapsed_seconds,
                 )
             } else {
-                build_block_instance_batches(&self.gameplay.state.objects)
+                build_chunked_block_mesh(&self.gameplay.state.objects)
             };
-            self.render.meshes.blocks_instanced.replace_with_batches(
+            self.render.meshes.blocks_chunked.replace_with_chunked_mesh(
                 &self.render.gpu.device,
-                "Block Instance Buffer",
+                "Chunked Block Buffer",
                 &result,
             );
-            self.render.meshes.blocks.replace_with_geometry(
-                &self.render.gpu.device,
-                "Block Vertex Buffer",
-                &result.fallback_geometry,
-            );
+            self.render.meshes.blocks.clear();
+            self.render.meshes.blocks_instanced.clear();
             self.render.meshes.blocks_static.clear();
+            self.render.meshes.blocks_static_chunked.clear();
             self.render.meshes.blocks_static_instanced.clear();
             self.render.meshes.blocks_selected.clear();
             self.editor.block_static_vertex_cache.clear();
@@ -1132,7 +1114,7 @@ impl State {
             selected_mask
         };
 
-        let static_instances = {
+        let static_chunks = {
             puffin::profile_scope!("BlockMeshSplitStatic");
             let mut static_objects = Vec::new();
             for (index, object) in object_source.iter().enumerate() {
@@ -1141,12 +1123,13 @@ impl State {
                 }
             }
             if self.editor.has_camera_timeline_triggers() {
-                build_block_instance_batches_from_refs_at_time(
+                build_chunked_block_mesh_from_refs_at_time(
                     &static_objects,
                     Some(self.editor.timeline.clock.time_seconds),
+                    eg_mesh::DEFAULT_RENDER_CHUNK_SIZE,
                 )
             } else {
-                build_block_instance_batches_from_refs(&static_objects)
+                build_chunked_block_mesh_from_refs(&static_objects)
             }
         };
 
@@ -1180,48 +1163,32 @@ impl State {
 
         if !uses_runtime_objects && !has_selected_blocks {
             puffin::profile_scope!("BlockMeshUploadStatic");
-            self.editor.block_static_vertex_cache = static_instances.fallback_geometry.clone();
+            self.editor.block_static_vertex_cache = static_chunks.fallback_geometry();
             self.editor.block_static_vertex_cache_complete_len = Some(object_source.len());
             self.render
                 .meshes
-                .blocks_static_instanced
-                .replace_with_batches(
+                .blocks_static_chunked
+                .replace_with_chunked_mesh(
                     &self.render.gpu.device,
-                    "Block Static Instance Buffer",
-                    &static_instances,
+                    "Chunked Block Static Buffer",
+                    &static_chunks,
                 );
-            let (spare_vertices, spare_indices) = editor_static_mesh_spare_capacity(
-                &self.editor.block_static_vertex_cache,
-                object_source.len(),
-            );
-            self.render
-                .meshes
-                .blocks_static
-                .replace_with_streaming_geometry(
-                    &self.render.gpu.device,
-                    &self.render.gpu.queue,
-                    "Block Static Vertex Buffer",
-                    &self.editor.block_static_vertex_cache,
-                    spare_vertices,
-                    spare_indices,
-                );
+            self.render.meshes.blocks_static.clear();
+            self.render.meshes.blocks_static_instanced.clear();
         } else {
             puffin::profile_scope!("BlockMeshUploadStatic");
             self.editor.block_static_vertex_cache.clear();
             self.editor.block_static_vertex_cache_complete_len = None;
             self.render
                 .meshes
-                .blocks_static_instanced
-                .replace_with_batches(
+                .blocks_static_chunked
+                .replace_with_chunked_mesh(
                     &self.render.gpu.device,
-                    "Block Static Instance Buffer",
-                    &static_instances,
+                    "Chunked Block Static Buffer",
+                    &static_chunks,
                 );
-            self.render.meshes.blocks_static.replace_with_geometry(
-                &self.render.gpu.device,
-                "Block Static Vertex Buffer",
-                &static_instances.fallback_geometry,
-            );
+            self.render.meshes.blocks_static.clear();
+            self.render.meshes.blocks_static_instanced.clear();
         }
 
         {
@@ -1233,70 +1200,7 @@ impl State {
             );
         }
         self.render.meshes.blocks.clear();
-    }
-
-    fn append_editor_static_block_vertices(&mut self, index: usize) -> bool {
-        puffin::profile_scope!("BlockMeshAppendStatic");
-        if self.phase != AppPhase::Editor
-            || self.editor.block_static_vertex_cache_complete_len != Some(index)
-            || index >= self.editor.objects.len()
-        {
-            return false;
-        }
-
-        let object = &self.editor.objects[index];
-        let appended_geometry = {
-            puffin::profile_scope!("BlockMeshAppendBuildOne");
-            build_block_geometry_for_object(object)
-        };
-        let previous_vertex_count = self.editor.block_static_vertex_cache.vertex_count();
-        let previous_draw_count = self.editor.block_static_vertex_cache.draw_count();
-        let appended = {
-            puffin::profile_scope!("BlockMeshAppendUpload");
-            self.render.meshes.blocks_static.append_streaming_geometry(
-                &self.render.gpu.queue,
-                previous_vertex_count,
-                previous_draw_count,
-                &appended_geometry,
-            )
-        };
-        self.editor
-            .block_static_vertex_cache
-            .append_geometry(appended_geometry);
-
-        if !appended {
-            puffin::profile_scope!("BlockMeshAppendFallbackUpload");
-            let (spare_vertices, spare_indices) = editor_static_mesh_spare_capacity(
-                &self.editor.block_static_vertex_cache,
-                self.editor.objects.len(),
-            );
-            self.render
-                .meshes
-                .blocks_static
-                .replace_with_streaming_geometry(
-                    &self.render.gpu.device,
-                    &self.render.gpu.queue,
-                    "Block Static Vertex Buffer",
-                    &self.editor.block_static_vertex_cache,
-                    spare_vertices,
-                    spare_indices,
-                );
-        }
-
-        self.editor.block_static_vertex_cache_complete_len = Some(index + 1);
-        if let Some(selected_mask) = self.editor.selected_mask_cache.as_mut() {
-            if selected_mask.len() == index {
-                selected_mask.push(false);
-            } else {
-                self.editor.selected_mask_cache = Some(vec![false; self.editor.objects.len()]);
-            }
-        } else {
-            self.editor.selected_mask_cache = Some(vec![false; self.editor.objects.len()]);
-        }
-        self.render.meshes.blocks_selected.clear();
-        self.render.meshes.blocks.clear();
-        self.render.meshes.blocks_instanced.clear();
-        true
+        self.render.meshes.blocks_chunked.clear();
     }
 
     fn rebuild_editor_selected_block_vertices(&mut self) {
@@ -2095,18 +1999,19 @@ mod tests {
             state.rebuild_block_vertices();
             assert!(state.render.meshes.blocks.draw_data().is_none());
             assert!(state.render.meshes.blocks_selected.draw_data().is_some());
-            assert_eq!(
-                state.render.meshes.blocks_static_instanced.instance_count(),
-                1
-            );
+            assert_eq!(state.render.meshes.blocks_static_chunked.chunk_count(), 1);
+            assert!(!state.render.meshes.blocks_static_chunked.is_empty());
 
             state.phase = AppPhase::Playing;
             state.gameplay.state.objects = state.editor.objects.clone();
             state.rebuild_block_vertices();
-            assert_eq!(state.render.meshes.blocks_instanced.instance_count(), 2);
+            assert_eq!(state.render.meshes.blocks_chunked.chunk_count(), 1);
+            assert!(!state.render.meshes.blocks_chunked.is_empty());
+            assert!(state.render.meshes.blocks_instanced.is_empty());
             assert!(state.render.meshes.blocks.draw_data().is_none());
             assert!(state.render.meshes.blocks_selected.draw_data().is_none());
             assert!(state.render.meshes.blocks_static.draw_data().is_none());
+            assert!(state.render.meshes.blocks_static_chunked.is_empty());
             assert!(state.render.meshes.blocks_static_instanced.is_empty());
         });
     }
@@ -2120,13 +2025,7 @@ mod tests {
             state.editor.ui.cursor = [2.0, 0.0, 0.0];
 
             state.rebuild_block_vertices();
-            let before_count = state
-                .render
-                .meshes
-                .blocks_static
-                .draw_data()
-                .map(|draw_data| draw_data.count())
-                .unwrap_or_default();
+            let before_count = state.editor.block_static_vertex_cache.draw_count();
             assert_eq!(state.editor.block_static_vertex_cache_complete_len, Some(1));
 
             state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
@@ -2142,14 +2041,9 @@ mod tests {
 
             state.process_editor_dirty(0.02);
 
-            let after_count = state
-                .render
-                .meshes
-                .blocks_static
-                .draw_data()
-                .map(|draw_data| draw_data.count())
-                .unwrap_or_default();
+            let after_count = state.editor.block_static_vertex_cache.draw_count();
             assert!(after_count > before_count);
+            assert_eq!(state.render.meshes.blocks_static_chunked.chunk_count(), 1);
             assert_eq!(state.editor.block_static_vertex_cache_complete_len, Some(2));
             assert!(!state.editor.runtime.dirty.any());
         });

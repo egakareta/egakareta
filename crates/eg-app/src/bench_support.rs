@@ -10,7 +10,7 @@
 use std::hint::black_box;
 
 use eg_game::{trigger_transformed_objects_at_time, TimelineSimulationRuntime};
-use eg_mesh::{build_block_geometry, build_trail_vertices_with_alpha};
+use eg_mesh::{build_block_geometry, build_chunked_block_mesh, build_trail_vertices_with_alpha};
 use eg_types::{
     LevelObject, SpawnDirection, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
     TimedTriggerTarget,
@@ -35,6 +35,40 @@ pub fn rebuild_full_block_mesh(object_count: usize) -> BenchmarkWorkSummary {
         object_count: objects.len(),
         vertex_count: geometry.vertex_count(),
         draw_count: geometry.draw_count(),
+    }
+}
+
+/// Builds a chunked greedy block mesh for a dense voxel field.
+pub fn rebuild_chunked_dense_block_mesh(object_count: usize) -> BenchmarkWorkSummary {
+    let objects = dense_voxel_objects(object_count);
+    let mesh = build_chunked_block_mesh(black_box(&objects));
+    let vertex_count = mesh
+        .chunks
+        .iter()
+        .map(|chunk| {
+            chunk.greedy_geometry.vertex_count()
+                + chunk.fallback.fallback_geometry.vertex_count()
+                + chunk
+                    .fallback
+                    .batches
+                    .iter()
+                    .map(|batch| batch.template.vertex_count())
+                    .sum::<usize>()
+        })
+        .sum();
+    let draw_count = mesh
+        .chunks
+        .iter()
+        .map(|chunk| {
+            chunk.greedy_geometry.draw_count()
+                + chunk.fallback.fallback_geometry.draw_count()
+                + chunk.fallback.batches.len()
+        })
+        .sum();
+    BenchmarkWorkSummary {
+        object_count: objects.len(),
+        vertex_count,
+        draw_count,
     }
 }
 
@@ -456,6 +490,25 @@ pub fn benchmark_objects(object_count: usize) -> Vec<LevelObject> {
                 position: [x, 0.0, z],
                 size: [1.0, 1.0 + ((index % 3) as f32 * 0.25), 1.0],
                 rotation_degrees: [0.0, ((index % 4) as f32) * 15.0, 0.0],
+                block_id: "core/stone".to_string(),
+                color_tint: [1.0, 1.0, 1.0],
+                trigger: None,
+            }
+        })
+        .collect()
+}
+
+/// Builds grid-aligned full-cube blocks for greedy meshing benchmarks.
+pub fn dense_voxel_objects(object_count: usize) -> Vec<LevelObject> {
+    let side = (object_count as f32).sqrt().ceil() as usize;
+    (0..object_count)
+        .map(|index| {
+            let x = (index % side) as f32;
+            let z = (index / side) as f32;
+            LevelObject {
+                position: [x, 0.0, z],
+                size: [1.0, 1.0, 1.0],
+                rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,

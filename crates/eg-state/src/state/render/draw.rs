@@ -7,8 +7,13 @@
 */
 use std::iter;
 
-use eg_render::{current_surface_output, draw_instanced_blocks, draw_mesh, RenderFrameInput};
+use eg_mesh::ChunkAabb;
+use eg_render::{
+    current_surface_output, draw_instanced_blocks, draw_mesh, ChunkedBlockMeshSlot,
+    RenderFrameInput,
+};
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
+use glam::{Mat4, Vec3, Vec4};
 use wgpu::TextureViewDescriptor;
 
 use super::super::State;
@@ -17,6 +22,87 @@ use eg_render::RenderSurfaceError;
 use eg_types::{default_sky_color, AppPhase};
 
 const GRID_HALF_EXTENT: f32 = 2048.0;
+
+#[derive(Clone, Copy)]
+struct FrustumPlane {
+    normal: Vec3,
+    distance: f32,
+}
+
+#[derive(Clone, Copy)]
+struct ViewFrustum {
+    planes: [FrustumPlane; 6],
+}
+
+impl ViewFrustum {
+    fn from_view_projection(view_projection: Mat4) -> Self {
+        let row = |index: usize| -> Vec4 {
+            Vec4::new(
+                view_projection.x_axis[index],
+                view_projection.y_axis[index],
+                view_projection.z_axis[index],
+                view_projection.w_axis[index],
+            )
+        };
+
+        let row_x = row(0);
+        let row_y = row(1);
+        let row_z = row(2);
+        let row_w = row(3);
+        Self {
+            planes: [
+                FrustumPlane::from_vec4(row_w + row_x),
+                FrustumPlane::from_vec4(row_w - row_x),
+                FrustumPlane::from_vec4(row_w + row_y),
+                FrustumPlane::from_vec4(row_w - row_y),
+                FrustumPlane::from_vec4(row_w + row_z),
+                FrustumPlane::from_vec4(row_w - row_z),
+            ],
+        }
+    }
+
+    fn intersects_aabb(self, aabb: ChunkAabb) -> bool {
+        self.planes.iter().all(|plane| plane.intersects_aabb(aabb))
+    }
+}
+
+impl FrustumPlane {
+    fn from_vec4(plane: Vec4) -> Self {
+        let normal = plane.truncate();
+        let length = normal.length();
+        if length <= f32::EPSILON {
+            return Self {
+                normal,
+                distance: plane.w,
+            };
+        }
+        Self {
+            normal: normal / length,
+            distance: plane.w / length,
+        }
+    }
+
+    fn intersects_aabb(self, aabb: ChunkAabb) -> bool {
+        let positive = Vec3::new(
+            if self.normal.x >= 0.0 {
+                aabb.max[0]
+            } else {
+                aabb.min[0]
+            },
+            if self.normal.y >= 0.0 {
+                aabb.max[1]
+            } else {
+                aabb.min[1]
+            },
+            if self.normal.z >= 0.0 {
+                aabb.max[2]
+            } else {
+                aabb.min[2]
+            },
+        );
+        self.normal.dot(positive) + self.distance >= 0.0
+    }
+}
 
 fn grid_center_for_phase(state: &State) -> [f32; 2] {
     match state.phase {
@@ -30,6 +116,62 @@ fn grid_center_for_phase(state: &State) -> [f32; 2] {
             state.gameplay.state.position[2],
         ],
         _ => [0.0, 0.0],
+    }
+}
+
+fn view_projection_for_current_phase(state: &State) -> Mat4 {
+    let height = state.render.gpu.config.height.max(1);
+    let aspect = state.render.gpu.config.width.max(1) as f32 / height as f32;
+    let (eye, target) = match state.phase {
+        AppPhase::Editor if state.editor_is_playing() => {
+            let (eye, target) = state.editor_preview_camera_view();
+            (Vec3::from_array(eye), Vec3::from_array(target))
+        }
+        AppPhase::Editor => {
+            let target = Vec3::new(
+                state.editor.camera.editor_pan[0],
+                state.editor.camera.editor_target_z,
+                state.editor.camera.editor_pan[1],
+            );
+            (target + state.editor_camera_offset(), target)
+        }
+        AppPhase::Playing | AppPhase::GameOver => state.playing_camera_view(),
+        AppPhase::Menu => (
+            Vec3::from_array(state.menu.state.preview_camera_position),
+            Vec3::from_array(state.menu.state.preview_camera_target),
+        ),
+    };
+    Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0)
+        * Mat4::look_at_rh(eye, target, Vec3::Y)
+}
+
+fn draw_visible_chunked_geometry(
+    render_pass: &mut wgpu::RenderPass<'_>,
+    slot: &ChunkedBlockMeshSlot,
+    frustum: ViewFrustum,
+) {
+    for chunk in slot.chunks() {
+        if !frustum.intersects_aabb(chunk.aabb) {
+            continue;
+        }
+        if let Some(draw_data) = chunk.greedy.draw_data() {
+            draw_mesh(render_pass, draw_data);
+        }
+        if let Some(draw_data) = chunk.fallback.draw_data() {
+            draw_mesh(render_pass, draw_data);
+        }
+    }
+}
+
+fn draw_visible_chunked_instances(
+    render_pass: &mut wgpu::RenderPass<'_>,
+    slot: &ChunkedBlockMeshSlot,
+    frustum: ViewFrustum,
+) {
+    for chunk in slot.chunks() {
+        if frustum.intersects_aabb(chunk.aabb) {
+            draw_instanced_blocks(render_pass, &chunk.instanced);
+        }
     }
 }
 
@@ -170,6 +312,8 @@ impl State {
         let draw_editor_overlays = frame_input.should_draw_editor_overlays();
         let clear_color = frame_input.clear_color();
         let grid_uniform = frame_input.grid_uniform(GRID_HALF_EXTENT);
+        let block_frustum =
+            ViewFrustum::from_view_projection(view_projection_for_current_phase(self));
         self.render.gpu.queue.write_buffer(
             &self.render.gpu.grid_uniform_buffer,
             0,
@@ -239,6 +383,11 @@ impl State {
                 if self.phase == AppPhase::Editor {
                     render_pass.set_pipeline(&self.render.gpu.instanced_block_pipeline);
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    draw_visible_chunked_instances(
+                        &mut render_pass,
+                        &self.render.meshes.blocks_static_chunked,
+                        block_frustum,
+                    );
                     draw_instanced_blocks(
                         &mut render_pass,
                         &self.render.meshes.blocks_static_instanced,
@@ -248,6 +397,13 @@ impl State {
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                     render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
                     render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+
+                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    draw_visible_chunked_geometry(
+                        &mut render_pass,
+                        &self.render.meshes.blocks_static_chunked,
+                        block_frustum,
+                    );
 
                     if let Some(draw_data) = self.render.meshes.blocks_static.draw_data() {
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
@@ -261,12 +417,24 @@ impl State {
                 } else {
                     render_pass.set_pipeline(&self.render.gpu.instanced_block_pipeline);
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    draw_visible_chunked_instances(
+                        &mut render_pass,
+                        &self.render.meshes.blocks_chunked,
+                        block_frustum,
+                    );
                     draw_instanced_blocks(&mut render_pass, &self.render.meshes.blocks_instanced);
                     render_pass.set_pipeline(&self.render.gpu.render_pipeline);
                     render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                     render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
                     render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+
+                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    draw_visible_chunked_geometry(
+                        &mut render_pass,
+                        &self.render.meshes.blocks_chunked,
+                        block_frustum,
+                    );
 
                     if let Some(draw_data) = self.render.meshes.blocks.draw_data() {
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
@@ -678,9 +846,9 @@ mod tests {
     use wgpu::Color;
 
     use super::super::MeshSlot;
-    use super::{current_surface_output, RenderSurfaceError};
+    use super::{current_surface_output, RenderSurfaceError, ViewFrustum};
     use crate::state::State;
-    use eg_mesh::Vertex;
+    use eg_mesh::{ChunkAabb, Vertex};
     use eg_render::{
         apply_gamma_correction_if_enabled, clear_color_for_phase, editor_grid_darkening,
         linear_to_srgb, should_draw_editor_cursor, should_draw_editor_overlays,
@@ -700,6 +868,22 @@ mod tests {
         approx_eq(actual.g as f32, expected.g as f32, 1e-6);
         approx_eq(actual.b as f32, expected.b as f32, 1e-6);
         approx_eq(actual.a as f32, expected.a as f32, 1e-6);
+    }
+
+    #[test]
+    fn frustum_intersects_aabb_inside_clip_space() {
+        let frustum = ViewFrustum::from_view_projection(Mat4::IDENTITY);
+        let aabb = ChunkAabb::from_min_max([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]);
+
+        assert!(frustum.intersects_aabb(aabb));
+    }
+
+    #[test]
+    fn frustum_rejects_aabb_outside_clip_space() {
+        let frustum = ViewFrustum::from_view_projection(Mat4::IDENTITY);
+        let aabb = ChunkAabb::from_min_max([2.0, -0.5, -0.5], [3.0, 0.5, 0.5]);
+
+        assert!(!frustum.intersects_aabb(aabb));
     }
 
     fn fullscreen_triangle(z: f32, color: [f32; 4]) -> Vec<Vertex> {

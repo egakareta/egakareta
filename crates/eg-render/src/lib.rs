@@ -15,7 +15,7 @@ mod mesh_slot_tests;
 #[cfg(test)]
 mod shader_tests;
 
-use eg_mesh::{MeshGeometry, Vertex};
+use eg_mesh::{ChunkAabb, ChunkedBlockMesh, MeshGeometry, RenderChunkKey, Vertex};
 use eg_types::{AppPhase, EditorMode, GridUniform, PhysicalSize};
 use wgpu::util::DeviceExt;
 
@@ -194,6 +194,13 @@ pub fn draw_instanced_blocks(render_pass: &mut wgpu::RenderPass<'_>, slot: &Inst
         render_pass.set_vertex_buffer(1, batch.instance_buffer.slice(..));
         render_pass.draw(0..batch.template_vertex_count, 0..batch.instance_count);
     }
+}
+
+pub fn draw_chunk_instanced_blocks(
+    render_pass: &mut wgpu::RenderPass<'_>,
+    chunk: &RenderedBlockChunk,
+) {
+    draw_instanced_blocks(render_pass, &chunk.instanced);
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -581,6 +588,80 @@ pub struct InstancedBatch {
     pub instance_count: u32,
 }
 
+pub struct RenderedBlockChunk {
+    pub key: RenderChunkKey,
+    pub aabb: ChunkAabb,
+    pub greedy: MeshSlot,
+    pub fallback: MeshSlot,
+    pub instanced: InstancedMeshSlot,
+}
+
+impl RenderedBlockChunk {
+    fn destroy(&mut self) {
+        self.greedy.destroy();
+        self.fallback.destroy();
+        self.instanced.destroy();
+    }
+
+    pub fn has_draws(&self) -> bool {
+        self.greedy.draw_data().is_some()
+            || self.fallback.draw_data().is_some()
+            || !self.instanced.is_empty()
+    }
+}
+
+#[derive(Default)]
+pub struct ChunkedBlockMeshSlot {
+    chunks: Vec<RenderedBlockChunk>,
+}
+
+impl ChunkedBlockMeshSlot {
+    pub fn destroy(&mut self) {
+        for chunk in &mut self.chunks {
+            chunk.destroy();
+        }
+        self.chunks.clear();
+    }
+
+    pub fn clear(&mut self) {
+        self.destroy();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.chunks.iter().all(|chunk| !chunk.has_draws())
+    }
+
+    pub fn chunk_count(&self) -> usize {
+        self.chunks.len()
+    }
+
+    pub fn chunks(&self) -> impl Iterator<Item = &RenderedBlockChunk> {
+        self.chunks.iter().filter(|chunk| chunk.has_draws())
+    }
+
+    pub fn replace_with_chunked_mesh(
+        &mut self,
+        device: &wgpu::Device,
+        label: &'static str,
+        mesh: &ChunkedBlockMesh,
+    ) {
+        puffin::profile_scope!("ChunkedBlockMeshSlotReplace");
+        self.destroy();
+        self.chunks.reserve(mesh.chunks.len());
+        for chunk in &mesh.chunks {
+            let mut instanced = InstancedMeshSlot::default();
+            instanced.replace_with_batches(device, label, &chunk.fallback);
+            self.chunks.push(RenderedBlockChunk {
+                key: chunk.key,
+                aabb: chunk.aabb,
+                greedy: MeshSlot::from_geometry(device, label, &chunk.greedy_geometry),
+                fallback: MeshSlot::from_geometry(device, label, &chunk.fallback.fallback_geometry),
+                instanced,
+            });
+        }
+    }
+}
+
 /// GPU-side storage for instanced block rendering. Holds one [`InstancedBatch`]
 /// per block template. Replaces a single giant expanded mesh with compact
 /// per-object instance records, keeping memory bounded for large levels.
@@ -661,8 +742,10 @@ pub struct SceneMeshes {
     pub gem_shatter_effects: MeshSlot,
     pub practice_checkpoints: MeshSlot,
     pub blocks: MeshSlot,
+    pub blocks_chunked: ChunkedBlockMeshSlot,
     pub blocks_instanced: InstancedMeshSlot,
     pub blocks_static: MeshSlot,
+    pub blocks_static_chunked: ChunkedBlockMeshSlot,
     pub blocks_static_instanced: InstancedMeshSlot,
     pub blocks_selected: MeshSlot,
     pub editor_cursor: MeshSlot,
@@ -689,8 +772,10 @@ impl SceneMeshes {
         self.gem_shatter_effects.destroy();
         self.practice_checkpoints.destroy();
         self.blocks.destroy();
+        self.blocks_chunked.destroy();
         self.blocks_instanced.destroy();
         self.blocks_static.destroy();
+        self.blocks_static_chunked.destroy();
         self.blocks_static_instanced.destroy();
         self.blocks_selected.destroy();
         self.editor_cursor.destroy();

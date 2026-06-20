@@ -5,9 +5,12 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_mesh::{BlockInstance, BlockInstanceBatch, BlockInstanceBuildResult, MeshGeometry, Vertex};
+use eg_mesh::{
+    BlockInstance, BlockInstanceBatch, BlockInstanceBuildResult, BlockMeshChunk, ChunkAabb,
+    ChunkBuildStats, ChunkedBlockMesh, MeshGeometry, RenderChunkKey, Vertex,
+};
 
-use super::{InstancedMeshSlot, MeshDrawData, MeshSlot};
+use super::{ChunkedBlockMeshSlot, InstancedMeshSlot, MeshDrawData, MeshSlot};
 
 #[cfg(not(target_arch = "wasm32"))]
 async fn test_device_queue() -> (wgpu::Device, wgpu::Queue) {
@@ -154,5 +157,43 @@ fn instanced_mesh_slot_replaces_and_clears_batches() {
 
         assert!(slot.is_empty());
         assert_eq!(slot.batch_count(), 0);
+    });
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn chunked_block_mesh_slot_replaces_and_clears_chunks() {
+    pollster::block_on(async {
+        let (device, _queue) = test_device_queue().await;
+        let geometry = MeshGeometry {
+            vertices: vec![
+                Vertex::untextured([0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]),
+                Vertex::untextured([1.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]),
+                Vertex::untextured([0.0, 1.0, 0.0], [1.0, 1.0, 1.0, 1.0]),
+            ],
+            indices: Some(vec![0, 1, 2]),
+        };
+        let mesh = ChunkedBlockMesh {
+            chunks: vec![BlockMeshChunk {
+                key: RenderChunkKey { x: 0, y: 0, z: 0 },
+                aabb: ChunkAabb::from_min_max([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+                greedy_geometry: geometry,
+                fallback: BlockInstanceBuildResult::default(),
+                stats: ChunkBuildStats::default(),
+            }],
+            stats: ChunkBuildStats::default(),
+        };
+        let mut slot = ChunkedBlockMeshSlot::default();
+
+        slot.replace_with_chunked_mesh(&device, "Chunked Test Mesh", &mesh);
+
+        assert_eq!(slot.chunk_count(), 1);
+        assert!(!slot.is_empty());
+        assert_eq!(slot.chunks().count(), 1);
+
+        slot.clear();
+
+        assert_eq!(slot.chunk_count(), 0);
+        assert!(slot.is_empty());
     });
 }
