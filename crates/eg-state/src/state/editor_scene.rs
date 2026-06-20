@@ -15,13 +15,14 @@ use eg_editor_domain::tap_time_is_timing_division;
 use eg_editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds_with_triggers};
 use eg_game::trigger_transformed_objects_at_time;
 use eg_mesh::{
-    build_block_geometry, build_block_geometry_at_time, build_block_geometry_for_object,
-    build_block_geometry_from_refs, build_block_geometry_from_refs_at_time,
-    build_camera_arrow_vertices, build_colored_tap_indicator_vertices,
-    build_editor_cursor_vertices, build_editor_gizmo_vertices,
-    build_editor_hitbox_visualization_vertices, build_editor_hover_outline_vertices,
-    build_editor_selection_outline_vertices, build_editor_tap_cursor_vertices,
-    build_editor_transform_trigger_target_outline_vertices,
+    build_block_geometry_for_object, build_block_geometry_from_refs,
+    build_block_geometry_from_refs_at_time, build_block_instance_batches,
+    build_block_instance_batches_at_time, build_block_instance_batches_from_refs,
+    build_block_instance_batches_from_refs_at_time, build_camera_arrow_vertices,
+    build_colored_tap_indicator_vertices, build_editor_cursor_vertices,
+    build_editor_gizmo_vertices, build_editor_hitbox_visualization_vertices,
+    build_editor_hover_outline_vertices, build_editor_selection_outline_vertices,
+    build_editor_tap_cursor_vertices, build_editor_transform_trigger_target_outline_vertices,
     build_practice_checkpoint_flag_geometry, build_spawn_marker_vertices,
     build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices,
     build_transform_trigger_marker_vertices, GizmoParams, GizmoPart, MeshGeometry,
@@ -34,6 +35,7 @@ use eg_types::{
 };
 
 const SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD: usize = 700;
+const MAX_EXPANDED_SELECTED_BLOCK_OBJECTS: usize = 100_000;
 const EDITOR_SELECTION_OUTLINE_COLOR: [f32; 4] = [0.098, 0.6, 1.0, 1.0];
 const EDITOR_HOVER_OUTLINE_COLOR: [f32; 4] = [0.698, 0.898, 1.0, 1.0];
 
@@ -1049,20 +1051,30 @@ impl State {
         if self.phase == AppPhase::Editor {
             self.rebuild_editor_block_vertices_split();
         } else {
-            let geometry = if self.editor.has_camera_timeline_triggers() {
-                build_block_geometry_at_time(
+            // Non-editor phases (menu preview, playing) route normal blocks through
+            // instanced rendering so large levels no longer expand into one giant
+            // vertex buffer. Camera/transform triggers and other special visuals stay
+            // on the fallback mesh path.
+            let result = if self.editor.has_camera_timeline_triggers() {
+                build_block_instance_batches_at_time(
                     &self.gameplay.state.objects,
                     self.gameplay.state.elapsed_seconds,
                 )
             } else {
-                build_block_geometry(&self.gameplay.state.objects)
+                build_block_instance_batches(&self.gameplay.state.objects)
             };
+            self.render.meshes.blocks_instanced.replace_with_batches(
+                &self.render.gpu.device,
+                "Block Instance Buffer",
+                &result,
+            );
             self.render.meshes.blocks.replace_with_geometry(
                 &self.render.gpu.device,
                 "Block Vertex Buffer",
-                &geometry,
+                &result.fallback_geometry,
             );
             self.render.meshes.blocks_static.clear();
+            self.render.meshes.blocks_static_instanced.clear();
             self.render.meshes.blocks_selected.clear();
             self.editor.block_static_vertex_cache.clear();
             self.editor.block_static_vertex_cache_complete_len = None;
@@ -1120,7 +1132,7 @@ impl State {
             selected_mask
         };
 
-        let static_vertices = {
+        let static_instances = {
             puffin::profile_scope!("BlockMeshSplitStatic");
             let mut static_objects = Vec::new();
             for (index, object) in object_source.iter().enumerate() {
@@ -1129,12 +1141,12 @@ impl State {
                 }
             }
             if self.editor.has_camera_timeline_triggers() {
-                build_block_geometry_from_refs_at_time(
+                build_block_instance_batches_from_refs_at_time(
                     &static_objects,
                     Some(self.editor.timeline.clock.time_seconds),
                 )
             } else {
-                build_block_geometry_from_refs(&static_objects)
+                build_block_instance_batches_from_refs(&static_objects)
             }
         };
 
@@ -1146,7 +1158,13 @@ impl State {
                     selected_objects.push(object);
                 }
             }
-            if self.editor.has_camera_timeline_triggers() {
+            if selected_objects.len() > MAX_EXPANDED_SELECTED_BLOCK_OBJECTS {
+                log::warn!(
+                    "Skipping selected block mesh for {} selected objects to avoid an oversized expanded mesh",
+                    selected_objects.len()
+                );
+                MeshGeometry::default()
+            } else if self.editor.has_camera_timeline_triggers() {
                 build_block_geometry_from_refs_at_time(
                     &selected_objects,
                     Some(self.editor.timeline.clock.time_seconds),
@@ -1162,8 +1180,16 @@ impl State {
 
         if !uses_runtime_objects && !has_selected_blocks {
             puffin::profile_scope!("BlockMeshUploadStatic");
-            self.editor.block_static_vertex_cache = static_vertices;
+            self.editor.block_static_vertex_cache = static_instances.fallback_geometry.clone();
             self.editor.block_static_vertex_cache_complete_len = Some(object_source.len());
+            self.render
+                .meshes
+                .blocks_static_instanced
+                .replace_with_batches(
+                    &self.render.gpu.device,
+                    "Block Static Instance Buffer",
+                    &static_instances,
+                );
             let (spare_vertices, spare_indices) = editor_static_mesh_spare_capacity(
                 &self.editor.block_static_vertex_cache,
                 object_source.len(),
@@ -1183,10 +1209,18 @@ impl State {
             puffin::profile_scope!("BlockMeshUploadStatic");
             self.editor.block_static_vertex_cache.clear();
             self.editor.block_static_vertex_cache_complete_len = None;
+            self.render
+                .meshes
+                .blocks_static_instanced
+                .replace_with_batches(
+                    &self.render.gpu.device,
+                    "Block Static Instance Buffer",
+                    &static_instances,
+                );
             self.render.meshes.blocks_static.replace_with_geometry(
                 &self.render.gpu.device,
                 "Block Static Vertex Buffer",
-                &static_vertices,
+                &static_instances.fallback_geometry,
             );
         }
 
@@ -1261,6 +1295,7 @@ impl State {
         }
         self.render.meshes.blocks_selected.clear();
         self.render.meshes.blocks.clear();
+        self.render.meshes.blocks_instanced.clear();
         true
     }
 
@@ -2060,14 +2095,19 @@ mod tests {
             state.rebuild_block_vertices();
             assert!(state.render.meshes.blocks.draw_data().is_none());
             assert!(state.render.meshes.blocks_selected.draw_data().is_some());
-            assert!(state.render.meshes.blocks_static.draw_data().is_some());
+            assert_eq!(
+                state.render.meshes.blocks_static_instanced.instance_count(),
+                1
+            );
 
             state.phase = AppPhase::Playing;
             state.gameplay.state.objects = state.editor.objects.clone();
             state.rebuild_block_vertices();
-            assert!(state.render.meshes.blocks.draw_data().is_some());
+            assert_eq!(state.render.meshes.blocks_instanced.instance_count(), 2);
+            assert!(state.render.meshes.blocks.draw_data().is_none());
             assert!(state.render.meshes.blocks_selected.draw_data().is_none());
             assert!(state.render.meshes.blocks_static.draw_data().is_none());
+            assert!(state.render.meshes.blocks_static_instanced.is_empty());
         });
     }
 

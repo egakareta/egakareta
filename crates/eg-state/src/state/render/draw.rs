@@ -7,7 +7,7 @@
 */
 use std::iter;
 
-use eg_render::{current_surface_output, draw_mesh, RenderFrameInput};
+use eg_render::{current_surface_output, draw_instanced_blocks, draw_mesh, RenderFrameInput};
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 use wgpu::TextureViewDescriptor;
 
@@ -237,6 +237,18 @@ impl State {
             if !skip_world {
                 puffin::profile_scope!("DrawBlocksTrail");
                 if self.phase == AppPhase::Editor {
+                    render_pass.set_pipeline(&self.render.gpu.instanced_block_pipeline);
+                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    draw_instanced_blocks(
+                        &mut render_pass,
+                        &self.render.meshes.blocks_static_instanced,
+                    );
+                    render_pass.set_pipeline(&self.render.gpu.render_pipeline);
+                    render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
+                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                    render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+
                     if let Some(draw_data) = self.render.meshes.blocks_static.draw_data() {
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         draw_mesh(&mut render_pass, draw_data);
@@ -246,9 +258,20 @@ impl State {
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         draw_mesh(&mut render_pass, draw_data);
                     }
-                } else if let Some(draw_data) = self.render.meshes.blocks.draw_data() {
+                } else {
+                    render_pass.set_pipeline(&self.render.gpu.instanced_block_pipeline);
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                    draw_mesh(&mut render_pass, draw_data);
+                    draw_instanced_blocks(&mut render_pass, &self.render.meshes.blocks_instanced);
+                    render_pass.set_pipeline(&self.render.gpu.render_pipeline);
+                    render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
+                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                    render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+
+                    if let Some(draw_data) = self.render.meshes.blocks.draw_data() {
+                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                        draw_mesh(&mut render_pass, draw_data);
+                    }
                 }
 
                 if let Some(draw_data) = self.render.meshes.gem_shatter_effects.draw_data() {

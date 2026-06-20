@@ -5,9 +5,9 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_mesh::{MeshGeometry, Vertex};
+use eg_mesh::{BlockInstance, BlockInstanceBatch, BlockInstanceBuildResult, MeshGeometry, Vertex};
 
-use super::{MeshDrawData, MeshSlot};
+use super::{InstancedMeshSlot, MeshDrawData, MeshSlot};
 
 #[cfg(not(target_arch = "wasm32"))]
 async fn test_device_queue() -> (wgpu::Device, wgpu::Queue) {
@@ -112,5 +112,47 @@ fn streaming_geometry_appends_indexed_data_without_rebuild() {
             slot.draw_data(),
             Some(MeshDrawData::Indexed { .. })
         ));
+    });
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn instanced_mesh_slot_replaces_and_clears_batches() {
+    pollster::block_on(async {
+        let (device, _queue) = test_device_queue().await;
+        let template = MeshGeometry::from_vertices(vec![
+            Vertex::untextured([0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]),
+            Vertex::untextured([1.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]),
+            Vertex::untextured([0.0, 1.0, 0.0], [1.0, 1.0, 1.0, 1.0]),
+        ]);
+        let instance = BlockInstance {
+            model_rows: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ],
+            color_tint_and_noise: [1.0, 1.0, 1.0, 0.0],
+            animation_anchor: [0.0, 0.0, 0.0, 0.0],
+        };
+        let result = BlockInstanceBuildResult {
+            batches: vec![BlockInstanceBatch {
+                block_id: "core/stone".to_string(),
+                template,
+                instances: vec![instance, instance],
+            }],
+            fallback_geometry: MeshGeometry::default(),
+        };
+        let mut slot = InstancedMeshSlot::default();
+
+        slot.replace_with_batches(&device, "Instanced Test Mesh", &result);
+
+        assert_eq!(slot.batch_count(), 1);
+        assert_eq!(slot.instance_count(), 2);
+        assert_eq!(slot.draw_batches().count(), 1);
+
+        slot.clear();
+
+        assert!(slot.is_empty());
+        assert_eq!(slot.batch_count(), 0);
     });
 }

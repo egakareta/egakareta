@@ -14,7 +14,7 @@ use eg_game::{
     advance_simulation_time, trigger_transformed_objects_at_time, TimelineSimulationRuntime,
 };
 use eg_mesh::{
-    build_block_effect_vertices, build_block_geometry_at_time, build_trail_vertices,
+    build_block_effect_vertices, build_block_instance_batches_at_time, build_trail_vertices,
     build_trail_vertices_with_alpha, BlockEffectInstance,
 };
 use eg_platform::state_host::PlatformInstant;
@@ -876,12 +876,19 @@ impl State {
             || self.editor.has_camera_timeline_triggers()
         {
             puffin::profile_scope!("PlayingAnimatedBlockMesh");
-            let animated_geometry =
-                build_block_geometry_at_time(render_objects, self.gameplay.state.elapsed_seconds);
+            let animated_batches = build_block_instance_batches_at_time(
+                render_objects,
+                self.gameplay.state.elapsed_seconds,
+            );
+            self.render.meshes.blocks_instanced.replace_with_batches(
+                &self.render.gpu.device,
+                "Block Instance Buffer",
+                &animated_batches,
+            );
             self.render.meshes.blocks.replace_with_geometry(
                 &self.render.gpu.device,
                 "Block Vertex Buffer",
-                &animated_geometry,
+                &animated_batches.fallback_geometry,
             );
         }
 

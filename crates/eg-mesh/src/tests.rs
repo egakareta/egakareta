@@ -7,7 +7,10 @@
 */
 #[cfg(test)]
 mod tests {
-    use crate::blocks::{build_block_geometry, build_block_vertices};
+    use crate::blocks::{
+        build_block_geometry, build_block_instance_batches, build_block_template_geometry,
+        build_block_vertices,
+    };
     use crate::builders::{
         build_editor_gizmo_vertices, build_editor_hitbox_visualization_vertices,
         build_editor_hover_outline_vertices, build_editor_selection_outline_vertices, GizmoParams,
@@ -80,6 +83,73 @@ mod tests {
         assert_eq!(effective_hitbox_cuboids(&obj).len(), 3);
         assert!(vertices.iter().any(|vertex| vertex.position[0] == 0.0));
         assert!(vertices.iter().any(|vertex| vertex.position[1] == 1.0));
+    }
+
+    #[test]
+    fn block_template_geometry_preserves_custom_cuboid_count() {
+        let stone_template = build_block_template_geometry("core/stone");
+        let fence_template = build_block_template_geometry("core/wooden_fence");
+
+        assert_eq!(stone_template.vertex_count(), 36);
+        assert_eq!(fence_template.vertex_count(), 3 * 36);
+    }
+
+    #[test]
+    fn block_instance_transform_maps_unit_template_to_object_bounds() {
+        let object = LevelObject {
+            position: [2.0, 3.0, 4.0],
+            size: [5.0, 6.0, 7.0],
+            block_id: "core/stone".to_string(),
+            ..LevelObject::default()
+        };
+        let batches = build_block_instance_batches(std::slice::from_ref(&object));
+        let instance = batches.batches[0].instances[0];
+
+        assert_eq!(
+            instance.transform_position([0.0, 0.0, 0.0]),
+            object.position
+        );
+        assert_eq!(
+            instance.transform_position([1.0, 1.0, 1.0]),
+            [7.0, 9.0, 11.0]
+        );
+    }
+
+    #[test]
+    fn block_instance_batches_split_instanced_blocks_from_trigger_fallbacks() {
+        let objects = vec![
+            LevelObject {
+                block_id: "core/stone".to_string(),
+                ..LevelObject::default()
+            },
+            LevelObject {
+                block_id: "core/wooden_fence".to_string(),
+                ..LevelObject::default()
+            },
+            LevelObject {
+                block_id: "core/camera_trigger".to_string(),
+                ..LevelObject::default()
+            },
+            LevelObject {
+                block_id: "core/transform_trigger".to_string(),
+                ..LevelObject::default()
+            },
+        ];
+
+        let batches = build_block_instance_batches(&objects);
+
+        assert_eq!(batches.instance_count(), 2);
+        assert_eq!(batches.batches.len(), 2);
+        assert!(batches
+            .batches
+            .iter()
+            .any(|batch| batch.block_id == "core/stone" && batch.template.vertex_count() == 36));
+        assert!(batches
+            .batches
+            .iter()
+            .any(|batch| batch.block_id == "core/wooden_fence"
+                && batch.template.vertex_count() == 3 * 36));
+        assert!(batches.fallback_draw_count() > 0);
     }
 
     #[test]

@@ -59,6 +59,130 @@ struct VertexOutput {
     @location(6) world_position: vec3<f32>,
 };
 
+// Per-instance block data for the instanced rendering path. `model_row_*` hold the
+// rows of a 3x4 affine local->world transform; `color_tint_and_noise` packs the
+// object color tint (xyz) and a pre-computed additive noise factor (w); and
+// `animation_anchor` provides the world-space idle-animation pivot and phase seed.
+struct InstanceInput {
+    @location(10) model_row_0: vec4<f32>,
+    @location(11) model_row_1: vec4<f32>,
+    @location(12) model_row_2: vec4<f32>,
+    @location(13) color_tint_and_noise: vec4<f32>,
+    @location(14) animation_anchor: vec4<f32>,
+};
+
+// Apply idle spin/bob/pulse animation around a world-space anchor. Shared by the
+// per-vertex and instanced vertex paths so motion stays identical.
+fn animate_world_position(
+    world_in: vec3<f32>,
+    animation_anchor: vec4<f32>,
+    animation_params: vec4<f32>,
+    animation_params2: vec4<f32>,
+) -> vec3<f32> {
+    let animation_strength = abs(animation_params.y)
+        + abs(animation_params.w)
+        + abs(animation_params2.y);
+    if animation_strength <= 0.000001 {
+        return world_in;
+    }
+
+    let anchor = animation_anchor.xyz;
+    var local = world_in - anchor;
+    let phase = animation_anchor.w;
+
+    let pulse = sin(u_color_space.flags.y * animation_params2.z + phase)
+        * animation_params2.y;
+    local = local * max(0.05, 1.0 + pulse);
+
+    let spin_axis = round(animation_params.x);
+    let angle = u_color_space.flags.y * animation_params.y + phase;
+    let c_spin = cos(angle);
+    let s_spin = sin(angle);
+    if spin_axis > 0.5 && spin_axis < 1.5 {
+        local = vec3<f32>(
+            local.x,
+            local.y * c_spin - local.z * s_spin,
+            local.y * s_spin + local.z * c_spin
+        );
+    } else if spin_axis > 1.5 && spin_axis < 2.5 {
+        local = vec3<f32>(
+            local.x * c_spin - local.z * s_spin,
+            local.y,
+            local.x * s_spin + local.z * c_spin
+        );
+    } else if spin_axis > 2.5 && spin_axis < 3.5 {
+        local = vec3<f32>(
+            local.x * c_spin - local.y * s_spin,
+            local.x * s_spin + local.y * c_spin,
+            local.z
+        );
+    }
+
+    var bob = vec3<f32>(0.0, 0.0, 0.0);
+    let bob_axis = round(animation_params.z);
+    let bob_amount = sin(u_color_space.flags.y * animation_params2.x + phase)
+        * animation_params.w;
+    if bob_axis > 0.5 && bob_axis < 1.5 {
+        bob.x = bob_amount;
+    } else if bob_axis > 1.5 && bob_axis < 2.5 {
+        bob.y = bob_amount;
+    } else if bob_axis > 2.5 && bob_axis < 3.5 {
+        bob.z = bob_amount;
+    }
+
+    return anchor + local + bob;
+}
+
+// Apply the shared line rotation/offset and project to clip space. Returns both the
+// clip-space position and the rotated world position used for fragment effects.
+fn world_to_clip(world_position: vec3<f32>) -> VertexOutput {
+    var out: VertexOutput;
+    let c = cos(u_line.rotation);
+    let s = sin(u_line.rotation);
+    let rotated_pos = vec3<f32>(
+        world_position.x * c - world_position.z * s,
+        world_position.y,
+        world_position.x * s + world_position.z * c
+    );
+    let offset = vec3<f32>(u_line.offset.x, 0.0, u_line.offset.y);
+    out.position = u_camera.view_proj * vec4<f32>(rotated_pos + offset, 1.0);
+    out.world_position = rotated_pos + offset;
+    return out;
+}
+
+@vertex
+fn vs_instanced(input: VertexInput, instance: InstanceInput) -> VertexOutput {
+    // Transform template-local geometry into world space via the instance affine.
+    let local = vec4<f32>(input.position, 1.0);
+    let world_local = vec3<f32>(
+        dot(instance.model_row_0, local),
+        dot(instance.model_row_1, local),
+        dot(instance.model_row_2, local)
+    );
+
+    let animated = animate_world_position(
+        world_local,
+        instance.animation_anchor,
+        input.animation_params,
+        input.animation_params2
+    );
+
+    var out = world_to_clip(animated);
+
+    // Reproduce the CPU color pipeline: additive noise (uniform across faces) then
+    // multiplicative object tint. Noise is not applied to the outline color.
+    let tint = clamp(instance.color_tint_and_noise.xyz, vec3<f32>(0.0), vec3<f32>(1.0));
+    let noise_factor = instance.color_tint_and_noise.w;
+    let base_rgb = clamp(input.color.rgb + noise_factor, vec3<f32>(0.0), vec3<f32>(1.0));
+    out.color = vec4<f32>(base_rgb * tint, input.color.a);
+    out.uv = input.uv;
+    out.uv_norm = input.uv_norm;
+    out.texture_layer = input.texture_layer;
+    out.color_outline = vec4<f32>(input.color_outline.rgb * tint, input.color_outline.a);
+    out.render_profile = input.render_profile;
+    return out;
+}
+
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var out: VertexOutput;

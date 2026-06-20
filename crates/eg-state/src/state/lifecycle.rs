@@ -16,7 +16,7 @@ use super::{
     SessionSubsystem, State,
 };
 use crate::state::RenderSubsystem;
-use eg_render::{GpuContext, MeshSlot, SceneMeshes, DEPTH_FORMAT};
+use eg_render::{GpuContext, InstancedMeshSlot, MeshSlot, SceneMeshes, DEPTH_FORMAT};
 use glam::Mat4;
 #[cfg(any(test, feature = "test-support"))]
 use std::sync::OnceLock;
@@ -26,7 +26,8 @@ use eg_blocks::block_texture_atlas;
 use eg_game::{create_menu_scene, GameState};
 use eg_level::builtin_level_names;
 use eg_mesh::{
-    build_block_geometry, build_floor_vertices, build_grid_vertices, MeshGeometry, Vertex,
+    build_block_geometry, build_floor_vertices, build_grid_vertices, BlockInstance, MeshGeometry,
+    Vertex,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use eg_platform::state_host::NativeWindow;
@@ -238,6 +239,7 @@ struct TestGpuFixture {
     editor_outline_occlusion_depth_texture: wgpu::Texture,
     editor_outline_occlusion_depth_view: wgpu::TextureView,
     render_pipeline: wgpu::RenderPipeline,
+    instanced_block_pipeline: wgpu::RenderPipeline,
     grid_pipeline: wgpu::RenderPipeline,
     block_icon_pipeline: wgpu::RenderPipeline,
     editor_ghost_trail_pipeline: wgpu::RenderPipeline,
@@ -288,6 +290,7 @@ impl From<&GpuContext> for TestGpuFixture {
                 .clone(),
             editor_outline_occlusion_depth_view: gpu.editor_outline_occlusion_depth_view.clone(),
             render_pipeline: gpu.render_pipeline.clone(),
+            instanced_block_pipeline: gpu.instanced_block_pipeline.clone(),
             grid_pipeline: gpu.grid_pipeline.clone(),
             block_icon_pipeline: gpu.block_icon_pipeline.clone(),
             editor_ghost_trail_pipeline: gpu.editor_ghost_trail_pipeline.clone(),
@@ -540,6 +543,7 @@ impl State {
                         .editor_outline_occlusion_depth_view
                         .clone(),
                     render_pipeline: fixture.render_pipeline.clone(),
+                    instanced_block_pipeline: fixture.instanced_block_pipeline.clone(),
                     grid_pipeline: fixture.grid_pipeline.clone(),
                     block_icon_pipeline: fixture.block_icon_pipeline.clone(),
                     editor_ghost_trail_pipeline: fixture.editor_ghost_trail_pipeline.clone(),
@@ -572,7 +576,9 @@ impl State {
                     gem_shatter_effects: MeshSlot::Empty,
                     practice_checkpoints: MeshSlot::Empty,
                     blocks: MeshSlot::Empty,
+                    blocks_instanced: InstancedMeshSlot::default(),
                     blocks_static: MeshSlot::Empty,
+                    blocks_static_instanced: InstancedMeshSlot::default(),
                     blocks_selected: MeshSlot::Empty,
                     editor_cursor: MeshSlot::Empty,
                     editor_hover_stencil: MeshSlot::Empty,
@@ -1106,6 +1112,39 @@ impl State {
             cache: None,
         });
 
+        let instanced_block_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Instanced Block Pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_instanced"),
+                    buffers: &[Vertex::desc(), BlockInstance::desc()],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: config.format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::Less),
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                multiview_mask: None,
+                cache: None,
+            });
+
         let grid_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Grid Pipeline"),
             layout: Some(&grid_pipeline_layout),
@@ -1443,6 +1482,7 @@ impl State {
                     editor_outline_occlusion_depth_texture,
                     editor_outline_occlusion_depth_view,
                     render_pipeline,
+                    instanced_block_pipeline,
                     grid_pipeline,
                     block_icon_pipeline,
                     editor_ghost_trail_pipeline,
@@ -1473,7 +1513,9 @@ impl State {
                     gem_shatter_effects: MeshSlot::Empty,
                     practice_checkpoints: MeshSlot::Empty,
                     blocks: block_mesh,
+                    blocks_instanced: InstancedMeshSlot::default(),
                     blocks_static: MeshSlot::Empty,
+                    blocks_static_instanced: InstancedMeshSlot::default(),
                     blocks_selected: MeshSlot::Empty,
                     editor_cursor: MeshSlot::Empty,
                     editor_hover_stencil: MeshSlot::Empty,
@@ -1756,7 +1798,7 @@ mod tests {
     }
 
     #[test]
-    fn test_phase_transition_clipboard_clearing() {
+    fn test_phase_transition_preserves_editor_clipboard() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
             state.enter_editor_phase("Test Level".to_string());
@@ -1768,18 +1810,18 @@ mod tests {
             state.dispatch(AppCommand::Editor(EditorCommand::CopyBlock));
             assert!(state.editor.runtime.interaction.clipboard.is_some());
 
-            // 2. Transition to playing: Should clear clipboard
+            // 2. Transition to playing: Clipboard should remain available for editor re-entry.
             state.start_level(0);
             assert_eq!(state.phase, AppPhase::Playing);
             assert!(
-                state.editor.runtime.interaction.clipboard.is_none(),
-                "Clipboard should be cleared when entering game phase"
+                state.editor.runtime.interaction.clipboard.is_some(),
+                "Clipboard should survive entering game phase"
             );
         });
     }
 
     #[test]
-    fn test_editor_load_level_resets_history_and_clipboard() {
+    fn test_editor_load_level_resets_history_and_preserves_clipboard() {
         pollster::block_on(async {
             let mut state = State::new_test().await;
             state.enter_editor_phase("Test Level".to_string());
@@ -1803,8 +1845,8 @@ mod tests {
                 "Loading a level in editor must clear redo history"
             );
             assert!(
-                state.editor.runtime.interaction.clipboard.is_none(),
-                "Loading a level in editor must clear clipboard"
+                state.editor.runtime.interaction.clipboard.is_some(),
+                "Loading a level in editor should preserve clipboard"
             );
         });
     }

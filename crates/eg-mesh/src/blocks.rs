@@ -6,6 +6,7 @@
 
 */
 use rayon::prelude::*;
+use std::collections::BTreeMap;
 
 use crate::advanced_shapes::append_cone;
 use crate::builders::game::{
@@ -16,7 +17,7 @@ use crate::geometry::MeshGeometry;
 use crate::noise::pseudo_random_noise;
 use crate::shapes::{append_prism_with_layers, PrismFaceColors, PrismTextureLayers};
 use crate::transforms::rotate_vertices_around_euler;
-use crate::Vertex;
+use crate::{BlockInstance, Vertex};
 use eg_block_geometry::visual_cuboids;
 use eg_blocks::{resolve_block_definition, resolve_block_texture_layers};
 use eg_types::{
@@ -32,6 +33,7 @@ const CAMERA_TRIGGER_PROFILE_TAG: f32 = 6.0;
 const PARALLEL_GEOMETRY_OBJECT_THRESHOLD: usize = 256;
 const PARALLEL_CHUNK_SIZE: usize = 128;
 const VERTICES_PER_PRISM: usize = 36;
+const MAX_FALLBACK_BLOCK_GEOMETRY_OBJECTS: usize = 10_000;
 
 pub fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
     puffin::profile_scope!("BuildBlockVertices");
@@ -91,6 +93,276 @@ pub fn build_block_geometry_for_object(object: &LevelObject) -> MeshGeometry {
     let mut geometry = MeshGeometry::default();
     append_block_geometry(&mut geometry, object, None);
     geometry
+}
+
+#[derive(Clone)]
+pub struct BlockInstanceBatch {
+    pub block_id: String,
+    pub template: MeshGeometry,
+    pub instances: Vec<BlockInstance>,
+}
+
+#[derive(Clone, Default)]
+pub struct BlockInstanceBuildResult {
+    pub batches: Vec<BlockInstanceBatch>,
+    pub fallback_geometry: MeshGeometry,
+}
+
+impl BlockInstanceBuildResult {
+    pub fn instance_count(&self) -> usize {
+        self.batches.iter().map(|batch| batch.instances.len()).sum()
+    }
+
+    pub fn fallback_draw_count(&self) -> usize {
+        self.fallback_geometry.draw_count()
+    }
+}
+
+pub fn build_block_instance_batches(objects: &[LevelObject]) -> BlockInstanceBuildResult {
+    build_block_instance_batches_from_refs_at_time(&objects.iter().collect::<Vec<_>>(), None)
+}
+
+pub fn build_block_instance_batches_from_refs(
+    objects: &[&LevelObject],
+) -> BlockInstanceBuildResult {
+    build_block_instance_batches_from_refs_at_time(objects, None)
+}
+
+pub fn build_block_instance_batches_at_time(
+    objects: &[LevelObject],
+    current_time_seconds: f32,
+) -> BlockInstanceBuildResult {
+    build_block_instance_batches_from_refs_at_time(
+        &objects.iter().collect::<Vec<_>>(),
+        Some(current_time_seconds),
+    )
+}
+
+pub fn build_block_instance_batches_from_refs_at_time(
+    objects: &[&LevelObject],
+    current_time_seconds: Option<f32>,
+) -> BlockInstanceBuildResult {
+    puffin::profile_scope!("BuildBlockInstanceBatches");
+    let mut grouped_instances = BTreeMap::<String, Vec<BlockInstance>>::new();
+    let mut fallback_geometry = MeshGeometry::default();
+    let mut scratch = Vec::with_capacity(VERTICES_PER_PRISM);
+    let mut fallback_object_count = 0usize;
+    let mut warned_about_fallback_limit = false;
+
+    for object in objects {
+        let block = resolve_block_definition(&object.block_id);
+        if is_instanced_block_definition(block) {
+            grouped_instances
+                .entry(block.id.clone())
+                .or_default()
+                .push(block_instance_from_object(object, block));
+        } else {
+            if fallback_object_count >= MAX_FALLBACK_BLOCK_GEOMETRY_OBJECTS {
+                if !warned_about_fallback_limit {
+                    log::warn!(
+                        "Skipping block fallback geometry after {MAX_FALLBACK_BLOCK_GEOMETRY_OBJECTS} objects to avoid an oversized expanded mesh"
+                    );
+                    warned_about_fallback_limit = true;
+                }
+                continue;
+            }
+            append_block_geometry_with_scratch(
+                &mut fallback_geometry,
+                object,
+                &mut scratch,
+                current_time_seconds,
+            );
+            fallback_object_count += 1;
+        }
+    }
+
+    let batches = grouped_instances
+        .into_iter()
+        .map(|(block_id, instances)| BlockInstanceBatch {
+            template: build_block_template_geometry(&block_id),
+            block_id,
+            instances,
+        })
+        .collect();
+
+    BlockInstanceBuildResult {
+        batches,
+        fallback_geometry,
+    }
+}
+
+pub fn build_block_template_geometry(block_id: &str) -> MeshGeometry {
+    puffin::profile_scope!("BuildBlockTemplateGeometry");
+    let block = resolve_block_definition(block_id);
+    let texture_layers = resolve_block_texture_layers(&block.id);
+    let colors = BlockColors {
+        top: block.render.color_top,
+        side: block.render.color_side,
+        bottom: block.render.color_bottom,
+        outline: block.render.color_outline,
+    };
+    let prism_colors =
+        PrismFaceColors::new_with_outline(colors.top, colors.side, colors.bottom, colors.outline);
+    let prism_layers = PrismTextureLayers::new(
+        texture_layers.top,
+        texture_layers.side,
+        texture_layers.bottom,
+    );
+    let mut vertices = Vec::new();
+
+    if block.geometry.elements.is_empty() {
+        append_prism_with_layers(
+            &mut vertices,
+            [0.0, 0.0, 0.0],
+            [1.0, 1.0, 1.0],
+            prism_colors,
+            prism_layers,
+        );
+    } else {
+        vertices.reserve(
+            block
+                .geometry
+                .elements
+                .len()
+                .saturating_mul(VERTICES_PER_PRISM),
+        );
+        for cuboid in &block.geometry.elements {
+            let cuboid_colors = cuboid
+                .color_tint
+                .map(|color_tint| prism_colors.tinted(color_tint))
+                .unwrap_or(prism_colors);
+            append_prism_with_layers(
+                &mut vertices,
+                block_template_position(cuboid.from),
+                block_template_position(cuboid.to),
+                cuboid_colors,
+                prism_layers,
+            );
+        }
+    }
+
+    apply_block_template_profile_tags(&mut vertices, block, &colors);
+    MeshGeometry::from_vertices(vertices)
+}
+
+fn is_instanced_block_definition(block: &BlockDefinition) -> bool {
+    !matches!(
+        block.render.profile,
+        BlockRenderProfile::CameraTrigger | BlockRenderProfile::TransformTrigger
+    )
+}
+
+fn block_template_position(local: [f32; 3]) -> [f32; 3] {
+    [local[0] / 16.0, local[1] / 16.0, local[2] / 16.0]
+}
+
+fn block_instance_from_object(object: &LevelObject, block: &BlockDefinition) -> BlockInstance {
+    let rotation = glam::Mat3::from_euler(
+        glam::EulerRot::XYZ,
+        object.rotation_degrees[0].to_radians(),
+        object.rotation_degrees[1].to_radians(),
+        object.rotation_degrees[2].to_radians(),
+    );
+    let size = Vec3::from_array(object.size);
+    let position = Vec3::from_array(object.position);
+    let half_size = size * 0.5;
+    let center = position + half_size;
+    let translation = center - rotation * half_size;
+    let scaled_x = rotation * Vec3::X * size.x;
+    let scaled_y = rotation * Vec3::Y * size.y;
+    let scaled_z = rotation * Vec3::Z * size.z;
+    // Pre-compute the additive noise factor so the shader can apply it directly
+    // as `clamp(base_rgb + factor, 0, 1)` before the multiplicative tint, matching
+    // the per-vertex path in `append_block_geometry_inner`.
+    let noise_factor = if block.render.noise.abs() > f32::EPSILON {
+        let noise = pseudo_random_noise(object.position[0], object.position[1], object.position[2]);
+        (noise * 2.0 - 1.0) * block.render.noise
+    } else {
+        0.0
+    };
+    let animation_anchor = block_instance_animation_anchor(block, center);
+
+    BlockInstance {
+        model_rows: [
+            [scaled_x.x, scaled_y.x, scaled_z.x, translation.x],
+            [scaled_x.y, scaled_y.y, scaled_z.y, translation.y],
+            [scaled_x.z, scaled_y.z, scaled_z.z, translation.z],
+        ],
+        color_tint_and_noise: [
+            object.color_tint[0],
+            object.color_tint[1],
+            object.color_tint[2],
+            noise_factor,
+        ],
+        animation_anchor,
+    }
+}
+
+fn block_instance_animation_anchor(block: &BlockDefinition, center: Vec3) -> [f32; 4] {
+    let phase_seed = match block.animation.idle.phase_seed {
+        BlockAnimationPhaseSeed::None => 0.0,
+        BlockAnimationPhaseSeed::Position => {
+            pseudo_random_noise(center.x, center.y, center.z) * std::f32::consts::TAU
+        }
+    };
+    [center.x, center.y, center.z, phase_seed]
+}
+
+fn apply_block_template_profile_tags(
+    vertices: &mut [Vertex],
+    block: &BlockDefinition,
+    colors: &BlockColors,
+) {
+    match &block.render.profile {
+        BlockRenderProfile::Neon => {
+            for vertex in vertices.iter_mut() {
+                vertex.color = colors.top;
+            }
+        }
+        BlockRenderProfile::Liquid => {
+            for vertex in vertices.iter_mut() {
+                vertex.set_render_profile(LIQUID_PROFILE_TAG);
+            }
+        }
+        BlockRenderProfile::Gem => {
+            for vertex in vertices.iter_mut() {
+                vertex.set_render_profile(GEM_PROFILE_TAG);
+            }
+        }
+        BlockRenderProfile::Solid | BlockRenderProfile::SpeedPortal => {}
+        BlockRenderProfile::TransformTrigger | BlockRenderProfile::CameraTrigger => {}
+    }
+    apply_idle_animation_params(vertices, block);
+}
+
+fn apply_idle_animation_params(vertices: &mut [Vertex], block: &BlockDefinition) {
+    let idle = &block.animation.idle;
+    if !idle.has_motion() {
+        return;
+    }
+
+    let spin = idle.spin.filter(|animation| animation.is_active());
+    let bob = idle.bob.filter(|animation| animation.is_active());
+    let pulse = idle.pulse.filter(|animation| animation.is_active());
+    let animation_params = [
+        spin.map(|animation| animation_axis_tag(animation.axis))
+            .unwrap_or(0.0),
+        spin.map(|animation| animation.speed).unwrap_or(0.0),
+        bob.map(|animation| animation_axis_tag(animation.axis))
+            .unwrap_or(0.0),
+        bob.map(|animation| animation.amplitude).unwrap_or(0.0),
+    ];
+    let animation_params2 = [
+        bob.map(|animation| animation.frequency).unwrap_or(0.0),
+        pulse.map(|animation| animation.amplitude).unwrap_or(0.0),
+        pulse.map(|animation| animation.frequency).unwrap_or(0.0),
+        0.0,
+    ];
+
+    for vertex in vertices.iter_mut() {
+        vertex.animation_params = animation_params;
+        vertex.animation_params2 = animation_params2;
+    }
 }
 
 fn build_block_geometry_impl<'a, I>(objects: I, current_time_seconds: Option<f32>) -> MeshGeometry

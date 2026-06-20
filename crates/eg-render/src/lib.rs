@@ -186,6 +186,16 @@ pub fn draw_mesh(render_pass: &mut wgpu::RenderPass<'_>, draw_data: MeshDrawData
     }
 }
 
+/// Draw every batch in an [`InstancedMeshSlot`], binding template geometry on
+/// vertex buffer slot 0 and per-instance data on slot 1.
+pub fn draw_instanced_blocks(render_pass: &mut wgpu::RenderPass<'_>, slot: &InstancedMeshSlot) {
+    for batch in slot.draw_batches() {
+        render_pass.set_vertex_buffer(0, batch.template_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, batch.instance_buffer.slice(..));
+        render_pass.draw(0..batch.template_vertex_count, 0..batch.instance_count);
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EditorOutlineInstance {
     pub mask_vertices: std::ops::Range<u32>,
@@ -561,6 +571,89 @@ impl MeshSlot {
     }
 }
 
+/// A single instanced batch on the GPU: one template vertex buffer shared by
+/// `instance_count` per-instance records.
+pub struct InstancedBatch {
+    pub block_id: String,
+    pub template_buffer: wgpu::Buffer,
+    pub template_vertex_count: u32,
+    pub instance_buffer: wgpu::Buffer,
+    pub instance_count: u32,
+}
+
+/// GPU-side storage for instanced block rendering. Holds one [`InstancedBatch`]
+/// per block template. Replaces a single giant expanded mesh with compact
+/// per-object instance records, keeping memory bounded for large levels.
+#[derive(Default)]
+pub struct InstancedMeshSlot {
+    batches: Vec<InstancedBatch>,
+}
+
+impl InstancedMeshSlot {
+    pub fn destroy(&mut self) {
+        for batch in self.batches.drain(..) {
+            batch.template_buffer.destroy();
+            batch.instance_buffer.destroy();
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.destroy();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.batches.iter().all(|batch| batch.instance_count == 0)
+    }
+
+    pub fn instance_count(&self) -> u32 {
+        self.batches.iter().map(|batch| batch.instance_count).sum()
+    }
+
+    pub fn batch_count(&self) -> usize {
+        self.batches.len()
+    }
+
+    pub fn draw_batches(&self) -> impl Iterator<Item = &InstancedBatch> {
+        self.batches
+            .iter()
+            .filter(|batch| batch.instance_count > 0 && batch.template_vertex_count > 0)
+    }
+
+    /// Rebuild all GPU batches from a freshly computed instance build result.
+    pub fn replace_with_batches(
+        &mut self,
+        device: &wgpu::Device,
+        label: &'static str,
+        result: &eg_mesh::BlockInstanceBuildResult,
+    ) {
+        puffin::profile_scope!("InstancedMeshSlotReplace");
+        self.destroy();
+        self.batches.reserve(result.batches.len());
+        for batch in &result.batches {
+            if batch.instances.is_empty() || batch.template.vertices.is_empty() {
+                continue;
+            }
+            let template_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents: bytemuck::cast_slice(&batch.template.vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+            let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents: bytemuck::cast_slice(&batch.instances),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+            self.batches.push(InstancedBatch {
+                block_id: batch.block_id.clone(),
+                template_buffer,
+                template_vertex_count: batch.template.vertices.len() as u32,
+                instance_buffer,
+                instance_count: batch.instances.len() as u32,
+            });
+        }
+    }
+}
+
 pub struct SceneMeshes {
     pub floor: MeshSlot,
     pub grid: MeshSlot,
@@ -568,7 +661,9 @@ pub struct SceneMeshes {
     pub gem_shatter_effects: MeshSlot,
     pub practice_checkpoints: MeshSlot,
     pub blocks: MeshSlot,
+    pub blocks_instanced: InstancedMeshSlot,
     pub blocks_static: MeshSlot,
+    pub blocks_static_instanced: InstancedMeshSlot,
     pub blocks_selected: MeshSlot,
     pub editor_cursor: MeshSlot,
     pub editor_hover_stencil: MeshSlot,
@@ -594,7 +689,9 @@ impl SceneMeshes {
         self.gem_shatter_effects.destroy();
         self.practice_checkpoints.destroy();
         self.blocks.destroy();
+        self.blocks_instanced.destroy();
         self.blocks_static.destroy();
+        self.blocks_static_instanced.destroy();
         self.blocks_selected.destroy();
         self.editor_cursor.destroy();
         self.editor_hover_stencil.destroy();
@@ -624,6 +721,7 @@ pub struct GpuContext {
     pub editor_outline_occlusion_depth_texture: wgpu::Texture,
     pub editor_outline_occlusion_depth_view: wgpu::TextureView,
     pub render_pipeline: wgpu::RenderPipeline,
+    pub instanced_block_pipeline: wgpu::RenderPipeline,
     pub grid_pipeline: wgpu::RenderPipeline,
     pub block_icon_pipeline: wgpu::RenderPipeline,
     pub editor_ghost_trail_pipeline: wgpu::RenderPipeline,
