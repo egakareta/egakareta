@@ -1189,7 +1189,6 @@ impl State {
                 &self.editor.objects,
                 &self.editor.timeline.taps.tap_times,
                 &self.editor.triggers(),
-                self.editor.simulate_trigger_hitboxes(),
             )
         };
 
@@ -1433,6 +1432,7 @@ impl State {
                     position: object.position,
                     rotation_degrees: object.rotation_degrees,
                     size: object.size,
+                    simulate_hitboxes: false,
                 },
             };
             created_trigger_indices.push(self.editor.add_trigger(trigger));
@@ -1464,8 +1464,8 @@ impl State {
         self.editor.triggers()
     }
 
-    pub fn editor_simulate_trigger_hitboxes(&self) -> bool {
-        self.editor.simulate_trigger_hitboxes()
+    pub fn editor_has_simulate_hitboxes_triggers(&self) -> bool {
+        self.editor.has_simulate_hitboxes_triggers()
     }
 
     #[cfg(test)]
@@ -1500,21 +1500,6 @@ impl State {
             self.mark_editor_dirty(EditorDirtyFlags::trigger_selection_changed());
             self.mark_editor_dirty(EditorDirtyFlags::selection_overlay_changed());
         }
-    }
-
-    pub fn set_editor_simulate_trigger_hitboxes(&mut self, enabled: bool) {
-        if self.phase != AppPhase::Editor {
-            return;
-        }
-
-        if self.editor.simulate_trigger_hitboxes() == enabled {
-            return;
-        }
-
-        self.record_editor_history_state();
-        self.editor.set_simulate_trigger_hitboxes(enabled);
-        self.editor.invalidate_samples();
-        self.mark_editor_dirty(EditorDirtyFlags::simulate_trigger_hitboxes_changed());
     }
 
     pub fn editor_playback_speed(&self) -> f32 {
@@ -1673,6 +1658,7 @@ mod tests {
                 position,
                 rotation_degrees: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
+                simulate_hitboxes: false,
             },
         }
     }
@@ -1761,6 +1747,7 @@ mod tests {
                     position,
                     rotation_degrees,
                     size,
+                    ..
                 } => {
                     for component in 0..3 {
                         approx_eq(position[component], [0.0, 0.0, 0.0][component], 1e-6);
@@ -1779,6 +1766,7 @@ mod tests {
                     position,
                     rotation_degrees,
                     size,
+                    ..
                 } => {
                     for component in 0..3 {
                         approx_eq(position[component], [4.0, 0.0, 0.0][component], 1e-6);
@@ -1882,6 +1870,7 @@ mod tests {
                 position,
                 rotation_degrees,
                 size,
+                ..
             } = &existing_trigger.action
             else {
                 panic!("expected transform trigger action");
@@ -2298,9 +2287,25 @@ mod tests {
             state.editor_clear_taps();
             assert!(state.editor_tap_times().is_empty());
 
-            assert!(!state.editor_simulate_trigger_hitboxes());
-            state.set_editor_simulate_trigger_hitboxes(true);
-            assert!(state.editor_simulate_trigger_hitboxes());
+            // The hitbox-simulation flag is now per transform trigger: a transform
+            // trigger that does not opt in leaves hitboxes static, while one that
+            // opts in moves hitboxes during play.
+            assert!(!state.editor_has_simulate_hitboxes_triggers());
+            state.editor.set_triggers(vec![TimedTrigger {
+                time_seconds: 0.0,
+                duration_seconds: 1.0,
+                easing: TimedTriggerEasing::Linear,
+                target: TimedTriggerTarget::Objects {
+                    object_ids: vec!["obj_000001".to_string()],
+                },
+                action: TimedTriggerAction::TransformObjects {
+                    position: [1.0, 0.0, 0.0],
+                    rotation_degrees: [0.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
+                    simulate_hitboxes: true,
+                },
+            }]);
+            assert!(state.editor_has_simulate_hitboxes_triggers());
 
             state.set_editor_playback_speed(4.0);
             assert_eq!(state.editor_playback_speed(), 2.0);

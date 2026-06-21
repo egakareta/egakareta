@@ -54,7 +54,6 @@ pub struct EditorPlaytestTransitionParams<'a> {
     pub sky_color: [f32; 3],
     pub tap_times: &'a [f32],
     pub triggers: &'a [TimedTrigger],
-    pub simulate_trigger_hitboxes: bool,
     pub timeline_seconds: (f32, f32),
 }
 
@@ -68,7 +67,6 @@ pub fn build_editor_playtest_transition(
         sky_color,
         tap_times,
         triggers,
-        simulate_trigger_hitboxes,
         timeline_seconds,
     } = params;
     let (timeline_time_seconds, timeline_duration_seconds) = timeline_seconds;
@@ -79,7 +77,6 @@ pub fn build_editor_playtest_transition(
         timeline_time_seconds,
         objects,
         triggers,
-        simulate_trigger_hitboxes,
     );
 
     EditorPlaytestTransition {

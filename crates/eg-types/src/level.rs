@@ -92,7 +92,7 @@ serde_default_array!(default_preview_camera_position_zero: [f32; 3] = [0.0, 0.0,
 serde_default_array!(default_preview_camera_target_zero: [f32; 3] = [0.0, 0.0, 0.0]);
 serde_default_float!(default_timeline_time_seconds: f32 = 0.0);
 serde_default_float!(default_timeline_duration_seconds: f32 = 16.0);
-serde_default!(default_simulate_trigger_hitboxes: bool = false);
+serde_default!(default_transform_simulate_hitboxes: bool = false);
 serde_default_array!(default_block_rotation_degrees: [f32; 3] = [0.0, 0.0, 0.0]);
 serde_default_array!(default_level_object_position: [f32; 3] = [0.0, 0.0, 0.0]);
 serde_default_array!(default_level_object_size: [f32; 3] = [1.0, 1.0, 1.0]);
@@ -296,7 +296,6 @@ pub struct EditorStateParams {
     pub timing_points: Vec<TimingPoint>,
     pub timeline_time_seconds: f32,
     pub timeline_duration_seconds: f32,
-    pub simulate_trigger_hitboxes: bool,
     pub menu_preview_camera: Option<LevelPreviewCameraMetadata>,
     pub objects: Vec<LevelObject>,
 }
@@ -348,11 +347,6 @@ pub struct LevelMetadata {
         skip_serializing_if = "is_default_timeline_duration_seconds"
     )]
     pub timeline_duration_seconds: f32,
-    #[serde(
-        default = "default_simulate_trigger_hitboxes",
-        skip_serializing_if = "is_default_simulate_trigger_hitboxes"
-    )]
-    pub simulate_trigger_hitboxes: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub menu_preview_camera: Option<LevelPreviewCameraMetadata>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -378,7 +372,6 @@ impl Default for LevelMetadata {
             timing_points: Vec::new(),
             timeline_time_seconds: default_timeline_time_seconds(),
             timeline_duration_seconds: default_timeline_duration_seconds(),
-            simulate_trigger_hitboxes: default_simulate_trigger_hitboxes(),
             menu_preview_camera: None,
             objects: Vec::new(),
             extra: serde_json::Map::new(),
@@ -398,7 +391,6 @@ impl LevelMetadata {
             timing_points,
             timeline_time_seconds,
             timeline_duration_seconds,
-            simulate_trigger_hitboxes,
             menu_preview_camera,
             objects,
         }: EditorStateParams,
@@ -418,7 +410,6 @@ impl LevelMetadata {
             timing_points,
             timeline_time_seconds,
             timeline_duration_seconds,
-            simulate_trigger_hitboxes,
             menu_preview_camera,
             objects,
             extra: serde_json::Map::new(),
@@ -717,6 +708,11 @@ pub enum TimedTriggerAction {
         position: [f32; 3],
         rotation_degrees: [f32; 3],
         size: [f32; 3],
+        #[serde(
+            default = "default_transform_simulate_hitboxes",
+            skip_serializing_if = "is_default_transform_simulate_hitboxes"
+        )]
+        simulate_hitboxes: bool,
     },
     CameraPose {
         #[serde(
@@ -902,6 +898,105 @@ pub fn apply_timed_triggers_to_objects(
     let mut objects = base_objects.to_vec();
     apply_timed_triggers_to_objects_in_place(&mut objects, triggers, time_seconds);
     objects
+}
+
+/// Returns `true` when the trigger is an object-transform trigger that moves
+/// gameplay hitboxes during play (i.e. a `TransformObjects` trigger with
+/// `simulate_hitboxes` enabled that targets objects).
+pub fn trigger_simulates_hitboxes(trigger: &TimedTrigger) -> bool {
+    !matches!(trigger.target, TimedTriggerTarget::Camera)
+        && matches!(
+            trigger.action,
+            TimedTriggerAction::TransformObjects {
+                simulate_hitboxes: true,
+                ..
+            }
+        )
+}
+
+/// Returns `true` when any of the provided triggers moves gameplay hitboxes
+/// during play.
+pub fn has_simulate_hitboxes_triggers(triggers: &[TimedTrigger]) -> bool {
+    triggers.iter().any(trigger_simulates_hitboxes)
+}
+
+pub fn apply_simulate_hitboxes_triggers_to_objects(
+    base_objects: &[LevelObject],
+    triggers: &[TimedTrigger],
+    time_seconds: f32,
+) -> Vec<LevelObject> {
+    let mut objects = base_objects.to_vec();
+    apply_simulate_hitboxes_triggers_to_objects_in_place(&mut objects, triggers, time_seconds);
+    objects
+}
+
+pub fn apply_simulate_hitboxes_triggers_to_objects_into(
+    base_objects: &[LevelObject],
+    triggers: &[TimedTrigger],
+    time_seconds: f32,
+    objects: &mut Vec<LevelObject>,
+) {
+    if objects.len() == base_objects.len() {
+        objects.clone_from_slice(base_objects);
+    } else {
+        objects.clear();
+        objects.extend_from_slice(base_objects);
+    }
+    apply_simulate_hitboxes_triggers_to_objects_in_place(objects, triggers, time_seconds);
+}
+
+fn apply_simulate_hitboxes_triggers_to_objects_in_place(
+    objects: &mut [LevelObject],
+    triggers: &[TimedTrigger],
+    time_seconds: f32,
+) {
+    if objects.is_empty() || triggers.is_empty() {
+        return;
+    }
+
+    let simulating: Vec<&TimedTrigger> = triggers
+        .iter()
+        .filter(|trigger| trigger_simulates_hitboxes(*trigger))
+        .collect();
+    if simulating.is_empty() {
+        return;
+    }
+
+    let object_index_by_id = objects
+        .iter()
+        .enumerate()
+        .filter(|(_, object)| !object.id.is_empty())
+        .map(|(index, object)| (object.id.clone(), index))
+        .collect::<HashMap<_, _>>();
+
+    for trigger in simulating {
+        if !trigger.time_seconds.is_finite() {
+            continue;
+        }
+
+        let Some(progress) = timed_trigger_progress(trigger, time_seconds) else {
+            continue;
+        };
+        let object_count = objects.len();
+
+        if let TimedTriggerTarget::Objects { object_ids } = &trigger.target {
+            let mut seen: Vec<ObjectId> = Vec::new();
+            for object_id in object_ids.iter().cloned() {
+                let Some(object_index) = object_index_by_id.get(&object_id).copied() else {
+                    continue;
+                };
+                if object_index >= object_count || seen.contains(&object_id) {
+                    continue;
+                }
+                seen.push(object_id);
+                apply_trigger_action_to_object(
+                    &mut objects[object_index],
+                    &trigger.action,
+                    progress,
+                );
+            }
+        }
+    }
 }
 
 pub fn apply_timed_triggers_to_objects_into(
@@ -1181,6 +1276,7 @@ fn apply_trigger_action_to_object(
             position,
             rotation_degrees,
             size,
+            ..
         } => {
             for (current, target) in object.position.iter_mut().zip(position.iter()) {
                 *current += (*target - *current) * progress;
@@ -1212,10 +1308,12 @@ pub fn triggers_from_objects(objects: &[LevelObject]) -> Vec<TimedTrigger> {
                     position: _,
                     rotation_degrees: _,
                     size: _,
+                    simulate_hitboxes,
                 } => TimedTriggerAction::TransformObjects {
                     position: object.position,
                     rotation_degrees: object.rotation_degrees,
                     size: object.size,
+                    simulate_hitboxes,
                 },
                 TimedTriggerAction::CameraPose {
                     transition_interval_seconds,
@@ -1321,6 +1419,7 @@ mod tests {
                         position: [4.0, 0.0, 0.0],
                         rotation_degrees: [0.0, 0.0, 0.0],
                         size: [1.0, 1.0, 1.0],
+                        simulate_hitboxes: false,
                     },
                 }),
                 ..LevelObject::default()

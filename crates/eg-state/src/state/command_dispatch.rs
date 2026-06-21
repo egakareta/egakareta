@@ -2393,6 +2393,7 @@ mod tests {
                         position: [2.0, 0.0, 0.0],
                         rotation_degrees: [0.0, 0.0, 0.0],
                         size: [1.0, 1.0, 1.0],
+                        simulate_hitboxes: false,
                     },
                 }),
                 ..LevelObject::default()
@@ -3069,10 +3070,22 @@ mod tests {
             assert_eq!(state.render.gpu.config.width, 1024);
             assert_eq!(state.render.gpu.config.height, 576);
 
-            state.dispatch(AppCommand::Editor(
-                EditorCommand::SetSimulateTriggerHitboxes(true),
-            ));
-            assert!(state.editor_simulate_trigger_hitboxes());
+            // simulate_hitboxes is now a per-transform-trigger property.
+            state.editor.set_triggers(vec![TimedTrigger {
+                time_seconds: 0.0,
+                duration_seconds: 1.0,
+                easing: TimedTriggerEasing::Linear,
+                target: TimedTriggerTarget::Objects {
+                    object_ids: vec!["obj_000001".to_string()],
+                },
+                action: TimedTriggerAction::TransformObjects {
+                    position: [1.0, 0.0, 0.0],
+                    rotation_degrees: [0.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
+                    simulate_hitboxes: true,
+                },
+            }]);
+            assert!(state.editor_has_simulate_hitboxes_triggers());
 
             state.dispatch(AppCommand::Editor(EditorCommand::ToggleHitboxVisualization));
             assert!(state.editor_hitbox_visualization_enabled());

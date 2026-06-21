@@ -241,6 +241,7 @@ fn transform_trigger_markers_for_triggers(
             position,
             rotation_degrees,
             size,
+            ..
         } = &trigger.action
         else {
             continue;
@@ -392,7 +393,6 @@ impl EditorSubsystem {
             time_seconds,
             &self.objects,
             &self.triggers(),
-            self.simulate_trigger_hitboxes(),
         )
     }
 
@@ -450,16 +450,33 @@ impl State {
                 .map(|runtime| runtime.objects().to_vec());
         }
 
-        if self.editor.simulate_trigger_hitboxes() {
-            if let Some(runtime) = self.editor.timeline.playback.runtime.as_ref() {
-                return Some(runtime.objects().to_vec());
+        // Playing with transform triggers: the visual always reflects every
+        // transform trigger. When at least one trigger moves gameplay hitboxes,
+        // render against the runtime's consumed-pruned base so consumed blocks
+        // disappear while still showing the full set of transforms; otherwise
+        // render against the editor objects.
+        let time_seconds = self.editor.timeline.clock.time_seconds;
+        if self.editor.has_simulate_hitboxes_triggers() {
+            if let Some(base_objects) = self
+                .editor
+                .timeline
+                .playback
+                .runtime
+                .as_ref()
+                .and_then(|runtime| runtime.trigger_base_objects())
+            {
+                return Some(trigger_transformed_objects_at_time(
+                    base_objects,
+                    &self.editor.triggers(),
+                    time_seconds,
+                ));
             }
         }
 
         Some(trigger_transformed_objects_at_time(
             &self.editor.objects,
             &self.editor.triggers(),
-            self.editor.timeline.clock.time_seconds,
+            time_seconds,
         ))
     }
 
@@ -1401,7 +1418,7 @@ impl State {
             return;
         }
 
-        let object_source = if self.editor.simulate_trigger_hitboxes() {
+        let object_source = if self.editor.has_simulate_hitboxes_triggers() {
             self.editor_runtime_objects_for_render().unwrap_or_else(|| {
                 trigger_transformed_objects_at_time(
                     &self.editor.objects,
@@ -1598,6 +1615,7 @@ mod tests {
                 position: [2.0, 0.0, 0.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
+                simulate_hitboxes: false,
             },
         }
     }
@@ -1729,7 +1747,6 @@ mod tests {
             state.editor.ui.mode = EditorMode::Place;
             state.editor.objects = vec![block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])];
             state.editor.set_triggers(vec![object_move_trigger()]);
-            state.set_editor_simulate_trigger_hitboxes(false);
             state.editor.timeline.clock.time_seconds = 0.5;
             state.editor.timeline.playback.playing = true;
             state.editor.timeline.playback.runtime =
@@ -1739,7 +1756,6 @@ mod tests {
                     &state.editor.objects,
                     &state.editor.timeline.taps.tap_times,
                     &state.editor.triggers(),
-                    state.editor.simulate_trigger_hitboxes(),
                 ));
 
             let transformed = state
@@ -1915,6 +1931,7 @@ mod tests {
                     position: [8.0, 0.0, 0.0],
                     rotation_degrees: [0.0, 90.0, 0.0],
                     size: [2.0, 1.0, 1.0],
+                    simulate_hitboxes: false,
                 },
             },
             TimedTrigger {
@@ -1928,6 +1945,7 @@ mod tests {
                     position: [10.0, 0.0, 0.0],
                     rotation_degrees: [0.0, 180.0, 0.0],
                     size: [3.0, 1.0, 1.0],
+                    simulate_hitboxes: false,
                 },
             },
         ];
@@ -1954,6 +1972,7 @@ mod tests {
                 position: [8.0, 0.0, 0.0],
                 rotation_degrees: [0.0, 90.0, 0.0],
                 size: [2.0, 1.0, 1.0],
+                simulate_hitboxes: false,
             },
         }];
 

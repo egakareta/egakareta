@@ -346,7 +346,7 @@ fn focused_init_path_toggle_editor_uses_selected_menu_level() {
 
 fn configure_trigger_policy_parity_scene(
     state: &mut State,
-    simulate_trigger_hitboxes: bool,
+    simulate_hitboxes: bool,
     timeline_time_seconds: f32,
 ) {
     state.editor.objects = vec![block("core/speedportal", 8.0, 0.0, 8.0)];
@@ -364,9 +364,9 @@ fn configure_trigger_policy_parity_scene(
             position: [0.0, 0.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
+            simulate_hitboxes,
         },
     }]);
-    state.set_editor_simulate_trigger_hitboxes(simulate_trigger_hitboxes);
     state.editor.timeline.clock.time_seconds = timeline_time_seconds;
 }
 
@@ -383,7 +383,6 @@ fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_disabled(
             &state.editor.objects,
             &state.editor.timeline.taps.tap_times,
             &state.editor.triggers(),
-            state.editor.simulate_trigger_hitboxes(),
             timeline_time_seconds,
         );
 
@@ -407,7 +406,7 @@ fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_disabled(
         approx_eq(state.gameplay.state.position[1], expected.position[1], 1e-4);
         approx_eq(state.gameplay.state.position[2], expected.position[2], 1e-4);
         approx_eq(state.gameplay.state.speed, expected.speed, 1e-4);
-        assert!(!state.session.playing_trigger_hitboxes);
+        assert!(!state.editor_has_simulate_hitboxes_triggers());
     });
 }
 
@@ -424,7 +423,6 @@ fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_enabled()
             &state.editor.objects,
             &state.editor.timeline.taps.tap_times,
             &state.editor.triggers(),
-            state.editor.simulate_trigger_hitboxes(),
             timeline_time_seconds,
         );
 
@@ -448,7 +446,7 @@ fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_enabled()
         approx_eq(state.gameplay.state.position[1], expected.position[1], 1e-4);
         approx_eq(state.gameplay.state.position[2], expected.position[2], 1e-4);
         approx_eq(state.gameplay.state.speed, expected.speed, 1e-4);
-        assert!(state.session.playing_trigger_hitboxes);
+        assert!(state.editor_has_simulate_hitboxes_triggers());
         assert!(state.gameplay.state.speed > eg_game::BASE_PLAYER_SPEED);
     });
 }
@@ -468,7 +466,6 @@ fn editor_playtest_preserves_airborne_vertical_motion() {
             &state.editor.objects,
             &state.editor.timeline.taps.tap_times,
             &state.editor.triggers(),
-            state.editor.simulate_trigger_hitboxes(),
             state.editor.timeline.clock.time_seconds,
         );
 
@@ -1142,6 +1139,7 @@ fn timing_origin_playback_seek_resync_keeps_runtime_disabled() {
                 position: [3.0, 0.0, 0.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
+                simulate_hitboxes: false,
             },
         }]);
 
@@ -1372,6 +1370,7 @@ fn timing_mode_timeline_scrub_skips_simulation_and_mesh_dirty() {
                 position: [10.0, 0.0, 0.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
+                simulate_hitboxes: false,
             },
         }]);
 
@@ -1411,6 +1410,7 @@ fn compose_mode_timeline_scrub_runs_simulation_and_mesh_dirty() {
                 position: [10.0, 0.0, 0.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
+                simulate_hitboxes: false,
             },
         }]);
 

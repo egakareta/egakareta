@@ -277,7 +277,15 @@ fn show_trigger_action_controls(ui: &mut egui::Ui, trigger: &mut TimedTrigger) -
             rotation,
             pitch,
         ),
-        TimedTriggerAction::TransformObjects { .. } => show_transform_trigger_summary(ui, trigger),
+        TimedTriggerAction::TransformObjects {
+            simulate_hitboxes, ..
+        } => {
+            let target_count = match &trigger.target {
+                TimedTriggerTarget::Objects { object_ids } => object_ids.len(),
+                TimedTriggerTarget::Camera => 0,
+            };
+            show_transform_trigger_summary(ui, simulate_hitboxes, target_count)
+        }
     }
 }
 
@@ -365,16 +373,20 @@ fn show_camera_follow_trigger_controls(
     changed
 }
 
-fn show_transform_trigger_summary(ui: &mut egui::Ui, trigger: &TimedTrigger) -> bool {
-    let target_count = match &trigger.target {
-        TimedTriggerTarget::Objects { object_ids } => object_ids.len(),
-        TimedTriggerTarget::Camera => 0,
-    };
+fn show_transform_trigger_summary(
+    ui: &mut egui::Ui,
+    simulate_hitboxes: &mut bool,
+    target_count: usize,
+) -> bool {
     ui.horizontal(|ui| {
         ui.label("Targets:");
         ui.label(target_count.to_string());
     });
-    false
+
+    let tooltip = "When enabled, this trigger's transform also moves the\ngameplay hitboxes during play (visuals always move).";
+    ui.checkbox(simulate_hitboxes, "Move Hitboxes")
+        .on_hover_text(tooltip)
+        .changed()
 }
 
 fn trigger_easing_label(easing: TimedTriggerEasing) -> &'static str {
@@ -719,6 +731,7 @@ mod tests {
                     position: [1.0, 0.0, 1.0],
                     rotation_degrees: [0.0, 90.0, 0.0],
                     size: [1.0, 1.0, 1.0],
+                    simulate_hitboxes: false,
                 },
             }),
             ..LevelObject::default()
@@ -770,6 +783,7 @@ mod tests {
                     position: [1.0, 0.0, 1.0],
                     rotation_degrees: [0.0, 90.0, 0.0],
                     size: [1.0, 1.0, 1.0],
+                    simulate_hitboxes: false,
                 },
             }),
             ..LevelObject::default()

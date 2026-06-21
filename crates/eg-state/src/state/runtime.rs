@@ -143,15 +143,6 @@ impl EditorDirtyFlags {
         }
     }
 
-    pub fn simulate_trigger_hitboxes_changed() -> Self {
-        Self {
-            rebuild_preview_player: true,
-            rebuild_block_mesh: true,
-            rebuild_hitbox_visualization: true,
-            ..Self::default()
-        }
-    }
-
     pub fn drag_object_sync() -> Self {
         Self {
             sync_game_objects: true,

@@ -242,6 +242,7 @@ mod tests {
                 position,
                 rotation_degrees,
                 size,
+                ..
             } => {
                 assert_eq!(position, [1.0, 2.0, 3.0]);
                 assert_eq!(rotation_degrees, [0.0, 90.0, 0.0]);
@@ -345,7 +346,6 @@ mod tests {
             sky_color: eg_types::default_sky_color(),
             tap_times: &[],
             triggers: &[],
-            simulate_trigger_hitboxes: false,
             timeline_seconds: (timeline_time_seconds, 16.0),
         });
 
@@ -403,7 +403,6 @@ mod tests {
             sky_color: eg_types::default_sky_color(),
             tap_times: &[],
             triggers: &[],
-            simulate_trigger_hitboxes: false,
             timeline_seconds: (timeline_time_seconds, 16.0),
         });
 

@@ -1093,6 +1093,7 @@ mod tests {
                     position: [0.0, 0.0, 0.0],
                     rotation_degrees: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
+                    simulate_hitboxes: false,
                 },
             }]);
             state.editor.set_trigger_selected(Some(0));
@@ -1989,6 +1990,7 @@ mod tests {
                     position: [5.0, 0.0, 0.0],
                     rotation_degrees: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
+                    simulate_hitboxes: false,
                 },
             }]);
 

@@ -22,7 +22,6 @@ pub struct EditorSessionInit {
     pub timeline_time_seconds: f32,
     pub timeline_duration_seconds: f32,
     pub triggers: Vec<TimedTrigger>,
-    pub simulate_trigger_hitboxes: bool,
     pub menu_preview_camera: Option<LevelPreviewCameraMetadata>,
     pub cursor: [f32; 3],
     pub camera_pan: [f32; 2],
@@ -40,7 +39,6 @@ pub fn editor_session_init_from_metadata(metadata: Option<LevelMetadata>) -> Edi
         mut timeline_time_seconds,
         timeline_duration_seconds,
         mut triggers,
-        simulate_trigger_hitboxes,
         menu_preview_camera,
     ) = if let Some(metadata) = metadata {
         let triggers = metadata.resolved_triggers();
@@ -56,7 +54,6 @@ pub fn editor_session_init_from_metadata(metadata: Option<LevelMetadata>) -> Edi
             metadata.timeline_time_seconds,
             metadata.timeline_duration_seconds,
             triggers,
-            metadata.simulate_trigger_hitboxes,
             metadata.menu_preview_camera,
         )
     } else {
@@ -71,7 +68,6 @@ pub fn editor_session_init_from_metadata(metadata: Option<LevelMetadata>) -> Edi
             0.0,
             16.0,
             Vec::new(),
-            false,
             None,
         )
     };
@@ -96,7 +92,6 @@ pub fn editor_session_init_from_metadata(metadata: Option<LevelMetadata>) -> Edi
         timeline_time_seconds,
         timeline_duration_seconds: timeline_duration_seconds.max(0.1),
         triggers,
-        simulate_trigger_hitboxes,
         menu_preview_camera,
         cursor,
         camera_pan,

@@ -19,8 +19,8 @@ use eg_mesh::{
 };
 use eg_platform::state_host::PlatformInstant;
 use eg_types::{
-    AppPhase, BlockEffectColorMode, CameraUniform, ColorSpaceUniform, Direction, EditorMode,
-    LevelObject, SpawnDirection,
+    apply_simulate_hitboxes_triggers_to_objects, AppPhase, BlockEffectColorMode, CameraUniform,
+    ColorSpaceUniform, Direction, EditorMode, LevelObject, SpawnDirection,
 };
 
 const DEAD_SFX: &[u8] = include_bytes!(concat!(
@@ -158,17 +158,19 @@ impl State {
             return None;
         }
 
+        let simulates_hitboxes = self.editor.has_simulate_hitboxes_triggers();
+
         let base_objects = self
             .session
             .playing_trigger_base_objects
             .get_or_insert_with(|| self.gameplay.state.objects.clone());
 
-        if !self.session.playing_trigger_hitboxes
-            && base_objects.len() != self.gameplay.state.objects.len()
-        {
+        if !simulates_hitboxes && base_objects.len() != self.gameplay.state.objects.len() {
             *base_objects = self.gameplay.state.objects.clone();
         }
 
+        // Visual rendering always reflects every transform trigger applied to the
+        // (consumed-pruned when simulating) base object set.
         Some(trigger_transformed_objects_at_time(
             base_objects,
             &self.editor.triggers(),
@@ -178,7 +180,7 @@ impl State {
 
     fn prune_playing_trigger_base_objects_from_consumed(&mut self) {
         puffin::profile_scope!("PlayingTriggerPruneConsumed");
-        if !self.session.playing_trigger_hitboxes {
+        if !self.editor.has_simulate_hitboxes_triggers() {
             let _ = self.gameplay.state.take_consumed_object_indices();
             return;
         }
@@ -196,14 +198,26 @@ impl State {
     }
 
     fn apply_playing_object_triggers(&mut self, time_seconds: f32) -> Option<Vec<LevelObject>> {
-        let transformed = self.playing_trigger_objects_at_time(time_seconds)?;
+        // The visual set applies every transform trigger to the base objects.
+        let visual = self.playing_trigger_objects_at_time(time_seconds)?;
 
-        if self.session.playing_trigger_hitboxes {
-            self.gameplay.state.objects = transformed.clone();
+        // The gameplay hitbox set only applies transform triggers that opt in via
+        // their per-trigger `simulate_hitboxes` flag, so non-opting triggers move
+        // visuals without moving the collidable hitboxes.
+        if self.editor.has_simulate_hitboxes_triggers() {
+            let Some(base_objects) = self.session.playing_trigger_base_objects.as_ref() else {
+                return Some(visual);
+            };
+            let hitboxes = apply_simulate_hitboxes_triggers_to_objects(
+                base_objects,
+                &self.editor.triggers(),
+                time_seconds.max(0.0),
+            );
+            self.gameplay.state.objects = hitboxes;
             self.gameplay.state.rebuild_behavior_cache();
         }
 
-        Some(transformed)
+        Some(visual)
     }
 
     fn apply_pending_gameplay_turns_up_to(&mut self, time_seconds: f32) {
@@ -695,7 +709,6 @@ impl State {
                                 &self.editor.objects,
                                 &self.editor.timeline.taps.tap_times,
                                 &self.editor.triggers(),
-                                self.editor.simulate_trigger_hitboxes(),
                             );
                             runtime.advance_to(clamped_time);
                             let events = runtime.take_consumed_object_events();
@@ -1094,7 +1107,7 @@ mod tests {
         }
     }
 
-    fn instant_move_trigger() -> TimedTrigger {
+    fn instant_move_trigger(simulate_hitboxes: bool) -> TimedTrigger {
         TimedTrigger {
             time_seconds: 0.0,
             duration_seconds: 0.0,
@@ -1106,6 +1119,7 @@ mod tests {
                 position: [2.0, 0.0, 0.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
+                simulate_hitboxes,
             },
         }
     }
@@ -1218,21 +1232,28 @@ mod tests {
             state.phase = AppPhase::Playing;
             state.gameplay.state.objects = vec![sample_object()];
             state.gameplay.state.rebuild_behavior_cache();
-            state.editor.set_triggers(vec![instant_move_trigger()]);
 
-            state.session.playing_trigger_hitboxes = false;
+            // A transform trigger that does not opt into hitbox simulation moves the
+            // visual objects but leaves the gameplay hitboxes at their base pose.
+            state.editor.set_triggers(vec![instant_move_trigger(false)]);
+            state.session.playing_trigger_base_objects = None;
             let transformed = state
                 .playing_trigger_objects_at_time(0.5)
                 .expect("expected transformed objects");
             assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
             assert_eq!(state.gameplay.state.objects[0].position, [0.0, 0.0, 0.0]);
+            assert!(!state.editor_has_simulate_hitboxes_triggers());
 
-            state.session.playing_trigger_hitboxes = true;
+            // A transform trigger that opts into hitbox simulation moves both the
+            // visual objects and the gameplay hitboxes.
+            state.editor.set_triggers(vec![instant_move_trigger(true)]);
+            state.session.playing_trigger_base_objects = None;
             let transformed = state
                 .apply_playing_object_triggers(0.5)
                 .expect("expected transformed objects");
             assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
             assert_eq!(state.gameplay.state.objects[0].position, [2.0, 0.0, 0.0]);
+            assert!(state.editor_has_simulate_hitboxes_triggers());
         });
     }
 
@@ -1245,7 +1266,7 @@ mod tests {
             state.gameplay.state.started = true;
             state.gameplay.state.objects = vec![sample_object()];
             state.gameplay.state.rebuild_behavior_cache();
-            state.editor.set_triggers(vec![instant_move_trigger()]);
+            state.editor.set_triggers(vec![instant_move_trigger(false)]);
 
             let transformed = state
                 .advance_playing_state_to_time(0.2, 1.0 / 120.0)
@@ -1439,20 +1460,19 @@ mod tests {
             state.gameplay.state.rebuild_behavior_cache();
 
             state.phase = AppPhase::Menu;
-            state.editor.set_triggers(vec![instant_move_trigger()]);
+            state.editor.set_triggers(vec![instant_move_trigger(false)]);
             assert!(state.playing_trigger_objects_at_time(0.2).is_none());
 
             state.phase = AppPhase::Playing;
             state.editor.set_triggers(Vec::new());
             assert!(state.playing_trigger_objects_at_time(0.2).is_none());
 
-            state.editor.set_triggers(vec![instant_move_trigger()]);
+            state.editor.set_triggers(vec![instant_move_trigger(false)]);
             let transformed = state
                 .playing_trigger_objects_at_time(0.2)
                 .expect("expected transformed objects");
             assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
 
-            state.session.playing_trigger_hitboxes = false;
             state.session.playing_trigger_base_objects =
                 Some(vec![sample_object(), sample_object()]);
             let transformed = state
@@ -1544,7 +1564,6 @@ mod tests {
                     &state.editor.objects,
                     &state.editor.timeline.taps.tap_times,
                     &state.editor.triggers(),
-                    state.editor.simulate_trigger_hitboxes(),
                 ));
 
             // In tests, no active playback source means runtime reports not playing.

@@ -132,6 +132,7 @@ mod tests {
                     position: [2.0, 0.0, 0.0],
                     rotation_degrees: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
+                    simulate_hitboxes: false,
                 },
             }),
             ..LevelObject::default()
@@ -171,7 +172,6 @@ mod tests {
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 16.0,
-            simulate_trigger_hitboxes: false,
             menu_preview_camera: None,
             objects: vec![LevelObject {
                 position: [0.0, 0.0, 0.0],
@@ -198,7 +198,6 @@ mod tests {
         assert!(value.get("tap_times").is_none());
         assert!(value.get("timeline_time_seconds").is_none());
         assert!(value.get("timeline_duration_seconds").is_none());
-        assert!(value.get("simulate_trigger_hitboxes").is_none());
         assert!(value.get("camera_triggers").is_none());
         assert!(value.get("taps").is_none());
         assert!(value.get("timeline_step").is_none());
@@ -208,27 +207,6 @@ mod tests {
         assert!(object.get("size").is_none());
         assert!(object.get("rotation_degrees").is_none());
         assert!(object.get("block_id").is_none());
-    }
-
-    #[test]
-    fn level_metadata_serialization_includes_simulate_trigger_hitboxes_when_enabled() {
-        let metadata = LevelMetadata::from_editor_state(EditorStateParams {
-            name: "HitboxPolicy".to_string(),
-            creator_metadata: LevelCreatorMetadata::default(),
-            music: MusicMetadata::default(),
-            spawn: SpawnMetadata::default(),
-            sky_color: eg_types::default_sky_color(),
-            tap_times: Vec::new(),
-            timing_points: Vec::new(),
-            timeline_time_seconds: 0.0,
-            timeline_duration_seconds: 16.0,
-            simulate_trigger_hitboxes: true,
-            menu_preview_camera: None,
-            objects: Vec::new(),
-        });
-
-        let value = serde_json::to_value(&metadata).expect("serialize metadata");
-        assert_eq!(value.get("simulate_trigger_hitboxes"), Some(&json!(true)));
     }
 
     #[test]
@@ -243,7 +221,6 @@ mod tests {
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 16.0,
-            simulate_trigger_hitboxes: false,
             menu_preview_camera: None,
             objects: Vec::new(),
         });
@@ -267,7 +244,6 @@ mod tests {
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 16.0,
-            simulate_trigger_hitboxes: false,
             menu_preview_camera: Some(LevelPreviewCameraMetadata {
                 position: [4.0, 8.0, -3.0],
                 target: [0.0, 1.0, 0.0],
@@ -517,6 +493,7 @@ mod tests {
                     position: [0.0, 0.0, 0.0],
                     rotation_degrees: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
+                    simulate_hitboxes: false,
                 },
             }),
             ..LevelObject::default()
@@ -529,6 +506,7 @@ mod tests {
                 position,
                 rotation_degrees,
                 size,
+                ..
             } => {
                 assert_eq!(position, &[4.0, 5.0, 6.0]);
                 assert_eq!(rotation_degrees, &[10.0, 20.0, 30.0]);
@@ -562,6 +540,7 @@ mod tests {
                 position: [10.0, 0.0, 0.0],
                 rotation_degrees: [0.0, 90.0, 0.0],
                 size: [2.0, 0.0, 3.0],
+                simulate_hitboxes: false,
             },
         }];
 
@@ -626,6 +605,7 @@ mod tests {
                     position: [9.0, 9.0, 9.0],
                     rotation_degrees: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
+                    simulate_hitboxes: false,
                 },
             },
             TimedTrigger {
@@ -637,6 +617,7 @@ mod tests {
                     position: [5.0, 5.0, 5.0],
                     rotation_degrees: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
+                    simulate_hitboxes: false,
                 },
             },
         ];
@@ -670,6 +651,7 @@ mod tests {
                 position: [99.0, 0.0, 0.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
+                simulate_hitboxes: false,
             },
         }];
 

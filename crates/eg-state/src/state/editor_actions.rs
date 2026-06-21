@@ -663,7 +663,6 @@ impl State {
                         &self.editor.objects,
                         &self.editor.timeline.taps.tap_times,
                         &self.editor.triggers(),
-                        self.editor.simulate_trigger_hitboxes(),
                     ));
                 if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
                     runtime.advance_to(self.editor.timeline.clock.time_seconds);
@@ -717,7 +716,6 @@ impl State {
                     &self.editor.objects,
                     &self.editor.timeline.taps.tap_times,
                     &self.editor.triggers(),
-                    self.editor.simulate_trigger_hitboxes(),
                 ));
             if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
                 runtime.advance_to(self.editor.timeline.clock.time_seconds);
@@ -937,7 +935,6 @@ impl State {
                         &self.editor.objects,
                         &self.editor.timeline.taps.tap_times,
                         &self.editor.triggers(),
-                        self.editor.simulate_trigger_hitboxes(),
                     )
                 };
                 {
@@ -1022,7 +1019,6 @@ impl State {
             sky_color: self.session.editor_sky_color,
             tap_times: &self.editor.timeline.taps.tap_times,
             triggers: &self.editor.triggers(),
-            simulate_trigger_hitboxes: self.editor.simulate_trigger_hitboxes(),
             timeline_seconds: (
                 self.editor.timeline.clock.time_seconds,
                 self.editor.timeline.clock.duration_seconds,
@@ -1033,7 +1029,6 @@ impl State {
         self.session.playtest_audio_start_seconds = Some(transition.playtest_audio_start_seconds);
         self.session.playing_sky_color = transition.sky_color;
         self.gameplay.state = GameState::new();
-        self.session.playing_trigger_hitboxes = self.editor.simulate_trigger_hitboxes();
         self.apply_playing_transition_objects(
             transition.objects,
             transition.level_duration_seconds,
@@ -1094,7 +1089,6 @@ impl State {
             playtest_return_objects(self.session.playtesting_editor, &self.editor.objects)
         {
             self.session.playtesting_editor = false;
-            self.session.playing_trigger_hitboxes = false;
             self.phase = AppPhase::Editor;
             self.editor.timeline.playback.playing = false;
             self.editor.timeline.playback.runtime = None;
@@ -1345,6 +1339,7 @@ mod tests {
                 position: [9.0, 0.0, 0.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
+                simulate_hitboxes: false,
             },
         }
     }

@@ -171,6 +171,7 @@ impl EditorSubsystem {
             position,
             rotation_degrees,
             size,
+            ..
         } = &trigger.action
         else {
             return None;
@@ -263,7 +264,6 @@ impl State {
         self.session.playing_level_name = level_name;
         self.session.playtest_audio_start_seconds = None;
         self.session.playing_sky_color = eg_types::default_sky_color();
-        self.session.playing_trigger_hitboxes = false;
         self.session.playing_trigger_base_objects = None;
         self.session.practice_mode_enabled = false;
         self.session.practice_checkpoints.clear();
@@ -283,7 +283,6 @@ impl State {
         self.session.game_paused = false;
         self.session.playtest_audio_start_seconds = None;
         self.session.playing_sky_color = eg_types::default_sky_color();
-        self.session.playing_trigger_hitboxes = false;
         self.session.playing_trigger_base_objects = None;
         self.session.practice_mode_enabled = false;
         self.session.practice_checkpoints.clear();
@@ -318,7 +317,6 @@ impl State {
         self.session.game_paused = false;
         self.session.playtest_audio_start_seconds = None;
         self.session.playing_sky_color = eg_types::default_sky_color();
-        self.session.playing_trigger_hitboxes = false;
         self.session.playing_trigger_base_objects = None;
         self.session.practice_mode_enabled = false;
         self.session.practice_checkpoints.clear();

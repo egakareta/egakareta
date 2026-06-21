@@ -991,6 +991,7 @@ fn transform_trigger_target_object(action: &TimedTriggerAction) -> Option<LevelO
         position,
         rotation_degrees,
         size,
+        ..
     } = action
     else {
         return None;

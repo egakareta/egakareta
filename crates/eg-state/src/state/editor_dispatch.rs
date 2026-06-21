@@ -136,9 +136,6 @@ impl State {
             EditorCommand::SetTriggerSelected(selected) => {
                 self.set_editor_trigger_selected(selected)
             }
-            EditorCommand::SetSimulateTriggerHitboxes(enabled) => {
-                self.set_editor_simulate_trigger_hitboxes(enabled);
-            }
 
             EditorCommand::ToggleHitboxVisualization => self.toggle_editor_hitbox_visualization(),
             EditorCommand::TogglePerfOverlay => self.toggle_perf_overlay(),
@@ -305,6 +302,7 @@ mod tests {
                     position,
                     rotation_degrees: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
+                    simulate_hitboxes: false,
                 },
             }),
             ..LevelObject::default()
@@ -455,6 +453,7 @@ mod tests {
                         position: [0.0, 0.0, 0.0],
                         rotation_degrees: [0.0, 0.0, 0.0],
                         size: [1.0, 1.0, 1.0],
+                        simulate_hitboxes: false,
                     },
                 }),
                 ..LevelObject::default()
@@ -616,8 +615,22 @@ mod tests {
             state.dispatch_editor(EditorCommand::AddCameraTrigger);
             state.dispatch_editor(EditorCommand::AddCameraFollowTrigger);
             state.dispatch_editor(EditorCommand::SetTriggerSelected(Some(0)));
-            state.dispatch_editor(EditorCommand::SetSimulateTriggerHitboxes(true));
-            assert!(state.editor_simulate_trigger_hitboxes());
+            // simulate_hitboxes is now a per-transform-trigger property.
+            state.editor.set_triggers(vec![TimedTrigger {
+                time_seconds: 0.0,
+                duration_seconds: 1.0,
+                easing: TimedTriggerEasing::Linear,
+                target: TimedTriggerTarget::Objects {
+                    object_ids: vec!["obj_000001".to_string()],
+                },
+                action: TimedTriggerAction::TransformObjects {
+                    position: [1.0, 0.0, 0.0],
+                    rotation_degrees: [0.0, 0.0, 0.0],
+                    size: [1.0, 1.0, 1.0],
+                    simulate_hitboxes: true,
+                },
+            }]);
+            assert!(state.editor_has_simulate_hitboxes_triggers());
 
             // Misc
             state.dispatch_editor(EditorCommand::ToggleHitboxVisualization);

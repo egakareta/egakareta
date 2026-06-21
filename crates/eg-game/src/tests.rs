@@ -428,6 +428,7 @@ fn timeline_trigger_hitbox_mode_does_not_resurrect_consumed_portals() {
             position: [0.0, 0.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
+            simulate_hitboxes: true,
         },
     }];
 
@@ -437,7 +438,6 @@ fn timeline_trigger_hitbox_mode_does_not_resurrect_consumed_portals() {
         &objects,
         &[],
         &triggers,
-        true,
     );
     runtime.advance_to(0.6);
 
@@ -469,6 +469,7 @@ fn timeline_state_with_disabled_trigger_hitboxes_matches_plain_simulation() {
             position: [5.0, 0.0, 2.0],
             rotation_degrees: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
+            simulate_hitboxes: false,
         },
     }];
 
@@ -481,7 +482,6 @@ fn timeline_state_with_disabled_trigger_hitboxes_matches_plain_simulation() {
         &objects,
         &[],
         &triggers,
-        false,
         0.5,
     );
 

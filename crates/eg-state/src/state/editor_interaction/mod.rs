@@ -60,7 +60,6 @@ pub struct EditorHistorySnapshot {
     pub selected_tap_index: Option<usize>,
     pub timing_points: Vec<eg_types::TimingPoint>,
     pub selected_trigger_index: Option<usize>,
-    pub simulate_trigger_hitboxes: bool,
 }
 
 #[derive(Clone)]

@@ -140,8 +140,6 @@ pub enum EditorCommand {
     AddCameraFollowTrigger,
     /// Select or deselect a trigger in the UI.
     SetTriggerSelected(Option<usize>),
-    /// Set whether timed object triggers move gameplay hitboxes during play.
-    SetSimulateTriggerHitboxes(bool),
 
     // ── Misc ────────────────────────────────────────────────────────
     /// Toggle editor hitbox visualization.

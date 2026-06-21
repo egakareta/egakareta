@@ -224,7 +224,6 @@ pub fn derive_timeline_position(
         timeline_time_seconds,
         objects,
         &[],
-        false,
     );
     (state.position, state.direction)
 }
@@ -236,7 +235,6 @@ pub fn derive_timeline_elapsed_seconds_with_triggers(
     timeline_time_seconds: f32,
     objects: &[LevelObject],
     triggers: &[TimedTrigger],
-    simulate_trigger_hitboxes: bool,
 ) -> f32 {
     derive_timeline_state_with_triggers(
         spawn,
@@ -245,7 +243,6 @@ pub fn derive_timeline_elapsed_seconds_with_triggers(
         timeline_time_seconds,
         objects,
         triggers,
-        simulate_trigger_hitboxes,
     )
     .elapsed_seconds
 }
@@ -761,7 +758,6 @@ pub fn derive_timeline_state_with_triggers(
     timeline_time_seconds: f32,
     objects: &[LevelObject],
     triggers: &[TimedTrigger],
-    simulate_trigger_hitboxes: bool,
 ) -> TimelineState {
     let simulated = if triggers.is_empty() {
         simulate_timeline_state(spawn, direction, objects, tap_times, timeline_time_seconds)
@@ -772,7 +768,6 @@ pub fn derive_timeline_state_with_triggers(
             objects,
             tap_times,
             triggers,
-            simulate_trigger_hitboxes,
             timeline_time_seconds,
         )
     };

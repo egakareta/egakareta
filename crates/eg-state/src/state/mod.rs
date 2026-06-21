@@ -110,7 +110,6 @@ pub struct SessionSubsystem {
     pub game_paused: bool,
     pub playtest_audio_start_seconds: Option<f32>,
     pub playing_sky_color: [f32; 3],
-    pub playing_trigger_hitboxes: bool,
     pub playing_trigger_base_objects: Option<Vec<LevelObject>>,
     pub practice_mode_enabled: bool,
     pub practice_checkpoints: Vec<PracticeCheckpoint>,
