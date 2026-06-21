@@ -894,13 +894,6 @@ mod tests {
 
     use super::{linear_to_srgb, RenderFrameInput};
 
-    fn approx_eq(actual: f64, expected: f64, epsilon: f64) {
-        assert!(
-            (actual - expected).abs() <= epsilon,
-            "expected {actual} to be within {epsilon} of {expected}"
-        );
-    }
-
     #[test]
     fn render_frame_input_owns_frame_clear_grid_and_gate_policy() {
         let input = RenderFrameInput {
@@ -918,10 +911,10 @@ mod tests {
         assert!(input.should_draw_editor_cursor());
 
         let clear = input.clear_color();
-        approx_eq(clear.r, linear_to_srgb(0.18) as f64, 1e-7);
-        approx_eq(clear.g, linear_to_srgb(0.4) as f64, 1e-7);
-        approx_eq(clear.b, linear_to_srgb(0.8) as f64, 1e-7);
-        approx_eq(clear.a, 1.0, 1e-7);
+        approx::assert_abs_diff_eq!(clear.r, linear_to_srgb(0.18) as f64, epsilon = 1e-7);
+        approx::assert_abs_diff_eq!(clear.g, linear_to_srgb(0.4) as f64, epsilon = 1e-7);
+        approx::assert_abs_diff_eq!(clear.b, linear_to_srgb(0.8) as f64, epsilon = 1e-7);
+        approx::assert_abs_diff_eq!(clear.a, 1.0, epsilon = 1e-7);
 
         let grid = input.grid_uniform(2048.0);
         assert_eq!(grid.center, [12.0, -4.0]);

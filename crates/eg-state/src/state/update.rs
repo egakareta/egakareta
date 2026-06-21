@@ -1184,8 +1184,8 @@ mod tests {
             let _ = state.advance_playing_state_to_time(0.1, 1.0 / 120.0);
 
             assert!(matches!(state.gameplay.state.direction, Direction::Right));
-            crate::test_utils::assert_approx_eq(state.gameplay.state.position[2], 0.6, 1e-4);
-            crate::test_utils::assert_approx_eq(state.gameplay.state.position[0], 0.6, 1e-4);
+            approx::assert_abs_diff_eq!(state.gameplay.state.position[2], 0.6, epsilon = 1e-4);
+            approx::assert_abs_diff_eq!(state.gameplay.state.position[0], 0.6, epsilon = 1e-4);
             assert!(state.gameplay.pending_turn_inputs.is_empty());
         });
     }

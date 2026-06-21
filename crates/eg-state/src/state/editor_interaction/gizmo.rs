@@ -806,7 +806,6 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::super::super::{EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag, State};
-    use crate::test_utils::assert_approx_eq as approx_eq;
     use eg_mesh::{GizmoAxis, GizmoDragKind};
     use eg_types::{AppPhase, EditorMode, LevelObject};
     use eg_types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
@@ -983,8 +982,8 @@ mod tests {
                 .editor
                 .drag_gizmo(target.x as f64, target.y as f64, viewport));
             assert!(state.editor.objects[0].position[0] > 0.0);
-            approx_eq(state.editor.objects[0].position[1], 0.0, 1e-4);
-            approx_eq(state.editor.objects[0].position[2], 0.0, 1e-4);
+            approx::assert_abs_diff_eq!(state.editor.objects[0].position[1], 0.0, epsilon = 1e-4);
+            approx::assert_abs_diff_eq!(state.editor.objects[0].position[2], 0.0, epsilon = 1e-4);
         });
     }
 
@@ -1025,8 +1024,8 @@ mod tests {
             assert!(state
                 .editor
                 .drag_gizmo(target.x as f64, target.y as f64, viewport));
-            approx_eq(state.editor.objects[0].position[0], 0.0, 1e-4);
-            approx_eq(state.editor.objects[0].position[1], 0.0, 1e-4);
+            approx::assert_abs_diff_eq!(state.editor.objects[0].position[0], 0.0, epsilon = 1e-4);
+            approx::assert_abs_diff_eq!(state.editor.objects[0].position[1], 0.0, epsilon = 1e-4);
             assert!(state.editor.objects[0].position[2] < -0.1);
         });
     }
@@ -1069,9 +1068,17 @@ mod tests {
                 .drag_gizmo(axis_screen.x as f64, axis_screen.y as f64, viewport));
 
             let position = state.editor.objects[0].position;
-            approx_eq(position[0], std::f32::consts::FRAC_1_SQRT_2, 1e-4);
-            approx_eq(position[1], 0.0, 1e-4);
-            approx_eq(position[2], -std::f32::consts::FRAC_1_SQRT_2, 1e-4);
+            approx::assert_abs_diff_eq!(
+                position[0],
+                std::f32::consts::FRAC_1_SQRT_2,
+                epsilon = 1e-4
+            );
+            approx::assert_abs_diff_eq!(position[1], 0.0, epsilon = 1e-4);
+            approx::assert_abs_diff_eq!(
+                position[2],
+                -std::f32::consts::FRAC_1_SQRT_2,
+                epsilon = 1e-4
+            );
         });
     }
 
@@ -1172,7 +1179,7 @@ mod tests {
 
             let object = &state.editor.objects[0];
             assert!(object.size[0] >= 0.25);
-            approx_eq(object.position[0] + object.size[0], 1.0, 1e-3);
+            approx::assert_abs_diff_eq!(object.position[0] + object.size[0], 1.0, epsilon = 1e-3);
         });
     }
 
@@ -1218,9 +1225,21 @@ mod tests {
             let object = &state.editor.objects[0];
             assert!(object.size[0] > 2.9);
             let anchored_face_after = local_face_center(object, Vec3::X, -1.0);
-            approx_eq(anchored_face_after.x, anchored_face_before.x, 1e-3);
-            approx_eq(anchored_face_after.y, anchored_face_before.y, 1e-3);
-            approx_eq(anchored_face_after.z, anchored_face_before.z, 1e-3);
+            approx::assert_abs_diff_eq!(
+                anchored_face_after.x,
+                anchored_face_before.x,
+                epsilon = 1e-3
+            );
+            approx::assert_abs_diff_eq!(
+                anchored_face_after.y,
+                anchored_face_before.y,
+                epsilon = 1e-3
+            );
+            approx::assert_abs_diff_eq!(
+                anchored_face_after.z,
+                anchored_face_before.z,
+                epsilon = 1e-3
+            );
         });
     }
 
@@ -1266,9 +1285,21 @@ mod tests {
             let object = &state.editor.objects[0];
             assert!(object.size[0] < 1.1);
             let anchored_face_after = local_face_center(object, Vec3::X, 1.0);
-            approx_eq(anchored_face_after.x, anchored_face_before.x, 1e-3);
-            approx_eq(anchored_face_after.y, anchored_face_before.y, 1e-3);
-            approx_eq(anchored_face_after.z, anchored_face_before.z, 1e-3);
+            approx::assert_abs_diff_eq!(
+                anchored_face_after.x,
+                anchored_face_before.x,
+                epsilon = 1e-3
+            );
+            approx::assert_abs_diff_eq!(
+                anchored_face_after.y,
+                anchored_face_before.y,
+                epsilon = 1e-3
+            );
+            approx::assert_abs_diff_eq!(
+                anchored_face_after.z,
+                anchored_face_before.z,
+                epsilon = 1e-3
+            );
         });
     }
 
@@ -1682,8 +1713,8 @@ mod tests {
             );
             // X and Z should remain near zero since we rotated around Y
             // and the block had no prior rotation.
-            approx_eq(rot[0], 0.0, 1.0);
-            approx_eq(rot[2], 0.0, 1.0);
+            approx::assert_abs_diff_eq!(rot[0], 0.0, epsilon = 1.0);
+            approx::assert_abs_diff_eq!(rot[2], 0.0, epsilon = 1.0);
         });
     }
 
@@ -1744,9 +1775,9 @@ mod tests {
             let expected = expected_rotation_after_delta(start_degrees, world_axis, delta);
             let actual = state.editor.objects[0].rotation_degrees;
 
-            approx_eq(actual[0], expected[0], 0.5);
-            approx_eq(actual[1], expected[1], 0.5);
-            approx_eq(actual[2], expected[2], 0.5);
+            approx::assert_abs_diff_eq!(actual[0], expected[0], epsilon = 0.5);
+            approx::assert_abs_diff_eq!(actual[1], expected[1], epsilon = 0.5);
+            approx::assert_abs_diff_eq!(actual[2], expected[2], epsilon = 0.5);
 
             // Verify it differs from naive Euler addition (the old buggy behavior).
             // Old code would set X = 0 + delta, Y = 90, Z = 0.
@@ -1820,9 +1851,9 @@ mod tests {
             let expected = expected_rotation_after_delta(start_degrees, world_axis, delta);
             let actual = state.editor.objects[0].rotation_degrees;
 
-            approx_eq(actual[0], expected[0], 0.5);
-            approx_eq(actual[1], expected[1], 0.5);
-            approx_eq(actual[2], expected[2], 0.5);
+            approx::assert_abs_diff_eq!(actual[0], expected[0], epsilon = 0.5);
+            approx::assert_abs_diff_eq!(actual[1], expected[1], epsilon = 0.5);
+            approx::assert_abs_diff_eq!(actual[2], expected[2], epsilon = 0.5);
 
             // Verify it differs from naive Euler addition
             let naive = [45.0, delta, 45.0];
@@ -1893,9 +1924,9 @@ mod tests {
             let expected = expected_rotation_after_delta(start_degrees, world_axis, delta);
             let actual = state.editor.objects[0].rotation_degrees;
 
-            approx_eq(actual[0], expected[0], 0.5);
-            approx_eq(actual[1], expected[1], 0.5);
-            approx_eq(actual[2], expected[2], 0.5);
+            approx::assert_abs_diff_eq!(actual[0], expected[0], epsilon = 0.5);
+            approx::assert_abs_diff_eq!(actual[1], expected[1], epsilon = 0.5);
+            approx::assert_abs_diff_eq!(actual[2], expected[2], epsilon = 0.5);
         });
     }
 
@@ -1963,9 +1994,9 @@ mod tests {
             let expected = expected_rotation_after_delta(start_degrees, world_axis, snapped_delta);
             let actual = state.editor.objects[0].rotation_degrees;
 
-            approx_eq(actual[0], expected[0], 0.5);
-            approx_eq(actual[1], expected[1], 0.5);
-            approx_eq(actual[2], expected[2], 0.5);
+            approx::assert_abs_diff_eq!(actual[0], expected[0], epsilon = 0.5);
+            approx::assert_abs_diff_eq!(actual[1], expected[1], epsilon = 0.5);
+            approx::assert_abs_diff_eq!(actual[2], expected[2], epsilon = 0.5);
         });
     }
 

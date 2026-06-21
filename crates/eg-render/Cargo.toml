@@ -20,5 +20,6 @@ puffin = { workspace = true }
 wgpu = { workspace = true }
 
 [dev-dependencies]
+approx = { workspace = true }
 naga = { workspace = true }
 pollster = { workspace = true }

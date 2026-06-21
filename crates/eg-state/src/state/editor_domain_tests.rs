@@ -11,13 +11,13 @@
 //! They use `EditorSubsystem::new_test()` which requires no wgpu adapter.
 
 use super::EditorSubsystem;
-use crate::test_utils::{assert_approx_eq, stone};
+use crate::test_utils::stone;
 use eg_types::SpawnDirection;
 
 fn assert_vec3_approx_eq(actual: [f32; 3], expected: [f32; 3], eps: f32) {
-    assert_approx_eq(actual[0], expected[0], eps);
-    assert_approx_eq(actual[1], expected[1], eps);
-    assert_approx_eq(actual[2], expected[2], eps);
+    approx::assert_abs_diff_eq!(actual[0], expected[0], epsilon = eps);
+    approx::assert_abs_diff_eq!(actual[1], expected[1], epsilon = eps);
+    approx::assert_abs_diff_eq!(actual[2], expected[2], epsilon = eps);
 }
 
 // ── Nudge ──────────────────────────────────────────────────────────────

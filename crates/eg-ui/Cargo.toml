@@ -24,5 +24,6 @@ image = { workspace = true, features = ["png"] }
 js-sys = { workspace = true }
 
 [dev-dependencies]
+approx = { workspace = true }
 eg-state = { workspace = true, features = ["test-support"] }
 pollster = { workspace = true }

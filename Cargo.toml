@@ -31,6 +31,7 @@ license = "AGPL-3.0-only"
 
 [workspace.dependencies]
 async-trait = "0.1"
+approx = "0.5"
 arboard = "3.6"
 bytemuck = { version = "1.25", features = ["derive"] }
 console_error_panic_hook = "0.1"

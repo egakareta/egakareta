@@ -224,7 +224,6 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::super::super::State;
-    use crate::test_utils::assert_approx_eq as approx_eq;
     use eg_types::AppPhase;
     use glam::{Vec2, Vec3};
 
@@ -235,17 +234,17 @@ mod tests {
 
             state.editor.camera.editor_rotation = 0.0;
             let (right, up) = state.editor.camera_axes_xy();
-            approx_eq(right.x, 1.0, 1e-6);
-            approx_eq(right.y, 0.0, 1e-6);
-            approx_eq(up.x, 0.0, 1e-6);
-            approx_eq(up.y, 1.0, 1e-6);
+            approx::assert_abs_diff_eq!(right.x, 1.0, epsilon = 1e-6);
+            approx::assert_abs_diff_eq!(right.y, 0.0, epsilon = 1e-6);
+            approx::assert_abs_diff_eq!(up.x, 0.0, epsilon = 1e-6);
+            approx::assert_abs_diff_eq!(up.y, 1.0, epsilon = 1e-6);
 
             state.editor.camera.editor_rotation = std::f32::consts::FRAC_PI_2;
             let (right, up) = state.editor.camera_axes_xy();
-            approx_eq(right.x, 0.0, 1e-5);
-            approx_eq(right.y, -1.0, 1e-5);
-            approx_eq(up.x, 1.0, 1e-5);
-            approx_eq(up.y, 0.0, 1e-5);
+            approx::assert_abs_diff_eq!(right.x, 0.0, epsilon = 1e-5);
+            approx::assert_abs_diff_eq!(right.y, -1.0, epsilon = 1e-5);
+            approx::assert_abs_diff_eq!(up.x, 1.0, epsilon = 1e-5);
+            approx::assert_abs_diff_eq!(up.y, 0.0, epsilon = 1e-5);
         });
     }
 
@@ -261,9 +260,9 @@ mod tests {
             state.editor.camera.editor_pitch = 89.9f32.to_radians();
             let offset_at_limit = state.editor.camera_offset();
 
-            approx_eq(offset_clamped_high.x, offset_at_limit.x, 1e-4);
-            approx_eq(offset_clamped_high.y, offset_at_limit.y, 1e-4);
-            approx_eq(offset_clamped_high.z, offset_at_limit.z, 1e-4);
+            approx::assert_abs_diff_eq!(offset_clamped_high.x, offset_at_limit.x, epsilon = 1e-4);
+            approx::assert_abs_diff_eq!(offset_clamped_high.y, offset_at_limit.y, epsilon = 1e-4);
+            approx::assert_abs_diff_eq!(offset_clamped_high.z, offset_at_limit.z, epsilon = 1e-4);
 
             let viewport = Vec2::new(1280.0, 720.0);
             let target = Vec3::new(
@@ -295,14 +294,14 @@ mod tests {
                 .set_editor_camera_orientation(-3.0, 0.6, Some(1.0));
             let transition = state.editor.camera.transition.as_ref().expect("transition");
             assert!(transition.target_rotation > transition.start_rotation);
-            approx_eq(transition.target_pitch, 0.6, 1e-6);
+            approx::assert_abs_diff_eq!(transition.target_pitch, 0.6, epsilon = 1e-6);
 
             assert!(state.editor.update_camera_transition(0.5));
             assert!(state.editor.camera.transition.is_some());
 
             assert!(state.editor.update_camera_transition(0.6));
             assert!(state.editor.camera.transition.is_none());
-            approx_eq(state.editor.camera.editor_pitch, 0.6, 1e-3);
+            approx::assert_abs_diff_eq!(state.editor.camera.editor_pitch, 0.6, epsilon = 1e-3);
         });
     }
 
@@ -314,12 +313,16 @@ mod tests {
             let baseline_rotation = state.editor.camera.editor_rotation;
             state.phase = AppPhase::Menu;
             state.set_editor_camera_orientation(1.2, 0.3, None);
-            approx_eq(state.editor.camera.editor_rotation, baseline_rotation, 1e-6);
+            approx::assert_abs_diff_eq!(
+                state.editor.camera.editor_rotation,
+                baseline_rotation,
+                epsilon = 1e-6
+            );
 
             state.phase = AppPhase::Editor;
             state.set_editor_camera_orientation(1.2, 0.3, None);
-            approx_eq(state.editor.camera.editor_rotation, 1.2, 1e-6);
-            approx_eq(state.editor.camera.editor_pitch, 0.3, 1e-6);
+            approx::assert_abs_diff_eq!(state.editor.camera.editor_rotation, 1.2, epsilon = 1e-6);
+            approx::assert_abs_diff_eq!(state.editor.camera.editor_pitch, 0.3, epsilon = 1e-6);
         });
     }
 }

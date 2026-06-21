@@ -366,36 +366,12 @@ mod tests {
             state.dispatch_editor(EditorCommand::UpdateSelectedBlock(
                 crate::test_utils::sized("core/grass", 2.0, 3.0, 4.0, 5.0, 6.0, 7.0),
             ));
-            assert!(crate::test_utils::approx_eq(
-                state.editor.objects[0].position[0],
-                2.0,
-                1e-6
-            ));
-            assert!(crate::test_utils::approx_eq(
-                state.editor.objects[0].position[1],
-                3.0,
-                1e-6
-            ));
-            assert!(crate::test_utils::approx_eq(
-                state.editor.objects[0].position[2],
-                4.0,
-                1e-6
-            ));
-            assert!(crate::test_utils::approx_eq(
-                state.editor.objects[0].size[0],
-                5.0,
-                1e-6
-            ));
-            assert!(crate::test_utils::approx_eq(
-                state.editor.objects[0].size[1],
-                6.0,
-                1e-6
-            ));
-            assert!(crate::test_utils::approx_eq(
-                state.editor.objects[0].size[2],
-                7.0,
-                1e-6
-            ));
+            approx::assert_abs_diff_eq!(state.editor.objects[0].position[0], 2.0, epsilon = 1e-6);
+            approx::assert_abs_diff_eq!(state.editor.objects[0].position[1], 3.0, epsilon = 1e-6);
+            approx::assert_abs_diff_eq!(state.editor.objects[0].position[2], 4.0, epsilon = 1e-6);
+            approx::assert_abs_diff_eq!(state.editor.objects[0].size[0], 5.0, epsilon = 1e-6);
+            approx::assert_abs_diff_eq!(state.editor.objects[0].size[1], 6.0, epsilon = 1e-6);
+            approx::assert_abs_diff_eq!(state.editor.objects[0].size[2], 7.0, epsilon = 1e-6);
 
             state.dispatch_editor(EditorCommand::SnapSelectionToGrid);
             state.dispatch_editor(EditorCommand::FocusCameraTarget);
@@ -421,11 +397,11 @@ mod tests {
 
             state.editor.timeline.clock.time_seconds = 2.0;
             state.dispatch_editor(EditorCommand::Escape);
-            assert!(crate::test_utils::approx_eq(
+            approx::assert_abs_diff_eq!(
                 state.editor.timeline.clock.time_seconds,
                 0.0,
-                1e-6,
-            ));
+                epsilon = 1e-6
+            );
 
             state.dispatch_editor(EditorCommand::Escape);
             assert_eq!(state.phase, AppPhase::Menu);
@@ -476,16 +452,8 @@ mod tests {
                 .trigger
                 .as_ref()
                 .expect("updated block keeps trigger payload");
-            assert!(crate::test_utils::approx_eq(
-                trigger.time_seconds,
-                0.75,
-                1e-6
-            ));
-            assert!(crate::test_utils::approx_eq(
-                trigger.duration_seconds,
-                2.5,
-                1e-6
-            ));
+            approx::assert_abs_diff_eq!(trigger.time_seconds, 0.75, epsilon = 1e-6);
+            approx::assert_abs_diff_eq!(trigger.duration_seconds, 2.5, epsilon = 1e-6);
             assert_eq!(trigger.easing, TimedTriggerEasing::EaseOut);
         });
     }
@@ -549,14 +517,14 @@ mod tests {
             state.dispatch_editor(EditorCommand::SetSnapToGrid(false));
             assert!(!state.editor.config.snap_to_grid);
             state.dispatch_editor(EditorCommand::SetSnapStep(0.5));
-            crate::test_utils::assert_approx_eq(state.editor.config.snap_step, 0.5, 1e-6);
+            approx::assert_abs_diff_eq!(state.editor.config.snap_step, 0.5, epsilon = 1e-6);
             state.dispatch_editor(EditorCommand::SetSnapRotation(false));
             assert!(!state.editor.config.snap_rotation);
             state.dispatch_editor(EditorCommand::SetSnapRotationStep(30.0));
-            crate::test_utils::assert_approx_eq(
+            approx::assert_abs_diff_eq!(
                 state.editor.config.snap_rotation_step_degrees,
                 30.0,
-                1e-6,
+                epsilon = 1e-6
             );
 
             // Block ops
@@ -578,21 +546,17 @@ mod tests {
             // Spawn
             state.editor.ui.cursor = [3.0, 1.0, 5.0];
             state.dispatch_editor(EditorCommand::SetSpawnHere);
-            assert!(crate::test_utils::approx_eq(
-                state.editor.spawn.position[0],
-                3.0,
-                1e-6,
-            ));
+            approx::assert_abs_diff_eq!(state.editor.spawn.position[0], 3.0, epsilon = 1e-6);
             state.dispatch_editor(EditorCommand::RotateSpawnDirection);
             state.dispatch_editor(EditorCommand::RotatePlacementPreview);
 
             // Playback
             state.dispatch_editor(EditorCommand::SetPlaybackSpeed(1.5));
-            crate::test_utils::assert_approx_eq(state.editor_playback_speed(), 1.5, 1e-6);
+            approx::assert_abs_diff_eq!(state.editor_playback_speed(), 1.5, epsilon = 1e-6);
             state.dispatch_editor(EditorCommand::SetWaveformZoom(2.0));
-            crate::test_utils::assert_approx_eq(state.editor_waveform_zoom(), 2.0, 1e-6);
+            approx::assert_abs_diff_eq!(state.editor_waveform_zoom(), 2.0, epsilon = 1e-6);
             state.dispatch_editor(EditorCommand::SetWaveformScroll(1.0));
-            crate::test_utils::assert_approx_eq(state.editor_waveform_scroll(), 1.0, 1e-6);
+            approx::assert_abs_diff_eq!(state.editor_waveform_scroll(), 1.0, epsilon = 1e-6);
             state.dispatch_editor(EditorCommand::ShiftTimeline(0.5));
             state.dispatch_editor(EditorCommand::RemoveTap);
             state.dispatch_editor(EditorCommand::ClearTaps);

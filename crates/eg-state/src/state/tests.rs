@@ -9,7 +9,7 @@ use super::EditorDirtyFlags;
 use super::State;
 use crate::commands::AppCommand;
 use crate::state::editor_command::EditorCommand;
-use crate::test_utils::{assert_approx_eq as approx_eq, block, editor_test, sized, stone};
+use crate::test_utils::{block, editor_test, sized, stone};
 use eg_audio::audio::runtime_asset_source_key;
 use eg_editor_domain::{derive_tap_indicator_positions, derive_timeline_position};
 use eg_game::simulate_timeline_state_with_triggers;
@@ -396,16 +396,40 @@ fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_disabled(
             .expect("playback runtime should be initialized")
             .snapshot();
 
-        approx_eq(playback_snapshot.position[0], expected.position[0], 1e-4);
-        approx_eq(playback_snapshot.position[1], expected.position[1], 1e-4);
-        approx_eq(playback_snapshot.position[2], expected.position[2], 1e-4);
-        approx_eq(playback_snapshot.speed, expected.speed, 1e-4);
+        approx::assert_abs_diff_eq!(
+            playback_snapshot.position[0],
+            expected.position[0],
+            epsilon = 1e-4
+        );
+        approx::assert_abs_diff_eq!(
+            playback_snapshot.position[1],
+            expected.position[1],
+            epsilon = 1e-4
+        );
+        approx::assert_abs_diff_eq!(
+            playback_snapshot.position[2],
+            expected.position[2],
+            epsilon = 1e-4
+        );
+        approx::assert_abs_diff_eq!(playback_snapshot.speed, expected.speed, epsilon = 1e-4);
 
         state.editor_playtest();
-        approx_eq(state.gameplay.state.position[0], expected.position[0], 1e-4);
-        approx_eq(state.gameplay.state.position[1], expected.position[1], 1e-4);
-        approx_eq(state.gameplay.state.position[2], expected.position[2], 1e-4);
-        approx_eq(state.gameplay.state.speed, expected.speed, 1e-4);
+        approx::assert_abs_diff_eq!(
+            state.gameplay.state.position[0],
+            expected.position[0],
+            epsilon = 1e-4
+        );
+        approx::assert_abs_diff_eq!(
+            state.gameplay.state.position[1],
+            expected.position[1],
+            epsilon = 1e-4
+        );
+        approx::assert_abs_diff_eq!(
+            state.gameplay.state.position[2],
+            expected.position[2],
+            epsilon = 1e-4
+        );
+        approx::assert_abs_diff_eq!(state.gameplay.state.speed, expected.speed, epsilon = 1e-4);
         assert!(!state.editor_has_simulate_hitboxes_triggers());
     });
 }
@@ -436,16 +460,40 @@ fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_enabled()
             .expect("playback runtime should be initialized")
             .snapshot();
 
-        approx_eq(playback_snapshot.position[0], expected.position[0], 1e-4);
-        approx_eq(playback_snapshot.position[1], expected.position[1], 1e-4);
-        approx_eq(playback_snapshot.position[2], expected.position[2], 1e-4);
-        approx_eq(playback_snapshot.speed, expected.speed, 1e-4);
+        approx::assert_abs_diff_eq!(
+            playback_snapshot.position[0],
+            expected.position[0],
+            epsilon = 1e-4
+        );
+        approx::assert_abs_diff_eq!(
+            playback_snapshot.position[1],
+            expected.position[1],
+            epsilon = 1e-4
+        );
+        approx::assert_abs_diff_eq!(
+            playback_snapshot.position[2],
+            expected.position[2],
+            epsilon = 1e-4
+        );
+        approx::assert_abs_diff_eq!(playback_snapshot.speed, expected.speed, epsilon = 1e-4);
 
         state.editor_playtest();
-        approx_eq(state.gameplay.state.position[0], expected.position[0], 1e-4);
-        approx_eq(state.gameplay.state.position[1], expected.position[1], 1e-4);
-        approx_eq(state.gameplay.state.position[2], expected.position[2], 1e-4);
-        approx_eq(state.gameplay.state.speed, expected.speed, 1e-4);
+        approx::assert_abs_diff_eq!(
+            state.gameplay.state.position[0],
+            expected.position[0],
+            epsilon = 1e-4
+        );
+        approx::assert_abs_diff_eq!(
+            state.gameplay.state.position[1],
+            expected.position[1],
+            epsilon = 1e-4
+        );
+        approx::assert_abs_diff_eq!(
+            state.gameplay.state.position[2],
+            expected.position[2],
+            epsilon = 1e-4
+        );
+        approx::assert_abs_diff_eq!(state.gameplay.state.speed, expected.speed, epsilon = 1e-4);
         assert!(state.editor_has_simulate_hitboxes_triggers());
         assert!(state.gameplay.state.speed > eg_game::BASE_PLAYER_SPEED);
     });
@@ -474,10 +522,10 @@ fn editor_playtest_preserves_airborne_vertical_motion() {
 
         state.editor_playtest();
 
-        approx_eq(
+        approx::assert_abs_diff_eq!(
             state.gameplay.state.vertical_velocity,
             expected.vertical_velocity,
-            1e-4,
+            epsilon = 1e-4,
         );
         assert_eq!(state.gameplay.state.is_grounded, expected.is_grounded);
     });

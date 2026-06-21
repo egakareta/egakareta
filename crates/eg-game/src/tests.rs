@@ -13,13 +13,6 @@ use super::state::GameState;
 use eg_types::{LevelObject, SpawnDirection};
 use eg_types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
 
-fn approx_eq(left: f32, right: f32, epsilon: f32) {
-    assert!(
-        (left - right).abs() <= epsilon,
-        "expected {right} +/- {epsilon}, got {left}"
-    );
-}
-
 #[test]
 fn test_ground_detection_normal() {
     let mut game = GameState::new();
@@ -81,7 +74,7 @@ fn player_stays_grounded_when_footprint_overlaps_platform_edge() {
 
     assert!(game.is_grounded);
     assert!(!game.game_over);
-    approx_eq(game.position[1], 1.0, 1e-6);
+    approx::assert_abs_diff_eq!(game.position[1], 1.0, epsilon = 1e-6);
 }
 
 #[test]
@@ -260,7 +253,7 @@ fn speed_portal_overlap_removes_portal_and_boosts_speed() {
     game.rebuild_behavior_cache();
     game.update(0.0);
 
-    approx_eq(game.speed, 1.5, 1e-6);
+    approx::assert_abs_diff_eq!(game.speed, 1.5, epsilon = 1e-6);
     assert!(game.objects.is_empty());
     assert!(!game.game_over);
 }
@@ -310,8 +303,12 @@ fn level_completes_at_configured_duration() {
     assert!(!game.started);
     assert!(!game.game_over);
     assert!(game.level_progress().completed);
-    approx_eq(game.level_progress().progress_percent, 100.0, 1e-6);
-    approx_eq(game.elapsed_seconds, 0.05, 1e-6);
+    approx::assert_abs_diff_eq!(
+        game.level_progress().progress_percent,
+        100.0,
+        epsilon = 1e-6
+    );
+    approx::assert_abs_diff_eq!(game.elapsed_seconds, 0.05, epsilon = 1e-6);
 }
 
 #[test]
@@ -319,11 +316,11 @@ fn timeline_negative_time_clamps_to_zero() {
     let snapshot =
         simulate_timeline_state([0.0, 0.0, 0.0], SpawnDirection::Forward, &[], &[], -2.0);
 
-    approx_eq(snapshot.position[0], 0.5, 1e-6);
-    approx_eq(snapshot.position[1], 0.0, 1e-6);
-    approx_eq(snapshot.position[2], 0.5, 1e-6);
+    approx::assert_abs_diff_eq!(snapshot.position[0], 0.5, epsilon = 1e-6);
+    approx::assert_abs_diff_eq!(snapshot.position[1], 0.0, epsilon = 1e-6);
+    approx::assert_abs_diff_eq!(snapshot.position[2], 0.5, epsilon = 1e-6);
     assert!(matches!(snapshot.direction, SpawnDirection::Forward));
-    approx_eq(snapshot.elapsed_seconds, 0.0, 1e-6);
+    approx::assert_abs_diff_eq!(snapshot.elapsed_seconds, 0.0, epsilon = 1e-6);
 }
 
 #[test]
@@ -333,9 +330,9 @@ fn timeline_tap_at_zero_turns_before_movement() {
         simulate_timeline_state([0.0, 0.0, 0.0], SpawnDirection::Forward, &[], &[0.0], dt);
 
     assert!(matches!(snapshot.direction, SpawnDirection::Right));
-    approx_eq(snapshot.position[0], 1.5, 0.05);
-    approx_eq(snapshot.position[2], 0.5, 0.05);
-    approx_eq(snapshot.elapsed_seconds, dt, 1e-6);
+    approx::assert_abs_diff_eq!(snapshot.position[0], 1.5, epsilon = 0.05);
+    approx::assert_abs_diff_eq!(snapshot.position[2], 0.5, epsilon = 0.05);
+    approx::assert_abs_diff_eq!(snapshot.elapsed_seconds, dt, epsilon = 1e-6);
 }
 
 #[test]
@@ -350,9 +347,9 @@ fn timeline_tap_at_nonzero_time_turns_at_exact_boundary() {
     );
 
     assert!(matches!(snapshot.direction, SpawnDirection::Right));
-    approx_eq(snapshot.position[0], 0.5, 1e-5);
-    approx_eq(snapshot.position[2], 1.5, 1e-5);
-    approx_eq(snapshot.elapsed_seconds, tap_time, 1e-6);
+    approx::assert_abs_diff_eq!(snapshot.position[0], 0.5, epsilon = 1e-5);
+    approx::assert_abs_diff_eq!(snapshot.position[2], 1.5, epsilon = 1e-5);
+    approx::assert_abs_diff_eq!(snapshot.elapsed_seconds, tap_time, epsilon = 1e-6);
 
     let next_tick = tap_time + 1.0 / 240.0;
     let after_turn = simulate_timeline_state(
@@ -363,12 +360,12 @@ fn timeline_tap_at_nonzero_time_turns_at_exact_boundary() {
         next_tick,
     );
 
-    approx_eq(
+    approx::assert_abs_diff_eq!(
         after_turn.position[0],
         0.5 + BASE_PLAYER_SPEED / 240.0,
-        1e-5,
+        epsilon = 1e-5,
     );
-    approx_eq(after_turn.position[2], 1.5, 1e-5);
+    approx::assert_abs_diff_eq!(after_turn.position[2], 1.5, epsilon = 1e-5);
 }
 
 #[test]
@@ -393,15 +390,19 @@ fn timeline_incremental_runtime_matches_direct_simulation() {
         0.6,
     );
 
-    approx_eq(incremental.position[0], direct.position[0], 0.02);
-    approx_eq(incremental.position[1], direct.position[1], 0.02);
-    approx_eq(incremental.position[2], direct.position[2], 0.02);
+    approx::assert_abs_diff_eq!(incremental.position[0], direct.position[0], epsilon = 0.02);
+    approx::assert_abs_diff_eq!(incremental.position[1], direct.position[1], epsilon = 0.02);
+    approx::assert_abs_diff_eq!(incremental.position[2], direct.position[2], epsilon = 0.02);
     assert!(matches!(
         (incremental.direction, direct.direction),
         (SpawnDirection::Forward, SpawnDirection::Forward)
             | (SpawnDirection::Right, SpawnDirection::Right)
     ));
-    approx_eq(incremental.elapsed_seconds, direct.elapsed_seconds, 1e-6);
+    approx::assert_abs_diff_eq!(
+        incremental.elapsed_seconds,
+        direct.elapsed_seconds,
+        epsilon = 1e-6
+    );
 }
 
 #[test]
@@ -442,7 +443,7 @@ fn timeline_trigger_hitbox_mode_does_not_resurrect_consumed_portals() {
     runtime.advance_to(0.6);
 
     let snapshot = runtime.snapshot();
-    approx_eq(snapshot.speed, BASE_PLAYER_SPEED * 1.5, 1e-4);
+    approx::assert_abs_diff_eq!(snapshot.speed, BASE_PLAYER_SPEED * 1.5, epsilon = 1e-4);
 }
 
 #[test]
@@ -485,8 +486,20 @@ fn timeline_state_with_disabled_trigger_hitboxes_matches_plain_simulation() {
         0.5,
     );
 
-    approx_eq(plain.position[0], trigger_disabled.position[0], 1e-6);
-    approx_eq(plain.position[1], trigger_disabled.position[1], 1e-6);
-    approx_eq(plain.position[2], trigger_disabled.position[2], 1e-6);
-    approx_eq(plain.speed, trigger_disabled.speed, 1e-6);
+    approx::assert_abs_diff_eq!(
+        plain.position[0],
+        trigger_disabled.position[0],
+        epsilon = 1e-6
+    );
+    approx::assert_abs_diff_eq!(
+        plain.position[1],
+        trigger_disabled.position[1],
+        epsilon = 1e-6
+    );
+    approx::assert_abs_diff_eq!(
+        plain.position[2],
+        trigger_disabled.position[2],
+        epsilon = 1e-6
+    );
+    approx::assert_abs_diff_eq!(plain.speed, trigger_disabled.speed, epsilon = 1e-6);
 }

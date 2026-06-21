@@ -416,13 +416,6 @@ fn build_block_icon_vertices(block_id: &str, dimetric: bool) -> Vec<eg_mesh::Ver
 mod tests {
     use super::{build_block_icon_vertices, resolve_icon_camera, uses_dimetric_icon_projection};
 
-    fn assert_approx_eq(actual: f32, expected: f32, epsilon: f32) {
-        assert!(
-            (actual - expected).abs() <= epsilon,
-            "expected {expected} +/- {epsilon}, got {actual}"
-        );
-    }
-
     #[test]
     fn dimetric_projection_configuration_is_read_from_block_render_json() {
         assert!(uses_dimetric_icon_projection("core/stone"));
@@ -433,15 +426,15 @@ mod tests {
     fn custom_icon_camera_configuration_controls_speed_portal_view() {
         let camera = resolve_icon_camera("core/speedportal", false);
 
-        assert_approx_eq(camera.eye.x, 0.5, 1e-6);
-        assert_approx_eq(camera.eye.y, 4.0, 1e-6);
-        assert_approx_eq(camera.eye.z, 0.5, 1e-6);
-        assert_approx_eq(camera.target.x, 0.5, 1e-5);
-        assert_approx_eq(camera.target.y, 3.0, 1e-5);
-        assert_approx_eq(camera.target.z, 0.5, 1e-5);
-        assert_approx_eq(camera.up.x, 1.0, 1e-5);
-        assert_approx_eq(camera.up.y, 0.0, 1e-5);
-        assert_approx_eq(camera.up.z, 0.0, 1e-5);
+        approx::assert_abs_diff_eq!(camera.eye.x, 0.5, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(camera.eye.y, 4.0, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(camera.eye.z, 0.5, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(camera.target.x, 0.5, epsilon = 1e-5);
+        approx::assert_abs_diff_eq!(camera.target.y, 3.0, epsilon = 1e-5);
+        approx::assert_abs_diff_eq!(camera.target.z, 0.5, epsilon = 1e-5);
+        approx::assert_abs_diff_eq!(camera.up.x, 1.0, epsilon = 1e-5);
+        approx::assert_abs_diff_eq!(camera.up.y, 0.0, epsilon = 1e-5);
+        approx::assert_abs_diff_eq!(camera.up.z, 0.0, epsilon = 1e-5);
     }
 
     #[test]

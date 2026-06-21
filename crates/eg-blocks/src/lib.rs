@@ -374,18 +374,9 @@ pub fn normalize_block_id(block_id: &str) -> String {
 }
 
 #[cfg(test)]
-fn assert_approx_eq(left: f32, right: f32, epsilon: f32) {
-    assert!(
-        (left - right).abs() <= epsilon,
-        "expected {right} +/- {epsilon}, got {left}"
-    );
-}
-
-#[cfg(test)]
 mod tests {
     use eg_types::{BlockAnimation, BlockAssets, BlockBehavior, BlockGeometry, BlockRender};
 
-    use super::assert_approx_eq;
     use super::{
         all_placeable_blocks, block_texture_atlas, normalize_block_id, resolve_block_definition,
         resolve_block_texture_layers,
@@ -618,16 +609,16 @@ mod tests {
         assert_eq!(gem.geometry.hitboxes.len(), 1);
 
         let spin = gem.animation.idle.spin.expect("gem spin animation");
-        assert_approx_eq(spin.speed, 1.6, 1e-6);
+        approx::assert_abs_diff_eq!(spin.speed, 1.6, epsilon = 1e-6);
         let bob = gem.animation.idle.bob.expect("gem bob animation");
-        assert_approx_eq(bob.amplitude, 0.055, 1e-6);
-        assert_approx_eq(bob.frequency, 2.4, 1e-6);
+        approx::assert_abs_diff_eq!(bob.amplitude, 0.055, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(bob.frequency, 2.4, epsilon = 1e-6);
         let pulse = gem.animation.idle.pulse.expect("gem pulse animation");
-        assert_approx_eq(pulse.amplitude, 0.025, 1e-6);
-        assert_approx_eq(pulse.frequency, 3.2, 1e-6);
+        approx::assert_abs_diff_eq!(pulse.amplitude, 0.025, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(pulse.frequency, 3.2, epsilon = 1e-6);
         let consumed = gem.animation.on_consumed.expect("gem consumed effect");
         assert_eq!(consumed.shard_count, 14);
-        assert_approx_eq(consumed.duration_seconds, 0.48, 1e-6);
+        approx::assert_abs_diff_eq!(consumed.duration_seconds, 0.48, epsilon = 1e-6);
     }
 
     #[test]
@@ -640,13 +631,13 @@ mod tests {
             .orthographic_half_extent
             .expect("speed portal icon camera extent");
 
-        assert_approx_eq(position[0], 0.5, 1e-6);
-        assert_approx_eq(position[1], 4.0, 1e-6);
-        assert_approx_eq(position[2], 0.5, 1e-6);
-        assert_approx_eq(rotation[0], -90.0, 1e-6);
-        assert_approx_eq(rotation[1], 0.0, 1e-6);
-        assert_approx_eq(rotation[2], -90.0, 1e-6);
-        assert_approx_eq(half_extent, 0.6, 1e-6);
+        approx::assert_abs_diff_eq!(position[0], 0.5, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(position[1], 4.0, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(position[2], 0.5, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(rotation[0], -90.0, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(rotation[1], 0.0, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(rotation[2], -90.0, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(half_extent, 0.6, epsilon = 1e-6);
     }
 
     #[test]

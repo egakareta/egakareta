@@ -856,18 +856,11 @@ mod tests {
     };
     use eg_types::{AppPhase, CameraUniform, EditorMode, PhysicalSize};
 
-    fn approx_eq(a: f32, b: f32, eps: f32) {
-        assert!(
-            (a - b).abs() <= eps,
-            "expected {a} to be within {eps} of {b}"
-        );
-    }
-
     fn assert_color_approx(actual: Color, expected: Color) {
-        approx_eq(actual.r as f32, expected.r as f32, 1e-6);
-        approx_eq(actual.g as f32, expected.g as f32, 1e-6);
-        approx_eq(actual.b as f32, expected.b as f32, 1e-6);
-        approx_eq(actual.a as f32, expected.a as f32, 1e-6);
+        approx::assert_abs_diff_eq!(actual.r as f32, expected.r as f32, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(actual.g as f32, expected.g as f32, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(actual.b as f32, expected.b as f32, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(actual.a as f32, expected.a as f32, epsilon = 1e-6);
     }
 
     #[test]
@@ -1034,8 +1027,12 @@ mod tests {
         let below = 0.002;
         let at_threshold = 0.0031308;
 
-        approx_eq(linear_to_srgb(below), below * 12.92, 1e-7);
-        approx_eq(linear_to_srgb(at_threshold), at_threshold * 12.92, 1e-7);
+        approx::assert_abs_diff_eq!(linear_to_srgb(below), below * 12.92, epsilon = 1e-7);
+        approx::assert_abs_diff_eq!(
+            linear_to_srgb(at_threshold),
+            at_threshold * 12.92,
+            epsilon = 1e-7
+        );
     }
 
     #[test]
@@ -1043,7 +1040,7 @@ mod tests {
         let mid_gray_linear = 0.18;
         let expected = 0.461_356_1;
 
-        approx_eq(linear_to_srgb(mid_gray_linear), expected, 1e-6);
+        approx::assert_abs_diff_eq!(linear_to_srgb(mid_gray_linear), expected, epsilon = 1e-6);
     }
 
     #[test]
@@ -1145,10 +1142,22 @@ mod tests {
         assert_eq!(unchanged, linear);
 
         let corrected = apply_gamma_correction_if_enabled(linear, true);
-        approx_eq(corrected.r as f32, linear_to_srgb(linear.r as f32), 1e-7);
-        approx_eq(corrected.g as f32, linear_to_srgb(linear.g as f32), 1e-7);
-        approx_eq(corrected.b as f32, linear_to_srgb(linear.b as f32), 1e-7);
-        approx_eq(corrected.a as f32, linear.a as f32, 1e-7);
+        approx::assert_abs_diff_eq!(
+            corrected.r as f32,
+            linear_to_srgb(linear.r as f32),
+            epsilon = 1e-7
+        );
+        approx::assert_abs_diff_eq!(
+            corrected.g as f32,
+            linear_to_srgb(linear.g as f32),
+            epsilon = 1e-7
+        );
+        approx::assert_abs_diff_eq!(
+            corrected.b as f32,
+            linear_to_srgb(linear.b as f32),
+            epsilon = 1e-7
+        );
+        approx::assert_abs_diff_eq!(corrected.a as f32, linear.a as f32, epsilon = 1e-7);
     }
 
     #[test]
@@ -1186,21 +1195,21 @@ mod tests {
 
     #[test]
     fn editor_grid_darkening_scales_with_bright_editor_skies() {
-        approx_eq(
+        approx::assert_abs_diff_eq!(
             editor_grid_darkening(AppPhase::Editor, [0.0, 0.0, 0.0]),
             0.10,
-            1e-6,
+            epsilon = 1e-6,
         );
-        approx_eq(
+        approx::assert_abs_diff_eq!(
             editor_grid_darkening(AppPhase::Editor, [1.0, 1.0, 1.0]),
             0.45,
-            1e-6,
+            epsilon = 1e-6,
         );
         assert!(editor_grid_darkening(AppPhase::Editor, [0.55, 0.75, 0.84]) > 0.40);
-        approx_eq(
+        approx::assert_abs_diff_eq!(
             editor_grid_darkening(AppPhase::Playing, [1.0, 1.0, 1.0]),
             0.0,
-            1e-6,
+            epsilon = 1e-6,
         );
     }
 

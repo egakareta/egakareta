@@ -749,14 +749,6 @@ mod tests {
 
     const PRISM_VERTEX_COUNT: usize = 36;
 
-    fn approx_eq(a: f32, b: f32, eps: f32) {
-        assert!(
-            (a - b).abs() <= eps,
-            "expected {a} to be within {eps} of {b} (delta: {})",
-            (a - b).abs()
-        );
-    }
-
     fn segment_y_bounds(vertices: &[Vertex]) -> Vec<(f32, f32)> {
         assert_eq!(
             vertices.len() % PRISM_VERTEX_COUNT,
@@ -955,8 +947,8 @@ mod tests {
         let (first_min_y, first_max_y) = y_bounds[0];
 
         for (min_y, max_y) in y_bounds.iter().copied().skip(1) {
-            approx_eq(min_y, first_min_y, 1e-6);
-            approx_eq(max_y, first_max_y, 1e-6);
+            approx::assert_abs_diff_eq!(min_y, first_min_y, epsilon = 1e-6);
+            approx::assert_abs_diff_eq!(max_y, first_max_y, epsilon = 1e-6);
         }
     }
 
@@ -969,9 +961,9 @@ mod tests {
         let first_min_y = y_bounds.first().expect("expected first segment").0;
         let last_min_y = y_bounds.last().expect("expected last segment").0;
 
-        approx_eq(last_min_y - first_min_y, 0.003, 1e-6);
+        approx::assert_abs_diff_eq!(last_min_y - first_min_y, 0.003, epsilon = 1e-6);
         for (min_y, _) in y_bounds.iter().copied().skip(16) {
-            approx_eq(min_y, 0.003, 1e-6);
+            approx::assert_abs_diff_eq!(min_y, 0.003, epsilon = 1e-6);
         }
     }
 
@@ -1005,10 +997,10 @@ mod tests {
         assert_eq!(opaque.len(), full_alpha.len());
         for (a, b) in opaque.iter().zip(full_alpha.iter()) {
             for i in 0..3 {
-                approx_eq(a.position[i], b.position[i], 1e-6);
+                approx::assert_abs_diff_eq!(a.position[i], b.position[i], epsilon = 1e-6);
             }
             for i in 0..4 {
-                approx_eq(a.color[i], b.color[i], 1e-6);
+                approx::assert_abs_diff_eq!(a.color[i], b.color[i], epsilon = 1e-6);
             }
         }
     }

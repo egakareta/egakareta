@@ -698,12 +698,12 @@ fn is_full_cube_geometry(block: &BlockDefinition) -> bool {
 
 fn is_full_cube_cuboid(cuboid: BlockCuboid) -> bool {
     cuboid.color_tint.is_none()
-        && approx_eq(cuboid.from[0], 0.0)
-        && approx_eq(cuboid.from[1], 0.0)
-        && approx_eq(cuboid.from[2], 0.0)
-        && approx_eq(cuboid.to[0], 16.0)
-        && approx_eq(cuboid.to[1], 16.0)
-        && approx_eq(cuboid.to[2], 16.0)
+        && approx::abs_diff_eq!(cuboid.from[0], 0.0, epsilon = GRID_EPSILON)
+        && approx::abs_diff_eq!(cuboid.from[1], 0.0, epsilon = GRID_EPSILON)
+        && approx::abs_diff_eq!(cuboid.from[2], 0.0, epsilon = GRID_EPSILON)
+        && approx::abs_diff_eq!(cuboid.to[0], 16.0, epsilon = GRID_EPSILON)
+        && approx::abs_diff_eq!(cuboid.to[1], 16.0, epsilon = GRID_EPSILON)
+        && approx::abs_diff_eq!(cuboid.to[2], 16.0, epsilon = GRID_EPSILON)
 }
 
 fn chunk_key_for_point(point: [f32; 3], chunk_size: i32) -> RenderChunkKey {
@@ -753,15 +753,13 @@ fn rounded_grid_coord(value: f32) -> i32 {
 }
 
 fn is_grid_aligned(value: f32) -> bool {
-    approx_eq(value, value.round())
+    approx::abs_diff_eq!(value, value.round(), epsilon = GRID_EPSILON)
 }
 
 fn is_unit_size(size: [f32; 3]) -> bool {
-    approx_eq(size[0], 1.0) && approx_eq(size[1], 1.0) && approx_eq(size[2], 1.0)
-}
-
-fn approx_eq(a: f32, b: f32) -> bool {
-    (a - b).abs() <= GRID_EPSILON
+    approx::abs_diff_eq!(size[0], 1.0, epsilon = GRID_EPSILON)
+        && approx::abs_diff_eq!(size[1], 1.0, epsilon = GRID_EPSILON)
+        && approx::abs_diff_eq!(size[2], 1.0, epsilon = GRID_EPSILON)
 }
 
 #[cfg(test)]

@@ -886,7 +886,6 @@ mod tests {
     use super::super::super::State;
     use super::super::super::{EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart};
     use super::{projected_block_overlaps_rect, screen_bounds_overlap_rect};
-    use crate::test_utils::assert_approx_eq as approx_eq;
     use eg_types::{AppPhase, EditorInteractionChange, EditorMode, LevelObject};
     use glam::{Vec2, Vec3};
 
@@ -1407,8 +1406,8 @@ mod tests {
             ));
 
             assert!(small_drift_y > 0.0);
-            approx_eq(state.editor.objects[0].position[1], 0.0, 1e-6);
-            approx_eq(state.editor.ui.cursor[1], 0.0, 1e-6);
+            approx::assert_abs_diff_eq!(state.editor.objects[0].position[1], 0.0, epsilon = 1e-6);
+            approx::assert_abs_diff_eq!(state.editor.ui.cursor[1], 0.0, epsilon = 1e-6);
 
             let (lift_screen, lift_y) = screen_for_positive_y_delta(
                 &state,
@@ -1437,8 +1436,12 @@ mod tests {
                 viewport,
             ));
 
-            approx_eq(state.editor.objects[0].position[1], lift_y, 1e-5);
-            approx_eq(state.editor.ui.cursor[1], lift_y, 1e-5);
+            approx::assert_abs_diff_eq!(
+                state.editor.objects[0].position[1],
+                lift_y,
+                epsilon = 1e-5
+            );
+            approx::assert_abs_diff_eq!(state.editor.ui.cursor[1], lift_y, epsilon = 1e-5);
         });
     }
 
@@ -1488,8 +1491,8 @@ mod tests {
                 viewport,
             ));
 
-            approx_eq(state.editor.objects[1].position[1], 1.0, 1e-6);
-            approx_eq(state.editor.ui.cursor[1], 1.0, 1e-6);
+            approx::assert_abs_diff_eq!(state.editor.objects[1].position[1], 1.0, epsilon = 1e-6);
+            approx::assert_abs_diff_eq!(state.editor.ui.cursor[1], 1.0, epsilon = 1e-6);
         });
     }
 
@@ -1547,9 +1550,9 @@ mod tests {
             // Initial position Z was 0.0, so new position Z should be 3.0
 
             // Height drops to sit on top of the block below (Y=1)
-            approx_eq(state.editor.objects[1].position[0], 2.0, 1e-4);
-            approx_eq(state.editor.objects[1].position[1], 1.0, 1e-4);
-            approx_eq(state.editor.objects[1].position[2], 3.0, 1e-4);
+            approx::assert_abs_diff_eq!(state.editor.objects[1].position[0], 2.0, epsilon = 1e-4);
+            approx::assert_abs_diff_eq!(state.editor.objects[1].position[1], 1.0, epsilon = 1e-4);
+            approx::assert_abs_diff_eq!(state.editor.objects[1].position[2], 3.0, epsilon = 1e-4);
         });
     }
 

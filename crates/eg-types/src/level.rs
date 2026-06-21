@@ -1003,7 +1003,7 @@ fn apply_simulate_hitboxes_triggers_to_objects_in_place(
 
     let simulating: Vec<&TimedTrigger> = triggers
         .iter()
-        .filter(|trigger| trigger_simulates_hitboxes(*trigger))
+        .filter(|trigger| trigger_simulates_hitboxes(trigger))
         .collect();
     if simulating.is_empty() {
         return;

@@ -25,14 +25,6 @@ mod tests {
     };
     use serde_json::json;
 
-    /// Asserts that two f32 values are approximately equal within 1e-5 epsilon.
-    fn assert_approx_eq(actual: f32, expected: f32) {
-        assert!(
-            (actual - expected).abs() <= 1e-5,
-            "expected {expected}, got {actual}"
-        );
-    }
-
     #[test]
     fn game_cursor_reports_when_system_cursor_should_be_hidden() {
         assert!(!GameCursor::Default.hides_system_cursor());
@@ -227,9 +219,21 @@ mod tests {
 
         let value = serde_json::to_value(&metadata).expect("serialize metadata");
         let sky_color = value["sky_color"].as_array().expect("sky_color array");
-        assert_approx_eq(sky_color[0].as_f64().expect("sky red") as f32, 0.2);
-        assert_approx_eq(sky_color[1].as_f64().expect("sky green") as f32, 0.4);
-        assert_approx_eq(sky_color[2].as_f64().expect("sky blue") as f32, 0.8);
+        approx::assert_abs_diff_eq!(
+            sky_color[0].as_f64().expect("sky red") as f32,
+            0.2,
+            epsilon = 1e-5
+        );
+        approx::assert_abs_diff_eq!(
+            sky_color[1].as_f64().expect("sky green") as f32,
+            0.4,
+            epsilon = 1e-5
+        );
+        approx::assert_abs_diff_eq!(
+            sky_color[2].as_f64().expect("sky blue") as f32,
+            0.8,
+            epsilon = 1e-5
+        );
     }
 
     #[test]
@@ -409,10 +413,10 @@ mod tests {
         assert_eq!(resolved.len(), 1);
         assert!((resolved[0].time_seconds - 1.2).abs() <= 1e-6);
         for (actual, expected) in resolved[0].target_position.iter().zip(expected_target) {
-            assert_approx_eq(*actual, expected);
+            approx::assert_abs_diff_eq!(*actual, expected, epsilon = 1e-5);
         }
         for (actual, expected) in resolved_eye.iter().zip(expected_eye) {
-            assert_approx_eq(*actual, expected);
+            approx::assert_abs_diff_eq!(*actual, expected, epsilon = 1e-5);
         }
         assert!((resolved[0].pitch - 30.0_f32.to_radians()).abs() <= 1e-6);
         assert!((resolved[0].rotation - 60.0_f32.to_radians()).abs() <= 1e-6);
@@ -459,17 +463,17 @@ mod tests {
         );
 
         assert_eq!(resolved.len(), 1);
-        assert_approx_eq(resolved[0].rotation, expected_rotation);
-        assert_approx_eq(resolved[0].pitch, expected_pitch);
+        approx::assert_abs_diff_eq!(resolved[0].rotation, expected_rotation, epsilon = 1e-5);
+        approx::assert_abs_diff_eq!(resolved[0].pitch, expected_pitch, epsilon = 1e-5);
         assert!(resolved_forward[1] < -0.6);
         for (actual, expected) in resolved_forward.iter().zip(expected_forward) {
-            assert_approx_eq(*actual, expected);
+            approx::assert_abs_diff_eq!(*actual, expected, epsilon = 1e-5);
         }
         for (actual, expected) in resolved_eye
             .iter()
             .zip(camera_trigger_eye_from_object(&metadata.objects[0]))
         {
-            assert_approx_eq(*actual, expected);
+            approx::assert_abs_diff_eq!(*actual, expected, epsilon = 1e-5);
         }
     }
 
@@ -546,11 +550,11 @@ mod tests {
 
         let applied = apply_timed_triggers_to_objects(&base, &triggers, 2.5);
         let object = &applied[0];
-        assert_approx_eq(object.position[0], 5.0);
-        assert_approx_eq(object.rotation_degrees[1], 45.0);
-        assert_approx_eq(object.size[0], 1.5);
-        assert_approx_eq(object.size[1], 0.505);
-        assert_approx_eq(object.size[2], 2.0);
+        approx::assert_abs_diff_eq!(object.position[0], 5.0, epsilon = 1e-5);
+        approx::assert_abs_diff_eq!(object.rotation_degrees[1], 45.0, epsilon = 1e-5);
+        approx::assert_abs_diff_eq!(object.size[0], 1.5, epsilon = 1e-5);
+        approx::assert_abs_diff_eq!(object.size[1], 0.505, epsilon = 1e-5);
+        approx::assert_abs_diff_eq!(object.size[2], 2.0, epsilon = 1e-5);
     }
 
     #[test]

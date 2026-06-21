@@ -874,7 +874,6 @@ fn transform_trigger_target_object(action: &TimedTriggerAction) -> Option<LevelO
 #[cfg(test)]
 mod tests {
     use super::super::super::State;
-    use crate::test_utils::assert_approx_eq as approx_eq;
     use eg_types::LevelObject;
     use glam::{Vec2, Vec3};
 
@@ -1016,9 +1015,9 @@ mod tests {
 
             let cursor = state.editor.cursor_from_ray_hit(hit, normal);
 
-            approx_eq(cursor[0], 0.734, 1e-4);
-            approx_eq(cursor[1], 0.51, 1e-4);
-            approx_eq(cursor[2], 5.178, 1e-4);
+            approx::assert_abs_diff_eq!(cursor[0], 0.734, epsilon = 1e-4);
+            approx::assert_abs_diff_eq!(cursor[1], 0.51, epsilon = 1e-4);
+            approx::assert_abs_diff_eq!(cursor[2], 5.178, epsilon = 1e-4);
         });
     }
 
@@ -1034,9 +1033,9 @@ mod tests {
 
             let cursor = state.editor.cursor_from_ray_hit(hit, normal);
 
-            approx_eq(cursor[0], 1.0, 1e-4);
-            approx_eq(cursor[1], 0.0, 1e-4);
-            approx_eq(cursor[2], 5.0, 1e-4);
+            approx::assert_abs_diff_eq!(cursor[0], 1.0, epsilon = 1e-4);
+            approx::assert_abs_diff_eq!(cursor[1], 0.0, epsilon = 1e-4);
+            approx::assert_abs_diff_eq!(cursor[2], 5.0, epsilon = 1e-4);
         });
     }
 
@@ -1052,9 +1051,9 @@ mod tests {
 
             let cursor = state.editor.cursor_from_ray_hit(hit, normal);
 
-            approx_eq(cursor[0], 0.5, 1e-4);
-            approx_eq(cursor[1], 0.5, 1e-4);
-            approx_eq(cursor[2], 5.0, 1e-4);
+            approx::assert_abs_diff_eq!(cursor[0], 0.5, epsilon = 1e-4);
+            approx::assert_abs_diff_eq!(cursor[1], 0.5, epsilon = 1e-4);
+            approx::assert_abs_diff_eq!(cursor[2], 5.0, epsilon = 1e-4);
         });
     }
 
@@ -1070,9 +1069,9 @@ mod tests {
 
             let cursor = state.editor.cursor_from_ray_hit(hit, normal);
 
-            approx_eq(cursor[0], 3.0, 1e-4);
-            approx_eq(cursor[1], 0.26, 1e-4);
-            approx_eq(cursor[2], 8.5, 1e-4);
+            approx::assert_abs_diff_eq!(cursor[0], 3.0, epsilon = 1e-4);
+            approx::assert_abs_diff_eq!(cursor[1], 0.26, epsilon = 1e-4);
+            approx::assert_abs_diff_eq!(cursor[2], 8.5, epsilon = 1e-4);
         });
     }
 }

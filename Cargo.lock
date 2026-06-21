@@ -183,6 +183,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
+name = "approx"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cab112f0a86d568ea0e627cc1d6be74a1e9cd55214684db5561995f6dad897c6"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "arboard"
 version = "3.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -905,6 +914,7 @@ dependencies = [
 name = "eg-app"
 version = "0.1.0"
 dependencies = [
+ "approx",
  "console_error_panic_hook",
  "console_log",
  "criterion",
@@ -963,6 +973,7 @@ dependencies = [
 name = "eg-block-geometry"
 version = "0.1.0"
 dependencies = [
+ "approx",
  "eg-blocks",
  "eg-types",
  "glam",
@@ -972,6 +983,7 @@ dependencies = [
 name = "eg-blocks"
 version = "0.1.0"
 dependencies = [
+ "approx",
  "eg-types",
  "image",
  "include_dir",
@@ -1004,6 +1016,7 @@ dependencies = [
 name = "eg-game"
 version = "0.1.0"
 dependencies = [
+ "approx",
  "eg-block-geometry",
  "eg-blocks",
  "eg-types",
@@ -1026,6 +1039,7 @@ dependencies = [
 name = "eg-mesh"
 version = "0.1.0"
 dependencies = [
+ "approx",
  "bytemuck",
  "eg-block-geometry",
  "eg-blocks",
@@ -1074,6 +1088,7 @@ dependencies = [
 name = "eg-render"
 version = "0.1.0"
 dependencies = [
+ "approx",
  "bytemuck",
  "eg-block-geometry",
  "eg-blocks",
@@ -1092,6 +1107,7 @@ dependencies = [
 name = "eg-state"
 version = "0.1.0"
 dependencies = [
+ "approx",
  "bytemuck",
  "eg-audio",
  "eg-block-geometry",
@@ -1131,6 +1147,7 @@ dependencies = [
 name = "eg-ui"
 version = "0.1.0"
 dependencies = [
+ "approx",
  "eg-blocks",
  "eg-state",
  "eg-types",

@@ -568,7 +568,6 @@ impl ApplicationHandler for App {
 #[cfg(test)]
 mod tests {
     use super::{App, TouchPointEvent};
-    use crate::test_utils::approx_eq;
     use eg_state::commands::InputEvent;
     use eg_state::state::State;
     use eg_types::GameCursor;
@@ -749,7 +748,7 @@ mod tests {
             InputEvent::Zoom(delta) => delta,
             _ => panic!("expected zoom input event"),
         };
-        assert!(approx_eq(zoom_delta, 0.8, 0.0001));
+        approx::assert_abs_diff_eq!(zoom_delta, 0.8, epsilon = 0.0001);
     }
 
     #[test]

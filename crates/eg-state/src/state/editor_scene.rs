@@ -1596,14 +1596,6 @@ mod tests {
             .all(|vertex| (vertex.render_profile - 3.0).abs() <= f32::EPSILON));
     }
 
-    fn approx_eq(a: f32, b: f32, eps: f32) {
-        assert!(
-            (a - b).abs() <= eps,
-            "expected {a} to be within {eps} of {b} (delta: {})",
-            (a - b).abs()
-        );
-    }
-
     fn object_move_trigger() -> TimedTrigger {
         TimedTrigger {
             time_seconds: 0.0,
@@ -1955,8 +1947,8 @@ mod tests {
 
         assert_eq!(markers.len(), 2);
         assert_eq!(markers[0].source_position, Some([0.0, 0.0, 0.0]));
-        approx_eq(markers[1].source_position.unwrap()[0], 4.0, 1e-6);
-        approx_eq(markers[1].source_size.unwrap()[0], 1.5, 1e-6);
+        approx::assert_abs_diff_eq!(markers[1].source_position.unwrap()[0], 4.0, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(markers[1].source_size.unwrap()[0], 1.5, epsilon = 1e-6);
         assert!(markers[1].is_selected);
     }
 

@@ -138,7 +138,7 @@ Blocks can define inline `animation` metadata for reusable idle motion and event
 
 ### Floating Point Assertions
 
-- Never use `assert_eq!` for `f32` values. Use `crate::test_utils::approx_eq(a, b, eps)` and `crate::test_utils::assert_approx_eq(a, b, eps)`.
+- Use `approx::assert_abs_diff_eq!(a, b, epsilon = eps)` for assertions and avoid `assert_eq!` for `f32` values unless explicitly exact.
 - Default epsilon varies by test domain; physics tests commonly use `1e-6`.
 
 ### Async Tests

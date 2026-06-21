@@ -1615,7 +1615,6 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::State;
-    use crate::test_utils::assert_approx_eq as approx_eq;
     use eg_game::TimelineSimulationRuntime;
     use eg_mesh::{GizmoAxis, GizmoDragKind};
     use eg_types::{
@@ -1638,8 +1637,12 @@ mod tests {
 
     fn assert_object_pose(object: &LevelObject, position: [f32; 3], size: [f32; 3]) {
         for component in 0..3 {
-            approx_eq(object.position[component], position[component], 1e-6);
-            approx_eq(object.size[component], size[component], 1e-6);
+            approx::assert_abs_diff_eq!(
+                object.position[component],
+                position[component],
+                epsilon = 1e-6
+            );
+            approx::assert_abs_diff_eq!(object.size[component], size[component], epsilon = 1e-6);
         }
     }
 
@@ -1731,8 +1734,8 @@ mod tests {
             assert_eq!(triggers.len(), 2);
 
             for (trigger, expected_id) in triggers.iter().zip(["object_0", "object_4"]) {
-                approx_eq(trigger.time_seconds, 2.5, 1e-6);
-                approx_eq(trigger.duration_seconds, 1.0, 1e-6);
+                approx::assert_abs_diff_eq!(trigger.time_seconds, 2.5, epsilon = 1e-6);
+                approx::assert_abs_diff_eq!(trigger.duration_seconds, 1.0, epsilon = 1e-6);
                 assert_eq!(trigger.easing, TimedTriggerEasing::EaseInOut);
                 assert_eq!(
                     trigger.target,
@@ -1750,13 +1753,21 @@ mod tests {
                     ..
                 } => {
                     for component in 0..3 {
-                        approx_eq(position[component], [0.0, 0.0, 0.0][component], 1e-6);
-                        approx_eq(
+                        approx::assert_abs_diff_eq!(
+                            position[component],
+                            [0.0, 0.0, 0.0][component],
+                            epsilon = 1e-6
+                        );
+                        approx::assert_abs_diff_eq!(
                             rotation_degrees[component],
                             [0.0, 0.0, 0.0][component],
-                            1e-6,
+                            epsilon = 1e-6
                         );
-                        approx_eq(size[component], [1.0, 1.0, 1.0][component], 1e-6);
+                        approx::assert_abs_diff_eq!(
+                            size[component],
+                            [1.0, 1.0, 1.0][component],
+                            epsilon = 1e-6
+                        );
                     }
                 }
                 _ => panic!("expected transform objects action"),
@@ -1769,13 +1780,21 @@ mod tests {
                     ..
                 } => {
                     for component in 0..3 {
-                        approx_eq(position[component], [4.0, 0.0, 0.0][component], 1e-6);
-                        approx_eq(
+                        approx::assert_abs_diff_eq!(
+                            position[component],
+                            [4.0, 0.0, 0.0][component],
+                            epsilon = 1e-6
+                        );
+                        approx::assert_abs_diff_eq!(
                             rotation_degrees[component],
                             [0.0, 0.0, 0.0][component],
-                            1e-6,
+                            epsilon = 1e-6
                         );
-                        approx_eq(size[component], [1.0, 1.0, 1.0][component], 1e-6);
+                        approx::assert_abs_diff_eq!(
+                            size[component],
+                            [1.0, 1.0, 1.0][component],
+                            epsilon = 1e-6
+                        );
                     }
                 }
                 _ => panic!("expected transform objects action"),
@@ -1819,9 +1838,9 @@ mod tests {
                     else {
                         panic!("expected transform trigger action");
                     };
-                    approx_eq(position[0], 4.0, 1e-6);
-                    approx_eq(position[1], 0.0, 1e-6);
-                    approx_eq(position[2], 0.0, 1e-6);
+                    approx::assert_abs_diff_eq!(position[0], 4.0, epsilon = 1e-6);
+                    approx::assert_abs_diff_eq!(position[1], 0.0, epsilon = 1e-6);
+                    approx::assert_abs_diff_eq!(position[2], 0.0, epsilon = 1e-6);
                 }
             }
 
@@ -1921,9 +1940,9 @@ mod tests {
                 {
                     object_zero_same_time_count += 1;
                     if let TimedTriggerAction::TransformObjects { position, .. } = &trigger.action {
-                        approx_eq(position[0], 0.0, 1e-6);
-                        approx_eq(position[1], 0.0, 1e-6);
-                        approx_eq(position[2], 0.0, 1e-6);
+                        approx::assert_abs_diff_eq!(position[0], 0.0, epsilon = 1e-6);
+                        approx::assert_abs_diff_eq!(position[1], 0.0, epsilon = 1e-6);
+                        approx::assert_abs_diff_eq!(position[2], 0.0, epsilon = 1e-6);
                     }
                 }
 
@@ -1932,9 +1951,9 @@ mod tests {
                 {
                     object_one_same_time_count += 1;
                     if let TimedTriggerAction::TransformObjects { position, .. } = &trigger.action {
-                        approx_eq(position[0], 4.0, 1e-6);
-                        approx_eq(position[1], 0.0, 1e-6);
-                        approx_eq(position[2], 0.0, 1e-6);
+                        approx::assert_abs_diff_eq!(position[0], 4.0, epsilon = 1e-6);
+                        approx::assert_abs_diff_eq!(position[1], 0.0, epsilon = 1e-6);
+                        approx::assert_abs_diff_eq!(position[2], 0.0, epsilon = 1e-6);
                     }
                 }
 
@@ -1997,16 +2016,16 @@ mod tests {
 
                 if (trigger.time_seconds - 2.5).abs() <= 1e-6 && object_ids.is_empty() {
                     found_target_only_trigger = true;
-                    approx_eq(position[0], 10.0, 1e-6);
+                    approx::assert_abs_diff_eq!(position[0], 10.0, epsilon = 1e-6);
                 }
 
                 if (trigger.time_seconds - 2.5).abs() <= 1e-6
                     && object_ids == &["object_0".to_string()]
                 {
                     found_replacement_trigger = true;
-                    approx_eq(position[0], 0.0, 1e-6);
-                    approx_eq(position[1], 0.0, 1e-6);
-                    approx_eq(position[2], 0.0, 1e-6);
+                    approx::assert_abs_diff_eq!(position[0], 0.0, epsilon = 1e-6);
+                    approx::assert_abs_diff_eq!(position[1], 0.0, epsilon = 1e-6);
+                    approx::assert_abs_diff_eq!(position[2], 0.0, epsilon = 1e-6);
                 }
             }
 
@@ -2244,7 +2263,7 @@ mod tests {
             state.editor.bpm_tap(2.0);
 
             let bpm = state.editor.bpm_tap_result().expect("bpm should exist");
-            approx_eq(bpm, 120.0, 1e-3);
+            approx::assert_abs_diff_eq!(bpm, 120.0, epsilon = 1e-3);
 
             state.editor.bpm_tap_reset();
             assert!(state.editor.bpm_tap_result().is_none());

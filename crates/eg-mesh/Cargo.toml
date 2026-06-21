@@ -19,3 +19,4 @@ log = { workspace = true }
 puffin = { workspace = true }
 rayon = { workspace = true }
 wgpu = { workspace = true }
+approx = { workspace = true }

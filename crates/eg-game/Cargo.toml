@@ -15,3 +15,6 @@ eg-blocks = { workspace = true }
 eg-types = { workspace = true }
 glam = { workspace = true }
 puffin = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }

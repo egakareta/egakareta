@@ -707,7 +707,7 @@ pub(crate) fn show_waveform_panel(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::{assert_approx_eq as approx_eq, editor_view_model};
+    use crate::test_utils::editor_view_model;
     use eg_types::{
         default_camera_trigger_distance, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
         TimedTriggerTarget,
@@ -750,23 +750,27 @@ mod tests {
     #[test]
     fn test_timeline_visible_duration() {
         // Default zoom 1.0 should give default window
-        approx_eq(
+        approx::assert_abs_diff_eq!(
             timeline_visible_duration(100.0, 1.0),
             DEFAULT_TIMELINE_WINDOW_SECONDS,
-            0.001,
+            epsilon = 0.001,
         );
 
         // Zoom in (2.0) should give smaller window (10.0s)
-        approx_eq(timeline_visible_duration(100.0, 2.0), 10.0, 0.001);
+        approx::assert_abs_diff_eq!(timeline_visible_duration(100.0, 2.0), 10.0, epsilon = 0.001);
 
         // Zoom out (0.5) should give larger window (40.0s)
-        approx_eq(timeline_visible_duration(100.0, 0.5), 40.0, 0.001);
+        approx::assert_abs_diff_eq!(timeline_visible_duration(100.0, 0.5), 40.0, epsilon = 0.001);
 
         // Should be clamped to duration
-        approx_eq(timeline_visible_duration(10.0, 1.0), 10.0, 0.001);
+        approx::assert_abs_diff_eq!(timeline_visible_duration(10.0, 1.0), 10.0, epsilon = 0.001);
 
         // Should be clamped to max zoom (10.0), giving a 2.0s window with current limits
-        approx_eq(timeline_visible_duration(100.0, 1000.0), 2.0, 0.001);
+        approx::assert_abs_diff_eq!(
+            timeline_visible_duration(100.0, 1000.0),
+            2.0,
+            epsilon = 0.001
+        );
     }
 
     #[test]
@@ -775,21 +779,21 @@ mod tests {
 
         // Zoom in logic
         let zoom_in_1 = (initial_zoom * 1.25).clamp(0.1, 10.0);
-        approx_eq(zoom_in_1, 1.25, 0.001);
+        approx::assert_abs_diff_eq!(zoom_in_1, 1.25, epsilon = 0.001);
 
         let zoom_in_2 = (zoom_in_1 * 1.25).clamp(0.1, 10.0);
-        approx_eq(zoom_in_2, 1.5625, 0.001);
+        approx::assert_abs_diff_eq!(zoom_in_2, 1.5625, epsilon = 0.001);
 
         // Zoom out logic
         let zoom_out_1 = (initial_zoom / 1.25).clamp(0.1, 10.0);
-        approx_eq(zoom_out_1, 0.8, 0.001);
+        approx::assert_abs_diff_eq!(zoom_out_1, 0.8, epsilon = 0.001);
 
         // Clamping logic
         let max_zoom = (9.0_f32 * 1.25).clamp(0.1, 10.0);
-        approx_eq(max_zoom, 10.0, 0.001);
+        approx::assert_abs_diff_eq!(max_zoom, 10.0, epsilon = 0.001);
 
         let min_zoom = (0.12_f32 * 0.8).clamp(0.1, 10.0);
-        approx_eq(min_zoom, 0.1, 0.001);
+        approx::assert_abs_diff_eq!(min_zoom, 0.1, epsilon = 0.001);
     }
 
     #[test]
@@ -822,7 +826,7 @@ mod tests {
         // The tick_x and waveform_x should be aligned for the same time
         let tick_x_at_sample_time =
             rect_left + (sample_time - view_start) / visible_duration * rect_width;
-        approx_eq(waveform_x, tick_x_at_sample_time, 0.001);
+        approx::assert_abs_diff_eq!(waveform_x, tick_x_at_sample_time, epsilon = 0.001);
     }
 
     #[test]
@@ -875,7 +879,7 @@ mod tests {
         assert_eq!(commands.len(), 1);
         match &commands[0] {
             AppCommand::Editor(EditorCommand::SetTimelineTime(value)) => {
-                approx_eq(*value, 5.0, 0.001)
+                approx::assert_abs_diff_eq!(*value, 5.0, epsilon = 0.001)
             }
             other => panic!("expected timeline seek command, got {other:?}"),
         }
@@ -918,7 +922,7 @@ mod tests {
         assert_eq!(commands.len(), 2);
         match &commands[0] {
             AppCommand::Editor(EditorCommand::SetTimelineTime(value)) => {
-                approx_eq(*value, 5.0, 0.001)
+                approx::assert_abs_diff_eq!(*value, 5.0, epsilon = 0.001)
             }
             other => panic!("expected timeline seek command, got {other:?}"),
         }
@@ -988,7 +992,7 @@ mod tests {
         assert_eq!(commands.len(), 1);
         match &commands[0] {
             AppCommand::Editor(EditorCommand::SetWaveformScroll(value)) => {
-                approx_eq(*value, 20.0, 0.001)
+                approx::assert_abs_diff_eq!(*value, 20.0, epsilon = 0.001)
             }
             other => panic!("expected scroll recenter command, got {other:?}"),
         }

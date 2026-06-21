@@ -1944,7 +1944,6 @@ mod tests {
         responsive_ui_scale_multiplier, settings_sidebar_default_width, show_editor_ui,
         show_perf_overlay, sort_quad_by_angle, VIEW_CUBE_FACES,
     };
-    use crate::test_utils::approx_eq;
     use eg_blocks::resolve_block_definition;
     use eg_state::commands::AppCommand;
     use eg_state::state::editor_command::EditorCommand;
@@ -2040,7 +2039,7 @@ mod tests {
             let forward = camera_forward_from_orientation(face.rotation, face.pitch);
             let dot = forward.dot(face.normal.normalize_or_zero());
             assert!(
-                dot < -0.999 || approx_eq(dot, -1.0, 0.002),
+                dot < -0.999 || approx::abs_diff_eq!(dot, -1.0, epsilon = 0.002),
                 "Face {} should align camera forward opposite the normal (dot={})",
                 face.label,
                 dot
@@ -2058,91 +2057,79 @@ mod tests {
 
     #[test]
     fn settings_sidebar_width_uses_compact_fit_and_desktop_default() {
-        assert!(approx_eq(
-            settings_sidebar_default_width(320.0),
-            249.6,
-            0.01
-        ));
-        assert!(approx_eq(
-            settings_sidebar_default_width(200.0),
-            176.0,
-            0.01
-        ));
-        assert!(approx_eq(
+        approx::assert_abs_diff_eq!(settings_sidebar_default_width(320.0), 249.6, epsilon = 0.01);
+        approx::assert_abs_diff_eq!(settings_sidebar_default_width(200.0), 176.0, epsilon = 0.01);
+        approx::assert_abs_diff_eq!(
             settings_sidebar_default_width(1200.0),
             320.0,
-            0.01
-        ));
-        assert!(approx_eq(
-            settings_sidebar_default_width(180.0),
-            156.0,
-            0.01
-        ));
+            epsilon = 0.01
+        );
+        approx::assert_abs_diff_eq!(settings_sidebar_default_width(180.0), 156.0, epsilon = 0.01);
     }
 
     #[test]
     fn responsive_ui_scale_multiplier_tracks_screen_size() {
-        assert!(approx_eq(
+        approx::assert_abs_diff_eq!(
             responsive_ui_scale_multiplier(egui::vec2(1280.0, 720.0)),
             1.0,
-            0.001
-        ));
-        assert!(approx_eq(
+            epsilon = 0.001
+        );
+        approx::assert_abs_diff_eq!(
             responsive_ui_scale_multiplier(egui::vec2(320.0, 240.0)),
             0.8,
-            0.001
-        ));
-        assert!(approx_eq(
+            epsilon = 0.001
+        );
+        approx::assert_abs_diff_eq!(
             responsive_ui_scale_multiplier(egui::vec2(3840.0, 2160.0)),
             1.35,
-            0.001
-        ));
+            epsilon = 0.001
+        );
     }
 
     #[test]
     fn combined_ui_scale_factor_applies_user_multiplier_with_clamping() {
-        assert!(approx_eq(
+        approx::assert_abs_diff_eq!(
             combined_ui_scale_factor(egui::vec2(1280.0, 720.0), 1.25),
             1.25,
-            0.001
-        ));
-        assert!(approx_eq(
+            epsilon = 0.001
+        );
+        approx::assert_abs_diff_eq!(
             combined_ui_scale_factor(egui::vec2(1280.0, 720.0), 99.0),
             3.0,
-            0.001
-        ));
-        assert!(approx_eq(
+            epsilon = 0.001
+        );
+        approx::assert_abs_diff_eq!(
             combined_ui_scale_factor(egui::vec2(1280.0, 720.0), f32::NAN),
             1.0,
-            0.001
-        ));
-        assert!(approx_eq(
+            epsilon = 0.001
+        );
+        approx::assert_abs_diff_eq!(
             combined_ui_scale_factor(egui::vec2(3840.0, 2160.0), 3.0),
             4.0,
-            0.001
-        ));
+            epsilon = 0.001
+        );
     }
 
     #[test]
     fn marquee_screen_pos_to_egui_pos_scales_by_pixels_per_point() {
         let p = marquee_screen_pos_to_egui_pos([300.0, 180.0], 1.5);
-        assert!(approx_eq(p.x, 200.0, 0.001));
-        assert!(approx_eq(p.y, 120.0, 0.001));
+        approx::assert_abs_diff_eq!(p.x, 200.0, epsilon = 0.001);
+        approx::assert_abs_diff_eq!(p.y, 120.0, epsilon = 0.001);
     }
 
     #[test]
     fn marquee_screen_pos_to_egui_pos_handles_invalid_or_non_positive_scale() {
         let p = marquee_screen_pos_to_egui_pos([300.0, 180.0], f32::NAN);
-        assert!(approx_eq(p.x, 300.0, 0.001));
-        assert!(approx_eq(p.y, 180.0, 0.001));
+        approx::assert_abs_diff_eq!(p.x, 300.0, epsilon = 0.001);
+        approx::assert_abs_diff_eq!(p.y, 180.0, epsilon = 0.001);
 
         let p = marquee_screen_pos_to_egui_pos([300.0, 180.0], 0.0);
-        assert!(approx_eq(p.x, 300.0, 0.001));
-        assert!(approx_eq(p.y, 180.0, 0.001));
+        approx::assert_abs_diff_eq!(p.x, 300.0, epsilon = 0.001);
+        approx::assert_abs_diff_eq!(p.y, 180.0, epsilon = 0.001);
 
         let p = marquee_screen_pos_to_egui_pos([300.0, 180.0], -2.0);
-        assert!(approx_eq(p.x, 300.0, 0.001));
-        assert!(approx_eq(p.y, 180.0, 0.001));
+        approx::assert_abs_diff_eq!(p.x, 300.0, epsilon = 0.001);
+        approx::assert_abs_diff_eq!(p.y, 180.0, epsilon = 0.001);
     }
 
     #[test]
@@ -2393,14 +2380,6 @@ mod test_utils {
             marquee_selection_rect_screen: None,
             object_count: 0,
         }
-    }
-
-    pub fn approx_eq(a: f32, b: f32, eps: f32) -> bool {
-        (a - b).abs() <= eps
-    }
-
-    pub fn assert_approx_eq(a: f32, b: f32, eps: f32) {
-        assert!(approx_eq(a, b, eps), "expected {a} ~= {b} within {eps}");
     }
 
     pub fn stone(x: f32, y: f32, z: f32) -> LevelObject {
