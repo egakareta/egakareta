@@ -16,7 +16,7 @@ mod tests {
         build_editor_hover_outline_vertices, build_editor_selection_outline_vertices, GizmoParams,
     };
     use crate::{GizmoPart, Vertex};
-    use eg_block_geometry::effective_hitbox_cuboids;
+    use eg_block_geometry::hitbox_cuboids;
     use eg_types::LevelObject;
     use eg_types::{camera_trigger_eye_from_object, camera_trigger_forward_from_rotation_degrees};
 
@@ -81,7 +81,7 @@ mod tests {
         let vertices = build_block_vertices(std::slice::from_ref(&obj));
 
         assert_eq!(vertices.len(), 3 * 36);
-        assert_eq!(effective_hitbox_cuboids(&obj).len(), 3);
+        assert_eq!(hitbox_cuboids(&obj).len(), 3);
         assert!(vertices.iter().any(|vertex| vertex.position[0] == 0.0));
         assert!(vertices.iter().any(|vertex| vertex.position[1] == 1.0));
     }

@@ -8,7 +8,7 @@
 use crate::shapes::append_prism;
 use crate::transforms::rotate_vertices_around_euler;
 use crate::Vertex;
-use eg_block_geometry::effective_hitbox_cuboids;
+use eg_block_geometry::hitbox_cuboids;
 use eg_blocks::resolve_block_definition;
 use eg_types::{BlockCollision, LevelObject};
 use glam::{EulerRot, Mat3, Vec3};
@@ -147,7 +147,7 @@ pub fn build_editor_hitbox_visualization_vertices(
         };
 
         let mut hitbox_object = object.clone();
-        for cuboid in effective_hitbox_cuboids(object) {
+        for cuboid in hitbox_cuboids(object) {
             hitbox_object.position = cuboid.min;
             hitbox_object.size = [
                 cuboid.max[0] - cuboid.min[0],

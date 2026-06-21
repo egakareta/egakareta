@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_block_geometry::{effective_hitbox_cuboids, rotated_cuboid_aabb_xz};
+use eg_block_geometry::{hitbox_cuboids, rotated_cuboid_aabb_xz};
 use eg_types::LevelObject;
 use std::collections::HashMap;
 
@@ -26,7 +26,7 @@ impl SpatialGrid {
         let mut max_x = f32::NEG_INFINITY;
         let mut min_z = f32::INFINITY;
         let mut max_z = f32::NEG_INFINITY;
-        for cuboid in effective_hitbox_cuboids(obj) {
+        for cuboid in hitbox_cuboids(obj) {
             let [cuboid_min_x, cuboid_max_x, cuboid_min_z, cuboid_max_z] =
                 rotated_cuboid_aabb_xz(obj, cuboid);
             min_x = min_x.min(cuboid_min_x);

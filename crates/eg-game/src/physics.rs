@@ -5,14 +5,14 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_block_geometry::{effective_hitbox_cuboids, rotated_cuboid_xz_polygon};
+use eg_block_geometry::{hitbox_cuboids, rotated_cuboid_xz_polygon};
 use eg_types::LevelObject;
 use glam::Vec2;
 
 pub const BASE_PLAYER_SPEED: f32 = 8.0;
 
 pub fn object_xz_contains(obj: &LevelObject, x: f32, z: f32) -> bool {
-    for cuboid in effective_hitbox_cuboids(obj) {
+    for cuboid in hitbox_cuboids(obj) {
         let polygon = rotated_cuboid_xz_polygon(obj, cuboid);
         if polygon.len() >= 3 && point_in_polygon(Vec2::new(x, z), &polygon) {
             return true;
@@ -36,7 +36,7 @@ pub fn aabb_overlaps_object_xz(
         Vec2::new(min_x, max_z),
     ];
 
-    for cuboid in effective_hitbox_cuboids(obj) {
+    for cuboid in hitbox_cuboids(obj) {
         let polygon = rotated_cuboid_xz_polygon(obj, cuboid);
         if polygon.len() >= 3 && polygons_overlap_xz(&polygon, &rect) {
             return true;

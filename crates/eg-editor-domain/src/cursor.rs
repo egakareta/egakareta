@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_block_geometry::effective_hitbox_cuboids;
+use eg_block_geometry::hitbox_cuboids;
 use eg_game::physics::object_xz_contains;
 use eg_types::{LevelObject, TRANSFORM_TRIGGER_BLOCK_ID};
 use eg_types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
@@ -48,7 +48,7 @@ pub fn topmost_block_index_at_cursor(objects: &[LevelObject], cursor: [f32; 3]) 
 
     for (index, obj) in objects.iter().enumerate() {
         if object_xz_contains(obj, cursor[0] + 0.5, cursor[2] + 0.5) {
-            let top = effective_hitbox_cuboids(obj)
+            let top = hitbox_cuboids(obj)
                 .into_iter()
                 .filter(|cuboid| cuboid.max[1].is_finite())
                 .map(|cuboid| cuboid.max[1])

@@ -9,7 +9,7 @@
 use super::physics::object_xz_contains;
 use super::physics::{aabb_overlaps_cuboid_xz, BASE_PLAYER_SPEED};
 use super::spatial::SpatialGrid;
-use eg_block_geometry::effective_hitbox_cuboids;
+use eg_block_geometry::hitbox_cuboids;
 use eg_blocks::resolve_block_definition;
 use eg_types::{BlockCollision, Direction, LevelObject, PlayerLevelProgress, SpawnDirection};
 
@@ -350,7 +350,7 @@ impl GameState {
                     .copied()
                     .unwrap_or_else(|| CachedBlockBehavior::from_block_id(&obj.block_id));
 
-                let overlaps_hitbox = effective_hitbox_cuboids(obj).into_iter().any(|cuboid| {
+                let overlaps_hitbox = hitbox_cuboids(obj).into_iter().any(|cuboid| {
                     aabb_overlaps_cuboid_xz(s_min_x, s_max_x, s_min_z, s_max_z, obj, cuboid)
                         && s_max_y > cuboid.min[1]
                         && s_min_y < cuboid.max[1]
@@ -644,7 +644,7 @@ impl GameState {
             if !is_support {
                 continue;
             }
-            for cuboid in effective_hitbox_cuboids(obj) {
+            for cuboid in hitbox_cuboids(obj) {
                 if aabb_overlaps_cuboid_xz(min_x, max_x, min_z, max_z, obj, cuboid) {
                     let top = cuboid.top();
                     if top <= max_y {
