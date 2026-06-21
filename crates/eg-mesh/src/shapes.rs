@@ -147,19 +147,21 @@ pub fn append_prism_with_layers(
     let [x_min, y_min, z_min] = min;
     let [x_max, y_max, z_max] = max;
 
+    // Stretch the texture once across each face (UVs 0..1) regardless of the
+    // block's dimensions, instead of tiling it per world unit. `uv_norm` tracks
+    // the UV extent (1.0) so the shader's edge/outline detection maps to a
+    // consistent fraction of the face on every block.
     let mut push_face = |p0: [f32; 3], // Bottom-Left
                          p1: [f32; 3], // Top-Left
                          p2: [f32; 3], // Top-Right
                          p3: [f32; 3], // Bottom-Right
                          color: [f32; 4],
-                         texture_layer: u32,
-                         u_max: f32,
-                         v_max: f32| {
-        let face_size = [u_max, v_max];
+                         texture_layer: u32| {
+        let face_size = [1.0, 1.0];
         vertices.push(Vertex::textured_with_outline(
             p0,
             color,
-            [0.0, v_max],
+            [0.0, 1.0],
             face_size,
             texture_layer,
             colors.outline,
@@ -175,7 +177,7 @@ pub fn append_prism_with_layers(
         vertices.push(Vertex::textured_with_outline(
             p2,
             color,
-            [u_max, 0.0],
+            [1.0, 0.0],
             face_size,
             texture_layer,
             colors.outline,
@@ -183,7 +185,7 @@ pub fn append_prism_with_layers(
         vertices.push(Vertex::textured_with_outline(
             p0,
             color,
-            [0.0, v_max],
+            [0.0, 1.0],
             face_size,
             texture_layer,
             colors.outline,
@@ -191,7 +193,7 @@ pub fn append_prism_with_layers(
         vertices.push(Vertex::textured_with_outline(
             p2,
             color,
-            [u_max, 0.0],
+            [1.0, 0.0],
             face_size,
             texture_layer,
             colors.outline,
@@ -199,16 +201,12 @@ pub fn append_prism_with_layers(
         vertices.push(Vertex::textured_with_outline(
             p3,
             color,
-            [u_max, v_max],
+            [1.0, 1.0],
             face_size,
             texture_layer,
             colors.outline,
         ));
     };
-
-    let dx = (x_max - x_min).abs();
-    let dy = (y_max - y_min).abs();
-    let dz = (z_max - z_min).abs();
 
     // Top (+Y)
     push_face(
@@ -218,8 +216,6 @@ pub fn append_prism_with_layers(
         [x_max, y_max, z_max],
         colors.top,
         texture_layers.top,
-        dx,
-        dz,
     );
 
     // +X
@@ -230,8 +226,6 @@ pub fn append_prism_with_layers(
         [x_max, y_min, z_min],
         colors.side,
         texture_layers.side,
-        dz,
-        dy,
     );
 
     // -X
@@ -242,8 +236,6 @@ pub fn append_prism_with_layers(
         [x_min, y_min, z_max],
         colors.side,
         texture_layers.side,
-        dz,
-        dy,
     );
 
     // +Z
@@ -254,8 +246,6 @@ pub fn append_prism_with_layers(
         [x_max, y_min, z_max],
         colors.side,
         texture_layers.side,
-        dx,
-        dy,
     );
 
     // -Z
@@ -266,8 +256,6 @@ pub fn append_prism_with_layers(
         [x_min, y_min, z_min],
         colors.side,
         texture_layers.side,
-        dx,
-        dy,
     );
 
     // Bottom (-Y)
@@ -278,8 +266,6 @@ pub fn append_prism_with_layers(
         [x_max, y_min, z_min],
         colors.bottom,
         texture_layers.bottom,
-        dx,
-        dz,
     );
 }
 
@@ -386,17 +372,18 @@ mod tests {
         check_uv([1.0, 1.0, 0.0], [1.0, 0.0], "Top Top-Right");
         check_uv([1.0, 1.0, 1.0], [1.0, 1.0], "Top Bottom-Right");
 
-        // Test tiled resize
-        let mut tiled_vertices = Vec::new();
+        // Test stretched resize: textures stretch to fill each face (UVs 0..1)
+        // regardless of the prism's dimensions, instead of tiling per world unit.
+        let mut stretched_vertices = Vec::new();
         append_prism_with_layers(
-            &mut tiled_vertices,
+            &mut stretched_vertices,
             [0.0, 0.0, 0.0],
             [2.0, 1.0, 3.0], // Resized: DX=2, DY=1, DZ=3
             PrismFaceColors::new_with_outline(color, color, color, [0.0, 0.0, 0.0, 0.0]),
             PrismTextureLayers::new(1, 2, 3),
         );
 
-        let check_tiled_uv =
+        let check_stretched_uv =
             |vertices: &[Vertex], pos: [f32; 3], expected_uv: [f32; 2], face_name: &str| {
                 let matches: Vec<&Vertex> = vertices
                     .iter()
@@ -426,34 +413,34 @@ mod tests {
                 );
             };
 
-        // Top face of tiled block: DX=2, DZ=3
-        check_tiled_uv(
-            &tiled_vertices,
+        // Top face of stretched block: DX=2, DZ=3, but UVs stay 0..1.
+        check_stretched_uv(
+            &stretched_vertices,
             [2.0, 1.0, 0.0],
-            [2.0, 0.0],
-            "Tiled Top Top-Right",
+            [1.0, 0.0],
+            "Stretched Top Top-Right",
         );
-        check_tiled_uv(
-            &tiled_vertices,
+        check_stretched_uv(
+            &stretched_vertices,
             [2.0, 1.0, 3.0],
-            [2.0, 3.0],
-            "Tiled Top Bottom-Right",
+            [1.0, 1.0],
+            "Stretched Top Bottom-Right",
         );
 
-        // Side face (+Z): DX=2, DY=1
+        // Side face (+Z): DX=2, DY=1, but UVs stay 0..1.
         // We're looking from +Z to -Z.
         // Left is -X (x=0), Right is +X (x=2).
-        check_tiled_uv(
-            &tiled_vertices,
+        check_stretched_uv(
+            &stretched_vertices,
             [0.0, 1.0, 3.0],
             [0.0, 0.0], // x=0 is Left, so U=0
-            "Tiled +Z Top-Left",
+            "Stretched +Z Top-Left",
         );
-        check_tiled_uv(
-            &tiled_vertices,
+        check_stretched_uv(
+            &stretched_vertices,
             [2.0, 1.0, 3.0],
-            [2.0, 0.0], // x=2 is Right, so U=2
-            "Tiled +Z Top-Right",
+            [1.0, 0.0], // x=2 is Right, so U=1 (stretched, not 2)
+            "Stretched +Z Top-Right",
         );
     }
 
@@ -497,37 +484,12 @@ mod tests {
             assert_eq!(v.color_outline, outline_color);
         }
 
-        // Specifically check uv_norm for each vertex group (6 vertices per face)
+        // Specifically check uv_norm for each vertex group (6 vertices per face).
+        // Textures stretch once across each face, so the UV extent is always 1.0
+        // on both axes regardless of the prism's dimensions.
         // Order: Top (+Y), +X, -X, +Z, -Z, Bottom (-Y)
-
-        // Top (+Y) face: Size should be [2.5, 3.5] (DX, DZ)
-        for i in 0..6 {
-            assert_eq!(vertices[i].uv_norm, [2.5, 3.5]);
-        }
-
-        // +X face: Size should be [3.5, 1.0] (DZ, DY)
-        for i in 6..12 {
-            assert_eq!(vertices[i].uv_norm, [3.5, 1.0]);
-        }
-
-        // -X face: Size should be [3.5, 1.0] (DZ, DY)
-        for i in 12..18 {
-            assert_eq!(vertices[i].uv_norm, [3.5, 1.0]);
-        }
-
-        // +Z face: Size should be [2.5, 1.0] (DX, DY)
-        for i in 18..24 {
-            assert_eq!(vertices[i].uv_norm, [2.5, 1.0]);
-        }
-
-        // -Z face: Size should be [2.5, 1.0] (DX, DY)
-        for i in 24..30 {
-            assert_eq!(vertices[i].uv_norm, [2.5, 1.0]);
-        }
-
-        // Bottom (-Y) face: Size should be [2.5, 3.5] (DX, DZ)
-        for i in 30..36 {
-            assert_eq!(vertices[i].uv_norm, [2.5, 3.5]);
+        for v in &vertices {
+            assert_eq!(v.uv_norm, [1.0, 1.0]);
         }
     }
 

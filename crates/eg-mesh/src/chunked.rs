@@ -116,6 +116,10 @@ pub enum VoxelFastLaneRejection {
     RenderProfile,
     Animated,
     Noisy,
+    /// The block has been resized away from a unit cube. Resized blocks are
+    /// routed to the instanced/fallback path so their texture stretches across
+    /// the single block instead of tiling per voxel cell like placed unit blocks.
+    NonUnitSize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -261,6 +265,12 @@ pub fn classify_voxel_fast_lane(object: &LevelObject) -> Result<(), VoxelFastLan
     }
     if !is_full_cube_geometry(block) {
         return Err(VoxelFastLaneRejection::CustomGeometry);
+    }
+    // Only unit cubes go through the greedy voxel mesher (which tiles the texture
+    // per cell). A resized block falls through to the instanced path so its
+    // texture stretches across the single block instead of tiling.
+    if !is_unit_size(object.size) {
+        return Err(VoxelFastLaneRejection::NonUnitSize);
     }
 
     Ok(())
@@ -590,12 +600,18 @@ fn append_greedy_quad(geometry: &mut MeshGeometry, rect: GreedyQuadRect, materia
         ),
     };
 
+    // Tile the texture per world unit across the merged quad. The greedy mesher
+    // only ever receives unit-sized voxel cells (resized blocks are routed to the
+    // instanced path by the classifier so they stretch instead), so a row of
+    // placed blocks tiles once per block rather than stretching across the merge.
+    let face_size = [width_f, height_f];
+
     let vertices = vec![
         Vertex::textured_with_outline(
             positions[0],
             color,
             [0.0, height_f],
-            [width_f, height_f],
+            face_size,
             texture_layer,
             material.colors.outline,
         ),
@@ -603,7 +619,7 @@ fn append_greedy_quad(geometry: &mut MeshGeometry, rect: GreedyQuadRect, materia
             positions[1],
             color,
             [0.0, 0.0],
-            [width_f, height_f],
+            face_size,
             texture_layer,
             material.colors.outline,
         ),
@@ -611,7 +627,7 @@ fn append_greedy_quad(geometry: &mut MeshGeometry, rect: GreedyQuadRect, materia
             positions[2],
             color,
             [width_f, 0.0],
-            [width_f, height_f],
+            face_size,
             texture_layer,
             material.colors.outline,
         ),
@@ -619,7 +635,7 @@ fn append_greedy_quad(geometry: &mut MeshGeometry, rect: GreedyQuadRect, materia
             positions[3],
             color,
             [width_f, height_f],
-            [width_f, height_f],
+            face_size,
             texture_layer,
             material.colors.outline,
         ),
@@ -740,13 +756,17 @@ fn is_grid_aligned(value: f32) -> bool {
     approx_eq(value, value.round())
 }
 
+fn is_unit_size(size: [f32; 3]) -> bool {
+    approx_eq(size[0], 1.0) && approx_eq(size[1], 1.0) && approx_eq(size[2], 1.0)
+}
+
 fn approx_eq(a: f32, b: f32) -> bool {
     (a - b).abs() <= GRID_EPSILON
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{build_chunked_block_mesh, classify_voxel_fast_lane};
+    use super::{build_chunked_block_mesh, classify_voxel_fast_lane, VoxelFastLaneRejection};
     use eg_types::LevelObject;
 
     #[test]
@@ -815,5 +835,53 @@ mod tests {
         assert_eq!(mesh.chunks.len(), 2);
         assert_eq!(mesh.stats.hidden_faces, 2);
         assert_eq!(mesh.stats.visible_faces_before_greedy, 10);
+    }
+
+    #[test]
+    fn classifier_rejects_resized_grid_aligned_block() {
+        // A solid full-cube block resized to an integer size > 1 is grid aligned
+        // but no longer a unit cube. It must be rejected so it renders through the
+        // instanced path (stretching its texture) instead of the greedy mesher
+        // (which would tile per voxel cell).
+        let object = LevelObject {
+            block_id: "core/stone".to_string(),
+            size: [2.0, 1.0, 1.0],
+            ..LevelObject::default()
+        };
+
+        assert_eq!(
+            classify_voxel_fast_lane(&object),
+            Err(VoxelFastLaneRejection::NonUnitSize)
+        );
+    }
+
+    #[test]
+    fn classifier_accepts_unit_cube_after_resize_check() {
+        // A default unit cube is still accepted by the greedy fast lane.
+        let object = LevelObject {
+            block_id: "core/stone".to_string(),
+            ..LevelObject::default()
+        };
+
+        assert!(classify_voxel_fast_lane(&object).is_ok());
+    }
+
+    #[test]
+    fn resized_block_routes_to_fallback_instanced_path() {
+        // A resized block should not contribute voxel cells to the greedy mesh;
+        // instead it lands in the fallback (instanced) batches so its texture
+        // stretches across the single block.
+        let objects = vec![LevelObject {
+            block_id: "core/stone".to_string(),
+            size: [3.0, 1.0, 1.0],
+            ..LevelObject::default()
+        }];
+
+        let mesh = build_chunked_block_mesh(&objects);
+
+        assert_eq!(mesh.stats.voxel_cells, 0);
+        assert_eq!(mesh.stats.fallback_objects, 1);
+        assert!(mesh.chunks[0].greedy_geometry.vertex_count() == 0);
+        assert_eq!(mesh.chunks[0].fallback.batches.len(), 1);
     }
 }
