@@ -117,12 +117,13 @@ fn test_egb_roundtrip() {
     let decoded: serde_json::Value = serde_json::from_str(&decoded_json).unwrap();
 
     assert_eq!(original["name"], decoded["name"]);
-    assert_eq!(original["format_version"], decoded["format_version"]);
+    assert_eq!(decoded["format_version"], serde_json::Value::Null);
     assert_eq!(original["music"]["source"], decoded["music"]["source"]);
     assert_eq!(
         original["objects"].as_array().unwrap().len(),
         decoded["objects"].as_array().unwrap().len()
     );
+    assert_eq!(decoded["objects"][0]["id"], "obj_000001");
 }
 
 #[test]

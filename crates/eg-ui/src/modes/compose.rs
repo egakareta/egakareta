@@ -702,6 +702,7 @@ mod tests {
         let mut trigger_view =
             make_compose_view(&app_settings, &music_metadata, EditorMode::Select);
         trigger_view.selected_block = Some(LevelObject {
+            id: "trigger".to_string(),
             position: [1.0, 0.0, 1.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 90.0, 0.0],
@@ -712,7 +713,7 @@ mod tests {
                 duration_seconds: 1.0,
                 easing: TimedTriggerEasing::EaseInOut,
                 target: TimedTriggerTarget::Objects {
-                    object_ids: vec![0],
+                    object_ids: vec!["target".to_string()],
                 },
                 action: TimedTriggerAction::TransformObjects {
                     position: [1.0, 0.0, 1.0],
@@ -720,6 +721,7 @@ mod tests {
                     size: [1.0, 1.0, 1.0],
                 },
             }),
+            ..LevelObject::default()
         });
 
         let ctx = egui::Context::default();
@@ -751,6 +753,7 @@ mod tests {
         });
 
         let transform_trigger = LevelObject {
+            id: "trigger".to_string(),
             position: [1.0, 0.0, 1.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 90.0, 0.0],
@@ -761,7 +764,7 @@ mod tests {
                 duration_seconds: 1.0,
                 easing: TimedTriggerEasing::EaseInOut,
                 target: TimedTriggerTarget::Objects {
-                    object_ids: vec![0],
+                    object_ids: vec!["target".to_string()],
                 },
                 action: TimedTriggerAction::TransformObjects {
                     position: [1.0, 0.0, 1.0],
@@ -769,6 +772,7 @@ mod tests {
                     size: [1.0, 1.0, 1.0],
                 },
             }),
+            ..LevelObject::default()
         };
 
         assert_eq!(

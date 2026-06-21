@@ -146,6 +146,7 @@ fn selection_outline_uses_single_bounds_mesh_for_large_selections() {
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
+                ..LevelObject::default()
             });
         }
         state.editor.ui.selected_block_index = Some(0);
@@ -357,7 +358,7 @@ fn configure_trigger_policy_parity_scene(
         duration_seconds: 0.0,
         easing: TimedTriggerEasing::Linear,
         target: TimedTriggerTarget::Objects {
-            object_ids: vec![0],
+            object_ids: vec!["object_8_0_8".to_string()],
         },
         action: TimedTriggerAction::TransformObjects {
             position: [0.0, 0.0, 1.0],
@@ -1135,7 +1136,7 @@ fn timing_origin_playback_seek_resync_keeps_runtime_disabled() {
             duration_seconds: 1.0,
             easing: TimedTriggerEasing::Linear,
             target: TimedTriggerTarget::Objects {
-                object_ids: vec![0],
+                object_ids: vec!["object_0_0_0".to_string()],
             },
             action: TimedTriggerAction::TransformObjects {
                 position: [3.0, 0.0, 0.0],
@@ -1365,7 +1366,7 @@ fn timing_mode_timeline_scrub_skips_simulation_and_mesh_dirty() {
             duration_seconds: 1.0,
             easing: TimedTriggerEasing::Linear,
             target: TimedTriggerTarget::Objects {
-                object_ids: vec![0],
+                object_ids: vec!["object_0_0_0".to_string()],
             },
             action: TimedTriggerAction::TransformObjects {
                 position: [10.0, 0.0, 0.0],
@@ -1404,7 +1405,7 @@ fn compose_mode_timeline_scrub_runs_simulation_and_mesh_dirty() {
             duration_seconds: 1.0,
             easing: TimedTriggerEasing::Linear,
             target: TimedTriggerTarget::Objects {
-                object_ids: vec![0],
+                object_ids: vec!["object_0_0_0".to_string()],
             },
             action: TimedTriggerAction::TransformObjects {
                 position: [10.0, 0.0, 0.0],

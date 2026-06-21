@@ -1083,12 +1083,14 @@ mod tests {
 
     fn sample_object() -> LevelObject {
         LevelObject {
+            id: "object_0_0_0".to_string(),
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         }
     }
 
@@ -1098,7 +1100,7 @@ mod tests {
             duration_seconds: 0.0,
             easing: TimedTriggerEasing::Linear,
             target: TimedTriggerTarget::Objects {
-                object_ids: vec![0],
+                object_ids: vec!["object_0_0_0".to_string()],
             },
             action: TimedTriggerAction::TransformObjects {
                 position: [2.0, 0.0, 0.0],
@@ -1110,12 +1112,14 @@ mod tests {
 
     fn gameplay_floor() -> LevelObject {
         LevelObject {
+            id: "floor".to_string(),
             position: [-10.0, -1.0, -10.0],
             size: [20.0, 1.0, 20.0],
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         }
     }
 
@@ -1266,6 +1270,7 @@ mod tests {
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         }];
         let mut airborne_runtime =
             TimelineSimulationRuntime::new([0.0, 3.0, 0.0], SpawnDirection::Forward, &support, &[]);

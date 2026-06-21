@@ -892,12 +892,17 @@ mod tests {
 
     fn test_block(position: [f32; 3]) -> LevelObject {
         LevelObject {
+            id: format!(
+                "object_{:.0}_{:.0}_{:.0}",
+                position[0], position[1], position[2]
+            ),
             position,
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         }
     }
 
@@ -1675,7 +1680,7 @@ mod tests {
                 duration_seconds: 1.0,
                 easing: eg_types::TimedTriggerEasing::Linear,
                 target: eg_types::TimedTriggerTarget::Objects {
-                    object_ids: vec![0],
+                    object_ids: vec!["object_0_0_0".to_string()],
                 },
                 action: eg_types::TimedTriggerAction::TransformObjects {
                     position: [5.0, 0.0, 0.0],

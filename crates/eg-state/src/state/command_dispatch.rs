@@ -966,6 +966,7 @@ mod tests {
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
+                ..LevelObject::default()
             }];
             state.editor.ui.selected_block_indices = vec![0];
             state.editor.timeline.taps.tap_times = vec![1.25];
@@ -1080,6 +1081,7 @@ mod tests {
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
+                ..LevelObject::default()
             }];
             state.editor_playtest();
 
@@ -1133,6 +1135,7 @@ mod tests {
                     block_id: "core/stone".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
                     trigger: None,
+                    ..LevelObject::default()
                 },
                 LevelObject {
                     position: [1.0, 0.0, 0.0],
@@ -1141,6 +1144,7 @@ mod tests {
                     block_id: "core/grass".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
                     trigger: None,
+                    ..LevelObject::default()
                 },
             ];
             state.editor.ui.mode = EditorMode::Move;
@@ -1243,6 +1247,7 @@ mod tests {
                 block_id: "core/grass".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
+                ..LevelObject::default()
             }];
             state.dispatch(AppCommand::Editor(EditorCommand::SetMode(EditorMode::Move)));
             state.dispatch(AppCommand::Editor(EditorCommand::SetBlockId(
@@ -1281,6 +1286,7 @@ mod tests {
                     block_id: "core/stone".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
                     trigger: None,
+                    ..LevelObject::default()
                 },
                 LevelObject {
                     position: [50.0, 4.0, 70.0],
@@ -1289,6 +1295,7 @@ mod tests {
                     block_id: "core/grass".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
                     trigger: None,
+                    ..LevelObject::default()
                 },
             ];
             state.editor.ui.selected_block_index = Some(0);
@@ -1748,6 +1755,7 @@ mod tests {
                     block_id: "core/stone".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
                     trigger: None,
+                    ..eg_types::LevelObject::default()
                 },
                 eg_types::LevelObject {
                     position: [2.0, 0.0, 0.0],
@@ -1756,6 +1764,7 @@ mod tests {
                     block_id: "core/stone".to_string(),
                     color_tint: [1.0, 1.0, 1.0],
                     trigger: None,
+                    ..eg_types::LevelObject::default()
                 },
             ];
 
@@ -1805,6 +1814,7 @@ mod tests {
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
+                ..eg_types::LevelObject::default()
             }];
 
             // Ensure we are not hovering anything initially
@@ -1893,6 +1903,7 @@ mod tests {
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
+                ..LevelObject::default()
             }];
 
             let viewport = Vec2::new(
@@ -2244,6 +2255,7 @@ mod tests {
                 block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: Some(trigger),
+                ..LevelObject::default()
             });
             let viewport = Vec2::new(
                 state.render.gpu.config.width as f32,
@@ -2318,6 +2330,7 @@ mod tests {
                 block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: Some(trigger),
+                ..LevelObject::default()
             });
             let viewport = Vec2::new(
                 state.render.gpu.config.width as f32,
@@ -2374,7 +2387,7 @@ mod tests {
                     duration_seconds: 1.0,
                     easing: TimedTriggerEasing::Linear,
                     target: TimedTriggerTarget::Objects {
-                        object_ids: vec![0],
+                        object_ids: vec!["obj_000001".to_string()],
                     },
                     action: TimedTriggerAction::TransformObjects {
                         position: [2.0, 0.0, 0.0],
@@ -2382,6 +2395,7 @@ mod tests {
                         size: [1.0, 1.0, 1.0],
                     },
                 }),
+                ..LevelObject::default()
             });
 
             let viewport = Vec2::new(
@@ -2603,6 +2617,7 @@ mod tests {
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
+                ..LevelObject::default()
             }];
             state.editor.ui.selected_block_index = Some(0);
             assert!(state.has_block_selection());
@@ -2920,6 +2935,7 @@ mod tests {
                 block_id: "core/lava".to_string(),
                 color_tint: [0.2, 0.4, 0.8],
                 trigger: None,
+                ..LevelObject::default()
             };
             state.dispatch(AppCommand::Editor(EditorCommand::UpdateSelectedBlock(
                 updated.clone(),

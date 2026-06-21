@@ -79,6 +79,7 @@ mod tests {
             block_id: "core/grass".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         };
 
         let value = serde_json::to_value(&object).expect("serialize object");
@@ -101,6 +102,7 @@ mod tests {
             block_id: "core/grass".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         };
         assert!(!plain.is_transform_trigger());
 
@@ -113,6 +115,7 @@ mod tests {
         // A non-transform-trigger block carrying a TransformObjects action is
         // also detected (covers deserialized levels that omit block_id).
         let by_action = LevelObject {
+            id: "trigger".to_string(),
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
@@ -123,7 +126,7 @@ mod tests {
                 duration_seconds: 1.0,
                 easing: TimedTriggerEasing::EaseInOut,
                 target: TimedTriggerTarget::Objects {
-                    object_ids: vec![0],
+                    object_ids: vec!["target".to_string()],
                 },
                 action: TimedTriggerAction::TransformObjects {
                     position: [2.0, 0.0, 0.0],
@@ -131,6 +134,7 @@ mod tests {
                     size: [1.0, 1.0, 1.0],
                 },
             }),
+            ..LevelObject::default()
         };
         assert!(by_action.is_transform_trigger());
 
@@ -176,6 +180,7 @@ mod tests {
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
+                ..LevelObject::default()
             }],
         });
 
@@ -405,6 +410,7 @@ mod tests {
                 }])
                 .into_iter()
                 .next(),
+                ..LevelObject::default()
             }],
             ..LevelMetadata::default()
         };
@@ -457,6 +463,7 @@ mod tests {
             }])
             .into_iter()
             .next(),
+            ..LevelObject::default()
         };
         let metadata = LevelMetadata {
             name: "Bridge".to_string(),
@@ -493,6 +500,7 @@ mod tests {
     #[test]
     fn resolved_transform_trigger_uses_trigger_object_transform() {
         let object = LevelObject {
+            id: "trigger".to_string(),
             position: [4.0, 5.0, 6.0],
             size: [2.0, 3.0, 4.0],
             rotation_degrees: [10.0, 20.0, 30.0],
@@ -503,7 +511,7 @@ mod tests {
                 duration_seconds: 2.0,
                 easing: TimedTriggerEasing::EaseInOut,
                 target: TimedTriggerTarget::Objects {
-                    object_ids: vec![0],
+                    object_ids: vec!["target".to_string()],
                 },
                 action: TimedTriggerAction::TransformObjects {
                     position: [0.0, 0.0, 0.0],
@@ -511,6 +519,7 @@ mod tests {
                     size: [1.0, 1.0, 1.0],
                 },
             }),
+            ..LevelObject::default()
         };
 
         let triggers = triggers_from_objects(&[object]);
@@ -532,12 +541,14 @@ mod tests {
     #[test]
     fn timed_triggers_apply_easing_sorting_and_scale_clamp() {
         let base = vec![LevelObject {
+            id: "target".to_string(),
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         }];
 
         let triggers = vec![TimedTrigger {
@@ -545,7 +556,7 @@ mod tests {
             duration_seconds: 1.0,
             easing: TimedTriggerEasing::Linear,
             target: TimedTriggerTarget::Objects {
-                object_ids: vec![0],
+                object_ids: vec!["target".to_string()],
             },
             action: TimedTriggerAction::TransformObjects {
                 position: [10.0, 0.0, 0.0],
@@ -567,28 +578,34 @@ mod tests {
     fn timed_triggers_skip_camera_and_out_of_bounds_targets_and_deduplicate() {
         let base = vec![
             LevelObject {
+                id: "object_0".to_string(),
                 position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
+                ..LevelObject::default()
             },
             LevelObject {
+                id: "object_1".to_string(),
                 position: [1.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
+                ..LevelObject::default()
             },
             LevelObject {
+                id: "object_2".to_string(),
                 position: [2.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
+                ..LevelObject::default()
             },
         ];
 
@@ -598,7 +615,12 @@ mod tests {
                 duration_seconds: 0.0,
                 easing: TimedTriggerEasing::Linear,
                 target: TimedTriggerTarget::Objects {
-                    object_ids: vec![2, 2, 9, 1],
+                    object_ids: vec![
+                        "object_2".to_string(),
+                        "object_2".to_string(),
+                        "missing".to_string(),
+                        "object_1".to_string(),
+                    ],
                 },
                 action: TimedTriggerAction::TransformObjects {
                     position: [9.0, 9.0, 9.0],
@@ -628,19 +650,21 @@ mod tests {
     #[test]
     fn timed_triggers_ignore_non_finite_start_time() {
         let base = vec![LevelObject {
+            id: "target".to_string(),
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         }];
         let triggers = vec![TimedTrigger {
             time_seconds: f32::NAN,
             duration_seconds: 0.0,
             easing: TimedTriggerEasing::Linear,
             target: TimedTriggerTarget::Objects {
-                object_ids: vec![0],
+                object_ids: vec!["target".to_string()],
             },
             action: TimedTriggerAction::TransformObjects {
                 position: [99.0, 0.0, 0.0],

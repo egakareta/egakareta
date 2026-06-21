@@ -62,6 +62,8 @@ struct BinaryLevelPayloadV1 {
     object_rotations: Vec<[f32; 3]>,
     object_color_tints: Vec<[f32; 3]>,
     #[serde(default)]
+    object_ids: Vec<String>,
+    #[serde(default)]
     object_triggers: Vec<Option<TimedTrigger>>,
 }
 
@@ -99,6 +101,7 @@ impl Default for BinaryLevelPayloadV1 {
             object_sizes: Vec::new(),
             object_rotations: Vec::new(),
             object_color_tints: Vec::new(),
+            object_ids: Vec::new(),
             object_triggers: Vec::new(),
         }
     }
@@ -142,6 +145,11 @@ pub fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<Vec<u8>,
         .objects
         .iter()
         .map(|object| object.trigger.clone())
+        .collect::<Vec<_>>();
+    let object_ids = metadata
+        .objects
+        .iter()
+        .map(|object| object.id.clone())
         .collect::<Vec<_>>();
 
     let mut compact_positions = Vec::<[i32; 3]>::new();
@@ -245,6 +253,7 @@ pub fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<Vec<u8>,
         object_sizes,
         object_rotations,
         object_color_tints,
+        object_ids,
         object_triggers,
     };
 
@@ -340,6 +349,13 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
     } else {
         return Err("Object trigger stream length mismatch in binary payload".to_string());
     };
+    let object_ids = if payload.object_ids.is_empty() {
+        vec![String::new(); object_count]
+    } else if payload.object_ids.len() == object_count {
+        payload.object_ids
+    } else {
+        return Err("Object id stream length mismatch in binary payload".to_string());
+    };
 
     if payload.object_compact_mask.is_empty() {
         if payload.object_positions.len() != object_count
@@ -357,6 +373,7 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
             };
 
             let mut object = LevelObject {
+                id: object_ids[index].clone(),
                 position: payload.object_positions[index],
                 size: payload.object_sizes[index],
                 rotation_degrees: payload.object_rotations[index],
@@ -400,6 +417,7 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
                 compact_cursor += 1;
 
                 LevelObject {
+                    id: object_ids[index].clone(),
                     position: linear_index_to_position(
                         linear_index,
                         payload.grid_min,
@@ -413,6 +431,7 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
                 }
             } else {
                 let object = LevelObject {
+                    id: object_ids[index].clone(),
                     position: *payload
                         .object_positions
                         .get(full_cursor)
@@ -441,7 +460,7 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
         }
     }
 
-    Ok(LevelMetadata {
+    let mut metadata = LevelMetadata {
         format_version: payload.format_version,
         name: payload.name,
         creator: payload.creator,
@@ -465,7 +484,9 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
         menu_preview_camera: payload.menu_preview_camera,
         objects,
         extra: entries_to_map(payload.level_extra_entries)?,
-    })
+    };
+    metadata.normalize_object_ids();
+    Ok(metadata)
 }
 
 fn quantize_compact_position(object: &LevelObject) -> Option<[i32; 3]> {

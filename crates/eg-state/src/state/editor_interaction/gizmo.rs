@@ -814,12 +814,14 @@ mod tests {
 
     fn test_block() -> LevelObject {
         LevelObject {
+            id: "object_0_0_0".to_string(),
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         }
     }
 
@@ -1085,7 +1087,7 @@ mod tests {
                 duration_seconds: 1.0,
                 easing: TimedTriggerEasing::Linear,
                 target: TimedTriggerTarget::Objects {
-                    object_ids: vec![0],
+                    object_ids: vec!["object_0_0_0".to_string()],
                 },
                 action: TimedTriggerAction::TransformObjects {
                     position: [0.0, 0.0, 0.0],
@@ -1981,7 +1983,7 @@ mod tests {
                 duration_seconds: 1.0,
                 easing: TimedTriggerEasing::Linear,
                 target: TimedTriggerTarget::Objects {
-                    object_ids: vec![0],
+                    object_ids: vec!["object_0_0_0".to_string()],
                 },
                 action: TimedTriggerAction::TransformObjects {
                     position: [5.0, 0.0, 0.0],

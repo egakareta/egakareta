@@ -60,6 +60,7 @@ pub fn parse_level_metadata_json(json: &str) -> Result<LevelMetadata, String> {
     for object in &mut metadata.objects {
         object.normalize_block_id();
     }
+    metadata.normalize_object_ids();
     Ok(metadata)
 }
 

@@ -94,6 +94,7 @@ fn trigger_object_from_payload(trigger: TimedTrigger) -> LevelObject {
         block_id: trigger_block_id_from_action(&trigger.action).to_string(),
         color_tint: [1.0, 1.0, 1.0],
         trigger: Some(trigger),
+        ..LevelObject::default()
     }
 }
 
@@ -395,12 +396,10 @@ impl EditorSubsystem {
             let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
                 return false;
             };
-            object_ids.iter().any(|id| {
-                let Ok(object_index) = usize::try_from(*id) else {
-                    return false;
-                };
-                indices.contains(&object_index)
-            })
+            indices
+                .iter()
+                .filter_map(|index| self.objects.get(*index))
+                .any(|object| object_ids.contains(&object.id))
         })
     }
 
@@ -424,7 +423,9 @@ impl EditorSubsystem {
 
         // Add sanitized trigger objects
         for trigger in triggers {
-            self.objects.push(trigger_object_from_payload(trigger));
+            let trigger_object =
+                trigger_object_from_payload(trigger).with_generated_id(&self.objects);
+            self.objects.push(trigger_object);
         }
 
         self.sync_trigger_selection_from_objects();
@@ -435,8 +436,9 @@ impl EditorSubsystem {
         self.sanitize_trigger(&mut trigger);
 
         let object_index = self.objects.len();
-        self.objects
-            .push(trigger_object_from_payload(trigger.clone()));
+        let trigger_object =
+            trigger_object_from_payload(trigger.clone()).with_generated_id(&self.objects);
+        self.objects.push(trigger_object);
 
         self.sync_trigger_selection_from_objects();
         self.triggers.selected_index = self.trigger_index_for_object_index(object_index);
@@ -469,6 +471,7 @@ impl EditorSubsystem {
     }
 
     pub fn set_trigger_selected(&mut self, selected: Option<usize>) {
+        self.sync_trigger_object_indices();
         let trigger_count = self.triggers().len();
         self.triggers.selected_index = selected.filter(|index| *index < trigger_count);
     }
@@ -507,12 +510,14 @@ mod tests {
 
     fn test_block(x: f32) -> LevelObject {
         LevelObject {
+            id: format!("obj_{:06}", x as i32 + 1),
             position: [x, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: eg_types::DEFAULT_BLOCK_ID.to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         }
     }
 
@@ -522,7 +527,7 @@ mod tests {
             duration_seconds: 0.0,
             easing: TimedTriggerEasing::Linear,
             target: TimedTriggerTarget::Objects {
-                object_ids: vec![0],
+                object_ids: vec!["obj_000001".to_string()],
             },
             action: TimedTriggerAction::TransformObjects {
                 position: [1.0, 2.0, 3.0],
@@ -585,7 +590,12 @@ mod tests {
                 duration_seconds: f32::NAN,
                 easing: TimedTriggerEasing::Linear,
                 target: TimedTriggerTarget::Objects {
-                    object_ids: vec![3, 1, 3, 2],
+                    object_ids: vec![
+                        "three".to_string(),
+                        "one".to_string(),
+                        "three".to_string(),
+                        "two".to_string(),
+                    ],
                 },
                 action: TimedTriggerAction::TransformObjects {
                     position: [f32::NAN, 2.0, f32::INFINITY],
@@ -603,7 +613,10 @@ mod tests {
             assert_eq!(first.duration_seconds, 0.0);
             match &first.target {
                 TimedTriggerTarget::Objects { object_ids } => {
-                    assert_eq!(object_ids, &vec![1, 2, 3]);
+                    assert_eq!(
+                        object_ids,
+                        &vec!["one".to_string(), "three".to_string(), "two".to_string()]
+                    );
                 }
                 _ => panic!("expected object list target"),
             }
@@ -779,7 +792,7 @@ mod tests {
                 duration_seconds: 0.0,
                 easing: TimedTriggerEasing::Linear,
                 target: TimedTriggerTarget::Objects {
-                    object_ids: vec![1],
+                    object_ids: vec!["object_1".to_string()],
                 },
                 action: TimedTriggerAction::TransformObjects {
                     position: [0.0, 0.0, 0.0],

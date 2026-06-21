@@ -143,10 +143,10 @@ fn transform_trigger_target_indices_for_block(
         return Vec::new();
     };
 
-    let mut target_indices = object_ids
+    let mut target_indices = objects
         .iter()
-        .filter_map(|object_id| usize::try_from(*object_id).ok())
-        .filter(|index| *index < objects.len())
+        .enumerate()
+        .filter_map(|(index, object)| object_ids.contains(&object.id).then_some(index))
         .collect::<Vec<_>>();
     target_indices.sort_unstable();
     target_indices.dedup();
@@ -266,10 +266,9 @@ fn transform_trigger_markers_for_triggers(
             });
         } else {
             for object_id in object_ids {
-                let Ok(object_index) = usize::try_from(*object_id) else {
-                    continue;
-                };
-                let Some(source_object) = source_objects.get(object_index) else {
+                let Some(source_object) =
+                    source_objects.iter().find(|object| object.id == *object_id)
+                else {
                     continue;
                 };
 
@@ -347,7 +346,8 @@ impl EditorSubsystem {
             &self.config.selected_block_id,
             self.selected_block_default_size(),
             self.config.selected_block_rotation_degrees,
-        );
+        )
+        .with_generated_id(&self.objects);
         let placed_transform_trigger = new_block.block_id == TRANSFORM_TRIGGER_BLOCK_ID;
         let can_append_mesh = self.can_append_block_mesh_after_placement();
 
@@ -900,6 +900,7 @@ impl State {
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
+                ..LevelObject::default()
             };
             let mask_vertices =
                 build_block_geometry_for_object(&bounds_object).to_triangle_vertices();
@@ -1478,6 +1479,7 @@ fn editor_preview_player_hitbox(position: [f32; 3]) -> LevelObject {
         block_id: "core/void".to_string(),
         color_tint: [1.0, 1.0, 1.0],
         trigger: None,
+        ..LevelObject::default()
     }
 }
 
@@ -1533,12 +1535,14 @@ mod tests {
 
     fn block(position: [f32; 3], size: [f32; 3]) -> LevelObject {
         LevelObject {
+            id: "target".to_string(),
             position,
             size,
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         }
     }
 
@@ -1557,6 +1561,7 @@ mod tests {
             block_id: "core/camera_trigger".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         };
 
         let visual_vertices = build_block_geometry_for_object(&object).to_triangle_vertices();
@@ -1587,7 +1592,7 @@ mod tests {
             duration_seconds: 0.0,
             easing: TimedTriggerEasing::Linear,
             target: TimedTriggerTarget::Objects {
-                object_ids: vec![0],
+                object_ids: vec!["target".to_string()],
             },
             action: TimedTriggerAction::TransformObjects {
                 position: [2.0, 0.0, 0.0],
@@ -1904,7 +1909,7 @@ mod tests {
                 duration_seconds: 4.0,
                 easing: TimedTriggerEasing::Linear,
                 target: TimedTriggerTarget::Objects {
-                    object_ids: vec![0],
+                    object_ids: vec!["target".to_string()],
                 },
                 action: TimedTriggerAction::TransformObjects {
                     position: [8.0, 0.0, 0.0],
@@ -1917,7 +1922,7 @@ mod tests {
                 duration_seconds: 1.0,
                 easing: TimedTriggerEasing::Linear,
                 target: TimedTriggerTarget::Objects {
-                    object_ids: vec![0],
+                    object_ids: vec!["target".to_string()],
                 },
                 action: TimedTriggerAction::TransformObjects {
                     position: [10.0, 0.0, 0.0],

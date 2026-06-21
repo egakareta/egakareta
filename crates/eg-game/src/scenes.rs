@@ -28,6 +28,7 @@ pub fn create_menu_scene() -> Vec<LevelObject> {
                 block_id: "core/grass".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
+                ..LevelObject::default()
             });
         }
     }

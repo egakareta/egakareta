@@ -37,6 +37,7 @@ pub fn create_block_at_cursor(
         block_id: block_id.to_string(),
         color_tint: [1.0, 1.0, 1.0],
         trigger,
+        ..LevelObject::default()
     }
 }
 

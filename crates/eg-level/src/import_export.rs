@@ -91,6 +91,7 @@ mod tests {
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 0.8, 0.7],
                 trigger: None,
+                ..LevelObject::default()
             }],
         })
     }

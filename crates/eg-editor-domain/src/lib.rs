@@ -261,6 +261,7 @@ mod tests {
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
+                ..LevelObject::default()
             },
             LevelObject {
                 position: [0.0, 1.0, 0.0],
@@ -269,6 +270,7 @@ mod tests {
                 block_id: "core/grass".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
+                ..LevelObject::default()
             },
         ];
 
@@ -306,6 +308,7 @@ mod tests {
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
+                ..LevelObject::default()
             }],
             ..LevelMetadata::default()
         };
@@ -368,6 +371,7 @@ mod tests {
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         }];
 
         assert!(playtest_return_objects(true, &objects).is_some());
@@ -386,6 +390,7 @@ mod tests {
             block_id: "core/speedportal".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         }];
 
         // Advance timeline past the portal (e.g., 10 units / BASE_PLAYER_SPEED seconds)
@@ -434,6 +439,7 @@ mod tests {
                 block_id: "core/stone".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
+                ..LevelObject::default()
             }],
             ..LevelMetadata::default()
         };
@@ -591,6 +597,7 @@ mod tests {
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         }];
         let target = [0.5, 0.0, 3.5];
         let time = derive_timeline_time_for_world_target_near_time(
@@ -876,6 +883,7 @@ mod tests {
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         }];
 
         let previews = derive_timing_division_tap_previews(

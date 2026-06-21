@@ -5,6 +5,8 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use std::collections::{HashMap, HashSet};
+
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 
@@ -18,8 +20,11 @@ pub const DEFAULT_EDITOR_CAMERA_ROTATION: f32 = std::f32::consts::FRAC_PI_4;
 pub const DEFAULT_EDITOR_CAMERA_PITCH: f32 = std::f32::consts::FRAC_PI_4;
 pub const DEFAULT_PLAY_CAMERA_ROTATION: f32 = std::f32::consts::FRAC_PI_4;
 pub const DEFAULT_PLAY_CAMERA_PITCH: f32 = std::f32::consts::FRAC_PI_4;
-pub const CURRENT_LEVEL_FORMAT_VERSION: u32 = 2;
+pub const CURRENT_LEVEL_FORMAT_VERSION: u32 = 3;
 pub const CAMERA_TRIGGER_VIEW_DISTANCE: f32 = 24.0;
+
+pub type ObjectId = String;
+pub const OBJECT_ID_PREFIX: &str = "obj_";
 
 macro_rules! serde_default {
     ($default_name:ident : $ty:ty = $value:expr) => {
@@ -93,6 +98,7 @@ serde_default_array!(default_level_object_position: [f32; 3] = [0.0, 0.0, 0.0]);
 serde_default_array!(default_level_object_size: [f32; 3] = [1.0, 1.0, 1.0]);
 serde_default!(default_level_object_block_id: String = DEFAULT_BLOCK_ID.to_string());
 serde_default_array!(default_level_object_color_tint: [f32; 3] = [1.0, 1.0, 1.0]);
+serde_default!(default_level_object_id: ObjectId = String::new());
 serde_default_float!(default_level_stars: f32 = 0.0);
 serde_default!(default_level_tags: Vec<String> = Vec::<String>::new());
 serde_default!(default_time_signature_numerator: u32 = 4);
@@ -397,7 +403,7 @@ impl LevelMetadata {
             objects,
         }: EditorStateParams,
     ) -> Self {
-        Self {
+        let mut metadata = Self {
             format_version: CURRENT_LEVEL_FORMAT_VERSION,
             name,
             creator: creator_metadata.creator,
@@ -416,7 +422,14 @@ impl LevelMetadata {
             menu_preview_camera,
             objects,
             extra: serde_json::Map::new(),
-        }
+        };
+        metadata.normalize_object_ids();
+        metadata
+    }
+
+    pub fn normalize_object_ids(&mut self) {
+        self.format_version = CURRENT_LEVEL_FORMAT_VERSION;
+        normalize_level_object_ids(&mut self.objects);
     }
 
     pub fn resolved_triggers(&self) -> Vec<TimedTrigger> {
@@ -456,6 +469,11 @@ impl Default for SpawnMetadata {
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct LevelObject {
+    #[serde(
+        default = "default_level_object_id",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub id: ObjectId,
     #[serde(
         default = "default_level_object_position",
         skip_serializing_if = "is_default_level_object_position"
@@ -520,6 +538,11 @@ impl LevelObjectTransformFieldVisibility {
 }
 
 impl LevelObject {
+    pub fn with_generated_id(mut self, existing_objects: &[LevelObject]) -> Self {
+        self.id = next_level_object_id(existing_objects);
+        self
+    }
+
     pub fn normalize_block_id(&mut self) {
         self.block_id = normalize_level_block_id(&self.block_id);
     }
@@ -554,6 +577,7 @@ impl LevelObject {
 impl Default for LevelObject {
     fn default() -> Self {
         Self {
+            id: default_level_object_id(),
             position: default_level_object_position(),
             size: default_level_object_size(),
             rotation_degrees: default_block_rotation_degrees(),
@@ -663,7 +687,27 @@ pub struct CameraTrigger {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TimedTriggerTarget {
     Camera,
-    Objects { object_ids: Vec<u32> },
+    Objects {
+        #[serde(deserialize_with = "deserialize_trigger_object_ids")]
+        object_ids: Vec<ObjectId>,
+    },
+}
+
+fn deserialize_trigger_object_ids<'de, D>(deserializer: D) -> Result<Vec<ObjectId>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let values = Vec::<serde_json::Value>::deserialize(deserializer)?;
+    values
+        .into_iter()
+        .map(|value| match value {
+            serde_json::Value::String(value) => Ok(value),
+            serde_json::Value::Number(value) => Ok(value.to_string()),
+            other => Err(serde::de::Error::custom(format!(
+                "invalid object id value {other}"
+            ))),
+        })
+        .collect()
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
@@ -875,6 +919,120 @@ pub fn apply_timed_triggers_to_objects_into(
     apply_timed_triggers_to_objects_in_place(objects, triggers, time_seconds);
 }
 
+pub fn next_level_object_id(objects: &[LevelObject]) -> ObjectId {
+    let mut existing = HashSet::new();
+    for object in objects {
+        if object.id.is_empty() {
+            continue;
+        }
+        existing.insert(object.id.as_str());
+    }
+
+    let mut next_suffix = next_level_object_suffix_after(objects.iter().map(|object| &object.id));
+    allocate_next_level_object_id(&existing, &mut next_suffix)
+}
+
+pub fn normalize_level_object_ids(objects: &mut [LevelObject]) {
+    let original_ids = objects
+        .iter()
+        .map(|object| object.id.clone())
+        .collect::<Vec<_>>();
+    let legacy_compact_object_indices = objects
+        .iter()
+        .enumerate()
+        .filter(|(_, object)| object.trigger.is_none())
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+
+    let mut used_ids = HashSet::<ObjectId>::new();
+    let mut remapped_ids = HashMap::<ObjectId, ObjectId>::new();
+    let mut next_suffix = next_level_object_suffix_after(original_ids.iter());
+    for index in 0..objects.len() {
+        let original_id = original_ids[index].clone();
+        let needs_fresh_id = original_id.is_empty() || used_ids.contains(&original_id);
+        if needs_fresh_id {
+            let next_id = allocate_next_level_object_id(&used_ids, &mut next_suffix);
+            objects[index].id = next_id.clone();
+            if !original_id.is_empty() {
+                remapped_ids
+                    .entry(original_id)
+                    .or_insert_with(|| next_id.clone());
+            }
+            used_ids.insert(next_id);
+        } else {
+            used_ids.insert(original_id);
+        }
+    }
+
+    let current_ids = objects
+        .iter()
+        .map(|object| object.id.clone())
+        .collect::<HashSet<_>>();
+    let legacy_compact_ids = legacy_compact_object_indices
+        .iter()
+        .map(|index| objects[*index].id.clone())
+        .collect::<Vec<_>>();
+
+    for object in objects {
+        let Some(trigger) = object.trigger.as_mut() else {
+            continue;
+        };
+        let TimedTriggerTarget::Objects { object_ids } = &mut trigger.target else {
+            continue;
+        };
+        let mut normalized_ids = object_ids
+            .iter()
+            .filter_map(|object_id| {
+                remapped_ids
+                    .get(object_id)
+                    .cloned()
+                    .or_else(|| legacy_object_id_to_current_id(object_id, &legacy_compact_ids))
+                    .or_else(|| current_ids.contains(object_id).then(|| object_id.clone()))
+            })
+            .collect::<Vec<_>>();
+        normalized_ids.sort_unstable();
+        normalized_ids.dedup();
+        *object_ids = normalized_ids;
+    }
+}
+
+fn next_level_object_suffix_after<'a>(object_ids: impl Iterator<Item = &'a ObjectId>) -> u64 {
+    let mut max_suffix = 0_u64;
+    for object_id in object_ids {
+        if let Some(suffix) = object_id.strip_prefix(OBJECT_ID_PREFIX) {
+            if let Ok(value) = suffix.parse::<u64>() {
+                max_suffix = max_suffix.max(value);
+            }
+        }
+    }
+
+    max_suffix.saturating_add(1)
+}
+
+fn allocate_next_level_object_id<T>(used_ids: &HashSet<T>, next_suffix: &mut u64) -> ObjectId
+where
+    T: std::borrow::Borrow<str> + Eq + std::hash::Hash,
+{
+    loop {
+        let candidate = format!("{OBJECT_ID_PREFIX}{:06}", *next_suffix);
+        *next_suffix = next_suffix.checked_add(1).unwrap_or(1);
+        if !used_ids.contains(candidate.as_str()) {
+            return candidate;
+        }
+    }
+}
+
+fn legacy_object_id_to_current_id(
+    object_id: &ObjectId,
+    legacy_compact_ids: &[ObjectId],
+) -> Option<ObjectId> {
+    let index = object_id.parse::<usize>().ok()?;
+    legacy_compact_ids
+        .get(index)
+        .filter(|id| !id.is_empty())
+        .cloned()
+}
+
 pub fn camera_triggers_to_timed_triggers(camera_triggers: &[CameraTrigger]) -> Vec<TimedTrigger> {
     let mut triggers = Vec::with_capacity(camera_triggers.len());
     for camera_trigger in camera_triggers {
@@ -973,6 +1131,13 @@ fn apply_timed_triggers_to_objects_in_place(
         return;
     }
 
+    let object_index_by_id = objects
+        .iter()
+        .enumerate()
+        .filter(|(_, object)| !object.id.is_empty())
+        .map(|(index, object)| (object.id.clone(), index))
+        .collect::<HashMap<_, _>>();
+
     for trigger in triggers {
         if !trigger.time_seconds.is_finite() {
             continue;
@@ -986,17 +1151,17 @@ fn apply_timed_triggers_to_objects_in_place(
         match &trigger.target {
             TimedTriggerTarget::Camera => {}
             TimedTriggerTarget::Objects { object_ids } => {
-                let mut seen: Vec<u32> = Vec::new();
-                for &object_id in object_ids {
-                    if object_id as usize >= object_count {
+                let mut seen: Vec<&ObjectId> = Vec::new();
+                for object_id in object_ids {
+                    let Some(object_index) = object_index_by_id.get(object_id).copied() else {
                         continue;
-                    }
-                    if seen.contains(&object_id) {
+                    };
+                    if object_index >= object_count || seen.contains(&object_id) {
                         continue;
                     }
                     seen.push(object_id);
                     apply_trigger_action_to_object(
-                        &mut objects[object_id as usize],
+                        &mut objects[object_index],
                         &trigger.action,
                         progress,
                     );
@@ -1134,4 +1299,43 @@ fn timed_trigger_progress(trigger: &TimedTrigger, time_seconds: f32) -> Option<f
 
     let alpha = (time_seconds - start) / trigger.duration_seconds.max(1e-6);
     Some(timed_trigger_eased_alpha(trigger.easing, alpha))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_level_object_ids_maps_legacy_numeric_targets_to_generated_ids() {
+        let mut objects = vec![
+            LevelObject::default(),
+            LevelObject {
+                trigger: Some(TimedTrigger {
+                    time_seconds: 1.0,
+                    duration_seconds: 1.0,
+                    easing: TimedTriggerEasing::Linear,
+                    target: TimedTriggerTarget::Objects {
+                        object_ids: vec!["0".to_string()],
+                    },
+                    action: TimedTriggerAction::TransformObjects {
+                        position: [4.0, 0.0, 0.0],
+                        rotation_degrees: [0.0, 0.0, 0.0],
+                        size: [1.0, 1.0, 1.0],
+                    },
+                }),
+                ..LevelObject::default()
+            },
+        ];
+
+        normalize_level_object_ids(&mut objects);
+
+        assert_eq!(objects[0].id, "obj_000001");
+        let Some(trigger) = objects[1].trigger.as_ref() else {
+            panic!("expected trigger payload");
+        };
+        let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
+            panic!("expected object trigger target");
+        };
+        assert_eq!(object_ids, &["obj_000001"]);
+    }
 }

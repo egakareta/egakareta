@@ -21,6 +21,7 @@ use eg_types::LevelObject;
 /// Default `LevelObject` with "core/stone" at the origin.
 fn default_level_object() -> LevelObject {
     LevelObject {
+        id: String::new(),
         position: [0.0, 0.0, 0.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
@@ -33,6 +34,7 @@ fn default_level_object() -> LevelObject {
 /// A stone block at `(x, y, z)` with default size and no rotation.
 pub fn stone(x: f32, y: f32, z: f32) -> LevelObject {
     LevelObject {
+        id: format!("object_{x:.0}_{y:.0}_{z:.0}"),
         position: [x, y, z],
         ..default_level_object()
     }
@@ -41,6 +43,7 @@ pub fn stone(x: f32, y: f32, z: f32) -> LevelObject {
 /// A block with the given `id` at `(x, y, z)`.
 pub fn block(id: &str, x: f32, y: f32, z: f32) -> LevelObject {
     LevelObject {
+        id: format!("object_{x:.0}_{y:.0}_{z:.0}"),
         block_id: id.to_string(),
         position: [x, y, z],
         ..default_level_object()
@@ -55,6 +58,7 @@ pub fn gem(x: f32, y: f32, z: f32) -> LevelObject {
 /// A block at `(x, y, z)` with custom `size`.
 pub fn sized(id: &str, x: f32, y: f32, z: f32, sx: f32, sy: f32, sz: f32) -> LevelObject {
     LevelObject {
+        id: format!("object_{x:.0}_{y:.0}_{z:.0}"),
         block_id: id.to_string(),
         position: [x, y, z],
         size: [sx, sy, sz],
@@ -65,6 +69,7 @@ pub fn sized(id: &str, x: f32, y: f32, z: f32, sx: f32, sy: f32, sz: f32) -> Lev
 /// A block at `(x, y, z)` with custom rotation (degrees).
 pub fn rotated(id: &str, x: f32, y: f32, z: f32, rx: f32, ry: f32, rz: f32) -> LevelObject {
     LevelObject {
+        id: format!("object_{x:.0}_{y:.0}_{z:.0}"),
         block_id: id.to_string(),
         position: [x, y, z],
         rotation_degrees: [rx, ry, rz],

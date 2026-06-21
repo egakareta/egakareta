@@ -7,7 +7,7 @@
 */
 use super::{EditorClipboard, EditorHistorySnapshot, EditorSubsystem, State};
 use eg_editor_domain::derive_tap_indicator_positions;
-use eg_types::{AppPhase, LevelObject};
+use eg_types::{next_level_object_id, AppPhase, LevelObject, ObjectId, TimedTriggerTarget};
 
 pub struct EditorHistoryState {
     pub undo: Vec<EditorHistorySnapshot>,
@@ -178,7 +178,10 @@ impl EditorSubsystem {
         let base_len = self.objects.len();
         let mut new_indices = Vec::with_capacity(clipboard.objects.len());
 
-        for mut block in clipboard.objects {
+        let mut pasted_objects = clipboard.objects;
+        regenerate_object_ids_for_clipboard(&mut pasted_objects, &self.objects);
+
+        for mut block in pasted_objects {
             block.position = [
                 paste_anchor[0] + (block.position[0] - clipboard.anchor[0]),
                 paste_anchor[1] + (block.position[1] - clipboard.anchor[1]),
@@ -211,10 +214,11 @@ impl EditorSubsystem {
             .filter(|index| selected_indices.contains(index))
             .unwrap_or(selected_indices[0]);
         let anchor = self.objects[anchor_index].position;
-        let duplicates: Vec<LevelObject> = selected_indices
+        let mut duplicates: Vec<LevelObject> = selected_indices
             .iter()
             .map(|index| self.objects[*index].clone())
             .collect();
+        regenerate_object_ids_for_clipboard(&mut duplicates, &self.objects);
 
         self.runtime.interaction.clipboard = Some(EditorClipboard {
             objects: duplicates.clone(),
@@ -238,6 +242,37 @@ impl EditorSubsystem {
         self.invalidate_samples();
         self.pick_spatial_index.invalidate();
         true
+    }
+}
+
+fn regenerate_object_ids_for_clipboard(
+    objects: &mut [LevelObject],
+    existing_objects: &[LevelObject],
+) {
+    let mut id_map = std::collections::HashMap::<ObjectId, ObjectId>::new();
+    let mut allocated_objects = existing_objects.to_vec();
+
+    for object in objects.iter_mut() {
+        let old_id = object.id.clone();
+        object.id = next_level_object_id(&allocated_objects);
+        if !old_id.is_empty() {
+            id_map.insert(old_id, object.id.clone());
+        }
+        allocated_objects.push(object.clone());
+    }
+
+    for object in objects {
+        let Some(trigger) = object.trigger.as_mut() else {
+            continue;
+        };
+        let TimedTriggerTarget::Objects { object_ids } = &mut trigger.target else {
+            continue;
+        };
+        for object_id in object_ids {
+            if let Some(new_id) = id_map.get(object_id) {
+                *object_id = new_id.clone();
+            }
+        }
     }
 }
 
@@ -298,12 +333,17 @@ mod tests {
 
     fn test_block(position: [f32; 3]) -> LevelObject {
         LevelObject {
+            id: format!(
+                "object_{:.0}_{:.0}_{:.0}",
+                position[0], position[1], position[2]
+            ),
             position,
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         }
     }
 

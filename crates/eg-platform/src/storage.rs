@@ -182,11 +182,9 @@ async fn opfs_read_file(
 
     let file =
         dir.get_file_handle_with_options(filename, &opfs::GetFileHandleOptions { create: false });
-    let file = match file {
-        future => match run_opfs(future, "file open").await {
-            Ok(file) => file,
-            Err(_) => return Ok(None),
-        },
+    let file = match run_opfs(file, "file open").await {
+        Ok(file) => file,
+        Err(_) => return Ok(None),
     };
 
     run_opfs(file.read(), "file read").await.map(Some)
@@ -316,10 +314,10 @@ impl AudioStorage for PlatformAudioStorage {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            return pollster::block_on(async {
+            pollster::block_on(async {
                 let audio_dir = opfs_subdir(AUDIO_DIR_NAME).await.ok()?;
                 opfs_read_file(&audio_dir, music_source).await.ok()?
-            });
+            })
         }
 
         #[cfg(target_arch = "wasm32")]

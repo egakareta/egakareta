@@ -288,6 +288,7 @@ mod tests {
 
     fn transform_trigger_object(time_seconds: f32, position: [f32; 3]) -> LevelObject {
         LevelObject {
+            id: format!("trigger_{time_seconds:.1}"),
             position,
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
@@ -306,6 +307,7 @@ mod tests {
                     size: [1.0, 1.0, 1.0],
                 },
             }),
+            ..LevelObject::default()
         }
     }
 
@@ -447,7 +449,7 @@ mod tests {
                     duration_seconds: 1.0,
                     easing: TimedTriggerEasing::Linear,
                     target: TimedTriggerTarget::Objects {
-                        object_ids: vec![1],
+                        object_ids: vec!["target".to_string()],
                     },
                     action: TimedTriggerAction::TransformObjects {
                         position: [0.0, 0.0, 0.0],
@@ -455,6 +457,7 @@ mod tests {
                         size: [1.0, 1.0, 1.0],
                     },
                 }),
+                ..LevelObject::default()
             }];
             state.editor.ui.selected_block_index = Some(0);
             state.editor.ui.selected_block_indices = vec![0];

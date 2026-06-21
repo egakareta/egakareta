@@ -30,6 +30,7 @@ fn test_ground_detection_normal() {
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
         trigger: None,
+        ..LevelObject::default()
     });
     game.rebuild_behavior_cache();
 
@@ -48,6 +49,7 @@ fn test_ground_detection_includes_block_edges() {
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
         trigger: None,
+        ..LevelObject::default()
     });
     game.rebuild_behavior_cache();
 
@@ -69,6 +71,7 @@ fn player_stays_grounded_when_footprint_overlaps_platform_edge() {
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
         trigger: None,
+        ..LevelObject::default()
     });
     game.rebuild_behavior_cache();
 
@@ -92,6 +95,7 @@ fn test_ground_detection_under_overhang() {
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
         trigger: None,
+        ..LevelObject::default()
     });
     // Overhang block at height 3
     game.objects.push(LevelObject {
@@ -101,6 +105,7 @@ fn test_ground_detection_under_overhang() {
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
         trigger: None,
+        ..LevelObject::default()
     });
     game.rebuild_behavior_cache();
 
@@ -140,6 +145,7 @@ fn rotated_object_contains_expected_points() {
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
         trigger: None,
+        ..LevelObject::default()
     };
 
     assert!(object_xz_contains(&obj, 1.0, 0.5));
@@ -155,6 +161,7 @@ fn rotated_overlap_uses_oriented_bounds() {
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
         trigger: None,
+        ..LevelObject::default()
     };
 
     assert!(aabb_overlaps_object_xz(0.9, 1.1, 0.3, 0.5, &obj));
@@ -170,6 +177,7 @@ fn wooden_fence_collision_uses_json_hitboxes() {
         block_id: "core/wooden_fence".to_string(),
         color_tint: [1.0, 1.0, 1.0],
         trigger: None,
+        ..LevelObject::default()
     };
 
     assert!(object_xz_contains(&obj, 0.5, 0.5));
@@ -188,6 +196,7 @@ fn wooden_fence_support_height_uses_hitbox_top() {
         block_id: "core/wooden_fence".to_string(),
         color_tint: [1.0, 1.0, 1.0],
         trigger: None,
+        ..LevelObject::default()
     });
     game.rebuild_behavior_cache();
 
@@ -205,6 +214,7 @@ fn missing_hitboxes_fall_back_to_geometry_elements() {
         block_id: "core/wooden_fence".to_string(),
         color_tint: [1.0, 1.0, 1.0],
         trigger: None,
+        ..LevelObject::default()
     });
     game.rebuild_behavior_cache();
 
@@ -222,6 +232,7 @@ fn rotated_ground_detection_works() {
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
         trigger: None,
+        ..LevelObject::default()
     });
     game.rebuild_behavior_cache();
 
@@ -244,6 +255,7 @@ fn speed_portal_overlap_removes_portal_and_boosts_speed() {
         block_id: "core/speedportal".to_string(),
         color_tint: [1.0, 1.0, 1.0],
         trigger: None,
+        ..LevelObject::default()
     });
     game.rebuild_behavior_cache();
     game.update(0.0);
@@ -265,6 +277,7 @@ fn gem_overlap_collects_and_tracks_progress() {
         block_id: "core/gem".to_string(),
         color_tint: [1.0, 1.0, 1.0],
         trigger: None,
+        ..LevelObject::default()
     });
     game.rebuild_behavior_cache();
     game.initialize_level_progress_from_objects();
@@ -394,12 +407,14 @@ fn timeline_incremental_runtime_matches_direct_simulation() {
 #[test]
 fn timeline_trigger_hitbox_mode_does_not_resurrect_consumed_portals() {
     let objects = vec![LevelObject {
+        id: "target".to_string(),
         position: [0.0, 0.0, 1.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
         block_id: "core/speedportal".to_string(),
         color_tint: [1.0, 1.0, 1.0],
         trigger: None,
+        ..LevelObject::default()
     }];
 
     let triggers = vec![TimedTrigger {
@@ -407,7 +422,7 @@ fn timeline_trigger_hitbox_mode_does_not_resurrect_consumed_portals() {
         duration_seconds: 0.0,
         easing: TimedTriggerEasing::Linear,
         target: TimedTriggerTarget::Objects {
-            object_ids: vec![0],
+            object_ids: vec!["target".to_string()],
         },
         action: TimedTriggerAction::TransformObjects {
             position: [0.0, 0.0, 1.0],
@@ -433,12 +448,14 @@ fn timeline_trigger_hitbox_mode_does_not_resurrect_consumed_portals() {
 #[test]
 fn timeline_state_with_disabled_trigger_hitboxes_matches_plain_simulation() {
     let objects = vec![LevelObject {
+        id: "target".to_string(),
         position: [0.0, 0.0, 2.0],
         size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 0.0, 0.0],
         block_id: "core/stone".to_string(),
         color_tint: [1.0, 1.0, 1.0],
         trigger: None,
+        ..LevelObject::default()
     }];
 
     let triggers = vec![TimedTrigger {
@@ -446,7 +463,7 @@ fn timeline_state_with_disabled_trigger_hitboxes_matches_plain_simulation() {
         duration_seconds: 1.0,
         easing: TimedTriggerEasing::Linear,
         target: TimedTriggerTarget::Objects {
-            object_ids: vec![0],
+            object_ids: vec!["target".to_string()],
         },
         action: TimedTriggerAction::TransformObjects {
             position: [5.0, 0.0, 2.0],

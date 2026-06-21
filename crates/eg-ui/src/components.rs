@@ -1036,7 +1036,7 @@ mod tests {
                 duration_seconds: 0.0,
                 easing: TimedTriggerEasing::Linear,
                 target: TimedTriggerTarget::Objects {
-                    object_ids: vec![0],
+                    object_ids: vec!["target".to_string()],
                 },
                 action: TimedTriggerAction::TransformObjects {
                     position: [1.0, 2.0, 3.0],

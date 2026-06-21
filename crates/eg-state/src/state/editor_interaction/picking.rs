@@ -1003,6 +1003,7 @@ fn transform_trigger_target_object(action: &TimedTriggerAction) -> Option<LevelO
         block_id: eg_types::DEFAULT_BLOCK_ID.to_string(),
         color_tint: [1.0, 1.0, 1.0],
         trigger: None,
+        ..LevelObject::default()
     })
 }
 
@@ -1021,6 +1022,7 @@ mod tests {
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         }
     }
 
@@ -1103,6 +1105,7 @@ mod tests {
                 block_id: "core/camera_trigger".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
+                ..LevelObject::default()
             };
 
             let ray_origin = Vec3::new(0.5, 5.0, 0.5 + super::CAMERA_TRIGGER_ARROW_PICK_OFFSET);

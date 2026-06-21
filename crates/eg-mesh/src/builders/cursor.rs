@@ -27,6 +27,7 @@ pub fn build_editor_cursor_vertices(
         block_id: block_id.to_string(),
         color_tint: [1.0, 1.0, 1.0],
         trigger: None,
+        ..LevelObject::default()
     };
 
     let mut vertices = build_block_geometry_for_object(&object).to_triangle_vertices();
@@ -67,6 +68,7 @@ mod tests {
             block_id: block_id.to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         }
     }
 
@@ -132,6 +134,7 @@ mod tests {
             block_id: "core/speedportal".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         })
         .to_triangle_vertices();
 

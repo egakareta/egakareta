@@ -20,16 +20,16 @@ use eg_editor_domain::{
     TimelineNearSearch, TimingDivisionDirection,
 };
 use eg_game::{GameState, TimelineSimulationRuntime};
-use eg_types::{AppPhase, EditorMode, EditorTapDivisionPick, LevelObject};
+use eg_types::{AppPhase, EditorMode, EditorTapDivisionPick, LevelObject, ObjectId};
 use eg_types::{TimedTriggerAction, TimedTriggerTarget};
 
 const TAP_CLICK_ADD_EPSILON_SECONDS: f32 = 0.001;
 const FALLBACK_TIMELINE_SHIFT_SECONDS: f32 = 0.1;
 
-fn compact_object_ids_for_removed_indices(
+fn object_ids_for_removed_indices(
     objects: &[LevelObject],
     removed_indices: &[usize],
-) -> Vec<u32> {
+) -> Vec<ObjectId> {
     let mut removed_indices = removed_indices
         .iter()
         .copied()
@@ -38,24 +38,21 @@ fn compact_object_ids_for_removed_indices(
     removed_indices.sort_unstable();
     removed_indices.dedup();
 
-    let mut removed_object_ids = Vec::new();
-    let mut compact_object_id = 0_u32;
-    for (index, object) in objects.iter().enumerate() {
-        let is_targetable_object = object.trigger.is_none();
-        if removed_indices.binary_search(&index).is_ok() && is_targetable_object {
-            removed_object_ids.push(compact_object_id);
-        }
-        if is_targetable_object {
-            compact_object_id = compact_object_id.saturating_add(1);
-        }
-    }
-
-    removed_object_ids
+    objects
+        .iter()
+        .enumerate()
+        .filter(|(index, object)| {
+            removed_indices.binary_search(index).is_ok()
+                && object.trigger.is_none()
+                && !object.id.is_empty()
+        })
+        .map(|(_, object)| object.id.clone())
+        .collect()
 }
 
 fn dereference_removed_transform_trigger_targets(
     objects: &mut [LevelObject],
-    removed_object_ids: &[u32],
+    removed_object_ids: &[ObjectId],
 ) {
     if removed_object_ids.is_empty() {
         return;
@@ -76,21 +73,9 @@ fn dereference_removed_transform_trigger_targets(
             continue;
         };
 
-        let mut remapped_object_ids = object_ids
-            .iter()
-            .copied()
-            .filter_map(|object_id| {
-                if removed_object_ids.binary_search(&object_id).is_ok() {
-                    return None;
-                }
-                let removed_before =
-                    removed_object_ids.partition_point(|removed_id| *removed_id < object_id) as u32;
-                Some(object_id.saturating_sub(removed_before))
-            })
-            .collect::<Vec<_>>();
-        remapped_object_ids.sort_unstable();
-        remapped_object_ids.dedup();
-        *object_ids = remapped_object_ids;
+        object_ids.retain(|object_id| removed_object_ids.binary_search(object_id).is_err());
+        object_ids.sort_unstable();
+        object_ids.dedup();
     }
 }
 
@@ -491,7 +476,7 @@ impl EditorSubsystem {
         let selected_indices = self.selected_indices_normalized();
         if !selected_indices.is_empty() {
             let removed_object_ids =
-                compact_object_ids_for_removed_indices(&self.objects, &selected_indices);
+                object_ids_for_removed_indices(&self.objects, &selected_indices);
             dereference_removed_transform_trigger_targets(&mut self.objects, &removed_object_ids);
             for index in selected_indices.into_iter().rev() {
                 if index < self.objects.len() {
@@ -506,8 +491,7 @@ impl EditorSubsystem {
         }
 
         if let Some(index) = topmost_block_index_at_cursor(&self.objects, self.ui.cursor) {
-            let removed_object_ids =
-                compact_object_ids_for_removed_indices(&self.objects, &[index]);
+            let removed_object_ids = object_ids_for_removed_indices(&self.objects, &[index]);
             dereference_removed_transform_trigger_targets(&mut self.objects, &removed_object_ids);
             remove_topmost_block_at_cursor(&mut self.objects, self.ui.cursor);
             self.invalidate_samples();
@@ -1339,16 +1323,19 @@ mod tests {
 
     fn test_block(position: [f32; 3]) -> LevelObject {
         LevelObject {
+            id: format!("object_{:.0}", position[0]),
             position,
             size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         }
     }
 
-    fn test_transform_trigger(object_ids: Vec<u32>) -> TimedTrigger {
+    fn test_transform_trigger(object_ids: Vec<&str>) -> TimedTrigger {
+        let object_ids = object_ids.into_iter().map(str::to_string).collect();
         TimedTrigger {
             time_seconds: 0.0,
             duration_seconds: 1.0,
@@ -1398,7 +1385,7 @@ mod tests {
             ];
             state
                 .editor
-                .set_triggers(vec![test_transform_trigger(vec![1])]);
+                .set_triggers(vec![test_transform_trigger(vec!["object_2"])]);
             state.editor.ui.selected_block_index = Some(1);
             state.editor.ui.selected_block_indices = vec![1];
 
@@ -1429,7 +1416,7 @@ mod tests {
             ];
             state
                 .editor
-                .set_triggers(vec![test_transform_trigger(vec![2])]);
+                .set_triggers(vec![test_transform_trigger(vec!["object_4"])]);
             state.editor.ui.selected_block_index = Some(0);
             state.editor.ui.selected_block_indices = vec![0];
 
@@ -1441,7 +1428,7 @@ mod tests {
             assert_eq!(
                 trigger.target,
                 TimedTriggerTarget::Objects {
-                    object_ids: vec![1],
+                    object_ids: vec!["object_4".to_string()],
                 }
             );
         });

@@ -43,6 +43,7 @@ mod tests {
             block_id: "core/dirt".to_string(),
             color_tint: [1.0, 1.0, 1.0],
             trigger: None,
+            ..LevelObject::default()
         };
         let vertices = build_block_vertices(&[obj]);
         let positions: Vec<[f32; 3]> = vertices.iter().map(|v| v.position).collect();
@@ -372,6 +373,7 @@ mod tests {
                 block_id: "core/lava".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
+                ..LevelObject::default()
             },
             LevelObject {
                 position: [2.0, 0.0, 0.0],
@@ -380,6 +382,7 @@ mod tests {
                 block_id: "core/speedportal".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
+                ..LevelObject::default()
             },
             LevelObject {
                 position: [4.0, 0.0, 0.0],
@@ -388,6 +391,7 @@ mod tests {
                 block_id: "core/gem".to_string(),
                 color_tint: [1.0, 1.0, 1.0],
                 trigger: None,
+                ..LevelObject::default()
             },
         ];
 
