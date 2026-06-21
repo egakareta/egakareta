@@ -30,8 +30,9 @@ use eg_mesh::{
 };
 use eg_render::EditorOutlineInstance;
 use eg_types::{
-    AppPhase, BlockRenderProfile, EditorMode, EditorPlaceMode, LevelObject, SpawnDirection,
-    TimedTrigger, TimedTriggerAction, TimedTriggerTarget, TimingPoint, TRANSFORM_TRIGGER_BLOCK_ID,
+    apply_simulate_hitboxes_triggers_to_objects, AppPhase, BlockRenderProfile, EditorMode,
+    EditorPlaceMode, LevelObject, SpawnDirection, TimedTrigger, TimedTriggerAction,
+    TimedTriggerTarget, TimingPoint, TRANSFORM_TRIGGER_BLOCK_ID,
 };
 
 const SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD: usize = 700;
@@ -1418,14 +1419,14 @@ impl State {
             return;
         }
 
+        // Hitbox visualization follows the gameplay hitboxes, so when a trigger
+        // opts into moving hitboxes the red outline moves with it.
         let object_source = if self.editor.has_simulate_hitboxes_triggers() {
-            self.editor_runtime_objects_for_render().unwrap_or_else(|| {
-                trigger_transformed_objects_at_time(
-                    &self.editor.objects,
-                    &self.editor.triggers(),
-                    self.editor.timeline.clock.time_seconds,
-                )
-            })
+            apply_simulate_hitboxes_triggers_to_objects(
+                &self.editor.objects,
+                &self.editor.triggers(),
+                self.editor.timeline.clock.time_seconds,
+            )
         } else {
             self.editor.objects.clone()
         };

@@ -903,6 +903,7 @@ impl State {
                 "Block Vertex Buffer",
                 &animated_batches.fallback_geometry,
             );
+            self.render.meshes.blocks_chunked.clear();
         }
 
         if self.gameplay.state.level_complete && self.gameplay.state.completion_hold_seconds <= 0.0
@@ -1254,6 +1255,27 @@ mod tests {
             assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
             assert_eq!(state.gameplay.state.objects[0].position, [2.0, 0.0, 0.0]);
             assert!(state.editor_has_simulate_hitboxes_triggers());
+        });
+    }
+
+    #[test]
+    fn update_playing_state_clears_chunked_mesh_when_trigger_render_objects_are_active() {
+        pollster::block_on(async {
+            let mut state = State::new_test().await;
+
+            state.phase = AppPhase::Playing;
+            state.gameplay.state.started = true;
+            state.gameplay.state.objects = vec![sample_object()];
+            state.gameplay.state.rebuild_behavior_cache();
+            state.editor.set_triggers(vec![instant_move_trigger(false)]);
+
+            state.rebuild_block_vertices();
+            assert!(!state.render.meshes.blocks_chunked.is_empty());
+
+            state.update();
+
+            assert!(state.render.meshes.blocks_chunked.is_empty());
+            assert!(!state.render.meshes.blocks_instanced.is_empty());
         });
     }
 

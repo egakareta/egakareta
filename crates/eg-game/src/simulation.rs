@@ -7,8 +7,9 @@
 */
 use super::state::{ConsumedObjectEvent, GameState};
 use eg_types::{
-    apply_simulate_hitboxes_triggers_to_objects_into, apply_timed_triggers_to_objects,
-    has_simulate_hitboxes_triggers, TimedTrigger,
+    any_simulate_hitboxes_trigger_interpolating, apply_simulate_hitboxes_triggers_to_objects_into,
+    apply_timed_triggers_to_objects, has_simulate_hitboxes_triggers,
+    simulate_hitboxes_trigger_pose_signature, TimedTrigger,
 };
 use eg_types::{Direction, LevelObject, SpawnDirection};
 
@@ -29,6 +30,10 @@ pub struct TimelineSimulationRuntime {
     trigger_base_objects: Option<Vec<LevelObject>>,
     trigger_transformed_objects: Vec<LevelObject>,
     has_simulate_hitboxes_triggers: bool,
+    /// Signature of the last hitbox pose applied to `game.objects`, used to skip
+    /// redundant object replacements + spatial-grid rebuilds while the
+    /// transformed pose is stable. `None` means "pose unknown / force rebuild".
+    last_hitbox_pose_signature: Option<u64>,
     elapsed_seconds: f32,
     simulation_dt: f32,
 }
@@ -124,6 +129,7 @@ impl TimelineSimulationRuntime {
             trigger_base_objects: has_simulate_hitboxes_triggers.then(|| objects.to_vec()),
             trigger_transformed_objects: Vec::new(),
             has_simulate_hitboxes_triggers,
+            last_hitbox_pose_signature: None,
             elapsed_seconds: 0.0,
             simulation_dt: simulation_dt.clamp(1.0 / 240.0, 1.0 / 30.0),
         };
@@ -150,15 +156,46 @@ impl TimelineSimulationRuntime {
             return;
         };
 
+        let time_seconds = up_to_time.max(0.0);
+
+        // The transformed hitbox pose only changes while a simulate-hitboxes
+        // trigger is interpolating, or when a trigger enters/leaves its window.
+        // During the long stable stretches between trigger windows the pose is
+        // identical to the previous step, and `game.objects` is already kept in
+        // sync with the (consumed-pruned) base set. Skipping the object
+        // replacement + spatial-grid rebuild in that case avoids thousands of
+        // redundant full grid rebuilds when simulating a level with sparse
+        // transform triggers (e.g. toggling "Move Hitboxes" in the editor).
+        if any_simulate_hitboxes_trigger_interpolating(&self.triggers, time_seconds) {
+            apply_simulate_hitboxes_triggers_to_objects_into(
+                base_objects,
+                &self.triggers,
+                time_seconds,
+                &mut self.trigger_transformed_objects,
+            );
+            let objects = std::mem::take(&mut self.trigger_transformed_objects);
+            self.trigger_transformed_objects =
+                self.game.replace_objects_for_transform_hitboxes(objects);
+            // Force a rebuild on the first stable step after interpolation ends.
+            self.last_hitbox_pose_signature = None;
+            return;
+        }
+
+        let signature = simulate_hitboxes_trigger_pose_signature(&self.triggers, time_seconds);
+        if self.last_hitbox_pose_signature == Some(signature) {
+            return;
+        }
+
         apply_simulate_hitboxes_triggers_to_objects_into(
             base_objects,
             &self.triggers,
-            up_to_time.max(0.0),
+            time_seconds,
             &mut self.trigger_transformed_objects,
         );
         let objects = std::mem::take(&mut self.trigger_transformed_objects);
         self.trigger_transformed_objects =
             self.game.replace_objects_for_transform_hitboxes(objects);
+        self.last_hitbox_pose_signature = Some(signature);
     }
 
     fn sync_trigger_base_with_consumed(&mut self) {

@@ -920,6 +920,53 @@ pub fn has_simulate_hitboxes_triggers(triggers: &[TimedTrigger]) -> bool {
     triggers.iter().any(trigger_simulates_hitboxes)
 }
 
+/// Returns `true` when at least one simulate-hitboxes trigger is actively
+/// interpolating its targets at `time_seconds` (progress strictly between 0
+/// and 1). While this is true the transformed hitbox pose changes every step,
+/// so callers cannot reuse a previously computed pose.
+pub fn any_simulate_hitboxes_trigger_interpolating(
+    triggers: &[TimedTrigger],
+    time_seconds: f32,
+) -> bool {
+    triggers
+        .iter()
+        .filter(|trigger| trigger_simulates_hitboxes(trigger))
+        .any(
+            |trigger| match timed_trigger_progress(trigger, time_seconds) {
+                Some(progress) => progress > 0.0 && progress < 1.0,
+                None => false,
+            },
+        )
+}
+
+/// Returns a compact signature describing the discrete pose state of every
+/// simulate-hitboxes trigger at `time_seconds` (before its window / fully
+/// applied). Two equal signatures mean the transformed hitbox pose is
+/// identical, as long as no trigger is currently interpolating (see
+/// [`any_simulate_hitboxes_trigger_interpolating`]). Used to skip redundant
+/// hitbox rebuilds during the stable stretches between trigger windows.
+pub fn simulate_hitboxes_trigger_pose_signature(
+    triggers: &[TimedTrigger],
+    time_seconds: f32,
+) -> u64 {
+    let mut signature: u64 = 0;
+    let mut shift: u32 = 0;
+    for trigger in triggers
+        .iter()
+        .filter(|trigger| trigger_simulates_hitboxes(trigger))
+    {
+        let state: u64 = match timed_trigger_progress(trigger, time_seconds) {
+            None => 0,
+            Some(progress) if progress >= 1.0 => 2,
+            Some(progress) if progress <= 0.0 => 0,
+            Some(_) => 1,
+        };
+        signature |= state << shift;
+        shift = shift.saturating_add(2);
+    }
+    signature
+}
+
 pub fn apply_simulate_hitboxes_triggers_to_objects(
     base_objects: &[LevelObject],
     triggers: &[TimedTrigger],
