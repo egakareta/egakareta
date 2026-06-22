@@ -15,8 +15,6 @@
 #[cfg(feature = "benchmarks")]
 pub mod bench_support;
 mod platform;
-#[cfg(test)]
-mod test_utils;
 mod types;
 
 #[cfg(target_arch = "wasm32")]
