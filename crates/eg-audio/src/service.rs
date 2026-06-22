@@ -14,7 +14,6 @@ use std::sync::mpsc::Sender;
 
 use sha2::{Digest, Sha256};
 
-use eg_platform::parallel::spawn_cpu_bound;
 use eg_platform::task::spawn_background;
 
 pub type AudioPreloadResult = (String, Option<Vec<u8>>);
@@ -131,7 +130,7 @@ pub fn start_waveform_loading(
             }
         }
 
-        spawn_cpu_bound(move || {
+        rayon::spawn(move || {
             let _ = sender.send((
                 source_for_send.clone(),
                 level_for_send.clone(),

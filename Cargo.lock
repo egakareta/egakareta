@@ -961,6 +961,7 @@ dependencies = [
  "eg-types",
  "js-sys",
  "log",
+ "rayon",
  "rodio",
  "sha2",
  "symphonia 0.6.0",

@@ -267,7 +267,6 @@ See LICENSE and COMMERCIAL.md for details.
                     const {
                         default: init,
                         initThreadPool,
-                        mark_rayon_ready,
                         run_game,
                     } = await import("./pkg/egakareta_lib.js");
                     run_game_fn = run_game;
@@ -303,7 +302,6 @@ See LICENSE and COMMERCIAL.md for details.
                         console.log("initializing rayon:", workerCount);
                         rayonInitPromise = initThreadPool(workerCount).then(
                             () => {
-                                mark_rayon_ready();
                                 console.log("rayon ready");
                             },
                         );

@@ -11,7 +11,6 @@
 
 pub mod auth;
 pub mod io;
-pub mod parallel;
 pub mod services;
 pub mod state_host;
 pub mod storage;

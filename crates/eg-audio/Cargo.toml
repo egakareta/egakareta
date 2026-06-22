@@ -13,6 +13,7 @@ eg-platform = { workspace = true }
 eg-types = { workspace = true }
 cpal = { workspace = true }
 log = { workspace = true }
+rayon = { workspace = true }
 rodio = { workspace = true }
 sha2 = { workspace = true }
 symphonia = { workspace = true }
