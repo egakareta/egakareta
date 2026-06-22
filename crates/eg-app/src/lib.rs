@@ -15,7 +15,7 @@
 #[cfg(feature = "benchmarks")]
 pub mod bench_support;
 mod platform;
-mod types;
+mod tests;
 
 #[cfg(target_arch = "wasm32")]
 pub use eg_platform::parallel::mark_rayon_ready;
