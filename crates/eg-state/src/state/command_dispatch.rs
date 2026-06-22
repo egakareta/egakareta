@@ -9,7 +9,6 @@ use super::State;
 use crate::commands::AppCommand;
 use crate::state::editor_command::EditorCommand;
 use eg_editor_domain::TimingDivisionDirection;
-use eg_platform::io::{copy_text_to_clipboard, log_platform_error};
 use eg_types::{normalize_binding_key, AppPhase, EditorMode, KeyChord};
 
 impl State {
@@ -37,9 +36,7 @@ impl State {
             AppCommand::AuthOpenSignup => self.open_auth_signup_page(),
             AppCommand::CopyLatestPerfFrame => {
                 if let Some(text) = self.format_latest_frame() {
-                    if let Err(error) = copy_text_to_clipboard(&text) {
-                        log_platform_error(&error);
-                    }
+                    let _ = bevy_clipboard::Clipboard::default().set_text(text);
                 }
             }
 

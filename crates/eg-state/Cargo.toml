@@ -21,6 +21,7 @@ eg-mesh = { workspace = true }
 eg-platform = { workspace = true }
 eg-render = { workspace = true }
 eg-types = { workspace = true }
+bevy_clipboard = { workspace = true }
 bytemuck = { workspace = true }
 egui = { workspace = true }
 egui-wgpu = { workspace = true }

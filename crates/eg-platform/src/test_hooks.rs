@@ -28,8 +28,6 @@ pub struct PlatformHooks {
     pub load_waveform_result: Option<Option<PersistentWaveformCacheEntry>>,
     pub load_settings_result: Option<Result<AppSettings, String>>,
     pub save_settings_result: Option<Result<(), String>>,
-    pub copy_text_result: Option<Result<(), String>>,
-    pub copied_text: Option<String>,
     pub auth_sign_in_result: Option<Result<AuthSession, String>>,
     pub auth_refresh_result: Option<Result<AuthSession, String>>,
     pub auth_sign_out_result: Option<Result<(), String>>,
@@ -85,13 +83,6 @@ pub fn load_settings_result() -> Option<Result<AppSettings, String>> {
 
 pub fn save_settings_result() -> Option<Result<(), String>> {
     with_hooks_mut(|hooks| hooks.save_settings_result.clone())
-}
-
-pub fn copy_text_result(text: &str) -> Option<Result<(), String>> {
-    with_hooks_mut(|hooks| {
-        hooks.copied_text = Some(text.to_string());
-        hooks.copy_text_result.clone()
-    })
 }
 
 pub fn auth_sign_in_result() -> Option<Result<AuthSession, String>> {
