@@ -863,7 +863,7 @@ mod tests {
             let mut state = new_editor_state().await;
             state.editor.ui.mode = EditorMode::Place;
             state.editor.spawn.position = [0.0, 0.0, 0.0];
-            state.editor.spawn.direction = eg_types::SpawnDirection::Forward;
+            state.editor.spawn.direction = eg_types::Direction::Forward;
             state.editor.timeline.taps.tap_times = vec![0.5];
             state.editor.timeline.taps.tap_indicator_positions = vec![[42.0, 0.0, 42.0]];
             state.editor.timeline.taps.selected_index = Some(0);
@@ -889,7 +889,7 @@ mod tests {
             let mut state = new_editor_state().await;
             state.editor.ui.mode = EditorMode::Place;
             state.editor.spawn.position = [0.0, 0.0, 0.0];
-            state.editor.spawn.direction = eg_types::SpawnDirection::Forward;
+            state.editor.spawn.direction = eg_types::Direction::Forward;
             state.editor.timeline.clock.duration_seconds = 2.0;
             state.editor.invalidate_samples();
 
@@ -1197,7 +1197,7 @@ mod tests {
     fn r_in_place_mode_rotates_preview_without_rotating_spawn() {
         pollster::block_on(async {
             let mut state = new_editor_state().await;
-            state.editor.spawn.direction = eg_types::SpawnDirection::Forward;
+            state.editor.spawn.direction = eg_types::Direction::Forward;
             state.editor.config.selected_block_rotation_degrees = [0.0, 0.0, 0.0];
 
             let command = state.command_for_keybind_action("spawn_rotate", true);
@@ -1207,10 +1207,7 @@ mod tests {
             );
             state.dispatch(command.unwrap());
 
-            assert_eq!(
-                state.editor.spawn.direction,
-                eg_types::SpawnDirection::Forward
-            );
+            assert_eq!(state.editor.spawn.direction, eg_types::Direction::Forward);
             assert_eq!(
                 state.editor.config.selected_block_rotation_degrees,
                 [0.0, 90.0, 0.0]

@@ -8,8 +8,8 @@
 use super::State;
 use eg_types::TimedTrigger;
 use eg_types::{
-    AppSettings, EditorMode, LevelCreatorMetadata, LevelObject, MusicMetadata, PlayerLevelProgress,
-    SettingsSection, SpawnDirection, TimingPoint,
+    AppSettings, Direction, EditorMode, LevelCreatorMetadata, LevelObject, MusicMetadata,
+    PlayerLevelProgress, SettingsSection, TimingPoint,
 };
 
 #[derive(Clone, Copy)]
@@ -72,7 +72,7 @@ pub struct EditorUiViewModel<'a> {
     pub tap_times: &'a [f32],
     pub selected_tap: Option<SelectedTapViewModel>,
     pub timeline_preview_position: [f32; 3],
-    pub timeline_preview_direction: SpawnDirection,
+    pub timeline_preview_direction: Direction,
     pub timing_points: &'a [TimingPoint],
     pub playback_speed: f32,
     pub timing_selected_index: Option<usize>,

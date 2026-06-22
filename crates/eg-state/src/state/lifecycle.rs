@@ -1645,7 +1645,7 @@ mod tests {
     use crate::state::editor_command::EditorCommand;
     use crate::test_utils::tiny_wav_bytes;
     use eg_game::TimelineSimulationRuntime;
-    use eg_types::{MusicMetadata, SpawnDirection};
+    use eg_types::{Direction, MusicMetadata};
 
     use super::{
         block_texture_array_layer_count, editor_ghost_trail_depth_stencil_state,
@@ -1746,7 +1746,7 @@ mod tests {
             state.editor.timeline.playback.playing = true;
             state.editor.timeline.playback.runtime = Some(TimelineSimulationRuntime::new(
                 [0.0, 0.0, 0.0],
-                SpawnDirection::Forward,
+                Direction::Forward,
                 &[],
                 &[],
             ));

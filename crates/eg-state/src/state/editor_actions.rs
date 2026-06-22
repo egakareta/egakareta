@@ -1311,7 +1311,7 @@ mod tests {
     use eg_editor_domain::derive_tap_indicator_positions;
     use eg_game::TimelineSimulationRuntime;
     use eg_types::{
-        AppPhase, EditorMode, LevelObject, SpawnDirection, TimingPoint, TRANSFORM_TRIGGER_BLOCK_ID,
+        AppPhase, Direction, EditorMode, LevelObject, TimingPoint, TRANSFORM_TRIGGER_BLOCK_ID,
     };
     use eg_types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
 
@@ -1454,7 +1454,7 @@ mod tests {
             state.phase = AppPhase::Editor;
             state.editor.objects.clear();
             state.editor.spawn.position = [0.0, 0.0, 0.0];
-            state.editor.spawn.direction = SpawnDirection::Forward;
+            state.editor.spawn.direction = Direction::Forward;
             state.editor.timeline.taps.tap_times = vec![1.0 / eg_game::BASE_PLAYER_SPEED];
             state.editor.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
                 state.editor.spawn.position,
@@ -1467,20 +1467,20 @@ mod tests {
             state.editor_set_spawn_here();
             assert_eq!(state.editor.spawn.position, [4.0, 1.0, 3.0]);
             state.editor_rotate_spawn_direction();
-            assert_eq!(state.editor.spawn.direction, SpawnDirection::Right);
+            assert_eq!(state.editor.spawn.direction, Direction::Right);
 
             state.editor_undo();
-            assert_eq!(state.editor.spawn.direction, SpawnDirection::Forward);
+            assert_eq!(state.editor.spawn.direction, Direction::Forward);
             assert_eq!(state.editor.spawn.position, [4.0, 1.0, 3.0]);
 
             state.editor_undo();
-            assert_eq!(state.editor.spawn.direction, SpawnDirection::Forward);
+            assert_eq!(state.editor.spawn.direction, Direction::Forward);
             assert_eq!(state.editor.spawn.position, [0.0, 0.0, 0.0]);
 
             state.editor_redo();
             assert_eq!(state.editor.spawn.position, [4.0, 1.0, 3.0]);
             state.editor_redo();
-            assert_eq!(state.editor.spawn.direction, SpawnDirection::Right);
+            assert_eq!(state.editor.spawn.direction, Direction::Right);
 
             let expected_indicators = derive_tap_indicator_positions(
                 state.editor.spawn.position,
@@ -1708,7 +1708,7 @@ mod tests {
             forward_state.phase = AppPhase::Editor;
             forward_state.editor.ui.mode = EditorMode::Tapping;
             forward_state.editor.spawn.position = [1.0, 0.0, 0.0];
-            forward_state.editor.spawn.direction = SpawnDirection::Forward;
+            forward_state.editor.spawn.direction = Direction::Forward;
             forward_state.editor.config.snap_to_grid = true;
             forward_state.editor.config.snap_step = 2.0;
             forward_state.editor.timeline.clock.duration_seconds = 4.0;
@@ -1724,7 +1724,7 @@ mod tests {
             right_state.phase = AppPhase::Editor;
             right_state.editor.ui.mode = EditorMode::Tapping;
             right_state.editor.spawn.position = [0.0, 0.0, 1.0];
-            right_state.editor.spawn.direction = SpawnDirection::Right;
+            right_state.editor.spawn.direction = Direction::Right;
             right_state.editor.config.snap_to_grid = true;
             right_state.editor.config.snap_step = 2.0;
             right_state.editor.timeline.clock.duration_seconds = 4.0;
@@ -1753,7 +1753,7 @@ mod tests {
             state.editor.timeline.snapshot_cache = vec![
                 crate::state::editor_timeline::EditorTimelineSnapshot {
                     position: [1.44, 0.0, 1.5],
-                    direction: SpawnDirection::Right,
+                    direction: Direction::Right,
                     is_grounded: true,
                     game_over: false,
                     trail_segment_count: 0,
@@ -1761,7 +1761,7 @@ mod tests {
                 },
                 crate::state::editor_timeline::EditorTimelineSnapshot {
                     position: [1.5, 0.0, 1.56],
-                    direction: SpawnDirection::Forward,
+                    direction: Direction::Forward,
                     is_grounded: true,
                     game_over: false,
                     trail_segment_count: 0,

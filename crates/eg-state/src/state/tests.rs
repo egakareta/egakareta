@@ -14,7 +14,7 @@ use eg_audio::audio::runtime_asset_source_key;
 use eg_editor_domain::{derive_tap_indicator_positions, derive_timeline_position};
 use eg_game::simulate_timeline_state_with_triggers;
 use eg_mesh::{GizmoAxis, GizmoDragKind};
-use eg_types::{AppPhase, EditorMode, LevelObject, PhysicalSize, SpawnDirection};
+use eg_types::{AppPhase, Direction, EditorMode, LevelObject, PhysicalSize};
 use eg_types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
 use glam::{Vec2, Vec3};
 
@@ -230,14 +230,14 @@ fn derives_position_without_taps() {
     let step_time = 1.0 / eg_game::BASE_PLAYER_SPEED;
     let (position, direction) = derive_timeline_position(
         [0.0, 0.0, 0.0],
-        SpawnDirection::Forward,
+        Direction::Forward,
         &[],
         3.0 * step_time,
         &[],
     );
     assert!((position[0] - 0.5).abs() < 0.1);
     assert!((position[2] - 3.5).abs() < 0.1);
-    assert!(matches!(direction, SpawnDirection::Forward));
+    assert!(matches!(direction, Direction::Forward));
 }
 
 #[test]
@@ -246,24 +246,24 @@ fn derives_position_with_taps() {
     let taps = [2.0 * step_time, 4.0 * step_time];
     let (position, direction) = derive_timeline_position(
         [0.0, 0.0, 0.0],
-        SpawnDirection::Forward,
+        Direction::Forward,
         &taps,
         5.0 * step_time,
         &[],
     );
     assert!((position[0] - 2.5).abs() < 0.1);
     assert!((position[2] - 3.5).abs() < 0.1);
-    assert!(matches!(direction, SpawnDirection::Forward));
+    assert!(matches!(direction, Direction::Forward));
 }
 
 #[test]
 fn tap_at_zero_changes_direction() {
     let taps = [0.0];
     let (position, direction) =
-        derive_timeline_position([0.0, 0.0, 0.0], SpawnDirection::Forward, &taps, 0.0, &[]);
+        derive_timeline_position([0.0, 0.0, 0.0], Direction::Forward, &taps, 0.0, &[]);
     assert!((position[0] - 0.5).abs() < 0.1);
     assert!((position[2] - 0.5).abs() < 0.1);
-    assert!(matches!(direction, SpawnDirection::Right));
+    assert!(matches!(direction, Direction::Right));
 }
 
 #[test]
@@ -272,14 +272,14 @@ fn ignores_taps_after_step() {
     let taps = [5.0 * step_time];
     let (position, direction) = derive_timeline_position(
         [1.0, 0.0, 1.0],
-        SpawnDirection::Forward,
+        Direction::Forward,
         &taps,
         2.0 * step_time,
         &[],
     );
     assert!((position[0] - 1.5).abs() < 0.1);
     assert!((position[2] - 3.5).abs() < 0.1);
-    assert!(matches!(direction, SpawnDirection::Forward));
+    assert!(matches!(direction, Direction::Forward));
 }
 
 #[test]
@@ -288,14 +288,14 @@ fn supports_offset_spawn_with_tap() {
     let taps = [2.0 * step_time];
     let (position, direction) = derive_timeline_position(
         [2.0, 0.0, 2.0],
-        SpawnDirection::Right,
+        Direction::Right,
         &taps,
         3.0 * step_time,
         &[],
     );
     assert!((position[0] - 4.5).abs() < 0.1);
     assert!((position[2] - 3.5).abs() < 0.1);
-    assert!(matches!(direction, SpawnDirection::Forward));
+    assert!(matches!(direction, Direction::Forward));
 }
 
 #[test]
@@ -303,13 +303,13 @@ fn falls_from_elevated_platform() {
     let objects = [stone(0.0, 2.0, 0.0)];
     let (position, direction) = derive_timeline_position(
         [0.0, 3.0, 0.0],
-        SpawnDirection::Forward,
+        Direction::Forward,
         &[],
         1.0 / eg_game::BASE_PLAYER_SPEED,
         &objects,
     );
     assert!(position[1] <= 3.0);
-    assert!(matches!(direction, SpawnDirection::Forward));
+    assert!(matches!(direction, Direction::Forward));
 }
 
 #[test]
@@ -351,7 +351,7 @@ fn configure_trigger_policy_parity_scene(
 ) {
     state.editor.objects = vec![block("core/speedportal", 8.0, 0.0, 8.0)];
     state.editor.spawn.position = [0.0, 0.0, 0.0];
-    state.editor.spawn.direction = SpawnDirection::Forward;
+    state.editor.spawn.direction = Direction::Forward;
     state.editor.timeline.taps.tap_times.clear();
     state.editor.set_triggers(vec![TimedTrigger {
         time_seconds: 0.0,
@@ -659,7 +659,7 @@ fn timeline_seek_uses_interpolated_snapshot_cache_and_supports_backward_seek() {
         state.phase = AppPhase::Editor;
         state.editor.objects.clear();
         state.editor.spawn.position = [0.0, 0.0, 0.0];
-        state.editor.spawn.direction = SpawnDirection::Forward;
+        state.editor.spawn.direction = Direction::Forward;
         state.editor.timeline.taps.tap_times.clear();
         state.editor.timeline.clock.duration_seconds = 8.0;
         state.editor.invalidate_samples();
@@ -707,7 +707,7 @@ fn editor_playtest_stores_precomputed_audio_start_seconds() {
         state.editor.objects.clear();
         state.editor.timeline.taps.tap_times.clear();
         state.editor.spawn.position = [0.0, 0.0, 0.0];
-        state.editor.spawn.direction = SpawnDirection::Forward;
+        state.editor.spawn.direction = Direction::Forward;
 
         let target_time = 0.85;
         state.editor.timeline.clock.time_seconds = target_time;
@@ -738,7 +738,7 @@ fn editor_playtest_nonzero_timeline_handoff_stays_synced_after_first_input() {
         state.editor.objects.clear();
         state.editor.timeline.taps.tap_times = vec![0.35, 0.7, 1.1];
         state.editor.spawn.position = [0.0, 0.0, 0.0];
-        state.editor.spawn.direction = SpawnDirection::Forward;
+        state.editor.spawn.direction = Direction::Forward;
 
         let target_time = 1.25;
         state.editor.timeline.clock.time_seconds = target_time;
@@ -946,7 +946,7 @@ fn setting_spawn_recomputes_tap_indicator_positions() {
         let mut state = new_editor_state().await;
         state.editor.objects.clear();
         state.editor.spawn.position = [0.0, 0.0, 0.0];
-        state.editor.spawn.direction = SpawnDirection::Forward;
+        state.editor.spawn.direction = Direction::Forward;
         state.editor.timeline.taps.tap_times = vec![1.0 / eg_game::BASE_PLAYER_SPEED];
         state.editor.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
             state.editor.spawn.position,

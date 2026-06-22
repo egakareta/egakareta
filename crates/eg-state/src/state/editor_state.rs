@@ -16,7 +16,7 @@ use eg_types::{
     TimedTriggerTarget,
 };
 use eg_types::{
-    AppPhase, EditorMode, GameCursor, LevelObject, ObjectId, SpawnDirection, TimingPoint,
+    AppPhase, Direction, EditorMode, GameCursor, LevelObject, ObjectId, TimingPoint,
     DEFAULT_CAMERA_TRIGGER_PITCH, DEFAULT_CAMERA_TRIGGER_ROTATION,
 };
 
@@ -464,7 +464,7 @@ impl EditorSubsystem {
             .truncate(snapshot.trail_segment_count);
     }
 
-    pub fn timeline_preview(&self) -> ([f32; 3], SpawnDirection) {
+    pub fn timeline_preview(&self) -> ([f32; 3], Direction) {
         (
             self.timeline.preview.position,
             self.timeline.preview.direction,
@@ -1452,7 +1452,7 @@ impl State {
         true
     }
 
-    pub fn editor_timeline_preview(&self) -> ([f32; 3], SpawnDirection) {
+    pub fn editor_timeline_preview(&self) -> ([f32; 3], Direction) {
         self.editor.timeline_preview()
     }
 
@@ -1618,8 +1618,8 @@ mod tests {
     use eg_game::TimelineSimulationRuntime;
     use eg_mesh::{GizmoAxis, GizmoDragKind};
     use eg_types::{
-        AppPhase, EditorMode, GameCursor, LevelObject, SpawnDirection, TimedTrigger,
-        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget, TRANSFORM_TRIGGER_BLOCK_ID,
+        AppPhase, Direction, EditorMode, GameCursor, LevelObject, TimedTrigger, TimedTriggerAction,
+        TimedTriggerEasing, TimedTriggerTarget, TRANSFORM_TRIGGER_BLOCK_ID,
     };
 
     fn test_level_object(position: [f32; 3]) -> LevelObject {
@@ -2196,13 +2196,13 @@ mod tests {
             assert_eq!(state.editor.timeline.clock.time_seconds, 0.1);
 
             let mut runtime =
-                TimelineSimulationRuntime::new([0.0, 0.0, 0.0], SpawnDirection::Forward, &[], &[]);
+                TimelineSimulationRuntime::new([0.0, 0.0, 0.0], Direction::Forward, &[], &[]);
             runtime.advance_to(1.5);
             state.editor.timeline.snapshot_cache_step_seconds = 0.5;
             state.editor.timeline.snapshot_cache = vec![
                 crate::state::editor_timeline::EditorTimelineSnapshot {
                     position: [0.0, 0.0, 0.0],
-                    direction: SpawnDirection::Forward,
+                    direction: Direction::Forward,
                     is_grounded: true,
                     game_over: false,
                     trail_segment_count: 0,
@@ -2210,7 +2210,7 @@ mod tests {
                 },
                 crate::state::editor_timeline::EditorTimelineSnapshot {
                     position: [0.5, 0.0, 0.0],
-                    direction: SpawnDirection::Forward,
+                    direction: Direction::Forward,
                     is_grounded: true,
                     game_over: false,
                     trail_segment_count: 0,
@@ -2218,7 +2218,7 @@ mod tests {
                 },
                 crate::state::editor_timeline::EditorTimelineSnapshot {
                     position: [1.0, 0.0, 0.0],
-                    direction: SpawnDirection::Forward,
+                    direction: Direction::Forward,
                     is_grounded: true,
                     game_over: false,
                     trail_segment_count: 0,
@@ -2226,7 +2226,7 @@ mod tests {
                 },
                 crate::state::editor_timeline::EditorTimelineSnapshot {
                     position: [1.5, 0.0, 0.0],
-                    direction: SpawnDirection::Right,
+                    direction: Direction::Right,
                     is_grounded: true,
                     game_over: false,
                     trail_segment_count: 0,
@@ -2343,10 +2343,7 @@ mod tests {
             state.phase = AppPhase::Editor;
             state.editor.timeline.clock.duration_seconds = 1.0;
             state.set_editor_timeline_time_seconds(0.125);
-            assert_eq!(
-                state.editor.timeline.preview.direction,
-                SpawnDirection::Forward
-            );
+            assert_eq!(state.editor.timeline.preview.direction, Direction::Forward);
             state.editor.camera.editor_pan = [8.0, -6.0];
             state.editor.camera.editor_target_z = 3.0;
             let original_pan = state.editor.camera.editor_pan;
@@ -2356,10 +2353,7 @@ mod tests {
             state.editor_add_tap();
             assert!(state.editor.runtime.dirty.rebuild_tap_indicators);
             assert!(state.editor.runtime.dirty.rebuild_preview_player);
-            assert_eq!(
-                state.editor.timeline.preview.direction,
-                SpawnDirection::Right
-            );
+            assert_eq!(state.editor.timeline.preview.direction, Direction::Right);
             assert_eq!(state.editor.camera.editor_pan, original_pan);
             assert_eq!(state.editor.camera.editor_target_z, original_target_z);
 
@@ -2367,10 +2361,7 @@ mod tests {
             state.editor_remove_tap();
             assert!(state.editor.runtime.dirty.rebuild_tap_indicators);
             assert!(state.editor.runtime.dirty.rebuild_preview_player);
-            assert_eq!(
-                state.editor.timeline.preview.direction,
-                SpawnDirection::Forward
-            );
+            assert_eq!(state.editor.timeline.preview.direction, Direction::Forward);
             assert_eq!(state.editor.camera.editor_pan, original_pan);
             assert_eq!(state.editor.camera.editor_target_z, original_target_z);
         });
@@ -2425,7 +2416,7 @@ mod tests {
             state.editor.ui.mode = EditorMode::Tapping;
             state.editor.objects.clear();
             state.editor.spawn.position = [0.0, 0.0, 0.0];
-            state.editor.spawn.direction = SpawnDirection::Forward;
+            state.editor.spawn.direction = Direction::Forward;
             state.editor.timeline.clock.duration_seconds = 2.0;
 
             let step_time = 1.0 / eg_game::BASE_PLAYER_SPEED;

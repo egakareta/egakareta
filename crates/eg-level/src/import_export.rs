@@ -53,8 +53,8 @@ pub fn parse_level_egz_import(data: &[u8]) -> Result<(LevelMetadata, Option<Vec<
 #[cfg(test)]
 mod tests {
     use eg_types::{
-        default_sky_color, EditorStateParams, LevelCreatorMetadata, LevelMetadata, LevelObject,
-        MusicMetadata, SpawnDirection, SpawnMetadata,
+        default_sky_color, Direction, EditorStateParams, LevelCreatorMetadata, LevelMetadata,
+        LevelObject, MusicMetadata, SpawnMetadata,
     };
 
     use super::{
@@ -75,7 +75,7 @@ mod tests {
             },
             spawn: SpawnMetadata {
                 position: [1.0, 2.0, 3.0],
-                direction: SpawnDirection::Right,
+                direction: Direction::Right,
             },
             sky_color: default_sky_color(),
             tap_times: vec![0.25, 0.75],

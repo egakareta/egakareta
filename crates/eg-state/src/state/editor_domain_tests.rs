@@ -12,7 +12,7 @@
 
 use super::EditorSubsystem;
 use crate::test_utils::stone;
-use eg_types::SpawnDirection;
+use eg_types::Direction;
 
 fn assert_vec3_approx_eq(actual: [f32; 3], expected: [f32; 3], eps: f32) {
     approx::assert_abs_diff_eq!(actual[0], expected[0], epsilon = eps);
@@ -130,13 +130,13 @@ fn set_spawn_here_copies_cursor_position() {
 #[test]
 fn rotate_spawn_direction_toggles_between_forward_and_right() {
     let mut editor = EditorSubsystem::new_test();
-    assert_eq!(editor.spawn.direction, SpawnDirection::Forward);
+    assert_eq!(editor.spawn.direction, Direction::Forward);
 
     editor.rotate_spawn_direction();
-    assert_eq!(editor.spawn.direction, SpawnDirection::Right);
+    assert_eq!(editor.spawn.direction, Direction::Right);
 
     editor.rotate_spawn_direction();
-    assert_eq!(editor.spawn.direction, SpawnDirection::Forward);
+    assert_eq!(editor.spawn.direction, Direction::Forward);
 }
 
 // ── Selection helpers ──────────────────────────────────────────────────

@@ -9,7 +9,7 @@ use eg_game::{
     simulate_timeline_state, simulate_timeline_state_with_triggers, TimelineSimulationRuntime,
 };
 use eg_types::TimedTrigger;
-use eg_types::{LevelObject, SpawnDirection, TimingPoint};
+use eg_types::{Direction, LevelObject, TimingPoint};
 
 use super::TAP_EPSILON_SECONDS;
 
@@ -32,21 +32,21 @@ fn horizontal_distance(start: [f32; 3], end: [f32; 3]) -> f32 {
 
 pub fn timeline_turn_corner_position(
     previous_position: [f32; 3],
-    previous_direction: SpawnDirection,
+    previous_direction: Direction,
     current_position: [f32; 3],
-    current_direction: SpawnDirection,
+    current_direction: Direction,
 ) -> Option<[f32; 3]> {
     if previous_direction == current_direction {
         return None;
     }
 
     match (previous_direction, current_direction) {
-        (SpawnDirection::Forward, SpawnDirection::Right) => Some([
+        (Direction::Forward, Direction::Right) => Some([
             previous_position[0],
             current_position[1],
             current_position[2],
         ]),
-        (SpawnDirection::Right, SpawnDirection::Forward) => Some([
+        (Direction::Right, Direction::Forward) => Some([
             current_position[0],
             current_position[1],
             previous_position[2],
@@ -72,9 +72,9 @@ pub fn timeline_axis_aligned_segment_split_fraction(
 
 pub fn interpolate_timeline_sample_positions(
     previous_position: [f32; 3],
-    previous_direction: SpawnDirection,
+    previous_direction: Direction,
     current_position: [f32; 3],
-    current_direction: SpawnDirection,
+    current_direction: Direction,
     alpha: f32,
 ) -> [f32; 3] {
     let alpha = alpha.clamp(0.0, 1.0);
@@ -212,11 +212,11 @@ fn timing_division_times(timing_points: &[TimingPoint], duration: f32) -> Vec<f3
 
 pub fn derive_timeline_position(
     spawn: [f32; 3],
-    direction: SpawnDirection,
+    direction: Direction,
     tap_times: &[f32],
     timeline_time_seconds: f32,
     objects: &[LevelObject],
-) -> ([f32; 3], SpawnDirection) {
+) -> ([f32; 3], Direction) {
     let state = derive_timeline_state_with_triggers(
         spawn,
         direction,
@@ -230,7 +230,7 @@ pub fn derive_timeline_position(
 
 pub fn derive_timeline_elapsed_seconds_with_triggers(
     spawn: [f32; 3],
-    direction: SpawnDirection,
+    direction: Direction,
     tap_times: &[f32],
     timeline_time_seconds: f32,
     objects: &[LevelObject],
@@ -249,7 +249,7 @@ pub fn derive_timeline_elapsed_seconds_with_triggers(
 
 pub fn derive_tap_indicator_positions(
     spawn: [f32; 3],
-    direction: SpawnDirection,
+    direction: Direction,
     tap_times: &[f32],
     objects: &[LevelObject],
 ) -> Vec<[f32; 3]> {
@@ -276,7 +276,7 @@ pub fn derive_tap_indicator_positions(
 
 pub fn derive_timing_division_tap_previews(
     spawn: [f32; 3],
-    direction: SpawnDirection,
+    direction: Direction,
     tap_times: &[f32],
     timing_points: &[TimingPoint],
     duration_seconds: f32,
@@ -451,7 +451,7 @@ pub fn tap_time_is_timing_division(
 #[cfg(test)]
 pub fn derive_timeline_time_for_world_target(
     spawn: [f32; 3],
-    direction: SpawnDirection,
+    direction: Direction,
     tap_times: &[f32],
     duration_seconds: f32,
     objects: &[LevelObject],
@@ -552,7 +552,7 @@ pub fn derive_timeline_time_for_world_target(
 
 pub fn derive_timeline_time_for_world_target_near_time(
     spawn: [f32; 3],
-    direction: SpawnDirection,
+    direction: Direction,
     tap_times: &[f32],
     duration_seconds: f32,
     objects: &[LevelObject],
@@ -744,7 +744,7 @@ pub struct TimelineNearSearch {
 
 pub struct TimelineState {
     pub position: [f32; 3],
-    pub direction: SpawnDirection,
+    pub direction: Direction,
     pub elapsed_seconds: f32,
     pub speed: f32,
     pub vertical_velocity: f32,
@@ -753,7 +753,7 @@ pub struct TimelineState {
 
 pub fn derive_timeline_state_with_triggers(
     spawn: [f32; 3],
-    direction: SpawnDirection,
+    direction: Direction,
     tap_times: &[f32],
     timeline_time_seconds: f32,
     objects: &[LevelObject],

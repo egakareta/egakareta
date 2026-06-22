@@ -7,11 +7,11 @@
 */
 use eg_editor_domain::TapDivisionPreview;
 use eg_game::TimelineSimulationRuntime;
-use eg_types::SpawnDirection;
+use eg_types::Direction;
 
 pub struct EditorTimelineSnapshot {
     pub position: [f32; 3],
-    pub direction: SpawnDirection,
+    pub direction: Direction,
     pub is_grounded: bool,
     pub game_over: bool,
     pub trail_segment_count: usize,
@@ -27,7 +27,7 @@ pub struct EditorTimelinePlaybackState {
 
 pub struct EditorTimelinePreviewState {
     pub position: [f32; 3],
-    pub direction: SpawnDirection,
+    pub direction: Direction,
 }
 
 pub struct EditorTimelineClockState {
@@ -70,7 +70,7 @@ impl EditorTimelineState {
             },
             preview: EditorTimelinePreviewState {
                 position: [0.0, 0.0, 0.0],
-                direction: SpawnDirection::Forward,
+                direction: Direction::Forward,
             },
             taps: EditorTimelineTapState {
                 tap_times: Vec::new(),

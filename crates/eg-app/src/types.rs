@@ -17,11 +17,10 @@ mod tests {
         camera_triggers_to_timed_triggers, default_camera_trigger_distance,
         default_camera_trigger_pitch, default_camera_trigger_rotation,
         default_camera_trigger_transition_interval_seconds, timed_triggers_to_camera_triggers,
-        triggers_from_objects, CameraTrigger, CameraTriggerMode, EditorStateParams, GameCursor,
-        LevelCreatorMetadata, LevelMetadata, LevelObject, LevelPreviewCameraMetadata,
-        MusicMetadata, SpawnDirection, SpawnMetadata, TimedTrigger, TimedTriggerAction,
-        TimedTriggerEasing, TimedTriggerTarget, CAMERA_TRIGGER_BLOCK_ID,
-        TRANSFORM_TRIGGER_BLOCK_ID,
+        triggers_from_objects, CameraTrigger, CameraTriggerMode, Direction, EditorStateParams,
+        GameCursor, LevelCreatorMetadata, LevelMetadata, LevelObject, LevelPreviewCameraMetadata,
+        MusicMetadata, SpawnMetadata, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
+        TimedTriggerTarget, CAMERA_TRIGGER_BLOCK_ID, TRANSFORM_TRIGGER_BLOCK_ID,
     };
     use serde_json::json;
 
@@ -59,7 +58,7 @@ mod tests {
         let metadata: LevelMetadata = serde_json::from_str(json).expect("valid metadata");
         assert_eq!(metadata.objects.len(), 1);
         assert_eq!(metadata.objects[0].rotation_degrees, [0.0, 0.0, 0.0]);
-        assert!(matches!(metadata.spawn.direction, SpawnDirection::Forward));
+        assert!(matches!(metadata.spawn.direction, Direction::Forward));
     }
 
     #[test]

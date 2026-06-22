@@ -2298,7 +2298,7 @@ mod tests {
 mod test_utils {
     use eg_state::state::EditorUiViewModel;
     use eg_types::LevelObject;
-    use eg_types::{AppSettings, EditorMode, MusicMetadata, SettingsSection, SpawnDirection};
+    use eg_types::{AppSettings, Direction, EditorMode, MusicMetadata, SettingsSection};
 
     pub fn editor_view_model<'a>(
         app_settings: &'a AppSettings,
@@ -2357,7 +2357,7 @@ mod test_utils {
             tap_times: &[],
             selected_tap: None,
             timeline_preview_position: [0.0, 0.0, 0.0],
-            timeline_preview_direction: SpawnDirection::Forward,
+            timeline_preview_direction: Direction::Forward,
             timing_points: &[],
             playback_speed: 1.0,
             timing_selected_index: None,

@@ -11,11 +11,11 @@ use eg_types::{
     apply_timed_triggers_to_objects, has_simulate_hitboxes_triggers,
     simulate_hitboxes_trigger_pose_signature, TimedTrigger,
 };
-use eg_types::{Direction, LevelObject, SpawnDirection};
+use eg_types::{Direction, LevelObject};
 
 pub struct TimelineSimulationState {
     pub position: [f32; 3],
-    pub direction: SpawnDirection,
+    pub direction: Direction,
     pub elapsed_seconds: f32,
     pub speed: f32,
     pub vertical_velocity: f32,
@@ -44,7 +44,7 @@ const TIMELINE_TAP_EPSILON_SECONDS: f32 = 1.0 / 480.0;
 impl TimelineSimulationRuntime {
     pub fn new(
         spawn_position: [f32; 3],
-        spawn_direction: SpawnDirection,
+        spawn_direction: Direction,
         objects: &[LevelObject],
         tap_times: &[f32],
     ) -> Self {
@@ -59,7 +59,7 @@ impl TimelineSimulationRuntime {
 
     pub fn new_with_triggers(
         spawn_position: [f32; 3],
-        spawn_direction: SpawnDirection,
+        spawn_direction: Direction,
         objects: &[LevelObject],
         tap_times: &[f32],
         triggers: &[TimedTrigger],
@@ -76,7 +76,7 @@ impl TimelineSimulationRuntime {
 
     pub fn new_with_dt(
         spawn_position: [f32; 3],
-        spawn_direction: SpawnDirection,
+        spawn_direction: Direction,
         objects: &[LevelObject],
         tap_times: &[f32],
         simulation_dt: f32,
@@ -93,7 +93,7 @@ impl TimelineSimulationRuntime {
 
     pub fn new_with_dt_and_triggers(
         spawn_position: [f32; 3],
-        spawn_direction: SpawnDirection,
+        spawn_direction: Direction,
         objects: &[LevelObject],
         tap_times: &[f32],
         simulation_dt: f32,
@@ -308,8 +308,8 @@ impl TimelineSimulationRuntime {
         TimelineSimulationState {
             position: self.game.position,
             direction: match self.game.direction {
-                Direction::Forward => SpawnDirection::Forward,
-                Direction::Right => SpawnDirection::Right,
+                Direction::Forward => Direction::Forward,
+                Direction::Right => Direction::Right,
             },
             elapsed_seconds: self.elapsed_seconds,
             speed: self.game.speed,
@@ -321,7 +321,7 @@ impl TimelineSimulationRuntime {
 
 pub fn simulate_timeline_state(
     spawn_position: [f32; 3],
-    spawn_direction: SpawnDirection,
+    spawn_direction: Direction,
     objects: &[LevelObject],
     tap_times: &[f32],
     timeline_time_seconds: f32,
@@ -335,7 +335,7 @@ pub fn simulate_timeline_state(
 
 pub fn simulate_timeline_state_with_triggers(
     spawn_position: [f32; 3],
-    spawn_direction: SpawnDirection,
+    spawn_direction: Direction,
     objects: &[LevelObject],
     tap_times: &[f32],
     triggers: &[TimedTrigger],

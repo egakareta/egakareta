@@ -30,9 +30,9 @@ use eg_mesh::{
 };
 use eg_render::EditorOutlineInstance;
 use eg_types::{
-    apply_simulate_hitboxes_triggers_to_objects, AppPhase, BlockRenderProfile, EditorMode,
-    EditorPlaceMode, LevelObject, SpawnDirection, TimedTrigger, TimedTriggerAction,
-    TimedTriggerTarget, TimingPoint, TRANSFORM_TRIGGER_BLOCK_ID,
+    apply_simulate_hitboxes_triggers_to_objects, AppPhase, BlockRenderProfile, Direction,
+    EditorMode, EditorPlaceMode, LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerTarget,
+    TimingPoint, TRANSFORM_TRIGGER_BLOCK_ID,
 };
 
 const SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD: usize = 700;
@@ -636,7 +636,7 @@ impl State {
     pub(super) fn apply_spawn_to_game(
         &mut self,
         position: [f32; 3],
-        direction: SpawnDirection,
+        direction: Direction,
         speed: Option<f32>,
     ) {
         self.gameplay.state.apply_spawn(position, direction);
@@ -649,7 +649,7 @@ impl State {
     pub(super) fn apply_spawn_exact_to_game(
         &mut self,
         position: [f32; 3],
-        direction: SpawnDirection,
+        direction: Direction,
         speed: Option<f32>,
     ) {
         self.gameplay.state.apply_spawn_exact(position, direction);
@@ -679,7 +679,7 @@ impl State {
     pub(super) fn apply_editor_timeline_preview_state(
         &mut self,
         position: [f32; 3],
-        direction: SpawnDirection,
+        direction: Direction,
     ) {
         self.editor.timeline.preview.position = position;
         self.editor.timeline.preview.direction = direction;
@@ -1008,7 +1008,7 @@ impl State {
         puffin::profile_scope!("SpawnMarkerMesh");
         let vertices = build_spawn_marker_vertices(
             self.editor.spawn.position,
-            matches!(self.editor.spawn.direction, SpawnDirection::Right),
+            matches!(self.editor.spawn.direction, Direction::Right),
         );
         self.render.meshes.spawn_marker.replace_with_vertices(
             &self.render.gpu.device,
@@ -1400,7 +1400,7 @@ impl State {
     pub(super) fn rebuild_editor_preview_player_vertices_for_state(
         &mut self,
         position: [f32; 3],
-        direction: SpawnDirection,
+        direction: Direction,
     ) {
         self.editor.timeline.preview.position = position;
         self.editor.timeline.preview.direction = direction;
@@ -2120,20 +2120,15 @@ mod tests {
             state.editor.ui.cursor = [0.0, 0.0, 0.0];
 
             state.editor.timeline.playback.playing = false;
-            state.apply_editor_timeline_preview_state(
-                [1.2, 2.1, 3.8],
-                eg_types::SpawnDirection::Right,
-            );
+            state.apply_editor_timeline_preview_state([1.2, 2.1, 3.8], eg_types::Direction::Right);
             assert_eq!(state.editor.ui.cursor, [1.0, 2.0, 4.0]);
             assert_eq!(state.editor.camera.editor_pan, [1.7, 4.3]);
             assert_eq!(state.editor.camera.editor_target_z, 2.1);
 
             state.editor.timeline.playback.playing = true;
             state.editor.ui.cursor = [9.0, 9.0, 9.0];
-            state.apply_editor_timeline_preview_state(
-                [4.2, 1.0, 2.2],
-                eg_types::SpawnDirection::Forward,
-            );
+            state
+                .apply_editor_timeline_preview_state([4.2, 1.0, 2.2], eg_types::Direction::Forward);
             assert_eq!(state.editor.ui.cursor, [9.0, 9.0, 9.0]);
             assert_eq!(state.editor.camera.editor_pan, [4.7, 2.7]);
             assert_eq!(state.editor.camera.editor_target_z, 1.0);

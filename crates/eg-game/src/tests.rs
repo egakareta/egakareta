@@ -10,7 +10,7 @@ use super::simulation::{
     simulate_timeline_state, simulate_timeline_state_with_triggers, TimelineSimulationRuntime,
 };
 use super::state::GameState;
-use eg_types::{LevelObject, SpawnDirection};
+use eg_types::{Direction, LevelObject};
 use eg_types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
 
 #[test]
@@ -313,23 +313,21 @@ fn level_completes_at_configured_duration() {
 
 #[test]
 fn timeline_negative_time_clamps_to_zero() {
-    let snapshot =
-        simulate_timeline_state([0.0, 0.0, 0.0], SpawnDirection::Forward, &[], &[], -2.0);
+    let snapshot = simulate_timeline_state([0.0, 0.0, 0.0], Direction::Forward, &[], &[], -2.0);
 
     approx::assert_abs_diff_eq!(snapshot.position[0], 0.5, epsilon = 1e-6);
     approx::assert_abs_diff_eq!(snapshot.position[1], 0.0, epsilon = 1e-6);
     approx::assert_abs_diff_eq!(snapshot.position[2], 0.5, epsilon = 1e-6);
-    assert!(matches!(snapshot.direction, SpawnDirection::Forward));
+    assert!(matches!(snapshot.direction, Direction::Forward));
     approx::assert_abs_diff_eq!(snapshot.elapsed_seconds, 0.0, epsilon = 1e-6);
 }
 
 #[test]
 fn timeline_tap_at_zero_turns_before_movement() {
     let dt = 1.0 / BASE_PLAYER_SPEED;
-    let snapshot =
-        simulate_timeline_state([0.0, 0.0, 0.0], SpawnDirection::Forward, &[], &[0.0], dt);
+    let snapshot = simulate_timeline_state([0.0, 0.0, 0.0], Direction::Forward, &[], &[0.0], dt);
 
-    assert!(matches!(snapshot.direction, SpawnDirection::Right));
+    assert!(matches!(snapshot.direction, Direction::Right));
     approx::assert_abs_diff_eq!(snapshot.position[0], 1.5, epsilon = 0.05);
     approx::assert_abs_diff_eq!(snapshot.position[2], 0.5, epsilon = 0.05);
     approx::assert_abs_diff_eq!(snapshot.elapsed_seconds, dt, epsilon = 1e-6);
@@ -340,13 +338,13 @@ fn timeline_tap_at_nonzero_time_turns_at_exact_boundary() {
     let tap_time = 1.0 / BASE_PLAYER_SPEED;
     let snapshot = simulate_timeline_state(
         [0.0, 0.0, 0.0],
-        SpawnDirection::Forward,
+        Direction::Forward,
         &[],
         &[tap_time],
         tap_time,
     );
 
-    assert!(matches!(snapshot.direction, SpawnDirection::Right));
+    assert!(matches!(snapshot.direction, Direction::Right));
     approx::assert_abs_diff_eq!(snapshot.position[0], 0.5, epsilon = 1e-5);
     approx::assert_abs_diff_eq!(snapshot.position[2], 1.5, epsilon = 1e-5);
     approx::assert_abs_diff_eq!(snapshot.elapsed_seconds, tap_time, epsilon = 1e-6);
@@ -354,7 +352,7 @@ fn timeline_tap_at_nonzero_time_turns_at_exact_boundary() {
     let next_tick = tap_time + 1.0 / 240.0;
     let after_turn = simulate_timeline_state(
         [0.0, 0.0, 0.0],
-        SpawnDirection::Forward,
+        Direction::Forward,
         &[],
         &[tap_time],
         next_tick,
@@ -372,7 +370,7 @@ fn timeline_tap_at_nonzero_time_turns_at_exact_boundary() {
 fn timeline_incremental_runtime_matches_direct_simulation() {
     let mut runtime = TimelineSimulationRuntime::new(
         [0.0, 0.0, 0.0],
-        SpawnDirection::Forward,
+        Direction::Forward,
         &[],
         &[0.375, 0.125, 0.25],
     );
@@ -384,7 +382,7 @@ fn timeline_incremental_runtime_matches_direct_simulation() {
     let incremental = runtime.snapshot();
     let direct = simulate_timeline_state(
         [0.0, 0.0, 0.0],
-        SpawnDirection::Forward,
+        Direction::Forward,
         &[],
         &[0.375, 0.125, 0.25],
         0.6,
@@ -395,8 +393,7 @@ fn timeline_incremental_runtime_matches_direct_simulation() {
     approx::assert_abs_diff_eq!(incremental.position[2], direct.position[2], epsilon = 0.02);
     assert!(matches!(
         (incremental.direction, direct.direction),
-        (SpawnDirection::Forward, SpawnDirection::Forward)
-            | (SpawnDirection::Right, SpawnDirection::Right)
+        (Direction::Forward, Direction::Forward) | (Direction::Right, Direction::Right)
     ));
     approx::assert_abs_diff_eq!(
         incremental.elapsed_seconds,
@@ -435,7 +432,7 @@ fn timeline_trigger_hitbox_mode_does_not_resurrect_consumed_portals() {
 
     let mut runtime = TimelineSimulationRuntime::new_with_triggers(
         [0.0, 0.0, 0.0],
-        SpawnDirection::Forward,
+        Direction::Forward,
         &objects,
         &[],
         &triggers,
@@ -474,12 +471,11 @@ fn timeline_state_with_disabled_trigger_hitboxes_matches_plain_simulation() {
         },
     }];
 
-    let plain =
-        simulate_timeline_state([0.0, 0.0, 0.0], SpawnDirection::Forward, &objects, &[], 0.5);
+    let plain = simulate_timeline_state([0.0, 0.0, 0.0], Direction::Forward, &objects, &[], 0.5);
 
     let trigger_disabled = simulate_timeline_state_with_triggers(
         [0.0, 0.0, 0.0],
-        SpawnDirection::Forward,
+        Direction::Forward,
         &objects,
         &[],
         &triggers,

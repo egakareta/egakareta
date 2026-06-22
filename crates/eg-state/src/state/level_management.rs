@@ -19,8 +19,8 @@ use eg_level::{
 use eg_platform::io::{log_platform_error, read_editor_music_bytes};
 use eg_platform::services::{trigger_level_export, trigger_level_import};
 use eg_types::{
-    default_sky_color, EditorStateParams, LevelCreatorMetadata, LevelMetadata, LevelObject,
-    LevelPreviewCameraMetadata, MusicMetadata, SpawnDirection, SpawnMetadata,
+    default_sky_color, Direction, EditorStateParams, LevelCreatorMetadata, LevelMetadata,
+    LevelObject, LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata,
 };
 use eg_types::{
     AppPhase, AppSettings, EditorMode, KeyChord, SettingsSection,
@@ -698,8 +698,8 @@ fn auto_menu_preview_camera_from_spawn(spawn: &SpawnMetadata) -> ([f32; 3], [f32
 
     let spawn_position = Vec3::from_array(spawn.position);
     let forward = match spawn.direction {
-        SpawnDirection::Forward => Vec3::new(0.0, 0.0, 1.0),
-        SpawnDirection::Right => Vec3::new(1.0, 0.0, 0.0),
+        Direction::Forward => Vec3::new(0.0, 0.0, 1.0),
+        Direction::Right => Vec3::new(1.0, 0.0, 0.0),
     };
     let side = Vec3::new(forward.z, 0.0, -forward.x);
     let target = spawn_position
@@ -720,8 +720,8 @@ mod tests {
     use crate::state::editor_command::EditorCommand;
     use eg_audio::audio::runtime_asset_source_key;
     use eg_types::{
-        default_sky_color, EditorStateParams, LevelCreatorMetadata, LevelMetadata, LevelObject,
-        LevelPreviewCameraMetadata, MusicMetadata, SpawnDirection, SpawnMetadata,
+        default_sky_color, Direction, EditorStateParams, LevelCreatorMetadata, LevelMetadata,
+        LevelObject, LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata,
     };
     use eg_types::{
         AppPhase, KeyChord, SettingsSection, DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
@@ -858,7 +858,7 @@ mod tests {
             state.enter_editor_phase("KnownLevel".to_string());
             state.editor.objects = vec![test_object([1.0, 0.0, 1.0], "core/stone")];
             state.editor.spawn.position = [3.0, 0.0, 2.0];
-            state.editor.spawn.direction = SpawnDirection::Right;
+            state.editor.spawn.direction = Direction::Right;
 
             let before_name = state.editor_level_name();
             let before_objects = state.editor.objects.clone();
@@ -1152,14 +1152,14 @@ mod tests {
     fn auto_menu_preview_camera_positions_follow_spawn_direction() {
         let (forward_eye, forward_target) = auto_menu_preview_camera_from_spawn(&SpawnMetadata {
             position: [2.0, 3.0, 4.0],
-            direction: SpawnDirection::Forward,
+            direction: Direction::Forward,
         });
         assert_eq!(forward_eye, [14.0, 17.0, -16.0]);
         assert_eq!(forward_target, [2.0, 4.0, 14.0]);
 
         let (right_eye, right_target) = auto_menu_preview_camera_from_spawn(&SpawnMetadata {
             position: [2.0, 3.0, 4.0],
-            direction: SpawnDirection::Right,
+            direction: Direction::Right,
         });
         assert_eq!(right_eye, [-18.0, 17.0, -8.0]);
         assert_eq!(right_target, [12.0, 4.0, 4.0]);

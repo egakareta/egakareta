@@ -30,7 +30,7 @@ mod tests {
 
     fn assert_near_solver_hits_target(
         spawn: [f32; 3],
-        direction: eg_types::SpawnDirection,
+        direction: eg_types::Direction,
         tap_times: &[f32],
         target: [f32; 3],
         seed_time: f32,
@@ -139,12 +139,12 @@ mod tests {
     #[test]
     fn toggle_spawn_direction_cycles_between_supported_axes() {
         assert_eq!(
-            toggle_spawn_direction(eg_types::SpawnDirection::Forward),
-            eg_types::SpawnDirection::Right
+            toggle_spawn_direction(eg_types::Direction::Forward),
+            eg_types::Direction::Right
         );
         assert_eq!(
-            toggle_spawn_direction(eg_types::SpawnDirection::Right),
-            eg_types::SpawnDirection::Forward
+            toggle_spawn_direction(eg_types::Direction::Right),
+            eg_types::Direction::Forward
         );
     }
 
@@ -154,9 +154,9 @@ mod tests {
         let current = [1.5, 0.0, 1.56];
         let corner = timeline_turn_corner_position(
             previous,
-            eg_types::SpawnDirection::Right,
+            eg_types::Direction::Right,
             current,
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
         )
         .expect("right-to-forward turn should have a corner");
 
@@ -168,9 +168,9 @@ mod tests {
 
         let first_leg = interpolate_timeline_sample_positions(
             previous,
-            eg_types::SpawnDirection::Right,
+            eg_types::Direction::Right,
             current,
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             0.25,
         );
         assert!((first_leg[0] - 1.47).abs() < 1e-5);
@@ -178,9 +178,9 @@ mod tests {
 
         let second_leg = interpolate_timeline_sample_positions(
             previous,
-            eg_types::SpawnDirection::Right,
+            eg_types::Direction::Right,
             current,
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             0.75,
         );
         assert!((second_leg[0] - 1.5).abs() < 1e-5);
@@ -191,9 +191,9 @@ mod tests {
     fn timeline_interpolation_handles_straight_and_degenerate_segments() {
         let straight = interpolate_timeline_sample_positions(
             [0.0, 0.0, 0.0],
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             [0.0, 0.0, 10.0],
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             0.25,
         );
 
@@ -298,7 +298,7 @@ mod tests {
             },
             spawn: SpawnMetadata {
                 position: [2.0, 3.0, 1.0],
-                direction: eg_types::SpawnDirection::Right,
+                direction: eg_types::Direction::Right,
             },
             tap_times: vec![0.8, 0.2],
             timeline_time_seconds: 0.5,
@@ -353,7 +353,7 @@ mod tests {
         assert!((transition.spawn_position[2] - 1.5).abs() < 0.1);
         assert!(matches!(
             transition.spawn_direction,
-            eg_types::SpawnDirection::Forward
+            eg_types::Direction::Forward
         ));
         assert!((transition.spawn_vertical_velocity - 0.0).abs() < f32::EPSILON);
         assert!(transition.spawn_is_grounded);
@@ -429,7 +429,7 @@ mod tests {
             sky_color: [0.2, 0.3, 0.4],
             spawn: SpawnMetadata {
                 position: [3.0, 4.0, 1.0],
-                direction: eg_types::SpawnDirection::Right,
+                direction: eg_types::Direction::Right,
             },
             objects: vec![LevelObject {
                 position: [1.0, 2.0, 0.0],
@@ -448,7 +448,7 @@ mod tests {
         assert_eq!(transition.spawn_position, [3.0, 4.0, 1.0]);
         assert!(matches!(
             transition.spawn_direction,
-            eg_types::SpawnDirection::Right
+            eg_types::Direction::Right
         ));
         assert_eq!(transition.level_duration_seconds, 16.0);
         assert_eq!(transition.objects.len(), 1);
@@ -459,7 +459,7 @@ mod tests {
         let target = [0.5, 0.0, 4.5];
         let time = derive_timeline_time_for_world_target(
             [0.0, 0.0, 0.0],
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             &[],
             8.0,
             &[],
@@ -474,7 +474,7 @@ mod tests {
         let target = [2.5, 0.0, 0.5];
         let time = derive_timeline_time_for_world_target(
             [0.0, 0.0, 0.0],
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             &[0.0],
             4.0,
             &[],
@@ -488,7 +488,7 @@ mod tests {
     fn derives_timeline_time_clamps_zero_duration() {
         let time = derive_timeline_time_for_world_target(
             [0.0, 0.0, 0.0],
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             &[],
             0.0,
             &[],
@@ -504,7 +504,7 @@ mod tests {
         let target = [10.0, 0.0, 0.5];
         let time = derive_timeline_time_for_world_target(
             [0.0, 0.0, 0.0],
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             &taps,
             4.0,
             &[],
@@ -523,7 +523,7 @@ mod tests {
         let target = [0.5, 0.0, 1.5];
         let time = derive_timeline_time_for_world_target(
             [0.0, 0.0, 0.0],
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             &taps,
             6.0,
             &[],
@@ -538,7 +538,7 @@ mod tests {
         let target = [0.5, 0.0, 4.5];
         let time = derive_timeline_time_for_world_target_near_time(
             [0.0, 0.0, 0.0],
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             &[],
             8.0,
             &[],
@@ -560,7 +560,7 @@ mod tests {
         let target = [0.5, 0.0, 4.5];
         let time = assert_near_solver_hits_target(
             [0.0, 0.0, 0.0],
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             &[],
             target,
             0.67,
@@ -576,7 +576,7 @@ mod tests {
         let target = [2.5, 0.0, 0.5];
         let time = assert_near_solver_hits_target(
             [0.0, 0.0, 0.0],
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             &[0.0],
             target,
             0.35,
@@ -601,7 +601,7 @@ mod tests {
         let target = [0.5, 0.0, 3.5];
         let time = derive_timeline_time_for_world_target_near_time(
             [0.0, 0.0, 0.0],
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             &[],
             8.0,
             &objects,
@@ -615,7 +615,7 @@ mod tests {
         assert!((time - 0.375).abs() < 0.02, "unexpected time: {time}");
         let (position, _) = derive_timeline_position(
             [0.0, 0.0, 0.0],
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             &[],
             time,
             &objects,
@@ -627,7 +627,7 @@ mod tests {
     fn near_solver_handles_seed_past_short_audio_duration() {
         let time = derive_timeline_time_for_world_target_near_time(
             [0.0, 0.0, 0.0],
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             &[],
             11.080078,
             &[],
@@ -645,7 +645,7 @@ mod tests {
     fn near_solver_treats_non_finite_duration_as_zero() {
         let time = derive_timeline_time_for_world_target_near_time(
             [0.0, 0.0, 0.0],
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             &[],
             f32::NAN,
             &[],
@@ -666,7 +666,7 @@ mod tests {
         let target = [0.5, 0.0, 8.5];
         let time = derive_timeline_time_for_world_target_near_time(
             [0.0, 0.0, 0.0],
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             &[],
             8.0,
             &[],
@@ -685,7 +685,7 @@ mod tests {
         let target = [2.5, 0.0, 0.5];
         let time = derive_timeline_time_for_world_target_near_time(
             [0.0, 0.0, 0.0],
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             &[0.0],
             4.0,
             &[],
@@ -707,7 +707,7 @@ mod tests {
         let taps = [0.4, 0.1, 0.4, 0.7];
         let positions = derive_tap_indicator_positions(
             [0.0, 0.0, 0.0],
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             &taps,
             &[],
         );
@@ -717,7 +717,7 @@ mod tests {
         for tap in sorted_taps {
             let (position, _) = derive_timeline_position(
                 [0.0, 0.0, 0.0],
-                eg_types::SpawnDirection::Forward,
+                eg_types::Direction::Forward,
                 &sorted_taps,
                 tap,
                 &[],
@@ -732,7 +732,7 @@ mod tests {
     fn tap_indicator_positions_match_exact_timeline_per_tap() {
         let taps = [0.0, 0.125, 0.25, 0.375, 0.5, 0.625];
         let spawn = [0.0, 0.0, 0.0];
-        let direction = eg_types::SpawnDirection::Forward;
+        let direction = eg_types::Direction::Forward;
 
         let derived = derive_tap_indicator_positions(spawn, direction, &taps, &[]);
 
@@ -761,7 +761,7 @@ mod tests {
 
         let previews = derive_timing_division_tap_previews(
             [0.0, 0.0, 0.0],
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             &[],
             &timing_points,
             0.35,
@@ -851,7 +851,7 @@ mod tests {
 
         let previews = derive_timing_division_tap_previews(
             [0.0, 0.0, 0.0],
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             &[0.5],
             &timing_points,
             1.0,
@@ -887,7 +887,7 @@ mod tests {
 
         let previews = derive_timing_division_tap_previews(
             [0.0, 1.0, 0.0],
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             &[],
             &timing_points,
             0.35,
@@ -931,7 +931,7 @@ mod tests {
 
         let previews = derive_timing_division_tap_previews(
             [0.0, 0.0, 0.0],
-            eg_types::SpawnDirection::Forward,
+            eg_types::Direction::Forward,
             &[],
             &timing_points,
             120.0,

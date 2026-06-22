@@ -171,35 +171,20 @@ pub fn is_default_timed_trigger_target(value: &TimedTriggerTarget) -> bool {
     matches!(value, TimedTriggerTarget::Camera)
 }
 
-#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Direction {
-    Forward,
-    Right,
-}
-
 #[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
-pub enum SpawnDirection {
+pub enum Direction {
     #[default]
     Forward,
     Right,
 }
 
-impl From<SpawnDirection> for Direction {
-    fn from(value: SpawnDirection) -> Self {
-        match value {
-            SpawnDirection::Forward => Direction::Forward,
-            SpawnDirection::Right => Direction::Right,
-        }
-    }
-}
-
-pub fn is_default_spawn_direction(value: &SpawnDirection) -> bool {
-    matches!(value, SpawnDirection::Forward)
+pub fn is_default_direction(value: &Direction) -> bool {
+    matches!(value, Direction::Forward)
 }
 
 pub fn is_default_spawn_metadata(value: &SpawnMetadata) -> bool {
-    is_default_spawn_position(&value.position) && is_default_spawn_direction(&value.direction)
+    is_default_spawn_position(&value.position) && is_default_direction(&value.direction)
 }
 
 pub fn normalize_level_block_id(block_id: &str) -> String {
@@ -445,15 +430,15 @@ pub struct SpawnMetadata {
         skip_serializing_if = "is_default_spawn_position"
     )]
     pub position: [f32; 3],
-    #[serde(default, skip_serializing_if = "is_default_spawn_direction")]
-    pub direction: SpawnDirection,
+    #[serde(default, skip_serializing_if = "is_default_direction")]
+    pub direction: Direction,
 }
 
 impl Default for SpawnMetadata {
     fn default() -> Self {
         Self {
             position: default_spawn_position(),
-            direction: SpawnDirection::Forward,
+            direction: Direction::Forward,
         }
     }
 }

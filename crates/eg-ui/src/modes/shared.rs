@@ -8,7 +8,7 @@
 use eg_state::commands::AppCommand;
 use eg_state::state::editor_command::EditorCommand;
 use eg_state::state::EditorUiViewModel;
-use eg_types::{EditorMode, SpawnDirection};
+use eg_types::{Direction, EditorMode};
 
 const PROPERTY_POPUP_MARGIN: f32 = 12.0;
 const MODE_SELECTOR_WIDTH: f32 = 48.0;
@@ -250,8 +250,8 @@ pub(crate) fn show_player_camera_status_row(ui: &mut egui::Ui, view: &EditorUiVi
     let position = view.timeline_preview_position;
     let direction = view.timeline_preview_direction;
     let direction_label = match direction {
-        SpawnDirection::Forward => "Forward",
-        SpawnDirection::Right => "Right",
+        Direction::Forward => "Forward",
+        Direction::Right => "Right",
     };
     ui.horizontal(|ui| {
         ui.label(format!(
@@ -280,12 +280,12 @@ mod tests {
     use crate::test_utils::editor_view_model;
     use eg_state::commands::AppCommand;
     use eg_state::state::EditorUiViewModel;
-    use eg_types::{AppSettings, EditorMode, MusicMetadata, SpawnDirection};
+    use eg_types::{AppSettings, Direction, EditorMode, MusicMetadata};
 
     fn make_view<'a>(
         app_settings: &'a AppSettings,
         music_metadata: &'a MusicMetadata,
-        preview_direction: SpawnDirection,
+        preview_direction: Direction,
         mode: EditorMode,
     ) -> EditorUiViewModel<'a> {
         let mut view = editor_view_model(app_settings, music_metadata);
@@ -327,13 +327,13 @@ mod tests {
         let forward_view = make_view(
             &app_settings,
             &music_metadata,
-            SpawnDirection::Forward,
+            Direction::Forward,
             EditorMode::Select,
         );
         let right_view = make_view(
             &app_settings,
             &music_metadata,
-            SpawnDirection::Right,
+            Direction::Right,
             EditorMode::Select,
         );
 
@@ -353,7 +353,7 @@ mod tests {
         let view = make_view(
             &app_settings,
             &music_metadata,
-            SpawnDirection::Forward,
+            Direction::Forward,
             EditorMode::Select,
         );
         let mut commands = Vec::<AppCommand>::new();
@@ -373,7 +373,7 @@ mod tests {
         let view = make_view(
             &app_settings,
             &music_metadata,
-            SpawnDirection::Forward,
+            Direction::Forward,
             EditorMode::Move,
         );
         let mut commands = Vec::<AppCommand>::new();
@@ -391,7 +391,7 @@ mod tests {
         let view = make_view(
             &app_settings,
             &music_metadata,
-            SpawnDirection::Forward,
+            Direction::Forward,
             EditorMode::Scale,
         );
         let mut commands = Vec::<AppCommand>::new();
@@ -409,7 +409,7 @@ mod tests {
         let view = make_view(
             &app_settings,
             &music_metadata,
-            SpawnDirection::Forward,
+            Direction::Forward,
             EditorMode::Rotate,
         );
         let mut commands = Vec::<AppCommand>::new();

@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_types::SpawnDirection;
+use eg_types::Direction;
 
 pub const TAP_EPSILON_SECONDS: f32 = 0.01;
 
@@ -56,9 +56,9 @@ pub fn clear_taps_with_indicators(
     tap_indicator_positions.clear();
 }
 
-pub fn toggle_spawn_direction(direction: SpawnDirection) -> SpawnDirection {
+pub fn toggle_spawn_direction(direction: Direction) -> Direction {
     match direction {
-        SpawnDirection::Forward => SpawnDirection::Right,
-        SpawnDirection::Right => SpawnDirection::Forward,
+        Direction::Forward => Direction::Right,
+        Direction::Right => Direction::Forward,
     }
 }

@@ -11,7 +11,7 @@ use super::physics::{aabb_overlaps_cuboid_xz, BASE_PLAYER_SPEED};
 use super::spatial::SpatialGrid;
 use eg_block_geometry::hitbox_cuboids;
 use eg_blocks::resolve_block_definition;
-use eg_types::{BlockCollision, Direction, LevelObject, PlayerLevelProgress, SpawnDirection};
+use eg_types::{BlockCollision, Direction, LevelObject, PlayerLevelProgress};
 
 const PLAYER_WIDTH: f32 = 0.8;
 const PLAYER_HEIGHT: f32 = 0.8;
@@ -196,7 +196,7 @@ impl GameState {
     fn apply_spawn_internal(
         &mut self,
         position: [f32; 3],
-        direction: SpawnDirection,
+        direction: Direction,
         center_to_grid: bool,
     ) {
         let spawn_position = if center_to_grid {
@@ -221,11 +221,11 @@ impl GameState {
         self.trail_segments = vec![vec![spawn_position]];
     }
 
-    pub fn apply_spawn(&mut self, position: [f32; 3], direction: SpawnDirection) {
+    pub fn apply_spawn(&mut self, position: [f32; 3], direction: Direction) {
         self.apply_spawn_internal(position, direction, true);
     }
 
-    pub fn apply_spawn_exact(&mut self, position: [f32; 3], direction: SpawnDirection) {
+    pub fn apply_spawn_exact(&mut self, position: [f32; 3], direction: Direction) {
         self.apply_spawn_internal(position, direction, false);
     }
 

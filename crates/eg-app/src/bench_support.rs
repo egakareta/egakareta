@@ -12,7 +12,7 @@ use std::hint::black_box;
 use eg_game::{trigger_transformed_objects_at_time, TimelineSimulationRuntime};
 use eg_mesh::{build_block_geometry, build_chunked_block_mesh, build_trail_vertices_with_alpha};
 use eg_types::{
-    LevelObject, SpawnDirection, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
+    Direction, LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
     TimedTriggerTarget,
 };
 
@@ -128,7 +128,7 @@ pub fn advance_timeline_preview(
     let tap_times = benchmark_tap_times(target_time_seconds);
     let mut runtime = TimelineSimulationRuntime::new_with_triggers(
         [0.0, 2.0, 0.0],
-        SpawnDirection::Forward,
+        Direction::Forward,
         black_box(&objects),
         black_box(&tap_times),
         black_box(&triggers),
@@ -215,7 +215,7 @@ fn scrub_timeline_no_playback(
         if needs_reset {
             runtime = Some(TimelineSimulationRuntime::new_with_triggers(
                 [0.0, 2.0, 0.0],
-                SpawnDirection::Forward,
+                Direction::Forward,
                 black_box(&objects),
                 black_box(&tap_times),
                 black_box(&triggers),
@@ -274,7 +274,7 @@ impl TimelineScrubBenchmarkState {
         let mut trail_points = Vec::new();
         let trail_segment_starts = vec![0];
         let mut tap_index = 0;
-        let mut direction = SpawnDirection::Forward;
+        let mut direction = Direction::Forward;
         for index in 0..sample_count {
             let sample_time = (index as f32 * step_seconds).min(duration_seconds);
             let position = [
@@ -288,8 +288,8 @@ impl TimelineScrubBenchmarkState {
             while tap_index < tap_times.len() && tap_times[tap_index] <= sample_time {
                 push_distinct_cached_trail_point(&mut trail_points, position);
                 direction = match direction {
-                    SpawnDirection::Forward => SpawnDirection::Right,
-                    SpawnDirection::Right => SpawnDirection::Forward,
+                    Direction::Forward => Direction::Right,
+                    Direction::Right => Direction::Forward,
                 };
                 tap_index += 1;
             }

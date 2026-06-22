@@ -20,7 +20,7 @@ use eg_mesh::{
 use eg_platform::state_host::PlatformInstant;
 use eg_types::{
     apply_simulate_hitboxes_triggers_to_objects, AppPhase, BlockEffectColorMode, CameraUniform,
-    ColorSpaceUniform, Direction, EditorMode, LevelObject, SpawnDirection,
+    ColorSpaceUniform, Direction, EditorMode, LevelObject,
 };
 
 const DEAD_SFX: &[u8] = include_bytes!(concat!(
@@ -520,8 +520,8 @@ impl State {
         if !snapshot.is_grounded {
             let head_length = 0.22;
             let dir = match snapshot.direction {
-                SpawnDirection::Forward => [0.0, 1.0],
-                SpawnDirection::Right => [1.0, 0.0],
+                Direction::Forward => [0.0, 1.0],
+                Direction::Right => [1.0, 0.0],
             };
             let head_start = [
                 snapshot.position[0] - dir[0] * head_length,
@@ -1092,7 +1092,7 @@ impl State {
 mod tests {
     use super::State;
     use eg_game::{GameState, TimelineSimulationRuntime};
-    use eg_types::{AppPhase, Direction, EditorMode, LevelObject, SpawnDirection, TimingPoint};
+    use eg_types::{AppPhase, Direction, EditorMode, LevelObject, TimingPoint};
     use eg_types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
 
     fn sample_object() -> LevelObject {
@@ -1146,7 +1146,7 @@ mod tests {
         state
             .gameplay
             .state
-            .apply_spawn_exact([0.0, 0.0, 0.0], SpawnDirection::Forward);
+            .apply_spawn_exact([0.0, 0.0, 0.0], Direction::Forward);
         state.gameplay.state.started = true;
         state.gameplay.state.speed = speed;
         state.clear_pending_gameplay_inputs();
@@ -1302,7 +1302,7 @@ mod tests {
     #[test]
     fn playback_trail_vertices_include_airborne_head_segment() {
         let grounded_runtime =
-            TimelineSimulationRuntime::new([0.0, 0.0, 0.0], SpawnDirection::Forward, &[], &[]);
+            TimelineSimulationRuntime::new([0.0, 0.0, 0.0], Direction::Forward, &[], &[]);
         assert!(grounded_runtime.is_grounded());
         let grounded_vertices = State::build_editor_playback_trail_vertices(&grounded_runtime);
 
@@ -1316,7 +1316,7 @@ mod tests {
             ..LevelObject::default()
         }];
         let mut airborne_runtime =
-            TimelineSimulationRuntime::new([0.0, 3.0, 0.0], SpawnDirection::Forward, &support, &[]);
+            TimelineSimulationRuntime::new([0.0, 3.0, 0.0], Direction::Forward, &support, &[]);
         airborne_runtime.advance_to(1.0 / eg_game::BASE_PLAYER_SPEED + 0.01);
         assert!(!airborne_runtime.is_grounded());
         let airborne_vertices = State::build_editor_playback_trail_vertices(&airborne_runtime);
@@ -1359,7 +1359,7 @@ mod tests {
                 .map(
                     |index| crate::state::editor_timeline::EditorTimelineSnapshot {
                         position: [index as f32 * 0.1, 0.0, 0.0],
-                        direction: SpawnDirection::Forward,
+                        direction: Direction::Forward,
                         is_grounded: true,
                         game_over: false,
                         trail_segment_count: 1,
@@ -1384,7 +1384,7 @@ mod tests {
             state.phase = AppPhase::Editor;
             state.editor.objects.clear();
             state.editor.spawn.position = [0.0, 0.0, 0.0];
-            state.editor.spawn.direction = SpawnDirection::Forward;
+            state.editor.spawn.direction = Direction::Forward;
             state.editor.timeline.clock.duration_seconds = 2.0;
             state.editor.invalidate_samples();
             state.rebuild_editor_timeline_snapshot_cache_if_needed();
