@@ -118,17 +118,6 @@ mod tests {
     use super::{block, gem, rotated, sized, stone, tiny_wav_bytes};
 
     #[test]
-    fn approx_abs_diff_eq_works_within_epsilon() {
-        approx::assert_abs_diff_eq!(1.0, 1.000_5, epsilon = 0.001);
-    }
-
-    #[test]
-    #[should_panic]
-    fn approx_abs_diff_eq_panics_outside_epsilon() {
-        approx::assert_abs_diff_eq!(3.0, 4.0, epsilon = 0.1);
-    }
-
-    #[test]
     fn level_object_helpers_fill_expected_fields() {
         let stone = stone(1.0, 2.0, 3.0);
         assert_eq!(stone.block_id, "core/stone");
