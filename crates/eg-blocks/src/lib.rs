@@ -368,17 +368,12 @@ pub fn resolve_block_definition(block_id: &str) -> &'static BlockDefinition {
     block_catalog().block_for_id(block_id)
 }
 
-/// Normalizes a block ID to its canonical form (e.g., adding "core/" prefix if needed).
-pub fn normalize_block_id(block_id: &str) -> String {
-    block_catalog().resolve_id(block_id).to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use eg_types::{BlockAnimation, BlockAssets, BlockBehavior, BlockGeometry, BlockRender};
 
     use super::{
-        all_placeable_blocks, block_texture_atlas, normalize_block_id, resolve_block_definition,
+        all_placeable_blocks, block_texture_atlas, resolve_block_definition,
         resolve_block_texture_layers,
     };
     use eg_types::{
@@ -462,12 +457,6 @@ mod tests {
     fn block_id_resolution_prefers_catalog_and_falls_back_to_default() {
         let placeable = all_placeable_blocks();
         assert!(!placeable.is_empty());
-
-        let resolved_known = normalize_block_id("CORE/STONE");
-        assert_eq!(resolved_known, "core/stone");
-
-        let resolved_unknown = normalize_block_id("does/not/exist");
-        assert_eq!(resolved_unknown, "core/stone");
 
         let unknown_definition = resolve_block_definition("does/not/exist");
         assert_eq!(unknown_definition.id, "core/stone");
