@@ -21,37 +21,10 @@ pub enum AuthServiceMessage {
     SignedOut(Result<(), String>),
 }
 
-async fn pick_audio_file_for_import() -> Option<(String, Vec<u8>)> {
-    #[cfg(all(test, not(target_arch = "wasm32")))]
-    if let Some(result) = test_hooks::pick_audio_result() {
-        return result;
-    }
-
-    pick_audio_file().await
-}
-
-async fn save_audio_to_storage_for_import(filename: &str, bytes: &[u8]) -> Result<(), String> {
-    #[cfg(all(test, not(target_arch = "wasm32")))]
-    if let Some(result) = test_hooks::save_audio_result() {
-        return result;
-    }
-
-    save_audio_to_storage(filename, bytes).await
-}
-
-async fn pick_level_file_for_import() -> Option<Vec<u8>> {
-    #[cfg(all(test, not(target_arch = "wasm32")))]
-    if let Some(result) = test_hooks::pick_level_result() {
-        return result;
-    }
-
-    pick_level_file().await
-}
-
 pub fn trigger_audio_import(sender: Sender<(String, Vec<u8>)>) {
     spawn_background(async move {
-        if let Some((filename, bytes)) = pick_audio_file_for_import().await {
-            let _ = save_audio_to_storage_for_import(&filename, &bytes).await;
+        if let Some((filename, bytes)) = pick_audio_file().await {
+            let _ = save_audio_to_storage(&filename, &bytes).await;
             let _ = sender.send((filename, bytes));
         }
     });
@@ -59,7 +32,7 @@ pub fn trigger_audio_import(sender: Sender<(String, Vec<u8>)>) {
 
 pub fn trigger_level_import(sender: Sender<Vec<u8>>) {
     spawn_background(async move {
-        if let Some(bytes) = pick_level_file_for_import().await {
+        if let Some(bytes) = pick_level_file().await {
             let _ = sender.send(bytes);
         }
     });
@@ -74,7 +47,7 @@ pub fn trigger_level_export(filename: &str, data: &[u8]) {
 pub fn trigger_auth_sign_in(sender: Sender<AuthServiceMessage>) {
     spawn_background(async move {
         #[cfg(all(test, not(target_arch = "wasm32")))]
-        if let Some(result) = test_hooks::auth_sign_in_result() {
+        if let Some(result) = crate::test_hooks::auth_sign_in_result() {
             let _ = sender.send(AuthServiceMessage::SignedIn(result));
             return;
         }
@@ -87,7 +60,7 @@ pub fn trigger_auth_sign_in(sender: Sender<AuthServiceMessage>) {
 pub fn trigger_auth_refresh(refresh_token: String, sender: Sender<AuthServiceMessage>) {
     spawn_background(async move {
         #[cfg(all(test, not(target_arch = "wasm32")))]
-        if let Some(result) = test_hooks::auth_refresh_result() {
+        if let Some(result) = crate::test_hooks::auth_refresh_result() {
             let _ = sender.send(AuthServiceMessage::Refreshed(result));
             return;
         }
@@ -111,7 +84,7 @@ async fn persist_auth_session_result(
 pub fn trigger_auth_sign_out(access_token: Option<String>, sender: Sender<AuthServiceMessage>) {
     spawn_background(async move {
         #[cfg(all(test, not(target_arch = "wasm32")))]
-        if let Some(result) = test_hooks::auth_sign_out_result() {
+        if let Some(result) = crate::test_hooks::auth_sign_out_result() {
             let _ = sender.send(AuthServiceMessage::SignedOut(result));
             return;
         }
@@ -123,63 +96,6 @@ pub fn trigger_auth_sign_out(access_token: Option<String>, sender: Sender<AuthSe
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
-mod test_hooks {
-    use std::sync::{Mutex, OnceLock};
-
-    use eg_types::AuthSession;
-
-    #[derive(Clone, Default)]
-    pub struct ServiceHooks {
-        pub pick_audio_result: Option<Option<(String, Vec<u8>)>>,
-        pub pick_level_result: Option<Option<Vec<u8>>>,
-        pub save_audio_result: Option<Result<(), String>>,
-        pub auth_sign_in_result: Option<Result<AuthSession, String>>,
-        pub auth_refresh_result: Option<Result<AuthSession, String>>,
-        pub auth_sign_out_result: Option<Result<(), String>>,
-    }
-
-    fn hooks_state() -> &'static Mutex<ServiceHooks> {
-        static STATE: OnceLock<Mutex<ServiceHooks>> = OnceLock::new();
-        STATE.get_or_init(|| Mutex::new(ServiceHooks::default()))
-    }
-
-    pub fn with_hooks_mut<T>(update: impl FnOnce(&mut ServiceHooks) -> T) -> T {
-        let mut guard = hooks_state()
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        update(&mut guard)
-    }
-
-    pub fn reset() {
-        with_hooks_mut(|hooks| *hooks = ServiceHooks::default());
-    }
-
-    pub fn pick_audio_result() -> Option<Option<(String, Vec<u8>)>> {
-        with_hooks_mut(|hooks| hooks.pick_audio_result.clone())
-    }
-
-    pub fn save_audio_result() -> Option<Result<(), String>> {
-        with_hooks_mut(|hooks| hooks.save_audio_result.clone())
-    }
-
-    pub fn pick_level_result() -> Option<Option<Vec<u8>>> {
-        with_hooks_mut(|hooks| hooks.pick_level_result.clone())
-    }
-
-    pub fn auth_sign_in_result() -> Option<Result<AuthSession, String>> {
-        with_hooks_mut(|hooks| hooks.auth_sign_in_result.clone())
-    }
-
-    pub fn auth_refresh_result() -> Option<Result<AuthSession, String>> {
-        with_hooks_mut(|hooks| hooks.auth_refresh_result.clone())
-    }
-
-    pub fn auth_sign_out_result() -> Option<Result<(), String>> {
-        with_hooks_mut(|hooks| hooks.auth_sign_out_result.clone())
-    }
-}
-
-#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use std::fs;
     use std::sync::mpsc;
@@ -187,11 +103,12 @@ mod tests {
 
     use web_time::Duration;
 
+    use crate::test_hooks;
     use eg_types::{AuthSession, AuthSessionTokens, AuthUser};
 
     use super::{
-        test_hooks, trigger_audio_import, trigger_auth_refresh, trigger_auth_sign_in,
-        trigger_auth_sign_out, trigger_level_export, trigger_level_import, AuthServiceMessage,
+        trigger_audio_import, trigger_auth_refresh, trigger_auth_sign_in, trigger_auth_sign_out,
+        trigger_level_export, trigger_level_import, AuthServiceMessage,
     };
 
     fn test_auth_session(access_token: &str, refresh_token: &str) -> AuthSession {

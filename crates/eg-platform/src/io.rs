@@ -13,7 +13,7 @@ use crate::storage;
 
 pub fn copy_text_to_clipboard(text: &str) -> Result<(), String> {
     #[cfg(all(test, not(target_arch = "wasm32")))]
-    if let Some(result) = test_hooks::copy_text_result(text) {
+    if let Some(result) = crate::test_hooks::copy_text_result(text) {
         return result;
     }
 
@@ -89,6 +89,11 @@ pub fn log_platform_error(message: &str) {
 }
 
 pub async fn pick_audio_file() -> Option<(String, Vec<u8>)> {
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    if let Some(result) = crate::test_hooks::pick_audio_result() {
+        return result;
+    }
+
     let file = rfd::AsyncFileDialog::new()
         .add_filter("Audio", &["mp3", "wav", "ogg"])
         .pick_file()
@@ -104,6 +109,11 @@ pub async fn pick_audio_file() -> Option<(String, Vec<u8>)> {
 /// Supports `.egz` archives and `.egb` binary metadata files.
 /// Returns `None` when the user cancels the dialog; otherwise returns full file bytes.
 pub async fn pick_level_file() -> Option<Vec<u8>> {
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    if let Some(result) = crate::test_hooks::pick_level_result() {
+        return result;
+    }
+
     let file = rfd::AsyncFileDialog::new()
         .add_filter("Level Archive", &["egz"])
         .add_filter("Level Binary", &["egb"])
@@ -115,7 +125,7 @@ pub async fn pick_level_file() -> Option<Vec<u8>> {
 
 pub async fn save_audio_to_storage(filename: &str, data: &[u8]) -> Result<(), String> {
     #[cfg(all(test, not(target_arch = "wasm32")))]
-    if let Some(result) = test_hooks::save_audio_result() {
+    if let Some(result) = crate::test_hooks::save_audio_result() {
         return result;
     }
 
@@ -124,7 +134,7 @@ pub async fn save_audio_to_storage(filename: &str, data: &[u8]) -> Result<(), St
 
 pub async fn load_all_local_audio() -> std::collections::HashMap<String, Vec<u8>> {
     #[cfg(all(test, not(target_arch = "wasm32")))]
-    if let Some(result) = test_hooks::load_audio_result() {
+    if let Some(result) = crate::test_hooks::load_audio_result() {
         return result;
     }
 
@@ -133,7 +143,7 @@ pub async fn load_all_local_audio() -> std::collections::HashMap<String, Vec<u8>
 
 pub fn read_editor_music_bytes(level_name: Option<&str>, music_source: &str) -> Option<Vec<u8>> {
     #[cfg(all(test, not(target_arch = "wasm32")))]
-    if let Some(result) = test_hooks::read_editor_music_result() {
+    if let Some(result) = crate::test_hooks::read_editor_music_result() {
         return result;
     }
 
@@ -145,7 +155,7 @@ pub async fn save_waveform_to_storage(
     entry: &PersistentWaveformCacheEntry,
 ) -> Result<(), String> {
     #[cfg(all(test, not(target_arch = "wasm32")))]
-    if let Some(result) = test_hooks::save_waveform_result() {
+    if let Some(result) = crate::test_hooks::save_waveform_result() {
         return result;
     }
 
@@ -154,7 +164,7 @@ pub async fn save_waveform_to_storage(
 
 pub async fn load_waveform_from_storage(cache_key: &str) -> Option<PersistentWaveformCacheEntry> {
     #[cfg(all(test, not(target_arch = "wasm32")))]
-    if let Some(result) = test_hooks::load_waveform_result() {
+    if let Some(result) = crate::test_hooks::load_waveform_result() {
         return result;
     }
 
@@ -163,7 +173,7 @@ pub async fn load_waveform_from_storage(cache_key: &str) -> Option<PersistentWav
 
 pub async fn load_app_settings_from_storage() -> Result<AppSettings, String> {
     #[cfg(all(test, not(target_arch = "wasm32")))]
-    if let Some(result) = test_hooks::load_settings_result() {
+    if let Some(result) = crate::test_hooks::load_settings_result() {
         return result;
     }
 
@@ -172,84 +182,11 @@ pub async fn load_app_settings_from_storage() -> Result<AppSettings, String> {
 
 pub async fn save_app_settings_to_storage(settings: &AppSettings) -> Result<(), String> {
     #[cfg(all(test, not(target_arch = "wasm32")))]
-    if let Some(result) = test_hooks::save_settings_result() {
+    if let Some(result) = crate::test_hooks::save_settings_result() {
         return result;
     }
 
     storage::save_app_settings(settings).await
-}
-
-#[cfg(all(test, not(target_arch = "wasm32")))]
-mod test_hooks {
-    use std::collections::HashMap;
-    use std::sync::{Mutex, OnceLock};
-
-    use eg_types::AppSettings;
-    use eg_types::PersistentWaveformCacheEntry;
-
-    #[derive(Clone, Default)]
-    pub struct IoHooks {
-        pub save_audio_result: Option<Result<(), String>>,
-        pub load_audio_result: Option<HashMap<String, Vec<u8>>>,
-        pub read_editor_music_result: Option<Option<Vec<u8>>>,
-        pub save_waveform_result: Option<Result<(), String>>,
-        pub load_waveform_result: Option<Option<PersistentWaveformCacheEntry>>,
-        pub load_settings_result: Option<Result<AppSettings, String>>,
-        pub save_settings_result: Option<Result<(), String>>,
-        pub copy_text_result: Option<Result<(), String>>,
-        pub copied_text: Option<String>,
-    }
-
-    fn hooks_state() -> &'static Mutex<IoHooks> {
-        static STATE: OnceLock<Mutex<IoHooks>> = OnceLock::new();
-        STATE.get_or_init(|| Mutex::new(IoHooks::default()))
-    }
-
-    pub fn with_hooks_mut<T>(update: impl FnOnce(&mut IoHooks) -> T) -> T {
-        let mut guard = hooks_state()
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        update(&mut guard)
-    }
-
-    pub fn reset() {
-        with_hooks_mut(|hooks| *hooks = IoHooks::default());
-    }
-
-    pub fn save_audio_result() -> Option<Result<(), String>> {
-        with_hooks_mut(|hooks| hooks.save_audio_result.clone())
-    }
-
-    pub fn load_audio_result() -> Option<HashMap<String, Vec<u8>>> {
-        with_hooks_mut(|hooks| hooks.load_audio_result.clone())
-    }
-
-    pub fn read_editor_music_result() -> Option<Option<Vec<u8>>> {
-        with_hooks_mut(|hooks| hooks.read_editor_music_result.clone())
-    }
-
-    pub fn save_waveform_result() -> Option<Result<(), String>> {
-        with_hooks_mut(|hooks| hooks.save_waveform_result.clone())
-    }
-
-    pub fn load_waveform_result() -> Option<Option<PersistentWaveformCacheEntry>> {
-        with_hooks_mut(|hooks| hooks.load_waveform_result.clone())
-    }
-
-    pub fn load_settings_result() -> Option<Result<AppSettings, String>> {
-        with_hooks_mut(|hooks| hooks.load_settings_result.clone())
-    }
-
-    pub fn save_settings_result() -> Option<Result<(), String>> {
-        with_hooks_mut(|hooks| hooks.save_settings_result.clone())
-    }
-
-    pub fn copy_text_result(text: &str) -> Option<Result<(), String>> {
-        with_hooks_mut(|hooks| {
-            hooks.copied_text = Some(text.to_string());
-            hooks.copy_text_result.clone()
-        })
-    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -261,8 +198,9 @@ mod tests {
     use super::{
         copy_text_to_clipboard, load_all_local_audio, load_app_settings_from_storage,
         load_waveform_from_storage, save_app_settings_to_storage, save_audio_to_storage,
-        save_level_export, save_waveform_to_storage, test_hooks,
+        save_level_export, save_waveform_to_storage,
     };
+    use crate::test_hooks;
     use eg_types::AppSettings;
     use eg_types::PersistentWaveformCacheEntry;
 
