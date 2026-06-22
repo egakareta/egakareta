@@ -14,12 +14,8 @@ use crate::block_id::{normalize_block_id, DEFAULT_BLOCK_ID};
 
 pub const CAMERA_TRIGGER_BLOCK_ID: &str = "core/camera_trigger";
 pub const TRANSFORM_TRIGGER_BLOCK_ID: &str = "core/transform_trigger";
-pub const DEFAULT_CAMERA_TRIGGER_ROTATION: f32 = -std::f32::consts::FRAC_PI_4;
-pub const DEFAULT_CAMERA_TRIGGER_PITCH: f32 = std::f32::consts::FRAC_PI_4;
-pub const DEFAULT_EDITOR_CAMERA_ROTATION: f32 = std::f32::consts::FRAC_PI_4;
-pub const DEFAULT_EDITOR_CAMERA_PITCH: f32 = std::f32::consts::FRAC_PI_4;
-pub const DEFAULT_PLAY_CAMERA_ROTATION: f32 = std::f32::consts::FRAC_PI_4;
-pub const DEFAULT_PLAY_CAMERA_PITCH: f32 = std::f32::consts::FRAC_PI_4;
+pub const DEFAULT_CAMERA_ROTATION: f32 = std::f32::consts::FRAC_PI_4;
+pub const DEFAULT_CAMERA_PITCH: f32 = std::f32::consts::FRAC_PI_4;
 pub const CURRENT_LEVEL_FORMAT_VERSION: u32 = 3;
 pub const CAMERA_TRIGGER_VIEW_DISTANCE: f32 = 24.0;
 
@@ -116,19 +112,19 @@ pub fn is_default_camera_trigger_target_position(value: &[f32; 3]) -> bool {
 }
 
 pub fn default_camera_trigger_rotation() -> f32 {
-    DEFAULT_CAMERA_TRIGGER_ROTATION
+    DEFAULT_CAMERA_ROTATION
 }
 
 pub fn is_default_camera_trigger_rotation(value: &f32) -> bool {
-    (*value - DEFAULT_CAMERA_TRIGGER_ROTATION).abs() <= 1e-6
+    (*value - DEFAULT_CAMERA_ROTATION).abs() <= 1e-6
 }
 
 pub fn default_camera_trigger_pitch() -> f32 {
-    DEFAULT_CAMERA_TRIGGER_PITCH
+    DEFAULT_CAMERA_PITCH
 }
 
 pub fn is_default_camera_trigger_pitch(value: &f32) -> bool {
-    (*value - DEFAULT_CAMERA_TRIGGER_PITCH).abs() <= 1e-6
+    (*value - DEFAULT_CAMERA_PITCH).abs() <= 1e-6
 }
 
 pub fn default_camera_trigger_distance() -> f32 {

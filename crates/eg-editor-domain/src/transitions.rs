@@ -8,8 +8,8 @@
 use crate::timeline::derive_timeline_state_with_triggers;
 use eg_types::TimedTrigger;
 use eg_types::{
-    Direction, LevelMetadata, LevelObject, SpawnMetadata, DEFAULT_PLAY_CAMERA_PITCH,
-    DEFAULT_PLAY_CAMERA_ROTATION,
+    Direction, LevelMetadata, LevelObject, SpawnMetadata, DEFAULT_CAMERA_PITCH,
+    DEFAULT_CAMERA_ROTATION,
 };
 
 pub struct EditorPlaytestTransition {
@@ -90,8 +90,8 @@ pub fn build_editor_playtest_transition(
         playtest_audio_start_seconds: state.elapsed_seconds,
         level_duration_seconds: timeline_duration_seconds,
         playing_level_name: level_name.map(|name| name.to_string()),
-        camera_rotation: DEFAULT_PLAY_CAMERA_ROTATION,
-        camera_pitch: DEFAULT_PLAY_CAMERA_PITCH,
+        camera_rotation: DEFAULT_CAMERA_ROTATION,
+        camera_pitch: DEFAULT_CAMERA_PITCH,
     }
 }
 

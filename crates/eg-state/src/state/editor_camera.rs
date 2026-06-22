@@ -13,10 +13,7 @@ use eg_types::{
     CameraTrigger, CameraTriggerMode, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
     TimedTriggerTarget, CAMERA_TRIGGER_VIEW_DISTANCE,
 };
-use eg_types::{
-    AppPhase, DEFAULT_EDITOR_CAMERA_PITCH, DEFAULT_EDITOR_CAMERA_ROTATION,
-    DEFAULT_PLAY_CAMERA_PITCH, DEFAULT_PLAY_CAMERA_ROTATION,
-};
+use eg_types::{AppPhase, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_ROTATION};
 
 const PLAY_CAMERA_DISTANCE: f32 = 28.28;
 const MIN_EDITOR_PITCH: f32 = -89.9f32.to_radians();
@@ -45,10 +42,10 @@ impl Default for EditorCameraState {
         Self {
             editor_pan: [0.0, 0.0],
             editor_target_z: 0.0,
-            editor_rotation: DEFAULT_EDITOR_CAMERA_ROTATION,
-            editor_pitch: DEFAULT_EDITOR_CAMERA_PITCH,
-            playing_rotation: DEFAULT_PLAY_CAMERA_ROTATION,
-            playing_pitch: DEFAULT_PLAY_CAMERA_PITCH,
+            editor_rotation: DEFAULT_CAMERA_ROTATION,
+            editor_pitch: DEFAULT_CAMERA_PITCH,
+            playing_rotation: DEFAULT_CAMERA_ROTATION,
+            playing_pitch: DEFAULT_CAMERA_PITCH,
             transition: None,
         }
     }
@@ -241,12 +238,12 @@ impl EditorSubsystem {
 
     fn resolve_live_follow_sample(&self, target: Vec3, is_game_active: bool) -> CameraViewSample {
         let rotation = if is_game_active {
-            DEFAULT_PLAY_CAMERA_ROTATION
+            DEFAULT_CAMERA_ROTATION
         } else {
             self.camera.playing_rotation
         };
         let pitch = if is_game_active {
-            DEFAULT_PLAY_CAMERA_PITCH
+            DEFAULT_CAMERA_PITCH
         } else {
             self.camera
                 .playing_pitch
@@ -420,14 +417,14 @@ mod tests {
     use super::{
         eased_alpha, editor_camera_offset_for_pose, interpolate_camera_samples,
         offset_from_rotation_pitch, playing_camera_offset_for_angles, CameraViewSample, State,
-        DEFAULT_PLAY_CAMERA_PITCH, DEFAULT_PLAY_CAMERA_ROTATION, MIN_PLAYING_PITCH,
+        DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_ROTATION, MIN_PLAYING_PITCH,
     };
     use eg_types::AppPhase;
     use eg_types::{
         default_camera_trigger_distance, CameraTrigger, CameraTriggerMode, TimedTrigger,
         TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
     };
-    use eg_types::{DEFAULT_CAMERA_TRIGGER_PITCH, DEFAULT_CAMERA_TRIGGER_ROTATION};
+    use eg_types::{DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_ROTATION};
     use glam::Vec3;
 
     fn assert_vec3_close(actual: Vec3, expected: Vec3) {
@@ -479,8 +476,8 @@ mod tests {
             transition_interval_seconds,
             use_full_segment_transition,
             default_camera_trigger_distance(),
-            DEFAULT_CAMERA_TRIGGER_ROTATION,
-            DEFAULT_CAMERA_TRIGGER_PITCH,
+            DEFAULT_CAMERA_ROTATION,
+            DEFAULT_CAMERA_PITCH,
         )
     }
 
@@ -579,10 +576,7 @@ mod tests {
             let target = Vec3::new(2.0, 3.0, 4.0);
             let sample = state.editor.resolve_live_follow_sample(target, true);
             let expected_eye = target
-                + playing_camera_offset_for_angles(
-                    DEFAULT_PLAY_CAMERA_ROTATION,
-                    DEFAULT_PLAY_CAMERA_PITCH,
-                );
+                + playing_camera_offset_for_angles(DEFAULT_CAMERA_ROTATION, DEFAULT_CAMERA_PITCH);
 
             assert_vec3_close(sample.target, target);
             assert_vec3_close(sample.eye, expected_eye);
@@ -668,8 +662,8 @@ mod tests {
             let expected = CameraViewSample {
                 eye: target
                     + offset_from_rotation_pitch(
-                        DEFAULT_CAMERA_TRIGGER_ROTATION,
-                        DEFAULT_CAMERA_TRIGGER_PITCH,
+                        DEFAULT_CAMERA_ROTATION,
+                        DEFAULT_CAMERA_PITCH,
                         default_camera_trigger_distance(),
                     ),
                 target,

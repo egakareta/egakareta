@@ -1018,8 +1018,8 @@ mod tests {
                     transition_interval_seconds: 1.0,
                     use_full_segment_transition: false,
                     distance: default_camera_trigger_distance(),
-                    rotation: eg_types::DEFAULT_CAMERA_TRIGGER_ROTATION,
-                    pitch: eg_types::DEFAULT_CAMERA_TRIGGER_PITCH,
+                    rotation: eg_types::DEFAULT_CAMERA_ROTATION,
+                    pitch: eg_types::DEFAULT_CAMERA_PITCH,
                 },
             },
             TimedTrigger {

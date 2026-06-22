@@ -14,8 +14,8 @@ use eg_types::{
     TimedTriggerAction, TimedTriggerTarget,
 };
 use eg_types::{
-    LevelObject, CAMERA_TRIGGER_BLOCK_ID, DEFAULT_CAMERA_TRIGGER_PITCH,
-    DEFAULT_CAMERA_TRIGGER_ROTATION, TRANSFORM_TRIGGER_BLOCK_ID,
+    LevelObject, CAMERA_TRIGGER_BLOCK_ID, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_ROTATION,
+    TRANSFORM_TRIGGER_BLOCK_ID,
 };
 
 pub struct EditorTriggerState {
@@ -198,11 +198,11 @@ impl EditorSubsystem {
                 });
 
                 if !rotation.is_finite() {
-                    *rotation = DEFAULT_CAMERA_TRIGGER_ROTATION;
+                    *rotation = DEFAULT_CAMERA_ROTATION;
                 }
 
                 if !pitch.is_finite() {
-                    *pitch = DEFAULT_CAMERA_TRIGGER_PITCH;
+                    *pitch = DEFAULT_CAMERA_PITCH;
                 } else {
                     *pitch = pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
                 }
@@ -227,11 +227,11 @@ impl EditorSubsystem {
                 }
 
                 if !rotation.is_finite() {
-                    *rotation = DEFAULT_CAMERA_TRIGGER_ROTATION;
+                    *rotation = DEFAULT_CAMERA_ROTATION;
                 }
 
                 if !pitch.is_finite() {
-                    *pitch = DEFAULT_CAMERA_TRIGGER_PITCH;
+                    *pitch = DEFAULT_CAMERA_PITCH;
                 } else {
                     *pitch = pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
                 }
@@ -502,7 +502,7 @@ mod tests {
         default_camera_trigger_distance, CameraTriggerMode, TimedTrigger, TimedTriggerAction,
         TimedTriggerEasing, TimedTriggerTarget,
     };
-    use eg_types::{LevelObject, DEFAULT_CAMERA_TRIGGER_PITCH, DEFAULT_CAMERA_TRIGGER_ROTATION};
+    use eg_types::{LevelObject, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_ROTATION};
 
     fn test_block(x: f32) -> LevelObject {
         LevelObject {
@@ -564,8 +564,8 @@ mod tests {
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 distance: default_camera_trigger_distance(),
-                rotation: DEFAULT_CAMERA_TRIGGER_ROTATION,
-                pitch: DEFAULT_CAMERA_TRIGGER_PITCH,
+                rotation: DEFAULT_CAMERA_ROTATION,
+                pitch: DEFAULT_CAMERA_PITCH,
             },
             ..camera_pose_trigger(1.0)
         };
@@ -688,7 +688,7 @@ mod tests {
                     assert_eq!(transition_interval_seconds, 0.0);
                     assert!(use_full_segment_transition);
                     assert_eq!(distance, default_camera_trigger_distance());
-                    assert_eq!(rotation, DEFAULT_CAMERA_TRIGGER_ROTATION);
+                    assert_eq!(rotation, DEFAULT_CAMERA_ROTATION);
                     assert!((pitch - 89.9f32.to_radians()).abs() <= 1e-6);
                 }
                 _ => panic!("expected camera follow"),
@@ -757,8 +757,8 @@ mod tests {
                         transition_interval_seconds: 1.5,
                         use_full_segment_transition: false,
                         distance: default_camera_trigger_distance(),
-                        rotation: DEFAULT_CAMERA_TRIGGER_ROTATION,
-                        pitch: DEFAULT_CAMERA_TRIGGER_PITCH,
+                        rotation: DEFAULT_CAMERA_ROTATION,
+                        pitch: DEFAULT_CAMERA_PITCH,
                     },
                     ..camera_pose_trigger(1.0)
                 },

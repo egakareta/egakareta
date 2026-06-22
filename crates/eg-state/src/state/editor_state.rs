@@ -17,7 +17,7 @@ use eg_types::{
 };
 use eg_types::{
     AppPhase, Direction, EditorMode, GameCursor, LevelObject, ObjectId, TimingPoint,
-    DEFAULT_CAMERA_TRIGGER_PITCH, DEFAULT_CAMERA_TRIGGER_ROTATION,
+    DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_ROTATION,
 };
 
 const TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS: f32 = 0.001;
@@ -1370,8 +1370,8 @@ impl State {
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 distance: default_camera_trigger_distance(),
-                rotation: DEFAULT_CAMERA_TRIGGER_ROTATION,
-                pitch: DEFAULT_CAMERA_TRIGGER_PITCH,
+                rotation: DEFAULT_CAMERA_ROTATION,
+                pitch: DEFAULT_CAMERA_PITCH,
             },
         };
         self.editor.add_trigger(trigger);

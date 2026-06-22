@@ -249,8 +249,8 @@ impl State {
     }
 
     pub(super) fn reset_playing_camera_defaults(&mut self) {
-        self.editor.camera.playing_rotation = eg_types::DEFAULT_PLAY_CAMERA_ROTATION;
-        self.editor.camera.playing_pitch = eg_types::DEFAULT_PLAY_CAMERA_PITCH;
+        self.editor.camera.playing_rotation = eg_types::DEFAULT_CAMERA_ROTATION;
+        self.editor.camera.playing_pitch = eg_types::DEFAULT_CAMERA_PITCH;
     }
 
     pub(super) fn enter_playing_phase(
@@ -300,8 +300,8 @@ impl State {
         self.editor.runtime.history.undo.clear();
         self.editor.runtime.history.redo.clear();
         self.clear_editor_pan_keys();
-        self.editor.camera.editor_rotation = eg_types::DEFAULT_EDITOR_CAMERA_ROTATION;
-        self.editor.camera.editor_pitch = eg_types::DEFAULT_EDITOR_CAMERA_PITCH;
+        self.editor.camera.editor_rotation = eg_types::DEFAULT_CAMERA_ROTATION;
+        self.editor.camera.editor_pitch = eg_types::DEFAULT_CAMERA_PITCH;
         self.editor.camera.editor_target_z = 0.0;
         self.gameplay.state = GameState::new();
         self.render.meshes.trail.clear();
