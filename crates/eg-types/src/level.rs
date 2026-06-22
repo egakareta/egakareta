@@ -187,16 +187,12 @@ pub fn is_default_spawn_metadata(value: &SpawnMetadata) -> bool {
     is_default_spawn_position(&value.position) && is_default_direction(&value.direction)
 }
 
-pub fn normalize_level_block_id(block_id: &str) -> String {
-    normalize_block_id(block_id)
-}
-
 pub fn deserialize_level_object_block_id<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,
 {
     let raw = String::deserialize(deserializer)?;
-    Ok(normalize_level_block_id(&raw))
+    Ok(normalize_block_id(&raw))
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
@@ -520,7 +516,7 @@ impl LevelObject {
     }
 
     pub fn normalize_block_id(&mut self) {
-        self.block_id = normalize_level_block_id(&self.block_id);
+        self.block_id = normalize_block_id(&self.block_id);
     }
 
     pub fn transform_field_visibility(&self) -> LevelObjectTransformFieldVisibility {
