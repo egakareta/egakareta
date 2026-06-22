@@ -238,12 +238,7 @@ impl State {
             .local_audio_cache
             .get(&metadata.music.source)
             .cloned()
-            .or_else(|| {
-                read_editor_music_bytes(
-                    self.session.editor_level_name.as_deref(),
-                    &metadata.music.source,
-                )
-            });
+            .or_else(|| read_editor_music_bytes(&metadata.music.source));
 
         build_level_export(&metadata, audio_bytes)
     }

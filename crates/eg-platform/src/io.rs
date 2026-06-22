@@ -141,13 +141,15 @@ pub async fn load_all_local_audio() -> std::collections::HashMap<String, Vec<u8>
     storage::load_all_audio().await
 }
 
-pub fn read_editor_music_bytes(level_name: Option<&str>, music_source: &str) -> Option<Vec<u8>> {
+pub fn read_editor_music_bytes(music_source: &str) -> Option<Vec<u8>> {
     #[cfg(all(test, not(target_arch = "wasm32")))]
     if let Some(result) = crate::test_hooks::read_editor_music_result() {
         return result;
     }
 
-    storage::read_editor_music_bytes(level_name, music_source)
+    pollster::block_on(storage::read_editor_music_bytes(music_source))
+        .ok()
+        .flatten()
 }
 
 pub async fn save_waveform_to_storage(
