@@ -17,7 +17,6 @@ use eg_mesh::{
     build_block_effect_vertices, build_block_instance_batches_at_time, build_trail_vertices,
     build_trail_vertices_with_alpha, BlockEffectInstance,
 };
-use eg_platform::state_host::PlatformInstant;
 use eg_types::{
     apply_simulate_hitboxes_triggers_to_objects, AppPhase, BlockEffectColorMode, CameraUniform,
     ColorSpaceUniform, Direction, EditorMode, LevelObject,
@@ -595,7 +594,7 @@ impl State {
         }
         const FIXED_DT: f32 = 1.0 / 120.0;
 
-        let now = PlatformInstant::now();
+        let now = web_time::Instant::now();
         let frame_dt = (now - self.frame_runtime.editor.last_frame).as_secs_f32();
         self.frame_runtime.editor.last_frame = now;
         let instant_fps = 1.0 / frame_dt.max(1e-4);

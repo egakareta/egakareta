@@ -76,7 +76,7 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 ### Platform Duality (WASM vs Native)
 
 - Use conditional compilation `#[cfg(target_arch = "wasm32")]` and `#[cfg(not(target_arch = "wasm32"))]` for platform-specific logic. Keep unified code paths where possible.
-- Use `web_time::Instant` (aliased as `PlatformInstant`) instead of `std::time::Instant` everywhere.
+- Use `web_time::Instant` instead of `std::time::Instant`.
 - The `crate-type` in `Cargo.toml` is `["cdylib", "rlib"]` — `cdylib` for WASM, `rlib` for native testing.
 - For any `cfg`-gated struct fields, declare them in **all** branches (use empty tuples or `Option` on the non-applicable target) so the struct layout is consistent.
 - Use `opfs` for both WASM and native file I/O.

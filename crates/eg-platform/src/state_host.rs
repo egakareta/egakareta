@@ -18,8 +18,6 @@ pub type WasmCanvas = web_sys::HtmlCanvasElement;
 #[cfg(not(target_arch = "wasm32"))]
 pub type NativeWindow = Arc<winit::window::Window>;
 
-pub type PlatformInstant = web_time::Instant;
-
 pub enum SurfaceHost {
     #[cfg(target_arch = "wasm32")]
     Canvas(WasmCanvas),

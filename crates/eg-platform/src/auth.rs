@@ -12,7 +12,7 @@ use serde::Serialize;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
-use web_time::Instant as PlatformInstant;
+use web_time::Instant;
 
 use eg_types::{AuthErrorResponse, AuthSession};
 
@@ -75,8 +75,8 @@ async fn sign_in_platform() -> Result<AuthSession, String> {
         post_json("/api/auth/handoff/start", None, &serde_json::json!({})).await?;
     open_url(&start.signin_url)?;
 
-    let deadline = PlatformInstant::now() + Duration::from_secs(10 * 60);
-    while PlatformInstant::now() < deadline {
+    let deadline = Instant::now() + Duration::from_secs(10 * 60);
+    while Instant::now() < deadline {
         if let Some(session) = claim_handoff(&start.handoff_id, &start.handoff_secret).await? {
             return Ok(session);
         }

@@ -31,9 +31,9 @@ use eg_mesh::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 use eg_platform::state_host::NativeWindow;
+use eg_platform::state_host::SurfaceHost;
 #[cfg(target_arch = "wasm32")]
 use eg_platform::state_host::WasmCanvas;
-use eg_platform::state_host::{PlatformInstant, SurfaceHost};
 use eg_types::{
     AppPhase, CameraUniform, ColorSpaceUniform, EditorState, GridUniform, LevelCreatorMetadata,
     LineUniform, MenuState, MusicMetadata, PhysicalSize, SettingsSection, SpawnMetadata,
@@ -522,7 +522,7 @@ impl State {
             .runtime
             .set_preferred_backend_name(&app_settings.audio_backend);
 
-        let now = PlatformInstant::now();
+        let now = web_time::Instant::now();
 
         Self {
             render: RenderSubsystem {
@@ -1467,7 +1467,7 @@ impl State {
         let block_geometry = build_block_geometry(&game.objects);
         let block_mesh = MeshSlot::from_geometry(&device, "Block Vertex Buffer", &block_geometry);
 
-        let now = PlatformInstant::now();
+        let now = web_time::Instant::now();
 
         Some(Self {
             render: RenderSubsystem {

@@ -7,7 +7,6 @@
 */
 use super::editor_interaction::EditorInteractionState;
 use super::history::EditorHistoryState;
-use eg_platform::state_host::PlatformInstant;
 use eg_types::{BlockEffect, LevelObject, LineUniform};
 
 #[derive(Clone, Copy, Default, Debug)]
@@ -215,7 +214,7 @@ pub struct EditorRuntimeState {
 }
 
 pub struct EditorFrameState {
-    pub last_frame: PlatformInstant,
+    pub last_frame: web_time::Instant,
     pub accumulator: f32,
 }
 
