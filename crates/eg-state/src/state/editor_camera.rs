@@ -424,7 +424,6 @@ mod tests {
         default_camera_trigger_distance, CameraTrigger, CameraTriggerMode, TimedTrigger,
         TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
     };
-    use eg_types::{DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_ROTATION};
     use glam::Vec3;
 
     fn assert_vec3_close(actual: Vec3, expected: Vec3) {
