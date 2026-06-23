@@ -10,16 +10,12 @@ use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{Receiver, Sender};
 
 use super::State;
-use eg_audio::service::WaveformLoadMessage;
+use eg_audio::service::{AudioPreloadResult, WaveformLoadMessage, WaveformResult};
 use eg_platform::io::save_waveform_to_storage;
 use eg_platform::services::trigger_audio_import;
 use eg_platform::task::spawn_background;
 use eg_types::LevelMetadata;
 use eg_types::PersistentWaveformCacheEntry;
-
-pub type AudioImportData = (String, Vec<u8>);
-pub type RuntimeAudioPreloadData = eg_audio::service::AudioPreloadResult;
-pub type WaveformLoadData = eg_audio::service::WaveformResult;
 
 #[derive(Clone, Debug)]
 pub struct WaveformCacheEntry {
@@ -43,18 +39,15 @@ impl Default for WaveformCacheEntry {
 pub struct RuntimeAudioPreloadState {
     pub preloaded_audio: HashMap<String, Vec<u8>>,
     pub preloading_source_keys: HashSet<String>,
-    pub preload_channel: (
-        Sender<RuntimeAudioPreloadData>,
-        Receiver<RuntimeAudioPreloadData>,
-    ),
+    pub preload_channel: (Sender<AudioPreloadResult>, Receiver<AudioPreloadResult>),
     #[cfg(test)]
     pub last_warmup_request: Option<(String, f32)>,
 }
 
 pub struct EditorAudioState {
     pub local_audio_cache: HashMap<String, Vec<u8>>,
-    pub audio_import_channel: (Sender<AudioImportData>, Receiver<AudioImportData>),
-    pub waveform_load_channel: (Sender<WaveformLoadData>, Receiver<WaveformLoadData>),
+    pub audio_import_channel: (Sender<(String, Vec<u8>)>, Receiver<(String, Vec<u8>)>),
+    pub waveform_load_channel: (Sender<WaveformResult>, Receiver<WaveformResult>),
     pub waveform_cache: HashMap<String, WaveformCacheEntry>,
     pub waveform_loading_source: Option<String>,
 }
