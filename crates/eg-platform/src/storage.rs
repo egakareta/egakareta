@@ -148,13 +148,16 @@ pub async fn clear_auth_session() -> Result<(), String> {
 }
 
 /// The DirectoryHandle for the app-specific data storage.
+/// Uses the `EGAKARETA_STORAGE_ROOT` environment variable in tests.
 async fn app_specific_dir() -> Result<opfs::persistent::DirectoryHandle, String> {
+    #[cfg(test)]
     if let Ok(root) = std::env::var("EGAKARETA_STORAGE_ROOT") {
         let path = std::path::PathBuf::from(root);
         std::fs::create_dir_all(&path)
             .map_err(|err| format!("Failed to create storage root: {err}"))?;
         return Ok(opfs::persistent::DirectoryHandle::from(path));
     }
+
     opfs::persistent::app_specific_dir()
         .await
         .map_err(|err| format!("Failed to get app specific dir: {:?}", err))
