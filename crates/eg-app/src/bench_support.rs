@@ -12,8 +12,7 @@ use std::hint::black_box;
 use eg_game::{trigger_transformed_objects_at_time, TimelineSimulationRuntime};
 use eg_mesh::{build_block_geometry, build_chunked_block_mesh, build_trail_vertices_with_alpha};
 use eg_types::{
-    Direction, LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
-    TimedTriggerTarget,
+    Direction, LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TriggerTarget,
 };
 
 /// Summary of a benchmarked hot-path operation.
@@ -540,7 +539,7 @@ pub fn benchmark_object_triggers(
                     2 => TimedTriggerEasing::EaseOut,
                     _ => TimedTriggerEasing::EaseInOut,
                 },
-                target: TimedTriggerTarget::Objects { object_ids },
+                target: TriggerTarget::Objects { object_ids },
                 action: TimedTriggerAction::TransformObjects {
                     position: [
                         (trigger_index % 64) as f32 * 0.25,

@@ -274,7 +274,7 @@ mod tests {
     use eg_types::{
         AppPhase, EditorMode, LevelObject, SettingsSection, TRANSFORM_TRIGGER_BLOCK_ID,
     };
-    use eg_types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
+    use eg_types::{EasingDirection, TimedTrigger, TriggerAction, TriggerTarget};
 
     async fn new_editor_state() -> State {
         let mut state = State::new_test().await;
@@ -290,11 +290,11 @@ mod tests {
             trigger: Some(TimedTrigger {
                 time_seconds,
                 duration_seconds: 1.0,
-                easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Objects {
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Objects {
                     object_ids: Vec::new(),
                 },
-                action: TimedTriggerAction::TransformObjects {
+                action: TriggerAction::TransformObjects {
                     position,
                     rotation_degrees: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
@@ -411,11 +411,11 @@ mod tests {
             trigger: Some(TimedTrigger {
                 time_seconds: 0.0,
                 duration_seconds: 1.0,
-                easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Objects {
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Objects {
                     object_ids: vec!["target".to_string()],
                 },
-                action: TimedTriggerAction::TransformObjects {
+                action: TriggerAction::TransformObjects {
                     position: [0.0, 0.0, 0.0],
                     rotation_degrees: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
@@ -434,7 +434,7 @@ mod tests {
             .expect("trigger block has payload");
         trigger.time_seconds = 0.75;
         trigger.duration_seconds = 2.5;
-        trigger.easing = TimedTriggerEasing::EaseOut;
+        trigger.easing = EasingDirection::EaseOut;
 
         state.dispatch_editor(EditorCommand::UpdateSelectedBlock(selected));
 
@@ -444,7 +444,7 @@ mod tests {
             .expect("updated block keeps trigger payload");
         approx::assert_abs_diff_eq!(trigger.time_seconds, 0.75, epsilon = 1e-6);
         approx::assert_abs_diff_eq!(trigger.duration_seconds, 2.5, epsilon = 1e-6);
-        assert_eq!(trigger.easing, TimedTriggerEasing::EaseOut);
+        assert_eq!(trigger.easing, EasingDirection::EaseOut);
     }
 
     #[tokio::test]
@@ -567,11 +567,11 @@ mod tests {
         state.editor.set_triggers(vec![TimedTrigger {
             time_seconds: 0.0,
             duration_seconds: 1.0,
-            easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Objects {
+            easing: EasingDirection::Linear,
+            target: TriggerTarget::Objects {
                 object_ids: vec!["obj_000001".to_string()],
             },
-            action: TimedTriggerAction::TransformObjects {
+            action: TriggerAction::TransformObjects {
                 position: [1.0, 0.0, 0.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],

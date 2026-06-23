@@ -17,10 +17,10 @@ mod tests {
         camera_triggers_to_timed_triggers, default_camera_trigger_distance,
         default_camera_trigger_pitch, default_camera_trigger_rotation,
         default_camera_trigger_transition_interval_seconds, timed_triggers_to_camera_triggers,
-        triggers_from_objects, CameraTrigger, CameraTriggerMode, Direction, EditorStateParams,
-        GameCursor, LevelCreatorMetadata, LevelMetadata, LevelObject, LevelPreviewCameraMetadata,
-        MusicMetadata, SpawnMetadata, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
-        TimedTriggerTarget, CAMERA_TRIGGER_BLOCK_ID, TRANSFORM_TRIGGER_BLOCK_ID,
+        triggers_from_objects, CameraMode, CameraTrigger, Direction, EasingDirection,
+        EditorStateParams, GameCursor, LevelCreatorMetadata, LevelMetadata, LevelObject,
+        LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata, TimedTrigger, TriggerAction,
+        TriggerTarget, CAMERA_TRIGGER_BLOCK_ID, TRANSFORM_TRIGGER_BLOCK_ID,
     };
     use serde_json::json;
 
@@ -103,11 +103,11 @@ mod tests {
             trigger: Some(TimedTrigger {
                 time_seconds: 1.0,
                 duration_seconds: 1.0,
-                easing: TimedTriggerEasing::EaseInOut,
-                target: TimedTriggerTarget::Objects {
+                easing: EasingDirection::EaseInOut,
+                target: TriggerTarget::Objects {
                     object_ids: vec!["target".to_string()],
                 },
-                action: TimedTriggerAction::TransformObjects {
+                action: TriggerAction::TransformObjects {
                     position: [2.0, 0.0, 0.0],
                     rotation_degrees: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
@@ -124,9 +124,9 @@ mod tests {
             trigger: Some(TimedTrigger {
                 time_seconds: 0.0,
                 duration_seconds: 0.0,
-                easing: TimedTriggerEasing::EaseInOut,
-                target: TimedTriggerTarget::Camera,
-                action: TimedTriggerAction::CameraPose {
+                easing: EasingDirection::EaseInOut,
+                target: TriggerTarget::Camera,
+                action: TriggerAction::CameraPose {
                     transition_interval_seconds: 1.0,
                     use_full_segment_transition: false,
                     target_position: [0.0, 0.0, 0.0],
@@ -262,8 +262,8 @@ mod tests {
     fn camera_trigger_serialization_omits_default_pose_fields() {
         let camera_trigger = CameraTrigger {
             time_seconds: 2.5,
-            mode: CameraTriggerMode::Follow,
-            easing: TimedTriggerEasing::EaseInOut,
+            mode: CameraMode::Follow,
+            easing: EasingDirection::EaseInOut,
             transition_interval_seconds: default_camera_trigger_transition_interval_seconds(),
             use_full_segment_transition: false,
             target_position: [0.0, 0.0, 0.0],
@@ -293,7 +293,7 @@ mod tests {
         .expect("deserialize camera follow trigger");
 
         match trigger.action {
-            TimedTriggerAction::CameraFollow {
+            TriggerAction::CameraFollow {
                 transition_interval_seconds,
                 use_full_segment_transition,
                 distance,
@@ -315,8 +315,8 @@ mod tests {
         let camera_triggers = vec![
             CameraTrigger {
                 time_seconds: 0.5,
-                mode: CameraTriggerMode::Follow,
-                easing: TimedTriggerEasing::EaseIn,
+                mode: CameraMode::Follow,
+                easing: EasingDirection::EaseIn,
                 transition_interval_seconds: 0.4,
                 use_full_segment_transition: true,
                 target_position: [0.0, 0.0, 0.0],
@@ -326,8 +326,8 @@ mod tests {
             },
             CameraTrigger {
                 time_seconds: 1.0,
-                mode: CameraTriggerMode::Static,
-                easing: TimedTriggerEasing::EaseOut,
+                mode: CameraMode::Static,
+                easing: EasingDirection::EaseOut,
                 transition_interval_seconds: 0.25,
                 use_full_segment_transition: false,
                 target_position: [1.0, 2.0, 3.0],
@@ -339,10 +339,10 @@ mod tests {
 
         let triggers = camera_triggers_to_timed_triggers(&camera_triggers);
         assert_eq!(triggers.len(), 2);
-        assert!(matches!(triggers[0].target, TimedTriggerTarget::Camera));
+        assert!(matches!(triggers[0].target, TriggerTarget::Camera));
         assert!(matches!(
             triggers[0].action,
-            TimedTriggerAction::CameraFollow { .. }
+            TriggerAction::CameraFollow { .. }
         ));
 
         let restored = timed_triggers_to_camera_triggers(&triggers);
@@ -357,8 +357,8 @@ mod tests {
                 block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
                 trigger: camera_triggers_to_timed_triggers(&[CameraTrigger {
                     time_seconds: 1.2,
-                    mode: CameraTriggerMode::Static,
-                    easing: TimedTriggerEasing::Linear,
+                    mode: CameraMode::Static,
+                    easing: EasingDirection::Linear,
                     transition_interval_seconds: 1.0,
                     use_full_segment_transition: false,
                     target_position: [2.0, 3.0, 4.0],
@@ -407,8 +407,8 @@ mod tests {
             block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
             trigger: camera_triggers_to_timed_triggers(&[CameraTrigger {
                 time_seconds: 1.2,
-                mode: CameraTriggerMode::Static,
-                easing: TimedTriggerEasing::Linear,
+                mode: CameraMode::Static,
+                easing: EasingDirection::Linear,
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 target_position: [2.0, 3.0, 4.0],
@@ -463,11 +463,11 @@ mod tests {
             trigger: Some(TimedTrigger {
                 time_seconds: 1.0,
                 duration_seconds: 2.0,
-                easing: TimedTriggerEasing::EaseInOut,
-                target: TimedTriggerTarget::Objects {
+                easing: EasingDirection::EaseInOut,
+                target: TriggerTarget::Objects {
                     object_ids: vec!["target".to_string()],
                 },
-                action: TimedTriggerAction::TransformObjects {
+                action: TriggerAction::TransformObjects {
                     position: [0.0, 0.0, 0.0],
                     rotation_degrees: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
@@ -480,7 +480,7 @@ mod tests {
         let triggers = triggers_from_objects(&[object]);
         assert_eq!(triggers.len(), 1);
         match &triggers[0].action {
-            TimedTriggerAction::TransformObjects {
+            TriggerAction::TransformObjects {
                 position,
                 rotation_degrees,
                 size,
@@ -505,11 +505,11 @@ mod tests {
         let triggers = vec![TimedTrigger {
             time_seconds: 2.0,
             duration_seconds: 1.0,
-            easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Objects {
+            easing: EasingDirection::Linear,
+            target: TriggerTarget::Objects {
                 object_ids: vec!["target".to_string()],
             },
-            action: TimedTriggerAction::TransformObjects {
+            action: TriggerAction::TransformObjects {
                 position: [10.0, 0.0, 0.0],
                 rotation_degrees: [0.0, 90.0, 0.0],
                 size: [2.0, 0.0, 3.0],
@@ -549,8 +549,8 @@ mod tests {
             TimedTrigger {
                 time_seconds: 0.0,
                 duration_seconds: 0.0,
-                easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Objects {
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Objects {
                     object_ids: vec![
                         "object_2".to_string(),
                         "object_2".to_string(),
@@ -558,7 +558,7 @@ mod tests {
                         "object_1".to_string(),
                     ],
                 },
-                action: TimedTriggerAction::TransformObjects {
+                action: TriggerAction::TransformObjects {
                     position: [9.0, 9.0, 9.0],
                     rotation_degrees: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
@@ -568,9 +568,9 @@ mod tests {
             TimedTrigger {
                 time_seconds: 0.0,
                 duration_seconds: 0.0,
-                easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Camera,
-                action: TimedTriggerAction::TransformObjects {
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Camera,
+                action: TriggerAction::TransformObjects {
                     position: [5.0, 5.0, 5.0],
                     rotation_degrees: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
@@ -594,11 +594,11 @@ mod tests {
         let triggers = vec![TimedTrigger {
             time_seconds: f32::NAN,
             duration_seconds: 0.0,
-            easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Objects {
+            easing: EasingDirection::Linear,
+            target: TriggerTarget::Objects {
                 object_ids: vec!["target".to_string()],
             },
-            action: TimedTriggerAction::TransformObjects {
+            action: TriggerAction::TransformObjects {
                 position: [99.0, 0.0, 0.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],

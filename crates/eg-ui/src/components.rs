@@ -353,12 +353,10 @@ pub(crate) fn show_timeline_bar(
             let x =
                 rect.left() + (trigger.time_seconds - view_start) / visible_duration * rect.width();
             let fill = match &trigger.action {
-                eg_types::TimedTriggerAction::CameraFollow { .. } => {
+                eg_types::TriggerAction::CameraFollow { .. } => {
                     egui::Color32::from_rgb(110, 210, 140)
                 }
-                eg_types::TimedTriggerAction::CameraPose { .. } => {
-                    egui::Color32::from_rgb(255, 210, 90)
-                }
+                eg_types::TriggerAction::CameraPose { .. } => egui::Color32::from_rgb(255, 210, 90),
                 _ => egui::Color32::from_rgb(110, 140, 255),
             };
             let stroke = if view.trigger_selected_index == Some(index) {
@@ -709,8 +707,8 @@ mod tests {
     use super::*;
     use crate::test_utils::editor_view_model;
     use eg_types::{
-        default_camera_trigger_distance, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
-        TimedTriggerTarget,
+        default_camera_trigger_distance, EasingDirection, TimedTrigger, TriggerAction,
+        TriggerTarget,
     };
     use eg_types::{AppSettings, EditorMode, MusicMetadata, TimingPoint};
 
@@ -1012,9 +1010,9 @@ mod tests {
             TimedTrigger {
                 time_seconds: 1.0,
                 duration_seconds: 0.0,
-                easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Camera,
-                action: TimedTriggerAction::CameraFollow {
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Camera,
+                action: TriggerAction::CameraFollow {
                     transition_interval_seconds: 1.0,
                     use_full_segment_transition: false,
                     distance: default_camera_trigger_distance(),
@@ -1025,9 +1023,9 @@ mod tests {
             TimedTrigger {
                 time_seconds: 2.0,
                 duration_seconds: 0.0,
-                easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Camera,
-                action: TimedTriggerAction::CameraPose {
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Camera,
+                action: TriggerAction::CameraPose {
                     transition_interval_seconds: 1.0,
                     use_full_segment_transition: false,
                     target_position: [0.0, 0.0, 0.0],
@@ -1038,11 +1036,11 @@ mod tests {
             TimedTrigger {
                 time_seconds: 3.0,
                 duration_seconds: 0.0,
-                easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Objects {
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Objects {
                     object_ids: vec!["target".to_string()],
                 },
-                action: TimedTriggerAction::TransformObjects {
+                action: TriggerAction::TransformObjects {
                     position: [1.0, 2.0, 3.0],
                     rotation_degrees: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],

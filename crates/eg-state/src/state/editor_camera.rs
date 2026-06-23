@@ -10,8 +10,8 @@ use glam::{Mat4, Vec2, Vec3};
 use super::{EditorSubsystem, State};
 use eg_types::{
     camera_trigger_eye_from_target, camera_trigger_forward, timed_triggers_to_camera_triggers,
-    CameraTrigger, CameraTriggerMode, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
-    TimedTriggerTarget, CAMERA_TRIGGER_VIEW_DISTANCE,
+    CameraMode, CameraTrigger, EasingDirection, TimedTrigger, TriggerAction, TriggerTarget,
+    CAMERA_TRIGGER_VIEW_DISTANCE,
 };
 use eg_types::{AppPhase, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_ROTATION};
 
@@ -83,13 +83,13 @@ fn lerp_vec3(a: Vec3, b: Vec3, alpha: f32) -> Vec3 {
     a + (b - a) * alpha
 }
 
-fn eased_alpha(easing: TimedTriggerEasing, alpha: f32) -> f32 {
+fn eased_alpha(easing: EasingDirection, alpha: f32) -> f32 {
     let alpha = alpha.clamp(0.0, 1.0);
     match easing {
-        TimedTriggerEasing::Linear => alpha,
-        TimedTriggerEasing::EaseIn => alpha * alpha,
-        TimedTriggerEasing::EaseOut => 1.0 - (1.0 - alpha) * (1.0 - alpha),
-        TimedTriggerEasing::EaseInOut => {
+        EasingDirection::Linear => alpha,
+        EasingDirection::EaseIn => alpha * alpha,
+        EasingDirection::EaseOut => 1.0 - (1.0 - alpha) * (1.0 - alpha),
+        EasingDirection::EaseInOut => {
             if alpha < 0.5 {
                 2.0 * alpha * alpha
             } else {
@@ -165,9 +165,9 @@ impl EditorSubsystem {
         TimedTrigger {
             time_seconds,
             duration_seconds: 0.0,
-            easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Camera,
-            action: TimedTriggerAction::CameraPose {
+            easing: EasingDirection::Linear,
+            target: TriggerTarget::Camera,
+            action: TriggerAction::CameraPose {
                 transition_interval_seconds: DEFAULT_CAMERA_TRIGGER_TRANSITION_INTERVAL_SECONDS,
                 use_full_segment_transition: false,
                 target_position: self.editor_camera_target().to_array(),
@@ -268,13 +268,11 @@ impl State {
         live_follow_sample: CameraViewSample,
     ) -> CameraViewSample {
         match camera_trigger.mode {
-            CameraTriggerMode::Follow => EditorSubsystem::follow_camera_view_for_trigger(
+            CameraMode::Follow => EditorSubsystem::follow_camera_view_for_trigger(
                 camera_trigger,
                 live_follow_sample.target,
             ),
-            CameraTriggerMode::Static => {
-                EditorSubsystem::static_camera_view_for_trigger(camera_trigger)
-            }
+            CameraMode::Static => EditorSubsystem::static_camera_view_for_trigger(camera_trigger),
         }
     }
 
@@ -421,8 +419,8 @@ mod tests {
     };
     use eg_types::AppPhase;
     use eg_types::{
-        default_camera_trigger_distance, CameraTrigger, CameraTriggerMode, TimedTrigger,
-        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+        default_camera_trigger_distance, CameraMode, CameraTrigger, EasingDirection, TimedTrigger,
+        TriggerAction, TriggerTarget,
     };
     use glam::Vec3;
 
@@ -448,14 +446,14 @@ mod tests {
         pitch: f32,
         transition_interval_seconds: f32,
         use_full_segment_transition: bool,
-        easing: TimedTriggerEasing,
+        easing: EasingDirection,
     ) -> TimedTrigger {
         TimedTrigger {
             time_seconds,
             duration_seconds: 0.0,
             easing,
-            target: TimedTriggerTarget::Camera,
-            action: TimedTriggerAction::CameraPose {
+            target: TriggerTarget::Camera,
+            action: TriggerAction::CameraPose {
                 transition_interval_seconds,
                 use_full_segment_transition,
                 target_position,
@@ -491,9 +489,9 @@ mod tests {
         TimedTrigger {
             time_seconds,
             duration_seconds: 0.0,
-            easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Camera,
-            action: TimedTriggerAction::CameraFollow {
+            easing: EasingDirection::Linear,
+            target: TriggerTarget::Camera,
+            action: TriggerAction::CameraFollow {
                 transition_interval_seconds,
                 use_full_segment_transition,
                 distance,
@@ -512,10 +510,10 @@ mod tests {
     #[tokio::test]
     async fn eased_alpha_clamps_bounds_for_all_curves() {
         for easing in [
-            TimedTriggerEasing::Linear,
-            TimedTriggerEasing::EaseIn,
-            TimedTriggerEasing::EaseOut,
-            TimedTriggerEasing::EaseInOut,
+            EasingDirection::Linear,
+            EasingDirection::EaseIn,
+            EasingDirection::EaseOut,
+            EasingDirection::EaseInOut,
         ] {
             assert_eq!(eased_alpha(easing, -1.0), 0.0);
             assert_eq!(eased_alpha(easing, 2.0), 1.0);
@@ -524,8 +522,8 @@ mod tests {
 
     #[tokio::test]
     async fn ease_in_out_alpha_is_symmetric() {
-        let first_half = eased_alpha(TimedTriggerEasing::EaseInOut, 0.25);
-        let second_half = eased_alpha(TimedTriggerEasing::EaseInOut, 0.75);
+        let first_half = eased_alpha(EasingDirection::EaseInOut, 0.25);
+        let second_half = eased_alpha(EasingDirection::EaseInOut, 0.75);
         assert!((first_half - (1.0 - second_half)).abs() <= 1e-6);
     }
 
@@ -548,8 +546,8 @@ mod tests {
     async fn camera_trigger_modes_are_distinct() {
         let follow = CameraTrigger {
             time_seconds: 1.0,
-            mode: CameraTriggerMode::Follow,
-            easing: TimedTriggerEasing::Linear,
+            mode: CameraMode::Follow,
+            easing: EasingDirection::Linear,
             transition_interval_seconds: 1.0,
             use_full_segment_transition: false,
             target_position: [0.0, 0.0, 0.0],
@@ -558,7 +556,7 @@ mod tests {
             pitch: 0.0,
         };
         let static_trigger = CameraTrigger {
-            mode: CameraTriggerMode::Static,
+            mode: CameraMode::Static,
             ..follow.clone()
         };
 
@@ -623,7 +621,7 @@ mod tests {
             0.3,
             2.0,
             false,
-            TimedTriggerEasing::Linear,
+            EasingDirection::Linear,
         )]);
 
         let live_target = Vec3::new(0.0, 0.0, 0.0);
@@ -690,7 +688,7 @@ mod tests {
                 0.2,
                 0.0,
                 false,
-                TimedTriggerEasing::Linear,
+                EasingDirection::Linear,
             ),
             pose_trigger(
                 6.0,
@@ -699,7 +697,7 @@ mod tests {
                 0.4,
                 1.0,
                 false,
-                TimedTriggerEasing::EaseIn,
+                EasingDirection::EaseIn,
             ),
         ]);
 
@@ -721,7 +719,7 @@ mod tests {
         let expected = interpolate_camera_samples(
             previous_sample,
             next_sample,
-            eased_alpha(TimedTriggerEasing::EaseIn, 0.5),
+            eased_alpha(EasingDirection::EaseIn, 0.5),
         );
         assert_vec3_close(active.eye, expected.eye);
         assert_vec3_close(active.target, expected.target);
@@ -737,7 +735,7 @@ mod tests {
             0.5,
             0.5,
             false,
-            TimedTriggerEasing::Linear,
+            EasingDirection::Linear,
         )]);
 
         let sample = state.evaluate_camera_track(50.0, Vec3::ZERO, false);
@@ -760,7 +758,7 @@ mod tests {
         assert_eq!(trigger.time_seconds, 8.0);
 
         match trigger.action {
-            TimedTriggerAction::CameraPose {
+            TriggerAction::CameraPose {
                 target_position,
                 rotation,
                 pitch,

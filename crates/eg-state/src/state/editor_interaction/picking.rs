@@ -13,8 +13,7 @@ use eg_block_geometry::{
     ray_intersect_aabb_interval, ray_intersect_sphere,
 };
 use eg_types::{
-    camera_trigger_eye_from_object, camera_trigger_forward_from_rotation_degrees,
-    TimedTriggerAction,
+    camera_trigger_eye_from_object, camera_trigger_forward_from_rotation_degrees, TriggerAction,
 };
 use eg_types::{
     EditorMode, EditorPickResult, EditorTapDivisionPick, LevelObject, CAMERA_TRIGGER_BLOCK_ID,
@@ -849,8 +848,8 @@ impl EditorSubsystem {
     }
 }
 
-fn transform_trigger_target_object(action: &TimedTriggerAction) -> Option<LevelObject> {
-    let TimedTriggerAction::TransformObjects {
+fn transform_trigger_target_object(action: &TriggerAction) -> Option<LevelObject> {
+    let TriggerAction::TransformObjects {
         position,
         rotation_degrees,
         size,

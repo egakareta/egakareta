@@ -23,7 +23,7 @@ use eg_blocks::{resolve_block_definition, resolve_block_texture_layers};
 use eg_types::{
     camera_trigger_eye_from_object, camera_trigger_forward_from_rotation_degrees,
     BlockAnimationAxis, BlockAnimationPhaseSeed, BlockDefinition, BlockRenderProfile, LevelObject,
-    TimedTrigger, TimedTriggerAction, TimedTriggerTarget,
+    TimedTrigger, TriggerAction, TriggerTarget,
 };
 use glam::Vec3;
 
@@ -734,21 +734,21 @@ fn camera_trigger_countdown_progress(
 ) -> Option<f32> {
     if !current_time_seconds.is_finite()
         || !trigger.time_seconds.is_finite()
-        || !matches!(trigger.target, TimedTriggerTarget::Camera)
+        || !matches!(trigger.target, TriggerTarget::Camera)
     {
         return None;
     }
 
     let transition_interval_seconds = match trigger.action {
-        TimedTriggerAction::CameraPose {
+        TriggerAction::CameraPose {
             transition_interval_seconds,
             ..
         }
-        | TimedTriggerAction::CameraFollow {
+        | TriggerAction::CameraFollow {
             transition_interval_seconds,
             ..
         } => transition_interval_seconds,
-        TimedTriggerAction::TransformObjects { .. } => return None,
+        TriggerAction::TransformObjects { .. } => return None,
     };
 
     if current_time_seconds >= trigger.time_seconds {
@@ -969,9 +969,9 @@ mod tests {
             trigger: Some(TimedTrigger {
                 time_seconds,
                 duration_seconds: 0.0,
-                easing: eg_types::TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Camera,
-                action: TimedTriggerAction::CameraPose {
+                easing: eg_types::EasingDirection::Linear,
+                target: TriggerTarget::Camera,
+                action: TriggerAction::CameraPose {
                     transition_interval_seconds,
                     use_full_segment_transition: false,
                     target_position: [0.0, 0.0, 0.0],

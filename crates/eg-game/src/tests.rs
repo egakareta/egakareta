@@ -11,7 +11,7 @@ use super::simulation::{
 };
 use super::state::GameState;
 use eg_types::{Direction, LevelObject};
-use eg_types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
+use eg_types::{EasingDirection, TimedTrigger, TriggerAction, TriggerTarget};
 
 #[test]
 fn test_ground_detection_normal() {
@@ -341,11 +341,11 @@ fn timeline_trigger_hitbox_mode_does_not_resurrect_consumed_portals() {
     let triggers = vec![TimedTrigger {
         time_seconds: 0.0,
         duration_seconds: 0.0,
-        easing: TimedTriggerEasing::Linear,
-        target: TimedTriggerTarget::Objects {
+        easing: EasingDirection::Linear,
+        target: TriggerTarget::Objects {
             object_ids: vec!["target".to_string()],
         },
-        action: TimedTriggerAction::TransformObjects {
+        action: TriggerAction::TransformObjects {
             position: [0.0, 0.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
@@ -377,11 +377,11 @@ fn timeline_state_with_disabled_trigger_hitboxes_matches_plain_simulation() {
     let triggers = vec![TimedTrigger {
         time_seconds: 0.0,
         duration_seconds: 1.0,
-        easing: TimedTriggerEasing::Linear,
-        target: TimedTriggerTarget::Objects {
+        easing: EasingDirection::Linear,
+        target: TriggerTarget::Objects {
             object_ids: vec!["target".to_string()],
         },
-        action: TimedTriggerAction::TransformObjects {
+        action: TriggerAction::TransformObjects {
             position: [5.0, 0.0, 2.0],
             rotation_degrees: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],

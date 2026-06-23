@@ -808,7 +808,7 @@ mod tests {
     use super::super::super::{EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag, State};
     use eg_mesh::{GizmoAxis, GizmoDragKind};
     use eg_types::{AppPhase, EditorMode, LevelObject};
-    use eg_types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
+    use eg_types::{EasingDirection, TimedTrigger, TriggerAction, TriggerTarget};
     use glam::{Vec2, Vec3};
 
     fn start_block_for_index(index: usize, block: &LevelObject) -> EditorDragBlockStart {
@@ -861,9 +861,9 @@ mod tests {
         let camera_pose = TimedTrigger {
             time_seconds: 0.0,
             duration_seconds: 1.0,
-            easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Camera,
-            action: TimedTriggerAction::CameraPose {
+            easing: EasingDirection::Linear,
+            target: TriggerTarget::Camera,
+            action: TriggerAction::CameraPose {
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 target_position: [0.0, 0.0, 0.0],
@@ -872,7 +872,7 @@ mod tests {
             },
         };
         let camera_follow = TimedTrigger {
-            action: TimedTriggerAction::CameraFollow {
+            action: TriggerAction::CameraFollow {
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 distance: 8.0,
@@ -1062,11 +1062,11 @@ mod tests {
         state.editor.set_triggers(vec![TimedTrigger {
             time_seconds: 1.0,
             duration_seconds: 1.0,
-            easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Objects {
+            easing: EasingDirection::Linear,
+            target: TriggerTarget::Objects {
                 object_ids: vec!["object_0_0_0".to_string()],
             },
-            action: TimedTriggerAction::TransformObjects {
+            action: TriggerAction::TransformObjects {
                 position: [0.0, 0.0, 0.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
@@ -1103,8 +1103,7 @@ mod tests {
             .editor
             .drag_gizmo(axis_screen.x as f64, axis_screen.y as f64, viewport);
 
-        let TimedTriggerAction::TransformObjects { position, .. } =
-            &state.editor.triggers()[0].action
+        let TriggerAction::TransformObjects { position, .. } = &state.editor.triggers()[0].action
         else {
             panic!("expected transform trigger");
         };
@@ -1941,11 +1940,11 @@ mod tests {
         state.editor.set_triggers(vec![TimedTrigger {
             time_seconds: 1.0,
             duration_seconds: 1.0,
-            easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Objects {
+            easing: EasingDirection::Linear,
+            target: TriggerTarget::Objects {
                 object_ids: vec!["object_0_0_0".to_string()],
             },
-            action: TimedTriggerAction::TransformObjects {
+            action: TriggerAction::TransformObjects {
                 position: [5.0, 0.0, 0.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],

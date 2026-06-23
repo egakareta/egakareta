@@ -7,7 +7,7 @@
 */
 use super::{EditorClipboard, EditorHistorySnapshot, EditorSubsystem, State};
 use eg_editor_domain::derive_tap_indicator_positions;
-use eg_types::{next_level_object_id, AppPhase, LevelObject, ObjectId, TimedTriggerTarget};
+use eg_types::{next_level_object_id, AppPhase, LevelObject, TriggerTarget};
 
 pub struct EditorHistoryState {
     pub undo: Vec<EditorHistorySnapshot>,
@@ -247,7 +247,7 @@ fn regenerate_object_ids_for_clipboard(
     objects: &mut [LevelObject],
     existing_objects: &[LevelObject],
 ) {
-    let mut id_map = std::collections::HashMap::<ObjectId, ObjectId>::new();
+    let mut id_map = std::collections::HashMap::<String, String>::new();
     let mut allocated_objects = existing_objects.to_vec();
 
     for object in objects.iter_mut() {
@@ -263,7 +263,7 @@ fn regenerate_object_ids_for_clipboard(
         let Some(trigger) = object.trigger.as_mut() else {
             continue;
         };
-        let TimedTriggerTarget::Objects { object_ids } = &mut trigger.target else {
+        let TriggerTarget::Objects { object_ids } = &mut trigger.target else {
             continue;
         };
         for object_id in object_ids {

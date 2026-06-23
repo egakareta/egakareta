@@ -7,7 +7,7 @@
 */
 use super::{EditorSubsystem, State};
 use eg_game::GameState;
-use eg_types::TimedTriggerAction;
+use eg_types::TriggerAction;
 use eg_types::{AppPhase, EditorMode, LevelObject};
 
 impl EditorSubsystem {
@@ -167,7 +167,7 @@ impl EditorSubsystem {
         let index = self.selected_trigger_index()?;
         let triggers = self.triggers();
         let trigger = triggers.get(index)?;
-        let TimedTriggerAction::TransformObjects {
+        let TriggerAction::TransformObjects {
             position,
             rotation_degrees,
             size,

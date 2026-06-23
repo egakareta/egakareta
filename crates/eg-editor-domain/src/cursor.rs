@@ -7,8 +7,8 @@
 */
 use eg_block_geometry::hitbox_cuboids;
 use eg_game::physics::object_xz_contains;
+use eg_types::{EasingDirection, TimedTrigger, TriggerAction, TriggerTarget};
 use eg_types::{LevelObject, TRANSFORM_TRIGGER_BLOCK_ID};
-use eg_types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
 
 pub fn create_block_at_cursor(
     cursor: [f32; 3],
@@ -19,11 +19,11 @@ pub fn create_block_at_cursor(
     let trigger = (block_id == TRANSFORM_TRIGGER_BLOCK_ID).then(|| TimedTrigger {
         time_seconds: 0.0,
         duration_seconds: 1.0,
-        easing: TimedTriggerEasing::EaseInOut,
-        target: TimedTriggerTarget::Objects {
+        easing: EasingDirection::EaseInOut,
+        target: TriggerTarget::Objects {
             object_ids: Vec::new(),
         },
-        action: TimedTriggerAction::TransformObjects {
+        action: TriggerAction::TransformObjects {
             position: cursor,
             rotation_degrees,
             size: default_size,

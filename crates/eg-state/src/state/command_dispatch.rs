@@ -718,8 +718,8 @@ mod tests {
     use crate::state::editor_command::EditorCommand;
     use eg_types::{
         camera_trigger_eye_from_target, camera_triggers_to_timed_triggers,
-        default_camera_trigger_distance, CameraTrigger, CameraTriggerMode, TimedTrigger,
-        TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget,
+        default_camera_trigger_distance, CameraMode, CameraTrigger, EasingDirection, TimedTrigger,
+        TriggerAction, TriggerTarget,
     };
     use eg_types::{
         AppPhase, EditorMode, KeyChord, LevelObject, MusicMetadata, SettingsSection, TimingPoint,
@@ -2092,8 +2092,8 @@ mod tests {
             + Vec3::Y * 4.0;
         let camera_trigger = CameraTrigger {
             time_seconds: 1.0,
-            mode: CameraTriggerMode::Static,
-            easing: TimedTriggerEasing::Linear,
+            mode: CameraMode::Static,
+            easing: EasingDirection::Linear,
             transition_interval_seconds: 1.0,
             use_full_segment_transition: false,
             target_position: target.to_array(),
@@ -2163,8 +2163,8 @@ mod tests {
             + Vec3::Y * 4.0;
         let camera_trigger = CameraTrigger {
             time_seconds: 1.0,
-            mode: CameraTriggerMode::Static,
-            easing: TimedTriggerEasing::Linear,
+            mode: CameraMode::Static,
+            easing: EasingDirection::Linear,
             transition_interval_seconds: 1.0,
             use_full_segment_transition: false,
             target_position: target.to_array(),
@@ -2240,11 +2240,11 @@ mod tests {
             trigger: Some(TimedTrigger {
                 time_seconds: 1.0,
                 duration_seconds: 1.0,
-                easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Objects {
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Objects {
                     object_ids: vec!["obj_000001".to_string()],
                 },
-                action: TimedTriggerAction::TransformObjects {
+                action: TriggerAction::TransformObjects {
                     position: [2.0, 0.0, 0.0],
                     rotation_degrees: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
@@ -2905,11 +2905,11 @@ mod tests {
         state.editor.set_triggers(vec![TimedTrigger {
             time_seconds: 0.0,
             duration_seconds: 1.0,
-            easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Objects {
+            easing: EasingDirection::Linear,
+            target: TriggerTarget::Objects {
                 object_ids: vec!["obj_000001".to_string()],
             },
-            action: TimedTriggerAction::TransformObjects {
+            action: TriggerAction::TransformObjects {
                 position: [1.0, 0.0, 0.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],

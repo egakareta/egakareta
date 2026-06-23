@@ -26,7 +26,7 @@ mod tests {
         LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata, TimingPoint,
         TRANSFORM_TRIGGER_BLOCK_ID,
     };
-    use eg_types::{TimedTriggerAction, TimedTriggerTarget};
+    use eg_types::{TriggerAction, TriggerTarget};
 
     fn assert_near_solver_hits_target(
         spawn: [f32; 3],
@@ -234,11 +234,11 @@ mod tests {
             .trigger
             .expect("transform trigger block should carry a trigger");
         match trigger.target {
-            TimedTriggerTarget::Objects { object_ids } => assert!(object_ids.is_empty()),
-            TimedTriggerTarget::Camera => panic!("expected object target"),
+            TriggerTarget::Objects { object_ids } => assert!(object_ids.is_empty()),
+            TriggerTarget::Camera => panic!("expected object target"),
         }
         match trigger.action {
-            TimedTriggerAction::TransformObjects {
+            TriggerAction::TransformObjects {
                 position,
                 rotation_degrees,
                 size,

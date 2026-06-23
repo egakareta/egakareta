@@ -31,8 +31,8 @@ use eg_mesh::{
 use eg_render::EditorOutlineInstance;
 use eg_types::{
     apply_simulate_hitboxes_triggers_to_objects, AppPhase, BlockRenderProfile, Direction,
-    EditorMode, EditorPlaceMode, LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerTarget,
-    TimingPoint, TRANSFORM_TRIGGER_BLOCK_ID,
+    EditorMode, EditorPlaceMode, LevelObject, TimedTrigger, TimingPoint, TriggerAction,
+    TriggerTarget, TRANSFORM_TRIGGER_BLOCK_ID,
 };
 
 const SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD: usize = 700;
@@ -136,11 +136,11 @@ fn transform_trigger_target_indices_for_block(
         return Vec::new();
     };
 
-    if !matches!(trigger.action, TimedTriggerAction::TransformObjects { .. }) {
+    if !matches!(trigger.action, TriggerAction::TransformObjects { .. }) {
         return Vec::new();
     }
 
-    let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
+    let TriggerTarget::Objects { object_ids } = &trigger.target else {
         return Vec::new();
     };
 
@@ -235,10 +235,10 @@ fn transform_trigger_markers_for_triggers(
     let mut markers = Vec::new();
 
     for (trigger_index, trigger) in triggers.iter().enumerate() {
-        let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
+        let TriggerTarget::Objects { object_ids } = &trigger.target else {
             continue;
         };
-        let TimedTriggerAction::TransformObjects {
+        let TriggerAction::TransformObjects {
             position,
             rotation_degrees,
             size,
@@ -1543,7 +1543,7 @@ mod tests {
     use eg_mesh::builders::game::build_colored_tap_indicator_vertices;
     use eg_render::MeshDrawData;
     use eg_types::{AppPhase, EditorMode, LevelObject};
-    use eg_types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
+    use eg_types::{EasingDirection, TimedTrigger, TriggerAction, TriggerTarget};
 
     fn block(position: [f32; 3], size: [f32; 3]) -> LevelObject {
         LevelObject {
@@ -1587,11 +1587,11 @@ mod tests {
         TimedTrigger {
             time_seconds: 0.0,
             duration_seconds: 0.0,
-            easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Objects {
+            easing: EasingDirection::Linear,
+            target: TriggerTarget::Objects {
                 object_ids: vec!["target".to_string()],
             },
-            action: TimedTriggerAction::TransformObjects {
+            action: TriggerAction::TransformObjects {
                 position: [2.0, 0.0, 0.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
@@ -1604,9 +1604,9 @@ mod tests {
         TimedTrigger {
             time_seconds: 0.0,
             duration_seconds: 0.0,
-            easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Camera,
-            action: TimedTriggerAction::CameraPose {
+            easing: EasingDirection::Linear,
+            target: TriggerTarget::Camera,
+            action: TriggerAction::CameraPose {
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 target_position: [0.0, 0.0, 0.0],
@@ -1886,11 +1886,11 @@ mod tests {
             TimedTrigger {
                 time_seconds: 1.0,
                 duration_seconds: 4.0,
-                easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Objects {
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Objects {
                     object_ids: vec!["target".to_string()],
                 },
-                action: TimedTriggerAction::TransformObjects {
+                action: TriggerAction::TransformObjects {
                     position: [8.0, 0.0, 0.0],
                     rotation_degrees: [0.0, 90.0, 0.0],
                     size: [2.0, 1.0, 1.0],
@@ -1900,11 +1900,11 @@ mod tests {
             TimedTrigger {
                 time_seconds: 3.0,
                 duration_seconds: 1.0,
-                easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Objects {
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Objects {
                     object_ids: vec!["target".to_string()],
                 },
-                action: TimedTriggerAction::TransformObjects {
+                action: TriggerAction::TransformObjects {
                     position: [10.0, 0.0, 0.0],
                     rotation_degrees: [0.0, 180.0, 0.0],
                     size: [3.0, 1.0, 1.0],
@@ -1927,11 +1927,11 @@ mod tests {
         let triggers = vec![TimedTrigger {
             time_seconds: 1.0,
             duration_seconds: 4.0,
-            easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Objects {
+            easing: EasingDirection::Linear,
+            target: TriggerTarget::Objects {
                 object_ids: Vec::new(),
             },
-            action: TimedTriggerAction::TransformObjects {
+            action: TriggerAction::TransformObjects {
                 position: [8.0, 0.0, 0.0],
                 rotation_degrees: [0.0, 90.0, 0.0],
                 size: [2.0, 1.0, 1.0],

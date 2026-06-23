@@ -20,8 +20,8 @@ use eg_editor_domain::{
     TimelineNearSearch, TimingDivisionDirection,
 };
 use eg_game::{GameState, TimelineSimulationRuntime};
-use eg_types::{AppPhase, EditorMode, EditorTapDivisionPick, LevelObject, ObjectId};
-use eg_types::{TimedTriggerAction, TimedTriggerTarget};
+use eg_types::{AppPhase, EditorMode, EditorTapDivisionPick, LevelObject};
+use eg_types::{TriggerAction, TriggerTarget};
 
 const TAP_CLICK_ADD_EPSILON_SECONDS: f32 = 0.001;
 const FALLBACK_TIMELINE_SHIFT_SECONDS: f32 = 0.1;
@@ -29,7 +29,7 @@ const FALLBACK_TIMELINE_SHIFT_SECONDS: f32 = 0.1;
 fn object_ids_for_removed_indices(
     objects: &[LevelObject],
     removed_indices: &[usize],
-) -> Vec<ObjectId> {
+) -> Vec<String> {
     let mut removed_indices = removed_indices
         .iter()
         .copied()
@@ -52,7 +52,7 @@ fn object_ids_for_removed_indices(
 
 fn dereference_removed_transform_trigger_targets(
     objects: &mut [LevelObject],
-    removed_object_ids: &[ObjectId],
+    removed_object_ids: &[String],
 ) {
     if removed_object_ids.is_empty() {
         return;
@@ -66,10 +66,10 @@ fn dereference_removed_transform_trigger_targets(
         let Some(trigger) = object.trigger.as_mut() else {
             continue;
         };
-        if !matches!(trigger.action, TimedTriggerAction::TransformObjects { .. }) {
+        if !matches!(trigger.action, TriggerAction::TransformObjects { .. }) {
             continue;
         }
-        let TimedTriggerTarget::Objects { object_ids } = &mut trigger.target else {
+        let TriggerTarget::Objects { object_ids } = &mut trigger.target else {
             continue;
         };
 
@@ -1313,7 +1313,7 @@ mod tests {
     use eg_types::{
         AppPhase, Direction, EditorMode, LevelObject, TimingPoint, TRANSFORM_TRIGGER_BLOCK_ID,
     };
-    use eg_types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
+    use eg_types::{EasingDirection, TimedTrigger, TriggerAction, TriggerTarget};
 
     fn test_block(position: [f32; 3]) -> LevelObject {
         LevelObject {
@@ -1329,9 +1329,9 @@ mod tests {
         TimedTrigger {
             time_seconds: 0.0,
             duration_seconds: 1.0,
-            easing: TimedTriggerEasing::EaseInOut,
-            target: TimedTriggerTarget::Objects { object_ids },
-            action: TimedTriggerAction::TransformObjects {
+            easing: EasingDirection::EaseInOut,
+            target: TriggerTarget::Objects { object_ids },
+            action: TriggerAction::TransformObjects {
                 position: [9.0, 0.0, 0.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
@@ -1385,7 +1385,7 @@ mod tests {
         let trigger = triggers.first().expect("trigger remains");
         assert_eq!(
             trigger.target,
-            TimedTriggerTarget::Objects {
+            TriggerTarget::Objects {
                 object_ids: Vec::new(),
             }
         );
@@ -1413,7 +1413,7 @@ mod tests {
         let trigger = triggers.first().expect("trigger remains");
         assert_eq!(
             trigger.target,
-            TimedTriggerTarget::Objects {
+            TriggerTarget::Objects {
                 object_ids: vec!["object_4".to_string()],
             }
         );

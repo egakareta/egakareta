@@ -14,7 +14,7 @@ use eg_editor_domain::{derive_tap_indicator_positions, derive_timeline_position}
 use eg_game::simulate_timeline_state_with_triggers;
 use eg_mesh::{GizmoAxis, GizmoDragKind};
 use eg_types::{AppPhase, Direction, EditorMode, LevelObject, PhysicalSize};
-use eg_types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
+use eg_types::{EasingDirection, TimedTrigger, TriggerAction, TriggerTarget};
 use glam::{Vec2, Vec3};
 
 async fn new_editor_state() -> State {
@@ -360,11 +360,11 @@ fn configure_trigger_policy_parity_scene(
     state.editor.set_triggers(vec![TimedTrigger {
         time_seconds: 0.0,
         duration_seconds: 0.0,
-        easing: TimedTriggerEasing::Linear,
-        target: TimedTriggerTarget::Objects {
+        easing: EasingDirection::Linear,
+        target: TriggerTarget::Objects {
             object_ids: vec!["target".to_string()],
         },
-        action: TimedTriggerAction::TransformObjects {
+        action: TriggerAction::TransformObjects {
             position: [0.0, 0.0, 1.0],
             rotation_degrees: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
@@ -1150,11 +1150,11 @@ async fn timing_origin_playback_seek_resync_keeps_runtime_disabled() {
     state.editor.set_triggers(vec![TimedTrigger {
         time_seconds: 0.5,
         duration_seconds: 1.0,
-        easing: TimedTriggerEasing::Linear,
-        target: TimedTriggerTarget::Objects {
+        easing: EasingDirection::Linear,
+        target: TriggerTarget::Objects {
             object_ids: vec!["object_0_0_0".to_string()],
         },
-        action: TimedTriggerAction::TransformObjects {
+        action: TriggerAction::TransformObjects {
             position: [3.0, 0.0, 0.0],
             rotation_degrees: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
@@ -1374,11 +1374,11 @@ async fn timing_mode_timeline_scrub_skips_simulation_and_mesh_dirty() {
     state.editor.set_triggers(vec![TimedTrigger {
         time_seconds: 1.0,
         duration_seconds: 1.0,
-        easing: TimedTriggerEasing::Linear,
-        target: TimedTriggerTarget::Objects {
+        easing: EasingDirection::Linear,
+        target: TriggerTarget::Objects {
             object_ids: vec!["object_0_0_0".to_string()],
         },
-        action: TimedTriggerAction::TransformObjects {
+        action: TriggerAction::TransformObjects {
             position: [10.0, 0.0, 0.0],
             rotation_degrees: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
@@ -1412,11 +1412,11 @@ async fn compose_mode_timeline_scrub_runs_simulation_and_mesh_dirty() {
     state.editor.set_triggers(vec![TimedTrigger {
         time_seconds: 1.0,
         duration_seconds: 1.0,
-        easing: TimedTriggerEasing::Linear,
-        target: TimedTriggerTarget::Objects {
+        easing: EasingDirection::Linear,
+        target: TriggerTarget::Objects {
             object_ids: vec!["object_0_0_0".to_string()],
         },
-        action: TimedTriggerAction::TransformObjects {
+        action: TriggerAction::TransformObjects {
             position: [10.0, 0.0, 0.0],
             rotation_degrees: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
@@ -1447,9 +1447,9 @@ async fn camera_trigger_timeline_scrub_marks_block_mesh_dirty() {
     state.editor.set_triggers(vec![TimedTrigger {
         time_seconds: 1.0,
         duration_seconds: 0.0,
-        easing: TimedTriggerEasing::Linear,
-        target: TimedTriggerTarget::Camera,
-        action: TimedTriggerAction::CameraPose {
+        easing: EasingDirection::Linear,
+        target: TriggerTarget::Camera,
+        action: TriggerAction::CameraPose {
             transition_interval_seconds: 1.0,
             use_full_segment_transition: false,
             target_position: [0.0, 0.0, 0.0],

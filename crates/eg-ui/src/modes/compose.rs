@@ -13,8 +13,7 @@ use eg_state::commands::AppCommand;
 use eg_state::state::editor_command::EditorCommand;
 use eg_state::state::EditorUiViewModel;
 use eg_types::{
-    EditorMode, LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
-    TimedTriggerTarget,
+    EasingDirection, EditorMode, LevelObject, TimedTrigger, TriggerAction, TriggerTarget,
 };
 
 const RECENT_BLOCK_STRIP_LIMIT: usize = 4;
@@ -237,10 +236,10 @@ fn show_trigger_easing_control(ui: &mut egui::Ui, trigger: &mut TimedTrigger) ->
             .selected_text(trigger_easing_label(trigger.easing))
             .show_ui(ui, |ui| {
                 for easing in [
-                    TimedTriggerEasing::Linear,
-                    TimedTriggerEasing::EaseIn,
-                    TimedTriggerEasing::EaseOut,
-                    TimedTriggerEasing::EaseInOut,
+                    EasingDirection::Linear,
+                    EasingDirection::EaseIn,
+                    EasingDirection::EaseOut,
+                    EasingDirection::EaseInOut,
                 ] {
                     changed |= ui
                         .selectable_value(&mut trigger.easing, easing, trigger_easing_label(easing))
@@ -254,7 +253,7 @@ fn show_trigger_easing_control(ui: &mut egui::Ui, trigger: &mut TimedTrigger) ->
 
 fn show_trigger_action_controls(ui: &mut egui::Ui, trigger: &mut TimedTrigger) -> bool {
     match &mut trigger.action {
-        TimedTriggerAction::CameraPose {
+        TriggerAction::CameraPose {
             transition_interval_seconds,
             use_full_segment_transition,
             ..
@@ -263,7 +262,7 @@ fn show_trigger_action_controls(ui: &mut egui::Ui, trigger: &mut TimedTrigger) -
             transition_interval_seconds,
             use_full_segment_transition,
         ),
-        TimedTriggerAction::CameraFollow {
+        TriggerAction::CameraFollow {
             transition_interval_seconds,
             use_full_segment_transition,
             distance,
@@ -277,12 +276,12 @@ fn show_trigger_action_controls(ui: &mut egui::Ui, trigger: &mut TimedTrigger) -
             rotation,
             pitch,
         ),
-        TimedTriggerAction::TransformObjects {
+        TriggerAction::TransformObjects {
             simulate_hitboxes, ..
         } => {
             let target_count = match &trigger.target {
-                TimedTriggerTarget::Objects { object_ids } => object_ids.len(),
-                TimedTriggerTarget::Camera => 0,
+                TriggerTarget::Objects { object_ids } => object_ids.len(),
+                TriggerTarget::Camera => 0,
             };
             show_transform_trigger_summary(ui, simulate_hitboxes, target_count)
         }
@@ -389,12 +388,12 @@ fn show_transform_trigger_summary(
         .changed()
 }
 
-fn trigger_easing_label(easing: TimedTriggerEasing) -> &'static str {
+fn trigger_easing_label(easing: EasingDirection) -> &'static str {
     match easing {
-        TimedTriggerEasing::Linear => "Linear",
-        TimedTriggerEasing::EaseIn => "Ease In",
-        TimedTriggerEasing::EaseOut => "Ease Out",
-        TimedTriggerEasing::EaseInOut => "Ease In Out",
+        EasingDirection::Linear => "Linear",
+        EasingDirection::EaseIn => "Ease In",
+        EasingDirection::EaseOut => "Ease Out",
+        EasingDirection::EaseInOut => "Ease In Out",
     }
 }
 
@@ -591,8 +590,8 @@ mod tests {
     use crate::test_utils::editor_view_model;
     use eg_blocks::{all_placeable_blocks, block_texture_atlas, resolve_block_texture_layers};
     use eg_types::{
-        default_camera_trigger_distance, TimedTrigger, TimedTriggerAction, TimedTriggerEasing,
-        TimedTriggerTarget,
+        default_camera_trigger_distance, EasingDirection, TimedTrigger, TriggerAction,
+        TriggerTarget,
     };
     use eg_types::{
         AppSettings, EditorMode, LevelObject, MusicMetadata, CAMERA_TRIGGER_BLOCK_ID,
@@ -724,11 +723,11 @@ mod tests {
             trigger: Some(TimedTrigger {
                 time_seconds: 0.5,
                 duration_seconds: 1.0,
-                easing: TimedTriggerEasing::EaseInOut,
-                target: TimedTriggerTarget::Objects {
+                easing: EasingDirection::EaseInOut,
+                target: TriggerTarget::Objects {
                     object_ids: vec!["target".to_string()],
                 },
-                action: TimedTriggerAction::TransformObjects {
+                action: TriggerAction::TransformObjects {
                     position: [1.0, 0.0, 1.0],
                     rotation_degrees: [0.0, 90.0, 0.0],
                     size: [1.0, 1.0, 1.0],
@@ -755,9 +754,9 @@ mod tests {
             trigger: Some(TimedTrigger {
                 time_seconds: 1.0,
                 duration_seconds: 0.0,
-                easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Camera,
-                action: TimedTriggerAction::CameraFollow {
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Camera,
+                action: TriggerAction::CameraFollow {
                     transition_interval_seconds: 1.0,
                     use_full_segment_transition: false,
                     distance: default_camera_trigger_distance(),
@@ -776,11 +775,11 @@ mod tests {
             trigger: Some(TimedTrigger {
                 time_seconds: 0.5,
                 duration_seconds: 1.0,
-                easing: TimedTriggerEasing::EaseInOut,
-                target: TimedTriggerTarget::Objects {
+                easing: EasingDirection::EaseInOut,
+                target: TriggerTarget::Objects {
                     object_ids: vec!["target".to_string()],
                 },
-                action: TimedTriggerAction::TransformObjects {
+                action: TriggerAction::TransformObjects {
                     position: [1.0, 0.0, 1.0],
                     rotation_degrees: [0.0, 90.0, 0.0],
                     size: [1.0, 1.0, 1.0],

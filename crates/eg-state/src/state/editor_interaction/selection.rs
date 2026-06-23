@@ -1636,11 +1636,11 @@ mod tests {
         state.editor.set_triggers(vec![eg_types::TimedTrigger {
             time_seconds: 1.0,
             duration_seconds: 1.0,
-            easing: eg_types::TimedTriggerEasing::Linear,
-            target: eg_types::TimedTriggerTarget::Objects {
+            easing: eg_types::EasingDirection::Linear,
+            target: eg_types::TriggerTarget::Objects {
                 object_ids: vec!["object_0_0_0".to_string()],
             },
-            action: eg_types::TimedTriggerAction::TransformObjects {
+            action: eg_types::TriggerAction::TransformObjects {
                 position: [5.0, 0.0, 0.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],

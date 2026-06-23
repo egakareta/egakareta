@@ -11,7 +11,7 @@ use eg_types::{
     camera_trigger_eye_from_target, camera_trigger_eye_from_target_with_distance,
     default_camera_trigger_distance, default_camera_trigger_target_position,
     timed_triggers_to_camera_triggers, triggers_from_objects, CameraTrigger, TimedTrigger,
-    TimedTriggerAction, TimedTriggerTarget,
+    TriggerAction, TriggerTarget,
 };
 use eg_types::{
     LevelObject, CAMERA_TRIGGER_BLOCK_ID, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_ROTATION,
@@ -23,12 +23,12 @@ pub struct EditorTriggerState {
     pub object_indices: Vec<usize>,
 }
 
-fn trigger_block_id_from_action(action: &TimedTriggerAction) -> &'static str {
+fn trigger_block_id_from_action(action: &TriggerAction) -> &'static str {
     match action {
-        TimedTriggerAction::CameraPose { .. } | TimedTriggerAction::CameraFollow { .. } => {
+        TriggerAction::CameraPose { .. } | TriggerAction::CameraFollow { .. } => {
             CAMERA_TRIGGER_BLOCK_ID
         }
-        TimedTriggerAction::TransformObjects { .. } => TRANSFORM_TRIGGER_BLOCK_ID,
+        TriggerAction::TransformObjects { .. } => TRANSFORM_TRIGGER_BLOCK_ID,
     }
 }
 
@@ -46,7 +46,7 @@ fn camera_trigger_object_position_from_eye(eye: [f32; 3], size: [f32; 3]) -> [f3
 
 fn trigger_object_from_payload(trigger: TimedTrigger) -> LevelObject {
     let (position, size, rotation_degrees) = match &trigger.action {
-        TimedTriggerAction::CameraPose {
+        TriggerAction::CameraPose {
             target_position,
             rotation,
             pitch,
@@ -60,13 +60,13 @@ fn trigger_object_from_payload(trigger: TimedTrigger) -> LevelObject {
                 camera_trigger_rotation_degrees(*rotation, *pitch),
             )
         }
-        TimedTriggerAction::TransformObjects {
+        TriggerAction::TransformObjects {
             position,
             rotation_degrees,
             size,
             ..
         } => (*position, *size, *rotation_degrees),
-        TimedTriggerAction::CameraFollow {
+        TriggerAction::CameraFollow {
             distance,
             rotation,
             pitch,
@@ -114,10 +114,10 @@ impl Default for EditorTriggerState {
 
 impl EditorSubsystem {
     pub fn is_camera_track_trigger(trigger: &TimedTrigger) -> bool {
-        matches!(trigger.target, TimedTriggerTarget::Camera)
+        matches!(trigger.target, TriggerTarget::Camera)
             && matches!(
                 trigger.action,
-                TimedTriggerAction::CameraPose { .. } | TimedTriggerAction::CameraFollow { .. }
+                TriggerAction::CameraPose { .. } | TriggerAction::CameraFollow { .. }
             )
     }
 
@@ -137,15 +137,15 @@ impl EditorSubsystem {
         };
 
         match &mut trigger.target {
-            TimedTriggerTarget::Camera => {}
-            TimedTriggerTarget::Objects { object_ids } => {
+            TriggerTarget::Camera => {}
+            TriggerTarget::Objects { object_ids } => {
                 object_ids.sort_unstable();
                 object_ids.dedup();
             }
         }
 
         match &mut trigger.action {
-            TimedTriggerAction::TransformObjects {
+            TriggerAction::TransformObjects {
                 position,
                 rotation_degrees,
                 size,
@@ -175,7 +175,7 @@ impl EditorSubsystem {
                     }
                 });
             }
-            TimedTriggerAction::CameraPose {
+            TriggerAction::CameraPose {
                 transition_interval_seconds,
                 target_position,
                 rotation,
@@ -206,7 +206,7 @@ impl EditorSubsystem {
                     *pitch = pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
                 }
             }
-            TimedTriggerAction::CameraFollow {
+            TriggerAction::CameraFollow {
                 transition_interval_seconds,
                 distance,
                 rotation,
@@ -243,7 +243,7 @@ impl EditorSubsystem {
         trigger: &TimedTrigger,
         target_position: [f32; 3],
     ) {
-        let TimedTriggerAction::CameraFollow {
+        let TriggerAction::CameraFollow {
             distance,
             rotation,
             pitch,
@@ -360,7 +360,7 @@ impl EditorSubsystem {
                         .next()?;
                 if let Some(target_position) = self
                     .timeline_position_for_camera_trigger_marker(camera_trigger.time_seconds)
-                    .filter(|_| matches!(camera_trigger.mode, eg_types::CameraTriggerMode::Follow))
+                    .filter(|_| matches!(camera_trigger.mode, eg_types::CameraMode::Follow))
                 {
                     camera_trigger.target_position = target_position;
                 }
@@ -371,8 +371,8 @@ impl EditorSubsystem {
 
     pub fn has_object_transform_triggers(&self) -> bool {
         self.triggers().iter().any(|trigger| {
-            !matches!(trigger.target, TimedTriggerTarget::Camera)
-                && matches!(trigger.action, TimedTriggerAction::TransformObjects { .. })
+            !matches!(trigger.target, TriggerTarget::Camera)
+                && matches!(trigger.action, TriggerAction::TransformObjects { .. })
         })
     }
 
@@ -389,10 +389,10 @@ impl EditorSubsystem {
             return false;
         }
         self.triggers().iter().any(|trigger| {
-            if !matches!(trigger.action, TimedTriggerAction::TransformObjects { .. }) {
+            if !matches!(trigger.action, TriggerAction::TransformObjects { .. }) {
                 return false;
             }
-            let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
+            let TriggerTarget::Objects { object_ids } = &trigger.target else {
                 return false;
             };
             indices
@@ -498,8 +498,8 @@ mod tests {
     use crate::state::State;
     use eg_types::{
         camera_trigger_eye_from_object, camera_trigger_eye_from_target,
-        default_camera_trigger_distance, CameraTriggerMode, TimedTrigger, TimedTriggerAction,
-        TimedTriggerEasing, TimedTriggerTarget,
+        default_camera_trigger_distance, CameraMode, EasingDirection, TimedTrigger, TriggerAction,
+        TriggerTarget,
     };
     use eg_types::{LevelObject, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_ROTATION};
 
@@ -516,11 +516,11 @@ mod tests {
         TimedTrigger {
             time_seconds,
             duration_seconds: 0.0,
-            easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Objects {
+            easing: EasingDirection::Linear,
+            target: TriggerTarget::Objects {
                 object_ids: vec!["obj_000001".to_string()],
             },
-            action: TimedTriggerAction::TransformObjects {
+            action: TriggerAction::TransformObjects {
                 position: [1.0, 2.0, 3.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
@@ -533,9 +533,9 @@ mod tests {
         TimedTrigger {
             time_seconds,
             duration_seconds: 0.0,
-            easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Camera,
-            action: TimedTriggerAction::CameraPose {
+            easing: EasingDirection::Linear,
+            target: TriggerTarget::Camera,
+            action: TriggerAction::CameraPose {
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 target_position: [0.0, 0.0, 0.0],
@@ -555,7 +555,7 @@ mod tests {
     async fn camera_track_trigger_detection_matches_camera_target_and_action() {
         let pose = camera_pose_trigger(0.0);
         let follow = TimedTrigger {
-            action: TimedTriggerAction::CameraFollow {
+            action: TriggerAction::CameraFollow {
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 distance: default_camera_trigger_distance(),
@@ -579,8 +579,8 @@ mod tests {
         let index = state.editor.add_trigger(TimedTrigger {
             time_seconds: f32::INFINITY,
             duration_seconds: f32::NAN,
-            easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Objects {
+            easing: EasingDirection::Linear,
+            target: TriggerTarget::Objects {
                 object_ids: vec![
                     "three".to_string(),
                     "one".to_string(),
@@ -588,7 +588,7 @@ mod tests {
                     "two".to_string(),
                 ],
             },
-            action: TimedTriggerAction::TransformObjects {
+            action: TriggerAction::TransformObjects {
                 position: [f32::NAN, 2.0, f32::INFINITY],
                 rotation_degrees: [f32::NEG_INFINITY, 90.0, f32::NAN],
                 size: [f32::NAN, -9.0, 2.0],
@@ -604,7 +604,7 @@ mod tests {
         let first = &state.editor.triggers()[0];
         assert_eq!(first.duration_seconds, 0.0);
         match &first.target {
-            TimedTriggerTarget::Objects { object_ids } => {
+            TriggerTarget::Objects { object_ids } => {
                 assert_eq!(
                     object_ids,
                     &vec!["one".to_string(), "three".to_string(), "two".to_string()]
@@ -613,7 +613,7 @@ mod tests {
             _ => panic!("expected object list target"),
         }
         match first.action {
-            TimedTriggerAction::TransformObjects {
+            TriggerAction::TransformObjects {
                 position,
                 rotation_degrees,
                 size,
@@ -639,9 +639,9 @@ mod tests {
             TimedTrigger {
                 time_seconds: 9.0,
                 duration_seconds: -5.0,
-                easing: TimedTriggerEasing::EaseIn,
-                target: TimedTriggerTarget::Camera,
-                action: TimedTriggerAction::CameraPose {
+                easing: EasingDirection::EaseIn,
+                target: TriggerTarget::Camera,
+                action: TriggerAction::CameraPose {
                     transition_interval_seconds: f32::NAN,
                     use_full_segment_transition: false,
                     target_position: [f32::NAN, 2.0, f32::NEG_INFINITY],
@@ -652,9 +652,9 @@ mod tests {
             TimedTrigger {
                 time_seconds: -1.0,
                 duration_seconds: 1.0,
-                easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Camera,
-                action: TimedTriggerAction::CameraFollow {
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Camera,
+                action: TriggerAction::CameraFollow {
                     transition_interval_seconds: -3.0,
                     use_full_segment_transition: true,
                     distance: f32::NAN,
@@ -670,7 +670,7 @@ mod tests {
         assert_eq!(state.editor.triggers()[1].time_seconds, 8.0);
 
         match state.editor.triggers()[0].action {
-            TimedTriggerAction::CameraFollow {
+            TriggerAction::CameraFollow {
                 transition_interval_seconds,
                 use_full_segment_transition,
                 distance,
@@ -687,7 +687,7 @@ mod tests {
         }
 
         match state.editor.triggers()[1].action {
-            TimedTriggerAction::CameraPose {
+            TriggerAction::CameraPose {
                 transition_interval_seconds,
                 target_position,
                 rotation,
@@ -709,7 +709,7 @@ mod tests {
     async fn set_triggers_centers_camera_trigger_object_on_eye() {
         let mut state = new_editor_state().await;
         let trigger = camera_pose_trigger(0.0);
-        let TimedTriggerAction::CameraPose {
+        let TriggerAction::CameraPose {
             target_position,
             rotation,
             pitch,
@@ -741,7 +741,7 @@ mod tests {
             camera_pose_trigger(0.5),
             object_move_trigger(0.75),
             TimedTrigger {
-                action: TimedTriggerAction::CameraFollow {
+                action: TriggerAction::CameraFollow {
                     transition_interval_seconds: 1.5,
                     use_full_segment_transition: false,
                     distance: default_camera_trigger_distance(),
@@ -761,8 +761,8 @@ mod tests {
         assert_eq!(markers.len(), 2);
         assert_eq!(markers[0].0, 0);
         assert_eq!(markers[1].0, 2);
-        assert_eq!(markers[0].1.mode, CameraTriggerMode::Static);
-        assert_eq!(markers[1].1.mode, CameraTriggerMode::Follow);
+        assert_eq!(markers[0].1.mode, CameraMode::Static);
+        assert_eq!(markers[1].1.mode, CameraMode::Follow);
     }
 
     #[tokio::test]
@@ -776,11 +776,11 @@ mod tests {
         state.editor.add_trigger(TimedTrigger {
             time_seconds: 1.0,
             duration_seconds: 0.0,
-            easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Objects {
+            easing: EasingDirection::Linear,
+            target: TriggerTarget::Objects {
                 object_ids: vec!["object_1".to_string()],
             },
-            action: TimedTriggerAction::TransformObjects {
+            action: TriggerAction::TransformObjects {
                 position: [0.0, 0.0, 0.0],
                 rotation_degrees: [10.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
@@ -797,11 +797,11 @@ mod tests {
             TimedTrigger {
                 time_seconds: 1.0,
                 duration_seconds: 0.0,
-                easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Objects {
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Objects {
                     object_ids: vec!["object_1".to_string()],
                 },
-                action: TimedTriggerAction::TransformObjects {
+                action: TriggerAction::TransformObjects {
                     position: [0.0, 0.0, 0.0],
                     rotation_degrees: [10.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
@@ -825,7 +825,7 @@ mod tests {
         state.editor.objects[0].rotation_degrees = [10.0, 20.0, 30.0];
 
         let trigger = state.editor.triggers().remove(0);
-        let TimedTriggerAction::TransformObjects {
+        let TriggerAction::TransformObjects {
             position,
             rotation_degrees,
             size,

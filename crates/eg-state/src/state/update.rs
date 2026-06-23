@@ -1092,7 +1092,7 @@ mod tests {
     use super::State;
     use eg_game::{GameState, TimelineSimulationRuntime};
     use eg_types::{AppPhase, Direction, EditorMode, LevelObject, TimingPoint};
-    use eg_types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
+    use eg_types::{EasingDirection, TimedTrigger, TriggerAction, TriggerTarget};
 
     fn sample_object() -> LevelObject {
         LevelObject {
@@ -1106,11 +1106,11 @@ mod tests {
         TimedTrigger {
             time_seconds: 0.0,
             duration_seconds: 0.0,
-            easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Objects {
+            easing: EasingDirection::Linear,
+            target: TriggerTarget::Objects {
                 object_ids: vec!["object_0_0_0".to_string()],
             },
-            action: TimedTriggerAction::TransformObjects {
+            action: TriggerAction::TransformObjects {
                 position: [2.0, 0.0, 0.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],

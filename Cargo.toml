@@ -64,6 +64,7 @@ gloo-utils = "0.3"
 futures = "0.3"
 image = { version = "0.25", default-features = false }
 include_dir = "0.7"
+is_default = { git = "https://github.com/nujievik/is-default-rs", rev = "ea3c100f69924b230748f2056c5f3c6ad66353d9" }
 js-sys = "0.3"
 log = "0.4"
 naga = { version = "29", features = ["wgsl-in"] }
