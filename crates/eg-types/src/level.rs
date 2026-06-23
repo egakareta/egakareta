@@ -435,34 +435,42 @@ impl Default for SpawnMetadata {
     }
 }
 
+/// An object placed in a level.
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct LevelObject {
+    /// Unique identifier for this object, used for referencing in triggers. Must be unique within a level, but can be any string (e.g. doesn't have to be a number or follow any specific format).
     #[serde(
         default = "default_level_object_id",
         skip_serializing_if = "String::is_empty"
     )]
     pub id: ObjectId,
+    /// Position of the center of the object in level coordinates.
     #[serde(
         default = "default_level_object_position",
         skip_serializing_if = "is_default_level_object_position"
     )]
     pub position: [f32; 3],
+    /// Absolute size of the object.
     #[serde(
         default = "default_level_object_size",
         skip_serializing_if = "is_default_level_object_size"
     )]
     pub size: [f32; 3],
+    /// Rotation of the object in degrees, applied as intrinsic XYZ = extrinsic ZYX, pivoted at the object center.
+    /// X is pitch, Y is yaw, Z is roll.
     #[serde(
         default = "default_block_rotation_degrees",
         skip_serializing_if = "is_default_block_rotation_degrees"
     )]
     pub rotation_degrees: [f32; 3],
+    /// ID of the block to use for this object, which determines its appearance and behavior. Can be a custom block ID or a core block ID. For example, "core/stone" or "custom/my_block".
     #[serde(
         default = "default_level_object_block_id",
         deserialize_with = "deserialize_level_object_block_id",
         skip_serializing_if = "is_default_level_object_block_id"
     )]
     pub block_id: String,
+    /// Color tint to apply to the object, as RGB values from 0.0 to 1.0. This is multiplied with the block's colors, so it can be used to create variations of the same block without needing multiple block definitions. For example, a color tint of [1.0, 0.5, 0.5] would make the object appear redder, while [0.5, 1.0, 0.5] would make it appear greener.
     #[serde(
         default = "default_level_object_color_tint",
         skip_serializing_if = "is_default_level_object_color_tint"
