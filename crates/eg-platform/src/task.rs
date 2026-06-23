@@ -55,7 +55,7 @@ mod native_runtime {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        let _ = handle().spawn(future);
+        drop(handle().spawn(future));
     }
 }
 
