@@ -703,7 +703,7 @@ mod tests {
                 for (actual, expected) in target_position.iter().zip([0.0, 2.0, 0.0]) {
                     assert!((*actual - expected).abs() <= 1e-5);
                 }
-                assert_eq!(rotation, -45.0f32.to_radians());
+                assert_eq!(rotation, DEFAULT_CAMERA_ROTATION);
                 assert!((pitch - 89.9f32.to_radians()).abs() <= 1e-6);
             }
             _ => panic!("expected camera pose"),
