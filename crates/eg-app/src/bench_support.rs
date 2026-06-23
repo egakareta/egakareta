@@ -491,8 +491,7 @@ pub fn benchmark_objects(object_count: usize) -> Vec<LevelObject> {
                 size: [1.0, 1.0 + ((index % 3) as f32 * 0.25), 1.0],
                 rotation_degrees: [0.0, ((index % 4) as f32) * 15.0, 0.0],
                 block_id: "core/stone".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
+                ..LevelObject::default()
             }
         })
         .collect()
@@ -507,11 +506,8 @@ pub fn dense_voxel_objects(object_count: usize) -> Vec<LevelObject> {
             let z = (index / side) as f32;
             LevelObject {
                 position: [x, 0.0, z],
-                size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
+                ..LevelObject::default()
             }
         })
         .collect()

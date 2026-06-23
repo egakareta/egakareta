@@ -444,7 +444,7 @@ impl State {
     }
 
     fn reset_menu_preview_to_default_scene(&mut self) {
-        self.gameplay.state.objects = eg_game::create_menu_scene();
+        self.gameplay.state.objects = vec![];
         self.gameplay.state.rebuild_behavior_cache();
         self.menu.state.preview_sky_color = default_sky_color();
         self.menu.state.preview_camera_position = DEFAULT_MENU_PREVIEW_CAMERA_POSITION;
@@ -754,11 +754,7 @@ mod tests {
                 position[0], position[1], position[2]
             ),
             position,
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: block_id.to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         }
     }
@@ -1014,7 +1010,7 @@ mod tests {
             DEFAULT_MENU_PREVIEW_CAMERA_TARGET
         );
         assert_eq!(state.menu.state.preview_sky_color, default_sky_color());
-        assert_eq!(state.gameplay.state.objects, eg_game::create_menu_scene());
+        assert!(state.gameplay.state.objects.is_empty());
 
         state.menu.state.levels = vec!["__missing_preview_level__".to_string()];
         state.menu.state.selected_level = 0;
@@ -1023,7 +1019,7 @@ mod tests {
 
         state.refresh_menu_level_preview_if_needed();
         assert_eq!(state.menu.state.preview_level_index, Some(0));
-        assert_eq!(state.gameplay.state.objects, eg_game::create_menu_scene());
+        assert!(state.gameplay.state.objects.is_empty());
         assert_eq!(
             state.menu.state.preview_camera_position,
             DEFAULT_MENU_PREVIEW_CAMERA_POSITION

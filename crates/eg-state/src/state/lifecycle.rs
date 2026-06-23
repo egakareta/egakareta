@@ -23,7 +23,7 @@ use std::sync::OnceLock;
 use wgpu::util::DeviceExt;
 
 use eg_blocks::block_texture_atlas;
-use eg_game::{create_menu_scene, GameState};
+use eg_game::GameState;
 use eg_level::builtin_level_names;
 use eg_mesh::{
     build_block_geometry, build_floor_vertices, build_grid_vertices, BlockInstance, MeshGeometry,
@@ -506,7 +506,7 @@ impl State {
         };
 
         let mut game = GameState::new();
-        game.objects = create_menu_scene();
+        game.objects = vec![];
         game.rebuild_behavior_cache();
 
         let mut app_settings = eg_types::AppSettings::default();
@@ -1396,7 +1396,7 @@ impl State {
         };
 
         let mut game = GameState::new();
-        game.objects = create_menu_scene();
+        game.objects = vec![];
         game.rebuild_behavior_cache();
 
         let mut app_settings = if cfg!(test) {

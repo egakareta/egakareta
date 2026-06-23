@@ -140,11 +140,7 @@ async fn selection_outline_uses_single_bounds_mesh_for_large_selections() {
     for index in 0..701 {
         state.editor.objects.push(LevelObject {
             position: [index as f32, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         });
     }

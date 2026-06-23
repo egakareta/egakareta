@@ -92,7 +92,6 @@ fn trigger_object_from_payload(trigger: TimedTrigger) -> LevelObject {
         size,
         rotation_degrees,
         block_id: trigger_block_id_from_action(&trigger.action).to_string(),
-        color_tint: [1.0, 1.0, 1.0],
         trigger: Some(trigger),
         ..LevelObject::default()
     }
@@ -508,11 +507,7 @@ mod tests {
         LevelObject {
             id: format!("obj_{:06}", x as i32 + 1),
             position: [x, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: eg_types::DEFAULT_BLOCK_ID.to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         }
     }

@@ -543,6 +543,8 @@ impl LevelObject {
 }
 
 impl Default for LevelObject {
+    /// Default object is a non-trigger unit block at the origin, with no ID and no color tint.
+    /// This is guaranteed to be position (0,0,0), size (1,1,1), rotation (0,0,0).
     fn default() -> Self {
         Self {
             id: default_level_object_id(),

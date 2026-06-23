@@ -256,21 +256,14 @@ mod tests {
     fn removes_topmost_block_at_cursor_cell() {
         let mut objects = vec![
             LevelObject {
-                position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
                 ..LevelObject::default()
             },
             LevelObject {
                 position: [0.0, 1.0, 0.0],
                 size: [1.0, 2.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/grass".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
                 ..LevelObject::default()
             },
         ];
@@ -304,11 +297,7 @@ mod tests {
             timeline_time_seconds: 0.5,
             objects: vec![LevelObject {
                 position: [4.0, 6.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
                 ..LevelObject::default()
             }],
             ..LevelMetadata::default()
@@ -366,11 +355,7 @@ mod tests {
     fn returns_objects_only_when_playtesting() {
         let objects = vec![LevelObject {
             position: [1.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         }];
 
@@ -385,11 +370,7 @@ mod tests {
         // Place a speed portal at [0, 0, 5] (5 units ahead of spawn on Z).
         let objects = vec![LevelObject {
             position: [0.5, 0.0, 5.5],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/speedportal".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         }];
 
@@ -433,11 +414,7 @@ mod tests {
             },
             objects: vec![LevelObject {
                 position: [1.0, 2.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
                 ..LevelObject::default()
             }],
             ..LevelMetadata::default()
@@ -591,11 +568,7 @@ mod tests {
     fn near_solver_with_post_death_seed_uses_reachable_time() {
         let objects = vec![LevelObject {
             position: [0.0, 0.0, 4.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         }];
         let target = [0.5, 0.0, 3.5];
@@ -876,12 +849,7 @@ mod tests {
             time_signature_denominator: 4,
         }];
         let objects = vec![LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         }];
 

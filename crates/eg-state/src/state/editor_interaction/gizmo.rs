@@ -811,19 +811,6 @@ mod tests {
     use eg_types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTriggerTarget};
     use glam::{Vec2, Vec3};
 
-    fn test_block() -> LevelObject {
-        LevelObject {
-            id: "object_0_0_0".to_string(),
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
-            ..LevelObject::default()
-        }
-    }
-
     fn start_block_for_index(index: usize, block: &LevelObject) -> EditorDragBlockStart {
         EditorDragBlockStart {
             index,
@@ -853,7 +840,7 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.editor.ui.mode = EditorMode::Place;
-        state.editor.objects = vec![test_block()];
+        state.editor.objects = vec![LevelObject::default()];
         state.editor.ui.selected_block_index = Some(0);
 
         let viewport = Vec2::new(1280.0, 720.0);
@@ -895,7 +882,7 @@ mod tests {
             ..camera_pose.clone()
         };
 
-        let mut selected = test_block();
+        let mut selected = LevelObject::default();
         selected.trigger = Some(camera_pose);
         state.editor.objects = vec![selected];
         state.editor.ui.selected_block_index = Some(0);
@@ -946,7 +933,7 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.editor.config.snap_to_grid = false;
-        state.editor.objects = vec![test_block()];
+        state.editor.objects = vec![LevelObject::default()];
 
         let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(0.5, 0.5, 0.5);
@@ -984,7 +971,7 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.editor.config.snap_to_grid = false;
-        let mut block = test_block();
+        let mut block = LevelObject::default();
         block.rotation_degrees = [0.0, 90.0, 0.0];
         state.editor.objects = vec![block];
 
@@ -1026,7 +1013,7 @@ mod tests {
 
         state.editor.config.snap_to_grid = true;
         state.editor.config.snap_step = 1.0;
-        let mut block = test_block();
+        let mut block = LevelObject::default();
         block.rotation_degrees = [0.0, 45.0, 0.0];
         state.editor.objects = vec![block];
 
@@ -1129,7 +1116,7 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.editor.config.snap_to_grid = false;
-        state.editor.objects = vec![test_block()];
+        state.editor.objects = vec![LevelObject::default()];
 
         let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(0.5, 0.5, 0.5);
@@ -1168,7 +1155,7 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.editor.config.snap_to_grid = false;
-        let mut block = test_block();
+        let mut block = LevelObject::default();
         block.position = [2.0, 1.0, 3.0];
         block.size = [2.0, 1.0, 1.0];
         block.rotation_degrees = [0.0, 90.0, 0.0];
@@ -1226,7 +1213,7 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.editor.config.snap_to_grid = false;
-        let mut block = test_block();
+        let mut block = LevelObject::default();
         block.position = [2.0, 1.0, 3.0];
         block.size = [2.0, 1.0, 1.0];
         block.rotation_degrees = [0.0, 90.0, 0.0];
@@ -1284,7 +1271,7 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.editor.config.snap_rotation = false;
-        state.editor.objects = vec![test_block()];
+        state.editor.objects = vec![LevelObject::default()];
 
         let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(0.5, 0.5, 0.5);
@@ -1342,7 +1329,7 @@ mod tests {
     async fn pick_and_begin_gizmo_drag_cover_move_scale_rotate_paths() {
         let mut state = State::new_test().await;
 
-        state.editor.objects = vec![test_block()];
+        state.editor.objects = vec![LevelObject::default()];
         state.editor.ui.selected_block_index = Some(0);
         state.editor.ui.selected_block_indices = vec![0];
 
@@ -1403,7 +1390,7 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.editor.config.snap_to_grid = false;
-        state.editor.objects = vec![test_block()];
+        state.editor.objects = vec![LevelObject::default()];
 
         let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(0.5, 0.5, 0.5);
@@ -1467,7 +1454,7 @@ mod tests {
     async fn begin_gizmo_drag_ext_and_state_wrappers_follow_phase_guards() {
         let mut state = State::new_test().await;
 
-        state.editor.objects = vec![test_block()];
+        state.editor.objects = vec![LevelObject::default()];
         state.editor.ui.selected_block_index = Some(0);
         state.editor.ui.selected_block_indices = vec![0];
         state.editor.ui.mode = EditorMode::Move;
@@ -1513,9 +1500,9 @@ mod tests {
         let viewport = Vec2::new(1280.0, 720.0);
 
         // Two blocks at different heights.
-        let mut low = test_block();
+        let mut low = LevelObject::default();
         low.position = [0.0, 0.0, 0.0];
-        let mut high = test_block();
+        let mut high = LevelObject::default();
         high.position = [0.0, 3.0, 0.0];
         state.editor.objects = vec![low, high];
         state.editor.ui.mode = EditorMode::Select;
@@ -1633,7 +1620,7 @@ mod tests {
     async fn drag_gizmo_rotate_identity_block_produces_single_axis_change() {
         let mut state = State::new_test().await;
         state.editor.config.snap_rotation = false;
-        state.editor.objects = vec![test_block()];
+        state.editor.objects = vec![LevelObject::default()];
 
         let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(0.5, 0.5, 0.5);
@@ -1678,7 +1665,7 @@ mod tests {
         let mut state = State::new_test().await;
         state.editor.config.snap_rotation = false;
 
-        let mut block = test_block();
+        let mut block = LevelObject::default();
         block.rotation_degrees = [0.0, 90.0, 0.0];
         state.editor.objects = vec![block];
 
@@ -1750,7 +1737,7 @@ mod tests {
 
         // Use X+Z rotation so the world Y axis actually diverges from local Y.
         // (Pure X rotation doesn't change the Y axis direction.)
-        let mut block = test_block();
+        let mut block = LevelObject::default();
         block.rotation_degrees = [45.0, 0.0, 45.0];
         state.editor.objects = vec![block];
 
@@ -1819,7 +1806,7 @@ mod tests {
         let mut state = State::new_test().await;
         state.editor.config.snap_rotation = false;
 
-        let mut block = test_block();
+        let mut block = LevelObject::default();
         block.rotation_degrees = [30.0, 20.0, 0.0];
         state.editor.objects = vec![block];
 
@@ -1879,7 +1866,7 @@ mod tests {
         state.editor.config.snap_rotation = true;
         state.editor.config.snap_rotation_step_degrees = 15.0;
 
-        let mut block = test_block();
+        let mut block = LevelObject::default();
         block.rotation_degrees = [0.0, 45.0, 0.0];
         state.editor.objects = vec![block];
 
@@ -1946,7 +1933,10 @@ mod tests {
         state.editor.config.snap_to_grid = false;
         state.editor.ui.mode = EditorMode::Move;
         // Create a regular block that will be the source of a transform trigger
-        state.editor.objects = vec![test_block()];
+        state.editor.objects = vec![LevelObject {
+            id: "object_0_0_0".to_string(),
+            ..LevelObject::default()
+        }];
         // Add a transform trigger that targets object 0
         state.editor.set_triggers(vec![TimedTrigger {
             time_seconds: 1.0,

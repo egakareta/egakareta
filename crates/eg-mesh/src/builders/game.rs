@@ -280,7 +280,6 @@ fn practice_checkpoint_flag_object(checkpoint: &PracticeCheckpointFlagInstance) 
         ],
         size: PRACTICE_CHECKPOINT_FLAG_SIZE,
         rotation_degrees,
-        color_tint: [1.0, 1.0, 1.0],
         ..LevelObject::default()
     }
 }

@@ -1626,11 +1626,7 @@ mod tests {
         LevelObject {
             id: format!("object_{:.0}", position[0]),
             position,
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         }
     }
@@ -1670,10 +1666,7 @@ mod tests {
         LevelObject {
             id: format!("trigger_{time_seconds:.1}"),
             position: [9.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
-            color_tint: [1.0, 1.0, 1.0],
             trigger: Some(transform_trigger(time_seconds, target_ids, [9.0, 0.0, 0.0])),
             ..LevelObject::default()
         }
@@ -2118,12 +2111,7 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.editor.objects.push(LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         });
         state.editor.ui.selected_block_index = Some(0);
@@ -2504,12 +2492,7 @@ mod tests {
         state.phase = AppPhase::Editor;
 
         state.editor.objects.push(LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         });
         state.editor.ui.selected_block_index = Some(0);

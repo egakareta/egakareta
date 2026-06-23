@@ -716,10 +716,8 @@ mod tests {
         trigger_view.selected_block = Some(LevelObject {
             id: "trigger".to_string(),
             position: [1.0, 0.0, 1.0],
-            size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 90.0, 0.0],
             block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
-            color_tint: [1.0, 1.0, 1.0],
             trigger: Some(TimedTrigger {
                 time_seconds: 0.5,
                 duration_seconds: 1.0,
@@ -768,10 +766,8 @@ mod tests {
         let transform_trigger = LevelObject {
             id: "trigger".to_string(),
             position: [1.0, 0.0, 1.0],
-            size: [1.0, 1.0, 1.0],
             rotation_degrees: [0.0, 90.0, 0.0],
             block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
-            color_tint: [1.0, 1.0, 1.0],
             trigger: Some(TimedTrigger {
                 time_seconds: 0.5,
                 duration_seconds: 1.0,

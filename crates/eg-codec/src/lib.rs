@@ -420,11 +420,9 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
                         payload.grid_min,
                         payload.grid_dims,
                     )?,
-                    size: [1.0, 1.0, 1.0],
-                    rotation_degrees: [0.0, 0.0, 0.0],
                     block_id: block_id.clone(),
-                    color_tint: [1.0, 1.0, 1.0],
                     trigger: object_triggers[index].clone(),
+                    ..LevelObject::default()
                 }
             } else {
                 let object = LevelObject {

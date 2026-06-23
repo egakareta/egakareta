@@ -66,10 +66,7 @@ mod tests {
         let object = LevelObject {
             position: [1.0, 2.0, 3.0],
             size: [4.0, 5.0, 6.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/grass".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         };
 
@@ -86,13 +83,8 @@ mod tests {
     #[test]
     fn level_object_is_transform_trigger_matches_block_id_or_trigger_action() {
         // A plain block is not a transform trigger.
-        let plain = LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
+        let plain: LevelObject = LevelObject {
             block_id: "core/grass".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         };
         assert!(!plain.is_transform_trigger());
@@ -107,11 +99,7 @@ mod tests {
         // also detected (covers deserialized levels that omit block_id).
         let by_action = LevelObject {
             id: "trigger".to_string(),
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/grass".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
             trigger: Some(TimedTrigger {
                 time_seconds: 1.0,
                 duration_seconds: 1.0,
@@ -165,12 +153,7 @@ mod tests {
             timeline_duration_seconds: 16.0,
             menu_preview_camera: None,
             objects: vec![LevelObject {
-                position: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
                 ..LevelObject::default()
             }],
         });
@@ -371,11 +354,7 @@ mod tests {
         let metadata = LevelMetadata {
             name: "Bridge".to_string(),
             objects: vec![LevelObject {
-                position: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
-                color_tint: [1.0, 1.0, 1.0],
                 trigger: camera_triggers_to_timed_triggers(&[CameraTrigger {
                     time_seconds: 1.2,
                     mode: CameraTriggerMode::Static,
@@ -424,11 +403,8 @@ mod tests {
     #[test]
     fn resolved_camera_trigger_normalizes_wrapped_pitch_rotation() {
         let object = LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
             rotation_degrees: [-135.0, 0.0, 180.0],
             block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
-            color_tint: [1.0, 1.0, 1.0],
             trigger: camera_triggers_to_timed_triggers(&[CameraTrigger {
                 time_seconds: 1.2,
                 mode: CameraTriggerMode::Static,
@@ -484,7 +460,6 @@ mod tests {
             size: [2.0, 3.0, 4.0],
             rotation_degrees: [10.0, 20.0, 30.0],
             block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
-            color_tint: [1.0, 1.0, 1.0],
             trigger: Some(TimedTrigger {
                 time_seconds: 1.0,
                 duration_seconds: 2.0,
@@ -523,12 +498,7 @@ mod tests {
     fn timed_triggers_apply_easing_sorting_and_scale_clamp() {
         let base = vec![LevelObject {
             id: "target".to_string(),
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         }];
 
@@ -561,32 +531,16 @@ mod tests {
         let base = vec![
             LevelObject {
                 id: "object_0".to_string(),
-                position: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
-                block_id: "core/stone".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
                 ..LevelObject::default()
             },
             LevelObject {
                 id: "object_1".to_string(),
                 position: [1.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
-                block_id: "core/stone".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
                 ..LevelObject::default()
             },
             LevelObject {
                 id: "object_2".to_string(),
                 position: [2.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
-                block_id: "core/stone".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
                 ..LevelObject::default()
             },
         ];
@@ -635,12 +589,6 @@ mod tests {
     fn timed_triggers_ignore_non_finite_start_time() {
         let base = vec![LevelObject {
             id: "target".to_string(),
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         }];
         let triggers = vec![TimedTrigger {

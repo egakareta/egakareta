@@ -914,10 +914,7 @@ impl State {
             let bounds_object = LevelObject {
                 position: bounds_position,
                 size: bounds_size,
-                rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
                 ..LevelObject::default()
             };
             let mask_vertices =
@@ -1493,10 +1490,7 @@ fn editor_preview_player_hitbox(position: [f32; 3]) -> LevelObject {
             position[2] - inset_width * 0.5,
         ],
         size: [inset_width, inset_height, inset_width],
-        rotation_degrees: [0.0, 0.0, 0.0],
         block_id: "core/void".to_string(),
-        color_tint: [1.0, 1.0, 1.0],
-        trigger: None,
         ..LevelObject::default()
     }
 }
@@ -1556,10 +1550,7 @@ mod tests {
             id: "target".to_string(),
             position,
             size,
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         }
     }
@@ -1574,11 +1565,7 @@ mod tests {
     async fn camera_trigger_selection_outline_uses_visual_mesh_instead_of_cube_hull() {
         let object = LevelObject {
             position: [3.0, 4.0, 5.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/camera_trigger".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         };
 

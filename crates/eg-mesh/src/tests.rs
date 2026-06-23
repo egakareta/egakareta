@@ -37,12 +37,9 @@ mod tests {
     #[test]
     fn block_vertices_rotate_about_center() {
         let obj = LevelObject {
-            position: [0.0, 0.0, 0.0],
             size: [2.0, 1.0, 1.0],
             rotation_degrees: [0.0, 90.0, 0.0],
             block_id: "core/dirt".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         };
         let vertices = build_block_vertices(&[obj]);
@@ -367,30 +364,17 @@ mod tests {
     fn hitbox_visualization_draws_outline_only_for_lethal_and_consumables() {
         let objects = vec![
             LevelObject {
-                position: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/lava".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
                 ..LevelObject::default()
             },
             LevelObject {
                 position: [2.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/speedportal".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
                 ..LevelObject::default()
             },
             LevelObject {
                 position: [4.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/gem".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
                 ..LevelObject::default()
             },
         ];
@@ -477,7 +461,6 @@ mod tests {
     fn camera_trigger_profile_builds_eye_ring_and_direction_arrow() {
         let obj = LevelObject {
             position: [3.0, 4.0, 5.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/camera_trigger".to_string(),
             ..LevelObject::default()
         };

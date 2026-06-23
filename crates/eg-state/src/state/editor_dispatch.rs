@@ -287,10 +287,7 @@ mod tests {
         LevelObject {
             id: format!("trigger_{time_seconds:.1}"),
             position,
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
-            color_tint: [1.0, 1.0, 1.0],
             trigger: Some(TimedTrigger {
                 time_seconds,
                 duration_seconds: 1.0,
@@ -353,7 +350,7 @@ mod tests {
     #[tokio::test]
     async fn dispatch_editor_routes_selection_timeline_and_escape_commands() {
         let mut state = new_editor_state().await;
-        state.editor.objects = vec![stone(0.0, 0.0, 0.0)];
+        state.editor.objects = vec![LevelObject::default()];
         state.editor.ui.selected_block_index = Some(0);
         state.editor.ui.selected_block_indices = vec![0];
 
@@ -408,11 +405,7 @@ mod tests {
     async fn update_selected_block_persists_trigger_fields() {
         let mut state = new_editor_state().await;
         state.editor.objects = vec![LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
-            color_tint: [1.0, 1.0, 1.0],
             trigger: Some(TimedTrigger {
                 time_seconds: 0.0,
                 duration_seconds: 1.0,

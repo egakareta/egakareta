@@ -6,7 +6,6 @@
 
 */
 pub mod physics;
-pub mod scenes;
 pub mod simulation;
 pub mod spatial;
 pub mod state;
@@ -14,6 +13,5 @@ pub mod state;
 mod tests;
 
 pub use physics::*;
-pub use scenes::*;
 pub use simulation::*;
 pub use state::*;

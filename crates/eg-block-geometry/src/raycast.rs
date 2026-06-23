@@ -325,18 +325,6 @@ mod tests {
     use approx::assert_abs_diff_eq;
     use eg_types::LevelObject;
 
-    /// Returns a unit block at the origin with no rotation using the default
-    /// block definition (typically `core/stone`, which has no explicit geometry
-    /// and thus falls back to a full-size hitbox cuboid).
-    fn unit_block_at_origin() -> LevelObject {
-        LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
-            ..LevelObject::default()
-        }
-    }
-
     #[test]
     fn aabb_hits_front_face() {
         // Unit AABB at origin; ray approaches from -Z.
@@ -489,7 +477,7 @@ mod tests {
 
     #[test]
     fn bounds_direct_hit_within_range() {
-        let obj = unit_block_at_origin();
+        let obj = LevelObject::default();
         assert!(ray_may_hit_block_bounds(
             Vec3::new(0.5, 0.5, -5.0),
             Vec3::Z,
@@ -500,7 +488,7 @@ mod tests {
 
     #[test]
     fn bounds_beyond_max_t() {
-        let obj = unit_block_at_origin();
+        let obj = LevelObject::default();
         assert!(!ray_may_hit_block_bounds(
             Vec3::new(0.5, 0.5, -5.0),
             Vec3::Z,
@@ -511,7 +499,7 @@ mod tests {
 
     #[test]
     fn bounds_pointed_away() {
-        let obj = unit_block_at_origin();
+        let obj = LevelObject::default();
         assert!(!ray_may_hit_block_bounds(
             Vec3::new(0.5, 0.5, -5.0),
             -Vec3::Z,
@@ -553,7 +541,7 @@ mod tests {
 
     #[test]
     fn bounds_far_away_definitely_misses() {
-        let obj = unit_block_at_origin();
+        let obj = LevelObject::default();
         assert!(!ray_may_hit_block_bounds(
             Vec3::new(100.0, 100.0, -5.0),
             Vec3::Z,
@@ -619,7 +607,7 @@ mod tests {
 
     #[test]
     fn rotated_block_hits_unrotated_unit_block() {
-        let obj = unit_block_at_origin();
+        let obj = LevelObject::default();
         let (t, normal) = ray_intersect_rotated_block(Vec3::new(0.5, 0.5, -5.0), Vec3::Z, &obj)
             .expect("expected hit");
         assert_abs_diff_eq!(t, 5.0);
@@ -663,7 +651,7 @@ mod tests {
 
     #[test]
     fn rotated_block_hit_from_inside() {
-        let obj = unit_block_at_origin();
+        let obj = LevelObject::default();
         // Origin inside the block, ray pointing +Z — exits at Z=1 with outward normal +Z.
         let (t, normal) = ray_intersect_rotated_block(Vec3::new(0.5, 0.5, 0.5), Vec3::Z, &obj)
             .expect("expected hit from inside");
@@ -673,14 +661,14 @@ mod tests {
 
     #[test]
     fn rotated_block_behind_origin() {
-        let obj = unit_block_at_origin();
+        let obj = LevelObject::default();
         let result = ray_intersect_rotated_block(Vec3::new(0.5, 0.5, 5.0), Vec3::Z, &obj);
         assert!(result.is_none(), "should miss when block is behind the ray");
     }
 
     #[test]
     fn rotated_block_hits_side_face() {
-        let obj = unit_block_at_origin();
+        let obj = LevelObject::default();
         let (t, normal) = ray_intersect_rotated_block(Vec3::new(-5.0, 0.5, 0.5), Vec3::X, &obj)
             .expect("expected hit on side face");
         assert_abs_diff_eq!(t, 5.0);
@@ -691,7 +679,7 @@ mod tests {
 
     #[test]
     fn rotated_block_hits_top_face() {
-        let obj = unit_block_at_origin();
+        let obj = LevelObject::default();
         let (t, normal) = ray_intersect_rotated_block(Vec3::new(0.5, 5.0, 0.5), -Vec3::Y, &obj)
             .expect("expected hit on top face");
         assert_abs_diff_eq!(t, 4.0);
@@ -706,9 +694,7 @@ mod tests {
         // verifies the "closest hit" logic still works correctly. Create a
         // larger block with two potential hit regions.
         let obj = LevelObject {
-            position: [0.0, 0.0, 0.0],
             size: [2.0, 2.0, 2.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             ..LevelObject::default()
         };
         let (t, normal) = ray_intersect_rotated_block(Vec3::new(1.0, 1.0, -5.0), Vec3::Z, &obj)

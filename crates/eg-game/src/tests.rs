@@ -16,15 +16,7 @@ use eg_types::{TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TimedTrigge
 #[test]
 fn test_ground_detection_normal() {
     let mut game = GameState::new();
-    game.objects.push(LevelObject {
-        position: [0.0, 0.0, 0.0],
-        size: [1.0, 1.0, 1.0],
-        rotation_degrees: [0.0, 0.0, 0.0],
-        block_id: "core/stone".to_string(),
-        color_tint: [1.0, 1.0, 1.0],
-        trigger: None,
-        ..LevelObject::default()
-    });
+    game.objects.push(LevelObject::default());
     game.rebuild_behavior_cache();
 
     // Player at x=0.5, z=0.5 (center of block), check top Y height.
@@ -35,15 +27,7 @@ fn test_ground_detection_normal() {
 #[test]
 fn test_ground_detection_includes_block_edges() {
     let mut game = GameState::new();
-    game.objects.push(LevelObject {
-        position: [0.0, 0.0, 0.0],
-        size: [1.0, 1.0, 1.0],
-        rotation_degrees: [0.0, 0.0, 0.0],
-        block_id: "core/stone".to_string(),
-        color_tint: [1.0, 1.0, 1.0],
-        trigger: None,
-        ..LevelObject::default()
-    });
+    game.objects.push(LevelObject::default());
     game.rebuild_behavior_cache();
 
     assert_eq!(game.top_surface_y_at(0.0, 0.5, 2.0), Some(1.0));
@@ -57,15 +41,7 @@ fn player_stays_grounded_when_footprint_overlaps_platform_edge() {
     let mut game = GameState::new();
     game.started = true;
     game.position = [1.05, 1.0, 0.5];
-    game.objects.push(LevelObject {
-        position: [0.0, 0.0, 0.0],
-        size: [1.0, 1.0, 1.0],
-        rotation_degrees: [0.0, 0.0, 0.0],
-        block_id: "core/stone".to_string(),
-        color_tint: [1.0, 1.0, 1.0],
-        trigger: None,
-        ..LevelObject::default()
-    });
+    game.objects.push(LevelObject::default());
     game.rebuild_behavior_cache();
 
     for _ in 0..12 {
@@ -81,23 +57,10 @@ fn player_stays_grounded_when_footprint_overlaps_platform_edge() {
 fn test_ground_detection_under_overhang() {
     let mut game = GameState::new();
     // Ground block
-    game.objects.push(LevelObject {
-        position: [0.0, 0.0, 0.0],
-        size: [1.0, 1.0, 1.0],
-        rotation_degrees: [0.0, 0.0, 0.0],
-        block_id: "core/stone".to_string(),
-        color_tint: [1.0, 1.0, 1.0],
-        trigger: None,
-        ..LevelObject::default()
-    });
+    game.objects.push(LevelObject::default());
     // Overhang block at height 3
     game.objects.push(LevelObject {
         position: [0.0, 3.0, 0.0],
-        size: [1.0, 1.0, 1.0],
-        rotation_degrees: [0.0, 0.0, 0.0],
-        block_id: "core/stone".to_string(),
-        color_tint: [1.0, 1.0, 1.0],
-        trigger: None,
         ..LevelObject::default()
     });
     game.rebuild_behavior_cache();
@@ -132,12 +95,8 @@ fn test_can_turn_while_grounded() {
 #[test]
 fn rotated_object_contains_expected_points() {
     let obj = LevelObject {
-        position: [0.0, 0.0, 0.0],
         size: [2.0, 1.0, 1.0],
         rotation_degrees: [0.0, 90.0, 0.0],
-        block_id: "core/stone".to_string(),
-        color_tint: [1.0, 1.0, 1.0],
-        trigger: None,
         ..LevelObject::default()
     };
 
@@ -148,12 +107,8 @@ fn rotated_object_contains_expected_points() {
 #[test]
 fn rotated_overlap_uses_oriented_bounds() {
     let obj = LevelObject {
-        position: [0.0, 0.0, 0.0],
         size: [2.0, 1.0, 1.0],
         rotation_degrees: [0.0, 45.0, 0.0],
-        block_id: "core/stone".to_string(),
-        color_tint: [1.0, 1.0, 1.0],
-        trigger: None,
         ..LevelObject::default()
     };
 
@@ -164,12 +119,7 @@ fn rotated_overlap_uses_oriented_bounds() {
 #[test]
 fn wooden_fence_collision_uses_json_hitboxes() {
     let obj = LevelObject {
-        position: [0.0, 0.0, 0.0],
-        size: [1.0, 1.0, 1.0],
-        rotation_degrees: [0.0, 0.0, 0.0],
         block_id: "core/wooden_fence".to_string(),
-        color_tint: [1.0, 1.0, 1.0],
-        trigger: None,
         ..LevelObject::default()
     };
 
@@ -183,12 +133,7 @@ fn wooden_fence_collision_uses_json_hitboxes() {
 fn wooden_fence_support_height_uses_hitbox_top() {
     let mut game = GameState::new();
     game.objects.push(LevelObject {
-        position: [0.0, 0.0, 0.0],
-        size: [1.0, 1.0, 1.0],
-        rotation_degrees: [0.0, 0.0, 0.0],
         block_id: "core/wooden_fence".to_string(),
-        color_tint: [1.0, 1.0, 1.0],
-        trigger: None,
         ..LevelObject::default()
     });
     game.rebuild_behavior_cache();
@@ -201,12 +146,7 @@ fn wooden_fence_support_height_uses_hitbox_top() {
 fn missing_hitboxes_fall_back_to_geometry_elements() {
     let mut game = GameState::new();
     game.objects.push(LevelObject {
-        position: [0.0, 0.0, 0.0],
-        size: [1.0, 1.0, 1.0],
-        rotation_degrees: [0.0, 0.0, 0.0],
         block_id: "core/wooden_fence".to_string(),
-        color_tint: [1.0, 1.0, 1.0],
-        trigger: None,
         ..LevelObject::default()
     });
     game.rebuild_behavior_cache();
@@ -219,12 +159,8 @@ fn missing_hitboxes_fall_back_to_geometry_elements() {
 fn rotated_ground_detection_works() {
     let mut game = GameState::new();
     game.objects.push(LevelObject {
-        position: [0.0, 0.0, 0.0],
         size: [2.0, 2.0, 1.0],
         rotation_degrees: [0.0, 90.0, 0.0],
-        block_id: "core/stone".to_string(),
-        color_tint: [1.0, 1.0, 1.0],
-        trigger: None,
         ..LevelObject::default()
     });
     game.rebuild_behavior_cache();
@@ -242,12 +178,8 @@ fn speed_portal_overlap_removes_portal_and_boosts_speed() {
     game.position = [0.5, 0.0, 0.2];
     game.speed = 1.0;
     game.objects.push(LevelObject {
-        position: [0.0, 0.0, 0.0],
-        size: [1.0, 1.0, 1.0],
         rotation_degrees: [0.0, 30.0, 0.0],
         block_id: "core/speedportal".to_string(),
-        color_tint: [1.0, 1.0, 1.0],
-        trigger: None,
         ..LevelObject::default()
     });
     game.rebuild_behavior_cache();
@@ -264,12 +196,7 @@ fn gem_overlap_collects_and_tracks_progress() {
     game.started = true;
     game.position = [0.5, 0.0, 0.5];
     game.objects.push(LevelObject {
-        position: [0.0, 0.0, 0.0],
-        size: [0.72, 0.86, 0.72],
-        rotation_degrees: [0.0, 0.0, 0.0],
         block_id: "core/gem".to_string(),
-        color_tint: [1.0, 1.0, 1.0],
-        trigger: None,
         ..LevelObject::default()
     });
     game.rebuild_behavior_cache();
@@ -407,11 +334,7 @@ fn timeline_trigger_hitbox_mode_does_not_resurrect_consumed_portals() {
     let objects = vec![LevelObject {
         id: "target".to_string(),
         position: [0.0, 0.0, 1.0],
-        size: [1.0, 1.0, 1.0],
-        rotation_degrees: [0.0, 0.0, 0.0],
         block_id: "core/speedportal".to_string(),
-        color_tint: [1.0, 1.0, 1.0],
-        trigger: None,
         ..LevelObject::default()
     }];
 
@@ -448,11 +371,6 @@ fn timeline_state_with_disabled_trigger_hitboxes_matches_plain_simulation() {
     let objects = vec![LevelObject {
         id: "target".to_string(),
         position: [0.0, 0.0, 2.0],
-        size: [1.0, 1.0, 1.0],
-        rotation_degrees: [0.0, 0.0, 0.0],
-        block_id: "core/stone".to_string(),
-        color_tint: [1.0, 1.0, 1.0],
-        trigger: None,
         ..LevelObject::default()
     }];
 

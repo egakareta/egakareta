@@ -865,8 +865,6 @@ fn transform_trigger_target_object(action: &TimedTriggerAction) -> Option<LevelO
         size: *size,
         rotation_degrees: *rotation_degrees,
         block_id: eg_types::DEFAULT_BLOCK_ID.to_string(),
-        color_tint: [1.0, 1.0, 1.0],
-        trigger: None,
         ..LevelObject::default()
     })
 }
@@ -877,22 +875,13 @@ mod tests {
     use eg_types::LevelObject;
     use glam::{Vec2, Vec3};
 
-    fn sample_block(rotation_degrees: [f32; 3]) -> LevelObject {
-        LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees,
-            block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
-            ..LevelObject::default()
-        }
-    }
-
     #[tokio::test]
     async fn ray_intersect_rotated_block_hits_and_misses() {
         let state = State::new_test().await;
-        let block = sample_block([0.0, 45.0, 0.0]);
+        let block = LevelObject {
+            rotation_degrees: [0.0, 45.0, 0.0],
+            ..LevelObject::default()
+        };
 
         let hit =
             state
@@ -932,12 +921,7 @@ mod tests {
     async fn camera_trigger_block_pick_uses_arrow_visual_outside_old_cube_bounds() {
         let state = State::new_test().await;
         let camera_trigger = LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/camera_trigger".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         };
 
@@ -974,7 +958,7 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.editor.objects.clear();
-        state.editor.objects.push(sample_block([0.0, 0.0, 0.0]));
+        state.editor.objects.push(LevelObject::default());
 
         let viewport = Vec2::new(1280.0, 720.0);
         let pick = state

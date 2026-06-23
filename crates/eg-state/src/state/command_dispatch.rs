@@ -942,12 +942,7 @@ mod tests {
     async fn editor_escape_deselects_blocks_and_taps_before_playback_or_timeline() {
         let mut state = new_editor_state().await;
         state.editor.objects = vec![LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         }];
         state.editor.ui.selected_block_indices = vec![0];
@@ -1049,12 +1044,7 @@ mod tests {
         let mut state = State::new_test().await;
         state.enter_editor_phase("Playtest Escape".to_string());
         state.editor.objects = vec![LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         }];
         state.editor_playtest();
@@ -1099,21 +1089,12 @@ mod tests {
 
         state.editor.objects = vec![
             LevelObject {
-                position: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
                 ..LevelObject::default()
             },
             LevelObject {
                 position: [1.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/grass".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
                 ..LevelObject::default()
             },
         ];
@@ -1200,12 +1181,7 @@ mod tests {
     async fn pick_block_at_screen_samples_block_type_for_placement() {
         let mut state = new_editor_state().await;
         state.editor.objects = vec![LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/grass".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         }];
         state.dispatch(AppCommand::Editor(EditorCommand::SetMode(EditorMode::Move)));
@@ -1239,19 +1215,13 @@ mod tests {
             LevelObject {
                 position: [10.0, 2.0, 30.0],
                 size: [2.0, 4.0, 6.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
                 ..LevelObject::default()
             },
             LevelObject {
                 position: [50.0, 4.0, 70.0],
                 size: [4.0, 2.0, 8.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/grass".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
                 ..LevelObject::default()
             },
         ];
@@ -1678,21 +1648,12 @@ mod tests {
         state.editor.camera.editor_pan = [0.0, 0.0];
         state.editor.objects = vec![
             eg_types::LevelObject {
-                position: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
                 ..eg_types::LevelObject::default()
             },
             eg_types::LevelObject {
                 position: [2.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
                 block_id: "core/stone".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
                 ..eg_types::LevelObject::default()
             },
         ];
@@ -1735,12 +1696,7 @@ mod tests {
 
         state.editor.camera.editor_pan = [0.0, 0.0];
         state.editor.objects = vec![eg_types::LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..eg_types::LevelObject::default()
         }];
 
@@ -1822,12 +1778,7 @@ mod tests {
             eg_types::EditorMode::Select,
         )));
         state.editor.objects = vec![LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         }];
 
@@ -2161,14 +2112,12 @@ mod tests {
 
         state.editor.objects.push(LevelObject {
             position: camera_trigger_block_position_from_eye(camera_eye),
-            size: [1.0, 1.0, 1.0],
             rotation_degrees: [
                 camera_trigger.pitch.to_degrees(),
                 camera_trigger.rotation.to_degrees(),
                 0.0,
             ],
             block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
-            color_tint: [1.0, 1.0, 1.0],
             trigger: Some(trigger),
             ..LevelObject::default()
         });
@@ -2234,14 +2183,12 @@ mod tests {
 
         state.editor.objects.push(LevelObject {
             position: camera_trigger_block_position_from_eye(camera_eye),
-            size: [1.0, 1.0, 1.0],
             rotation_degrees: [
                 camera_trigger.pitch.to_degrees(),
                 camera_trigger.rotation.to_degrees(),
                 0.0,
             ],
             block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
-            color_tint: [1.0, 1.0, 1.0],
             trigger: Some(trigger),
             ..LevelObject::default()
         });
@@ -2289,10 +2236,7 @@ mod tests {
         let trigger_index = state.editor.objects.len();
         state.editor.objects.push(LevelObject {
             position: [2.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
-            color_tint: [1.0, 1.0, 1.0],
             trigger: Some(TimedTrigger {
                 time_seconds: 1.0,
                 duration_seconds: 1.0,
@@ -2511,12 +2455,7 @@ mod tests {
 
         assert!(!state.has_block_selection());
         state.editor.objects = vec![LevelObject {
-            position: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
             block_id: "core/stone".to_string(),
-            color_tint: [1.0, 1.0, 1.0],
-            trigger: None,
             ..LevelObject::default()
         }];
         state.editor.ui.selected_block_index = Some(0);
@@ -2830,7 +2769,6 @@ mod tests {
             rotation_degrees: [5.0, 10.0, 15.0],
             block_id: "core/lava".to_string(),
             color_tint: [0.2, 0.4, 0.8],
-            trigger: None,
             ..LevelObject::default()
         };
         state.dispatch(AppCommand::Editor(EditorCommand::UpdateSelectedBlock(
