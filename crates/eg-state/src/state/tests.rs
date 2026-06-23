@@ -9,7 +9,6 @@ use super::EditorDirtyFlags;
 use super::State;
 use crate::commands::AppCommand;
 use crate::state::editor_command::EditorCommand;
-use crate::test_utils::{block, editor_test, sized, stone};
 use eg_audio::audio::runtime_asset_source_key;
 use eg_editor_domain::{derive_tap_indicator_positions, derive_timeline_position};
 use eg_game::simulate_timeline_state_with_triggers;
@@ -24,112 +23,120 @@ async fn new_editor_state() -> State {
     state
 }
 
-editor_test!(
-    test_marquee_no_redundant_selections_before_drag_started,
-    |state| {
-        state.editor.objects.push(stone(0.0, 0.0, 0.0));
-        state.editor.objects.push(stone(5.0, 0.0, 0.0));
+#[tokio::test]
+async fn test_marquee_no_redundant_selections_before_drag_started() {
+    let mut state = State::new_test().await;
+    state.phase = AppPhase::Editor;
+    state.editor.ui.mode = EditorMode::Select;
+    state.editor.objects.push(LevelObject::default());
+    state.editor.objects.push(LevelObject {
+        position: [5.0, 0.0, 0.0],
+        ..LevelObject::default()
+    });
 
-        // 1. Just hovering over the first block (no mouse down)
-        state.editor.ui.hovered_block_index = Some(0);
-        state.rebuild_editor_hover_outline_vertices();
+    // 1. Just hovering over the first block (no mouse down)
+    state.editor.ui.hovered_block_index = Some(0);
+    state.rebuild_editor_hover_outline_vertices();
 
-        let count = state
-            .render
-            .meshes
-            .editor_hover_outline
-            .draw_data()
-            .map(|draw_data| draw_data.count())
-            .expect("hover outline mesh should exist after rebuilding vertices");
-        // One stencil outline hull = 1 prism * 36 vertices/prism.
+    let count = state
+        .render
+        .meshes
+        .editor_hover_outline
+        .draw_data()
+        .map(|draw_data| draw_data.count())
+        .expect("hover outline mesh should exist after rebuilding vertices");
+    // One stencil outline hull = 1 prism * 36 vertices/prism.
+    assert_eq!(
+        count, 36,
+        "Should only have one block outlined when just hovering"
+    );
+    assert!(state
+        .render
+        .meshes
+        .editor_hover_stencil
+        .draw_data()
+        .is_some());
+
+    // 2. Mouse down - starts marquee but drag hasn't started (moved only 1 pixel)
+    state.editor.ui.left_mouse_down = true;
+    state.editor.ui.marquee_start_screen = Some([100.0, 100.0]);
+    state.editor.ui.marquee_current_screen = Some([101.0, 101.0]);
+
+    // Verify marquee is not active yet
+    let (_, _, is_active) = state.editor.marquee_selection_rect_screen().unwrap();
+    assert!(!is_active, "Marquee should NOT be active yet");
+
+    // Even if we were to have overlapping blocks (mathematically),
+    // they shouldn't show up because drag isn't active.
+    state.rebuild_editor_hover_outline_vertices();
+    let count = state
+        .render
+        .meshes
+        .editor_hover_outline
+        .draw_data()
+        .map(|draw_data| draw_data.count())
+        .expect("hover outline mesh should still exist before marquee drag activates");
+    assert_eq!(
+        count, 36,
+        "Should still only have one block outlined if marquee drag hasn't started"
+    );
+
+    // 3. Drag far enough for marquee to be active
+    state.editor.ui.marquee_current_screen = Some([200.0, 200.0]);
+    let (_, _, is_active) = state.editor.marquee_selection_rect_screen().unwrap();
+    assert!(is_active, "Marquee SHOULD be active now");
+}
+
+#[tokio::test]
+async fn selection_outline_builds_instances_per_selected_block() {
+    let mut state = State::new_test().await;
+    state.phase = AppPhase::Editor;
+    state.editor.ui.mode = EditorMode::Select;
+    state.editor.objects.push(LevelObject::default());
+    state.editor.objects.push(LevelObject {
+        position: [2.0, 0.0, 0.0],
+        ..LevelObject::default()
+    });
+
+    state.editor.ui.selected_block_index = Some(0);
+    state.editor.ui.selected_block_indices = vec![0, 1];
+
+    state.rebuild_editor_selection_outline_vertices();
+
+    assert_eq!(
+        state.render.meshes.editor_selection_outline_instances.len(),
+        2
+    );
+    let instances = &state.render.meshes.editor_selection_outline_instances;
+    for instance in instances {
         assert_eq!(
-            count, 36,
-            "Should only have one block outlined when just hovering"
+            instance.outline_vertices.end - instance.outline_vertices.start,
+            36
         );
-        assert!(state
-            .render
-            .meshes
-            .editor_hover_stencil
-            .draw_data()
-            .is_some());
-
-        // 2. Mouse down - starts marquee but drag hasn't started (moved only 1 pixel)
-        state.editor.ui.left_mouse_down = true;
-        state.editor.ui.marquee_start_screen = Some([100.0, 100.0]);
-        state.editor.ui.marquee_current_screen = Some([101.0, 101.0]);
-
-        // Verify marquee is not active yet
-        let (_, _, is_active) = state.editor.marquee_selection_rect_screen().unwrap();
-        assert!(!is_active, "Marquee should NOT be active yet");
-
-        // Even if we were to have overlapping blocks (mathematically),
-        // they shouldn't show up because drag isn't active.
-        state.rebuild_editor_hover_outline_vertices();
-        let count = state
-            .render
-            .meshes
-            .editor_hover_outline
-            .draw_data()
-            .map(|draw_data| draw_data.count())
-            .expect("hover outline mesh should still exist before marquee drag activates");
         assert_eq!(
-            count, 36,
-            "Should still only have one block outlined if marquee drag hasn't started"
+            instance.mask_vertices.end - instance.mask_vertices.start,
+            36
         );
-
-        // 3. Drag far enough for marquee to be active
-        state.editor.ui.marquee_current_screen = Some([200.0, 200.0]);
-        let (_, _, is_active) = state.editor.marquee_selection_rect_screen().unwrap();
-        assert!(is_active, "Marquee SHOULD be active now");
     }
-);
 
-editor_test!(
-    selection_outline_builds_instances_per_selected_block,
-    |state| {
-        state.editor.objects.push(stone(0.0, 0.0, 0.0));
-        state.editor.objects.push(stone(2.0, 0.0, 0.0));
+    let total_outline = state
+        .render
+        .meshes
+        .editor_selection_outline
+        .draw_data()
+        .map(|draw_data| draw_data.count())
+        .expect("selection outline mesh should exist");
+    assert_eq!(total_outline, 72);
 
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0, 1];
-
-        state.rebuild_editor_selection_outline_vertices();
-
-        assert_eq!(
-            state.render.meshes.editor_selection_outline_instances.len(),
-            2
-        );
-        let instances = &state.render.meshes.editor_selection_outline_instances;
-        for instance in instances {
-            assert_eq!(
-                instance.outline_vertices.end - instance.outline_vertices.start,
-                36
-            );
-            assert_eq!(
-                instance.mask_vertices.end - instance.mask_vertices.start,
-                36
-            );
-        }
-
-        let total_outline = state
-            .render
-            .meshes
-            .editor_selection_outline
-            .draw_data()
-            .map(|draw_data| draw_data.count())
-            .expect("selection outline mesh should exist");
-        assert_eq!(total_outline, 72);
-
-        let total_mask = state
-            .render
-            .meshes
-            .editor_selection_stencil
-            .draw_data()
-            .map(|draw_data| draw_data.count())
-            .expect("selection mask mesh should exist");
-        assert_eq!(total_mask, 72);
-    }
-);
+    let total_mask = state
+        .render
+        .meshes
+        .editor_selection_stencil
+        .draw_data()
+        .map(|draw_data| draw_data.count())
+        .expect("selection mask mesh should exist");
+    assert_eq!(total_mask, 72);
+}
 
 #[tokio::test]
 async fn selection_outline_uses_single_bounds_mesh_for_large_selections() {
@@ -140,7 +147,6 @@ async fn selection_outline_uses_single_bounds_mesh_for_large_selections() {
     for index in 0..701 {
         state.editor.objects.push(LevelObject {
             position: [index as f32, 0.0, 0.0],
-            block_id: "core/stone".to_string(),
             ..LevelObject::default()
         });
     }
@@ -294,7 +300,10 @@ async fn supports_offset_spawn_with_tap() {
 
 #[tokio::test]
 async fn falls_from_elevated_platform() {
-    let objects = [stone(0.0, 2.0, 0.0)];
+    let objects = [LevelObject {
+        position: [0.0, 2.0, 0.0],
+        ..LevelObject::default()
+    }];
     let (position, direction) = derive_timeline_position(
         [0.0, 3.0, 0.0],
         Direction::Forward,
@@ -339,7 +348,12 @@ fn configure_trigger_policy_parity_scene(
     simulate_hitboxes: bool,
     timeline_time_seconds: f32,
 ) {
-    state.editor.objects = vec![block("core/speedportal", 8.0, 0.0, 8.0)];
+    state.editor.objects = vec![LevelObject {
+        id: "target".to_string(),
+        block_id: "core/speedportal".to_string(),
+        position: [8.0, 0.0, 8.0],
+        ..LevelObject::default()
+    }];
     state.editor.spawn.position = [0.0, 0.0, 0.0];
     state.editor.spawn.direction = Direction::Forward;
     state.editor.timeline.taps.tap_times.clear();
@@ -348,7 +362,7 @@ fn configure_trigger_policy_parity_scene(
         duration_seconds: 0.0,
         easing: TimedTriggerEasing::Linear,
         target: TimedTriggerTarget::Objects {
-            object_ids: vec!["object_8_0_8".to_string()],
+            object_ids: vec!["target".to_string()],
         },
         action: TimedTriggerAction::TransformObjects {
             position: [0.0, 0.0, 1.0],
@@ -590,7 +604,13 @@ async fn multi_selection_clicking_rendered_gizmo_starts_gizmo_drag_not_block_dra
     let mut state = new_editor_state().await;
     state.editor.ui.mode = EditorMode::Move;
 
-    state.editor.objects = vec![stone(0.0, 0.0, 0.0), stone(4.0, 0.0, 0.0)];
+    state.editor.objects = vec![
+        LevelObject::default(),
+        LevelObject {
+            position: [2.0, 0.0, 0.0],
+            ..LevelObject::default()
+        },
+    ];
     state.editor.ui.selected_block_indices = vec![0, 1];
     state.sync_primary_selection_from_indices();
 
@@ -846,7 +866,10 @@ async fn editor_clipboard_survives_builtin_level_switch() {
         .cloned()
         .expect("test requires at least one built-in level");
 
-    state.editor.objects = vec![stone(2.0, 1.0, 3.0)];
+    state.editor.objects = vec![LevelObject {
+        position: [2.0, 1.0, 3.0],
+        ..LevelObject::default()
+    }];
     state.editor.ui.selected_block_index = Some(0);
     state.editor.ui.selected_block_indices = vec![0];
     state.editor_copy_block();
@@ -866,7 +889,10 @@ async fn editor_clipboard_survives_builtin_level_switch() {
 async fn editor_clipboard_survives_exit_and_reentry() {
     let mut state = new_editor_state().await;
 
-    state.editor.objects = vec![stone(1.0, 0.0, 1.0)];
+    state.editor.objects = vec![LevelObject {
+        position: [1.0, 0.0, 1.0],
+        ..LevelObject::default()
+    }];
     state.editor.ui.selected_block_index = Some(0);
     state.editor.ui.selected_block_indices = vec![0];
     state.editor_copy_block();
@@ -993,10 +1019,11 @@ async fn test_handle_primary_click_shift_priority() {
     state.editor.ui.shift_held = true;
 
     // Add a block and select it
-    state
-        .editor
-        .objects
-        .push(sized("core/stone", -5.0, -5.0, -5.0, 10.0, 10.0, 10.0));
+    state.editor.objects.push(LevelObject {
+        position: [-5.0, -5.0, -5.0],
+        size: [10.0, 10.0, 10.0],
+        ..LevelObject::default()
+    });
     state.editor.ui.selected_block_indices.push(0);
 
     // Set camera to look at origin from above
@@ -1067,7 +1094,7 @@ async fn editor_playback_mode_switching() {
 async fn editor_null_mode_clears_selection() {
     let mut state = State::new_test().await;
     state.phase = AppPhase::Editor;
-    state.editor.objects.push(stone(0.0, 0.0, 0.0));
+    state.editor.objects.push(LevelObject::default());
     state.editor.ui.selected_block_index = Some(0);
     state.editor.set_mode(EditorMode::Place);
     assert_eq!(state.editor.ui.selected_block_index, Some(0));
@@ -1203,7 +1230,7 @@ async fn test_gizmo_move_shaft_is_pickable() {
     state.phase = AppPhase::Editor;
     state.editor.set_mode(EditorMode::Move);
 
-    state.editor.objects.push(stone(0.0, 0.0, 0.0));
+    state.editor.objects.push(LevelObject::default());
     state.editor.ui.selected_block_indices.push(0);
     state.sync_editor_objects();
 
@@ -1271,7 +1298,7 @@ async fn test_gizmo_hover_priority_suppresses_block_outline() {
     state.editor.set_mode(EditorMode::Move);
 
     // 1. Add a primary block and select it to show the gizmo
-    state.editor.objects.push(stone(0.0, 0.0, 0.0));
+    state.editor.objects.push(LevelObject::default());
     state.editor.ui.selected_block_indices.push(0);
     state.sync_editor_objects();
 
@@ -1300,11 +1327,14 @@ async fn test_gizmo_hover_priority_suppresses_block_outline() {
 
     // 3. Add a second block exactly where the gizmo handle is projected
     // This ensures that a raycast from the mouse position *would* hit a block.
-    state.editor.objects.push(stone(
-        move_x_handle_world.x - 0.5,
-        move_x_handle_world.y - 0.5,
-        move_x_handle_world.z - 0.5,
-    ));
+    state.editor.objects.push(LevelObject {
+        position: [
+            move_x_handle_world.x - 0.5,
+            move_x_handle_world.y - 0.5,
+            move_x_handle_world.z - 0.5,
+        ],
+        ..LevelObject::default()
+    });
     state.sync_editor_objects();
 
     // 4. Verify that picking at the gizmo handle's screen coordinates hits the second block.

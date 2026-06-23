@@ -146,15 +146,6 @@ Blocks can define inline `animation` metadata for reusable idle motion and event
 - State construction is `async` (e.g., `State::new_test().await`). Use `#[tokio::test]` for async tests.
 - Editor tests use `enter_editor_phase("name")` with minimal test data when built-in level metadata is not needed. Avoid `start_editor(0)` (which loads full built-in data) unless specifically testing built-in levels — it makes tests multi-second.
 
-### Test Fixtures & Helpers
-
-- Use `crate::test_utils::stone(x, y, z)` to create a stone `LevelObject` at position (x, y, z).
-- Use `crate::test_utils::block(id, x, y, z)` for blocks with custom IDs.
-- Use `crate::test_utils::gem(x, y, z)` for gem blocks.
-- Use `crate::test_utils::sized(id, x, y, z, sx, sy, sz)` for blocks with custom size.
-- Use `crate::test_utils::rotated(id, x, y, z, rx, ry, rz)` for blocks with custom rotation.
-- Use the `editor_test!` macro from `crate::test_utils` to eliminate `pollster::block_on` + `State::new_test()` + `AppPhase::Editor` boilerplate.
-
 ### Adding a New Serde Field
 
 - Use the `serde_default!` family of macros in `src/types.rs` instead of writing separate `default_*` and `is_default_*` functions:

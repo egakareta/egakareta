@@ -709,7 +709,10 @@ mod tests {
         let app_settings = AppSettings::default();
         let music_metadata = MusicMetadata::default();
         let mut normal_view = make_compose_view(&app_settings, &music_metadata, EditorMode::Select);
-        normal_view.selected_block = Some(crate::test_utils::stone(1.0, 2.0, 3.0));
+        normal_view.selected_block = Some(LevelObject {
+            position: [1.0, 2.0, 3.0],
+            ..LevelObject::default()
+        });
 
         let mut trigger_view =
             make_compose_view(&app_settings, &music_metadata, EditorMode::Select);
@@ -747,21 +750,23 @@ mod tests {
 
     #[test]
     fn selected_block_properties_identifies_camera_follow_triggers() {
-        let mut camera_follow = crate::test_utils::stone(0.0, 0.0, 0.0);
-        camera_follow.block_id = CAMERA_TRIGGER_BLOCK_ID.to_string();
-        camera_follow.trigger = Some(TimedTrigger {
-            time_seconds: 1.0,
-            duration_seconds: 0.0,
-            easing: TimedTriggerEasing::Linear,
-            target: TimedTriggerTarget::Camera,
-            action: TimedTriggerAction::CameraFollow {
-                transition_interval_seconds: 1.0,
-                use_full_segment_transition: false,
-                distance: default_camera_trigger_distance(),
-                rotation: DEFAULT_CAMERA_ROTATION,
-                pitch: DEFAULT_CAMERA_PITCH,
-            },
-        });
+        let camera_follow = LevelObject {
+            block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
+            trigger: Some(TimedTrigger {
+                time_seconds: 1.0,
+                duration_seconds: 0.0,
+                easing: TimedTriggerEasing::Linear,
+                target: TimedTriggerTarget::Camera,
+                action: TimedTriggerAction::CameraFollow {
+                    transition_interval_seconds: 1.0,
+                    use_full_segment_transition: false,
+                    distance: default_camera_trigger_distance(),
+                    rotation: DEFAULT_CAMERA_ROTATION,
+                    pitch: DEFAULT_CAMERA_PITCH,
+                },
+            }),
+            ..LevelObject::default()
+        };
 
         let transform_trigger = LevelObject {
             id: "trigger".to_string(),

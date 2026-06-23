@@ -11,8 +11,7 @@
 //! They use `EditorSubsystem::new_test()` which requires no wgpu adapter.
 
 use super::EditorSubsystem;
-use crate::test_utils::stone;
-use eg_types::Direction;
+use eg_types::{Direction, LevelObject};
 
 fn assert_vec3_approx_eq(actual: [f32; 3], expected: [f32; 3], eps: f32) {
     approx::assert_abs_diff_eq!(actual[0], expected[0], epsilon = eps);
@@ -25,8 +24,11 @@ fn assert_vec3_approx_eq(actual: [f32; 3], expected: [f32; 3], eps: f32) {
 #[test]
 fn nudge_moves_selected_blocks_by_world_delta() {
     let mut editor = EditorSubsystem::new_test();
-    editor.objects.push(stone(0.0, 0.0, 0.0));
-    editor.objects.push(stone(3.0, 0.0, 0.0));
+    editor.objects.push(LevelObject::default());
+    editor.objects.push(LevelObject {
+        position: [3.0, 0.0, 0.0],
+        ..LevelObject::default()
+    });
     editor.ui.selected_block_index = Some(0);
     editor.ui.selected_block_indices = vec![0];
 
@@ -38,7 +40,7 @@ fn nudge_moves_selected_blocks_by_world_delta() {
 #[test]
 fn nudge_returns_false_when_nothing_selected() {
     let mut editor = EditorSubsystem::new_test();
-    editor.objects.push(stone(0.0, 0.0, 0.0));
+    editor.objects.push(LevelObject::default());
 
     assert!(!editor.nudge_selected(1.0, 0.0));
     assert_vec3_approx_eq(editor.objects[0].position, [0.0, 0.0, 0.0], 1e-6);
@@ -47,7 +49,10 @@ fn nudge_returns_false_when_nothing_selected() {
 #[test]
 fn nudge_updates_cursor_to_selected_block_position() {
     let mut editor = EditorSubsystem::new_test();
-    editor.objects.push(stone(1.0, 2.0, 3.0));
+    editor.objects.push(LevelObject {
+        position: [1.0, 2.0, 3.0],
+        ..LevelObject::default()
+    });
     editor.ui.selected_block_index = Some(0);
 
     editor.nudge_selected(5.0, -2.0);
@@ -60,7 +65,10 @@ fn nudge_updates_cursor_to_selected_block_position() {
 fn snap_moves_blocks_to_nearest_grid_cell() {
     let mut editor = EditorSubsystem::new_test();
     editor.config.snap_step = 1.0;
-    editor.objects.push(stone(0.3, 0.0, 0.7));
+    editor.objects.push(LevelObject {
+        position: [0.3, 0.0, 0.7],
+        ..LevelObject::default()
+    });
     editor.ui.selected_block_index = Some(0);
 
     assert!(editor.snap_selected_blocks_to_grid());
@@ -71,7 +79,10 @@ fn snap_moves_blocks_to_nearest_grid_cell() {
 fn snap_respects_custom_step_size() {
     let mut editor = EditorSubsystem::new_test();
     editor.config.snap_step = 2.0;
-    editor.objects.push(stone(1.3, 0.0, 3.8));
+    editor.objects.push(LevelObject {
+        position: [1.3, 0.0, 3.8],
+        ..LevelObject::default()
+    });
     editor.ui.selected_block_index = Some(0);
 
     assert!(editor.snap_selected_blocks_to_grid());
@@ -82,7 +93,10 @@ fn snap_respects_custom_step_size() {
 fn snap_returns_false_when_already_snapped() {
     let mut editor = EditorSubsystem::new_test();
     editor.config.snap_step = 1.0;
-    editor.objects.push(stone(3.0, 0.0, 5.0));
+    editor.objects.push(LevelObject {
+        position: [3.0, 0.0, 5.0],
+        ..LevelObject::default()
+    });
     editor.ui.selected_block_index = Some(0);
 
     assert!(!editor.snap_selected_blocks_to_grid());
@@ -93,9 +107,15 @@ fn snap_returns_false_when_already_snapped() {
 #[test]
 fn remove_selected_deletes_marked_blocks() {
     let mut editor = EditorSubsystem::new_test();
-    editor.objects.push(stone(0.0, 0.0, 0.0));
-    editor.objects.push(stone(1.0, 0.0, 0.0));
-    editor.objects.push(stone(2.0, 0.0, 0.0));
+    editor.objects.push(LevelObject::default());
+    editor.objects.push(LevelObject {
+        position: [1.0, 0.0, 0.0],
+        ..LevelObject::default()
+    });
+    editor.objects.push(LevelObject {
+        position: [2.0, 0.0, 0.0],
+        ..LevelObject::default()
+    });
     editor.ui.selected_block_index = Some(1);
     editor.ui.selected_block_indices = vec![1];
 
@@ -108,7 +128,7 @@ fn remove_selected_deletes_marked_blocks() {
 #[test]
 fn remove_selected_clears_selection() {
     let mut editor = EditorSubsystem::new_test();
-    editor.objects.push(stone(0.0, 0.0, 0.0));
+    editor.objects.push(LevelObject::default());
     editor.ui.selected_block_index = Some(0);
 
     editor.remove_selected();
@@ -144,8 +164,11 @@ fn rotate_spawn_direction_toggles_between_forward_and_right() {
 #[test]
 fn clear_block_selection_resets_all_indices() {
     let mut editor = EditorSubsystem::new_test();
-    editor.objects.push(stone(0.0, 0.0, 0.0));
-    editor.objects.push(stone(1.0, 0.0, 0.0));
+    editor.objects.push(LevelObject::default());
+    editor.objects.push(LevelObject {
+        position: [1.0, 0.0, 0.0],
+        ..LevelObject::default()
+    });
     editor.ui.selected_block_index = Some(0);
     editor.ui.selected_block_indices = vec![0, 1];
 
@@ -157,8 +180,11 @@ fn clear_block_selection_resets_all_indices() {
 #[test]
 fn selected_indices_normalized_deduplicates() {
     let mut editor = EditorSubsystem::new_test();
-    editor.objects.push(stone(0.0, 0.0, 0.0));
-    editor.objects.push(stone(1.0, 0.0, 0.0));
+    editor.objects.push(LevelObject::default());
+    editor.objects.push(LevelObject {
+        position: [1.0, 0.0, 0.0],
+        ..LevelObject::default()
+    });
     editor.ui.selected_block_index = Some(0);
     editor.ui.selected_block_indices = vec![0, 0, 1];
 
@@ -214,9 +240,15 @@ fn set_snap_step_clamps_minimum() {
 #[test]
 fn nudge_moves_all_selected_blocks() {
     let mut editor = EditorSubsystem::new_test();
-    editor.objects.push(stone(0.0, 0.0, 0.0));
-    editor.objects.push(stone(1.0, 0.0, 0.0));
-    editor.objects.push(stone(2.0, 0.0, 0.0));
+    editor.objects.push(LevelObject::default());
+    editor.objects.push(LevelObject {
+        position: [1.0, 0.0, 0.0],
+        ..LevelObject::default()
+    });
+    editor.objects.push(LevelObject {
+        position: [2.0, 0.0, 0.0],
+        ..LevelObject::default()
+    });
     editor.ui.selected_block_index = Some(0);
     editor.ui.selected_block_indices = vec![0, 2];
 
@@ -232,7 +264,10 @@ fn nudge_moves_all_selected_blocks() {
 fn snap_returns_false_when_nothing_selected() {
     let mut editor = EditorSubsystem::new_test();
     editor.config.snap_step = 1.0;
-    editor.objects.push(stone(0.3, 0.0, 0.7));
+    editor.objects.push(LevelObject {
+        position: [0.3, 0.0, 0.7],
+        ..LevelObject::default()
+    });
 
     assert!(!editor.snap_selected_blocks_to_grid());
 }
@@ -242,7 +277,7 @@ fn snap_returns_false_when_nothing_selected() {
 #[test]
 fn remove_selected_returns_false_when_nothing_selected_and_cursor_empty() {
     let mut editor = EditorSubsystem::new_test();
-    editor.objects.push(stone(0.0, 0.0, 0.0));
+    editor.objects.push(LevelObject::default());
     // Cursor far from any block so remove_topmost_block_at_cursor also fails
     editor.ui.cursor = [100.0, 100.0, 100.0];
 
@@ -268,9 +303,15 @@ fn effective_snap_rotation_overridden_by_ctrl() {
 #[test]
 fn selected_indices_normalized_sorted() {
     let mut editor = EditorSubsystem::new_test();
-    editor.objects.push(stone(0.0, 0.0, 0.0));
-    editor.objects.push(stone(1.0, 0.0, 0.0));
-    editor.objects.push(stone(2.0, 0.0, 0.0));
+    editor.objects.push(LevelObject::default());
+    editor.objects.push(LevelObject {
+        position: [1.0, 0.0, 0.0],
+        ..LevelObject::default()
+    });
+    editor.objects.push(LevelObject {
+        position: [2.0, 0.0, 0.0],
+        ..LevelObject::default()
+    });
     editor.ui.selected_block_index = Some(2);
     editor.ui.selected_block_indices = vec![2, 0, 1];
 

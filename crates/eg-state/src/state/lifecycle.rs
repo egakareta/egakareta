@@ -1637,7 +1637,6 @@ impl State {
 mod tests {
     use crate::commands::AppCommand;
     use crate::state::editor_command::EditorCommand;
-    use crate::test_utils::tiny_wav_bytes;
     use eg_game::TimelineSimulationRuntime;
     use eg_types::{Direction, MusicMetadata};
 
@@ -1774,7 +1773,7 @@ mod tests {
             .state
             .editor
             .local_audio_cache
-            .insert(music_source, tiny_wav_bytes());
+            .insert(music_source, eg_audio::audio::tiny_wav_bytes());
         state.editor_playtest();
 
         state.turn_right();

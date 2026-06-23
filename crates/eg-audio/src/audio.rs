@@ -844,6 +844,16 @@ where
     })
 }
 
+/// Minimal PCM WAV mono, 16-bit, 44.1kHz, one zero sample.
+/// Reserved for testing.
+pub fn tiny_wav_bytes() -> Vec<u8> {
+    vec![
+        b'R', b'I', b'F', b'F', 38, 0, 0, 0, b'W', b'A', b'V', b'E', b'f', b'm', b't', b' ', 16, 0,
+        0, 0, 1, 0, 1, 0, 68, 172, 0, 0, 136, 88, 1, 0, 2, 0, 16, 0, b'd', b'a', b't', b'a', 2, 0,
+        0, 0, 0, 0,
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use crate::audio::AudioBackend;
@@ -854,15 +864,6 @@ mod tests {
     use super::decode_audio_to_waveform_streaming;
 
     use super::{available_host_labels, host_label, parse_host_id_by_label, select_host};
-
-    fn tiny_wav_bytes() -> Vec<u8> {
-        // Minimal PCM WAV: mono, 16-bit, 44.1kHz, one zero sample.
-        vec![
-            b'R', b'I', b'F', b'F', 38, 0, 0, 0, b'W', b'A', b'V', b'E', b'f', b'm', b't', b' ',
-            16, 0, 0, 0, 1, 0, 1, 0, 68, 172, 0, 0, 136, 88, 1, 0, 2, 0, 16, 0, b'd', b'a', b't',
-            b'a', 2, 0, 0, 0, 0, 0,
-        ]
-    }
 
     #[test]
     fn parse_host_id_by_label_handles_default_and_case_insensitive_labels() {
@@ -943,7 +944,7 @@ mod tests {
     #[test]
     fn replace_with_valid_bytes_tracks_and_reuses_playback_state() {
         let mut backend = AudioBackend::new();
-        let wav = tiny_wav_bytes();
+        let wav = super::tiny_wav_bytes();
 
         backend.replace_with_bytes("bytes:play".to_string(), "tone.wav", &wav, 1.25);
         assert!(backend.can_reuse_source("bytes:play"));
@@ -962,7 +963,7 @@ mod tests {
     #[test]
     fn seek_and_play_reuses_cached_pcm_without_redecode() {
         let mut backend = AudioBackend::new();
-        let wav = tiny_wav_bytes();
+        let wav = super::tiny_wav_bytes();
 
         backend.replace_with_bytes("bytes:song".to_string(), "tone.wav", &wav, 0.0);
         assert!(backend.decoded_cache.is_some());

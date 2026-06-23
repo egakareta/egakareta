@@ -7,9 +7,11 @@
 */
 use crate::commands::AppCommand;
 use crate::state::editor_command::EditorCommand;
-use crate::test_utils::editor_test;
 
-editor_test!(test_editor_snap_override_with_ctrl, |state| {
+#[tokio::test]
+async fn test_editor_snap_override_with_ctrl() {
+    let mut state = crate::state::State::new_test().await;
+    state.phase = eg_types::AppPhase::Editor;
     // 1. Initially enabled
     state.editor.config.snap_to_grid = true;
     state.editor.config.snap_rotation = true;
@@ -36,18 +38,18 @@ editor_test!(test_editor_snap_override_with_ctrl, |state| {
     assert!(!state.editor.effective_snap_to_grid());
     state.dispatch(AppCommand::Editor(EditorCommand::SetCtrlHeld(true)));
     assert!(!state.editor.effective_snap_to_grid());
-});
+}
 
-editor_test!(
-    test_editor_cursor_snapping_respects_ctrl_override,
-    |state| {
-        state.editor.config.snap_to_grid = true;
-        state.editor.config.snap_step = 1.0;
+#[tokio::test]
+async fn test_editor_cursor_snapping_respects_ctrl_override() {
+    let mut state = crate::state::State::new_test().await;
+    state.phase = eg_types::AppPhase::Editor;
+    state.editor.config.snap_to_grid = true;
+    state.editor.config.snap_step = 1.0;
 
-        state.editor.ui.ctrl_held = false;
-        assert!(state.editor.effective_snap_to_grid());
+    state.editor.ui.ctrl_held = false;
+    assert!(state.editor.effective_snap_to_grid());
 
-        state.editor.ui.ctrl_held = true;
-        assert!(!state.editor.effective_snap_to_grid());
-    }
-);
+    state.editor.ui.ctrl_held = true;
+    assert!(!state.editor.effective_snap_to_grid());
+}

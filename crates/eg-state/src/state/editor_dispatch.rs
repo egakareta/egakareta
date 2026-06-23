@@ -271,7 +271,6 @@ impl State {
 mod tests {
     use super::State;
     use crate::state::editor_command::EditorCommand;
-    use crate::test_utils::stone;
     use eg_types::{
         AppPhase, EditorMode, LevelObject, SettingsSection, TRANSFORM_TRIGGER_BLOCK_ID,
     };
@@ -357,9 +356,12 @@ mod tests {
         state.dispatch_editor(EditorCommand::CopyBlock);
         assert!(state.editor.runtime.interaction.clipboard.is_some());
 
-        state.dispatch_editor(EditorCommand::UpdateSelectedBlock(
-            crate::test_utils::sized("core/grass", 2.0, 3.0, 4.0, 5.0, 6.0, 7.0),
-        ));
+        state.dispatch_editor(EditorCommand::UpdateSelectedBlock(LevelObject {
+            block_id: "core/grass".to_string(),
+            position: [2.0, 3.0, 4.0],
+            size: [5.0, 6.0, 7.0],
+            ..LevelObject::default()
+        }));
         approx::assert_abs_diff_eq!(state.editor.objects[0].position[0], 2.0, epsilon = 1e-6);
         approx::assert_abs_diff_eq!(state.editor.objects[0].position[1], 3.0, epsilon = 1e-6);
         approx::assert_abs_diff_eq!(state.editor.objects[0].position[2], 4.0, epsilon = 1e-6);
@@ -449,7 +451,7 @@ mod tests {
     async fn set_trigger_selected_selects_matching_trigger_block() {
         let mut state = new_editor_state().await;
         state.editor.objects = vec![
-            stone(0.0, 0.0, 0.0),
+            LevelObject::default(),
             transform_trigger_object(2.0, [2.0, 0.0, 0.0]),
             transform_trigger_object(1.0, [1.0, 0.0, 0.0]),
         ];
@@ -468,7 +470,7 @@ mod tests {
     #[tokio::test]
     async fn dispatch_editor_routes_mode_and_pointer_pick_commands() {
         let mut state = new_editor_state().await;
-        state.editor.objects = vec![stone(0.0, 0.0, 0.0)];
+        state.editor.objects = vec![LevelObject::default()];
         state.editor.ui.selected_block_index = Some(0);
         state.editor.ui.selected_block_indices = vec![0];
 
@@ -491,7 +493,7 @@ mod tests {
     #[tokio::test]
     async fn dispatch_editor_routes_snap_block_history_and_misc_commands() {
         let mut state = new_editor_state().await;
-        state.editor.objects = vec![stone(0.0, 0.0, 0.0)];
+        state.editor.objects = vec![LevelObject::default()];
         state.editor.ui.selected_block_index = Some(0);
         state.editor.ui.selected_block_indices = vec![0];
 
@@ -514,7 +516,7 @@ mod tests {
         assert!(state.editor.objects.len() >= 2);
         state.dispatch_editor(EditorCommand::RemoveBlock);
 
-        state.editor.objects = vec![stone(0.0, 0.0, 0.0)];
+        state.editor.objects = vec![LevelObject::default()];
         state.editor.ui.selected_block_index = Some(0);
         state.editor.ui.selected_block_indices = vec![0];
         state.dispatch_editor(EditorCommand::PasteBlock);
@@ -656,7 +658,7 @@ mod tests {
     #[tokio::test]
     async fn dispatch_editor_mouse_button_branches() {
         let mut state = new_editor_state().await;
-        state.editor.objects = vec![stone(0.0, 0.0, 0.0)];
+        state.editor.objects = vec![LevelObject::default()];
         state.editor.ui.selected_block_index = Some(0);
         state.editor.ui.selected_block_indices = vec![0];
 
@@ -704,7 +706,7 @@ mod tests {
         let mut state = new_editor_state().await;
 
         // Simulate playtesting from editor
-        state.editor.objects = vec![stone(0.0, 0.0, 0.0)];
+        state.editor.objects = vec![LevelObject::default()];
         state.editor.spawn.position = [0.0, 1.0, 0.0];
         state.editor.timeline.clock.duration_seconds = 4.0;
         state.dispatch_editor(EditorCommand::Playtest);

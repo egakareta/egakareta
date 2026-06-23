@@ -2287,7 +2287,6 @@ mod tests {
 #[cfg(test)]
 mod test_utils {
     use eg_state::state::EditorUiViewModel;
-    use eg_types::LevelObject;
     use eg_types::{AppSettings, Direction, EditorMode, MusicMetadata, SettingsSection};
 
     pub fn editor_view_model<'a>(
@@ -2369,14 +2368,6 @@ mod test_utils {
             fps: 60.0,
             marquee_selection_rect_screen: None,
             object_count: 0,
-        }
-    }
-
-    pub fn stone(x: f32, y: f32, z: f32) -> LevelObject {
-        LevelObject {
-            position: [x, y, z],
-            block_id: "core/stone".to_string(),
-            ..LevelObject::default()
         }
     }
 }
