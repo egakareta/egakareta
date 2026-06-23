@@ -9,9 +9,7 @@ use std::sync::mpsc::Sender;
 
 use eg_types::AuthSession;
 
-use crate::io::{
-    log_platform_error, pick_audio_file, pick_level_file, save_audio_to_storage, save_level_export,
-};
+use crate::io::{pick_audio_file, pick_level_file, save_audio_to_storage};
 use crate::task::spawn_background;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -36,12 +34,6 @@ pub fn trigger_level_import(sender: Sender<Vec<u8>>) {
             let _ = sender.send(bytes);
         }
     });
-}
-
-pub fn trigger_level_export(filename: &str, data: &[u8]) {
-    if let Err(error) = save_level_export(filename, data) {
-        log_platform_error(&format!("Export failed: {}", error));
-    }
 }
 
 pub fn trigger_auth_sign_in(sender: Sender<AuthServiceMessage>) {
@@ -97,7 +89,6 @@ pub fn trigger_auth_sign_out(access_token: Option<String>, sender: Sender<AuthSe
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use std::fs;
     use std::sync::mpsc;
     use std::sync::{Mutex, OnceLock};
 
@@ -108,7 +99,7 @@ mod tests {
 
     use super::{
         trigger_audio_import, trigger_auth_refresh, trigger_auth_sign_in, trigger_auth_sign_out,
-        trigger_level_export, trigger_level_import, AuthServiceMessage,
+        trigger_level_import, AuthServiceMessage,
     };
 
     fn test_auth_session(access_token: &str, refresh_token: &str) -> AuthSession {
@@ -229,18 +220,6 @@ mod tests {
             received.is_err(),
             "no selection should produce no import event"
         );
-    }
-
-    #[test]
-    fn trigger_level_export_writes_level_bytes_to_requested_file() {
-        let temp_dir = tempfile::tempdir().expect("temp dir should be created");
-        let export_path = temp_dir.path().join("level.egb");
-        let payload = b"serialized level bytes";
-
-        trigger_level_export(export_path.to_string_lossy().as_ref(), payload);
-
-        let loaded = fs::read(&export_path).expect("exported file should exist");
-        assert_eq!(loaded, payload);
     }
 
     #[test]

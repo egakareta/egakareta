@@ -16,8 +16,9 @@ use eg_level::{
     build_level_binary_export, build_level_export, load_builtin_level_metadata,
     parse_level_binary_import, parse_level_egz_import,
 };
-use eg_platform::io::{log_platform_error, read_editor_music_bytes};
-use eg_platform::services::{trigger_level_export, trigger_level_import};
+use eg_platform::io::{read_editor_music_bytes, save_level_export};
+use eg_platform::services::trigger_level_import;
+use eg_platform::task::spawn_background;
 use eg_types::{
     default_sky_color, Direction, EditorStateParams, LevelCreatorMetadata, LevelMetadata,
     LevelObject, LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata,
@@ -597,9 +598,7 @@ impl State {
         let settings = self.session.app_settings.clone();
         eg_platform::task::spawn_background(async move {
             if let Err(error) = eg_platform::io::save_app_settings_to_storage(&settings).await {
-                eg_platform::io::log_platform_error(&format!(
-                    "Failed to persist app settings: {error}"
-                ));
+                log::error!("{}", &format!("Failed to persist app settings: {error}"));
             }
         });
     }
@@ -644,10 +643,14 @@ impl State {
                         .unwrap_or_else(|| "level".to_string())
                 );
 
-                trigger_level_export(&filename, &data);
+                spawn_background(async move {
+                    if let Err(error) = save_level_export(&filename, &data).await {
+                        log::error!("Export failed: {}", error);
+                    }
+                });
             }
             Err(e) => {
-                log_platform_error(&format!("Export failed: {}", e));
+                log::error!("Export failed: {}", e);
             }
         }
     }
@@ -658,9 +661,9 @@ impl State {
                 Ok(()) => continue,
                 Err(egz_error) => {
                     if let Err(binary_error) = self.import_level(&bytes) {
-                        log_platform_error(&format!(
+                        log::error!(
                             "Level import failed (.egz parse error: {egz_error}; binary parse error: {binary_error})"
-                        ));
+                        );
                     }
                 }
             }

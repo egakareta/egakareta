@@ -1405,9 +1405,7 @@ impl State {
             match eg_platform::io::load_app_settings_from_storage().await {
                 Ok(settings) => settings,
                 Err(error) => {
-                    eg_platform::io::log_platform_error(&format!(
-                        "Failed to load app settings: {error}"
-                    ));
+                    log::error!("Failed to load app settings: {error}");
                     eg_types::AppSettings::default()
                 }
             }
@@ -1417,9 +1415,7 @@ impl State {
         let app_settings_migrated = app_settings.migrate_defaults();
         if app_settings_migrated && !cfg!(test) {
             if let Err(error) = eg_platform::io::save_app_settings_to_storage(&app_settings).await {
-                eg_platform::io::log_platform_error(&format!(
-                    "Failed to persist migrated app settings: {error}"
-                ));
+                log::error!("Failed to persist migrated app settings: {error}");
             }
         }
 
@@ -1444,9 +1440,7 @@ impl State {
             match eg_platform::storage::load_auth_session().await {
                 Ok(session) => session,
                 Err(error) => {
-                    eg_platform::io::log_platform_error(&format!(
-                        "Failed to load auth session: {error}"
-                    ));
+                    log::error!("Failed to load auth session: {error}");
                     None
                 }
             }

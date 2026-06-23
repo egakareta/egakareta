@@ -20,7 +20,6 @@ opfs = { workspace = true }
 serde = { workspace = true }
 serde_cbor = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true }
 web-time = { workspace = true }
 wgpu = { workspace = true }
 
@@ -42,3 +41,4 @@ workspace = true
 
 [dev-dependencies]
 tempfile = { workspace = true }
+tokio = { workspace = true }

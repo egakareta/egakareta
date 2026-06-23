@@ -1488,6 +1488,7 @@ dependencies = [
  "puffin",
  "serde_json",
  "tempfile",
+ "tokio",
  "web-time",
  "wgpu",
  "winit",

@@ -11,7 +11,7 @@ use std::sync::mpsc::{Receiver, Sender};
 
 use super::State;
 use eg_audio::service::WaveformLoadMessage;
-use eg_platform::io::{log_platform_error, save_waveform_to_storage};
+use eg_platform::io::save_waveform_to_storage;
 use eg_platform::services::trigger_audio_import;
 use eg_platform::task::spawn_background;
 use eg_types::LevelMetadata;
@@ -580,7 +580,7 @@ fn persist_waveform_cache_entry(cache_key: String, entry: &WaveformCacheEntry) {
 
     spawn_background(async move {
         if let Err(error) = save_waveform_to_storage(&cache_key, &cached).await {
-            log_platform_error(&format!("Failed to save waveform cache: {error}"));
+            log::error!("Failed to save waveform cache: {error}");
         }
     });
 }

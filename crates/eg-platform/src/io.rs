@@ -11,48 +11,35 @@ use eg_types::PersistentWaveformCacheEntry;
 
 use crate::storage;
 
-pub fn save_level_export(filename: &str, data: &[u8]) -> Result<(), String> {
-    #[cfg(target_arch = "wasm32")]
+pub async fn save_level_export(filename: &str, data: &[u8]) -> Result<(), String> {
+    #[cfg(test)]
     {
-        use js_sys::Uint8Array;
-        use wasm_bindgen::JsCast;
-        use web_sys::HtmlAnchorElement;
+        return std::fs::write(filename, data)
+            .map_err(|error| format!("Failed to write file: {error}"));
+    }
 
-        let document = gloo_utils::document();
-        let uint8_array = Uint8Array::new_with_length(data.len() as u32);
-        uint8_array.copy_from(data);
-        let blob = gloo_file::Blob::new(uint8_array.buffer());
-        let url = gloo_file::ObjectUrl::from(blob);
+    #[cfg(not(test))]
+    {
+        let dialog = rfd::AsyncFileDialog::new()
+            .set_file_name(filename)
+            .add_filter("Level Data", &["dat", "json", "bin"]); // Optional extension filters
 
-        let anchor = document
-            .create_element("a")
-            .map_err(|error| format!("Failed to create anchor: {:?}", error))?
-            .dyn_into::<HtmlAnchorElement>()
-            .map_err(|error| format!("Failed to cast anchor: {:?}", error))?;
+        let file_handle = dialog
+            .save_file()
+            .await
+            .ok_or_else(|| "User cancelled the save operation".to_string())?;
 
-        anchor.set_href(&url);
-        anchor.set_download(filename);
-        anchor.click();
+        file_handle
+            .write(data)
+            .await
+            .map_err(|error| format!("Failed to write file: {:?}", error))?;
 
         Ok(())
     }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        std::fs::write(filename, data).map_err(|error| error.to_string())
-    }
-}
-
-pub fn log_platform_error(message: &str) {
-    #[cfg(target_arch = "wasm32")]
-    gloo_console::error!(message);
-
-    #[cfg(not(target_arch = "wasm32"))]
-    log::error!("{}", message);
 }
 
 pub async fn pick_audio_file() -> Option<(String, Vec<u8>)> {
-    #[cfg(all(test, not(target_arch = "wasm32")))]
+    #[cfg(test)]
     if let Some(result) = crate::test_hooks::pick_audio_result() {
         return result;
     }
@@ -72,7 +59,7 @@ pub async fn pick_audio_file() -> Option<(String, Vec<u8>)> {
 /// Supports `.egz` archives and `.egb` binary metadata files.
 /// Returns `None` when the user cancels the dialog; otherwise returns full file bytes.
 pub async fn pick_level_file() -> Option<Vec<u8>> {
-    #[cfg(all(test, not(target_arch = "wasm32")))]
+    #[cfg(test)]
     if let Some(result) = crate::test_hooks::pick_level_result() {
         return result;
     }
@@ -87,7 +74,7 @@ pub async fn pick_level_file() -> Option<Vec<u8>> {
 }
 
 pub async fn save_audio_to_storage(filename: &str, data: &[u8]) -> Result<(), String> {
-    #[cfg(all(test, not(target_arch = "wasm32")))]
+    #[cfg(test)]
     if let Some(result) = crate::test_hooks::save_audio_result() {
         return result;
     }
@@ -96,7 +83,7 @@ pub async fn save_audio_to_storage(filename: &str, data: &[u8]) -> Result<(), St
 }
 
 pub async fn load_all_local_audio() -> std::collections::HashMap<String, Vec<u8>> {
-    #[cfg(all(test, not(target_arch = "wasm32")))]
+    #[cfg(test)]
     if let Some(result) = crate::test_hooks::load_audio_result() {
         return result;
     }
@@ -105,7 +92,7 @@ pub async fn load_all_local_audio() -> std::collections::HashMap<String, Vec<u8>
 }
 
 pub fn read_editor_music_bytes(music_source: &str) -> Option<Vec<u8>> {
-    #[cfg(all(test, not(target_arch = "wasm32")))]
+    #[cfg(test)]
     if let Some(result) = crate::test_hooks::read_editor_music_result() {
         return result;
     }
@@ -119,7 +106,7 @@ pub async fn save_waveform_to_storage(
     cache_key: &str,
     entry: &PersistentWaveformCacheEntry,
 ) -> Result<(), String> {
-    #[cfg(all(test, not(target_arch = "wasm32")))]
+    #[cfg(test)]
     if let Some(result) = crate::test_hooks::save_waveform_result() {
         return result;
     }
@@ -128,7 +115,7 @@ pub async fn save_waveform_to_storage(
 }
 
 pub async fn load_waveform_from_storage(cache_key: &str) -> Option<PersistentWaveformCacheEntry> {
-    #[cfg(all(test, not(target_arch = "wasm32")))]
+    #[cfg(test)]
     if let Some(result) = crate::test_hooks::load_waveform_result() {
         return result;
     }
@@ -137,7 +124,7 @@ pub async fn load_waveform_from_storage(cache_key: &str) -> Option<PersistentWav
 }
 
 pub async fn load_app_settings_from_storage() -> Result<AppSettings, String> {
-    #[cfg(all(test, not(target_arch = "wasm32")))]
+    #[cfg(test)]
     if let Some(result) = crate::test_hooks::load_settings_result() {
         return result;
     }
@@ -146,7 +133,7 @@ pub async fn load_app_settings_from_storage() -> Result<AppSettings, String> {
 }
 
 pub async fn save_app_settings_to_storage(settings: &AppSettings) -> Result<(), String> {
-    #[cfg(all(test, not(target_arch = "wasm32")))]
+    #[cfg(test)]
     if let Some(result) = crate::test_hooks::save_settings_result() {
         return result;
     }
@@ -154,7 +141,7 @@ pub async fn save_app_settings_to_storage(settings: &AppSettings) -> Result<(), 
     storage::save_app_settings(settings).await
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 mod tests {
     use std::collections::HashMap;
     use std::fs;
@@ -189,31 +176,32 @@ mod tests {
         }
     }
 
-    #[test]
-    fn save_level_export_writes_bytes_to_file() {
+    #[tokio::test]
+    async fn save_level_export_writes_bytes_to_file() {
         let temp_dir = tempfile::tempdir().expect("temp dir should be created");
         let export_path = temp_dir.path().join("level.egb");
         let payload = b"eg-level-bytes";
 
         save_level_export(export_path.to_string_lossy().as_ref(), payload)
+            .await
             .expect("save_level_export should succeed");
 
         let loaded = fs::read(&export_path).expect("saved file should be readable");
         assert_eq!(loaded, payload);
     }
 
-    #[test]
-    fn save_level_export_returns_error_when_parent_directory_is_missing() {
+    #[tokio::test]
+    async fn save_level_export_returns_error_when_parent_directory_is_missing() {
         let temp_dir = tempfile::tempdir().expect("temp dir should be created");
         let missing_parent = temp_dir.path().join("missing-parent").join("level.egb");
 
-        let result = save_level_export(missing_parent.to_string_lossy().as_ref(), b"bytes");
+        let result = save_level_export(missing_parent.to_string_lossy().as_ref(), b"bytes").await;
 
         assert!(result.is_err(), "missing parent directory should fail");
     }
 
-    #[test]
-    fn save_audio_to_storage_returns_ok_when_storage_layer_succeeds() {
+    #[tokio::test]
+    async fn save_audio_to_storage_returns_ok_when_storage_layer_succeeds() {
         let _lock = shared_test_lock()
             .lock()
             .unwrap_or_else(|error| error.into_inner());
@@ -222,12 +210,12 @@ mod tests {
             hooks.save_audio_result = Some(Ok(()));
         });
 
-        let result = pollster::block_on(save_audio_to_storage("music.ogg", b"audio-bytes"));
+        let result = save_audio_to_storage("music.ogg", b"audio-bytes").await;
         assert!(result.is_ok(), "save should return the delegated success");
     }
 
-    #[test]
-    fn save_audio_to_storage_returns_error_when_storage_layer_fails() {
+    #[tokio::test]
+    async fn save_audio_to_storage_returns_error_when_storage_layer_fails() {
         let _lock = shared_test_lock()
             .lock()
             .unwrap_or_else(|error| error.into_inner());
@@ -236,12 +224,12 @@ mod tests {
             hooks.save_audio_result = Some(Err("disk full".to_string()));
         });
 
-        let result = pollster::block_on(save_audio_to_storage("music.ogg", b"audio-bytes"));
+        let result = save_audio_to_storage("music.ogg", b"audio-bytes").await;
         assert_eq!(result, Err("disk full".to_string()));
     }
 
-    #[test]
-    fn load_all_local_audio_returns_storage_layer_payload() {
+    #[tokio::test]
+    async fn load_all_local_audio_returns_storage_layer_payload() {
         let _lock = shared_test_lock()
             .lock()
             .unwrap_or_else(|error| error.into_inner());
@@ -252,12 +240,12 @@ mod tests {
             hooks.load_audio_result = Some(expected_audio.clone());
         });
 
-        let loaded = pollster::block_on(load_all_local_audio());
+        let loaded = load_all_local_audio().await;
         assert_eq!(loaded, expected_audio);
     }
 
-    #[test]
-    fn waveform_storage_helpers_delegate_to_storage_layer() {
+    #[tokio::test]
+    async fn waveform_storage_helpers_delegate_to_storage_layer() {
         let _lock = shared_test_lock()
             .lock()
             .unwrap_or_else(|error| error.into_inner());
@@ -268,15 +256,15 @@ mod tests {
             hooks.load_waveform_result = Some(Some(entry.clone()));
         });
 
-        let save_result = pollster::block_on(save_waveform_to_storage("cache-key", &entry));
+        let save_result = save_waveform_to_storage("cache-key", &entry).await;
         assert!(save_result.is_ok(), "waveform save should delegate success");
 
-        let loaded = pollster::block_on(load_waveform_from_storage("cache-key"));
+        let loaded = load_waveform_from_storage("cache-key").await;
         assert_eq!(loaded, Some(entry));
     }
 
-    #[test]
-    fn save_and_load_app_settings_round_trip_through_delegate_layer() {
+    #[tokio::test]
+    async fn save_and_load_app_settings_round_trip_through_delegate_layer() {
         let _lock = shared_test_lock()
             .lock()
             .unwrap_or_else(|error| error.into_inner());
@@ -291,15 +279,15 @@ mod tests {
             hooks.load_settings_result = Some(Ok(expected.clone()));
         });
 
-        let save_result = pollster::block_on(save_app_settings_to_storage(&settings));
+        let save_result = save_app_settings_to_storage(&settings).await;
         assert_eq!(save_result, Ok(()));
 
-        let loaded = pollster::block_on(load_app_settings_from_storage());
+        let loaded = load_app_settings_from_storage().await;
         assert_eq!(loaded, Ok(settings));
     }
 
-    #[test]
-    fn load_app_settings_from_storage_returns_error_when_storage_layer_fails() {
+    #[tokio::test]
+    async fn load_app_settings_from_storage_returns_error_when_storage_layer_fails() {
         let _lock = shared_test_lock()
             .lock()
             .unwrap_or_else(|error| error.into_inner());
@@ -309,7 +297,7 @@ mod tests {
                 Some(Err("Settings JSON parse failed: invalid JSON".into()));
         });
 
-        let result = pollster::block_on(load_app_settings_from_storage());
+        let result = load_app_settings_from_storage().await;
         assert!(
             matches!(&result, Err(error) if error.contains("Settings JSON parse failed")),
             "expected delegated parse error, got: {result:?}"
