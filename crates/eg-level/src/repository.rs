@@ -25,7 +25,7 @@ fn builtin_levels() -> &'static [LevelMetadata] {
     BUILTIN_LEVELS.get_or_init(|| {
         let mut levels = Vec::new();
         collect_builtin_levels(&LEVELS_DIR, &mut levels);
-        levels.sort_unstable_by(|left, right| left.name.cmp(&right.name));
+        levels.sort_unstable_by(|left, right| left.basic.name.cmp(&right.basic.name));
         levels
     })
 }
@@ -34,7 +34,7 @@ fn builtin_levels() -> &'static [LevelMetadata] {
 pub fn builtin_level_names() -> Vec<String> {
     builtin_levels()
         .iter()
-        .map(|metadata| metadata.name.clone())
+        .map(|metadata| metadata.basic.name.clone())
         .collect()
 }
 
@@ -42,13 +42,13 @@ pub fn builtin_level_names() -> Vec<String> {
 pub fn load_builtin_level_metadata(level_name: &str) -> Option<LevelMetadata> {
     builtin_levels()
         .iter()
-        .find(|metadata| metadata.name == level_name)
+        .find(|metadata| metadata.basic.name == level_name)
         .cloned()
 }
 
 /// Retrieves the raw audio bytes for a built-in level's music file.
-pub fn get_builtin_audio(level_name: &str, music_source: &str) -> Option<&'static [u8]> {
-    let path = format!("{}/{}", level_name, music_source);
+pub fn get_builtin_audio(level_name: &str) -> Option<&'static [u8]> {
+    let path = format!("{}/{}", level_name, "audio.mp3");
     LEVELS_DIR.get_file(path).map(|f| f.contents())
 }
 
@@ -108,7 +108,7 @@ pub fn read_metadata_from_egz(data: &[u8]) -> Result<(LevelMetadata, Option<Vec<
     let metadata = decode_level_metadata_binary(&metadata_binary)?;
 
     // Try to read the audio file if it exists
-    let audio_bytes = if let Ok(mut audio_file) = archive.by_name(&metadata.music.source) {
+    let audio_bytes = if let Ok(mut audio_file) = archive.by_name("audio.mp3") {
         let mut bytes = Vec::new();
         audio_file
             .read_to_end(&mut bytes)
@@ -172,7 +172,7 @@ mod tests {
         let encoded = encode_level_metadata_binary(&metadata).expect("serialize");
         let decoded = decode_level_metadata_binary(&encoded).expect("parse");
 
-        assert_eq!(decoded.name, metadata.name);
+        assert_eq!(decoded.basic.name, metadata.basic.name);
         assert_eq!(decoded.objects.len(), metadata.objects.len());
     }
 
@@ -202,36 +202,30 @@ mod tests {
         let archive_bytes = build_egz_archive(&metadata, None).expect("build egz");
         let (decoded, audio) = read_metadata_from_egz(&archive_bytes).expect("read egz");
 
-        assert_eq!(decoded.name, metadata.name);
+        assert_eq!(decoded.basic.name, metadata.basic.name);
         assert_eq!(decoded.objects.len(), metadata.objects.len());
         assert!(audio.is_none());
     }
 
     #[test]
     fn builds_and_reads_egz_archive_with_audio() {
-        let mut metadata = load_builtin_level_metadata("Flowerfield").expect("missing level");
-        metadata.music.source = "custom.mp3".to_string();
+        let metadata = load_builtin_level_metadata("Flowerfield").expect("missing level");
         let audio = vec![8_u8, 6, 7, 5, 3, 0, 9];
 
         let archive_bytes =
-            build_egz_archive(&metadata, Some(("custom.mp3", audio.as_slice()))).expect("build");
+            build_egz_archive(&metadata, Some(("audio.mp3", audio.as_slice()))).expect("build");
         let (decoded, decoded_audio) = read_metadata_from_egz(&archive_bytes).expect("read");
 
-        assert_eq!(decoded.name, metadata.name);
-        assert_eq!(decoded.music.source, "custom.mp3");
+        assert_eq!(decoded.basic.name, metadata.basic.name);
         assert_eq!(decoded_audio, Some(audio));
     }
 
     #[test]
     fn reads_builtin_audio_and_handles_missing_audio() {
-        let metadata = load_builtin_level_metadata("Flowerfield").expect("missing level");
-
-        let bytes = get_builtin_audio("Flowerfield", &metadata.music.source)
-            .expect("expected built-in audio bytes");
+        let bytes = get_builtin_audio("Flowerfield").expect("expected built-in audio bytes");
         assert!(!bytes.is_empty());
 
-        assert!(get_builtin_audio("Flowerfield", "missing.mp3").is_none());
-        assert!(get_builtin_audio("UnknownLevel", "audio.mp3").is_none());
+        assert!(get_builtin_audio("UnknownLevel").is_none());
     }
 
     #[test]

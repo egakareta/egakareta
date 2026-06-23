@@ -13,7 +13,7 @@
 //! self-contained within the `state/` module.
 
 use eg_types::{
-    EditorMode, KeyChord, LevelCreatorMetadata, LevelObject, MusicMetadata, SettingsSection,
+    BasicLevelMetadata, EditorMode, KeyChord, LevelObject, MusicMetadata, SettingsSection,
 };
 
 /// Editor-specific commands. Grouped by domain for clarity.
@@ -187,7 +187,7 @@ pub enum EditorCommand {
     /// Update music information for the level.
     UpdateMusic(MusicMetadata),
     /// Update creator-facing metadata for the level.
-    UpdateCreatorMetadata(LevelCreatorMetadata),
+    UpdateCreatorMetadata(BasicLevelMetadata),
     /// Update the level sky clear color.
     UpdateSkyColor([f32; 3]),
     /// Trigger the platform audio import dialog.

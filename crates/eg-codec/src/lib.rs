@@ -8,8 +8,8 @@
 use serde::{Deserialize, Serialize};
 
 use eg_types::{
-    default_sky_color, LevelMetadata, LevelObject, LevelPreviewCameraMetadata, MusicMetadata,
-    SpawnMetadata, TimedTrigger, TimingPoint,
+    default_sky_color, BasicLevelMetadata, LevelMetadata, LevelObject, LevelPreviewCameraMetadata,
+    MusicMetadata, SpawnMetadata, TimedTrigger, TimingPoint,
 };
 
 const LEVEL_MAGIC: [u8; 4] = *b"EGB1";
@@ -21,19 +21,9 @@ const ZSTD_LEVEL: i32 = 3;
 #[derive(Serialize, Deserialize)]
 struct BinaryLevelPayloadV1 {
     format_version: u32,
-    name: String,
-    #[serde(default)]
-    creator: Option<String>,
-    #[serde(default)]
-    description: Option<String>,
-    #[serde(default)]
-    stars: f32,
-    #[serde(default)]
-    tags: Vec<String>,
-    music_source: String,
+    basic: BasicLevelMetadata,
     music_title: Option<String>,
     music_author: Option<String>,
-    music_extra_entries: Vec<MetadataEntry>,
     spawn: SpawnMetadata,
     #[serde(default = "default_sky_color")]
     sky_color: [f32; 3],
@@ -68,15 +58,9 @@ impl Default for BinaryLevelPayloadV1 {
     fn default() -> Self {
         Self {
             format_version: 1,
-            name: "test level".to_string(),
-            creator: None,
-            description: None,
-            stars: 0.0,
-            tags: Vec::new(),
-            music_source: "music.mp3".to_string(),
+            basic: BasicLevelMetadata::default(),
             music_title: None,
             music_author: None,
-            music_extra_entries: Vec::new(),
             spawn: SpawnMetadata::default(),
             sky_color: default_sky_color(),
             tap_times: Vec::new(),
@@ -217,15 +201,9 @@ pub fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<Vec<u8>,
 
     let payload = BinaryLevelPayloadV1 {
         format_version: metadata.format_version,
-        name: metadata.name.clone(),
-        creator: metadata.creator.clone(),
-        description: metadata.description.clone(),
-        stars: metadata.stars,
-        tags: metadata.tags.clone(),
-        music_source: metadata.music.source.clone(),
+        basic: metadata.basic.clone(),
         music_title: metadata.music.title.clone(),
         music_author: metadata.music.author.clone(),
-        music_extra_entries: map_to_entries(&metadata.music.extra)?,
         spawn: metadata.spawn.clone(),
         sky_color: metadata.sky_color,
         tap_times: metadata.tap_times.clone(),
@@ -450,16 +428,10 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
 
     let mut metadata = LevelMetadata {
         format_version: payload.format_version,
-        name: payload.name,
-        creator: payload.creator,
-        description: payload.description,
-        stars: payload.stars.clamp(0.0, 10.0),
-        tags: payload.tags,
+        basic: payload.basic,
         music: MusicMetadata {
-            source: payload.music_source,
             title: payload.music_title,
             author: payload.music_author,
-            extra: entries_to_map(payload.music_extra_entries)?,
         },
         spawn: payload.spawn,
         sky_color: payload.sky_color,

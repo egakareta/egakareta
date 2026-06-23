@@ -64,7 +64,7 @@ use eg_mesh::MeshGeometry;
 #[cfg(not(target_arch = "wasm32"))]
 use eg_platform::state_host::NativeWindow;
 use eg_types::{
-    AppPhase, AppSettings, EditorMode, EditorState, LevelCreatorMetadata, LevelObject,
+    AppPhase, AppSettings, BasicLevelMetadata, EditorMode, EditorState, LevelObject,
     LevelPreviewCameraMetadata, MenuState, MusicMetadata, PhysicalSize, SettingsSection,
     SpawnMetadata,
 };
@@ -87,7 +87,7 @@ pub struct TimedGameplayTurn {
 pub struct SessionSubsystem {
     pub editor_level_name: Option<String>,
     pub editor_music_metadata: MusicMetadata,
-    pub editor_creator_metadata: LevelCreatorMetadata,
+    pub editor_creator_metadata: BasicLevelMetadata,
     pub editor_sky_color: [f32; 3],
     pub editor_menu_preview_camera: Option<LevelPreviewCameraMetadata>,
     pub editor_show_metadata: bool,
@@ -321,7 +321,6 @@ impl State {
 
         self.gameplay.state.started = true;
         if self.session.playtesting_editor {
-            let metadata = self.current_editor_metadata();
             let level_name = self
                 .session
                 .editor_level_name
@@ -333,15 +332,13 @@ impl State {
                 .unwrap_or_else(|| {
                     self.editor_timeline_elapsed_seconds(self.editor.timeline_time_seconds())
                 });
-            self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
+            self.start_audio_source_at_seconds(&level_name, start_seconds);
         } else if let Some(level_name) = self.session.playing_level_name.clone() {
-            if let Some(metadata) = self.load_level_metadata(&level_name) {
-                let start_seconds = self.gameplay.state.elapsed_seconds;
-                if start_seconds > 0.001 {
-                    self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
-                } else {
-                    self.start_audio(&level_name, &metadata);
-                }
+            let start_seconds = self.gameplay.state.elapsed_seconds;
+            if start_seconds > 0.001 {
+                self.start_audio_source_at_seconds(&level_name, start_seconds);
+            } else {
+                self.start_audio_source_at_seconds(&level_name, 0.0);
             }
         }
 

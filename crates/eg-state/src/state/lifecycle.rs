@@ -35,7 +35,7 @@ use eg_platform::state_host::SurfaceHost;
 #[cfg(target_arch = "wasm32")]
 use eg_platform::state_host::WasmCanvas;
 use eg_types::{
-    AppPhase, CameraUniform, ColorSpaceUniform, EditorState, GridUniform, LevelCreatorMetadata,
+    AppPhase, BasicLevelMetadata, CameraUniform, ColorSpaceUniform, EditorState, GridUniform,
     LineUniform, MenuState, MusicMetadata, PhysicalSize, SettingsSection, SpawnMetadata,
     DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
 };
@@ -627,12 +627,10 @@ impl State {
             session: SessionSubsystem {
                 editor_level_name: None,
                 editor_music_metadata: MusicMetadata {
-                    source: "music.mp3".to_string(),
                     title: None,
                     author: None,
-                    extra: serde_json::Map::new(),
                 },
-                editor_creator_metadata: LevelCreatorMetadata::default(),
+                editor_creator_metadata: BasicLevelMetadata::default(),
                 editor_sky_color: eg_types::default_sky_color(),
                 editor_menu_preview_camera: None,
                 editor_show_metadata: false,
@@ -1560,12 +1558,10 @@ impl State {
             session: SessionSubsystem {
                 editor_level_name: None,
                 editor_music_metadata: MusicMetadata {
-                    source: "music.mp3".to_string(),
                     title: None,
                     author: None,
-                    extra: serde_json::Map::new(),
                 },
-                editor_creator_metadata: LevelCreatorMetadata::default(),
+                editor_creator_metadata: BasicLevelMetadata::default(),
                 editor_sky_color: eg_types::default_sky_color(),
                 editor_menu_preview_camera: None,
                 editor_show_metadata: false,
@@ -1761,19 +1757,15 @@ mod tests {
     #[tokio::test]
     async fn test_lifecycle_audio_start_marks_playing_in_tests() {
         let mut state = State::new_test().await;
-        let music_source = "unit-test-audio.wav".to_string();
 
         state.enter_editor_phase("AudioStartTest".to_string());
-        state.set_editor_music_metadata(MusicMetadata {
-            source: music_source.clone(),
-            ..MusicMetadata::default()
-        });
+        state.set_editor_music_metadata(MusicMetadata::default());
         state
             .audio
             .state
             .editor
             .local_audio_cache
-            .insert(music_source, eg_audio::audio::tiny_wav_bytes());
+            .insert("audio.mp3".to_string(), eg_audio::audio::tiny_wav_bytes());
         state.editor_playtest();
 
         state.turn_right();

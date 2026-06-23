@@ -47,8 +47,7 @@ fn test_egb_roundtrip() {
   "music": {
     "source": "audio.mp3",
     "title": "Test Title",
-    "author": "Test Author",
-    "extra": {}
+    "author": "Test Author"
   },
   "spawn": {
     "position": [0.0, 1.0, 0.0],
@@ -138,8 +137,7 @@ fn test_egb_encode_stdin() {
   "music": {
     "source": "audio.mp3",
     "title": "Stdin Track",
-    "author": "Stdin Composer",
-    "extra": {}
+    "author": "Stdin Composer"
   },
   "spawn": {
     "position": [0.0, 0.0, 0.0],
@@ -203,8 +201,7 @@ fn test_egb_short_flags() {
   "music": {
     "source": "audio.mp3",
     "title": "Title",
-    "author": "Author",
-    "extra": {}
+    "author": "Author"
   },
   "spawn": {
     "position": [0.0, 0.0, 0.0],

@@ -2861,11 +2861,14 @@ mod tests {
 
         state.dispatch(AppCommand::Editor(EditorCommand::UpdateMusic(
             MusicMetadata {
-                source: "dispatch.mp3".to_string(),
+                title: Some("testtitle".to_string()),
                 ..MusicMetadata::default()
             },
         )));
-        assert_eq!(state.editor_music_metadata().source, "dispatch.mp3");
+        assert_eq!(
+            state.editor_music_metadata().title,
+            Some("testtitle".to_string())
+        );
 
         state.dispatch(AppCommand::Editor(EditorCommand::SetTimelineDuration(5.0)));
         state.dispatch(AppCommand::Editor(EditorCommand::SetTimelineTime(1.25)));

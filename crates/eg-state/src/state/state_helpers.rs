@@ -275,7 +275,7 @@ impl State {
     pub(super) fn enter_editor_phase(&mut self, level_name: String) {
         self.phase = AppPhase::Editor;
         self.session.editor_level_name = Some(level_name);
-        self.session.editor_creator_metadata = eg_types::LevelCreatorMetadata::default();
+        self.session.editor_creator_metadata = eg_types::BasicLevelMetadata::default();
         self.session.editor_sky_color = eg_types::default_sky_color();
         self.session.playtesting_editor = false;
         self.session.game_paused = false;
@@ -322,7 +322,7 @@ impl State {
         self.rebuild_practice_checkpoint_vertices();
         self.clear_pending_gameplay_inputs();
         self.session.editor_level_name = None;
-        self.session.editor_creator_metadata = eg_types::LevelCreatorMetadata::default();
+        self.session.editor_creator_metadata = eg_types::BasicLevelMetadata::default();
         self.session.editor_sky_color = eg_types::default_sky_color();
         self.editor.clear_block_selection();
         self.editor.ui.marquee_start_screen = None;

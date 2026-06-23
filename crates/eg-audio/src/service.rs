@@ -63,18 +63,17 @@ pub fn waveform_cache_key(bytes: &[u8], window_size: usize) -> String {
     format!("waveform-v{WAVEFORM_CACHE_VERSION}-window-{window_size}-sha256-{digest_hex}")
 }
 
-async fn load_level_audio_bytes(level_name: &str, music_source: &str) -> Option<Vec<u8>> {
-    eg_level::get_builtin_audio(level_name, music_source).map(|bytes| bytes.to_vec())
+async fn load_level_audio_bytes(level_name: &str) -> Option<Vec<u8>> {
+    eg_level::get_builtin_audio(level_name).map(|bytes| bytes.to_vec())
 }
 
 pub fn start_audio_preload(
     source_key: String,
     level_name: String,
-    music_source: String,
     sender: Sender<AudioPreloadResult>,
 ) {
     spawn_background(async move {
-        let bytes = load_level_audio_bytes(&level_name, &music_source).await;
+        let bytes = load_level_audio_bytes(&level_name).await;
         let _ = sender.send((source_key, bytes));
     });
 }
@@ -83,25 +82,22 @@ pub fn start_audio_preload(
 /// Spawns a thread to decode the audio file.
 ///
 /// # Arguments
-/// * `music_source` - The filename of the music file
 /// * `level_name` - The level directory name containing the music file
 /// * `cached_bytes` - Optional pre-loaded audio bytes to avoid re-reading
 /// * `sender` - Channel sender for the result
 pub fn start_waveform_loading(
-    music_source: String,
     level_name: String,
     cached_bytes: Option<Vec<u8>>,
     sender: Sender<WaveformResult>,
 ) {
-    let source_for_send = music_source.clone();
+    let source_for_send = "audio.mp3".to_string();
     let level_for_send = level_name.clone();
-    let source_for_load = music_source.clone();
 
     spawn_background(async move {
         let bytes = if let Some(bytes) = cached_bytes {
             Some(bytes)
         } else {
-            load_level_audio_bytes(&level_name, &source_for_load).await
+            load_level_audio_bytes(&level_name).await
         };
 
         let Some(bytes) = bytes else {

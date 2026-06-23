@@ -7,15 +7,15 @@
 */
 use eg_types::TimedTrigger;
 use eg_types::{
-    default_sky_color, LevelCreatorMetadata, LevelMetadata, LevelObject,
-    LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata, TimingPoint,
+    default_sky_color, BasicLevelMetadata, LevelMetadata, LevelObject, LevelPreviewCameraMetadata,
+    MusicMetadata, SpawnMetadata, TimingPoint,
 };
 
 pub struct EditorSessionInit {
     pub objects: Vec<LevelObject>,
     pub spawn: SpawnMetadata,
     pub music: MusicMetadata,
-    pub creator_metadata: LevelCreatorMetadata,
+    pub creator_metadata: BasicLevelMetadata,
     pub sky_color: [f32; 3],
     pub tap_times: Vec<f32>,
     pub timing_points: Vec<TimingPoint>,
@@ -41,7 +41,7 @@ pub fn editor_session_init_from_metadata(metadata: Option<LevelMetadata>) -> Edi
         menu_preview_camera,
     ) = if let Some(metadata) = metadata {
         let triggers = metadata.resolved_triggers();
-        let creator_metadata = metadata.creator_metadata();
+        let creator_metadata = metadata.basic;
         (
             metadata.objects,
             metadata.spawn,
@@ -59,7 +59,7 @@ pub fn editor_session_init_from_metadata(metadata: Option<LevelMetadata>) -> Edi
             Vec::new(),
             SpawnMetadata::default(),
             MusicMetadata::default(),
-            LevelCreatorMetadata::default(),
+            BasicLevelMetadata::default(),
             default_sky_color(),
             Vec::new(),
             Vec::new(),

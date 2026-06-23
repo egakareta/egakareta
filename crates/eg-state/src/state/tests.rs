@@ -769,11 +769,6 @@ async fn start_editor_warms_audio_before_playtest() {
     let mut state = State::new_test().await;
     let level_index = 0;
     let level_name = state.menu.state.levels[level_index].clone();
-    let music_source = state
-        .load_level_metadata(&level_name)
-        .expect("selected level metadata should exist")
-        .music
-        .source;
 
     state.start_editor(level_index);
 
@@ -787,7 +782,7 @@ async fn start_editor_warms_audio_before_playtest() {
     let (source_key, warmup_seconds) = editor_warmup.clone();
     assert_eq!(
         source_key,
-        runtime_asset_source_key(&level_name, &music_source),
+        runtime_asset_source_key(&level_name, "audio.mp3"),
         "warmup should target the active editor source"
     );
     assert!(
@@ -846,8 +841,7 @@ async fn editor_load_level_in_timing_mode_reloads_waveform_for_new_level() {
         "switching levels in timing mode should reset waveform sample rate before loading"
     );
 
-    let expected_source_key =
-        runtime_asset_source_key(&next_level, &state.session.editor_music_metadata.source);
+    let expected_source_key = runtime_asset_source_key(&next_level, "audio.mp3");
     assert_eq!(
         state.audio.state.editor.waveform_loading_source,
         Some(expected_source_key),

@@ -14,6 +14,7 @@ test-support = []
 eg-audio = { workspace = true }
 eg-block-geometry = { workspace = true }
 eg-blocks = { workspace = true }
+eg-codec = { workspace = true }
 eg-editor-domain = { workspace = true }
 eg-game = { workspace = true }
 eg-level = { workspace = true }

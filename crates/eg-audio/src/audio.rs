@@ -139,12 +139,12 @@ pub fn canonical_backend_name(backend_name: &str) -> Option<String> {
     parse_host_id_by_label(trimmed).map(host_label)
 }
 
-pub fn runtime_asset_source_key(level_name: &str, music_source: &str) -> String {
-    format!("asset:{}/{}", level_name, music_source)
+pub fn runtime_asset_source_key(level_name: &str, asset_path: &str) -> String {
+    format!("asset:{}/{}", level_name, asset_path)
 }
 
-fn runtime_bytes_source_key(music_source: &str) -> String {
-    format!("bytes:{}", music_source)
+fn runtime_bytes_source_key(asset_path: &str) -> String {
+    format!("bytes:{}", asset_path)
 }
 
 fn accumulate_waveform_frame_peak(
@@ -461,13 +461,7 @@ impl AudioBackend {
     }
 
     /// Replace the current audio source with the provided bytes, starting at the specified time, and start playback immediately.
-    pub fn replace_with_bytes(
-        &mut self,
-        source_key: String,
-        music_source: &str,
-        bytes: &[u8],
-        start_seconds: f32,
-    ) {
+    pub fn replace_with_bytes(&mut self, source_key: String, bytes: &[u8], start_seconds: f32) {
         if let Some(player) = self.current_player.take() {
             player.stop();
         }
@@ -481,7 +475,7 @@ impl AudioBackend {
                 self.play_buffer(source_key, buffer, start_seconds, true);
             }
             None => {
-                log::warn!("Failed to decode imported level music '{}'", music_source);
+                log::warn!("Failed to decode imported level music '{}'", source_key);
             }
         }
     }
@@ -491,7 +485,6 @@ impl AudioBackend {
         &mut self,
         source_key: String,
         level_name: &str,
-        music_source: &str,
         start_seconds: f32,
         autoplay: bool,
     ) {
@@ -502,10 +495,10 @@ impl AudioBackend {
             self.current_audio_source = None;
         }
 
-        let audio_path = format!("assets/levels/{}/{}", level_name, music_source);
+        let audio_path = format!("assets/levels/{}/{}", level_name, "audio.mp3");
 
         log::trace!("RodioAudioBackend: loading asset {}", audio_path);
-        let audio_bytes = match eg_level::get_builtin_audio(level_name, music_source) {
+        let audio_bytes = match eg_level::get_builtin_audio(level_name) {
             Some(bytes) => bytes.to_vec(),
             None => {
                 log::warn!("Failed to read level music '{}'", audio_path);
@@ -606,13 +599,7 @@ impl AudioBackend {
 
     /// Start playing audio from a specific source key at the given time.
     /// If the source can be reused, it will seek to the specified time and play; otherwise, it will replace the current source with the new one.
-    fn start_with_source_key_at(
-        &mut self,
-        source_key: String,
-        music_source: &str,
-        bytes: &[u8],
-        start_seconds: f32,
-    ) {
+    fn start_with_source_key_at(&mut self, source_key: String, bytes: &[u8], start_seconds: f32) {
         let start_seconds = start_seconds.max(0.0);
         self.stop();
 
@@ -620,22 +607,17 @@ impl AudioBackend {
             return;
         }
 
-        self.replace_with_bytes(source_key, music_source, bytes, start_seconds);
+        self.replace_with_bytes(source_key, bytes, start_seconds);
     }
 
     /// Start playing audio from the provided bytes at the specified time. This will replace the current audio source with the new one and start playback immediately.
-    pub fn start_with_bytes_at(&mut self, music_source: &str, bytes: &[u8], start_seconds: f32) {
-        self.start_with_source_key_at(
-            runtime_bytes_source_key(music_source),
-            music_source,
-            bytes,
-            start_seconds,
-        );
+    pub fn start_with_bytes_at(&mut self, bytes: &[u8], start_seconds: f32) {
+        self.start_with_source_key_at(runtime_bytes_source_key("audio.mp3"), bytes, start_seconds);
     }
 
     /// Warm up the audio system with the provided bytes at the specified time. This will replace the current audio source with the new one but will not start playback.
-    pub fn warmup_with_bytes_at(&mut self, music_source: &str, bytes: &[u8], start_seconds: f32) {
-        let source_key = runtime_bytes_source_key(music_source);
+    pub fn warmup_with_bytes_at(&mut self, bytes: &[u8], start_seconds: f32) {
+        let source_key = runtime_bytes_source_key("audio.mp3");
         let start_seconds = start_seconds.max(0.0);
         self.stop();
 
@@ -643,21 +625,14 @@ impl AudioBackend {
             return;
         }
 
-        self.replace_with_bytes(source_key, music_source, bytes, start_seconds);
+        self.replace_with_bytes(source_key, bytes, start_seconds);
     }
 
     /// Start playing a preloaded asset at the specified time.
     /// If the asset can be reused, it will seek to the specified time and play; otherwise, it will replace the current source with the new one.
-    pub fn start_preloaded_asset_at(
-        &mut self,
-        level_name: &str,
-        music_source: &str,
-        bytes: &[u8],
-        start_seconds: f32,
-    ) {
+    pub fn start_preloaded_asset_at(&mut self, level_name: &str, bytes: &[u8], start_seconds: f32) {
         self.start_with_source_key_at(
-            runtime_asset_source_key(level_name, music_source),
-            music_source,
+            runtime_asset_source_key(level_name, "audio.mp3"),
             bytes,
             start_seconds,
         );
@@ -668,11 +643,10 @@ impl AudioBackend {
     pub fn warmup_preloaded_asset_at(
         &mut self,
         level_name: &str,
-        music_source: &str,
         bytes: &[u8],
         start_seconds: f32,
     ) {
-        let source_key = runtime_asset_source_key(level_name, music_source);
+        let source_key = runtime_asset_source_key(level_name, "audio.mp3");
         let start_seconds = start_seconds.max(0.0);
         self.stop();
 
@@ -680,13 +654,13 @@ impl AudioBackend {
             return;
         }
 
-        self.replace_with_bytes(source_key, music_source, bytes, start_seconds);
+        self.replace_with_bytes(source_key, bytes, start_seconds);
     }
 
     /// Start playing a level asset at the specified time. This will replace the current audio source with the new one and start playback immediately.
     /// If the asset can be reused, it will seek to the specified time and play; otherwise, it will replace the current source with the new one.
-    pub fn start_at(&mut self, level_name: &str, music_source: &str, start_seconds: f32) {
-        let source_key = runtime_asset_source_key(level_name, music_source);
+    pub fn start_at(&mut self, level_name: &str, start_seconds: f32) {
+        let source_key = runtime_asset_source_key(level_name, "audio.mp3");
         let start_seconds = start_seconds.max(0.0);
         self.stop();
 
@@ -694,13 +668,13 @@ impl AudioBackend {
             return;
         }
 
-        self.replace_with_asset(source_key, level_name, music_source, start_seconds, true);
+        self.replace_with_asset(source_key, level_name, start_seconds, true);
     }
 
     /// Warm up a level asset at the specified time. This will replace the current audio source with the new one but will not start playback.
     /// If the asset can be reused, it will not replace the current source.
-    pub fn warmup_at(&mut self, level_name: &str, music_source: &str, start_seconds: f32) {
-        let source_key = runtime_asset_source_key(level_name, music_source);
+    pub fn warmup_at(&mut self, level_name: &str, start_seconds: f32) {
+        let source_key = runtime_asset_source_key(level_name, "audio.mp3");
         let start_seconds = start_seconds.max(0.0);
         self.stop();
 
@@ -708,7 +682,7 @@ impl AudioBackend {
             return;
         }
 
-        self.replace_with_asset(source_key, level_name, music_source, start_seconds, false);
+        self.replace_with_asset(source_key, level_name, start_seconds, false);
     }
 }
 
@@ -935,7 +909,7 @@ mod tests {
     #[test]
     fn replace_with_bytes_invalid_payload_does_not_mark_source_reusable() {
         let mut backend = AudioBackend::new();
-        backend.replace_with_bytes("bytes:bad".to_string(), "bad.bin", &[1, 2, 3], 0.0);
+        backend.replace_with_bytes("bytes:bad".to_string(), &[1, 2, 3], 0.0);
 
         assert!(!backend.can_reuse_source("bytes:bad"));
         assert!(!backend.is_playing());
@@ -946,13 +920,13 @@ mod tests {
         let mut backend = AudioBackend::new();
         let wav = super::tiny_wav_bytes();
 
-        backend.replace_with_bytes("bytes:play".to_string(), "tone.wav", &wav, 1.25);
+        backend.replace_with_bytes("bytes:play".to_string(), &wav, 1.25);
         assert!(backend.can_reuse_source("bytes:play"));
         assert!(backend.is_playing());
         assert!(backend.playback_time_seconds().is_some());
 
         // Decoding a new key replaces the reusable source and caches its PCM.
-        backend.replace_with_bytes("bytes:warm".to_string(), "tone.wav", &wav, 0.5);
+        backend.replace_with_bytes("bytes:warm".to_string(), &wav, 0.5);
         assert!(backend.can_reuse_source("bytes:warm"));
 
         // Stopping clears playback tracking deterministically.
@@ -965,7 +939,7 @@ mod tests {
         let mut backend = AudioBackend::new();
         let wav = super::tiny_wav_bytes();
 
-        backend.replace_with_bytes("bytes:song".to_string(), "tone.wav", &wav, 0.0);
+        backend.replace_with_bytes("bytes:song".to_string(), &wav, 0.0);
         assert!(backend.decoded_cache.is_some());
         assert!(backend.can_reuse_source("bytes:song"));
 

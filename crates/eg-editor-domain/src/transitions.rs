@@ -8,8 +8,7 @@
 use crate::timeline::derive_timeline_state_with_triggers;
 use eg_types::TimedTrigger;
 use eg_types::{
-    Direction, LevelMetadata, LevelObject, SpawnMetadata, DEFAULT_CAMERA_PITCH,
-    DEFAULT_CAMERA_ROTATION,
+    Direction, LevelObject, SpawnMetadata, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_ROTATION,
 };
 
 pub struct EditorPlaytestTransition {
@@ -25,26 +24,6 @@ pub struct EditorPlaytestTransition {
     pub playing_level_name: Option<String>,
     pub camera_rotation: f32,
     pub camera_pitch: f32,
-}
-
-pub struct PlayingLevelTransition {
-    pub level_name: String,
-    pub objects: Vec<LevelObject>,
-    pub sky_color: [f32; 3],
-    pub spawn_position: [f32; 3],
-    pub spawn_direction: Direction,
-    pub level_duration_seconds: f32,
-}
-
-pub fn build_playing_transition_from_metadata(metadata: LevelMetadata) -> PlayingLevelTransition {
-    PlayingLevelTransition {
-        level_name: metadata.name,
-        objects: metadata.objects,
-        sky_color: metadata.sky_color,
-        spawn_position: metadata.spawn.position,
-        spawn_direction: metadata.spawn.direction,
-        level_duration_seconds: metadata.timeline_duration_seconds,
-    }
 }
 
 pub struct EditorPlaytestTransitionParams<'a> {

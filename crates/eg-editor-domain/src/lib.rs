@@ -23,7 +23,7 @@ pub use transitions::*;
 mod tests {
     use super::*;
     use eg_types::{
-        LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata, TimingPoint,
+        BasicLevelMetadata, LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata, TimingPoint,
         TRANSFORM_TRIGGER_BLOCK_ID,
     };
     use eg_types::{TriggerAction, TriggerTarget};
@@ -277,16 +277,16 @@ mod tests {
     #[test]
     fn initializes_editor_session_from_metadata() {
         let metadata = LevelMetadata {
-            name: "Test".to_string(),
-            creator: Some("Tester".to_string()),
-            description: Some("Session init metadata".to_string()),
-            stars: 6.5,
-            tags: vec!["unit".to_string(), "session".to_string()],
+            basic: BasicLevelMetadata {
+                name: "Test".to_string(),
+                creator: Some("Tester".to_string()),
+                description: Some("Session init metadata".to_string()),
+                stars: 6.5,
+                tags: vec!["unit".to_string(), "session".to_string()],
+            },
             music: MusicMetadata {
-                source: "audio.mp3".to_string(),
                 title: None,
                 author: None,
-                extra: serde_json::Map::new(),
             },
             spawn: SpawnMetadata {
                 position: [2.0, 3.0, 1.0],
@@ -308,7 +308,6 @@ mod tests {
         assert_eq!(init.creator_metadata.creator.as_deref(), Some("Tester"));
         assert_eq!(init.creator_metadata.stars, 6.5);
         assert_eq!(init.creator_metadata.tags, ["unit", "session"]);
-        assert!((init.timeline_time_seconds - 0.5).abs() <= 1e-6);
     }
 
     #[test]
@@ -393,40 +392,6 @@ mod tests {
             expected_speed,
             transition.spawn_speed
         );
-    }
-
-    #[test]
-    fn builds_playing_transition_from_metadata() {
-        let metadata = LevelMetadata {
-            name: "Starter".to_string(),
-            music: MusicMetadata {
-                source: "audio.mp3".to_string(),
-                title: None,
-                author: None,
-                extra: serde_json::Map::new(),
-            },
-            sky_color: [0.2, 0.3, 0.4],
-            spawn: SpawnMetadata {
-                position: [3.0, 4.0, 1.0],
-                direction: eg_types::Direction::Right,
-            },
-            objects: vec![LevelObject {
-                position: [1.0, 2.0, 0.0],
-                block_id: "core/stone".to_string(),
-                ..LevelObject::default()
-            }],
-            ..LevelMetadata::default()
-        };
-
-        let transition = build_playing_transition_from_metadata(metadata);
-        assert_eq!(transition.level_name, "Starter");
-        assert_eq!(transition.spawn_position, [3.0, 4.0, 1.0]);
-        assert!(matches!(
-            transition.spawn_direction,
-            eg_types::Direction::Right
-        ));
-        assert_eq!(transition.level_duration_seconds, 16.0);
-        assert_eq!(transition.objects.len(), 1);
     }
 
     #[test]

@@ -17,8 +17,8 @@ mod tests {
         camera_triggers_to_timed_triggers, default_camera_trigger_distance,
         default_camera_trigger_pitch, default_camera_trigger_rotation,
         default_camera_trigger_transition_interval_seconds, timed_triggers_to_camera_triggers,
-        triggers_from_objects, CameraMode, CameraTrigger, Direction, EasingDirection,
-        EditorStateParams, GameCursor, LevelCreatorMetadata, LevelMetadata, LevelObject,
+        triggers_from_objects, BasicLevelMetadata, CameraMode, CameraTrigger, Direction,
+        EasingDirection, EditorStateParams, GameCursor, LevelMetadata, LevelObject,
         LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata, TimedTrigger, TriggerAction,
         TriggerTarget, CAMERA_TRIGGER_BLOCK_ID, TRANSFORM_TRIGGER_BLOCK_ID,
     };
@@ -47,7 +47,7 @@ mod tests {
     #[test]
     fn level_metadata_parses_objects_without_rotation_field() {
         let json = r#"{
-            "name":"Current",
+            "basic":{"name":"Current"},
             "music":{"source":"music.mp3"},
             "spawn":{"position":[0.0,0.0,0.0],"direction":"forward"},
             "objects":[
@@ -142,8 +142,10 @@ mod tests {
     #[test]
     fn level_metadata_serialization_omits_default_fields() {
         let metadata = LevelMetadata::from_editor_state(EditorStateParams {
-            name: "Minimal".to_string(),
-            creator_metadata: LevelCreatorMetadata::default(),
+            basic: BasicLevelMetadata {
+                name: "Minimal".to_string(),
+                ..BasicLevelMetadata::default()
+            },
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
             sky_color: eg_types::default_sky_color(),
@@ -159,13 +161,15 @@ mod tests {
         });
 
         let value = serde_json::to_value(&metadata).expect("serialize metadata");
-        assert_eq!(value["name"], "Minimal");
         assert!(value.get("format_version").is_none());
-        assert!(value.get("creator").is_none());
-        assert!(value.get("description").is_none());
-        assert!(value.get("stars").is_none());
-        assert!(value.get("tags").is_none());
-        assert!(value.get("version").is_none());
+        assert_eq!(value["basic"]["name"], "Minimal");
+        assert!(value.get("basic").and_then(|v| v.get("creator")).is_none());
+        assert!(value
+            .get("basic")
+            .and_then(|v| v.get("description"))
+            .is_none());
+        assert!(value.get("basic").and_then(|v| v.get("stars")).is_none());
+        assert!(value.get("basic").and_then(|v| v.get("tags")).is_none());
         assert!(value.get("music").is_none());
         assert!(value.get("spawn").is_none());
         assert!(value.get("sky_color").is_none());
@@ -186,8 +190,10 @@ mod tests {
     #[test]
     fn level_metadata_serialization_includes_custom_sky_color() {
         let metadata = LevelMetadata::from_editor_state(EditorStateParams {
-            name: "CustomSky".to_string(),
-            creator_metadata: LevelCreatorMetadata::default(),
+            basic: BasicLevelMetadata {
+                name: "CustomSky".to_string(),
+                ..BasicLevelMetadata::default()
+            },
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
             sky_color: [0.2, 0.4, 0.8],
@@ -221,8 +227,10 @@ mod tests {
     #[test]
     fn level_metadata_serialization_includes_menu_preview_camera_when_present() {
         let metadata = LevelMetadata::from_editor_state(EditorStateParams {
-            name: "MenuPreview".to_string(),
-            creator_metadata: LevelCreatorMetadata::default(),
+            basic: BasicLevelMetadata {
+                name: "MenuPreview".to_string(),
+                ..BasicLevelMetadata::default()
+            },
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
             sky_color: eg_types::default_sky_color(),
@@ -352,7 +360,10 @@ mod tests {
     #[test]
     fn resolved_triggers_return_trigger_data_for_camera_conversion() {
         let metadata = LevelMetadata {
-            name: "Bridge".to_string(),
+            basic: BasicLevelMetadata {
+                name: "Bridge".to_string(),
+                ..BasicLevelMetadata::default()
+            },
             objects: vec![LevelObject {
                 block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
                 trigger: camera_triggers_to_timed_triggers(&[CameraTrigger {
@@ -421,7 +432,10 @@ mod tests {
             ..LevelObject::default()
         };
         let metadata = LevelMetadata {
-            name: "Bridge".to_string(),
+            basic: BasicLevelMetadata {
+                name: "Bridge".to_string(),
+                ..BasicLevelMetadata::default()
+            },
             objects: vec![object],
             ..LevelMetadata::default()
         };

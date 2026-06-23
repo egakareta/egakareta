@@ -14,7 +14,6 @@ use eg_audio::service::{AudioPreloadResult, WaveformLoadMessage, WaveformResult}
 use eg_platform::io::save_waveform_to_storage;
 use eg_platform::services::trigger_audio_import;
 use eg_platform::task::spawn_background;
-use eg_types::LevelMetadata;
 use eg_types::PersistentWaveformCacheEntry;
 
 #[derive(Clone, Debug)]
@@ -106,7 +105,6 @@ impl AudioState {
             eg_audio::service::start_audio_preload(
                 source_key,
                 level_name.to_string(),
-                music_source.to_string(),
                 self.runtime_preload.preload_channel.0.clone(),
             );
         }
@@ -148,10 +146,10 @@ impl Default for AudioState {
 }
 
 impl State {
-    pub fn preload_runtime_audio(&mut self, level_name: &str, music_source: &str) {
+    pub fn preload_runtime_audio(&mut self, level_name: &str, audio_source: &str) {
         self.audio
             .state
-            .preload_runtime_audio(level_name, music_source);
+            .preload_runtime_audio(level_name, audio_source);
     }
 
     pub fn stop_audio(&mut self) {
@@ -170,35 +168,16 @@ impl State {
         self.audio.state.runtime.ensure_device();
     }
 
-    pub fn start_audio(&mut self, level_name: &str, metadata: &LevelMetadata) {
-        self.start_audio_at_seconds(level_name, metadata, 0.0);
-    }
-
-    pub fn start_audio_at_seconds(
-        &mut self,
-        level_name: &str,
-        metadata: &LevelMetadata,
-        start_seconds: f32,
-    ) {
-        let music_source = metadata.music.source.clone();
-        self.start_audio_source_at_seconds(level_name, &music_source, start_seconds);
-    }
-
-    pub(super) fn start_audio_source_at_seconds(
-        &mut self,
-        level_name: &str,
-        music_source: &str,
-        start_seconds: f32,
-    ) {
-        let source_key = runtime_asset_source_key(level_name, music_source);
+    pub(super) fn start_audio_source_at_seconds(&mut self, level_name: &str, start_seconds: f32) {
+        let source_key = runtime_asset_source_key(level_name, "audio.mp3");
         self.update_runtime_audio_preloads();
 
         if self.phase == eg_types::AppPhase::Editor || self.session.playtesting_editor {
-            if let Some(bytes) = self.audio.state.editor.local_audio_cache.get(music_source) {
+            if let Some(bytes) = self.audio.state.editor.local_audio_cache.get("audio.mp3") {
                 self.audio
                     .state
                     .runtime
-                    .start_with_bytes_at(music_source, bytes, start_seconds);
+                    .start_with_bytes_at(bytes, start_seconds);
                 return;
             }
         }
@@ -210,27 +189,17 @@ impl State {
             .preloaded_audio
             .get(&source_key)
         {
-            self.audio.state.runtime.start_preloaded_asset_at(
-                level_name,
-                music_source,
-                bytes,
-                start_seconds,
-            );
-        } else {
             self.audio
                 .state
                 .runtime
-                .start_at(level_name, music_source, start_seconds);
+                .start_preloaded_asset_at(level_name, bytes, start_seconds);
+        } else {
+            self.audio.state.runtime.start_at(level_name, start_seconds);
         }
     }
 
-    pub fn warmup_audio_at_seconds(
-        &mut self,
-        level_name: &str,
-        metadata: &LevelMetadata,
-        start_seconds: f32,
-    ) {
-        let source_key = runtime_asset_source_key(level_name, &metadata.music.source);
+    pub fn warmup_audio_at_seconds(&mut self, level_name: &str, start_seconds: f32) {
+        let source_key = runtime_asset_source_key(level_name, "audio.mp3");
 
         self.update_runtime_audio_preloads();
 
@@ -243,18 +212,12 @@ impl State {
         #[cfg(not(test))]
         {
             if self.phase == eg_types::AppPhase::Editor || self.session.playtesting_editor {
-                if let Some(bytes) = self
-                    .audio
-                    .state
-                    .editor
-                    .local_audio_cache
-                    .get(&metadata.music.source)
-                {
-                    self.audio.state.runtime.warmup_with_bytes_at(
-                        &metadata.music.source,
-                        bytes,
-                        start_seconds,
-                    );
+                // TODO: this logic is obviously wrong
+                if let Some(bytes) = self.audio.state.editor.local_audio_cache.get("audio.mp3") {
+                    self.audio
+                        .state
+                        .runtime
+                        .warmup_with_bytes_at(bytes, start_seconds);
                     return;
                 }
             }
@@ -268,16 +231,14 @@ impl State {
             {
                 self.audio.state.runtime.warmup_preloaded_asset_at(
                     level_name,
-                    &metadata.music.source,
                     bytes,
                     start_seconds,
                 );
             } else {
-                self.audio.state.runtime.warmup_at(
-                    level_name,
-                    &metadata.music.source,
-                    start_seconds,
-                );
+                self.audio
+                    .state
+                    .runtime
+                    .warmup_at(level_name, start_seconds);
             }
         }
     }
@@ -294,9 +255,8 @@ impl State {
                 .editor_level_name
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string());
-            let source_key = runtime_asset_source_key(&level_name, &filename);
+            let source_key = runtime_asset_source_key(&level_name, "audio.mp3");
 
-            self.session.editor_music_metadata.source = filename.clone();
             self.audio
                 .state
                 .editor
@@ -338,8 +298,7 @@ impl State {
             self.audio.state.editor.waveform_load_channel.1.try_recv()
         {
             let source_key = runtime_asset_source_key(&level_name, &source);
-            let is_current = source == self.session.editor_music_metadata.source
-                && self.session.editor_level_name.as_deref() == Some(&level_name);
+            let is_current = self.session.editor_level_name.as_deref() == Some(&level_name);
 
             match message {
                 WaveformLoadMessage::Started { window_size } => {
@@ -499,13 +458,12 @@ impl State {
     }
 
     pub fn load_waveform_for_current_audio(&mut self) {
-        let music_source = self.session.editor_music_metadata.source.clone();
         let level_name = self
             .session
             .editor_level_name
             .clone()
             .unwrap_or_else(|| "Untitled".to_string());
-        let source_key = runtime_asset_source_key(&level_name, &music_source);
+        let source_key = runtime_asset_source_key(&level_name, "audio.mp3");
 
         if let Some(entry) = self.audio.state.editor.waveform_cache.get(&source_key) {
             self.editor.timing.waveform_samples = entry.samples.clone();
@@ -535,7 +493,7 @@ impl State {
             .state
             .editor
             .local_audio_cache
-            .get(&music_source)
+            .get("audio.mp3")
             .cloned()
             .or_else(|| {
                 self.audio
@@ -547,7 +505,7 @@ impl State {
             });
         let sender = self.audio.state.editor.waveform_load_channel.0.clone();
 
-        eg_audio::service::start_waveform_loading(music_source, level_name, cached_bytes, sender);
+        eg_audio::service::start_waveform_loading(level_name, cached_bytes, sender);
     }
 }
 
@@ -696,9 +654,8 @@ mod tests {
     async fn update_waveform_loading_applies_current_source_and_caches_bytes() {
         let mut state = new_editor_state().await;
         state.session.editor_level_name = Some("Test Level".to_string());
-        state.session.editor_music_metadata.source = "song.mp3".to_string();
 
-        let source_key = runtime_asset_source_key("Test Level", "song.mp3");
+        let source_key = runtime_asset_source_key("Test Level", "audio.mp3");
         state.audio.state.editor.waveform_loading_source = Some(source_key.clone());
 
         state
@@ -708,7 +665,7 @@ mod tests {
             .waveform_load_channel
             .0
             .send((
-                "song.mp3".to_string(),
+                "audio.mp3".to_string(),
                 "Test Level".to_string(),
                 WaveformLoadMessage::Chunk {
                     start_peak: 0,
@@ -770,9 +727,8 @@ mod tests {
     async fn update_waveform_loading_applies_persistent_cache_hit() {
         let mut state = new_editor_state().await;
         state.session.editor_level_name = Some("Test Level".to_string());
-        state.session.editor_music_metadata.source = "song.mp3".to_string();
 
-        let source_key = runtime_asset_source_key("Test Level", "song.mp3");
+        let source_key = runtime_asset_source_key("Test Level", "audio.mp3");
         state.audio.state.editor.waveform_loading_source = Some(source_key.clone());
 
         state
@@ -782,7 +738,7 @@ mod tests {
             .waveform_load_channel
             .0
             .send((
-                "song.mp3".to_string(),
+                "audio.mp3".to_string(),
                 "Test Level".to_string(),
                 WaveformLoadMessage::Cached {
                     samples: vec![0.15, 0.45, 0.9],
@@ -825,11 +781,10 @@ mod tests {
     async fn update_waveform_loading_keeps_timing_for_stale_source_but_still_caches() {
         let mut state = new_editor_state().await;
         state.session.editor_level_name = Some("Test Level".to_string());
-        state.session.editor_music_metadata.source = "current.mp3".to_string();
         state.editor.timing.waveform_samples = vec![1.0];
         state.editor.timing.waveform_sample_rate = 22_050;
 
-        let stale_key = runtime_asset_source_key("Test Level", "stale.mp3");
+        let stale_key = runtime_asset_source_key("Test Level", "audio.mp3");
         state.audio.state.editor.waveform_loading_source = Some(stale_key.clone());
 
         state
@@ -839,7 +794,7 @@ mod tests {
             .waveform_load_channel
             .0
             .send((
-                "stale.mp3".to_string(),
+                "audio.mp3".to_string(),
                 "Test Level".to_string(),
                 WaveformLoadMessage::Chunk {
                     start_peak: 0,
@@ -870,11 +825,10 @@ mod tests {
     async fn update_waveform_loading_clears_timing_when_current_decode_fails() {
         let mut state = new_editor_state().await;
         state.session.editor_level_name = Some("Test Level".to_string());
-        state.session.editor_music_metadata.source = "broken.mp3".to_string();
         state.editor.timing.waveform_samples = vec![0.5, 0.6];
         state.editor.timing.waveform_sample_rate = 44_100;
 
-        let key = runtime_asset_source_key("Test Level", "broken.mp3");
+        let key = runtime_asset_source_key("Test Level", "audio.mp3");
         state.audio.state.editor.waveform_loading_source = Some(key.clone());
 
         state
@@ -884,7 +838,7 @@ mod tests {
             .waveform_load_channel
             .0
             .send((
-                "broken.mp3".to_string(),
+                "audio.mp3".to_string(),
                 "Test Level".to_string(),
                 WaveformLoadMessage::Failed { bytes: None },
             ))
@@ -901,8 +855,7 @@ mod tests {
     async fn load_waveform_for_current_audio_prefers_cache_and_short_circuits_inflight_requests() {
         let mut state = new_editor_state().await;
         state.session.editor_level_name = Some("Test Level".to_string());
-        state.session.editor_music_metadata.source = "song.mp3".to_string();
-        let source_key = runtime_asset_source_key("Test Level", "song.mp3");
+        let source_key = runtime_asset_source_key("Test Level", "audio.mp3");
 
         state.audio.state.editor.waveform_cache.insert(
             source_key.clone(),
@@ -932,9 +885,8 @@ mod tests {
     async fn load_waveform_for_current_audio_marks_loading_and_clears_timing_when_uncached() {
         let mut state = new_editor_state().await;
         state.session.editor_level_name = Some("Test Level".to_string());
-        state.session.editor_music_metadata.source = "uncached.mp3".to_string();
 
-        let source_key = runtime_asset_source_key("Test Level", "uncached.mp3");
+        let source_key = runtime_asset_source_key("Test Level", "audio.mp3");
         state.editor.timing.waveform_samples = vec![1.0, 2.0];
         state.editor.timing.waveform_sample_rate = 11_025;
         state.audio.state.editor.waveform_loading_source = None;
@@ -953,7 +905,6 @@ mod tests {
     async fn update_audio_imports_updates_source_cache_and_invalidates_waveform_cache() {
         let mut state = new_editor_state().await;
         state.session.editor_level_name = Some("Test Level".to_string());
-        state.session.editor_music_metadata.source = "old.mp3".to_string();
 
         let imported_name = "imported.mp3".to_string();
         let source_key = runtime_asset_source_key("Test Level", &imported_name);
@@ -979,7 +930,6 @@ mod tests {
 
         state.update_audio_imports();
 
-        assert_eq!(state.session.editor_music_metadata.source, imported_name);
         assert_eq!(
             state
                 .audio

@@ -1044,13 +1044,9 @@ pub fn show_editor_ui(
                     let mut changed = false;
 
                     ui.horizontal(|ui| {
-                        ui.label(format!("{} Source:", egui_phosphor::regular::GLOBE));
-                        if ui.text_edit_singleline(&mut music.source).changed() {
-                            changed = true;
-                        }
                         if ui
                             .button(format!(
-                                "{} Import External Audio",
+                                "{} Import Audio",
                                 egui_phosphor::regular::FILE_AUDIO
                             ))
                             .clicked()
@@ -2303,7 +2299,7 @@ mod test_utils {
             settings_section: SettingsSection::Backends,
             keybind_capture_action: None,
             music_metadata,
-            creator_metadata: eg_types::LevelCreatorMetadata::default(),
+            creator_metadata: eg_types::BasicLevelMetadata::default(),
             sky_color: eg_types::default_sky_color(),
             app_settings,
             configured_graphics_backend: "Auto",

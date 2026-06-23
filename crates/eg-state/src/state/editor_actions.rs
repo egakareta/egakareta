@@ -670,7 +670,6 @@ impl State {
             }
         }
 
-        let metadata = self.current_editor_metadata();
         let level_name = self
             .session
             .editor_level_name
@@ -681,7 +680,7 @@ impl State {
 
         {
             puffin::profile_scope!("SeekAudioStart");
-            self.start_audio_at_seconds(&level_name, &metadata, start_seconds);
+            self.start_audio_source_at_seconds(&level_name, start_seconds);
         }
     }
 
@@ -951,10 +950,9 @@ impl State {
                 .editor_level_name
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string());
-            let music_source = self.session.editor_music_metadata.source.clone();
             {
                 puffin::profile_scope!("TimelinePlaybackAudioStart");
-                self.start_audio_source_at_seconds(&level_name, &music_source, start_seconds);
+                self.start_audio_source_at_seconds(&level_name, start_seconds);
             }
             return;
         }

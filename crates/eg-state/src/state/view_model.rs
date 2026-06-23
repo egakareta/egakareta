@@ -8,7 +8,7 @@
 use super::State;
 use eg_types::TimedTrigger;
 use eg_types::{
-    AppSettings, Direction, EditorMode, LevelCreatorMetadata, LevelObject, MusicMetadata,
+    AppSettings, BasicLevelMetadata, Direction, EditorMode, LevelObject, MusicMetadata,
     PlayerLevelProgress, SettingsSection, TimingPoint,
 };
 
@@ -36,7 +36,7 @@ pub struct EditorUiViewModel<'a> {
     pub settings_section: SettingsSection,
     pub keybind_capture_action: Option<&'a (String, usize)>,
     pub music_metadata: &'a MusicMetadata,
-    pub creator_metadata: LevelCreatorMetadata,
+    pub creator_metadata: BasicLevelMetadata,
     pub sky_color: [f32; 3],
     pub app_settings: &'a AppSettings,
     pub configured_graphics_backend: &'a str,

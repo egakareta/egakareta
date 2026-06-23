@@ -600,12 +600,6 @@ mod tests {
         state.dispatch_editor(EditorCommand::RenameLevel("TestLevel".to_string()));
         assert_eq!(state.editor_level_name().as_deref(), Some("TestLevel"));
 
-        state.dispatch_editor(EditorCommand::UpdateMusic(eg_types::MusicMetadata {
-            source: "test.mp3".to_string(),
-            ..eg_types::MusicMetadata::default()
-        }));
-        assert_eq!(state.editor_music_metadata().source, "test.mp3");
-
         state.dispatch_editor(EditorCommand::UpdateSkyColor([0.1, 0.2, 0.3]));
 
         state.dispatch_editor(EditorCommand::CaptureMenuPreviewCamera);

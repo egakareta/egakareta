@@ -82,7 +82,7 @@ pub fn is_default_sky_color(value: &[f32; 3]) -> bool {
 }
 
 serde_default!(default_level_format_version: u32 = CURRENT_LEVEL_FORMAT_VERSION);
-serde_default!(default_music_source: String = "music.mp3".to_string());
+serde_default!(default_level_name: String = "Untitled".to_string());
 serde_default_array!(default_spawn_position: [f32; 3] = [0.0, 0.0, 0.0]);
 serde_default_array!(default_preview_camera_position_zero: [f32; 3] = [0.0, 0.0, 0.0]);
 serde_default_array!(default_preview_camera_target_zero: [f32; 3] = [0.0, 0.0, 0.0]);
@@ -185,36 +185,55 @@ where
     Ok(normalize_block_id(&raw))
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Default)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Default, IsDefault)]
 pub struct MusicMetadata {
-    #[serde(
-        default = "default_music_source",
-        skip_serializing_if = "is_default_music_source"
-    )]
-    pub source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
-    #[serde(default, flatten)]
-    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
-impl IsDefault for MusicMetadata {
-    fn is_default(&self) -> bool {
-        is_default_music_source(&self.source)
-            && self.title.is_none()
-            && self.author.is_none()
-            && self.extra.is_empty()
-    }
-}
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct LevelCreatorMetadata {
+/// Metadata that can be supplied by the level creator and should be:
+/// - easily changed
+/// - gameplay-irrelevant
+/// - performance-insensitive
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct BasicLevelMetadata {
+    /// The name of the level, supplied by the creator.
+    #[serde(
+        default = "default_level_name",
+        skip_serializing_if = "is_default_level_name"
+    )]
+    pub name: String,
+    /// The username of level creator, None if the level is built-in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub creator: Option<String>,
+    /// A description of the level, supplied by the creator.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Difficulty of the level, from 0.0 to 10.0, supplied by the creator.
+    /// TODO: subject to change.
+    #[serde(
+        default = "default_level_stars",
+        skip_serializing_if = "is_default_level_stars"
+    )]
     pub stars: f32,
+    /// Tags for the level, supplied by the creator. Can be used for categorization, search, or filtering.
+    #[serde(
+        default = "default_level_tags",
+        skip_serializing_if = "is_default_level_tags"
+    )]
     pub tags: Vec<String>,
+}
+
+impl IsDefault for BasicLevelMetadata {
+    fn is_default(&self) -> bool {
+        is_default_level_name(&self.name)
+            && self.creator.is_none()
+            && self.description.is_none()
+            && is_default_level_stars(&self.stars)
+            && is_default_level_tags(&self.tags)
+    }
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
@@ -248,8 +267,7 @@ pub struct LevelPreviewCameraMetadata {
 }
 
 pub struct EditorStateParams {
-    pub name: String,
-    pub creator_metadata: LevelCreatorMetadata,
+    pub basic: BasicLevelMetadata,
     pub music: MusicMetadata,
     pub spawn: SpawnMetadata,
     pub sky_color: [f32; 3],
@@ -269,32 +287,22 @@ pub struct LevelMetadata {
         skip_serializing_if = "is_default_level_format_version"
     )]
     pub format_version: u32,
-    /// The name of the level, supplied by the creator.
-    pub name: String,
-    /// The username of level creator, None if the level is built-in.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub creator: Option<String>,
-    /// A description of the level, supplied by the creator.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    /// Difficulty of the level, from 0.0 to 10.0, supplied by the creator.
-    /// TODO: subject to change.
     #[serde(
-        default = "default_level_stars",
-        skip_serializing_if = "is_default_level_stars"
+        default = "Default::default",
+        skip_serializing_if = "IsDefault::is_default"
     )]
-    pub stars: f32,
-    /// Tags for the level, supplied by the creator. Can be used for categorization, search, or filtering.
-    #[serde(
-        default = "default_level_tags",
-        skip_serializing_if = "is_default_level_tags"
-    )]
-    pub tags: Vec<String>,
+    pub basic: BasicLevelMetadata,
     /// Metadata about the music used in the level, including source, title, and author.
-    #[serde(default, skip_serializing_if = "IsDefault::is_default")]
+    #[serde(
+        default = "Default::default",
+        skip_serializing_if = "IsDefault::is_default"
+    )]
     pub music: MusicMetadata,
     /// Metadata about the spawn point of the level, including position and direction.
-    #[serde(default, skip_serializing_if = "IsDefault::is_default")]
+    #[serde(
+        default = "Default::default",
+        skip_serializing_if = "IsDefault::is_default"
+    )]
     pub spawn: SpawnMetadata,
     /// Color of the sky in the level, as RGB values from 0.0 to 1.0.
     /// TODO: will be controllable by triggers in the future.
@@ -326,11 +334,7 @@ impl Default for LevelMetadata {
     fn default() -> Self {
         Self {
             format_version: CURRENT_LEVEL_FORMAT_VERSION,
-            name: "Untitled".to_string(),
-            creator: None,
-            description: None,
-            stars: default_level_stars(),
-            tags: default_level_tags(),
+            basic: BasicLevelMetadata::default(),
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
             sky_color: default_sky_color(),
@@ -347,8 +351,7 @@ impl Default for LevelMetadata {
 impl LevelMetadata {
     pub fn from_editor_state(
         EditorStateParams {
-            name,
-            creator_metadata,
+            basic,
             music,
             spawn,
             sky_color,
@@ -362,11 +365,7 @@ impl LevelMetadata {
     ) -> Self {
         let mut metadata = Self {
             format_version: CURRENT_LEVEL_FORMAT_VERSION,
-            name,
-            creator: creator_metadata.creator,
-            description: creator_metadata.description,
-            stars: creator_metadata.stars.clamp(0.0, 10.0),
-            tags: creator_metadata.tags,
+            basic,
             music,
             spawn,
             sky_color,
@@ -388,15 +387,6 @@ impl LevelMetadata {
 
     pub fn resolved_triggers(&self) -> Vec<TimedTrigger> {
         triggers_from_objects(&self.objects)
-    }
-
-    pub fn creator_metadata(&self) -> LevelCreatorMetadata {
-        LevelCreatorMetadata {
-            creator: self.creator.clone(),
-            description: self.description.clone(),
-            stars: self.stars.clamp(0.0, 10.0),
-            tags: self.tags.clone(),
-        }
     }
 }
 

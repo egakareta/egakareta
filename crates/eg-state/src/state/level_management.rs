@@ -6,21 +6,18 @@
 
 */
 use super::State;
+use eg_codec::{decode_level_metadata_binary, encode_level_metadata_binary};
 use eg_editor_domain::{
-    build_editor_playtest_transition, build_playing_transition_from_metadata,
-    derive_tap_indicator_positions, editor_session_init_from_metadata,
-    EditorPlaytestTransitionParams,
+    build_editor_playtest_transition, derive_tap_indicator_positions,
+    editor_session_init_from_metadata, EditorPlaytestTransitionParams,
 };
 use eg_game::GameState;
-use eg_level::{
-    build_level_binary_export, build_level_export, load_builtin_level_metadata,
-    parse_level_binary_import, parse_level_egz_import,
-};
+use eg_level::{build_level_export, load_builtin_level_metadata, read_metadata_from_egz};
 use eg_platform::io::{read_editor_music_bytes, save_level_export};
 use eg_platform::services::trigger_level_import;
 use eg_platform::task::spawn_background;
 use eg_types::{
-    default_sky_color, Direction, EditorStateParams, LevelCreatorMetadata, LevelMetadata,
+    default_sky_color, BasicLevelMetadata, Direction, EditorStateParams, LevelMetadata,
     LevelObject, LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata,
 };
 use eg_types::{
@@ -53,18 +50,17 @@ impl State {
         self.stop_audio();
 
         if let Some(metadata) = self.load_level_metadata(&level_name) {
-            self.preload_runtime_audio(&level_name, &metadata.music.source);
-            self.warmup_audio_at_seconds(&level_name, &metadata, 0.0);
+            self.preload_runtime_audio(&level_name, "audio.mp3");
+            self.warmup_audio_at_seconds(&level_name, 0.0);
             self.editor.set_triggers(metadata.resolved_triggers());
             self.editor.set_trigger_selected(None);
-            let transition = build_playing_transition_from_metadata(metadata);
-            log::debug!("Starting level: {}", transition.level_name);
-            self.session.playing_sky_color = transition.sky_color;
+            log::debug!("Starting level: {}", metadata.basic.name);
+            self.session.playing_sky_color = metadata.sky_color;
             self.apply_playing_transition_objects(
-                transition.objects,
-                transition.level_duration_seconds,
+                metadata.objects,
+                metadata.timeline_duration_seconds,
             );
-            self.apply_spawn_to_game(transition.spawn_position, transition.spawn_direction, None);
+            self.apply_spawn_to_game(metadata.spawn.position, metadata.spawn.direction, None);
         }
 
         self.rebuild_block_vertices();
@@ -95,16 +91,11 @@ impl State {
                     self.editor.timeline.clock.duration_seconds,
                 ),
             });
-            let metadata = self.current_editor_metadata();
             let level_name = transition
                 .playing_level_name
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string());
-            self.warmup_audio_at_seconds(
-                &level_name,
-                &metadata,
-                transition.playtest_audio_start_seconds,
-            );
+            self.warmup_audio_at_seconds(&level_name, transition.playtest_audio_start_seconds);
             self.session.playtest_audio_start_seconds =
                 Some(transition.playtest_audio_start_seconds);
             self.session.playing_sky_color = transition.sky_color;
@@ -125,17 +116,12 @@ impl State {
             if let Some(metadata) = self.load_level_metadata(&level_name) {
                 self.editor.set_triggers(metadata.resolved_triggers());
                 self.editor.set_trigger_selected(None);
-                let transition = build_playing_transition_from_metadata(metadata);
-                self.session.playing_sky_color = transition.sky_color;
+                self.session.playing_sky_color = metadata.sky_color;
                 self.apply_playing_transition_objects(
-                    transition.objects,
-                    transition.level_duration_seconds,
+                    metadata.objects,
+                    metadata.timeline_duration_seconds,
                 );
-                self.apply_spawn_to_game(
-                    transition.spawn_position,
-                    transition.spawn_direction,
-                    None,
-                );
+                self.apply_spawn_to_game(metadata.spawn.position, metadata.spawn.direction, None);
             }
         }
 
@@ -168,13 +154,7 @@ impl State {
         self.session.playing_trigger_base_objects = checkpoint.trigger_base_objects;
 
         if let Some(level_name) = self.session.playing_level_name.clone() {
-            if let Some(metadata) = self.load_level_metadata(&level_name) {
-                self.warmup_audio_at_seconds(
-                    &level_name,
-                    &metadata,
-                    self.gameplay.state.elapsed_seconds,
-                );
-            }
+            self.warmup_audio_at_seconds(&level_name, self.gameplay.state.elapsed_seconds);
         }
 
         self.rebuild_block_vertices();
@@ -188,10 +168,8 @@ impl State {
         self.enter_editor_phase(level_name.clone());
 
         let metadata = self.load_level_metadata(&level_name);
-        if let Some(metadata) = metadata.as_ref() {
-            self.preload_runtime_audio(&level_name, &metadata.music.source);
-            self.warmup_audio_at_seconds(&level_name, metadata, 0.0);
-        }
+        self.preload_runtime_audio(&level_name, "audio.mp3");
+        self.warmup_audio_at_seconds(&level_name, 0.0);
 
         let init = editor_session_init_from_metadata(metadata);
         self.editor.objects = init.objects;
@@ -237,9 +215,9 @@ impl State {
             .state
             .editor
             .local_audio_cache
-            .get(&metadata.music.source)
+            .get("audio.mp3")
             .cloned()
-            .or_else(|| read_editor_music_bytes(&metadata.music.source));
+            .or_else(|| read_editor_music_bytes("audio.mp3"));
 
         build_level_export(&metadata, audio_bytes)
     }
@@ -248,13 +226,13 @@ impl State {
     ///
     /// This replaces the current editor level and caches any bundled audio data.
     pub fn import_level_egz(&mut self, data: &[u8]) -> Result<(), String> {
-        let (metadata, audio_bytes) = parse_level_egz_import(data)?;
+        let (metadata, audio_bytes) = read_metadata_from_egz(data)?;
         if let Some(bytes) = audio_bytes {
             self.audio
                 .state
                 .editor
                 .local_audio_cache
-                .insert(metadata.music.source.clone(), bytes);
+                .insert("audio.mp3".to_string(), bytes);
         }
         self.apply_imported_level_metadata(metadata);
         Ok(())
@@ -262,14 +240,14 @@ impl State {
 
     /// Exports the current editor level metadata to binary bytes.
     pub fn export_level(&self) -> Result<Vec<u8>, String> {
-        build_level_binary_export(&self.current_editor_metadata())
+        encode_level_metadata_binary(&self.current_editor_metadata())
     }
 
     /// Imports level metadata from a binary payload.
     ///
     /// This replaces the current editor level metadata.
     pub fn import_level(&mut self, data: &[u8]) -> Result<(), String> {
-        let metadata = parse_level_binary_import(data)?;
+        let metadata = decode_level_metadata_binary(data)?;
         self.apply_imported_level_metadata(metadata);
 
         Ok(())
@@ -277,12 +255,7 @@ impl State {
 
     pub(super) fn current_editor_metadata(&self) -> LevelMetadata {
         LevelMetadata::from_editor_state(EditorStateParams {
-            name: self
-                .session
-                .editor_level_name
-                .clone()
-                .unwrap_or_else(|| "Untitled".to_string()),
-            creator_metadata: self.session.editor_creator_metadata.clone(),
+            basic: self.session.editor_creator_metadata.clone(),
             music: self.session.editor_music_metadata.clone(),
             spawn: self.editor.spawn.clone(),
             sky_color: self.session.editor_sky_color,
@@ -296,7 +269,7 @@ impl State {
     }
 
     pub fn apply_imported_level_metadata(&mut self, metadata: LevelMetadata) {
-        let level_name = metadata.name.clone();
+        let level_name = metadata.basic.name.clone();
         let init = editor_session_init_from_metadata(Some(metadata));
 
         self.editor.objects = init.objects;
@@ -373,11 +346,11 @@ impl State {
         self.session.editor_music_metadata = metadata;
     }
 
-    pub fn editor_creator_metadata(&self) -> &LevelCreatorMetadata {
+    pub fn editor_creator_metadata(&self) -> &BasicLevelMetadata {
         &self.session.editor_creator_metadata
     }
 
-    pub fn set_editor_creator_metadata(&mut self, metadata: LevelCreatorMetadata) {
+    pub fn set_editor_creator_metadata(&mut self, metadata: BasicLevelMetadata) {
         self.session.editor_creator_metadata = metadata;
     }
 
@@ -718,7 +691,7 @@ mod tests {
     use crate::state::editor_command::EditorCommand;
     use eg_audio::audio::runtime_asset_source_key;
     use eg_types::{
-        default_sky_color, Direction, EditorStateParams, LevelCreatorMetadata, LevelMetadata,
+        default_sky_color, BasicLevelMetadata, Direction, EditorStateParams, LevelMetadata,
         LevelObject, LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata,
     };
     use eg_types::{
@@ -765,15 +738,12 @@ mod tests {
         state.enter_editor_phase("RoundtripSource".to_string());
 
         state.set_editor_level_name("RoundtripSource".to_string());
-        state.set_editor_music_metadata(MusicMetadata {
-            source: "roundtrip.mp3".to_string(),
-            ..MusicMetadata::default()
-        });
-        state.set_editor_creator_metadata(LevelCreatorMetadata {
+        state.set_editor_music_metadata(MusicMetadata::default());
+        state.set_editor_creator_metadata(BasicLevelMetadata {
             creator: Some("Roundtrip Author".to_string()),
-            description: None,
             stars: 6.5,
             tags: vec!["binary".to_string(), "roundtrip".to_string()],
+            ..BasicLevelMetadata::default()
         });
         state.editor.objects = vec![test_object([2.0, 1.0, 3.0], "core/grass")];
         state.editor.spawn.position = [3.0, 0.0, 4.0];
@@ -795,11 +765,10 @@ mod tests {
             .expect("import should restore metadata from binary payload");
 
         let actual = state.current_editor_metadata();
-        assert_eq!(actual.name, expected.name);
-        assert_eq!(actual.music.source, expected.music.source);
-        assert_eq!(actual.creator, expected.creator);
-        assert_eq!(actual.stars, expected.stars);
-        assert_eq!(actual.tags, expected.tags);
+        assert_eq!(actual.basic.name, expected.basic.name);
+        assert_eq!(actual.basic.creator, expected.basic.creator);
+        assert_eq!(actual.basic.stars, expected.basic.stars);
+        assert_eq!(actual.basic.tags, expected.basic.tags);
         assert_eq!(actual.spawn.position, expected.spawn.position);
         assert_eq!(actual.tap_times, expected.tap_times);
         assert_eq!(
@@ -816,14 +785,12 @@ mod tests {
         state.enter_editor_phase("CrudSeed".to_string());
 
         let mut created = state.current_editor_metadata();
-        created.name = "CrudCreate".to_string();
-        created.music.source = "crud.mp3".to_string();
+        created.basic.name = "CrudCreate".to_string();
         created.objects = vec![test_object([1.0, 0.0, 1.0], "core/stone")];
         created.tap_times = vec![0.75];
         state.apply_imported_level_metadata(created);
 
         assert_eq!(state.editor_level_name().as_deref(), Some("CrudCreate"));
-        assert_eq!(state.current_editor_metadata().music.source, "crud.mp3");
         assert_eq!(state.editor.objects.len(), 1);
 
         state.set_editor_level_name("CrudUpdate".to_string());
@@ -1031,8 +998,7 @@ mod tests {
     #[test]
     fn menu_preview_camera_for_metadata_prefers_manual_camera() {
         let metadata = LevelMetadata::from_editor_state(EditorStateParams {
-            name: "ManualPreview".to_string(),
-            creator_metadata: LevelCreatorMetadata::default(),
+            basic: BasicLevelMetadata::default(),
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
             sky_color: default_sky_color(),
@@ -1140,11 +1106,6 @@ mod tests {
     async fn start_level_and_restart_level_initialize_playing_session_state() {
         let mut state = State::new_test().await;
         let expected_level_name = state.menu.state.levels[0].clone();
-        let expected_music_source = state
-            .load_level_metadata(&expected_level_name)
-            .expect("selected level metadata should exist")
-            .music
-            .source;
 
         state.start_level(0);
         assert_eq!(state.phase, AppPhase::Playing);
@@ -1163,7 +1124,7 @@ mod tests {
         assert_eq!(
             warmup,
             (
-                runtime_asset_source_key(&expected_level_name, &expected_music_source),
+                runtime_asset_source_key(&expected_level_name, "audio.mp3"),
                 0.0
             )
         );
@@ -1344,22 +1305,19 @@ mod tests {
         state.editor.objects = vec![test_object([2.0, 0.0, 2.0], "core/grass")];
 
         state.set_editor_level_name("EgzRoundtrip".to_string());
-        state.set_editor_music_metadata(MusicMetadata {
-            source: "unit-test-audio.mp3".to_string(),
-            ..MusicMetadata::default()
-        });
-        state.set_editor_creator_metadata(LevelCreatorMetadata {
-            creator: None,
+        state.set_editor_music_metadata(MusicMetadata::default());
+        state.set_editor_creator_metadata(BasicLevelMetadata {
             description: Some("Bundled export metadata".to_string()),
             stars: 8.25,
             tags: vec!["test".to_string(), "archive".to_string()],
+            ..BasicLevelMetadata::default()
         });
         state
             .audio
             .state
             .editor
             .local_audio_cache
-            .insert("unit-test-audio.mp3".to_string(), vec![1, 2, 3, 4, 5, 6]);
+            .insert("audio.mp3".to_string(), vec![1, 2, 3, 4, 5, 6]);
 
         let expected = state.current_editor_metadata();
         let exported = state
@@ -1379,11 +1337,10 @@ mod tests {
             .expect("egz import should restore metadata and embedded audio");
 
         let actual = state.current_editor_metadata();
-        assert_eq!(actual.name, expected.name);
-        assert_eq!(actual.music.source, expected.music.source);
-        assert_eq!(actual.description, expected.description);
-        assert_eq!(actual.stars, expected.stars);
-        assert_eq!(actual.tags, expected.tags);
+        assert_eq!(actual.basic.name, expected.basic.name);
+        assert_eq!(actual.basic.description, expected.basic.description);
+        assert_eq!(actual.basic.stars, expected.basic.stars);
+        assert_eq!(actual.basic.tags, expected.basic.tags);
         assert_eq!(actual.spawn.position, expected.spawn.position);
         assert!(!state.editor.objects.is_empty());
         assert!(state
@@ -1399,16 +1356,13 @@ mod tests {
         let mut state = State::new_test().await;
         state.enter_editor_phase("MethodPointer".to_string());
         state.editor.objects = vec![test_object([0.0, 0.0, 0.0], "core/stone")];
-        state.set_editor_music_metadata(MusicMetadata {
-            source: "method-pointer-audio.mp3".to_string(),
-            ..MusicMetadata::default()
-        });
+        state.set_editor_music_metadata(MusicMetadata::default());
         state
             .audio
             .state
             .editor
             .local_audio_cache
-            .insert("method-pointer-audio.mp3".to_string(), vec![7, 8, 9, 10]);
+            .insert("audio.mp3".to_string(), vec![7, 8, 9, 10]);
 
         let level_export_filename = format!(
             "{}.egz",

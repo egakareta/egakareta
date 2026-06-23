@@ -8,7 +8,7 @@
 use eg_codec::{decode_level_metadata_binary, encode_level_metadata_binary};
 use eg_types::LevelMetadata;
 
-use crate::repository::{build_egz_archive, parse_level_metadata_json, read_metadata_from_egz};
+use crate::repository::{build_egz_archive, parse_level_metadata_json};
 
 pub fn build_level_export(
     metadata: &LevelMetadata,
@@ -16,16 +16,8 @@ pub fn build_level_export(
 ) -> Result<Vec<u8>, String> {
     let audio_file = audio_bytes
         .as_ref()
-        .map(|bytes| (metadata.music.source.as_str(), bytes.as_slice()));
+        .map(|bytes| ("audio.mp3", bytes.as_slice()));
     build_egz_archive(metadata, audio_file)
-}
-
-pub fn build_level_binary_export(metadata: &LevelMetadata) -> Result<Vec<u8>, String> {
-    encode_level_metadata_binary(metadata)
-}
-
-pub fn parse_level_binary_import(data: &[u8]) -> Result<LevelMetadata, String> {
-    decode_level_metadata_binary(data)
 }
 
 /// Converts JSON level metadata into binary metadata bytes.
@@ -46,32 +38,29 @@ pub fn normalize_level_binary_format(data: &[u8]) -> Result<Vec<u8>, String> {
     encode_level_metadata_binary(&metadata)
 }
 
-pub fn parse_level_egz_import(data: &[u8]) -> Result<(LevelMetadata, Option<Vec<u8>>), String> {
-    read_metadata_from_egz(data)
-}
-
 #[cfg(test)]
 mod tests {
+    use eg_codec::{decode_level_metadata_binary, encode_level_metadata_binary};
     use eg_types::{
-        default_sky_color, Direction, EditorStateParams, LevelCreatorMetadata, LevelMetadata,
+        default_sky_color, BasicLevelMetadata, Direction, EditorStateParams, LevelMetadata,
         LevelObject, MusicMetadata, SpawnMetadata,
     };
 
+    use super::super::read_metadata_from_egz;
     use super::{
-        build_level_binary_export, build_level_export, convert_level_binary_to_json,
-        convert_level_json_to_binary, normalize_level_binary_format, parse_level_binary_import,
-        parse_level_egz_import,
+        build_level_export, convert_level_binary_to_json, convert_level_json_to_binary,
+        normalize_level_binary_format,
     };
 
     fn sample_metadata() -> LevelMetadata {
         LevelMetadata::from_editor_state(EditorStateParams {
-            name: "Service Test".to_string(),
-            creator_metadata: LevelCreatorMetadata::default(),
+            basic: BasicLevelMetadata {
+                name: "Service Test".to_string(),
+                ..BasicLevelMetadata::default()
+            },
             music: MusicMetadata {
-                source: "audio.mp3".to_string(),
                 title: Some("Track".to_string()),
                 author: Some("Composer".to_string()),
-                extra: serde_json::Map::new(),
             },
             spawn: SpawnMetadata {
                 position: [1.0, 2.0, 3.0],
@@ -99,10 +88,9 @@ mod tests {
         let audio = vec![1_u8, 3, 3, 7, 9, 9];
 
         let bytes = build_level_export(&metadata, Some(audio.clone())).expect("build export");
-        let (decoded, decoded_audio) = parse_level_egz_import(&bytes).expect("parse export");
+        let (decoded, decoded_audio) = read_metadata_from_egz(&bytes).expect("parse export");
 
-        assert_eq!(decoded.name, metadata.name);
-        assert_eq!(decoded.music.source, metadata.music.source);
+        assert_eq!(decoded.basic.name, metadata.basic.name);
         assert_eq!(decoded.spawn, metadata.spawn);
         assert_eq!(decoded.objects, metadata.objects);
         assert_eq!(decoded_audio, Some(audio));
@@ -112,17 +100,17 @@ mod tests {
     fn binary_and_json_conversion_roundtrip_preserves_metadata() {
         let metadata = sample_metadata();
 
-        let binary = build_level_binary_export(&metadata).expect("binary encode");
-        let decoded = parse_level_binary_import(&binary).expect("binary decode");
-        assert_eq!(decoded.name, metadata.name);
+        let binary = encode_level_metadata_binary(&metadata).expect("binary encode");
+        let decoded = decode_level_metadata_binary(&binary).expect("binary decode");
+        assert_eq!(decoded.basic.name, metadata.basic.name);
         assert_eq!(decoded.objects, metadata.objects);
 
         let json = convert_level_binary_to_json(&binary).expect("binary to json");
         let binary_from_json = convert_level_json_to_binary(&json).expect("json to binary");
         let decoded_from_json =
-            parse_level_binary_import(&binary_from_json).expect("decode re-encoded binary");
+            decode_level_metadata_binary(&binary_from_json).expect("decode re-encoded binary");
 
-        assert_eq!(decoded_from_json.name, metadata.name);
+        assert_eq!(decoded_from_json.basic.name, metadata.basic.name);
         assert_eq!(decoded_from_json.spawn, metadata.spawn);
         assert_eq!(decoded_from_json.tap_times, metadata.tap_times);
     }
@@ -130,12 +118,12 @@ mod tests {
     #[test]
     fn normalize_binary_format_keeps_semantics() {
         let metadata = sample_metadata();
-        let binary = build_level_binary_export(&metadata).expect("binary encode");
+        let binary = encode_level_metadata_binary(&metadata).expect("binary encode");
 
         let normalized = normalize_level_binary_format(&binary).expect("normalize");
-        let decoded = parse_level_binary_import(&normalized).expect("decode normalized");
+        let decoded = decode_level_metadata_binary(&normalized).expect("decode normalized");
 
-        assert_eq!(decoded.name, metadata.name);
+        assert_eq!(decoded.basic.name, metadata.basic.name);
         assert_eq!(decoded.music, metadata.music);
         assert_eq!(decoded.objects, metadata.objects);
     }
@@ -155,7 +143,7 @@ mod tests {
         }"#;
 
         let binary = convert_level_json_to_binary(json).expect("convert");
-        let decoded = parse_level_binary_import(&binary).expect("decode");
+        let decoded = decode_level_metadata_binary(&binary).expect("decode");
 
         assert_eq!(decoded.objects.len(), 1);
         assert_eq!(decoded.objects[0].block_id, "core/stone");
@@ -165,8 +153,8 @@ mod tests {
     fn rejects_invalid_payloads_for_binary_and_egz_inputs() {
         let invalid = b"not a valid payload";
 
-        assert!(parse_level_binary_import(invalid).is_err());
+        assert!(decode_level_metadata_binary(invalid).is_err());
         assert!(convert_level_binary_to_json(invalid).is_err());
-        assert!(parse_level_egz_import(invalid).is_err());
+        assert!(read_metadata_from_egz(invalid).is_err());
     }
 }
