@@ -38,6 +38,21 @@ fn hooks_state() -> &'static Mutex<PlatformHooks> {
     STATE.get_or_init(|| Mutex::new(PlatformHooks::default()))
 }
 
+/// Crate-wide mutex that serializes every test mutating [`PlatformHooks`].
+///
+/// `services` and `io` tests both stub the single global hook state in
+/// [`hooks_state`]; without a shared lock, a test in one module can `reset()`
+/// away a hook that a concurrently-running test in the other module just
+/// installed (e.g. wiping `pick_audio_result` before a spawned background
+/// thread reads it, which makes `pick_audio_file` fall through to the real
+/// `rfd` dialog and hang). Every hook-mutating test must hold this lock for
+/// its whole body.
+#[cfg(test)]
+pub fn shared_test_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 pub fn with_hooks_mut<T>(update: impl FnOnce(&mut PlatformHooks) -> T) -> T {
     let mut guard = hooks_state()
         .lock()

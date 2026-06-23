@@ -205,7 +205,7 @@ impl GameState {
             position
         };
         self.position = spawn_position;
-        self.direction = direction.into();
+        self.direction = direction;
         self.elapsed_seconds = 0.0;
         self.speed = BASE_PLAYER_SPEED;
         self.vertical_velocity = 0.0;

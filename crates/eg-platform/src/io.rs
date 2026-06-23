@@ -11,6 +11,7 @@ use eg_types::PersistentWaveformCacheEntry;
 
 use crate::storage;
 
+/// Opens a file dialog for saving a level file. Returns an error if the save operation fails.
 pub async fn save_level_export(filename: &str, data: &[u8]) -> Result<(), String> {
     #[cfg(test)]
     {
@@ -38,39 +39,52 @@ pub async fn save_level_export(filename: &str, data: &[u8]) -> Result<(), String
     }
 }
 
+/// Opens a file dialog for picking an audio file. Returns `None` if the user cancels the dialog; otherwise returns the filename and file bytes.
 pub async fn pick_audio_file() -> Option<(String, Vec<u8>)> {
     #[cfg(test)]
-    if let Some(result) = crate::test_hooks::pick_audio_result() {
-        return result;
+    {
+        if let Some(result) = crate::test_hooks::pick_audio_result() {
+            return result;
+        }
+        return None;
     }
 
-    let file = rfd::AsyncFileDialog::new()
-        .add_filter("Audio", &["mp3", "wav", "ogg"])
-        .pick_file()
-        .await?;
+    #[cfg(not(test))]
+    {
+        let file = rfd::AsyncFileDialog::new()
+            .add_filter("Audio", &["mp3", "wav", "ogg"])
+            .pick_file()
+            .await?;
 
-    let filename = file.file_name();
-    let data = file.read().await;
-    Some((filename, data))
+        let filename = file.file_name();
+        let data = file.read().await;
+        Some((filename, data))
+    }
 }
 
-/// Opens a platform-native file picker for level imports.
+/// Opens a file dialog for picking a level file.
 ///
 /// Supports `.egz` archives and `.egb` binary metadata files.
 /// Returns `None` when the user cancels the dialog; otherwise returns full file bytes.
 pub async fn pick_level_file() -> Option<Vec<u8>> {
     #[cfg(test)]
-    if let Some(result) = crate::test_hooks::pick_level_result() {
-        return result;
+    {
+        if let Some(result) = crate::test_hooks::pick_level_result() {
+            return result;
+        }
+        return None;
     }
 
-    let file = rfd::AsyncFileDialog::new()
-        .add_filter("Level Archive", &["egz"])
-        .add_filter("Level Binary", &["egb"])
-        .pick_file()
-        .await?;
+    #[cfg(not(test))]
+    {
+        let file = rfd::AsyncFileDialog::new()
+            .add_filter("Level Archive", &["egz"])
+            .add_filter("Level Binary", &["egb"])
+            .pick_file()
+            .await?;
 
-    Some(file.read().await)
+        Some(file.read().await)
+    }
 }
 
 pub async fn save_audio_to_storage(filename: &str, data: &[u8]) -> Result<(), String> {
@@ -145,7 +159,6 @@ pub async fn save_app_settings_to_storage(settings: &AppSettings) -> Result<(), 
 mod tests {
     use std::collections::HashMap;
     use std::fs;
-    use std::sync::{Mutex, OnceLock};
 
     use super::{
         load_all_local_audio, load_app_settings_from_storage, load_waveform_from_storage,
@@ -153,13 +166,9 @@ mod tests {
         save_waveform_to_storage,
     };
     use crate::test_hooks;
+    use crate::test_hooks::shared_test_lock;
     use eg_types::AppSettings;
     use eg_types::PersistentWaveformCacheEntry;
-
-    fn shared_test_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
 
     struct HookResetGuard;
 

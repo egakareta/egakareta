@@ -90,11 +90,11 @@ pub fn trigger_auth_sign_out(access_token: Option<String>, sender: Sender<AuthSe
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use std::sync::mpsc;
-    use std::sync::{Mutex, OnceLock};
 
     use web_time::Duration;
 
     use crate::test_hooks;
+    use crate::test_hooks::shared_test_lock;
     use eg_types::{AuthSession, AuthSessionTokens, AuthUser};
 
     use super::{
@@ -116,11 +116,6 @@ mod tests {
             },
             profile: None,
         }
-    }
-
-    fn shared_test_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
     }
 
     struct HookResetGuard;
