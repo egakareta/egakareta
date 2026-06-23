@@ -13,7 +13,6 @@ use crate::Vertex;
 use eg_types::{BlockEffect, BlockEffectPreset, Direction, LevelObject};
 use glam::{EulerRot, Quat, Vec2, Vec3};
 
-const GEM_SHATTER_DURATION_SECONDS: f32 = 0.48;
 const PRACTICE_CHECKPOINT_FLAG_BLOCK_ID: &str = "core/practice_checkpoint_flag";
 const PRACTICE_CHECKPOINT_FLAG_SIZE: [f32; 3] = [0.45, 1.0, 0.85];
 
@@ -44,16 +43,8 @@ pub struct TransformTriggerMarker {
     pub is_selected: bool,
 }
 
-pub fn gem_shatter_duration_seconds() -> f32 {
-    GEM_SHATTER_DURATION_SECONDS
-}
-
-pub fn build_gem_shatter_vertices(effects: &[GemShatterInstance]) -> Vec<Vertex> {
-    build_block_effect_vertices(effects)
-}
-
 pub fn build_block_effect_vertices(effects: &[BlockEffectInstance]) -> Vec<Vertex> {
-    puffin::profile_scope!("BuildGemShatterVertices");
+    puffin::profile_scope!("BuildBlockEffectVertices");
     let mut vertices = Vec::new();
     for effect in effects {
         match effect.effect.preset {
