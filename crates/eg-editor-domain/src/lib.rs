@@ -282,7 +282,6 @@ mod tests {
             description: Some("Session init metadata".to_string()),
             stars: 6.5,
             tags: vec!["unit".to_string(), "session".to_string()],
-            version: Some("1.0".to_string()),
             music: MusicMetadata {
                 source: "audio.mp3".to_string(),
                 title: None,
@@ -294,7 +293,6 @@ mod tests {
                 direction: eg_types::Direction::Right,
             },
             tap_times: vec![0.8, 0.2],
-            timeline_time_seconds: 0.5,
             objects: vec![LevelObject {
                 position: [4.0, 6.0, 0.0],
                 block_id: "core/stone".to_string(),

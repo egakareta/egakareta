@@ -86,7 +86,6 @@ serde_default!(default_music_source: String = "music.mp3".to_string());
 serde_default_array!(default_spawn_position: [f32; 3] = [0.0, 0.0, 0.0]);
 serde_default_array!(default_preview_camera_position_zero: [f32; 3] = [0.0, 0.0, 0.0]);
 serde_default_array!(default_preview_camera_target_zero: [f32; 3] = [0.0, 0.0, 0.0]);
-serde_default_float!(default_timeline_time_seconds: f32 = 0.0);
 serde_default_float!(default_timeline_duration_seconds: f32 = 16.0);
 serde_default!(default_transform_simulate_hitboxes: bool = false);
 serde_default_array!(default_block_rotation_degrees: [f32; 3] = [0.0, 0.0, 0.0]);
@@ -167,20 +166,15 @@ pub fn is_default_timed_trigger_target(value: &TriggerTarget) -> bool {
     matches!(value, TriggerTarget::Camera)
 }
 
-#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+/// Direction the player (snake) is facing.
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq, Default, IsDefault)]
 #[serde(rename_all = "lowercase")]
 pub enum Direction {
+    /// Facing the positive Z axis.
     #[default]
     Forward,
+    /// Facing the positive X axis.
     Right,
-}
-
-pub fn is_default_direction(value: &Direction) -> bool {
-    matches!(value, Direction::Forward)
-}
-
-pub fn is_default_spawn_metadata(value: &SpawnMetadata) -> bool {
-    is_default_spawn_position(&value.position) && is_default_direction(&value.direction)
 }
 
 pub fn deserialize_level_object_block_id<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -191,7 +185,7 @@ where
     Ok(normalize_block_id(&raw))
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Default)]
 pub struct MusicMetadata {
     #[serde(
         default = "default_music_source",
@@ -202,26 +196,17 @@ pub struct MusicMetadata {
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
-    #[serde(flatten)]
+    #[serde(default, flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
-impl Default for MusicMetadata {
-    fn default() -> Self {
-        Self {
-            source: default_music_source(),
-            title: None,
-            author: None,
-            extra: serde_json::Map::new(),
-        }
+impl IsDefault for MusicMetadata {
+    fn is_default(&self) -> bool {
+        is_default_music_source(&self.source)
+            && self.title.is_none()
+            && self.author.is_none()
+            && self.extra.is_empty()
     }
-}
-
-pub fn is_default_music_metadata(value: &MusicMetadata) -> bool {
-    is_default_music_source(&value.source)
-        && value.title.is_none()
-        && value.author.is_none()
-        && value.extra.is_empty()
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -230,7 +215,6 @@ pub struct LevelCreatorMetadata {
     pub description: Option<String>,
     pub stars: f32,
     pub tags: Vec<String>,
-    pub version: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
@@ -279,46 +263,52 @@ pub struct EditorStateParams {
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct LevelMetadata {
+    /// Version number for the level format. This is used to ensure compatibility between different versions of the game. Older format versions are always loadable by newer game versions, but newer format versions may not be loadable by older game versions.
     #[serde(
         default = "default_level_format_version",
         skip_serializing_if = "is_default_level_format_version"
     )]
     pub format_version: u32,
+    /// The name of the level, supplied by the creator.
     pub name: String,
+    /// The username of level creator, None if the level is built-in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub creator: Option<String>,
+    /// A description of the level, supplied by the creator.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Difficulty of the level, from 0.0 to 10.0, supplied by the creator.
+    /// TODO: subject to change.
     #[serde(
         default = "default_level_stars",
         skip_serializing_if = "is_default_level_stars"
     )]
     pub stars: f32,
+    /// Tags for the level, supplied by the creator. Can be used for categorization, search, or filtering.
     #[serde(
         default = "default_level_tags",
         skip_serializing_if = "is_default_level_tags"
     )]
     pub tags: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
-    #[serde(default, skip_serializing_if = "is_default_music_metadata")]
+    /// Metadata about the music used in the level, including source, title, and author.
+    #[serde(default, skip_serializing_if = "IsDefault::is_default")]
     pub music: MusicMetadata,
-    #[serde(default, skip_serializing_if = "is_default_spawn_metadata")]
+    /// Metadata about the spawn point of the level, including position and direction.
+    #[serde(default, skip_serializing_if = "IsDefault::is_default")]
     pub spawn: SpawnMetadata,
+    /// Color of the sky in the level, as RGB values from 0.0 to 1.0.
+    /// TODO: will be controllable by triggers in the future.
     #[serde(
         default = "default_sky_color",
         skip_serializing_if = "is_default_sky_color"
     )]
     pub sky_color: [f32; 3],
+    /// Times in seconds when the player is expected to tap, used for gameplay simulation. This is only used in the editor right now, but may be visualized in practice mode in the future.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tap_times: Vec<f32>,
+    /// Timing points in the level that define the tempo and time signature of the music. This is only used in the editor to help time taps and triggers.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub timing_points: Vec<TimingPoint>,
-    #[serde(
-        default = "default_timeline_time_seconds",
-        skip_serializing_if = "is_default_timeline_time_seconds"
-    )]
-    pub timeline_time_seconds: f32,
     #[serde(
         default = "default_timeline_duration_seconds",
         skip_serializing_if = "is_default_timeline_duration_seconds"
@@ -341,13 +331,11 @@ impl Default for LevelMetadata {
             description: None,
             stars: default_level_stars(),
             tags: default_level_tags(),
-            version: None,
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
             sky_color: default_sky_color(),
             tap_times: Vec::new(),
             timing_points: Vec::new(),
-            timeline_time_seconds: default_timeline_time_seconds(),
             timeline_duration_seconds: default_timeline_duration_seconds(),
             menu_preview_camera: None,
             objects: Vec::new(),
@@ -366,7 +354,7 @@ impl LevelMetadata {
             sky_color,
             tap_times,
             timing_points,
-            timeline_time_seconds,
+            timeline_time_seconds: _,
             timeline_duration_seconds,
             menu_preview_camera,
             objects,
@@ -379,13 +367,11 @@ impl LevelMetadata {
             description: creator_metadata.description,
             stars: creator_metadata.stars.clamp(0.0, 10.0),
             tags: creator_metadata.tags,
-            version: creator_metadata.version,
             music,
             spawn,
             sky_color,
             tap_times,
             timing_points,
-            timeline_time_seconds,
             timeline_duration_seconds,
             menu_preview_camera,
             objects,
@@ -410,28 +396,24 @@ impl LevelMetadata {
             description: self.description.clone(),
             stars: self.stars.clamp(0.0, 10.0),
             tags: self.tags.clone(),
-            version: self.version.clone(),
         }
     }
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Default)]
 pub struct SpawnMetadata {
     #[serde(
         default = "default_spawn_position",
         skip_serializing_if = "is_default_spawn_position"
     )]
     pub position: [f32; 3],
-    #[serde(default, skip_serializing_if = "is_default_direction")]
+    #[serde(default, skip_serializing_if = "IsDefault::is_default")]
     pub direction: Direction,
 }
 
-impl Default for SpawnMetadata {
-    fn default() -> Self {
-        Self {
-            position: default_spawn_position(),
-            direction: Direction::Forward,
-        }
+impl IsDefault for SpawnMetadata {
+    fn is_default(&self) -> bool {
+        is_default_spawn_position(&self.position) && Direction::is_default(&self.direction)
     }
 }
 

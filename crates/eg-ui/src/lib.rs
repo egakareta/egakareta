@@ -1083,15 +1083,6 @@ pub fn show_editor_ui(
                     });
 
                     ui.horizontal(|ui| {
-                        ui.label(format!("{} Version:", egui_phosphor::regular::TAG));
-                        let mut version = creator_metadata.version.clone().unwrap_or_default();
-                        if ui.text_edit_singleline(&mut version).changed() {
-                            creator_metadata.version = optional_trimmed_string(version);
-                            creator_metadata_changed = true;
-                        }
-                    });
-
-                    ui.horizontal(|ui| {
                         ui.label(format!("{} Stars:", egui_phosphor::regular::STAR));
                         let mut stars = creator_metadata.stars.clamp(0.0, 10.0);
                         if ui

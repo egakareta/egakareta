@@ -774,7 +774,6 @@ mod tests {
             description: None,
             stars: 6.5,
             tags: vec!["binary".to_string(), "roundtrip".to_string()],
-            version: Some("1.0".to_string()),
         });
         state.editor.objects = vec![test_object([2.0, 1.0, 3.0], "core/grass")];
         state.editor.spawn.position = [3.0, 0.0, 4.0];
@@ -801,10 +800,8 @@ mod tests {
         assert_eq!(actual.creator, expected.creator);
         assert_eq!(actual.stars, expected.stars);
         assert_eq!(actual.tags, expected.tags);
-        assert_eq!(actual.version, expected.version);
         assert_eq!(actual.spawn.position, expected.spawn.position);
         assert_eq!(actual.tap_times, expected.tap_times);
-        assert_eq!(actual.timeline_time_seconds, expected.timeline_time_seconds);
         assert_eq!(
             actual.timeline_duration_seconds,
             expected.timeline_duration_seconds
@@ -1356,7 +1353,6 @@ mod tests {
             description: Some("Bundled export metadata".to_string()),
             stars: 8.25,
             tags: vec!["test".to_string(), "archive".to_string()],
-            version: None,
         });
         state
             .audio

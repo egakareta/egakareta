@@ -36,7 +36,6 @@ pub fn editor_session_init_from_metadata(metadata: Option<LevelMetadata>) -> Edi
         sky_color,
         mut tap_times,
         timing_points,
-        mut timeline_time_seconds,
         timeline_duration_seconds,
         mut triggers,
         menu_preview_camera,
@@ -51,7 +50,6 @@ pub fn editor_session_init_from_metadata(metadata: Option<LevelMetadata>) -> Edi
             metadata.sky_color,
             metadata.tap_times,
             metadata.timing_points,
-            metadata.timeline_time_seconds,
             metadata.timeline_duration_seconds,
             triggers,
             metadata.menu_preview_camera,
@@ -65,14 +63,11 @@ pub fn editor_session_init_from_metadata(metadata: Option<LevelMetadata>) -> Edi
             default_sky_color(),
             Vec::new(),
             Vec::new(),
-            0.0,
             16.0,
             Vec::new(),
             None,
         )
     };
-
-    timeline_time_seconds = timeline_time_seconds.clamp(0.0, timeline_duration_seconds.max(0.1));
 
     tap_times.retain(|tap| tap.is_finite() && *tap >= 0.0);
     tap_times.sort_by(f32::total_cmp);
@@ -89,7 +84,7 @@ pub fn editor_session_init_from_metadata(metadata: Option<LevelMetadata>) -> Edi
         sky_color,
         tap_times,
         timing_points,
-        timeline_time_seconds,
+        timeline_time_seconds: 0.0,
         timeline_duration_seconds: timeline_duration_seconds.max(0.1),
         triggers,
         menu_preview_camera,
