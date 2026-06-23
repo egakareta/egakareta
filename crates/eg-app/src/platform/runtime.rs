@@ -73,38 +73,34 @@ mod tests {
     use super::*;
     use eg_state::state::State;
 
-    #[test]
-    fn test_runtime_new() {
-        pollster::block_on(async {
-            let state = State::new_test().await;
-            let runtime = Runtime::new(state);
+    #[tokio::test]
+    async fn test_runtime_new() {
+        let state = State::new_test().await;
+        let runtime = Runtime::new(state);
 
-            // Verify the egui context was initialized
-            let ctx = runtime.pipeline.ctx();
-            assert!(ctx.pixels_per_point() > 0.0);
+        // Verify the egui context was initialized
+        let ctx = runtime.pipeline.ctx();
+        assert!(ctx.pixels_per_point() > 0.0);
 
-            // Verify the state was correctly moved into the runtime
-            assert!(runtime.state.is_menu());
-        });
+        // Verify the state was correctly moved into the runtime
+        assert!(runtime.state.is_menu());
     }
 
-    #[test]
-    fn test_runtime_run_frame() {
-        pollster::block_on(async {
-            let state = State::new_test().await;
-            let mut runtime = Runtime::new(state);
+    #[tokio::test]
+    async fn test_runtime_run_frame() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
 
-            let mut raw_input = egui::RawInput::default();
-            raw_input.screen_rect = Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(1024.0, 768.0),
-            ));
+        let mut raw_input = egui::RawInput::default();
+        raw_input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1024.0, 768.0),
+        ));
 
-            let output = runtime.run_frame(raw_input);
+        let output = runtime.run_frame(raw_input);
 
-            // Verify we get valid pixels_per_point and shapes were generated (menu UI)
-            assert!(output.pixels_per_point > 0.0);
-            assert!(!output.shapes.is_empty());
-        });
+        // Verify we get valid pixels_per_point and shapes were generated (menu UI)
+        assert!(output.pixels_per_point > 0.0);
+        assert!(!output.shapes.is_empty());
     }
 }

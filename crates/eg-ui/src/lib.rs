@@ -2172,40 +2172,36 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn show_editor_ui_returns_early_when_not_in_editor() {
-        pollster::block_on(async {
-            let Some(mut state) = eg_state::state::State::try_new_test().await else {
-                return;
-            };
+    #[tokio::test]
+    async fn show_editor_ui_returns_early_when_not_in_editor() {
+        let Some(mut state) = eg_state::state::State::try_new_test().await else {
+            return;
+        };
 
-            assert!(state.is_menu());
-            run_editor_ui_once(&mut state);
-            assert!(state.is_menu());
-        });
+        assert!(state.is_menu());
+        run_editor_ui_once(&mut state);
+        assert!(state.is_menu());
     }
 
-    #[test]
-    fn show_perf_overlay_renders_outside_editor() {
-        pollster::block_on(async {
-            let Some(mut state) = eg_state::state::State::try_new_test().await else {
-                return;
-            };
+    #[tokio::test]
+    async fn show_perf_overlay_renders_outside_editor() {
+        let Some(mut state) = eg_state::state::State::try_new_test().await else {
+            return;
+        };
 
-            assert!(state.is_menu());
-            state.dispatch(AppCommand::Editor(EditorCommand::TogglePerfOverlay));
+        assert!(state.is_menu());
+        state.dispatch(AppCommand::Editor(EditorCommand::TogglePerfOverlay));
 
-            let ctx = egui::Context::default();
-            let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
-                let ctx = root_ui.ctx();
-                let view = state.editor_ui_view_model();
-                let mut commands = Vec::new();
-                show_perf_overlay(ctx, &view, &mut commands);
-                assert!(commands.is_empty());
-            });
-
-            assert!(state.perf_overlay_enabled());
+        let ctx = egui::Context::default();
+        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+            let ctx = root_ui.ctx();
+            let view = state.editor_ui_view_model();
+            let mut commands = Vec::new();
+            show_perf_overlay(ctx, &view, &mut commands);
+            assert!(commands.is_empty());
         });
+
+        assert!(state.perf_overlay_enabled());
     }
 
     #[test]
@@ -2213,84 +2209,78 @@ mod tests {
         assert!(perf_overlay_window_order() < egui::Order::Tooltip);
     }
 
-    #[test]
-    fn show_editor_ui_renders_marquee_selection() {
-        pollster::block_on(async {
-            let Some(mut state) = eg_state::state::State::try_new_test().await else {
-                return;
-            };
+    #[tokio::test]
+    async fn show_editor_ui_renders_marquee_selection() {
+        let Some(mut state) = eg_state::state::State::try_new_test().await else {
+            return;
+        };
 
-            state.enter_editor_phase_for_test("MarqueeUiTest");
-            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
-                eg_types::EditorMode::Select,
-            )));
+        state.enter_editor_phase_for_test("MarqueeUiTest");
+        state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+            eg_types::EditorMode::Select,
+        )));
 
-            // Inject a marquee drag large enough to be considered active.
-            state.process_input_event(eg_state::commands::InputEvent::MouseButton {
-                button: 1, // Left click
-                pressed: true,
-            });
-            state.process_input_event(eg_state::commands::InputEvent::PointerMoved {
-                x: 10.0,
-                y: 10.0,
-            });
-            state.process_input_event(eg_state::commands::InputEvent::PointerMoved {
-                x: 100.0,
-                y: 100.0,
-            });
-
-            run_editor_ui_once(&mut state);
-
-            // If we successfully run the UI loop without panicking, the marquee rendering path is covered.
+        // Inject a marquee drag large enough to be considered active.
+        state.process_input_event(eg_state::commands::InputEvent::MouseButton {
+            button: 1, // Left click
+            pressed: true,
         });
+        state
+            .process_input_event(eg_state::commands::InputEvent::PointerMoved { x: 10.0, y: 10.0 });
+        state.process_input_event(eg_state::commands::InputEvent::PointerMoved {
+            x: 100.0,
+            y: 100.0,
+        });
+
+        run_editor_ui_once(&mut state);
+
+        // If we successfully run the UI loop without panicking, the marquee rendering path is covered.
     }
 
-    #[test]
-    fn show_editor_ui_composes_timing_tapping_compose_and_trigger_modes() {
-        pollster::block_on(async {
-            let Some(mut state) = eg_state::state::State::try_new_test().await else {
-                return;
-            };
+    #[tokio::test]
+    async fn show_editor_ui_composes_timing_tapping_compose_and_trigger_modes() {
+        let Some(mut state) = eg_state::state::State::try_new_test().await else {
+            return;
+        };
 
-            state.enter_editor_phase_for_test("EditorUiCompositionTest");
-            assert!(state.is_editor());
+        state.enter_editor_phase_for_test("EditorUiCompositionTest");
+        assert!(state.is_editor());
 
-            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
-                EditorMode::Timing,
-            )));
-            state.dispatch(AppCommand::Editor(EditorCommand::SetShowSettings(true)));
-            state.dispatch(AppCommand::Editor(EditorCommand::SetSettingsSection(
-                SettingsSection::Backends,
-            )));
-            state.dispatch(AppCommand::Editor(EditorCommand::SetShowMetadata(true)));
-            state.dispatch(AppCommand::Editor(EditorCommand::TogglePerfOverlay));
-            run_editor_ui_once(&mut state);
+        state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+            EditorMode::Timing,
+        )));
+        state.dispatch(AppCommand::Editor(EditorCommand::SetShowSettings(true)));
+        state.dispatch(AppCommand::Editor(EditorCommand::SetSettingsSection(
+            SettingsSection::Backends,
+        )));
+        state.dispatch(AppCommand::Editor(EditorCommand::SetShowMetadata(true)));
+        state.dispatch(AppCommand::Editor(EditorCommand::TogglePerfOverlay));
+        run_editor_ui_once(&mut state);
 
-            assert_eq!(state.editor_mode(), EditorMode::Timing);
-            assert!(state.editor_show_settings());
-            assert_eq!(state.editor_settings_section(), SettingsSection::Backends);
-            assert!(state.editor_show_metadata());
-            assert!(state.perf_overlay_enabled());
+        assert_eq!(state.editor_mode(), EditorMode::Timing);
+        assert!(state.editor_show_settings());
+        assert_eq!(state.editor_settings_section(), SettingsSection::Backends);
+        assert!(state.editor_show_metadata());
+        assert!(state.perf_overlay_enabled());
 
-            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
-                EditorMode::Place,
-            )));
-            state.dispatch(AppCommand::Editor(EditorCommand::SetSettingsSection(
-                SettingsSection::Keybinds,
-            )));
-            run_editor_ui_once(&mut state);
+        state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+            EditorMode::Place,
+        )));
+        state.dispatch(AppCommand::Editor(EditorCommand::SetSettingsSection(
+            SettingsSection::Keybinds,
+        )));
+        run_editor_ui_once(&mut state);
 
-            assert_eq!(state.editor_mode(), EditorMode::Place);
-            assert_eq!(state.editor_settings_section(), SettingsSection::Keybinds);
+        assert_eq!(state.editor_mode(), EditorMode::Place);
+        assert_eq!(state.editor_settings_section(), SettingsSection::Keybinds);
 
-            state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
-                EditorMode::Tapping,
-            )));
-            run_editor_ui_once(&mut state);
+        state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
+            EditorMode::Tapping,
+        )));
+        run_editor_ui_once(&mut state);
 
-            assert_eq!(state.editor_mode(), EditorMode::Tapping);
-            assert!(state.is_editor());
-        });
+        assert_eq!(state.editor_mode(), EditorMode::Tapping);
+        assert!(state.is_editor());
     }
 }
 

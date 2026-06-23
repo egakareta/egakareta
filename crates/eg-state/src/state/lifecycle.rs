@@ -1718,134 +1718,124 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_lifecycle_transitions() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
+    #[tokio::test]
+    async fn test_lifecycle_transitions() {
+        let mut state = State::new_test().await;
 
-            state.enter_playing_phase(Some("LifecycleTest".to_string()), false);
-            assert_eq!(state.phase, AppPhase::Playing);
+        state.enter_playing_phase(Some("LifecycleTest".to_string()), false);
+        assert_eq!(state.phase, AppPhase::Playing);
 
-            state.back_to_menu();
-            assert_eq!(state.phase, AppPhase::Menu);
-        });
+        state.back_to_menu();
+        assert_eq!(state.phase, AppPhase::Menu);
     }
 
-    #[test]
-    fn test_lifecycle_audio_side_effects() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
+    #[tokio::test]
+    async fn test_lifecycle_audio_side_effects() {
+        let mut state = State::new_test().await;
 
-            state.enter_editor_phase("Test Level".to_string());
-            state.editor.timeline.playback.playing = true;
-            state.editor.timeline.playback.runtime = Some(TimelineSimulationRuntime::new(
-                [0.0, 0.0, 0.0],
-                Direction::Forward,
-                &[],
-                &[],
-            ));
+        state.enter_editor_phase("Test Level".to_string());
+        state.editor.timeline.playback.playing = true;
+        state.editor.timeline.playback.runtime = Some(TimelineSimulationRuntime::new(
+            [0.0, 0.0, 0.0],
+            Direction::Forward,
+            &[],
+            &[],
+        ));
 
-            let level_name = state.menu.state.levels[0].clone();
-            state.dispatch(AppCommand::Editor(EditorCommand::LoadLevel(level_name)));
+        let level_name = state.menu.state.levels[0].clone();
+        state.dispatch(AppCommand::Editor(EditorCommand::LoadLevel(level_name)));
 
-            assert!(
-                !state.editor.timeline.playback.playing,
-                "Loading a level in editor must stop timeline playback"
-            );
-            assert!(
-                state.editor.timeline.playback.runtime.is_none(),
-                "Loading a level in editor must clear playback runtime"
-            );
-            assert!(
-                !state.audio.state.runtime.is_playing(),
-                "Loading a level in editor must stop runtime audio"
-            );
-        });
+        assert!(
+            !state.editor.timeline.playback.playing,
+            "Loading a level in editor must stop timeline playback"
+        );
+        assert!(
+            state.editor.timeline.playback.runtime.is_none(),
+            "Loading a level in editor must clear playback runtime"
+        );
+        assert!(
+            !state.audio.state.runtime.is_playing(),
+            "Loading a level in editor must stop runtime audio"
+        );
     }
 
-    #[test]
-    fn test_lifecycle_audio_start_marks_playing_in_tests() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            let music_source = "unit-test-audio.wav".to_string();
+    #[tokio::test]
+    async fn test_lifecycle_audio_start_marks_playing_in_tests() {
+        let mut state = State::new_test().await;
+        let music_source = "unit-test-audio.wav".to_string();
 
-            state.enter_editor_phase("AudioStartTest".to_string());
-            state.set_editor_music_metadata(MusicMetadata {
-                source: music_source.clone(),
-                ..MusicMetadata::default()
-            });
-            state
-                .audio
-                .state
-                .editor
-                .local_audio_cache
-                .insert(music_source, tiny_wav_bytes());
-            state.editor_playtest();
+        state.enter_editor_phase("AudioStartTest".to_string());
+        state.set_editor_music_metadata(MusicMetadata {
+            source: music_source.clone(),
+            ..MusicMetadata::default()
+        });
+        state
+            .audio
+            .state
+            .editor
+            .local_audio_cache
+            .insert(music_source, tiny_wav_bytes());
+        state.editor_playtest();
 
-            state.turn_right();
+        state.turn_right();
 
-            assert!(
+        assert!(
                 state.audio.state.runtime.is_playing(),
                 "First gameplay input after starting a level should mark runtime audio as playing in tests"
             );
-            assert!(
+        assert!(
                 state.audio.state.runtime.playback_time_seconds().is_some(),
                 "First gameplay input after starting a level should produce a runtime playback clock in tests"
             );
-        });
     }
 
-    #[test]
-    fn test_phase_transition_preserves_editor_clipboard() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.enter_editor_phase("Test Level".to_string());
+    #[tokio::test]
+    async fn test_phase_transition_preserves_editor_clipboard() {
+        let mut state = State::new_test().await;
+        state.enter_editor_phase("Test Level".to_string());
 
-            // 1. Setup: Enter editor and copy a block
-            state.dispatch(AppCommand::TurnRight); // Place block
-            state.editor.ui.selected_block_index = Some(0);
-            state.editor.ui.selected_block_indices = vec![0];
-            state.dispatch(AppCommand::Editor(EditorCommand::CopyBlock));
-            assert!(state.editor.runtime.interaction.clipboard.is_some());
+        // 1. Setup: Enter editor and copy a block
+        state.dispatch(AppCommand::TurnRight); // Place block
+        state.editor.ui.selected_block_index = Some(0);
+        state.editor.ui.selected_block_indices = vec![0];
+        state.dispatch(AppCommand::Editor(EditorCommand::CopyBlock));
+        assert!(state.editor.runtime.interaction.clipboard.is_some());
 
-            // 2. Transition to playing: Clipboard should remain available for editor re-entry.
-            state.start_level(0);
-            assert_eq!(state.phase, AppPhase::Playing);
-            assert!(
-                state.editor.runtime.interaction.clipboard.is_some(),
-                "Clipboard should survive entering game phase"
-            );
-        });
+        // 2. Transition to playing: Clipboard should remain available for editor re-entry.
+        state.start_level(0);
+        assert_eq!(state.phase, AppPhase::Playing);
+        assert!(
+            state.editor.runtime.interaction.clipboard.is_some(),
+            "Clipboard should survive entering game phase"
+        );
     }
 
-    #[test]
-    fn test_editor_load_level_resets_history_and_preserves_clipboard() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.enter_editor_phase("Test Level".to_string());
+    #[tokio::test]
+    async fn test_editor_load_level_resets_history_and_preserves_clipboard() {
+        let mut state = State::new_test().await;
+        state.enter_editor_phase("Test Level".to_string());
 
-            state.dispatch(AppCommand::TurnRight); // Place block -> adds to undo history
-            state.editor.ui.selected_block_index = Some(0);
-            state.editor.ui.selected_block_indices = vec![0];
-            state.dispatch(AppCommand::Editor(EditorCommand::CopyBlock));
-            assert!(!state.editor.runtime.history.undo.is_empty());
-            assert!(state.editor.runtime.interaction.clipboard.is_some());
+        state.dispatch(AppCommand::TurnRight); // Place block -> adds to undo history
+        state.editor.ui.selected_block_index = Some(0);
+        state.editor.ui.selected_block_indices = vec![0];
+        state.dispatch(AppCommand::Editor(EditorCommand::CopyBlock));
+        assert!(!state.editor.runtime.history.undo.is_empty());
+        assert!(state.editor.runtime.interaction.clipboard.is_some());
 
-            let level_name = state.menu.state.levels[0].clone();
-            state.dispatch(AppCommand::Editor(EditorCommand::LoadLevel(level_name)));
+        let level_name = state.menu.state.levels[0].clone();
+        state.dispatch(AppCommand::Editor(EditorCommand::LoadLevel(level_name)));
 
-            assert!(
-                state.editor.runtime.history.undo.is_empty(),
-                "Loading a level in editor must clear undo history"
-            );
-            assert!(
-                state.editor.runtime.history.redo.is_empty(),
-                "Loading a level in editor must clear redo history"
-            );
-            assert!(
-                state.editor.runtime.interaction.clipboard.is_some(),
-                "Loading a level in editor should preserve clipboard"
-            );
-        });
+        assert!(
+            state.editor.runtime.history.undo.is_empty(),
+            "Loading a level in editor must clear undo history"
+        );
+        assert!(
+            state.editor.runtime.history.redo.is_empty(),
+            "Loading a level in editor must clear redo history"
+        );
+        assert!(
+            state.editor.runtime.interaction.clipboard.is_some(),
+            "Loading a level in editor should preserve clipboard"
+        );
     }
 }

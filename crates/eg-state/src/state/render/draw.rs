@@ -863,16 +863,16 @@ mod tests {
         approx::assert_abs_diff_eq!(actual.a as f32, expected.a as f32, epsilon = 1e-6);
     }
 
-    #[test]
-    fn frustum_intersects_aabb_inside_clip_space() {
+    #[tokio::test]
+    async fn frustum_intersects_aabb_inside_clip_space() {
         let frustum = ViewFrustum::from_view_projection(Mat4::IDENTITY);
         let aabb = ChunkAabb::from_min_max([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]);
 
         assert!(frustum.intersects_aabb(aabb));
     }
 
-    #[test]
-    fn frustum_rejects_aabb_outside_clip_space() {
+    #[tokio::test]
+    async fn frustum_rejects_aabb_outside_clip_space() {
         let frustum = ViewFrustum::from_view_projection(Mat4::IDENTITY);
         let aabb = ChunkAabb::from_min_max([2.0, -0.5, -0.5], [3.0, 0.5, 0.5]);
 
@@ -1022,8 +1022,8 @@ mod tests {
         state.render.meshes.editor_preview_player = MeshSlot::Empty;
     }
 
-    #[test]
-    fn linear_to_srgb_uses_linear_segment_at_or_below_threshold() {
+    #[tokio::test]
+    async fn linear_to_srgb_uses_linear_segment_at_or_below_threshold() {
         let below = 0.002;
         let at_threshold = 0.0031308;
 
@@ -1035,16 +1035,16 @@ mod tests {
         );
     }
 
-    #[test]
-    fn linear_to_srgb_uses_gamma_segment_above_threshold() {
+    #[tokio::test]
+    async fn linear_to_srgb_uses_gamma_segment_above_threshold() {
         let mid_gray_linear = 0.18;
         let expected = 0.461_356_1;
 
         approx::assert_abs_diff_eq!(linear_to_srgb(mid_gray_linear), expected, epsilon = 1e-6);
     }
 
-    #[test]
-    fn clear_color_for_phase_matches_expected_palette() {
+    #[tokio::test]
+    async fn clear_color_for_phase_matches_expected_palette() {
         assert_color_approx(
             clear_color_for_phase(AppPhase::Playing, true, eg_types::default_sky_color()),
             Color {
@@ -1096,8 +1096,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn clear_color_for_phase_uses_custom_sky_for_menu_editor_and_playing() {
+    #[tokio::test]
+    async fn clear_color_for_phase_uses_custom_sky_for_menu_editor_and_playing() {
         let sky_color = [0.2, 0.4, 0.8];
 
         assert_color_approx(
@@ -1129,8 +1129,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn apply_gamma_correction_if_enabled_only_changes_rgb() {
+    #[tokio::test]
+    async fn apply_gamma_correction_if_enabled_only_changes_rgb() {
         let linear = Color {
             r: 0.18,
             g: 0.04,
@@ -1160,8 +1160,8 @@ mod tests {
         approx::assert_abs_diff_eq!(corrected.a as f32, linear.a as f32, epsilon = 1e-7);
     }
 
-    #[test]
-    fn render_gate_helpers_match_phase_and_mode_rules() {
+    #[tokio::test]
+    async fn render_gate_helpers_match_phase_and_mode_rules() {
         assert!(!should_draw_floor_and_grid(
             AppPhase::Menu,
             EditorMode::Place
@@ -1193,8 +1193,8 @@ mod tests {
         assert!(!should_draw_editor_cursor(EditorMode::Timing));
     }
 
-    #[test]
-    fn editor_grid_darkening_scales_with_bright_editor_skies() {
+    #[tokio::test]
+    async fn editor_grid_darkening_scales_with_bright_editor_skies() {
         approx::assert_abs_diff_eq!(
             editor_grid_darkening(AppPhase::Editor, [0.0, 0.0, 0.0]),
             0.10,
@@ -1213,8 +1213,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn current_surface_statuses_match_render_policy() {
+    #[tokio::test]
+    async fn current_surface_statuses_match_render_policy() {
         assert!(matches!(
             current_surface_output(wgpu::CurrentSurfaceTexture::Timeout),
             Ok(None)
@@ -1237,297 +1237,277 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn render_paths_are_safe_when_surface_is_absent() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
+    #[tokio::test]
+    async fn render_paths_are_safe_when_surface_is_absent() {
+        let mut state = State::new_test().await;
 
-            assert!(state.render().is_ok());
+        assert!(state.render().is_ok());
 
-            let overlay_called = Cell::new(false);
-            let render_result = state.render_with_overlay(|_, _, _, _| {
-                overlay_called.set(true);
-            });
-
-            assert!(render_result.is_ok());
-            assert!(
-                !overlay_called.get(),
-                "overlay should not run when there is no surface"
-            );
-
-            let before = (state.surface_width(), state.surface_height());
-            state.recreate_surface();
-            let after = (state.surface_width(), state.surface_height());
-            assert_eq!(before, after);
+        let overlay_called = Cell::new(false);
+        let render_result = state.render_with_overlay(|_, _, _, _| {
+            overlay_called.set(true);
         });
+
+        assert!(render_result.is_ok());
+        assert!(
+            !overlay_called.get(),
+            "overlay should not run when there is no surface"
+        );
+
+        let before = (state.surface_width(), state.surface_height());
+        state.recreate_surface();
+        let after = (state.surface_width(), state.surface_height());
+        assert_eq!(before, after);
     }
 
-    #[test]
-    fn render_egui_returns_ok_when_surface_is_absent() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            let mut renderer = state.create_egui_renderer();
-            let paint_jobs: Vec<egui::ClippedPrimitive> = Vec::new();
-            let screen_descriptor = ScreenDescriptor {
-                size_in_pixels: [state.surface_width(), state.surface_height()],
-                pixels_per_point: 1.0,
-            };
+    #[tokio::test]
+    async fn render_egui_returns_ok_when_surface_is_absent() {
+        let mut state = State::new_test().await;
+        let mut renderer = state.create_egui_renderer();
+        let paint_jobs: Vec<egui::ClippedPrimitive> = Vec::new();
+        let screen_descriptor = ScreenDescriptor {
+            size_in_pixels: [state.surface_width(), state.surface_height()],
+            pixels_per_point: 1.0,
+        };
 
-            let result = state.render_egui(&mut renderer, &paint_jobs, &screen_descriptor);
-            assert!(result.is_ok());
-        });
+        let result = state.render_egui(&mut renderer, &paint_jobs, &screen_descriptor);
+        assert!(result.is_ok());
     }
 
-    #[test]
-    fn selection_outline_ignores_unselected_scene_depth() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            prepare_outline_occlusion_test_state(&mut state);
+    #[tokio::test]
+    async fn selection_outline_ignores_unselected_scene_depth() {
+        let mut state = State::new_test().await;
+        prepare_outline_occlusion_test_state(&mut state);
 
-            let red_front = fullscreen_triangle(0.1, [1.0, 0.0, 0.0, 1.0]);
-            let cyan_outline = fullscreen_triangle(0.2, [0.0, 1.0, 1.0, 1.0]);
-            let corner_mask = corner_triangle(0.2, [1.0, 1.0, 1.0, 1.0]);
+        let red_front = fullscreen_triangle(0.1, [1.0, 0.0, 0.0, 1.0]);
+        let cyan_outline = fullscreen_triangle(0.2, [0.0, 1.0, 1.0, 1.0]);
+        let corner_mask = corner_triangle(0.2, [1.0, 1.0, 1.0, 1.0]);
 
-            state.render.meshes.blocks_static =
-                MeshSlot::from_vertices(state.device(), "Unselected Front Block", &red_front);
-            state.render.meshes.editor_selection_stencil =
-                MeshSlot::from_vertices(state.device(), "Selection Mask", &corner_mask);
-            state.render.meshes.editor_selection_outline =
-                MeshSlot::from_vertices(state.device(), "Selection Outline", &cyan_outline);
-            state.render.meshes.editor_selection_outline_instances = vec![EditorOutlineInstance {
-                mask_vertices: 0..corner_mask.len() as u32,
-                outline_vertices: 0..cyan_outline.len() as u32,
-            }];
+        state.render.meshes.blocks_static =
+            MeshSlot::from_vertices(state.device(), "Unselected Front Block", &red_front);
+        state.render.meshes.editor_selection_stencil =
+            MeshSlot::from_vertices(state.device(), "Selection Mask", &corner_mask);
+        state.render.meshes.editor_selection_outline =
+            MeshSlot::from_vertices(state.device(), "Selection Outline", &cyan_outline);
+        state.render.meshes.editor_selection_outline_instances = vec![EditorOutlineInstance {
+            mask_vertices: 0..corner_mask.len() as u32,
+            outline_vertices: 0..cyan_outline.len() as u32,
+        }];
 
-            let pixel = render_center_pixel(&mut state);
-            assert!(
-                pixel[0] < 80 && pixel[1] > 180 && pixel[2] > 180,
-                "selection outline should draw over unselected scene depth; got rgba={pixel:?}"
-            );
-        });
+        let pixel = render_center_pixel(&mut state);
+        assert!(
+            pixel[0] < 80 && pixel[1] > 180 && pixel[2] > 180,
+            "selection outline should draw over unselected scene depth; got rgba={pixel:?}"
+        );
     }
 
-    #[test]
-    fn hover_outline_ignores_unselected_scene_depth() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            prepare_outline_occlusion_test_state(&mut state);
+    #[tokio::test]
+    async fn hover_outline_ignores_unselected_scene_depth() {
+        let mut state = State::new_test().await;
+        prepare_outline_occlusion_test_state(&mut state);
 
-            let red_front = fullscreen_triangle(0.1, [1.0, 0.0, 0.0, 1.0]);
-            let cyan_outline = fullscreen_triangle(0.2, [0.0, 1.0, 1.0, 1.0]);
-            let corner_mask = corner_triangle(0.2, [1.0, 1.0, 1.0, 1.0]);
+        let red_front = fullscreen_triangle(0.1, [1.0, 0.0, 0.0, 1.0]);
+        let cyan_outline = fullscreen_triangle(0.2, [0.0, 1.0, 1.0, 1.0]);
+        let corner_mask = corner_triangle(0.2, [1.0, 1.0, 1.0, 1.0]);
 
-            state.render.meshes.blocks_static =
-                MeshSlot::from_vertices(state.device(), "Unselected Front Block", &red_front);
-            state.render.meshes.editor_hover_stencil =
-                MeshSlot::from_vertices(state.device(), "Hover Mask", &corner_mask);
-            state.render.meshes.editor_hover_outline =
-                MeshSlot::from_vertices(state.device(), "Hover Outline", &cyan_outline);
+        state.render.meshes.blocks_static =
+            MeshSlot::from_vertices(state.device(), "Unselected Front Block", &red_front);
+        state.render.meshes.editor_hover_stencil =
+            MeshSlot::from_vertices(state.device(), "Hover Mask", &corner_mask);
+        state.render.meshes.editor_hover_outline =
+            MeshSlot::from_vertices(state.device(), "Hover Outline", &cyan_outline);
 
-            let pixel = render_center_pixel(&mut state);
-            assert!(
-                pixel[0] < 80 && pixel[1] > 180 && pixel[2] > 180,
-                "hover outline should draw over unselected scene depth; got rgba={pixel:?}"
-            );
-        });
+        let pixel = render_center_pixel(&mut state);
+        assert!(
+            pixel[0] < 80 && pixel[1] > 180 && pixel[2] > 180,
+            "hover outline should draw over unselected scene depth; got rgba={pixel:?}"
+        );
     }
 
-    #[test]
-    fn hover_outline_draws_over_selected_blocks() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            prepare_outline_occlusion_test_state(&mut state);
+    #[tokio::test]
+    async fn hover_outline_draws_over_selected_blocks() {
+        let mut state = State::new_test().await;
+        prepare_outline_occlusion_test_state(&mut state);
 
-            let red_selected = fullscreen_triangle(0.1, [1.0, 0.0, 0.0, 1.0]);
-            let cyan_outline = fullscreen_triangle(0.2, [0.0, 1.0, 1.0, 1.0]);
-            let selected_mask = fullscreen_triangle(0.1, [1.0, 1.0, 1.0, 1.0]);
-            let hover_mask = corner_triangle(0.2, [1.0, 1.0, 1.0, 1.0]);
+        let red_selected = fullscreen_triangle(0.1, [1.0, 0.0, 0.0, 1.0]);
+        let cyan_outline = fullscreen_triangle(0.2, [0.0, 1.0, 1.0, 1.0]);
+        let selected_mask = fullscreen_triangle(0.1, [1.0, 1.0, 1.0, 1.0]);
+        let hover_mask = corner_triangle(0.2, [1.0, 1.0, 1.0, 1.0]);
 
-            state.render.meshes.blocks_selected =
-                MeshSlot::from_vertices(state.device(), "Selected Front Block", &red_selected);
-            state.render.meshes.editor_selection_stencil =
-                MeshSlot::from_vertices(state.device(), "Selected Occlusion Mask", &selected_mask);
-            state.render.meshes.editor_hover_stencil =
-                MeshSlot::from_vertices(state.device(), "Hover Mask", &hover_mask);
-            state.render.meshes.editor_hover_outline =
-                MeshSlot::from_vertices(state.device(), "Hover Outline", &cyan_outline);
+        state.render.meshes.blocks_selected =
+            MeshSlot::from_vertices(state.device(), "Selected Front Block", &red_selected);
+        state.render.meshes.editor_selection_stencil =
+            MeshSlot::from_vertices(state.device(), "Selected Occlusion Mask", &selected_mask);
+        state.render.meshes.editor_hover_stencil =
+            MeshSlot::from_vertices(state.device(), "Hover Mask", &hover_mask);
+        state.render.meshes.editor_hover_outline =
+            MeshSlot::from_vertices(state.device(), "Hover Outline", &cyan_outline);
 
-            let pixel = render_center_pixel(&mut state);
-            assert!(
-                pixel[0] < 80 && pixel[1] > 180 && pixel[2] > 180,
-                "hover outline should draw over selected block depth; got rgba={pixel:?}"
-            );
-        });
+        let pixel = render_center_pixel(&mut state);
+        assert!(
+            pixel[0] < 80 && pixel[1] > 180 && pixel[2] > 180,
+            "hover outline should draw over selected block depth; got rgba={pixel:?}"
+        );
     }
 
-    #[test]
-    fn test_render_to_view_exercises_full_pipeline() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            let size = 64;
-            state.resize_surface(eg_types::PhysicalSize {
+    #[tokio::test]
+    async fn test_render_to_view_exercises_full_pipeline() {
+        let mut state = State::new_test().await;
+        let size = 64;
+        state.resize_surface(eg_types::PhysicalSize {
+            width: size,
+            height: size,
+        });
+
+        let texture = state.device().create_texture(&wgpu::TextureDescriptor {
+            label: Some("Test Render Texture"),
+            size: wgpu::Extent3d {
                 width: size,
                 height: size,
-            });
-
-            let texture = state.device().create_texture(&wgpu::TextureDescriptor {
-                label: Some("Test Render Texture"),
-                size: wgpu::Extent3d {
-                    width: size,
-                    height: size,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: state.render.gpu.config.format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                view_formats: &[],
-            });
-            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-            let mut encoder =
-                state
-                    .device()
-                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                        label: Some("Test Encoder"),
-                    });
-
-            // 1. Test Editor Phase + Place Mode
-            state.phase = AppPhase::Editor;
-            state.editor.ui.mode = EditorMode::Place;
-
-            // Populate some meshes
-            state.editor.objects.push(eg_types::LevelObject {
-                block_id: "core/stone".to_string(),
-                ..Default::default()
-            });
-            state.editor.ui.selected_block_indices = vec![0];
-            state.sync_editor_objects();
-            state.rebuild_editor_cursor_vertices();
-            state.rebuild_spawn_marker_vertices();
-
-            state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
-
-            // 2. Test Playing Phase + GameOver
-            state.phase = AppPhase::Playing;
-            state.gameplay.state.game_over = true;
-            state.editor.timeline.playback.playing = true; // For trail
-            state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
-
-            // 3. Test Timing Mode (skip world)
-            state.phase = AppPhase::Editor;
-            state.editor.ui.mode = EditorMode::Timing;
-            state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
-
-            // 4. Test with gamma correction enabled
-            state.render.gpu.apply_gamma_correction = true;
-            state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
-
-            state.queue().submit(std::iter::once(encoder.finish()));
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: state.render.gpu.config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
         });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = state
+            .device()
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Test Encoder"),
+            });
+
+        // 1. Test Editor Phase + Place Mode
+        state.phase = AppPhase::Editor;
+        state.editor.ui.mode = EditorMode::Place;
+
+        // Populate some meshes
+        state.editor.objects.push(eg_types::LevelObject {
+            block_id: "core/stone".to_string(),
+            ..Default::default()
+        });
+        state.editor.ui.selected_block_indices = vec![0];
+        state.sync_editor_objects();
+        state.rebuild_editor_cursor_vertices();
+        state.rebuild_spawn_marker_vertices();
+
+        state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
+
+        // 2. Test Playing Phase + GameOver
+        state.phase = AppPhase::Playing;
+        state.gameplay.state.game_over = true;
+        state.editor.timeline.playback.playing = true; // For trail
+        state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
+
+        // 3. Test Timing Mode (skip world)
+        state.phase = AppPhase::Editor;
+        state.editor.ui.mode = EditorMode::Timing;
+        state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
+
+        // 4. Test with gamma correction enabled
+        state.render.gpu.apply_gamma_correction = true;
+        state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
+
+        state.queue().submit(std::iter::once(encoder.finish()));
     }
 
-    #[test]
-    fn render_to_view_draws_populated_mesh_slots_across_phases() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            let size = 96;
-            state.resize_surface(eg_types::PhysicalSize {
+    #[tokio::test]
+    async fn render_to_view_draws_populated_mesh_slots_across_phases() {
+        let mut state = State::new_test().await;
+        let size = 96;
+        state.resize_surface(eg_types::PhysicalSize {
+            width: size,
+            height: size,
+        });
+
+        let texture = state.device().create_texture(&wgpu::TextureDescriptor {
+            label: Some("Branch Coverage Render Texture"),
+            size: wgpu::Extent3d {
                 width: size,
                 height: size,
-            });
-
-            let texture = state.device().create_texture(&wgpu::TextureDescriptor {
-                label: Some("Branch Coverage Render Texture"),
-                size: wgpu::Extent3d {
-                    width: size,
-                    height: size,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: state.render.gpu.config.format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                view_formats: &[],
-            });
-            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-            let mut encoder =
-                state
-                    .device()
-                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                        label: Some("Branch Coverage Encoder"),
-                    });
-
-            let tri = vec![
-                Vertex::untextured([0.0, 0.0, 0.0], [1.0, 0.2, 0.2, 1.0]),
-                Vertex::untextured([0.2, 0.0, 0.0], [0.2, 1.0, 0.2, 1.0]),
-                Vertex::untextured([0.0, 0.2, 0.0], [0.2, 0.2, 1.0, 1.0]),
-            ];
-
-            state.render.meshes.floor = MeshSlot::from_vertices(state.device(), "floor", &tri);
-            state.render.meshes.grid = MeshSlot::from_vertices(state.device(), "grid", &tri);
-            state.render.meshes.trail = MeshSlot::from_vertices(state.device(), "trail", &tri);
-            state.render.meshes.blocks = MeshSlot::from_vertices(state.device(), "blocks", &tri);
-            state.render.meshes.blocks_static =
-                MeshSlot::from_vertices(state.device(), "blocks_static", &tri);
-            state.render.meshes.blocks_selected =
-                MeshSlot::from_vertices(state.device(), "blocks_selected", &tri);
-            state.render.meshes.editor_cursor =
-                MeshSlot::from_vertices(state.device(), "cursor", &tri);
-            state.render.meshes.editor_hover_stencil =
-                MeshSlot::from_vertices(state.device(), "hover_stencil", &tri);
-            state.render.meshes.editor_hover_outline =
-                MeshSlot::from_vertices(state.device(), "hover", &tri);
-            state.render.meshes.editor_selection_stencil =
-                MeshSlot::from_vertices(state.device(), "selection_stencil", &tri);
-            state.render.meshes.editor_selection_outline =
-                MeshSlot::from_vertices(state.device(), "selection", &tri);
-            state.render.meshes.editor_gizmo =
-                MeshSlot::from_vertices(state.device(), "gizmo", &tri);
-            state.render.meshes.tap_indicators =
-                MeshSlot::from_vertices(state.device(), "taps", &tri);
-            state.render.meshes.transform_trigger_markers =
-                MeshSlot::from_vertices(state.device(), "transform_markers", &tri);
-            state.render.meshes.spawn_marker =
-                MeshSlot::from_vertices(state.device(), "spawn", &tri);
-            state.render.meshes.camera_trigger_markers =
-                MeshSlot::from_vertices(state.device(), "camera_markers", &tri);
-
-            let overlay_calls = Cell::new(0_u32);
-
-            state.phase = AppPhase::Editor;
-            state.editor.ui.mode = EditorMode::Place;
-            state.render_to_view(&view, &mut encoder, |_, _, _, _| {
-                overlay_calls.set(overlay_calls.get() + 1);
-            });
-
-            state.phase = AppPhase::Editor;
-            state.editor.ui.mode = EditorMode::Timing;
-            state.render_to_view(&view, &mut encoder, |_, _, _, _| {
-                overlay_calls.set(overlay_calls.get() + 1);
-            });
-
-            state.phase = AppPhase::Playing;
-            state.gameplay.state.game_over = false;
-            state.render_to_view(&view, &mut encoder, |_, _, _, _| {
-                overlay_calls.set(overlay_calls.get() + 1);
-            });
-
-            state.phase = AppPhase::GameOver;
-            state.gameplay.state.game_over = true;
-            state.render_to_view(&view, &mut encoder, |_, _, _, _| {
-                overlay_calls.set(overlay_calls.get() + 1);
-            });
-
-            state.phase = AppPhase::Menu;
-            state.editor.ui.mode = EditorMode::Select;
-            state.render_to_view(&view, &mut encoder, |_, _, _, _| {
-                overlay_calls.set(overlay_calls.get() + 1);
-            });
-
-            assert_eq!(overlay_calls.get(), 5);
-            state.queue().submit(std::iter::once(encoder.finish()));
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: state.render.gpu.config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
         });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = state
+            .device()
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Branch Coverage Encoder"),
+            });
+
+        let tri = vec![
+            Vertex::untextured([0.0, 0.0, 0.0], [1.0, 0.2, 0.2, 1.0]),
+            Vertex::untextured([0.2, 0.0, 0.0], [0.2, 1.0, 0.2, 1.0]),
+            Vertex::untextured([0.0, 0.2, 0.0], [0.2, 0.2, 1.0, 1.0]),
+        ];
+
+        state.render.meshes.floor = MeshSlot::from_vertices(state.device(), "floor", &tri);
+        state.render.meshes.grid = MeshSlot::from_vertices(state.device(), "grid", &tri);
+        state.render.meshes.trail = MeshSlot::from_vertices(state.device(), "trail", &tri);
+        state.render.meshes.blocks = MeshSlot::from_vertices(state.device(), "blocks", &tri);
+        state.render.meshes.blocks_static =
+            MeshSlot::from_vertices(state.device(), "blocks_static", &tri);
+        state.render.meshes.blocks_selected =
+            MeshSlot::from_vertices(state.device(), "blocks_selected", &tri);
+        state.render.meshes.editor_cursor = MeshSlot::from_vertices(state.device(), "cursor", &tri);
+        state.render.meshes.editor_hover_stencil =
+            MeshSlot::from_vertices(state.device(), "hover_stencil", &tri);
+        state.render.meshes.editor_hover_outline =
+            MeshSlot::from_vertices(state.device(), "hover", &tri);
+        state.render.meshes.editor_selection_stencil =
+            MeshSlot::from_vertices(state.device(), "selection_stencil", &tri);
+        state.render.meshes.editor_selection_outline =
+            MeshSlot::from_vertices(state.device(), "selection", &tri);
+        state.render.meshes.editor_gizmo = MeshSlot::from_vertices(state.device(), "gizmo", &tri);
+        state.render.meshes.tap_indicators = MeshSlot::from_vertices(state.device(), "taps", &tri);
+        state.render.meshes.transform_trigger_markers =
+            MeshSlot::from_vertices(state.device(), "transform_markers", &tri);
+        state.render.meshes.spawn_marker = MeshSlot::from_vertices(state.device(), "spawn", &tri);
+        state.render.meshes.camera_trigger_markers =
+            MeshSlot::from_vertices(state.device(), "camera_markers", &tri);
+
+        let overlay_calls = Cell::new(0_u32);
+
+        state.phase = AppPhase::Editor;
+        state.editor.ui.mode = EditorMode::Place;
+        state.render_to_view(&view, &mut encoder, |_, _, _, _| {
+            overlay_calls.set(overlay_calls.get() + 1);
+        });
+
+        state.phase = AppPhase::Editor;
+        state.editor.ui.mode = EditorMode::Timing;
+        state.render_to_view(&view, &mut encoder, |_, _, _, _| {
+            overlay_calls.set(overlay_calls.get() + 1);
+        });
+
+        state.phase = AppPhase::Playing;
+        state.gameplay.state.game_over = false;
+        state.render_to_view(&view, &mut encoder, |_, _, _, _| {
+            overlay_calls.set(overlay_calls.get() + 1);
+        });
+
+        state.phase = AppPhase::GameOver;
+        state.gameplay.state.game_over = true;
+        state.render_to_view(&view, &mut encoder, |_, _, _, _| {
+            overlay_calls.set(overlay_calls.get() + 1);
+        });
+
+        state.phase = AppPhase::Menu;
+        state.editor.ui.mode = EditorMode::Select;
+        state.render_to_view(&view, &mut encoder, |_, _, _, _| {
+            overlay_calls.set(overlay_calls.get() + 1);
+        });
+
+        assert_eq!(overlay_calls.get(), 5);
+        state.queue().submit(std::iter::once(encoder.finish()));
     }
 }

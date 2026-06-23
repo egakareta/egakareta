@@ -1679,910 +1679,858 @@ mod tests {
         }
     }
 
-    #[test]
-    fn add_transform_trigger_ignores_trigger_block_selection() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
+    #[tokio::test]
+    async fn add_transform_trigger_ignores_trigger_block_selection() {
+        let mut state = State::new_test().await;
 
-            state.phase = AppPhase::Editor;
-            state.editor.objects = vec![transform_trigger_object(1.0, vec!["object_0"])];
-            state.editor.sync_trigger_selection_from_objects();
-            state.editor.ui.selected_block_indices = vec![0];
-            state.editor.ui.selected_block_index = Some(0);
+        state.phase = AppPhase::Editor;
+        state.editor.objects = vec![transform_trigger_object(1.0, vec!["object_0"])];
+        state.editor.sync_trigger_selection_from_objects();
+        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.ui.selected_block_index = Some(0);
 
-            assert!(!state.add_editor_transform_trigger());
-            assert_eq!(state.editor.objects.len(), 1);
-            assert_eq!(state.editor.triggers().len(), 1);
-        });
+        assert!(!state.add_editor_transform_trigger());
+        assert_eq!(state.editor.objects.len(), 1);
+        assert_eq!(state.editor.triggers().len(), 1);
     }
 
-    #[test]
-    fn add_transform_trigger_creates_selected_markers_for_selected_blocks() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
+    #[tokio::test]
+    async fn add_transform_trigger_creates_selected_markers_for_selected_blocks() {
+        let mut state = State::new_test().await;
 
-            state.phase = AppPhase::Editor;
-            state.editor.timeline.clock.time_seconds = 2.5;
-            state.editor.timeline.clock.duration_seconds = 8.0;
-            state.editor.objects = vec![
-                test_level_object([0.0, 0.0, 0.0]),
-                test_level_object([4.0, 0.0, 0.0]),
-            ];
-            state.editor.ui.selected_block_indices = vec![0, 1];
-            state.editor.ui.selected_block_index = Some(0);
-            state.editor.ui.mode = EditorMode::Rotate;
+        state.phase = AppPhase::Editor;
+        state.editor.timeline.clock.time_seconds = 2.5;
+        state.editor.timeline.clock.duration_seconds = 8.0;
+        state.editor.objects = vec![
+            test_level_object([0.0, 0.0, 0.0]),
+            test_level_object([4.0, 0.0, 0.0]),
+        ];
+        state.editor.ui.selected_block_indices = vec![0, 1];
+        state.editor.ui.selected_block_index = Some(0);
+        state.editor.ui.mode = EditorMode::Rotate;
 
-            assert!(state.add_editor_transform_trigger());
-            assert_eq!(state.editor.ui.mode, EditorMode::Rotate);
-            assert_object_pose(&state.editor.objects[0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-            assert_object_pose(&state.editor.objects[1], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-            assert_eq!(state.editor.objects.len(), 4);
-            assert_eq!(state.editor.objects[2].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
-            assert_object_pose(&state.editor.objects[2], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-            assert_eq!(state.editor.objects[2].rotation_degrees, [0.0, 0.0, 0.0]);
-            assert_eq!(state.editor.objects[3].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
-            assert_object_pose(&state.editor.objects[3], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-            assert_eq!(state.editor.objects[3].rotation_degrees, [0.0, 0.0, 0.0]);
-            assert_eq!(state.editor.ui.selected_block_index, Some(2));
-            assert_eq!(state.editor.ui.selected_block_indices, vec![2, 3]);
+        assert!(state.add_editor_transform_trigger());
+        assert_eq!(state.editor.ui.mode, EditorMode::Rotate);
+        assert_object_pose(&state.editor.objects[0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_object_pose(&state.editor.objects[1], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_eq!(state.editor.objects.len(), 4);
+        assert_eq!(state.editor.objects[2].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
+        assert_object_pose(&state.editor.objects[2], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_eq!(state.editor.objects[2].rotation_degrees, [0.0, 0.0, 0.0]);
+        assert_eq!(state.editor.objects[3].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
+        assert_object_pose(&state.editor.objects[3], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_eq!(state.editor.objects[3].rotation_degrees, [0.0, 0.0, 0.0]);
+        assert_eq!(state.editor.ui.selected_block_index, Some(2));
+        assert_eq!(state.editor.ui.selected_block_indices, vec![2, 3]);
 
-            let mut triggers = state.editor.triggers();
-            triggers.sort_by_key(|trigger| match &trigger.target {
-                TimedTriggerTarget::Objects { object_ids } => object_ids[0].clone(),
-                TimedTriggerTarget::Camera => String::new(),
-            });
-            assert_eq!(triggers.len(), 2);
-
-            for (trigger, expected_id) in triggers.iter().zip(["object_0", "object_4"]) {
-                approx::assert_abs_diff_eq!(trigger.time_seconds, 2.5, epsilon = 1e-6);
-                approx::assert_abs_diff_eq!(trigger.duration_seconds, 1.0, epsilon = 1e-6);
-                assert_eq!(trigger.easing, TimedTriggerEasing::EaseInOut);
-                assert_eq!(
-                    trigger.target,
-                    TimedTriggerTarget::Objects {
-                        object_ids: vec![expected_id.to_string()],
-                    }
-                );
-            }
-
-            match &triggers[0].action {
-                TimedTriggerAction::TransformObjects {
-                    position,
-                    rotation_degrees,
-                    size,
-                    ..
-                } => {
-                    for component in 0..3 {
-                        approx::assert_abs_diff_eq!(
-                            position[component],
-                            [0.0, 0.0, 0.0][component],
-                            epsilon = 1e-6
-                        );
-                        approx::assert_abs_diff_eq!(
-                            rotation_degrees[component],
-                            [0.0, 0.0, 0.0][component],
-                            epsilon = 1e-6
-                        );
-                        approx::assert_abs_diff_eq!(
-                            size[component],
-                            [1.0, 1.0, 1.0][component],
-                            epsilon = 1e-6
-                        );
-                    }
-                }
-                _ => panic!("expected transform objects action"),
-            }
-            match &triggers[1].action {
-                TimedTriggerAction::TransformObjects {
-                    position,
-                    rotation_degrees,
-                    size,
-                    ..
-                } => {
-                    for component in 0..3 {
-                        approx::assert_abs_diff_eq!(
-                            position[component],
-                            [4.0, 0.0, 0.0][component],
-                            epsilon = 1e-6
-                        );
-                        approx::assert_abs_diff_eq!(
-                            rotation_degrees[component],
-                            [0.0, 0.0, 0.0][component],
-                            epsilon = 1e-6
-                        );
-                        approx::assert_abs_diff_eq!(
-                            size[component],
-                            [1.0, 1.0, 1.0][component],
-                            epsilon = 1e-6
-                        );
-                    }
-                }
-                _ => panic!("expected transform objects action"),
-            }
+        let mut triggers = state.editor.triggers();
+        triggers.sort_by_key(|trigger| match &trigger.target {
+            TimedTriggerTarget::Objects { object_ids } => object_ids[0].clone(),
+            TimedTriggerTarget::Camera => String::new(),
         });
-    }
+        assert_eq!(triggers.len(), 2);
 
-    #[test]
-    fn add_transform_trigger_targets_block_after_existing_trigger_object() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-
-            state.phase = AppPhase::Editor;
-            state.editor.timeline.clock.time_seconds = 2.5;
-            state.editor.timeline.clock.duration_seconds = 8.0;
-            state.editor.objects = vec![
-                test_level_object([0.0, 0.0, 0.0]),
-                transform_trigger_object(1.0, vec!["object_0"]),
-                test_level_object([4.0, 0.0, 0.0]),
-            ];
-            state.editor.sync_trigger_selection_from_objects();
-            state.editor.ui.selected_block_indices = vec![2];
-            state.editor.ui.selected_block_index = Some(2);
-
-            assert!(state.add_editor_transform_trigger());
-
-            assert_eq!(state.editor.objects.len(), 4);
-            assert_object_pose(&state.editor.objects[1], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-            assert_eq!(state.editor.ui.selected_block_index, Some(3));
-            assert_eq!(state.editor.ui.selected_block_indices, vec![3]);
-
-            let mut found_retargeted_capture = false;
-            for trigger in &state.editor.triggers() {
-                let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
-                    continue;
-                };
-                if (trigger.time_seconds - 2.5).abs() <= 1e-6 {
-                    assert_eq!(object_ids, &["object_4".to_string()]);
-                    found_retargeted_capture = true;
-                    let TimedTriggerAction::TransformObjects { position, .. } = &trigger.action
-                    else {
-                        panic!("expected transform trigger action");
-                    };
-                    approx::assert_abs_diff_eq!(position[0], 4.0, epsilon = 1e-6);
-                    approx::assert_abs_diff_eq!(position[1], 0.0, epsilon = 1e-6);
-                    approx::assert_abs_diff_eq!(position[2], 0.0, epsilon = 1e-6);
+        for (trigger, expected_id) in triggers.iter().zip(["object_0", "object_4"]) {
+            approx::assert_abs_diff_eq!(trigger.time_seconds, 2.5, epsilon = 1e-6);
+            approx::assert_abs_diff_eq!(trigger.duration_seconds, 1.0, epsilon = 1e-6);
+            assert_eq!(trigger.easing, TimedTriggerEasing::EaseInOut);
+            assert_eq!(
+                trigger.target,
+                TimedTriggerTarget::Objects {
+                    object_ids: vec![expected_id.to_string()],
                 }
-            }
+            );
+        }
 
-            assert!(found_retargeted_capture);
-        });
-    }
-
-    #[test]
-    fn add_transform_trigger_preserves_existing_moved_trigger_object_pose() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-
-            state.phase = AppPhase::Editor;
-            state.editor.timeline.clock.time_seconds = 2.5;
-            state.editor.timeline.clock.duration_seconds = 8.0;
-            state.editor.objects = vec![
-                test_level_object([0.0, 0.0, 0.0]),
-                test_level_object([4.0, 0.0, 0.0]),
-            ];
-            state.editor.set_triggers(vec![transform_trigger(
-                2.5,
-                vec!["object_0"],
-                [8.0, 0.0, 0.0],
-            )]);
-            state.editor.objects[2].position = [12.0, 1.0, 3.0];
-            state.editor.objects[2].size = [2.0, 3.0, 4.0];
-            state.editor.objects[2].rotation_degrees = [10.0, 20.0, 30.0];
-            state.editor.ui.selected_block_indices = vec![1];
-            state.editor.ui.selected_block_index = Some(1);
-
-            assert!(state.add_editor_transform_trigger());
-
-            assert_object_pose(&state.editor.objects[2], [12.0, 1.0, 3.0], [2.0, 3.0, 4.0]);
-            assert_eq!(state.editor.objects[2].rotation_degrees, [10.0, 20.0, 30.0]);
-            let triggers = state.editor.triggers();
-            let existing_trigger = triggers
-                .iter()
-                .find(|trigger| match &trigger.target {
-                    TimedTriggerTarget::Objects { object_ids } => {
-                        object_ids == &["object_0".to_string()]
-                    }
-                    TimedTriggerTarget::Camera => false,
-                })
-                .expect("existing transform trigger remains");
-            let TimedTriggerAction::TransformObjects {
+        match &triggers[0].action {
+            TimedTriggerAction::TransformObjects {
                 position,
                 rotation_degrees,
                 size,
                 ..
-            } = &existing_trigger.action
-            else {
-                panic!("expected transform trigger action");
-            };
-            assert_eq!(position, &[12.0, 1.0, 3.0]);
-            assert_eq!(rotation_degrees, &[10.0, 20.0, 30.0]);
-            assert_eq!(size, &[2.0, 3.0, 4.0]);
-        });
-    }
-
-    #[test]
-    fn add_transform_trigger_overrides_existing_same_time_object_triggers() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-
-            state.phase = AppPhase::Editor;
-            state.editor.timeline.clock.time_seconds = 2.5;
-            state.editor.timeline.clock.duration_seconds = 8.0;
-            state.editor.objects = vec![
-                test_level_object([0.0, 0.0, 0.0]),
-                test_level_object([4.0, 0.0, 0.0]),
-                test_level_object([8.0, 0.0, 0.0]),
-            ];
-            state.editor.ui.selected_block_indices = vec![0, 1];
-            state.editor.ui.selected_block_index = Some(0);
-            state.editor.set_triggers(vec![
-                transform_trigger(2.5, vec!["object_0"], [10.0, 0.0, 0.0]),
-                transform_trigger(2.5, vec!["object_4", "object_8"], [20.0, 0.0, 0.0]),
-                transform_trigger(2.5, vec!["object_8"], [30.0, 0.0, 0.0]),
-                transform_trigger(4.0, vec!["object_0"], [40.0, 0.0, 0.0]),
-            ]);
-
-            assert!(state.add_editor_transform_trigger());
-
-            let mut object_zero_same_time_count = 0;
-            let mut object_one_same_time_count = 0;
-            let mut retained_object_two_multi_target = false;
-            let mut retained_object_two_standalone = false;
-            let mut retained_different_time_object_zero = false;
-
-            for trigger in &state.editor.triggers() {
-                let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
-                    continue;
-                };
-
-                if (trigger.time_seconds - 2.5).abs() <= 1e-6
-                    && object_ids == &["object_0".to_string()]
-                {
-                    object_zero_same_time_count += 1;
-                    if let TimedTriggerAction::TransformObjects { position, .. } = &trigger.action {
-                        approx::assert_abs_diff_eq!(position[0], 0.0, epsilon = 1e-6);
-                        approx::assert_abs_diff_eq!(position[1], 0.0, epsilon = 1e-6);
-                        approx::assert_abs_diff_eq!(position[2], 0.0, epsilon = 1e-6);
-                    }
-                }
-
-                if (trigger.time_seconds - 2.5).abs() <= 1e-6
-                    && object_ids == &["object_4".to_string()]
-                {
-                    object_one_same_time_count += 1;
-                    if let TimedTriggerAction::TransformObjects { position, .. } = &trigger.action {
-                        approx::assert_abs_diff_eq!(position[0], 4.0, epsilon = 1e-6);
-                        approx::assert_abs_diff_eq!(position[1], 0.0, epsilon = 1e-6);
-                        approx::assert_abs_diff_eq!(position[2], 0.0, epsilon = 1e-6);
-                    }
-                }
-
-                if (trigger.time_seconds - 2.5).abs() <= 1e-6
-                    && object_ids == &["object_8".to_string()]
-                {
-                    if let TimedTriggerAction::TransformObjects { position, .. } = &trigger.action {
-                        if (position[0] - 20.0).abs() <= 1e-6 {
-                            retained_object_two_multi_target = true;
-                        } else if (position[0] - 30.0).abs() <= 1e-6 {
-                            retained_object_two_standalone = true;
-                        }
-                    }
-                }
-
-                if (trigger.time_seconds - 4.0).abs() <= 1e-6
-                    && object_ids == &["object_0".to_string()]
-                {
-                    retained_different_time_object_zero = true;
+            } => {
+                for component in 0..3 {
+                    approx::assert_abs_diff_eq!(
+                        position[component],
+                        [0.0, 0.0, 0.0][component],
+                        epsilon = 1e-6
+                    );
+                    approx::assert_abs_diff_eq!(
+                        rotation_degrees[component],
+                        [0.0, 0.0, 0.0][component],
+                        epsilon = 1e-6
+                    );
+                    approx::assert_abs_diff_eq!(
+                        size[component],
+                        [1.0, 1.0, 1.0][component],
+                        epsilon = 1e-6
+                    );
                 }
             }
-
-            assert_eq!(object_zero_same_time_count, 1);
-            assert_eq!(object_one_same_time_count, 1);
-            assert!(retained_object_two_multi_target);
-            assert!(retained_object_two_standalone);
-            assert!(retained_different_time_object_zero);
-        });
+            _ => panic!("expected transform objects action"),
+        }
+        match &triggers[1].action {
+            TimedTriggerAction::TransformObjects {
+                position,
+                rotation_degrees,
+                size,
+                ..
+            } => {
+                for component in 0..3 {
+                    approx::assert_abs_diff_eq!(
+                        position[component],
+                        [4.0, 0.0, 0.0][component],
+                        epsilon = 1e-6
+                    );
+                    approx::assert_abs_diff_eq!(
+                        rotation_degrees[component],
+                        [0.0, 0.0, 0.0][component],
+                        epsilon = 1e-6
+                    );
+                    approx::assert_abs_diff_eq!(
+                        size[component],
+                        [1.0, 1.0, 1.0][component],
+                        epsilon = 1e-6
+                    );
+                }
+            }
+            _ => panic!("expected transform objects action"),
+        }
     }
 
-    #[test]
-    fn add_transform_trigger_preserves_replaced_trigger_with_no_sources() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
+    #[tokio::test]
+    async fn add_transform_trigger_targets_block_after_existing_trigger_object() {
+        let mut state = State::new_test().await;
 
-            state.phase = AppPhase::Editor;
-            state.editor.timeline.clock.time_seconds = 2.5;
-            state.editor.timeline.clock.duration_seconds = 8.0;
-            state.editor.objects = vec![test_level_object([0.0, 0.0, 0.0])];
-            state.editor.ui.selected_block_indices = vec![0];
-            state.editor.ui.selected_block_index = Some(0);
-            state.editor.set_triggers(vec![transform_trigger(
-                2.5,
-                vec!["object_0"],
-                [10.0, 0.0, 0.0],
-            )]);
+        state.phase = AppPhase::Editor;
+        state.editor.timeline.clock.time_seconds = 2.5;
+        state.editor.timeline.clock.duration_seconds = 8.0;
+        state.editor.objects = vec![
+            test_level_object([0.0, 0.0, 0.0]),
+            transform_trigger_object(1.0, vec!["object_0"]),
+            test_level_object([4.0, 0.0, 0.0]),
+        ];
+        state.editor.sync_trigger_selection_from_objects();
+        state.editor.ui.selected_block_indices = vec![2];
+        state.editor.ui.selected_block_index = Some(2);
 
-            assert!(state.add_editor_transform_trigger());
+        assert!(state.add_editor_transform_trigger());
 
-            let mut found_target_only_trigger = false;
-            let mut found_replacement_trigger = false;
+        assert_eq!(state.editor.objects.len(), 4);
+        assert_object_pose(&state.editor.objects[1], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_eq!(state.editor.ui.selected_block_index, Some(3));
+        assert_eq!(state.editor.ui.selected_block_indices, vec![3]);
 
-            for trigger in &state.editor.triggers() {
-                let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
-                    continue;
-                };
+        let mut found_retargeted_capture = false;
+        for trigger in &state.editor.triggers() {
+            let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
+                continue;
+            };
+            if (trigger.time_seconds - 2.5).abs() <= 1e-6 {
+                assert_eq!(object_ids, &["object_4".to_string()]);
+                found_retargeted_capture = true;
                 let TimedTriggerAction::TransformObjects { position, .. } = &trigger.action else {
-                    continue;
+                    panic!("expected transform trigger action");
                 };
+                approx::assert_abs_diff_eq!(position[0], 4.0, epsilon = 1e-6);
+                approx::assert_abs_diff_eq!(position[1], 0.0, epsilon = 1e-6);
+                approx::assert_abs_diff_eq!(position[2], 0.0, epsilon = 1e-6);
+            }
+        }
 
-                if (trigger.time_seconds - 2.5).abs() <= 1e-6 && object_ids.is_empty() {
-                    found_target_only_trigger = true;
-                    approx::assert_abs_diff_eq!(position[0], 10.0, epsilon = 1e-6);
+        assert!(found_retargeted_capture);
+    }
+
+    #[tokio::test]
+    async fn add_transform_trigger_preserves_existing_moved_trigger_object_pose() {
+        let mut state = State::new_test().await;
+
+        state.phase = AppPhase::Editor;
+        state.editor.timeline.clock.time_seconds = 2.5;
+        state.editor.timeline.clock.duration_seconds = 8.0;
+        state.editor.objects = vec![
+            test_level_object([0.0, 0.0, 0.0]),
+            test_level_object([4.0, 0.0, 0.0]),
+        ];
+        state.editor.set_triggers(vec![transform_trigger(
+            2.5,
+            vec!["object_0"],
+            [8.0, 0.0, 0.0],
+        )]);
+        state.editor.objects[2].position = [12.0, 1.0, 3.0];
+        state.editor.objects[2].size = [2.0, 3.0, 4.0];
+        state.editor.objects[2].rotation_degrees = [10.0, 20.0, 30.0];
+        state.editor.ui.selected_block_indices = vec![1];
+        state.editor.ui.selected_block_index = Some(1);
+
+        assert!(state.add_editor_transform_trigger());
+
+        assert_object_pose(&state.editor.objects[2], [12.0, 1.0, 3.0], [2.0, 3.0, 4.0]);
+        assert_eq!(state.editor.objects[2].rotation_degrees, [10.0, 20.0, 30.0]);
+        let triggers = state.editor.triggers();
+        let existing_trigger = triggers
+            .iter()
+            .find(|trigger| match &trigger.target {
+                TimedTriggerTarget::Objects { object_ids } => {
+                    object_ids == &["object_0".to_string()]
                 }
+                TimedTriggerTarget::Camera => false,
+            })
+            .expect("existing transform trigger remains");
+        let TimedTriggerAction::TransformObjects {
+            position,
+            rotation_degrees,
+            size,
+            ..
+        } = &existing_trigger.action
+        else {
+            panic!("expected transform trigger action");
+        };
+        assert_eq!(position, &[12.0, 1.0, 3.0]);
+        assert_eq!(rotation_degrees, &[10.0, 20.0, 30.0]);
+        assert_eq!(size, &[2.0, 3.0, 4.0]);
+    }
 
-                if (trigger.time_seconds - 2.5).abs() <= 1e-6
-                    && object_ids == &["object_0".to_string()]
-                {
-                    found_replacement_trigger = true;
+    #[tokio::test]
+    async fn add_transform_trigger_overrides_existing_same_time_object_triggers() {
+        let mut state = State::new_test().await;
+
+        state.phase = AppPhase::Editor;
+        state.editor.timeline.clock.time_seconds = 2.5;
+        state.editor.timeline.clock.duration_seconds = 8.0;
+        state.editor.objects = vec![
+            test_level_object([0.0, 0.0, 0.0]),
+            test_level_object([4.0, 0.0, 0.0]),
+            test_level_object([8.0, 0.0, 0.0]),
+        ];
+        state.editor.ui.selected_block_indices = vec![0, 1];
+        state.editor.ui.selected_block_index = Some(0);
+        state.editor.set_triggers(vec![
+            transform_trigger(2.5, vec!["object_0"], [10.0, 0.0, 0.0]),
+            transform_trigger(2.5, vec!["object_4", "object_8"], [20.0, 0.0, 0.0]),
+            transform_trigger(2.5, vec!["object_8"], [30.0, 0.0, 0.0]),
+            transform_trigger(4.0, vec!["object_0"], [40.0, 0.0, 0.0]),
+        ]);
+
+        assert!(state.add_editor_transform_trigger());
+
+        let mut object_zero_same_time_count = 0;
+        let mut object_one_same_time_count = 0;
+        let mut retained_object_two_multi_target = false;
+        let mut retained_object_two_standalone = false;
+        let mut retained_different_time_object_zero = false;
+
+        for trigger in &state.editor.triggers() {
+            let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
+                continue;
+            };
+
+            if (trigger.time_seconds - 2.5).abs() <= 1e-6 && object_ids == &["object_0".to_string()]
+            {
+                object_zero_same_time_count += 1;
+                if let TimedTriggerAction::TransformObjects { position, .. } = &trigger.action {
                     approx::assert_abs_diff_eq!(position[0], 0.0, epsilon = 1e-6);
                     approx::assert_abs_diff_eq!(position[1], 0.0, epsilon = 1e-6);
                     approx::assert_abs_diff_eq!(position[2], 0.0, epsilon = 1e-6);
                 }
             }
 
-            assert!(found_target_only_trigger);
-            assert!(found_replacement_trigger);
-        });
+            if (trigger.time_seconds - 2.5).abs() <= 1e-6 && object_ids == &["object_4".to_string()]
+            {
+                object_one_same_time_count += 1;
+                if let TimedTriggerAction::TransformObjects { position, .. } = &trigger.action {
+                    approx::assert_abs_diff_eq!(position[0], 4.0, epsilon = 1e-6);
+                    approx::assert_abs_diff_eq!(position[1], 0.0, epsilon = 1e-6);
+                    approx::assert_abs_diff_eq!(position[2], 0.0, epsilon = 1e-6);
+                }
+            }
+
+            if (trigger.time_seconds - 2.5).abs() <= 1e-6 && object_ids == &["object_8".to_string()]
+            {
+                if let TimedTriggerAction::TransformObjects { position, .. } = &trigger.action {
+                    if (position[0] - 20.0).abs() <= 1e-6 {
+                        retained_object_two_multi_target = true;
+                    } else if (position[0] - 30.0).abs() <= 1e-6 {
+                        retained_object_two_standalone = true;
+                    }
+                }
+            }
+
+            if (trigger.time_seconds - 4.0).abs() <= 1e-6 && object_ids == &["object_0".to_string()]
+            {
+                retained_different_time_object_zero = true;
+            }
+        }
+
+        assert_eq!(object_zero_same_time_count, 1);
+        assert_eq!(object_one_same_time_count, 1);
+        assert!(retained_object_two_multi_target);
+        assert!(retained_object_two_standalone);
+        assert!(retained_different_time_object_zero);
     }
 
-    #[test]
-    fn transform_trigger_keybind_creates_selected_trigger_block() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
+    #[tokio::test]
+    async fn add_transform_trigger_preserves_replaced_trigger_with_no_sources() {
+        let mut state = State::new_test().await;
 
-            state.phase = AppPhase::Editor;
-            state.editor.objects = vec![test_level_object([0.0, 0.0, 0.0])];
-            state.editor.ui.selected_block_indices = vec![0];
-            state.editor.ui.selected_block_index = Some(0);
+        state.phase = AppPhase::Editor;
+        state.editor.timeline.clock.time_seconds = 2.5;
+        state.editor.timeline.clock.duration_seconds = 8.0;
+        state.editor.objects = vec![test_level_object([0.0, 0.0, 0.0])];
+        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.ui.selected_block_index = Some(0);
+        state.editor.set_triggers(vec![transform_trigger(
+            2.5,
+            vec!["object_0"],
+            [10.0, 0.0, 0.0],
+        )]);
 
-            state.process_keyboard_input("t", true, true);
-            assert_object_pose(&state.editor.objects[0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-            assert_eq!(state.editor.triggers().len(), 1);
-            assert_eq!(state.editor.ui.selected_block_indices, vec![1]);
-            assert_eq!(state.editor.objects[1].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
-        });
+        assert!(state.add_editor_transform_trigger());
+
+        let mut found_target_only_trigger = false;
+        let mut found_replacement_trigger = false;
+
+        for trigger in &state.editor.triggers() {
+            let TimedTriggerTarget::Objects { object_ids } = &trigger.target else {
+                continue;
+            };
+            let TimedTriggerAction::TransformObjects { position, .. } = &trigger.action else {
+                continue;
+            };
+
+            if (trigger.time_seconds - 2.5).abs() <= 1e-6 && object_ids.is_empty() {
+                found_target_only_trigger = true;
+                approx::assert_abs_diff_eq!(position[0], 10.0, epsilon = 1e-6);
+            }
+
+            if (trigger.time_seconds - 2.5).abs() <= 1e-6 && object_ids == &["object_0".to_string()]
+            {
+                found_replacement_trigger = true;
+                approx::assert_abs_diff_eq!(position[0], 0.0, epsilon = 1e-6);
+                approx::assert_abs_diff_eq!(position[1], 0.0, epsilon = 1e-6);
+                approx::assert_abs_diff_eq!(position[2], 0.0, epsilon = 1e-6);
+            }
+        }
+
+        assert!(found_target_only_trigger);
+        assert!(found_replacement_trigger);
     }
 
-    #[test]
-    fn game_cursor_is_hidden_while_playing_or_playtesting() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
+    #[tokio::test]
+    async fn transform_trigger_keybind_creates_selected_trigger_block() {
+        let mut state = State::new_test().await;
 
-            state.phase = AppPhase::Playing;
-            state.session.playtesting_editor = false;
-            state.session.game_paused = false;
-            assert_eq!(state.game_cursor(false), GameCursor::Hidden);
-            assert_eq!(state.game_cursor(true), GameCursor::Hidden);
+        state.phase = AppPhase::Editor;
+        state.editor.objects = vec![test_level_object([0.0, 0.0, 0.0])];
+        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.ui.selected_block_index = Some(0);
 
-            state.session.playtesting_editor = true;
-            assert_eq!(state.game_cursor(false), GameCursor::Hidden);
-            assert_eq!(state.game_cursor(true), GameCursor::Hidden);
-        });
+        state.process_keyboard_input("t", true, true);
+        assert_object_pose(&state.editor.objects[0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_eq!(state.editor.triggers().len(), 1);
+        assert_eq!(state.editor.ui.selected_block_indices, vec![1]);
+        assert_eq!(state.editor.objects[1].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
     }
 
-    #[test]
-    fn game_cursor_uses_default_cursor_while_real_gameplay_is_paused() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
+    #[tokio::test]
+    async fn game_cursor_is_hidden_while_playing_or_playtesting() {
+        let mut state = State::new_test().await;
 
-            state.phase = AppPhase::Playing;
-            state.session.playtesting_editor = false;
-            state.session.game_paused = true;
+        state.phase = AppPhase::Playing;
+        state.session.playtesting_editor = false;
+        state.session.game_paused = false;
+        assert_eq!(state.game_cursor(false), GameCursor::Hidden);
+        assert_eq!(state.game_cursor(true), GameCursor::Hidden);
 
-            assert_eq!(state.game_cursor(false), GameCursor::Default);
-            assert_eq!(state.game_cursor(true), GameCursor::Default);
-        });
+        state.session.playtesting_editor = true;
+        assert_eq!(state.game_cursor(false), GameCursor::Hidden);
+        assert_eq!(state.game_cursor(true), GameCursor::Hidden);
     }
 
-    #[test]
-    fn game_cursor_uses_default_cursor_outside_playing_including_over_egui() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
+    #[tokio::test]
+    async fn game_cursor_uses_default_cursor_while_real_gameplay_is_paused() {
+        let mut state = State::new_test().await;
 
-            state.phase = AppPhase::Menu;
-            assert_eq!(state.game_cursor(false), GameCursor::Default);
-            assert_eq!(state.game_cursor(true), GameCursor::Default);
+        state.phase = AppPhase::Playing;
+        state.session.playtesting_editor = false;
+        state.session.game_paused = true;
 
-            state.phase = AppPhase::Editor;
-            assert_eq!(state.game_cursor(false), GameCursor::Default);
-            assert_eq!(state.game_cursor(true), GameCursor::Default);
-
-            state.phase = AppPhase::GameOver;
-            assert_eq!(state.game_cursor(false), GameCursor::Default);
-            assert_eq!(state.game_cursor(true), GameCursor::Default);
-        });
+        assert_eq!(state.game_cursor(false), GameCursor::Default);
+        assert_eq!(state.game_cursor(true), GameCursor::Default);
     }
 
-    #[test]
-    fn editor_mode_switch_clears_selection_and_drag_state_when_mode_cannot_select() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
+    #[tokio::test]
+    async fn game_cursor_uses_default_cursor_outside_playing_including_over_egui() {
+        let mut state = State::new_test().await;
 
-            state.editor.ui.selected_block_index = Some(0);
-            state.editor.ui.selected_block_indices = vec![0, 1];
-            state.editor.ui.hovered_block_index = Some(1);
-            state.editor.ui.marquee_start_screen = Some([10.0, 20.0]);
-            state.editor.ui.marquee_current_screen = Some([30.0, 40.0]);
-            state.editor.runtime.interaction.gizmo_drag = Some(super::super::EditorGizmoDrag {
-                axis: GizmoAxis::X,
-                kind: GizmoDragKind::Move,
-                start_mouse: [0.0, 0.0],
-                start_center_screen: [0.0, 0.0],
-                start_center_world: [0.0, 0.0, 0.0],
-                start_blocks: Vec::new(),
-            });
-            state.editor.runtime.interaction.block_drag = Some(super::super::EditorBlockDrag {
-                start_mouse: [0.0, 0.0],
-                start_center_world: [0.0, 0.0, 0.0],
-                start_drag_world: [0.0, 0.0, 0.0],
-                start_cursor: [0.0, 0.0, 0.0],
-                start_blocks: Vec::new(),
-            });
+        state.phase = AppPhase::Menu;
+        assert_eq!(state.game_cursor(false), GameCursor::Default);
+        assert_eq!(state.game_cursor(true), GameCursor::Default);
 
-            state.editor.set_mode(EditorMode::Null);
+        state.phase = AppPhase::Editor;
+        assert_eq!(state.game_cursor(false), GameCursor::Default);
+        assert_eq!(state.game_cursor(true), GameCursor::Default);
 
-            assert_eq!(state.editor.mode(), EditorMode::Null);
-            assert!(state.editor.runtime.interaction.gizmo_drag.is_none());
-            assert!(state.editor.runtime.interaction.block_drag.is_none());
-            assert!(state.editor.ui.selected_block_index.is_none());
-            assert!(state.editor.ui.selected_block_indices.is_empty());
-            assert!(state.editor.ui.hovered_block_index.is_none());
-            assert!(state.editor.ui.marquee_start_screen.is_none());
-            assert!(state.editor.ui.marquee_current_screen.is_none());
-        });
+        state.phase = AppPhase::GameOver;
+        assert_eq!(state.game_cursor(false), GameCursor::Default);
+        assert_eq!(state.game_cursor(true), GameCursor::Default);
     }
 
-    #[test]
-    fn selected_block_mutators_apply_snap_and_clamp_rules() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
+    #[tokio::test]
+    async fn editor_mode_switch_clears_selection_and_drag_state_when_mode_cannot_select() {
+        let mut state = State::new_test().await;
 
-            state.editor.objects.push(LevelObject {
+        state.editor.ui.selected_block_index = Some(0);
+        state.editor.ui.selected_block_indices = vec![0, 1];
+        state.editor.ui.hovered_block_index = Some(1);
+        state.editor.ui.marquee_start_screen = Some([10.0, 20.0]);
+        state.editor.ui.marquee_current_screen = Some([30.0, 40.0]);
+        state.editor.runtime.interaction.gizmo_drag = Some(super::super::EditorGizmoDrag {
+            axis: GizmoAxis::X,
+            kind: GizmoDragKind::Move,
+            start_mouse: [0.0, 0.0],
+            start_center_screen: [0.0, 0.0],
+            start_center_world: [0.0, 0.0, 0.0],
+            start_blocks: Vec::new(),
+        });
+        state.editor.runtime.interaction.block_drag = Some(super::super::EditorBlockDrag {
+            start_mouse: [0.0, 0.0],
+            start_center_world: [0.0, 0.0, 0.0],
+            start_drag_world: [0.0, 0.0, 0.0],
+            start_cursor: [0.0, 0.0, 0.0],
+            start_blocks: Vec::new(),
+        });
+
+        state.editor.set_mode(EditorMode::Null);
+
+        assert_eq!(state.editor.mode(), EditorMode::Null);
+        assert!(state.editor.runtime.interaction.gizmo_drag.is_none());
+        assert!(state.editor.runtime.interaction.block_drag.is_none());
+        assert!(state.editor.ui.selected_block_index.is_none());
+        assert!(state.editor.ui.selected_block_indices.is_empty());
+        assert!(state.editor.ui.hovered_block_index.is_none());
+        assert!(state.editor.ui.marquee_start_screen.is_none());
+        assert!(state.editor.ui.marquee_current_screen.is_none());
+    }
+
+    #[tokio::test]
+    async fn selected_block_mutators_apply_snap_and_clamp_rules() {
+        let mut state = State::new_test().await;
+
+        state.editor.objects.push(LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
+            ..LevelObject::default()
+        });
+        state.editor.ui.selected_block_index = Some(0);
+        state.editor.config.snap_to_grid = true;
+        state.editor.config.snap_step = 0.5;
+        state.editor.config.snap_rotation = true;
+        state.editor.config.snap_rotation_step_degrees = 15.0;
+        state.editor.ui.ctrl_held = false;
+
+        state.editor.set_selected_block_position([1.24, -1.0, 2.26]);
+        assert_eq!(state.editor.objects[0].position, [1.0, 0.0, 2.5]);
+        assert_eq!(state.editor.ui.cursor, [1.0, 0.0, 2.5]);
+
+        state.editor.set_selected_block_size([0.1, 0.4, 0.62]);
+        assert_eq!(state.editor.objects[0].size, [0.5, 0.5, 0.5]);
+
+        state.editor.set_selected_block_rotation([7.0, 22.0, 44.0]);
+        assert_eq!(state.editor.objects[0].rotation_degrees, [0.0, 15.0, 45.0]);
+
+        state.editor.set_selected_block_color_tint([-1.0, 0.4, 2.0]);
+        assert_eq!(state.editor.objects[0].color_tint, [0.0, 0.4, 1.0]);
+
+        state.editor.set_selected_block_id("stone".to_string());
+        assert_eq!(state.editor.objects[0].block_id, "core/stone");
+    }
+
+    #[tokio::test]
+    async fn timeline_clamp_and_cache_invalidation_helpers_work() {
+        let mut state = State::new_test().await;
+
+        state.editor.timeline.clock.duration_seconds = 2.0;
+        assert!(state.editor.set_timeline_time_seconds(5.0));
+        assert_eq!(state.editor.timeline.clock.time_seconds, 2.0);
+        assert!(!state.editor.set_timeline_time_seconds(2.0));
+
+        state.editor.timeline.clock.time_seconds = 10.0;
+        state.editor.set_timeline_duration_seconds(0.01);
+        assert_eq!(state.editor.timeline.clock.duration_seconds, 0.1);
+        assert_eq!(state.editor.timeline.clock.time_seconds, 0.1);
+
+        let mut runtime =
+            TimelineSimulationRuntime::new([0.0, 0.0, 0.0], Direction::Forward, &[], &[]);
+        runtime.advance_to(1.5);
+        state.editor.timeline.snapshot_cache_step_seconds = 0.5;
+        state.editor.timeline.snapshot_cache = vec![
+            crate::state::editor_timeline::EditorTimelineSnapshot {
                 position: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
+                direction: Direction::Forward,
+                is_grounded: true,
+                game_over: false,
+                trail_segment_count: 0,
+                trail_point_count: 0,
+            },
+            crate::state::editor_timeline::EditorTimelineSnapshot {
+                position: [0.5, 0.0, 0.0],
+                direction: Direction::Forward,
+                is_grounded: true,
+                game_over: false,
+                trail_segment_count: 0,
+                trail_point_count: 0,
+            },
+            crate::state::editor_timeline::EditorTimelineSnapshot {
+                position: [1.0, 0.0, 0.0],
+                direction: Direction::Forward,
+                is_grounded: true,
+                game_over: false,
+                trail_segment_count: 0,
+                trail_point_count: 0,
+            },
+            crate::state::editor_timeline::EditorTimelineSnapshot {
+                position: [1.5, 0.0, 0.0],
+                direction: Direction::Right,
+                is_grounded: true,
+                game_over: false,
+                trail_segment_count: 0,
+                trail_point_count: 0,
+            },
+        ];
+        state.editor.timeline.snapshot_cache_revision = 123;
+        state.editor.timeline.scrub_runtime = Some(runtime);
+        state.editor.timeline.scrub_runtime_revision = 55;
+
+        state.editor.invalidate_samples_from(1.0);
+        assert_eq!(state.editor.timeline.snapshot_cache.len(), 2);
+        assert_eq!(state.editor.timeline.snapshot_cache_revision, 0);
+        assert!(state.editor.timeline.scrub_runtime.is_none());
+        assert_eq!(state.editor.timeline.scrub_runtime_revision, 0);
+
+        state.editor.invalidate_samples();
+        assert!(state.editor.timeline.snapshot_cache.is_empty());
+        assert_eq!(state.editor.timeline.snapshot_cache_revision, 0);
+        assert!(state.editor.timeline.scrub_runtime.is_none());
+        assert_eq!(state.editor.timeline.scrub_runtime_revision, 0);
+    }
+
+    #[tokio::test]
+    async fn bpm_tap_estimates_tempo_and_reset_clears_state() {
+        let mut state = State::new_test().await;
+
+        state.editor.bpm_tap(1.0);
+        assert!(state.editor.bpm_tap_result().is_none());
+
+        state.editor.bpm_tap(1.5);
+        state.editor.bpm_tap(2.0);
+
+        let bpm = state.editor.bpm_tap_result().expect("bpm should exist");
+        approx::assert_abs_diff_eq!(bpm, 120.0, epsilon = 1e-3);
+
+        state.editor.bpm_tap_reset();
+        assert!(state.editor.bpm_tap_result().is_none());
+        assert!(state.editor.timing.bpm_tap_times.is_empty());
+    }
+
+    #[tokio::test]
+    async fn state_wrappers_update_timeline_taps_and_simulate_hitbox_flag() {
+        let mut state = State::new_test().await;
+
+        state.phase = eg_types::AppPhase::Editor;
+        state.editor.timeline.preview.position = [3.5, 0.0, 4.5];
+
+        state.set_editor_timeline_duration_seconds(6.0);
+        assert_eq!(state.editor_timeline_duration_seconds(), 6.0);
+
+        state.set_editor_timeline_time_seconds(3.0);
+        assert_eq!(state.editor_timeline_time_seconds(), 3.0);
+
+        state.editor_add_tap();
+        assert_eq!(state.editor_tap_times().len(), 1);
+
+        state.editor_remove_tap_at(3.0);
+        assert_eq!(state.editor_tap_times().len(), 0);
+
+        state.editor_add_tap();
+        assert_eq!(state.editor_tap_times().len(), 1);
+
+        state.editor_remove_tap();
+        assert_eq!(state.editor_tap_times().len(), 0);
+
+        state.editor_add_tap();
+        state.editor.timeline.preview.position = [4.5, 0.0, 4.5];
+        state.set_editor_timeline_time_seconds(4.0);
+        state.editor_add_tap();
+        assert_eq!(state.editor_tap_times().len(), 2);
+
+        state.editor_clear_taps();
+        assert!(state.editor_tap_times().is_empty());
+
+        // The hitbox-simulation flag is now per transform trigger: a transform
+        // trigger that does not opt in leaves hitboxes static, while one that
+        // opts in moves hitboxes during play.
+        assert!(!state.editor_has_simulate_hitboxes_triggers());
+        state.editor.set_triggers(vec![TimedTrigger {
+            time_seconds: 0.0,
+            duration_seconds: 1.0,
+            easing: TimedTriggerEasing::Linear,
+            target: TimedTriggerTarget::Objects {
+                object_ids: vec!["obj_000001".to_string()],
+            },
+            action: TimedTriggerAction::TransformObjects {
+                position: [1.0, 0.0, 0.0],
                 rotation_degrees: [0.0, 0.0, 0.0],
-                block_id: "core/stone".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
-                ..LevelObject::default()
-            });
-            state.editor.ui.selected_block_index = Some(0);
-            state.editor.config.snap_to_grid = true;
-            state.editor.config.snap_step = 0.5;
-            state.editor.config.snap_rotation = true;
-            state.editor.config.snap_rotation_step_degrees = 15.0;
-            state.editor.ui.ctrl_held = false;
-
-            state.editor.set_selected_block_position([1.24, -1.0, 2.26]);
-            assert_eq!(state.editor.objects[0].position, [1.0, 0.0, 2.5]);
-            assert_eq!(state.editor.ui.cursor, [1.0, 0.0, 2.5]);
-
-            state.editor.set_selected_block_size([0.1, 0.4, 0.62]);
-            assert_eq!(state.editor.objects[0].size, [0.5, 0.5, 0.5]);
-
-            state.editor.set_selected_block_rotation([7.0, 22.0, 44.0]);
-            assert_eq!(state.editor.objects[0].rotation_degrees, [0.0, 15.0, 45.0]);
-
-            state.editor.set_selected_block_color_tint([-1.0, 0.4, 2.0]);
-            assert_eq!(state.editor.objects[0].color_tint, [0.0, 0.4, 1.0]);
-
-            state.editor.set_selected_block_id("stone".to_string());
-            assert_eq!(state.editor.objects[0].block_id, "core/stone");
-        });
-    }
-
-    #[test]
-    fn timeline_clamp_and_cache_invalidation_helpers_work() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-
-            state.editor.timeline.clock.duration_seconds = 2.0;
-            assert!(state.editor.set_timeline_time_seconds(5.0));
-            assert_eq!(state.editor.timeline.clock.time_seconds, 2.0);
-            assert!(!state.editor.set_timeline_time_seconds(2.0));
-
-            state.editor.timeline.clock.time_seconds = 10.0;
-            state.editor.set_timeline_duration_seconds(0.01);
-            assert_eq!(state.editor.timeline.clock.duration_seconds, 0.1);
-            assert_eq!(state.editor.timeline.clock.time_seconds, 0.1);
-
-            let mut runtime =
-                TimelineSimulationRuntime::new([0.0, 0.0, 0.0], Direction::Forward, &[], &[]);
-            runtime.advance_to(1.5);
-            state.editor.timeline.snapshot_cache_step_seconds = 0.5;
-            state.editor.timeline.snapshot_cache = vec![
-                crate::state::editor_timeline::EditorTimelineSnapshot {
-                    position: [0.0, 0.0, 0.0],
-                    direction: Direction::Forward,
-                    is_grounded: true,
-                    game_over: false,
-                    trail_segment_count: 0,
-                    trail_point_count: 0,
-                },
-                crate::state::editor_timeline::EditorTimelineSnapshot {
-                    position: [0.5, 0.0, 0.0],
-                    direction: Direction::Forward,
-                    is_grounded: true,
-                    game_over: false,
-                    trail_segment_count: 0,
-                    trail_point_count: 0,
-                },
-                crate::state::editor_timeline::EditorTimelineSnapshot {
-                    position: [1.0, 0.0, 0.0],
-                    direction: Direction::Forward,
-                    is_grounded: true,
-                    game_over: false,
-                    trail_segment_count: 0,
-                    trail_point_count: 0,
-                },
-                crate::state::editor_timeline::EditorTimelineSnapshot {
-                    position: [1.5, 0.0, 0.0],
-                    direction: Direction::Right,
-                    is_grounded: true,
-                    game_over: false,
-                    trail_segment_count: 0,
-                    trail_point_count: 0,
-                },
-            ];
-            state.editor.timeline.snapshot_cache_revision = 123;
-            state.editor.timeline.scrub_runtime = Some(runtime);
-            state.editor.timeline.scrub_runtime_revision = 55;
-
-            state.editor.invalidate_samples_from(1.0);
-            assert_eq!(state.editor.timeline.snapshot_cache.len(), 2);
-            assert_eq!(state.editor.timeline.snapshot_cache_revision, 0);
-            assert!(state.editor.timeline.scrub_runtime.is_none());
-            assert_eq!(state.editor.timeline.scrub_runtime_revision, 0);
-
-            state.editor.invalidate_samples();
-            assert!(state.editor.timeline.snapshot_cache.is_empty());
-            assert_eq!(state.editor.timeline.snapshot_cache_revision, 0);
-            assert!(state.editor.timeline.scrub_runtime.is_none());
-            assert_eq!(state.editor.timeline.scrub_runtime_revision, 0);
-        });
-    }
-
-    #[test]
-    fn bpm_tap_estimates_tempo_and_reset_clears_state() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-
-            state.editor.bpm_tap(1.0);
-            assert!(state.editor.bpm_tap_result().is_none());
-
-            state.editor.bpm_tap(1.5);
-            state.editor.bpm_tap(2.0);
-
-            let bpm = state.editor.bpm_tap_result().expect("bpm should exist");
-            approx::assert_abs_diff_eq!(bpm, 120.0, epsilon = 1e-3);
-
-            state.editor.bpm_tap_reset();
-            assert!(state.editor.bpm_tap_result().is_none());
-            assert!(state.editor.timing.bpm_tap_times.is_empty());
-        });
-    }
-
-    #[test]
-    fn state_wrappers_update_timeline_taps_and_simulate_hitbox_flag() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-
-            state.phase = eg_types::AppPhase::Editor;
-            state.editor.timeline.preview.position = [3.5, 0.0, 4.5];
-
-            state.set_editor_timeline_duration_seconds(6.0);
-            assert_eq!(state.editor_timeline_duration_seconds(), 6.0);
-
-            state.set_editor_timeline_time_seconds(3.0);
-            assert_eq!(state.editor_timeline_time_seconds(), 3.0);
-
-            state.editor_add_tap();
-            assert_eq!(state.editor_tap_times().len(), 1);
-
-            state.editor_remove_tap_at(3.0);
-            assert_eq!(state.editor_tap_times().len(), 0);
-
-            state.editor_add_tap();
-            assert_eq!(state.editor_tap_times().len(), 1);
-
-            state.editor_remove_tap();
-            assert_eq!(state.editor_tap_times().len(), 0);
-
-            state.editor_add_tap();
-            state.editor.timeline.preview.position = [4.5, 0.0, 4.5];
-            state.set_editor_timeline_time_seconds(4.0);
-            state.editor_add_tap();
-            assert_eq!(state.editor_tap_times().len(), 2);
-
-            state.editor_clear_taps();
-            assert!(state.editor_tap_times().is_empty());
-
-            // The hitbox-simulation flag is now per transform trigger: a transform
-            // trigger that does not opt in leaves hitboxes static, while one that
-            // opts in moves hitboxes during play.
-            assert!(!state.editor_has_simulate_hitboxes_triggers());
-            state.editor.set_triggers(vec![TimedTrigger {
-                time_seconds: 0.0,
-                duration_seconds: 1.0,
-                easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Objects {
-                    object_ids: vec!["obj_000001".to_string()],
-                },
-                action: TimedTriggerAction::TransformObjects {
-                    position: [1.0, 0.0, 0.0],
-                    rotation_degrees: [0.0, 0.0, 0.0],
-                    size: [1.0, 1.0, 1.0],
-                    simulate_hitboxes: true,
-                },
-            }]);
-            assert!(state.editor_has_simulate_hitboxes_triggers());
-
-            state.set_editor_playback_speed(4.0);
-            assert_eq!(state.editor_playback_speed(), 2.0);
-
-            state.set_editor_waveform_zoom(25.0);
-            state.set_editor_waveform_scroll(2.5);
-            assert_eq!(state.editor_waveform_zoom(), 10.0);
-            assert_eq!(state.editor_waveform_scroll(), 2.5);
-        });
-    }
-
-    #[test]
-    fn tap_mutations_mark_indicators_and_preview_dirty() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Editor;
-            state.editor.timeline.clock.duration_seconds = 1.0;
-            state.set_editor_timeline_time_seconds(0.125);
-            assert_eq!(state.editor.timeline.preview.direction, Direction::Forward);
-            state.editor.camera.editor_pan = [8.0, -6.0];
-            state.editor.camera.editor_target_z = 3.0;
-            let original_pan = state.editor.camera.editor_pan;
-            let original_target_z = state.editor.camera.editor_target_z;
-
-            state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
-            state.editor_add_tap();
-            assert!(state.editor.runtime.dirty.rebuild_tap_indicators);
-            assert!(state.editor.runtime.dirty.rebuild_preview_player);
-            assert_eq!(state.editor.timeline.preview.direction, Direction::Right);
-            assert_eq!(state.editor.camera.editor_pan, original_pan);
-            assert_eq!(state.editor.camera.editor_target_z, original_target_z);
-
-            state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
-            state.editor_remove_tap();
-            assert!(state.editor.runtime.dirty.rebuild_tap_indicators);
-            assert!(state.editor.runtime.dirty.rebuild_preview_player);
-            assert_eq!(state.editor.timeline.preview.direction, Direction::Forward);
-            assert_eq!(state.editor.camera.editor_pan, original_pan);
-            assert_eq!(state.editor.camera.editor_target_z, original_target_z);
-        });
-    }
-
-    #[test]
-    fn timeline_seek_tracks_preview_by_default() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Editor;
-            state.editor.timeline.clock.duration_seconds = 1.0;
-            state.editor.camera.editor_pan = [8.0, -6.0];
-            state.editor.camera.editor_target_z = 3.0;
-
-            state.set_editor_timeline_time_seconds(0.125);
-
-            let preview_position = state.editor.timeline.preview.position;
-            assert_eq!(state.editor_timeline_time_seconds(), 0.125);
-            assert_eq!(
-                state.editor.camera.editor_pan,
-                [preview_position[0] + 0.5, preview_position[2] + 0.5]
-            );
-            assert_eq!(state.editor.camera.editor_target_z, preview_position[1]);
-        });
-    }
-
-    #[test]
-    fn timeline_seek_preserves_editor_camera_focus_when_ctrl_is_held() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Editor;
-            state.editor.timeline.clock.duration_seconds = 1.0;
-            state.editor.camera.editor_pan = [8.0, -6.0];
-            state.editor.camera.editor_target_z = 3.0;
-            state.editor.ui.ctrl_held = true;
-            let original_pan = state.editor.camera.editor_pan;
-            let original_target_z = state.editor.camera.editor_target_z;
-
-            state.set_editor_timeline_time_seconds(0.125);
-
-            assert_eq!(state.editor_timeline_time_seconds(), 0.125);
-            assert_eq!(state.editor.camera.editor_pan, original_pan);
-            assert_eq!(state.editor.camera.editor_target_z, original_target_z);
-        });
-    }
-
-    #[test]
-    fn adding_tap_recomputes_all_indicator_positions() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Editor;
-            state.editor.ui.mode = EditorMode::Tapping;
-            state.editor.objects.clear();
-            state.editor.spawn.position = [0.0, 0.0, 0.0];
-            state.editor.spawn.direction = Direction::Forward;
-            state.editor.timeline.clock.duration_seconds = 2.0;
-
-            let step_time = 1.0 / eg_game::BASE_PLAYER_SPEED;
-            state.set_editor_timeline_time_seconds(4.0 * step_time);
-            state.editor_add_tap();
-
-            state.set_editor_timeline_time_seconds(2.0 * step_time);
-            state.editor_add_tap();
-
-            let expected = eg_editor_domain::derive_tap_indicator_positions(
-                state.editor.spawn.position,
-                state.editor.spawn.direction,
-                &state.editor.timeline.taps.tap_times,
-                &state.editor.objects,
-            );
-
-            assert_eq!(state.editor.timeline.taps.tap_indicator_positions, expected);
-        });
-    }
-
-    #[test]
-    fn pan_input_wrappers_are_phase_gated_but_modifiers_are_global() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
-
-            state.set_editor_pan_up_held(true);
-            state.set_editor_pan_down_held(true);
-            state.set_editor_pan_left_held(true);
-            state.set_editor_pan_right_held(true);
-            state.set_editor_shift_held(true);
-            state.set_editor_ctrl_held(true);
-            state.set_editor_alt_held(true);
-
-            assert!(!state.editor.ui.pan_up_held);
-            assert!(!state.editor.ui.pan_down_held);
-            assert!(!state.editor.ui.pan_left_held);
-            assert!(!state.editor.ui.pan_right_held);
-            assert!(state.editor.ui.shift_held);
-            assert!(state.editor.ui.ctrl_held);
-            assert!(state.editor.ui.alt_held);
-
-            state.set_editor_shift_held(false);
-            state.set_editor_ctrl_held(false);
-            state.set_editor_alt_held(false);
-
-            state.phase = AppPhase::Editor;
-            state.set_editor_pan_up_held(true);
-            state.set_editor_pan_down_held(true);
-            state.set_editor_pan_left_held(true);
-            state.set_editor_pan_right_held(true);
-            state.set_editor_shift_held(true);
-            state.set_editor_ctrl_held(true);
-            state.set_editor_alt_held(true);
-
-            assert!(state.editor.ui.pan_up_held);
-            assert!(state.editor.ui.pan_down_held);
-            assert!(state.editor.ui.pan_left_held);
-            assert!(state.editor.ui.pan_right_held);
-            assert!(state.editor.ui.shift_held);
-            assert!(state.editor.ui.ctrl_held);
-            assert!(state.editor.ui.alt_held);
-        });
-    }
-
-    #[test]
-    fn editor_effective_mode_for_playback_uses_last_mode_when_ui_is_null() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-
-            state.editor.timeline.playback.playing = true;
-            state.editor.ui.mode = EditorMode::Null;
-            state.editor.runtime.interaction.last_mode = Some(EditorMode::Timing);
-            assert_eq!(
-                state.editor_effective_mode_for_playback(),
-                EditorMode::Timing
-            );
-            assert!(state.editor_is_effectively_timing_mode());
-
-            state.editor.runtime.interaction.last_mode = None;
-            assert_eq!(state.editor_effective_mode_for_playback(), EditorMode::Null);
-            assert!(!state.editor_is_effectively_timing_mode());
-
-            state.editor.timeline.playback.playing = false;
-            state.editor.ui.mode = EditorMode::Place;
-            assert_eq!(
-                state.editor_effective_mode_for_playback(),
-                EditorMode::Place
-            );
-        });
-    }
-
-    #[test]
-    fn editor_wrapper_setters_and_getters_cover_timing_and_waveform_state() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Editor;
-
-            state.editor_add_timing_point(2.0, 130.0);
-            state.editor_add_timing_point(1.0, 120.0);
-            assert_eq!(state.editor_timing_points().len(), 2);
-            assert!(
-                state.editor_timing_points()[0].time_seconds
-                    <= state.editor_timing_points()[1].time_seconds
-            );
-
-            state.set_editor_timing_selected_index(Some(1));
-            assert_eq!(state.editor_timing_selected_index(), Some(1));
-            state.editor_update_timing_point_time(1, -5.0);
-            assert!(state.editor_timing_points()[0].time_seconds >= 0.0);
-            state.editor_update_timing_point_bpm(0, 0.2);
-            assert!(state.editor_timing_points()[0].bpm >= 1.0);
-            state.editor_update_timing_point_time_signature(0, 0, 0);
-            assert!(state.editor_timing_points()[0].time_signature_numerator >= 1);
-            assert!(state.editor_timing_points()[0].time_signature_denominator >= 1);
-            state.editor_remove_timing_point(5);
-            state.editor_remove_timing_point(0);
-            assert!(state.editor_timing_points().len() <= 1);
-
-            state.set_editor_waveform_zoom(0.01);
-            state.set_editor_waveform_scroll(3.25);
-            assert_eq!(state.editor_waveform_zoom(), 0.1);
-            assert_eq!(state.editor_waveform_scroll(), 3.25);
-
-            state.editor.timing.waveform_samples = vec![0.1, 0.2, 0.3];
-            state.editor.timing.waveform_sample_rate = 44_100;
-            assert_eq!(state.editor_waveform_samples(), &[0.1, 0.2, 0.3]);
-            assert_eq!(state.editor_waveform_sample_rate(), 44_100);
-        });
-    }
-
-    #[test]
-    fn set_editor_block_id_and_snap_settings_update_app_settings() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Editor;
-
-            state.editor.objects.push(LevelObject {
-                position: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
-                block_id: "core/stone".to_string(),
-                color_tint: [1.0, 1.0, 1.0],
-                trigger: None,
-                ..LevelObject::default()
-            });
-            state.editor.ui.selected_block_index = Some(0);
-            state.editor.ui.selected_block_indices = vec![0];
+                simulate_hitboxes: true,
+            },
+        }]);
+        assert!(state.editor_has_simulate_hitboxes_triggers());
 
-            state.set_editor_block_id("core/lava".to_string());
-            assert_eq!(state.editor_selected_block_id(), "core/lava");
-            assert_eq!(state.app_settings().editor_selected_block_id, "core/lava");
+        state.set_editor_playback_speed(4.0);
+        assert_eq!(state.editor_playback_speed(), 2.0);
 
-            state.set_editor_snap_to_grid(true);
-            state.set_editor_snap_step(0.2);
-            state.set_editor_snap_rotation(true);
-            state.set_editor_snap_rotation_step(7.5);
+        state.set_editor_waveform_zoom(25.0);
+        state.set_editor_waveform_scroll(2.5);
+        assert_eq!(state.editor_waveform_zoom(), 10.0);
+        assert_eq!(state.editor_waveform_scroll(), 2.5);
+    }
 
-            assert!(state.editor_snap_to_grid());
-            assert_eq!(state.editor_snap_step(), 0.2);
-            assert!(state.editor_snap_rotation());
-            assert_eq!(state.editor_snap_rotation_step_degrees(), 7.5);
-            assert!(state.app_settings().editor_snap_to_grid);
-            assert_eq!(state.app_settings().editor_snap_step, 0.2);
-            assert!(state.app_settings().editor_rotation_snap);
-            assert_eq!(state.app_settings().editor_rotation_snap_step, 7.5);
+    #[tokio::test]
+    async fn tap_mutations_mark_indicators_and_preview_dirty() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+        state.editor.timeline.clock.duration_seconds = 1.0;
+        state.set_editor_timeline_time_seconds(0.125);
+        assert_eq!(state.editor.timeline.preview.direction, Direction::Forward);
+        state.editor.camera.editor_pan = [8.0, -6.0];
+        state.editor.camera.editor_target_z = 3.0;
+        let original_pan = state.editor.camera.editor_pan;
+        let original_target_z = state.editor.camera.editor_target_z;
+
+        state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
+        state.editor_add_tap();
+        assert!(state.editor.runtime.dirty.rebuild_tap_indicators);
+        assert!(state.editor.runtime.dirty.rebuild_preview_player);
+        assert_eq!(state.editor.timeline.preview.direction, Direction::Right);
+        assert_eq!(state.editor.camera.editor_pan, original_pan);
+        assert_eq!(state.editor.camera.editor_target_z, original_target_z);
+
+        state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
+        state.editor_remove_tap();
+        assert!(state.editor.runtime.dirty.rebuild_tap_indicators);
+        assert!(state.editor.runtime.dirty.rebuild_preview_player);
+        assert_eq!(state.editor.timeline.preview.direction, Direction::Forward);
+        assert_eq!(state.editor.camera.editor_pan, original_pan);
+        assert_eq!(state.editor.camera.editor_target_z, original_target_z);
+    }
+
+    #[tokio::test]
+    async fn timeline_seek_tracks_preview_by_default() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+        state.editor.timeline.clock.duration_seconds = 1.0;
+        state.editor.camera.editor_pan = [8.0, -6.0];
+        state.editor.camera.editor_target_z = 3.0;
+
+        state.set_editor_timeline_time_seconds(0.125);
+
+        let preview_position = state.editor.timeline.preview.position;
+        assert_eq!(state.editor_timeline_time_seconds(), 0.125);
+        assert_eq!(
+            state.editor.camera.editor_pan,
+            [preview_position[0] + 0.5, preview_position[2] + 0.5]
+        );
+        assert_eq!(state.editor.camera.editor_target_z, preview_position[1]);
+    }
+
+    #[tokio::test]
+    async fn timeline_seek_preserves_editor_camera_focus_when_ctrl_is_held() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+        state.editor.timeline.clock.duration_seconds = 1.0;
+        state.editor.camera.editor_pan = [8.0, -6.0];
+        state.editor.camera.editor_target_z = 3.0;
+        state.editor.ui.ctrl_held = true;
+        let original_pan = state.editor.camera.editor_pan;
+        let original_target_z = state.editor.camera.editor_target_z;
+
+        state.set_editor_timeline_time_seconds(0.125);
+
+        assert_eq!(state.editor_timeline_time_seconds(), 0.125);
+        assert_eq!(state.editor.camera.editor_pan, original_pan);
+        assert_eq!(state.editor.camera.editor_target_z, original_target_z);
+    }
+
+    #[tokio::test]
+    async fn adding_tap_recomputes_all_indicator_positions() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+        state.editor.ui.mode = EditorMode::Tapping;
+        state.editor.objects.clear();
+        state.editor.spawn.position = [0.0, 0.0, 0.0];
+        state.editor.spawn.direction = Direction::Forward;
+        state.editor.timeline.clock.duration_seconds = 2.0;
+
+        let step_time = 1.0 / eg_game::BASE_PLAYER_SPEED;
+        state.set_editor_timeline_time_seconds(4.0 * step_time);
+        state.editor_add_tap();
+
+        state.set_editor_timeline_time_seconds(2.0 * step_time);
+        state.editor_add_tap();
+
+        let expected = eg_editor_domain::derive_tap_indicator_positions(
+            state.editor.spawn.position,
+            state.editor.spawn.direction,
+            &state.editor.timeline.taps.tap_times,
+            &state.editor.objects,
+        );
+
+        assert_eq!(state.editor.timeline.taps.tap_indicator_positions, expected);
+    }
+
+    #[tokio::test]
+    async fn pan_input_wrappers_are_phase_gated_but_modifiers_are_global() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Menu;
+
+        state.set_editor_pan_up_held(true);
+        state.set_editor_pan_down_held(true);
+        state.set_editor_pan_left_held(true);
+        state.set_editor_pan_right_held(true);
+        state.set_editor_shift_held(true);
+        state.set_editor_ctrl_held(true);
+        state.set_editor_alt_held(true);
+
+        assert!(!state.editor.ui.pan_up_held);
+        assert!(!state.editor.ui.pan_down_held);
+        assert!(!state.editor.ui.pan_left_held);
+        assert!(!state.editor.ui.pan_right_held);
+        assert!(state.editor.ui.shift_held);
+        assert!(state.editor.ui.ctrl_held);
+        assert!(state.editor.ui.alt_held);
+
+        state.set_editor_shift_held(false);
+        state.set_editor_ctrl_held(false);
+        state.set_editor_alt_held(false);
+
+        state.phase = AppPhase::Editor;
+        state.set_editor_pan_up_held(true);
+        state.set_editor_pan_down_held(true);
+        state.set_editor_pan_left_held(true);
+        state.set_editor_pan_right_held(true);
+        state.set_editor_shift_held(true);
+        state.set_editor_ctrl_held(true);
+        state.set_editor_alt_held(true);
+
+        assert!(state.editor.ui.pan_up_held);
+        assert!(state.editor.ui.pan_down_held);
+        assert!(state.editor.ui.pan_left_held);
+        assert!(state.editor.ui.pan_right_held);
+        assert!(state.editor.ui.shift_held);
+        assert!(state.editor.ui.ctrl_held);
+        assert!(state.editor.ui.alt_held);
+    }
+
+    #[tokio::test]
+    async fn editor_effective_mode_for_playback_uses_last_mode_when_ui_is_null() {
+        let mut state = State::new_test().await;
+
+        state.editor.timeline.playback.playing = true;
+        state.editor.ui.mode = EditorMode::Null;
+        state.editor.runtime.interaction.last_mode = Some(EditorMode::Timing);
+        assert_eq!(
+            state.editor_effective_mode_for_playback(),
+            EditorMode::Timing
+        );
+        assert!(state.editor_is_effectively_timing_mode());
+
+        state.editor.runtime.interaction.last_mode = None;
+        assert_eq!(state.editor_effective_mode_for_playback(), EditorMode::Null);
+        assert!(!state.editor_is_effectively_timing_mode());
+
+        state.editor.timeline.playback.playing = false;
+        state.editor.ui.mode = EditorMode::Place;
+        assert_eq!(
+            state.editor_effective_mode_for_playback(),
+            EditorMode::Place
+        );
+    }
+
+    #[tokio::test]
+    async fn editor_wrapper_setters_and_getters_cover_timing_and_waveform_state() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+
+        state.editor_add_timing_point(2.0, 130.0);
+        state.editor_add_timing_point(1.0, 120.0);
+        assert_eq!(state.editor_timing_points().len(), 2);
+        assert!(
+            state.editor_timing_points()[0].time_seconds
+                <= state.editor_timing_points()[1].time_seconds
+        );
+
+        state.set_editor_timing_selected_index(Some(1));
+        assert_eq!(state.editor_timing_selected_index(), Some(1));
+        state.editor_update_timing_point_time(1, -5.0);
+        assert!(state.editor_timing_points()[0].time_seconds >= 0.0);
+        state.editor_update_timing_point_bpm(0, 0.2);
+        assert!(state.editor_timing_points()[0].bpm >= 1.0);
+        state.editor_update_timing_point_time_signature(0, 0, 0);
+        assert!(state.editor_timing_points()[0].time_signature_numerator >= 1);
+        assert!(state.editor_timing_points()[0].time_signature_denominator >= 1);
+        state.editor_remove_timing_point(5);
+        state.editor_remove_timing_point(0);
+        assert!(state.editor_timing_points().len() <= 1);
+
+        state.set_editor_waveform_zoom(0.01);
+        state.set_editor_waveform_scroll(3.25);
+        assert_eq!(state.editor_waveform_zoom(), 0.1);
+        assert_eq!(state.editor_waveform_scroll(), 3.25);
+
+        state.editor.timing.waveform_samples = vec![0.1, 0.2, 0.3];
+        state.editor.timing.waveform_sample_rate = 44_100;
+        assert_eq!(state.editor_waveform_samples(), &[0.1, 0.2, 0.3]);
+        assert_eq!(state.editor_waveform_sample_rate(), 44_100);
+    }
+
+    #[tokio::test]
+    async fn set_editor_block_id_and_snap_settings_update_app_settings() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+
+        state.editor.objects.push(LevelObject {
+            position: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            rotation_degrees: [0.0, 0.0, 0.0],
+            block_id: "core/stone".to_string(),
+            color_tint: [1.0, 1.0, 1.0],
+            trigger: None,
+            ..LevelObject::default()
         });
+        state.editor.ui.selected_block_index = Some(0);
+        state.editor.ui.selected_block_indices = vec![0];
+
+        state.set_editor_block_id("core/lava".to_string());
+        assert_eq!(state.editor_selected_block_id(), "core/lava");
+        assert_eq!(state.app_settings().editor_selected_block_id, "core/lava");
+
+        state.set_editor_snap_to_grid(true);
+        state.set_editor_snap_step(0.2);
+        state.set_editor_snap_rotation(true);
+        state.set_editor_snap_rotation_step(7.5);
+
+        assert!(state.editor_snap_to_grid());
+        assert_eq!(state.editor_snap_step(), 0.2);
+        assert!(state.editor_snap_rotation());
+        assert_eq!(state.editor_snap_rotation_step_degrees(), 7.5);
+        assert!(state.app_settings().editor_snap_to_grid);
+        assert_eq!(state.app_settings().editor_snap_step, 0.2);
+        assert!(state.app_settings().editor_rotation_snap);
+        assert_eq!(state.app_settings().editor_rotation_snap_step, 7.5);
     }
 }

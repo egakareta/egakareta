@@ -556,8 +556,8 @@ mod tests {
         state
     }
 
-    #[test]
-    fn camera_track_trigger_detection_matches_camera_target_and_action() {
+    #[tokio::test]
+    async fn camera_track_trigger_detection_matches_camera_target_and_action() {
         let pose = camera_pose_trigger(0.0);
         let follow = TimedTrigger {
             action: TimedTriggerAction::CameraFollow {
@@ -576,218 +576,230 @@ mod tests {
         assert!(!EditorSubsystem::is_camera_track_trigger(&object));
     }
 
-    #[test]
-    fn add_trigger_sanitizes_values_and_keeps_items_sorted() {
-        pollster::block_on(async {
-            let mut state = new_editor_state().await;
-            state.editor.timeline.clock.duration_seconds = 5.0;
+    #[tokio::test]
+    async fn add_trigger_sanitizes_values_and_keeps_items_sorted() {
+        let mut state = new_editor_state().await;
+        state.editor.timeline.clock.duration_seconds = 5.0;
 
-            let index = state.editor.add_trigger(TimedTrigger {
-                time_seconds: f32::INFINITY,
-                duration_seconds: f32::NAN,
+        let index = state.editor.add_trigger(TimedTrigger {
+            time_seconds: f32::INFINITY,
+            duration_seconds: f32::NAN,
+            easing: TimedTriggerEasing::Linear,
+            target: TimedTriggerTarget::Objects {
+                object_ids: vec![
+                    "three".to_string(),
+                    "one".to_string(),
+                    "three".to_string(),
+                    "two".to_string(),
+                ],
+            },
+            action: TimedTriggerAction::TransformObjects {
+                position: [f32::NAN, 2.0, f32::INFINITY],
+                rotation_degrees: [f32::NEG_INFINITY, 90.0, f32::NAN],
+                size: [f32::NAN, -9.0, 2.0],
+                simulate_hitboxes: false,
+            },
+        });
+        assert_eq!(index, 0);
+
+        state.editor.add_trigger(camera_pose_trigger(1.0));
+        assert_eq!(state.editor.triggers()[0].time_seconds, 0.0);
+        assert_eq!(state.editor.triggers()[1].time_seconds, 1.0);
+
+        let first = &state.editor.triggers()[0];
+        assert_eq!(first.duration_seconds, 0.0);
+        match &first.target {
+            TimedTriggerTarget::Objects { object_ids } => {
+                assert_eq!(
+                    object_ids,
+                    &vec!["one".to_string(), "three".to_string(), "two".to_string()]
+                );
+            }
+            _ => panic!("expected object list target"),
+        }
+        match first.action {
+            TimedTriggerAction::TransformObjects {
+                position,
+                rotation_degrees,
+                size,
+                ..
+            } => {
+                assert_eq!(position, [0.0, 2.0, 0.0]);
+                assert_eq!(rotation_degrees, [0.0, 90.0, 0.0]);
+                assert_eq!(size[0], 1.0);
+                assert_eq!(size[1], 0.01);
+                assert_eq!(size[2], 2.0);
+            }
+            _ => panic!("expected transform action"),
+        }
+    }
+
+    #[tokio::test]
+    async fn set_triggers_sanitizes_camera_pose_and_follow_and_bounds_selection() {
+        let mut state = new_editor_state().await;
+        state.editor.timeline.clock.duration_seconds = 8.0;
+        state.editor.triggers.selected_index = Some(4);
+
+        state.editor.set_triggers(vec![
+            TimedTrigger {
+                time_seconds: 9.0,
+                duration_seconds: -5.0,
+                easing: TimedTriggerEasing::EaseIn,
+                target: TimedTriggerTarget::Camera,
+                action: TimedTriggerAction::CameraPose {
+                    transition_interval_seconds: f32::NAN,
+                    use_full_segment_transition: false,
+                    target_position: [f32::NAN, 2.0, f32::NEG_INFINITY],
+                    rotation: f32::NAN,
+                    pitch: 99.0,
+                },
+            },
+            TimedTrigger {
+                time_seconds: -1.0,
+                duration_seconds: 1.0,
                 easing: TimedTriggerEasing::Linear,
-                target: TimedTriggerTarget::Objects {
-                    object_ids: vec![
-                        "three".to_string(),
-                        "one".to_string(),
-                        "three".to_string(),
-                        "two".to_string(),
-                    ],
+                target: TimedTriggerTarget::Camera,
+                action: TimedTriggerAction::CameraFollow {
+                    transition_interval_seconds: -3.0,
+                    use_full_segment_transition: true,
+                    distance: f32::NAN,
+                    rotation: f32::NAN,
+                    pitch: 99.0,
                 },
-                action: TimedTriggerAction::TransformObjects {
-                    position: [f32::NAN, 2.0, f32::INFINITY],
-                    rotation_degrees: [f32::NEG_INFINITY, 90.0, f32::NAN],
-                    size: [f32::NAN, -9.0, 2.0],
-                    simulate_hitboxes: false,
-                },
-            });
-            assert_eq!(index, 0);
+            },
+        ]);
 
-            state.editor.add_trigger(camera_pose_trigger(1.0));
-            assert_eq!(state.editor.triggers()[0].time_seconds, 0.0);
-            assert_eq!(state.editor.triggers()[1].time_seconds, 1.0);
+        assert_eq!(state.editor.triggers().len(), 2);
+        assert_eq!(state.editor.triggers.selected_index, None);
+        assert_eq!(state.editor.triggers()[0].time_seconds, 0.0);
+        assert_eq!(state.editor.triggers()[1].time_seconds, 8.0);
 
-            let first = &state.editor.triggers()[0];
-            assert_eq!(first.duration_seconds, 0.0);
-            match &first.target {
-                TimedTriggerTarget::Objects { object_ids } => {
-                    assert_eq!(
-                        object_ids,
-                        &vec!["one".to_string(), "three".to_string(), "two".to_string()]
-                    );
-                }
-                _ => panic!("expected object list target"),
+        match state.editor.triggers()[0].action {
+            TimedTriggerAction::CameraFollow {
+                transition_interval_seconds,
+                use_full_segment_transition,
+                distance,
+                rotation,
+                pitch,
+            } => {
+                assert_eq!(transition_interval_seconds, 0.0);
+                assert!(use_full_segment_transition);
+                assert_eq!(distance, default_camera_trigger_distance());
+                assert_eq!(rotation, DEFAULT_CAMERA_ROTATION);
+                assert!((pitch - 89.9f32.to_radians()).abs() <= 1e-6);
             }
-            match first.action {
-                TimedTriggerAction::TransformObjects {
-                    position,
-                    rotation_degrees,
-                    size,
-                    ..
-                } => {
-                    assert_eq!(position, [0.0, 2.0, 0.0]);
-                    assert_eq!(rotation_degrees, [0.0, 90.0, 0.0]);
-                    assert_eq!(size[0], 1.0);
-                    assert_eq!(size[1], 0.01);
-                    assert_eq!(size[2], 2.0);
-                }
-                _ => panic!("expected transform action"),
-            }
-        });
-    }
+            _ => panic!("expected camera follow"),
+        }
 
-    #[test]
-    fn set_triggers_sanitizes_camera_pose_and_follow_and_bounds_selection() {
-        pollster::block_on(async {
-            let mut state = new_editor_state().await;
-            state.editor.timeline.clock.duration_seconds = 8.0;
-            state.editor.triggers.selected_index = Some(4);
-
-            state.editor.set_triggers(vec![
-                TimedTrigger {
-                    time_seconds: 9.0,
-                    duration_seconds: -5.0,
-                    easing: TimedTriggerEasing::EaseIn,
-                    target: TimedTriggerTarget::Camera,
-                    action: TimedTriggerAction::CameraPose {
-                        transition_interval_seconds: f32::NAN,
-                        use_full_segment_transition: false,
-                        target_position: [f32::NAN, 2.0, f32::NEG_INFINITY],
-                        rotation: f32::NAN,
-                        pitch: 99.0,
-                    },
-                },
-                TimedTrigger {
-                    time_seconds: -1.0,
-                    duration_seconds: 1.0,
-                    easing: TimedTriggerEasing::Linear,
-                    target: TimedTriggerTarget::Camera,
-                    action: TimedTriggerAction::CameraFollow {
-                        transition_interval_seconds: -3.0,
-                        use_full_segment_transition: true,
-                        distance: f32::NAN,
-                        rotation: f32::NAN,
-                        pitch: 99.0,
-                    },
-                },
-            ]);
-
-            assert_eq!(state.editor.triggers().len(), 2);
-            assert_eq!(state.editor.triggers.selected_index, None);
-            assert_eq!(state.editor.triggers()[0].time_seconds, 0.0);
-            assert_eq!(state.editor.triggers()[1].time_seconds, 8.0);
-
-            match state.editor.triggers()[0].action {
-                TimedTriggerAction::CameraFollow {
-                    transition_interval_seconds,
-                    use_full_segment_transition,
-                    distance,
-                    rotation,
-                    pitch,
-                } => {
-                    assert_eq!(transition_interval_seconds, 0.0);
-                    assert!(use_full_segment_transition);
-                    assert_eq!(distance, default_camera_trigger_distance());
-                    assert_eq!(rotation, DEFAULT_CAMERA_ROTATION);
-                    assert!((pitch - 89.9f32.to_radians()).abs() <= 1e-6);
-                }
-                _ => panic!("expected camera follow"),
-            }
-
-            match state.editor.triggers()[1].action {
-                TimedTriggerAction::CameraPose {
-                    transition_interval_seconds,
-                    target_position,
-                    rotation,
-                    pitch,
-                    ..
-                } => {
-                    assert_eq!(transition_interval_seconds, 1.0);
-                    for (actual, expected) in target_position.iter().zip([0.0, 2.0, 0.0]) {
-                        assert!((*actual - expected).abs() <= 1e-5);
-                    }
-                    assert_eq!(rotation, -45.0f32.to_radians());
-                    assert!((pitch - 89.9f32.to_radians()).abs() <= 1e-6);
-                }
-                _ => panic!("expected camera pose"),
-            }
-        });
-    }
-
-    #[test]
-    fn set_triggers_centers_camera_trigger_object_on_eye() {
-        pollster::block_on(async {
-            let mut state = new_editor_state().await;
-            let trigger = camera_pose_trigger(0.0);
-            let TimedTriggerAction::CameraPose {
+        match state.editor.triggers()[1].action {
+            TimedTriggerAction::CameraPose {
+                transition_interval_seconds,
                 target_position,
                 rotation,
                 pitch,
                 ..
-            } = trigger.action
-            else {
-                panic!("expected camera pose");
-            };
-            let expected_eye = camera_trigger_eye_from_target(target_position, rotation, pitch);
-
-            state.editor.set_triggers(vec![trigger]);
-
-            let object = state
-                .editor
-                .objects
-                .iter()
-                .find(|object| object.trigger.is_some())
-                .expect("expected camera trigger object");
-            let actual_eye = camera_trigger_eye_from_object(object);
-            for (actual, expected) in actual_eye.iter().zip(expected_eye) {
-                assert!((*actual - expected).abs() <= 1e-6);
+            } => {
+                assert_eq!(transition_interval_seconds, 1.0);
+                for (actual, expected) in target_position.iter().zip([0.0, 2.0, 0.0]) {
+                    assert!((*actual - expected).abs() <= 1e-5);
+                }
+                assert_eq!(rotation, -45.0f32.to_radians());
+                assert!((pitch - 89.9f32.to_radians()).abs() <= 1e-6);
             }
-        });
+            _ => panic!("expected camera pose"),
+        }
     }
 
-    #[test]
-    fn trigger_selection_and_marker_queries_reflect_filtered_camera_track() {
-        pollster::block_on(async {
-            let mut state = new_editor_state().await;
-            state.editor.set_triggers(vec![
-                camera_pose_trigger(0.5),
-                object_move_trigger(0.75),
-                TimedTrigger {
-                    action: TimedTriggerAction::CameraFollow {
-                        transition_interval_seconds: 1.5,
-                        use_full_segment_transition: false,
-                        distance: default_camera_trigger_distance(),
-                        rotation: DEFAULT_CAMERA_ROTATION,
-                        pitch: DEFAULT_CAMERA_PITCH,
-                    },
-                    ..camera_pose_trigger(1.0)
+    #[tokio::test]
+    async fn set_triggers_centers_camera_trigger_object_on_eye() {
+        let mut state = new_editor_state().await;
+        let trigger = camera_pose_trigger(0.0);
+        let TimedTriggerAction::CameraPose {
+            target_position,
+            rotation,
+            pitch,
+            ..
+        } = trigger.action
+        else {
+            panic!("expected camera pose");
+        };
+        let expected_eye = camera_trigger_eye_from_target(target_position, rotation, pitch);
+
+        state.editor.set_triggers(vec![trigger]);
+
+        let object = state
+            .editor
+            .objects
+            .iter()
+            .find(|object| object.trigger.is_some())
+            .expect("expected camera trigger object");
+        let actual_eye = camera_trigger_eye_from_object(object);
+        for (actual, expected) in actual_eye.iter().zip(expected_eye) {
+            assert!((*actual - expected).abs() <= 1e-6);
+        }
+    }
+
+    #[tokio::test]
+    async fn trigger_selection_and_marker_queries_reflect_filtered_camera_track() {
+        let mut state = new_editor_state().await;
+        state.editor.set_triggers(vec![
+            camera_pose_trigger(0.5),
+            object_move_trigger(0.75),
+            TimedTrigger {
+                action: TimedTriggerAction::CameraFollow {
+                    transition_interval_seconds: 1.5,
+                    use_full_segment_transition: false,
+                    distance: default_camera_trigger_distance(),
+                    rotation: DEFAULT_CAMERA_ROTATION,
+                    pitch: DEFAULT_CAMERA_PITCH,
                 },
-            ]);
+                ..camera_pose_trigger(1.0)
+            },
+        ]);
 
-            state.editor.set_trigger_selected(Some(99));
-            assert_eq!(state.editor.selected_trigger_index(), None);
-            state.editor.set_trigger_selected(Some(2));
-            assert_eq!(state.editor.selected_trigger_index(), Some(2));
+        state.editor.set_trigger_selected(Some(99));
+        assert_eq!(state.editor.selected_trigger_index(), None);
+        state.editor.set_trigger_selected(Some(2));
+        assert_eq!(state.editor.selected_trigger_index(), Some(2));
 
-            let markers = state.editor.camera_trigger_markers();
-            assert_eq!(markers.len(), 2);
-            assert_eq!(markers[0].0, 0);
-            assert_eq!(markers[1].0, 2);
-            assert_eq!(markers[0].1.mode, CameraTriggerMode::Static);
-            assert_eq!(markers[1].1.mode, CameraTriggerMode::Follow);
-        });
+        let markers = state.editor.camera_trigger_markers();
+        assert_eq!(markers.len(), 2);
+        assert_eq!(markers[0].0, 0);
+        assert_eq!(markers[1].0, 2);
+        assert_eq!(markers[0].1.mode, CameraTriggerMode::Static);
+        assert_eq!(markers[1].1.mode, CameraTriggerMode::Follow);
     }
 
-    #[test]
-    fn object_transform_detection_and_hitbox_toggle_cover_simple_state_helpers() {
-        pollster::block_on(async {
-            let mut state = new_editor_state().await;
+    #[tokio::test]
+    async fn object_transform_detection_and_hitbox_toggle_cover_simple_state_helpers() {
+        let mut state = new_editor_state().await;
 
-            state.editor.set_triggers(vec![camera_pose_trigger(0.0)]);
-            assert!(!state.editor.has_object_transform_triggers());
-            assert!(!state.editor.has_simulate_hitboxes_triggers());
+        state.editor.set_triggers(vec![camera_pose_trigger(0.0)]);
+        assert!(!state.editor.has_object_transform_triggers());
+        assert!(!state.editor.has_simulate_hitboxes_triggers());
 
-            state.editor.add_trigger(TimedTrigger {
+        state.editor.add_trigger(TimedTrigger {
+            time_seconds: 1.0,
+            duration_seconds: 0.0,
+            easing: TimedTriggerEasing::Linear,
+            target: TimedTriggerTarget::Objects {
+                object_ids: vec!["object_1".to_string()],
+            },
+            action: TimedTriggerAction::TransformObjects {
+                position: [0.0, 0.0, 0.0],
+                rotation_degrees: [10.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
+                simulate_hitboxes: false,
+            },
+        });
+        assert!(state.editor.has_object_transform_triggers());
+        // A transform trigger without simulate_hitboxes does not move hitboxes.
+        assert!(!state.editor.has_simulate_hitboxes_triggers());
+
+        // Replacing it with a trigger that opts in moves hitboxes during play.
+        state.editor.set_triggers(vec![
+            camera_pose_trigger(0.0),
+            TimedTrigger {
                 time_seconds: 1.0,
                 duration_seconds: 0.0,
                 easing: TimedTriggerEasing::Linear,
@@ -798,79 +810,53 @@ mod tests {
                     position: [0.0, 0.0, 0.0],
                     rotation_degrees: [10.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
-                    simulate_hitboxes: false,
+                    simulate_hitboxes: true,
                 },
-            });
-            assert!(state.editor.has_object_transform_triggers());
-            // A transform trigger without simulate_hitboxes does not move hitboxes.
-            assert!(!state.editor.has_simulate_hitboxes_triggers());
-
-            // Replacing it with a trigger that opts in moves hitboxes during play.
-            state.editor.set_triggers(vec![
-                camera_pose_trigger(0.0),
-                TimedTrigger {
-                    time_seconds: 1.0,
-                    duration_seconds: 0.0,
-                    easing: TimedTriggerEasing::Linear,
-                    target: TimedTriggerTarget::Objects {
-                        object_ids: vec!["object_1".to_string()],
-                    },
-                    action: TimedTriggerAction::TransformObjects {
-                        position: [0.0, 0.0, 0.0],
-                        rotation_degrees: [10.0, 0.0, 0.0],
-                        size: [1.0, 1.0, 1.0],
-                        simulate_hitboxes: true,
-                    },
-                },
-            ]);
-            assert!(state.editor.has_object_transform_triggers());
-            assert!(state.editor.has_simulate_hitboxes_triggers());
-        });
+            },
+        ]);
+        assert!(state.editor.has_object_transform_triggers());
+        assert!(state.editor.has_simulate_hitboxes_triggers());
     }
 
-    #[test]
-    fn derived_triggers_use_trigger_block_pose_as_source_of_truth() {
-        pollster::block_on(async {
-            let mut state = new_editor_state().await;
-            state.editor.objects.clear();
-            state.editor.set_triggers(vec![object_move_trigger(0.0)]);
+    #[tokio::test]
+    async fn derived_triggers_use_trigger_block_pose_as_source_of_truth() {
+        let mut state = new_editor_state().await;
+        state.editor.objects.clear();
+        state.editor.set_triggers(vec![object_move_trigger(0.0)]);
 
-            assert_eq!(state.editor.triggers().len(), 1);
-            state.editor.objects[0].position = [9.0, 8.0, 7.0];
-            state.editor.objects[0].size = [2.0, 3.0, 4.0];
-            state.editor.objects[0].rotation_degrees = [10.0, 20.0, 30.0];
+        assert_eq!(state.editor.triggers().len(), 1);
+        state.editor.objects[0].position = [9.0, 8.0, 7.0];
+        state.editor.objects[0].size = [2.0, 3.0, 4.0];
+        state.editor.objects[0].rotation_degrees = [10.0, 20.0, 30.0];
 
-            let trigger = state.editor.triggers().remove(0);
-            let TimedTriggerAction::TransformObjects {
-                position,
-                rotation_degrees,
-                size,
-                ..
-            } = trigger.action
-            else {
-                panic!("expected transform trigger");
-            };
-            assert_eq!(position, [9.0, 8.0, 7.0]);
-            assert_eq!(rotation_degrees, [10.0, 20.0, 30.0]);
-            assert_eq!(size, [2.0, 3.0, 4.0]);
-        });
+        let trigger = state.editor.triggers().remove(0);
+        let TimedTriggerAction::TransformObjects {
+            position,
+            rotation_degrees,
+            size,
+            ..
+        } = trigger.action
+        else {
+            panic!("expected transform trigger");
+        };
+        assert_eq!(position, [9.0, 8.0, 7.0]);
+        assert_eq!(rotation_degrees, [10.0, 20.0, 30.0]);
+        assert_eq!(size, [2.0, 3.0, 4.0]);
     }
 
-    #[test]
-    fn trigger_queries_skip_non_trigger_objects_after_index_sync() {
-        pollster::block_on(async {
-            let mut state = new_editor_state().await;
-            state.editor.objects = (0..10_000).map(|index| test_block(index as f32)).collect();
-            state.editor.set_triggers(vec![camera_pose_trigger(1.0)]);
-            state.editor.objects.push(test_block(10_001.0));
+    #[tokio::test]
+    async fn trigger_queries_skip_non_trigger_objects_after_index_sync() {
+        let mut state = new_editor_state().await;
+        state.editor.objects = (0..10_000).map(|index| test_block(index as f32)).collect();
+        state.editor.set_triggers(vec![camera_pose_trigger(1.0)]);
+        state.editor.objects.push(test_block(10_001.0));
 
-            assert_eq!(state.editor.triggers().len(), 1);
-            assert!(state.editor.has_camera_timeline_triggers());
+        assert_eq!(state.editor.triggers().len(), 1);
+        assert!(state.editor.has_camera_timeline_triggers());
 
-            state.editor.sync_objects();
+        state.editor.sync_objects();
 
-            assert_eq!(state.editor.triggers().len(), 1);
-            assert!(state.editor.has_camera_timeline_triggers());
-        });
+        assert_eq!(state.editor.triggers().len(), 1);
+        assert!(state.editor.has_camera_timeline_triggers());
     }
 }

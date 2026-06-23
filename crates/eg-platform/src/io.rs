@@ -111,6 +111,7 @@ pub fn read_editor_music_bytes(music_source: &str) -> Option<Vec<u8>> {
         return result;
     }
 
+    // TODO: Avoid block_on here
     pollster::block_on(storage::read_editor_music_bytes(music_source))
         .ok()
         .flatten()

@@ -360,26 +360,24 @@ mod tests {
         }
     }
 
-    #[test]
-    fn normalize_block_selection_filters_invalid_indices_and_preserves_valid_primary() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.editor.objects = vec![
-                block([0.0, 0.0, 0.0]),
-                block([1.0, 0.0, 0.0]),
-                block([2.0, 0.0, 0.0]),
-            ];
-            state.editor.ui.selected_block_index = Some(1);
-            state.editor.ui.selected_block_indices = vec![2, 99, 2];
-            state.editor.ui.hovered_block_index = Some(42);
-            state.editor.selected_mask_cache = Some(vec![false, true, true]);
+    #[tokio::test]
+    async fn normalize_block_selection_filters_invalid_indices_and_preserves_valid_primary() {
+        let mut state = State::new_test().await;
+        state.editor.objects = vec![
+            block([0.0, 0.0, 0.0]),
+            block([1.0, 0.0, 0.0]),
+            block([2.0, 0.0, 0.0]),
+        ];
+        state.editor.ui.selected_block_index = Some(1);
+        state.editor.ui.selected_block_indices = vec![2, 99, 2];
+        state.editor.ui.hovered_block_index = Some(42);
+        state.editor.selected_mask_cache = Some(vec![false, true, true]);
 
-            state.editor.normalize_block_selection();
+        state.editor.normalize_block_selection();
 
-            assert_eq!(state.editor.ui.selected_block_index, Some(1));
-            assert_eq!(state.editor.ui.selected_block_indices, vec![1, 2]);
-            assert_eq!(state.editor.ui.hovered_block_index, None);
-            assert!(state.editor.selected_mask_cache.is_none());
-        });
+        assert_eq!(state.editor.ui.selected_block_index, Some(1));
+        assert_eq!(state.editor.ui.selected_block_indices, vec![1, 2]);
+        assert_eq!(state.editor.ui.hovered_block_index, None);
+        assert!(state.editor.selected_mask_cache.is_none());
     }
 }

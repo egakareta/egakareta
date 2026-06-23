@@ -1151,155 +1151,141 @@ mod tests {
         state.clear_pending_gameplay_inputs();
     }
 
-    #[test]
-    fn target_playing_time_respects_started_and_game_over_state() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
+    #[tokio::test]
+    async fn target_playing_time_respects_started_and_game_over_state() {
+        let mut state = State::new_test().await;
 
-            state.gameplay.state.elapsed_seconds = 1.25;
-            state.gameplay.state.started = false;
-            assert_eq!(state.target_playing_time(0.2), 1.25);
+        state.gameplay.state.elapsed_seconds = 1.25;
+        state.gameplay.state.started = false;
+        assert_eq!(state.target_playing_time(0.2), 1.25);
 
-            state.gameplay.state.started = true;
-            state.gameplay.state.game_over = false;
-            assert_eq!(state.target_playing_time(0.2), 1.45);
+        state.gameplay.state.started = true;
+        state.gameplay.state.game_over = false;
+        assert_eq!(state.target_playing_time(0.2), 1.45);
 
-            state.gameplay.state.game_over = true;
-            assert_eq!(state.target_playing_time(0.2), 1.25);
+        state.gameplay.state.game_over = true;
+        assert_eq!(state.target_playing_time(0.2), 1.25);
 
-            state.gameplay.state.game_over = false;
-            assert_eq!(state.target_playing_time(10.0), 1.5);
-            assert_eq!(state.target_playing_time(-1.0), 1.25);
-        });
+        state.gameplay.state.game_over = false;
+        assert_eq!(state.target_playing_time(10.0), 1.5);
+        assert_eq!(state.target_playing_time(-1.0), 1.25);
     }
 
-    #[test]
-    fn queued_gameplay_turn_applies_at_its_timestamp() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            prepare_started_gameplay(&mut state, 12.0);
+    #[tokio::test]
+    async fn queued_gameplay_turn_applies_at_its_timestamp() {
+        let mut state = State::new_test().await;
+        prepare_started_gameplay(&mut state, 12.0);
 
-            state.queue_gameplay_turn_right_at(0.05);
-            let _ = state.advance_playing_state_to_time(0.1, 1.0 / 120.0);
+        state.queue_gameplay_turn_right_at(0.05);
+        let _ = state.advance_playing_state_to_time(0.1, 1.0 / 120.0);
 
-            assert!(matches!(state.gameplay.state.direction, Direction::Right));
-            approx::assert_abs_diff_eq!(state.gameplay.state.position[2], 0.6, epsilon = 1e-4);
-            approx::assert_abs_diff_eq!(state.gameplay.state.position[0], 0.6, epsilon = 1e-4);
-            assert!(state.gameplay.pending_turn_inputs.is_empty());
-        });
+        assert!(matches!(state.gameplay.state.direction, Direction::Right));
+        approx::assert_abs_diff_eq!(state.gameplay.state.position[2], 0.6, epsilon = 1e-4);
+        approx::assert_abs_diff_eq!(state.gameplay.state.position[0], 0.6, epsilon = 1e-4);
+        assert!(state.gameplay.pending_turn_inputs.is_empty());
     }
 
-    #[test]
-    fn active_gameplay_turn_right_queues_until_update() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            prepare_started_gameplay(&mut state, 10.0);
+    #[tokio::test]
+    async fn active_gameplay_turn_right_queues_until_update() {
+        let mut state = State::new_test().await;
+        prepare_started_gameplay(&mut state, 10.0);
 
-            state.turn_right();
+        state.turn_right();
 
-            assert!(matches!(state.gameplay.state.direction, Direction::Forward));
-            assert_eq!(state.gameplay.pending_turn_inputs.len(), 1);
+        assert!(matches!(state.gameplay.state.direction, Direction::Forward));
+        assert_eq!(state.gameplay.pending_turn_inputs.len(), 1);
 
-            let _ = state.advance_playing_state_to_time(1.0 / 120.0, 1.0 / 120.0);
+        let _ = state.advance_playing_state_to_time(1.0 / 120.0, 1.0 / 120.0);
 
-            assert!(matches!(state.gameplay.state.direction, Direction::Right));
-            assert!(state.gameplay.pending_turn_inputs.is_empty());
-        });
+        assert!(matches!(state.gameplay.state.direction, Direction::Right));
+        assert!(state.gameplay.pending_turn_inputs.is_empty());
     }
 
-    #[test]
-    fn pending_seek_without_target_resets_cooldown_in_editor_playback() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Editor;
-            state.editor.timeline.playback.playing = true;
-            state.editor.timeline.playback.pending_seek_time_seconds = None;
-            state.editor.timeline.playback.seek_resync_cooldown_seconds = 0.75;
+    #[tokio::test]
+    async fn pending_seek_without_target_resets_cooldown_in_editor_playback() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+        state.editor.timeline.playback.playing = true;
+        state.editor.timeline.playback.pending_seek_time_seconds = None;
+        state.editor.timeline.playback.seek_resync_cooldown_seconds = 0.75;
 
-            state.maybe_resync_editor_playback_from_pending_seek(0.1);
-            assert_eq!(
-                state.editor.timeline.playback.seek_resync_cooldown_seconds,
-                0.0
-            );
-        });
+        state.maybe_resync_editor_playback_from_pending_seek(0.1);
+        assert_eq!(
+            state.editor.timeline.playback.seek_resync_cooldown_seconds,
+            0.0
+        );
     }
 
-    #[test]
-    fn playing_object_triggers_transform_objects_and_optionally_hitboxes() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
+    #[tokio::test]
+    async fn playing_object_triggers_transform_objects_and_optionally_hitboxes() {
+        let mut state = State::new_test().await;
 
-            state.phase = AppPhase::Playing;
-            state.gameplay.state.objects = vec![sample_object()];
-            state.gameplay.state.rebuild_behavior_cache();
+        state.phase = AppPhase::Playing;
+        state.gameplay.state.objects = vec![sample_object()];
+        state.gameplay.state.rebuild_behavior_cache();
 
-            // A transform trigger that does not opt into hitbox simulation moves the
-            // visual objects but leaves the gameplay hitboxes at their base pose.
-            state.editor.set_triggers(vec![instant_move_trigger(false)]);
-            state.session.playing_trigger_base_objects = None;
-            let transformed = state
-                .playing_trigger_objects_at_time(0.5)
-                .expect("expected transformed objects");
-            assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
-            assert_eq!(state.gameplay.state.objects[0].position, [0.0, 0.0, 0.0]);
-            assert!(!state.editor_has_simulate_hitboxes_triggers());
+        // A transform trigger that does not opt into hitbox simulation moves the
+        // visual objects but leaves the gameplay hitboxes at their base pose.
+        state.editor.set_triggers(vec![instant_move_trigger(false)]);
+        state.session.playing_trigger_base_objects = None;
+        let transformed = state
+            .playing_trigger_objects_at_time(0.5)
+            .expect("expected transformed objects");
+        assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
+        assert_eq!(state.gameplay.state.objects[0].position, [0.0, 0.0, 0.0]);
+        assert!(!state.editor_has_simulate_hitboxes_triggers());
 
-            // A transform trigger that opts into hitbox simulation moves both the
-            // visual objects and the gameplay hitboxes.
-            state.editor.set_triggers(vec![instant_move_trigger(true)]);
-            state.session.playing_trigger_base_objects = None;
-            let transformed = state
-                .apply_playing_object_triggers(0.5)
-                .expect("expected transformed objects");
-            assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
-            assert_eq!(state.gameplay.state.objects[0].position, [2.0, 0.0, 0.0]);
-            assert!(state.editor_has_simulate_hitboxes_triggers());
-        });
+        // A transform trigger that opts into hitbox simulation moves both the
+        // visual objects and the gameplay hitboxes.
+        state.editor.set_triggers(vec![instant_move_trigger(true)]);
+        state.session.playing_trigger_base_objects = None;
+        let transformed = state
+            .apply_playing_object_triggers(0.5)
+            .expect("expected transformed objects");
+        assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
+        assert_eq!(state.gameplay.state.objects[0].position, [2.0, 0.0, 0.0]);
+        assert!(state.editor_has_simulate_hitboxes_triggers());
     }
 
-    #[test]
-    fn update_playing_state_clears_chunked_mesh_when_trigger_render_objects_are_active() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
+    #[tokio::test]
+    async fn update_playing_state_clears_chunked_mesh_when_trigger_render_objects_are_active() {
+        let mut state = State::new_test().await;
 
-            state.phase = AppPhase::Playing;
-            state.gameplay.state.started = true;
-            state.gameplay.state.objects = vec![sample_object()];
-            state.gameplay.state.rebuild_behavior_cache();
-            state.editor.set_triggers(vec![instant_move_trigger(false)]);
+        state.phase = AppPhase::Playing;
+        state.gameplay.state.started = true;
+        state.gameplay.state.objects = vec![sample_object()];
+        state.gameplay.state.rebuild_behavior_cache();
+        state.editor.set_triggers(vec![instant_move_trigger(false)]);
 
-            state.rebuild_block_vertices();
-            assert!(!state.render.meshes.blocks_chunked.is_empty());
+        state.rebuild_block_vertices();
+        assert!(!state.render.meshes.blocks_chunked.is_empty());
 
-            state.update();
+        state.update();
 
-            assert!(state.render.meshes.blocks_chunked.is_empty());
-            assert!(!state.render.meshes.blocks_instanced.is_empty());
-        });
+        assert!(state.render.meshes.blocks_chunked.is_empty());
+        assert!(!state.render.meshes.blocks_instanced.is_empty());
     }
 
-    #[test]
-    fn advance_playing_state_to_time_updates_elapsed_and_returns_render_objects() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
+    #[tokio::test]
+    async fn advance_playing_state_to_time_updates_elapsed_and_returns_render_objects() {
+        let mut state = State::new_test().await;
 
-            state.phase = AppPhase::Playing;
-            state.gameplay.state.started = true;
-            state.gameplay.state.objects = vec![sample_object()];
-            state.gameplay.state.rebuild_behavior_cache();
-            state.editor.set_triggers(vec![instant_move_trigger(false)]);
+        state.phase = AppPhase::Playing;
+        state.gameplay.state.started = true;
+        state.gameplay.state.objects = vec![sample_object()];
+        state.gameplay.state.rebuild_behavior_cache();
+        state.editor.set_triggers(vec![instant_move_trigger(false)]);
 
-            let transformed = state
-                .advance_playing_state_to_time(0.2, 1.0 / 120.0)
-                .expect("expected trigger render objects");
+        let transformed = state
+            .advance_playing_state_to_time(0.2, 1.0 / 120.0)
+            .expect("expected trigger render objects");
 
-            assert!(state.gameplay.state.elapsed_seconds <= 0.2 + 1e-6);
-            assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
-        });
+        assert!(state.gameplay.state.elapsed_seconds <= 0.2 + 1e-6);
+        assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
     }
 
-    #[test]
-    fn playback_trail_vertices_include_airborne_head_segment() {
+    #[tokio::test]
+    async fn playback_trail_vertices_include_airborne_head_segment() {
         let grounded_runtime =
             TimelineSimulationRuntime::new([0.0, 0.0, 0.0], Direction::Forward, &[], &[]);
         assert!(grounded_runtime.is_grounded());
@@ -1324,8 +1310,8 @@ mod tests {
         assert!(!airborne_vertices.is_empty());
     }
 
-    #[test]
-    fn recent_trail_segments_keeps_latest_points_with_bound() {
+    #[tokio::test]
+    async fn recent_trail_segments_keeps_latest_points_with_bound() {
         let segments = vec![
             vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
             vec![[3.0, 0.0, 0.0], [4.0, 0.0, 0.0]],
@@ -1346,380 +1332,347 @@ mod tests {
         );
     }
 
-    #[test]
-    fn scrub_trail_uses_sparse_trail_cache_not_dense_snapshots() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Editor;
-            state.editor.timeline.snapshot_cache_step_seconds = 1.0 / 240.0;
-            state.editor.timeline.trail_point_cache = vec![[0.0, 0.0, 0.0], [24.0, 0.0, 0.0]];
-            state.editor.timeline.trail_segment_start_cache = vec![0];
-            state.editor.timeline.snapshot_cache = (0..=2_000)
-                .map(
-                    |index| crate::state::editor_timeline::EditorTimelineSnapshot {
-                        position: [index as f32 * 0.1, 0.0, 0.0],
-                        direction: Direction::Forward,
-                        is_grounded: true,
-                        game_over: false,
-                        trail_segment_count: 1,
-                        trail_point_count: 2,
-                    },
-                )
-                .collect();
+    #[tokio::test]
+    async fn scrub_trail_uses_sparse_trail_cache_not_dense_snapshots() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+        state.editor.timeline.snapshot_cache_step_seconds = 1.0 / 240.0;
+        state.editor.timeline.trail_point_cache = vec![[0.0, 0.0, 0.0], [24.0, 0.0, 0.0]];
+        state.editor.timeline.trail_segment_start_cache = vec![0];
+        state.editor.timeline.snapshot_cache = (0..=2_000)
+            .map(
+                |index| crate::state::editor_timeline::EditorTimelineSnapshot {
+                    position: [index as f32 * 0.1, 0.0, 0.0],
+                    direction: Direction::Forward,
+                    is_grounded: true,
+                    game_over: false,
+                    trail_segment_count: 1,
+                    trail_point_count: 2,
+                },
+            )
+            .collect();
 
-            let vertices = state.build_editor_scrub_trail_vertices_from_cache(2_000.0 / 240.0);
+        let vertices = state.build_editor_scrub_trail_vertices_from_cache(2_000.0 / 240.0);
 
-            assert!(
-                vertices.len() < 120,
-                "dense timeline samples must not be emitted as trail geometry"
-            );
-        });
+        assert!(
+            vertices.len() < 120,
+            "dense timeline samples must not be emitted as trail geometry"
+        );
     }
 
-    #[test]
-    fn scrub_trail_draws_grounded_head_from_fresh_cache() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Editor;
-            state.editor.objects.clear();
-            state.editor.spawn.position = [0.0, 0.0, 0.0];
-            state.editor.spawn.direction = Direction::Forward;
-            state.editor.timeline.clock.duration_seconds = 2.0;
-            state.editor.invalidate_samples();
-            state.rebuild_editor_timeline_snapshot_cache_if_needed();
+    #[tokio::test]
+    async fn scrub_trail_draws_grounded_head_from_fresh_cache() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+        state.editor.objects.clear();
+        state.editor.spawn.position = [0.0, 0.0, 0.0];
+        state.editor.spawn.direction = Direction::Forward;
+        state.editor.timeline.clock.duration_seconds = 2.0;
+        state.editor.invalidate_samples();
+        state.rebuild_editor_timeline_snapshot_cache_if_needed();
 
-            let vertices = state.build_editor_scrub_trail_vertices_from_cache(0.5);
+        let vertices = state.build_editor_scrub_trail_vertices_from_cache(0.5);
 
-            assert!(
-                !state.editor.timeline.trail_point_cache.is_empty(),
-                "fresh cache should store the initial trail anchor"
-            );
-            assert!(
-                !vertices.is_empty(),
-                "grounded scrub trail should draw before a fall or turn creates a new segment"
-            );
-        });
+        assert!(
+            !state.editor.timeline.trail_point_cache.is_empty(),
+            "fresh cache should store the initial trail anchor"
+        );
+        assert!(
+            !vertices.is_empty(),
+            "grounded scrub trail should draw before a fall or turn creates a new segment"
+        );
     }
 
-    #[test]
-    fn perf_overlay_toggle_controls_visibility() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
+    #[tokio::test]
+    async fn perf_overlay_toggle_controls_visibility() {
+        let mut state = State::new_test().await;
 
-            assert!(!state.perf_overlay_enabled());
+        assert!(!state.perf_overlay_enabled());
 
-            state.toggle_perf_overlay();
-            assert!(state.perf_overlay_enabled());
+        state.toggle_perf_overlay();
+        assert!(state.perf_overlay_enabled());
 
-            state.toggle_perf_overlay();
-            assert!(!state.perf_overlay_enabled());
-        });
+        state.toggle_perf_overlay();
+        assert!(!state.perf_overlay_enabled());
     }
 
-    #[test]
-    fn pending_seek_resync_waits_for_cooldown_then_applies_target_time() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Editor;
-            state.editor.set_mode(EditorMode::Timing);
-            state.editor.timeline.playback.playing = true;
-            state.editor.timeline.clock.time_seconds = 0.5;
-            state.editor.timeline.playback.pending_seek_time_seconds = Some(2.0);
-            state.editor.timeline.playback.seek_resync_cooldown_seconds = 0.2;
+    #[tokio::test]
+    async fn pending_seek_resync_waits_for_cooldown_then_applies_target_time() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+        state.editor.set_mode(EditorMode::Timing);
+        state.editor.timeline.playback.playing = true;
+        state.editor.timeline.clock.time_seconds = 0.5;
+        state.editor.timeline.playback.pending_seek_time_seconds = Some(2.0);
+        state.editor.timeline.playback.seek_resync_cooldown_seconds = 0.2;
 
-            state.maybe_resync_editor_playback_from_pending_seek(0.05);
-            assert_eq!(
-                state.editor.timeline.playback.pending_seek_time_seconds,
-                Some(2.0)
-            );
-            assert!(state.editor.timeline.playback.seek_resync_cooldown_seconds > 0.0);
-            assert_eq!(state.editor.timeline.clock.time_seconds, 0.5);
+        state.maybe_resync_editor_playback_from_pending_seek(0.05);
+        assert_eq!(
+            state.editor.timeline.playback.pending_seek_time_seconds,
+            Some(2.0)
+        );
+        assert!(state.editor.timeline.playback.seek_resync_cooldown_seconds > 0.0);
+        assert_eq!(state.editor.timeline.clock.time_seconds, 0.5);
 
-            state.maybe_resync_editor_playback_from_pending_seek(1.0);
-            assert_eq!(
-                state.editor.timeline.playback.pending_seek_time_seconds,
-                None
-            );
-            assert_eq!(
-                state.editor.timeline.playback.seek_resync_cooldown_seconds,
-                0.0
-            );
-            assert_eq!(state.editor.timeline.clock.time_seconds, 2.0);
-        });
+        state.maybe_resync_editor_playback_from_pending_seek(1.0);
+        assert_eq!(
+            state.editor.timeline.playback.pending_seek_time_seconds,
+            None
+        );
+        assert_eq!(
+            state.editor.timeline.playback.seek_resync_cooldown_seconds,
+            0.0
+        );
+        assert_eq!(state.editor.timeline.clock.time_seconds, 2.0);
     }
 
-    #[test]
-    fn pending_seek_resync_early_returns_when_not_editor_or_not_playing() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.editor.timeline.playback.pending_seek_time_seconds = Some(3.0);
-            state.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
+    #[tokio::test]
+    async fn pending_seek_resync_early_returns_when_not_editor_or_not_playing() {
+        let mut state = State::new_test().await;
+        state.editor.timeline.playback.pending_seek_time_seconds = Some(3.0);
+        state.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
 
-            state.phase = AppPhase::Menu;
-            state.editor.timeline.playback.playing = true;
-            state.maybe_resync_editor_playback_from_pending_seek(1.0);
-            assert_eq!(
-                state.editor.timeline.playback.pending_seek_time_seconds,
-                Some(3.0)
-            );
+        state.phase = AppPhase::Menu;
+        state.editor.timeline.playback.playing = true;
+        state.maybe_resync_editor_playback_from_pending_seek(1.0);
+        assert_eq!(
+            state.editor.timeline.playback.pending_seek_time_seconds,
+            Some(3.0)
+        );
 
-            state.phase = AppPhase::Editor;
-            state.editor.timeline.playback.playing = false;
-            state.maybe_resync_editor_playback_from_pending_seek(1.0);
-            assert_eq!(
-                state.editor.timeline.playback.pending_seek_time_seconds,
-                Some(3.0)
-            );
-        });
+        state.phase = AppPhase::Editor;
+        state.editor.timeline.playback.playing = false;
+        state.maybe_resync_editor_playback_from_pending_seek(1.0);
+        assert_eq!(
+            state.editor.timeline.playback.pending_seek_time_seconds,
+            Some(3.0)
+        );
     }
 
-    #[test]
-    fn playing_trigger_objects_at_time_requires_playing_phase_and_transform_triggers() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.gameplay.state.objects = vec![sample_object()];
-            state.gameplay.state.rebuild_behavior_cache();
+    #[tokio::test]
+    async fn playing_trigger_objects_at_time_requires_playing_phase_and_transform_triggers() {
+        let mut state = State::new_test().await;
+        state.gameplay.state.objects = vec![sample_object()];
+        state.gameplay.state.rebuild_behavior_cache();
 
-            state.phase = AppPhase::Menu;
-            state.editor.set_triggers(vec![instant_move_trigger(false)]);
-            assert!(state.playing_trigger_objects_at_time(0.2).is_none());
+        state.phase = AppPhase::Menu;
+        state.editor.set_triggers(vec![instant_move_trigger(false)]);
+        assert!(state.playing_trigger_objects_at_time(0.2).is_none());
 
-            state.phase = AppPhase::Playing;
-            state.editor.set_triggers(Vec::new());
-            assert!(state.playing_trigger_objects_at_time(0.2).is_none());
+        state.phase = AppPhase::Playing;
+        state.editor.set_triggers(Vec::new());
+        assert!(state.playing_trigger_objects_at_time(0.2).is_none());
 
-            state.editor.set_triggers(vec![instant_move_trigger(false)]);
-            let transformed = state
-                .playing_trigger_objects_at_time(0.2)
-                .expect("expected transformed objects");
-            assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
+        state.editor.set_triggers(vec![instant_move_trigger(false)]);
+        let transformed = state
+            .playing_trigger_objects_at_time(0.2)
+            .expect("expected transformed objects");
+        assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
 
-            state.session.playing_trigger_base_objects =
-                Some(vec![sample_object(), sample_object()]);
-            let transformed = state
-                .playing_trigger_objects_at_time(0.2)
-                .expect("expected transformed objects");
-            assert_eq!(transformed.len(), 1);
-            assert_eq!(
-                state
-                    .session
-                    .playing_trigger_base_objects
-                    .as_ref()
-                    .map(|objects| objects.len()),
-                Some(1)
-            );
-        });
+        state.session.playing_trigger_base_objects = Some(vec![sample_object(), sample_object()]);
+        let transformed = state
+            .playing_trigger_objects_at_time(0.2)
+            .expect("expected transformed objects");
+        assert_eq!(transformed.len(), 1);
+        assert_eq!(
+            state
+                .session
+                .playing_trigger_base_objects
+                .as_ref()
+                .map(|objects| objects.len()),
+            Some(1)
+        );
     }
 
-    #[test]
-    fn update_editor_scrub_trail_mesh_uses_snapshot_cache_without_runtime() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
+    #[tokio::test]
+    async fn update_editor_scrub_trail_mesh_uses_snapshot_cache_without_runtime() {
+        let mut state = State::new_test().await;
 
-            state.phase = AppPhase::Editor;
-            state.editor.timeline.clock.duration_seconds = 8.0;
-            state.editor.timeline.clock.time_seconds = 3.0;
-            state.editor.timeline.scrub_runtime = None;
-            state.editor.timeline.simulation_revision = 2;
-            state.editor.invalidate_samples();
+        state.phase = AppPhase::Editor;
+        state.editor.timeline.clock.duration_seconds = 8.0;
+        state.editor.timeline.clock.time_seconds = 3.0;
+        state.editor.timeline.scrub_runtime = None;
+        state.editor.timeline.simulation_revision = 2;
+        state.editor.invalidate_samples();
 
-            state.update_editor_scrub_trail_mesh();
-            assert!(state.editor.timeline.scrub_runtime.is_none());
-            assert_eq!(
-                state.editor.timeline.snapshot_cache_revision,
-                state.editor.timeline.simulation_revision
-            );
+        state.update_editor_scrub_trail_mesh();
+        assert!(state.editor.timeline.scrub_runtime.is_none());
+        assert_eq!(
+            state.editor.timeline.snapshot_cache_revision,
+            state.editor.timeline.simulation_revision
+        );
 
-            state.editor.timeline.clock.time_seconds = 2.0;
+        state.editor.timeline.clock.time_seconds = 2.0;
 
-            state.update_editor_scrub_trail_mesh();
-            assert!(state.editor.timeline.scrub_runtime.is_none());
-        });
+        state.update_editor_scrub_trail_mesh();
+        assert!(state.editor.timeline.scrub_runtime.is_none());
     }
 
-    #[test]
-    fn update_menu_branch_resets_accumulator() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
-            state.frame_runtime.editor.accumulator = 0.2;
+    #[tokio::test]
+    async fn update_menu_branch_resets_accumulator() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Menu;
+        state.frame_runtime.editor.accumulator = 0.2;
 
-            state.update();
+        state.update();
 
-            assert_eq!(state.frame_runtime.editor.accumulator, 0.0);
-        });
+        assert_eq!(state.frame_runtime.editor.accumulator, 0.0);
     }
 
-    #[test]
-    fn update_editor_playback_in_timing_mode_keeps_runtime_none_and_handles_pending_seek() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Editor;
-            state.editor.ui.mode = EditorMode::Timing;
-            state.editor.timeline.clock.duration_seconds = 4.0;
-            state.editor.timeline.clock.time_seconds = 0.5;
-            state.editor.timeline.playback.playing = true;
-            state.editor.timeline.playback.pending_seek_time_seconds = Some(1.5);
-            state.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
+    #[tokio::test]
+    async fn update_editor_playback_in_timing_mode_keeps_runtime_none_and_handles_pending_seek() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+        state.editor.ui.mode = EditorMode::Timing;
+        state.editor.timeline.clock.duration_seconds = 4.0;
+        state.editor.timeline.clock.time_seconds = 0.5;
+        state.editor.timeline.playback.playing = true;
+        state.editor.timeline.playback.pending_seek_time_seconds = Some(1.5);
+        state.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
 
-            state.update();
+        state.update();
 
-            assert!(state.editor.timeline.playback.runtime.is_none());
-            assert!(state.editor.timeline.clock.time_seconds >= 0.5);
-        });
+        assert!(state.editor.timeline.playback.runtime.is_none());
+        assert!(state.editor.timeline.clock.time_seconds >= 0.5);
     }
 
-    #[test]
-    fn update_editor_playback_stops_when_audio_not_playing() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Editor;
-            state.editor.ui.mode = EditorMode::Place;
-            state.editor.timeline.clock.duration_seconds = 10.0;
-            state.editor.timeline.clock.time_seconds = 2.0;
-            state.editor.timeline.playback.playing = true;
-            state.editor.timeline.playback.runtime =
-                Some(TimelineSimulationRuntime::new_with_triggers(
-                    state.editor.spawn.position,
-                    state.editor.spawn.direction,
-                    &state.editor.objects,
-                    &state.editor.timeline.taps.tap_times,
-                    &state.editor.triggers(),
-                ));
+    #[tokio::test]
+    async fn update_editor_playback_stops_when_audio_not_playing() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+        state.editor.ui.mode = EditorMode::Place;
+        state.editor.timeline.clock.duration_seconds = 10.0;
+        state.editor.timeline.clock.time_seconds = 2.0;
+        state.editor.timeline.playback.playing = true;
+        state.editor.timeline.playback.runtime =
+            Some(TimelineSimulationRuntime::new_with_triggers(
+                state.editor.spawn.position,
+                state.editor.spawn.direction,
+                &state.editor.objects,
+                &state.editor.timeline.taps.tap_times,
+                &state.editor.triggers(),
+            ));
 
-            // In tests, no active playback source means runtime reports not playing.
-            state.update();
+        // In tests, no active playback source means runtime reports not playing.
+        state.update();
 
-            assert!(!state.editor.timeline.playback.playing);
-            assert!(state.editor.timeline.playback.runtime.is_none());
-            assert!(state
-                .editor
-                .timeline
-                .playback
-                .pending_seek_time_seconds
-                .is_none());
-        });
+        assert!(!state.editor.timeline.playback.playing);
+        assert!(state.editor.timeline.playback.runtime.is_none());
+        assert!(state
+            .editor
+            .timeline
+            .playback
+            .pending_seek_time_seconds
+            .is_none());
     }
 
-    #[test]
-    fn update_playing_phase_level_complete_returns_to_menu() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Playing;
-            state.gameplay.state.level_complete = true;
-            state.gameplay.state.completion_hold_seconds = 0.0;
+    #[tokio::test]
+    async fn update_playing_phase_level_complete_returns_to_menu() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Playing;
+        state.gameplay.state.level_complete = true;
+        state.gameplay.state.completion_hold_seconds = 0.0;
 
-            state.update();
+        state.update();
 
-            assert_eq!(state.phase, AppPhase::Menu);
-        });
+        assert_eq!(state.phase, AppPhase::Menu);
     }
 
-    #[test]
-    fn update_playtest_level_complete_returns_to_editor_after_hold() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.enter_editor_phase("PlaytestComplete".to_string());
-            state.editor.objects = vec![sample_object()];
-            state.editor_playtest();
-            state.gameplay.state.level_complete = true;
-            state.gameplay.state.completion_hold_seconds = 0.0;
+    #[tokio::test]
+    async fn update_playtest_level_complete_returns_to_editor_after_hold() {
+        let mut state = State::new_test().await;
+        state.enter_editor_phase("PlaytestComplete".to_string());
+        state.editor.objects = vec![sample_object()];
+        state.editor_playtest();
+        state.gameplay.state.level_complete = true;
+        state.gameplay.state.completion_hold_seconds = 0.0;
 
-            state.update();
+        state.update();
 
-            assert_eq!(state.phase, AppPhase::Editor);
-            assert!(!state.session.playtesting_editor);
-            assert_eq!(state.gameplay.state.objects, state.editor.objects);
-        });
+        assert_eq!(state.phase, AppPhase::Editor);
+        assert!(!state.session.playtesting_editor);
+        assert_eq!(state.gameplay.state.objects, state.editor.objects);
     }
 
-    #[test]
-    fn update_playing_phase_game_over_keeps_phase_and_stops_audio_path() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Playing;
-            state.gameplay.state.started = true;
-            state.gameplay.state.game_over = true;
-            state.gameplay.state.objects = vec![sample_object()];
-            state.gameplay.state.rebuild_behavior_cache();
+    #[tokio::test]
+    async fn update_playing_phase_game_over_keeps_phase_and_stops_audio_path() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Playing;
+        state.gameplay.state.started = true;
+        state.gameplay.state.game_over = true;
+        state.gameplay.state.objects = vec![sample_object()];
+        state.gameplay.state.rebuild_behavior_cache();
 
-            assert!(!state.gameplay.death_sfx_played);
-            state.update();
+        assert!(!state.gameplay.death_sfx_played);
+        state.update();
 
-            assert_eq!(state.phase, AppPhase::Playing);
-            assert!(state.gameplay.state.game_over);
-            assert!(state.gameplay.death_sfx_played);
+        assert_eq!(state.phase, AppPhase::Playing);
+        assert!(state.gameplay.state.game_over);
+        assert!(state.gameplay.death_sfx_played);
 
-            state.update();
+        state.update();
 
-            assert!(state.gameplay.death_sfx_played);
-        });
+        assert!(state.gameplay.death_sfx_played);
     }
 
-    #[test]
-    fn update_playing_phase_builds_trail_and_line_uniform_for_right_direction() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Playing;
-            state.gameplay.state.started = false;
-            state.gameplay.state.direction = eg_types::Direction::Right;
-            state.gameplay.state.position = [0.0, 0.0, 0.0];
-            state.gameplay.state.is_grounded = false;
-            state.gameplay.state.trail_segments =
-                vec![vec![[900.0, 0.0, 900.0]], vec![[0.0, 0.0, 0.0]]];
+    #[tokio::test]
+    async fn update_playing_phase_builds_trail_and_line_uniform_for_right_direction() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Playing;
+        state.gameplay.state.started = false;
+        state.gameplay.state.direction = eg_types::Direction::Right;
+        state.gameplay.state.position = [0.0, 0.0, 0.0];
+        state.gameplay.state.is_grounded = false;
+        state.gameplay.state.trail_segments =
+            vec![vec![[900.0, 0.0, 900.0]], vec![[0.0, 0.0, 0.0]]];
 
-            state.update();
+        state.update();
 
-            assert_eq!(
-                state.frame_runtime.player_render.line_uniform.rotation,
-                -std::f32::consts::FRAC_PI_2
-            );
-            assert!(state.render.meshes.trail.draw_data().is_some());
-        });
+        assert_eq!(
+            state.frame_runtime.player_render.line_uniform.rotation,
+            -std::f32::consts::FRAC_PI_2
+        );
+        assert!(state.render.meshes.trail.draw_data().is_some());
     }
 
-    #[test]
-    fn update_playing_phase_paused_does_not_advance_gameplay() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Playing;
-            state.session.playtesting_editor = false;
-            state.session.game_paused = true;
-            state.gameplay.state.started = true;
-            state.gameplay.state.elapsed_seconds = 1.0;
-            state.gameplay.state.position = [2.0, 0.0, 3.0];
+    #[tokio::test]
+    async fn update_playing_phase_paused_does_not_advance_gameplay() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Playing;
+        state.session.playtesting_editor = false;
+        state.session.game_paused = true;
+        state.gameplay.state.started = true;
+        state.gameplay.state.elapsed_seconds = 1.0;
+        state.gameplay.state.position = [2.0, 0.0, 3.0];
 
-            state.update();
+        state.update();
 
-            assert_eq!(state.phase, AppPhase::Playing);
-            assert_eq!(state.gameplay.state.elapsed_seconds, 1.0);
-            assert_eq!(state.gameplay.state.position, [2.0, 0.0, 3.0]);
-            assert_eq!(state.frame_runtime.editor.accumulator, 0.0);
-        });
+        assert_eq!(state.phase, AppPhase::Playing);
+        assert_eq!(state.gameplay.state.elapsed_seconds, 1.0);
+        assert_eq!(state.gameplay.state.position, [2.0, 0.0, 3.0]);
+        assert_eq!(state.frame_runtime.editor.accumulator, 0.0);
     }
 
-    #[test]
-    fn update_editor_timing_playback_advances_with_pending_seek_and_timing_points() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Editor;
-            state.editor.ui.mode = EditorMode::Timing;
-            state.editor.timeline.playback.playing = true;
-            state.editor.timeline.clock.time_seconds = 0.1;
-            state.editor.timeline.clock.duration_seconds = 8.0;
-            state.editor.timeline.playback.pending_seek_time_seconds = Some(1.1);
-            state.editor.timeline.playback.seek_resync_cooldown_seconds = 1.0;
-            state.editor.timing.timing_points = vec![TimingPoint {
-                time_seconds: 0.0,
-                bpm: 120.0,
-                time_signature_numerator: 4,
-                time_signature_denominator: 4,
-            }];
+    #[tokio::test]
+    async fn update_editor_timing_playback_advances_with_pending_seek_and_timing_points() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+        state.editor.ui.mode = EditorMode::Timing;
+        state.editor.timeline.playback.playing = true;
+        state.editor.timeline.clock.time_seconds = 0.1;
+        state.editor.timeline.clock.duration_seconds = 8.0;
+        state.editor.timeline.playback.pending_seek_time_seconds = Some(1.1);
+        state.editor.timeline.playback.seek_resync_cooldown_seconds = 1.0;
+        state.editor.timing.timing_points = vec![TimingPoint {
+            time_seconds: 0.0,
+            bpm: 120.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        }];
 
-            state.update();
+        state.update();
 
-            assert!(state.editor.timeline.clock.time_seconds >= 1.0);
-            assert!(!state.editor.timeline.playback.playing);
-        });
+        assert!(state.editor.timeline.clock.time_seconds >= 1.0);
+        assert!(!state.editor.timeline.playback.playing);
     }
 }

@@ -143,7 +143,7 @@ Blocks can define inline `animation` metadata for reusable idle motion and event
 
 ### Async Tests
 
-- State construction is `async` (e.g., `State::new_test().await`). Use `pollster::block_on(...)` to run async tests synchronously.
+- State construction is `async` (e.g., `State::new_test().await`). Use `#[tokio::test]` for async tests.
 - Editor tests use `enter_editor_phase("name")` with minimal test data when built-in level metadata is not needed. Avoid `start_editor(0)` (which loads full built-in data) unless specifically testing built-in levels — it makes tests multi-second.
 
 ### Test Fixtures & Helpers

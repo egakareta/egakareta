@@ -18,29 +18,25 @@ impl State {
 mod tests {
     use super::super::State;
 
-    #[test]
-    fn render_block_icon_snapshot_returns_texture_for_known_block() {
-        pollster::block_on(async {
-            let state = State::new_test().await;
-            let texture = state
-                .render_block_icon_snapshot("core/stone", 96)
-                .expect("expected icon snapshot texture");
-            let size = texture.size();
-            assert_eq!(size.width, 96);
-            assert_eq!(size.height, 96);
-        });
+    #[tokio::test]
+    async fn render_block_icon_snapshot_returns_texture_for_known_block() {
+        let state = State::new_test().await;
+        let texture = state
+            .render_block_icon_snapshot("core/stone", 96)
+            .expect("expected icon snapshot texture");
+        let size = texture.size();
+        assert_eq!(size.width, 96);
+        assert_eq!(size.height, 96);
     }
 
-    #[test]
-    fn render_block_icon_snapshot_clamps_zero_size_and_supports_unknown_block_ids() {
-        pollster::block_on(async {
-            let state = State::new_test().await;
-            let texture = state
-                .render_block_icon_snapshot("missing/block-id", 0)
-                .expect("expected fallback block icon snapshot texture");
-            let size = texture.size();
-            assert_eq!(size.width, 1);
-            assert_eq!(size.height, 1);
-        });
+    #[tokio::test]
+    async fn render_block_icon_snapshot_clamps_zero_size_and_supports_unknown_block_ids() {
+        let state = State::new_test().await;
+        let texture = state
+            .render_block_icon_snapshot("missing/block-id", 0)
+            .expect("expected fallback block icon snapshot texture");
+        let size = texture.size();
+        assert_eq!(size.width, 1);
+        assert_eq!(size.height, 1);
     }
 }
