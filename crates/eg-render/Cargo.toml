@@ -23,3 +23,4 @@ wgpu = { workspace = true }
 approx = { workspace = true }
 naga = { workspace = true }
 pollster = { workspace = true }
+tokio = { workspace = true }

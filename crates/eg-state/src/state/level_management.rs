@@ -763,292 +763,276 @@ mod tests {
         }
     }
 
-    #[test]
-    fn level_binary_export_import_roundtrip_restores_editor_state() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.enter_editor_phase("RoundtripSource".to_string());
+    #[tokio::test]
+    async fn level_binary_export_import_roundtrip_restores_editor_state() {
+        let mut state = State::new_test().await;
+        state.enter_editor_phase("RoundtripSource".to_string());
 
-            state.set_editor_level_name("RoundtripSource".to_string());
-            state.set_editor_music_metadata(MusicMetadata {
-                source: "roundtrip.mp3".to_string(),
-                ..MusicMetadata::default()
-            });
-            state.set_editor_creator_metadata(LevelCreatorMetadata {
-                creator: Some("Roundtrip Author".to_string()),
-                description: None,
-                stars: 6.5,
-                tags: vec!["binary".to_string(), "roundtrip".to_string()],
-                version: Some("1.0".to_string()),
-            });
-            state.editor.objects = vec![test_object([2.0, 1.0, 3.0], "core/grass")];
-            state.editor.spawn.position = [3.0, 0.0, 4.0];
-            state.editor.timeline.taps.tap_times = vec![0.25, 0.5];
-            state.editor.timeline.clock.time_seconds = 0.5;
-            state.editor.timeline.clock.duration_seconds = 12.0;
-
-            let expected = state.current_editor_metadata();
-            let exported = state
-                .export_level()
-                .expect("export should produce binary payload");
-
-            state.editor.objects.clear();
-            state.editor.spawn.position = [99.0, 0.0, 99.0];
-            state.set_editor_level_name("Mutated".to_string());
-
-            state
-                .import_level(&exported)
-                .expect("import should restore metadata from binary payload");
-
-            let actual = state.current_editor_metadata();
-            assert_eq!(actual.name, expected.name);
-            assert_eq!(actual.music.source, expected.music.source);
-            assert_eq!(actual.creator, expected.creator);
-            assert_eq!(actual.stars, expected.stars);
-            assert_eq!(actual.tags, expected.tags);
-            assert_eq!(actual.version, expected.version);
-            assert_eq!(actual.spawn.position, expected.spawn.position);
-            assert_eq!(actual.tap_times, expected.tap_times);
-            assert_eq!(actual.timeline_time_seconds, expected.timeline_time_seconds);
-            assert_eq!(
-                actual.timeline_duration_seconds,
-                expected.timeline_duration_seconds
-            );
-            assert_eq!(actual.objects.len(), expected.objects.len());
-            assert_eq!(actual.objects[0].block_id, expected.objects[0].block_id);
+        state.set_editor_level_name("RoundtripSource".to_string());
+        state.set_editor_music_metadata(MusicMetadata {
+            source: "roundtrip.mp3".to_string(),
+            ..MusicMetadata::default()
         });
+        state.set_editor_creator_metadata(LevelCreatorMetadata {
+            creator: Some("Roundtrip Author".to_string()),
+            description: None,
+            stars: 6.5,
+            tags: vec!["binary".to_string(), "roundtrip".to_string()],
+            version: Some("1.0".to_string()),
+        });
+        state.editor.objects = vec![test_object([2.0, 1.0, 3.0], "core/grass")];
+        state.editor.spawn.position = [3.0, 0.0, 4.0];
+        state.editor.timeline.taps.tap_times = vec![0.25, 0.5];
+        state.editor.timeline.clock.time_seconds = 0.5;
+        state.editor.timeline.clock.duration_seconds = 12.0;
+
+        let expected = state.current_editor_metadata();
+        let exported = state
+            .export_level()
+            .expect("export should produce binary payload");
+
+        state.editor.objects.clear();
+        state.editor.spawn.position = [99.0, 0.0, 99.0];
+        state.set_editor_level_name("Mutated".to_string());
+
+        state
+            .import_level(&exported)
+            .expect("import should restore metadata from binary payload");
+
+        let actual = state.current_editor_metadata();
+        assert_eq!(actual.name, expected.name);
+        assert_eq!(actual.music.source, expected.music.source);
+        assert_eq!(actual.creator, expected.creator);
+        assert_eq!(actual.stars, expected.stars);
+        assert_eq!(actual.tags, expected.tags);
+        assert_eq!(actual.version, expected.version);
+        assert_eq!(actual.spawn.position, expected.spawn.position);
+        assert_eq!(actual.tap_times, expected.tap_times);
+        assert_eq!(actual.timeline_time_seconds, expected.timeline_time_seconds);
+        assert_eq!(
+            actual.timeline_duration_seconds,
+            expected.timeline_duration_seconds
+        );
+        assert_eq!(actual.objects.len(), expected.objects.len());
+        assert_eq!(actual.objects[0].block_id, expected.objects[0].block_id);
     }
 
-    #[test]
-    fn apply_metadata_supports_create_update_and_delete_like_replacement() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.enter_editor_phase("CrudSeed".to_string());
+    #[tokio::test]
+    async fn apply_metadata_supports_create_update_and_delete_like_replacement() {
+        let mut state = State::new_test().await;
+        state.enter_editor_phase("CrudSeed".to_string());
 
-            let mut created = state.current_editor_metadata();
-            created.name = "CrudCreate".to_string();
-            created.music.source = "crud.mp3".to_string();
-            created.objects = vec![test_object([1.0, 0.0, 1.0], "core/stone")];
-            created.tap_times = vec![0.75];
-            state.apply_imported_level_metadata(created);
+        let mut created = state.current_editor_metadata();
+        created.name = "CrudCreate".to_string();
+        created.music.source = "crud.mp3".to_string();
+        created.objects = vec![test_object([1.0, 0.0, 1.0], "core/stone")];
+        created.tap_times = vec![0.75];
+        state.apply_imported_level_metadata(created);
 
-            assert_eq!(state.editor_level_name().as_deref(), Some("CrudCreate"));
-            assert_eq!(state.current_editor_metadata().music.source, "crud.mp3");
-            assert_eq!(state.editor.objects.len(), 1);
+        assert_eq!(state.editor_level_name().as_deref(), Some("CrudCreate"));
+        assert_eq!(state.current_editor_metadata().music.source, "crud.mp3");
+        assert_eq!(state.editor.objects.len(), 1);
 
-            state.set_editor_level_name("CrudUpdate".to_string());
-            assert_eq!(state.editor_level_name().as_deref(), Some("CrudUpdate"));
+        state.set_editor_level_name("CrudUpdate".to_string());
+        assert_eq!(state.editor_level_name().as_deref(), Some("CrudUpdate"));
 
-            let mut deleted = state.current_editor_metadata();
-            deleted.objects.clear();
-            deleted.tap_times.clear();
-            state.apply_imported_level_metadata(deleted);
+        let mut deleted = state.current_editor_metadata();
+        deleted.objects.clear();
+        deleted.tap_times.clear();
+        state.apply_imported_level_metadata(deleted);
 
-            assert!(state.editor.objects.is_empty());
-            assert!(state.editor.timeline.taps.tap_times.is_empty());
-        });
+        assert!(state.editor.objects.is_empty());
+        assert!(state.editor.timeline.taps.tap_times.is_empty());
     }
 
-    #[test]
-    fn loading_unknown_builtin_level_is_noop() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.enter_editor_phase("KnownLevel".to_string());
-            state.editor.objects = vec![test_object([1.0, 0.0, 1.0], "core/stone")];
-            state.editor.spawn.position = [3.0, 0.0, 2.0];
-            state.editor.spawn.direction = Direction::Right;
+    #[tokio::test]
+    async fn loading_unknown_builtin_level_is_noop() {
+        let mut state = State::new_test().await;
+        state.enter_editor_phase("KnownLevel".to_string());
+        state.editor.objects = vec![test_object([1.0, 0.0, 1.0], "core/stone")];
+        state.editor.spawn.position = [3.0, 0.0, 2.0];
+        state.editor.spawn.direction = Direction::Right;
 
-            let before_name = state.editor_level_name();
-            let before_objects = state.editor.objects.clone();
-            let before_spawn = state.editor.spawn.clone();
+        let before_name = state.editor_level_name();
+        let before_objects = state.editor.objects.clone();
+        let before_spawn = state.editor.spawn.clone();
 
-            state.load_builtin_level_into_editor("__missing_builtin_level__");
+        state.load_builtin_level_into_editor("__missing_builtin_level__");
 
-            assert_eq!(state.editor_level_name(), before_name);
-            assert_eq!(state.editor.objects, before_objects);
-            assert_eq!(state.editor.spawn.position, before_spawn.position);
-            assert_eq!(state.editor.spawn.direction, before_spawn.direction);
-        });
+        assert_eq!(state.editor_level_name(), before_name);
+        assert_eq!(state.editor.objects, before_objects);
+        assert_eq!(state.editor.spawn.position, before_spawn.position);
+        assert_eq!(state.editor.spawn.direction, before_spawn.direction);
     }
 
-    #[test]
-    fn settings_and_editor_visibility_accessors_roundtrip() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
+    #[tokio::test]
+    async fn settings_and_editor_visibility_accessors_roundtrip() {
+        let mut state = State::new_test().await;
 
-            state.set_editor_show_metadata(true);
-            assert!(state.editor_show_metadata());
+        state.set_editor_show_metadata(true);
+        assert!(state.editor_show_metadata());
 
-            state.set_editor_show_settings(true);
-            assert!(state.editor_show_settings());
+        state.set_editor_show_settings(true);
+        assert!(state.editor_show_settings());
 
-            state.set_editor_settings_section(SettingsSection::Keybinds);
-            assert_eq!(state.editor_settings_section(), SettingsSection::Keybinds);
+        state.set_editor_settings_section(SettingsSection::Keybinds);
+        assert_eq!(state.editor_settings_section(), SettingsSection::Keybinds);
 
-            state.set_editor_keybind_capture_action(Some(("editor.copy".to_string(), 0)));
-            assert_eq!(
-                state.editor_keybind_capture_action(),
-                Some(&("editor.copy".to_string(), 0))
-            );
+        state.set_editor_keybind_capture_action(Some(("editor.copy".to_string(), 0)));
+        assert_eq!(
+            state.editor_keybind_capture_action(),
+            Some(&("editor.copy".to_string(), 0))
+        );
 
-            state.set_editor_show_settings(false);
-            assert!(!state.editor_show_settings());
-            assert_eq!(state.editor_keybind_capture_action(), None);
-        });
+        state.set_editor_show_settings(false);
+        assert!(!state.editor_show_settings());
+        assert_eq!(state.editor_keybind_capture_action(), None);
     }
 
-    #[test]
-    fn graphics_and_keybind_preference_mutations_update_state() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
+    #[tokio::test]
+    async fn graphics_and_keybind_preference_mutations_update_state() {
+        let mut state = State::new_test().await;
 
-            let original_graphics = state.app_settings().graphics_backend.clone();
-            let original_restart_required = state.settings_restart_required();
+        let original_graphics = state.app_settings().graphics_backend.clone();
+        let original_restart_required = state.settings_restart_required();
 
-            state.set_preferred_graphics_backend(original_graphics.clone());
-            assert_eq!(state.app_settings().graphics_backend, original_graphics);
-            assert_eq!(state.settings_restart_required(), original_restart_required);
+        state.set_preferred_graphics_backend(original_graphics.clone());
+        assert_eq!(state.app_settings().graphics_backend, original_graphics);
+        assert_eq!(state.settings_restart_required(), original_restart_required);
 
-            state.set_preferred_graphics_backend("ManualTestBackend".to_string());
-            assert_eq!(state.app_settings().graphics_backend, "ManualTestBackend");
-            assert!(state.settings_restart_required());
+        state.set_preferred_graphics_backend("ManualTestBackend".to_string());
+        assert_eq!(state.app_settings().graphics_backend, "ManualTestBackend");
+        assert!(state.settings_restart_required());
 
-            state.set_ui_scale_multiplier(0.1);
-            assert!((state.app_settings().ui_scale_multiplier - 0.5).abs() <= 1e-6);
-            state.set_ui_scale_multiplier(8.0);
-            assert!((state.app_settings().ui_scale_multiplier - 3.0).abs() <= 1e-6);
-            state.set_ui_scale_multiplier(1.25);
-            assert!((state.app_settings().ui_scale_multiplier - 1.25).abs() <= 1e-6);
+        state.set_ui_scale_multiplier(0.1);
+        assert!((state.app_settings().ui_scale_multiplier - 0.5).abs() <= 1e-6);
+        state.set_ui_scale_multiplier(8.0);
+        assert!((state.app_settings().ui_scale_multiplier - 3.0).abs() <= 1e-6);
+        state.set_ui_scale_multiplier(1.25);
+        assert!((state.app_settings().ui_scale_multiplier - 1.25).abs() <= 1e-6);
 
-            let before_keybinds = state
-                .app_settings()
-                .keybinds_for_action("editor.copy")
-                .len();
-            state.set_keybind_for_action(
-                "editor.copy".to_string(),
-                0,
-                KeyChord::new("K", true, false, false),
-            );
-            let after_set = state
-                .app_settings()
-                .keybinds_for_action("editor.copy")
-                .len();
-            assert!(after_set >= 1);
+        let before_keybinds = state
+            .app_settings()
+            .keybinds_for_action("editor.copy")
+            .len();
+        state.set_keybind_for_action(
+            "editor.copy".to_string(),
+            0,
+            KeyChord::new("K", true, false, false),
+        );
+        let after_set = state
+            .app_settings()
+            .keybinds_for_action("editor.copy")
+            .len();
+        assert!(after_set >= 1);
 
-            state.clear_keybind_slot_for_action("editor.copy", 0);
-            let after_clear = state
-                .app_settings()
-                .keybinds_for_action("editor.copy")
-                .len();
-            assert!(after_clear <= after_set);
+        state.clear_keybind_slot_for_action("editor.copy", 0);
+        let after_clear = state
+            .app_settings()
+            .keybinds_for_action("editor.copy")
+            .len();
+        assert!(after_clear <= after_set);
 
-            state.reset_keybind_for_action("editor.copy");
-            let after_reset = state
-                .app_settings()
-                .keybinds_for_action("editor.copy")
-                .len();
-            assert!(after_reset >= 1 || before_keybinds == 0);
-        });
+        state.reset_keybind_for_action("editor.copy");
+        let after_reset = state
+            .app_settings()
+            .keybinds_for_action("editor.copy")
+            .len();
+        assert!(after_reset >= 1 || before_keybinds == 0);
     }
 
-    #[test]
-    fn locked_backend_preferences_ignore_mutations() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
+    #[tokio::test]
+    async fn locked_backend_preferences_ignore_mutations() {
+        let mut state = State::new_test().await;
 
-            state.session.graphics_backend_locked = true;
-            let original_graphics = state.app_settings().graphics_backend.clone();
-            state.set_preferred_graphics_backend("ManualTestBackend".to_string());
-            assert_eq!(state.app_settings().graphics_backend, original_graphics);
-            assert!(!state.settings_restart_required());
+        state.session.graphics_backend_locked = true;
+        let original_graphics = state.app_settings().graphics_backend.clone();
+        state.set_preferred_graphics_backend("ManualTestBackend".to_string());
+        assert_eq!(state.app_settings().graphics_backend, original_graphics);
+        assert!(!state.settings_restart_required());
 
-            state.session.audio_backend_locked = true;
-            state.session.app_settings.audio_backend = "LockedAudio".to_string();
-            let original_audio = state.app_settings().audio_backend.clone();
-            state.set_preferred_audio_backend("Default".to_string());
-            assert_eq!(state.app_settings().audio_backend, original_audio);
-        });
+        state.session.audio_backend_locked = true;
+        state.session.app_settings.audio_backend = "LockedAudio".to_string();
+        let original_audio = state.app_settings().audio_backend.clone();
+        state.set_preferred_audio_backend("Default".to_string());
+        assert_eq!(state.app_settings().audio_backend, original_audio);
     }
 
-    #[test]
-    fn menu_preview_refresh_uses_selected_level_scene_and_camera() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
-            state.menu.state.selected_level = 0;
-            state.menu.state.preview_level_index = None;
+    #[tokio::test]
+    async fn menu_preview_refresh_uses_selected_level_scene_and_camera() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Menu;
+        state.menu.state.selected_level = 0;
+        state.menu.state.preview_level_index = None;
 
-            let level_name = state.menu.state.levels[0].clone();
-            let metadata = state
-                .load_level_metadata(&level_name)
-                .expect("selected level metadata should exist");
+        let level_name = state.menu.state.levels[0].clone();
+        let metadata = state
+            .load_level_metadata(&level_name)
+            .expect("selected level metadata should exist");
 
-            state.refresh_menu_level_preview_if_needed();
+        state.refresh_menu_level_preview_if_needed();
 
-            assert_eq!(state.menu.state.preview_level_index, Some(0));
-            assert_eq!(state.gameplay.state.objects, metadata.objects);
+        assert_eq!(state.menu.state.preview_level_index, Some(0));
+        assert_eq!(state.gameplay.state.objects, metadata.objects);
 
-            let expected_camera = metadata
-                .menu_preview_camera
-                .as_ref()
-                .map(|preview| (preview.position, preview.target))
-                .unwrap_or_else(|| auto_menu_preview_camera_from_spawn(&metadata.spawn));
-            assert_eq!(state.menu.state.preview_camera_position, expected_camera.0);
-            assert_eq!(state.menu.state.preview_camera_target, expected_camera.1);
-            assert_eq!(state.menu.state.preview_sky_color, metadata.sky_color);
+        let expected_camera = metadata
+            .menu_preview_camera
+            .as_ref()
+            .map(|preview| (preview.position, preview.target))
+            .unwrap_or_else(|| auto_menu_preview_camera_from_spawn(&metadata.spawn));
+        assert_eq!(state.menu.state.preview_camera_position, expected_camera.0);
+        assert_eq!(state.menu.state.preview_camera_target, expected_camera.1);
+        assert_eq!(state.menu.state.preview_sky_color, metadata.sky_color);
 
-            state.refresh_menu_level_preview_if_needed();
-            assert_eq!(state.menu.state.preview_level_index, Some(0));
-        });
+        state.refresh_menu_level_preview_if_needed();
+        assert_eq!(state.menu.state.preview_level_index, Some(0));
     }
 
-    #[test]
-    fn menu_preview_refresh_uses_default_scene_for_unavailable_levels() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.enter_editor_phase("PreviewGuard".to_string());
-            state.menu.state.preview_level_index = None;
+    #[tokio::test]
+    async fn menu_preview_refresh_uses_default_scene_for_unavailable_levels() {
+        let mut state = State::new_test().await;
+        state.enter_editor_phase("PreviewGuard".to_string());
+        state.menu.state.preview_level_index = None;
 
-            state.refresh_menu_level_preview_if_needed();
-            assert_eq!(state.menu.state.preview_level_index, None);
+        state.refresh_menu_level_preview_if_needed();
+        assert_eq!(state.menu.state.preview_level_index, None);
 
-            state.phase = AppPhase::Menu;
-            state.menu.state.selected_level = state.menu.state.levels.len();
+        state.phase = AppPhase::Menu;
+        state.menu.state.selected_level = state.menu.state.levels.len();
 
-            state.refresh_menu_level_preview_if_needed();
-            assert_eq!(
-                state.menu.state.preview_level_index,
-                Some(state.menu.state.selected_level)
-            );
-            assert_eq!(
-                state.menu.state.preview_camera_position,
-                DEFAULT_MENU_PREVIEW_CAMERA_POSITION
-            );
-            assert_eq!(
-                state.menu.state.preview_camera_target,
-                DEFAULT_MENU_PREVIEW_CAMERA_TARGET
-            );
-            assert_eq!(state.menu.state.preview_sky_color, default_sky_color());
-            assert_eq!(state.gameplay.state.objects, eg_game::create_menu_scene());
+        state.refresh_menu_level_preview_if_needed();
+        assert_eq!(
+            state.menu.state.preview_level_index,
+            Some(state.menu.state.selected_level)
+        );
+        assert_eq!(
+            state.menu.state.preview_camera_position,
+            DEFAULT_MENU_PREVIEW_CAMERA_POSITION
+        );
+        assert_eq!(
+            state.menu.state.preview_camera_target,
+            DEFAULT_MENU_PREVIEW_CAMERA_TARGET
+        );
+        assert_eq!(state.menu.state.preview_sky_color, default_sky_color());
+        assert_eq!(state.gameplay.state.objects, eg_game::create_menu_scene());
 
-            state.menu.state.levels = vec!["__missing_preview_level__".to_string()];
-            state.menu.state.selected_level = 0;
-            state.menu.state.preview_level_index = None;
-            state.gameplay.state.objects.clear();
+        state.menu.state.levels = vec!["__missing_preview_level__".to_string()];
+        state.menu.state.selected_level = 0;
+        state.menu.state.preview_level_index = None;
+        state.gameplay.state.objects.clear();
 
-            state.refresh_menu_level_preview_if_needed();
-            assert_eq!(state.menu.state.preview_level_index, Some(0));
-            assert_eq!(state.gameplay.state.objects, eg_game::create_menu_scene());
-            assert_eq!(
-                state.menu.state.preview_camera_position,
-                DEFAULT_MENU_PREVIEW_CAMERA_POSITION
-            );
-            assert_eq!(
-                state.menu.state.preview_camera_target,
-                DEFAULT_MENU_PREVIEW_CAMERA_TARGET
-            );
-            assert_eq!(state.menu.state.preview_sky_color, default_sky_color());
-        });
+        state.refresh_menu_level_preview_if_needed();
+        assert_eq!(state.menu.state.preview_level_index, Some(0));
+        assert_eq!(state.gameplay.state.objects, eg_game::create_menu_scene());
+        assert_eq!(
+            state.menu.state.preview_camera_position,
+            DEFAULT_MENU_PREVIEW_CAMERA_POSITION
+        );
+        assert_eq!(
+            state.menu.state.preview_camera_target,
+            DEFAULT_MENU_PREVIEW_CAMERA_TARGET
+        );
+        assert_eq!(state.menu.state.preview_sky_color, default_sky_color());
     }
 
     #[test]
@@ -1076,74 +1060,70 @@ mod tests {
         );
     }
 
-    #[test]
-    fn menu_preview_camera_commands_are_phase_guarded_and_dispatchable() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Menu;
+    #[tokio::test]
+    async fn menu_preview_camera_commands_are_phase_guarded_and_dispatchable() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Menu;
 
-            state.dispatch(AppCommand::Editor(EditorCommand::CaptureMenuPreviewCamera));
-            assert!(state
-                .current_editor_metadata()
-                .menu_preview_camera
-                .is_none());
+        state.dispatch(AppCommand::Editor(EditorCommand::CaptureMenuPreviewCamera));
+        assert!(state
+            .current_editor_metadata()
+            .menu_preview_camera
+            .is_none());
 
-            state.session.editor_menu_preview_camera = Some(LevelPreviewCameraMetadata {
-                position: [9.0, 8.0, 7.0],
-                target: [6.0, 5.0, 4.0],
-            });
-            state.dispatch(AppCommand::Editor(EditorCommand::UseAutoMenuPreviewCamera));
-            assert!(state
-                .current_editor_metadata()
-                .menu_preview_camera
-                .is_some());
-
-            state.enter_editor_phase("DispatchPreviewCamera".to_string());
-            state.editor.camera.editor_pan = [2.0, -4.0];
-            state.editor.camera.editor_target_z = 3.0;
-
-            state.dispatch(AppCommand::Editor(EditorCommand::CaptureMenuPreviewCamera));
-            let captured = state.current_editor_metadata().menu_preview_camera;
-            assert_eq!(
-                captured.as_ref().map(|camera| camera.target),
-                Some([2.0, 3.0, -4.0])
-            );
-
-            state.dispatch(AppCommand::Editor(EditorCommand::UseAutoMenuPreviewCamera));
-            assert!(state
-                .current_editor_metadata()
-                .menu_preview_camera
-                .is_none());
+        state.session.editor_menu_preview_camera = Some(LevelPreviewCameraMetadata {
+            position: [9.0, 8.0, 7.0],
+            target: [6.0, 5.0, 4.0],
         });
+        state.dispatch(AppCommand::Editor(EditorCommand::UseAutoMenuPreviewCamera));
+        assert!(state
+            .current_editor_metadata()
+            .menu_preview_camera
+            .is_some());
+
+        state.enter_editor_phase("DispatchPreviewCamera".to_string());
+        state.editor.camera.editor_pan = [2.0, -4.0];
+        state.editor.camera.editor_target_z = 3.0;
+
+        state.dispatch(AppCommand::Editor(EditorCommand::CaptureMenuPreviewCamera));
+        let captured = state.current_editor_metadata().menu_preview_camera;
+        assert_eq!(
+            captured.as_ref().map(|camera| camera.target),
+            Some([2.0, 3.0, -4.0])
+        );
+
+        state.dispatch(AppCommand::Editor(EditorCommand::UseAutoMenuPreviewCamera));
+        assert!(state
+            .current_editor_metadata()
+            .menu_preview_camera
+            .is_none());
     }
 
-    #[test]
-    fn capture_and_clear_menu_preview_camera_updates_editor_metadata() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.enter_editor_phase("PreviewCamera".to_string());
-            state.editor.camera.editor_pan = [5.0, -3.0];
-            state.editor.camera.editor_target_z = 2.0;
-            state.editor.camera.editor_rotation = 30.0f32.to_radians();
-            state.editor.camera.editor_pitch = 40.0f32.to_radians();
+    #[tokio::test]
+    async fn capture_and_clear_menu_preview_camera_updates_editor_metadata() {
+        let mut state = State::new_test().await;
+        state.enter_editor_phase("PreviewCamera".to_string());
+        state.editor.camera.editor_pan = [5.0, -3.0];
+        state.editor.camera.editor_target_z = 2.0;
+        state.editor.camera.editor_rotation = 30.0f32.to_radians();
+        state.editor.camera.editor_pitch = 40.0f32.to_radians();
 
-            state.editor_capture_menu_preview_camera();
-            let captured = state.current_editor_metadata().menu_preview_camera;
-            assert!(captured.is_some());
+        state.editor_capture_menu_preview_camera();
+        let captured = state.current_editor_metadata().menu_preview_camera;
+        assert!(captured.is_some());
 
-            let manual_camera = captured.expect("manual camera should be captured");
-            assert_eq!(manual_camera.target, [5.0, 2.0, -3.0]);
+        let manual_camera = captured.expect("manual camera should be captured");
+        assert_eq!(manual_camera.target, [5.0, 2.0, -3.0]);
 
-            state.editor_use_auto_menu_preview_camera();
-            assert!(state
-                .current_editor_metadata()
-                .menu_preview_camera
-                .is_none());
+        state.editor_use_auto_menu_preview_camera();
+        assert!(state
+            .current_editor_metadata()
+            .menu_preview_camera
+            .is_none());
 
-            let expected = menu_preview_camera_for_metadata(&state.current_editor_metadata());
-            let auto = auto_menu_preview_camera_from_spawn(&state.editor.spawn);
-            assert_eq!(expected, auto);
-        });
+        let expected = menu_preview_camera_for_metadata(&state.current_editor_metadata());
+        let auto = auto_menu_preview_camera_from_spawn(&state.editor.spawn);
+        assert_eq!(expected, auto);
     }
 
     #[test]
@@ -1163,378 +1143,357 @@ mod tests {
         assert_eq!(right_target, [12.0, 4.0, 4.0]);
     }
 
-    #[test]
-    fn start_level_and_restart_level_initialize_playing_session_state() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            let expected_level_name = state.menu.state.levels[0].clone();
-            let expected_music_source = state
-                .load_level_metadata(&expected_level_name)
-                .expect("selected level metadata should exist")
-                .music
-                .source;
+    #[tokio::test]
+    async fn start_level_and_restart_level_initialize_playing_session_state() {
+        let mut state = State::new_test().await;
+        let expected_level_name = state.menu.state.levels[0].clone();
+        let expected_music_source = state
+            .load_level_metadata(&expected_level_name)
+            .expect("selected level metadata should exist")
+            .music
+            .source;
 
-            state.start_level(0);
-            assert_eq!(state.phase, AppPhase::Playing);
-            assert!(state.session.playing_level_name.is_some());
-            assert!(!state.gameplay.state.objects.is_empty());
-            assert!(state.session.playing_trigger_base_objects.is_some());
-            assert!(!state.gameplay.state.started);
+        state.start_level(0);
+        assert_eq!(state.phase, AppPhase::Playing);
+        assert!(state.session.playing_level_name.is_some());
+        assert!(!state.gameplay.state.objects.is_empty());
+        assert!(state.session.playing_trigger_base_objects.is_some());
+        assert!(!state.gameplay.state.started);
 
-            let warmup = state
-                .audio
-                .state
-                .runtime_preload
-                .last_warmup_request
-                .clone()
-                .expect("starting a level should warm up runtime audio before first input");
-            assert_eq!(
-                warmup,
-                (
-                    runtime_asset_source_key(&expected_level_name, &expected_music_source),
-                    0.0
-                )
-            );
+        let warmup = state
+            .audio
+            .state
+            .runtime_preload
+            .last_warmup_request
+            .clone()
+            .expect("starting a level should warm up runtime audio before first input");
+        assert_eq!(
+            warmup,
+            (
+                runtime_asset_source_key(&expected_level_name, &expected_music_source),
+                0.0
+            )
+        );
 
-            state.gameplay.state.started = true;
-            state.gameplay.state.elapsed_seconds = 12.0;
-            state.restart_level();
+        state.gameplay.state.started = true;
+        state.gameplay.state.elapsed_seconds = 12.0;
+        state.restart_level();
 
-            assert_eq!(state.phase, AppPhase::Playing);
-            assert!(!state.gameplay.state.started);
-            assert!(state.gameplay.state.elapsed_seconds >= 0.0);
-            assert!(!state.gameplay.state.objects.is_empty());
-        });
+        assert_eq!(state.phase, AppPhase::Playing);
+        assert!(!state.gameplay.state.started);
+        assert!(state.gameplay.state.elapsed_seconds >= 0.0);
+        assert!(!state.gameplay.state.objects.is_empty());
     }
 
-    #[test]
-    fn practice_checkpoint_respawns_and_restart_exits_practice_mode() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Playing;
-            state.session.playtesting_editor = false;
-            state.session.practice_mode_enabled = true;
-            state.gameplay.state.objects = vec![test_object([0.0, 0.0, 0.0], "core/stone")];
-            state.gameplay.state.rebuild_behavior_cache();
-            state
-                .gameplay
-                .state
-                .initialize_level_progress_from_objects();
-            state.gameplay.state.started = true;
-            state.gameplay.state.position = [4.0, 2.0, 6.0];
-            state.gameplay.state.elapsed_seconds = 3.5;
-            state
-                .session
-                .practice_checkpoints
-                .push(super::super::PracticeCheckpoint {
-                    gameplay: state.gameplay.state.checkpoint_state(),
-                    trigger_base_objects: state.session.playing_trigger_base_objects.clone(),
-                });
-
-            state.gameplay.state.position = [20.0, -8.0, 20.0];
-            state.gameplay.state.elapsed_seconds = 9.0;
-            state.gameplay.state.game_over = true;
-
-            assert!(state.respawn_from_practice_checkpoint());
-            assert_eq!(state.gameplay.state.position, [4.0, 2.0, 6.0]);
-            assert_eq!(state.gameplay.state.elapsed_seconds, 3.5);
-            assert!(!state.gameplay.state.started);
-            assert!(!state.gameplay.state.game_over);
-            assert!(state.session.practice_mode_enabled);
-
-            state.restart_level();
-            assert!(!state.session.practice_mode_enabled);
-            assert!(state.session.practice_checkpoints.is_empty());
-        });
-    }
-
-    #[test]
-    fn removing_practice_checkpoint_falls_back_to_previous_latest() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Playing;
-            state.session.playtesting_editor = false;
-            state.session.practice_mode_enabled = true;
-            state.gameplay.state.objects = vec![test_object([0.0, 0.0, 0.0], "core/stone")];
-            state.gameplay.state.rebuild_behavior_cache();
-            state.gameplay.state.started = true;
-
-            state.gameplay.state.position = [2.0, 2.0, 2.0];
-            state.gameplay.state.elapsed_seconds = 2.0;
-            state.dispatch(crate::commands::AppCommand::GameSetPracticeCheckpoint);
-
-            state.gameplay.state.position = [5.0, 2.0, 5.0];
-            state.gameplay.state.elapsed_seconds = 5.0;
-            state.dispatch(crate::commands::AppCommand::GameSetPracticeCheckpoint);
-
-            assert_eq!(state.practice_checkpoint_count(), 2);
-            assert_eq!(state.practice_checkpoint_time_seconds(), Some(5.0));
-
-            state.dispatch(crate::commands::AppCommand::GameRemovePracticeCheckpoint);
-
-            assert_eq!(state.practice_checkpoint_count(), 1);
-            assert_eq!(state.practice_checkpoint_time_seconds(), Some(2.0));
-
-            state.gameplay.state.position = [20.0, -8.0, 20.0];
-            state.gameplay.state.elapsed_seconds = 9.0;
-            state.gameplay.state.game_over = true;
-
-            assert!(state.respawn_from_practice_checkpoint());
-            assert_eq!(state.gameplay.state.position, [2.0, 2.0, 2.0]);
-            assert_eq!(state.gameplay.state.elapsed_seconds, 2.0);
-        });
-    }
-
-    #[test]
-    fn practice_checkpoint_commands_sync_flag_mesh() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.phase = AppPhase::Playing;
-            state.session.playtesting_editor = false;
-            state.session.practice_mode_enabled = true;
-            state.gameplay.state.started = true;
-
-            state.gameplay.state.position = [2.0, 1.0, 2.0];
-            state.dispatch(crate::commands::AppCommand::GameSetPracticeCheckpoint);
-            assert!(state
-                .render
-                .meshes
-                .practice_checkpoints
-                .draw_data()
-                .is_some());
-
-            state.dispatch(crate::commands::AppCommand::GameRemovePracticeCheckpoint);
-            assert!(state
-                .render
-                .meshes
-                .practice_checkpoints
-                .draw_data()
-                .is_none());
-        });
-    }
-
-    #[test]
-    fn practice_death_before_checkpoint_restarts_at_zero_but_stays_in_practice() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.enter_playing_phase(Some("PracticeTest".to_string()), false);
-            state.session.practice_mode_enabled = true;
-            state.session.practice_checkpoints.clear();
-            state.gameplay.state.started = true;
-            state.gameplay.state.elapsed_seconds = 4.0;
-            state.gameplay.state.game_over = true;
-
-            assert!(state.respawn_from_practice_checkpoint());
-            assert!(state.session.practice_mode_enabled);
-            assert!(state.session.practice_checkpoints.is_empty());
-            assert!(!state.gameplay.state.started);
-            assert!(!state.gameplay.state.game_over);
-            assert_eq!(state.gameplay.state.elapsed_seconds, 0.0);
-        });
-    }
-
-    #[test]
-    fn practice_game_over_input_before_checkpoint_keeps_practice_mode() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.enter_playing_phase(Some("PracticeInputTest".to_string()), false);
-            state.session.practice_mode_enabled = true;
-            state.session.practice_checkpoints.clear();
-            state.gameplay.state.started = true;
-            state.gameplay.state.elapsed_seconds = 4.0;
-            state.gameplay.state.game_over = true;
-
-            state.turn_right();
-
-            assert!(state.session.practice_mode_enabled);
-            assert!(!state.gameplay.state.started);
-            assert!(!state.gameplay.state.game_over);
-            assert_eq!(state.gameplay.state.elapsed_seconds, 0.0);
-        });
-    }
-
-    #[test]
-    fn start_editor_loads_builtin_metadata_into_editor_session() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            let expected_level_name = state.menu.state.levels[0].clone();
-            let expected_metadata = state
-                .load_level_metadata(&expected_level_name)
-                .expect("selected level metadata should exist");
-
-            state.start_editor(0);
-
-            assert_eq!(state.phase, AppPhase::Editor);
-            assert_eq!(state.editor_level_name(), Some(expected_level_name));
-            assert_eq!(state.editor_sky_color(), expected_metadata.sky_color);
-            assert!(state.editor.timeline.clock.duration_seconds > 0.0);
-            assert!(!state.editor.objects.is_empty());
-            assert_eq!(
-                state.editor.timeline.taps.tap_times.len(),
-                state.editor.timeline.taps.tap_indicator_positions.len()
-            );
-            assert_eq!(state.editor.timing.timing_selected_index, None);
-            assert_eq!(state.editor.selected_trigger_index(), None);
-        });
-    }
-
-    #[test]
-    fn egz_export_import_roundtrip_preserves_metadata_and_embedded_audio() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.enter_editor_phase("EgzRoundtripSeed".to_string());
-            state.editor.objects = vec![test_object([2.0, 0.0, 2.0], "core/grass")];
-
-            state.set_editor_level_name("EgzRoundtrip".to_string());
-            state.set_editor_music_metadata(MusicMetadata {
-                source: "unit-test-audio.mp3".to_string(),
-                ..MusicMetadata::default()
+    #[tokio::test]
+    async fn practice_checkpoint_respawns_and_restart_exits_practice_mode() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Playing;
+        state.session.playtesting_editor = false;
+        state.session.practice_mode_enabled = true;
+        state.gameplay.state.objects = vec![test_object([0.0, 0.0, 0.0], "core/stone")];
+        state.gameplay.state.rebuild_behavior_cache();
+        state
+            .gameplay
+            .state
+            .initialize_level_progress_from_objects();
+        state.gameplay.state.started = true;
+        state.gameplay.state.position = [4.0, 2.0, 6.0];
+        state.gameplay.state.elapsed_seconds = 3.5;
+        state
+            .session
+            .practice_checkpoints
+            .push(super::super::PracticeCheckpoint {
+                gameplay: state.gameplay.state.checkpoint_state(),
+                trigger_base_objects: state.session.playing_trigger_base_objects.clone(),
             });
-            state.set_editor_creator_metadata(LevelCreatorMetadata {
-                creator: None,
-                description: Some("Bundled export metadata".to_string()),
-                stars: 8.25,
-                tags: vec!["test".to_string(), "archive".to_string()],
-                version: None,
-            });
-            state
-                .audio
-                .state
-                .editor
-                .local_audio_cache
-                .insert("unit-test-audio.mp3".to_string(), vec![1, 2, 3, 4, 5, 6]);
 
-            let expected = state.current_editor_metadata();
-            let exported = state
-                .export_level_egz()
-                .expect("egz export should succeed when metadata is valid");
+        state.gameplay.state.position = [20.0, -8.0, 20.0];
+        state.gameplay.state.elapsed_seconds = 9.0;
+        state.gameplay.state.game_over = true;
 
-            state.editor.objects.clear();
-            state
-                .audio
-                .state
-                .editor
-                .local_audio_cache
-                .remove("unit-test-audio.mp3");
+        assert!(state.respawn_from_practice_checkpoint());
+        assert_eq!(state.gameplay.state.position, [4.0, 2.0, 6.0]);
+        assert_eq!(state.gameplay.state.elapsed_seconds, 3.5);
+        assert!(!state.gameplay.state.started);
+        assert!(!state.gameplay.state.game_over);
+        assert!(state.session.practice_mode_enabled);
 
-            state
-                .import_level_egz(&exported)
-                .expect("egz import should restore metadata and embedded audio");
-
-            let actual = state.current_editor_metadata();
-            assert_eq!(actual.name, expected.name);
-            assert_eq!(actual.music.source, expected.music.source);
-            assert_eq!(actual.description, expected.description);
-            assert_eq!(actual.stars, expected.stars);
-            assert_eq!(actual.tags, expected.tags);
-            assert_eq!(actual.spawn.position, expected.spawn.position);
-            assert!(!state.editor.objects.is_empty());
-            assert!(state
-                .audio
-                .state
-                .editor
-                .local_audio_cache
-                .contains_key("unit-test-audio.mp3"));
-        });
+        state.restart_level();
+        assert!(!state.session.practice_mode_enabled);
+        assert!(state.session.practice_checkpoints.is_empty());
     }
 
-    #[test]
-    fn method_pointer_paths_cover_level_management_runtime_branches() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.enter_editor_phase("MethodPointer".to_string());
-            state.editor.objects = vec![test_object([0.0, 0.0, 0.0], "core/stone")];
-            state.set_editor_music_metadata(MusicMetadata {
-                source: "method-pointer-audio.mp3".to_string(),
-                ..MusicMetadata::default()
-            });
-            state
-                .audio
-                .state
-                .editor
-                .local_audio_cache
-                .insert("method-pointer-audio.mp3".to_string(), vec![7, 8, 9, 10]);
+    #[tokio::test]
+    async fn removing_practice_checkpoint_falls_back_to_previous_latest() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Playing;
+        state.session.playtesting_editor = false;
+        state.session.practice_mode_enabled = true;
+        state.gameplay.state.objects = vec![test_object([0.0, 0.0, 0.0], "core/stone")];
+        state.gameplay.state.rebuild_behavior_cache();
+        state.gameplay.state.started = true;
 
-            let level_export_filename = format!(
-                "{}.egz",
-                state
-                    .editor_level_name()
-                    .unwrap_or_else(|| "level".to_string())
-            );
-            let artifact_export_filename = "core_stone_selected.export".to_string();
-            let _artifact_cleanup =
-                ArtifactCleanup::new(vec![level_export_filename, artifact_export_filename]);
+        state.gameplay.state.position = [2.0, 2.0, 2.0];
+        state.gameplay.state.elapsed_seconds = 2.0;
+        state.dispatch(crate::commands::AppCommand::GameSetPracticeCheckpoint);
 
-            let set_capture: fn(&mut State, Option<(String, usize)>) =
-                State::set_editor_keybind_capture_action;
-            set_capture(&mut state, Some(("editor.copy".to_string(), 1)));
-            assert_eq!(
-                state.editor_keybind_capture_action(),
-                Some(&("editor.copy".to_string(), 1))
-            );
+        state.gameplay.state.position = [5.0, 2.0, 5.0];
+        state.gameplay.state.elapsed_seconds = 5.0;
+        state.dispatch(crate::commands::AppCommand::GameSetPracticeCheckpoint);
 
-            let restart: fn(&mut State) = State::restart_level;
-            state.phase = AppPhase::Playing;
-            state.session.playtesting_editor = false;
-            state.session.playing_level_name = state.menu.state.levels.first().cloned();
-            state.gameplay.state.started = true;
-            restart(&mut state);
-            assert!(!state.gameplay.state.started);
+        assert_eq!(state.practice_checkpoint_count(), 2);
+        assert_eq!(state.practice_checkpoint_time_seconds(), Some(5.0));
 
-            let set_graphics_backend: fn(&mut State, String) =
-                State::set_preferred_graphics_backend;
-            let baseline_graphics = state.app_settings().graphics_backend.clone();
-            set_graphics_backend(&mut state, baseline_graphics.clone());
-            set_graphics_backend(&mut state, "CoverageBackend".to_string());
-            assert_eq!(state.app_settings().graphics_backend, "CoverageBackend");
+        state.dispatch(crate::commands::AppCommand::GameRemovePracticeCheckpoint);
 
-            let set_audio_backend: fn(&mut State, String) = State::set_preferred_audio_backend;
-            set_audio_backend(&mut state, "definitely-invalid-backend".to_string());
-            if let Some(backend) = state.available_audio_backends().first().cloned() {
-                set_audio_backend(&mut state, backend);
-            }
+        assert_eq!(state.practice_checkpoint_count(), 1);
+        assert_eq!(state.practice_checkpoint_time_seconds(), Some(2.0));
 
-            let clear_keybind: fn(&mut State, &str, usize) = State::clear_keybind_slot_for_action;
-            let reset_keybind: fn(&mut State, &str) = State::reset_keybind_for_action;
-            let reset_essential: fn(&mut State) = State::reset_essential_keybinds;
-            clear_keybind(&mut state, "editor.copy", 0);
-            reset_keybind(&mut state, "editor.copy");
-            reset_essential(&mut state);
+        state.gameplay.state.position = [20.0, -8.0, 20.0];
+        state.gameplay.state.elapsed_seconds = 9.0;
+        state.gameplay.state.game_over = true;
 
-            let export_egz: fn(&State) -> Result<Vec<u8>, String> = State::export_level_egz;
-            let import_egz: fn(&mut State, &[u8]) -> Result<(), String> = State::import_level_egz;
-            let egz_bytes = export_egz(&state).expect("egz export should succeed");
-            import_egz(&mut state, &egz_bytes).expect("egz import should succeed");
-
-            let trigger_export: fn(&State) = State::trigger_level_export;
-            trigger_export(&state);
-        });
+        assert!(state.respawn_from_practice_checkpoint());
+        assert_eq!(state.gameplay.state.position, [2.0, 2.0, 2.0]);
+        assert_eq!(state.gameplay.state.elapsed_seconds, 2.0);
     }
 
-    #[test]
-    fn update_level_imports_applies_egz_payload_from_channel() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            state.enter_editor_phase("QueuedImport".to_string());
-            state.set_editor_level_name("QueuedImportSource".to_string());
+    #[tokio::test]
+    async fn practice_checkpoint_commands_sync_flag_mesh() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Playing;
+        state.session.playtesting_editor = false;
+        state.session.practice_mode_enabled = true;
+        state.gameplay.state.started = true;
 
-            let bytes = state
-                .export_level_egz()
-                .expect("egz export should succeed for queued import");
-            state.set_editor_level_name("MutatedAfterQueue".to_string());
-            state
-                .session
-                .editor_level_import_channel
-                .0
-                .send(bytes)
-                .expect("channel send should succeed");
+        state.gameplay.state.position = [2.0, 1.0, 2.0];
+        state.dispatch(crate::commands::AppCommand::GameSetPracticeCheckpoint);
+        assert!(state
+            .render
+            .meshes
+            .practice_checkpoints
+            .draw_data()
+            .is_some());
 
-            state.update_level_imports();
+        state.dispatch(crate::commands::AppCommand::GameRemovePracticeCheckpoint);
+        assert!(state
+            .render
+            .meshes
+            .practice_checkpoints
+            .draw_data()
+            .is_none());
+    }
 
-            assert_eq!(
-                state.editor_level_name().as_deref(),
-                Some("QueuedImportSource")
-            );
+    #[tokio::test]
+    async fn practice_death_before_checkpoint_restarts_at_zero_but_stays_in_practice() {
+        let mut state = State::new_test().await;
+        state.enter_playing_phase(Some("PracticeTest".to_string()), false);
+        state.session.practice_mode_enabled = true;
+        state.session.practice_checkpoints.clear();
+        state.gameplay.state.started = true;
+        state.gameplay.state.elapsed_seconds = 4.0;
+        state.gameplay.state.game_over = true;
+
+        assert!(state.respawn_from_practice_checkpoint());
+        assert!(state.session.practice_mode_enabled);
+        assert!(state.session.practice_checkpoints.is_empty());
+        assert!(!state.gameplay.state.started);
+        assert!(!state.gameplay.state.game_over);
+        assert_eq!(state.gameplay.state.elapsed_seconds, 0.0);
+    }
+
+    #[tokio::test]
+    async fn practice_game_over_input_before_checkpoint_keeps_practice_mode() {
+        let mut state = State::new_test().await;
+        state.enter_playing_phase(Some("PracticeInputTest".to_string()), false);
+        state.session.practice_mode_enabled = true;
+        state.session.practice_checkpoints.clear();
+        state.gameplay.state.started = true;
+        state.gameplay.state.elapsed_seconds = 4.0;
+        state.gameplay.state.game_over = true;
+
+        state.turn_right();
+
+        assert!(state.session.practice_mode_enabled);
+        assert!(!state.gameplay.state.started);
+        assert!(!state.gameplay.state.game_over);
+        assert_eq!(state.gameplay.state.elapsed_seconds, 0.0);
+    }
+
+    #[tokio::test]
+    async fn start_editor_loads_builtin_metadata_into_editor_session() {
+        let mut state = State::new_test().await;
+        let expected_level_name = state.menu.state.levels[0].clone();
+        let expected_metadata = state
+            .load_level_metadata(&expected_level_name)
+            .expect("selected level metadata should exist");
+
+        state.start_editor(0);
+
+        assert_eq!(state.phase, AppPhase::Editor);
+        assert_eq!(state.editor_level_name(), Some(expected_level_name));
+        assert_eq!(state.editor_sky_color(), expected_metadata.sky_color);
+        assert!(state.editor.timeline.clock.duration_seconds > 0.0);
+        assert!(!state.editor.objects.is_empty());
+        assert_eq!(
+            state.editor.timeline.taps.tap_times.len(),
+            state.editor.timeline.taps.tap_indicator_positions.len()
+        );
+        assert_eq!(state.editor.timing.timing_selected_index, None);
+        assert_eq!(state.editor.selected_trigger_index(), None);
+    }
+
+    #[tokio::test]
+    async fn egz_export_import_roundtrip_preserves_metadata_and_embedded_audio() {
+        let mut state = State::new_test().await;
+        state.enter_editor_phase("EgzRoundtripSeed".to_string());
+        state.editor.objects = vec![test_object([2.0, 0.0, 2.0], "core/grass")];
+
+        state.set_editor_level_name("EgzRoundtrip".to_string());
+        state.set_editor_music_metadata(MusicMetadata {
+            source: "unit-test-audio.mp3".to_string(),
+            ..MusicMetadata::default()
         });
+        state.set_editor_creator_metadata(LevelCreatorMetadata {
+            creator: None,
+            description: Some("Bundled export metadata".to_string()),
+            stars: 8.25,
+            tags: vec!["test".to_string(), "archive".to_string()],
+            version: None,
+        });
+        state
+            .audio
+            .state
+            .editor
+            .local_audio_cache
+            .insert("unit-test-audio.mp3".to_string(), vec![1, 2, 3, 4, 5, 6]);
+
+        let expected = state.current_editor_metadata();
+        let exported = state
+            .export_level_egz()
+            .expect("egz export should succeed when metadata is valid");
+
+        state.editor.objects.clear();
+        state
+            .audio
+            .state
+            .editor
+            .local_audio_cache
+            .remove("unit-test-audio.mp3");
+
+        state
+            .import_level_egz(&exported)
+            .expect("egz import should restore metadata and embedded audio");
+
+        let actual = state.current_editor_metadata();
+        assert_eq!(actual.name, expected.name);
+        assert_eq!(actual.music.source, expected.music.source);
+        assert_eq!(actual.description, expected.description);
+        assert_eq!(actual.stars, expected.stars);
+        assert_eq!(actual.tags, expected.tags);
+        assert_eq!(actual.spawn.position, expected.spawn.position);
+        assert!(!state.editor.objects.is_empty());
+        assert!(state
+            .audio
+            .state
+            .editor
+            .local_audio_cache
+            .contains_key("unit-test-audio.mp3"));
+    }
+
+    #[tokio::test]
+    async fn method_pointer_paths_cover_level_management_runtime_branches() {
+        let mut state = State::new_test().await;
+        state.enter_editor_phase("MethodPointer".to_string());
+        state.editor.objects = vec![test_object([0.0, 0.0, 0.0], "core/stone")];
+        state.set_editor_music_metadata(MusicMetadata {
+            source: "method-pointer-audio.mp3".to_string(),
+            ..MusicMetadata::default()
+        });
+        state
+            .audio
+            .state
+            .editor
+            .local_audio_cache
+            .insert("method-pointer-audio.mp3".to_string(), vec![7, 8, 9, 10]);
+
+        let level_export_filename = format!(
+            "{}.egz",
+            state
+                .editor_level_name()
+                .unwrap_or_else(|| "level".to_string())
+        );
+        let artifact_export_filename = "core_stone_selected.export".to_string();
+        let _artifact_cleanup =
+            ArtifactCleanup::new(vec![level_export_filename, artifact_export_filename]);
+
+        let set_capture: fn(&mut State, Option<(String, usize)>) =
+            State::set_editor_keybind_capture_action;
+        set_capture(&mut state, Some(("editor.copy".to_string(), 1)));
+        assert_eq!(
+            state.editor_keybind_capture_action(),
+            Some(&("editor.copy".to_string(), 1))
+        );
+
+        let restart: fn(&mut State) = State::restart_level;
+        state.phase = AppPhase::Playing;
+        state.session.playtesting_editor = false;
+        state.session.playing_level_name = state.menu.state.levels.first().cloned();
+        state.gameplay.state.started = true;
+        restart(&mut state);
+        assert!(!state.gameplay.state.started);
+
+        let set_graphics_backend: fn(&mut State, String) = State::set_preferred_graphics_backend;
+        let baseline_graphics = state.app_settings().graphics_backend.clone();
+        set_graphics_backend(&mut state, baseline_graphics.clone());
+        set_graphics_backend(&mut state, "CoverageBackend".to_string());
+        assert_eq!(state.app_settings().graphics_backend, "CoverageBackend");
+
+        let set_audio_backend: fn(&mut State, String) = State::set_preferred_audio_backend;
+        set_audio_backend(&mut state, "definitely-invalid-backend".to_string());
+        if let Some(backend) = state.available_audio_backends().first().cloned() {
+            set_audio_backend(&mut state, backend);
+        }
+
+        let clear_keybind: fn(&mut State, &str, usize) = State::clear_keybind_slot_for_action;
+        let reset_keybind: fn(&mut State, &str) = State::reset_keybind_for_action;
+        let reset_essential: fn(&mut State) = State::reset_essential_keybinds;
+        clear_keybind(&mut state, "editor.copy", 0);
+        reset_keybind(&mut state, "editor.copy");
+        reset_essential(&mut state);
+
+        let export_egz: fn(&State) -> Result<Vec<u8>, String> = State::export_level_egz;
+        let import_egz: fn(&mut State, &[u8]) -> Result<(), String> = State::import_level_egz;
+        let egz_bytes = export_egz(&state).expect("egz export should succeed");
+        import_egz(&mut state, &egz_bytes).expect("egz import should succeed");
+
+        let trigger_export: fn(&State) = State::trigger_level_export;
+        trigger_export(&state);
+    }
+
+    #[tokio::test]
+    async fn update_level_imports_applies_egz_payload_from_channel() {
+        let mut state = State::new_test().await;
+        state.enter_editor_phase("QueuedImport".to_string());
+        state.set_editor_level_name("QueuedImportSource".to_string());
+
+        let bytes = state
+            .export_level_egz()
+            .expect("egz export should succeed for queued import");
+        state.set_editor_level_name("MutatedAfterQueue".to_string());
+        state
+            .session
+            .editor_level_import_channel
+            .0
+            .send(bytes)
+            .expect("channel send should succeed");
+
+        state.update_level_imports();
+
+        assert_eq!(
+            state.editor_level_name().as_deref(),
+            Some("QueuedImportSource")
+        );
     }
 }

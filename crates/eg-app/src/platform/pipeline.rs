@@ -217,73 +217,67 @@ mod tests {
         ctx.set_fonts(fonts);
     }
 
-    #[test]
-    fn run_frame_executes_without_surface_and_returns_output() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            let egui_ctx = egui::Context::default();
-            configure_test_fonts(&egui_ctx);
-            let renderer = state.create_egui_renderer();
-            let mut pipeline = FramePipeline::new(egui_ctx, renderer, MenuTextures::default());
+    #[tokio::test]
+    async fn run_frame_executes_without_surface_and_returns_output() {
+        let mut state = State::new_test().await;
+        let egui_ctx = egui::Context::default();
+        configure_test_fonts(&egui_ctx);
+        let renderer = state.create_egui_renderer();
+        let mut pipeline = FramePipeline::new(egui_ctx, renderer, MenuTextures::default());
 
-            let output = pipeline.run_frame(&mut state, egui::RawInput::default());
+        let output = pipeline.run_frame(&mut state, egui::RawInput::default());
 
-            assert!(output.pixels_per_point > 0.0);
-            let _ctx = pipeline.ctx();
-        });
+        assert!(output.pixels_per_point > 0.0);
+        let _ctx = pipeline.ctx();
     }
 
-    #[test]
-    fn run_frame_executes_favicon_ui_branch_when_texture_is_present() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            let egui_ctx = egui::Context::default();
-            configure_test_fonts(&egui_ctx);
-            let renderer = state.create_egui_renderer();
-            let favicon = egui_ctx.load_texture(
-                "test-favicon",
-                egui::ColorImage::new([2, 2], vec![egui::Color32::WHITE; 4]),
-                egui::TextureOptions::LINEAR,
-            );
-            let menu_textures = MenuTextures {
-                favicon: Some(favicon),
-                ..Default::default()
-            };
-            let mut pipeline = FramePipeline::new(egui_ctx, renderer, menu_textures);
+    #[tokio::test]
+    async fn run_frame_executes_favicon_ui_branch_when_texture_is_present() {
+        let mut state = State::new_test().await;
+        let egui_ctx = egui::Context::default();
+        configure_test_fonts(&egui_ctx);
+        let renderer = state.create_egui_renderer();
+        let favicon = egui_ctx.load_texture(
+            "test-favicon",
+            egui::ColorImage::new([2, 2], vec![egui::Color32::WHITE; 4]),
+            egui::TextureOptions::LINEAR,
+        );
+        let menu_textures = MenuTextures {
+            favicon: Some(favicon),
+            ..Default::default()
+        };
+        let mut pipeline = FramePipeline::new(egui_ctx, renderer, menu_textures);
 
-            let output = pipeline.run_frame(&mut state, egui::RawInput::default());
+        let output = pipeline.run_frame(&mut state, egui::RawInput::default());
 
-            assert!(output.pixels_per_point > 0.0);
-        });
+        assert!(output.pixels_per_point > 0.0);
     }
 
-    #[test]
-    fn run_frame_executes_play_button_texture_branch_when_texture_is_present() {
-        pollster::block_on(async {
-            let mut state = State::new_test().await;
-            let egui_ctx = egui::Context::default();
-            configure_test_fonts(&egui_ctx);
-            let renderer = state.create_egui_renderer();
-            let play_button = egui_ctx.load_texture(
-                "test-play-button",
-                egui::ColorImage::new([2, 2], vec![egui::Color32::WHITE; 4]),
-                egui::TextureOptions::LINEAR,
-            );
-            let filled_play_button = egui_ctx.load_texture(
-                "test-filled-play-button",
-                egui::ColorImage::new([2, 2], vec![egui::Color32::WHITE; 4]),
-                egui::TextureOptions::LINEAR,
-            );
-            let menu_textures = MenuTextures {
-                play_button: Some(play_button),
-                play_button_filled: Some(filled_play_button),
-                ..Default::default()
-            };
-            let mut pipeline = FramePipeline::new(egui_ctx, renderer, menu_textures);
+    #[tokio::test]
+    async fn run_frame_executes_play_button_texture_branch_when_texture_is_present() {
+        let mut state = State::new_test().await;
+        let egui_ctx = egui::Context::default();
+        configure_test_fonts(&egui_ctx);
+        let renderer = state.create_egui_renderer();
+        let play_button = egui_ctx.load_texture(
+            "test-play-button",
+            egui::ColorImage::new([2, 2], vec![egui::Color32::WHITE; 4]),
+            egui::TextureOptions::LINEAR,
+        );
+        let filled_play_button = egui_ctx.load_texture(
+            "test-filled-play-button",
+            egui::ColorImage::new([2, 2], vec![egui::Color32::WHITE; 4]),
+            egui::TextureOptions::LINEAR,
+        );
+        let menu_textures = MenuTextures {
+            play_button: Some(play_button),
+            play_button_filled: Some(filled_play_button),
+            ..Default::default()
+        };
+        let mut pipeline = FramePipeline::new(egui_ctx, renderer, menu_textures);
 
-            let output = pipeline.run_frame(&mut state, egui::RawInput::default());
+        let output = pipeline.run_frame(&mut state, egui::RawInput::default());
 
-            assert!(output.pixels_per_point > 0.0);
-        });
+        assert!(output.pixels_per_point > 0.0);
     }
 }

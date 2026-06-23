@@ -71,6 +71,7 @@ criterion = { workspace = true }
 naga = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
+tokio = { workspace = true }
 eg-state = { workspace = true, features = ["test-support"] }
 
 [[bench]]

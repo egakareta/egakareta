@@ -813,40 +813,36 @@ mod tests {
         );
     }
 
-    #[test]
-    fn menu_topbar_and_auth_ui_render_guest_state() {
-        pollster::block_on(async {
-            let mut state = eg_state::state::State::new_test().await;
+    #[tokio::test]
+    async fn menu_topbar_and_auth_ui_render_guest_state() {
+        let mut state = eg_state::state::State::new_test().await;
 
-            let commands = run_menu_auth_ui_once(&mut state);
+        let commands = run_menu_auth_ui_once(&mut state);
 
-            assert!(commands.is_empty());
-            assert_eq!(state.auth_display_name(), None);
-        });
+        assert!(commands.is_empty());
+        assert_eq!(state.auth_display_name(), None);
     }
 
-    #[test]
-    fn menu_auth_ui_renders_pending_message_and_signed_in_state() {
-        pollster::block_on(async {
-            let mut state = eg_state::state::State::new_test().await;
+    #[tokio::test]
+    async fn menu_auth_ui_renders_pending_message_and_signed_in_state() {
+        let mut state = eg_state::state::State::new_test().await;
 
-            state.set_auth_state_for_test(
-                None,
-                true,
-                Some("Complete sign-in in your browser.".to_string()),
-            );
-            let pending_commands = run_menu_auth_ui_once(&mut state);
-            assert!(pending_commands.is_empty());
-            assert!(state.auth_pending());
-            assert_eq!(
-                state.auth_message(),
-                Some("Complete sign-in in your browser.")
-            );
+        state.set_auth_state_for_test(
+            None,
+            true,
+            Some("Complete sign-in in your browser.".to_string()),
+        );
+        let pending_commands = run_menu_auth_ui_once(&mut state);
+        assert!(pending_commands.is_empty());
+        assert!(state.auth_pending());
+        assert_eq!(
+            state.auth_message(),
+            Some("Complete sign-in in your browser.")
+        );
 
-            state.set_auth_state_for_test(Some(test_auth_session(Some("player"))), false, None);
-            let signed_in_commands = run_menu_auth_ui_once(&mut state);
-            assert!(signed_in_commands.is_empty());
-            assert_eq!(state.auth_display_name(), Some("player"));
-        });
+        state.set_auth_state_for_test(Some(test_auth_session(Some("player"))), false, None);
+        let signed_in_commands = run_menu_auth_ui_once(&mut state);
+        assert!(signed_in_commands.is_empty());
+        assert_eq!(state.auth_display_name(), Some("player"));
     }
 }

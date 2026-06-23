@@ -189,13 +189,9 @@ mod tests {
         }
     }
 
-    fn new_state() -> State {
-        pollster::block_on(State::new_test())
-    }
-
-    #[test]
-    fn auth_display_name_prefers_profile_username_then_email() {
-        let mut state = new_state();
+    #[tokio::test]
+    async fn auth_display_name_prefers_profile_username_then_email() {
+        let mut state = State::new_test().await;
         assert_eq!(state.auth_display_name(), None);
 
         state.auth.session = Some(test_auth_session(
@@ -211,9 +207,9 @@ mod tests {
         assert_eq!(state.auth_display_name(), None);
     }
 
-    #[test]
-    fn auth_actions_ignore_pending_or_missing_session_guards() {
-        let mut state = new_state();
+    #[tokio::test]
+    async fn auth_actions_ignore_pending_or_missing_session_guards() {
+        let mut state = State::new_test().await;
 
         state.auth.pending = true;
         state.submit_auth_sign_in();
@@ -243,9 +239,9 @@ mod tests {
         assert_eq!(state.auth.message.as_deref(), Some("keep me"));
     }
 
-    #[test]
-    fn update_auth_results_applies_sign_in_success_and_failure() {
-        let mut state = new_state();
+    #[tokio::test]
+    async fn update_auth_results_applies_sign_in_success_and_failure() {
+        let mut state = State::new_test().await;
         let session = test_auth_session(Some("player"), Some("player@example.com"));
 
         state.auth.pending = true;
@@ -277,9 +273,9 @@ mod tests {
         assert_eq!(state.auth.message.as_deref(), Some("sign-in failed"));
     }
 
-    #[test]
-    fn update_auth_results_applies_refresh_success_and_failure() {
-        let mut state = new_state();
+    #[tokio::test]
+    async fn update_auth_results_applies_refresh_success_and_failure() {
+        let mut state = State::new_test().await;
         let original = test_auth_session(Some("old"), Some("old@example.com"));
         let refreshed = test_auth_session(Some("new"), Some("new@example.com"));
 
@@ -312,9 +308,9 @@ mod tests {
         assert_eq!(state.auth.message.as_deref(), Some("refresh failed"));
     }
 
-    #[test]
-    fn update_auth_results_applies_sign_out_success_and_failure() {
-        let mut state = new_state();
+    #[tokio::test]
+    async fn update_auth_results_applies_sign_out_success_and_failure() {
+        let mut state = State::new_test().await;
 
         state.auth.session = Some(test_auth_session(
             Some("player"),

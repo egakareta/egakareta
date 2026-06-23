@@ -1301,6 +1301,7 @@ dependencies = [
  "serde_cbor",
  "serde_json",
  "tempfile",
+ "tokio",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-rayon",
@@ -1459,6 +1460,7 @@ dependencies = [
  "naga",
  "pollster",
  "puffin",
+ "tokio",
  "wgpu",
 ]
 
@@ -1520,6 +1522,7 @@ dependencies = [
  "pollster",
  "puffin",
  "puffin_egui",
+ "tokio",
 ]
 
 [[package]]

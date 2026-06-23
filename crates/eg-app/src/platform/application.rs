@@ -598,14 +598,12 @@ mod tests {
         assert!(App::native_window_icon().is_some());
     }
 
-    #[test]
-    fn frame_system_cursor_visibility_follows_default_state_and_ui_hover() {
-        pollster::block_on(async {
-            let state = State::new_test().await;
+    #[tokio::test]
+    async fn frame_system_cursor_visibility_follows_default_state_and_ui_hover() {
+        let state = State::new_test().await;
 
-            assert!(App::system_cursor_visible_for_frame(&state, false));
-            assert!(App::system_cursor_visible_for_frame(&state, true));
-        });
+        assert!(App::system_cursor_visible_for_frame(&state, false));
+        assert!(App::system_cursor_visible_for_frame(&state, true));
     }
 
     #[test]

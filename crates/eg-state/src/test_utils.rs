@@ -77,7 +77,7 @@ pub fn tiny_wav_bytes() -> Vec<u8> {
     ]
 }
 
-/// Ergonomic macro for editor tests. Eliminates `pollster::block_on` and
+/// Ergonomic macro for editor tests. Eliminates `tokio::test` + `async fn` +
 /// `State::new_test()` boilerplate.
 ///
 /// The body receives `state: &mut State` already in `AppPhase::Editor` with
@@ -94,15 +94,13 @@ pub fn tiny_wav_bytes() -> Vec<u8> {
 #[allow(unused_macros)]
 macro_rules! editor_test {
     ($name:ident, $body:expr) => {
-        #[test]
-        fn $name() {
-            pollster::block_on(async {
-                let mut state = crate::state::State::new_test().await;
-                state.phase = eg_types::AppPhase::Editor;
-                state.editor.ui.mode = eg_types::EditorMode::Select;
-                let body: &dyn Fn(&mut crate::state::State) = &$body;
-                body(&mut state);
-            });
+        #[tokio::test]
+        async fn $name() {
+            let mut state = crate::state::State::new_test().await;
+            state.phase = eg_types::AppPhase::Editor;
+            state.editor.ui.mode = eg_types::EditorMode::Select;
+            let body: &dyn Fn(&mut crate::state::State) = &$body;
+            body(&mut state);
         }
     };
 }

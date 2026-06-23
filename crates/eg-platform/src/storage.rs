@@ -149,6 +149,12 @@ pub async fn clear_auth_session() -> Result<(), String> {
 
 /// The DirectoryHandle for the app-specific data storage.
 async fn app_specific_dir() -> Result<opfs::persistent::DirectoryHandle, String> {
+    if let Ok(root) = std::env::var("EGAKARETA_STORAGE_ROOT") {
+        let path = std::path::PathBuf::from(root);
+        std::fs::create_dir_all(&path)
+            .map_err(|err| format!("Failed to create storage root: {err}"))?;
+        return Ok(opfs::persistent::DirectoryHandle::from(path));
+    }
     opfs::persistent::app_specific_dir()
         .await
         .map_err(|err| format!("Failed to get app specific dir: {:?}", err))
@@ -243,171 +249,155 @@ mod tests {
         }
     }
 
-    #[test]
-    fn opfs_root_uses_storage_override() {
-        pollster::block_on(async {
-            let _env = TestEnv::new();
-            let root = app_specific_dir()
-                .await
-                .expect("failed to get app specific dir");
+    #[tokio::test]
+    async fn opfs_root_uses_storage_override() {
+        let _env = TestEnv::new();
+        let root = app_specific_dir()
+            .await
+            .expect("failed to get app specific dir");
 
-            opfs_write_file(&root, "probe.txt", b"probe")
-                .await
-                .expect("failed to write probe");
-            let loaded = opfs_read_file(&root, "probe.txt")
-                .await
-                .expect("failed to read probe")
-                .expect("probe should exist");
+        opfs_write_file(&root, "probe.txt", b"probe")
+            .await
+            .expect("failed to write probe");
+        let loaded = opfs_read_file(&root, "probe.txt")
+            .await
+            .expect("failed to read probe")
+            .expect("probe should exist");
 
-            assert_eq!(loaded, b"probe");
-        });
+        assert_eq!(loaded, b"probe");
     }
 
-    #[test]
-    fn opfs_subdirectories_are_created() {
-        pollster::block_on(async {
-            let _env = TestEnv::new();
-            opfs_subdir(AUDIO_DIR_NAME)
-                .await
-                .expect("audio directory should resolve");
-            opfs_subdir(WAVEFORM_DIR_NAME)
-                .await
-                .expect("waveform directory should resolve");
-        });
+    #[tokio::test]
+    async fn opfs_subdirectories_are_created() {
+        let _env = TestEnv::new();
+        opfs_subdir(AUDIO_DIR_NAME)
+            .await
+            .expect("audio directory should resolve");
+        opfs_subdir(WAVEFORM_DIR_NAME)
+            .await
+            .expect("waveform directory should resolve");
     }
 
-    #[test]
-    fn test_settings_roundtrip() {
-        pollster::block_on(async {
-            let _env = TestEnv::new();
+    #[tokio::test]
+    async fn test_settings_roundtrip() {
+        let _env = TestEnv::new();
 
-            let mut settings = AppSettings::default();
-            settings.editor_snap_to_grid = !settings.editor_snap_to_grid;
-            settings.editor_snap_step = 1.23;
+        let mut settings = AppSettings::default();
+        settings.editor_snap_to_grid = !settings.editor_snap_to_grid;
+        settings.editor_snap_step = 1.23;
 
-            save_app_settings(&settings)
-                .await
-                .expect("failed to save settings");
-            let loaded = load_app_settings().await.expect("failed to load settings");
+        save_app_settings(&settings)
+            .await
+            .expect("failed to save settings");
+        let loaded = load_app_settings().await.expect("failed to load settings");
 
-            assert_eq!(loaded.editor_snap_to_grid, settings.editor_snap_to_grid);
-            assert_eq!(loaded.editor_snap_step, settings.editor_snap_step);
-        });
+        assert_eq!(loaded.editor_snap_to_grid, settings.editor_snap_to_grid);
+        assert_eq!(loaded.editor_snap_step, settings.editor_snap_step);
     }
 
-    #[test]
-    fn test_load_settings_default_when_missing() {
-        pollster::block_on(async {
-            let _env = TestEnv::new();
-            let loaded = load_app_settings().await.expect("failed to load settings");
-            assert_eq!(loaded, AppSettings::default());
-        });
+    #[tokio::test]
+    async fn test_load_settings_default_when_missing() {
+        let _env = TestEnv::new();
+        let loaded = load_app_settings().await.expect("failed to load settings");
+        assert_eq!(loaded, AppSettings::default());
     }
 
-    #[test]
-    fn test_auth_session_roundtrip() {
-        pollster::block_on(async {
-            let _env = TestEnv::new();
-            let session = eg_types::AuthSession {
-                session: eg_types::AuthSessionTokens {
-                    access_token: "access".to_string(),
-                    refresh_token: "refresh".to_string(),
-                    expires_at: Some(123),
-                    token_type: "bearer".to_string(),
-                },
-                user: eg_types::AuthUser {
-                    id: "user-id".to_string(),
-                    email: Some("player@example.com".to_string()),
-                },
-                profile: Some(eg_types::AuthProfile {
-                    id: "user-id".to_string(),
-                    username: Some("player".to_string()),
-                    avatar_url: None,
-                    country: "UN".to_string(),
-                }),
-            };
+    #[tokio::test]
+    async fn test_auth_session_roundtrip() {
+        let _env = TestEnv::new();
+        let session = eg_types::AuthSession {
+            session: eg_types::AuthSessionTokens {
+                access_token: "access".to_string(),
+                refresh_token: "refresh".to_string(),
+                expires_at: Some(123),
+                token_type: "bearer".to_string(),
+            },
+            user: eg_types::AuthUser {
+                id: "user-id".to_string(),
+                email: Some("player@example.com".to_string()),
+            },
+            profile: Some(eg_types::AuthProfile {
+                id: "user-id".to_string(),
+                username: Some("player".to_string()),
+                avatar_url: None,
+                country: "UN".to_string(),
+            }),
+        };
 
-            save_auth_session(&session)
-                .await
-                .expect("failed to save auth session");
-            let loaded = load_auth_session()
-                .await
-                .expect("failed to load auth session");
-            assert_eq!(loaded, Some(session));
+        save_auth_session(&session)
+            .await
+            .expect("failed to save auth session");
+        let loaded = load_auth_session()
+            .await
+            .expect("failed to load auth session");
+        assert_eq!(loaded, Some(session));
 
-            clear_auth_session()
-                .await
-                .expect("failed to clear auth session");
-            let cleared = load_auth_session()
-                .await
-                .expect("failed to load cleared auth session");
-            assert_eq!(cleared, None);
-        });
+        clear_auth_session()
+            .await
+            .expect("failed to clear auth session");
+        let cleared = load_auth_session()
+            .await
+            .expect("failed to load cleared auth session");
+        assert_eq!(cleared, None);
     }
 
-    #[test]
-    fn test_audio_roundtrip() {
-        pollster::block_on(async {
-            let _env = TestEnv::new();
+    #[tokio::test]
+    async fn test_audio_roundtrip() {
+        let _env = TestEnv::new();
 
-            let data1 = b"audio1-content";
-            let data2 = b"audio2-content";
+        let data1 = b"audio1-content";
+        let data2 = b"audio2-content";
 
-            save_audio("test1.ogg", data1)
-                .await
-                .expect("failed to save audio 1");
-            save_audio("test2.ogg", data2)
-                .await
-                .expect("failed to save audio 2");
+        save_audio("test1.ogg", data1)
+            .await
+            .expect("failed to save audio 1");
+        save_audio("test2.ogg", data2)
+            .await
+            .expect("failed to save audio 2");
 
-            let all = load_all_audio().await;
-            assert_eq!(all.len(), 2);
-            assert_eq!(all.get("test1.ogg").unwrap(), data1);
-            assert_eq!(all.get("test2.ogg").unwrap(), data2);
+        let all = load_all_audio().await;
+        assert_eq!(all.len(), 2);
+        assert_eq!(all.get("test1.ogg").unwrap(), data1);
+        assert_eq!(all.get("test2.ogg").unwrap(), data2);
 
-            let read = read_editor_music_bytes("test1.ogg")
-                .await
-                .expect("failed to read audio");
+        let read = read_editor_music_bytes("test1.ogg")
+            .await
+            .expect("failed to read audio");
 
-            assert_eq!(read, Some(data1.to_vec()));
-        });
+        assert_eq!(read, Some(data1.to_vec()));
     }
 
-    #[test]
-    fn test_read_music_bytes_builtin_fallback() {
-        pollster::block_on(async {
-            let _env = TestEnv::new();
+    #[tokio::test]
+    async fn test_read_music_bytes_builtin_fallback() {
+        let _env = TestEnv::new();
 
-            // Should return None for unknown builtin and unknown user audio
-            let read = read_editor_music_bytes("missing.ogg")
-                .await
-                .expect("unexpected error");
+        // Should return None for unknown builtin and unknown user audio
+        let read = read_editor_music_bytes("missing.ogg")
+            .await
+            .expect("unexpected error");
 
-            assert!(read.is_none());
+        assert!(read.is_none());
 
-            // Save to user audio and check fallback
-            let data = b"user-audio";
-            save_audio("user.ogg", data).await.unwrap();
-            let read = read_editor_music_bytes("user.ogg").await.unwrap();
-            assert_eq!(read, Some(data.to_vec()));
-        });
+        // Save to user audio and check fallback
+        let data = b"user-audio";
+        save_audio("user.ogg", data).await.unwrap();
+        let read = read_editor_music_bytes("user.ogg").await.unwrap();
+        assert_eq!(read, Some(data.to_vec()));
     }
 
-    #[test]
-    fn test_waveform_cache_roundtrip() {
-        pollster::block_on(async {
-            let _env = TestEnv::new();
-            let entry = PersistentWaveformCacheEntry::new(vec![0.1, 0.5, 1.0], 44_100, 256);
+    #[tokio::test]
+    async fn test_waveform_cache_roundtrip() {
+        let _env = TestEnv::new();
+        let entry = PersistentWaveformCacheEntry::new(vec![0.1, 0.5, 1.0], 44_100, 256);
 
-            save_waveform("waveform-v1-window-256-sha256-test", &entry)
-                .await
-                .expect("failed to save waveform cache");
+        save_waveform("waveform-v1-window-256-sha256-test", &entry)
+            .await
+            .expect("failed to save waveform cache");
 
-            let loaded = load_waveform("waveform-v1-window-256-sha256-test")
-                .await
-                .expect("failed to load waveform cache");
-            assert_eq!(loaded, entry);
-            assert!(load_waveform("missing-waveform").await.is_none());
-        });
+        let loaded = load_waveform("waveform-v1-window-256-sha256-test")
+            .await
+            .expect("failed to load waveform cache");
+        assert_eq!(loaded, entry);
+        assert!(load_waveform("missing-waveform").await.is_none());
     }
 }
