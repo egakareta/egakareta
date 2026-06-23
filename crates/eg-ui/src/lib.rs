@@ -152,9 +152,7 @@ const KEYBIND_CONTENT_MIN_WIDTH: f32 =
     KEYBIND_ACTION_LABEL_WIDTH + KEYBIND_CONTROLS_MIN_WIDTH + 12.0;
 const EDITOR_CONTEXT_MENU_WIDTH: f32 = 220.0;
 
-type BlockCatalogCategory = Option<BlockCategory>;
-
-const BLOCK_CATALOG_CATEGORIES: [BlockCatalogCategory; 5] = [
+const BLOCK_CATALOG_CATEGORIES: [Option<BlockCategory>; 5] = [
     None,
     Some(BlockCategory::Building),
     Some(BlockCategory::Danger),
@@ -165,7 +163,7 @@ const PLACE_BLOCK_CATALOG_COLUMNS: usize = 9;
 const PLACE_BLOCK_CATALOG_ROWS: usize = 4;
 const PLACE_BLOCK_CATALOG_CELL_SIZE: f32 = 72.0;
 
-fn block_catalog_category_label(category: BlockCatalogCategory) -> &'static str {
+fn block_catalog_category_label(category: Option<BlockCategory>) -> &'static str {
     match category {
         None => "All",
         Some(BlockCategory::Building) => "Building",
@@ -179,7 +177,10 @@ fn is_compact_editor_ui(viewport_width: f32) -> bool {
     viewport_width <= COMPACT_EDITOR_UI_BREAKPOINT
 }
 
-fn block_matches_catalog_category(block: &BlockDefinition, category: BlockCatalogCategory) -> bool {
+fn block_matches_catalog_category(
+    block: &BlockDefinition,
+    category: Option<BlockCategory>,
+) -> bool {
     category.is_none_or(|block_category| block.category == block_category)
 }
 
@@ -1190,7 +1191,7 @@ pub fn show_editor_ui(
         let mut place_open = true;
         let place_category_id = egui::Id::new("editor_place_block_catalog_category");
         let mut selected_place_category = ctx.data_mut(|data| {
-            data.get_persisted::<BlockCatalogCategory>(place_category_id)
+            data.get_persisted::<Option<BlockCategory>>(place_category_id)
                 .unwrap_or_default()
         });
 
