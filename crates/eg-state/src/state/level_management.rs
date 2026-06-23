@@ -1464,8 +1464,9 @@ mod tests {
         let egz_bytes = export_egz(&state).expect("egz export should succeed");
         import_egz(&mut state, &egz_bytes).expect("egz import should succeed");
 
-        let trigger_export: fn(&State) = State::trigger_level_export;
-        trigger_export(&state);
+        // TODO: Make this not prompt a dialog
+        // let trigger_export: fn(&State) = State::trigger_level_export;
+        // trigger_export(&state);
     }
 
     #[tokio::test]
