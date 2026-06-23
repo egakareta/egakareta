@@ -1018,11 +1018,25 @@ pub fn show_editor_ui(
             egui::Window::new(format!("{} Level Metadata", egui_phosphor::regular::INFO))
                 .open(&mut metadata_open)
                 .show(ctx, |ui| {
-                    ui.label(format!("{} Level Name:", egui_phosphor::regular::PENCIL));
-                    let mut name = view.level_name.unwrap_or("Untitled").to_string();
-                    if ui.text_edit_singleline(&mut name).changed() {
-                        commands.push(AppCommand::Editor(EditorCommand::RenameLevel(name)));
-                    }
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} Level Name:", egui_phosphor::regular::PENCIL));
+                        let mut name = view.level_name.unwrap_or("Untitled").to_string();
+                        if ui.text_edit_singleline(&mut name).changed() {
+                            commands.push(AppCommand::Editor(EditorCommand::RenameLevel(name)));
+                        }
+                    });
+
+                    let mut creator_metadata = view.creator_metadata.clone();
+                    let mut creator_metadata_changed = false;
+
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} Creator:", egui_phosphor::regular::USER));
+                        let mut creator = creator_metadata.creator.clone().unwrap_or_default();
+                        if ui.text_edit_singleline(&mut creator).changed() {
+                            creator_metadata.creator = optional_trimmed_string(creator);
+                            creator_metadata_changed = true;
+                        }
+                    });
 
                     ui.separator();
 
@@ -1068,19 +1082,6 @@ pub fn show_editor_ui(
                     }
 
                     ui.separator();
-                    ui.heading(format!("{} Creator Info", egui_phosphor::regular::USER));
-
-                    let mut creator_metadata = view.creator_metadata.clone();
-                    let mut creator_metadata_changed = false;
-
-                    ui.horizontal(|ui| {
-                        ui.label(format!("{} Creator:", egui_phosphor::regular::USER));
-                        let mut creator = creator_metadata.creator.clone().unwrap_or_default();
-                        if ui.text_edit_singleline(&mut creator).changed() {
-                            creator_metadata.creator = optional_trimmed_string(creator);
-                            creator_metadata_changed = true;
-                        }
-                    });
 
                     ui.horizontal(|ui| {
                         ui.label(format!("{} Stars:", egui_phosphor::regular::STAR));
