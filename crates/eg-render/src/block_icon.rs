@@ -135,10 +135,7 @@ fn build_block_icon_geometry(block_id: &str, dimetric: bool) -> MeshGeometry {
     const LIQUID_PROFILE_TAG: f32 = 1.0;
 
     if !dimetric {
-        let block = LevelObject {
-            block_id: block_id.to_string(),
-            ..LevelObject::default()
-        };
+        let block = LevelObject::new(block_id);
         return build_block_geometry(std::slice::from_ref(&block));
     }
 
@@ -159,10 +156,7 @@ fn build_block_icon_geometry(block_id: &str, dimetric: bool) -> MeshGeometry {
         block.render.color_outline,
     );
 
-    let icon_object = LevelObject {
-        block_id: block_id.to_string(),
-        ..LevelObject::default()
-    };
+    let icon_object = LevelObject::new(block_id);
     let cuboids = visual_cuboids(&icon_object);
     let mut vertices = Vec::with_capacity(cuboids.len().max(1) * 36);
     if cuboids.is_empty() {

@@ -965,7 +965,6 @@ mod tests {
 
     fn camera_trigger_object(time_seconds: f32, transition_interval_seconds: f32) -> LevelObject {
         LevelObject {
-            block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
             trigger: Some(TimedTrigger {
                 time_seconds,
                 duration_seconds: 0.0,
@@ -979,7 +978,7 @@ mod tests {
                     pitch: 0.0,
                 },
             }),
-            ..LevelObject::default()
+            ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         }
     }
 

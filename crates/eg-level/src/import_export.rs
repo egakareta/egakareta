@@ -75,7 +75,6 @@ mod tests {
             objects: vec![LevelObject {
                 position: [4.0, 0.0, 2.0],
                 rotation_degrees: [0.0, 45.0, 0.0],
-                block_id: "core/stone".to_string(),
                 color_tint: [1.0, 0.8, 0.7],
                 ..LevelObject::default()
             }],

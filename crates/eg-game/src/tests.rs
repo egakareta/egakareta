@@ -118,10 +118,7 @@ fn rotated_overlap_uses_oriented_bounds() {
 
 #[test]
 fn wooden_fence_collision_uses_json_hitboxes() {
-    let obj = LevelObject {
-        block_id: "core/wooden_fence".to_string(),
-        ..LevelObject::default()
-    };
+    let obj = LevelObject::new("core/wooden_fence");
 
     assert!(object_xz_contains(&obj, 0.5, 0.5));
     assert!(!object_xz_contains(&obj, 0.5, 0.2));
@@ -132,10 +129,7 @@ fn wooden_fence_collision_uses_json_hitboxes() {
 #[test]
 fn wooden_fence_support_height_uses_hitbox_top() {
     let mut game = GameState::new();
-    game.objects.push(LevelObject {
-        block_id: "core/wooden_fence".to_string(),
-        ..LevelObject::default()
-    });
+    game.objects.push(LevelObject::new("core/wooden_fence"));
     game.rebuild_behavior_cache();
 
     assert_eq!(game.top_surface_y_at(0.5, 0.5, 2.0), Some(1.0));
@@ -145,10 +139,7 @@ fn wooden_fence_support_height_uses_hitbox_top() {
 #[test]
 fn missing_hitboxes_fall_back_to_geometry_elements() {
     let mut game = GameState::new();
-    game.objects.push(LevelObject {
-        block_id: "core/wooden_fence".to_string(),
-        ..LevelObject::default()
-    });
+    game.objects.push(LevelObject::new("core/wooden_fence"));
     game.rebuild_behavior_cache();
 
     assert!(object_xz_contains(&game.objects[0], 0.5, 0.5));
@@ -179,8 +170,7 @@ fn speed_portal_overlap_removes_portal_and_boosts_speed() {
     game.speed = 1.0;
     game.objects.push(LevelObject {
         rotation_degrees: [0.0, 30.0, 0.0],
-        block_id: "core/speedportal".to_string(),
-        ..LevelObject::default()
+        ..LevelObject::new("core/speedportal")
     });
     game.rebuild_behavior_cache();
     game.update(0.0);
@@ -195,10 +185,7 @@ fn gem_overlap_collects_and_tracks_progress() {
     let mut game = GameState::new();
     game.started = true;
     game.position = [0.5, 0.0, 0.5];
-    game.objects.push(LevelObject {
-        block_id: "core/gem".to_string(),
-        ..LevelObject::default()
-    });
+    game.objects.push(LevelObject::new("core/gem"));
     game.rebuild_behavior_cache();
     game.initialize_level_progress_from_objects();
 
@@ -334,8 +321,7 @@ fn timeline_trigger_hitbox_mode_does_not_resurrect_consumed_portals() {
     let objects = vec![LevelObject {
         id: "target".to_string(),
         position: [0.0, 0.0, 1.0],
-        block_id: "core/speedportal".to_string(),
-        ..LevelObject::default()
+        ..LevelObject::new("core/speedportal")
     }];
 
     let triggers = vec![TimedTrigger {

@@ -133,13 +133,13 @@ pub fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<Vec<u8>,
     let mut compact_mask = vec![0u8; metadata.objects.len().div_ceil(8)];
 
     for object in &metadata.objects {
-        let palette_index = if let Some(index) = palette_lookup.get(&object.block_id) {
+        let palette_index = if let Some(index) = palette_lookup.get(&*object.block_id) {
             *index
         } else {
             let next_index = u16::try_from(palette.len())
                 .map_err(|_| "Too many unique block ids for binary palette".to_string())?;
-            palette_lookup.insert(object.block_id.clone(), next_index);
-            palette.push(object.block_id.clone());
+            palette_lookup.insert(object.block_id.to_string(), next_index);
+            palette.push(object.block_id.to_string());
             next_index
         };
 
@@ -339,18 +339,15 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
             let Some(block_id) = payload.palette.get(palette_index) else {
                 return Err("Object palette index out of range".to_string());
             };
-
-            let mut object = LevelObject {
+            objects.push(LevelObject {
                 id: object_ids[index].clone(),
                 position: payload.object_positions[index],
                 size: payload.object_sizes[index],
                 rotation_degrees: payload.object_rotations[index],
-                block_id: block_id.clone(),
                 color_tint: payload.object_color_tints[index],
                 trigger: object_triggers[index].clone(),
-            };
-            object.normalize_block_id();
-            objects.push(object);
+                ..LevelObject::new(block_id)
+            });
         }
     } else {
         let compact_count = count_compact_bits(&payload.object_compact_mask, object_count);
@@ -376,7 +373,7 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
                 return Err("Object palette index out of range".to_string());
             };
 
-            let mut object = if is_compact_bit_set(&payload.object_compact_mask, index) {
+            let object = if is_compact_bit_set(&payload.object_compact_mask, index) {
                 let linear_index = payload
                     .object_linear_indices
                     .get(compact_cursor)
@@ -391,9 +388,8 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
                         payload.grid_min,
                         payload.grid_dims,
                     )?,
-                    block_id: block_id.clone(),
                     trigger: object_triggers[index].clone(),
-                    ..LevelObject::default()
+                    ..LevelObject::new(block_id)
                 }
             } else {
                 let object = LevelObject {
@@ -410,18 +406,17 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
                         .object_rotations
                         .get(full_cursor)
                         .ok_or_else(|| "Full object rotation cursor overflow".to_string())?,
-                    block_id: block_id.clone(),
                     color_tint: *payload
                         .object_color_tints
                         .get(full_cursor)
                         .ok_or_else(|| "Full object color cursor overflow".to_string())?,
                     trigger: object_triggers[index].clone(),
+                    ..LevelObject::new(block_id)
                 };
                 full_cursor += 1;
                 object
             };
 
-            object.normalize_block_id();
             objects.push(object);
         }
     }

@@ -24,8 +24,7 @@ pub fn build_editor_cursor_vertices(
         position: cursor,
         size,
         rotation_degrees,
-        block_id: block_id.to_string(),
-        ..LevelObject::default()
+        ..LevelObject::new(block_id)
     };
 
     let mut vertices = build_block_geometry_for_object(&object).to_triangle_vertices();
@@ -93,8 +92,7 @@ mod tests {
         let block_vertices = build_block_geometry_for_object(&LevelObject {
             position,
             size,
-            block_id: "core/speedportal".to_string(),
-            ..LevelObject::default()
+            ..LevelObject::new("core/speedportal")
         })
         .to_triangle_vertices();
 
@@ -121,8 +119,7 @@ mod tests {
             position,
             size,
             rotation_degrees,
-            block_id: "core/speedportal".to_string(),
-            ..LevelObject::default()
+            ..LevelObject::new("core/speedportal")
         })
         .to_triangle_vertices();
 

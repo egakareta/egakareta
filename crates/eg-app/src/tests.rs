@@ -16,7 +16,7 @@ mod tests {
         camera_triggers_to_timed_triggers, default_camera_trigger_distance,
         default_camera_trigger_pitch, default_camera_trigger_rotation,
         default_camera_trigger_transition_interval_seconds, timed_triggers_to_camera_triggers,
-        triggers_from_objects, BasicLevelMetadata, CameraMode, CameraTrigger, Direction,
+        triggers_from_objects, BasicLevelMetadata, BlockId, CameraMode, CameraTrigger, Direction,
         EasingDirection, EditorStateParams, GameCursor, LevelMetadata, LevelObject,
         LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata, TimedTrigger, TriggerAction,
         TriggerTarget, CAMERA_TRIGGER_BLOCK_ID, DEFAULT_CAMERA_DISTANCE,
@@ -66,8 +66,7 @@ mod tests {
         let object = LevelObject {
             position: [1.0, 2.0, 3.0],
             size: [4.0, 5.0, 6.0],
-            block_id: "core/grass".to_string(),
-            ..LevelObject::default()
+            ..LevelObject::new("core/grass")
         };
 
         let value = serde_json::to_value(&object).expect("serialize object");
@@ -83,23 +82,19 @@ mod tests {
     #[test]
     fn level_object_is_transform_trigger_matches_block_id_or_trigger_action() {
         // A plain block is not a transform trigger.
-        let plain: LevelObject = LevelObject {
-            block_id: "core/grass".to_string(),
-            ..LevelObject::default()
-        };
+        let plain: LevelObject = LevelObject::new("core/grass");
         assert!(!plain.is_transform_trigger());
 
         // A transform trigger block (matched by block_id) is detected even
         // without a stored trigger.
         let mut by_block_id = plain.clone();
-        by_block_id.block_id = TRANSFORM_TRIGGER_BLOCK_ID.to_string();
+        by_block_id.block_id = BlockId::new(TRANSFORM_TRIGGER_BLOCK_ID);
         assert!(by_block_id.is_transform_trigger());
 
         // A non-transform-trigger block carrying a TransformObjects action is
         // also detected (covers deserialized levels that omit block_id).
         let by_action = LevelObject {
             id: "trigger".to_string(),
-            block_id: "core/grass".to_string(),
             trigger: Some(TimedTrigger {
                 time_seconds: 1.0,
                 duration_seconds: 1.0,
@@ -114,13 +109,13 @@ mod tests {
                     simulate_hitboxes: false,
                 },
             }),
-            ..LevelObject::default()
+            ..LevelObject::new("core/grass")
         };
         assert!(by_action.is_transform_trigger());
 
         // A non-TransformObjects trigger (e.g. camera) should not be detected.
         let camera_block = LevelObject {
-            block_id: "core/camera_trigger".to_string(),
+            block_id: BlockId::new(CAMERA_TRIGGER_BLOCK_ID),
             trigger: Some(TimedTrigger {
                 time_seconds: 0.0,
                 duration_seconds: 0.0,
@@ -154,10 +149,7 @@ mod tests {
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 16.0,
             menu_preview_camera: None,
-            objects: vec![LevelObject {
-                block_id: "core/stone".to_string(),
-                ..LevelObject::default()
-            }],
+            objects: vec![LevelObject::default()],
         });
 
         let value = serde_json::to_value(&metadata).expect("serialize metadata");
@@ -365,7 +357,7 @@ mod tests {
                 ..BasicLevelMetadata::default()
             },
             objects: vec![LevelObject {
-                block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
+                block_id: BlockId::new(CAMERA_TRIGGER_BLOCK_ID),
                 trigger: camera_triggers_to_timed_triggers(&[CameraTrigger {
                     time_seconds: 1.2,
                     mode: CameraMode::Static,
@@ -416,7 +408,7 @@ mod tests {
     fn resolved_camera_trigger_normalizes_wrapped_pitch_rotation() {
         let object = LevelObject {
             rotation_degrees: [-135.0, 0.0, 180.0],
-            block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
+            block_id: BlockId::new(CAMERA_TRIGGER_BLOCK_ID),
             trigger: camera_triggers_to_timed_triggers(&[CameraTrigger {
                 time_seconds: 1.2,
                 mode: CameraMode::Static,
@@ -475,7 +467,7 @@ mod tests {
             position: [4.0, 5.0, 6.0],
             size: [2.0, 3.0, 4.0],
             rotation_degrees: [10.0, 20.0, 30.0],
-            block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
+            block_id: BlockId::new(TRANSFORM_TRIGGER_BLOCK_ID),
             trigger: Some(TimedTrigger {
                 time_seconds: 1.0,
                 duration_seconds: 2.0,
@@ -514,7 +506,6 @@ mod tests {
     fn timed_triggers_apply_easing_sorting_and_scale_clamp() {
         let base = vec![LevelObject {
             id: "target".to_string(),
-            block_id: "core/stone".to_string(),
             ..LevelObject::default()
         }];
 

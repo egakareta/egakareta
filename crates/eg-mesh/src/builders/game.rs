@@ -263,7 +263,6 @@ fn practice_checkpoint_flag_object(checkpoint: &PracticeCheckpointFlagInstance) 
         Direction::Right => [0.0, 90.0, 0.0],
     };
     LevelObject {
-        block_id: PRACTICE_CHECKPOINT_FLAG_BLOCK_ID.to_string(),
         position: [
             checkpoint.position[0] - PRACTICE_CHECKPOINT_FLAG_SIZE[0] * 0.5,
             checkpoint.position[1] + 1.0,
@@ -271,7 +270,7 @@ fn practice_checkpoint_flag_object(checkpoint: &PracticeCheckpointFlagInstance) 
         ],
         size: PRACTICE_CHECKPOINT_FLAG_SIZE,
         rotation_degrees,
-        ..LevelObject::default()
+        ..LevelObject::new(PRACTICE_CHECKPOINT_FLAG_BLOCK_ID)
     }
 }
 

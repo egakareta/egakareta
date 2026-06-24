@@ -862,7 +862,6 @@ fn transform_trigger_target_object(action: &TriggerAction) -> Option<LevelObject
         position: *position,
         size: *size,
         rotation_degrees: *rotation_degrees,
-        block_id: eg_types::DEFAULT_BLOCK_ID.to_string(),
         ..LevelObject::default()
     })
 }
@@ -870,7 +869,7 @@ fn transform_trigger_target_object(action: &TriggerAction) -> Option<LevelObject
 #[cfg(test)]
 mod tests {
     use super::super::super::State;
-    use eg_types::LevelObject;
+    use eg_types::{LevelObject, CAMERA_TRIGGER_BLOCK_ID};
     use glam::{Vec2, Vec3};
 
     #[tokio::test]
@@ -897,10 +896,7 @@ mod tests {
     #[tokio::test]
     async fn ray_intersect_rotated_block_uses_json_hitboxes() {
         let state = State::new_test().await;
-        let fence = LevelObject {
-            block_id: "core/wooden_fence".to_string(),
-            ..LevelObject::default()
-        };
+        let fence = LevelObject::new("core/wooden_fence");
 
         let rail_hit =
             state
@@ -918,10 +914,7 @@ mod tests {
     #[tokio::test]
     async fn camera_trigger_block_pick_uses_arrow_visual_outside_old_cube_bounds() {
         let state = State::new_test().await;
-        let camera_trigger = LevelObject {
-            block_id: "core/camera_trigger".to_string(),
-            ..LevelObject::default()
-        };
+        let camera_trigger = LevelObject::new(CAMERA_TRIGGER_BLOCK_ID);
 
         let ray_origin = Vec3::new(0.5, 5.0, 0.5 + super::CAMERA_TRIGGER_ARROW_PICK_OFFSET);
         let ray_dir = -Vec3::Y;

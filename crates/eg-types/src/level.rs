@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use smart_default::SmartDefault;
 use std::collections::{HashMap, HashSet};
 
-use crate::block_id::{normalize_block_id, DEFAULT_BLOCK_ID};
+use crate::block_id::BlockId;
 
 pub const CAMERA_TRIGGER_BLOCK_ID: &str = "core/camera_trigger";
 pub const TRANSFORM_TRIGGER_BLOCK_ID: &str = "core/transform_trigger";
@@ -93,7 +93,6 @@ serde_default!(default_transform_simulate_hitboxes: bool = false);
 serde_default_array!(default_block_rotation_degrees: [f32; 3] = [0.0, 0.0, 0.0]);
 serde_default_array!(default_level_object_position: [f32; 3] = [0.0, 0.0, 0.0]);
 serde_default_array!(default_level_object_size: [f32; 3] = [1.0, 1.0, 1.0]);
-serde_default!(default_level_object_block_id: String = DEFAULT_BLOCK_ID.to_string());
 serde_default_array!(default_level_object_color_tint: [f32; 3] = [1.0, 1.0, 1.0]);
 serde_default!(default_level_object_id: String = String::new());
 serde_default_float!(default_level_stars: f32 = 0.0);
@@ -177,14 +176,6 @@ pub enum Direction {
     Forward,
     /// Facing the positive X axis.
     Right,
-}
-
-pub fn deserialize_level_object_block_id<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let raw = String::deserialize(deserializer)?;
-    Ok(normalize_block_id(&raw))
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Default, IsDefault)]
@@ -442,12 +433,8 @@ pub struct LevelObject {
     )]
     pub rotation_degrees: [f32; 3],
     /// ID of the block to use for this object, which determines its appearance and behavior. Can be a custom block ID or a core block ID. For example, "core/stone" or "custom/my_block".
-    #[serde(
-        default = "default_level_object_block_id",
-        deserialize_with = "deserialize_level_object_block_id",
-        skip_serializing_if = "is_default_level_object_block_id"
-    )]
-    pub block_id: String,
+    #[serde(default, skip_serializing_if = "IsDefault::is_default")]
+    pub block_id: BlockId,
     /// Color tint to apply to the object, as RGB values from 0.0 to 1.0. This is multiplied with the block's colors, so it can be used to create variations of the same block without needing multiple block definitions. For example, a color tint of [1.0, 0.5, 0.5] would make the object appear redder, while [0.5, 1.0, 0.5] would make it appear greener.
     #[serde(
         default = "default_level_object_color_tint",
@@ -459,6 +446,14 @@ pub struct LevelObject {
 }
 
 impl LevelObject {
+    /// Convenience constructor for creating a new LevelObject with a given block ID string, using default values for all other fields.
+    pub fn new(block_id_str: &str) -> Self {
+        Self {
+            block_id: BlockId::new(block_id_str),
+            ..Self::default()
+        }
+    }
+
     /// Dead-center position of the object, used as the pivot point for rotation.
     pub fn center(&self) -> Vec3 {
         Vec3::from_array(self.position) + Vec3::from_array(self.size) * 0.5
@@ -514,10 +509,6 @@ impl LevelObject {
         self
     }
 
-    pub fn normalize_block_id(&mut self) {
-        self.block_id = normalize_block_id(&self.block_id);
-    }
-
     pub fn transform_field_visibility(&self) -> LevelObjectTransformFieldVisibility {
         match self.trigger.as_ref().map(|trigger| &trigger.action) {
             Some(TriggerAction::CameraFollow { .. }) => LevelObjectTransformFieldVisibility::none(),
@@ -552,7 +543,7 @@ impl Default for LevelObject {
             position: default_level_object_position(),
             size: default_level_object_size(),
             rotation_degrees: default_block_rotation_degrees(),
-            block_id: default_level_object_block_id(),
+            block_id: BlockId::default(),
             color_tint: default_level_object_color_tint(),
             trigger: None,
         }

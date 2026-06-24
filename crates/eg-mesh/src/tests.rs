@@ -17,8 +17,8 @@ mod tests {
     };
     use crate::{GizmoPart, Vertex};
     use eg_block_geometry::hitbox_cuboids;
-    use eg_types::LevelObject;
     use eg_types::{camera_trigger_eye_from_object, camera_trigger_forward_from_rotation_degrees};
+    use eg_types::{LevelObject, CAMERA_TRIGGER_BLOCK_ID, TRANSFORM_TRIGGER_BLOCK_ID};
 
     fn bounds_xz(vertices: &[[f32; 3]]) -> (f32, f32, f32, f32) {
         let mut min_x = f32::INFINITY;
@@ -39,8 +39,7 @@ mod tests {
         let obj = LevelObject {
             size: [2.0, 1.0, 1.0],
             rotation_degrees: [0.0, 90.0, 0.0],
-            block_id: "core/dirt".to_string(),
-            ..LevelObject::default()
+            ..LevelObject::new("core/dirt")
         };
         let vertices = build_block_vertices(&[obj]);
         let positions: Vec<[f32; 3]> = vertices.iter().map(|v| v.position).collect();
@@ -55,9 +54,8 @@ mod tests {
     #[test]
     fn solid_block_black_tint_darkens_vertex_colors() {
         let obj = LevelObject {
-            block_id: "core/solid".to_string(),
             color_tint: [0.0, 0.0, 0.0],
-            ..LevelObject::default()
+            ..LevelObject::new("core/solid")
         };
 
         let vertices = build_block_vertices(&[obj]);
@@ -70,10 +68,7 @@ mod tests {
 
     #[test]
     fn wooden_fence_builds_multiple_cuboids() {
-        let obj = LevelObject {
-            block_id: "core/wooden_fence".to_string(),
-            ..LevelObject::default()
-        };
+        let obj = LevelObject::new("core/wooden_fence");
 
         let vertices = build_block_vertices(std::slice::from_ref(&obj));
 
@@ -97,7 +92,6 @@ mod tests {
         let object = LevelObject {
             position: [2.0, 3.0, 4.0],
             size: [5.0, 6.0, 7.0],
-            block_id: "core/stone".to_string(),
             ..LevelObject::default()
         };
         let batches = build_block_instance_batches(std::slice::from_ref(&object));
@@ -116,22 +110,10 @@ mod tests {
     #[test]
     fn block_instance_batches_split_instanced_blocks_from_trigger_fallbacks() {
         let objects = vec![
-            LevelObject {
-                block_id: "core/stone".to_string(),
-                ..LevelObject::default()
-            },
-            LevelObject {
-                block_id: "core/wooden_fence".to_string(),
-                ..LevelObject::default()
-            },
-            LevelObject {
-                block_id: "core/camera_trigger".to_string(),
-                ..LevelObject::default()
-            },
-            LevelObject {
-                block_id: "core/transform_trigger".to_string(),
-                ..LevelObject::default()
-            },
+            LevelObject::new("core/stone"),
+            LevelObject::new("core/wooden_fence"),
+            LevelObject::new(CAMERA_TRIGGER_BLOCK_ID),
+            LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID),
         ];
 
         let batches = build_block_instance_batches(&objects);
@@ -363,19 +345,14 @@ mod tests {
     #[test]
     fn hitbox_visualization_draws_outline_only_for_lethal_and_consumables() {
         let objects = vec![
-            LevelObject {
-                block_id: "core/lava".to_string(),
-                ..LevelObject::default()
-            },
+            LevelObject::new("core/lava"),
             LevelObject {
                 position: [2.0, 0.0, 0.0],
-                block_id: "core/speedportal".to_string(),
-                ..LevelObject::default()
+                ..LevelObject::new("core/speedportal")
             },
             LevelObject {
                 position: [4.0, 0.0, 0.0],
-                block_id: "core/gem".to_string(),
-                ..LevelObject::default()
+                ..LevelObject::new("core/gem")
             },
         ];
 
@@ -431,10 +408,7 @@ mod tests {
 
     #[test]
     fn gem_block_uses_cuboid_geometry_and_idle_animation_tags() {
-        let obj = LevelObject {
-            block_id: "core/gem".to_string(),
-            ..LevelObject::default()
-        };
+        let obj = LevelObject::new("core/gem");
         let geometry = build_block_geometry(std::slice::from_ref(&obj));
         assert!(geometry.indices.is_none());
 
@@ -461,8 +435,7 @@ mod tests {
     fn camera_trigger_profile_builds_eye_ring_and_direction_arrow() {
         let obj = LevelObject {
             position: [3.0, 4.0, 5.0],
-            block_id: "core/camera_trigger".to_string(),
-            ..LevelObject::default()
+            ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         };
         let eye = camera_trigger_eye_from_object(&obj);
 
@@ -509,8 +482,7 @@ mod tests {
         let obj = LevelObject {
             position,
             rotation_degrees,
-            block_id: "core/camera_trigger".to_string(),
-            ..LevelObject::default()
+            ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         };
         let vertices = build_block_geometry(std::slice::from_ref(&obj)).to_triangle_vertices();
         let eye = glam::Vec3::from_array(camera_trigger_eye_from_object(&obj));
@@ -537,8 +509,7 @@ mod tests {
         let obj = LevelObject {
             position: [0.0, 0.0, 0.0],
             rotation_degrees,
-            block_id: "core/camera_trigger".to_string(),
-            ..LevelObject::default()
+            ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         };
         let vertices = build_block_geometry(std::slice::from_ref(&obj)).to_triangle_vertices();
         let eye = glam::Vec3::from_array(camera_trigger_eye_from_object(&obj));

@@ -35,9 +35,8 @@ pub fn create_block_at_cursor(
         position: cursor,
         size: default_size,
         rotation_degrees,
-        block_id: block_id.to_string(),
         trigger,
-        ..LevelObject::default()
+        ..LevelObject::new(block_id)
     }
 }
 

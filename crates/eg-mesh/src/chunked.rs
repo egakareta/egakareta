@@ -659,7 +659,9 @@ fn material_key_for_object(
     block_ids: &mut BTreeMap<String, u32>,
 ) -> MaterialKey {
     let next_id = block_ids.len() as u32;
-    let block_id = *block_ids.entry(object.block_id.clone()).or_insert(next_id);
+    let block_id = *block_ids
+        .entry(object.block_id.to_string())
+        .or_insert(next_id);
     MaterialKey {
         block_id,
         tint: object.color_tint.map(f32::to_bits),
@@ -769,20 +771,14 @@ mod tests {
 
     #[test]
     fn classifier_accepts_grid_aligned_solid_cube() {
-        let object = LevelObject {
-            block_id: "core/stone".to_string(),
-            ..LevelObject::default()
-        };
+        let object = LevelObject::default();
 
         assert!(classify_voxel_fast_lane(&object).is_ok());
     }
 
     #[test]
     fn classifier_rejects_custom_geometry() {
-        let object = LevelObject {
-            block_id: "core/wooden_fence".to_string(),
-            ..LevelObject::default()
-        };
+        let object = LevelObject::new("core/wooden_fence");
 
         assert!(classify_voxel_fast_lane(&object).is_err());
     }
@@ -790,13 +786,8 @@ mod tests {
     #[test]
     fn greedy_mesh_removes_hidden_faces_and_merges_rows() {
         let objects = vec![
+            LevelObject::default(),
             LevelObject {
-                block_id: "core/stone".to_string(),
-                position: [0.0, 0.0, 0.0],
-                ..LevelObject::default()
-            },
-            LevelObject {
-                block_id: "core/stone".to_string(),
                 position: [1.0, 0.0, 0.0],
                 ..LevelObject::default()
             },
@@ -817,12 +808,10 @@ mod tests {
     fn cross_chunk_neighbors_hide_boundary_faces() {
         let objects = vec![
             LevelObject {
-                block_id: "core/stone".to_string(),
                 position: [15.0, 0.0, 0.0],
                 ..LevelObject::default()
             },
             LevelObject {
-                block_id: "core/stone".to_string(),
                 position: [16.0, 0.0, 0.0],
                 ..LevelObject::default()
             },
@@ -842,7 +831,6 @@ mod tests {
         // instanced path (stretching its texture) instead of the greedy mesher
         // (which would tile per voxel cell).
         let object = LevelObject {
-            block_id: "core/stone".to_string(),
             size: [2.0, 1.0, 1.0],
             ..LevelObject::default()
         };
@@ -856,10 +844,7 @@ mod tests {
     #[test]
     fn classifier_accepts_unit_cube_after_resize_check() {
         // A default unit cube is still accepted by the greedy fast lane.
-        let object = LevelObject {
-            block_id: "core/stone".to_string(),
-            ..LevelObject::default()
-        };
+        let object = LevelObject::default();
 
         assert!(classify_voxel_fast_lane(&object).is_ok());
     }
@@ -870,7 +855,6 @@ mod tests {
         // instead it lands in the fallback (instanced) batches so its texture
         // stretches across the single block.
         let objects = vec![LevelObject {
-            block_id: "core/stone".to_string(),
             size: [3.0, 1.0, 1.0],
             ..LevelObject::default()
         }];

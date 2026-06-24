@@ -57,9 +57,6 @@ pub fn parse_level_metadata_json(json: &str) -> Result<LevelMetadata, String> {
     let mut metadata: LevelMetadata =
         serde_json::from_str(json).map_err(|error| error.to_string())?;
 
-    for object in &mut metadata.objects {
-        object.normalize_block_id();
-    }
     metadata.normalize_object_ids();
     Ok(metadata)
 }

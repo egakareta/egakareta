@@ -941,10 +941,7 @@ mod tests {
     #[tokio::test]
     async fn editor_escape_deselects_blocks_and_taps_before_playback_or_timeline() {
         let mut state = new_editor_state().await;
-        state.editor.objects = vec![LevelObject {
-            block_id: "core/stone".to_string(),
-            ..LevelObject::default()
-        }];
+        state.editor.objects = vec![LevelObject::default()];
         state.editor.ui.selected_block_indices = vec![0];
         state.editor.timeline.taps.tap_times = vec![1.25];
         state.editor.timeline.taps.tap_indicator_positions = vec![[0.25, 0.0, 0.75]];
@@ -1043,10 +1040,7 @@ mod tests {
     async fn escape_during_playtest_still_returns_to_editor() {
         let mut state = State::new_test().await;
         state.enter_editor_phase("Playtest Escape".to_string());
-        state.editor.objects = vec![LevelObject {
-            block_id: "core/stone".to_string(),
-            ..LevelObject::default()
-        }];
+        state.editor.objects = vec![LevelObject::default()];
         state.editor_playtest();
 
         state.dispatch(AppCommand::Editor(EditorCommand::Escape));
@@ -1088,14 +1082,10 @@ mod tests {
         assert_eq!(state.editor.config.recent_block_ids[0], "core/lava");
 
         state.editor.objects = vec![
-            LevelObject {
-                block_id: "core/stone".to_string(),
-                ..LevelObject::default()
-            },
+            LevelObject::default(),
             LevelObject {
                 position: [1.0, 0.0, 0.0],
-                block_id: "core/grass".to_string(),
-                ..LevelObject::default()
+                ..LevelObject::new("core/grass")
             },
         ];
         state.editor.ui.mode = EditorMode::Move;
@@ -1180,10 +1170,7 @@ mod tests {
     #[tokio::test]
     async fn pick_block_at_screen_samples_block_type_for_placement() {
         let mut state = new_editor_state().await;
-        state.editor.objects = vec![LevelObject {
-            block_id: "core/grass".to_string(),
-            ..LevelObject::default()
-        }];
+        state.editor.objects = vec![LevelObject::new("core/grass")];
         state.dispatch(AppCommand::Editor(EditorCommand::SetMode(EditorMode::Move)));
         state.dispatch(AppCommand::Editor(EditorCommand::SetBlockId(
             "core/stone".to_string(),
@@ -1215,14 +1202,12 @@ mod tests {
             LevelObject {
                 position: [10.0, 2.0, 30.0],
                 size: [2.0, 4.0, 6.0],
-                block_id: "core/stone".to_string(),
                 ..LevelObject::default()
             },
             LevelObject {
                 position: [50.0, 4.0, 70.0],
                 size: [4.0, 2.0, 8.0],
-                block_id: "core/grass".to_string(),
-                ..LevelObject::default()
+                ..LevelObject::new("core/grass")
             },
         ];
         state.editor.ui.selected_block_index = Some(0);
@@ -1647,13 +1632,9 @@ mod tests {
 
         state.editor.camera.editor_pan = [0.0, 0.0];
         state.editor.objects = vec![
-            eg_types::LevelObject {
-                block_id: "core/stone".to_string(),
-                ..eg_types::LevelObject::default()
-            },
+            eg_types::LevelObject::default(),
             eg_types::LevelObject {
                 position: [2.0, 0.0, 0.0],
-                block_id: "core/stone".to_string(),
                 ..eg_types::LevelObject::default()
             },
         ];
@@ -1695,10 +1676,7 @@ mod tests {
         )));
 
         state.editor.camera.editor_pan = [0.0, 0.0];
-        state.editor.objects = vec![eg_types::LevelObject {
-            block_id: "core/stone".to_string(),
-            ..eg_types::LevelObject::default()
-        }];
+        state.editor.objects = vec![eg_types::LevelObject::default()];
 
         // Ensure we are not hovering anything initially
         state.editor.ui.hovered_block_index = None;
@@ -1777,10 +1755,7 @@ mod tests {
         state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
             eg_types::EditorMode::Select,
         )));
-        state.editor.objects = vec![LevelObject {
-            block_id: "core/stone".to_string(),
-            ..LevelObject::default()
-        }];
+        state.editor.objects = vec![LevelObject::default()];
 
         let viewport = Vec2::new(
             state.render.gpu.config.width as f32,
@@ -2118,9 +2093,8 @@ mod tests {
                 camera_trigger.rotation.to_degrees(),
                 0.0,
             ],
-            block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
             trigger: Some(trigger),
-            ..LevelObject::default()
+            ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         });
         let viewport = Vec2::new(
             state.render.gpu.config.width as f32,
@@ -2190,9 +2164,8 @@ mod tests {
                 camera_trigger.rotation.to_degrees(),
                 0.0,
             ],
-            block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
             trigger: Some(trigger),
-            ..LevelObject::default()
+            ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         });
         let viewport = Vec2::new(
             state.render.gpu.config.width as f32,
@@ -2238,7 +2211,6 @@ mod tests {
         let trigger_index = state.editor.objects.len();
         state.editor.objects.push(LevelObject {
             position: [2.0, 0.0, 0.0],
-            block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
             trigger: Some(TimedTrigger {
                 time_seconds: 1.0,
                 duration_seconds: 1.0,
@@ -2253,7 +2225,7 @@ mod tests {
                     simulate_hitboxes: false,
                 },
             }),
-            ..LevelObject::default()
+            ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
         });
 
         let viewport = Vec2::new(
@@ -2456,10 +2428,7 @@ mod tests {
         assert!(!State::is_modifier_key("m"));
 
         assert!(!state.has_block_selection());
-        state.editor.objects = vec![LevelObject {
-            block_id: "core/stone".to_string(),
-            ..LevelObject::default()
-        }];
+        state.editor.objects = vec![LevelObject::default()];
         state.editor.ui.selected_block_index = Some(0);
         assert!(state.has_block_selection());
         state.editor.ui.selected_block_index = None;
@@ -2769,9 +2738,8 @@ mod tests {
             position: [2.0, 1.0, 3.0],
             size: [1.5, 1.0, 0.5],
             rotation_degrees: [5.0, 10.0, 15.0],
-            block_id: "core/lava".to_string(),
             color_tint: [0.2, 0.4, 0.8],
-            ..LevelObject::default()
+            ..LevelObject::new("core/lava")
         };
         state.dispatch(AppCommand::Editor(EditorCommand::UpdateSelectedBlock(
             updated.clone(),

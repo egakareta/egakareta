@@ -257,14 +257,12 @@ mod tests {
         let mut objects = vec![
             LevelObject {
                 size: [1.0, 1.0, 1.0],
-                block_id: "core/stone".to_string(),
                 ..LevelObject::default()
             },
             LevelObject {
                 position: [0.0, 1.0, 0.0],
                 size: [1.0, 2.0, 1.0],
-                block_id: "core/grass".to_string(),
-                ..LevelObject::default()
+                ..LevelObject::new("core/grass")
             },
         ];
 
@@ -295,7 +293,6 @@ mod tests {
             tap_times: vec![0.8, 0.2],
             objects: vec![LevelObject {
                 position: [4.0, 6.0, 0.0],
-                block_id: "core/stone".to_string(),
                 ..LevelObject::default()
             }],
             ..LevelMetadata::default()
@@ -355,8 +352,7 @@ mod tests {
         // Place a speed portal at [0, 0, 5] (5 units ahead of spawn on Z).
         let objects = vec![LevelObject {
             position: [0.5, 0.0, 5.5],
-            block_id: "core/speedportal".to_string(),
-            ..LevelObject::default()
+            ..LevelObject::new("core/speedportal")
         }];
 
         // Advance timeline past the portal (e.g., 10 units / BASE_PLAYER_SPEED seconds)
@@ -519,7 +515,6 @@ mod tests {
     fn near_solver_with_post_death_seed_uses_reachable_time() {
         let objects = vec![LevelObject {
             position: [0.0, 0.0, 4.0],
-            block_id: "core/stone".to_string(),
             ..LevelObject::default()
         }];
         let target = [0.5, 0.0, 3.5];
@@ -799,10 +794,7 @@ mod tests {
             time_signature_numerator: 4,
             time_signature_denominator: 4,
         }];
-        let objects = vec![LevelObject {
-            block_id: "core/stone".to_string(),
-            ..LevelObject::default()
-        }];
+        let objects = vec![LevelObject::default()];
 
         let previews = derive_timing_division_tap_previews(
             [0.0, 1.0, 0.0],
