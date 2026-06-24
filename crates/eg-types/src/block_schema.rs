@@ -7,7 +7,7 @@
 */
 use serde::{Deserialize, Serialize};
 
-use crate::block_id::{canonical_block_id_text, DEFAULT_BLOCK_ID};
+use crate::BlockId;
 
 fn default_display_name() -> String {
     "Standard".to_string()
@@ -169,7 +169,7 @@ fn sanitize_nonnegative(value: f32, fallback: f32) -> f32 {
 #[derive(Clone, Deserialize, Serialize)]
 pub struct BlockDefinition {
     /// Canonical block identifier.
-    pub id: String,
+    pub id: BlockId,
     /// Human-readable editor label.
     #[serde(default = "default_display_name")]
     pub display_name: String,
@@ -198,13 +198,12 @@ pub struct BlockDefinition {
 impl BlockDefinition {
     /// Normalizes IDs, display names, dimensions, and custom cuboid bounds.
     pub fn normalize(mut self) -> Option<Self> {
-        self.id = canonical_block_id_text(&self.id);
         if self.id.is_empty() {
             return None;
         }
         self.display_name = self.display_name.trim().to_string();
         if self.display_name.is_empty() {
-            self.display_name = self.id.clone();
+            self.display_name = self.id.to_string();
         }
         self.render.default_size = sanitize_block_size(self.render.default_size);
         self.geometry.elements = self
@@ -691,7 +690,7 @@ impl Default for BlockBehavior {
 /// Returns the built-in fallback block definition used by runtime catalogs.
 pub fn fallback_block_definition() -> BlockDefinition {
     BlockDefinition {
-        id: DEFAULT_BLOCK_ID.to_string(),
+        id: BlockId::default(),
         display_name: "Standard".to_string(),
         category: BlockCategory::Building,
         assets: BlockAssets::default(),

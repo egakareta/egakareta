@@ -153,7 +153,7 @@ pub fn build_block_instance_batches_from_refs_at_time(
         let block = resolve_block_definition(&object.block_id);
         if is_instanced_block_definition(block) {
             grouped_instances
-                .entry(block.id.clone())
+                .entry(block.id.to_string())
                 .or_default()
                 .push(block_instance_from_object(object, block));
         } else {

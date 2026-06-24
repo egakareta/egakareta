@@ -1221,7 +1221,7 @@ pub fn show_editor_ui(
                                     if show_block_preview_button(
                                         ui,
                                         block,
-                                        block_icon_texture_ids.get(block.id.as_str()).copied(),
+                                        block_icon_texture_ids.get(&block.id.to_string()).copied(),
                                     ) {
                                         commands.push(AppCommand::Editor(
                                             EditorCommand::SetBlockId(BlockId::new(&block.id)),

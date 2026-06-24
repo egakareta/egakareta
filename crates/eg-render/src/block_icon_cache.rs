@@ -11,7 +11,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use eg_blocks::{all_placeable_blocks, resolve_block_texture_layers};
 use eg_types::{
     BlockAnimationAxis, BlockAnimationPhaseSeed, BlockCuboid, BlockDefinition,
-    BlockEffectColorMode, BlockEffectPreset, BlockRenderProfile,
+    BlockEffectColorMode, BlockEffectPreset, BlockId, BlockRenderProfile,
 };
 use egui::TextureId;
 use egui_wgpu::Renderer as EguiRenderer;
@@ -49,32 +49,39 @@ impl BlockIconCache {
             let signature = block_icon_signature(block);
             let should_refresh = self
                 .entries
-                .get(block.id.as_str())
+                .get(&block.id.to_string())
                 .is_none_or(|cached| cached.signature != signature);
 
             if !should_refresh {
                 continue;
             }
 
-            let Some(texture) = gpu.render_block_icon_snapshot(block.id.as_str(), BLOCK_ICON_SIZE)
+            let Some(texture) =
+                gpu.render_block_icon_snapshot(&block.id.to_string(), BLOCK_ICON_SIZE)
             else {
-                if let Some(removed) = self.entries.remove(block.id.as_str()) {
+                if let Some(removed) = self.entries.remove(&block.id.to_string()) {
                     egui_renderer.free_texture(&removed.texture_id);
                 }
                 continue;
             };
 
-            self.upsert_block_icon(gpu, egui_renderer, block.id.as_str(), texture, signature);
+            self.upsert_block_icon(
+                gpu,
+                egui_renderer,
+                &block.id.to_string(),
+                texture,
+                signature,
+            );
         }
 
         let stale_ids: Vec<String> = self
             .entries
             .keys()
-            .filter(|id| !seen_ids.contains(*id))
+            .filter(|id| !seen_ids.contains(&BlockId::new(id)))
             .cloned()
             .collect();
         for id in stale_ids {
-            if let Some(removed) = self.entries.remove(id.as_str()) {
+            if let Some(removed) = self.entries.remove(&id) {
                 egui_renderer.free_texture(&removed.texture_id);
             }
         }
@@ -129,7 +136,7 @@ impl Default for BlockIconCache {
 
 fn block_icon_signature(block: &BlockDefinition) -> u64 {
     let mut hasher = DefaultHasher::new();
-    let layers = resolve_block_texture_layers(block.id.as_str());
+    let layers = resolve_block_texture_layers(&block.id.to_string());
     layers.top.hash(&mut hasher);
     layers.side.hash(&mut hasher);
     layers.bottom.hash(&mut hasher);

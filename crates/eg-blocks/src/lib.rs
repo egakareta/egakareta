@@ -16,9 +16,7 @@ use std::sync::OnceLock;
 use image::imageops::FilterType;
 use include_dir::{include_dir, Dir};
 
-use eg_types::{
-    canonical_block_id_text, fallback_block_definition, BlockDefinition, DEFAULT_BLOCK_ID,
-};
+use eg_types::{fallback_block_definition, BlockDefinition, BlockId};
 
 static BLOCKS_DIR: Dir<'_> = include_dir!("$EGAKARETA_WORKSPACE_ROOT/assets/blocks");
 static BLOCK_CATALOG: OnceLock<BlockCatalog> = OnceLock::new();
@@ -134,8 +132,8 @@ pub struct BlockTextureLayers {
 
 pub(crate) struct BlockCatalog {
     definitions: Vec<BlockDefinition>,
-    by_id: HashMap<String, usize>,
-    fallback_id: String,
+    by_id: HashMap<BlockId, usize>,
+    fallback_id: BlockId,
 }
 
 impl BlockCatalog {
@@ -149,7 +147,7 @@ impl BlockCatalog {
             by_id.insert(definition.id.clone(), index);
         }
 
-        if !by_id.contains_key(DEFAULT_BLOCK_ID) {
+        if !by_id.contains_key(&BlockId::default()) {
             let fallback = Self::fallback_definition();
             let index = definitions.len();
             by_id.insert(fallback.id.clone(), index);
@@ -159,7 +157,7 @@ impl BlockCatalog {
         Self {
             definitions,
             by_id,
-            fallback_id: DEFAULT_BLOCK_ID.to_string(),
+            fallback_id: BlockId::default(),
         }
     }
 
@@ -167,21 +165,9 @@ impl BlockCatalog {
         fallback_block_definition()
     }
 
-    fn resolve_id<'a>(&'a self, block_id: &'a str) -> &'a str {
-        let normalized = canonical_block_id_text(block_id);
-        if normalized.is_empty() {
-            return self.fallback_id.as_str();
-        }
+    fn block_for_id(&self, block_id: &BlockId) -> &BlockDefinition {
         self.by_id
-            .get(&normalized)
-            .map(|&index| self.definitions[index].id.as_str())
-            .unwrap_or(self.fallback_id.as_str())
-    }
-
-    fn block_for_id(&self, block_id: &str) -> &BlockDefinition {
-        let resolved = self.resolve_id(block_id);
-        self.by_id
-            .get(resolved)
+            .get(block_id)
             .and_then(|index| self.definitions.get(*index))
             .or_else(|| {
                 self.by_id
@@ -365,12 +351,14 @@ pub fn all_placeable_blocks() -> &'static [BlockDefinition] {
 
 /// Resolves a block ID to its definition, returning the default block if not found.
 pub fn resolve_block_definition(block_id: &str) -> &'static BlockDefinition {
-    block_catalog().block_for_id(block_id)
+    block_catalog().block_for_id(&BlockId::new(block_id))
 }
 
 #[cfg(test)]
 mod tests {
-    use eg_types::{BlockAnimation, BlockAssets, BlockBehavior, BlockGeometry, BlockRender};
+    use eg_types::{
+        BlockAnimation, BlockAssets, BlockBehavior, BlockGeometry, BlockId, BlockRender,
+    };
 
     use super::{
         all_placeable_blocks, block_texture_atlas, resolve_block_definition,
@@ -423,7 +411,7 @@ mod tests {
     #[test]
     fn normalize_block_definition_trims_and_falls_back_display_name() {
         let normalized = BlockDefinition {
-            id: "  CORE/STONE  ".to_string(),
+            id: BlockId::new("  CORE/STONE  "),
             display_name: "   ".to_string(),
             category: BlockCategory::Building,
             assets: BlockAssets::default(),
@@ -439,7 +427,7 @@ mod tests {
         assert_eq!(normalized.display_name, "core/stone");
 
         let missing_id = BlockDefinition {
-            id: "   ".to_string(),
+            id: BlockId::new("   "),
             display_name: "name".to_string(),
             category: BlockCategory::Building,
             assets: BlockAssets::default(),
@@ -513,7 +501,7 @@ mod tests {
         assert_eq!(speed_portal.default_size(), [2.0, 1.0, 1.0]);
 
         let normalized = BlockDefinition {
-            id: "debug/flat".to_string(),
+            id: BlockId::new("debug/flat"),
             display_name: "Flat".to_string(),
             category: BlockCategory::Building,
             assets: BlockAssets::default(),
@@ -540,7 +528,7 @@ mod tests {
         assert_eq!(fence.geometry.elements[0].to, [10.0, 16.0, 10.0]);
 
         let normalized = BlockDefinition {
-            id: "debug/cuboids".to_string(),
+            id: BlockId::new("debug/cuboids"),
             display_name: "Cuboids".to_string(),
             category: BlockCategory::Building,
             assets: BlockAssets::default(),

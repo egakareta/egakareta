@@ -56,7 +56,7 @@ pub(crate) fn show_recent_block_quick_strip(
         if show_block_preview_button_sized(
             ui,
             block,
-            block_icon_texture_ids.get(block.id.as_str()).copied(),
+            block_icon_texture_ids.get(&block.id.to_string()).copied(),
             egui::Vec2::splat(COMPACT_PREVIEW_BUTTON_SIZE),
             COMPACT_PREVIEW_HEIGHT,
         ) {
@@ -470,7 +470,7 @@ fn show_block_preview_button_sized(
             egui::Color32::WHITE,
         );
     } else {
-        draw_block_preview_cube(ui.painter(), preview_rect, block.id.as_str());
+        draw_block_preview_cube(ui.painter(), preview_rect, &block.id.to_string());
     }
 
     let clicked = response.clicked();
@@ -653,7 +653,7 @@ mod tests {
             .find(|block| block.placeable)
             .expect("expected at least one placeable block");
         let atlas = block_texture_atlas();
-        let layers = resolve_block_texture_layers(block.id.as_str());
+        let layers = resolve_block_texture_layers(&block.id.to_string());
 
         let expected_top = scale_rgb(
             atlas_average_color(atlas, layers.top).unwrap_or(FALLBACK_TOP_COLOR),
@@ -662,7 +662,7 @@ mod tests {
         let expected_side = atlas_average_color(atlas, layers.side).unwrap_or(FALLBACK_SIDE_COLOR);
 
         assert_eq!(
-            block_preview_colors(block.id.as_str()),
+            block_preview_colors(&block.id.to_string()),
             (expected_top, expected_side)
         );
     }
