@@ -110,11 +110,11 @@ pub fn is_default_camera_trigger_target_position(value: &[f32; 3]) -> bool {
         .all(|(component, default)| (*component - default).abs() <= 1e-6)
 }
 
-pub fn default_camera_trigger_rotation() -> f32 {
+pub fn default_camera_trigger_yaw() -> f32 {
     DEFAULT_CAMERA_YAW
 }
 
-pub fn is_default_camera_trigger_rotation(value: &f32) -> bool {
+pub fn is_default_camera_trigger_yaw(value: &f32) -> bool {
     (*value - DEFAULT_CAMERA_YAW).abs() <= 1e-6
 }
 
@@ -603,9 +603,10 @@ pub enum EasingDirection {
     EaseInOut,
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, SmartDefault, IsDefault)]
 pub struct CameraTrigger {
     /// Time in seconds when the trigger is activated.
+    #[serde(default, skip_serializing_if = "IsDefault::is_default")]
     pub time_seconds: f32,
     /// [`CameraMode`] for how the camera behaves during this trigger.
     #[serde(default, skip_serializing_if = "IsDefault::is_default")]
@@ -614,39 +615,112 @@ pub struct CameraTrigger {
     #[serde(default, skip_serializing_if = "IsDefault::is_default")]
     pub easing: EasingDirection,
     /// Time in seconds for how long the camera transition takes. If 0, the transition is instant.
+    #[default(default_camera_trigger_transition_interval_seconds())]
     #[serde(
         default = "default_camera_trigger_transition_interval_seconds",
         skip_serializing_if = "is_default_camera_trigger_transition_interval_seconds"
     )]
     pub transition_interval_seconds: f32,
     /// Decides whether the transition into a trigger spans the entire segment leading up to it, or just the `transition_interval_seconds` right before `time_seconds` when it fires.
+    #[default(default_camera_trigger_use_full_segment_transition())]
     #[serde(
         default = "default_camera_trigger_use_full_segment_transition",
         skip_serializing_if = "is_default_camera_trigger_use_full_segment_transition"
     )]
     pub use_full_segment_transition: bool,
     /// Look-at position for the Static camera.
+    #[default(default_camera_trigger_target_position())]
     #[serde(
         default = "default_camera_trigger_target_position",
         skip_serializing_if = "is_default_camera_trigger_target_position"
     )]
     pub target_position: [f32; 3],
     /// Straight-line distance from the Follow camera to the target position.
+    #[default(default_camera_trigger_distance())]
     #[serde(
         default = "default_camera_trigger_distance",
         skip_serializing_if = "is_default_camera_trigger_distance"
     )]
     pub distance: f32,
+    #[default(default_camera_trigger_yaw())]
     #[serde(
-        default = "default_camera_trigger_rotation",
-        skip_serializing_if = "is_default_camera_trigger_rotation"
+        default = "default_camera_trigger_yaw",
+        skip_serializing_if = "is_default_camera_trigger_yaw"
     )]
-    pub rotation: f32,
+    pub yaw: f32,
+    #[default(default_camera_trigger_pitch())]
     #[serde(
         default = "default_camera_trigger_pitch",
         skip_serializing_if = "is_default_camera_trigger_pitch"
     )]
     pub pitch: f32,
+}
+
+impl CameraTrigger {
+    /// The vector from the look-at target to the specified eye.
+    /// Roll is not considered, so the camera is always upright.
+    fn camera_offset_from_target(yaw: f32, pitch: f32, distance: f32) -> [f32; 3] {
+        let horizontal_distance = distance * pitch.cos();
+        [
+            -yaw.sin() * horizontal_distance,
+            pitch.sin() * distance,
+            -yaw.cos() * horizontal_distance,
+        ]
+    }
+
+    /// Normalize degrees to the range [-180, 180).
+    fn normalize_degrees(degrees: f32) -> f32 {
+        (degrees + 180.0).rem_euclid(360.0) - 180.0
+    }
+
+    /// Convert a rotation in degrees to yaw and pitch in radians, normalized to the range [-π, π) for yaw and [-π/2, π/2] for pitch.
+    pub fn yaw_pitch_from_rotation(rotation: [f32; 3]) -> (f32, f32) {
+        let mut pitch_degrees = Self::normalize_degrees(rotation[0]);
+        let mut rotation_degrees_y = Self::normalize_degrees(rotation[1]);
+        if pitch_degrees > 90.0 {
+            pitch_degrees = 180.0 - pitch_degrees;
+            rotation_degrees_y += 180.0;
+        } else if pitch_degrees < -90.0 {
+            pitch_degrees += 180.0;
+            rotation_degrees_y += 180.0;
+        }
+        (
+            Self::normalize_degrees(rotation_degrees_y).to_radians(),
+            pitch_degrees.to_radians(),
+        )
+    }
+
+    /// Convert a rotation in degrees to a forward vector in world coordinates.
+    pub fn forward_from_rotation(rotation: [f32; 3]) -> [f32; 3] {
+        let (yaw, pitch) = Self::yaw_pitch_from_rotation(rotation);
+        CameraTrigger {
+            yaw,
+            pitch,
+            ..CameraTrigger::default()
+        }
+        .forward()
+    }
+
+    /// The camera eye position that will be used to look at the target.
+    pub fn eye(&self) -> [f32; 3] {
+        let offset = Self::camera_offset_from_target(self.yaw, self.pitch, self.distance);
+        [
+            self.target_position[0] + offset[0],
+            self.target_position[1] + offset[1],
+            self.target_position[2] + offset[2],
+        ]
+    }
+
+    /// The forward vector of the camera, pointing from the eye to the target.
+    pub fn forward(&self) -> [f32; 3] {
+        let distance = self.distance.max(0.001);
+        let offset = Self::camera_offset_from_target(self.yaw, self.pitch, distance);
+        [
+            -offset[0] / distance,
+            -offset[1] / distance,
+            -offset[2] / distance,
+        ]
+    }
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
@@ -683,7 +757,7 @@ where
 pub enum TriggerAction {
     TransformObjects {
         position: [f32; 3],
-        rotation_degrees: [f32; 3],
+        rotation: [f32; 3],
         size: [f32; 3],
         #[serde(
             default = "default_transform_simulate_hitboxes",
@@ -708,10 +782,10 @@ pub enum TriggerAction {
         )]
         target_position: [f32; 3],
         #[serde(
-            default = "default_camera_trigger_rotation",
-            skip_serializing_if = "is_default_camera_trigger_rotation"
+            default = "default_camera_trigger_yaw",
+            skip_serializing_if = "is_default_camera_trigger_yaw"
         )]
-        rotation: f32,
+        yaw: f32,
         #[serde(
             default = "default_camera_trigger_pitch",
             skip_serializing_if = "is_default_camera_trigger_pitch"
@@ -735,10 +809,10 @@ pub enum TriggerAction {
         )]
         distance: f32,
         #[serde(
-            default = "default_camera_trigger_rotation",
-            skip_serializing_if = "is_default_camera_trigger_rotation"
+            default = "default_camera_trigger_yaw",
+            skip_serializing_if = "is_default_camera_trigger_yaw"
         )]
-        rotation: f32,
+        yaw: f32,
         #[serde(
             default = "default_camera_trigger_pitch",
             skip_serializing_if = "is_default_camera_trigger_pitch"
@@ -774,79 +848,6 @@ pub fn camera_offset_from_target(yaw: f32, pitch: f32, distance: f32) -> [f32; 3
         pitch.sin() * distance,
         -yaw.cos() * horizontal_distance,
     ]
-}
-
-/// The camera eye position given a look-at target, camera yaw, pitch, and distance.
-pub fn camera_eye_from_target(
-    target_position: [f32; 3],
-    yaw: f32,
-    pitch: f32,
-    distance: f32,
-) -> [f32; 3] {
-    let offset = camera_offset_from_target(yaw, pitch, distance);
-    [
-        target_position[0] + offset[0],
-        target_position[1] + offset[1],
-        target_position[2] + offset[2],
-    ]
-}
-
-pub fn camera_trigger_eye_from_object(object: &LevelObject) -> [f32; 3] {
-    object.center().into()
-}
-
-pub fn camera_trigger_target_from_eye(
-    eye_position: [f32; 3],
-    rotation: f32,
-    pitch: f32,
-) -> [f32; 3] {
-    let offset = camera_offset_from_target(rotation, pitch, DEFAULT_CAMERA_DISTANCE);
-    [
-        eye_position[0] - offset[0],
-        eye_position[1] - offset[1],
-        eye_position[2] - offset[2],
-    ]
-}
-
-pub fn camera_trigger_forward(rotation: f32, pitch: f32) -> [f32; 3] {
-    camera_trigger_forward_with_distance(rotation, pitch, DEFAULT_CAMERA_DISTANCE)
-}
-
-pub fn camera_trigger_forward_with_distance(rotation: f32, pitch: f32, distance: f32) -> [f32; 3] {
-    let distance = distance.max(0.001);
-    let offset = camera_offset_from_target(rotation, pitch, distance);
-    [
-        -offset[0] / distance,
-        -offset[1] / distance,
-        -offset[2] / distance,
-    ]
-}
-
-pub fn camera_trigger_forward_from_rotation_degrees(rotation_degrees: [f32; 3]) -> [f32; 3] {
-    let (rotation, pitch) = camera_trigger_rotation_pitch_from_rotation_degrees(rotation_degrees);
-    camera_trigger_forward(rotation, pitch)
-}
-
-pub fn camera_trigger_rotation_pitch_from_rotation_degrees(
-    rotation_degrees: [f32; 3],
-) -> (f32, f32) {
-    let mut pitch_degrees = normalize_degrees(rotation_degrees[0]);
-    let mut rotation_degrees_y = normalize_degrees(rotation_degrees[1]);
-    if pitch_degrees > 90.0 {
-        pitch_degrees = 180.0 - pitch_degrees;
-        rotation_degrees_y += 180.0;
-    } else if pitch_degrees < -90.0 {
-        pitch_degrees += 180.0;
-        rotation_degrees_y += 180.0;
-    }
-    (
-        normalize_degrees(rotation_degrees_y).to_radians(),
-        pitch_degrees.to_radians(),
-    )
-}
-
-fn normalize_degrees(degrees: f32) -> f32 {
-    (degrees + 180.0).rem_euclid(360.0) - 180.0
 }
 
 pub fn apply_timed_triggers_to_objects(
@@ -1142,14 +1143,14 @@ pub fn camera_triggers_to_timed_triggers(camera_triggers: &[CameraTrigger]) -> V
                 transition_interval_seconds: camera_trigger.transition_interval_seconds,
                 use_full_segment_transition: camera_trigger.use_full_segment_transition,
                 distance: camera_trigger.distance,
-                rotation: camera_trigger.rotation,
+                yaw: camera_trigger.yaw,
                 pitch: camera_trigger.pitch,
             },
             CameraMode::Static => TriggerAction::CameraPose {
                 transition_interval_seconds: camera_trigger.transition_interval_seconds,
                 use_full_segment_transition: camera_trigger.use_full_segment_transition,
                 target_position: camera_trigger.target_position,
-                rotation: camera_trigger.rotation,
+                yaw: camera_trigger.yaw,
                 pitch: camera_trigger.pitch,
             },
         };
@@ -1180,7 +1181,7 @@ pub fn timed_triggers_to_camera_triggers(triggers: &[TimedTrigger]) -> Vec<Camer
                 transition_interval_seconds,
                 use_full_segment_transition,
                 target_position,
-                rotation,
+                yaw: rotation,
                 pitch,
             } => {
                 camera_triggers.push(CameraTrigger {
@@ -1191,7 +1192,7 @@ pub fn timed_triggers_to_camera_triggers(triggers: &[TimedTrigger]) -> Vec<Camer
                     use_full_segment_transition,
                     target_position,
                     distance: default_camera_trigger_distance(),
-                    rotation,
+                    yaw: rotation,
                     pitch,
                 });
             }
@@ -1199,7 +1200,7 @@ pub fn timed_triggers_to_camera_triggers(triggers: &[TimedTrigger]) -> Vec<Camer
                 transition_interval_seconds,
                 use_full_segment_transition,
                 distance,
-                rotation,
+                yaw: rotation,
                 pitch,
             } => {
                 camera_triggers.push(CameraTrigger {
@@ -1210,7 +1211,7 @@ pub fn timed_triggers_to_camera_triggers(triggers: &[TimedTrigger]) -> Vec<Camer
                     use_full_segment_transition,
                     target_position: default_camera_trigger_target_position(),
                     distance,
-                    rotation,
+                    yaw: rotation,
                     pitch,
                 });
             }
@@ -1276,7 +1277,7 @@ fn apply_trigger_action_to_object(object: &mut LevelObject, action: &TriggerActi
     match action {
         TriggerAction::TransformObjects {
             position,
-            rotation_degrees,
+            rotation: rotation_degrees,
             size,
             ..
         } => {
@@ -1304,12 +1305,12 @@ pub fn triggers_from_objects(objects: &[LevelObject]) -> Vec<TimedTrigger> {
             trigger.action = match trigger.action {
                 TriggerAction::TransformObjects {
                     position: _,
-                    rotation_degrees: _,
+                    rotation: _,
                     size: _,
                     simulate_hitboxes,
                 } => TriggerAction::TransformObjects {
                     position: object.position,
-                    rotation_degrees: object.rotation,
+                    rotation: object.rotation,
                     size: object.size,
                     simulate_hitboxes,
                 },
@@ -1317,20 +1318,21 @@ pub fn triggers_from_objects(objects: &[LevelObject]) -> Vec<TimedTrigger> {
                     transition_interval_seconds,
                     use_full_segment_transition,
                     target_position: _,
-                    rotation: _,
+                    yaw: _,
                     pitch: _,
                 } => {
-                    let (rotation, pitch) =
-                        camera_trigger_rotation_pitch_from_rotation_degrees(object.rotation);
+                    let (yaw, pitch) = CameraTrigger::yaw_pitch_from_rotation(object.rotation);
                     TriggerAction::CameraPose {
                         transition_interval_seconds,
                         use_full_segment_transition,
-                        target_position: camera_trigger_target_from_eye(
-                            camera_trigger_eye_from_object(object),
-                            rotation,
+                        target_position: CameraTrigger {
+                            target_position: object.center().into(),
+                            yaw,
                             pitch,
-                        ),
-                        rotation,
+                            ..CameraTrigger::default()
+                        }
+                        .eye(),
+                        yaw,
                         pitch,
                     }
                 }
@@ -1338,13 +1340,13 @@ pub fn triggers_from_objects(objects: &[LevelObject]) -> Vec<TimedTrigger> {
                     transition_interval_seconds,
                     use_full_segment_transition,
                     distance,
-                    rotation,
+                    yaw: rotation,
                     pitch,
                 } => TriggerAction::CameraFollow {
                     transition_interval_seconds,
                     use_full_segment_transition,
                     distance,
-                    rotation,
+                    yaw: rotation,
                     pitch,
                 },
             };
@@ -1414,7 +1416,7 @@ mod tests {
                     },
                     action: TriggerAction::TransformObjects {
                         position: [4.0, 0.0, 0.0],
-                        rotation_degrees: [0.0, 0.0, 0.0],
+                        rotation: [0.0, 0.0, 0.0],
                         size: [1.0, 1.0, 1.0],
                         simulate_hitboxes: false,
                     },

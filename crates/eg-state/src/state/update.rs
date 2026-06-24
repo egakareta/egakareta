@@ -814,7 +814,7 @@ impl State {
                 || (self.editor.camera.editor_target_z - self.editor.runtime.gizmo.last_target_z)
                     .abs()
                     > 1e-4
-                || (self.editor.camera.editor_rotation - self.editor.runtime.gizmo.last_rotation)
+                || (self.editor.camera.editor_yaw - self.editor.runtime.gizmo.last_rotation)
                     .abs()
                     > 1e-4
                 || (self.editor.camera.editor_pitch - self.editor.runtime.gizmo.last_pitch).abs()
@@ -846,7 +846,7 @@ impl State {
 
             self.editor.runtime.gizmo.last_pan = self.editor.camera.editor_pan;
             self.editor.runtime.gizmo.last_target_z = self.editor.camera.editor_target_z;
-            self.editor.runtime.gizmo.last_rotation = self.editor.camera.editor_rotation;
+            self.editor.runtime.gizmo.last_rotation = self.editor.camera.editor_yaw;
             self.editor.runtime.gizmo.last_pitch = self.editor.camera.editor_pitch;
             {
                 puffin::profile_scope!("DirtyProcess");
@@ -1111,7 +1111,7 @@ mod tests {
             },
             action: TriggerAction::TransformObjects {
                 position: [2.0, 0.0, 0.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
+                rotation: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 simulate_hitboxes,
             },

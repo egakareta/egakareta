@@ -21,9 +21,7 @@ use crate::{BlockInstance, Vertex};
 use eg_block_geometry::visual_cuboids;
 use eg_blocks::{resolve_block_definition, resolve_block_texture_layers};
 use eg_types::{
-    camera_trigger_eye_from_object, camera_trigger_forward_from_rotation_degrees,
-    BlockAnimationAxis, BlockAnimationPhaseSeed, BlockDefinition, BlockRenderProfile, LevelObject,
-    TimedTrigger, TriggerAction, TriggerTarget,
+    BlockAnimationAxis, BlockAnimationPhaseSeed, BlockDefinition, BlockRenderProfile, CameraTrigger, LevelObject, TimedTrigger, TriggerAction, TriggerTarget
 };
 use glam::Vec3;
 
@@ -720,12 +718,7 @@ fn build_camera_trigger_block_vertices(
         cone_radius: 0.16,
     };
 
-    append_camera_trigger_visual_vertices(
-        vertices,
-        camera_trigger_eye_from_object(obj),
-        obj.rotation,
-        &style,
-    );
+    append_camera_trigger_visual_vertices(vertices, obj.center().into(), obj.rotation, &style);
 }
 
 fn camera_trigger_countdown_progress(
@@ -805,9 +798,7 @@ pub fn append_camera_trigger_visual_vertices(
     style: &CameraTriggerVisualStyle,
 ) {
     let eye = Vec3::from_array(position);
-    let forward = Vec3::from_array(camera_trigger_forward_from_rotation_degrees(
-        rotation_degrees,
-    ));
+    let forward = Vec3::from_array(CameraTrigger::forward_from_rotation(rotation_degrees));
     let arrow_direction = if forward.length_squared() > f32::EPSILON {
         forward
     } else {
@@ -974,7 +965,7 @@ mod tests {
                     transition_interval_seconds,
                     use_full_segment_transition: false,
                     target_position: [0.0, 0.0, 0.0],
-                    rotation: 0.0,
+                    yaw: 0.0,
                     pitch: 0.0,
                 },
             }),
@@ -1010,7 +1001,7 @@ mod tests {
         build_camera_trigger_block_vertices(&mut early, &object, &colors, Some(2.0));
         build_camera_trigger_block_vertices(&mut late, &object, &colors, Some(4.0));
 
-        let center = camera_trigger_eye_from_object(&object);
+        let center = object.center().into();
         assert!(
             ring_outer_radius(&late, center, colors.side)
                 < ring_outer_radius(&early, center, colors.side)

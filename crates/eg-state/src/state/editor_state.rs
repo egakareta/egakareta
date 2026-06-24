@@ -1364,7 +1364,7 @@ impl State {
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 distance: default_camera_trigger_distance(),
-                rotation: DEFAULT_CAMERA_YAW,
+                yaw: DEFAULT_CAMERA_YAW,
                 pitch: DEFAULT_CAMERA_PITCH,
             },
         };
@@ -1424,7 +1424,7 @@ impl State {
                 },
                 action: TriggerAction::TransformObjects {
                     position: object.position,
-                    rotation_degrees: object.rotation,
+                    rotation: object.rotation,
                     size: object.size,
                     simulate_hitboxes: false,
                 },
@@ -1648,7 +1648,7 @@ mod tests {
             target: TriggerTarget::Objects { object_ids },
             action: TriggerAction::TransformObjects {
                 position,
-                rotation_degrees: [0.0, 0.0, 0.0],
+                rotation: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 simulate_hitboxes: false,
             },
@@ -1730,7 +1730,7 @@ mod tests {
         match &triggers[0].action {
             TriggerAction::TransformObjects {
                 position,
-                rotation_degrees,
+                rotation,
                 size,
                 ..
             } => {
@@ -1741,7 +1741,7 @@ mod tests {
                         epsilon = 1e-6
                     );
                     approx::assert_abs_diff_eq!(
-                        rotation_degrees[component],
+                        rotation[component],
                         [0.0, 0.0, 0.0][component],
                         epsilon = 1e-6
                     );
@@ -1757,7 +1757,7 @@ mod tests {
         match &triggers[1].action {
             TriggerAction::TransformObjects {
                 position,
-                rotation_degrees,
+                rotation,
                 size,
                 ..
             } => {
@@ -1768,7 +1768,7 @@ mod tests {
                         epsilon = 1e-6
                     );
                     approx::assert_abs_diff_eq!(
-                        rotation_degrees[component],
+                        rotation[component],
                         [0.0, 0.0, 0.0][component],
                         epsilon = 1e-6
                     );
@@ -1862,7 +1862,7 @@ mod tests {
             .expect("existing transform trigger remains");
         let TriggerAction::TransformObjects {
             position,
-            rotation_degrees,
+            rotation,
             size,
             ..
         } = &existing_trigger.action
@@ -1870,7 +1870,7 @@ mod tests {
             panic!("expected transform trigger action");
         };
         assert_eq!(position, &[12.0, 1.0, 3.0]);
-        assert_eq!(rotation_degrees, &[10.0, 20.0, 30.0]);
+        assert_eq!(rotation, &[10.0, 20.0, 30.0]);
         assert_eq!(size, &[2.0, 3.0, 4.0]);
     }
 
@@ -2259,7 +2259,7 @@ mod tests {
             },
             action: TriggerAction::TransformObjects {
                 position: [1.0, 0.0, 0.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
+                rotation: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 simulate_hitboxes: true,
             },

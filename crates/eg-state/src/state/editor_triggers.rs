@@ -8,10 +8,9 @@
 use super::EditorSubsystem;
 use eg_editor_domain::interpolate_timeline_sample_positions;
 use eg_types::{
-    camera_eye_from_target, default_camera_trigger_distance,
-    default_camera_trigger_target_position, timed_triggers_to_camera_triggers,
-    triggers_from_objects, BlockId, CameraTrigger, TimedTrigger, TriggerAction, TriggerTarget,
-    DEFAULT_CAMERA_DISTANCE,
+    default_camera_trigger_distance, default_camera_trigger_target_position,
+    timed_triggers_to_camera_triggers, triggers_from_objects, BlockId, CameraTrigger, TimedTrigger,
+    TriggerAction, TriggerTarget, DEFAULT_CAMERA_DISTANCE,
 };
 use eg_types::{
     LevelObject, CAMERA_TRIGGER_BLOCK_ID, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW,
@@ -48,17 +47,19 @@ fn trigger_object_from_payload(trigger: TimedTrigger) -> LevelObject {
     let (position, size, rotation_degrees) = match &trigger.action {
         TriggerAction::CameraPose {
             target_position,
-            rotation,
+            yaw: rotation,
             pitch,
             ..
         } => {
             let size = [1.0, 1.0, 1.0];
-            let eye = camera_eye_from_target(
-                *target_position,
-                *rotation,
-                *pitch,
-                DEFAULT_CAMERA_DISTANCE,
-            );
+            let eye = CameraTrigger {
+                target_position: *target_position,
+                yaw: *rotation,
+                pitch: *pitch,
+                distance: DEFAULT_CAMERA_DISTANCE,
+                ..CameraTrigger::default()
+            }
+            .eye();
             (
                 camera_trigger_object_position_from_eye(eye, size),
                 size,
@@ -67,23 +68,25 @@ fn trigger_object_from_payload(trigger: TimedTrigger) -> LevelObject {
         }
         TriggerAction::TransformObjects {
             position,
-            rotation_degrees,
+            rotation: rotation_degrees,
             size,
             ..
         } => (*position, *size, *rotation_degrees),
         TriggerAction::CameraFollow {
             distance,
-            rotation,
+            yaw: rotation,
             pitch,
             ..
         } => {
             let size = [1.0, 1.0, 1.0];
-            let eye = camera_eye_from_target(
-                default_camera_trigger_target_position(),
-                *rotation,
-                *pitch,
-                *distance,
-            );
+            let eye = CameraTrigger {
+                target_position: default_camera_trigger_target_position(),
+                yaw: *rotation,
+                pitch: *pitch,
+                distance: *distance,
+                ..CameraTrigger::default()
+            }
+            .eye();
             (
                 camera_trigger_object_position_from_eye(eye, size),
                 size,
@@ -152,7 +155,7 @@ impl EditorSubsystem {
         match &mut trigger.action {
             TriggerAction::TransformObjects {
                 position,
-                rotation_degrees,
+                rotation: rotation_degrees,
                 size,
                 ..
             } => {
@@ -183,7 +186,7 @@ impl EditorSubsystem {
             TriggerAction::CameraPose {
                 transition_interval_seconds,
                 target_position,
-                rotation,
+                yaw: rotation,
                 pitch,
                 ..
             } => {
@@ -214,7 +217,7 @@ impl EditorSubsystem {
             TriggerAction::CameraFollow {
                 transition_interval_seconds,
                 distance,
-                rotation,
+                yaw: rotation,
                 pitch,
                 ..
             } => {
@@ -250,7 +253,7 @@ impl EditorSubsystem {
     ) {
         let TriggerAction::CameraFollow {
             distance,
-            rotation,
+            yaw: rotation,
             pitch,
             ..
         } = trigger.action
@@ -259,7 +262,14 @@ impl EditorSubsystem {
         };
 
         let size = [1.0, 1.0, 1.0];
-        let eye = camera_eye_from_target(target_position, rotation, pitch, distance);
+        let eye = CameraTrigger {
+            target_position,
+            yaw: rotation,
+            pitch,
+            distance,
+            ..CameraTrigger::default()
+        }
+        .eye();
         object.size = size;
         object.position = camera_trigger_object_position_from_eye(eye, size);
         object.rotation = camera_trigger_rotation_degrees(rotation, pitch);
@@ -497,9 +507,8 @@ mod tests {
     use super::EditorSubsystem;
     use crate::state::State;
     use eg_types::{
-        camera_eye_from_target, camera_trigger_eye_from_object, default_camera_trigger_distance,
-        CameraMode, EasingDirection, TimedTrigger, TriggerAction, TriggerTarget,
-        DEFAULT_CAMERA_DISTANCE,
+        default_camera_trigger_distance, CameraMode, CameraTrigger, EasingDirection, TimedTrigger,
+        TriggerAction, TriggerTarget, DEFAULT_CAMERA_DISTANCE,
     };
     use eg_types::{LevelObject, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW};
 
@@ -521,7 +530,7 @@ mod tests {
             },
             action: TriggerAction::TransformObjects {
                 position: [1.0, 2.0, 3.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
+                rotation: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 simulate_hitboxes: false,
             },
@@ -538,7 +547,7 @@ mod tests {
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 target_position: [0.0, 0.0, 0.0],
-                rotation: 0.0,
+                yaw: 0.0,
                 pitch: 0.0,
             },
         }
@@ -558,7 +567,7 @@ mod tests {
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 distance: default_camera_trigger_distance(),
-                rotation: DEFAULT_CAMERA_YAW,
+                yaw: DEFAULT_CAMERA_YAW,
                 pitch: DEFAULT_CAMERA_PITCH,
             },
             ..camera_pose_trigger(1.0)
@@ -589,7 +598,7 @@ mod tests {
             },
             action: TriggerAction::TransformObjects {
                 position: [f32::NAN, 2.0, f32::INFINITY],
-                rotation_degrees: [f32::NEG_INFINITY, 90.0, f32::NAN],
+                rotation: [f32::NEG_INFINITY, 90.0, f32::NAN],
                 size: [f32::NAN, -9.0, 2.0],
                 simulate_hitboxes: false,
             },
@@ -614,12 +623,12 @@ mod tests {
         match first.action {
             TriggerAction::TransformObjects {
                 position,
-                rotation_degrees,
+                rotation,
                 size,
                 ..
             } => {
                 assert_eq!(position, [0.0, 2.0, 0.0]);
-                assert_eq!(rotation_degrees, [0.0, 90.0, 0.0]);
+                assert_eq!(rotation, [0.0, 90.0, 0.0]);
                 assert_eq!(size[0], 1.0);
                 assert_eq!(size[1], 0.01);
                 assert_eq!(size[2], 2.0);
@@ -644,7 +653,7 @@ mod tests {
                     transition_interval_seconds: f32::NAN,
                     use_full_segment_transition: false,
                     target_position: [f32::NAN, 2.0, f32::NEG_INFINITY],
-                    rotation: f32::NAN,
+                    yaw: f32::NAN,
                     pitch: 99.0,
                 },
             },
@@ -657,7 +666,7 @@ mod tests {
                     transition_interval_seconds: -3.0,
                     use_full_segment_transition: true,
                     distance: f32::NAN,
-                    rotation: f32::NAN,
+                    yaw: f32::NAN,
                     pitch: 99.0,
                 },
             },
@@ -673,13 +682,13 @@ mod tests {
                 transition_interval_seconds,
                 use_full_segment_transition,
                 distance,
-                rotation,
+                yaw,
                 pitch,
             } => {
                 assert_eq!(transition_interval_seconds, 0.0);
                 assert!(use_full_segment_transition);
                 assert_eq!(distance, default_camera_trigger_distance());
-                assert_eq!(rotation, DEFAULT_CAMERA_YAW);
+                assert_eq!(yaw, DEFAULT_CAMERA_YAW);
                 assert!((pitch - 89.9f32.to_radians()).abs() <= 1e-6);
             }
             _ => panic!("expected camera follow"),
@@ -689,7 +698,7 @@ mod tests {
             TriggerAction::CameraPose {
                 transition_interval_seconds,
                 target_position,
-                rotation,
+                yaw,
                 pitch,
                 ..
             } => {
@@ -697,7 +706,7 @@ mod tests {
                 for (actual, expected) in target_position.iter().zip([0.0, 2.0, 0.0]) {
                     assert!((*actual - expected).abs() <= 1e-5);
                 }
-                assert_eq!(rotation, DEFAULT_CAMERA_YAW);
+                assert_eq!(yaw, DEFAULT_CAMERA_YAW);
                 assert!((pitch - 89.9f32.to_radians()).abs() <= 1e-6);
             }
             _ => panic!("expected camera pose"),
@@ -710,15 +719,21 @@ mod tests {
         let trigger = camera_pose_trigger(0.0);
         let TriggerAction::CameraPose {
             target_position,
-            rotation,
+            yaw,
             pitch,
             ..
         } = trigger.action
         else {
             panic!("expected camera pose");
         };
-        let expected_eye =
-            camera_eye_from_target(target_position, rotation, pitch, DEFAULT_CAMERA_DISTANCE);
+        let expected_eye = CameraTrigger {
+            target_position,
+            yaw,
+            pitch,
+            distance: DEFAULT_CAMERA_DISTANCE,
+            ..CameraTrigger::default()
+        }
+        .eye();
 
         state.editor.set_triggers(vec![trigger]);
 
@@ -728,7 +743,7 @@ mod tests {
             .iter()
             .find(|object| object.trigger.is_some())
             .expect("expected camera trigger object");
-        let actual_eye = camera_trigger_eye_from_object(object);
+        let actual_eye: [f32; 3] = object.center().into();
         for (actual, expected) in actual_eye.iter().zip(expected_eye) {
             assert!((*actual - expected).abs() <= 1e-6);
         }
@@ -745,7 +760,7 @@ mod tests {
                     transition_interval_seconds: 1.5,
                     use_full_segment_transition: false,
                     distance: default_camera_trigger_distance(),
-                    rotation: DEFAULT_CAMERA_YAW,
+                    yaw: DEFAULT_CAMERA_YAW,
                     pitch: DEFAULT_CAMERA_PITCH,
                 },
                 ..camera_pose_trigger(1.0)
@@ -782,7 +797,7 @@ mod tests {
             },
             action: TriggerAction::TransformObjects {
                 position: [0.0, 0.0, 0.0],
-                rotation_degrees: [10.0, 0.0, 0.0],
+                rotation: [10.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 simulate_hitboxes: false,
             },
@@ -803,7 +818,7 @@ mod tests {
                 },
                 action: TriggerAction::TransformObjects {
                     position: [0.0, 0.0, 0.0],
-                    rotation_degrees: [10.0, 0.0, 0.0],
+                    rotation: [10.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
                     simulate_hitboxes: true,
                 },
@@ -827,7 +842,7 @@ mod tests {
         let trigger = state.editor.triggers().remove(0);
         let TriggerAction::TransformObjects {
             position,
-            rotation_degrees,
+            rotation,
             size,
             ..
         } = trigger.action
@@ -835,7 +850,7 @@ mod tests {
             panic!("expected transform trigger");
         };
         assert_eq!(position, [9.0, 8.0, 7.0]);
-        assert_eq!(rotation_degrees, [10.0, 20.0, 30.0]);
+        assert_eq!(rotation, [10.0, 20.0, 30.0]);
         assert_eq!(size, [2.0, 3.0, 4.0]);
     }
 

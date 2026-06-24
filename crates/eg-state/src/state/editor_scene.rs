@@ -240,7 +240,7 @@ fn transform_trigger_markers_for_triggers(
         };
         let TriggerAction::TransformObjects {
             position,
-            rotation_degrees,
+            rotation: rotation_degrees,
             size,
             ..
         } = &trigger.action
@@ -1592,7 +1592,7 @@ mod tests {
             },
             action: TriggerAction::TransformObjects {
                 position: [2.0, 0.0, 0.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
+                rotation: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 simulate_hitboxes: false,
             },
@@ -1609,7 +1609,7 @@ mod tests {
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 target_position: [0.0, 0.0, 0.0],
-                rotation: 0.0,
+                yaw: 0.0,
                 pitch: 0.0,
             },
         }
@@ -1891,7 +1891,7 @@ mod tests {
                 },
                 action: TriggerAction::TransformObjects {
                     position: [8.0, 0.0, 0.0],
-                    rotation_degrees: [0.0, 90.0, 0.0],
+                    rotation: [0.0, 90.0, 0.0],
                     size: [2.0, 1.0, 1.0],
                     simulate_hitboxes: false,
                 },
@@ -1905,7 +1905,7 @@ mod tests {
                 },
                 action: TriggerAction::TransformObjects {
                     position: [10.0, 0.0, 0.0],
-                    rotation_degrees: [0.0, 180.0, 0.0],
+                    rotation: [0.0, 180.0, 0.0],
                     size: [3.0, 1.0, 1.0],
                     simulate_hitboxes: false,
                 },
@@ -1932,7 +1932,7 @@ mod tests {
             },
             action: TriggerAction::TransformObjects {
                 position: [8.0, 0.0, 0.0],
-                rotation_degrees: [0.0, 90.0, 0.0],
+                rotation: [0.0, 90.0, 0.0],
                 size: [2.0, 1.0, 1.0],
                 simulate_hitboxes: false,
             },

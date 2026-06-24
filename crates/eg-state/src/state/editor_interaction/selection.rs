@@ -168,7 +168,7 @@ impl EditorSubsystem {
         let mut best_hit: Option<(usize, f32)> = None;
 
         for (trigger_index, camera_trigger) in self.camera_trigger_markers() {
-            let eye = self.camera_trigger_marker_eye(&camera_trigger);
+            let eye = Vec3::from_array((&camera_trigger).eye());
             let Some(screen) = self.world_to_screen_v(eye, viewport) else {
                 continue;
             };
@@ -1641,7 +1641,7 @@ mod tests {
             },
             action: eg_types::TriggerAction::TransformObjects {
                 position: [5.0, 0.0, 0.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
+                rotation: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 simulate_hitboxes: false,
             },

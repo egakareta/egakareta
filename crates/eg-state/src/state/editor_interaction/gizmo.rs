@@ -867,7 +867,7 @@ mod tests {
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 target_position: [0.0, 0.0, 0.0],
-                rotation: 0.0,
+                yaw: 0.0,
                 pitch: 0.0,
             },
         };
@@ -876,7 +876,7 @@ mod tests {
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 distance: 8.0,
-                rotation: 0.0,
+                yaw: 0.0,
                 pitch: 0.0,
             },
             ..camera_pose.clone()
@@ -1068,7 +1068,7 @@ mod tests {
             },
             action: TriggerAction::TransformObjects {
                 position: [0.0, 0.0, 0.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
+                rotation: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 simulate_hitboxes: false,
             },
@@ -1946,7 +1946,7 @@ mod tests {
             },
             action: TriggerAction::TransformObjects {
                 position: [5.0, 0.0, 0.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
+                rotation: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 simulate_hitboxes: false,
             },

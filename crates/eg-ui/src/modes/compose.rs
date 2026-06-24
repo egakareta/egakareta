@@ -266,7 +266,7 @@ fn show_trigger_action_controls(ui: &mut egui::Ui, trigger: &mut TimedTrigger) -
             transition_interval_seconds,
             use_full_segment_transition,
             distance,
-            rotation,
+            yaw: rotation,
             pitch,
         } => show_camera_follow_trigger_controls(
             ui,
@@ -728,7 +728,7 @@ mod tests {
                 },
                 action: TriggerAction::TransformObjects {
                     position: [1.0, 0.0, 1.0],
-                    rotation_degrees: [0.0, 90.0, 0.0],
+                    rotation: [0.0, 90.0, 0.0],
                     size: [1.0, 1.0, 1.0],
                     simulate_hitboxes: false,
                 },
@@ -758,7 +758,7 @@ mod tests {
                     transition_interval_seconds: 1.0,
                     use_full_segment_transition: false,
                     distance: default_camera_trigger_distance(),
-                    rotation: DEFAULT_CAMERA_YAW,
+                    yaw: DEFAULT_CAMERA_YAW,
                     pitch: DEFAULT_CAMERA_PITCH,
                 },
             }),
@@ -778,7 +778,7 @@ mod tests {
                 },
                 action: TriggerAction::TransformObjects {
                     position: [1.0, 0.0, 1.0],
-                    rotation_degrees: [0.0, 90.0, 0.0],
+                    rotation: [0.0, 90.0, 0.0],
                     size: [1.0, 1.0, 1.0],
                     simulate_hitboxes: false,
                 },

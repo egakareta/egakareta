@@ -195,7 +195,7 @@ impl State {
             camera_position,
             camera_preview_position,
             camera_preview_target,
-            camera_rotation: self.editor.camera.editor_rotation,
+            camera_rotation: self.editor.camera.editor_yaw,
             camera_pitch: self.editor.camera.editor_pitch,
             fps: self.editor_fps(),
             marquee_selection_rect_screen: self.editor_marquee_selection_rect_screen(),

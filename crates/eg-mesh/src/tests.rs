@@ -17,8 +17,9 @@ mod tests {
     };
     use crate::{GizmoPart, Vertex};
     use eg_block_geometry::hitbox_cuboids;
-    use eg_types::{camera_trigger_eye_from_object, camera_trigger_forward_from_rotation_degrees};
-    use eg_types::{LevelObject, CAMERA_TRIGGER_BLOCK_ID, TRANSFORM_TRIGGER_BLOCK_ID};
+    use eg_types::{
+        CameraTrigger, LevelObject, CAMERA_TRIGGER_BLOCK_ID, TRANSFORM_TRIGGER_BLOCK_ID,
+    };
 
     fn bounds_xz(vertices: &[[f32; 3]]) -> (f32, f32, f32, f32) {
         let mut min_x = f32::INFINITY;
@@ -437,7 +438,7 @@ mod tests {
             position: [3.0, 4.0, 5.0],
             ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         };
-        let eye = camera_trigger_eye_from_object(&obj);
+        let eye: [f32; 3] = obj.center().into();
 
         let vertices = build_block_geometry(std::slice::from_ref(&obj)).to_triangle_vertices();
 
@@ -485,10 +486,9 @@ mod tests {
             ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         };
         let vertices = build_block_geometry(std::slice::from_ref(&obj)).to_triangle_vertices();
-        let eye = glam::Vec3::from_array(camera_trigger_eye_from_object(&obj));
-        let forward = glam::Vec3::from_array(camera_trigger_forward_from_rotation_degrees(
-            rotation_degrees,
-        ));
+        let eye = obj.center();
+        let forward =
+            glam::Vec3::from_array(CameraTrigger::forward_from_rotation(rotation_degrees));
 
         let max_forward = vertices
             .iter()
@@ -512,10 +512,9 @@ mod tests {
             ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         };
         let vertices = build_block_geometry(std::slice::from_ref(&obj)).to_triangle_vertices();
-        let eye = glam::Vec3::from_array(camera_trigger_eye_from_object(&obj));
-        let forward = glam::Vec3::from_array(camera_trigger_forward_from_rotation_degrees(
-            rotation_degrees,
-        ));
+        let eye = obj.center();
+        let forward =
+            glam::Vec3::from_array(CameraTrigger::forward_from_rotation(rotation_degrees));
 
         assert!(forward.y < -0.6);
         let max_forward = vertices

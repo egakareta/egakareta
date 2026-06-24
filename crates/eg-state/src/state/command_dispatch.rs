@@ -717,9 +717,8 @@ mod tests {
     use crate::commands::AppCommand;
     use crate::state::editor_command::EditorCommand;
     use eg_types::{
-        camera_eye_from_target, camera_triggers_to_timed_triggers, default_camera_trigger_distance,
-        BlockId, CameraMode, CameraTrigger, EasingDirection, TimedTrigger, TriggerAction,
-        TriggerTarget, DEFAULT_CAMERA_DISTANCE,
+        camera_triggers_to_timed_triggers, default_camera_trigger_distance, BlockId, CameraMode,
+        CameraTrigger, EasingDirection, TimedTrigger, TriggerAction, TriggerTarget,
     };
     use eg_types::{
         AppPhase, EditorMode, KeyChord, LevelObject, MusicMetadata, SettingsSection, TimingPoint,
@@ -2073,24 +2072,19 @@ mod tests {
             use_full_segment_transition: false,
             target_position: target.to_array(),
             distance: default_camera_trigger_distance(),
-            rotation: state.editor.camera.editor_rotation,
+            yaw: state.editor.camera.editor_yaw,
             pitch: state.editor.camera.editor_pitch,
         };
         let trigger_index = state.editor.objects.len();
         let trigger =
             camera_triggers_to_timed_triggers(std::slice::from_ref(&camera_trigger)).remove(0);
-        let camera_eye = camera_eye_from_target(
-            camera_trigger.target_position,
-            camera_trigger.rotation,
-            camera_trigger.pitch,
-            DEFAULT_CAMERA_DISTANCE,
-        );
+        let camera_eye = camera_trigger.eye();
 
         state.editor.objects.push(LevelObject {
             position: camera_trigger_block_position_from_eye(camera_eye),
             rotation: [
                 camera_trigger.pitch.to_degrees(),
-                camera_trigger.rotation.to_degrees(),
+                camera_trigger.yaw.to_degrees(),
                 0.0,
             ],
             trigger: Some(trigger),
@@ -2144,24 +2138,19 @@ mod tests {
             use_full_segment_transition: false,
             target_position: target.to_array(),
             distance: default_camera_trigger_distance(),
-            rotation: state.editor.camera.editor_rotation,
+            yaw: state.editor.camera.editor_yaw,
             pitch: state.editor.camera.editor_pitch,
         };
         let trigger_index = state.editor.objects.len();
         let trigger =
             camera_triggers_to_timed_triggers(std::slice::from_ref(&camera_trigger)).remove(0);
-        let camera_eye = camera_eye_from_target(
-            camera_trigger.target_position,
-            camera_trigger.rotation,
-            camera_trigger.pitch,
-            DEFAULT_CAMERA_DISTANCE,
-        );
+        let camera_eye = camera_trigger.eye();
 
         state.editor.objects.push(LevelObject {
             position: camera_trigger_block_position_from_eye(camera_eye),
             rotation: [
                 camera_trigger.pitch.to_degrees(),
-                camera_trigger.rotation.to_degrees(),
+                camera_trigger.yaw.to_degrees(),
                 0.0,
             ],
             trigger: Some(trigger),
@@ -2220,7 +2209,7 @@ mod tests {
                 },
                 action: TriggerAction::TransformObjects {
                     position: [2.0, 0.0, 0.0],
-                    rotation_degrees: [0.0, 0.0, 0.0],
+                    rotation: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
                     simulate_hitboxes: false,
                 },
@@ -2884,7 +2873,7 @@ mod tests {
             },
             action: TriggerAction::TransformObjects {
                 position: [1.0, 0.0, 0.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
+                rotation: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 simulate_hitboxes: true,
             },

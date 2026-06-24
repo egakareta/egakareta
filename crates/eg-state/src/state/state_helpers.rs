@@ -169,7 +169,7 @@ impl EditorSubsystem {
         let trigger = triggers.get(index)?;
         let TriggerAction::TransformObjects {
             position,
-            rotation_degrees,
+            rotation: rotation_degrees,
             size,
             ..
         } = &trigger.action
@@ -297,7 +297,7 @@ impl State {
         self.editor.runtime.history.undo.clear();
         self.editor.runtime.history.redo.clear();
         self.clear_editor_pan_keys();
-        self.editor.camera.editor_rotation = eg_types::DEFAULT_CAMERA_YAW;
+        self.editor.camera.editor_yaw = eg_types::DEFAULT_CAMERA_YAW;
         self.editor.camera.editor_pitch = eg_types::DEFAULT_CAMERA_PITCH;
         self.editor.camera.editor_target_z = 0.0;
         self.gameplay.state = GameState::new();

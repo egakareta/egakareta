@@ -25,7 +25,7 @@ pub fn create_block_at_cursor(
         },
         action: TriggerAction::TransformObjects {
             position: cursor,
-            rotation_degrees,
+            rotation: rotation_degrees,
             size: default_size,
             simulate_hitboxes: false,
         },

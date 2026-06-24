@@ -1063,7 +1063,7 @@ mod tests {
         state.enter_editor_phase("PreviewCamera".to_string());
         state.editor.camera.editor_pan = [5.0, -3.0];
         state.editor.camera.editor_target_z = 2.0;
-        state.editor.camera.editor_rotation = 30.0f32.to_radians();
+        state.editor.camera.editor_yaw = 30.0f32.to_radians();
         state.editor.camera.editor_pitch = 40.0f32.to_radians();
 
         state.editor_capture_menu_preview_camera();

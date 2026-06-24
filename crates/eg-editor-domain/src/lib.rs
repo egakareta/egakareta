@@ -240,7 +240,7 @@ mod tests {
         match trigger.action {
             TriggerAction::TransformObjects {
                 position,
-                rotation_degrees,
+                rotation: rotation_degrees,
                 size,
                 ..
             } => {

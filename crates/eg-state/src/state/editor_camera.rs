@@ -9,9 +9,8 @@ use glam::{Mat4, Vec2, Vec3};
 
 use super::{EditorSubsystem, State};
 use eg_types::{
-    camera_eye_from_target, camera_trigger_forward, timed_triggers_to_camera_triggers, CameraMode,
-    CameraTrigger, EasingDirection, TimedTrigger, TriggerAction, TriggerTarget,
-    DEFAULT_CAMERA_DISTANCE,
+    timed_triggers_to_camera_triggers, CameraMode, CameraTrigger, EasingDirection, TimedTrigger,
+    TriggerAction, TriggerTarget, DEFAULT_CAMERA_DISTANCE,
 };
 use eg_types::{AppPhase, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW};
 
@@ -30,7 +29,7 @@ struct CameraViewSample {
 pub struct EditorCameraState {
     pub editor_pan: [f32; 2],
     pub editor_target_z: f32,
-    pub editor_rotation: f32,
+    pub editor_yaw: f32,
     pub editor_pitch: f32,
     pub playing_rotation: f32,
     pub playing_pitch: f32,
@@ -42,7 +41,7 @@ impl Default for EditorCameraState {
         Self {
             editor_pan: [0.0, 0.0],
             editor_target_z: 0.0,
-            editor_rotation: DEFAULT_CAMERA_YAW,
+            editor_yaw: DEFAULT_CAMERA_YAW,
             editor_pitch: DEFAULT_CAMERA_PITCH,
             playing_rotation: DEFAULT_CAMERA_YAW,
             playing_pitch: DEFAULT_CAMERA_PITCH,
@@ -52,9 +51,9 @@ impl Default for EditorCameraState {
 }
 
 pub struct CameraTransition {
-    pub start_rotation: f32,
+    pub start_yaw: f32,
     pub start_pitch: f32,
-    pub target_rotation: f32,
+    pub target_yaw: f32,
     pub target_pitch: f32,
     pub elapsed: f32,
     pub duration: f32,
@@ -114,8 +113,7 @@ impl EditorSubsystem {
     fn static_camera_view_for_trigger(camera_trigger: &CameraTrigger) -> CameraViewSample {
         let target = Vec3::from_array(camera_trigger.target_position);
         CameraViewSample {
-            eye: target
-                + editor_camera_offset_for_pose(camera_trigger.rotation, camera_trigger.pitch),
+            eye: target + editor_camera_offset_for_pose(camera_trigger.yaw, camera_trigger.pitch),
             target,
         }
     }
@@ -130,28 +128,12 @@ impl EditorSubsystem {
         CameraViewSample {
             eye: live_follow_target
                 + offset_from_rotation_pitch(
-                    camera_trigger.rotation,
+                    camera_trigger.yaw,
                     pitch,
                     camera_trigger.distance.max(0.01),
                 ),
             target: live_follow_target,
         }
-    }
-
-    pub fn camera_trigger_marker_eye(&self, camera_trigger: &CameraTrigger) -> Vec3 {
-        Vec3::from_array(camera_eye_from_target(
-            camera_trigger.target_position,
-            camera_trigger.rotation,
-            camera_trigger.pitch,
-            camera_trigger.distance,
-        ))
-    }
-
-    pub fn camera_trigger_marker_forward(&self, camera_trigger: &CameraTrigger) -> Vec3 {
-        Vec3::from_array(camera_trigger_forward(
-            camera_trigger.rotation,
-            camera_trigger.pitch,
-        ))
     }
 
     pub fn editor_camera_target(&self) -> Vec3 {
@@ -172,7 +154,7 @@ impl EditorSubsystem {
                 transition_interval_seconds: DEFAULT_CAMERA_TRIGGER_TRANSITION_INTERVAL_SECONDS,
                 use_full_segment_transition: false,
                 target_position: self.editor_camera_target().to_array(),
-                rotation: self.camera.editor_rotation,
+                yaw: self.camera.editor_yaw,
                 pitch: self.camera.editor_pitch,
             },
         }
@@ -458,7 +440,7 @@ mod tests {
                 transition_interval_seconds,
                 use_full_segment_transition,
                 target_position,
-                rotation,
+                yaw: rotation,
                 pitch,
             },
         }
@@ -496,7 +478,7 @@ mod tests {
                 transition_interval_seconds,
                 use_full_segment_transition,
                 distance,
-                rotation,
+                yaw: rotation,
                 pitch,
             },
         }
@@ -553,7 +535,7 @@ mod tests {
             use_full_segment_transition: false,
             target_position: [0.0, 0.0, 0.0],
             distance: default_camera_trigger_distance(),
-            rotation: 0.0,
+            yaw: 0.0,
             pitch: 0.0,
         };
         let static_trigger = CameraTrigger {
@@ -752,7 +734,7 @@ mod tests {
         let mut state = new_editor_state().await;
         state.editor.camera.editor_pan = [12.0, -7.0];
         state.editor.camera.editor_target_z = 4.5;
-        state.editor.camera.editor_rotation = 0.9;
+        state.editor.camera.editor_yaw = 0.9;
         state.editor.camera.editor_pitch = 0.3;
 
         let trigger = state.editor.capture_current_camera_trigger(8.0);
@@ -761,13 +743,13 @@ mod tests {
         match trigger.action {
             TriggerAction::CameraPose {
                 target_position,
-                rotation,
+                yaw,
                 pitch,
                 transition_interval_seconds,
                 use_full_segment_transition,
             } => {
                 assert_eq!(target_position, [12.0, 4.5, -7.0]);
-                assert_eq!(rotation, 0.9);
+                assert_eq!(yaw, 0.9);
                 assert_eq!(pitch, 0.3);
                 assert_eq!(transition_interval_seconds, 1.0);
                 assert!(!use_full_segment_transition);

@@ -1263,7 +1263,7 @@ impl State {
         self.editor.camera.editor_pan = [target[0], target[2]];
         self.editor.camera.editor_target_z = target[1];
         if let Some((rotation, pitch)) = orientation {
-            self.editor.camera.editor_rotation = rotation;
+            self.editor.camera.editor_yaw = rotation;
             self.editor.camera.editor_pitch =
                 pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
         }
@@ -1329,7 +1329,7 @@ mod tests {
             target: TriggerTarget::Objects { object_ids },
             action: TriggerAction::TransformObjects {
                 position: [9.0, 0.0, 0.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
+                rotation: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 simulate_hitboxes: false,
             },

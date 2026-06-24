@@ -10,16 +10,13 @@
 mod tests {
     use eg_mesh::Vertex;
     use eg_types::{
-        apply_timed_triggers_to_objects, camera_eye_from_target, camera_trigger_eye_from_object,
-        camera_trigger_forward, camera_trigger_forward_from_rotation_degrees,
-        camera_trigger_rotation_pitch_from_rotation_degrees, camera_trigger_target_from_eye,
-        camera_triggers_to_timed_triggers, default_camera_trigger_distance,
-        default_camera_trigger_pitch, default_camera_trigger_rotation,
-        default_camera_trigger_transition_interval_seconds, timed_triggers_to_camera_triggers,
-        triggers_from_objects, BasicLevelMetadata, BlockId, CameraMode, CameraTrigger, Direction,
-        EasingDirection, EditorStateParams, GameCursor, LevelMetadata, LevelObject,
-        LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata, TimedTrigger, TriggerAction,
-        TriggerTarget, CAMERA_TRIGGER_BLOCK_ID, DEFAULT_CAMERA_DISTANCE,
+        apply_timed_triggers_to_objects, camera_triggers_to_timed_triggers,
+        default_camera_trigger_distance, default_camera_trigger_pitch,
+        default_camera_trigger_transition_interval_seconds, default_camera_trigger_yaw,
+        timed_triggers_to_camera_triggers, triggers_from_objects, BasicLevelMetadata, BlockId,
+        CameraMode, CameraTrigger, Direction, EasingDirection, EditorStateParams, GameCursor,
+        LevelMetadata, LevelObject, LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata,
+        TimedTrigger, TriggerAction, TriggerTarget, CAMERA_TRIGGER_BLOCK_ID,
         TRANSFORM_TRIGGER_BLOCK_ID,
     };
     use serde_json::json;
@@ -104,7 +101,7 @@ mod tests {
                 },
                 action: TriggerAction::TransformObjects {
                     position: [2.0, 0.0, 0.0],
-                    rotation_degrees: [0.0, 0.0, 0.0],
+                    rotation: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
                     simulate_hitboxes: false,
                 },
@@ -125,7 +122,7 @@ mod tests {
                     transition_interval_seconds: 1.0,
                     use_full_segment_transition: false,
                     target_position: [0.0, 0.0, 0.0],
-                    rotation: 0.0,
+                    yaw: 0.0,
                     pitch: 0.0,
                 },
             }),
@@ -268,7 +265,7 @@ mod tests {
             use_full_segment_transition: false,
             target_position: [0.0, 0.0, 0.0],
             distance: default_camera_trigger_distance(),
-            rotation: default_camera_trigger_rotation(),
+            yaw: default_camera_trigger_yaw(),
             pitch: default_camera_trigger_pitch(),
         };
 
@@ -297,13 +294,13 @@ mod tests {
                 transition_interval_seconds,
                 use_full_segment_transition,
                 distance,
-                rotation,
+                yaw: rotation,
                 pitch,
             } => {
                 assert_eq!(transition_interval_seconds, 1.0);
                 assert!(!use_full_segment_transition);
                 assert_eq!(distance, default_camera_trigger_distance());
-                assert_eq!(rotation, default_camera_trigger_rotation());
+                assert_eq!(rotation, default_camera_trigger_yaw());
                 assert_eq!(pitch, default_camera_trigger_pitch());
             }
             _ => panic!("expected camera follow action"),
@@ -321,7 +318,7 @@ mod tests {
                 use_full_segment_transition: true,
                 target_position: [0.0, 0.0, 0.0],
                 distance: 18.0,
-                rotation: default_camera_trigger_rotation(),
+                yaw: default_camera_trigger_yaw(),
                 pitch: default_camera_trigger_pitch(),
             },
             CameraTrigger {
@@ -332,7 +329,7 @@ mod tests {
                 use_full_segment_transition: false,
                 target_position: [1.0, 2.0, 3.0],
                 distance: default_camera_trigger_distance(),
-                rotation: 0.8,
+                yaw: 0.8,
                 pitch: 0.2,
             },
         ];
@@ -366,7 +363,7 @@ mod tests {
                     use_full_segment_transition: false,
                     target_position: [2.0, 3.0, 4.0],
                     distance: default_camera_trigger_distance(),
-                    rotation: 0.4,
+                    yaw: 0.4,
                     pitch: 0.6,
                 }])
                 .into_iter()
@@ -380,18 +377,15 @@ mod tests {
         metadata.objects[0].rotation = [30.0, 60.0, 0.0];
 
         let resolved = timed_triggers_to_camera_triggers(&metadata.resolved_triggers());
-        let expected_target = camera_trigger_target_from_eye(
-            camera_trigger_eye_from_object(&metadata.objects[0]),
-            60.0_f32.to_radians(),
-            30.0_f32.to_radians(),
-        );
-        let expected_eye = camera_trigger_eye_from_object(&metadata.objects[0]);
-        let resolved_eye = camera_eye_from_target(
-            resolved[0].target_position,
-            resolved[0].rotation,
-            resolved[0].pitch,
-            DEFAULT_CAMERA_DISTANCE,
-        );
+        let expected_eye = metadata.objects[0].center().into();
+        let expected_target = CameraTrigger {
+            target_position: expected_eye,
+            yaw: 60.0_f32.to_radians(),
+            pitch: 30.0_f32.to_radians(),
+            ..CameraTrigger::default()
+        }
+        .eye();
+        let resolved_eye = resolved[0].eye();
         assert_eq!(resolved.len(), 1);
         assert!((resolved[0].time_seconds - 1.2).abs() <= 1e-6);
         for (actual, expected) in resolved[0].target_position.iter().zip(expected_target) {
@@ -401,7 +395,7 @@ mod tests {
             approx::assert_abs_diff_eq!(*actual, expected, epsilon = 1e-5);
         }
         assert!((resolved[0].pitch - 30.0_f32.to_radians()).abs() <= 1e-6);
-        assert!((resolved[0].rotation - 60.0_f32.to_radians()).abs() <= 1e-6);
+        assert!((resolved[0].yaw - 60.0_f32.to_radians()).abs() <= 1e-6);
     }
 
     #[test]
@@ -417,7 +411,7 @@ mod tests {
                 use_full_segment_transition: false,
                 target_position: [2.0, 3.0, 4.0],
                 distance: default_camera_trigger_distance(),
-                rotation: 0.0,
+                yaw: 0.0,
                 pitch: 0.0,
             }])
             .into_iter()
@@ -434,28 +428,21 @@ mod tests {
         };
 
         let resolved = timed_triggers_to_camera_triggers(&metadata.resolved_triggers());
-        let (expected_rotation, expected_pitch) =
-            camera_trigger_rotation_pitch_from_rotation_degrees([-135.0, 0.0, 180.0]);
-        let expected_forward = camera_trigger_forward_from_rotation_degrees([-135.0, 0.0, 180.0]);
-        let resolved_forward = camera_trigger_forward(resolved[0].rotation, resolved[0].pitch);
-        let resolved_eye = camera_eye_from_target(
-            resolved[0].target_position,
-            resolved[0].rotation,
-            resolved[0].pitch,
-            DEFAULT_CAMERA_DISTANCE,
-        );
+        let (expected_yaw, expected_pitch) =
+            CameraTrigger::yaw_pitch_from_rotation([-135.0, 0.0, 180.0]);
+        let expected_forward = CameraTrigger::forward_from_rotation([-135.0, 0.0, 180.0]);
+        let resolved_forward = resolved[0].forward();
+        let resolved_eye = resolved[0].eye();
 
         assert_eq!(resolved.len(), 1);
-        approx::assert_abs_diff_eq!(resolved[0].rotation, expected_rotation, epsilon = 1e-5);
+        approx::assert_abs_diff_eq!(resolved[0].yaw, expected_yaw, epsilon = 1e-5);
         approx::assert_abs_diff_eq!(resolved[0].pitch, expected_pitch, epsilon = 1e-5);
         assert!(resolved_forward[1] < -0.6);
         for (actual, expected) in resolved_forward.iter().zip(expected_forward) {
             approx::assert_abs_diff_eq!(*actual, expected, epsilon = 1e-5);
         }
-        for (actual, expected) in resolved_eye
-            .iter()
-            .zip(camera_trigger_eye_from_object(&metadata.objects[0]))
-        {
+        let actual_eye: [f32; 3] = metadata.objects[0].center().into();
+        for (actual, expected) in resolved_eye.iter().zip(&actual_eye) {
             approx::assert_abs_diff_eq!(*actual, expected, epsilon = 1e-5);
         }
     }
@@ -477,7 +464,7 @@ mod tests {
                 },
                 action: TriggerAction::TransformObjects {
                     position: [0.0, 0.0, 0.0],
-                    rotation_degrees: [0.0, 0.0, 0.0],
+                    rotation: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
                     simulate_hitboxes: false,
                 },
@@ -490,7 +477,7 @@ mod tests {
         match &triggers[0].action {
             TriggerAction::TransformObjects {
                 position,
-                rotation_degrees,
+                rotation: rotation_degrees,
                 size,
                 ..
             } => {
@@ -518,7 +505,7 @@ mod tests {
             },
             action: TriggerAction::TransformObjects {
                 position: [10.0, 0.0, 0.0],
-                rotation_degrees: [0.0, 90.0, 0.0],
+                rotation: [0.0, 90.0, 0.0],
                 size: [2.0, 0.0, 3.0],
                 simulate_hitboxes: false,
             },
@@ -567,7 +554,7 @@ mod tests {
                 },
                 action: TriggerAction::TransformObjects {
                     position: [9.0, 9.0, 9.0],
-                    rotation_degrees: [0.0, 0.0, 0.0],
+                    rotation: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
                     simulate_hitboxes: false,
                 },
@@ -579,7 +566,7 @@ mod tests {
                 target: TriggerTarget::Camera,
                 action: TriggerAction::TransformObjects {
                     position: [5.0, 5.0, 5.0],
-                    rotation_degrees: [0.0, 0.0, 0.0],
+                    rotation: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
                     simulate_hitboxes: false,
                 },
@@ -607,7 +594,7 @@ mod tests {
             },
             action: TriggerAction::TransformObjects {
                 position: [99.0, 0.0, 0.0],
-                rotation_degrees: [0.0, 0.0, 0.0],
+                rotation: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
                 simulate_hitboxes: false,
             },

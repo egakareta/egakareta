@@ -365,7 +365,7 @@ fn configure_trigger_policy_parity_scene(
         },
         action: TriggerAction::TransformObjects {
             position: [0.0, 0.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             simulate_hitboxes,
         },
@@ -1023,7 +1023,7 @@ async fn test_handle_primary_click_shift_priority() {
     state.editor.camera.editor_pan = [0.0, 0.0];
     state.editor.camera.editor_target_z = 0.0;
     state.editor.camera.editor_pitch = -std::f32::consts::FRAC_PI_2; // Looking straight down
-    state.editor.camera.editor_rotation = 0.0;
+    state.editor.camera.editor_yaw = 0.0;
 
     // Click at the center (400, 300 in a 800x600 viewport)
     state.handle_primary_click(400.0, 300.0);
@@ -1149,7 +1149,7 @@ async fn timing_origin_playback_seek_resync_keeps_runtime_disabled() {
         },
         action: TriggerAction::TransformObjects {
             position: [3.0, 0.0, 0.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             simulate_hitboxes: false,
         },
@@ -1373,7 +1373,7 @@ async fn timing_mode_timeline_scrub_skips_simulation_and_mesh_dirty() {
         },
         action: TriggerAction::TransformObjects {
             position: [10.0, 0.0, 0.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             simulate_hitboxes: false,
         },
@@ -1411,7 +1411,7 @@ async fn compose_mode_timeline_scrub_runs_simulation_and_mesh_dirty() {
         },
         action: TriggerAction::TransformObjects {
             position: [10.0, 0.0, 0.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             simulate_hitboxes: false,
         },
@@ -1446,7 +1446,7 @@ async fn camera_trigger_timeline_scrub_marks_block_mesh_dirty() {
             transition_interval_seconds: 1.0,
             use_full_segment_transition: false,
             target_position: [0.0, 0.0, 0.0],
-            rotation: 0.0,
+            yaw: 0.0,
             pitch: 0.0,
         },
     }]);

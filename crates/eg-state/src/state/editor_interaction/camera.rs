@@ -12,12 +12,12 @@ use glam::{Mat4, Vec2, Vec3, Vec4};
 impl EditorSubsystem {
     pub fn camera_axes_xy(&self) -> (Vec2, Vec2) {
         let right = Vec2::new(
-            self.camera.editor_rotation.cos(),
-            -self.camera.editor_rotation.sin(),
+            self.camera.editor_yaw.cos(),
+            -self.camera.editor_yaw.sin(),
         );
         let up = Vec2::new(
-            self.camera.editor_rotation.sin(),
-            self.camera.editor_rotation.cos(),
+            self.camera.editor_yaw.sin(),
+            self.camera.editor_yaw.cos(),
         );
         (right, up)
     }
@@ -67,7 +67,7 @@ impl EditorSubsystem {
             .clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
         let horizontal_distance = distance * pitch.cos();
         let vertical_distance = distance * pitch.sin();
-        Mat4::from_rotation_y(self.camera.editor_rotation).transform_vector3(Vec3::new(
+        Mat4::from_rotation_y(self.camera.editor_yaw).transform_vector3(Vec3::new(
             0.0,
             vertical_distance,
             -horizontal_distance,
@@ -120,7 +120,7 @@ impl EditorSubsystem {
         const PITCH_SPEED: f32 = 0.006;
 
         if phase == AppPhase::Editor {
-            self.camera.editor_rotation -= dx as f32 * ROTATE_SPEED;
+            self.camera.editor_yaw -= dx as f32 * ROTATE_SPEED;
             self.camera.editor_pitch = (self.camera.editor_pitch + dy as f32 * PITCH_SPEED)
                 .clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
         } else if phase == AppPhase::Playing && !is_game_active {
@@ -138,7 +138,7 @@ impl EditorSubsystem {
     ) {
         if let Some(duration) = transition_seconds {
             if duration > 0.0 {
-                let current_rot = self.camera.editor_rotation;
+                let current_rot = self.camera.editor_yaw;
                 let current_pitch = self.camera.editor_pitch;
 
                 let mut target_rot = rotation;
@@ -150,9 +150,9 @@ impl EditorSubsystem {
                 }
 
                 self.camera.transition = Some(crate::state::editor_camera::CameraTransition {
-                    start_rotation: current_rot,
+                    start_yaw: current_rot,
                     start_pitch: current_pitch,
-                    target_rotation: target_rot,
+                    target_yaw: target_rot,
                     target_pitch: pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians()),
                     elapsed: 0.0,
                     duration,
@@ -162,7 +162,7 @@ impl EditorSubsystem {
         }
 
         self.camera.transition = None;
-        self.camera.editor_rotation = rotation;
+        self.camera.editor_yaw = rotation;
         self.camera.editor_pitch = pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
     }
 
@@ -174,8 +174,8 @@ impl EditorSubsystem {
         transition.elapsed += frame_dt;
         let alpha = (transition.elapsed / transition.duration).clamp(0.0, 1.0);
 
-        self.camera.editor_rotation = transition.start_rotation
-            + (transition.target_rotation - transition.start_rotation) * alpha;
+        self.camera.editor_yaw = transition.start_yaw
+            + (transition.target_yaw - transition.start_yaw) * alpha;
         self.camera.editor_pitch =
             transition.start_pitch + (transition.target_pitch - transition.start_pitch) * alpha;
 
@@ -231,14 +231,14 @@ mod tests {
     async fn camera_axes_follow_editor_rotation() {
         let mut state = State::new_test().await;
 
-        state.editor.camera.editor_rotation = 0.0;
+        state.editor.camera.editor_yaw = 0.0;
         let (right, up) = state.editor.camera_axes_xy();
         approx::assert_abs_diff_eq!(right.x, 1.0, epsilon = 1e-6);
         approx::assert_abs_diff_eq!(right.y, 0.0, epsilon = 1e-6);
         approx::assert_abs_diff_eq!(up.x, 0.0, epsilon = 1e-6);
         approx::assert_abs_diff_eq!(up.y, 1.0, epsilon = 1e-6);
 
-        state.editor.camera.editor_rotation = std::f32::consts::FRAC_PI_2;
+        state.editor.camera.editor_yaw = std::f32::consts::FRAC_PI_2;
         let (right, up) = state.editor.camera_axes_xy();
         approx::assert_abs_diff_eq!(right.x, 0.0, epsilon = 1e-5);
         approx::assert_abs_diff_eq!(right.y, -1.0, epsilon = 1e-5);
@@ -250,7 +250,7 @@ mod tests {
     async fn camera_offset_clamps_pitch_and_world_projection_handles_visibility() {
         let mut state = State::new_test().await;
 
-        state.editor.camera.editor_rotation = 0.0;
+        state.editor.camera.editor_yaw = 0.0;
         state.editor.camera.editor_pitch = 10.0;
         let offset_clamped_high = state.editor.camera_offset();
 
@@ -281,14 +281,14 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.phase = AppPhase::Editor;
-        state.editor.camera.editor_rotation = 3.0;
+        state.editor.camera.editor_yaw = 3.0;
         state.editor.camera.editor_pitch = 0.2;
 
         state
             .editor
             .set_editor_camera_orientation(-3.0, 0.6, Some(1.0));
         let transition = state.editor.camera.transition.as_ref().expect("transition");
-        assert!(transition.target_rotation > transition.start_rotation);
+        assert!(transition.target_yaw > transition.start_yaw);
         approx::assert_abs_diff_eq!(transition.target_pitch, 0.6, epsilon = 1e-6);
 
         assert!(state.editor.update_camera_transition(0.5));
@@ -303,18 +303,18 @@ mod tests {
     async fn state_camera_orientation_api_only_applies_in_editor_phase() {
         let mut state = State::new_test().await;
 
-        let baseline_rotation = state.editor.camera.editor_rotation;
+        let baseline_rotation = state.editor.camera.editor_yaw;
         state.phase = AppPhase::Menu;
         state.set_editor_camera_orientation(1.2, 0.3, None);
         approx::assert_abs_diff_eq!(
-            state.editor.camera.editor_rotation,
+            state.editor.camera.editor_yaw,
             baseline_rotation,
             epsilon = 1e-6
         );
 
         state.phase = AppPhase::Editor;
         state.set_editor_camera_orientation(1.2, 0.3, None);
-        approx::assert_abs_diff_eq!(state.editor.camera.editor_rotation, 1.2, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(state.editor.camera.editor_yaw, 1.2, epsilon = 1e-6);
         approx::assert_abs_diff_eq!(state.editor.camera.editor_pitch, 0.3, epsilon = 1e-6);
     }
 }

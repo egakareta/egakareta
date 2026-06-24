@@ -12,10 +12,7 @@ use eg_block_geometry::{
     hitbox_cuboids, ray_intersect_aabb, ray_intersect_aabb_interval, ray_intersect_sphere,
 };
 use eg_types::{
-    camera_trigger_eye_from_object, camera_trigger_forward_from_rotation_degrees, TriggerAction,
-};
-use eg_types::{
-    EditorMode, EditorPickResult, EditorTapDivisionPick, LevelObject, CAMERA_TRIGGER_BLOCK_ID,
+    CAMERA_TRIGGER_BLOCK_ID, CameraTrigger, EditorMode, EditorPickResult, EditorTapDivisionPick, LevelObject, TriggerAction
 };
 use glam::{Vec2, Vec3, Vec4};
 
@@ -241,10 +238,8 @@ fn add_pick_candidate(
 
 fn object_pick_bounds(object: &LevelObject) -> Option<(Vec3, Vec3)> {
     if object.block_id == CAMERA_TRIGGER_BLOCK_ID {
-        let eye = Vec3::from_array(camera_trigger_eye_from_object(object));
-        let forward = Vec3::from_array(camera_trigger_forward_from_rotation_degrees(
-            object.rotation,
-        ));
+        let eye = object.center();
+        let forward = Vec3::from_array(CameraTrigger::forward_from_rotation(object.rotation));
         let arrow_direction = if forward.length_squared() > f32::EPSILON {
             forward.normalize()
         } else {
@@ -451,8 +446,8 @@ impl EditorSubsystem {
             }
 
             for (trigger_index, camera_trigger) in self.camera_trigger_markers() {
-                let marker_eye = self.camera_trigger_marker_eye(&camera_trigger);
-                let marker_forward = self.camera_trigger_marker_forward(&camera_trigger);
+                let marker_eye = Vec3::from_array(camera_trigger.eye());
+                let marker_forward = Vec3::from_array(camera_trigger.forward());
 
                 let mut marker_t = ray_intersect_sphere(
                     ray_origin,
@@ -791,8 +786,8 @@ impl EditorSubsystem {
         ray_dir: Vec3,
         obj: &eg_types::LevelObject,
     ) -> Option<(f32, Vec3)> {
-        let eye = Vec3::from_array(camera_trigger_eye_from_object(obj));
-        let forward = Vec3::from_array(camera_trigger_forward_from_rotation_degrees(obj.rotation));
+        let eye = obj.center();
+        let forward = Vec3::from_array(CameraTrigger::forward_from_rotation(obj.rotation));
         let arrow_direction = if forward.length_squared() > f32::EPSILON {
             forward.normalize()
         } else {
@@ -848,7 +843,7 @@ impl EditorSubsystem {
 fn transform_trigger_target_object(action: &TriggerAction) -> Option<LevelObject> {
     let TriggerAction::TransformObjects {
         position,
-        rotation_degrees,
+        rotation: rotation_degrees,
         size,
         ..
     } = action

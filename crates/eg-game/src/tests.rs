@@ -333,7 +333,7 @@ fn timeline_trigger_hitbox_mode_does_not_resurrect_consumed_portals() {
         },
         action: TriggerAction::TransformObjects {
             position: [0.0, 0.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             simulate_hitboxes: true,
         },
@@ -369,7 +369,7 @@ fn timeline_state_with_disabled_trigger_hitboxes_matches_plain_simulation() {
         },
         action: TriggerAction::TransformObjects {
             position: [5.0, 0.0, 2.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             simulate_hitboxes: false,
         },
