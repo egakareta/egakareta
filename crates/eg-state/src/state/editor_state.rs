@@ -12,7 +12,8 @@ use eg_editor_domain::{
 };
 use eg_game::TimelineSimulationRuntime;
 use eg_types::{
-    default_camera_trigger_distance, EasingDirection, TimedTrigger, TriggerAction, TriggerTarget,
+    default_camera_trigger_distance, BlockId, EasingDirection, TimedTrigger, TriggerAction,
+    TriggerTarget,
 };
 use eg_types::{
     AppPhase, Direction, EditorMode, GameCursor, LevelObject, TimingPoint, DEFAULT_CAMERA_PITCH,
@@ -147,8 +148,8 @@ impl EditorSubsystem {
         self.timeline.clock.time_seconds
     }
 
-    pub fn set_block_id(&mut self, block_id: String) {
-        self.config.selected_block_id = eg_types::normalize_block_id(&block_id);
+    pub fn set_block_id(&mut self, block_id: BlockId) {
+        self.config.selected_block_id = block_id;
         self.config
             .remember_recent_block_id(self.config.selected_block_id.clone());
     }
@@ -261,13 +262,13 @@ impl EditorSubsystem {
         }
     }
 
-    pub fn set_selected_block_id(&mut self, block_id: String) {
+    pub fn set_selected_block_id(&mut self, block_id: BlockId) {
         if let Some(index) = self
             .ui
             .selected_block_index
             .filter(|index| *index < self.objects.len())
         {
-            self.objects[index].block_id = eg_types::normalize_block_id(&block_id);
+            self.objects[index].block_id = block_id;
         }
     }
 
@@ -300,10 +301,6 @@ impl EditorSubsystem {
         {
             self.objects[index].color_tint = color_tint.map(|component| component.clamp(0.0, 1.0));
         }
-    }
-
-    pub fn selected_block_id(&self) -> &str {
-        self.config.selected_block_id.as_str()
     }
 
     pub fn timeline_duration_seconds(&self) -> f32 {
@@ -656,10 +653,8 @@ impl State {
         self.editor.set_alt_held(held);
     }
 
-    pub fn set_editor_block_id(&mut self, block_id: String) {
+    pub fn set_editor_block_id(&mut self, block_id: BlockId) {
         self.editor.set_block_id(block_id);
-        self.session.app_settings.editor_selected_block_id =
-            self.editor.config.selected_block_id.clone();
         self.persist_app_settings();
         if self.phase == AppPhase::Editor {
             self.rebuild_editor_cursor_vertices();
@@ -843,7 +838,7 @@ impl State {
         }
     }
 
-    pub fn set_editor_selected_block_id(&mut self, block_id: String) {
+    pub fn set_editor_selected_block_id(&mut self, block_id: BlockId) {
         if self.phase != AppPhase::Editor {
             return;
         }
@@ -931,8 +926,8 @@ impl State {
     }
 
     /// Returns the unique identifier of the currently selected block type in the editor.
-    pub fn editor_selected_block_id(&self) -> &str {
-        self.editor.selected_block_id()
+    pub fn editor_selected_block_id(&self) -> &BlockId {
+        &self.editor.config.selected_block_id
     }
 
     /// Returns whether the editor timeline is currently playing.
@@ -1617,15 +1612,14 @@ mod tests {
     use eg_game::TimelineSimulationRuntime;
     use eg_mesh::{GizmoAxis, GizmoDragKind};
     use eg_types::{
-        AppPhase, Direction, EasingDirection, EditorMode, GameCursor, LevelObject, TimedTrigger,
-        TriggerAction, TriggerTarget, TRANSFORM_TRIGGER_BLOCK_ID,
+        AppPhase, BlockId, Direction, EasingDirection, EditorMode, GameCursor, LevelObject,
+        TimedTrigger, TriggerAction, TriggerTarget, TRANSFORM_TRIGGER_BLOCK_ID,
     };
 
     fn test_level_object(position: [f32; 3]) -> LevelObject {
         LevelObject {
             id: format!("object_{:.0}", position[0]),
             position,
-            block_id: "core/stone".to_string(),
             ..LevelObject::default()
         }
     }
@@ -1665,9 +1659,8 @@ mod tests {
         LevelObject {
             id: format!("trigger_{time_seconds:.1}"),
             position: [9.0, 0.0, 0.0],
-            block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
             trigger: Some(transform_trigger(time_seconds, target_ids, [9.0, 0.0, 0.0])),
-            ..LevelObject::default()
+            ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
         }
     }
 
@@ -2107,10 +2100,7 @@ mod tests {
     async fn selected_block_mutators_apply_snap_and_clamp_rules() {
         let mut state = State::new_test().await;
 
-        state.editor.objects.push(LevelObject {
-            block_id: "core/stone".to_string(),
-            ..LevelObject::default()
-        });
+        state.editor.objects.push(LevelObject::default());
         state.editor.ui.selected_block_index = Some(0);
         state.editor.config.snap_to_grid = true;
         state.editor.config.snap_step = 0.5;
@@ -2131,7 +2121,7 @@ mod tests {
         state.editor.set_selected_block_color_tint([-1.0, 0.4, 2.0]);
         assert_eq!(state.editor.objects[0].color_tint, [0.0, 0.4, 1.0]);
 
-        state.editor.set_selected_block_id("stone".to_string());
+        state.editor.set_selected_block_id(BlockId::new("stone"));
         assert_eq!(state.editor.objects[0].block_id, "core/stone");
     }
 
@@ -2488,16 +2478,12 @@ mod tests {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
 
-        state.editor.objects.push(LevelObject {
-            block_id: "core/stone".to_string(),
-            ..LevelObject::default()
-        });
+        state.editor.objects.push(LevelObject::default());
         state.editor.ui.selected_block_index = Some(0);
         state.editor.ui.selected_block_indices = vec![0];
 
-        state.set_editor_block_id("core/lava".to_string());
-        assert_eq!(state.editor_selected_block_id(), "core/lava");
-        assert_eq!(state.app_settings().editor_selected_block_id, "core/lava");
+        state.set_editor_block_id(BlockId::new("core/lava"));
+        assert_eq!(state.editor_selected_block_id().to_string(), "core/lava");
 
         state.set_editor_snap_to_grid(true);
         state.set_editor_snap_step(0.2);

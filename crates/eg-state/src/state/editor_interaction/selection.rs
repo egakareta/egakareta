@@ -896,7 +896,6 @@ mod tests {
                 position[0], position[1], position[2]
             ),
             position,
-            block_id: "core/stone".to_string(),
             ..LevelObject::default()
         }
     }

@@ -6,11 +6,11 @@
 
 */
 use super::State;
-use eg_types::TimedTrigger;
 use eg_types::{
     AppSettings, BasicLevelMetadata, Direction, EditorMode, LevelObject, MusicMetadata,
     PlayerLevelProgress, SettingsSection, TimingPoint,
 };
+use eg_types::{BlockId, TimedTrigger};
 
 #[derive(Clone, Copy)]
 pub struct SelectedTapViewModel {
@@ -57,10 +57,10 @@ pub struct EditorUiViewModel<'a> {
     pub snap_step: f32,
     pub snap_rotation: bool,
     pub snap_rotation_step_degrees: f32,
-    pub selected_block_id: &'a str,
+    pub selected_block_id: &'a BlockId,
     pub place_preview_position: [f32; 3],
     pub place_preview_size: [f32; 3],
-    pub recent_block_ids: &'a [String],
+    pub recent_block_ids: &'a [BlockId],
     pub selected_block: Option<LevelObject>,
     pub selected_block_count: usize,
     pub clipboard_block_count: usize,

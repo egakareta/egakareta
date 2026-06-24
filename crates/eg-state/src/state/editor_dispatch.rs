@@ -272,7 +272,7 @@ mod tests {
     use super::State;
     use crate::state::editor_command::EditorCommand;
     use eg_types::{
-        AppPhase, EditorMode, LevelObject, SettingsSection, TRANSFORM_TRIGGER_BLOCK_ID,
+        AppPhase, BlockId, EditorMode, LevelObject, SettingsSection, TRANSFORM_TRIGGER_BLOCK_ID,
     };
     use eg_types::{EasingDirection, TimedTrigger, TriggerAction, TriggerTarget};
 
@@ -286,7 +286,6 @@ mod tests {
         LevelObject {
             id: format!("trigger_{time_seconds:.1}"),
             position,
-            block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
             trigger: Some(TimedTrigger {
                 time_seconds,
                 duration_seconds: 1.0,
@@ -301,7 +300,7 @@ mod tests {
                     simulate_hitboxes: false,
                 },
             }),
-            ..LevelObject::default()
+            ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
         }
     }
 
@@ -357,10 +356,9 @@ mod tests {
         assert!(state.editor.runtime.interaction.clipboard.is_some());
 
         state.dispatch_editor(EditorCommand::UpdateSelectedBlock(LevelObject {
-            block_id: "core/grass".to_string(),
             position: [2.0, 3.0, 4.0],
             size: [5.0, 6.0, 7.0],
-            ..LevelObject::default()
+            ..LevelObject::new("core/grass")
         }));
         approx::assert_abs_diff_eq!(state.editor.objects[0].position[0], 2.0, epsilon = 1e-6);
         approx::assert_abs_diff_eq!(state.editor.objects[0].position[1], 3.0, epsilon = 1e-6);
@@ -407,7 +405,6 @@ mod tests {
     async fn update_selected_block_persists_trigger_fields() {
         let mut state = new_editor_state().await;
         state.editor.objects = vec![LevelObject {
-            block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
             trigger: Some(TimedTrigger {
                 time_seconds: 0.0,
                 duration_seconds: 1.0,
@@ -422,7 +419,7 @@ mod tests {
                     simulate_hitboxes: false,
                 },
             }),
-            ..LevelObject::default()
+            ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
         }];
         state.editor.ui.selected_block_index = Some(0);
         state.editor.ui.selected_block_indices = vec![0];
@@ -745,7 +742,7 @@ mod tests {
     async fn dispatch_editor_select_recent_block() {
         let mut state = new_editor_state().await;
         state.editor.config.recent_block_ids =
-            vec!["core/stone".to_string(), "core/grass".to_string()];
+            vec![BlockId::new("core/stone"), BlockId::new("core/grass")];
 
         state.dispatch_editor(EditorCommand::SelectRecentBlock(0));
         assert_eq!(state.editor.config.selected_block_id, "core/stone");
@@ -759,7 +756,7 @@ mod tests {
     async fn dispatch_editor_set_block_id_updates_recent() {
         let mut state = new_editor_state().await;
 
-        state.dispatch_editor(EditorCommand::SetBlockId("core/lava".to_string()));
+        state.dispatch_editor(EditorCommand::SetBlockId(BlockId::new("core/lava")));
         assert_eq!(state.editor.config.selected_block_id, "core/lava");
         assert_eq!(state.editor.config.recent_block_ids[0], "core/lava");
     }

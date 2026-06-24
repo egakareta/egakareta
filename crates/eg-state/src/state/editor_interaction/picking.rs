@@ -869,7 +869,7 @@ fn transform_trigger_target_object(action: &TriggerAction) -> Option<LevelObject
 #[cfg(test)]
 mod tests {
     use super::super::super::State;
-    use eg_types::{LevelObject, CAMERA_TRIGGER_BLOCK_ID};
+    use eg_types::{BlockId, LevelObject, CAMERA_TRIGGER_BLOCK_ID};
     use glam::{Vec2, Vec3};
 
     #[tokio::test]
@@ -1016,7 +1016,7 @@ mod tests {
     async fn cursor_from_ray_hit_centers_selected_block_size_when_snap_disabled() {
         let mut state = State::new_test().await;
         state.editor.config.snap_to_grid = false;
-        state.editor.config.selected_block_id = "core/speedportal".to_string();
+        state.editor.config.selected_block_id = BlockId::new("core/speedportal");
 
         let hit = Vec3::new(4.0, 0.25, 9.0);
         let normal = Vec3::Y;

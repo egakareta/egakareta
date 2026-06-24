@@ -1097,7 +1097,6 @@ mod tests {
     fn sample_object() -> LevelObject {
         LevelObject {
             id: "object_0_0_0".to_string(),
-            block_id: "core/stone".to_string(),
             ..LevelObject::default()
         }
     }
@@ -1124,7 +1123,6 @@ mod tests {
             id: "floor".to_string(),
             position: [-10.0, -1.0, -10.0],
             size: [20.0, 1.0, 20.0],
-            block_id: "core/stone".to_string(),
             ..LevelObject::default()
         }
     }
@@ -1285,7 +1283,6 @@ mod tests {
 
         let support = [LevelObject {
             position: [0.0, 2.0, 0.0],
-            block_id: "core/stone".to_string(),
             ..LevelObject::default()
         }];
         let mut airborne_runtime =

@@ -13,7 +13,7 @@
 //! self-contained within the `state/` module.
 
 use eg_types::{
-    BasicLevelMetadata, EditorMode, KeyChord, LevelObject, MusicMetadata, SettingsSection,
+    BasicLevelMetadata, BlockId, EditorMode, KeyChord, LevelObject, MusicMetadata, SettingsSection,
 };
 
 /// Editor-specific commands. Grouped by domain for clarity.
@@ -23,7 +23,7 @@ pub enum EditorCommand {
     /// Switch the editor mode.
     SetMode(EditorMode),
     /// Set the current block ID for placement.
-    SetBlockId(String),
+    SetBlockId(BlockId),
     /// Select the Nth recent placeable block and switch to Place mode.
     SelectRecentBlock(usize),
     /// Pick the selected block and enter place mode with that block type.

@@ -10,7 +10,7 @@ use eg_editor_domain::interpolate_timeline_sample_positions;
 use eg_types::{
     camera_eye_from_target, default_camera_trigger_distance,
     default_camera_trigger_target_position, timed_triggers_to_camera_triggers,
-    triggers_from_objects, CameraTrigger, TimedTrigger, TriggerAction, TriggerTarget,
+    triggers_from_objects, BlockId, CameraTrigger, TimedTrigger, TriggerAction, TriggerTarget,
     DEFAULT_CAMERA_DISTANCE,
 };
 use eg_types::{
@@ -23,12 +23,12 @@ pub struct EditorTriggerState {
     pub object_indices: Vec<usize>,
 }
 
-fn trigger_block_id_from_action(action: &TriggerAction) -> &'static str {
+fn trigger_block_id_from_action(action: &TriggerAction) -> BlockId {
     match action {
         TriggerAction::CameraPose { .. } | TriggerAction::CameraFollow { .. } => {
-            CAMERA_TRIGGER_BLOCK_ID
+            BlockId::new(CAMERA_TRIGGER_BLOCK_ID)
         }
-        TriggerAction::TransformObjects { .. } => TRANSFORM_TRIGGER_BLOCK_ID,
+        TriggerAction::TransformObjects { .. } => BlockId::new(TRANSFORM_TRIGGER_BLOCK_ID),
     }
 }
 
@@ -96,7 +96,7 @@ fn trigger_object_from_payload(trigger: TimedTrigger) -> LevelObject {
         position,
         size,
         rotation_degrees,
-        block_id: trigger_block_id_from_action(&trigger.action).to_string(),
+        block_id: trigger_block_id_from_action(&trigger.action),
         trigger: Some(trigger),
         ..LevelObject::default()
     }
@@ -507,7 +507,6 @@ mod tests {
         LevelObject {
             id: format!("obj_{:06}", x as i32 + 1),
             position: [x, 0.0, 0.0],
-            block_id: eg_types::DEFAULT_BLOCK_ID.to_string(),
             ..LevelObject::default()
         }
     }

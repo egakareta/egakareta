@@ -5,13 +5,14 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_types::normalize_block_id;
+use eg_types::BlockId;
 
 const RECENT_BLOCK_LIMIT: usize = 10;
 
+#[derive(Default)]
 pub struct EditorConfigState {
-    pub selected_block_id: String,
-    pub recent_block_ids: Vec<String>,
+    pub selected_block_id: BlockId,
+    pub recent_block_ids: Vec<BlockId>,
     pub snap_to_grid: bool,
     pub snap_step: f32,
     pub snap_rotation: bool,
@@ -20,10 +21,9 @@ pub struct EditorConfigState {
 }
 
 impl EditorConfigState {
-    pub fn remember_recent_block_id(&mut self, block_id: String) {
-        let normalized = normalize_block_id(&block_id);
-        self.recent_block_ids.retain(|id| id != &normalized);
-        self.recent_block_ids.insert(0, normalized);
+    pub fn remember_recent_block_id(&mut self, block_id: BlockId) {
+        self.recent_block_ids.retain(|id| id != &block_id);
+        self.recent_block_ids.insert(0, block_id);
         self.recent_block_ids.truncate(RECENT_BLOCK_LIMIT);
     }
 }

@@ -183,7 +183,6 @@ impl EditorSubsystem {
                 position: *position,
                 size: *size,
                 rotation_degrees: *rotation_degrees,
-                block_id: eg_types::DEFAULT_BLOCK_ID.to_string(),
                 ..LevelObject::default()
             },
         ))
@@ -349,7 +348,6 @@ mod tests {
                 position[0], position[1], position[2]
             ),
             position,
-            block_id: "core/stone".to_string(),
             ..LevelObject::default()
         }
     }

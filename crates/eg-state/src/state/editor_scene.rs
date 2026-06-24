@@ -914,7 +914,6 @@ impl State {
             let bounds_object = LevelObject {
                 position: bounds_position,
                 size: bounds_size,
-                block_id: "core/stone".to_string(),
                 ..LevelObject::default()
             };
             let mask_vertices =
@@ -1490,8 +1489,7 @@ fn editor_preview_player_hitbox(position: [f32; 3]) -> LevelObject {
             position[2] - inset_width * 0.5,
         ],
         size: [inset_width, inset_height, inset_width],
-        block_id: "core/void".to_string(),
-        ..LevelObject::default()
+        ..LevelObject::new("core/void")
     }
 }
 
@@ -1542,7 +1540,10 @@ mod tests {
     use eg_mesh::blocks::build_block_geometry_for_object;
     use eg_mesh::builders::game::build_colored_tap_indicator_vertices;
     use eg_render::MeshDrawData;
-    use eg_types::{AppPhase, EditorMode, LevelObject};
+    use eg_types::{
+        AppPhase, BlockId, EditorMode, LevelObject, CAMERA_TRIGGER_BLOCK_ID,
+        TRANSFORM_TRIGGER_BLOCK_ID,
+    };
     use eg_types::{EasingDirection, TimedTrigger, TriggerAction, TriggerTarget};
 
     fn block(position: [f32; 3], size: [f32; 3]) -> LevelObject {
@@ -1550,7 +1551,6 @@ mod tests {
             id: "target".to_string(),
             position,
             size,
-            block_id: "core/stone".to_string(),
             ..LevelObject::default()
         }
     }
@@ -1565,8 +1565,7 @@ mod tests {
     async fn camera_trigger_selection_outline_uses_visual_mesh_instead_of_cube_hull() {
         let object = LevelObject {
             position: [3.0, 4.0, 5.0],
-            block_id: "core/camera_trigger".to_string(),
-            ..LevelObject::default()
+            ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         };
 
         let visual_vertices = build_block_geometry_for_object(&object).to_triangle_vertices();
@@ -2039,7 +2038,7 @@ mod tests {
     async fn placing_selected_block_uses_block_default_size() {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
-        state.editor.config.selected_block_id = "core/speedportal".to_string();
+        state.editor.config.selected_block_id = BlockId::new("core/speedportal");
         state.editor.config.selected_block_rotation_degrees = [0.0, 90.0, 0.0];
         state.editor.ui.cursor = [2.0, 0.0, 4.0];
 
@@ -2058,7 +2057,7 @@ mod tests {
     async fn placing_transform_trigger_marks_target_marker_rebuild_dirty() {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
-        state.editor.config.selected_block_id = eg_types::TRANSFORM_TRIGGER_BLOCK_ID.to_string();
+        state.editor.config.selected_block_id = BlockId::new(TRANSFORM_TRIGGER_BLOCK_ID);
         state.editor.ui.cursor = [2.0, 0.0, 4.0];
         state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
 

@@ -1385,10 +1385,7 @@ mod tests {
         state.editor.ui.mode = EditorMode::Place;
 
         // Populate some meshes
-        state.editor.objects.push(eg_types::LevelObject {
-            block_id: "core/stone".to_string(),
-            ..Default::default()
-        });
+        state.editor.objects.push(eg_types::LevelObject::default());
         state.editor.ui.selected_block_indices = vec![0];
         state.sync_editor_objects();
         state.rebuild_editor_cursor_vertices();

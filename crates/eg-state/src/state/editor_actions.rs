@@ -20,7 +20,7 @@ use eg_editor_domain::{
     TimelineNearSearch, TimingDivisionDirection,
 };
 use eg_game::{GameState, TimelineSimulationRuntime};
-use eg_types::{AppPhase, EditorMode, EditorTapDivisionPick, LevelObject};
+use eg_types::{AppPhase, BlockId, EditorMode, EditorTapDivisionPick, LevelObject};
 use eg_types::{TriggerAction, TriggerTarget};
 
 const TAP_CLICK_ADD_EPSILON_SECONDS: f32 = 0.001;
@@ -1116,7 +1116,7 @@ impl State {
 
     /// Select the Nth recent placeable block and switch to Place mode.
     pub(super) fn select_recent_block(&mut self, index: usize) {
-        let block_ids: Vec<String> = self
+        let block_ids: Vec<BlockId> = self
             .editor
             .config
             .recent_block_ids
@@ -1316,7 +1316,6 @@ mod tests {
         LevelObject {
             id: format!("object_{:.0}", position[0]),
             position,
-            block_id: "core/stone".to_string(),
             ..LevelObject::default()
         }
     }

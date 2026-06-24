@@ -13,7 +13,7 @@ use eg_state::commands::AppCommand;
 use eg_state::state::editor_command::EditorCommand;
 use eg_state::state::EditorUiViewModel;
 use eg_types::{
-    EasingDirection, EditorMode, LevelObject, TimedTrigger, TriggerAction, TriggerTarget,
+    BlockId, EasingDirection, EditorMode, LevelObject, TimedTrigger, TriggerAction, TriggerTarget,
 };
 
 const RECENT_BLOCK_STRIP_LIMIT: usize = 4;
@@ -60,9 +60,9 @@ pub(crate) fn show_recent_block_quick_strip(
             egui::Vec2::splat(COMPACT_PREVIEW_BUTTON_SIZE),
             COMPACT_PREVIEW_HEIGHT,
         ) {
-            commands.push(AppCommand::Editor(EditorCommand::SetBlockId(
-                block.id.clone(),
-            )));
+            commands.push(AppCommand::Editor(EditorCommand::SetBlockId(BlockId::new(
+                &block.id,
+            ))));
             commands.push(AppCommand::Editor(EditorCommand::SetMode(
                 EditorMode::Place,
             )));
@@ -719,7 +719,6 @@ mod tests {
             id: "trigger".to_string(),
             position: [1.0, 0.0, 1.0],
             rotation_degrees: [0.0, 90.0, 0.0],
-            block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
             trigger: Some(TimedTrigger {
                 time_seconds: 0.5,
                 duration_seconds: 1.0,
@@ -734,7 +733,7 @@ mod tests {
                     simulate_hitboxes: false,
                 },
             }),
-            ..LevelObject::default()
+            ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
         });
 
         let ctx = egui::Context::default();
@@ -750,7 +749,6 @@ mod tests {
     #[test]
     fn selected_block_properties_identifies_camera_follow_triggers() {
         let camera_follow = LevelObject {
-            block_id: CAMERA_TRIGGER_BLOCK_ID.to_string(),
             trigger: Some(TimedTrigger {
                 time_seconds: 1.0,
                 duration_seconds: 0.0,
@@ -764,14 +762,13 @@ mod tests {
                     pitch: DEFAULT_CAMERA_PITCH,
                 },
             }),
-            ..LevelObject::default()
+            ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         };
 
         let transform_trigger = LevelObject {
             id: "trigger".to_string(),
             position: [1.0, 0.0, 1.0],
             rotation_degrees: [0.0, 90.0, 0.0],
-            block_id: TRANSFORM_TRIGGER_BLOCK_ID.to_string(),
             trigger: Some(TimedTrigger {
                 time_seconds: 0.5,
                 duration_seconds: 1.0,
@@ -786,7 +783,7 @@ mod tests {
                     simulate_hitboxes: false,
                 },
             }),
-            ..LevelObject::default()
+            ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
         };
 
         assert_eq!(

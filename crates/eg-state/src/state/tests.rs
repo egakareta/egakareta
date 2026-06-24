@@ -350,9 +350,8 @@ fn configure_trigger_policy_parity_scene(
 ) {
     state.editor.objects = vec![LevelObject {
         id: "target".to_string(),
-        block_id: "core/speedportal".to_string(),
         position: [8.0, 0.0, 8.0],
-        ..LevelObject::default()
+        ..LevelObject::new("core/speedportal")
     }];
     state.editor.spawn.position = [0.0, 0.0, 0.0];
     state.editor.spawn.direction = Direction::Forward;

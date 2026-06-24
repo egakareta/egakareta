@@ -718,8 +718,8 @@ mod tests {
     use crate::state::editor_command::EditorCommand;
     use eg_types::{
         camera_eye_from_target, camera_triggers_to_timed_triggers, default_camera_trigger_distance,
-        CameraMode, CameraTrigger, EasingDirection, TimedTrigger, TriggerAction, TriggerTarget,
-        DEFAULT_CAMERA_DISTANCE,
+        BlockId, CameraMode, CameraTrigger, EasingDirection, TimedTrigger, TriggerAction,
+        TriggerTarget, DEFAULT_CAMERA_DISTANCE,
     };
     use eg_types::{
         AppPhase, EditorMode, KeyChord, LevelObject, MusicMetadata, SettingsSection, TimingPoint,
@@ -1075,9 +1075,9 @@ mod tests {
         // or at least change the position.
         assert!(state.editor.camera.editor_target_z != initial_z);
 
-        state.dispatch(AppCommand::Editor(EditorCommand::SetBlockId(
-            "core/lava".to_string(),
-        )));
+        state.dispatch(AppCommand::Editor(EditorCommand::SetBlockId(BlockId::new(
+            "core/lava",
+        ))));
         assert_eq!(state.editor.config.selected_block_id, "core/lava");
         assert_eq!(state.editor.config.recent_block_ids[0], "core/lava");
 
@@ -1116,9 +1116,9 @@ mod tests {
         state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
             EditorMode::Place,
         )));
-        state.dispatch(AppCommand::Editor(EditorCommand::SetBlockId(
-            "core/lava".to_string(),
-        )));
+        state.dispatch(AppCommand::Editor(EditorCommand::SetBlockId(BlockId::new(
+            "core/lava",
+        ))));
         state.dispatch(AppCommand::Editor(EditorCommand::RotatePlacementPreview));
         state.dispatch(AppCommand::TurnRight);
 
@@ -1172,9 +1172,9 @@ mod tests {
         let mut state = new_editor_state().await;
         state.editor.objects = vec![LevelObject::new("core/grass")];
         state.dispatch(AppCommand::Editor(EditorCommand::SetMode(EditorMode::Move)));
-        state.dispatch(AppCommand::Editor(EditorCommand::SetBlockId(
-            "core/stone".to_string(),
-        )));
+        state.dispatch(AppCommand::Editor(EditorCommand::SetBlockId(BlockId::new(
+            "core/stone",
+        ))));
 
         let viewport = Vec2::new(
             state.render.gpu.config.width as f32,
@@ -2284,9 +2284,9 @@ mod tests {
         let initial_count = state.editor.objects.len();
 
         // Set a specific block type
-        state.dispatch(AppCommand::Editor(EditorCommand::SetBlockId(
-            "core/lava".to_string(),
-        )));
+        state.dispatch(AppCommand::Editor(EditorCommand::SetBlockId(BlockId::new(
+            "core/lava",
+        ))));
 
         // Move cursor to a known position
         state.dispatch(AppCommand::NextLevel); // Move X+1

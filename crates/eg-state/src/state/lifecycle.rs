@@ -509,9 +509,7 @@ impl State {
         game.objects = vec![];
         game.rebuild_behavior_cache();
 
-        let mut app_settings = eg_types::AppSettings::default();
-        app_settings.editor_selected_block_id =
-            eg_types::normalize_block_id(&app_settings.editor_selected_block_id);
+        let app_settings = eg_types::AppSettings::default();
         let auth_session = None;
 
         let local_audio_cache = std::collections::HashMap::new();
@@ -657,13 +655,12 @@ impl State {
             editor: EditorSubsystem {
                 ui: EditorState::new(),
                 config: EditorConfigState {
-                    selected_block_id: app_settings.editor_selected_block_id.clone(),
-                    recent_block_ids: vec![app_settings.editor_selected_block_id.clone()],
                     snap_to_grid: app_settings.editor_snap_to_grid,
                     snap_step: app_settings.editor_snap_step.max(0.05),
                     snap_rotation: app_settings.editor_rotation_snap,
                     snap_rotation_step_degrees: app_settings.editor_rotation_snap_step.max(1.0),
                     selected_block_rotation_degrees: [0.0, 0.0, 0.0],
+                    ..EditorConfigState::default()
                 },
                 objects: Vec::new(),
                 spawn: SpawnMetadata::default(),
@@ -1408,8 +1405,6 @@ impl State {
                 }
             }
         };
-        app_settings.editor_selected_block_id =
-            eg_types::normalize_block_id(&app_settings.editor_selected_block_id);
         let app_settings_migrated = app_settings.migrate_defaults();
         if app_settings_migrated && !cfg!(test) {
             if let Err(error) = eg_platform::io::save_app_settings_to_storage(&app_settings).await {
@@ -1588,13 +1583,12 @@ impl State {
             editor: EditorSubsystem {
                 ui: EditorState::new(),
                 config: EditorConfigState {
-                    selected_block_id: app_settings.editor_selected_block_id.clone(),
-                    recent_block_ids: vec![app_settings.editor_selected_block_id.clone()],
                     snap_to_grid: app_settings.editor_snap_to_grid,
                     snap_step: app_settings.editor_snap_step.max(0.05),
                     snap_rotation: app_settings.editor_rotation_snap,
                     snap_rotation_step_degrees: app_settings.editor_rotation_snap_step.max(1.0),
                     selected_block_rotation_degrees: [0.0, 0.0, 0.0],
+                    ..EditorConfigState::default()
                 },
                 objects: Vec::new(),
                 spawn: SpawnMetadata::default(),

@@ -14,7 +14,7 @@ mod selection;
 pub(crate) use picking::EditorPickSpatialIndex;
 
 use eg_mesh::{GizmoAxis, GizmoDragKind};
-use eg_types::{EditorMode, EditorTapDivisionPick, LevelObject, SpawnMetadata};
+use eg_types::{BlockId, EditorMode, EditorTapDivisionPick, LevelObject, SpawnMetadata};
 
 #[derive(Clone)]
 pub struct EditorGizmoDrag {
@@ -49,9 +49,9 @@ pub struct EditorHistorySnapshot {
     pub selected_block_index: Option<usize>,
     pub selected_block_indices: Vec<usize>,
     pub cursor: [f32; 3],
-    pub selected_block_id: String,
+    pub selected_block_id: BlockId,
     pub selected_block_rotation_degrees: [f32; 3],
-    pub recent_block_ids: Vec<String>,
+    pub recent_block_ids: Vec<BlockId>,
     pub spawn: SpawnMetadata,
     pub timeline_time_seconds: f32,
     pub timeline_duration_seconds: f32,

@@ -144,11 +144,13 @@ pub struct EditorSubsystem {
 impl EditorSubsystem {
     /// Construct a standalone `EditorSubsystem` for domain tests — no GPU required.
     pub fn new_test() -> Self {
+        use eg_types::BlockId;
+
         Self {
             ui: EditorState::new(),
             config: EditorConfigState {
-                selected_block_id: eg_types::DEFAULT_BLOCK_ID.to_string(),
-                recent_block_ids: vec![eg_types::DEFAULT_BLOCK_ID.to_string()],
+                selected_block_id: BlockId::default(),
+                recent_block_ids: vec![BlockId::default()],
                 snap_to_grid: true,
                 snap_step: 1.0,
                 snap_rotation: true,

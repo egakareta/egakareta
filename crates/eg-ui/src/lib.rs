@@ -30,7 +30,7 @@ use eg_state::commands::AppCommand;
 use eg_state::state::editor_command::EditorCommand;
 use eg_state::state::EditorUiViewModel;
 use eg_state::state::State;
-use eg_types::{essential_keybind_actions, format_key_chord, EditorMode, SettingsSection};
+use eg_types::{essential_keybind_actions, format_key_chord, BlockId, EditorMode, SettingsSection};
 use eg_types::{BlockCategory, BlockDefinition};
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
 use glam::{Mat3, Vec3};
@@ -1224,7 +1224,7 @@ pub fn show_editor_ui(
                                         block_icon_texture_ids.get(block.id.as_str()).copied(),
                                     ) {
                                         commands.push(AppCommand::Editor(
-                                            EditorCommand::SetBlockId(block.id.clone()),
+                                            EditorCommand::SetBlockId(BlockId::new(&block.id)),
                                         ));
                                         commands.push(AppCommand::Editor(EditorCommand::SetMode(
                                             EditorMode::Place,
@@ -2275,8 +2275,12 @@ mod tests {
 
 #[cfg(test)]
 mod test_utils {
+    use std::sync::LazyLock;
+
     use eg_state::state::EditorUiViewModel;
-    use eg_types::{AppSettings, Direction, EditorMode, MusicMetadata, SettingsSection};
+    use eg_types::{AppSettings, BlockId, Direction, EditorMode, MusicMetadata, SettingsSection};
+
+    static DEFAULT_BLOCK_ID: LazyLock<BlockId> = LazyLock::new(BlockId::default);
 
     pub fn editor_view_model<'a>(
         app_settings: &'a AppSettings,
@@ -2320,7 +2324,7 @@ mod test_utils {
             snap_step: 1.0,
             snap_rotation: true,
             snap_rotation_step_degrees: 15.0,
-            selected_block_id: "core/stone",
+            selected_block_id: &DEFAULT_BLOCK_ID,
             place_preview_position: [0.0, 0.0, 0.0],
             place_preview_size: [1.0, 1.0, 1.0],
             recent_block_ids: &[],

@@ -9,7 +9,6 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::block_id::DEFAULT_BLOCK_ID;
 use crate::level::PlayerLevelProgress;
 
 macro_rules! serde_default {
@@ -44,7 +43,6 @@ macro_rules! serde_default_float {
 
 pub const APP_SETTINGS_VERSION: u32 = 3;
 serde_default!(default_app_settings_version: u32 = APP_SETTINGS_VERSION);
-serde_default!(default_editor_selected_block_id: String = DEFAULT_BLOCK_ID.to_string());
 serde_default!(default_editor_snap_to_grid_setting: bool = true);
 serde_default_float!(default_editor_snap_step_setting: f32 = 1.0);
 serde_default!(default_editor_rotation_snap_setting: bool = true);
@@ -133,11 +131,6 @@ pub struct AppSettings {
     )]
     pub version: u32,
     #[serde(
-        default = "default_editor_selected_block_id",
-        skip_serializing_if = "is_default_editor_selected_block_id"
-    )]
-    pub editor_selected_block_id: String,
-    #[serde(
         default = "default_editor_snap_to_grid_setting",
         skip_serializing_if = "is_default_editor_snap_to_grid_setting"
     )]
@@ -188,7 +181,6 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             version: APP_SETTINGS_VERSION,
-            editor_selected_block_id: default_editor_selected_block_id(),
             editor_snap_to_grid: default_editor_snap_to_grid_setting(),
             editor_snap_step: default_editor_snap_step_setting(),
             editor_rotation_snap: default_editor_rotation_snap_setting(),
