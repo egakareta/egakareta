@@ -27,7 +27,6 @@ pub fn create_block_at_cursor(
             position: cursor,
             rotation: rotation_degrees,
             size: default_size,
-            simulate_hitboxes: false,
         },
     });
 

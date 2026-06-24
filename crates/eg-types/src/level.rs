@@ -759,11 +759,6 @@ pub enum TriggerAction {
         position: [f32; 3],
         rotation: [f32; 3],
         size: [f32; 3],
-        #[serde(
-            default = "default_transform_simulate_hitboxes",
-            skip_serializing_if = "is_default_transform_simulate_hitboxes"
-        )]
-        simulate_hitboxes: bool,
     },
     CameraPose {
         #[serde(
@@ -858,152 +853,6 @@ pub fn apply_timed_triggers_to_objects(
     let mut objects = base_objects.to_vec();
     apply_timed_triggers_to_objects_in_place(&mut objects, triggers, time_seconds);
     objects
-}
-
-/// Returns `true` when the trigger is an object-transform trigger that moves
-/// gameplay hitboxes during play (i.e. a `TransformObjects` trigger with
-/// `simulate_hitboxes` enabled that targets objects).
-pub fn trigger_simulates_hitboxes(trigger: &TimedTrigger) -> bool {
-    !matches!(trigger.target, TriggerTarget::Camera)
-        && matches!(
-            trigger.action,
-            TriggerAction::TransformObjects {
-                simulate_hitboxes: true,
-                ..
-            }
-        )
-}
-
-/// Returns `true` when any of the provided triggers moves gameplay hitboxes
-/// during play.
-pub fn has_simulate_hitboxes_triggers(triggers: &[TimedTrigger]) -> bool {
-    triggers.iter().any(trigger_simulates_hitboxes)
-}
-
-/// Returns `true` when at least one simulate-hitboxes trigger is actively
-/// interpolating its targets at `time_seconds` (progress strictly between 0
-/// and 1). While this is true the transformed hitbox pose changes every step,
-/// so callers cannot reuse a previously computed pose.
-pub fn any_simulate_hitboxes_trigger_interpolating(
-    triggers: &[TimedTrigger],
-    time_seconds: f32,
-) -> bool {
-    triggers
-        .iter()
-        .filter(|trigger| trigger_simulates_hitboxes(trigger))
-        .any(
-            |trigger| match timed_trigger_progress(trigger, time_seconds) {
-                Some(progress) => progress > 0.0 && progress < 1.0,
-                None => false,
-            },
-        )
-}
-
-/// Returns a compact signature describing the discrete pose state of every
-/// simulate-hitboxes trigger at `time_seconds` (before its window / fully
-/// applied). Two equal signatures mean the transformed hitbox pose is
-/// identical, as long as no trigger is currently interpolating (see
-/// [`any_simulate_hitboxes_trigger_interpolating`]). Used to skip redundant
-/// hitbox rebuilds during the stable stretches between trigger windows.
-pub fn simulate_hitboxes_trigger_pose_signature(
-    triggers: &[TimedTrigger],
-    time_seconds: f32,
-) -> u64 {
-    let mut signature: u64 = 0;
-    let mut shift: u32 = 0;
-    for trigger in triggers
-        .iter()
-        .filter(|trigger| trigger_simulates_hitboxes(trigger))
-    {
-        let state: u64 = match timed_trigger_progress(trigger, time_seconds) {
-            None => 0,
-            Some(progress) if progress >= 1.0 => 2,
-            Some(progress) if progress <= 0.0 => 0,
-            Some(_) => 1,
-        };
-        signature |= state << shift;
-        shift = shift.saturating_add(2);
-    }
-    signature
-}
-
-pub fn apply_simulate_hitboxes_triggers_to_objects(
-    base_objects: &[LevelObject],
-    triggers: &[TimedTrigger],
-    time_seconds: f32,
-) -> Vec<LevelObject> {
-    let mut objects = base_objects.to_vec();
-    apply_simulate_hitboxes_triggers_to_objects_in_place(&mut objects, triggers, time_seconds);
-    objects
-}
-
-pub fn apply_simulate_hitboxes_triggers_to_objects_into(
-    base_objects: &[LevelObject],
-    triggers: &[TimedTrigger],
-    time_seconds: f32,
-    objects: &mut Vec<LevelObject>,
-) {
-    if objects.len() == base_objects.len() {
-        objects.clone_from_slice(base_objects);
-    } else {
-        objects.clear();
-        objects.extend_from_slice(base_objects);
-    }
-    apply_simulate_hitboxes_triggers_to_objects_in_place(objects, triggers, time_seconds);
-}
-
-fn apply_simulate_hitboxes_triggers_to_objects_in_place(
-    objects: &mut [LevelObject],
-    triggers: &[TimedTrigger],
-    time_seconds: f32,
-) {
-    if objects.is_empty() || triggers.is_empty() {
-        return;
-    }
-
-    let simulating: Vec<&TimedTrigger> = triggers
-        .iter()
-        .filter(|trigger| trigger_simulates_hitboxes(trigger))
-        .collect();
-    if simulating.is_empty() {
-        return;
-    }
-
-    let object_index_by_id = objects
-        .iter()
-        .enumerate()
-        .filter(|(_, object)| !object.id.is_empty())
-        .map(|(index, object)| (object.id.clone(), index))
-        .collect::<HashMap<_, _>>();
-
-    for trigger in simulating {
-        if !trigger.time_seconds.is_finite() {
-            continue;
-        }
-
-        let Some(progress) = timed_trigger_progress(trigger, time_seconds) else {
-            continue;
-        };
-        let object_count = objects.len();
-
-        if let TriggerTarget::Objects { object_ids } = &trigger.target {
-            let mut seen: Vec<String> = Vec::new();
-            for object_id in object_ids.iter().cloned() {
-                let Some(object_index) = object_index_by_id.get(&object_id).copied() else {
-                    continue;
-                };
-                if object_index >= object_count || seen.contains(&object_id) {
-                    continue;
-                }
-                seen.push(object_id);
-                apply_trigger_action_to_object(
-                    &mut objects[object_index],
-                    &trigger.action,
-                    progress,
-                );
-            }
-        }
-    }
 }
 
 pub fn apply_timed_triggers_to_objects_into(
@@ -1307,12 +1156,10 @@ pub fn triggers_from_objects(objects: &[LevelObject]) -> Vec<TimedTrigger> {
                     position: _,
                     rotation: _,
                     size: _,
-                    simulate_hitboxes,
                 } => TriggerAction::TransformObjects {
                     position: object.position,
                     rotation: object.rotation,
                     size: object.size,
-                    simulate_hitboxes,
                 },
                 TriggerAction::CameraPose {
                     transition_interval_seconds,
@@ -1418,7 +1265,6 @@ mod tests {
                         position: [4.0, 0.0, 0.0],
                         rotation: [0.0, 0.0, 0.0],
                         size: [1.0, 1.0, 1.0],
-                        simulate_hitboxes: false,
                     },
                 }),
                 ..LevelObject::default()

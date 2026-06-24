@@ -1331,7 +1331,6 @@ mod tests {
                 position: [9.0, 0.0, 0.0],
                 rotation: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
-                simulate_hitboxes: false,
             },
         }
     }

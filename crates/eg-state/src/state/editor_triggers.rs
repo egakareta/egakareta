@@ -412,10 +412,6 @@ impl EditorSubsystem {
         })
     }
 
-    pub fn has_simulate_hitboxes_triggers(&self) -> bool {
-        eg_types::has_simulate_hitboxes_triggers(&self.triggers())
-    }
-
     pub fn set_triggers(&mut self, mut triggers: Vec<TimedTrigger>) {
         // Sanitize
         for trigger in &mut triggers {
@@ -532,7 +528,6 @@ mod tests {
                 position: [1.0, 2.0, 3.0],
                 rotation: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
-                simulate_hitboxes: false,
             },
         }
     }
@@ -600,7 +595,6 @@ mod tests {
                 position: [f32::NAN, 2.0, f32::INFINITY],
                 rotation: [f32::NEG_INFINITY, 90.0, f32::NAN],
                 size: [f32::NAN, -9.0, 2.0],
-                simulate_hitboxes: false,
             },
         });
         assert_eq!(index, 0);
@@ -786,7 +780,6 @@ mod tests {
 
         state.editor.set_triggers(vec![camera_pose_trigger(0.0)]);
         assert!(!state.editor.has_object_transform_triggers());
-        assert!(!state.editor.has_simulate_hitboxes_triggers());
 
         state.editor.add_trigger(TimedTrigger {
             time_seconds: 1.0,
@@ -799,33 +792,9 @@ mod tests {
                 position: [0.0, 0.0, 0.0],
                 rotation: [10.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
-                simulate_hitboxes: false,
             },
         });
         assert!(state.editor.has_object_transform_triggers());
-        // A transform trigger without simulate_hitboxes does not move hitboxes.
-        assert!(!state.editor.has_simulate_hitboxes_triggers());
-
-        // Replacing it with a trigger that opts in moves hitboxes during play.
-        state.editor.set_triggers(vec![
-            camera_pose_trigger(0.0),
-            TimedTrigger {
-                time_seconds: 1.0,
-                duration_seconds: 0.0,
-                easing: EasingDirection::Linear,
-                target: TriggerTarget::Objects {
-                    object_ids: vec!["object_1".to_string()],
-                },
-                action: TriggerAction::TransformObjects {
-                    position: [0.0, 0.0, 0.0],
-                    rotation: [10.0, 0.0, 0.0],
-                    size: [1.0, 1.0, 1.0],
-                    simulate_hitboxes: true,
-                },
-            },
-        ]);
-        assert!(state.editor.has_object_transform_triggers());
-        assert!(state.editor.has_simulate_hitboxes_triggers());
     }
 
     #[tokio::test]

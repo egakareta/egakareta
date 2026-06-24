@@ -103,7 +103,6 @@ mod tests {
                     position: [2.0, 0.0, 0.0],
                     rotation: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
-                    simulate_hitboxes: false,
                 },
             }),
             ..LevelObject::new("core/grass")
@@ -466,7 +465,6 @@ mod tests {
                     position: [0.0, 0.0, 0.0],
                     rotation: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
-                    simulate_hitboxes: false,
                 },
             }),
             ..LevelObject::default()
@@ -507,7 +505,6 @@ mod tests {
                 position: [10.0, 0.0, 0.0],
                 rotation: [0.0, 90.0, 0.0],
                 size: [2.0, 0.0, 3.0],
-                simulate_hitboxes: false,
             },
         }];
 
@@ -556,7 +553,6 @@ mod tests {
                     position: [9.0, 9.0, 9.0],
                     rotation: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
-                    simulate_hitboxes: false,
                 },
             },
             TimedTrigger {
@@ -568,7 +564,6 @@ mod tests {
                     position: [5.0, 5.0, 5.0],
                     rotation: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
-                    simulate_hitboxes: false,
                 },
             },
         ];
@@ -596,7 +591,6 @@ mod tests {
                 position: [99.0, 0.0, 0.0],
                 rotation: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
-                simulate_hitboxes: false,
             },
         }];
 

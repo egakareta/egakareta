@@ -6,12 +6,7 @@
 
 */
 use super::state::{ConsumedObjectEvent, GameState};
-use eg_types::{
-    any_simulate_hitboxes_trigger_interpolating, apply_simulate_hitboxes_triggers_to_objects_into,
-    apply_timed_triggers_to_objects, has_simulate_hitboxes_triggers,
-    simulate_hitboxes_trigger_pose_signature, TimedTrigger,
-};
-use eg_types::{Direction, LevelObject};
+use eg_types::{apply_timed_triggers_to_objects, TimedTrigger,Direction, LevelObject};
 
 pub struct TimelineSimulationState {
     pub position: [f32; 3],
@@ -26,14 +21,8 @@ pub struct TimelineSimulationRuntime {
     game: GameState,
     tap_times: Vec<f32>,
     tap_index: usize,
-    triggers: Vec<TimedTrigger>,
     trigger_base_objects: Option<Vec<LevelObject>>,
-    trigger_transformed_objects: Vec<LevelObject>,
     has_simulate_hitboxes_triggers: bool,
-    /// Signature of the last hitbox pose applied to `game.objects`, used to skip
-    /// redundant object replacements + spatial-grid rebuilds while the
-    /// transformed pose is stable. `None` means "pose unknown / force rebuild".
-    last_hitbox_pose_signature: Option<u64>,
     elapsed_seconds: f32,
     simulation_dt: f32,
 }
@@ -120,16 +109,12 @@ impl TimelineSimulationRuntime {
             .collect();
         sorted_triggers.sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
 
-        let has_simulate_hitboxes_triggers = has_simulate_hitboxes_triggers(&sorted_triggers);
         let mut runtime = Self {
             game,
             tap_times: sorted_taps,
             tap_index: 0,
-            triggers: sorted_triggers,
-            trigger_base_objects: has_simulate_hitboxes_triggers.then(|| objects.to_vec()),
-            trigger_transformed_objects: Vec::new(),
-            has_simulate_hitboxes_triggers,
-            last_hitbox_pose_signature: None,
+            trigger_base_objects: None,
+            has_simulate_hitboxes_triggers: false,
             elapsed_seconds: 0.0,
             simulation_dt: simulation_dt.clamp(1.0 / 240.0, 1.0 / 30.0),
         };
@@ -144,58 +129,6 @@ impl TimelineSimulationRuntime {
             self.game.turn_right();
             self.tap_index += 1;
         }
-    }
-
-    fn apply_trigger_hitboxes(&mut self, up_to_time: f32) {
-        puffin::profile_scope!("TimelineTriggerHitboxes");
-        if !self.has_simulate_hitboxes_triggers || self.triggers.is_empty() {
-            return;
-        }
-
-        let Some(base_objects) = self.trigger_base_objects.as_ref() else {
-            return;
-        };
-
-        let time_seconds = up_to_time.max(0.0);
-
-        // The transformed hitbox pose only changes while a simulate-hitboxes
-        // trigger is interpolating, or when a trigger enters/leaves its window.
-        // During the long stable stretches between trigger windows the pose is
-        // identical to the previous step, and `game.objects` is already kept in
-        // sync with the (consumed-pruned) base set. Skipping the object
-        // replacement + spatial-grid rebuild in that case avoids thousands of
-        // redundant full grid rebuilds when simulating a level with sparse
-        // transform triggers (e.g. toggling "Move Hitboxes" in the editor).
-        if any_simulate_hitboxes_trigger_interpolating(&self.triggers, time_seconds) {
-            apply_simulate_hitboxes_triggers_to_objects_into(
-                base_objects,
-                &self.triggers,
-                time_seconds,
-                &mut self.trigger_transformed_objects,
-            );
-            let objects = std::mem::take(&mut self.trigger_transformed_objects);
-            self.trigger_transformed_objects =
-                self.game.replace_objects_for_transform_hitboxes(objects);
-            // Force a rebuild on the first stable step after interpolation ends.
-            self.last_hitbox_pose_signature = None;
-            return;
-        }
-
-        let signature = simulate_hitboxes_trigger_pose_signature(&self.triggers, time_seconds);
-        if self.last_hitbox_pose_signature == Some(signature) {
-            return;
-        }
-
-        apply_simulate_hitboxes_triggers_to_objects_into(
-            base_objects,
-            &self.triggers,
-            time_seconds,
-            &mut self.trigger_transformed_objects,
-        );
-        let objects = std::mem::take(&mut self.trigger_transformed_objects);
-        self.trigger_transformed_objects =
-            self.game.replace_objects_for_transform_hitboxes(objects);
-        self.last_hitbox_pose_signature = Some(signature);
     }
 
     fn sync_trigger_base_with_consumed(&mut self) {
@@ -246,7 +179,6 @@ impl TimelineSimulationRuntime {
                 continue;
             }
 
-            self.apply_trigger_hitboxes(step_target);
             self.game.update(step_dt);
             self.sync_trigger_base_with_consumed();
             self.elapsed_seconds = step_target;

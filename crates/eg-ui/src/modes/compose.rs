@@ -277,13 +277,14 @@ fn show_trigger_action_controls(ui: &mut egui::Ui, trigger: &mut TimedTrigger) -
             pitch,
         ),
         TriggerAction::TransformObjects {
-            simulate_hitboxes, ..
+         ..
         } => {
             let target_count = match &trigger.target {
                 TriggerTarget::Objects { object_ids } => object_ids.len(),
                 TriggerTarget::Camera => 0,
             };
-            show_transform_trigger_summary(ui, simulate_hitboxes, target_count)
+            show_transform_trigger_summary(ui, target_count);
+            false
         }
     }
 }
@@ -374,18 +375,12 @@ fn show_camera_follow_trigger_controls(
 
 fn show_transform_trigger_summary(
     ui: &mut egui::Ui,
-    simulate_hitboxes: &mut bool,
     target_count: usize,
-) -> bool {
+) -> () {
     ui.horizontal(|ui| {
         ui.label("Targets:");
         ui.label(target_count.to_string());
     });
-
-    let tooltip = "When enabled, this trigger's transform also moves the\ngameplay hitboxes during play (visuals always move).";
-    ui.checkbox(simulate_hitboxes, "Move Hitboxes")
-        .on_hover_text(tooltip)
-        .changed()
 }
 
 fn trigger_easing_label(easing: EasingDirection) -> &'static str {
@@ -730,7 +725,6 @@ mod tests {
                     position: [1.0, 0.0, 1.0],
                     rotation: [0.0, 90.0, 0.0],
                     size: [1.0, 1.0, 1.0],
-                    simulate_hitboxes: false,
                 },
             }),
             ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
@@ -780,7 +774,6 @@ mod tests {
                     position: [1.0, 0.0, 1.0],
                     rotation: [0.0, 90.0, 0.0],
                     size: [1.0, 1.0, 1.0],
-                    simulate_hitboxes: false,
                 },
             }),
             ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)

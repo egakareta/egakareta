@@ -30,7 +30,7 @@ use eg_mesh::{
 };
 use eg_render::EditorOutlineInstance;
 use eg_types::{
-    apply_simulate_hitboxes_triggers_to_objects, AppPhase, BlockRenderProfile, Direction,
+    AppPhase, BlockRenderProfile, Direction,
     EditorMode, EditorPlaceMode, LevelObject, TimedTrigger, TimingPoint, TriggerAction,
     TriggerTarget, TRANSFORM_TRIGGER_BLOCK_ID,
 };
@@ -451,33 +451,10 @@ impl State {
                 .map(|runtime| runtime.objects().to_vec());
         }
 
-        // Playing with transform triggers: the visual always reflects every
-        // transform trigger. When at least one trigger moves gameplay hitboxes,
-        // render against the runtime's consumed-pruned base so consumed blocks
-        // disappear while still showing the full set of transforms; otherwise
-        // render against the editor objects.
-        let time_seconds = self.editor.timeline.clock.time_seconds;
-        if self.editor.has_simulate_hitboxes_triggers() {
-            if let Some(base_objects) = self
-                .editor
-                .timeline
-                .playback
-                .runtime
-                .as_ref()
-                .and_then(|runtime| runtime.trigger_base_objects())
-            {
-                return Some(trigger_transformed_objects_at_time(
-                    base_objects,
-                    &self.editor.triggers(),
-                    time_seconds,
-                ));
-            }
-        }
-
         Some(trigger_transformed_objects_at_time(
             &self.editor.objects,
             &self.editor.triggers(),
-            time_seconds,
+            self.editor.timeline.clock.time_seconds,
         ))
     }
 
@@ -1417,15 +1394,7 @@ impl State {
 
         // Hitbox visualization follows the gameplay hitboxes, so when a trigger
         // opts into moving hitboxes the red outline moves with it.
-        let object_source = if self.editor.has_simulate_hitboxes_triggers() {
-            apply_simulate_hitboxes_triggers_to_objects(
-                &self.editor.objects,
-                &self.editor.triggers(),
-                self.editor.timeline.clock.time_seconds,
-            )
-        } else {
-            self.editor.objects.clone()
-        };
+        let object_source =self.editor.objects.clone();
 
         let player_hitbox = editor_preview_player_hitbox(self.editor.timeline.preview.position);
         let vertices =
@@ -1594,7 +1563,6 @@ mod tests {
                 position: [2.0, 0.0, 0.0],
                 rotation: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
-                simulate_hitboxes: false,
             },
         }
     }
@@ -1893,7 +1861,6 @@ mod tests {
                     position: [8.0, 0.0, 0.0],
                     rotation: [0.0, 90.0, 0.0],
                     size: [2.0, 1.0, 1.0],
-                    simulate_hitboxes: false,
                 },
             },
             TimedTrigger {
@@ -1907,7 +1874,6 @@ mod tests {
                     position: [10.0, 0.0, 0.0],
                     rotation: [0.0, 180.0, 0.0],
                     size: [3.0, 1.0, 1.0],
-                    simulate_hitboxes: false,
                 },
             },
         ];
@@ -1934,7 +1900,6 @@ mod tests {
                 position: [8.0, 0.0, 0.0],
                 rotation: [0.0, 90.0, 0.0],
                 size: [2.0, 1.0, 1.0],
-                simulate_hitboxes: false,
             },
         }];
 

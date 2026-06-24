@@ -345,7 +345,6 @@ async fn focused_init_path_toggle_editor_uses_selected_menu_level() {
 
 fn configure_trigger_policy_parity_scene(
     state: &mut State,
-    simulate_hitboxes: bool,
     timeline_time_seconds: f32,
 ) {
     state.editor.objects = vec![LevelObject {
@@ -367,17 +366,16 @@ fn configure_trigger_policy_parity_scene(
             position: [0.0, 0.0, 1.0],
             rotation: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
-            simulate_hitboxes,
         },
     }]);
     state.editor.timeline.clock.time_seconds = timeline_time_seconds;
 }
 
 #[tokio::test]
-async fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_disabled() {
+async fn editor_playback_and_playtest_match_simulation() {
     let mut state = new_editor_state().await;
     let timeline_time_seconds = 0.35;
-    configure_trigger_policy_parity_scene(&mut state, false, timeline_time_seconds);
+    configure_trigger_policy_parity_scene(&mut state, timeline_time_seconds);
 
     let expected = simulate_timeline_state_with_triggers(
         state.editor.spawn.position,
@@ -432,70 +430,6 @@ async fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_dis
         epsilon = 1e-4
     );
     approx::assert_abs_diff_eq!(state.gameplay.state.speed, expected.speed, epsilon = 1e-4);
-    assert!(!state.editor_has_simulate_hitboxes_triggers());
-}
-
-#[tokio::test]
-async fn editor_playback_and_playtest_match_simulation_when_trigger_hitboxes_enabled() {
-    let mut state = new_editor_state().await;
-    let timeline_time_seconds = 0.35;
-    configure_trigger_policy_parity_scene(&mut state, true, timeline_time_seconds);
-
-    let expected = simulate_timeline_state_with_triggers(
-        state.editor.spawn.position,
-        state.editor.spawn.direction,
-        &state.editor.objects,
-        &state.editor.timeline.taps.tap_times,
-        &state.editor.triggers(),
-        timeline_time_seconds,
-    );
-
-    state.toggle_editor_timeline_playback();
-    let playback_snapshot = state
-        .editor
-        .timeline
-        .playback
-        .runtime
-        .as_ref()
-        .expect("playback runtime should be initialized")
-        .snapshot();
-
-    approx::assert_abs_diff_eq!(
-        playback_snapshot.position[0],
-        expected.position[0],
-        epsilon = 1e-4
-    );
-    approx::assert_abs_diff_eq!(
-        playback_snapshot.position[1],
-        expected.position[1],
-        epsilon = 1e-4
-    );
-    approx::assert_abs_diff_eq!(
-        playback_snapshot.position[2],
-        expected.position[2],
-        epsilon = 1e-4
-    );
-    approx::assert_abs_diff_eq!(playback_snapshot.speed, expected.speed, epsilon = 1e-4);
-
-    state.editor_playtest();
-    approx::assert_abs_diff_eq!(
-        state.gameplay.state.position[0],
-        expected.position[0],
-        epsilon = 1e-4
-    );
-    approx::assert_abs_diff_eq!(
-        state.gameplay.state.position[1],
-        expected.position[1],
-        epsilon = 1e-4
-    );
-    approx::assert_abs_diff_eq!(
-        state.gameplay.state.position[2],
-        expected.position[2],
-        epsilon = 1e-4
-    );
-    approx::assert_abs_diff_eq!(state.gameplay.state.speed, expected.speed, epsilon = 1e-4);
-    assert!(state.editor_has_simulate_hitboxes_triggers());
-    assert!(state.gameplay.state.speed > eg_game::BASE_PLAYER_SPEED);
 }
 
 #[tokio::test]
@@ -1151,7 +1085,6 @@ async fn timing_origin_playback_seek_resync_keeps_runtime_disabled() {
             position: [3.0, 0.0, 0.0],
             rotation: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
-            simulate_hitboxes: false,
         },
     }]);
 
@@ -1375,7 +1308,6 @@ async fn timing_mode_timeline_scrub_skips_simulation_and_mesh_dirty() {
             position: [10.0, 0.0, 0.0],
             rotation: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
-            simulate_hitboxes: false,
         },
     }]);
 
@@ -1413,7 +1345,6 @@ async fn compose_mode_timeline_scrub_runs_simulation_and_mesh_dirty() {
             position: [10.0, 0.0, 0.0],
             rotation: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
-            simulate_hitboxes: false,
         },
     }]);
 

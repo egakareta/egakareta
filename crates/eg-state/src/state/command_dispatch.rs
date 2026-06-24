@@ -2211,7 +2211,6 @@ mod tests {
                     position: [2.0, 0.0, 0.0],
                     rotation: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
-                    simulate_hitboxes: false,
                 },
             }),
             ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
@@ -2863,7 +2862,6 @@ mod tests {
         assert_eq!(state.render.gpu.config.width, 1024);
         assert_eq!(state.render.gpu.config.height, 576);
 
-        // simulate_hitboxes is now a per-transform-trigger property.
         state.editor.set_triggers(vec![TimedTrigger {
             time_seconds: 0.0,
             duration_seconds: 1.0,
@@ -2875,10 +2873,8 @@ mod tests {
                 position: [1.0, 0.0, 0.0],
                 rotation: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
-                simulate_hitboxes: true,
             },
         }]);
-        assert!(state.editor_has_simulate_hitboxes_triggers());
 
         state.dispatch(AppCommand::Editor(EditorCommand::ToggleHitboxVisualization));
         assert!(state.editor_hitbox_visualization_enabled());

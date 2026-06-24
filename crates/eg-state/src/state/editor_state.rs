@@ -1426,7 +1426,6 @@ impl State {
                     position: object.position,
                     rotation: object.rotation,
                     size: object.size,
-                    simulate_hitboxes: false,
                 },
             };
             created_trigger_indices.push(self.editor.add_trigger(trigger));
@@ -1456,10 +1455,6 @@ impl State {
 
     pub fn editor_triggers(&self) -> Vec<TimedTrigger> {
         self.editor.triggers()
-    }
-
-    pub fn editor_has_simulate_hitboxes_triggers(&self) -> bool {
-        self.editor.has_simulate_hitboxes_triggers()
     }
 
     #[cfg(test)]
@@ -1650,7 +1645,6 @@ mod tests {
                 position,
                 rotation: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
-                simulate_hitboxes: false,
             },
         }
     }
@@ -2246,10 +2240,6 @@ mod tests {
         state.editor_clear_taps();
         assert!(state.editor_tap_times().is_empty());
 
-        // The hitbox-simulation flag is now per transform trigger: a transform
-        // trigger that does not opt in leaves hitboxes static, while one that
-        // opts in moves hitboxes during play.
-        assert!(!state.editor_has_simulate_hitboxes_triggers());
         state.editor.set_triggers(vec![TimedTrigger {
             time_seconds: 0.0,
             duration_seconds: 1.0,
@@ -2261,10 +2251,8 @@ mod tests {
                 position: [1.0, 0.0, 0.0],
                 rotation: [0.0, 0.0, 0.0],
                 size: [1.0, 1.0, 1.0],
-                simulate_hitboxes: true,
             },
         }]);
-        assert!(state.editor_has_simulate_hitboxes_triggers());
 
         state.set_editor_playback_speed(4.0);
         assert_eq!(state.editor_playback_speed(), 2.0);
