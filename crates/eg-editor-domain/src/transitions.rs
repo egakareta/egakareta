@@ -36,6 +36,7 @@ pub struct EditorPlaytestTransitionParams<'a> {
     pub timeline_seconds: (f32, f32),
 }
 
+// TODO: FIX THIS STUPID TRANSITION SHIT
 pub fn build_editor_playtest_transition(
     params: EditorPlaytestTransitionParams<'_>,
 ) -> EditorPlaytestTransition {
@@ -71,16 +72,5 @@ pub fn build_editor_playtest_transition(
         playing_level_name: level_name.map(|name| name.to_string()),
         camera_rotation: DEFAULT_CAMERA_ROTATION,
         camera_pitch: DEFAULT_CAMERA_PITCH,
-    }
-}
-
-pub fn playtest_return_objects(
-    playtesting_editor: bool,
-    editor_objects: &[LevelObject],
-) -> Option<Vec<LevelObject>> {
-    if playtesting_editor {
-        Some(editor_objects.to_vec())
-    } else {
-        None
     }
 }

@@ -13,7 +13,7 @@ use crate::state::editor_command::EditorCommand;
 use eg_editor_domain::{
     add_tap_with_indicator, build_editor_playtest_transition, derive_tap_indicator_positions,
     derive_timeline_time_for_world_target_near_time, derive_timing_division_tap_previews,
-    playtest_return_objects, remove_topmost_block_at_cursor, snap_cell_to_step,
+    remove_topmost_block_at_cursor, snap_cell_to_step,
     timeline_axis_aligned_segment_split_fraction, timeline_turn_corner_position,
     timing_division_time_in_direction, toggle_spawn_direction, topmost_block_index_at_cursor,
     EditorPlaytestTransitionParams, TapDivisionPreview, TapDivisionPreviewRange,
@@ -1083,16 +1083,15 @@ impl State {
         self.editor.timeline.playback.playing = false;
         self.editor.timeline.playback.runtime = None;
         self.stop_audio();
-        if let Some(objects) =
-            playtest_return_objects(self.session.playtesting_editor, &self.editor.objects)
-        {
+
+        if self.session.playtesting_editor {
             self.session.playtesting_editor = false;
             self.phase = AppPhase::Editor;
             self.editor.timeline.playback.playing = false;
             self.editor.timeline.playback.runtime = None;
             self.gameplay.state = GameState::new();
             self.gameplay.death_sfx_played = false;
-            self.gameplay.state.objects = objects;
+            self.gameplay.state.objects = self.editor.objects.clone();
             self.gameplay.state.rebuild_behavior_cache();
             self.rebuild_block_vertices();
             return;

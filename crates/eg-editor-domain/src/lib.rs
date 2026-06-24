@@ -349,18 +349,6 @@ mod tests {
     }
 
     #[test]
-    fn returns_objects_only_when_playtesting() {
-        let objects = vec![LevelObject {
-            position: [1.0, 0.0, 0.0],
-            block_id: "core/stone".to_string(),
-            ..LevelObject::default()
-        }];
-
-        assert!(playtest_return_objects(true, &objects).is_some());
-        assert!(playtest_return_objects(false, &objects).is_none());
-    }
-
-    #[test]
     fn playtest_transition_respects_speed_portals() {
         use eg_game::physics::BASE_PLAYER_SPEED;
 

@@ -9,6 +9,7 @@
 use is_default::IsDefault;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
+use smart_default::SmartDefault;
 use std::collections::{HashMap, HashSet};
 
 use crate::block_id::{normalize_block_id, DEFAULT_BLOCK_ID};
@@ -390,13 +391,17 @@ impl LevelMetadata {
     }
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Default)]
+/// How the spawn point is configured in the level.
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, SmartDefault)]
 pub struct SpawnMetadata {
+    /// The position of the spawn point in world coordinates.
+    #[default(default_spawn_position())]
     #[serde(
         default = "default_spawn_position",
         skip_serializing_if = "is_default_spawn_position"
     )]
     pub position: [f32; 3],
+    /// The direction the player is facing at the spawn point.
     #[serde(default, skip_serializing_if = "IsDefault::is_default")]
     pub direction: Direction,
 }
@@ -754,10 +759,6 @@ pub struct TimedTrigger {
     pub action: TriggerAction,
 }
 
-pub fn camera_trigger_offset(rotation: f32, pitch: f32) -> [f32; 3] {
-    camera_trigger_offset_with_distance(rotation, pitch, CAMERA_TRIGGER_VIEW_DISTANCE)
-}
-
 pub fn camera_trigger_offset_with_distance(rotation: f32, pitch: f32, distance: f32) -> [f32; 3] {
     let horizontal_distance = distance * pitch.cos();
     [
@@ -772,7 +773,7 @@ pub fn camera_trigger_eye_from_target(
     rotation: f32,
     pitch: f32,
 ) -> [f32; 3] {
-    let offset = camera_trigger_offset(rotation, pitch);
+    let offset = camera_trigger_offset_with_distance(rotation, pitch, CAMERA_TRIGGER_VIEW_DISTANCE);
     [
         target_position[0] + offset[0],
         target_position[1] + offset[1],
@@ -807,7 +808,7 @@ pub fn camera_trigger_target_from_eye(
     rotation: f32,
     pitch: f32,
 ) -> [f32; 3] {
-    let offset = camera_trigger_offset(rotation, pitch);
+    let offset = camera_trigger_offset_with_distance(rotation, pitch, CAMERA_TRIGGER_VIEW_DISTANCE);
     [
         eye_position[0] - offset[0],
         eye_position[1] - offset[1],
