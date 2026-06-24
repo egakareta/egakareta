@@ -156,7 +156,7 @@ fn show_size_controls(ui: &mut egui::Ui, selected: &mut LevelObject) -> bool {
 fn show_rotation_controls(ui: &mut egui::Ui, selected: &mut LevelObject) -> bool {
     ui.horizontal(|ui| {
         ui.label("Rotation:");
-        show_rotation_drag_values(ui, &mut selected.rotation_degrees)
+        show_rotation_drag_values(ui, &mut selected.rotation)
     })
     .inner
 }
@@ -718,7 +718,7 @@ mod tests {
         trigger_view.selected_block = Some(LevelObject {
             id: "trigger".to_string(),
             position: [1.0, 0.0, 1.0],
-            rotation_degrees: [0.0, 90.0, 0.0],
+            rotation: [0.0, 90.0, 0.0],
             trigger: Some(TimedTrigger {
                 time_seconds: 0.5,
                 duration_seconds: 1.0,
@@ -768,7 +768,7 @@ mod tests {
         let transform_trigger = LevelObject {
             id: "trigger".to_string(),
             position: [1.0, 0.0, 1.0],
-            rotation_degrees: [0.0, 90.0, 0.0],
+            rotation: [0.0, 90.0, 0.0],
             trigger: Some(TimedTrigger {
                 time_seconds: 0.5,
                 duration_seconds: 1.0,

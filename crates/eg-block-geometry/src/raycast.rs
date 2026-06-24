@@ -297,7 +297,7 @@ pub fn ray_intersect_rotated_block(
     obj: &eg_types::LevelObject,
 ) -> Option<(f32, Vec3)> {
     let center = obj.center();
-    let rotation = obj.rotation();
+    let rotation = obj.basis();
     let inv_rotation = rotation.transpose();
 
     let local_origin_world = center + inv_rotation * (ray_origin - center);
@@ -621,7 +621,7 @@ mod tests {
         let obj = LevelObject {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 45.0, 0.0],
+            rotation: [0.0, 45.0, 0.0],
             ..LevelObject::default()
         };
         // A 45° Y-rotation makes the block diamond-shaped in XZ. The ray down
@@ -639,7 +639,7 @@ mod tests {
         let obj = LevelObject {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 45.0, 0.0],
+            rotation: [0.0, 45.0, 0.0],
             ..LevelObject::default()
         };
         let result = ray_intersect_rotated_block(Vec3::new(5.0, 5.0, -5.0), Vec3::Z, &obj);

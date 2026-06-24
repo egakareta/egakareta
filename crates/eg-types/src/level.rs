@@ -94,7 +94,6 @@ serde_default_array!(default_block_rotation_degrees: [f32; 3] = [0.0, 0.0, 0.0])
 serde_default_array!(default_level_object_position: [f32; 3] = [0.0, 0.0, 0.0]);
 serde_default_array!(default_level_object_size: [f32; 3] = [1.0, 1.0, 1.0]);
 serde_default_array!(default_level_object_color_tint: [f32; 3] = [1.0, 1.0, 1.0]);
-serde_default!(default_level_object_id: String = String::new());
 serde_default_float!(default_level_stars: f32 = 0.0);
 serde_default!(default_level_tags: Vec<String> = Vec::<String>::new());
 serde_default!(default_time_signature_numerator: u32 = 4);
@@ -408,10 +407,7 @@ impl IsDefault for SpawnMetadata {
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct LevelObject {
     /// Unique identifier for this object, used for referencing in triggers. Must be unique within a level, but can be any string (e.g. doesn't have to be a number or follow any specific format).
-    #[serde(
-        default = "default_level_object_id",
-        skip_serializing_if = "String::is_empty"
-    )]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub id: String,
     /// Position of the center of the object in level coordinates.
     #[serde(
@@ -419,19 +415,20 @@ pub struct LevelObject {
         skip_serializing_if = "is_default_level_object_position"
     )]
     pub position: [f32; 3],
-    /// Absolute size of the object.
-    #[serde(
-        default = "default_level_object_size",
-        skip_serializing_if = "is_default_level_object_size"
-    )]
-    pub size: [f32; 3],
     /// Rotation of the object in degrees, applied as intrinsic XYZ = extrinsic ZYX, pivoted at the object center.
     /// X is pitch, Y is yaw, Z is roll.
     #[serde(
         default = "default_block_rotation_degrees",
         skip_serializing_if = "is_default_block_rotation_degrees"
     )]
-    pub rotation_degrees: [f32; 3],
+    pub rotation: [f32; 3],
+    /// Absolute size of the object.
+    #[serde(
+        default = "default_level_object_size",
+        skip_serializing_if = "is_default_level_object_size"
+    )]
+    pub size: [f32; 3],
+
     /// ID of the block to use for this object, which determines its appearance and behavior. Can be a custom block ID or a core block ID. For example, "core/stone" or "custom/my_block".
     #[serde(default, skip_serializing_if = "IsDefault::is_default")]
     pub block_id: BlockId,
@@ -460,12 +457,12 @@ impl LevelObject {
     }
 
     /// Rotation radians matrix for the object, based on its rotation_degrees.
-    pub fn rotation(&self) -> Mat3 {
+    pub fn basis(&self) -> Mat3 {
         Mat3::from_euler(
             EulerRot::XYZ,
-            self.rotation_degrees[0].to_radians(),
-            self.rotation_degrees[1].to_radians(),
-            self.rotation_degrees[2].to_radians(),
+            self.rotation[0].to_radians(),
+            self.rotation[1].to_radians(),
+            self.rotation[2].to_radians(),
         )
     }
 }
@@ -539,10 +536,10 @@ impl Default for LevelObject {
     /// This is guaranteed to be position (0,0,0), size (1,1,1), rotation (0,0,0).
     fn default() -> Self {
         Self {
-            id: default_level_object_id(),
+            id: String::new(),
             position: default_level_object_position(),
             size: default_level_object_size(),
-            rotation_degrees: default_block_rotation_degrees(),
+            rotation: default_block_rotation_degrees(),
             block_id: BlockId::default(),
             color_tint: default_level_object_color_tint(),
             trigger: None,
@@ -1286,11 +1283,7 @@ fn apply_trigger_action_to_object(object: &mut LevelObject, action: &TriggerActi
             for (current, target) in object.position.iter_mut().zip(position.iter()) {
                 *current += (*target - *current) * progress;
             }
-            for (current, target) in object
-                .rotation_degrees
-                .iter_mut()
-                .zip(rotation_degrees.iter())
-            {
+            for (current, target) in object.rotation.iter_mut().zip(rotation_degrees.iter()) {
                 *current += (*target - *current) * progress;
             }
             for (current, target) in object.size.iter_mut().zip(size.iter()) {
@@ -1316,7 +1309,7 @@ pub fn triggers_from_objects(objects: &[LevelObject]) -> Vec<TimedTrigger> {
                     simulate_hitboxes,
                 } => TriggerAction::TransformObjects {
                     position: object.position,
-                    rotation_degrees: object.rotation_degrees,
+                    rotation_degrees: object.rotation,
                     size: object.size,
                     simulate_hitboxes,
                 },
@@ -1327,9 +1320,8 @@ pub fn triggers_from_objects(objects: &[LevelObject]) -> Vec<TimedTrigger> {
                     rotation: _,
                     pitch: _,
                 } => {
-                    let (rotation, pitch) = camera_trigger_rotation_pitch_from_rotation_degrees(
-                        object.rotation_degrees,
-                    );
+                    let (rotation, pitch) =
+                        camera_trigger_rotation_pitch_from_rotation_degrees(object.rotation);
                     TriggerAction::CameraPose {
                         transition_interval_seconds,
                         use_full_segment_transition,

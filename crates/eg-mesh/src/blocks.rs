@@ -259,9 +259,9 @@ fn block_template_position(local: [f32; 3]) -> [f32; 3] {
 fn block_instance_from_object(object: &LevelObject, block: &BlockDefinition) -> BlockInstance {
     let rotation = glam::Mat3::from_euler(
         glam::EulerRot::XYZ,
-        object.rotation_degrees[0].to_radians(),
-        object.rotation_degrees[1].to_radians(),
-        object.rotation_degrees[2].to_radians(),
+        object.rotation[0].to_radians(),
+        object.rotation[1].to_radians(),
+        object.rotation[2].to_radians(),
     );
     let size = Vec3::from_array(object.size);
     let position = Vec3::from_array(object.position);
@@ -609,7 +609,7 @@ fn append_block_geometry_inner(
     }
 
     if !object_vertices.is_empty() {
-        rotate_vertices_around_euler(object_vertices, center, obj.rotation_degrees);
+        rotate_vertices_around_euler(object_vertices, center, obj.rotation);
         // Apply profile tags directly to the vertex buffer before appending.
         apply_block_profile_tags(object_vertices, block, &colors, center);
         all_geometry.append_vertices_from_slice(object_vertices);
@@ -723,7 +723,7 @@ fn build_camera_trigger_block_vertices(
     append_camera_trigger_visual_vertices(
         vertices,
         camera_trigger_eye_from_object(obj),
-        obj.rotation_degrees,
+        obj.rotation,
         &style,
     );
 }
@@ -793,7 +793,7 @@ fn build_transform_trigger_block_vertices(
         vertices,
         obj.position,
         obj.size,
-        obj.rotation_degrees,
+        obj.rotation,
         &style,
     );
 }

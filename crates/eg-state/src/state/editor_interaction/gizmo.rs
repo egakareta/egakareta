@@ -22,10 +22,10 @@ impl EditorSubsystem {
             .selected_indices_normalized()
             .first()
             .and_then(|&index| self.objects.get(index))
-            .map(|obj| obj.rotation_degrees)
+            .map(|obj| obj.rotation)
             .or_else(|| {
                 self.selected_transform_trigger_target()
-                    .map(|(_, target)| target.rotation_degrees)
+                    .map(|(_, target)| target.rotation)
             })
             .unwrap_or([0.0, 0.0, 0.0]);
 
@@ -375,7 +375,7 @@ impl EditorSubsystem {
                 } else {
                     for block in &drag.start_blocks {
                         if let Some(obj) = self.objects.get_mut(block.index) {
-                            obj.rotation_degrees = apply_rotation(*block);
+                            obj.rotation = apply_rotation(*block);
                         }
                     }
                 }
@@ -500,10 +500,10 @@ impl EditorSubsystem {
                 .selected_indices_normalized()
                 .first()
                 .and_then(|&index| self.objects.get(index))
-                .map(|obj| obj.rotation_degrees)
+                .map(|obj| obj.rotation)
                 .or_else(|| {
                     self.selected_transform_trigger_target()
-                        .map(|(_, target)| target.rotation_degrees)
+                        .map(|(_, target)| target.rotation)
                 })
                 .unwrap_or([0.0, 0.0, 0.0]);
             let rotation = glam::Quat::from_euler(
@@ -653,7 +653,7 @@ impl EditorSubsystem {
                 index: trigger_index,
                 position: target.position,
                 size: target.size,
-                rotation_degrees: target.rotation_degrees,
+                rotation_degrees: target.rotation,
             });
         } else {
             for index in indices {
@@ -662,7 +662,7 @@ impl EditorSubsystem {
                         index,
                         position: obj.position,
                         size: obj.size,
-                        rotation_degrees: obj.rotation_degrees,
+                        rotation_degrees: obj.rotation,
                     });
                 }
             }
@@ -816,16 +816,16 @@ mod tests {
             index,
             position: block.position,
             size: block.size,
-            rotation_degrees: block.rotation_degrees,
+            rotation_degrees: block.rotation,
         }
     }
 
     fn local_face_center(block: &LevelObject, axis: Vec3, face_sign: f32) -> Vec3 {
         let rotation = glam::Quat::from_euler(
             glam::EulerRot::XYZ,
-            block.rotation_degrees[0].to_radians(),
-            block.rotation_degrees[1].to_radians(),
-            block.rotation_degrees[2].to_radians(),
+            block.rotation[0].to_radians(),
+            block.rotation[1].to_radians(),
+            block.rotation[2].to_radians(),
         );
         let position = Vec3::from(block.position);
         let size = Vec3::from(block.size);
@@ -972,7 +972,7 @@ mod tests {
 
         state.editor.config.snap_to_grid = false;
         let mut block = LevelObject::default();
-        block.rotation_degrees = [0.0, 90.0, 0.0];
+        block.rotation = [0.0, 90.0, 0.0];
         state.editor.objects = vec![block];
 
         let viewport = Vec2::new(1280.0, 720.0);
@@ -1014,7 +1014,7 @@ mod tests {
         state.editor.config.snap_to_grid = true;
         state.editor.config.snap_step = 1.0;
         let mut block = LevelObject::default();
-        block.rotation_degrees = [0.0, 45.0, 0.0];
+        block.rotation = [0.0, 45.0, 0.0];
         state.editor.objects = vec![block];
 
         let viewport = Vec2::new(1280.0, 720.0);
@@ -1157,7 +1157,7 @@ mod tests {
         let mut block = LevelObject::default();
         block.position = [2.0, 1.0, 3.0];
         block.size = [2.0, 1.0, 1.0];
-        block.rotation_degrees = [0.0, 90.0, 0.0];
+        block.rotation = [0.0, 90.0, 0.0];
         let anchored_face_before = local_face_center(&block, Vec3::X, -1.0);
         state.editor.objects = vec![block];
 
@@ -1215,7 +1215,7 @@ mod tests {
         let mut block = LevelObject::default();
         block.position = [2.0, 1.0, 3.0];
         block.size = [2.0, 1.0, 1.0];
-        block.rotation_degrees = [0.0, 90.0, 0.0];
+        block.rotation = [0.0, 90.0, 0.0];
         let anchored_face_before = local_face_center(&block, Vec3::X, 1.0);
         state.editor.objects = vec![block];
 
@@ -1294,7 +1294,7 @@ mod tests {
         assert!(state
             .editor
             .drag_gizmo(target.x as f64, target.y as f64, viewport));
-        assert!(state.editor.objects[0].rotation_degrees[1].abs() > 1.0);
+        assert!(state.editor.objects[0].rotation[1].abs() > 1.0);
     }
 
     #[tokio::test]
@@ -1646,7 +1646,7 @@ mod tests {
             .editor
             .drag_gizmo(current_mouse.x as f64, current_mouse.y as f64, viewport,));
 
-        let rot = state.editor.objects[0].rotation_degrees;
+        let rot = state.editor.objects[0].rotation;
         // With no pre-rotation, the Y ring axis is world Y.
         // Rotation should mostly affect the Y Euler component.
         assert!(
@@ -1665,7 +1665,7 @@ mod tests {
         state.editor.config.snap_rotation = false;
 
         let mut block = LevelObject::default();
-        block.rotation_degrees = [0.0, 90.0, 0.0];
+        block.rotation = [0.0, 90.0, 0.0];
         state.editor.objects = vec![block];
 
         let viewport = Vec2::new(1280.0, 720.0);
@@ -1711,7 +1711,7 @@ mod tests {
         assert!(delta.abs() > 1.0, "delta should be non-trivial");
 
         let expected = expected_rotation_after_delta(start_degrees, world_axis, delta);
-        let actual = state.editor.objects[0].rotation_degrees;
+        let actual = state.editor.objects[0].rotation;
 
         approx::assert_abs_diff_eq!(actual[0], expected[0], epsilon = 0.5);
         approx::assert_abs_diff_eq!(actual[1], expected[1], epsilon = 0.5);
@@ -1737,7 +1737,7 @@ mod tests {
         // Use X+Z rotation so the world Y axis actually diverges from local Y.
         // (Pure X rotation doesn't change the Y axis direction.)
         let mut block = LevelObject::default();
-        block.rotation_degrees = [45.0, 0.0, 45.0];
+        block.rotation = [45.0, 0.0, 45.0];
         state.editor.objects = vec![block];
 
         let viewport = Vec2::new(1280.0, 720.0);
@@ -1783,7 +1783,7 @@ mod tests {
         assert!(delta.abs() > 1.0);
 
         let expected = expected_rotation_after_delta(start_degrees, world_axis, delta);
-        let actual = state.editor.objects[0].rotation_degrees;
+        let actual = state.editor.objects[0].rotation;
 
         approx::assert_abs_diff_eq!(actual[0], expected[0], epsilon = 0.5);
         approx::assert_abs_diff_eq!(actual[1], expected[1], epsilon = 0.5);
@@ -1806,7 +1806,7 @@ mod tests {
         state.editor.config.snap_rotation = false;
 
         let mut block = LevelObject::default();
-        block.rotation_degrees = [30.0, 20.0, 0.0];
+        block.rotation = [30.0, 20.0, 0.0];
         state.editor.objects = vec![block];
 
         let viewport = Vec2::new(1280.0, 720.0);
@@ -1852,7 +1852,7 @@ mod tests {
         assert!(delta.abs() > 1.0);
 
         let expected = expected_rotation_after_delta(start_degrees, world_axis, delta);
-        let actual = state.editor.objects[0].rotation_degrees;
+        let actual = state.editor.objects[0].rotation;
 
         approx::assert_abs_diff_eq!(actual[0], expected[0], epsilon = 0.5);
         approx::assert_abs_diff_eq!(actual[1], expected[1], epsilon = 0.5);
@@ -1866,7 +1866,7 @@ mod tests {
         state.editor.config.snap_rotation_step_degrees = 15.0;
 
         let mut block = LevelObject::default();
-        block.rotation_degrees = [0.0, 45.0, 0.0];
+        block.rotation = [0.0, 45.0, 0.0];
         state.editor.objects = vec![block];
 
         let viewport = Vec2::new(1280.0, 720.0);
@@ -1918,7 +1918,7 @@ mod tests {
         );
 
         let expected = expected_rotation_after_delta(start_degrees, world_axis, snapped_delta);
-        let actual = state.editor.objects[0].rotation_degrees;
+        let actual = state.editor.objects[0].rotation;
 
         approx::assert_abs_diff_eq!(actual[0], expected[0], epsilon = 0.5);
         approx::assert_abs_diff_eq!(actual[1], expected[1], epsilon = 0.5);

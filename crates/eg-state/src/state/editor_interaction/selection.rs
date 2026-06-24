@@ -134,9 +134,9 @@ impl EditorSubsystem {
         let half = Vec3::new(obj.size[0] * 0.5, obj.size[1] * 0.5, obj.size[2] * 0.5);
         let rotation = Mat3::from_euler(
             EulerRot::XYZ,
-            obj.rotation_degrees[0].to_radians(),
-            obj.rotation_degrees[1].to_radians(),
-            obj.rotation_degrees[2].to_radians(),
+            obj.rotation[0].to_radians(),
+            obj.rotation[1].to_radians(),
+            obj.rotation[2].to_radians(),
         );
 
         let mut bounds: Option<(Vec2, Vec2)> = None;
@@ -475,7 +475,7 @@ impl EditorSubsystem {
                         index,
                         position: obj.position,
                         size: obj.size,
-                        rotation_degrees: obj.rotation_degrees,
+                        rotation_degrees: obj.rotation,
                     });
                 }
             }
@@ -1135,7 +1135,7 @@ mod tests {
 
         let mut large_block = test_block([-6.0, 0.0, -6.0]);
         large_block.size = [12.0, 8.0, 12.0];
-        large_block.rotation_degrees = [0.0, 45.0, 0.0];
+        large_block.rotation = [0.0, 45.0, 0.0];
         state.editor.objects = vec![large_block];
 
         let geometry = state
@@ -1265,7 +1265,7 @@ mod tests {
                 index: 0,
                 position: state.editor.objects[0].position,
                 size: state.editor.objects[0].size,
-                rotation_degrees: state.editor.objects[0].rotation_degrees,
+                rotation_degrees: state.editor.objects[0].rotation,
             }],
         });
 
@@ -1298,7 +1298,7 @@ mod tests {
                 index: 0,
                 position: state.editor.objects[0].position,
                 size: state.editor.objects[0].size,
-                rotation_degrees: state.editor.objects[0].rotation_degrees,
+                rotation_degrees: state.editor.objects[0].rotation,
             }],
         });
 
@@ -1365,7 +1365,7 @@ mod tests {
                 index: 0,
                 position: state.editor.objects[0].position,
                 size: state.editor.objects[0].size,
-                rotation_degrees: state.editor.objects[0].rotation_degrees,
+                rotation_degrees: state.editor.objects[0].rotation,
             }],
         });
 
@@ -1396,7 +1396,7 @@ mod tests {
                 index: 0,
                 position: [0.0, 0.0, 0.0],
                 size: state.editor.objects[0].size,
-                rotation_degrees: state.editor.objects[0].rotation_degrees,
+                rotation_degrees: state.editor.objects[0].rotation,
             }],
         });
 
@@ -1443,7 +1443,7 @@ mod tests {
                 index: 1,
                 position: state.editor.objects[1].position,
                 size: state.editor.objects[1].size,
-                rotation_degrees: state.editor.objects[1].rotation_degrees,
+                rotation_degrees: state.editor.objects[1].rotation,
             }],
         });
 
@@ -1494,7 +1494,7 @@ mod tests {
                 index: 1,
                 position: state.editor.objects[1].position,
                 size: state.editor.objects[1].size,
-                rotation_degrees: state.editor.objects[1].rotation_degrees,
+                rotation_degrees: state.editor.objects[1].rotation,
             }],
         });
 
@@ -1662,7 +1662,7 @@ mod tests {
                 index: 0,
                 position: state.editor.objects[0].position,
                 size: state.editor.objects[0].size,
-                rotation_degrees: state.editor.objects[0].rotation_degrees,
+                rotation_degrees: state.editor.objects[0].rotation,
             }],
         });
 

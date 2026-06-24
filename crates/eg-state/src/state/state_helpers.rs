@@ -182,7 +182,7 @@ impl EditorSubsystem {
             LevelObject {
                 position: *position,
                 size: *size,
-                rotation_degrees: *rotation_degrees,
+                rotation: *rotation_degrees,
                 ..LevelObject::default()
             },
         ))
@@ -217,7 +217,7 @@ impl EditorSubsystem {
         let clamped_position = [position[0], position[1].max(0.0), position[2]];
         obj.position = clamped_position;
         obj.size = [size[0].max(0.01), size[1].max(0.01), size[2].max(0.01)];
-        obj.rotation_degrees = rotation_degrees;
+        obj.rotation = rotation_degrees;
 
         self.ui.cursor = [
             clamped_position[0],

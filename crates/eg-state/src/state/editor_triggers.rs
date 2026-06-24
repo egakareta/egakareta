@@ -95,7 +95,7 @@ fn trigger_object_from_payload(trigger: TimedTrigger) -> LevelObject {
     LevelObject {
         position,
         size,
-        rotation_degrees,
+        rotation: rotation_degrees,
         block_id: trigger_block_id_from_action(&trigger.action),
         trigger: Some(trigger),
         ..LevelObject::default()
@@ -262,7 +262,7 @@ impl EditorSubsystem {
         let eye = camera_eye_from_target(target_position, rotation, pitch, distance);
         object.size = size;
         object.position = camera_trigger_object_position_from_eye(eye, size);
-        object.rotation_degrees = camera_trigger_rotation_degrees(rotation, pitch);
+        object.rotation = camera_trigger_rotation_degrees(rotation, pitch);
     }
 
     fn timeline_position_for_camera_trigger_marker(&self, time_seconds: f32) -> Option<[f32; 3]> {
@@ -822,7 +822,7 @@ mod tests {
         assert_eq!(state.editor.triggers().len(), 1);
         state.editor.objects[0].position = [9.0, 8.0, 7.0];
         state.editor.objects[0].size = [2.0, 3.0, 4.0];
-        state.editor.objects[0].rotation_degrees = [10.0, 20.0, 30.0];
+        state.editor.objects[0].rotation = [10.0, 20.0, 30.0];
 
         let trigger = state.editor.triggers().remove(0);
         let TriggerAction::TransformObjects {

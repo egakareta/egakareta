@@ -38,7 +38,7 @@ mod tests {
     fn block_vertices_rotate_about_center() {
         let obj = LevelObject {
             size: [2.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 90.0, 0.0],
+            rotation: [0.0, 90.0, 0.0],
             ..LevelObject::new("core/dirt")
         };
         let vertices = build_block_vertices(&[obj]);
@@ -481,7 +481,7 @@ mod tests {
         let rotation_degrees = [30.0, 60.0, 0.0];
         let obj = LevelObject {
             position,
-            rotation_degrees,
+            rotation: rotation_degrees,
             ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         };
         let vertices = build_block_geometry(std::slice::from_ref(&obj)).to_triangle_vertices();
@@ -508,7 +508,7 @@ mod tests {
         let rotation_degrees = [-135.0, 0.0, 180.0];
         let obj = LevelObject {
             position: [0.0, 0.0, 0.0],
-            rotation_degrees,
+            rotation: rotation_degrees,
             ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         };
         let vertices = build_block_geometry(std::slice::from_ref(&obj)).to_triangle_vertices();

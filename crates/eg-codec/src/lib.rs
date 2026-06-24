@@ -105,7 +105,7 @@ fn push_full_object_streams(
 ) {
     object_positions.push(object.position);
     object_sizes.push(object.size);
-    object_rotations.push(object.rotation_degrees);
+    object_rotations.push(object.rotation);
     object_color_tints.push(object.color_tint);
 }
 
@@ -343,7 +343,7 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
                 id: object_ids[index].clone(),
                 position: payload.object_positions[index],
                 size: payload.object_sizes[index],
-                rotation_degrees: payload.object_rotations[index],
+                rotation: payload.object_rotations[index],
                 color_tint: payload.object_color_tints[index],
                 trigger: object_triggers[index].clone(),
                 ..LevelObject::new(block_id)
@@ -402,7 +402,7 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
                         .object_sizes
                         .get(full_cursor)
                         .ok_or_else(|| "Full object size cursor overflow".to_string())?,
-                    rotation_degrees: *payload
+                    rotation: *payload
                         .object_rotations
                         .get(full_cursor)
                         .ok_or_else(|| "Full object rotation cursor overflow".to_string())?,
@@ -447,7 +447,7 @@ fn quantize_compact_position(object: &LevelObject) -> Option<[i32; 3]> {
     }
 
     if object.size != [1.0, 1.0, 1.0]
-        || object.rotation_degrees != [0.0, 0.0, 0.0]
+        || object.rotation != [0.0, 0.0, 0.0]
         || object.color_tint != [1.0, 1.0, 1.0]
     {
         return None;

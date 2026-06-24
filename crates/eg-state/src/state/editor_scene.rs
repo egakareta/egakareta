@@ -92,13 +92,13 @@ fn build_editor_object_outline_vertices(
         EditorObjectOutlineStyle::Selection => build_editor_selection_outline_vertices(
             object.position,
             object.size,
-            object.rotation_degrees,
+            object.rotation,
             line_width,
         ),
         EditorObjectOutlineStyle::Hover => build_editor_hover_outline_vertices(
             object.position,
             object.size,
-            object.rotation_degrees,
+            object.rotation,
             line_width,
         ),
     }
@@ -168,7 +168,7 @@ fn append_transform_trigger_target_outline_instance(
         build_editor_transform_trigger_target_outline_vertices(
             object.position,
             object.size,
-            object.rotation_degrees,
+            object.rotation,
             2.5,
         ),
     );
@@ -221,7 +221,7 @@ fn append_hovered_transform_trigger_target_outlines(
         outline_vertices.extend(build_editor_transform_trigger_target_outline_vertices(
             object.position,
             object.size,
-            object.rotation_degrees,
+            object.rotation,
             2.5,
         ));
     }
@@ -848,11 +848,11 @@ impl State {
             .selected_indices_normalized()
             .first()
             .and_then(|&index| self.editor.objects.get(index))
-            .map(|obj| obj.rotation_degrees)
+            .map(|obj| obj.rotation)
             .or_else(|| {
                 self.editor
                     .selected_transform_trigger_target()
-                    .map(|(_, target)| target.rotation_degrees)
+                    .map(|(_, target)| target.rotation)
             })
             .unwrap_or([0.0, 0.0, 0.0]);
 
@@ -2049,7 +2049,7 @@ mod tests {
         assert_eq!(state.editor.objects.len(), 1);
         assert_eq!(state.editor.objects[0].position, [2.0, 0.0, 4.0]);
         assert_eq!(state.editor.objects[0].size, [2.0, 1.0, 1.0]);
-        assert_eq!(state.editor.objects[0].rotation_degrees, [0.0, 90.0, 0.0]);
+        assert_eq!(state.editor.objects[0].rotation, [0.0, 90.0, 0.0]);
         assert_eq!(state.editor.objects[0].block_id, "core/speedportal");
     }
 

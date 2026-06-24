@@ -96,7 +96,7 @@ fn test_can_turn_while_grounded() {
 fn rotated_object_contains_expected_points() {
     let obj = LevelObject {
         size: [2.0, 1.0, 1.0],
-        rotation_degrees: [0.0, 90.0, 0.0],
+        rotation: [0.0, 90.0, 0.0],
         ..LevelObject::default()
     };
 
@@ -108,7 +108,7 @@ fn rotated_object_contains_expected_points() {
 fn rotated_overlap_uses_oriented_bounds() {
     let obj = LevelObject {
         size: [2.0, 1.0, 1.0],
-        rotation_degrees: [0.0, 45.0, 0.0],
+        rotation: [0.0, 45.0, 0.0],
         ..LevelObject::default()
     };
 
@@ -151,7 +151,7 @@ fn rotated_ground_detection_works() {
     let mut game = GameState::new();
     game.objects.push(LevelObject {
         size: [2.0, 2.0, 1.0],
-        rotation_degrees: [0.0, 90.0, 0.0],
+        rotation: [0.0, 90.0, 0.0],
         ..LevelObject::default()
     });
     game.rebuild_behavior_cache();
@@ -169,7 +169,7 @@ fn speed_portal_overlap_removes_portal_and_boosts_speed() {
     game.position = [0.5, 0.0, 0.2];
     game.speed = 1.0;
     game.objects.push(LevelObject {
-        rotation_degrees: [0.0, 30.0, 0.0],
+        rotation: [0.0, 30.0, 0.0],
         ..LevelObject::new("core/speedportal")
     });
     game.rebuild_behavior_cache();

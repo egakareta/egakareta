@@ -59,7 +59,7 @@ impl State {
                 self.set_editor_selected_block_position(obj.position);
                 self.set_editor_selected_block_size(obj.size);
                 self.set_editor_selected_block_id(obj.block_id);
-                self.set_editor_selected_block_rotation(obj.rotation_degrees);
+                self.set_editor_selected_block_rotation(obj.rotation);
                 self.set_editor_selected_block_color_tint(obj.color_tint);
                 self.set_editor_selected_block_trigger(obj.trigger);
             }

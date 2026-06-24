@@ -39,7 +39,7 @@ mod tests {
         }"#;
 
         let object: LevelObject = serde_json::from_str(json).expect("valid level object");
-        assert_eq!(object.rotation_degrees, [0.0, 0.0, 0.0]);
+        assert_eq!(object.rotation, [0.0, 0.0, 0.0]);
         assert_eq!(object.block_id, "core/stone");
         assert_eq!(object.color_tint, [1.0, 1.0, 1.0]);
     }
@@ -57,7 +57,7 @@ mod tests {
 
         let metadata: LevelMetadata = serde_json::from_str(json).expect("valid metadata");
         assert_eq!(metadata.objects.len(), 1);
-        assert_eq!(metadata.objects[0].rotation_degrees, [0.0, 0.0, 0.0]);
+        assert_eq!(metadata.objects[0].rotation, [0.0, 0.0, 0.0]);
         assert!(matches!(metadata.spawn.direction, Direction::Forward));
     }
 
@@ -377,7 +377,7 @@ mod tests {
         };
         let mut metadata = metadata;
         metadata.objects[0].position = [9.0, 8.0, 7.0];
-        metadata.objects[0].rotation_degrees = [30.0, 60.0, 0.0];
+        metadata.objects[0].rotation = [30.0, 60.0, 0.0];
 
         let resolved = timed_triggers_to_camera_triggers(&metadata.resolved_triggers());
         let expected_target = camera_trigger_target_from_eye(
@@ -407,7 +407,7 @@ mod tests {
     #[test]
     fn resolved_camera_trigger_normalizes_wrapped_pitch_rotation() {
         let object = LevelObject {
-            rotation_degrees: [-135.0, 0.0, 180.0],
+            rotation: [-135.0, 0.0, 180.0],
             block_id: BlockId::new(CAMERA_TRIGGER_BLOCK_ID),
             trigger: camera_triggers_to_timed_triggers(&[CameraTrigger {
                 time_seconds: 1.2,
@@ -466,7 +466,7 @@ mod tests {
             id: "trigger".to_string(),
             position: [4.0, 5.0, 6.0],
             size: [2.0, 3.0, 4.0],
-            rotation_degrees: [10.0, 20.0, 30.0],
+            rotation: [10.0, 20.0, 30.0],
             block_id: BlockId::new(TRANSFORM_TRIGGER_BLOCK_ID),
             trigger: Some(TimedTrigger {
                 time_seconds: 1.0,
@@ -527,7 +527,7 @@ mod tests {
         let applied = apply_timed_triggers_to_objects(&base, &triggers, 2.5);
         let object = &applied[0];
         approx::assert_abs_diff_eq!(object.position[0], 5.0, epsilon = 1e-5);
-        approx::assert_abs_diff_eq!(object.rotation_degrees[1], 45.0, epsilon = 1e-5);
+        approx::assert_abs_diff_eq!(object.rotation[1], 45.0, epsilon = 1e-5);
         approx::assert_abs_diff_eq!(object.size[0], 1.5, epsilon = 1e-5);
         approx::assert_abs_diff_eq!(object.size[1], 0.505, epsilon = 1e-5);
         approx::assert_abs_diff_eq!(object.size[2], 2.0, epsilon = 1e-5);

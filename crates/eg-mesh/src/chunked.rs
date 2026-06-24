@@ -227,7 +227,7 @@ pub fn classify_voxel_fast_lane(object: &LevelObject) -> Result<(), VoxelFastLan
         return Err(VoxelFastLaneRejection::Trigger);
     }
     if object
-        .rotation_degrees
+        .rotation
         .iter()
         .any(|value| value.abs() > GRID_EPSILON)
     {

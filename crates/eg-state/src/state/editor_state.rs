@@ -284,7 +284,7 @@ impl EditorSubsystem {
             } else {
                 rotation_degrees
             };
-            self.objects[index].rotation_degrees = next_rotation;
+            self.objects[index].rotation = next_rotation;
         }
     }
 
@@ -766,7 +766,7 @@ impl State {
         self.persist_app_settings();
         if self.editor.ui.selected_block_index.is_some() {
             if let Some(obj) = self.editor_selected_block() {
-                self.set_editor_selected_block_rotation(obj.rotation_degrees);
+                self.set_editor_selected_block_rotation(obj.rotation);
             }
         }
     }
@@ -778,7 +778,7 @@ impl State {
         self.persist_app_settings();
         if self.editor.config.snap_rotation && self.editor.ui.selected_block_index.is_some() {
             if let Some(obj) = self.editor_selected_block() {
-                self.set_editor_selected_block_rotation(obj.rotation_degrees);
+                self.set_editor_selected_block_rotation(obj.rotation);
             }
         }
     }
@@ -1424,7 +1424,7 @@ impl State {
                 },
                 action: TriggerAction::TransformObjects {
                     position: object.position,
-                    rotation_degrees: object.rotation_degrees,
+                    rotation_degrees: object.rotation,
                     size: object.size,
                     simulate_hitboxes: false,
                 },
@@ -1701,10 +1701,10 @@ mod tests {
         assert_eq!(state.editor.objects.len(), 4);
         assert_eq!(state.editor.objects[2].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
         assert_object_pose(&state.editor.objects[2], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        assert_eq!(state.editor.objects[2].rotation_degrees, [0.0, 0.0, 0.0]);
+        assert_eq!(state.editor.objects[2].rotation, [0.0, 0.0, 0.0]);
         assert_eq!(state.editor.objects[3].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
         assert_object_pose(&state.editor.objects[3], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        assert_eq!(state.editor.objects[3].rotation_degrees, [0.0, 0.0, 0.0]);
+        assert_eq!(state.editor.objects[3].rotation, [0.0, 0.0, 0.0]);
         assert_eq!(state.editor.ui.selected_block_index, Some(2));
         assert_eq!(state.editor.ui.selected_block_indices, vec![2, 3]);
 
@@ -1844,14 +1844,14 @@ mod tests {
         )]);
         state.editor.objects[2].position = [12.0, 1.0, 3.0];
         state.editor.objects[2].size = [2.0, 3.0, 4.0];
-        state.editor.objects[2].rotation_degrees = [10.0, 20.0, 30.0];
+        state.editor.objects[2].rotation = [10.0, 20.0, 30.0];
         state.editor.ui.selected_block_indices = vec![1];
         state.editor.ui.selected_block_index = Some(1);
 
         assert!(state.add_editor_transform_trigger());
 
         assert_object_pose(&state.editor.objects[2], [12.0, 1.0, 3.0], [2.0, 3.0, 4.0]);
-        assert_eq!(state.editor.objects[2].rotation_degrees, [10.0, 20.0, 30.0]);
+        assert_eq!(state.editor.objects[2].rotation, [10.0, 20.0, 30.0]);
         let triggers = state.editor.triggers();
         let existing_trigger = triggers
             .iter()
@@ -2116,7 +2116,7 @@ mod tests {
         assert_eq!(state.editor.objects[0].size, [0.5, 0.5, 0.5]);
 
         state.editor.set_selected_block_rotation([7.0, 22.0, 44.0]);
-        assert_eq!(state.editor.objects[0].rotation_degrees, [0.0, 15.0, 45.0]);
+        assert_eq!(state.editor.objects[0].rotation, [0.0, 15.0, 45.0]);
 
         state.editor.set_selected_block_color_tint([-1.0, 0.4, 2.0]);
         assert_eq!(state.editor.objects[0].color_tint, [0.0, 0.4, 1.0]);

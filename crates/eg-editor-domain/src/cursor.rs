@@ -34,7 +34,7 @@ pub fn create_block_at_cursor(
     LevelObject {
         position: cursor,
         size: default_size,
-        rotation_degrees,
+        rotation: rotation_degrees,
         trigger,
         ..LevelObject::new(block_id)
     }

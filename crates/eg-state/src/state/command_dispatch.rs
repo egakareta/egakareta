@@ -1128,7 +1128,7 @@ mod tests {
         assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
         assert_eq!(state.editor.ui.hovered_block_index, Some(0));
         assert_eq!(state.editor.objects[0].block_id, "core/lava");
-        assert_eq!(state.editor.objects[0].rotation_degrees, [0.0, 90.0, 0.0]);
+        assert_eq!(state.editor.objects[0].rotation, [0.0, 90.0, 0.0]);
     }
 
     #[tokio::test]
@@ -2088,7 +2088,7 @@ mod tests {
 
         state.editor.objects.push(LevelObject {
             position: camera_trigger_block_position_from_eye(camera_eye),
-            rotation_degrees: [
+            rotation: [
                 camera_trigger.pitch.to_degrees(),
                 camera_trigger.rotation.to_degrees(),
                 0.0,
@@ -2159,7 +2159,7 @@ mod tests {
 
         state.editor.objects.push(LevelObject {
             position: camera_trigger_block_position_from_eye(camera_eye),
-            rotation_degrees: [
+            rotation: [
                 camera_trigger.pitch.to_degrees(),
                 camera_trigger.rotation.to_degrees(),
                 0.0,
@@ -2737,7 +2737,7 @@ mod tests {
         let updated = LevelObject {
             position: [2.0, 1.0, 3.0],
             size: [1.5, 1.0, 0.5],
-            rotation_degrees: [5.0, 10.0, 15.0],
+            rotation: [5.0, 10.0, 15.0],
             color_tint: [0.2, 0.4, 0.8],
             ..LevelObject::new("core/lava")
         };

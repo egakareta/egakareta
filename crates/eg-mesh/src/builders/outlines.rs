@@ -126,7 +126,7 @@ fn append_hitbox_outline_vertices(
         object.position[1] + object.size[1] * 0.5,
         object.position[2] + object.size[2] * 0.5,
     ];
-    rotate_vertices_around_euler(&mut vertices[start..], center, object.rotation_degrees);
+    rotate_vertices_around_euler(&mut vertices[start..], center, object.rotation);
 }
 
 pub fn build_editor_hitbox_visualization_vertices(

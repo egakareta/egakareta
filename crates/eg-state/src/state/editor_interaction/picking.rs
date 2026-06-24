@@ -243,7 +243,7 @@ fn object_pick_bounds(object: &LevelObject) -> Option<(Vec3, Vec3)> {
     if object.block_id == CAMERA_TRIGGER_BLOCK_ID {
         let eye = Vec3::from_array(camera_trigger_eye_from_object(object));
         let forward = Vec3::from_array(camera_trigger_forward_from_rotation_degrees(
-            object.rotation_degrees,
+            object.rotation,
         ));
         let arrow_direction = if forward.length_squared() > f32::EPSILON {
             forward.normalize()
@@ -792,9 +792,7 @@ impl EditorSubsystem {
         obj: &eg_types::LevelObject,
     ) -> Option<(f32, Vec3)> {
         let eye = Vec3::from_array(camera_trigger_eye_from_object(obj));
-        let forward = Vec3::from_array(camera_trigger_forward_from_rotation_degrees(
-            obj.rotation_degrees,
-        ));
+        let forward = Vec3::from_array(camera_trigger_forward_from_rotation_degrees(obj.rotation));
         let arrow_direction = if forward.length_squared() > f32::EPSILON {
             forward.normalize()
         } else {
@@ -824,7 +822,7 @@ impl EditorSubsystem {
         obj: &eg_types::LevelObject,
     ) -> Option<(f32, Vec3)> {
         let center = obj.center();
-        let rotation = obj.rotation();
+        let rotation = obj.basis();
         let inv_rotation = rotation.transpose();
 
         let local_origin_world = center + inv_rotation * (ray_origin - center);
@@ -861,7 +859,7 @@ fn transform_trigger_target_object(action: &TriggerAction) -> Option<LevelObject
     Some(LevelObject {
         position: *position,
         size: *size,
-        rotation_degrees: *rotation_degrees,
+        rotation: *rotation_degrees,
         ..LevelObject::default()
     })
 }
@@ -876,7 +874,7 @@ mod tests {
     async fn ray_intersect_rotated_block_hits_and_misses() {
         let state = State::new_test().await;
         let block = LevelObject {
-            rotation_degrees: [0.0, 45.0, 0.0],
+            rotation: [0.0, 45.0, 0.0],
             ..LevelObject::default()
         };
 

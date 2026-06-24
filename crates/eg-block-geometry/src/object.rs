@@ -63,7 +63,7 @@ pub fn hitbox_cuboids(object: &LevelObject) -> Vec<WorldCuboid> {
 /// Computes the 2D polygon of a rotated cuboid's footprint on the XZ plane, used for collision detection and rendering.
 pub fn rotated_cuboid_xz_polygon(object: &LevelObject, cuboid: WorldCuboid) -> Vec<Vec2> {
     let object_center = object.center();
-    let rotation = object.rotation();
+    let rotation = object.basis();
     let min = Vec3::from(cuboid.min);
     let max = Vec3::from(cuboid.max);
     let mut points = Vec::with_capacity(8);

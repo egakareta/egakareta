@@ -269,7 +269,7 @@ fn practice_checkpoint_flag_object(checkpoint: &PracticeCheckpointFlagInstance) 
             checkpoint.position[2],
         ],
         size: PRACTICE_CHECKPOINT_FLAG_SIZE,
-        rotation_degrees,
+        rotation: rotation_degrees,
         ..LevelObject::new(PRACTICE_CHECKPOINT_FLAG_BLOCK_ID)
     }
 }
