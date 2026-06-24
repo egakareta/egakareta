@@ -595,7 +595,7 @@ mod tests {
     };
     use eg_types::{
         AppSettings, EditorMode, LevelObject, MusicMetadata, CAMERA_TRIGGER_BLOCK_ID,
-        DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_ROTATION, TRANSFORM_TRIGGER_BLOCK_ID,
+        DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, TRANSFORM_TRIGGER_BLOCK_ID,
     };
 
     fn make_compose_view<'a>(
@@ -760,7 +760,7 @@ mod tests {
                     transition_interval_seconds: 1.0,
                     use_full_segment_transition: false,
                     distance: default_camera_trigger_distance(),
-                    rotation: DEFAULT_CAMERA_ROTATION,
+                    rotation: DEFAULT_CAMERA_YAW,
                     pitch: DEFAULT_CAMERA_PITCH,
                 },
             }),

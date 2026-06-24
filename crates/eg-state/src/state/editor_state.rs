@@ -16,7 +16,7 @@ use eg_types::{
 };
 use eg_types::{
     AppPhase, Direction, EditorMode, GameCursor, LevelObject, TimingPoint, DEFAULT_CAMERA_PITCH,
-    DEFAULT_CAMERA_ROTATION,
+    DEFAULT_CAMERA_YAW,
 };
 
 const TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS: f32 = 0.001;
@@ -1369,7 +1369,7 @@ impl State {
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 distance: default_camera_trigger_distance(),
-                rotation: DEFAULT_CAMERA_ROTATION,
+                rotation: DEFAULT_CAMERA_YAW,
                 pitch: DEFAULT_CAMERA_PITCH,
             },
         };

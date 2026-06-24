@@ -717,9 +717,9 @@ mod tests {
     use crate::commands::AppCommand;
     use crate::state::editor_command::EditorCommand;
     use eg_types::{
-        camera_trigger_eye_from_target, camera_triggers_to_timed_triggers,
-        default_camera_trigger_distance, CameraMode, CameraTrigger, EasingDirection, TimedTrigger,
-        TriggerAction, TriggerTarget,
+        camera_eye_from_target, camera_triggers_to_timed_triggers, default_camera_trigger_distance,
+        CameraMode, CameraTrigger, EasingDirection, TimedTrigger, TriggerAction, TriggerTarget,
+        DEFAULT_CAMERA_DISTANCE,
     };
     use eg_types::{
         AppPhase, EditorMode, KeyChord, LevelObject, MusicMetadata, SettingsSection, TimingPoint,
@@ -2104,10 +2104,11 @@ mod tests {
         let trigger_index = state.editor.objects.len();
         let trigger =
             camera_triggers_to_timed_triggers(std::slice::from_ref(&camera_trigger)).remove(0);
-        let camera_eye = camera_trigger_eye_from_target(
+        let camera_eye = camera_eye_from_target(
             camera_trigger.target_position,
             camera_trigger.rotation,
             camera_trigger.pitch,
+            DEFAULT_CAMERA_DISTANCE,
         );
 
         state.editor.objects.push(LevelObject {
@@ -2175,10 +2176,11 @@ mod tests {
         let trigger_index = state.editor.objects.len();
         let trigger =
             camera_triggers_to_timed_triggers(std::slice::from_ref(&camera_trigger)).remove(0);
-        let camera_eye = camera_trigger_eye_from_target(
+        let camera_eye = camera_eye_from_target(
             camera_trigger.target_position,
             camera_trigger.rotation,
             camera_trigger.pitch,
+            DEFAULT_CAMERA_DISTANCE,
         );
 
         state.editor.objects.push(LevelObject {

@@ -9,11 +9,11 @@ use glam::{Mat4, Vec2, Vec3};
 
 use super::{EditorSubsystem, State};
 use eg_types::{
-    camera_trigger_eye_from_target, camera_trigger_forward, timed_triggers_to_camera_triggers,
-    CameraMode, CameraTrigger, EasingDirection, TimedTrigger, TriggerAction, TriggerTarget,
-    CAMERA_TRIGGER_VIEW_DISTANCE,
+    camera_eye_from_target, camera_trigger_forward, timed_triggers_to_camera_triggers, CameraMode,
+    CameraTrigger, EasingDirection, TimedTrigger, TriggerAction, TriggerTarget,
+    DEFAULT_CAMERA_DISTANCE,
 };
-use eg_types::{AppPhase, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_ROTATION};
+use eg_types::{AppPhase, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW};
 
 const PLAY_CAMERA_DISTANCE: f32 = 28.28;
 const MIN_EDITOR_PITCH: f32 = -89.9f32.to_radians();
@@ -42,9 +42,9 @@ impl Default for EditorCameraState {
         Self {
             editor_pan: [0.0, 0.0],
             editor_target_z: 0.0,
-            editor_rotation: DEFAULT_CAMERA_ROTATION,
+            editor_rotation: DEFAULT_CAMERA_YAW,
             editor_pitch: DEFAULT_CAMERA_PITCH,
-            playing_rotation: DEFAULT_CAMERA_ROTATION,
+            playing_rotation: DEFAULT_CAMERA_YAW,
             playing_pitch: DEFAULT_CAMERA_PITCH,
             transition: None,
         }
@@ -72,7 +72,7 @@ fn offset_from_rotation_pitch(rotation: f32, pitch: f32, distance: f32) -> Vec3 
 
 fn editor_camera_offset_for_pose(rotation: f32, pitch: f32) -> Vec3 {
     let pitch = pitch.clamp(MIN_EDITOR_PITCH, MAX_EDITOR_PITCH);
-    offset_from_rotation_pitch(rotation, pitch, CAMERA_TRIGGER_VIEW_DISTANCE)
+    offset_from_rotation_pitch(rotation, pitch, DEFAULT_CAMERA_DISTANCE)
 }
 
 fn playing_camera_offset_for_angles(rotation: f32, pitch: f32) -> Vec3 {
@@ -139,10 +139,11 @@ impl EditorSubsystem {
     }
 
     pub fn camera_trigger_marker_eye(&self, camera_trigger: &CameraTrigger) -> Vec3 {
-        Vec3::from_array(camera_trigger_eye_from_target(
+        Vec3::from_array(camera_eye_from_target(
             camera_trigger.target_position,
             camera_trigger.rotation,
             camera_trigger.pitch,
+            camera_trigger.distance,
         ))
     }
 
@@ -238,7 +239,7 @@ impl EditorSubsystem {
 
     fn resolve_live_follow_sample(&self, target: Vec3, is_game_active: bool) -> CameraViewSample {
         let rotation = if is_game_active {
-            DEFAULT_CAMERA_ROTATION
+            DEFAULT_CAMERA_YAW
         } else {
             self.camera.playing_rotation
         };
@@ -415,7 +416,7 @@ mod tests {
     use super::{
         eased_alpha, editor_camera_offset_for_pose, interpolate_camera_samples,
         offset_from_rotation_pitch, playing_camera_offset_for_angles, CameraViewSample, State,
-        DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_ROTATION, MIN_PLAYING_PITCH,
+        DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, MIN_PLAYING_PITCH,
     };
     use eg_types::AppPhase;
     use eg_types::{
@@ -473,7 +474,7 @@ mod tests {
             transition_interval_seconds,
             use_full_segment_transition,
             default_camera_trigger_distance(),
-            DEFAULT_CAMERA_ROTATION,
+            DEFAULT_CAMERA_YAW,
             DEFAULT_CAMERA_PITCH,
         )
     }
@@ -571,8 +572,8 @@ mod tests {
 
         let target = Vec3::new(2.0, 3.0, 4.0);
         let sample = state.editor.resolve_live_follow_sample(target, true);
-        let expected_eye = target
-            + playing_camera_offset_for_angles(DEFAULT_CAMERA_ROTATION, DEFAULT_CAMERA_PITCH);
+        let expected_eye =
+            target + playing_camera_offset_for_angles(DEFAULT_CAMERA_YAW, DEFAULT_CAMERA_PITCH);
 
         assert_vec3_close(sample.target, target);
         assert_vec3_close(sample.eye, expected_eye);
@@ -650,7 +651,7 @@ mod tests {
         let expected = CameraViewSample {
             eye: target
                 + offset_from_rotation_pitch(
-                    DEFAULT_CAMERA_ROTATION,
+                    DEFAULT_CAMERA_YAW,
                     DEFAULT_CAMERA_PITCH,
                     default_camera_trigger_distance(),
                 ),

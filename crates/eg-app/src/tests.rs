@@ -10,9 +10,8 @@
 mod tests {
     use eg_mesh::Vertex;
     use eg_types::{
-        apply_timed_triggers_to_objects, camera_trigger_eye_from_object,
-        camera_trigger_eye_from_target, camera_trigger_forward,
-        camera_trigger_forward_from_rotation_degrees,
+        apply_timed_triggers_to_objects, camera_eye_from_target, camera_trigger_eye_from_object,
+        camera_trigger_forward, camera_trigger_forward_from_rotation_degrees,
         camera_trigger_rotation_pitch_from_rotation_degrees, camera_trigger_target_from_eye,
         camera_triggers_to_timed_triggers, default_camera_trigger_distance,
         default_camera_trigger_pitch, default_camera_trigger_rotation,
@@ -20,7 +19,8 @@ mod tests {
         triggers_from_objects, BasicLevelMetadata, CameraMode, CameraTrigger, Direction,
         EasingDirection, EditorStateParams, GameCursor, LevelMetadata, LevelObject,
         LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata, TimedTrigger, TriggerAction,
-        TriggerTarget, CAMERA_TRIGGER_BLOCK_ID, TRANSFORM_TRIGGER_BLOCK_ID,
+        TriggerTarget, CAMERA_TRIGGER_BLOCK_ID, DEFAULT_CAMERA_DISTANCE,
+        TRANSFORM_TRIGGER_BLOCK_ID,
     };
     use serde_json::json;
 
@@ -394,10 +394,11 @@ mod tests {
             30.0_f32.to_radians(),
         );
         let expected_eye = camera_trigger_eye_from_object(&metadata.objects[0]);
-        let resolved_eye = camera_trigger_eye_from_target(
+        let resolved_eye = camera_eye_from_target(
             resolved[0].target_position,
             resolved[0].rotation,
             resolved[0].pitch,
+            DEFAULT_CAMERA_DISTANCE,
         );
         assert_eq!(resolved.len(), 1);
         assert!((resolved[0].time_seconds - 1.2).abs() <= 1e-6);
@@ -445,10 +446,11 @@ mod tests {
             camera_trigger_rotation_pitch_from_rotation_degrees([-135.0, 0.0, 180.0]);
         let expected_forward = camera_trigger_forward_from_rotation_degrees([-135.0, 0.0, 180.0]);
         let resolved_forward = camera_trigger_forward(resolved[0].rotation, resolved[0].pitch);
-        let resolved_eye = camera_trigger_eye_from_target(
+        let resolved_eye = camera_eye_from_target(
             resolved[0].target_position,
             resolved[0].rotation,
             resolved[0].pitch,
+            DEFAULT_CAMERA_DISTANCE,
         );
 
         assert_eq!(resolved.len(), 1);

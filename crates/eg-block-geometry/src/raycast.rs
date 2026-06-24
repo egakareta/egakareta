@@ -296,8 +296,8 @@ pub fn ray_intersect_rotated_block(
     ray_dir: Vec3,
     obj: &eg_types::LevelObject,
 ) -> Option<(f32, Vec3)> {
-    let center = object_center(obj);
-    let rotation = object_rotation(obj);
+    let center = obj.center();
+    let rotation = obj.rotation();
     let inv_rotation = rotation.transpose();
 
     let local_origin_world = center + inv_rotation * (ray_origin - center);

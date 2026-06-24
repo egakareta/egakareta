@@ -6,6 +6,7 @@
 
 */
 
+use glam::{EulerRot, Mat3, Vec3};
 use is_default::IsDefault;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
@@ -16,10 +17,10 @@ use crate::block_id::{normalize_block_id, DEFAULT_BLOCK_ID};
 
 pub const CAMERA_TRIGGER_BLOCK_ID: &str = "core/camera_trigger";
 pub const TRANSFORM_TRIGGER_BLOCK_ID: &str = "core/transform_trigger";
-pub const DEFAULT_CAMERA_ROTATION: f32 = std::f32::consts::FRAC_PI_4;
+pub const DEFAULT_CAMERA_YAW: f32 = std::f32::consts::FRAC_PI_4;
 pub const DEFAULT_CAMERA_PITCH: f32 = std::f32::consts::FRAC_PI_4;
+pub const DEFAULT_CAMERA_DISTANCE: f32 = 24.0;
 pub const CURRENT_LEVEL_FORMAT_VERSION: u32 = 3;
-pub const CAMERA_TRIGGER_VIEW_DISTANCE: f32 = 24.0;
 
 pub const OBJECT_ID_PREFIX: &str = "obj_";
 
@@ -112,11 +113,11 @@ pub fn is_default_camera_trigger_target_position(value: &[f32; 3]) -> bool {
 }
 
 pub fn default_camera_trigger_rotation() -> f32 {
-    DEFAULT_CAMERA_ROTATION
+    DEFAULT_CAMERA_YAW
 }
 
 pub fn is_default_camera_trigger_rotation(value: &f32) -> bool {
-    (*value - DEFAULT_CAMERA_ROTATION).abs() <= 1e-6
+    (*value - DEFAULT_CAMERA_YAW).abs() <= 1e-6
 }
 
 pub fn default_camera_trigger_pitch() -> f32 {
@@ -128,11 +129,11 @@ pub fn is_default_camera_trigger_pitch(value: &f32) -> bool {
 }
 
 pub fn default_camera_trigger_distance() -> f32 {
-    CAMERA_TRIGGER_VIEW_DISTANCE
+    DEFAULT_CAMERA_DISTANCE
 }
 
 pub fn is_default_camera_trigger_distance(value: &f32) -> bool {
-    (*value - CAMERA_TRIGGER_VIEW_DISTANCE).abs() <= 1e-6
+    (*value - DEFAULT_CAMERA_DISTANCE).abs() <= 1e-6
 }
 
 pub fn default_camera_trigger_transition_interval_seconds() -> f32 {
@@ -457,6 +458,23 @@ pub struct LevelObject {
     pub trigger: Option<TimedTrigger>,
 }
 
+impl LevelObject {
+    /// Dead-center position of the object, used as the pivot point for rotation.
+    pub fn center(&self) -> Vec3 {
+        Vec3::from_array(self.position) + Vec3::from_array(self.size) * 0.5
+    }
+
+    /// Rotation radians matrix for the object, based on its rotation_degrees.
+    pub fn rotation(&self) -> Mat3 {
+        Mat3::from_euler(
+            EulerRot::XYZ,
+            self.rotation_degrees[0].to_radians(),
+            self.rotation_degrees[1].to_radians(),
+            self.rotation_degrees[2].to_radians(),
+        )
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LevelObjectTransformFieldVisibility {
     pub position: bool,
@@ -759,35 +777,25 @@ pub struct TimedTrigger {
     pub action: TriggerAction,
 }
 
-pub fn camera_trigger_offset_with_distance(rotation: f32, pitch: f32, distance: f32) -> [f32; 3] {
+/// The vector from the look-at target to the specified eye.
+/// Roll is not considered, so the camera is always upright.
+pub fn camera_offset_from_target(yaw: f32, pitch: f32, distance: f32) -> [f32; 3] {
     let horizontal_distance = distance * pitch.cos();
     [
-        -rotation.sin() * horizontal_distance,
+        -yaw.sin() * horizontal_distance,
         pitch.sin() * distance,
-        -rotation.cos() * horizontal_distance,
+        -yaw.cos() * horizontal_distance,
     ]
 }
 
-pub fn camera_trigger_eye_from_target(
+/// The camera eye position given a look-at target, camera yaw, pitch, and distance.
+pub fn camera_eye_from_target(
     target_position: [f32; 3],
-    rotation: f32,
-    pitch: f32,
-) -> [f32; 3] {
-    let offset = camera_trigger_offset_with_distance(rotation, pitch, CAMERA_TRIGGER_VIEW_DISTANCE);
-    [
-        target_position[0] + offset[0],
-        target_position[1] + offset[1],
-        target_position[2] + offset[2],
-    ]
-}
-
-pub fn camera_trigger_eye_from_target_with_distance(
-    target_position: [f32; 3],
-    rotation: f32,
+    yaw: f32,
     pitch: f32,
     distance: f32,
 ) -> [f32; 3] {
-    let offset = camera_trigger_offset_with_distance(rotation, pitch, distance);
+    let offset = camera_offset_from_target(yaw, pitch, distance);
     [
         target_position[0] + offset[0],
         target_position[1] + offset[1],
@@ -796,11 +804,7 @@ pub fn camera_trigger_eye_from_target_with_distance(
 }
 
 pub fn camera_trigger_eye_from_object(object: &LevelObject) -> [f32; 3] {
-    [
-        object.position[0] + object.size[0] * 0.5,
-        object.position[1] + object.size[1] * 0.5,
-        object.position[2] + object.size[2] * 0.5,
-    ]
+    object.center().into()
 }
 
 pub fn camera_trigger_target_from_eye(
@@ -808,7 +812,7 @@ pub fn camera_trigger_target_from_eye(
     rotation: f32,
     pitch: f32,
 ) -> [f32; 3] {
-    let offset = camera_trigger_offset_with_distance(rotation, pitch, CAMERA_TRIGGER_VIEW_DISTANCE);
+    let offset = camera_offset_from_target(rotation, pitch, DEFAULT_CAMERA_DISTANCE);
     [
         eye_position[0] - offset[0],
         eye_position[1] - offset[1],
@@ -817,12 +821,12 @@ pub fn camera_trigger_target_from_eye(
 }
 
 pub fn camera_trigger_forward(rotation: f32, pitch: f32) -> [f32; 3] {
-    camera_trigger_forward_with_distance(rotation, pitch, CAMERA_TRIGGER_VIEW_DISTANCE)
+    camera_trigger_forward_with_distance(rotation, pitch, DEFAULT_CAMERA_DISTANCE)
 }
 
 pub fn camera_trigger_forward_with_distance(rotation: f32, pitch: f32, distance: f32) -> [f32; 3] {
     let distance = distance.max(0.001);
-    let offset = camera_trigger_offset_with_distance(rotation, pitch, distance);
+    let offset = camera_offset_from_target(rotation, pitch, distance);
     [
         -offset[0] / distance,
         -offset[1] / distance,

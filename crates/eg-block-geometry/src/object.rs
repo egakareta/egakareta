@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use glam::{EulerRot, Mat3, Vec2, Vec3};
+use glam::{Vec2, Vec3};
 
 use eg_blocks::resolve_block_definition;
 use eg_types::{BlockCuboid, LevelObject};
@@ -22,25 +22,6 @@ impl WorldCuboid {
     pub fn top(self) -> f32 {
         self.max[1]
     }
-}
-
-/// Dead-center position of the object, used as the pivot point for rotation.
-pub fn object_center(object: &LevelObject) -> Vec3 {
-    Vec3::new(
-        object.position[0] + object.size[0] * 0.5,
-        object.position[1] + object.size[1] * 0.5,
-        object.position[2] + object.size[2] * 0.5,
-    )
-}
-
-/// Rotation radians matrix for the object, based on its rotation_degrees.
-pub fn object_rotation(object: &LevelObject) -> Mat3 {
-    Mat3::from_euler(
-        EulerRot::XYZ,
-        object.rotation_degrees[0].to_radians(),
-        object.rotation_degrees[1].to_radians(),
-        object.rotation_degrees[2].to_radians(),
-    )
 }
 
 /// Obtain world-space cuboids for the object's visuals and hitboxes, based on block definitions and object transforms.
@@ -81,8 +62,8 @@ pub fn hitbox_cuboids(object: &LevelObject) -> Vec<WorldCuboid> {
 
 /// Computes the 2D polygon of a rotated cuboid's footprint on the XZ plane, used for collision detection and rendering.
 pub fn rotated_cuboid_xz_polygon(object: &LevelObject, cuboid: WorldCuboid) -> Vec<Vec2> {
-    let object_center = object_center(object);
-    let rotation = object_rotation(object);
+    let object_center = object.center();
+    let rotation = object.rotation();
     let min = Vec3::from(cuboid.min);
     let max = Vec3::from(cuboid.max);
     let mut points = Vec::with_capacity(8);

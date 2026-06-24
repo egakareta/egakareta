@@ -9,8 +9,7 @@ use super::super::EditorSubsystem;
 use std::collections::HashMap;
 
 use eg_block_geometry::{
-    hitbox_cuboids, object_center, object_rotation, ray_intersect_aabb,
-    ray_intersect_aabb_interval, ray_intersect_sphere,
+    hitbox_cuboids, ray_intersect_aabb, ray_intersect_aabb_interval, ray_intersect_sphere,
 };
 use eg_types::{
     camera_trigger_eye_from_object, camera_trigger_forward_from_rotation_degrees, TriggerAction,
@@ -268,7 +267,7 @@ fn object_pick_bounds(object: &LevelObject) -> Option<(Vec3, Vec3)> {
         return None;
     }
 
-    let center = object_center(object);
+    let center = object.center();
     let extent = Vec3::splat(radius);
     let min = center - extent;
     let max = center + extent;
@@ -824,8 +823,8 @@ impl EditorSubsystem {
         ray_dir: Vec3,
         obj: &eg_types::LevelObject,
     ) -> Option<(f32, Vec3)> {
-        let center = object_center(obj);
-        let rotation = object_rotation(obj);
+        let center = obj.center();
+        let rotation = obj.rotation();
         let inv_rotation = rotation.transpose();
 
         let local_origin_world = center + inv_rotation * (ray_origin - center);

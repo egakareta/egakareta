@@ -8,13 +8,13 @@
 use super::EditorSubsystem;
 use eg_editor_domain::interpolate_timeline_sample_positions;
 use eg_types::{
-    camera_trigger_eye_from_target, camera_trigger_eye_from_target_with_distance,
-    default_camera_trigger_distance, default_camera_trigger_target_position,
-    timed_triggers_to_camera_triggers, triggers_from_objects, CameraTrigger, TimedTrigger,
-    TriggerAction, TriggerTarget,
+    camera_eye_from_target, default_camera_trigger_distance,
+    default_camera_trigger_target_position, timed_triggers_to_camera_triggers,
+    triggers_from_objects, CameraTrigger, TimedTrigger, TriggerAction, TriggerTarget,
+    DEFAULT_CAMERA_DISTANCE,
 };
 use eg_types::{
-    LevelObject, CAMERA_TRIGGER_BLOCK_ID, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_ROTATION,
+    LevelObject, CAMERA_TRIGGER_BLOCK_ID, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW,
     TRANSFORM_TRIGGER_BLOCK_ID,
 };
 
@@ -53,7 +53,12 @@ fn trigger_object_from_payload(trigger: TimedTrigger) -> LevelObject {
             ..
         } => {
             let size = [1.0, 1.0, 1.0];
-            let eye = camera_trigger_eye_from_target(*target_position, *rotation, *pitch);
+            let eye = camera_eye_from_target(
+                *target_position,
+                *rotation,
+                *pitch,
+                DEFAULT_CAMERA_DISTANCE,
+            );
             (
                 camera_trigger_object_position_from_eye(eye, size),
                 size,
@@ -73,7 +78,7 @@ fn trigger_object_from_payload(trigger: TimedTrigger) -> LevelObject {
             ..
         } => {
             let size = [1.0, 1.0, 1.0];
-            let eye = camera_trigger_eye_from_target_with_distance(
+            let eye = camera_eye_from_target(
                 default_camera_trigger_target_position(),
                 *rotation,
                 *pitch,
@@ -197,7 +202,7 @@ impl EditorSubsystem {
                 });
 
                 if !rotation.is_finite() {
-                    *rotation = DEFAULT_CAMERA_ROTATION;
+                    *rotation = DEFAULT_CAMERA_YAW;
                 }
 
                 if !pitch.is_finite() {
@@ -226,7 +231,7 @@ impl EditorSubsystem {
                 }
 
                 if !rotation.is_finite() {
-                    *rotation = DEFAULT_CAMERA_ROTATION;
+                    *rotation = DEFAULT_CAMERA_YAW;
                 }
 
                 if !pitch.is_finite() {
@@ -254,12 +259,7 @@ impl EditorSubsystem {
         };
 
         let size = [1.0, 1.0, 1.0];
-        let eye = camera_trigger_eye_from_target_with_distance(
-            target_position,
-            rotation,
-            pitch,
-            distance,
-        );
+        let eye = camera_eye_from_target(target_position, rotation, pitch, distance);
         object.size = size;
         object.position = camera_trigger_object_position_from_eye(eye, size);
         object.rotation_degrees = camera_trigger_rotation_degrees(rotation, pitch);
@@ -497,11 +497,11 @@ mod tests {
     use super::EditorSubsystem;
     use crate::state::State;
     use eg_types::{
-        camera_trigger_eye_from_object, camera_trigger_eye_from_target,
-        default_camera_trigger_distance, CameraMode, EasingDirection, TimedTrigger, TriggerAction,
-        TriggerTarget,
+        camera_eye_from_target, camera_trigger_eye_from_object, default_camera_trigger_distance,
+        CameraMode, EasingDirection, TimedTrigger, TriggerAction, TriggerTarget,
+        DEFAULT_CAMERA_DISTANCE,
     };
-    use eg_types::{LevelObject, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_ROTATION};
+    use eg_types::{LevelObject, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW};
 
     fn test_block(x: f32) -> LevelObject {
         LevelObject {
@@ -559,7 +559,7 @@ mod tests {
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 distance: default_camera_trigger_distance(),
-                rotation: DEFAULT_CAMERA_ROTATION,
+                rotation: DEFAULT_CAMERA_YAW,
                 pitch: DEFAULT_CAMERA_PITCH,
             },
             ..camera_pose_trigger(1.0)
@@ -680,7 +680,7 @@ mod tests {
                 assert_eq!(transition_interval_seconds, 0.0);
                 assert!(use_full_segment_transition);
                 assert_eq!(distance, default_camera_trigger_distance());
-                assert_eq!(rotation, DEFAULT_CAMERA_ROTATION);
+                assert_eq!(rotation, DEFAULT_CAMERA_YAW);
                 assert!((pitch - 89.9f32.to_radians()).abs() <= 1e-6);
             }
             _ => panic!("expected camera follow"),
@@ -698,7 +698,7 @@ mod tests {
                 for (actual, expected) in target_position.iter().zip([0.0, 2.0, 0.0]) {
                     assert!((*actual - expected).abs() <= 1e-5);
                 }
-                assert_eq!(rotation, DEFAULT_CAMERA_ROTATION);
+                assert_eq!(rotation, DEFAULT_CAMERA_YAW);
                 assert!((pitch - 89.9f32.to_radians()).abs() <= 1e-6);
             }
             _ => panic!("expected camera pose"),
@@ -718,7 +718,8 @@ mod tests {
         else {
             panic!("expected camera pose");
         };
-        let expected_eye = camera_trigger_eye_from_target(target_position, rotation, pitch);
+        let expected_eye =
+            camera_eye_from_target(target_position, rotation, pitch, DEFAULT_CAMERA_DISTANCE);
 
         state.editor.set_triggers(vec![trigger]);
 
@@ -745,7 +746,7 @@ mod tests {
                     transition_interval_seconds: 1.5,
                     use_full_segment_transition: false,
                     distance: default_camera_trigger_distance(),
-                    rotation: DEFAULT_CAMERA_ROTATION,
+                    rotation: DEFAULT_CAMERA_YAW,
                     pitch: DEFAULT_CAMERA_PITCH,
                 },
                 ..camera_pose_trigger(1.0)
