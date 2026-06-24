@@ -154,11 +154,7 @@ fn sanitize_color_tint(color_tint: [f32; 3]) -> [f32; 3] {
 }
 
 fn sanitize_finite(value: f32, fallback: f32) -> f32 {
-    if value.is_finite() {
-        value
-    } else {
-        fallback
-    }
+    if value.is_finite() { value } else { fallback }
 }
 
 fn sanitize_nonnegative(value: f32, fallback: f32) -> f32 {

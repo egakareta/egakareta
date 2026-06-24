@@ -287,7 +287,7 @@ pub fn append_quad(
 
 #[cfg(test)]
 mod tests {
-    use super::{append_prism_with_layers, PrismFaceColors, PrismTextureLayers};
+    use super::{PrismFaceColors, PrismTextureLayers, append_prism_with_layers};
     use crate::Vertex;
 
     #[test]
@@ -539,8 +539,9 @@ mod tests {
             let dot = normal.dot(*expected_outward_normal);
             assert!(
                 dot < -0.99,
-                "Face {} is not clockwise. Expected inward normal (opposite of outward), but got dot product {}", 
-                face_index, dot
+                "Face {} is not clockwise. Expected inward normal (opposite of outward), but got dot product {}",
+                face_index,
+                dot
             );
         }
     }

@@ -6,8 +6,8 @@
 
 */
 use eg_state::commands::AppCommand;
-use eg_state::state::editor_command::EditorCommand;
 use eg_state::state::EditorUiViewModel;
+use eg_state::state::editor_command::EditorCommand;
 use eg_types::{Direction, EditorMode};
 
 const PROPERTY_POPUP_MARGIN: f32 = 12.0;
@@ -274,8 +274,8 @@ pub(crate) fn show_player_camera_status_row(ui: &mut egui::Ui, view: &EditorUiVi
 #[cfg(test)]
 mod tests {
     use super::{
-        show_editor_property_popup, show_mode_selector_popup, show_player_camera_status_row,
-        EditorPropertyPopup, PROPERTY_POPUP_MARGIN,
+        EditorPropertyPopup, PROPERTY_POPUP_MARGIN, show_editor_property_popup,
+        show_mode_selector_popup, show_player_camera_status_row,
     };
     use crate::test_utils::editor_view_model;
     use eg_state::commands::AppCommand;

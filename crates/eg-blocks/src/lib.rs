@@ -14,9 +14,9 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use image::imageops::FilterType;
-use include_dir::{include_dir, Dir};
+use include_dir::{Dir, include_dir};
 
-use eg_types::{fallback_block_definition, BlockDefinition, BlockId};
+use eg_types::{BlockDefinition, BlockId, fallback_block_definition};
 
 static BLOCKS_DIR: Dir<'_> = include_dir!("$EGAKARETA_WORKSPACE_ROOT/assets/blocks");
 static BLOCK_CATALOG: OnceLock<BlockCatalog> = OnceLock::new();

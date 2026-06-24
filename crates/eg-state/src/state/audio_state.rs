@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_audio::audio::{runtime_asset_source_key, AudioBackend};
+use eg_audio::audio::{AudioBackend, runtime_asset_source_key};
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{Receiver, Sender};
 
@@ -555,10 +555,12 @@ mod tests {
         let mut state = AudioState::new(HashMap::new());
         state.preload_runtime_audio("Flowerfield", "music.mp3");
 
-        assert!(state
-            .runtime_preload
-            .preloading_source_keys
-            .contains(&runtime_asset_source_key("Flowerfield", "music.mp3")));
+        assert!(
+            state
+                .runtime_preload
+                .preloading_source_keys
+                .contains(&runtime_asset_source_key("Flowerfield", "music.mp3"))
+        );
     }
 
     #[test]
@@ -569,10 +571,12 @@ mod tests {
         state.preload_runtime_audio("Flowerfield", "music.mp3");
 
         assert_eq!(state.runtime_preload.preloading_source_keys.len(), 1);
-        assert!(state
-            .runtime_preload
-            .preloading_source_keys
-            .contains(&preload_key));
+        assert!(
+            state
+                .runtime_preload
+                .preloading_source_keys
+                .contains(&preload_key)
+        );
 
         let already_loaded = runtime_asset_source_key("Golden Haze", "audio.mp3");
         state
@@ -580,10 +584,12 @@ mod tests {
             .preloaded_audio
             .insert(already_loaded.clone(), vec![1, 2, 3]);
         state.preload_runtime_audio("Golden Haze", "audio.mp3");
-        assert!(!state
-            .runtime_preload
-            .preloading_source_keys
-            .contains(&already_loaded));
+        assert!(
+            !state
+                .runtime_preload
+                .preloading_source_keys
+                .contains(&already_loaded)
+        );
     }
 
     #[tokio::test]
@@ -624,30 +630,38 @@ mod tests {
 
         state.update_runtime_audio_preloads();
 
-        assert!(state
-            .audio
-            .state
-            .runtime_preload
-            .preloaded_audio
-            .contains_key(&loaded_key));
-        assert!(!state
-            .audio
-            .state
-            .runtime_preload
-            .preloaded_audio
-            .contains_key(&missing_key));
-        assert!(!state
-            .audio
-            .state
-            .runtime_preload
-            .preloading_source_keys
-            .contains(&loaded_key));
-        assert!(!state
-            .audio
-            .state
-            .runtime_preload
-            .preloading_source_keys
-            .contains(&missing_key));
+        assert!(
+            state
+                .audio
+                .state
+                .runtime_preload
+                .preloaded_audio
+                .contains_key(&loaded_key)
+        );
+        assert!(
+            !state
+                .audio
+                .state
+                .runtime_preload
+                .preloaded_audio
+                .contains_key(&missing_key)
+        );
+        assert!(
+            !state
+                .audio
+                .state
+                .runtime_preload
+                .preloading_source_keys
+                .contains(&loaded_key)
+        );
+        assert!(
+            !state
+                .audio
+                .state
+                .runtime_preload
+                .preloading_source_keys
+                .contains(&missing_key)
+        );
     }
 
     #[tokio::test]
@@ -809,12 +823,14 @@ mod tests {
 
         assert_eq!(state.editor.timing.waveform_samples, vec![1.0]);
         assert_eq!(state.editor.timing.waveform_sample_rate, 22_050);
-        assert!(state
-            .audio
-            .state
-            .editor
-            .waveform_cache
-            .contains_key(&stale_key));
+        assert!(
+            state
+                .audio
+                .state
+                .editor
+                .waveform_cache
+                .contains_key(&stale_key)
+        );
         assert_eq!(
             state.audio.state.editor.waveform_loading_source,
             Some(stale_key)
@@ -939,12 +955,14 @@ mod tests {
                 .get("imported.mp3"),
             Some(&vec![1, 2, 3, 4])
         );
-        assert!(!state
-            .audio
-            .state
-            .editor
-            .waveform_cache
-            .contains_key(&source_key));
+        assert!(
+            !state
+                .audio
+                .state
+                .editor
+                .waveform_cache
+                .contains_key(&source_key)
+        );
         assert_eq!(
             state.audio.state.editor.waveform_loading_source,
             Some(source_key)

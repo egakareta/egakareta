@@ -7,13 +7,13 @@
 */
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use crate::Vertex;
 use crate::blocks::{
-    build_block_instance_batches_from_refs, build_block_instance_batches_from_refs_at_time,
-    BlockInstanceBuildResult,
+    BlockInstanceBuildResult, build_block_instance_batches_from_refs,
+    build_block_instance_batches_from_refs_at_time,
 };
 use crate::geometry::MeshGeometry;
 use crate::shapes::{PrismFaceColors, PrismTextureLayers};
-use crate::Vertex;
 use eg_blocks::{resolve_block_definition, resolve_block_texture_layers};
 use eg_types::{BlockCuboid, BlockDefinition, BlockRenderProfile, LevelObject};
 
@@ -766,7 +766,7 @@ fn is_unit_size(size: [f32; 3]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_chunked_block_mesh, classify_voxel_fast_lane, VoxelFastLaneRejection};
+    use super::{VoxelFastLaneRejection, build_chunked_block_mesh, classify_voxel_fast_lane};
     use eg_types::LevelObject;
 
     #[test]

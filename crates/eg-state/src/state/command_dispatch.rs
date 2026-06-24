@@ -9,7 +9,7 @@ use super::State;
 use crate::commands::AppCommand;
 use crate::state::editor_command::EditorCommand;
 use eg_editor_domain::TimingDivisionDirection;
-use eg_types::{normalize_binding_key, AppPhase, EditorMode, KeyChord};
+use eg_types::{AppPhase, EditorMode, KeyChord, normalize_binding_key};
 
 impl State {
     /// Central dispatcher: every `AppCommand` is routed here.
@@ -717,12 +717,12 @@ mod tests {
     use crate::commands::AppCommand;
     use crate::state::editor_command::EditorCommand;
     use eg_types::{
-        camera_triggers_to_timed_triggers, default_camera_trigger_distance, BlockId, CameraMode,
-        CameraTrigger, EasingDirection, TimedTrigger, TriggerAction, TriggerTarget,
+        AppPhase, CAMERA_TRIGGER_BLOCK_ID, EditorMode, KeyChord, LevelObject, MusicMetadata,
+        SettingsSection, TRANSFORM_TRIGGER_BLOCK_ID, TimingPoint,
     };
     use eg_types::{
-        AppPhase, EditorMode, KeyChord, LevelObject, MusicMetadata, SettingsSection, TimingPoint,
-        CAMERA_TRIGGER_BLOCK_ID, TRANSFORM_TRIGGER_BLOCK_ID,
+        BlockId, CameraMode, CameraTrigger, EasingDirection, TimedTrigger, TriggerAction,
+        TriggerTarget, camera_triggers_to_timed_triggers, default_camera_trigger_distance,
     };
     use glam::{Vec2, Vec3};
 
@@ -894,10 +894,12 @@ mod tests {
             state.editor.timeline.snapshot_cache_revision,
             state.editor.timeline.simulation_revision
         );
-        assert!(state
-            .editor
-            .tap_path_pick_near_world([0.5, 0.0, 0.5])
-            .is_some());
+        assert!(
+            state
+                .editor
+                .tap_path_pick_near_world([0.5, 0.0, 0.5])
+                .is_some()
+        );
     }
 
     #[tokio::test]
@@ -1680,12 +1682,14 @@ mod tests {
         // Ensure we are not hovering anything initially
         state.editor.ui.hovered_block_index = None;
         state.rebuild_editor_hover_outline_vertices();
-        assert!(state
-            .render
-            .meshes
-            .editor_hover_outline
-            .draw_data()
-            .is_none());
+        assert!(
+            state
+                .render
+                .meshes
+                .editor_hover_outline
+                .draw_data()
+                .is_none()
+        );
 
         let start_x = 0.0;
         let start_y = 0.0;
@@ -1780,18 +1784,22 @@ mod tests {
         assert!(state.editor.ui.marquee_start_screen.is_none());
 
         state.process_editor_dirty(1.0 / 60.0);
-        assert!(state
-            .render
-            .meshes
-            .editor_hover_outline
-            .draw_data()
-            .is_none());
-        assert!(state
-            .render
-            .meshes
-            .editor_selection_outline
-            .draw_data()
-            .is_some());
+        assert!(
+            state
+                .render
+                .meshes
+                .editor_hover_outline
+                .draw_data()
+                .is_none()
+        );
+        assert!(
+            state
+                .render
+                .meshes
+                .editor_selection_outline
+                .draw_data()
+                .is_some()
+        );
     }
 
     #[tokio::test]
@@ -2930,11 +2938,13 @@ mod tests {
             just_pressed: true,
         });
         assert!(state.editor_keybind_capture_action().is_none());
-        assert!(state
-            .app_settings()
-            .keybinds_for_action("copy")
-            .iter()
-            .any(|chord| chord.key == "k" && chord.ctrl));
+        assert!(
+            state
+                .app_settings()
+                .keybinds_for_action("copy")
+                .iter()
+                .any(|chord| chord.key == "k" && chord.ctrl)
+        );
 
         state.dispatch(AppCommand::Editor(EditorCommand::SetKeybindCapture(Some(
             ("paste".to_string(), 0),

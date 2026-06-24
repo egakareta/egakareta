@@ -12,12 +12,12 @@ use eg_editor_domain::{
 };
 use eg_game::TimelineSimulationRuntime;
 use eg_types::{
-    default_camera_trigger_distance, BlockId, EasingDirection, TimedTrigger, TriggerAction,
-    TriggerTarget,
+    AppPhase, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, Direction, EditorMode, GameCursor,
+    LevelObject, TimingPoint,
 };
 use eg_types::{
-    AppPhase, Direction, EditorMode, GameCursor, LevelObject, TimingPoint, DEFAULT_CAMERA_PITCH,
-    DEFAULT_CAMERA_YAW,
+    BlockId, EasingDirection, TimedTrigger, TriggerAction, TriggerTarget,
+    default_camera_trigger_distance,
 };
 
 const TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS: f32 = 0.001;
@@ -1608,7 +1608,7 @@ mod tests {
     use eg_mesh::{GizmoAxis, GizmoDragKind};
     use eg_types::{
         AppPhase, BlockId, Direction, EasingDirection, EditorMode, GameCursor, LevelObject,
-        TimedTrigger, TriggerAction, TriggerTarget, TRANSFORM_TRIGGER_BLOCK_ID,
+        TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerAction, TriggerTarget,
     };
 
     fn test_level_object(position: [f32; 3]) -> LevelObject {

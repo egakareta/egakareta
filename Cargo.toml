@@ -24,7 +24,7 @@ default-members = ["crates/eg-app"]
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "Feel the beat, follow the line."
 repository = "https://github.com/egakareta/egakareta"
 license = "AGPL-3.0-only"

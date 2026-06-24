@@ -98,8 +98,8 @@ mod tests {
     use eg_types::{AuthSession, AuthSessionTokens, AuthUser};
 
     use super::{
-        trigger_audio_import, trigger_auth_refresh, trigger_auth_sign_in, trigger_auth_sign_out,
-        trigger_level_import, AuthServiceMessage,
+        AuthServiceMessage, trigger_audio_import, trigger_auth_refresh, trigger_auth_sign_in,
+        trigger_auth_sign_out, trigger_level_import,
     };
 
     fn test_auth_session(access_token: &str, refresh_token: &str) -> AuthSession {

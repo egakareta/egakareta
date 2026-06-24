@@ -6,7 +6,7 @@
 
 */
 use eg_game::{
-    simulate_timeline_state, simulate_timeline_state_with_triggers, TimelineSimulationRuntime,
+    TimelineSimulationRuntime, simulate_timeline_state, simulate_timeline_state_with_triggers,
 };
 use eg_types::TimedTrigger;
 use eg_types::{Direction, LevelObject, TimingPoint};

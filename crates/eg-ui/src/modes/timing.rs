@@ -7,8 +7,8 @@
 */
 use crate::components::{MAX_TIMELINE_DURATION_SECONDS, MIN_TIMELINE_DURATION_SECONDS};
 use eg_state::commands::AppCommand;
-use eg_state::state::editor_command::EditorCommand;
 use eg_state::state::EditorUiViewModel;
+use eg_state::state::editor_command::EditorCommand;
 
 pub(crate) fn show_timing_mode_bottom_panel(
     ui: &mut egui::Ui,

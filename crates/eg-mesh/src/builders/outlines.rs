@@ -5,9 +5,9 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use crate::Vertex;
 use crate::shapes::append_prism;
 use crate::transforms::rotate_vertices_around_euler;
-use crate::Vertex;
 use eg_block_geometry::hitbox_cuboids;
 use eg_blocks::resolve_block_definition;
 use eg_types::{BlockCollision, LevelObject};

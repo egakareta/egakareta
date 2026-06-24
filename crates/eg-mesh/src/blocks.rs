@@ -15,13 +15,14 @@ use crate::builders::game::{
 };
 use crate::geometry::MeshGeometry;
 use crate::noise::pseudo_random_noise;
-use crate::shapes::{append_prism_with_layers, PrismFaceColors, PrismTextureLayers};
+use crate::shapes::{PrismFaceColors, PrismTextureLayers, append_prism_with_layers};
 use crate::transforms::rotate_vertices_around_euler;
 use crate::{BlockInstance, Vertex};
 use eg_block_geometry::visual_cuboids;
 use eg_blocks::{resolve_block_definition, resolve_block_texture_layers};
 use eg_types::{
-    BlockAnimationAxis, BlockAnimationPhaseSeed, BlockDefinition, BlockRenderProfile, CameraTrigger, LevelObject, TimedTrigger, TriggerAction, TriggerTarget
+    BlockAnimationAxis, BlockAnimationPhaseSeed, BlockDefinition, BlockRenderProfile,
+    CameraTrigger, LevelObject, TimedTrigger, TriggerAction, TriggerTarget,
 };
 use glam::Vec3;
 

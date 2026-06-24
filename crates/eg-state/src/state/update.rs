@@ -7,19 +7,19 @@
 */
 use glam::{Mat4, Vec3};
 
-use super::runtime::BlockVisualEffect;
 use super::State;
+use super::runtime::BlockVisualEffect;
 use eg_blocks::resolve_block_definition;
 use eg_game::{
-    advance_simulation_time, trigger_transformed_objects_at_time, TimelineSimulationRuntime,
+    TimelineSimulationRuntime, advance_simulation_time, trigger_transformed_objects_at_time,
 };
 use eg_mesh::{
-    build_block_effect_vertices, build_block_instance_batches_at_time, build_trail_vertices,
-    build_trail_vertices_with_alpha, BlockEffectInstance,
+    BlockEffectInstance, build_block_effect_vertices, build_block_instance_batches_at_time,
+    build_trail_vertices, build_trail_vertices_with_alpha,
 };
 use eg_types::{
-    AppPhase, BlockEffectColorMode, CameraUniform,
-    ColorSpaceUniform, Direction, EditorMode, LevelObject,
+    AppPhase, BlockEffectColorMode, CameraUniform, ColorSpaceUniform, Direction, EditorMode,
+    LevelObject,
 };
 
 const DEAD_SFX: &[u8] = include_bytes!(concat!(
@@ -782,8 +782,7 @@ impl State {
                 || (self.editor.camera.editor_target_z - self.editor.runtime.gizmo.last_target_z)
                     .abs()
                     > 1e-4
-                || (self.editor.camera.editor_yaw - self.editor.runtime.gizmo.last_rotation)
-                    .abs()
+                || (self.editor.camera.editor_yaw - self.editor.runtime.gizmo.last_rotation).abs()
                     > 1e-4
                 || (self.editor.camera.editor_pitch - self.editor.runtime.gizmo.last_pitch).abs()
                     > 1e-4;
@@ -1496,12 +1495,14 @@ mod tests {
 
         assert!(!state.editor.timeline.playback.playing);
         assert!(state.editor.timeline.playback.runtime.is_none());
-        assert!(state
-            .editor
-            .timeline
-            .playback
-            .pending_seek_time_seconds
-            .is_none());
+        assert!(
+            state
+                .editor
+                .timeline
+                .playback
+                .pending_seek_time_seconds
+                .is_none()
+        );
     }
 
     #[tokio::test]

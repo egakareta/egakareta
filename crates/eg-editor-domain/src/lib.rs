@@ -23,8 +23,8 @@ pub use transitions::*;
 mod tests {
     use super::*;
     use eg_types::{
-        BasicLevelMetadata, LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata, TimingPoint,
-        TRANSFORM_TRIGGER_BLOCK_ID,
+        BasicLevelMetadata, LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata,
+        TRANSFORM_TRIGGER_BLOCK_ID, TimingPoint,
     };
     use eg_types::{TriggerAction, TriggerTarget};
 
@@ -781,9 +781,11 @@ mod tests {
             &[],
         );
 
-        assert!(previews
-            .iter()
-            .all(|preview| (preview.time_seconds - 0.5).abs() > TAP_EPSILON_SECONDS));
+        assert!(
+            previews
+                .iter()
+                .all(|preview| (preview.time_seconds - 0.5).abs() > TAP_EPSILON_SECONDS)
+        );
     }
 
     #[test]
@@ -809,12 +811,16 @@ mod tests {
             &objects,
         );
 
-        assert!(previews
-            .iter()
-            .any(|preview| (preview.time_seconds - 0.1).abs() <= TAP_EPSILON_SECONDS));
-        assert!(previews
-            .iter()
-            .all(|preview| (preview.time_seconds - 0.2).abs() > TAP_EPSILON_SECONDS));
+        assert!(
+            previews
+                .iter()
+                .any(|preview| (preview.time_seconds - 0.1).abs() <= TAP_EPSILON_SECONDS)
+        );
+        assert!(
+            previews
+                .iter()
+                .all(|preview| (preview.time_seconds - 0.2).abs() > TAP_EPSILON_SECONDS)
+        );
     }
 
     #[test]

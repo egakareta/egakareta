@@ -14,10 +14,10 @@ use crate::{
     show_editor_ui, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
     show_pause_menu_ui, show_perf_overlay, show_practice_checkpoint_ui, show_settings_sidebar,
 };
-use eg_render::block_icon_cache::BlockIconCache;
 use eg_render::RenderSurfaceError;
+use eg_render::block_icon_cache::BlockIconCache;
 use eg_state::state::State;
-use eg_ui::{combined_ui_scale_factor, MenuTextures};
+use eg_ui::{MenuTextures, combined_ui_scale_factor};
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 
 /// The main frame pipeline that orchestrates UI rendering and game updates.

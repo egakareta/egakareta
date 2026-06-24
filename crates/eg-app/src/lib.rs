@@ -18,9 +18,9 @@ mod platform;
 mod tests;
 
 pub use eg_ui::{
-    load_menu_textures, show_editor_ui, show_menu_favicon_ui, show_menu_play_ui,
+    MenuTextures, load_menu_textures, show_editor_ui, show_menu_favicon_ui, show_menu_play_ui,
     show_menu_topbar_ui, show_pause_menu_ui, show_perf_overlay, show_practice_checkpoint_ui,
-    show_settings_sidebar, MenuTextures,
+    show_settings_sidebar,
 };
 #[cfg(target_arch = "wasm32")]
 pub use platform::application::run_game;

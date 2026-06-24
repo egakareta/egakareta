@@ -16,7 +16,7 @@ use super::{
     MenuSubsystem, SessionSubsystem, State,
 };
 use crate::state::RenderSubsystem;
-use eg_render::{GpuContext, InstancedMeshSlot, MeshSlot, SceneMeshes, DEPTH_FORMAT};
+use eg_render::{DEPTH_FORMAT, GpuContext, InstancedMeshSlot, MeshSlot, SceneMeshes};
 use glam::Mat4;
 #[cfg(any(test, feature = "test-support"))]
 use std::sync::OnceLock;
@@ -26,8 +26,8 @@ use eg_blocks::block_texture_atlas;
 use eg_game::GameState;
 use eg_level::builtin_level_names;
 use eg_mesh::{
-    build_block_geometry, build_floor_vertices, build_grid_vertices, BlockInstance, MeshGeometry,
-    Vertex,
+    BlockInstance, MeshGeometry, Vertex, build_block_geometry, build_floor_vertices,
+    build_grid_vertices,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use eg_platform::state_host::NativeWindow;
@@ -35,9 +35,10 @@ use eg_platform::state_host::SurfaceHost;
 #[cfg(target_arch = "wasm32")]
 use eg_platform::state_host::WasmCanvas;
 use eg_types::{
-    AppPhase, BasicLevelMetadata, CameraUniform, ColorSpaceUniform, EditorState, GridUniform,
-    LineUniform, MenuState, MusicMetadata, PhysicalSize, SettingsSection, SpawnMetadata,
-    DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
+    AppPhase, BasicLevelMetadata, CameraUniform, ColorSpaceUniform,
+    DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET, EditorState,
+    GridUniform, LineUniform, MenuState, MusicMetadata, PhysicalSize, SettingsSection,
+    SpawnMetadata,
 };
 
 const GRID_HALF_EXTENT: f32 = 2048.0;
@@ -1631,10 +1632,10 @@ mod tests {
     use eg_types::{Direction, MusicMetadata};
 
     use super::{
-        block_texture_array_layer_count, editor_ghost_trail_depth_stencil_state,
+        State, block_texture_array_layer_count, editor_ghost_trail_depth_stencil_state,
         editor_ghost_trail_primitive_state, editor_hover_outline_depth_stencil_state,
         editor_outline_depth_stencil_state, editor_outline_mask_depth_stencil_state,
-        editor_outline_occlusion_depth_mask_depth_stencil_state, State,
+        editor_outline_occlusion_depth_mask_depth_stencil_state,
     };
     use eg_types::AppPhase;
 
@@ -1765,13 +1766,13 @@ mod tests {
         state.turn_right();
 
         assert!(
-                state.audio.state.runtime.is_playing(),
-                "First gameplay input after starting a level should mark runtime audio as playing in tests"
-            );
+            state.audio.state.runtime.is_playing(),
+            "First gameplay input after starting a level should mark runtime audio as playing in tests"
+        );
         assert!(
-                state.audio.state.runtime.playback_time_seconds().is_some(),
-                "First gameplay input after starting a level should produce a runtime playback clock in tests"
-            );
+            state.audio.state.runtime.playback_time_seconds().is_some(),
+            "First gameplay input after starting a level should produce a runtime playback clock in tests"
+        );
     }
 
     #[tokio::test]

@@ -7,8 +7,8 @@
 */
 use eg_types::TimedTrigger;
 use eg_types::{
-    default_sky_color, BasicLevelMetadata, LevelMetadata, LevelObject, LevelPreviewCameraMetadata,
-    MusicMetadata, SpawnMetadata, TimingPoint,
+    BasicLevelMetadata, LevelMetadata, LevelObject, LevelPreviewCameraMetadata, MusicMetadata,
+    SpawnMetadata, TimingPoint, default_sky_color,
 };
 
 pub struct EditorSessionInit {

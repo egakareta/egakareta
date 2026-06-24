@@ -11,17 +11,18 @@ use wgpu::util::DeviceExt;
 use eg_block_geometry::visual_cuboids;
 use eg_blocks::{resolve_block_definition, resolve_block_texture_layers};
 
-use eg_mesh::shapes::{append_prism_with_layers, PrismFaceColors, PrismTextureLayers};
+use eg_mesh::shapes::{PrismFaceColors, PrismTextureLayers, append_prism_with_layers};
 use eg_mesh::{
+    CameraTriggerVisualStyle, MeshGeometry, TransformTriggerVisualStyle,
     append_camera_trigger_visual_vertices, append_transform_trigger_visual_vertices,
-    build_block_geometry, CameraTriggerVisualStyle, MeshGeometry, TransformTriggerVisualStyle,
+    build_block_geometry,
 };
 use eg_types::{
-    BlockIconCamera, BlockRenderProfile, CameraUniform, ColorSpaceUniform, LevelObject,
-    CAMERA_TRIGGER_BLOCK_ID, TRANSFORM_TRIGGER_BLOCK_ID,
+    BlockIconCamera, BlockRenderProfile, CAMERA_TRIGGER_BLOCK_ID, CameraUniform, ColorSpaceUniform,
+    LevelObject, TRANSFORM_TRIGGER_BLOCK_ID,
 };
 
-use crate::{GpuContext, DEPTH_FORMAT};
+use crate::{DEPTH_FORMAT, GpuContext};
 
 const ICON_DIMETRIC_YAW_DEGREES: f32 = 45.0;
 const ICON_DIMETRIC_PITCH_DEGREES: f32 = 30.0;

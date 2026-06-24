@@ -9,7 +9,7 @@
 
 use std::hint::black_box;
 
-use eg_game::{trigger_transformed_objects_at_time, TimelineSimulationRuntime};
+use eg_game::{TimelineSimulationRuntime, trigger_transformed_objects_at_time};
 use eg_mesh::{build_block_geometry, build_chunked_block_mesh, build_trail_vertices_with_alpha};
 use eg_types::{
     Direction, LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TriggerTarget,

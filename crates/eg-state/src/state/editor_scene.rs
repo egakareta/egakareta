@@ -15,7 +15,8 @@ use eg_editor_domain::tap_time_is_timing_division;
 use eg_editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds_with_triggers};
 use eg_game::trigger_transformed_objects_at_time;
 use eg_mesh::{
-    build_block_geometry_for_object, build_block_geometry_from_refs,
+    GizmoParams, GizmoPart, MeshGeometry, PracticeCheckpointFlagInstance, TransformTriggerMarker,
+    Vertex, build_block_geometry_for_object, build_block_geometry_from_refs,
     build_block_geometry_from_refs_at_time, build_camera_arrow_vertices, build_chunked_block_mesh,
     build_chunked_block_mesh_at_time, build_chunked_block_mesh_from_refs,
     build_chunked_block_mesh_from_refs_at_time, build_colored_tap_indicator_vertices,
@@ -25,14 +26,12 @@ use eg_mesh::{
     build_editor_transform_trigger_target_outline_vertices,
     build_practice_checkpoint_flag_geometry, build_spawn_marker_vertices,
     build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices,
-    build_transform_trigger_marker_vertices, GizmoParams, GizmoPart, MeshGeometry,
-    PracticeCheckpointFlagInstance, TransformTriggerMarker, Vertex,
+    build_transform_trigger_marker_vertices,
 };
 use eg_render::EditorOutlineInstance;
 use eg_types::{
-    AppPhase, BlockRenderProfile, Direction,
-    EditorMode, EditorPlaceMode, LevelObject, TimedTrigger, TimingPoint, TriggerAction,
-    TriggerTarget, TRANSFORM_TRIGGER_BLOCK_ID,
+    AppPhase, BlockRenderProfile, Direction, EditorMode, EditorPlaceMode, LevelObject,
+    TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TimingPoint, TriggerAction, TriggerTarget,
 };
 
 const SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD: usize = 700;
@@ -1394,7 +1393,7 @@ impl State {
 
         // Hitbox visualization follows the gameplay hitboxes, so when a trigger
         // opts into moving hitboxes the red outline moves with it.
-        let object_source =self.editor.objects.clone();
+        let object_source = self.editor.objects.clone();
 
         let player_hitbox = editor_preview_player_hitbox(self.editor.timeline.preview.position);
         let vertices =
@@ -1502,15 +1501,15 @@ fn tap_indicator_color(
 #[cfg(test)]
 mod tests {
     use super::{
+        EDITOR_SELECTION_OUTLINE_COLOR, EditorObjectOutlineStyle, State,
         build_editor_object_outline_vertices, tap_indicator_color,
-        transform_trigger_markers_for_triggers, EditorObjectOutlineStyle, State,
-        EDITOR_SELECTION_OUTLINE_COLOR,
+        transform_trigger_markers_for_triggers,
     };
     use eg_mesh::blocks::build_block_geometry_for_object;
     use eg_mesh::builders::game::build_colored_tap_indicator_vertices;
     use eg_render::MeshDrawData;
     use eg_types::{
-        AppPhase, BlockId, EditorMode, LevelObject, CAMERA_TRIGGER_BLOCK_ID,
+        AppPhase, BlockId, CAMERA_TRIGGER_BLOCK_ID, EditorMode, LevelObject,
         TRANSFORM_TRIGGER_BLOCK_ID,
     };
     use eg_types::{EasingDirection, TimedTrigger, TriggerAction, TriggerTarget};
@@ -1543,12 +1542,16 @@ mod tests {
 
         assert_ne!(visual_vertices.len(), 36);
         assert_eq!(outline_vertices.len(), visual_vertices.len());
-        assert!(outline_vertices
-            .iter()
-            .all(|vertex| vertex.color == EDITOR_SELECTION_OUTLINE_COLOR));
-        assert!(outline_vertices
-            .iter()
-            .all(|vertex| (vertex.render_profile - 3.0).abs() <= f32::EPSILON));
+        assert!(
+            outline_vertices
+                .iter()
+                .all(|vertex| vertex.color == EDITOR_SELECTION_OUTLINE_COLOR)
+        );
+        assert!(
+            outline_vertices
+                .iter()
+                .all(|vertex| (vertex.render_profile - 3.0).abs() <= f32::EPSILON)
+        );
     }
 
     fn object_move_trigger() -> TimedTrigger {
@@ -1742,31 +1745,37 @@ mod tests {
 
         state.phase = AppPhase::Menu;
         state.rebuild_camera_trigger_marker_vertices();
-        assert!(state
-            .render
-            .meshes
-            .camera_trigger_markers
-            .draw_data()
-            .is_none());
+        assert!(
+            state
+                .render
+                .meshes
+                .camera_trigger_markers
+                .draw_data()
+                .is_none()
+        );
 
         state.phase = AppPhase::Editor;
         state.editor.set_triggers(Vec::new());
         state.rebuild_camera_trigger_marker_vertices();
-        assert!(state
-            .render
-            .meshes
-            .camera_trigger_markers
-            .draw_data()
-            .is_none());
+        assert!(
+            state
+                .render
+                .meshes
+                .camera_trigger_markers
+                .draw_data()
+                .is_none()
+        );
 
         state.editor.set_triggers(vec![camera_trigger()]);
         state.rebuild_camera_trigger_marker_vertices();
-        assert!(state
-            .render
-            .meshes
-            .camera_trigger_markers
-            .draw_data()
-            .is_none());
+        assert!(
+            state
+                .render
+                .meshes
+                .camera_trigger_markers
+                .draw_data()
+                .is_none()
+        );
 
         state.phase = AppPhase::Menu;
         state.rebuild_tap_indicator_vertices();
@@ -1820,30 +1829,36 @@ mod tests {
 
         state.phase = AppPhase::Menu;
         state.rebuild_transform_trigger_marker_vertices();
-        assert!(state
-            .render
-            .meshes
-            .transform_trigger_markers
-            .draw_data()
-            .is_none());
+        assert!(
+            state
+                .render
+                .meshes
+                .transform_trigger_markers
+                .draw_data()
+                .is_none()
+        );
 
         state.phase = AppPhase::Editor;
         state.rebuild_transform_trigger_marker_vertices();
-        assert!(state
-            .render
-            .meshes
-            .transform_trigger_markers
-            .draw_data()
-            .is_some());
+        assert!(
+            state
+                .render
+                .meshes
+                .transform_trigger_markers
+                .draw_data()
+                .is_some()
+        );
 
         state.editor.set_triggers(Vec::new());
         state.rebuild_transform_trigger_marker_vertices();
-        assert!(state
-            .render
-            .meshes
-            .transform_trigger_markers
-            .draw_data()
-            .is_none());
+        assert!(
+            state
+                .render
+                .meshes
+                .transform_trigger_markers
+                .draw_data()
+                .is_none()
+        );
     }
 
     #[tokio::test]

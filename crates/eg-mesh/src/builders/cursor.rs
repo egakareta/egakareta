@@ -5,9 +5,9 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use crate::Vertex;
 use crate::blocks::build_block_geometry_for_object;
 use crate::builders::game::build_colored_tap_indicator_vertices;
-use crate::Vertex;
 use eg_types::LevelObject;
 
 const EDITOR_CURSOR_TOP_COLOR: [f32; 4] = [0.2, 0.85, 0.95, 0.6];
@@ -134,11 +134,15 @@ mod tests {
         let vertices = build_editor_tap_cursor_vertices([1.0, 2.0, 3.0]);
 
         assert_eq!(vertices.len(), 72);
-        assert!(vertices
-            .iter()
-            .all(|vertex| vertex.color == [0.2, 0.85, 0.95, 0.6]));
-        assert!(vertices
-            .iter()
-            .all(|vertex| (vertex.position[1] - 2.1).abs() <= f32::EPSILON));
+        assert!(
+            vertices
+                .iter()
+                .all(|vertex| vertex.color == [0.2, 0.85, 0.95, 0.6])
+        );
+        assert!(
+            vertices
+                .iter()
+                .all(|vertex| (vertex.position[1] - 2.1).abs() <= f32::EPSILON)
+        );
     }
 }

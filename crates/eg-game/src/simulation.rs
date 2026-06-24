@@ -6,7 +6,7 @@
 
 */
 use super::state::{ConsumedObjectEvent, GameState};
-use eg_types::{apply_timed_triggers_to_objects, TimedTrigger,Direction, LevelObject};
+use eg_types::{Direction, LevelObject, TimedTrigger, apply_timed_triggers_to_objects};
 
 pub struct TimelineSimulationState {
     pub position: [f32; 3],

@@ -12,7 +12,8 @@ use eg_block_geometry::{
     hitbox_cuboids, ray_intersect_aabb, ray_intersect_aabb_interval, ray_intersect_sphere,
 };
 use eg_types::{
-    CAMERA_TRIGGER_BLOCK_ID, CameraTrigger, EditorMode, EditorPickResult, EditorTapDivisionPick, LevelObject, TriggerAction
+    CAMERA_TRIGGER_BLOCK_ID, CameraTrigger, EditorMode, EditorPickResult, EditorTapDivisionPick,
+    LevelObject, TriggerAction,
 };
 use glam::{Vec2, Vec3, Vec4};
 
@@ -862,7 +863,7 @@ fn transform_trigger_target_object(action: &TriggerAction) -> Option<LevelObject
 #[cfg(test)]
 mod tests {
     use super::super::super::State;
-    use eg_types::{BlockId, LevelObject, CAMERA_TRIGGER_BLOCK_ID};
+    use eg_types::{BlockId, CAMERA_TRIGGER_BLOCK_ID, LevelObject};
     use glam::{Vec2, Vec3};
 
     #[tokio::test]
@@ -912,14 +913,18 @@ mod tests {
         let ray_origin = Vec3::new(0.5, 5.0, 0.5 + super::CAMERA_TRIGGER_ARROW_PICK_OFFSET);
         let ray_dir = -Vec3::Y;
 
-        assert!(state
-            .editor
-            .ray_intersect_rotated_block(ray_origin, ray_dir, &camera_trigger)
-            .is_none());
-        assert!(state
-            .editor
-            .ray_intersect_camera_trigger_block(ray_origin, ray_dir, &camera_trigger)
-            .is_some());
+        assert!(
+            state
+                .editor
+                .ray_intersect_rotated_block(ray_origin, ray_dir, &camera_trigger)
+                .is_none()
+        );
+        assert!(
+            state
+                .editor
+                .ray_intersect_camera_trigger_block(ray_origin, ray_dir, &camera_trigger)
+                .is_some()
+        );
     }
 
     #[tokio::test]

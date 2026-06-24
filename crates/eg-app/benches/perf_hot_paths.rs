@@ -7,12 +7,12 @@
 */
 use std::hint::black_box;
 
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
-use eg_state::state::{editor_command::EditorCommand, State};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use eg_state::state::{State, editor_command::EditorCommand};
 use eg_types::EditorMode;
 use egakareta_lib::bench_support::{
-    advance_timeline_preview, rebuild_chunked_dense_block_mesh, rebuild_full_block_mesh,
-    rebuild_transformed_block_mesh, transform_objects_only, TimelineScrubBenchmarkState,
+    TimelineScrubBenchmarkState, advance_timeline_preview, rebuild_chunked_dense_block_mesh,
+    rebuild_full_block_mesh, rebuild_transformed_block_mesh, transform_objects_only,
 };
 
 fn build_editor_playback_start_state() -> State {

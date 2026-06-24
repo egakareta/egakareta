@@ -11,14 +11,8 @@ use glam::{Mat4, Vec2, Vec3, Vec4};
 
 impl EditorSubsystem {
     pub fn camera_axes_xy(&self) -> (Vec2, Vec2) {
-        let right = Vec2::new(
-            self.camera.editor_yaw.cos(),
-            -self.camera.editor_yaw.sin(),
-        );
-        let up = Vec2::new(
-            self.camera.editor_yaw.sin(),
-            self.camera.editor_yaw.cos(),
-        );
+        let right = Vec2::new(self.camera.editor_yaw.cos(), -self.camera.editor_yaw.sin());
+        let up = Vec2::new(self.camera.editor_yaw.sin(), self.camera.editor_yaw.cos());
         (right, up)
     }
 
@@ -174,8 +168,8 @@ impl EditorSubsystem {
         transition.elapsed += frame_dt;
         let alpha = (transition.elapsed / transition.duration).clamp(0.0, 1.0);
 
-        self.camera.editor_yaw = transition.start_yaw
-            + (transition.target_yaw - transition.start_yaw) * alpha;
+        self.camera.editor_yaw =
+            transition.start_yaw + (transition.target_yaw - transition.start_yaw) * alpha;
         self.camera.editor_pitch =
             transition.start_pitch + (transition.target_pitch - transition.start_pitch) * alpha;
 

@@ -20,7 +20,7 @@ use winit::{
 use winit::window::Icon;
 
 #[cfg(target_arch = "wasm32")]
-use wasm_bindgen::{prelude::*, JsCast};
+use wasm_bindgen::{JsCast, prelude::*};
 #[cfg(target_arch = "wasm32")]
 use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys, WindowExtWebSys};
 
@@ -690,9 +690,11 @@ mod tests {
             },
         );
 
-        assert!(end_primary_after_cancel_events
-            .iter()
-            .all(|event| !matches!(event, InputEvent::MouseButton { .. })));
+        assert!(
+            end_primary_after_cancel_events
+                .iter()
+                .all(|event| !matches!(event, InputEvent::MouseButton { .. }))
+        );
     }
 
     #[test]

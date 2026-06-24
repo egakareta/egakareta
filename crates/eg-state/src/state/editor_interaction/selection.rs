@@ -973,18 +973,24 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.editor.ui.mode = EditorMode::Timing;
-        assert!(!state
-            .editor
-            .begin_marquee_selection(50.0, 50.0, AppPhase::Editor));
+        assert!(
+            !state
+                .editor
+                .begin_marquee_selection(50.0, 50.0, AppPhase::Editor)
+        );
 
         state.editor.ui.mode = EditorMode::Select;
-        assert!(!state
-            .editor
-            .begin_marquee_selection(50.0, 50.0, AppPhase::Menu));
+        assert!(
+            !state
+                .editor
+                .begin_marquee_selection(50.0, 50.0, AppPhase::Menu)
+        );
 
-        assert!(state
-            .editor
-            .begin_marquee_selection(50.0, 50.0, AppPhase::Editor));
+        assert!(
+            state
+                .editor
+                .begin_marquee_selection(50.0, 50.0, AppPhase::Editor)
+        );
         assert!(state.editor.ui.marquee_start_screen.is_some());
         assert!(state.editor.ui.marquee_current_screen.is_some());
     }
@@ -994,12 +1000,16 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.editor.ui.mode = EditorMode::Select;
-        assert!(state
-            .editor
-            .begin_marquee_selection(100.0, 100.0, AppPhase::Editor));
-        assert!(state
-            .editor
-            .update_marquee_selection(101.0, 101.0, AppPhase::Editor));
+        assert!(
+            state
+                .editor
+                .begin_marquee_selection(100.0, 100.0, AppPhase::Editor)
+        );
+        assert!(
+            state
+                .editor
+                .update_marquee_selection(101.0, 101.0, AppPhase::Editor)
+        );
 
         let changed = state.editor.finish_marquee_selection(
             101.0,
@@ -1020,12 +1030,16 @@ mod tests {
         state.editor.ui.mode = EditorMode::Select;
         state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
 
-        assert!(state
-            .editor
-            .begin_marquee_selection(0.0, 0.0, AppPhase::Editor));
-        assert!(state
-            .editor
-            .update_marquee_selection(2000.0, 2000.0, AppPhase::Editor));
+        assert!(
+            state
+                .editor
+                .begin_marquee_selection(0.0, 0.0, AppPhase::Editor)
+        );
+        assert!(
+            state
+                .editor
+                .update_marquee_selection(2000.0, 2000.0, AppPhase::Editor)
+        );
 
         let changed = state.editor.finish_marquee_selection(
             2000.0,
@@ -1050,12 +1064,16 @@ mod tests {
         state.editor.ui.selected_block_indices = vec![0];
         state.editor.ui.selected_block_index = Some(0);
 
-        assert!(state
-            .editor
-            .begin_marquee_selection(0.0, 0.0, AppPhase::Editor));
-        assert!(state
-            .editor
-            .update_marquee_selection(2000.0, 2000.0, AppPhase::Editor));
+        assert!(
+            state
+                .editor
+                .begin_marquee_selection(0.0, 0.0, AppPhase::Editor)
+        );
+        assert!(
+            state
+                .editor
+                .update_marquee_selection(2000.0, 2000.0, AppPhase::Editor)
+        );
 
         let changed = state.editor.finish_marquee_selection(
             2000.0,
@@ -1084,12 +1102,14 @@ mod tests {
         for [x, y] in [[2000.0, 2000.0], [20.0, 20.0], [2000.0, 2000.0]] {
             assert!(state.update_editor_marquee_selection(x, y));
             assert!(state.editor.runtime.dirty.rebuild_selection_overlays);
-            assert!(state
-                .render
-                .meshes
-                .editor_hover_outline
-                .draw_data()
-                .is_none());
+            assert!(
+                state
+                    .render
+                    .meshes
+                    .editor_hover_outline
+                    .draw_data()
+                    .is_none()
+            );
             state.editor.runtime.dirty = EditorDirtyFlags::default();
         }
 
@@ -1098,18 +1118,22 @@ mod tests {
             ..EditorDirtyFlags::default()
         });
         state.process_editor_dirty(1.0 / 60.0);
-        assert!(state
-            .render
-            .meshes
-            .editor_hover_outline
-            .draw_data()
-            .is_none());
-        assert!(state
-            .render
-            .meshes
-            .editor_selection_outline
-            .draw_data()
-            .is_some());
+        assert!(
+            state
+                .render
+                .meshes
+                .editor_hover_outline
+                .draw_data()
+                .is_none()
+        );
+        assert!(
+            state
+                .render
+                .meshes
+                .editor_selection_outline
+                .draw_data()
+                .is_some()
+        );
     }
 
     #[tokio::test]
@@ -1177,24 +1201,32 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.editor.ui.mode = EditorMode::Select;
-        assert!(!state
-            .editor
-            .update_marquee_selection(10.0, 10.0, AppPhase::Editor));
+        assert!(
+            !state
+                .editor
+                .update_marquee_selection(10.0, 10.0, AppPhase::Editor)
+        );
 
         state.editor.ui.marquee_start_screen = Some([0.0, 0.0]);
         state.editor.ui.right_dragging = true;
-        assert!(!state
-            .editor
-            .update_marquee_selection(10.0, 10.0, AppPhase::Editor));
+        assert!(
+            !state
+                .editor
+                .update_marquee_selection(10.0, 10.0, AppPhase::Editor)
+        );
 
         state.editor.ui.right_dragging = false;
-        assert!(!state
-            .editor
-            .update_marquee_selection(10.0, 10.0, AppPhase::Menu));
+        assert!(
+            !state
+                .editor
+                .update_marquee_selection(10.0, 10.0, AppPhase::Menu)
+        );
 
-        assert!(state
-            .editor
-            .update_marquee_selection(10.0, 10.0, AppPhase::Editor));
+        assert!(
+            state
+                .editor
+                .update_marquee_selection(10.0, 10.0, AppPhase::Editor)
+        );
         assert_eq!(state.editor.ui.marquee_current_screen, Some([10.0, 10.0]));
     }
 
@@ -1214,9 +1246,11 @@ mod tests {
             .world_to_screen_v(block_center, viewport)
             .expect("block center should project to screen");
 
-        assert!(state
-            .editor
-            .begin_block_drag(click.x as f64, click.y as f64, viewport));
+        assert!(
+            state
+                .editor
+                .begin_block_drag(click.x as f64, click.y as f64, viewport)
+        );
         let drag = state
             .editor
             .runtime
@@ -1400,9 +1434,11 @@ mod tests {
             }],
         });
 
-        assert!(state
-            .editor
-            .drag_selection(lift_screen.x as f64, lift_screen.y as f64, viewport,));
+        assert!(
+            state
+                .editor
+                .drag_selection(lift_screen.x as f64, lift_screen.y as f64, viewport,)
+        );
 
         approx::assert_abs_diff_eq!(state.editor.objects[0].position[1], lift_y, epsilon = 1e-5);
         approx::assert_abs_diff_eq!(state.editor.ui.cursor[1], lift_y, epsilon = 1e-5);

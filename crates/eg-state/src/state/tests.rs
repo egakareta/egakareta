@@ -50,12 +50,14 @@ async fn test_marquee_no_redundant_selections_before_drag_started() {
         count, 36,
         "Should only have one block outlined when just hovering"
     );
-    assert!(state
-        .render
-        .meshes
-        .editor_hover_stencil
-        .draw_data()
-        .is_some());
+    assert!(
+        state
+            .render
+            .meshes
+            .editor_hover_stencil
+            .draw_data()
+            .is_some()
+    );
 
     // 2. Mouse down - starts marquee but drag hasn't started (moved only 1 pixel)
     state.editor.ui.left_mouse_down = true;
@@ -343,10 +345,7 @@ async fn focused_init_path_toggle_editor_uses_selected_menu_level() {
     assert!(state.editor.objects.is_empty());
 }
 
-fn configure_trigger_policy_parity_scene(
-    state: &mut State,
-    timeline_time_seconds: f32,
-) {
+fn configure_trigger_policy_parity_scene(state: &mut State, timeline_time_seconds: f32) {
     state.editor.objects = vec![LevelObject {
         id: "target".to_string(),
         position: [8.0, 0.0, 8.0],
@@ -1284,9 +1283,9 @@ async fn test_gizmo_hover_priority_suppresses_block_outline() {
         "expected gizmo handle to be hovered"
     );
     assert!(
-            state.editor.ui.hovered_block_index.is_none(),
-            "expected block hover to be suppressed while gizmo handle is hovered, even though a block is behind it"
-        );
+        state.editor.ui.hovered_block_index.is_none(),
+        "expected block hover to be suppressed while gizmo handle is hovered, even though a block is behind it"
+    );
 }
 
 #[tokio::test]

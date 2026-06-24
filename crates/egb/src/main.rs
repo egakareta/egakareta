@@ -181,7 +181,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_cli, Mode};
+    use super::{Mode, parse_cli};
 
     fn parse_error(values: &[&str]) -> String {
         match parse_cli(values.iter().map(|value| value.to_string())) {

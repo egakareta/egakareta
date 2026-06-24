@@ -13,7 +13,7 @@
 use std::io::{Read, Write as _};
 use std::sync::OnceLock;
 
-use include_dir::{include_dir, Dir};
+use include_dir::{Dir, include_dir};
 
 use eg_codec::{decode_level_metadata_binary, encode_level_metadata_binary};
 use eg_types::LevelMetadata;

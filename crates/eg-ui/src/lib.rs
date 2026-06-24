@@ -27,16 +27,16 @@ use crate::modes::shared::show_mode_selector_popup;
 use crate::modes::tapping::{show_selected_tap_properties_window, show_tapping_mode_bottom_panel};
 use crate::modes::timing::show_timing_mode_bottom_panel;
 use eg_state::commands::AppCommand;
-use eg_state::state::editor_command::EditorCommand;
 use eg_state::state::EditorUiViewModel;
 use eg_state::state::State;
-use eg_types::{essential_keybind_actions, format_key_chord, BlockId, EditorMode, SettingsSection};
+use eg_state::state::editor_command::EditorCommand;
 use eg_types::{BlockCategory, BlockDefinition};
+use eg_types::{BlockId, EditorMode, SettingsSection, essential_keybind_actions, format_key_chord};
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
 use glam::{Mat3, Vec3};
 pub use menu::{
-    load_menu_textures, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
-    show_pause_menu_ui, show_practice_checkpoint_ui, MenuTextures,
+    MenuTextures, load_menu_textures, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
+    show_pause_menu_ui, show_practice_checkpoint_ui,
 };
 
 #[derive(Clone, Copy)]
@@ -101,11 +101,7 @@ const INSANE_STAR_THRESHOLD: f32 = 10.0;
 
 fn optional_trimmed_string(value: String) -> Option<String> {
     let value = value.trim().to_string();
-    if value.is_empty() {
-        None
-    } else {
-        Some(value)
-    }
+    if value.is_empty() { None } else { Some(value) }
 }
 
 fn tags_to_text(tags: &[String]) -> String {
@@ -350,11 +346,7 @@ fn show_editor_context_menu(
 
     let hint = |action: &str| -> Option<String> {
         let h = view.app_settings.hotkey_hint(action);
-        if h.is_empty() {
-            None
-        } else {
-            Some(h)
-        }
+        if h.is_empty() { None } else { Some(h) }
     };
 
     let response = egui::Area::new("editor_canvas_context_menu".into())
@@ -1928,10 +1920,10 @@ fn show_view_selector_cube(
 #[cfg(test)]
 mod tests {
     use super::{
-        block_matches_catalog_category, combined_ui_scale_factor, is_compact_editor_ui,
-        marquee_screen_pos_to_egui_pos, perf_overlay_window_order, push_command_when_clicked,
-        responsive_ui_scale_multiplier, settings_sidebar_default_width, show_editor_ui,
-        show_perf_overlay, sort_quad_by_angle, VIEW_CUBE_FACES,
+        VIEW_CUBE_FACES, block_matches_catalog_category, combined_ui_scale_factor,
+        is_compact_editor_ui, marquee_screen_pos_to_egui_pos, perf_overlay_window_order,
+        push_command_when_clicked, responsive_ui_scale_multiplier, settings_sidebar_default_width,
+        show_editor_ui, show_perf_overlay, sort_quad_by_angle,
     };
     use eg_blocks::resolve_block_definition;
     use eg_state::commands::AppCommand;

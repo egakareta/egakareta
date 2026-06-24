@@ -8,11 +8,11 @@
 use glam::{Mat4, Vec2, Vec3};
 
 use super::{EditorSubsystem, State};
-use eg_types::{
-    timed_triggers_to_camera_triggers, CameraMode, CameraTrigger, EasingDirection, TimedTrigger,
-    TriggerAction, TriggerTarget, DEFAULT_CAMERA_DISTANCE,
-};
 use eg_types::{AppPhase, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW};
+use eg_types::{
+    CameraMode, CameraTrigger, DEFAULT_CAMERA_DISTANCE, EasingDirection, TimedTrigger,
+    TriggerAction, TriggerTarget, timed_triggers_to_camera_triggers,
+};
 
 const PLAY_CAMERA_DISTANCE: f32 = 28.28;
 const MIN_EDITOR_PITCH: f32 = -89.9f32.to_radians();
@@ -396,14 +396,14 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::{
+        CameraViewSample, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, MIN_PLAYING_PITCH, State,
         eased_alpha, editor_camera_offset_for_pose, interpolate_camera_samples,
-        offset_from_rotation_pitch, playing_camera_offset_for_angles, CameraViewSample, State,
-        DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, MIN_PLAYING_PITCH,
+        offset_from_rotation_pitch, playing_camera_offset_for_angles,
     };
     use eg_types::AppPhase;
     use eg_types::{
-        default_camera_trigger_distance, CameraMode, CameraTrigger, EasingDirection, TimedTrigger,
-        TriggerAction, TriggerTarget,
+        CameraMode, CameraTrigger, EasingDirection, TimedTrigger, TriggerAction, TriggerTarget,
+        default_camera_trigger_distance,
     };
     use glam::Vec3;
 

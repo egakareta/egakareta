@@ -4,7 +4,7 @@
 [package]
 name = "eg-blocks"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "Block catalog and texture atlas loading for egakareta."
 repository = "https://github.com/egakareta/egakareta"
 license = "AGPL-3.0-only"

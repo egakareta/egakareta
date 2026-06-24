@@ -4,7 +4,7 @@
 [package]
 name = "egb"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "Level metadata conversion helper for egakareta."
 repository = "https://github.com/egakareta/egakareta"
 license = "AGPL-3.0-only"

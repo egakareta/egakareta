@@ -7,8 +7,8 @@
 */
 use crate::components::show_shadowed_label;
 use eg_state::commands::AppCommand;
-use eg_state::state::editor_command::EditorCommand;
 use eg_state::state::EditorUiViewModel;
+use eg_state::state::editor_command::EditorCommand;
 
 const MENU_TEXTURE_MAX_DIMENSION: u32 = 256;
 const MENU_TOPBAR_VERTICAL_PADDING: f32 = 2.0;
@@ -749,8 +749,8 @@ fn get_current_time_str() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        downsample_menu_texture, load_png_color_image, show_menu_topbar_ui, MENU_EDIT_BUTTON_PNG,
-        MENU_PLAY_BUTTON_PNG, MENU_TEXTURE_MAX_DIMENSION,
+        MENU_EDIT_BUTTON_PNG, MENU_PLAY_BUTTON_PNG, MENU_TEXTURE_MAX_DIMENSION,
+        downsample_menu_texture, load_png_color_image, show_menu_topbar_ui,
     };
     use eg_state::commands::AppCommand;
     use eg_types::{AuthProfile, AuthSession, AuthSessionTokens, AuthUser};

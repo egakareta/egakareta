@@ -11,13 +11,13 @@ use super::{EditorDirtyFlags, EditorSubsystem, State, TAP_CLICK_SCREEN_EPSILON_P
 use crate::commands::AppCommand;
 use crate::state::editor_command::EditorCommand;
 use eg_editor_domain::{
-    add_tap_with_indicator, build_editor_playtest_transition, derive_tap_indicator_positions,
+    EditorPlaytestTransitionParams, TapDivisionPreview, TapDivisionPreviewRange,
+    TimelineNearSearch, TimingDivisionDirection, add_tap_with_indicator,
+    build_editor_playtest_transition, derive_tap_indicator_positions,
     derive_timeline_time_for_world_target_near_time, derive_timing_division_tap_previews,
     remove_topmost_block_at_cursor, snap_cell_to_step,
     timeline_axis_aligned_segment_split_fraction, timeline_turn_corner_position,
     timing_division_time_in_direction, toggle_spawn_direction, topmost_block_index_at_cursor,
-    EditorPlaytestTransitionParams, TapDivisionPreview, TapDivisionPreviewRange,
-    TimelineNearSearch, TimingDivisionDirection,
 };
 use eg_game::{GameState, TimelineSimulationRuntime};
 use eg_types::{AppPhase, BlockId, EditorMode, EditorTapDivisionPick, LevelObject};
@@ -1308,7 +1308,7 @@ mod tests {
     use eg_editor_domain::derive_tap_indicator_positions;
     use eg_game::TimelineSimulationRuntime;
     use eg_types::{
-        AppPhase, Direction, EditorMode, LevelObject, TimingPoint, TRANSFORM_TRIGGER_BLOCK_ID,
+        AppPhase, Direction, EditorMode, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID, TimingPoint,
     };
     use eg_types::{EasingDirection, TimedTrigger, TriggerAction, TriggerTarget};
 
@@ -1495,12 +1495,14 @@ mod tests {
         assert!(!added_again);
         assert!(removed_time.is_some());
         assert!(state.editor.timeline.taps.tap_times.is_empty());
-        assert!(state
-            .editor
-            .timeline
-            .taps
-            .tap_indicator_positions
-            .is_empty());
+        assert!(
+            state
+                .editor
+                .timeline
+                .taps
+                .tap_indicator_positions
+                .is_empty()
+        );
     }
 
     #[tokio::test]

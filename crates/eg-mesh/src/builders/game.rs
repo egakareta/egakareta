@@ -5,11 +5,11 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use crate::MeshGeometry;
+use crate::Vertex;
 use crate::advanced_shapes::append_cone;
 use crate::blocks::build_block_geometry;
 use crate::shapes::{append_prism, append_quad};
-use crate::MeshGeometry;
-use crate::Vertex;
 use eg_types::{BlockEffect, BlockEffectPreset, Direction, LevelObject};
 use glam::{EulerRot, Quat, Vec2, Vec3};
 
@@ -727,11 +727,10 @@ pub fn build_camera_arrow_vertices(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_block_effect_vertices, build_practice_checkpoint_flag_geometry,
-        build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices,
-        build_trail_vertices, build_trail_vertices_with_alpha,
-        build_transform_trigger_marker_vertices, PracticeCheckpointFlagInstance,
-        TransformTriggerMarker,
+        PracticeCheckpointFlagInstance, TransformTriggerMarker, build_block_effect_vertices,
+        build_practice_checkpoint_flag_geometry, build_tap_division_preview_vertices,
+        build_tap_division_tap_marker_vertices, build_trail_vertices,
+        build_trail_vertices_with_alpha, build_transform_trigger_marker_vertices,
     };
     use crate::Vertex;
     use eg_types::{BlockEffect, Direction};
@@ -966,9 +965,10 @@ mod tests {
 
         let high = build_trail_vertices_with_alpha(&points, false, 5.0);
         assert!(!high.is_empty());
-        assert!(high
-            .iter()
-            .all(|v| (v.color[3] - 1.0).abs() <= f32::EPSILON));
+        assert!(
+            high.iter()
+                .all(|v| (v.color[3] - 1.0).abs() <= f32::EPSILON)
+        );
     }
 
     #[test]
@@ -1028,9 +1028,11 @@ mod tests {
 
         assert_eq!(vertices.len(), 12);
         assert!(vertices.iter().all(|vertex| vertex.color == color));
-        assert!(vertices
-            .iter()
-            .all(|vertex| (vertex.position[1] - 1.1).abs() <= f32::EPSILON));
+        assert!(
+            vertices
+                .iter()
+                .all(|vertex| (vertex.position[1] - 1.1).abs() <= f32::EPSILON)
+        );
 
         let min_x = vertices
             .iter()

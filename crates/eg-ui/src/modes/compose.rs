@@ -7,11 +7,11 @@
 */
 use std::collections::HashMap;
 
-use crate::modes::shared::{show_editor_property_popup, EditorPropertyPopup};
+use crate::modes::shared::{EditorPropertyPopup, show_editor_property_popup};
 use eg_blocks::{block_texture_atlas, resolve_block_definition, resolve_block_texture_layers};
 use eg_state::commands::AppCommand;
-use eg_state::state::editor_command::EditorCommand;
 use eg_state::state::EditorUiViewModel;
+use eg_state::state::editor_command::EditorCommand;
 use eg_types::{
     BlockId, EasingDirection, EditorMode, LevelObject, TimedTrigger, TriggerAction, TriggerTarget,
 };
@@ -276,9 +276,7 @@ fn show_trigger_action_controls(ui: &mut egui::Ui, trigger: &mut TimedTrigger) -
             rotation,
             pitch,
         ),
-        TriggerAction::TransformObjects {
-         ..
-        } => {
+        TriggerAction::TransformObjects { .. } => {
             let target_count = match &trigger.target {
                 TriggerTarget::Objects { object_ids } => object_ids.len(),
                 TriggerTarget::Camera => 0,
@@ -373,10 +371,7 @@ fn show_camera_follow_trigger_controls(
     changed
 }
 
-fn show_transform_trigger_summary(
-    ui: &mut egui::Ui,
-    target_count: usize,
-) -> () {
+fn show_transform_trigger_summary(ui: &mut egui::Ui, target_count: usize) -> () {
     ui.horizontal(|ui| {
         ui.label("Targets:");
         ui.label(target_count.to_string());
@@ -577,20 +572,19 @@ fn scale_channel(value: u8, factor: f32) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::{
-        atlas_average_color, block_preview_colors, scale_channel, scale_rgb,
-        show_block_preview_button, show_place_block_properties_window,
-        show_selected_block_properties_window, FALLBACK_SIDE_COLOR, FALLBACK_TOP_COLOR,
-        TOP_LIGHTEN_FACTOR,
+        FALLBACK_SIDE_COLOR, FALLBACK_TOP_COLOR, TOP_LIGHTEN_FACTOR, atlas_average_color,
+        block_preview_colors, scale_channel, scale_rgb, show_block_preview_button,
+        show_place_block_properties_window, show_selected_block_properties_window,
     };
     use crate::test_utils::editor_view_model;
     use eg_blocks::{all_placeable_blocks, block_texture_atlas, resolve_block_texture_layers};
     use eg_types::{
-        default_camera_trigger_distance, EasingDirection, TimedTrigger, TriggerAction,
-        TriggerTarget,
+        AppSettings, CAMERA_TRIGGER_BLOCK_ID, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, EditorMode,
+        LevelObject, MusicMetadata, TRANSFORM_TRIGGER_BLOCK_ID,
     };
     use eg_types::{
-        AppSettings, EditorMode, LevelObject, MusicMetadata, CAMERA_TRIGGER_BLOCK_ID,
-        DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, TRANSFORM_TRIGGER_BLOCK_ID,
+        EasingDirection, TimedTrigger, TriggerAction, TriggerTarget,
+        default_camera_trigger_distance,
     };
 
     fn make_compose_view<'a>(

@@ -8,12 +8,12 @@
 use super::EditorSubsystem;
 use eg_editor_domain::interpolate_timeline_sample_positions;
 use eg_types::{
+    BlockId, CameraTrigger, DEFAULT_CAMERA_DISTANCE, TimedTrigger, TriggerAction, TriggerTarget,
     default_camera_trigger_distance, default_camera_trigger_target_position,
-    timed_triggers_to_camera_triggers, triggers_from_objects, BlockId, CameraTrigger, TimedTrigger,
-    TriggerAction, TriggerTarget, DEFAULT_CAMERA_DISTANCE,
+    timed_triggers_to_camera_triggers, triggers_from_objects,
 };
 use eg_types::{
-    LevelObject, CAMERA_TRIGGER_BLOCK_ID, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW,
+    CAMERA_TRIGGER_BLOCK_ID, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, LevelObject,
     TRANSFORM_TRIGGER_BLOCK_ID,
 };
 
@@ -503,10 +503,10 @@ mod tests {
     use super::EditorSubsystem;
     use crate::state::State;
     use eg_types::{
-        default_camera_trigger_distance, CameraMode, CameraTrigger, EasingDirection, TimedTrigger,
-        TriggerAction, TriggerTarget, DEFAULT_CAMERA_DISTANCE,
+        CameraMode, CameraTrigger, DEFAULT_CAMERA_DISTANCE, EasingDirection, TimedTrigger,
+        TriggerAction, TriggerTarget, default_camera_trigger_distance,
     };
-    use eg_types::{LevelObject, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW};
+    use eg_types::{DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, LevelObject};
 
     fn test_block(x: f32) -> LevelObject {
         LevelObject {

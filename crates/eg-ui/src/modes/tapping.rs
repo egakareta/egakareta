@@ -6,11 +6,11 @@
 
 */
 use crate::modes::shared::{
-    show_editor_property_popup, show_player_camera_status_row, EditorPropertyPopup,
+    EditorPropertyPopup, show_editor_property_popup, show_player_camera_status_row,
 };
 use eg_state::commands::AppCommand;
-use eg_state::state::editor_command::EditorCommand;
 use eg_state::state::EditorUiViewModel;
+use eg_state::state::editor_command::EditorCommand;
 
 pub(crate) fn show_tapping_mode_bottom_panel(
     ui: &mut egui::Ui,

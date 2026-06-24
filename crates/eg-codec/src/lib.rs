@@ -8,8 +8,8 @@
 use serde::{Deserialize, Serialize};
 
 use eg_types::{
-    default_sky_color, BasicLevelMetadata, LevelMetadata, LevelObject, LevelPreviewCameraMetadata,
-    MusicMetadata, SpawnMetadata, TimedTrigger, TimingPoint,
+    BasicLevelMetadata, LevelMetadata, LevelObject, LevelPreviewCameraMetadata, MusicMetadata,
+    SpawnMetadata, TimedTrigger, TimingPoint, default_sky_color,
 };
 
 const LEVEL_MAGIC: [u8; 4] = *b"EGB1";

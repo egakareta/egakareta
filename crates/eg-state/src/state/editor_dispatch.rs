@@ -5,8 +5,8 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::runtime::EditorDirtyFlags;
 use super::State;
+use super::runtime::EditorDirtyFlags;
 use crate::state::editor_command::EditorCommand;
 use eg_types::{AppPhase, EditorMode};
 

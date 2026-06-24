@@ -42,8 +42,8 @@ pub fn normalize_level_binary_format(data: &[u8]) -> Result<Vec<u8>, String> {
 mod tests {
     use eg_codec::{decode_level_metadata_binary, encode_level_metadata_binary};
     use eg_types::{
-        default_sky_color, BasicLevelMetadata, Direction, EditorStateParams, LevelMetadata,
-        LevelObject, MusicMetadata, SpawnMetadata,
+        BasicLevelMetadata, Direction, EditorStateParams, LevelMetadata, LevelObject,
+        MusicMetadata, SpawnMetadata, default_sky_color,
     };
 
     use super::super::read_metadata_from_egz;

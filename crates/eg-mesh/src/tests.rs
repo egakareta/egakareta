@@ -12,13 +12,13 @@ mod tests {
         build_block_vertices,
     };
     use crate::builders::{
-        build_editor_gizmo_vertices, build_editor_hitbox_visualization_vertices,
-        build_editor_hover_outline_vertices, build_editor_selection_outline_vertices, GizmoParams,
+        GizmoParams, build_editor_gizmo_vertices, build_editor_hitbox_visualization_vertices,
+        build_editor_hover_outline_vertices, build_editor_selection_outline_vertices,
     };
     use crate::{GizmoPart, Vertex};
     use eg_block_geometry::hitbox_cuboids;
     use eg_types::{
-        CameraTrigger, LevelObject, CAMERA_TRIGGER_BLOCK_ID, TRANSFORM_TRIGGER_BLOCK_ID,
+        CAMERA_TRIGGER_BLOCK_ID, CameraTrigger, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID,
     };
 
     fn bounds_xz(vertices: &[[f32; 3]]) -> (f32, f32, f32, f32) {
@@ -121,15 +121,19 @@ mod tests {
 
         assert_eq!(batches.instance_count(), 2);
         assert_eq!(batches.batches.len(), 2);
-        assert!(batches
-            .batches
-            .iter()
-            .any(|batch| batch.block_id == "core/stone" && batch.template.vertex_count() == 36));
-        assert!(batches
-            .batches
-            .iter()
-            .any(|batch| batch.block_id == "core/wooden_fence"
-                && batch.template.vertex_count() == 3 * 36));
+        assert!(
+            batches
+                .batches
+                .iter()
+                .any(|batch| batch.block_id == "core/stone" && batch.template.vertex_count() == 36)
+        );
+        assert!(
+            batches
+                .batches
+                .iter()
+                .any(|batch| batch.block_id == "core/wooden_fence"
+                    && batch.template.vertex_count() == 3 * 36)
+        );
         assert!(batches.fallback_draw_count() > 0);
     }
 
@@ -324,9 +328,11 @@ mod tests {
             0.03,
         );
         assert!(!vertices.is_empty());
-        assert!(vertices
-            .iter()
-            .all(|vertex| vertex.color == [0.698, 0.898, 1.0, 1.0]));
+        assert!(
+            vertices
+                .iter()
+                .all(|vertex| vertex.color == [0.698, 0.898, 1.0, 1.0])
+        );
     }
 
     #[test]
@@ -338,9 +344,11 @@ mod tests {
             0.03,
         );
         assert!(!vertices.is_empty());
-        assert!(vertices
-            .iter()
-            .all(|vertex| vertex.color == [0.098, 0.6, 1.0, 1.0]));
+        assert!(
+            vertices
+                .iter()
+                .all(|vertex| vertex.color == [0.098, 0.6, 1.0, 1.0])
+        );
     }
 
     #[test]
@@ -362,15 +370,21 @@ mod tests {
         assert!(!vertices.is_empty());
         assert!(vertices.iter().all(|vertex| vertex.render_profile == 0.0));
         assert_eq!(vertices.len(), objects.len() * 12 * 36);
-        assert!(vertices
-            .iter()
-            .any(|vertex| vertex.color == [1.0, 0.04, 0.06, 0.88]));
-        assert!(vertices
-            .iter()
-            .any(|vertex| vertex.color == [0.0, 0.82, 1.0, 0.88]));
-        assert!(vertices
-            .iter()
-            .any(|vertex| vertex.color == [1.0, 0.86, 0.10, 0.9]));
+        assert!(
+            vertices
+                .iter()
+                .any(|vertex| vertex.color == [1.0, 0.04, 0.06, 0.88])
+        );
+        assert!(
+            vertices
+                .iter()
+                .any(|vertex| vertex.color == [0.0, 0.82, 1.0, 0.88])
+        );
+        assert!(
+            vertices
+                .iter()
+                .any(|vertex| vertex.color == [1.0, 0.86, 0.10, 0.9])
+        );
     }
 
     #[test]
@@ -415,9 +429,11 @@ mod tests {
 
         let vertices = geometry.to_triangle_vertices();
         assert_eq!(vertices.len(), 5 * 36);
-        assert!(vertices
-            .iter()
-            .all(|vertex| (vertex.render_profile - 4.0).abs() <= f32::EPSILON));
+        assert!(
+            vertices
+                .iter()
+                .all(|vertex| (vertex.render_profile - 4.0).abs() <= f32::EPSILON)
+        );
         assert!(vertices.iter().all(|vertex| {
             (vertex.animation_anchor[0] - 0.5).abs() <= 1e-6
                 && (vertex.animation_anchor[1] - 0.5).abs() <= 1e-6
@@ -444,9 +460,11 @@ mod tests {
 
         assert!(!vertices.is_empty());
         assert_ne!(vertices.len(), 36);
-        assert!(vertices
-            .iter()
-            .all(|vertex| (vertex.render_profile - 6.0).abs() <= f32::EPSILON));
+        assert!(
+            vertices
+                .iter()
+                .all(|vertex| (vertex.render_profile - 6.0).abs() <= f32::EPSILON)
+        );
         assert!(vertices.iter().all(|vertex| {
             vertex.color_outline[0..3]
                 .iter()

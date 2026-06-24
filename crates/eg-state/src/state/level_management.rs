@@ -8,8 +8,8 @@
 use super::State;
 use eg_codec::{decode_level_metadata_binary, encode_level_metadata_binary};
 use eg_editor_domain::{
-    build_editor_playtest_transition, derive_tap_indicator_positions,
-    editor_session_init_from_metadata, EditorPlaytestTransitionParams,
+    EditorPlaytestTransitionParams, build_editor_playtest_transition,
+    derive_tap_indicator_positions, editor_session_init_from_metadata,
 };
 use eg_game::GameState;
 use eg_level::{build_level_export, load_builtin_level_metadata, read_metadata_from_egz};
@@ -17,12 +17,12 @@ use eg_platform::io::{read_editor_music_bytes, save_level_export};
 use eg_platform::services::trigger_level_import;
 use eg_platform::task::spawn_background;
 use eg_types::{
-    default_sky_color, BasicLevelMetadata, Direction, EditorStateParams, LevelMetadata,
-    LevelObject, LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata,
+    AppPhase, AppSettings, DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
+    DEFAULT_MENU_PREVIEW_CAMERA_TARGET, EditorMode, KeyChord, SettingsSection,
 };
 use eg_types::{
-    AppPhase, AppSettings, EditorMode, KeyChord, SettingsSection,
-    DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
+    BasicLevelMetadata, Direction, EditorStateParams, LevelMetadata, LevelObject,
+    LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata, default_sky_color,
 };
 use glam::Vec3;
 
@@ -686,17 +686,17 @@ fn auto_menu_preview_camera_from_spawn(spawn: &SpawnMetadata) -> ([f32; 3], [f32
 mod tests {
     use std::fs;
 
-    use super::{auto_menu_preview_camera_from_spawn, menu_preview_camera_for_metadata, State};
+    use super::{State, auto_menu_preview_camera_from_spawn, menu_preview_camera_for_metadata};
     use crate::commands::AppCommand;
     use crate::state::editor_command::EditorCommand;
     use eg_audio::audio::runtime_asset_source_key;
     use eg_types::{
-        default_sky_color, BasicLevelMetadata, Direction, EditorStateParams, LevelMetadata,
-        LevelObject, LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata,
+        AppPhase, DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
+        KeyChord, SettingsSection,
     };
     use eg_types::{
-        AppPhase, KeyChord, SettingsSection, DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
-        DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
+        BasicLevelMetadata, Direction, EditorStateParams, LevelMetadata, LevelObject,
+        LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata, default_sky_color,
     };
 
     struct ArtifactCleanup {
@@ -1024,20 +1024,24 @@ mod tests {
         state.phase = AppPhase::Menu;
 
         state.dispatch(AppCommand::Editor(EditorCommand::CaptureMenuPreviewCamera));
-        assert!(state
-            .current_editor_metadata()
-            .menu_preview_camera
-            .is_none());
+        assert!(
+            state
+                .current_editor_metadata()
+                .menu_preview_camera
+                .is_none()
+        );
 
         state.session.editor_menu_preview_camera = Some(LevelPreviewCameraMetadata {
             position: [9.0, 8.0, 7.0],
             target: [6.0, 5.0, 4.0],
         });
         state.dispatch(AppCommand::Editor(EditorCommand::UseAutoMenuPreviewCamera));
-        assert!(state
-            .current_editor_metadata()
-            .menu_preview_camera
-            .is_some());
+        assert!(
+            state
+                .current_editor_metadata()
+                .menu_preview_camera
+                .is_some()
+        );
 
         state.enter_editor_phase("DispatchPreviewCamera".to_string());
         state.editor.camera.editor_pan = [2.0, -4.0];
@@ -1051,10 +1055,12 @@ mod tests {
         );
 
         state.dispatch(AppCommand::Editor(EditorCommand::UseAutoMenuPreviewCamera));
-        assert!(state
-            .current_editor_metadata()
-            .menu_preview_camera
-            .is_none());
+        assert!(
+            state
+                .current_editor_metadata()
+                .menu_preview_camera
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -1074,10 +1080,12 @@ mod tests {
         assert_eq!(manual_camera.target, [5.0, 2.0, -3.0]);
 
         state.editor_use_auto_menu_preview_camera();
-        assert!(state
-            .current_editor_metadata()
-            .menu_preview_camera
-            .is_none());
+        assert!(
+            state
+                .current_editor_metadata()
+                .menu_preview_camera
+                .is_none()
+        );
 
         let expected = menu_preview_camera_for_metadata(&state.current_editor_metadata());
         let auto = auto_menu_preview_camera_from_spawn(&state.editor.spawn);
@@ -1222,20 +1230,24 @@ mod tests {
 
         state.gameplay.state.position = [2.0, 1.0, 2.0];
         state.dispatch(crate::commands::AppCommand::GameSetPracticeCheckpoint);
-        assert!(state
-            .render
-            .meshes
-            .practice_checkpoints
-            .draw_data()
-            .is_some());
+        assert!(
+            state
+                .render
+                .meshes
+                .practice_checkpoints
+                .draw_data()
+                .is_some()
+        );
 
         state.dispatch(crate::commands::AppCommand::GameRemovePracticeCheckpoint);
-        assert!(state
-            .render
-            .meshes
-            .practice_checkpoints
-            .draw_data()
-            .is_none());
+        assert!(
+            state
+                .render
+                .meshes
+                .practice_checkpoints
+                .draw_data()
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -1342,12 +1354,14 @@ mod tests {
         assert_eq!(actual.basic.tags, expected.basic.tags);
         assert_eq!(actual.spawn.position, expected.spawn.position);
         assert!(!state.editor.objects.is_empty());
-        assert!(state
-            .audio
-            .state
-            .editor
-            .local_audio_cache
-            .contains_key("unit-test-audio.mp3"));
+        assert!(
+            state
+                .audio
+                .state
+                .editor
+                .local_audio_cache
+                .contains_key("unit-test-audio.mp3")
+        );
     }
 
     #[tokio::test]

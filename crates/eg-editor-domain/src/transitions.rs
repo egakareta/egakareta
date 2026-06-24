@@ -7,7 +7,7 @@
 */
 use crate::timeline::derive_timeline_state_with_triggers;
 use eg_types::TimedTrigger;
-use eg_types::{Direction, LevelObject, SpawnMetadata, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW};
+use eg_types::{DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, Direction, LevelObject, SpawnMetadata};
 
 pub struct EditorPlaytestTransition {
     pub objects: Vec<LevelObject>,

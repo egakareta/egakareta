@@ -892,7 +892,7 @@ impl GpuContext {
 mod tests {
     use eg_types::{AppPhase, EditorMode};
 
-    use super::{linear_to_srgb, RenderFrameInput};
+    use super::{RenderFrameInput, linear_to_srgb};
 
     #[test]
     fn render_frame_input_owns_frame_clear_grid_and_gate_policy() {

@@ -7,7 +7,7 @@
 */
 use super::State;
 use eg_platform::services::{
-    trigger_auth_refresh, trigger_auth_sign_in, trigger_auth_sign_out, AuthServiceMessage,
+    AuthServiceMessage, trigger_auth_refresh, trigger_auth_sign_in, trigger_auth_sign_out,
 };
 use eg_types::AuthSession;
 

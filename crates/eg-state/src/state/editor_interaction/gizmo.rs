@@ -958,9 +958,11 @@ mod tests {
             start_blocks: vec![start_block_for_index(0, &block)],
         });
 
-        assert!(state
-            .editor
-            .drag_gizmo(target.x as f64, target.y as f64, viewport));
+        assert!(
+            state
+                .editor
+                .drag_gizmo(target.x as f64, target.y as f64, viewport)
+        );
         assert!(state.editor.objects[0].position[0] > 0.0);
         approx::assert_abs_diff_eq!(state.editor.objects[0].position[1], 0.0, epsilon = 1e-4);
         approx::assert_abs_diff_eq!(state.editor.objects[0].position[2], 0.0, epsilon = 1e-4);
@@ -999,9 +1001,11 @@ mod tests {
             start_blocks: vec![start_block_for_index(0, &block)],
         });
 
-        assert!(state
-            .editor
-            .drag_gizmo(target.x as f64, target.y as f64, viewport));
+        assert!(
+            state
+                .editor
+                .drag_gizmo(target.x as f64, target.y as f64, viewport)
+        );
         approx::assert_abs_diff_eq!(state.editor.objects[0].position[0], 0.0, epsilon = 1e-4);
         approx::assert_abs_diff_eq!(state.editor.objects[0].position[1], 0.0, epsilon = 1e-4);
         assert!(state.editor.objects[0].position[2] < -0.1);
@@ -1039,9 +1043,11 @@ mod tests {
             start_blocks: vec![start_block_for_index(0, &block)],
         });
 
-        assert!(state
-            .editor
-            .drag_gizmo(axis_screen.x as f64, axis_screen.y as f64, viewport));
+        assert!(
+            state
+                .editor
+                .drag_gizmo(axis_screen.x as f64, axis_screen.y as f64, viewport)
+        );
 
         let position = state.editor.objects[0].position;
         approx::assert_abs_diff_eq!(position[0], std::f32::consts::FRAC_1_SQRT_2, epsilon = 1e-4);
@@ -1139,9 +1145,11 @@ mod tests {
             start_blocks: vec![start_block_for_index(0, &block)],
         });
 
-        assert!(state
-            .editor
-            .drag_gizmo(target.x as f64, target.y as f64, viewport));
+        assert!(
+            state
+                .editor
+                .drag_gizmo(target.x as f64, target.y as f64, viewport)
+        );
 
         let object = &state.editor.objects[0];
         assert!(object.size[0] >= 0.25);
@@ -1182,9 +1190,11 @@ mod tests {
             start_blocks: vec![start_block_for_index(0, &block)],
         });
 
-        assert!(state
-            .editor
-            .drag_gizmo(axis_screen.x as f64, axis_screen.y as f64, viewport,));
+        assert!(
+            state
+                .editor
+                .drag_gizmo(axis_screen.x as f64, axis_screen.y as f64, viewport,)
+        );
 
         let object = &state.editor.objects[0];
         assert!(object.size[0] > 2.9);
@@ -1240,9 +1250,11 @@ mod tests {
             start_blocks: vec![start_block_for_index(0, &block)],
         });
 
-        assert!(state
-            .editor
-            .drag_gizmo(axis_screen.x as f64, axis_screen.y as f64, viewport,));
+        assert!(
+            state
+                .editor
+                .drag_gizmo(axis_screen.x as f64, axis_screen.y as f64, viewport,)
+        );
 
         let object = &state.editor.objects[0];
         assert!(object.size[0] < 1.1);
@@ -1290,9 +1302,11 @@ mod tests {
             start_blocks: vec![start_block_for_index(0, &block)],
         });
 
-        assert!(state
-            .editor
-            .drag_gizmo(target.x as f64, target.y as f64, viewport));
+        assert!(
+            state
+                .editor
+                .drag_gizmo(target.x as f64, target.y as f64, viewport)
+        );
         assert!(state.editor.objects[0].rotation[1].abs() > 1.0);
     }
 
@@ -1484,8 +1498,12 @@ mod tests {
 
         state.phase = AppPhase::Editor;
         let _ = state.begin_editor_gizmo_drag(center_screen.x as f64, center_screen.y as f64);
-        assert!(state
-            .drag_editor_gizmo_from_screen(center_screen.x as f64 + 8.0, center_screen.y as f64));
+        assert!(
+            state.drag_editor_gizmo_from_screen(
+                center_screen.x as f64 + 8.0,
+                center_screen.y as f64
+            )
+        );
 
         let lengths = state.editor_gizmo_axis_lengths_world(Vec3::new(0.5, 0.5, 0.5), 100.0);
         assert!(lengths[0] > 0.0 && lengths[1] > 0.0 && lengths[2] > 0.0);
@@ -1641,9 +1659,11 @@ mod tests {
             start_blocks: vec![start_block_for_index(0, &block)],
         });
 
-        assert!(state
-            .editor
-            .drag_gizmo(current_mouse.x as f64, current_mouse.y as f64, viewport,));
+        assert!(
+            state
+                .editor
+                .drag_gizmo(current_mouse.x as f64, current_mouse.y as f64, viewport,)
+        );
 
         let rot = state.editor.objects[0].rotation;
         // With no pre-rotation, the Y ring axis is world Y.
@@ -1687,9 +1707,11 @@ mod tests {
             start_blocks: vec![start_block_for_index(0, &block_snap)],
         });
 
-        assert!(state
-            .editor
-            .drag_gizmo(current_mouse.x as f64, current_mouse.y as f64, viewport,));
+        assert!(
+            state
+                .editor
+                .drag_gizmo(current_mouse.x as f64, current_mouse.y as f64, viewport,)
+        );
 
         let start_degrees = [0.0_f32, 90.0, 0.0];
         let start_quat = glam::Quat::from_euler(
@@ -1723,9 +1745,9 @@ mod tests {
             || (actual[1] - naive[1]).abs() > 1.0
             || (actual[2] - naive[2]).abs() > 1.0;
         assert!(
-                differs,
-                "quaternion rotation should differ from naive Euler addition: actual={actual:?}, naive={naive:?}"
-            );
+            differs,
+            "quaternion rotation should differ from naive Euler addition: actual={actual:?}, naive={naive:?}"
+        );
     }
 
     #[tokio::test]
@@ -1759,9 +1781,11 @@ mod tests {
             start_blocks: vec![start_block_for_index(0, &block_snap)],
         });
 
-        assert!(state
-            .editor
-            .drag_gizmo(current_mouse.x as f64, current_mouse.y as f64, viewport,));
+        assert!(
+            state
+                .editor
+                .drag_gizmo(current_mouse.x as f64, current_mouse.y as f64, viewport,)
+        );
 
         let start_degrees = [45.0_f32, 0.0, 45.0];
         let start_quat = glam::Quat::from_euler(
@@ -1794,9 +1818,9 @@ mod tests {
             || (actual[1] - naive[1]).abs() > 1.0
             || (actual[2] - naive[2]).abs() > 1.0;
         assert!(
-                differs,
-                "quaternion rotation should differ from naive Euler: actual={actual:?}, naive={naive:?}"
-            );
+            differs,
+            "quaternion rotation should differ from naive Euler: actual={actual:?}, naive={naive:?}"
+        );
     }
 
     #[tokio::test]
@@ -1828,9 +1852,11 @@ mod tests {
             start_blocks: vec![start_block_for_index(0, &block_snap)],
         });
 
-        assert!(state
-            .editor
-            .drag_gizmo(current_mouse.x as f64, current_mouse.y as f64, viewport,));
+        assert!(
+            state
+                .editor
+                .drag_gizmo(current_mouse.x as f64, current_mouse.y as f64, viewport,)
+        );
 
         let start_degrees = [30.0_f32, 20.0, 0.0];
         let start_quat = glam::Quat::from_euler(
@@ -1888,9 +1914,11 @@ mod tests {
             start_blocks: vec![start_block_for_index(0, &block_snap)],
         });
 
-        assert!(state
-            .editor
-            .drag_gizmo(current_mouse.x as f64, current_mouse.y as f64, viewport,));
+        assert!(
+            state
+                .editor
+                .drag_gizmo(current_mouse.x as f64, current_mouse.y as f64, viewport,)
+        );
 
         // Compute the snapped delta and verify quaternion composition
         let start_degrees = [0.0_f32, 45.0, 0.0];

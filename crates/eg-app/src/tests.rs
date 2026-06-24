@@ -10,14 +10,13 @@
 mod tests {
     use eg_mesh::Vertex;
     use eg_types::{
-        apply_timed_triggers_to_objects, camera_triggers_to_timed_triggers,
-        default_camera_trigger_distance, default_camera_trigger_pitch,
-        default_camera_trigger_transition_interval_seconds, default_camera_trigger_yaw,
-        timed_triggers_to_camera_triggers, triggers_from_objects, BasicLevelMetadata, BlockId,
-        CameraMode, CameraTrigger, Direction, EasingDirection, EditorStateParams, GameCursor,
-        LevelMetadata, LevelObject, LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata,
-        TimedTrigger, TriggerAction, TriggerTarget, CAMERA_TRIGGER_BLOCK_ID,
-        TRANSFORM_TRIGGER_BLOCK_ID,
+        BasicLevelMetadata, BlockId, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, Direction,
+        EasingDirection, EditorStateParams, GameCursor, LevelMetadata, LevelObject,
+        LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata, TRANSFORM_TRIGGER_BLOCK_ID,
+        TimedTrigger, TriggerAction, TriggerTarget, apply_timed_triggers_to_objects,
+        camera_triggers_to_timed_triggers, default_camera_trigger_distance,
+        default_camera_trigger_pitch, default_camera_trigger_transition_interval_seconds,
+        default_camera_trigger_yaw, timed_triggers_to_camera_triggers, triggers_from_objects,
     };
     use serde_json::json;
 
@@ -152,10 +151,12 @@ mod tests {
         assert!(value.get("format_version").is_none());
         assert_eq!(value["basic"]["name"], "Minimal");
         assert!(value.get("basic").and_then(|v| v.get("creator")).is_none());
-        assert!(value
-            .get("basic")
-            .and_then(|v| v.get("description"))
-            .is_none());
+        assert!(
+            value
+                .get("basic")
+                .and_then(|v| v.get("description"))
+                .is_none()
+        );
         assert!(value.get("basic").and_then(|v| v.get("stars")).is_none());
         assert!(value.get("basic").and_then(|v| v.get("tags")).is_none());
         assert!(value.get("music").is_none());

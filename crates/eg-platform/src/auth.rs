@@ -306,17 +306,21 @@ mod tests {
     impl AuthBaseUrlEnv {
         fn set(value: &str) -> Self {
             let previous = std::env::var("EGAKARETA_AUTH_BASE_URL").ok();
-            std::env::set_var("EGAKARETA_AUTH_BASE_URL", value);
+            unsafe {
+                std::env::set_var("EGAKARETA_AUTH_BASE_URL", value);
+            }
             Self { previous }
         }
     }
 
     impl Drop for AuthBaseUrlEnv {
         fn drop(&mut self) {
-            if let Some(previous) = &self.previous {
-                std::env::set_var("EGAKARETA_AUTH_BASE_URL", previous);
-            } else {
-                std::env::remove_var("EGAKARETA_AUTH_BASE_URL");
+            unsafe {
+                if let Some(previous) = &self.previous {
+                    std::env::set_var("EGAKARETA_AUTH_BASE_URL", previous);
+                } else {
+                    std::env::remove_var("EGAKARETA_AUTH_BASE_URL");
+                }
             }
         }
     }

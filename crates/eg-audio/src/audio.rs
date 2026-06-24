@@ -717,9 +717,9 @@ where
     use symphonia::core::audio::sample::Sample;
     use symphonia::core::codecs::audio::AudioDecoderOptions;
     use symphonia::core::errors::Error as SymphoniaError;
-    use symphonia::core::formats::probe::Hint;
     use symphonia::core::formats::FormatOptions;
     use symphonia::core::formats::TrackType;
+    use symphonia::core::formats::probe::Hint;
     use symphonia::core::io::MediaSourceStream;
     use symphonia::core::meta::MetadataOptions;
 
@@ -1055,7 +1055,7 @@ mod tests {
         wav.extend_from_slice(&byte_rate.to_le_bytes());
         wav.extend_from_slice(&2u16.to_le_bytes()); // block align
         wav.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
-                                                     // data sub-chunk
+        // data sub-chunk
         wav.extend_from_slice(b"data");
         wav.extend_from_slice(&data_bytes.to_le_bytes());
         for &s in samples {

@@ -7,7 +7,7 @@
 */
 #[cfg(test)]
 use super::physics::object_xz_contains;
-use super::physics::{aabb_overlaps_cuboid_xz, BASE_PLAYER_SPEED};
+use super::physics::{BASE_PLAYER_SPEED, aabb_overlaps_cuboid_xz};
 use super::spatial::SpatialGrid;
 use eg_block_geometry::hitbox_cuboids;
 use eg_blocks::resolve_block_definition;

@@ -4,7 +4,7 @@
 [package]
 name = "eg-block-geometry"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "Block cuboid geometry helpers for egakareta."
 repository = "https://github.com/egakareta/egakareta"
 license = "AGPL-3.0-only"

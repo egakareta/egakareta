@@ -238,7 +238,7 @@ mod tests {
         fn new() -> Self {
             let lock = test_lock().lock().unwrap();
             let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
-            std::env::set_var("EGAKARETA_STORAGE_ROOT", temp_dir.path());
+            unsafe { std::env::set_var("EGAKARETA_STORAGE_ROOT", temp_dir.path()) };
             Self {
                 _temp_dir: temp_dir,
                 _lock: lock,
@@ -248,7 +248,7 @@ mod tests {
 
     impl Drop for TestEnv {
         fn drop(&mut self) {
-            std::env::remove_var("EGAKARETA_STORAGE_ROOT");
+            unsafe { std::env::remove_var("EGAKARETA_STORAGE_ROOT") };
         }
     }
 

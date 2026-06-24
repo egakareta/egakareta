@@ -6,8 +6,8 @@
 
 */
 use eg_state::commands::AppCommand;
-use eg_state::state::editor_command::EditorCommand;
 use eg_state::state::EditorUiViewModel;
+use eg_state::state::editor_command::EditorCommand;
 use eg_types::EditorMode;
 
 pub(crate) const MIN_TIMELINE_DURATION_SECONDS: f32 = 0.1;
@@ -706,11 +706,11 @@ pub(crate) fn show_waveform_panel(
 mod tests {
     use super::*;
     use crate::test_utils::editor_view_model;
-    use eg_types::{
-        default_camera_trigger_distance, EasingDirection, TimedTrigger, TriggerAction,
-        TriggerTarget,
-    };
     use eg_types::{AppSettings, EditorMode, MusicMetadata, TimingPoint};
+    use eg_types::{
+        EasingDirection, TimedTrigger, TriggerAction, TriggerTarget,
+        default_camera_trigger_distance,
+    };
 
     fn make_view<'a>(
         app_settings: &'a AppSettings,
