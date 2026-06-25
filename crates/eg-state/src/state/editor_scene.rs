@@ -10,6 +10,7 @@ use std::borrow::Cow;
 use glam::Vec3;
 
 use super::{EditorDirtyFlags, EditorSubsystem, State};
+use eg_blocks::BlockRenderProfile;
 use eg_blocks::resolve_block_definition;
 use eg_editor_domain::tap_time_is_timing_division;
 use eg_editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds};
@@ -30,8 +31,8 @@ use eg_mesh::{
 };
 use eg_render::EditorOutlineInstance;
 use eg_types::{
-    AppPhase, BlockRenderProfile, Direction, EditorMode, EditorPlaceMode, LevelObject,
-    TRANSFORM_TRIGGER_BLOCK_ID, TimingPoint, TriggerTarget,
+    AppPhase, Direction, EditorMode, EditorPlaceMode, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID,
+    TimingPoint, TriggerTarget,
 };
 
 const SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD: usize = 700;
@@ -722,11 +723,11 @@ impl State {
             .hovered_block_index
             .filter(|index| *index < self.editor.objects.len());
 
-        if let Some(index) = hovered_block_index {
-            if !selected_mask[index] {
-                outline_mask[index] = true;
-                indices_to_outline.push(index);
-            }
+        if let Some(index) = hovered_block_index
+            && !selected_mask[index]
+        {
+            outline_mask[index] = true;
+            indices_to_outline.push(index);
         }
 
         let has_transform_trigger_targets = hovered_block_index.is_some_and(|index| {
@@ -1507,12 +1508,13 @@ mod tests {
         build_editor_object_outline_vertices, tap_indicator_color,
         transform_trigger_markers_for_triggers,
     };
+    use eg_blocks::BlockId;
     use eg_mesh::blocks::build_block_geometry_for_object;
     use eg_mesh::builders::game::build_colored_tap_indicator_vertices;
     use eg_render::MeshDrawData;
     use eg_types::{
-        AppPhase, BlockId, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EditorMode,
-        LevelObject, TRANSFORM_TRIGGER_BLOCK_ID,
+        AppPhase, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EditorMode, LevelObject,
+        TRANSFORM_TRIGGER_BLOCK_ID,
     };
     use eg_types::{EasingDirection, TimedTrigger, TriggerTarget};
 

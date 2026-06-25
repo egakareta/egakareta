@@ -10,8 +10,8 @@ use super::physics::object_xz_contains;
 use super::physics::{BASE_PLAYER_SPEED, aabb_overlaps_cuboid_xz};
 use super::spatial::SpatialGrid;
 use eg_block_geometry::hitbox_cuboids;
-use eg_blocks::resolve_block_definition;
-use eg_types::{BlockCollision, Direction, LevelObject, PlayerLevelProgress};
+use eg_blocks::{BlockCollision, resolve_block_definition};
+use eg_types::{Direction, LevelObject, PlayerLevelProgress};
 
 const PLAYER_WIDTH: f32 = 0.8;
 const PLAYER_HEIGHT: f32 = 0.8;
@@ -560,13 +560,12 @@ impl GameState {
     fn push_to_active_trail(&mut self, point: [f32; 3]) {
         const MIN_DELTA: f32 = 0.001;
         if let Some(segment) = self.trail_segments.last_mut() {
-            if let Some(last) = segment.last() {
-                if (last[0] - point[0]).abs() < MIN_DELTA
-                    && (last[1] - point[1]).abs() < MIN_DELTA
-                    && (last[2] - point[2]).abs() < MIN_DELTA
-                {
-                    return;
-                }
+            if let Some(last) = segment.last()
+                && (last[0] - point[0]).abs() < MIN_DELTA
+                && (last[1] - point[1]).abs() < MIN_DELTA
+                && (last[2] - point[2]).abs() < MIN_DELTA
+            {
+                return;
             }
             segment.push(point);
         } else {

@@ -9,8 +9,8 @@ use crate::Vertex;
 use crate::shapes::append_prism;
 use crate::transforms::rotate_vertices_around_euler;
 use eg_block_geometry::hitbox_cuboids;
-use eg_blocks::resolve_block_definition;
-use eg_types::{BlockCollision, LevelObject};
+use eg_blocks::{BlockCollision, resolve_block_definition};
+use eg_types::LevelObject;
 use glam::{EulerRot, Mat3, Vec3};
 
 fn euler_rotation_matrix(degrees: [f32; 3]) -> Mat3 {

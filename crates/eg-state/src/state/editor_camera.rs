@@ -9,10 +9,11 @@ use glam::{Mat4, Vec2, Vec3};
 
 use super::editor_triggers::camera_trigger_object_pose;
 use super::{EditorSubsystem, State};
+use eg_blocks::BlockId;
 use eg_types::{AppPhase, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW};
 use eg_types::{
-    BlockId, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, DEFAULT_CAMERA_DISTANCE,
-    EasingDirection, LevelObject, TimedTrigger, TriggerTarget,
+    CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, DEFAULT_CAMERA_DISTANCE, EasingDirection,
+    LevelObject, TimedTrigger, TriggerTarget,
 };
 
 const PLAY_CAMERA_DISTANCE: f32 = 28.28;

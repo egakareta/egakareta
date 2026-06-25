@@ -271,8 +271,9 @@ impl State {
 mod tests {
     use super::State;
     use crate::state::editor_command::EditorCommand;
+    use eg_blocks::BlockId;
     use eg_types::{
-        AppPhase, BlockId, EditorMode, LevelObject, SettingsSection, TRANSFORM_TRIGGER_BLOCK_ID,
+        AppPhase, EditorMode, LevelObject, SettingsSection, TRANSFORM_TRIGGER_BLOCK_ID,
     };
     use eg_types::{EasingDirection, TimedTrigger, TriggerTarget};
 

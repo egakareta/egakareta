@@ -9,6 +9,7 @@ use glam::{Mat4, Vec3};
 
 use super::State;
 use super::runtime::BlockVisualEffect;
+use eg_blocks::BlockEffectColorMode;
 use eg_blocks::resolve_block_definition;
 use eg_game::{
     TimelineSimulationRuntime, advance_simulation_time, trigger_transformed_objects_at_time,
@@ -17,10 +18,7 @@ use eg_mesh::{
     BlockEffectInstance, build_block_effect_vertices, build_block_instance_batches_at_time,
     build_trail_vertices, build_trail_vertices_with_alpha,
 };
-use eg_types::{
-    AppPhase, BlockEffectColorMode, CameraUniform, ColorSpaceUniform, Direction, EditorMode,
-    LevelObject,
-};
+use eg_types::{AppPhase, CameraUniform, ColorSpaceUniform, Direction, EditorMode, LevelObject};
 
 const DEAD_SFX: &[u8] = include_bytes!(concat!(
     env!("EGAKARETA_WORKSPACE_ROOT"),
@@ -649,24 +647,24 @@ impl State {
 
                     if simulate_preview {
                         let mut applied_runtime_state = false;
-                        if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
-                            if clamped_time + 1e-6 >= runtime.elapsed_seconds() {
-                                runtime.advance_to(clamped_time);
-                                let events = runtime.take_consumed_object_events();
-                                let consumed_gems = !events.is_empty();
-                                let snapshot = runtime.snapshot();
-                                self.push_block_effect_events(events);
-                                if consumed_gems {
-                                    self.mark_editor_dirty(
-                                        super::EditorDirtyFlags::block_mesh_and_hitboxes_changed(),
-                                    );
-                                }
-                                self.apply_editor_timeline_preview_state(
-                                    snapshot.position,
-                                    snapshot.direction,
+                        if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut()
+                            && clamped_time + 1e-6 >= runtime.elapsed_seconds()
+                        {
+                            runtime.advance_to(clamped_time);
+                            let events = runtime.take_consumed_object_events();
+                            let consumed_gems = !events.is_empty();
+                            let snapshot = runtime.snapshot();
+                            self.push_block_effect_events(events);
+                            if consumed_gems {
+                                self.mark_editor_dirty(
+                                    super::EditorDirtyFlags::block_mesh_and_hitboxes_changed(),
                                 );
-                                applied_runtime_state = true;
                             }
+                            self.apply_editor_timeline_preview_state(
+                                snapshot.position,
+                                snapshot.direction,
+                            );
+                            applied_runtime_state = true;
                         }
 
                         if !applied_runtime_state {
@@ -692,34 +690,32 @@ impl State {
                             );
                             self.editor.timeline.playback.runtime = Some(runtime);
                         }
-                    } else if clamped_time > old_time {
-                        if let Some(tp) = self
+                    } else if clamped_time > old_time
+                        && let Some(tp) = self
                             .editor
                             .timing
                             .timing_points
                             .iter()
                             .rev()
                             .find(|tp| tp.time_seconds <= clamped_time)
-                        {
-                            if tp.bpm > 0.0 {
-                                let beat_duration = 60.0 / tp.bpm;
-                                let old_beat = if old_time < tp.time_seconds {
-                                    -1
-                                } else {
-                                    ((old_time - tp.time_seconds) / beat_duration).floor() as i64
-                                };
-                                let new_beat = ((clamped_time - tp.time_seconds) / beat_duration)
-                                    .floor() as i64;
+                        && tp.bpm > 0.0
+                    {
+                        let beat_duration = 60.0 / tp.bpm;
+                        let old_beat = if old_time < tp.time_seconds {
+                            -1
+                        } else {
+                            ((old_time - tp.time_seconds) / beat_duration).floor() as i64
+                        };
+                        let new_beat =
+                            ((clamped_time - tp.time_seconds) / beat_duration).floor() as i64;
 
-                                if new_beat > old_beat {
-                                    let is_downbeat =
-                                        new_beat % (tp.time_signature_numerator.max(1) as i64) == 0;
-                                    if is_downbeat {
-                                        self.audio.state.runtime.play_sfx(METRONOME_MAJOR_SFX);
-                                    } else {
-                                        self.audio.state.runtime.play_sfx(METRONOME_MINOR_SFX);
-                                    }
-                                }
+                        if new_beat > old_beat {
+                            let is_downbeat =
+                                new_beat % (tp.time_signature_numerator.max(1) as i64) == 0;
+                            if is_downbeat {
+                                self.audio.state.runtime.play_sfx(METRONOME_MAJOR_SFX);
+                            } else {
+                                self.audio.state.runtime.play_sfx(METRONOME_MINOR_SFX);
                             }
                         }
                     }
@@ -763,13 +759,12 @@ impl State {
                 self.update_editor_pan_from_keys(frame_dt);
                 self.update_editor_camera_transition(frame_dt);
             }
-            if self.editor.runtime.interaction.gizmo_drag.is_some()
-                || self.editor.runtime.interaction.block_drag.is_some()
+            if (self.editor.runtime.interaction.gizmo_drag.is_some()
+                || self.editor.runtime.interaction.block_drag.is_some())
+                && let Some(pointer) = self.editor.ui.pointer_screen
             {
-                if let Some(pointer) = self.editor.ui.pointer_screen {
-                    puffin::profile_scope!("DragSelection");
-                    self.drag_editor_selection_from_screen(pointer[0], pointer[1]);
-                }
+                puffin::profile_scope!("DragSelection");
+                self.drag_editor_selection_from_screen(pointer[0], pointer[1]);
             }
 
             let camera_changed = (self.editor.camera.editor_pan[0]

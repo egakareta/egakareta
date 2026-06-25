@@ -10,6 +10,7 @@ use glam::{Vec2, Vec3};
 use super::{EditorDirtyFlags, EditorSubsystem, State, TAP_CLICK_SCREEN_EPSILON_PIXELS};
 use crate::commands::AppCommand;
 use crate::state::editor_command::EditorCommand;
+use eg_blocks::BlockId;
 use eg_editor_domain::{
     EditorPlaytestTransitionParams, TapDivisionPreview, TapDivisionPreviewRange,
     TimelineNearSearch, TimingDivisionDirection, add_tap_with_indicator,
@@ -21,7 +22,7 @@ use eg_editor_domain::{
 };
 use eg_game::{GameState, TimelineSimulationRuntime};
 use eg_types::TriggerTarget;
-use eg_types::{AppPhase, BlockId, EditorMode, EditorTapDivisionPick, LevelObject};
+use eg_types::{AppPhase, EditorMode, EditorTapDivisionPick, LevelObject};
 
 const TAP_CLICK_ADD_EPSILON_SECONDS: f32 = 0.001;
 const FALLBACK_TIMELINE_SHIFT_SECONDS: f32 = 0.1;
@@ -427,10 +428,9 @@ impl EditorSubsystem {
             .selected_block_index
             .filter(|index| selected_indices.contains(index))
             .or_else(|| selected_indices.first().copied())
+            && let Some(obj) = self.objects.get(index)
         {
-            if let Some(obj) = self.objects.get(index) {
-                self.ui.cursor = [obj.position[0], obj.position[1].max(0.0), obj.position[2]];
-            }
+            self.ui.cursor = [obj.position[0], obj.position[1].max(0.0), obj.position[2]];
         }
 
         self.invalidate_samples();
@@ -460,10 +460,9 @@ impl EditorSubsystem {
             .selected_block_index
             .filter(|index| selected_indices.contains(index))
             .or_else(|| selected_indices.first().copied())
+            && let Some(obj) = self.objects.get(index)
         {
-            if let Some(obj) = self.objects.get(index) {
-                self.ui.cursor = [obj.position[0], obj.position[1].max(0.0), obj.position[2]];
-            }
+            self.ui.cursor = [obj.position[0], obj.position[1].max(0.0), obj.position[2]];
         }
 
         if changed {
@@ -531,16 +530,14 @@ impl State {
         self.editor.sync_tap_indicators_to_spawn();
         if let (Some(cursor), Some(selected_index)) =
             (cursor_override, self.editor.timeline.taps.selected_index)
-        {
-            if let Some(position) = self
+            && let Some(position) = self
                 .editor
                 .timeline
                 .taps
                 .tap_indicator_positions
                 .get_mut(selected_index)
-            {
-                *position = cursor;
-            }
+        {
+            *position = cursor;
         }
         let current_time = self.editor.timeline.clock.time_seconds;
         self.set_editor_timeline_time_seconds_preserving_editor_camera(current_time);
@@ -1229,11 +1226,11 @@ impl State {
             return false;
         }
 
-        if self.editor_effective_mode_for_playback() == EditorMode::Tapping {
-            if let Some((_, _, position)) = self.editor.selected_tap() {
-                self.set_editor_camera_focus(tap_focus_point(position), None);
-                return true;
-            }
+        if self.editor_effective_mode_for_playback() == EditorMode::Tapping
+            && let Some((_, _, position)) = self.editor.selected_tap()
+        {
+            self.set_editor_camera_focus(tap_focus_point(position), None);
+            return true;
         }
 
         if let Some((min, size)) = self.editor.selected_group_bounds() {

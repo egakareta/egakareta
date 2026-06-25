@@ -667,19 +667,17 @@ pub fn derive_timeline_time_for_world_target_near_time(
 
                 if previous_snapshot.direction == snapshot.direction
                     && (previous_snapshot.speed - snapshot.speed).abs() <= 1e-4
-                {
-                    if let Some((candidate_time, candidate_distance_sq)) = segment_closest_time(
+                    && let Some((candidate_time, candidate_distance_sq)) = segment_closest_time(
                         previous_time,
                         previous_snapshot.position,
                         sample_time,
                         snapshot.position,
                         target,
-                    ) {
-                        if candidate_distance_sq < best_distance_sq {
-                            best_distance_sq = candidate_distance_sq;
-                            best_time = candidate_time;
-                        }
-                    }
+                    )
+                    && candidate_distance_sq < best_distance_sq
+                {
+                    best_distance_sq = candidate_distance_sq;
+                    best_time = candidate_time;
                 }
 
                 let current_distance_sq = distance_sq(snapshot.position, target);

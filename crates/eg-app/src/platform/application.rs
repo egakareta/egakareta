@@ -557,10 +557,10 @@ impl ApplicationHandler for App {
         }
 
         #[cfg(not(target_arch = "wasm32"))]
-        if let Some(runtime) = &self.runtime {
-            if let Some(window) = runtime.state.window() {
-                window.request_redraw();
-            }
+        if let Some(runtime) = &self.runtime
+            && let Some(window) = runtime.state.window()
+        {
+            window.request_redraw();
         }
     }
 }

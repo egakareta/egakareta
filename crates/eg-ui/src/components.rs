@@ -410,74 +410,71 @@ pub(crate) fn show_timeline_bar(
             }
         }
 
-        if response.clicked_by(egui::PointerButton::Secondary) {
-            if let Some(pointer) = response.interact_pointer_pos() {
-                if let Some(index) = timeline_bar_nearest_tap_index(
-                    view.tap_times,
-                    pointer.x,
-                    rect,
-                    view_start,
-                    visible_duration,
-                ) {
-                    commands.push(AppCommand::Editor(EditorCommand::RemoveTapAt(
-                        view.tap_times[index],
-                    )));
-                }
-            }
+        if response.clicked_by(egui::PointerButton::Secondary)
+            && let Some(pointer) = response.interact_pointer_pos()
+            && let Some(index) = timeline_bar_nearest_tap_index(
+                view.tap_times,
+                pointer.x,
+                rect,
+                view_start,
+                visible_duration,
+            )
+        {
+            commands.push(AppCommand::Editor(EditorCommand::RemoveTapAt(
+                view.tap_times[index],
+            )));
         }
 
-        if response.clicked_by(egui::PointerButton::Primary) {
-            if let Some(pointer) = response.interact_pointer_pos() {
-                if !timeline_bar_push_tap_click_commands(
-                    view,
-                    pointer.x,
-                    rect,
-                    view_start,
-                    visible_duration,
-                    commands,
-                ) {
-                    let mut nearest_trigger_index = None;
-                    let mut nearest_distance = f32::INFINITY;
+        if response.clicked_by(egui::PointerButton::Primary)
+            && let Some(pointer) = response.interact_pointer_pos()
+            && !timeline_bar_push_tap_click_commands(
+                view,
+                pointer.x,
+                rect,
+                view_start,
+                visible_duration,
+                commands,
+            )
+        {
+            let mut nearest_trigger_index = None;
+            let mut nearest_distance = f32::INFINITY;
 
-                    for (index, trigger_object) in view.trigger_objects.iter().enumerate() {
-                        let Some(trigger) = trigger_object.trigger.as_ref() else {
-                            continue;
-                        };
-                        if trigger.time_seconds < view_start || trigger.time_seconds > view_end {
-                            continue;
-                        }
-
-                        let x = rect.left()
-                            + (trigger.time_seconds - view_start) / visible_duration * rect.width();
-                        let distance = (x - pointer.x).abs();
-                        if distance < nearest_distance {
-                            nearest_distance = distance;
-                            nearest_trigger_index = Some(index);
-                        }
-                    }
-
-                    if let Some(index) = nearest_trigger_index.filter(|_| nearest_distance <= 8.0) {
-                        commands.push(AppCommand::Editor(EditorCommand::SetTriggerSelected(Some(
-                            index,
-                        ))));
-                        commands.push(AppCommand::Editor(EditorCommand::SetTimelineTime(
-                            view.trigger_objects[index]
-                                .trigger
-                                .as_ref()
-                                .map(|trigger| trigger.time_seconds)
-                                .unwrap_or(0.0)
-                                .clamp(0.0, duration_seconds),
-                        )));
-                    } else {
-                        let normalized_x =
-                            ((pointer.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
-                        let clicked_time = view_start + normalized_x * visible_duration;
-                        commands.push(AppCommand::Editor(EditorCommand::SetTriggerSelected(None)));
-                        commands.push(AppCommand::Editor(EditorCommand::SetTimelineTime(
-                            clicked_time.clamp(0.0, duration_seconds),
-                        )));
-                    }
+            for (index, trigger_object) in view.trigger_objects.iter().enumerate() {
+                let Some(trigger) = trigger_object.trigger.as_ref() else {
+                    continue;
+                };
+                if trigger.time_seconds < view_start || trigger.time_seconds > view_end {
+                    continue;
                 }
+
+                let x = rect.left()
+                    + (trigger.time_seconds - view_start) / visible_duration * rect.width();
+                let distance = (x - pointer.x).abs();
+                if distance < nearest_distance {
+                    nearest_distance = distance;
+                    nearest_trigger_index = Some(index);
+                }
+            }
+
+            if let Some(index) = nearest_trigger_index.filter(|_| nearest_distance <= 8.0) {
+                commands.push(AppCommand::Editor(EditorCommand::SetTriggerSelected(Some(
+                    index,
+                ))));
+                commands.push(AppCommand::Editor(EditorCommand::SetTimelineTime(
+                    view.trigger_objects[index]
+                        .trigger
+                        .as_ref()
+                        .map(|trigger| trigger.time_seconds)
+                        .unwrap_or(0.0)
+                        .clamp(0.0, duration_seconds),
+                )));
+            } else {
+                let normalized_x = ((pointer.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
+                let clicked_time = view_start + normalized_x * visible_duration;
+                commands.push(AppCommand::Editor(EditorCommand::SetTriggerSelected(None)));
+                commands.push(AppCommand::Editor(EditorCommand::SetTimelineTime(
+                    clicked_time.clamp(0.0, duration_seconds),
+                )));
             }
         }
 

@@ -110,20 +110,20 @@ pub fn start_waveform_loading(
         };
 
         let cache_key = waveform_cache_key(&bytes, WAVEFORM_WINDOW);
-        if let Some(cached) = eg_platform::io::load_waveform_from_storage(&cache_key).await {
-            if cached.is_compatible(WAVEFORM_WINDOW) {
-                let _ = sender.send((
-                    source_for_send,
-                    level_for_send,
-                    WaveformLoadMessage::Cached {
-                        samples: cached.samples,
-                        sample_rate: cached.sample_rate,
-                        window_size: cached.window_size,
-                        bytes: Some(bytes),
-                    },
-                ));
-                return;
-            }
+        if let Some(cached) = eg_platform::io::load_waveform_from_storage(&cache_key).await
+            && cached.is_compatible(WAVEFORM_WINDOW)
+        {
+            let _ = sender.send((
+                source_for_send,
+                level_for_send,
+                WaveformLoadMessage::Cached {
+                    samples: cached.samples,
+                    sample_rate: cached.sample_rate,
+                    window_size: cached.window_size,
+                    bytes: Some(bytes),
+                },
+            ));
+            return;
         }
 
         rayon::spawn(move || {

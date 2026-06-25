@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_types::BlockId;
+use eg_blocks::BlockId;
 
 const RECENT_BLOCK_LIMIT: usize = 10;
 

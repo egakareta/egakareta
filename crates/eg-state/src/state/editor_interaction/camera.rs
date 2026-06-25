@@ -130,29 +130,29 @@ impl EditorSubsystem {
         pitch: f32,
         transition_seconds: Option<f32>,
     ) {
-        if let Some(duration) = transition_seconds {
-            if duration > 0.0 {
-                let current_rot = self.camera.editor_yaw;
-                let current_pitch = self.camera.editor_pitch;
+        if let Some(duration) = transition_seconds
+            && duration > 0.0
+        {
+            let current_rot = self.camera.editor_yaw;
+            let current_pitch = self.camera.editor_pitch;
 
-                let mut target_rot = rotation;
-                let diff = target_rot - current_rot;
-                if diff > std::f32::consts::PI {
-                    target_rot -= std::f32::consts::TAU;
-                } else if diff < -std::f32::consts::PI {
-                    target_rot += std::f32::consts::TAU;
-                }
-
-                self.camera.transition = Some(crate::state::editor_camera::CameraTransition {
-                    start_yaw: current_rot,
-                    start_pitch: current_pitch,
-                    target_yaw: target_rot,
-                    target_pitch: pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians()),
-                    elapsed: 0.0,
-                    duration,
-                });
-                return;
+            let mut target_rot = rotation;
+            let diff = target_rot - current_rot;
+            if diff > std::f32::consts::PI {
+                target_rot -= std::f32::consts::TAU;
+            } else if diff < -std::f32::consts::PI {
+                target_rot += std::f32::consts::TAU;
             }
+
+            self.camera.transition = Some(crate::state::editor_camera::CameraTransition {
+                start_yaw: current_rot,
+                start_pitch: current_pitch,
+                target_yaw: target_rot,
+                target_pitch: pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians()),
+                elapsed: 0.0,
+                duration,
+            });
+            return;
         }
 
         self.camera.transition = None;

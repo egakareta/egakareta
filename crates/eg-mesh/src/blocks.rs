@@ -19,11 +19,11 @@ use crate::shapes::{PrismFaceColors, PrismTextureLayers, append_prism_with_layer
 use crate::transforms::rotate_vertices_around_euler;
 use crate::{BlockInstance, Vertex};
 use eg_block_geometry::visual_cuboids;
-use eg_blocks::{resolve_block_definition, resolve_block_texture_layers};
-use eg_types::{
+use eg_blocks::{
     BlockAnimationAxis, BlockAnimationPhaseSeed, BlockDefinition, BlockRenderProfile,
-    CameraTrigger, LevelObject, TimedTrigger, TriggerTarget,
+    resolve_block_definition, resolve_block_texture_layers,
 };
+use eg_types::{CameraTrigger, LevelObject, TimedTrigger, TriggerTarget};
 use glam::Vec3;
 
 const LIQUID_PROFILE_TAG: f32 = 1.0;

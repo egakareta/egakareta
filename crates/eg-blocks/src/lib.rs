@@ -10,13 +10,17 @@
 //! Provides a catalog of block types loaded from JSON files in assets/blocks/.
 //! Each block defines its visual appearance, collision behavior, and gameplay effects.
 
+mod block_id;
+mod block_schema;
+
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use image::imageops::FilterType;
 use include_dir::{Dir, include_dir};
 
-use eg_types::{BlockDefinition, BlockId};
+pub use block_id::*;
+pub use block_schema::*;
 
 static BLOCKS_DIR: Dir<'_> = include_dir!("$EGAKARETA_WORKSPACE_ROOT/assets/blocks");
 static BLOCK_CATALOG: OnceLock<BlockCatalog> = OnceLock::new();
@@ -350,11 +354,7 @@ pub fn resolve_block_definition(block_id: &str) -> &'static BlockDefinition {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        all_placeable_blocks, block_texture_atlas, resolve_block_definition,
-        resolve_block_texture_layers,
-    };
-    use eg_types::{BlockCategory, BlockCollision, BlockCuboid, BlockRenderProfile};
+    use super::*;
 
     #[test]
     fn configured_texture_assets_resolve_to_non_default_layers() {

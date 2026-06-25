@@ -7,7 +7,8 @@
 */
 use super::editor_interaction::EditorInteractionState;
 use super::history::EditorHistoryState;
-use eg_types::{BlockEffect, LevelObject, LineUniform};
+use eg_blocks::BlockEffect;
+use eg_types::{LevelObject, LineUniform};
 
 #[derive(Clone, Copy, Default, Debug)]
 pub struct EditorDirtyFlags {

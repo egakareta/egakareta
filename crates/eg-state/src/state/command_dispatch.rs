@@ -315,12 +315,10 @@ impl State {
                 && chord.ctrl == ctrl
                 && chord.shift == shift
                 && chord.alt == alt
-            {
-                if let Some(command) =
+                && let Some(command) =
                     self.command_for_keybind_action(&binding.action, just_pressed)
-                {
-                    commands.push(command);
-                }
+            {
+                commands.push(command);
             }
         }
 
@@ -716,12 +714,13 @@ mod tests {
     use super::State;
     use crate::commands::AppCommand;
     use crate::state::editor_command::EditorCommand;
+    use eg_blocks::BlockId;
     use eg_types::{
         AppPhase, CAMERA_TRIGGER_BLOCK_ID, EditorMode, KeyChord, LevelObject, MusicMetadata,
         SettingsSection, TRANSFORM_TRIGGER_BLOCK_ID, TimingPoint,
     };
     use eg_types::{
-        BlockId, CameraMode, CameraTrigger, EasingDirection, TimedTrigger, TriggerTarget,
+        CameraMode, CameraTrigger, EasingDirection, TimedTrigger, TriggerTarget,
         default_camera_trigger_distance,
     };
     use glam::{Vec2, Vec3};

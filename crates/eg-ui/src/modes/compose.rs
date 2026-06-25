@@ -8,13 +8,13 @@
 use std::collections::HashMap;
 
 use crate::modes::shared::{EditorPropertyPopup, show_editor_property_popup};
-use eg_blocks::{block_texture_atlas, resolve_block_definition, resolve_block_texture_layers};
+use eg_blocks::{
+    BlockId, block_texture_atlas, resolve_block_definition, resolve_block_texture_layers,
+};
 use eg_state::commands::AppCommand;
 use eg_state::state::UiViewModel;
 use eg_state::state::editor_command::EditorCommand;
-use eg_types::{
-    BlockId, CameraMode, EasingDirection, EditorMode, LevelObject, TimedTrigger, TriggerTarget,
-};
+use eg_types::{CameraMode, EasingDirection, EditorMode, LevelObject, TimedTrigger, TriggerTarget};
 
 const RECENT_BLOCK_STRIP_LIMIT: usize = 4;
 const COMPACT_PREVIEW_BUTTON_SIZE: f32 = 40.0;
@@ -366,7 +366,7 @@ fn show_camera_follow_trigger_controls(
     changed
 }
 
-fn show_transform_trigger_summary(ui: &mut egui::Ui, target_count: usize) -> () {
+fn show_transform_trigger_summary(ui: &mut egui::Ui, target_count: usize) {
     ui.horizontal(|ui| {
         ui.label("Targets:");
         ui.label(target_count.to_string());
@@ -417,7 +417,7 @@ pub(crate) fn show_place_block_properties_window(
 
 pub(crate) fn show_block_preview_button(
     ui: &mut egui::Ui,
-    block: &eg_types::BlockDefinition,
+    block: &eg_blocks::BlockDefinition,
     icon_texture_id: Option<egui::TextureId>,
 ) -> bool {
     let button_size = egui::vec2(PREVIEW_BUTTON_WIDTH, PREVIEW_BUTTON_HEIGHT);
@@ -426,7 +426,7 @@ pub(crate) fn show_block_preview_button(
 
 fn show_block_preview_button_sized(
     ui: &mut egui::Ui,
-    block: &eg_types::BlockDefinition,
+    block: &eg_blocks::BlockDefinition,
     icon_texture_id: Option<egui::TextureId>,
     button_size: egui::Vec2,
     preview_height: f32,

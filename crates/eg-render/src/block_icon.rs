@@ -9,7 +9,7 @@ use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
 
 use eg_block_geometry::visual_cuboids;
-use eg_blocks::{resolve_block_definition, resolve_block_texture_layers};
+use eg_blocks::{BlockRenderProfile, resolve_block_definition, resolve_block_texture_layers};
 
 use eg_mesh::shapes::{PrismFaceColors, PrismTextureLayers, append_prism_with_layers};
 use eg_mesh::{
@@ -17,7 +17,7 @@ use eg_mesh::{
     append_camera_trigger_visual_vertices, append_transform_trigger_visual_vertices,
 };
 use eg_types::{
-    BlockRenderProfile, CAMERA_TRIGGER_BLOCK_ID, CameraUniform, ColorSpaceUniform, LevelObject,
+    CAMERA_TRIGGER_BLOCK_ID, CameraUniform, ColorSpaceUniform, LevelObject,
     TRANSFORM_TRIGGER_BLOCK_ID,
 };
 

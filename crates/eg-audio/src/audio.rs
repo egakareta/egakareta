@@ -47,10 +47,10 @@ fn parse_host_id_by_label(label: &str) -> Option<cpal::HostId> {
 }
 
 fn select_host(preferred_host: Option<cpal::HostId>) -> cpal::Host {
-    if let Some(host_id) = preferred_host {
-        if let Ok(host) = cpal::host_from_id(host_id) {
-            return host;
-        }
+    if let Some(host_id) = preferred_host
+        && let Ok(host) = cpal::host_from_id(host_id)
+    {
+        return host;
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -578,17 +578,17 @@ impl AudioBackend {
     pub fn play_sfx(&mut self, asset_bytes: &'static [u8]) {
         self.active_sfx.retain(|player| !player.empty());
 
-        if let Ok(decoded) = rodio::Decoder::new(Cursor::new(asset_bytes)) {
-            if let Some(device) = self.ensure_device() {
-                let (player, output) = rodio::Player::new();
-                if cfg!(test) {
-                    player.set_volume(0.0);
-                }
-                device.mixer().add(output);
-                player.append(decoded);
-                player.play();
-                self.active_sfx.push(player);
+        if let Ok(decoded) = rodio::Decoder::new(Cursor::new(asset_bytes))
+            && let Some(device) = self.ensure_device()
+        {
+            let (player, output) = rodio::Player::new();
+            if cfg!(test) {
+                player.set_volume(0.0);
             }
+            device.mixer().add(output);
+            player.append(decoded);
+            player.play();
+            self.active_sfx.push(player);
         }
     }
 

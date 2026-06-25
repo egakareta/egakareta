@@ -389,17 +389,16 @@ impl EditorSubsystem {
                 if obj.block_id == CAMERA_TRIGGER_BLOCK_ID {
                     if let Some((t, normal)) =
                         self.ray_intersect_camera_trigger_block(ray_origin, ray_dir, obj)
+                        && t < min_t
                     {
-                        if t < min_t {
-                            min_t = t;
-                            hit_found = true;
-                            hit_block_index = Some(index);
-                            hit_trigger_index = None;
-                            hit_tap_index = None;
-                            hit_tap_division = None;
-                            cursor_override = None;
-                            best_hit_normal = normal;
-                        }
+                        min_t = t;
+                        hit_found = true;
+                        hit_block_index = Some(index);
+                        hit_trigger_index = None;
+                        hit_tap_index = None;
+                        hit_tap_division = None;
+                        cursor_override = None;
+                        best_hit_normal = normal;
                     }
                     continue;
                 }
@@ -410,17 +409,16 @@ impl EditorSubsystem {
 
                 if let Some((t, normal)) =
                     self.ray_intersect_rotated_block(ray_origin, ray_dir, obj)
+                    && t < min_t
                 {
-                    if t < min_t {
-                        min_t = t;
-                        hit_found = true;
-                        hit_block_index = Some(index);
-                        hit_trigger_index = None;
-                        hit_tap_index = None;
-                        hit_tap_division = None;
-                        cursor_override = None;
-                        best_hit_normal = normal;
-                    }
+                    min_t = t;
+                    hit_found = true;
+                    hit_block_index = Some(index);
+                    hit_trigger_index = None;
+                    hit_tap_index = None;
+                    hit_tap_division = None;
+                    cursor_override = None;
+                    best_hit_normal = normal;
                 }
             }
 
@@ -434,15 +432,14 @@ impl EditorSubsystem {
 
                 if let Some((t, _normal)) =
                     self.ray_intersect_rotated_block(ray_origin, ray_dir, object)
+                    && t < min_t
                 {
-                    if t < min_t {
-                        min_t = t;
-                        hit_found = true;
-                        hit_trigger_index = Some(trigger_index);
-                        hit_tap_index = None;
-                        hit_tap_division = None;
-                        cursor_override = None;
-                    }
+                    min_t = t;
+                    hit_found = true;
+                    hit_trigger_index = Some(trigger_index);
+                    hit_tap_index = None;
+                    hit_tap_division = None;
+                    cursor_override = None;
                 }
             }
 
@@ -467,26 +464,24 @@ impl EditorSubsystem {
                     marker_t = Some(marker_t.map_or(arrow_t, |best| best.min(arrow_t)));
                 }
 
-                if let Some(t) = marker_t {
-                    if t < min_t {
-                        min_t = t;
-                        hit_found = true;
-                        hit_block_index = None;
-                        hit_trigger_index = Some(trigger_index);
-                        hit_tap_index = None;
-                        hit_tap_division = None;
-                        cursor_override = None;
-                    }
+                if let Some(t) = marker_t
+                    && t < min_t
+                {
+                    min_t = t;
+                    hit_found = true;
+                    hit_block_index = None;
+                    hit_trigger_index = Some(trigger_index);
+                    hit_tap_index = None;
+                    hit_tap_division = None;
+                    cursor_override = None;
                 }
             }
         }
 
-        if !hit_found {
-            if let Some(t) = ground_t {
-                min_t = t;
-                hit_found = true;
-                best_hit_normal = Vec3::Y;
-            }
+        if !hit_found && let Some(t) = ground_t {
+            min_t = t;
+            hit_found = true;
+            best_hit_normal = Vec3::Y;
         }
 
         if !hit_found {
@@ -555,11 +550,11 @@ impl EditorSubsystem {
                 continue;
             }
 
-            if let Some((t, _normal)) = self.ray_intersect_rotated_block(ray_origin, ray_dir, obj) {
-                if t < min_t {
-                    min_t = t;
-                    hit_found = true;
-                }
+            if let Some((t, _normal)) = self.ray_intersect_rotated_block(ray_origin, ray_dir, obj)
+                && t < min_t
+            {
+                min_t = t;
+                hit_found = true;
             }
         }
 
@@ -591,12 +586,12 @@ impl EditorSubsystem {
                 continue;
             }
 
-            if let Some((t, normal)) = self.ray_intersect_rotated_block(ray_origin, ray_dir, obj) {
-                if t < min_t {
-                    min_t = t;
-                    best_hit_normal = normal;
-                    hit_found = true;
-                }
+            if let Some((t, normal)) = self.ray_intersect_rotated_block(ray_origin, ray_dir, obj)
+                && t < min_t
+            {
+                min_t = t;
+                best_hit_normal = normal;
+                hit_found = true;
             }
         }
 
@@ -830,10 +825,9 @@ impl EditorSubsystem {
             let max = Vec3::from(cuboid.max);
             if let Some((t_hit, normal_local)) =
                 ray_intersect_aabb(local_origin_world, local_dir, min, max)
+                && best_hit.map(|(best_t, _)| t_hit < best_t).unwrap_or(true)
             {
-                if best_hit.map(|(best_t, _)| t_hit < best_t).unwrap_or(true) {
-                    best_hit = Some((t_hit, rotation * normal_local));
-                }
+                best_hit = Some((t_hit, rotation * normal_local));
             }
         }
 
@@ -844,7 +838,8 @@ impl EditorSubsystem {
 #[cfg(test)]
 mod tests {
     use super::super::super::State;
-    use eg_types::{BlockId, CAMERA_TRIGGER_BLOCK_ID, LevelObject};
+    use eg_blocks::BlockId;
+    use eg_types::{CAMERA_TRIGGER_BLOCK_ID, LevelObject};
     use glam::{Vec2, Vec3};
 
     #[tokio::test]

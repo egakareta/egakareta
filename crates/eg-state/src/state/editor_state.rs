@@ -6,6 +6,7 @@
 
 */
 use super::{EditorDirtyFlags, EditorSubsystem, State};
+use eg_blocks::BlockId;
 use eg_editor_domain::{
     add_tap_with_indicator, clear_taps_with_indicators, interpolate_timeline_sample_positions,
     remove_tap_with_indicator, snap_cell_to_step, snap_component_to_step,
@@ -16,7 +17,7 @@ use eg_types::{
     LevelObject, TimingPoint,
 };
 use eg_types::{
-    BlockId, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EasingDirection,
+    CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EasingDirection,
     TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget, default_camera_trigger_distance,
 };
 
@@ -735,11 +736,11 @@ impl State {
         self.editor.set_snap_to_grid(snap);
         self.session.app_settings.editor_snap_to_grid = self.editor.config.snap_to_grid;
         self.persist_app_settings();
-        if self.editor.ui.selected_block_index.is_some() {
-            if let Some(obj) = self.editor_selected_block() {
-                self.set_editor_selected_block_position(obj.position);
-                self.set_editor_selected_block_size(obj.size);
-            }
+        if self.editor.ui.selected_block_index.is_some()
+            && let Some(obj) = self.editor_selected_block()
+        {
+            self.set_editor_selected_block_position(obj.position);
+            self.set_editor_selected_block_size(obj.size);
         }
     }
 
@@ -747,11 +748,12 @@ impl State {
         self.editor.set_snap_step(step);
         self.session.app_settings.editor_snap_step = self.editor.config.snap_step;
         self.persist_app_settings();
-        if self.editor.config.snap_to_grid && self.editor.ui.selected_block_index.is_some() {
-            if let Some(obj) = self.editor_selected_block() {
-                self.set_editor_selected_block_position(obj.position);
-                self.set_editor_selected_block_size(obj.size);
-            }
+        if self.editor.config.snap_to_grid
+            && self.editor.ui.selected_block_index.is_some()
+            && let Some(obj) = self.editor_selected_block()
+        {
+            self.set_editor_selected_block_position(obj.position);
+            self.set_editor_selected_block_size(obj.size);
         }
     }
 
@@ -759,10 +761,10 @@ impl State {
         self.editor.set_snap_rotation(snap);
         self.session.app_settings.editor_rotation_snap = self.editor.config.snap_rotation;
         self.persist_app_settings();
-        if self.editor.ui.selected_block_index.is_some() {
-            if let Some(obj) = self.editor_selected_block() {
-                self.set_editor_selected_block_rotation(obj.rotation);
-            }
+        if self.editor.ui.selected_block_index.is_some()
+            && let Some(obj) = self.editor_selected_block()
+        {
+            self.set_editor_selected_block_rotation(obj.rotation);
         }
     }
 
@@ -771,10 +773,11 @@ impl State {
         self.session.app_settings.editor_rotation_snap_step =
             self.editor.config.snap_rotation_step_degrees;
         self.persist_app_settings();
-        if self.editor.config.snap_rotation && self.editor.ui.selected_block_index.is_some() {
-            if let Some(obj) = self.editor_selected_block() {
-                self.set_editor_selected_block_rotation(obj.rotation);
-            }
+        if self.editor.config.snap_rotation
+            && self.editor.ui.selected_block_index.is_some()
+            && let Some(obj) = self.editor_selected_block()
+        {
+            self.set_editor_selected_block_rotation(obj.rotation);
         }
     }
 
@@ -1618,10 +1621,11 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::State;
+    use eg_blocks::BlockId;
     use eg_game::TimelineSimulationRuntime;
     use eg_mesh::{GizmoAxis, GizmoDragKind};
     use eg_types::{
-        AppPhase, BlockId, Direction, EasingDirection, EditorMode, GameCursor, LevelObject,
+        AppPhase, Direction, EasingDirection, EditorMode, GameCursor, LevelObject,
         TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget,
     };
 

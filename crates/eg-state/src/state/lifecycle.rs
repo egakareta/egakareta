@@ -1407,10 +1407,11 @@ impl State {
             }
         };
         let app_settings_migrated = app_settings.migrate_defaults();
-        if app_settings_migrated && !cfg!(test) {
-            if let Err(error) = eg_platform::io::save_app_settings_to_storage(&app_settings).await {
-                log::error!("Failed to persist migrated app settings: {error}");
-            }
+        if app_settings_migrated
+            && !cfg!(test)
+            && let Err(error) = eg_platform::io::save_app_settings_to_storage(&app_settings).await
+        {
+            log::error!("Failed to persist migrated app settings: {error}");
         }
 
         let graphics_backend_locked = graphics_backend_override.is_some();

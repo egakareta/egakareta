@@ -795,11 +795,11 @@ impl State {
                 gizmo_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
             }
 
-            if frame_input.should_draw_editor_cursor() {
-                if let Some(draw_data) = self.render.meshes.editor_cursor.draw_data() {
-                    gizmo_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                    draw_mesh(&mut gizmo_pass, draw_data);
-                }
+            if frame_input.should_draw_editor_cursor()
+                && let Some(draw_data) = self.render.meshes.editor_cursor.draw_data()
+            {
+                gizmo_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                draw_mesh(&mut gizmo_pass, draw_data);
             }
 
             if let Some(draw_data) = self.render.meshes.camera_arrow.draw_data() {

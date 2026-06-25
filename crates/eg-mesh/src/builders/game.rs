@@ -10,7 +10,8 @@ use crate::Vertex;
 use crate::advanced_shapes::append_cone;
 use crate::blocks::build_block_geometry;
 use crate::shapes::{append_prism, append_quad};
-use eg_types::{BlockEffect, BlockEffectPreset, Direction, LevelObject};
+use eg_blocks::{BlockEffect, BlockEffectPreset};
+use eg_types::{Direction, LevelObject};
 use glam::{EulerRot, Quat, Vec2, Vec3};
 
 const PRACTICE_CHECKPOINT_FLAG_BLOCK_ID: &str = "core/practice_checkpoint_flag";
@@ -269,7 +270,7 @@ fn practice_checkpoint_flag_object(checkpoint: &PracticeCheckpointFlagInstance) 
             checkpoint.position[2],
         ],
         size: PRACTICE_CHECKPOINT_FLAG_SIZE,
-        rotation: rotation,
+        rotation,
         ..LevelObject::new(PRACTICE_CHECKPOINT_FLAG_BLOCK_ID)
     }
 }
@@ -733,7 +734,8 @@ mod tests {
         build_trail_vertices_with_alpha, build_transform_trigger_marker_vertices,
     };
     use crate::Vertex;
-    use eg_types::{BlockEffect, Direction};
+    use eg_blocks::BlockEffect;
+    use eg_types::Direction;
 
     const PRISM_VERTEX_COUNT: usize = 36;
 

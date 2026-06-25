@@ -43,9 +43,11 @@ pub struct RuntimeAudioPreloadState {
     pub last_warmup_request: Option<(String, f32)>,
 }
 
+pub type AudioImportChannel = (Sender<(String, Vec<u8>)>, Receiver<(String, Vec<u8>)>);
+
 pub struct EditorAudioState {
     pub local_audio_cache: HashMap<String, Vec<u8>>,
-    pub audio_import_channel: (Sender<(String, Vec<u8>)>, Receiver<(String, Vec<u8>)>),
+    pub audio_import_channel: AudioImportChannel,
     pub waveform_load_channel: (Sender<WaveformResult>, Receiver<WaveformResult>),
     pub waveform_cache: HashMap<String, WaveformCacheEntry>,
     pub waveform_loading_source: Option<String>,
@@ -172,14 +174,14 @@ impl State {
         let source_key = runtime_asset_source_key(level_name, "audio.mp3");
         self.update_runtime_audio_preloads();
 
-        if self.phase == eg_types::AppPhase::Editor || self.session.playtesting_editor {
-            if let Some(bytes) = self.audio.state.editor.local_audio_cache.get("audio.mp3") {
-                self.audio
-                    .state
-                    .runtime
-                    .start_with_bytes_at(bytes, start_seconds);
-                return;
-            }
+        if (self.phase == eg_types::AppPhase::Editor || self.session.playtesting_editor)
+            && let Some(bytes) = self.audio.state.editor.local_audio_cache.get("audio.mp3")
+        {
+            self.audio
+                .state
+                .runtime
+                .start_with_bytes_at(bytes, start_seconds);
+            return;
         }
 
         if let Some(bytes) = self

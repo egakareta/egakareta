@@ -23,7 +23,7 @@ pub fn build_editor_cursor_vertices(
     let object = LevelObject {
         position: cursor,
         size,
-        rotation: rotation,
+        rotation,
         ..LevelObject::new(block_id)
     };
 

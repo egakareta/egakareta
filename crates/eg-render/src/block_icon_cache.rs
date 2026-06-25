@@ -8,10 +8,10 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-use eg_blocks::{all_placeable_blocks, resolve_block_texture_layers};
-use eg_types::{
-    BlockAnimationAxis, BlockAnimationPhaseSeed, BlockCuboid, BlockDefinition,
-    BlockEffectColorMode, BlockEffectPreset, BlockId, BlockRenderProfile,
+use eg_blocks::{
+    BlockAnimationAxis, BlockAnimationPhaseSeed, BlockBobAnimation, BlockCuboid, BlockDefinition,
+    BlockEffect, BlockEffectColorMode, BlockEffectPreset, BlockId, BlockPulseAnimation,
+    BlockRenderProfile, BlockSpinAnimation, all_placeable_blocks, resolve_block_texture_layers,
 };
 use egui::TextureId;
 use egui_wgpu::Renderer as EguiRenderer;
@@ -208,7 +208,7 @@ fn hash_phase_seed(phase_seed: BlockAnimationPhaseSeed, hasher: &mut DefaultHash
     .hash(hasher);
 }
 
-fn hash_optional_spin(value: Option<eg_types::BlockSpinAnimation>, hasher: &mut DefaultHasher) {
+fn hash_optional_spin(value: Option<BlockSpinAnimation>, hasher: &mut DefaultHasher) {
     value.is_some().hash(hasher);
     if let Some(value) = value {
         hash_axis(value.axis, hasher);
@@ -216,7 +216,7 @@ fn hash_optional_spin(value: Option<eg_types::BlockSpinAnimation>, hasher: &mut 
     }
 }
 
-fn hash_optional_bob(value: Option<eg_types::BlockBobAnimation>, hasher: &mut DefaultHasher) {
+fn hash_optional_bob(value: Option<BlockBobAnimation>, hasher: &mut DefaultHasher) {
     value.is_some().hash(hasher);
     if let Some(value) = value {
         hash_axis(value.axis, hasher);
@@ -225,7 +225,7 @@ fn hash_optional_bob(value: Option<eg_types::BlockBobAnimation>, hasher: &mut De
     }
 }
 
-fn hash_optional_pulse(value: Option<eg_types::BlockPulseAnimation>, hasher: &mut DefaultHasher) {
+fn hash_optional_pulse(value: Option<BlockPulseAnimation>, hasher: &mut DefaultHasher) {
     value.is_some().hash(hasher);
     if let Some(value) = value {
         value.amplitude.to_bits().hash(hasher);
@@ -233,7 +233,7 @@ fn hash_optional_pulse(value: Option<eg_types::BlockPulseAnimation>, hasher: &mu
     }
 }
 
-fn hash_optional_effect(value: Option<eg_types::BlockEffect>, hasher: &mut DefaultHasher) {
+fn hash_optional_effect(value: Option<BlockEffect>, hasher: &mut DefaultHasher) {
     value.is_some().hash(hasher);
     if let Some(value) = value {
         match value.preset {
@@ -267,9 +267,9 @@ fn render_profile_tag(profile: &BlockRenderProfile) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use eg_blocks::all_placeable_blocks;
-    use eg_types::{
+    use eg_blocks::{
         BlockAnimationAxis, BlockBobAnimation, BlockCuboid, BlockEffect, BlockRenderProfile,
+        all_placeable_blocks,
     };
 
     use super::{block_icon_signature, render_profile_tag};

@@ -26,12 +26,12 @@ use crate::modes::compose::{
 use crate::modes::shared::show_mode_selector_popup;
 use crate::modes::tapping::{show_selected_tap_properties_window, show_tapping_mode_bottom_panel};
 use crate::modes::timing::show_timing_mode_bottom_panel;
+use eg_blocks::{BlockCategory, BlockDefinition, BlockId};
 use eg_state::commands::AppCommand;
 use eg_state::state::State;
 use eg_state::state::UiViewModel;
 use eg_state::state::editor_command::EditorCommand;
-use eg_types::{BlockCategory, BlockDefinition};
-use eg_types::{BlockId, EditorMode, SettingsSection, essential_keybind_actions, format_key_chord};
+use eg_types::{EditorMode, SettingsSection, essential_keybind_actions, format_key_chord};
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
 use glam::{Mat3, Vec3};
 pub use menu::{
@@ -317,15 +317,13 @@ fn show_editor_context_menu(
     let menu_id = egui::Id::new("editor_canvas_context_menu_position");
     let secondary_clicked = ctx.input(|input| input.pointer.secondary_clicked());
     let mut opened_this_frame = false;
-    if secondary_clicked {
-        if let Some(pointer) = ctx.input(|input| input.pointer.latest_pos()) {
-            if !ctx.is_pointer_over_egui()
-                && !pointer_over_ui_rects(pointer, ui_input_blocking_rects)
-            {
-                ctx.data_mut(|data| data.insert_temp(menu_id, pointer));
-                opened_this_frame = true;
-            }
-        }
+    if secondary_clicked
+        && let Some(pointer) = ctx.input(|input| input.pointer.latest_pos())
+        && !ctx.is_pointer_over_egui()
+        && !pointer_over_ui_rects(pointer, ui_input_blocking_rects)
+    {
+        ctx.data_mut(|data| data.insert_temp(menu_id, pointer));
+        opened_this_frame = true;
     }
 
     let Some(menu_position) = ctx.data_mut(|data| data.get_temp::<egui::Pos2>(menu_id)) else {
@@ -1327,40 +1325,40 @@ pub fn show_editor_ui(
             });
     }
 
-    if !is_timing && !is_compact_ui {
-        if let Some(rect) = show_view_selector_cube(
+    if !is_timing
+        && !is_compact_ui
+        && let Some(rect) = show_view_selector_cube(
             ctx,
             view.camera_rotation,
             view.camera_pitch,
             view.camera_position,
             &mut commands,
-        ) {
-            ui_input_blocking_rects.push(rect_to_input_bounds(rect));
-        }
+        )
+    {
+        ui_input_blocking_rects.push(rect_to_input_bounds(rect));
     }
 
-    if view.mode.is_selection_mode() {
-        if let Some((start, current, is_active_drag)) = view.marquee_selection_rect_screen {
-            if is_active_drag {
-                let pixels_per_point = ctx.pixels_per_point();
-                let rect = egui::Rect::from_two_pos(
-                    marquee_screen_pos_to_egui_pos(start, pixels_per_point),
-                    marquee_screen_pos_to_egui_pos(current, pixels_per_point),
-                );
-                let stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(25, 153, 255));
-                let layer = egui::LayerId::new(
-                    egui::Order::Foreground,
-                    egui::Id::new("editor_marquee_overlay"),
-                );
-                ctx.layer_painter(layer).rect(
-                    rect,
-                    0.0,
-                    egui::Color32::from_rgba_unmultiplied(25, 153, 255, 38),
-                    stroke,
-                    egui::StrokeKind::Outside,
-                );
-            }
-        }
+    if view.mode.is_selection_mode()
+        && let Some((start, current, is_active_drag)) = view.marquee_selection_rect_screen
+        && is_active_drag
+    {
+        let pixels_per_point = ctx.pixels_per_point();
+        let rect = egui::Rect::from_two_pos(
+            marquee_screen_pos_to_egui_pos(start, pixels_per_point),
+            marquee_screen_pos_to_egui_pos(current, pixels_per_point),
+        );
+        let stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(25, 153, 255));
+        let layer = egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("editor_marquee_overlay"),
+        );
+        ctx.layer_painter(layer).rect(
+            rect,
+            0.0,
+            egui::Color32::from_rgba_unmultiplied(25, 153, 255, 38),
+            stroke,
+            egui::StrokeKind::Outside,
+        );
     }
 
     show_editor_context_menu(ctx, &view, &mut ui_input_blocking_rects, &mut commands);
@@ -1892,15 +1890,16 @@ fn show_view_selector_cube(
                 }
             }
 
-            if response.clicked() && !dragging_cube {
-                if let Some(idx) = hovered_face {
-                    let face = &rendered_faces[idx];
-                    commands.push(AppCommand::Editor(EditorCommand::SetCameraOrientation {
-                        rotation: face.rotation,
-                        pitch: face.pitch,
-                        transition_seconds: Some(0.25),
-                    }));
-                }
+            if response.clicked()
+                && !dragging_cube
+                && let Some(idx) = hovered_face
+            {
+                let face = &rendered_faces[idx];
+                commands.push(AppCommand::Editor(EditorCommand::SetCameraOrientation {
+                    rotation: face.rotation,
+                    pitch: face.pitch,
+                    transition_seconds: Some(0.25),
+                }));
             }
 
             painter.text(
@@ -1925,10 +1924,11 @@ mod tests {
         push_command_when_clicked, responsive_ui_scale_multiplier, settings_sidebar_default_width,
         show_editor_ui, show_perf_overlay, sort_quad_by_angle,
     };
+    use eg_blocks::BlockCategory;
     use eg_blocks::resolve_block_definition;
     use eg_state::commands::AppCommand;
     use eg_state::state::editor_command::EditorCommand;
-    use eg_types::{BlockCategory, EditorMode, SettingsSection};
+    use eg_types::{EditorMode, SettingsSection};
     use glam::{Mat3, Vec3};
 
     fn camera_forward_from_orientation(rotation: f32, pitch: f32) -> Vec3 {
@@ -2269,8 +2269,9 @@ mod tests {
 mod test_utils {
     use std::sync::LazyLock;
 
+    use eg_blocks::BlockId;
     use eg_state::state::UiViewModel;
-    use eg_types::{AppSettings, BlockId, Direction, EditorMode, MusicMetadata, SettingsSection};
+    use eg_types::{AppSettings, Direction, EditorMode, MusicMetadata, SettingsSection};
 
     static DEFAULT_BLOCK_ID: LazyLock<BlockId> = LazyLock::new(BlockId::default);
 

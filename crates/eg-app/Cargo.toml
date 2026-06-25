@@ -22,6 +22,7 @@ path = "src/main.rs"
 benchmarks = []
 
 [dependencies]
+eg-blocks = { workspace = true }
 eg-types = { workspace = true }
 eg-game = { workspace = true }
 eg-mesh = { workspace = true }

@@ -91,19 +91,19 @@ fn format_scope(
     let _ = writeln!(out, "{prefix}{connector}{name} ({duration_ms:.3} ms){data}");
 
     let child_prefix = format!("{prefix}{}", if is_last { "   " } else { "│  " });
-    if let Ok(reader) = Reader::with_offset(stream, scope.child_begin_position) {
-        if let Ok(children) = reader.read_top_scopes() {
-            for (i, child) in children.iter().enumerate() {
-                let child_is_last = i == children.len() - 1;
-                format_scope(
-                    out,
-                    child,
-                    stream,
-                    scope_collection,
-                    &child_prefix,
-                    child_is_last,
-                );
-            }
+    if let Ok(reader) = Reader::with_offset(stream, scope.child_begin_position)
+        && let Ok(children) = reader.read_top_scopes()
+    {
+        for (i, child) in children.iter().enumerate() {
+            let child_is_last = i == children.len() - 1;
+            format_scope(
+                out,
+                child,
+                stream,
+                scope_collection,
+                &child_prefix,
+                child_is_last,
+            );
         }
     }
 }

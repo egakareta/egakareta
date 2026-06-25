@@ -168,7 +168,7 @@ impl EditorSubsystem {
         let mut best_hit: Option<(usize, f32)> = None;
 
         for (trigger_index, camera_trigger) in self.camera_trigger_markers() {
-            let eye = Vec3::from_array((&camera_trigger).eye());
+            let eye = Vec3::from_array(camera_trigger.eye());
             let Some(screen) = self.world_to_screen_v(eye, viewport) else {
                 continue;
             };
@@ -240,10 +240,10 @@ impl EditorSubsystem {
 
         self.ui.hovered_block_index = self.ui.selected_block_index;
 
-        if let Some(index) = self.ui.selected_block_index {
-            if let Some(obj) = self.objects.get(index) {
-                self.ui.cursor = [obj.position[0], obj.position[1], obj.position[2]];
-            }
+        if let Some(index) = self.ui.selected_block_index
+            && let Some(obj) = self.objects.get(index)
+        {
+            self.ui.cursor = [obj.position[0], obj.position[1], obj.position[2]];
         }
 
         self.mark_dirty(EditorDirtyFlags::selection_cursor_changed(

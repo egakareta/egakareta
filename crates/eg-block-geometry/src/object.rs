@@ -5,10 +5,9 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use eg_blocks::{BlockCuboid, resolve_block_definition};
+use eg_types::LevelObject;
 use glam::{Vec2, Vec3};
-
-use eg_blocks::resolve_block_definition;
-use eg_types::{BlockCuboid, LevelObject};
 
 /// A cuboid in world space, derived from block definitions and object transforms.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -179,7 +178,8 @@ fn cross(a: Vec2, b: Vec2) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use eg_types::{BlockCuboid, LevelObject};
+    use eg_blocks::BlockCuboid;
+    use eg_types::LevelObject;
 
     #[test]
     fn cuboids_from_definition_preserves_color_tint() {

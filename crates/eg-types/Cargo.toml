@@ -10,6 +10,7 @@ repository = "https://github.com/egakareta/egakareta"
 license = "AGPL-3.0-only"
 
 [dependencies]
+eg-blocks = { workspace = true }
 is_default = { workspace = true }
 bytemuck = { workspace = true }
 glam = { workspace = true }

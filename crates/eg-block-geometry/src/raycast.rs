@@ -309,10 +309,9 @@ pub fn ray_intersect_rotated_block(
         let max = Vec3::from(cuboid.max);
         if let Some((t_hit, normal_local)) =
             ray_intersect_aabb(local_origin_world, local_dir, min, max)
+            && best_hit.map(|(best_t, _)| t_hit < best_t).unwrap_or(true)
         {
-            if best_hit.map(|(best_t, _)| t_hit < best_t).unwrap_or(true) {
-                best_hit = Some((t_hit, rotation * normal_local));
-            }
+            best_hit = Some((t_hit, rotation * normal_local));
         }
     }
 

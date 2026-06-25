@@ -144,7 +144,7 @@ pub struct EditorSubsystem {
 impl EditorSubsystem {
     /// Construct a standalone `EditorSubsystem` for domain tests — no GPU required.
     pub fn new_test() -> Self {
-        use eg_types::BlockId;
+        use eg_blocks::BlockId;
 
         Self {
             ui: EditorState::new(),

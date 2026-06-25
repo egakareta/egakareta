@@ -194,12 +194,12 @@ pub(crate) fn show_timing_mode_bottom_panel(
             }
             if let Some(bpm) = view.bpm_tap_result {
                 ui.label(format!("Detected: {:.1} BPM", bpm));
-                if let Some(idx) = view.timing_selected_index {
-                    if ui.button("Apply to selected").clicked() {
-                        commands.push(AppCommand::Editor(EditorCommand::SetTimingPointBpm(
-                            idx, bpm,
-                        )));
-                    }
+                if let Some(idx) = view.timing_selected_index
+                    && ui.button("Apply to selected").clicked()
+                {
+                    commands.push(AppCommand::Editor(EditorCommand::SetTimingPointBpm(
+                        idx, bpm,
+                    )));
                 }
             }
             if ui.button("Reset taps").clicked() {

@@ -14,8 +14,11 @@ use crate::blocks::{
 };
 use crate::geometry::MeshGeometry;
 use crate::shapes::{PrismFaceColors, PrismTextureLayers};
-use eg_blocks::{resolve_block_definition, resolve_block_texture_layers};
-use eg_types::{BlockCuboid, BlockDefinition, BlockRenderProfile, LevelObject};
+use eg_blocks::{
+    BlockCuboid, BlockDefinition, BlockRenderProfile, resolve_block_definition,
+    resolve_block_texture_layers,
+};
+use eg_types::LevelObject;
 
 pub const DEFAULT_RENDER_CHUNK_SIZE: i32 = 16;
 

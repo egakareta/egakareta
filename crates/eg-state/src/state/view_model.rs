@@ -6,7 +6,7 @@
 
 */
 use super::State;
-use eg_types::BlockId;
+use eg_blocks::BlockId;
 use eg_types::{
     AppSettings, BasicLevelMetadata, Direction, EditorMode, LevelObject, MusicMetadata,
     PlayerLevelProgress, SettingsSection, TimingPoint,

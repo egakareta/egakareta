@@ -12,8 +12,9 @@
 //! `EditorSubsystem` / `State` methods, keeping editor feature additions
 //! self-contained within the `state/` module.
 
+use eg_blocks::BlockId;
 use eg_types::{
-    BasicLevelMetadata, BlockId, EditorMode, KeyChord, LevelObject, MusicMetadata, SettingsSection,
+    BasicLevelMetadata, EditorMode, KeyChord, LevelObject, MusicMetadata, SettingsSection,
 };
 
 /// Editor-specific commands. Grouped by domain for clarity.

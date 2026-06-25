@@ -8,9 +8,10 @@
 
 #[cfg(test)]
 mod tests {
+    use eg_blocks::BlockId;
     use eg_mesh::Vertex;
     use eg_types::{
-        BasicLevelMetadata, BlockId, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, Direction,
+        BasicLevelMetadata, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, Direction,
         EasingDirection, EditorStateParams, GameCursor, LevelMetadata, LevelObject,
         LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata, TRANSFORM_TRIGGER_BLOCK_ID,
         TimedTrigger, TriggerTarget, apply_timed_triggers_to_objects,

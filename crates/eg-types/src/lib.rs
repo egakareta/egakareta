@@ -11,16 +11,12 @@
 
 mod app;
 mod auth;
-mod block_id;
-mod block_schema;
 mod level;
 mod settings;
 mod waveform;
 
 pub use app::*;
 pub use auth::*;
-pub use block_id::*;
-pub use block_schema::*;
 pub use level::*;
 pub use settings::*;
 pub use waveform::*;

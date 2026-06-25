@@ -10,11 +10,13 @@ repository = "https://github.com/egakareta/egakareta"
 license = "AGPL-3.0-only"
 
 [dependencies]
-eg-types = { workspace = true }
 image = { workspace = true, features = ["ico", "png"] }
+is_default = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+smart-default = { workspace = true }
 include_dir = { workspace = true }
 log = { workspace = true }
-serde_json = { workspace = true }
 
 [dev-dependencies]
 approx = { workspace = true }

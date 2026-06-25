@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use smart_default::SmartDefault;
 use std::collections::{HashMap, HashSet};
 
-use crate::block_id::BlockId;
+use eg_blocks::BlockId;
 
 pub const CAMERA_TRIGGER_BLOCK_ID: &str = "core/camera_trigger";
 pub const TRANSFORM_TRIGGER_BLOCK_ID: &str = "core/transform_trigger";
@@ -936,10 +936,10 @@ pub fn normalize_level_object_ids(objects: &mut [LevelObject]) {
 fn next_level_object_suffix_after<'a>(object_ids: impl Iterator<Item = &'a String>) -> u64 {
     let mut max_suffix = 0_u64;
     for object_id in object_ids {
-        if let Some(suffix) = object_id.strip_prefix(OBJECT_ID_PREFIX) {
-            if let Ok(value) = suffix.parse::<u64>() {
-                max_suffix = max_suffix.max(value);
-            }
+        if let Some(suffix) = object_id.strip_prefix(OBJECT_ID_PREFIX)
+            && let Ok(value) = suffix.parse::<u64>()
+        {
+            max_suffix = max_suffix.max(value);
         }
     }
 
