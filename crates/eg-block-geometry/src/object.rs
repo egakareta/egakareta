@@ -101,20 +101,11 @@ fn cuboids_from_definition(object: &LevelObject, cuboids: &[BlockCuboid]) -> Vec
     cuboids
         .iter()
         .map(|cuboid| WorldCuboid {
-            min: block_local_to_world(object, cuboid.from),
-            max: block_local_to_world(object, cuboid.to),
+            min: object.local_to_world(cuboid.from),
+            max: object.local_to_world(cuboid.to),
             color_tint: cuboid.color_tint,
         })
         .collect()
-}
-
-/// Converts block-local coordinates (0 to 16) to world coordinates based on the object's position and size.
-fn block_local_to_world(object: &LevelObject, local: [f32; 3]) -> [f32; 3] {
-    [
-        object.position[0] + object.size[0] * (local[0] / 16.0),
-        object.position[1] + object.size[1] * (local[1] / 16.0),
-        object.position[2] + object.size[2] * (local[2] / 16.0),
-    ]
 }
 
 /// Computes the convex hull of a set of 2D points using the monotone chain algorithm.

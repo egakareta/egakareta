@@ -460,6 +460,15 @@ impl LevelObject {
         )
     }
 
+    /// Converts block-local coordinates (0 to 16) to world coordinates based on the object's position and size.
+    pub fn local_to_world(&self, local: [f32; 3]) -> [f32; 3] {
+        [
+            self.position[0] + self.size[0] * (local[0] / 16.0),
+            self.position[1] + self.size[1] * (local[1] / 16.0),
+            self.position[2] + self.size[2] * (local[2] / 16.0),
+        ]
+    }
+
     pub fn with_generated_id(mut self, existing_objects: &[LevelObject]) -> Self {
         self.id = next_level_object_id(existing_objects);
         self
