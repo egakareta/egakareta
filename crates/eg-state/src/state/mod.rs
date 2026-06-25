@@ -141,14 +141,6 @@ pub struct EditorSubsystem {
     pub(crate) pick_spatial_index: EditorPickSpatialIndex,
 }
 
-#[cfg(test)]
-impl EditorSubsystem {
-    /// Construct a standalone `EditorSubsystem` for domain tests — no GPU required.
-    pub fn new_test() -> Self {
-        EditorSubsystem::default()
-    }
-}
-
 pub struct MenuSubsystem {
     pub state: MenuState,
 }

@@ -8,7 +8,7 @@
 //! Pure domain tests for `EditorSubsystem`.
 //!
 //! These tests exercise editor logic **without GPU, audio, or rendering**.
-//! They use `EditorSubsystem::new_test()` which requires no wgpu adapter.
+//! They use `EditorSubsystem::default()` which requires no wgpu adapter.
 
 use super::EditorSubsystem;
 use eg_types::{Direction, LevelObject};
@@ -23,7 +23,7 @@ fn assert_vec3_approx_eq(actual: [f32; 3], expected: [f32; 3], eps: f32) {
 
 #[test]
 fn nudge_moves_selected_blocks_by_world_delta() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
     editor.objects.push(LevelObject::default());
     editor.objects.push(LevelObject {
         position: [3.0, 0.0, 0.0],
@@ -39,7 +39,7 @@ fn nudge_moves_selected_blocks_by_world_delta() {
 
 #[test]
 fn nudge_returns_false_when_nothing_selected() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
     editor.objects.push(LevelObject::default());
 
     assert!(!editor.nudge_selected(1.0, 0.0));
@@ -48,7 +48,7 @@ fn nudge_returns_false_when_nothing_selected() {
 
 #[test]
 fn nudge_updates_cursor_to_selected_block_position() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
     editor.objects.push(LevelObject {
         position: [1.0, 2.0, 3.0],
         ..LevelObject::default()
@@ -63,7 +63,7 @@ fn nudge_updates_cursor_to_selected_block_position() {
 
 #[test]
 fn snap_moves_blocks_to_nearest_grid_cell() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
     editor.config.snap_step = 1.0;
     editor.objects.push(LevelObject {
         position: [0.3, 0.0, 0.7],
@@ -77,7 +77,7 @@ fn snap_moves_blocks_to_nearest_grid_cell() {
 
 #[test]
 fn snap_respects_custom_step_size() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
     editor.config.snap_step = 2.0;
     editor.objects.push(LevelObject {
         position: [1.3, 0.0, 3.8],
@@ -91,7 +91,7 @@ fn snap_respects_custom_step_size() {
 
 #[test]
 fn snap_returns_false_when_already_snapped() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
     editor.config.snap_step = 1.0;
     editor.objects.push(LevelObject {
         position: [3.0, 0.0, 5.0],
@@ -106,7 +106,7 @@ fn snap_returns_false_when_already_snapped() {
 
 #[test]
 fn remove_selected_deletes_marked_blocks() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
     editor.objects.push(LevelObject::default());
     editor.objects.push(LevelObject {
         position: [1.0, 0.0, 0.0],
@@ -127,7 +127,7 @@ fn remove_selected_deletes_marked_blocks() {
 
 #[test]
 fn remove_selected_clears_selection() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
     editor.objects.push(LevelObject::default());
     editor.input.selected_block_index = Some(0);
 
@@ -140,7 +140,7 @@ fn remove_selected_clears_selection() {
 
 #[test]
 fn set_spawn_here_copies_cursor_position() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
     editor.input.cursor = [5.0, 3.0, 7.0];
 
     editor.set_spawn_here();
@@ -149,7 +149,7 @@ fn set_spawn_here_copies_cursor_position() {
 
 #[test]
 fn rotate_spawn_direction_toggles_between_forward_and_right() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
     assert_eq!(editor.spawn.direction, Direction::Forward);
 
     editor.rotate_spawn_direction();
@@ -163,7 +163,7 @@ fn rotate_spawn_direction_toggles_between_forward_and_right() {
 
 #[test]
 fn clear_block_selection_resets_all_indices() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
     editor.objects.push(LevelObject::default());
     editor.objects.push(LevelObject {
         position: [1.0, 0.0, 0.0],
@@ -179,7 +179,7 @@ fn clear_block_selection_resets_all_indices() {
 
 #[test]
 fn selected_indices_normalized_deduplicates() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
     editor.objects.push(LevelObject::default());
     editor.objects.push(LevelObject {
         position: [1.0, 0.0, 0.0],
@@ -196,7 +196,7 @@ fn selected_indices_normalized_deduplicates() {
 
 #[test]
 fn set_mode_clears_drags_and_marquee() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
     editor.runtime.interaction.gizmo_drag = Some(super::EditorGizmoDrag {
         axis: eg_mesh::GizmoAxis::X,
         kind: eg_mesh::GizmoDragKind::Move,
@@ -216,7 +216,7 @@ fn set_mode_clears_drags_and_marquee() {
 
 #[test]
 fn effective_snap_overridden_by_ctrl() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
     editor.config.snap_to_grid = true;
     editor.input.ctrl_held = false;
     assert!(editor.effective_snap_to_grid());
@@ -227,7 +227,7 @@ fn effective_snap_overridden_by_ctrl() {
 
 #[test]
 fn set_snap_step_clamps_minimum() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
     editor.set_snap_step(0.001);
     assert!(
         editor.snap_step() >= 0.05,
@@ -239,7 +239,7 @@ fn set_snap_step_clamps_minimum() {
 
 #[test]
 fn nudge_moves_all_selected_blocks() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
     editor.objects.push(LevelObject::default());
     editor.objects.push(LevelObject {
         position: [1.0, 0.0, 0.0],
@@ -262,7 +262,7 @@ fn nudge_moves_all_selected_blocks() {
 
 #[test]
 fn snap_returns_false_when_nothing_selected() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
     editor.config.snap_step = 1.0;
     editor.objects.push(LevelObject {
         position: [0.3, 0.0, 0.7],
@@ -276,7 +276,7 @@ fn snap_returns_false_when_nothing_selected() {
 
 #[test]
 fn remove_selected_returns_false_when_nothing_selected_and_cursor_empty() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
     editor.objects.push(LevelObject::default());
     // Cursor far from any block so remove_topmost_block_at_cursor also fails
     editor.input.cursor = [100.0, 100.0, 100.0];
@@ -289,7 +289,7 @@ fn remove_selected_returns_false_when_nothing_selected_and_cursor_empty() {
 
 #[test]
 fn effective_snap_rotation_overridden_by_ctrl() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
     editor.config.snap_rotation = true;
     editor.input.ctrl_held = false;
     assert!(editor.effective_snap_rotation());
@@ -302,7 +302,7 @@ fn effective_snap_rotation_overridden_by_ctrl() {
 
 #[test]
 fn selected_indices_normalized_sorted() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
     editor.objects.push(LevelObject::default());
     editor.objects.push(LevelObject {
         position: [1.0, 0.0, 0.0],
@@ -323,7 +323,7 @@ fn selected_indices_normalized_sorted() {
 
 #[test]
 fn rotate_spawn_direction_full_cycle() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
     let initial = editor.spawn.direction;
 
     // Rotate through all directions and return to initial
@@ -337,7 +337,7 @@ fn rotate_spawn_direction_full_cycle() {
 
 #[test]
 fn set_mode_updates_mode_field() {
-    let mut editor = EditorSubsystem::new_test();
+    let mut editor = EditorSubsystem::default();
 
     editor.set_mode(eg_types::EditorMode::Move);
     assert_eq!(editor.input.mode, eg_types::EditorMode::Move);
