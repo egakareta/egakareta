@@ -1113,7 +1113,7 @@ impl State {
             .recent_block_ids
             .iter()
             .filter_map(|id| {
-                let block = eg_blocks::resolve_block_definition(id);
+                let block = eg_blocks::BlockDefinition::get(id);
                 if block.placeable {
                     Some(id.clone())
                 } else {
@@ -1176,7 +1176,7 @@ impl State {
             return false;
         };
 
-        if !eg_blocks::resolve_block_definition(&block_id).placeable {
+        if !eg_blocks::BlockDefinition::get(&block_id).placeable {
             return false;
         }
 
@@ -1208,7 +1208,7 @@ impl State {
             return false;
         };
 
-        if !eg_blocks::resolve_block_definition(&block_id).placeable {
+        if !eg_blocks::BlockDefinition::get(&block_id).placeable {
             return false;
         }
 

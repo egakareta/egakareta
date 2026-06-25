@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_blocks::{BlockCuboid, resolve_block_definition};
+use eg_blocks::{BlockCuboid, BlockDefinition};
 use eg_types::LevelObject;
 use glam::{Vec2, Vec3};
 
@@ -25,13 +25,13 @@ impl WorldCuboid {
 
 /// Obtain world-space cuboids for the object's visuals and hitboxes, based on block definitions and object transforms.
 pub fn visual_cuboids(object: &LevelObject) -> Vec<WorldCuboid> {
-    let block = resolve_block_definition(&object.block_id);
+    let block = BlockDefinition::get(&object.block_id);
     cuboids_from_definition(object, &block.geometry.elements)
 }
 
 /// Hitboxes are defined separately from visuals in block definitions. If hitboxes are missing, the caller can fall back to visuals or a full object cuboid.
 fn raw_hitbox_cuboids(object: &LevelObject) -> Vec<WorldCuboid> {
-    let block = resolve_block_definition(&object.block_id);
+    let block = BlockDefinition::get(&object.block_id);
     cuboids_from_definition(object, &block.geometry.hitboxes)
 }
 

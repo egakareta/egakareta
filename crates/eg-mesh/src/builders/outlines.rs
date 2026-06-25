@@ -9,7 +9,7 @@ use crate::Vertex;
 use crate::shapes::append_prism;
 use crate::transforms::rotate_vertices_around_euler;
 use eg_block_geometry::hitbox_cuboids;
-use eg_blocks::{BlockCollision, resolve_block_definition};
+use eg_blocks::{BlockCollision, BlockDefinition};
 use eg_types::LevelObject;
 use glam::{EulerRot, Mat3, Vec3};
 
@@ -136,9 +136,7 @@ pub fn build_editor_hitbox_visualization_vertices(
     let mut vertices = Vec::with_capacity(objects.len().saturating_mul(432));
 
     for object in objects {
-        let collision = resolve_block_definition(&object.block_id)
-            .behavior
-            .collision;
+        let collision = BlockDefinition::get(&object.block_id).behavior.collision;
         let outline_color = match collision {
             BlockCollision::Solid | BlockCollision::Hazard => [1.0, 0.04, 0.06, 0.88],
             BlockCollision::Portal => [0.0, 0.82, 1.0, 0.88],

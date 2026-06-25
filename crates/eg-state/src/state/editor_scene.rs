@@ -10,8 +10,7 @@ use std::borrow::Cow;
 use glam::Vec3;
 
 use super::{EditorDirtyFlags, EditorSubsystem, State};
-use eg_blocks::BlockRenderProfile;
-use eg_blocks::resolve_block_definition;
+use eg_blocks::{BlockDefinition, BlockRenderProfile};
 use eg_editor_domain::tap_time_is_timing_division;
 use eg_editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds};
 use eg_game::trigger_transformed_objects_at_time;
@@ -56,7 +55,7 @@ impl EditorObjectOutlineStyle {
 }
 
 fn is_camera_trigger_block(object: &LevelObject) -> bool {
-    resolve_block_definition(&object.block_id).render.profile == BlockRenderProfile::CameraTrigger
+    BlockDefinition::get(&object.block_id).render.profile == BlockRenderProfile::CameraTrigger
 }
 
 fn build_camera_trigger_visual_outline_vertices(
@@ -340,7 +339,7 @@ impl EditorSubsystem {
     }
 
     pub fn selected_block_default_size(&self) -> [f32; 3] {
-        resolve_block_definition(&self.config.selected_block_id)
+        BlockDefinition::get(&self.config.selected_block_id)
             .render
             .default_size
     }

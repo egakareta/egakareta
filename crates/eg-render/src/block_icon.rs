@@ -9,7 +9,7 @@ use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
 
 use eg_block_geometry::visual_cuboids;
-use eg_blocks::{BlockRenderProfile, resolve_block_definition, resolve_block_texture_layers};
+use eg_blocks::{BlockDefinition, BlockRenderProfile, BlockTextureLayers};
 
 use eg_mesh::shapes::{PrismFaceColors, PrismTextureLayers, append_prism_with_layers};
 use eg_mesh::{
@@ -71,7 +71,7 @@ fn orthographic_projection(half_extent: f32) -> Mat4 {
 fn build_block_icon_geometry(block_id: &str) -> MeshGeometry {
     const LIQUID_PROFILE_TAG: f32 = 1.0;
 
-    let block = resolve_block_definition(block_id);
+    let block = BlockDefinition::get(block_id);
     if block.id == CAMERA_TRIGGER_BLOCK_ID {
         return build_camera_trigger_icon_geometry();
     }
@@ -80,7 +80,7 @@ fn build_block_icon_geometry(block_id: &str) -> MeshGeometry {
         return build_transform_trigger_icon_geometry();
     }
 
-    let layers = resolve_block_texture_layers(block_id);
+    let layers = BlockTextureLayers::get(block_id);
     let colors = PrismFaceColors::new_with_outline(
         block.render.color_top,
         block.render.color_side,

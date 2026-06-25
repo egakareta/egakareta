@@ -10,7 +10,7 @@ use super::physics::object_xz_contains;
 use super::physics::{BASE_PLAYER_SPEED, aabb_overlaps_cuboid_xz};
 use super::spatial::SpatialGrid;
 use eg_block_geometry::hitbox_cuboids;
-use eg_blocks::{BlockCollision, resolve_block_definition};
+use eg_blocks::{BlockCollision, BlockDefinition};
 use eg_types::{Direction, LevelObject, PlayerLevelProgress};
 
 const PLAYER_WIDTH: f32 = 0.8;
@@ -30,7 +30,7 @@ pub struct CachedBlockBehavior {
 
 impl CachedBlockBehavior {
     pub fn from_block_id(block_id: &str) -> Self {
-        let def = resolve_block_definition(block_id);
+        let def = BlockDefinition::get(block_id);
         Self {
             collision: def.behavior.collision,
             speed_multiplier: def.behavior.speed_multiplier,
@@ -393,7 +393,7 @@ impl GameState {
                         consumed_indices.push(i);
                     }
                 } else if let Some(portal) = self.objects.get(i) {
-                    let behavior = &resolve_block_definition(&portal.block_id).behavior;
+                    let behavior = &BlockDefinition::get(&portal.block_id).behavior;
                     self.speed *= behavior.speed_multiplier.max(0.1);
                     if behavior.consumed_on_overlap {
                         consumed_indices.push(i);
@@ -584,11 +584,7 @@ impl GameState {
                 .cached_behaviors
                 .get(i)
                 .map(|b| b.support_surface)
-                .unwrap_or_else(|| {
-                    resolve_block_definition(&obj.block_id)
-                        .behavior
-                        .support_surface
-                });
+                .unwrap_or_else(|| BlockDefinition::get(&obj.block_id).behavior.support_surface);
             if !is_support {
                 continue;
             }
@@ -635,11 +631,7 @@ impl GameState {
                 .cached_behaviors
                 .get(i)
                 .map(|b| b.support_surface)
-                .unwrap_or_else(|| {
-                    resolve_block_definition(&obj.block_id)
-                        .behavior
-                        .support_surface
-                });
+                .unwrap_or_else(|| BlockDefinition::get(&obj.block_id).behavior.support_surface);
             if !is_support {
                 continue;
             }

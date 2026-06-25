@@ -21,7 +21,7 @@ use crate::{BlockInstance, Vertex};
 use eg_block_geometry::visual_cuboids;
 use eg_blocks::{
     BlockAnimationAxis, BlockAnimationPhaseSeed, BlockDefinition, BlockRenderProfile,
-    resolve_block_definition, resolve_block_texture_layers,
+    BlockTextureLayers,
 };
 use eg_types::{CameraTrigger, LevelObject, TimedTrigger, TriggerTarget};
 use glam::Vec3;
@@ -149,7 +149,7 @@ pub fn build_block_instance_batches_from_refs_at_time(
     let mut warned_about_fallback_limit = false;
 
     for object in objects {
-        let block = resolve_block_definition(&object.block_id);
+        let block = BlockDefinition::get(&object.block_id);
         if is_instanced_block_definition(block) {
             grouped_instances
                 .entry(block.id.to_string())
@@ -192,8 +192,8 @@ pub fn build_block_instance_batches_from_refs_at_time(
 
 pub fn build_block_template_geometry(block_id: &str) -> MeshGeometry {
     puffin::profile_scope!("BuildBlockTemplateGeometry");
-    let block = resolve_block_definition(block_id);
-    let texture_layers = resolve_block_texture_layers(&block.id);
+    let block = BlockDefinition::get(block_id);
+    let texture_layers = BlockTextureLayers::get(&block.id);
     let colors = BlockColors {
         top: block.render.color_top,
         side: block.render.color_side,
@@ -532,8 +532,8 @@ fn append_block_geometry_inner(
     let z_min = obj.position[2];
     let z_max = obj.position[2] + obj.size[2];
 
-    let block = resolve_block_definition(&obj.block_id);
-    let texture_layers = resolve_block_texture_layers(&obj.block_id);
+    let block = BlockDefinition::get(&obj.block_id);
+    let texture_layers = BlockTextureLayers::get(&obj.block_id);
 
     let mut colors = BlockColors {
         top: block.render.color_top,

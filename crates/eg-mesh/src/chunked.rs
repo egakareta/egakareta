@@ -14,10 +14,7 @@ use crate::blocks::{
 };
 use crate::geometry::MeshGeometry;
 use crate::shapes::{PrismFaceColors, PrismTextureLayers};
-use eg_blocks::{
-    BlockCuboid, BlockDefinition, BlockRenderProfile, resolve_block_definition,
-    resolve_block_texture_layers,
-};
+use eg_blocks::{BlockCuboid, BlockDefinition, BlockRenderProfile, BlockTextureLayers};
 use eg_types::LevelObject;
 
 pub const DEFAULT_RENDER_CHUNK_SIZE: i32 = 16;
@@ -256,7 +253,7 @@ pub fn classify_voxel_fast_lane(object: &LevelObject) -> Result<(), VoxelFastLan
         return Err(VoxelFastLaneRejection::NonGridAligned);
     }
 
-    let block = resolve_block_definition(&object.block_id);
+    let block = BlockDefinition::get(&object.block_id);
     if block.render.profile != BlockRenderProfile::Solid {
         return Err(VoxelFastLaneRejection::RenderProfile);
     }
@@ -672,8 +669,8 @@ fn material_key_for_object(
 }
 
 fn material_for_object(object: &LevelObject) -> VoxelMaterial {
-    let block = resolve_block_definition(&object.block_id);
-    let texture_layers = resolve_block_texture_layers(&object.block_id);
+    let block = BlockDefinition::get(&object.block_id);
+    let texture_layers = BlockTextureLayers::get(&object.block_id);
     let mut colors = VoxelColors {
         top: block.render.color_top,
         side: block.render.color_side,

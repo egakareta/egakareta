@@ -1193,7 +1193,7 @@ pub fn show_editor_ui(
                     egui::Grid::new("editor_place_block_catalog_grid")
                         .num_columns(PLACE_BLOCK_CATALOG_COLUMNS)
                         .show(ui, |ui| {
-                            let blocks: Vec<_> = eg_blocks::all_placeable_blocks()
+                            let blocks: Vec<_> = eg_blocks::BlockDefinition::all_placeable()
                                 .iter()
                                 .filter(|block| {
                                     block.placeable
@@ -1925,7 +1925,7 @@ mod tests {
         show_editor_ui, show_perf_overlay, sort_quad_by_angle,
     };
     use eg_blocks::BlockCategory;
-    use eg_blocks::resolve_block_definition;
+    use eg_blocks::BlockDefinition;
     use eg_state::commands::AppCommand;
     use eg_state::state::editor_command::EditorCommand;
     use eg_types::{EditorMode, SettingsSection};
@@ -2115,11 +2115,11 @@ mod tests {
 
     #[test]
     fn block_catalog_category_groups_builtin_blocks() {
-        let stone = resolve_block_definition("core/stone");
-        let lava = resolve_block_definition("core/lava");
-        let void = resolve_block_definition("core/void");
-        let speed_portal = resolve_block_definition("core/speedportal");
-        let torch = resolve_block_definition("core/torch");
+        let stone = BlockDefinition::get("core/stone");
+        let lava = BlockDefinition::get("core/lava");
+        let void = BlockDefinition::get("core/void");
+        let speed_portal = BlockDefinition::get("core/speedportal");
+        let torch = BlockDefinition::get("core/torch");
 
         assert!(block_matches_catalog_category(
             stone,

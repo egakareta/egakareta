@@ -8,9 +8,7 @@
 use std::collections::HashMap;
 
 use crate::modes::shared::{EditorPropertyPopup, show_editor_property_popup};
-use eg_blocks::{
-    BlockId, block_texture_atlas, resolve_block_definition, resolve_block_texture_layers,
-};
+use eg_blocks::{BlockDefinition, BlockId, BlockTextureAtlas, BlockTextureLayers};
 use eg_state::commands::AppCommand;
 use eg_state::state::UiViewModel;
 use eg_state::state::editor_command::EditorCommand;
@@ -44,7 +42,7 @@ pub(crate) fn show_recent_block_quick_strip(
     let blocks: Vec<_> = view
         .recent_block_ids
         .iter()
-        .map(|id| resolve_block_definition(id))
+        .map(|id| BlockDefinition::get(id))
         .filter(|block| block.placeable)
         .take(RECENT_BLOCK_STRIP_LIMIT)
         .collect();
@@ -391,7 +389,7 @@ pub(crate) fn show_place_block_properties_window(
         return;
     }
 
-    let block = resolve_block_definition(view.selected_block_id);
+    let block = BlockDefinition::get(view.selected_block_id);
     show_editor_property_popup(
         ctx,
         EditorPropertyPopup::above_bottom_bar("place_block_properties", bottom_bar_height),
@@ -514,8 +512,8 @@ fn draw_block_preview_cube(painter: &egui::Painter, rect: egui::Rect, block_id: 
 }
 
 fn block_preview_colors(block_id: &str) -> (egui::Color32, egui::Color32) {
-    let atlas = block_texture_atlas();
-    let layers = resolve_block_texture_layers(block_id);
+    let atlas = BlockTextureAtlas::get();
+    let layers = BlockTextureLayers::get(block_id);
     let top = atlas_average_color(atlas, layers.top).unwrap_or(FALLBACK_TOP_COLOR);
     let side = atlas_average_color(atlas, layers.side).unwrap_or(FALLBACK_SIDE_COLOR);
     (scale_rgb(top, TOP_LIGHTEN_FACTOR), side)
@@ -572,7 +570,7 @@ mod tests {
         show_place_block_properties_window, show_selected_block_properties_window,
     };
     use crate::test_utils::editor_view_model;
-    use eg_blocks::{all_placeable_blocks, block_texture_atlas, resolve_block_texture_layers};
+    use eg_blocks::{BlockDefinition, BlockTextureAtlas, BlockTextureLayers};
     use eg_types::{
         AppSettings, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, DEFAULT_CAMERA_PITCH,
         DEFAULT_CAMERA_YAW, EditorMode, LevelObject, MusicMetadata, TRANSFORM_TRIGGER_BLOCK_ID,
@@ -595,7 +593,7 @@ mod tests {
 
     #[test]
     fn atlas_average_color_returns_some_for_known_default_layer() {
-        let atlas = block_texture_atlas();
+        let atlas = BlockTextureAtlas::get();
         let color = atlas_average_color(atlas, atlas.default_layer());
         assert!(color.is_some());
     }
@@ -616,7 +614,7 @@ mod tests {
 
     #[test]
     fn atlas_average_color_returns_none_for_out_of_bounds_layer() {
-        let atlas = block_texture_atlas();
+        let atlas = BlockTextureAtlas::get();
         let color = atlas_average_color(atlas, u32::MAX);
         assert!(color.is_none());
     }
@@ -629,12 +627,12 @@ mod tests {
 
     #[test]
     fn block_preview_colors_match_texture_layer_sampling_for_placeable_block() {
-        let block = all_placeable_blocks()
+        let block = BlockDefinition::all_placeable()
             .iter()
             .find(|block| block.placeable)
             .expect("expected at least one placeable block");
-        let atlas = block_texture_atlas();
-        let layers = resolve_block_texture_layers(&block.id.to_string());
+        let atlas = BlockTextureAtlas::get();
+        let layers = BlockTextureLayers::get(&block.id.to_string());
 
         let expected_top = scale_rgb(
             atlas_average_color(atlas, layers.top).unwrap_or(FALLBACK_TOP_COLOR),
@@ -650,7 +648,7 @@ mod tests {
 
     #[test]
     fn show_block_preview_button_handles_texture_and_fallback_paths() {
-        let block = all_placeable_blocks()
+        let block = BlockDefinition::all_placeable()
             .iter()
             .find(|block| block.placeable)
             .expect("expected at least one placeable block");

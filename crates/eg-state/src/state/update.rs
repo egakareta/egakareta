@@ -9,8 +9,8 @@ use glam::{Mat4, Vec3};
 
 use super::State;
 use super::runtime::BlockVisualEffect;
+use eg_blocks::BlockDefinition;
 use eg_blocks::BlockEffectColorMode;
-use eg_blocks::resolve_block_definition;
 use eg_game::{
     TimelineSimulationRuntime, advance_simulation_time, trigger_transformed_objects_at_time,
 };
@@ -48,7 +48,7 @@ impl State {
             .player_render
             .gem_shatter_effects
             .extend(events.iter().filter_map(|event| {
-                let block = resolve_block_definition(&event.object.block_id);
+                let block = BlockDefinition::get(&event.object.block_id);
                 let effect = block.animation.on_consumed?;
                 let color = match effect.color_mode {
                     BlockEffectColorMode::Tint => event.object.color_tint,

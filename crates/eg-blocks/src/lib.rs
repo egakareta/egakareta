@@ -23,7 +23,8 @@ pub use block_id::*;
 pub use block_schema::*;
 
 static BLOCKS_DIR: Dir<'_> = include_dir!("$EGAKARETA_WORKSPACE_ROOT/assets/blocks");
-static BLOCK_CATALOG: OnceLock<BlockCatalog> = OnceLock::new();
+static BLOCK_DEFINITIONS: OnceLock<Vec<BlockDefinition>> = OnceLock::new();
+static BLOCK_DEFINITION_INDEX: OnceLock<HashMap<BlockId, usize>> = OnceLock::new();
 static BLOCK_TEXTURE_ATLAS: OnceLock<BlockTextureAtlas> = OnceLock::new();
 
 const BLOCK_TEXTURE_EDGE: u32 = 64;
@@ -125,6 +126,53 @@ impl BlockTextureAtlas {
     pub fn default_layer(&self) -> u32 {
         self.default_layer
     }
+
+    pub fn get() -> &'static Self {
+        BLOCK_TEXTURE_ATLAS.get_or_init(|| {
+            let mut atlas = BlockTextureAtlas::new();
+            let mut files = Vec::new();
+            collect_builtin_texture_files(&BLOCKS_DIR, &mut files);
+            files.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+
+            if files.is_empty() {
+                log::warn!(
+                    "No block textures (PNG/BMP) were discovered in embedded assets; textured blocks will fall back to flat color."
+                );
+            }
+
+            for (path, bytes) in files {
+                let decoded = match image::load_from_memory(&bytes) {
+                    Ok(image) => image,
+                    Err(error) => {
+                        log::warn!("Failed to decode block texture {path}: {error}");
+                        continue;
+                    }
+                };
+
+                let rgba = decoded.to_rgba8();
+                let resized =
+                    if rgba.width() != BLOCK_TEXTURE_EDGE || rgba.height() != BLOCK_TEXTURE_EDGE {
+                        image::imageops::resize(
+                            &rgba,
+                            BLOCK_TEXTURE_EDGE,
+                            BLOCK_TEXTURE_EDGE,
+                            FilterType::Nearest,
+                        )
+                    } else {
+                        rgba
+                    };
+
+                atlas.add_layer(&path, resized.into_raw());
+            }
+
+            log::info!(
+                "Loaded {} block texture layer(s) from embedded assets.",
+                atlas.layers.len().saturating_sub(1)
+            );
+
+            atlas
+        })
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -134,57 +182,102 @@ pub struct BlockTextureLayers {
     pub bottom: u32,
 }
 
-pub(crate) struct BlockCatalog {
-    definitions: Vec<BlockDefinition>,
-    by_id: HashMap<BlockId, usize>,
-    fallback_id: BlockId,
+impl BlockTextureLayers {
+    pub fn get(block_id: &str) -> Self {
+        let block = BlockDefinition::get(block_id);
+        let atlas = BlockTextureAtlas::get();
+
+        let resolve_layer = |key: Option<&str>, face: &str| -> u32 {
+            match key {
+                Some(value) => match atlas.resolve_layer(value) {
+                    Some(layer) => layer,
+                    None => {
+                        log::warn!(
+                            "Missing {face} texture for block {}: {}. Falling back to default.",
+                            block.id,
+                            value
+                        );
+                        atlas.default_layer()
+                    }
+                },
+                None => atlas.default_layer(),
+            }
+        };
+
+        let top_key = block
+            .assets
+            .texture_top
+            .as_deref()
+            .or(block.assets.texture.as_deref());
+        let side_key = block
+            .assets
+            .texture_side
+            .as_deref()
+            .or(block.assets.texture.as_deref());
+        let bottom_key = block
+            .assets
+            .texture_bottom
+            .as_deref()
+            .or(block.assets.texture_side.as_deref())
+            .or(block.assets.texture.as_deref());
+
+        Self {
+            top: resolve_layer(top_key, "top"),
+            side: resolve_layer(side_key, "side"),
+            bottom: resolve_layer(bottom_key, "bottom"),
+        }
+    }
 }
 
-impl BlockCatalog {
-    fn from_definitions(mut definitions: Vec<BlockDefinition>) -> Self {
+impl BlockDefinition {
+    /// Returns a slice of all block definitions available for placement in the editor.
+    pub fn all_placeable() -> &'static [Self] {
+        block_definitions()
+    }
+
+    /// Resolves a block ID to its definition, returning the default block if not found.
+    pub fn get(block_id: &str) -> &'static Self {
+        block_definition_for_id(&BlockId::new(block_id))
+    }
+}
+
+fn block_definitions() -> &'static [BlockDefinition] {
+    BLOCK_DEFINITIONS.get_or_init(|| {
+        let mut definitions = Vec::new();
+        collect_builtin_blocks(&BLOCKS_DIR, &mut definitions);
+
         if definitions.is_empty() {
             definitions.push(BlockDefinition::default());
         }
 
-        let mut by_id = HashMap::new();
-        for (index, definition) in definitions.iter().enumerate() {
-            by_id.insert(definition.id.clone(), index);
+        if !definitions
+            .iter()
+            .any(|definition| definition.id == BlockId::default())
+        {
+            definitions.push(BlockDefinition::default());
         }
 
-        if !by_id.contains_key(&BlockId::default()) {
-            let fallback = BlockDefinition::default();
-            let index = definitions.len();
-            by_id.insert(fallback.id.clone(), index);
-            definitions.push(fallback);
-        }
-
-        Self {
-            definitions,
-            by_id,
-            fallback_id: BlockId::default(),
-        }
-    }
-
-    fn block_for_id(&self, block_id: &BlockId) -> &BlockDefinition {
-        self.by_id
-            .get(block_id)
-            .and_then(|index| self.definitions.get(*index))
-            .or_else(|| {
-                self.by_id
-                    .get(&self.fallback_id)
-                    .and_then(|index| self.definitions.get(*index))
-            })
-            .expect("block catalog must contain fallback block")
-    }
+        definitions.sort_unstable_by(|left, right| left.display_name.cmp(&right.display_name));
+        definitions
+    })
 }
 
-fn block_catalog() -> &'static BlockCatalog {
-    BLOCK_CATALOG.get_or_init(|| {
-        let mut definitions = Vec::new();
-        collect_builtin_blocks(&BLOCKS_DIR, &mut definitions);
-        definitions.sort_unstable_by(|left, right| left.display_name.cmp(&right.display_name));
-        BlockCatalog::from_definitions(definitions)
+fn block_definition_index() -> &'static HashMap<BlockId, usize> {
+    BLOCK_DEFINITION_INDEX.get_or_init(|| {
+        block_definitions()
+            .iter()
+            .enumerate()
+            .map(|(index, definition)| (definition.id.clone(), index))
+            .collect()
     })
+}
+
+fn block_definition_for_id(block_id: &BlockId) -> &'static BlockDefinition {
+    block_definition_index()
+        .get(block_id)
+        .or_else(|| block_definition_index().get(&BlockId::default()))
+        .and_then(|index| block_definitions().get(*index))
+        .expect("block definitions must contain fallback block")
 }
 
 fn collect_builtin_blocks(dir: &Dir<'_>, definitions: &mut Vec<BlockDefinition>) {
@@ -250,119 +343,17 @@ fn collect_builtin_texture_files(dir: &Dir<'_>, files: &mut Vec<(String, Vec<u8>
     }
 }
 
-pub fn block_texture_atlas() -> &'static BlockTextureAtlas {
-    BLOCK_TEXTURE_ATLAS.get_or_init(|| {
-        let mut atlas = BlockTextureAtlas::new();
-        let mut files = Vec::new();
-        collect_builtin_texture_files(&BLOCKS_DIR, &mut files);
-        files.sort_unstable_by(|left, right| left.0.cmp(&right.0));
-
-        if files.is_empty() {
-            log::warn!(
-                "No block textures (PNG/BMP) were discovered in embedded assets; textured blocks will fall back to flat color."
-            );
-        }
-
-        for (path, bytes) in files {
-            let decoded = match image::load_from_memory(&bytes) {
-                Ok(image) => image,
-                Err(error) => {
-                    log::warn!("Failed to decode block texture {path}: {error}");
-                    continue;
-                }
-            };
-
-            let rgba = decoded.to_rgba8();
-            let resized =
-                if rgba.width() != BLOCK_TEXTURE_EDGE || rgba.height() != BLOCK_TEXTURE_EDGE {
-                    image::imageops::resize(
-                        &rgba,
-                        BLOCK_TEXTURE_EDGE,
-                        BLOCK_TEXTURE_EDGE,
-                        FilterType::Nearest,
-                    )
-                } else {
-                    rgba
-                };
-
-            atlas.add_layer(&path, resized.into_raw());
-        }
-
-        log::info!(
-            "Loaded {} block texture layer(s) from embedded assets.",
-            atlas.layers.len().saturating_sub(1)
-        );
-
-        atlas
-    })
-}
-
-pub fn resolve_block_texture_layers(block_id: &str) -> BlockTextureLayers {
-    let block = resolve_block_definition(block_id);
-    let atlas = block_texture_atlas();
-
-    let resolve_layer = |key: Option<&str>, face: &str| -> u32 {
-        match key {
-            Some(value) => match atlas.resolve_layer(value) {
-                Some(layer) => layer,
-                None => {
-                    log::warn!(
-                        "Missing {face} texture for block {}: {}. Falling back to default.",
-                        block.id,
-                        value
-                    );
-                    atlas.default_layer()
-                }
-            },
-            None => atlas.default_layer(),
-        }
-    };
-
-    let top_key = block
-        .assets
-        .texture_top
-        .as_deref()
-        .or(block.assets.texture.as_deref());
-    let side_key = block
-        .assets
-        .texture_side
-        .as_deref()
-        .or(block.assets.texture.as_deref());
-    let bottom_key = block
-        .assets
-        .texture_bottom
-        .as_deref()
-        .or(block.assets.texture_side.as_deref())
-        .or(block.assets.texture.as_deref());
-
-    BlockTextureLayers {
-        top: resolve_layer(top_key, "top"),
-        side: resolve_layer(side_key, "side"),
-        bottom: resolve_layer(bottom_key, "bottom"),
-    }
-}
-
-/// Returns a slice of all block definitions available for placement in the editor.
-pub fn all_placeable_blocks() -> &'static [BlockDefinition] {
-    &block_catalog().definitions
-}
-
-/// Resolves a block ID to its definition, returning the default block if not found.
-pub fn resolve_block_definition(block_id: &str) -> &'static BlockDefinition {
-    block_catalog().block_for_id(&BlockId::new(block_id))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn configured_texture_assets_resolve_to_non_default_layers() {
-        let atlas = block_texture_atlas();
+        let atlas = BlockTextureAtlas::get();
         let default_layer = atlas.default_layer();
 
-        for block in all_placeable_blocks() {
-            let layers = resolve_block_texture_layers(&block.id);
+        for block in BlockDefinition::all_placeable() {
+            let layers = BlockTextureLayers::get(&block.id);
 
             let top_configured =
                 block.assets.texture_top.is_some() || block.assets.texture.is_some();
@@ -397,17 +388,17 @@ mod tests {
     }
 
     #[test]
-    fn block_id_resolution_prefers_catalog_and_falls_back_to_default() {
-        let placeable = all_placeable_blocks();
+    fn block_id_resolution_prefers_definition_lookup_and_falls_back_to_default() {
+        let placeable = BlockDefinition::all_placeable();
         assert!(!placeable.is_empty());
 
-        let unknown_definition = resolve_block_definition("does/not/exist");
+        let unknown_definition = BlockDefinition::get("does/not/exist");
         assert_eq!(unknown_definition.id, "core/stone");
     }
 
     #[test]
     fn texture_atlas_resolve_layer_handles_aliases_and_empty_keys() {
-        let atlas = block_texture_atlas();
+        let atlas = BlockTextureAtlas::get();
         let default_layer = atlas.default_layer();
 
         let grass_top = atlas
@@ -427,7 +418,7 @@ mod tests {
 
     #[test]
     fn torch_block_definition_is_passthrough_and_liquid() {
-        let torch = resolve_block_definition("core/torch");
+        let torch = BlockDefinition::get("core/torch");
         assert_eq!(torch.id, "core/torch");
         assert!(matches!(
             torch.behavior.collision,
@@ -439,7 +430,7 @@ mod tests {
 
     #[test]
     fn practice_checkpoint_flag_is_passthrough_cuboid_block() {
-        let flag = resolve_block_definition("core/practice_checkpoint_flag");
+        let flag = BlockDefinition::get("core/practice_checkpoint_flag");
         assert_eq!(flag.id, "core/practice_checkpoint_flag");
         assert!(matches!(
             flag.behavior.collision,
@@ -452,13 +443,13 @@ mod tests {
 
     #[test]
     fn block_default_size_is_loaded() {
-        let speed_portal = resolve_block_definition("core/speedportal");
+        let speed_portal = BlockDefinition::get("core/speedportal");
         assert_eq!(speed_portal.render.default_size, [2.0, 1.0, 1.0]);
     }
 
     #[test]
     fn block_geometry_cuboids_are_loaded_and_normalized() {
-        let fence = resolve_block_definition("core/wooden_fence");
+        let fence = BlockDefinition::get("core/wooden_fence");
         assert_eq!(fence.geometry.elements.len(), 3);
         assert_eq!(fence.geometry.hitboxes.len(), 0);
         assert_eq!(fence.geometry.elements[0].from, [6.0, 0.0, 6.0]);
@@ -481,7 +472,7 @@ mod tests {
 
     #[test]
     fn gem_block_uses_json_geometry_and_inline_animation() {
-        let gem = resolve_block_definition("core/gem");
+        let gem = BlockDefinition::get("core/gem");
 
         assert_eq!(gem.geometry.elements.len(), 5);
         assert_eq!(gem.geometry.hitboxes.len(), 1);
@@ -501,11 +492,11 @@ mod tests {
 
     #[test]
     fn block_categories_are_loaded_from_definitions() {
-        let stone = resolve_block_definition("core/stone");
-        let lava = resolve_block_definition("core/lava");
-        let void = resolve_block_definition("core/void");
-        let speed_portal = resolve_block_definition("core/speedportal");
-        let torch = resolve_block_definition("core/torch");
+        let stone = BlockDefinition::get("core/stone");
+        let lava = BlockDefinition::get("core/lava");
+        let void = BlockDefinition::get("core/void");
+        let speed_portal = BlockDefinition::get("core/speedportal");
+        let torch = BlockDefinition::get("core/torch");
 
         assert_eq!(stone.category, BlockCategory::Building);
         assert_eq!(lava.category, BlockCategory::Danger);

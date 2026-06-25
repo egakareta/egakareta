@@ -11,7 +11,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use eg_blocks::{
     BlockAnimationAxis, BlockAnimationPhaseSeed, BlockBobAnimation, BlockCuboid, BlockDefinition,
     BlockEffect, BlockEffectColorMode, BlockEffectPreset, BlockId, BlockPulseAnimation,
-    BlockRenderProfile, BlockSpinAnimation, all_placeable_blocks, resolve_block_texture_layers,
+    BlockRenderProfile, BlockSpinAnimation, BlockTextureLayers,
 };
 use egui::TextureId;
 use egui_wgpu::Renderer as EguiRenderer;
@@ -41,7 +41,7 @@ impl BlockIconCache {
     pub fn refresh_icons(&mut self, gpu: &GpuContext, egui_renderer: &mut EguiRenderer) {
         let mut seen_ids = HashSet::new();
 
-        for block in all_placeable_blocks()
+        for block in BlockDefinition::all_placeable()
             .iter()
             .filter(|block| block.placeable)
         {
@@ -136,7 +136,7 @@ impl Default for BlockIconCache {
 
 fn block_icon_signature(block: &BlockDefinition) -> u64 {
     let mut hasher = DefaultHasher::new();
-    let layers = resolve_block_texture_layers(&block.id.to_string());
+    let layers = BlockTextureLayers::get(&block.id.to_string());
     layers.top.hash(&mut hasher);
     layers.side.hash(&mut hasher);
     layers.bottom.hash(&mut hasher);
@@ -268,15 +268,15 @@ fn render_profile_tag(profile: &BlockRenderProfile) -> u8 {
 #[cfg(test)]
 mod tests {
     use eg_blocks::{
-        BlockAnimationAxis, BlockBobAnimation, BlockCuboid, BlockEffect, BlockRenderProfile,
-        all_placeable_blocks,
+        BlockAnimationAxis, BlockBobAnimation, BlockCuboid, BlockDefinition, BlockEffect,
+        BlockRenderProfile,
     };
 
     use super::{block_icon_signature, render_profile_tag};
 
     #[test]
     fn block_icon_signature_is_stable_for_same_visual_inputs() {
-        let block = all_placeable_blocks()
+        let block = BlockDefinition::all_placeable()
             .iter()
             .find(|block| block.placeable)
             .expect("expected at least one placeable block")
@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn block_icon_signature_changes_when_render_inputs_change() {
-        let block = all_placeable_blocks()
+        let block = BlockDefinition::all_placeable()
             .iter()
             .find(|block| block.placeable)
             .expect("expected at least one placeable block")
@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn block_icon_signature_changes_when_profile_or_projection_changes() {
-        let block = all_placeable_blocks()
+        let block = BlockDefinition::all_placeable()
             .iter()
             .find(|block| block.placeable)
             .expect("expected at least one placeable block")
@@ -330,7 +330,7 @@ mod tests {
 
     #[test]
     fn block_icon_signature_changes_when_geometry_or_animation_changes() {
-        let block = all_placeable_blocks()
+        let block = BlockDefinition::all_placeable()
             .iter()
             .find(|block| block.placeable)
             .expect("expected at least one placeable block")

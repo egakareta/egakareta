@@ -22,7 +22,7 @@ use glam::Mat4;
 use std::sync::OnceLock;
 use wgpu::util::DeviceExt;
 
-use eg_blocks::block_texture_atlas;
+use eg_blocks::BlockTextureAtlas;
 use eg_game::GameState;
 use eg_level::builtin_level_names;
 use eg_mesh::{
@@ -926,7 +926,7 @@ impl State {
                 ],
             });
 
-        let texture_atlas = block_texture_atlas();
+        let texture_atlas = BlockTextureAtlas::get();
         let block_texture_layer_count = block_texture_array_layer_count(texture_atlas.layers.len());
         let block_texture_array = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Block Texture Array"),
