@@ -85,7 +85,6 @@ pub fn is_default_sky_color(value: &[f32; 3]) -> bool {
 
 serde_default!(default_level_format_version: u32 = CURRENT_LEVEL_FORMAT_VERSION);
 serde_default!(default_level_name: String = "Untitled".to_string());
-serde_default_array!(default_spawn_position: [f32; 3] = [0.0, 0.0, 0.0]);
 serde_default_array!(default_preview_camera_position_zero: [f32; 3] = [0.0, 0.0, 0.0]);
 serde_default_array!(default_preview_camera_target_zero: [f32; 3] = [0.0, 0.0, 0.0]);
 serde_default_float!(default_timeline_duration_seconds: f32 = 16.0);
@@ -388,24 +387,14 @@ impl LevelMetadata {
 }
 
 /// How the spawn point is configured in the level.
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, SmartDefault)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, SmartDefault, IsDefault)]
 pub struct SpawnMetadata {
     /// The position of the spawn point in world coordinates.
-    #[default(default_spawn_position())]
-    #[serde(
-        default = "default_spawn_position",
-        skip_serializing_if = "is_default_spawn_position"
-    )]
+    #[serde(default, skip_serializing_if = "IsDefault::is_default")]
     pub position: [f32; 3],
     /// The direction the player is facing at the spawn point.
     #[serde(default, skip_serializing_if = "IsDefault::is_default")]
     pub direction: Direction,
-}
-
-impl IsDefault for SpawnMetadata {
-    fn is_default(&self) -> bool {
-        is_default_spawn_position(&self.position) && Direction::is_default(&self.direction)
-    }
 }
 
 /// An object placed in a level.
