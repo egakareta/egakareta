@@ -7,7 +7,7 @@
 */
 use eg_block_geometry::hitbox_cuboids;
 use eg_game::physics::object_xz_contains;
-use eg_types::{EasingDirection, TimedTrigger, TriggerAction, TriggerTarget};
+use eg_types::{EasingDirection, TimedTrigger, TriggerTarget};
 use eg_types::{LevelObject, TRANSFORM_TRIGGER_BLOCK_ID};
 
 pub fn create_block_at_cursor(
@@ -23,11 +23,8 @@ pub fn create_block_at_cursor(
         target: TriggerTarget::Objects {
             object_ids: Vec::new(),
         },
-        action: TriggerAction::TransformObjects {
-            position: cursor,
-            rotation: rotation_degrees,
-            size: default_size,
-        },
+        transform: true,
+        ..TimedTrigger::default()
     });
 
     LevelObject {

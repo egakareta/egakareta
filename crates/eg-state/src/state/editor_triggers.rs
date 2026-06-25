@@ -8,27 +8,12 @@
 use super::EditorSubsystem;
 use eg_editor_domain::interpolate_timeline_sample_positions;
 use eg_types::{
-    BlockId, CameraTrigger, DEFAULT_CAMERA_DISTANCE, TimedTrigger, TriggerAction, TriggerTarget,
-    default_camera_trigger_distance, default_camera_trigger_target_position,
-    timed_triggers_to_camera_triggers, triggers_from_objects,
-};
-use eg_types::{
-    CAMERA_TRIGGER_BLOCK_ID, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, LevelObject,
-    TRANSFORM_TRIGGER_BLOCK_ID,
+    CameraMode, CameraTrigger, LevelObject, TimedTrigger, TriggerTarget,
+    default_camera_trigger_target_position,
 };
 
 pub struct EditorTriggerState {
     pub selected_index: Option<usize>,
-    pub object_indices: Vec<usize>,
-}
-
-fn trigger_block_id_from_action(action: &TriggerAction) -> BlockId {
-    match action {
-        TriggerAction::CameraPose { .. } | TriggerAction::CameraFollow { .. } => {
-            BlockId::new(CAMERA_TRIGGER_BLOCK_ID)
-        }
-        TriggerAction::TransformObjects { .. } => BlockId::new(TRANSFORM_TRIGGER_BLOCK_ID),
-    }
 }
 
 fn camera_trigger_rotation_degrees(rotation: f32, pitch: f32) -> [f32; 3] {
@@ -43,73 +28,22 @@ fn camera_trigger_object_position_from_eye(eye: [f32; 3], size: [f32; 3]) -> [f3
     ]
 }
 
-fn trigger_object_from_payload(trigger: TimedTrigger) -> LevelObject {
-    let (position, size, rotation_degrees) = match &trigger.action {
-        TriggerAction::CameraPose {
-            target_position,
-            yaw: rotation,
-            pitch,
-            ..
-        } => {
-            let size = [1.0, 1.0, 1.0];
-            let eye = CameraTrigger {
-                target_position: *target_position,
-                yaw: *rotation,
-                pitch: *pitch,
-                distance: DEFAULT_CAMERA_DISTANCE,
-                ..CameraTrigger::default()
-            }
-            .eye();
-            (
-                camera_trigger_object_position_from_eye(eye, size),
-                size,
-                camera_trigger_rotation_degrees(*rotation, *pitch),
-            )
-        }
-        TriggerAction::TransformObjects {
-            position,
-            rotation: rotation_degrees,
-            size,
-            ..
-        } => (*position, *size, *rotation_degrees),
-        TriggerAction::CameraFollow {
-            distance,
-            yaw: rotation,
-            pitch,
-            ..
-        } => {
-            let size = [1.0, 1.0, 1.0];
-            let eye = CameraTrigger {
-                target_position: default_camera_trigger_target_position(),
-                yaw: *rotation,
-                pitch: *pitch,
-                distance: *distance,
-                ..CameraTrigger::default()
-            }
-            .eye();
-            (
-                camera_trigger_object_position_from_eye(eye, size),
-                size,
-                camera_trigger_rotation_degrees(*rotation, *pitch),
-            )
-        }
-    };
-
-    LevelObject {
-        position,
-        size,
-        rotation: rotation_degrees,
-        block_id: trigger_block_id_from_action(&trigger.action),
-        trigger: Some(trigger),
-        ..LevelObject::default()
-    }
+/// World-space pose (position, rotation_degrees) for a camera trigger object placed so its eye
+/// sits at the camera trigger's eye, looking at the target. Used when capturing a camera trigger
+/// from the current editor camera.
+pub(super) fn camera_trigger_object_pose(camera: &CameraTrigger) -> ([f32; 3], [f32; 3]) {
+    let size = [1.0, 1.0, 1.0];
+    let eye = camera.eye();
+    (
+        camera_trigger_object_position_from_eye(eye, size),
+        camera_trigger_rotation_degrees(camera.yaw, camera.pitch),
+    )
 }
 
 impl EditorTriggerState {
     pub fn new() -> Self {
         Self {
             selected_index: None,
-            object_indices: Vec::new(),
         }
     }
 }
@@ -122,128 +56,7 @@ impl Default for EditorTriggerState {
 
 impl EditorSubsystem {
     pub fn is_camera_track_trigger(trigger: &TimedTrigger) -> bool {
-        matches!(trigger.target, TriggerTarget::Camera)
-            && matches!(
-                trigger.action,
-                TriggerAction::CameraPose { .. } | TriggerAction::CameraFollow { .. }
-            )
-    }
-
-    fn sanitize_trigger(&self, trigger: &mut TimedTrigger) {
-        let duration = self.timeline.clock.duration_seconds.max(0.1);
-
-        trigger.time_seconds = if trigger.time_seconds.is_finite() {
-            trigger.time_seconds.clamp(0.0, duration)
-        } else {
-            0.0
-        };
-
-        trigger.duration_seconds = if trigger.duration_seconds.is_finite() {
-            trigger.duration_seconds.max(0.0)
-        } else {
-            0.0
-        };
-
-        match &mut trigger.target {
-            TriggerTarget::Camera => {}
-            TriggerTarget::Objects { object_ids } => {
-                object_ids.sort_unstable();
-                object_ids.dedup();
-            }
-        }
-
-        match &mut trigger.action {
-            TriggerAction::TransformObjects {
-                position,
-                rotation: rotation_degrees,
-                size,
-                ..
-            } => {
-                *position = position.map(|component| {
-                    if component.is_finite() {
-                        component
-                    } else {
-                        0.0
-                    }
-                });
-
-                *rotation_degrees = rotation_degrees.map(|component| {
-                    if component.is_finite() {
-                        component
-                    } else {
-                        0.0
-                    }
-                });
-
-                *size = size.map(|component| {
-                    if component.is_finite() {
-                        component.max(0.01)
-                    } else {
-                        1.0
-                    }
-                });
-            }
-            TriggerAction::CameraPose {
-                transition_interval_seconds,
-                target_position,
-                yaw: rotation,
-                pitch,
-                ..
-            } => {
-                if !transition_interval_seconds.is_finite() {
-                    *transition_interval_seconds = 1.0;
-                } else {
-                    *transition_interval_seconds = transition_interval_seconds.max(0.0);
-                }
-
-                *target_position = target_position.map(|component| {
-                    if component.is_finite() {
-                        component
-                    } else {
-                        0.0
-                    }
-                });
-
-                if !rotation.is_finite() {
-                    *rotation = DEFAULT_CAMERA_YAW;
-                }
-
-                if !pitch.is_finite() {
-                    *pitch = DEFAULT_CAMERA_PITCH;
-                } else {
-                    *pitch = pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
-                }
-            }
-            TriggerAction::CameraFollow {
-                transition_interval_seconds,
-                distance,
-                yaw: rotation,
-                pitch,
-                ..
-            } => {
-                if !transition_interval_seconds.is_finite() {
-                    *transition_interval_seconds = 1.0;
-                } else {
-                    *transition_interval_seconds = transition_interval_seconds.max(0.0);
-                }
-
-                if !distance.is_finite() {
-                    *distance = default_camera_trigger_distance();
-                } else {
-                    *distance = distance.max(0.01);
-                }
-
-                if !rotation.is_finite() {
-                    *rotation = DEFAULT_CAMERA_YAW;
-                }
-
-                if !pitch.is_finite() {
-                    *pitch = DEFAULT_CAMERA_PITCH;
-                } else {
-                    *pitch = pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
-                }
-            }
-        }
+        matches!(trigger.target, TriggerTarget::Camera) && trigger.camera.is_some()
     }
 
     pub fn sync_camera_follow_trigger_object_pose(
@@ -251,28 +64,25 @@ impl EditorSubsystem {
         trigger: &TimedTrigger,
         target_position: [f32; 3],
     ) {
-        let TriggerAction::CameraFollow {
-            distance,
-            yaw: rotation,
-            pitch,
-            ..
-        } = trigger.action
-        else {
+        let Some(camera) = &trigger.camera else {
             return;
         };
+        if camera.mode != CameraMode::Follow {
+            return;
+        }
 
         let size = [1.0, 1.0, 1.0];
         let eye = CameraTrigger {
             target_position,
-            yaw: rotation,
-            pitch,
-            distance,
+            yaw: camera.yaw,
+            pitch: camera.pitch,
+            distance: camera.distance,
             ..CameraTrigger::default()
         }
         .eye();
         object.size = size;
         object.position = camera_trigger_object_position_from_eye(eye, size);
-        object.rotation = camera_trigger_rotation_degrees(rotation, pitch);
+        object.rotation = camera_trigger_rotation_degrees(camera.yaw, camera.pitch);
     }
 
     fn timeline_position_for_camera_trigger_marker(&self, time_seconds: f32) -> Option<[f32; 3]> {
@@ -300,28 +110,26 @@ impl EditorSubsystem {
         ))
     }
 
-    fn sync_trigger_object_indices(&mut self) {
-        self.triggers.object_indices = self
+    // TODO: avoid re-scanning self.objects on every call; index trigger objects efficiently.
+    pub fn trigger_objects(&self) -> Vec<LevelObject> {
+        let mut triggers = self
             .objects
             .iter()
-            .enumerate()
-            .filter_map(|(index, object)| object.trigger.is_some().then_some(index))
-            .collect();
-    }
-
-    pub fn triggers(&self) -> Vec<TimedTrigger> {
-        let trigger_objects = self
-            .triggers
-            .object_indices
-            .iter()
-            .filter_map(|index| self.objects.get(*index).cloned())
+            .filter(|object| object.trigger.is_some())
+            .cloned()
             .collect::<Vec<_>>();
-        triggers_from_objects(&trigger_objects)
+        triggers.sort_by(|a, b| {
+            f32::total_cmp(
+                &a.trigger.as_ref().map(|t| t.time_seconds).unwrap_or(0.0),
+                &b.trigger.as_ref().map(|t| t.time_seconds).unwrap_or(0.0),
+            )
+        });
+        triggers
     }
 
+    // TODO: avoid re-scanning self.objects on every call; index trigger objects efficiently.
     pub fn sync_trigger_selection_from_objects(&mut self) {
-        self.sync_trigger_object_indices();
-        let trigger_count = self.triggers().len();
+        let trigger_count = self.trigger_objects().len();
         self.triggers.selected_index = self
             .triggers
             .selected_index
@@ -329,65 +137,63 @@ impl EditorSubsystem {
     }
 
     pub fn selected_trigger_index(&self) -> Option<usize> {
-        let triggers = self.triggers();
+        let trigger_count = self.trigger_objects().len();
         self.triggers
             .selected_index
-            .filter(|index| *index < triggers.len())
+            .filter(|index| *index < trigger_count)
     }
 
     pub fn trigger_object_index_for_trigger_index(&self, trigger_index: usize) -> Option<usize> {
-        let mut indexed_triggers = self
+        let mut indexed: Vec<(usize, f32)> = self
             .objects
             .iter()
             .enumerate()
             .filter_map(|(object_index, object)| {
-                let trigger = triggers_from_objects(std::slice::from_ref(object))
-                    .into_iter()
-                    .next()?;
-                Some((object_index, trigger))
+                let trigger = object.trigger.as_ref()?;
+                Some((object_index, trigger.time_seconds))
             })
-            .collect::<Vec<_>>();
-
-        indexed_triggers
-            .sort_by(|left, right| f32::total_cmp(&left.1.time_seconds, &right.1.time_seconds));
-        indexed_triggers
+            .collect();
+        indexed.sort_by(|left, right| f32::total_cmp(&left.1, &right.1));
+        indexed
             .get(trigger_index)
             .map(|(object_index, _)| *object_index)
     }
 
     pub fn camera_trigger_markers(&self) -> Vec<(usize, CameraTrigger)> {
-        self.triggers()
+        self.trigger_objects()
             .iter()
             .enumerate()
-            .filter_map(|(index, trigger)| {
+            .filter_map(|(index, object)| {
+                let trigger = object.trigger.as_ref()?;
                 if !Self::is_camera_track_trigger(trigger) {
                     return None;
                 }
-
-                let mut camera_trigger =
-                    timed_triggers_to_camera_triggers(std::slice::from_ref(trigger))
-                        .into_iter()
-                        .next()?;
+                let mut camera = trigger.camera.clone()?;
                 if let Some(target_position) = self
-                    .timeline_position_for_camera_trigger_marker(camera_trigger.time_seconds)
-                    .filter(|_| matches!(camera_trigger.mode, eg_types::CameraMode::Follow))
+                    .timeline_position_for_camera_trigger_marker(trigger.time_seconds)
+                    .filter(|_| camera.mode == CameraMode::Follow)
                 {
-                    camera_trigger.target_position = target_position;
+                    camera.target_position = target_position;
                 }
-                Some((index, camera_trigger))
+                Some((index, camera))
             })
             .collect()
     }
 
     pub fn has_object_transform_triggers(&self) -> bool {
-        self.triggers().iter().any(|trigger| {
-            !matches!(trigger.target, TriggerTarget::Camera)
-                && matches!(trigger.action, TriggerAction::TransformObjects { .. })
+        self.trigger_objects().iter().any(|object| {
+            let Some(trigger) = object.trigger.as_ref() else {
+                return false;
+            };
+            !matches!(trigger.target, TriggerTarget::Camera) && trigger.transform
         })
     }
 
     pub fn has_camera_timeline_triggers(&self) -> bool {
-        self.triggers().iter().any(Self::is_camera_track_trigger)
+        self.trigger_objects()
+            .iter()
+            .filter_map(|object| object.trigger.as_ref())
+            .any(Self::is_camera_track_trigger)
     }
 
     /// Returns `true` when any of the given block indices are referenced as
@@ -398,8 +204,11 @@ impl EditorSubsystem {
         if indices.is_empty() {
             return false;
         }
-        self.triggers().iter().any(|trigger| {
-            if !matches!(trigger.action, TriggerAction::TransformObjects { .. }) {
+        self.trigger_objects().iter().any(|object| {
+            let Some(trigger) = object.trigger.as_ref() else {
+                return false;
+            };
+            if !trigger.transform {
                 return false;
             }
             let TriggerTarget::Objects { object_ids } = &trigger.target else {
@@ -412,46 +221,7 @@ impl EditorSubsystem {
         })
     }
 
-    pub fn set_triggers(&mut self, mut triggers: Vec<TimedTrigger>) {
-        // Sanitize
-        for trigger in &mut triggers {
-            self.sanitize_trigger(trigger);
-        }
-        triggers.sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
-
-        // Remove existing trigger objects from objects list
-        self.objects.retain(|obj| obj.trigger.is_none());
-
-        // Add sanitized trigger objects
-        for trigger in triggers {
-            let trigger_object =
-                trigger_object_from_payload(trigger).with_generated_id(&self.objects);
-            self.objects.push(trigger_object);
-        }
-
-        self.sync_trigger_selection_from_objects();
-    }
-
-    pub fn add_trigger(&mut self, trigger: TimedTrigger) -> usize {
-        let mut trigger = trigger;
-        self.sanitize_trigger(&mut trigger);
-
-        let object_index = self.objects.len();
-        let trigger_object =
-            trigger_object_from_payload(trigger.clone()).with_generated_id(&self.objects);
-        self.objects.push(trigger_object);
-
-        self.sync_trigger_selection_from_objects();
-        self.triggers.selected_index = self.trigger_index_for_object_index(object_index);
-        object_index
-    }
-
     pub fn set_selected_block_trigger(&mut self, trigger: Option<TimedTrigger>) {
-        let mut trigger = trigger;
-        if let Some(trigger) = &mut trigger {
-            self.sanitize_trigger(trigger);
-        }
-
         let Some(index) = self
             .ui
             .selected_block_index
@@ -472,29 +242,8 @@ impl EditorSubsystem {
     }
 
     pub fn set_trigger_selected(&mut self, selected: Option<usize>) {
-        self.sync_trigger_object_indices();
-        let trigger_count = self.triggers().len();
+        let trigger_count = self.trigger_objects().len();
         self.triggers.selected_index = selected.filter(|index| *index < trigger_count);
-    }
-
-    fn trigger_index_for_object_index(&self, target_object_index: usize) -> Option<usize> {
-        let mut indexed_triggers = self
-            .objects
-            .iter()
-            .enumerate()
-            .filter_map(|(object_index, object)| {
-                let trigger = triggers_from_objects(std::slice::from_ref(object))
-                    .into_iter()
-                    .next()?;
-                Some((object_index, trigger))
-            })
-            .collect::<Vec<_>>();
-
-        indexed_triggers
-            .sort_by(|left, right| f32::total_cmp(&left.1.time_seconds, &right.1.time_seconds));
-        indexed_triggers
-            .iter()
-            .position(|(object_index, _)| *object_index == target_object_index)
     }
 }
 
@@ -503,10 +252,10 @@ mod tests {
     use super::EditorSubsystem;
     use crate::state::State;
     use eg_types::{
-        CameraMode, CameraTrigger, DEFAULT_CAMERA_DISTANCE, EasingDirection, TimedTrigger,
-        TriggerAction, TriggerTarget, default_camera_trigger_distance,
+        CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EasingDirection, LevelObject,
+        TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget, default_camera_trigger_distance,
     };
-    use eg_types::{DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, LevelObject};
+    use eg_types::{DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW};
 
     fn test_block(x: f32) -> LevelObject {
         LevelObject {
@@ -516,7 +265,73 @@ mod tests {
         }
     }
 
-    fn object_move_trigger(time_seconds: f32) -> TimedTrigger {
+    fn object_move_trigger(time_seconds: f32) -> LevelObject {
+        LevelObject {
+            id: format!("transform_{time_seconds}"),
+            position: [1.0, 2.0, 3.0],
+            rotation: [10.0, 20.0, 30.0],
+            size: [2.0, 3.0, 4.0],
+            trigger: Some(TimedTrigger {
+                time_seconds,
+                duration_seconds: 0.0,
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Objects {
+                    object_ids: vec!["obj_000001".to_string()],
+                },
+                transform: true,
+                camera: None,
+            }),
+            ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
+        }
+    }
+
+    fn camera_pose_trigger(time_seconds: f32) -> LevelObject {
+        LevelObject {
+            id: format!("camera_pose_{time_seconds}"),
+            trigger: Some(TimedTrigger {
+                time_seconds,
+                duration_seconds: 0.0,
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Camera,
+                transform: false,
+                camera: Some(CameraTrigger {
+                    mode: CameraMode::Static,
+                    transition_interval_seconds: 1.0,
+                    use_full_segment_transition: false,
+                    target_position: [0.0, 0.0, 0.0],
+                    yaw: 0.0,
+                    pitch: 0.0,
+                    ..CameraTrigger::default()
+                }),
+            }),
+            ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
+        }
+    }
+
+    fn camera_follow_trigger(time_seconds: f32) -> LevelObject {
+        LevelObject {
+            id: format!("camera_follow_{time_seconds}"),
+            trigger: Some(TimedTrigger {
+                time_seconds,
+                duration_seconds: 0.0,
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Camera,
+                transform: false,
+                camera: Some(CameraTrigger {
+                    mode: CameraMode::Follow,
+                    transition_interval_seconds: 1.5,
+                    use_full_segment_transition: false,
+                    distance: default_camera_trigger_distance(),
+                    yaw: DEFAULT_CAMERA_YAW,
+                    pitch: DEFAULT_CAMERA_PITCH,
+                    ..CameraTrigger::default()
+                }),
+            }),
+            ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
+        }
+    }
+
+    fn object_move_timed_trigger(time_seconds: f32) -> TimedTrigger {
         TimedTrigger {
             time_seconds,
             duration_seconds: 0.0,
@@ -524,27 +339,8 @@ mod tests {
             target: TriggerTarget::Objects {
                 object_ids: vec!["obj_000001".to_string()],
             },
-            action: TriggerAction::TransformObjects {
-                position: [1.0, 2.0, 3.0],
-                rotation: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-            },
-        }
-    }
-
-    fn camera_pose_trigger(time_seconds: f32) -> TimedTrigger {
-        TimedTrigger {
-            time_seconds,
-            duration_seconds: 0.0,
-            easing: EasingDirection::Linear,
-            target: TriggerTarget::Camera,
-            action: TriggerAction::CameraPose {
-                transition_interval_seconds: 1.0,
-                use_full_segment_transition: false,
-                target_position: [0.0, 0.0, 0.0],
-                yaw: 0.0,
-                pitch: 0.0,
-            },
+            transform: true,
+            camera: None,
         }
     }
 
@@ -556,18 +352,9 @@ mod tests {
 
     #[tokio::test]
     async fn camera_track_trigger_detection_matches_camera_target_and_action() {
-        let pose = camera_pose_trigger(0.0);
-        let follow = TimedTrigger {
-            action: TriggerAction::CameraFollow {
-                transition_interval_seconds: 1.0,
-                use_full_segment_transition: false,
-                distance: default_camera_trigger_distance(),
-                yaw: DEFAULT_CAMERA_YAW,
-                pitch: DEFAULT_CAMERA_PITCH,
-            },
-            ..camera_pose_trigger(1.0)
-        };
-        let object = object_move_trigger(2.0);
+        let pose = camera_pose_trigger(0.0).trigger.unwrap();
+        let follow = camera_follow_trigger(1.0).trigger.unwrap();
+        let object = object_move_timed_trigger(2.0);
 
         assert!(EditorSubsystem::is_camera_track_trigger(&pose));
         assert!(EditorSubsystem::is_camera_track_trigger(&follow));
@@ -575,191 +362,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn add_trigger_sanitizes_values_and_keeps_items_sorted() {
+    async fn trigger_objects_are_sorted_trigger_objects() {
         let mut state = new_editor_state().await;
-        state.editor.timeline.clock.duration_seconds = 5.0;
 
-        let index = state.editor.add_trigger(TimedTrigger {
-            time_seconds: f32::INFINITY,
-            duration_seconds: f32::NAN,
-            easing: EasingDirection::Linear,
-            target: TriggerTarget::Objects {
-                object_ids: vec![
-                    "three".to_string(),
-                    "one".to_string(),
-                    "three".to_string(),
-                    "two".to_string(),
-                ],
-            },
-            action: TriggerAction::TransformObjects {
-                position: [f32::NAN, 2.0, f32::INFINITY],
-                rotation: [f32::NEG_INFINITY, 90.0, f32::NAN],
-                size: [f32::NAN, -9.0, 2.0],
-            },
-        });
-        assert_eq!(index, 0);
+        state.editor.objects = vec![
+            test_block(99.0),
+            camera_pose_trigger(2.0),
+            object_move_trigger(0.5),
+            camera_follow_trigger(1.0),
+        ];
 
-        state.editor.add_trigger(camera_pose_trigger(1.0));
-        assert_eq!(state.editor.triggers()[0].time_seconds, 0.0);
-        assert_eq!(state.editor.triggers()[1].time_seconds, 1.0);
-
-        let first = &state.editor.triggers()[0];
-        assert_eq!(first.duration_seconds, 0.0);
-        match &first.target {
-            TriggerTarget::Objects { object_ids } => {
-                assert_eq!(
-                    object_ids,
-                    &vec!["one".to_string(), "three".to_string(), "two".to_string()]
-                );
-            }
-            _ => panic!("expected object list target"),
-        }
-        match first.action {
-            TriggerAction::TransformObjects {
-                position,
-                rotation,
-                size,
-                ..
-            } => {
-                assert_eq!(position, [0.0, 2.0, 0.0]);
-                assert_eq!(rotation, [0.0, 90.0, 0.0]);
-                assert_eq!(size[0], 1.0);
-                assert_eq!(size[1], 0.01);
-                assert_eq!(size[2], 2.0);
-            }
-            _ => panic!("expected transform action"),
-        }
-    }
-
-    #[tokio::test]
-    async fn set_triggers_sanitizes_camera_pose_and_follow_and_bounds_selection() {
-        let mut state = new_editor_state().await;
-        state.editor.timeline.clock.duration_seconds = 8.0;
-        state.editor.triggers.selected_index = Some(4);
-
-        state.editor.set_triggers(vec![
-            TimedTrigger {
-                time_seconds: 9.0,
-                duration_seconds: -5.0,
-                easing: EasingDirection::EaseIn,
-                target: TriggerTarget::Camera,
-                action: TriggerAction::CameraPose {
-                    transition_interval_seconds: f32::NAN,
-                    use_full_segment_transition: false,
-                    target_position: [f32::NAN, 2.0, f32::NEG_INFINITY],
-                    yaw: f32::NAN,
-                    pitch: 99.0,
-                },
-            },
-            TimedTrigger {
-                time_seconds: -1.0,
-                duration_seconds: 1.0,
-                easing: EasingDirection::Linear,
-                target: TriggerTarget::Camera,
-                action: TriggerAction::CameraFollow {
-                    transition_interval_seconds: -3.0,
-                    use_full_segment_transition: true,
-                    distance: f32::NAN,
-                    yaw: f32::NAN,
-                    pitch: 99.0,
-                },
-            },
-        ]);
-
-        assert_eq!(state.editor.triggers().len(), 2);
-        assert_eq!(state.editor.triggers.selected_index, None);
-        assert_eq!(state.editor.triggers()[0].time_seconds, 0.0);
-        assert_eq!(state.editor.triggers()[1].time_seconds, 8.0);
-
-        match state.editor.triggers()[0].action {
-            TriggerAction::CameraFollow {
-                transition_interval_seconds,
-                use_full_segment_transition,
-                distance,
-                yaw,
-                pitch,
-            } => {
-                assert_eq!(transition_interval_seconds, 0.0);
-                assert!(use_full_segment_transition);
-                assert_eq!(distance, default_camera_trigger_distance());
-                assert_eq!(yaw, DEFAULT_CAMERA_YAW);
-                assert!((pitch - 89.9f32.to_radians()).abs() <= 1e-6);
-            }
-            _ => panic!("expected camera follow"),
-        }
-
-        match state.editor.triggers()[1].action {
-            TriggerAction::CameraPose {
-                transition_interval_seconds,
-                target_position,
-                yaw,
-                pitch,
-                ..
-            } => {
-                assert_eq!(transition_interval_seconds, 1.0);
-                for (actual, expected) in target_position.iter().zip([0.0, 2.0, 0.0]) {
-                    assert!((*actual - expected).abs() <= 1e-5);
-                }
-                assert_eq!(yaw, DEFAULT_CAMERA_YAW);
-                assert!((pitch - 89.9f32.to_radians()).abs() <= 1e-6);
-            }
-            _ => panic!("expected camera pose"),
-        }
-    }
-
-    #[tokio::test]
-    async fn set_triggers_centers_camera_trigger_object_on_eye() {
-        let mut state = new_editor_state().await;
-        let trigger = camera_pose_trigger(0.0);
-        let TriggerAction::CameraPose {
-            target_position,
-            yaw,
-            pitch,
-            ..
-        } = trigger.action
-        else {
-            panic!("expected camera pose");
-        };
-        let expected_eye = CameraTrigger {
-            target_position,
-            yaw,
-            pitch,
-            distance: DEFAULT_CAMERA_DISTANCE,
-            ..CameraTrigger::default()
-        }
-        .eye();
-
-        state.editor.set_triggers(vec![trigger]);
-
-        let object = state
-            .editor
-            .objects
-            .iter()
-            .find(|object| object.trigger.is_some())
-            .expect("expected camera trigger object");
-        let actual_eye: [f32; 3] = object.center().into();
-        for (actual, expected) in actual_eye.iter().zip(expected_eye) {
-            assert!((*actual - expected).abs() <= 1e-6);
-        }
+        let triggers = state.editor.trigger_objects();
+        assert_eq!(triggers.len(), 3);
+        assert_eq!(triggers[0].id, "transform_0.5");
+        assert_eq!(triggers[1].id, "camera_follow_1");
+        assert_eq!(triggers[2].id, "camera_pose_2");
     }
 
     #[tokio::test]
     async fn trigger_selection_and_marker_queries_reflect_filtered_camera_track() {
         let mut state = new_editor_state().await;
-        state.editor.set_triggers(vec![
+        state.editor.objects = vec![
             camera_pose_trigger(0.5),
             object_move_trigger(0.75),
-            TimedTrigger {
-                action: TriggerAction::CameraFollow {
-                    transition_interval_seconds: 1.5,
-                    use_full_segment_transition: false,
-                    distance: default_camera_trigger_distance(),
-                    yaw: DEFAULT_CAMERA_YAW,
-                    pitch: DEFAULT_CAMERA_PITCH,
-                },
-                ..camera_pose_trigger(1.0)
-            },
-        ]);
+            camera_follow_trigger(1.0),
+        ];
 
         state.editor.set_trigger_selected(Some(99));
         assert_eq!(state.editor.selected_trigger_index(), None);
@@ -778,64 +405,41 @@ mod tests {
     async fn object_transform_detection_and_hitbox_toggle_cover_simple_state_helpers() {
         let mut state = new_editor_state().await;
 
-        state.editor.set_triggers(vec![camera_pose_trigger(0.0)]);
+        state.editor.objects = vec![camera_pose_trigger(0.0)];
         assert!(!state.editor.has_object_transform_triggers());
 
-        state.editor.add_trigger(TimedTrigger {
-            time_seconds: 1.0,
-            duration_seconds: 0.0,
-            easing: EasingDirection::Linear,
-            target: TriggerTarget::Objects {
-                object_ids: vec!["object_1".to_string()],
-            },
-            action: TriggerAction::TransformObjects {
-                position: [0.0, 0.0, 0.0],
-                rotation: [10.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-            },
-        });
+        state.editor.objects.push(object_move_trigger(1.0));
         assert!(state.editor.has_object_transform_triggers());
     }
 
     #[tokio::test]
     async fn derived_triggers_use_trigger_block_pose_as_source_of_truth() {
         let mut state = new_editor_state().await;
-        state.editor.objects.clear();
-        state.editor.set_triggers(vec![object_move_trigger(0.0)]);
+        state.editor.objects = vec![object_move_trigger(0.0)];
 
-        assert_eq!(state.editor.triggers().len(), 1);
         state.editor.objects[0].position = [9.0, 8.0, 7.0];
         state.editor.objects[0].size = [2.0, 3.0, 4.0];
         state.editor.objects[0].rotation = [10.0, 20.0, 30.0];
 
-        let trigger = state.editor.triggers().remove(0);
-        let TriggerAction::TransformObjects {
-            position,
-            rotation,
-            size,
-            ..
-        } = trigger.action
-        else {
-            panic!("expected transform trigger");
-        };
-        assert_eq!(position, [9.0, 8.0, 7.0]);
-        assert_eq!(rotation, [10.0, 20.0, 30.0]);
-        assert_eq!(size, [2.0, 3.0, 4.0]);
+        let trigger_object = state.editor.trigger_objects().remove(0);
+        assert_eq!(trigger_object.position, [9.0, 8.0, 7.0]);
+        assert_eq!(trigger_object.rotation, [10.0, 20.0, 30.0]);
+        assert_eq!(trigger_object.size, [2.0, 3.0, 4.0]);
     }
 
     #[tokio::test]
     async fn trigger_queries_skip_non_trigger_objects_after_index_sync() {
         let mut state = new_editor_state().await;
         state.editor.objects = (0..10_000).map(|index| test_block(index as f32)).collect();
-        state.editor.set_triggers(vec![camera_pose_trigger(1.0)]);
+        state.editor.objects.push(camera_pose_trigger(1.0));
         state.editor.objects.push(test_block(10_001.0));
 
-        assert_eq!(state.editor.triggers().len(), 1);
+        assert_eq!(state.editor.trigger_objects().len(), 1);
         assert!(state.editor.has_camera_timeline_triggers());
 
         state.editor.sync_objects();
 
-        assert_eq!(state.editor.triggers().len(), 1);
+        assert_eq!(state.editor.trigger_objects().len(), 1);
         assert!(state.editor.has_camera_timeline_triggers());
     }
 }

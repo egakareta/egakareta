@@ -22,7 +22,7 @@ use eg_block_geometry::visual_cuboids;
 use eg_blocks::{resolve_block_definition, resolve_block_texture_layers};
 use eg_types::{
     BlockAnimationAxis, BlockAnimationPhaseSeed, BlockDefinition, BlockRenderProfile,
-    CameraTrigger, LevelObject, TimedTrigger, TriggerAction, TriggerTarget,
+    CameraTrigger, LevelObject, TimedTrigger, TriggerTarget,
 };
 use glam::Vec3;
 
@@ -733,17 +733,8 @@ fn camera_trigger_countdown_progress(
         return None;
     }
 
-    let transition_interval_seconds = match trigger.action {
-        TriggerAction::CameraPose {
-            transition_interval_seconds,
-            ..
-        }
-        | TriggerAction::CameraFollow {
-            transition_interval_seconds,
-            ..
-        } => transition_interval_seconds,
-        TriggerAction::TransformObjects { .. } => return None,
-    };
+    let camera = trigger.camera.as_ref()?;
+    let transition_interval_seconds = camera.transition_interval_seconds;
 
     if current_time_seconds >= trigger.time_seconds {
         return Some(1.0);
@@ -962,13 +953,12 @@ mod tests {
                 duration_seconds: 0.0,
                 easing: eg_types::EasingDirection::Linear,
                 target: TriggerTarget::Camera,
-                action: TriggerAction::CameraPose {
+                camera: Some(CameraTrigger {
+                    mode: eg_types::CameraMode::Static,
                     transition_interval_seconds,
-                    use_full_segment_transition: false,
-                    target_position: [0.0, 0.0, 0.0],
-                    yaw: 0.0,
-                    pitch: 0.0,
-                },
+                    ..CameraTrigger::default()
+                }),
+                ..TimedTrigger::default()
             }),
             ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         }

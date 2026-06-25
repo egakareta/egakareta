@@ -5,8 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use crate::timeline::derive_timeline_state_with_triggers;
-use eg_types::TimedTrigger;
+use crate::timeline::derive_timeline_state;
 use eg_types::{DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, Direction, LevelObject, SpawnMetadata};
 
 pub struct EditorPlaytestTransition {
@@ -30,7 +29,6 @@ pub struct EditorPlaytestTransitionParams<'a> {
     pub spawn: SpawnMetadata,
     pub sky_color: [f32; 3],
     pub tap_times: &'a [f32],
-    pub triggers: &'a [TimedTrigger],
     pub timeline_seconds: (f32, f32),
 }
 
@@ -44,17 +42,15 @@ pub fn build_editor_playtest_transition(
         spawn,
         sky_color,
         tap_times,
-        triggers,
         timeline_seconds,
     } = params;
     let (timeline_time_seconds, timeline_duration_seconds) = timeline_seconds;
-    let state = derive_timeline_state_with_triggers(
+    let state = derive_timeline_state(
         spawn.position,
         spawn.direction,
         tap_times,
         timeline_time_seconds,
         objects,
-        triggers,
     );
 
     EditorPlaytestTransition {

@@ -158,14 +158,6 @@ pub fn is_default_timed_trigger_duration_seconds(value: &f32) -> bool {
     value.abs() <= 1e-6
 }
 
-pub fn default_timed_trigger_target() -> TriggerTarget {
-    TriggerTarget::Camera
-}
-
-pub fn is_default_timed_trigger_target(value: &TriggerTarget) -> bool {
-    matches!(value, TriggerTarget::Camera)
-}
-
 /// Direction the player (snake) is facing.
 #[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq, Default, IsDefault)]
 #[serde(rename_all = "lowercase")]
@@ -377,8 +369,21 @@ impl LevelMetadata {
         normalize_level_object_ids(&mut self.objects);
     }
 
-    pub fn resolved_triggers(&self) -> Vec<TimedTrigger> {
-        triggers_from_objects(&self.objects)
+    /// All objects that carry a trigger with a finite fire time, sorted ascending by fire time.
+    pub fn trigger_objects(&self) -> Vec<LevelObject> {
+        let mut triggers = self
+            .objects
+            .iter()
+            .filter_map(|object| {
+                let trigger = object.trigger.as_ref()?;
+                trigger
+                    .time_seconds
+                    .is_finite()
+                    .then(|| (trigger.time_seconds, object.clone()))
+            })
+            .collect::<Vec<_>>();
+        triggers.sort_by(|a, b| f32::total_cmp(&a.0, &b.0));
+        triggers.into_iter().map(|(_, object)| object).collect()
     }
 }
 
@@ -465,16 +470,58 @@ impl LevelObject {
             self.rotation[2].to_radians(),
         )
     }
+
+    pub fn with_generated_id(mut self, existing_objects: &[LevelObject]) -> Self {
+        self.id = next_level_object_id(existing_objects);
+        self
+    }
+
+    /// Returns the visibility of different transforms for this object, based on its trigger (if any).
+    pub fn transform_field_visibility(&self) -> TransformVisibility {
+        if let Some(trigger) = &self.trigger {
+            TransformVisibility::from_trigger(trigger)
+        } else {
+            TransformVisibility::all()
+        }
+    }
+
+    /// Returns true if this object has a transform trigger, false otherwise.
+    pub fn is_transform_trigger(&self) -> bool {
+        if let Some(trigger) = &self.trigger {
+            trigger.transform
+        } else {
+            false
+        }
+    }
+
+    /// Applies the transform trigger to the given object, interpolating between the object's current transform and the target transform based on the given progress (0.0 to 1.0).
+    pub fn apply_transform_trigger(&self, object: &mut LevelObject, progress: f32) {
+        if let Some(trigger) = &self.trigger
+            && trigger.transform
+        {
+            for (current, target) in object.position.iter_mut().zip(self.position.iter()) {
+                *current += (*target - *current) * progress;
+            }
+            for (current, target) in object.rotation.iter_mut().zip(self.rotation.iter()) {
+                *current += (*target - *current) * progress;
+            }
+            for (current, target) in object.size.iter_mut().zip(self.size.iter()) {
+                let current_value = (*current).max(0.01);
+                let target_value = (*target).max(0.01);
+                *current = current_value + (target_value - current_value) * progress;
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LevelObjectTransformFieldVisibility {
+pub struct TransformVisibility {
     pub position: bool,
     pub rotation: bool,
     pub size: bool,
 }
 
-impl LevelObjectTransformFieldVisibility {
+impl TransformVisibility {
     pub const fn all() -> Self {
         Self {
             position: true,
@@ -498,36 +545,37 @@ impl LevelObjectTransformFieldVisibility {
             size: self.size && other.size,
         }
     }
-}
 
-impl LevelObject {
-    pub fn with_generated_id(mut self, existing_objects: &[LevelObject]) -> Self {
-        self.id = next_level_object_id(existing_objects);
-        self
+    pub const fn union(self, other: Self) -> Self {
+        Self {
+            position: self.position || other.position,
+            rotation: self.rotation || other.rotation,
+            size: self.size || other.size,
+        }
     }
 
-    pub fn transform_field_visibility(&self) -> LevelObjectTransformFieldVisibility {
-        match self.trigger.as_ref().map(|trigger| &trigger.action) {
-            Some(TriggerAction::CameraFollow { .. }) => LevelObjectTransformFieldVisibility::none(),
-            Some(TriggerAction::CameraPose { .. }) => LevelObjectTransformFieldVisibility {
+    /// Has transform: position, rotation, and size.
+    /// Has Static camera: position and rotation.
+    /// Has Follow camera: none.
+    pub const fn from_trigger(trigger: &TimedTrigger) -> Self {
+        if trigger.transform {
+            Self {
                 position: true,
                 rotation: true,
-                size: false,
-            },
-            Some(TriggerAction::TransformObjects { .. }) | None => {
-                LevelObjectTransformFieldVisibility::all()
+                size: true,
             }
+        } else if let Some(camera) = &trigger.camera {
+            match camera.mode {
+                CameraMode::Static => Self {
+                    position: true,
+                    rotation: true,
+                    size: false,
+                },
+                CameraMode::Follow => Self::none(),
+            }
+        } else {
+            Self::none()
         }
-    }
-
-    pub fn is_transform_trigger(&self) -> bool {
-        if self.block_id == TRANSFORM_TRIGGER_BLOCK_ID {
-            return true;
-        }
-        matches!(
-            self.trigger.as_ref().map(|t| &t.action),
-            Some(TriggerAction::TransformObjects { .. })
-        )
     }
 }
 
@@ -589,6 +637,7 @@ pub enum CameraMode {
 }
 
 /// Direction that an easing function is applied.
+/// The default is guaranteed to be Linear, which means no easing is applied.
 #[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq, Default, IsDefault)]
 #[serde(rename_all = "snake_case")]
 pub enum EasingDirection {
@@ -605,9 +654,6 @@ pub enum EasingDirection {
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq, SmartDefault, IsDefault)]
 pub struct CameraTrigger {
-    /// Time in seconds when the trigger is activated.
-    #[serde(default, skip_serializing_if = "IsDefault::is_default")]
-    pub time_seconds: f32,
     /// [`CameraMode`] for how the camera behaves during this trigger.
     #[serde(default, skip_serializing_if = "IsDefault::is_default")]
     pub mode: CameraMode,
@@ -642,12 +688,14 @@ pub struct CameraTrigger {
         skip_serializing_if = "is_default_camera_trigger_distance"
     )]
     pub distance: f32,
+    /// Yaw rotation in radians for the camera, around the target position. 0 is facing the positive Z axis, π/2 is facing the positive X axis, and -π/2 is facing the negative X axis.
     #[default(default_camera_trigger_yaw())]
     #[serde(
         default = "default_camera_trigger_yaw",
         skip_serializing_if = "is_default_camera_trigger_yaw"
     )]
     pub yaw: f32,
+    /// Pitch rotation in radians for the camera, around the target position. 0 is level with the target, π/2 is looking straight up, and -π/2 is looking straight down.
     #[default(default_camera_trigger_pitch())]
     #[serde(
         default = "default_camera_trigger_pitch",
@@ -723,10 +771,11 @@ impl CameraTrigger {
     }
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq, Default, IsDefault)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TriggerTarget {
     /// The player's camera.
+    #[default]
     Camera,
     /// A list of level objects.
     Objects {
@@ -752,86 +801,34 @@ where
         .collect()
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum TriggerAction {
-    TransformObjects {
-        position: [f32; 3],
-        rotation: [f32; 3],
-        size: [f32; 3],
-    },
-    CameraPose {
-        #[serde(
-            default = "default_camera_trigger_transition_interval_seconds",
-            skip_serializing_if = "is_default_camera_trigger_transition_interval_seconds"
-        )]
-        transition_interval_seconds: f32,
-        #[serde(
-            default = "default_camera_trigger_use_full_segment_transition",
-            skip_serializing_if = "is_default_camera_trigger_use_full_segment_transition"
-        )]
-        use_full_segment_transition: bool,
-        #[serde(
-            default = "default_camera_trigger_target_position",
-            skip_serializing_if = "is_default_camera_trigger_target_position"
-        )]
-        target_position: [f32; 3],
-        #[serde(
-            default = "default_camera_trigger_yaw",
-            skip_serializing_if = "is_default_camera_trigger_yaw"
-        )]
-        yaw: f32,
-        #[serde(
-            default = "default_camera_trigger_pitch",
-            skip_serializing_if = "is_default_camera_trigger_pitch"
-        )]
-        pitch: f32,
-    },
-    CameraFollow {
-        #[serde(
-            default = "default_camera_trigger_transition_interval_seconds",
-            skip_serializing_if = "is_default_camera_trigger_transition_interval_seconds"
-        )]
-        transition_interval_seconds: f32,
-        #[serde(
-            default = "default_camera_trigger_use_full_segment_transition",
-            skip_serializing_if = "is_default_camera_trigger_use_full_segment_transition"
-        )]
-        use_full_segment_transition: bool,
-        #[serde(
-            default = "default_camera_trigger_distance",
-            skip_serializing_if = "is_default_camera_trigger_distance"
-        )]
-        distance: f32,
-        #[serde(
-            default = "default_camera_trigger_yaw",
-            skip_serializing_if = "is_default_camera_trigger_yaw"
-        )]
-        yaw: f32,
-        #[serde(
-            default = "default_camera_trigger_pitch",
-            skip_serializing_if = "is_default_camera_trigger_pitch"
-        )]
-        pitch: f32,
-    },
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+/// An event tied to a specific object that fires at a specific time in the level.
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, SmartDefault, IsDefault)]
 pub struct TimedTrigger {
+    /// Time in seconds when the trigger fires.
+    #[serde(default, skip_serializing_if = "IsDefault::is_default")]
     pub time_seconds: f32,
-    #[serde(
-        default = "default_timed_trigger_duration_seconds",
-        skip_serializing_if = "is_default_timed_trigger_duration_seconds"
-    )]
+
+    /// Duration in seconds for how long the trigger's effect lasts. If 0, the effect is instant.
+    #[serde(default, skip_serializing_if = "IsDefault::is_default")]
     pub duration_seconds: f32,
+
+    /// The easing direction for this trigger. This determines how the trigger's effect is applied over time.
     #[serde(default, skip_serializing_if = "IsDefault::is_default")]
     pub easing: EasingDirection,
-    #[serde(
-        default = "default_timed_trigger_target",
-        skip_serializing_if = "is_default_timed_trigger_target"
-    )]
+
+    /// The target of this trigger.
+    #[serde(default, skip_serializing_if = "IsDefault::is_default")]
     pub target: TriggerTarget,
-    pub action: TriggerAction,
+
+    /// Mark this trigger as a Transform trigger.
+    /// All targets of this trigger will move to the trigger object's transform.
+    #[serde(default, skip_serializing_if = "IsDefault::is_default")]
+    pub transform: bool,
+
+    /// Mark this trigger as a Camera trigger.
+    /// The player camera will behave according to this [`CameraTrigger`].
+    #[serde(default, skip_serializing_if = "IsDefault::is_default")]
+    pub camera: Option<CameraTrigger>,
 }
 
 /// The vector from the look-at target to the specified eye.
@@ -847,7 +844,7 @@ pub fn camera_offset_from_target(yaw: f32, pitch: f32, distance: f32) -> [f32; 3
 
 pub fn apply_timed_triggers_to_objects(
     base_objects: &[LevelObject],
-    triggers: &[TimedTrigger],
+    triggers: &[LevelObject],
     time_seconds: f32,
 ) -> Vec<LevelObject> {
     let mut objects = base_objects.to_vec();
@@ -857,7 +854,7 @@ pub fn apply_timed_triggers_to_objects(
 
 pub fn apply_timed_triggers_to_objects_into(
     base_objects: &[LevelObject],
-    triggers: &[TimedTrigger],
+    triggers: &[LevelObject],
     time_seconds: f32,
     objects: &mut Vec<LevelObject>,
 ) {
@@ -888,12 +885,6 @@ pub fn normalize_level_object_ids(objects: &mut [LevelObject]) {
         .iter()
         .map(|object| object.id.clone())
         .collect::<Vec<_>>();
-    let legacy_compact_object_indices = objects
-        .iter()
-        .enumerate()
-        .filter(|(_, object)| object.trigger.is_none())
-        .map(|(index, _)| index)
-        .collect::<Vec<_>>();
 
     let mut used_ids = HashSet::<String>::new();
     let mut remapped_ids = HashMap::<String, String>::new();
@@ -919,10 +910,6 @@ pub fn normalize_level_object_ids(objects: &mut [LevelObject]) {
         .iter()
         .map(|object| object.id.clone())
         .collect::<HashSet<_>>();
-    let legacy_compact_ids = legacy_compact_object_indices
-        .iter()
-        .map(|index| objects[*index].id.clone())
-        .collect::<Vec<_>>();
 
     for object in objects {
         let Some(trigger) = object.trigger.as_mut() else {
@@ -937,7 +924,6 @@ pub fn normalize_level_object_ids(objects: &mut [LevelObject]) {
                 remapped_ids
                     .get(object_id)
                     .cloned()
-                    .or_else(|| legacy_object_id_to_current_id(object_id, &legacy_compact_ids))
                     .or_else(|| current_ids.contains(object_id).then(|| object_id.clone()))
             })
             .collect::<Vec<_>>();
@@ -973,112 +959,12 @@ where
     }
 }
 
-fn legacy_object_id_to_current_id(
-    object_id: &String,
-    legacy_compact_ids: &[String],
-) -> Option<String> {
-    let index = object_id.parse::<usize>().ok()?;
-    legacy_compact_ids
-        .get(index)
-        .filter(|id| !id.is_empty())
-        .cloned()
-}
-
-pub fn camera_triggers_to_timed_triggers(camera_triggers: &[CameraTrigger]) -> Vec<TimedTrigger> {
-    let mut triggers = Vec::with_capacity(camera_triggers.len());
-    for camera_trigger in camera_triggers {
-        let action = match camera_trigger.mode {
-            CameraMode::Follow => TriggerAction::CameraFollow {
-                transition_interval_seconds: camera_trigger.transition_interval_seconds,
-                use_full_segment_transition: camera_trigger.use_full_segment_transition,
-                distance: camera_trigger.distance,
-                yaw: camera_trigger.yaw,
-                pitch: camera_trigger.pitch,
-            },
-            CameraMode::Static => TriggerAction::CameraPose {
-                transition_interval_seconds: camera_trigger.transition_interval_seconds,
-                use_full_segment_transition: camera_trigger.use_full_segment_transition,
-                target_position: camera_trigger.target_position,
-                yaw: camera_trigger.yaw,
-                pitch: camera_trigger.pitch,
-            },
-        };
-
-        triggers.push(TimedTrigger {
-            time_seconds: camera_trigger.time_seconds,
-            duration_seconds: 0.0,
-            easing: camera_trigger.easing,
-            target: TriggerTarget::Camera,
-            action,
-        });
-    }
-
-    triggers.sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
-    triggers
-}
-
-pub fn timed_triggers_to_camera_triggers(triggers: &[TimedTrigger]) -> Vec<CameraTrigger> {
-    let mut camera_triggers = Vec::new();
-
-    for trigger in triggers {
-        if !matches!(trigger.target, TriggerTarget::Camera) {
-            continue;
-        }
-
-        match trigger.action {
-            TriggerAction::CameraPose {
-                transition_interval_seconds,
-                use_full_segment_transition,
-                target_position,
-                yaw: rotation,
-                pitch,
-            } => {
-                camera_triggers.push(CameraTrigger {
-                    time_seconds: trigger.time_seconds,
-                    mode: CameraMode::Static,
-                    easing: trigger.easing,
-                    transition_interval_seconds,
-                    use_full_segment_transition,
-                    target_position,
-                    distance: default_camera_trigger_distance(),
-                    yaw: rotation,
-                    pitch,
-                });
-            }
-            TriggerAction::CameraFollow {
-                transition_interval_seconds,
-                use_full_segment_transition,
-                distance,
-                yaw: rotation,
-                pitch,
-            } => {
-                camera_triggers.push(CameraTrigger {
-                    time_seconds: trigger.time_seconds,
-                    mode: CameraMode::Follow,
-                    easing: trigger.easing,
-                    transition_interval_seconds,
-                    use_full_segment_transition,
-                    target_position: default_camera_trigger_target_position(),
-                    distance,
-                    yaw: rotation,
-                    pitch,
-                });
-            }
-            TriggerAction::TransformObjects { .. } => {}
-        }
-    }
-
-    camera_triggers.retain(|trigger| trigger.time_seconds.is_finite());
-    camera_triggers.sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
-    camera_triggers
-}
-
 fn apply_timed_triggers_to_objects_in_place(
     objects: &mut [LevelObject],
-    triggers: &[TimedTrigger],
+    trigger_objects: &[LevelObject],
     time_seconds: f32,
 ) {
-    if objects.is_empty() || triggers.is_empty() {
+    if objects.is_empty() || trigger_objects.is_empty() {
         return;
     }
 
@@ -1089,7 +975,10 @@ fn apply_timed_triggers_to_objects_in_place(
         .map(|(index, object)| (object.id.clone(), index))
         .collect::<HashMap<_, _>>();
 
-    for trigger in triggers {
+    for trigger_object in trigger_objects {
+        let Some(trigger) = &trigger_object.trigger else {
+            continue;
+        };
         if !trigger.time_seconds.is_finite() {
             continue;
         }
@@ -1111,98 +1000,11 @@ fn apply_timed_triggers_to_objects_in_place(
                         continue;
                     }
                     seen.push(object_id);
-                    apply_trigger_action_to_object(
-                        &mut objects[object_index],
-                        &trigger.action,
-                        progress,
-                    );
+                    trigger_object.apply_transform_trigger(&mut objects[object_index], progress);
                 }
             }
         }
     }
-}
-
-fn apply_trigger_action_to_object(object: &mut LevelObject, action: &TriggerAction, progress: f32) {
-    match action {
-        TriggerAction::TransformObjects {
-            position,
-            rotation: rotation_degrees,
-            size,
-            ..
-        } => {
-            for (current, target) in object.position.iter_mut().zip(position.iter()) {
-                *current += (*target - *current) * progress;
-            }
-            for (current, target) in object.rotation.iter_mut().zip(rotation_degrees.iter()) {
-                *current += (*target - *current) * progress;
-            }
-            for (current, target) in object.size.iter_mut().zip(size.iter()) {
-                let current_value = (*current).max(0.01);
-                let target_value = (*target).max(0.01);
-                *current = current_value + (target_value - current_value) * progress;
-            }
-        }
-        TriggerAction::CameraPose { .. } | TriggerAction::CameraFollow { .. } => {}
-    }
-}
-
-pub fn triggers_from_objects(objects: &[LevelObject]) -> Vec<TimedTrigger> {
-    let mut triggers = objects
-        .iter()
-        .filter_map(|object| {
-            let mut trigger = object.trigger.clone()?;
-            trigger.action = match trigger.action {
-                TriggerAction::TransformObjects {
-                    position: _,
-                    rotation: _,
-                    size: _,
-                } => TriggerAction::TransformObjects {
-                    position: object.position,
-                    rotation: object.rotation,
-                    size: object.size,
-                },
-                TriggerAction::CameraPose {
-                    transition_interval_seconds,
-                    use_full_segment_transition,
-                    target_position: _,
-                    yaw: _,
-                    pitch: _,
-                } => {
-                    let (yaw, pitch) = CameraTrigger::yaw_pitch_from_rotation(object.rotation);
-                    TriggerAction::CameraPose {
-                        transition_interval_seconds,
-                        use_full_segment_transition,
-                        target_position: CameraTrigger {
-                            target_position: object.center().into(),
-                            yaw,
-                            pitch,
-                            ..CameraTrigger::default()
-                        }
-                        .eye(),
-                        yaw,
-                        pitch,
-                    }
-                }
-                TriggerAction::CameraFollow {
-                    transition_interval_seconds,
-                    use_full_segment_transition,
-                    distance,
-                    yaw: rotation,
-                    pitch,
-                } => TriggerAction::CameraFollow {
-                    transition_interval_seconds,
-                    use_full_segment_transition,
-                    distance,
-                    yaw: rotation,
-                    pitch,
-                },
-            };
-            Some(trigger)
-        })
-        .filter(|trigger| trigger.time_seconds.is_finite())
-        .collect::<Vec<_>>();
-    triggers.sort_by(|left, right| f32::total_cmp(&left.time_seconds, &right.time_seconds));
-    triggers
 }
 
 fn timed_trigger_eased_alpha(easing: EasingDirection, alpha: f32) -> f32 {
@@ -1254,18 +1056,16 @@ mod tests {
         let mut objects = vec![
             LevelObject::default(),
             LevelObject {
+                position: [4.0, 0.0, 0.0],
+                size: [1.0, 1.0, 1.0],
                 trigger: Some(TimedTrigger {
                     time_seconds: 1.0,
                     duration_seconds: 1.0,
-                    easing: EasingDirection::Linear,
                     target: TriggerTarget::Objects {
                         object_ids: vec!["0".to_string()],
                     },
-                    action: TriggerAction::TransformObjects {
-                        position: [4.0, 0.0, 0.0],
-                        rotation: [0.0, 0.0, 0.0],
-                        size: [1.0, 1.0, 1.0],
-                    },
+                    transform: true,
+                    ..TimedTrigger::default()
                 }),
                 ..LevelObject::default()
             },

@@ -13,10 +13,9 @@ mod tests {
         BasicLevelMetadata, BlockId, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, Direction,
         EasingDirection, EditorStateParams, GameCursor, LevelMetadata, LevelObject,
         LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata, TRANSFORM_TRIGGER_BLOCK_ID,
-        TimedTrigger, TriggerAction, TriggerTarget, apply_timed_triggers_to_objects,
-        camera_triggers_to_timed_triggers, default_camera_trigger_distance,
-        default_camera_trigger_pitch, default_camera_trigger_transition_interval_seconds,
-        default_camera_trigger_yaw, timed_triggers_to_camera_triggers, triggers_from_objects,
+        TimedTrigger, TriggerTarget, apply_timed_triggers_to_objects,
+        default_camera_trigger_distance, default_camera_trigger_pitch,
+        default_camera_trigger_transition_interval_seconds, default_camera_trigger_yaw,
     };
     use serde_json::json;
 
@@ -91,6 +90,9 @@ mod tests {
         // also detected (covers deserialized levels that omit block_id).
         let by_action = LevelObject {
             id: "trigger".to_string(),
+            position: [2.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
             trigger: Some(TimedTrigger {
                 time_seconds: 1.0,
                 duration_seconds: 1.0,
@@ -98,11 +100,8 @@ mod tests {
                 target: TriggerTarget::Objects {
                     object_ids: vec!["target".to_string()],
                 },
-                action: TriggerAction::TransformObjects {
-                    position: [2.0, 0.0, 0.0],
-                    rotation: [0.0, 0.0, 0.0],
-                    size: [1.0, 1.0, 1.0],
-                },
+                transform: true,
+                ..Default::default()
             }),
             ..LevelObject::new("core/grass")
         };
@@ -116,13 +115,11 @@ mod tests {
                 duration_seconds: 0.0,
                 easing: EasingDirection::EaseInOut,
                 target: TriggerTarget::Camera,
-                action: TriggerAction::CameraPose {
-                    transition_interval_seconds: 1.0,
-                    use_full_segment_transition: false,
-                    target_position: [0.0, 0.0, 0.0],
-                    yaw: 0.0,
-                    pitch: 0.0,
-                },
+                camera: Some(CameraTrigger {
+                    mode: CameraMode::Static,
+                    ..Default::default()
+                }),
+                ..Default::default()
             }),
             ..plain.clone()
         };
@@ -258,23 +255,18 @@ mod tests {
     #[test]
     fn camera_trigger_serialization_omits_default_pose_fields() {
         let camera_trigger = CameraTrigger {
-            time_seconds: 2.5,
             mode: CameraMode::Follow,
-            easing: EasingDirection::EaseInOut,
             transition_interval_seconds: default_camera_trigger_transition_interval_seconds(),
             use_full_segment_transition: false,
             target_position: [0.0, 0.0, 0.0],
             distance: default_camera_trigger_distance(),
             yaw: default_camera_trigger_yaw(),
             pitch: default_camera_trigger_pitch(),
+            ..CameraTrigger::default()
         };
 
         let value = serde_json::to_value(&camera_trigger).expect("serialize camera trigger");
-        let expected = json!({
-            "time_seconds": 2.5,
-            "mode": "follow",
-            "easing": "ease_in_out"
-        });
+        let expected = json!({ "mode": "follow" });
 
         assert_eq!(value, expected);
     }
@@ -283,168 +275,63 @@ mod tests {
     fn camera_follow_trigger_defaults_missing_orbit_fields() {
         let trigger: TimedTrigger = serde_json::from_value(json!({
             "time_seconds": 1.25,
-            "action": {
-                "kind": "camera_follow"
+            "target": { "kind": "camera" },
+            "camera": {
+                "mode": "follow"
             }
         }))
         .expect("deserialize camera follow trigger");
 
-        match trigger.action {
-            TriggerAction::CameraFollow {
-                transition_interval_seconds,
-                use_full_segment_transition,
-                distance,
-                yaw: rotation,
-                pitch,
-            } => {
-                assert_eq!(transition_interval_seconds, 1.0);
-                assert!(!use_full_segment_transition);
-                assert_eq!(distance, default_camera_trigger_distance());
-                assert_eq!(rotation, default_camera_trigger_yaw());
-                assert_eq!(pitch, default_camera_trigger_pitch());
-            }
-            _ => panic!("expected camera follow action"),
-        }
+        let camera = trigger.camera.expect("camera payload");
+        assert_eq!(camera.mode, CameraMode::Follow);
+        assert_eq!(camera.transition_interval_seconds, 1.0);
+        assert!(!camera.use_full_segment_transition);
+        assert_eq!(camera.distance, default_camera_trigger_distance());
+        assert_eq!(camera.yaw, default_camera_trigger_yaw());
+        assert_eq!(camera.pitch, default_camera_trigger_pitch());
     }
 
     #[test]
-    fn converts_camera_triggers_to_triggers_and_back() {
-        let camera_triggers = vec![
-            CameraTrigger {
-                time_seconds: 0.5,
-                mode: CameraMode::Follow,
-                easing: EasingDirection::EaseIn,
-                transition_interval_seconds: 0.4,
-                use_full_segment_transition: true,
-                target_position: [0.0, 0.0, 0.0],
-                distance: 18.0,
-                yaw: default_camera_trigger_yaw(),
-                pitch: default_camera_trigger_pitch(),
-            },
-            CameraTrigger {
-                time_seconds: 1.0,
-                mode: CameraMode::Static,
-                easing: EasingDirection::EaseOut,
-                transition_interval_seconds: 0.25,
-                use_full_segment_transition: false,
-                target_position: [1.0, 2.0, 3.0],
-                distance: default_camera_trigger_distance(),
-                yaw: 0.8,
-                pitch: 0.2,
-            },
-        ];
-
-        let triggers = camera_triggers_to_timed_triggers(&camera_triggers);
-        assert_eq!(triggers.len(), 2);
-        assert!(matches!(triggers[0].target, TriggerTarget::Camera));
-        assert!(matches!(
-            triggers[0].action,
-            TriggerAction::CameraFollow { .. }
-        ));
-
-        let restored = timed_triggers_to_camera_triggers(&triggers);
-        assert_eq!(restored, camera_triggers);
-    }
-
-    #[test]
-    fn resolved_triggers_return_trigger_data_for_camera_conversion() {
+    fn trigger_objects_return_sorted_trigger_blocks() {
         let metadata = LevelMetadata {
             basic: BasicLevelMetadata {
                 name: "Bridge".to_string(),
                 ..BasicLevelMetadata::default()
             },
-            objects: vec![LevelObject {
-                block_id: BlockId::new(CAMERA_TRIGGER_BLOCK_ID),
-                trigger: camera_triggers_to_timed_triggers(&[CameraTrigger {
-                    time_seconds: 1.2,
-                    mode: CameraMode::Static,
-                    easing: EasingDirection::Linear,
-                    transition_interval_seconds: 1.0,
-                    use_full_segment_transition: false,
-                    target_position: [2.0, 3.0, 4.0],
-                    distance: default_camera_trigger_distance(),
-                    yaw: 0.4,
-                    pitch: 0.6,
-                }])
-                .into_iter()
-                .next(),
-                ..LevelObject::default()
-            }],
-            ..LevelMetadata::default()
-        };
-        let mut metadata = metadata;
-        metadata.objects[0].position = [9.0, 8.0, 7.0];
-        metadata.objects[0].rotation = [30.0, 60.0, 0.0];
-
-        let resolved = timed_triggers_to_camera_triggers(&metadata.resolved_triggers());
-        let expected_eye = metadata.objects[0].center().into();
-        let expected_target = CameraTrigger {
-            target_position: expected_eye,
-            yaw: 60.0_f32.to_radians(),
-            pitch: 30.0_f32.to_radians(),
-            ..CameraTrigger::default()
-        }
-        .eye();
-        let resolved_eye = resolved[0].eye();
-        assert_eq!(resolved.len(), 1);
-        assert!((resolved[0].time_seconds - 1.2).abs() <= 1e-6);
-        for (actual, expected) in resolved[0].target_position.iter().zip(expected_target) {
-            approx::assert_abs_diff_eq!(*actual, expected, epsilon = 1e-5);
-        }
-        for (actual, expected) in resolved_eye.iter().zip(expected_eye) {
-            approx::assert_abs_diff_eq!(*actual, expected, epsilon = 1e-5);
-        }
-        assert!((resolved[0].pitch - 30.0_f32.to_radians()).abs() <= 1e-6);
-        assert!((resolved[0].yaw - 60.0_f32.to_radians()).abs() <= 1e-6);
-    }
-
-    #[test]
-    fn resolved_camera_trigger_normalizes_wrapped_pitch_rotation() {
-        let object = LevelObject {
-            rotation: [-135.0, 0.0, 180.0],
-            block_id: BlockId::new(CAMERA_TRIGGER_BLOCK_ID),
-            trigger: camera_triggers_to_timed_triggers(&[CameraTrigger {
-                time_seconds: 1.2,
-                mode: CameraMode::Static,
-                easing: EasingDirection::Linear,
-                transition_interval_seconds: 1.0,
-                use_full_segment_transition: false,
-                target_position: [2.0, 3.0, 4.0],
-                distance: default_camera_trigger_distance(),
-                yaw: 0.0,
-                pitch: 0.0,
-            }])
-            .into_iter()
-            .next(),
-            ..LevelObject::default()
-        };
-        let metadata = LevelMetadata {
-            basic: BasicLevelMetadata {
-                name: "Bridge".to_string(),
-                ..BasicLevelMetadata::default()
-            },
-            objects: vec![object],
+            objects: vec![
+                LevelObject::new("core/stone"),
+                LevelObject {
+                    id: "late".to_string(),
+                    block_id: BlockId::new(CAMERA_TRIGGER_BLOCK_ID),
+                    trigger: Some(TimedTrigger {
+                        time_seconds: 2.0,
+                        target: TriggerTarget::Camera,
+                        camera: Some(CameraTrigger::default()),
+                        ..TimedTrigger::default()
+                    }),
+                    ..LevelObject::default()
+                },
+                LevelObject {
+                    id: "early".to_string(),
+                    block_id: BlockId::new(TRANSFORM_TRIGGER_BLOCK_ID),
+                    trigger: Some(TimedTrigger {
+                        time_seconds: 1.0,
+                        transform: true,
+                        target: TriggerTarget::Objects {
+                            object_ids: vec!["target".to_string()],
+                        },
+                        ..TimedTrigger::default()
+                    }),
+                    ..LevelObject::default()
+                },
+            ],
             ..LevelMetadata::default()
         };
 
-        let resolved = timed_triggers_to_camera_triggers(&metadata.resolved_triggers());
-        let (expected_yaw, expected_pitch) =
-            CameraTrigger::yaw_pitch_from_rotation([-135.0, 0.0, 180.0]);
-        let expected_forward = CameraTrigger::forward_from_rotation([-135.0, 0.0, 180.0]);
-        let resolved_forward = resolved[0].forward();
-        let resolved_eye = resolved[0].eye();
-
-        assert_eq!(resolved.len(), 1);
-        approx::assert_abs_diff_eq!(resolved[0].yaw, expected_yaw, epsilon = 1e-5);
-        approx::assert_abs_diff_eq!(resolved[0].pitch, expected_pitch, epsilon = 1e-5);
-        assert!(resolved_forward[1] < -0.6);
-        for (actual, expected) in resolved_forward.iter().zip(expected_forward) {
-            approx::assert_abs_diff_eq!(*actual, expected, epsilon = 1e-5);
-        }
-        let actual_eye: [f32; 3] = metadata.objects[0].center().into();
-        for (actual, expected) in resolved_eye.iter().zip(&actual_eye) {
-            approx::assert_abs_diff_eq!(*actual, expected, epsilon = 1e-5);
-        }
+        let resolved = metadata.trigger_objects();
+        assert_eq!(resolved.len(), 2);
+        assert_eq!(resolved[0].id, "early");
+        assert_eq!(resolved[1].id, "late");
     }
 
     #[test]
@@ -462,30 +349,21 @@ mod tests {
                 target: TriggerTarget::Objects {
                     object_ids: vec!["target".to_string()],
                 },
-                action: TriggerAction::TransformObjects {
-                    position: [0.0, 0.0, 0.0],
-                    rotation: [0.0, 0.0, 0.0],
-                    size: [1.0, 1.0, 1.0],
-                },
+                transform: true,
+                camera: None,
             }),
             ..LevelObject::default()
         };
 
-        let triggers = triggers_from_objects(&[object]);
-        assert_eq!(triggers.len(), 1);
-        match &triggers[0].action {
-            TriggerAction::TransformObjects {
-                position,
-                rotation: rotation_degrees,
-                size,
-                ..
-            } => {
-                assert_eq!(position, &[4.0, 5.0, 6.0]);
-                assert_eq!(rotation_degrees, &[10.0, 20.0, 30.0]);
-                assert_eq!(size, &[2.0, 3.0, 4.0]);
-            }
-            _ => panic!("expected transform trigger"),
+        let triggers = LevelMetadata {
+            objects: vec![object],
+            ..LevelMetadata::default()
         }
+        .trigger_objects();
+        assert_eq!(triggers.len(), 1);
+        assert_eq!(triggers[0].position, [4.0, 5.0, 6.0]);
+        assert_eq!(triggers[0].rotation, [10.0, 20.0, 30.0]);
+        assert_eq!(triggers[0].size, [2.0, 3.0, 4.0]);
     }
 
     #[test]
@@ -495,18 +373,20 @@ mod tests {
             ..LevelObject::default()
         }];
 
-        let triggers = vec![TimedTrigger {
-            time_seconds: 2.0,
-            duration_seconds: 1.0,
-            easing: EasingDirection::Linear,
-            target: TriggerTarget::Objects {
-                object_ids: vec!["target".to_string()],
-            },
-            action: TriggerAction::TransformObjects {
-                position: [10.0, 0.0, 0.0],
-                rotation: [0.0, 90.0, 0.0],
-                size: [2.0, 0.0, 3.0],
-            },
+        let triggers = vec![LevelObject {
+            position: [10.0, 0.0, 0.0],
+            rotation: [0.0, 90.0, 0.0],
+            size: [2.0, 0.0, 3.0],
+            trigger: Some(TimedTrigger {
+                time_seconds: 2.0,
+                duration_seconds: 1.0,
+                target: TriggerTarget::Objects {
+                    object_ids: vec!["target".to_string()],
+                },
+                transform: true,
+                ..Default::default()
+            }),
+            ..LevelObject::default()
         }];
 
         let applied = apply_timed_triggers_to_objects(&base, &triggers, 2.5);
@@ -538,34 +418,36 @@ mod tests {
         ];
 
         let triggers = vec![
-            TimedTrigger {
-                time_seconds: 0.0,
-                duration_seconds: 0.0,
-                easing: EasingDirection::Linear,
-                target: TriggerTarget::Objects {
-                    object_ids: vec![
-                        "object_2".to_string(),
-                        "object_2".to_string(),
-                        "missing".to_string(),
-                        "object_1".to_string(),
-                    ],
-                },
-                action: TriggerAction::TransformObjects {
-                    position: [9.0, 9.0, 9.0],
-                    rotation: [0.0, 0.0, 0.0],
-                    size: [1.0, 1.0, 1.0],
-                },
+            LevelObject {
+                position: [9.0, 9.0, 9.0],
+                trigger: Some(TimedTrigger {
+                    time_seconds: 0.0,
+                    duration_seconds: 0.0,
+                    easing: EasingDirection::Linear,
+                    target: TriggerTarget::Objects {
+                        object_ids: vec![
+                            "object_2".to_string(),
+                            "object_2".to_string(),
+                            "missing".to_string(),
+                            "object_1".to_string(),
+                        ],
+                    },
+                    transform: true,
+                    camera: None,
+                }),
+                ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
             },
-            TimedTrigger {
-                time_seconds: 0.0,
-                duration_seconds: 0.0,
-                easing: EasingDirection::Linear,
-                target: TriggerTarget::Camera,
-                action: TriggerAction::TransformObjects {
-                    position: [5.0, 5.0, 5.0],
-                    rotation: [0.0, 0.0, 0.0],
-                    size: [1.0, 1.0, 1.0],
-                },
+            LevelObject {
+                position: [5.0, 5.0, 5.0],
+                trigger: Some(TimedTrigger {
+                    time_seconds: 0.0,
+                    duration_seconds: 0.0,
+                    easing: EasingDirection::Linear,
+                    target: TriggerTarget::Camera,
+                    transform: true,
+                    camera: None,
+                }),
+                ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
             },
         ];
 
@@ -581,18 +463,19 @@ mod tests {
             id: "target".to_string(),
             ..LevelObject::default()
         }];
-        let triggers = vec![TimedTrigger {
-            time_seconds: f32::NAN,
-            duration_seconds: 0.0,
-            easing: EasingDirection::Linear,
-            target: TriggerTarget::Objects {
-                object_ids: vec!["target".to_string()],
-            },
-            action: TriggerAction::TransformObjects {
-                position: [99.0, 0.0, 0.0],
-                rotation: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-            },
+        let triggers = vec![LevelObject {
+            position: [99.0, 0.0, 0.0],
+            trigger: Some(TimedTrigger {
+                time_seconds: f32::NAN,
+                duration_seconds: 0.0,
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Objects {
+                    object_ids: vec!["target".to_string()],
+                },
+                transform: true,
+                camera: None,
+            }),
+            ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
         }];
 
         let applied = apply_timed_triggers_to_objects(&base, &triggers, 10.0);

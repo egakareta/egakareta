@@ -170,7 +170,7 @@ impl State {
         // (consumed-pruned when simulating) base object set.
         Some(trigger_transformed_objects_at_time(
             base_objects,
-            &self.editor.triggers(),
+            &self.editor.trigger_objects(),
             time_seconds.max(0.0),
         ))
     }
@@ -670,12 +670,11 @@ impl State {
                         }
 
                         if !applied_runtime_state {
-                            let mut runtime = TimelineSimulationRuntime::new_with_triggers(
+                            let mut runtime = TimelineSimulationRuntime::new(
                                 self.editor.spawn.position,
                                 self.editor.spawn.direction,
                                 &self.editor.objects,
                                 &self.editor.timeline.taps.tap_times,
-                                &self.editor.triggers(),
                             );
                             runtime.advance_to(clamped_time);
                             let events = runtime.take_consumed_object_events();
@@ -1058,8 +1057,10 @@ impl State {
 mod tests {
     use super::State;
     use eg_game::{GameState, TimelineSimulationRuntime};
-    use eg_types::{AppPhase, Direction, EditorMode, LevelObject, TimingPoint};
-    use eg_types::{EasingDirection, TimedTrigger, TriggerAction, TriggerTarget};
+    use eg_types::{
+        AppPhase, Direction, EasingDirection, EditorMode, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID,
+        TimedTrigger, TimingPoint, TriggerTarget,
+    };
 
     fn sample_object() -> LevelObject {
         LevelObject {
@@ -1068,19 +1069,20 @@ mod tests {
         }
     }
 
-    fn instant_move_trigger() -> TimedTrigger {
-        TimedTrigger {
-            time_seconds: 0.0,
-            duration_seconds: 0.0,
-            easing: EasingDirection::Linear,
-            target: TriggerTarget::Objects {
-                object_ids: vec!["object_0_0_0".to_string()],
-            },
-            action: TriggerAction::TransformObjects {
-                position: [2.0, 0.0, 0.0],
-                rotation: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-            },
+    fn instant_move_trigger() -> LevelObject {
+        LevelObject {
+            position: [2.0, 0.0, 0.0],
+            trigger: Some(TimedTrigger {
+                time_seconds: 0.0,
+                duration_seconds: 0.0,
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Objects {
+                    object_ids: vec!["object_0_0_0".to_string()],
+                },
+                transform: true,
+                camera: None,
+            }),
+            ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
         }
     }
 
@@ -1180,7 +1182,7 @@ mod tests {
         state.gameplay.state.objects = vec![sample_object()];
         state.gameplay.state.rebuild_behavior_cache();
 
-        state.editor.set_triggers(vec![instant_move_trigger()]);
+        state.editor.objects.push(instant_move_trigger());
         state.session.playing_trigger_base_objects = None;
         let transformed = state
             .playing_trigger_objects_at_time(0.5)
@@ -1197,7 +1199,7 @@ mod tests {
         state.gameplay.state.started = true;
         state.gameplay.state.objects = vec![sample_object()];
         state.gameplay.state.rebuild_behavior_cache();
-        state.editor.set_triggers(vec![instant_move_trigger()]);
+        state.editor.objects.push(instant_move_trigger());
 
         state.rebuild_block_vertices();
         assert!(!state.render.meshes.blocks_chunked.is_empty());
@@ -1216,7 +1218,7 @@ mod tests {
         state.gameplay.state.started = true;
         state.gameplay.state.objects = vec![sample_object()];
         state.gameplay.state.rebuild_behavior_cache();
-        state.editor.set_triggers(vec![instant_move_trigger()]);
+        state.editor.objects.push(instant_move_trigger());
 
         let transformed = state
             .advance_playing_state_to_time(0.2, 1.0 / 120.0)
@@ -1393,14 +1395,14 @@ mod tests {
         state.gameplay.state.rebuild_behavior_cache();
 
         state.phase = AppPhase::Menu;
-        state.editor.set_triggers(vec![instant_move_trigger()]);
+        state.editor.objects.push(instant_move_trigger());
         assert!(state.playing_trigger_objects_at_time(0.2).is_none());
 
         state.phase = AppPhase::Playing;
-        state.editor.set_triggers(Vec::new());
+        state.editor.objects.clear();
         assert!(state.playing_trigger_objects_at_time(0.2).is_none());
 
-        state.editor.set_triggers(vec![instant_move_trigger()]);
+        state.editor.objects.push(instant_move_trigger());
         let transformed = state
             .playing_trigger_objects_at_time(0.2)
             .expect("expected transformed objects");
@@ -1481,14 +1483,12 @@ mod tests {
         state.editor.timeline.clock.duration_seconds = 10.0;
         state.editor.timeline.clock.time_seconds = 2.0;
         state.editor.timeline.playback.playing = true;
-        state.editor.timeline.playback.runtime =
-            Some(TimelineSimulationRuntime::new_with_triggers(
-                state.editor.spawn.position,
-                state.editor.spawn.direction,
-                &state.editor.objects,
-                &state.editor.timeline.taps.tap_times,
-                &state.editor.triggers(),
-            ));
+        state.editor.timeline.playback.runtime = Some(TimelineSimulationRuntime::new(
+            state.editor.spawn.position,
+            state.editor.spawn.direction,
+            &state.editor.objects,
+            &state.editor.timeline.taps.tap_times,
+        ));
 
         // In tests, no active playback source means runtime reports not playing.
         state.update();

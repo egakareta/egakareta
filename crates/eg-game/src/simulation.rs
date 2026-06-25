@@ -6,7 +6,7 @@
 
 */
 use super::state::{ConsumedObjectEvent, GameState};
-use eg_types::{Direction, LevelObject, TimedTrigger, apply_timed_triggers_to_objects};
+use eg_types::{Direction, LevelObject, apply_timed_triggers_to_objects};
 
 pub struct TimelineSimulationState {
     pub position: [f32; 3],
@@ -21,8 +21,6 @@ pub struct TimelineSimulationRuntime {
     game: GameState,
     tap_times: Vec<f32>,
     tap_index: usize,
-    trigger_base_objects: Option<Vec<LevelObject>>,
-    has_simulate_hitboxes_triggers: bool,
     elapsed_seconds: f32,
     simulation_dt: f32,
 }
@@ -46,47 +44,12 @@ impl TimelineSimulationRuntime {
         )
     }
 
-    pub fn new_with_triggers(
-        spawn_position: [f32; 3],
-        spawn_direction: Direction,
-        objects: &[LevelObject],
-        tap_times: &[f32],
-        triggers: &[TimedTrigger],
-    ) -> Self {
-        Self::new_with_dt_and_triggers(
-            spawn_position,
-            spawn_direction,
-            objects,
-            tap_times,
-            TIMELINE_SIMULATION_DT,
-            triggers,
-        )
-    }
-
     pub fn new_with_dt(
         spawn_position: [f32; 3],
         spawn_direction: Direction,
         objects: &[LevelObject],
         tap_times: &[f32],
         simulation_dt: f32,
-    ) -> Self {
-        Self::new_with_dt_and_triggers(
-            spawn_position,
-            spawn_direction,
-            objects,
-            tap_times,
-            simulation_dt,
-            &[],
-        )
-    }
-
-    pub fn new_with_dt_and_triggers(
-        spawn_position: [f32; 3],
-        spawn_direction: Direction,
-        objects: &[LevelObject],
-        tap_times: &[f32],
-        simulation_dt: f32,
-        triggers: &[TimedTrigger],
     ) -> Self {
         puffin::profile_scope!("TimelineRuntimeBuild");
         let mut game = GameState::new();
@@ -102,19 +65,10 @@ impl TimelineSimulationRuntime {
             .collect();
         sorted_taps.sort_by(f32::total_cmp);
 
-        let mut sorted_triggers: Vec<TimedTrigger> = triggers
-            .iter()
-            .filter(|trigger| trigger.time_seconds.is_finite())
-            .cloned()
-            .collect();
-        sorted_triggers.sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
-
         let mut runtime = Self {
             game,
             tap_times: sorted_taps,
             tap_index: 0,
-            trigger_base_objects: None,
-            has_simulate_hitboxes_triggers: false,
             elapsed_seconds: 0.0,
             simulation_dt: simulation_dt.clamp(1.0 / 240.0, 1.0 / 30.0),
         };
@@ -129,23 +83,6 @@ impl TimelineSimulationRuntime {
             self.game.turn_right();
             self.tap_index += 1;
         }
-    }
-
-    fn sync_trigger_base_with_consumed(&mut self) {
-        if !self.has_simulate_hitboxes_triggers {
-            return;
-        }
-
-        let consumed_indices = self.game.take_consumed_object_indices();
-        if consumed_indices.is_empty() {
-            return;
-        }
-
-        let Some(base_objects) = self.trigger_base_objects.as_mut() else {
-            return;
-        };
-
-        GameState::prune_consumed_indices_from_objects(base_objects, consumed_indices);
     }
 
     pub fn advance_to(&mut self, target_time_seconds: f32) {
@@ -180,7 +117,6 @@ impl TimelineSimulationRuntime {
             }
 
             self.game.update(step_dt);
-            self.sync_trigger_base_with_consumed();
             self.elapsed_seconds = step_target;
             self.apply_pending_taps(self.elapsed_seconds + TIME_EPSILON_SECONDS);
 
@@ -222,20 +158,6 @@ impl TimelineSimulationRuntime {
         &self.game.objects
     }
 
-    /// Returns the consumed-pruned base object set used as the source for hitbox
-    /// simulation, when any transform trigger moves hitboxes. Callers can apply
-    /// the full set of transform triggers to this base to render the visual
-    /// object poses while still reflecting consumed blocks.
-    pub fn trigger_base_objects(&self) -> Option<&[LevelObject]> {
-        self.trigger_base_objects.as_deref()
-    }
-
-    /// Returns `true` when at least one transform trigger moves gameplay
-    /// hitboxes during this simulation.
-    pub fn has_simulate_hitboxes_triggers(&self) -> bool {
-        self.has_simulate_hitboxes_triggers
-    }
-
     pub fn snapshot(&self) -> TimelineSimulationState {
         TimelineSimulationState {
             position: self.game.position,
@@ -261,26 +183,6 @@ pub fn simulate_timeline_state(
     puffin::profile_scope!("TimelineSimulateState");
     let mut runtime =
         TimelineSimulationRuntime::new(spawn_position, spawn_direction, objects, tap_times);
-    runtime.advance_to(timeline_time_seconds);
-    runtime.snapshot()
-}
-
-pub fn simulate_timeline_state_with_triggers(
-    spawn_position: [f32; 3],
-    spawn_direction: Direction,
-    objects: &[LevelObject],
-    tap_times: &[f32],
-    triggers: &[TimedTrigger],
-    timeline_time_seconds: f32,
-) -> TimelineSimulationState {
-    puffin::profile_scope!("TimelineSimulateStateWithTriggers");
-    let mut runtime = TimelineSimulationRuntime::new_with_triggers(
-        spawn_position,
-        spawn_direction,
-        objects,
-        tap_times,
-        triggers,
-    );
     runtime.advance_to(timeline_time_seconds);
     runtime.snapshot()
 }
@@ -320,9 +222,9 @@ pub fn advance_simulation_time<F>(
 
 pub fn trigger_transformed_objects_at_time(
     base_objects: &[LevelObject],
-    triggers: &[TimedTrigger],
+    trigger_objects: &[LevelObject],
     time_seconds: f32,
 ) -> Vec<LevelObject> {
     puffin::profile_scope!("TriggerTransformObjects");
-    apply_timed_triggers_to_objects(base_objects, triggers, time_seconds)
+    apply_timed_triggers_to_objects(base_objects, trigger_objects, time_seconds)
 }

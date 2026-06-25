@@ -11,16 +11,62 @@ use crate::commands::AppCommand;
 use crate::state::editor_command::EditorCommand;
 use eg_audio::audio::runtime_asset_source_key;
 use eg_editor_domain::{derive_tap_indicator_positions, derive_timeline_position};
-use eg_game::simulate_timeline_state_with_triggers;
+use eg_game::simulate_timeline_state;
 use eg_mesh::{GizmoAxis, GizmoDragKind};
-use eg_types::{AppPhase, Direction, EditorMode, LevelObject, PhysicalSize};
-use eg_types::{EasingDirection, TimedTrigger, TriggerAction, TriggerTarget};
+use eg_types::{
+    AppPhase, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, Direction, EasingDirection,
+    EditorMode, LevelObject, PhysicalSize, TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget,
+};
 use glam::{Vec2, Vec3};
 
 async fn new_editor_state() -> State {
     let mut state = State::new_test().await;
     state.enter_editor_phase("Test Level".to_string());
     state
+}
+
+fn transform_trigger_object(
+    time_seconds: f32,
+    duration_seconds: f32,
+    position: [f32; 3],
+    object_ids: Vec<&str>,
+) -> LevelObject {
+    LevelObject {
+        position,
+        trigger: Some(TimedTrigger {
+            time_seconds,
+            duration_seconds,
+            easing: EasingDirection::Linear,
+            target: TriggerTarget::Objects {
+                object_ids: object_ids.into_iter().map(str::to_string).collect(),
+            },
+            transform: true,
+            camera: None,
+        }),
+        ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
+    }
+}
+
+fn camera_trigger_object(time_seconds: f32) -> LevelObject {
+    LevelObject {
+        trigger: Some(TimedTrigger {
+            time_seconds,
+            duration_seconds: 0.0,
+            easing: EasingDirection::Linear,
+            target: TriggerTarget::Camera,
+            transform: false,
+            camera: Some(CameraTrigger {
+                mode: CameraMode::Static,
+                transition_interval_seconds: 1.0,
+                use_full_segment_transition: false,
+                target_position: [0.0, 0.0, 0.0],
+                yaw: 0.0,
+                pitch: 0.0,
+                ..CameraTrigger::default()
+            }),
+        }),
+        ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
+    }
 }
 
 #[tokio::test]
@@ -354,19 +400,12 @@ fn configure_trigger_policy_parity_scene(state: &mut State, timeline_time_second
     state.editor.spawn.position = [0.0, 0.0, 0.0];
     state.editor.spawn.direction = Direction::Forward;
     state.editor.timeline.taps.tap_times.clear();
-    state.editor.set_triggers(vec![TimedTrigger {
-        time_seconds: 0.0,
-        duration_seconds: 0.0,
-        easing: EasingDirection::Linear,
-        target: TriggerTarget::Objects {
-            object_ids: vec!["target".to_string()],
-        },
-        action: TriggerAction::TransformObjects {
-            position: [0.0, 0.0, 1.0],
-            rotation: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-        },
-    }]);
+    state.editor.objects.push(transform_trigger_object(
+        0.0,
+        0.0,
+        [0.0, 0.0, 1.0],
+        vec!["target"],
+    ));
     state.editor.timeline.clock.time_seconds = timeline_time_seconds;
 }
 
@@ -376,12 +415,11 @@ async fn editor_playback_and_playtest_match_simulation() {
     let timeline_time_seconds = 0.35;
     configure_trigger_policy_parity_scene(&mut state, timeline_time_seconds);
 
-    let expected = simulate_timeline_state_with_triggers(
+    let expected = simulate_timeline_state(
         state.editor.spawn.position,
         state.editor.spawn.direction,
         &state.editor.objects,
         &state.editor.timeline.taps.tap_times,
-        &state.editor.triggers(),
         timeline_time_seconds,
     );
 
@@ -439,12 +477,11 @@ async fn editor_playtest_preserves_airborne_vertical_motion() {
     state.editor.spawn.position = [0.0, 2.0, 0.0];
     state.editor.timeline.clock.time_seconds = 0.25;
 
-    let expected = simulate_timeline_state_with_triggers(
+    let expected = simulate_timeline_state(
         state.editor.spawn.position,
         state.editor.spawn.direction,
         &state.editor.objects,
         &state.editor.timeline.taps.tap_times,
-        &state.editor.triggers(),
         state.editor.timeline.clock.time_seconds,
     );
 
@@ -1073,19 +1110,12 @@ async fn timing_origin_playback_seek_resync_keeps_runtime_disabled() {
     state.phase = AppPhase::Editor;
     state.editor.set_mode(EditorMode::Timing);
 
-    state.editor.set_triggers(vec![TimedTrigger {
-        time_seconds: 0.5,
-        duration_seconds: 1.0,
-        easing: EasingDirection::Linear,
-        target: TriggerTarget::Objects {
-            object_ids: vec!["object_0_0_0".to_string()],
-        },
-        action: TriggerAction::TransformObjects {
-            position: [3.0, 0.0, 0.0],
-            rotation: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-        },
-    }]);
+    state.editor.objects.push(transform_trigger_object(
+        0.5,
+        1.0,
+        [3.0, 0.0, 0.0],
+        vec!["object_0_0_0"],
+    ));
 
     state.toggle_editor_timeline_playback();
     assert!(state.editor.timeline.playback.playing);
@@ -1296,19 +1326,12 @@ async fn timing_mode_timeline_scrub_skips_simulation_and_mesh_dirty() {
     state.editor.set_mode(EditorMode::Timing);
 
     // Add an object transform trigger to ensure that in Compose it WOULD mark dirty
-    state.editor.set_triggers(vec![TimedTrigger {
-        time_seconds: 1.0,
-        duration_seconds: 1.0,
-        easing: EasingDirection::Linear,
-        target: TriggerTarget::Objects {
-            object_ids: vec!["object_0_0_0".to_string()],
-        },
-        action: TriggerAction::TransformObjects {
-            position: [10.0, 0.0, 0.0],
-            rotation: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-        },
-    }]);
+    state.editor.objects.push(transform_trigger_object(
+        1.0,
+        1.0,
+        [10.0, 0.0, 0.0],
+        vec!["object_0_0_0"],
+    ));
 
     // Clear any initial dirty flags
     state.editor.runtime.dirty = EditorDirtyFlags::default();
@@ -1333,19 +1356,12 @@ async fn compose_mode_timeline_scrub_runs_simulation_and_mesh_dirty() {
     state.editor.set_mode(EditorMode::Place);
 
     // Add an object transform trigger
-    state.editor.set_triggers(vec![TimedTrigger {
-        time_seconds: 1.0,
-        duration_seconds: 1.0,
-        easing: EasingDirection::Linear,
-        target: TriggerTarget::Objects {
-            object_ids: vec!["object_0_0_0".to_string()],
-        },
-        action: TriggerAction::TransformObjects {
-            position: [10.0, 0.0, 0.0],
-            rotation: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-        },
-    }]);
+    state.editor.objects.push(transform_trigger_object(
+        1.0,
+        1.0,
+        [10.0, 0.0, 0.0],
+        vec!["object_0_0_0"],
+    ));
 
     // Clear any initial dirty flags
     state.editor.runtime.dirty = EditorDirtyFlags::default();
@@ -1367,19 +1383,7 @@ async fn camera_trigger_timeline_scrub_marks_block_mesh_dirty() {
     state.phase = AppPhase::Editor;
     state.editor.set_mode(EditorMode::Place);
 
-    state.editor.set_triggers(vec![TimedTrigger {
-        time_seconds: 1.0,
-        duration_seconds: 0.0,
-        easing: EasingDirection::Linear,
-        target: TriggerTarget::Camera,
-        action: TriggerAction::CameraPose {
-            transition_interval_seconds: 1.0,
-            use_full_segment_transition: false,
-            target_position: [0.0, 0.0, 0.0],
-            yaw: 0.0,
-            pitch: 0.0,
-        },
-    }]);
+    state.editor.objects.push(camera_trigger_object(1.0));
 
     state.editor.runtime.dirty = EditorDirtyFlags::default();
     state.set_editor_timeline_time_seconds(0.5);

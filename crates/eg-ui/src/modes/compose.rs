@@ -13,7 +13,7 @@ use eg_state::commands::AppCommand;
 use eg_state::state::EditorUiViewModel;
 use eg_state::state::editor_command::EditorCommand;
 use eg_types::{
-    BlockId, EasingDirection, EditorMode, LevelObject, TimedTrigger, TriggerAction, TriggerTarget,
+    BlockId, CameraMode, EasingDirection, EditorMode, LevelObject, TimedTrigger, TriggerTarget,
 };
 
 const RECENT_BLOCK_STRIP_LIMIT: usize = 4;
@@ -252,38 +252,33 @@ fn show_trigger_easing_control(ui: &mut egui::Ui, trigger: &mut TimedTrigger) ->
 }
 
 fn show_trigger_action_controls(ui: &mut egui::Ui, trigger: &mut TimedTrigger) -> bool {
-    match &mut trigger.action {
-        TriggerAction::CameraPose {
-            transition_interval_seconds,
-            use_full_segment_transition,
-            ..
-        } => show_camera_trigger_controls(
-            ui,
-            transition_interval_seconds,
-            use_full_segment_transition,
-        ),
-        TriggerAction::CameraFollow {
-            transition_interval_seconds,
-            use_full_segment_transition,
-            distance,
-            yaw: rotation,
-            pitch,
-        } => show_camera_follow_trigger_controls(
-            ui,
-            transition_interval_seconds,
-            use_full_segment_transition,
-            distance,
-            rotation,
-            pitch,
-        ),
-        TriggerAction::TransformObjects { .. } => {
-            let target_count = match &trigger.target {
-                TriggerTarget::Objects { object_ids } => object_ids.len(),
-                TriggerTarget::Camera => 0,
-            };
-            show_transform_trigger_summary(ui, target_count);
-            false
-        }
+    if let Some(camera) = trigger.camera.as_mut() {
+        return match camera.mode {
+            CameraMode::Static => show_camera_trigger_controls(
+                ui,
+                &mut camera.transition_interval_seconds,
+                &mut camera.use_full_segment_transition,
+            ),
+            CameraMode::Follow => show_camera_follow_trigger_controls(
+                ui,
+                &mut camera.transition_interval_seconds,
+                &mut camera.use_full_segment_transition,
+                &mut camera.distance,
+                &mut camera.yaw,
+                &mut camera.pitch,
+            ),
+        };
+    }
+
+    if trigger.transform {
+        let target_count = match &trigger.target {
+            TriggerTarget::Objects { object_ids } => object_ids.len(),
+            TriggerTarget::Camera => 0,
+        };
+        show_transform_trigger_summary(ui, target_count);
+        false
+    } else {
+        false
     }
 }
 
@@ -579,13 +574,10 @@ mod tests {
     use crate::test_utils::editor_view_model;
     use eg_blocks::{all_placeable_blocks, block_texture_atlas, resolve_block_texture_layers};
     use eg_types::{
-        AppSettings, CAMERA_TRIGGER_BLOCK_ID, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, EditorMode,
-        LevelObject, MusicMetadata, TRANSFORM_TRIGGER_BLOCK_ID,
+        AppSettings, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, DEFAULT_CAMERA_PITCH,
+        DEFAULT_CAMERA_YAW, EditorMode, LevelObject, MusicMetadata, TRANSFORM_TRIGGER_BLOCK_ID,
     };
-    use eg_types::{
-        EasingDirection, TimedTrigger, TriggerAction, TriggerTarget,
-        default_camera_trigger_distance,
-    };
+    use eg_types::{EasingDirection, TimedTrigger, TriggerTarget, default_camera_trigger_distance};
 
     fn make_compose_view<'a>(
         app_settings: &'a AppSettings,
@@ -715,11 +707,8 @@ mod tests {
                 target: TriggerTarget::Objects {
                     object_ids: vec!["target".to_string()],
                 },
-                action: TriggerAction::TransformObjects {
-                    position: [1.0, 0.0, 1.0],
-                    rotation: [0.0, 90.0, 0.0],
-                    size: [1.0, 1.0, 1.0],
-                },
+                transform: true,
+                camera: None,
             }),
             ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
         });
@@ -742,13 +731,16 @@ mod tests {
                 duration_seconds: 0.0,
                 easing: EasingDirection::Linear,
                 target: TriggerTarget::Camera,
-                action: TriggerAction::CameraFollow {
+                transform: false,
+                camera: Some(CameraTrigger {
+                    mode: CameraMode::Follow,
                     transition_interval_seconds: 1.0,
                     use_full_segment_transition: false,
                     distance: default_camera_trigger_distance(),
                     yaw: DEFAULT_CAMERA_YAW,
                     pitch: DEFAULT_CAMERA_PITCH,
-                },
+                    ..CameraTrigger::default()
+                }),
             }),
             ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         };
@@ -764,22 +756,19 @@ mod tests {
                 target: TriggerTarget::Objects {
                     object_ids: vec!["target".to_string()],
                 },
-                action: TriggerAction::TransformObjects {
-                    position: [1.0, 0.0, 1.0],
-                    rotation: [0.0, 90.0, 0.0],
-                    size: [1.0, 1.0, 1.0],
-                },
+                transform: true,
+                camera: None,
             }),
             ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
         };
 
         assert_eq!(
             camera_follow.transform_field_visibility(),
-            eg_types::LevelObjectTransformFieldVisibility::none()
+            eg_types::TransformVisibility::none()
         );
         assert_eq!(
             transform_trigger.transform_field_visibility(),
-            eg_types::LevelObjectTransformFieldVisibility::all()
+            eg_types::TransformVisibility::all()
         );
     }
 }

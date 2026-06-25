@@ -5,7 +5,6 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_types::TimedTrigger;
 use eg_types::{
     BasicLevelMetadata, LevelMetadata, LevelObject, LevelPreviewCameraMetadata, MusicMetadata,
     SpawnMetadata, TimingPoint, default_sky_color,
@@ -21,7 +20,6 @@ pub struct EditorSessionInit {
     pub timing_points: Vec<TimingPoint>,
     pub timeline_time_seconds: f32,
     pub timeline_duration_seconds: f32,
-    pub triggers: Vec<TimedTrigger>,
     pub menu_preview_camera: Option<LevelPreviewCameraMetadata>,
     pub cursor: [f32; 3],
     pub camera_pan: [f32; 2],
@@ -37,10 +35,8 @@ pub fn editor_session_init_from_metadata(metadata: Option<LevelMetadata>) -> Edi
         mut tap_times,
         timing_points,
         timeline_duration_seconds,
-        mut triggers,
         menu_preview_camera,
     ) = if let Some(metadata) = metadata {
-        let triggers = metadata.resolved_triggers();
         let creator_metadata = metadata.basic;
         (
             metadata.objects,
@@ -51,7 +47,6 @@ pub fn editor_session_init_from_metadata(metadata: Option<LevelMetadata>) -> Edi
             metadata.tap_times,
             metadata.timing_points,
             metadata.timeline_duration_seconds,
-            triggers,
             metadata.menu_preview_camera,
         )
     } else {
@@ -64,15 +59,12 @@ pub fn editor_session_init_from_metadata(metadata: Option<LevelMetadata>) -> Edi
             Vec::new(),
             Vec::new(),
             16.0,
-            Vec::new(),
             None,
         )
     };
 
     tap_times.retain(|tap| tap.is_finite() && *tap >= 0.0);
     tap_times.sort_by(f32::total_cmp);
-    triggers.retain(|trigger| trigger.time_seconds.is_finite());
-    triggers.sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
     let cursor = cursor_from_objects(&objects);
     let camera_pan = camera_pan_from_cursor(cursor);
 
@@ -86,7 +78,6 @@ pub fn editor_session_init_from_metadata(metadata: Option<LevelMetadata>) -> Edi
         timing_points,
         timeline_time_seconds: 0.0,
         timeline_duration_seconds: timeline_duration_seconds.max(0.1),
-        triggers,
         menu_preview_camera,
         cursor,
         camera_pan,

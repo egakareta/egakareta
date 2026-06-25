@@ -7,11 +7,12 @@
 */
 use glam::{Mat4, Vec2, Vec3};
 
+use super::editor_triggers::camera_trigger_object_pose;
 use super::{EditorSubsystem, State};
 use eg_types::{AppPhase, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW};
 use eg_types::{
-    CameraMode, CameraTrigger, DEFAULT_CAMERA_DISTANCE, EasingDirection, TimedTrigger,
-    TriggerAction, TriggerTarget, timed_triggers_to_camera_triggers,
+    BlockId, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, DEFAULT_CAMERA_DISTANCE,
+    EasingDirection, LevelObject, TimedTrigger, TriggerTarget,
 };
 
 const PLAY_CAMERA_DISTANCE: f32 = 28.28;
@@ -144,19 +145,31 @@ impl EditorSubsystem {
         )
     }
 
-    pub fn capture_current_camera_trigger(&self, time_seconds: f32) -> TimedTrigger {
-        TimedTrigger {
-            time_seconds,
-            duration_seconds: 0.0,
-            easing: EasingDirection::Linear,
-            target: TriggerTarget::Camera,
-            action: TriggerAction::CameraPose {
-                transition_interval_seconds: DEFAULT_CAMERA_TRIGGER_TRANSITION_INTERVAL_SECONDS,
-                use_full_segment_transition: false,
-                target_position: self.editor_camera_target().to_array(),
-                yaw: self.camera.editor_yaw,
-                pitch: self.camera.editor_pitch,
-            },
+    pub fn capture_current_camera_trigger(&self, time_seconds: f32) -> LevelObject {
+        let camera = CameraTrigger {
+            mode: CameraMode::Static,
+            transition_interval_seconds: DEFAULT_CAMERA_TRIGGER_TRANSITION_INTERVAL_SECONDS,
+            use_full_segment_transition: false,
+            target_position: self.editor_camera_target().to_array(),
+            yaw: self.camera.editor_yaw,
+            pitch: self.camera.editor_pitch,
+            ..CameraTrigger::default()
+        };
+        let (position, rotation) = camera_trigger_object_pose(&camera);
+        LevelObject {
+            position,
+            rotation,
+            size: [1.0, 1.0, 1.0],
+            block_id: BlockId::new(CAMERA_TRIGGER_BLOCK_ID),
+            trigger: Some(TimedTrigger {
+                time_seconds,
+                duration_seconds: 0.0,
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Camera,
+                camera: Some(camera),
+                ..TimedTrigger::default()
+            }),
+            ..LevelObject::default()
         }
     }
 
@@ -268,62 +281,70 @@ impl State {
         let live_follow_sample = self
             .editor
             .resolve_live_follow_sample(live_follow_target, is_game_active);
-        let camera_triggers = timed_triggers_to_camera_triggers(&self.editor.triggers());
+        let trigger_objects = self.editor.trigger_objects();
+        let camera_triggers: Vec<(&TimedTrigger, &CameraTrigger)> = trigger_objects
+            .iter()
+            .filter_map(|object| {
+                let trigger = object.trigger.as_ref()?;
+                let camera = trigger.camera.as_ref()?;
+                Some((trigger, camera))
+            })
+            .collect();
         if camera_triggers.is_empty() {
             return live_follow_sample;
         }
 
         let clamped_time = time_seconds.max(0.0);
         let next_index =
-            camera_triggers.partition_point(|trigger| trigger.time_seconds < clamped_time);
+            camera_triggers.partition_point(|(trigger, _)| trigger.time_seconds < clamped_time);
 
         if next_index == 0 {
-            let first = &camera_triggers[0];
-            if first.time_seconds <= 1e-6 {
-                return self.resolve_camera_trigger_sample(first, live_follow_sample);
+            let (first_t, first_c) = camera_triggers[0];
+            if first_t.time_seconds <= 1e-6 {
+                return self.resolve_camera_trigger_sample(first_c, live_follow_sample);
             }
 
-            let end_sample = self.resolve_camera_trigger_sample(first, live_follow_sample);
-            let transition_start = if first.use_full_segment_transition {
+            let end_sample = self.resolve_camera_trigger_sample(first_c, live_follow_sample);
+            let transition_start = if first_c.use_full_segment_transition {
                 0.0
             } else {
-                (first.time_seconds - first.transition_interval_seconds.max(0.0)).max(0.0)
+                (first_t.time_seconds - first_c.transition_interval_seconds.max(0.0)).max(0.0)
             };
             if clamped_time <= transition_start {
                 return live_follow_sample;
             }
 
-            let transition_duration = (first.time_seconds - transition_start).max(1e-6);
+            let transition_duration = (first_t.time_seconds - transition_start).max(1e-6);
             let alpha = eased_alpha(
-                first.easing,
+                first_t.easing,
                 (clamped_time - transition_start) / transition_duration,
             );
             return interpolate_camera_samples(live_follow_sample, end_sample, alpha);
         }
 
         if next_index >= camera_triggers.len() {
-            let last = camera_triggers.last().expect("camera triggers not empty");
-            return self.resolve_camera_trigger_sample(last, live_follow_sample);
+            let (_, last_c) = *camera_triggers.last().expect("camera triggers not empty");
+            return self.resolve_camera_trigger_sample(last_c, live_follow_sample);
         }
 
-        let previous = &camera_triggers[next_index - 1];
-        let next = &camera_triggers[next_index];
-        let start_sample = self.resolve_camera_trigger_sample(previous, live_follow_sample);
-        let end_sample = self.resolve_camera_trigger_sample(next, live_follow_sample);
+        let (previous_t, previous_c) = camera_triggers[next_index - 1];
+        let (next_t, next_c) = camera_triggers[next_index];
+        let start_sample = self.resolve_camera_trigger_sample(previous_c, live_follow_sample);
+        let end_sample = self.resolve_camera_trigger_sample(next_c, live_follow_sample);
 
-        let transition_start = if next.use_full_segment_transition {
-            previous.time_seconds
+        let transition_start = if next_c.use_full_segment_transition {
+            previous_t.time_seconds
         } else {
-            (next.time_seconds - next.transition_interval_seconds.max(0.0))
-                .max(previous.time_seconds)
+            (next_t.time_seconds - next_c.transition_interval_seconds.max(0.0))
+                .max(previous_t.time_seconds)
         };
         if clamped_time <= transition_start {
             return start_sample;
         }
 
-        let transition_duration = (next.time_seconds - transition_start).max(1e-6);
+        let transition_duration = (next_t.time_seconds - transition_start).max(1e-6);
         let local_alpha = (clamped_time - transition_start) / transition_duration;
-        let eased = eased_alpha(next.easing, local_alpha);
+        let eased = eased_alpha(next_t.easing, local_alpha);
         interpolate_camera_samples(start_sample, end_sample, eased)
     }
 
@@ -400,9 +421,9 @@ mod tests {
         eased_alpha, editor_camera_offset_for_pose, interpolate_camera_samples,
         offset_from_rotation_pitch, playing_camera_offset_for_angles,
     };
-    use eg_types::AppPhase;
+    use eg_types::{AppPhase, CAMERA_TRIGGER_BLOCK_ID, LevelObject};
     use eg_types::{
-        CameraMode, CameraTrigger, EasingDirection, TimedTrigger, TriggerAction, TriggerTarget,
+        CameraMode, CameraTrigger, EasingDirection, TimedTrigger, TriggerTarget,
         default_camera_trigger_distance,
     };
     use glam::Vec3;
@@ -430,19 +451,25 @@ mod tests {
         transition_interval_seconds: f32,
         use_full_segment_transition: bool,
         easing: EasingDirection,
-    ) -> TimedTrigger {
-        TimedTrigger {
-            time_seconds,
-            duration_seconds: 0.0,
-            easing,
-            target: TriggerTarget::Camera,
-            action: TriggerAction::CameraPose {
-                transition_interval_seconds,
-                use_full_segment_transition,
-                target_position,
-                yaw: rotation,
-                pitch,
-            },
+    ) -> LevelObject {
+        LevelObject {
+            trigger: Some(TimedTrigger {
+                time_seconds,
+                duration_seconds: 0.0,
+                easing,
+                target: TriggerTarget::Camera,
+                transform: false,
+                camera: Some(CameraTrigger {
+                    mode: CameraMode::Static,
+                    transition_interval_seconds,
+                    use_full_segment_transition,
+                    target_position,
+                    yaw: rotation,
+                    pitch,
+                    ..CameraTrigger::default()
+                }),
+            }),
+            ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         }
     }
 
@@ -450,7 +477,7 @@ mod tests {
         time_seconds: f32,
         transition_interval_seconds: f32,
         use_full_segment_transition: bool,
-    ) -> TimedTrigger {
+    ) -> LevelObject {
         follow_trigger_with_orbit(
             time_seconds,
             transition_interval_seconds,
@@ -468,19 +495,25 @@ mod tests {
         distance: f32,
         rotation: f32,
         pitch: f32,
-    ) -> TimedTrigger {
-        TimedTrigger {
-            time_seconds,
-            duration_seconds: 0.0,
-            easing: EasingDirection::Linear,
-            target: TriggerTarget::Camera,
-            action: TriggerAction::CameraFollow {
-                transition_interval_seconds,
-                use_full_segment_transition,
-                distance,
-                yaw: rotation,
-                pitch,
-            },
+    ) -> LevelObject {
+        LevelObject {
+            trigger: Some(TimedTrigger {
+                time_seconds,
+                duration_seconds: 0.0,
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Camera,
+                transform: false,
+                camera: Some(CameraTrigger {
+                    mode: CameraMode::Follow,
+                    transition_interval_seconds,
+                    use_full_segment_transition,
+                    distance,
+                    yaw: rotation,
+                    pitch,
+                    ..CameraTrigger::default()
+                }),
+            }),
+            ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         }
     }
 
@@ -528,15 +561,14 @@ mod tests {
     #[tokio::test]
     async fn camera_trigger_modes_are_distinct() {
         let follow = CameraTrigger {
-            time_seconds: 1.0,
             mode: CameraMode::Follow,
-            easing: EasingDirection::Linear,
             transition_interval_seconds: 1.0,
             use_full_segment_transition: false,
             target_position: [0.0, 0.0, 0.0],
             distance: default_camera_trigger_distance(),
             yaw: 0.0,
             pitch: 0.0,
+            ..CameraTrigger::default()
         };
         let static_trigger = CameraTrigger {
             mode: CameraMode::Static,
@@ -582,7 +614,7 @@ mod tests {
     #[tokio::test]
     async fn evaluate_camera_track_without_triggers_returns_live_follow() {
         let mut state = new_editor_state().await;
-        state.editor.set_triggers(Vec::new());
+        state.editor.objects.clear();
         state.editor.camera.playing_rotation = 0.6;
         state.editor.camera.playing_pitch = 0.4;
 
@@ -597,7 +629,7 @@ mod tests {
     #[tokio::test]
     async fn evaluate_camera_track_interpolates_into_first_trigger_window() {
         let mut state = new_editor_state().await;
-        state.editor.set_triggers(vec![pose_trigger(
+        state.editor.objects = vec![pose_trigger(
             5.0,
             [10.0, 1.0, -2.0],
             0.8,
@@ -605,7 +637,7 @@ mod tests {
             2.0,
             false,
             EasingDirection::Linear,
-        )]);
+        )];
 
         let live_target = Vec3::new(0.0, 0.0, 0.0);
         let live = state.editor.resolve_live_follow_sample(live_target, false);
@@ -624,10 +656,10 @@ mod tests {
     #[tokio::test]
     async fn evaluate_camera_track_between_follow_segments_uses_follow_orbit() {
         let mut state = new_editor_state().await;
-        state.editor.set_triggers(vec![
+        state.editor.objects = vec![
             follow_trigger(2.0, 1.0, false),
             follow_trigger(4.0, 1.0, false),
-        ]);
+        ];
 
         let target = Vec3::new(1.0, 2.0, 3.0);
         let expected = CameraViewSample {
@@ -648,9 +680,7 @@ mod tests {
     #[tokio::test]
     async fn evaluate_camera_track_uses_custom_follow_orbit() {
         let mut state = new_editor_state().await;
-        state.editor.set_triggers(vec![follow_trigger_with_orbit(
-            0.0, 1.0, false, 12.0, 0.25, 0.35,
-        )]);
+        state.editor.objects = vec![follow_trigger_with_orbit(0.0, 1.0, false, 12.0, 0.25, 0.35)];
 
         let target = Vec3::new(4.0, 1.0, -2.0);
         let sample = state.evaluate_camera_track(1.0, target, false);
@@ -663,7 +693,7 @@ mod tests {
     #[tokio::test]
     async fn evaluate_camera_track_between_static_triggers_handles_pre_and_active_transition() {
         let mut state = new_editor_state().await;
-        state.editor.set_triggers(vec![
+        state.editor.objects = vec![
             pose_trigger(
                 2.0,
                 [0.0, 0.0, 0.0],
@@ -682,7 +712,7 @@ mod tests {
                 false,
                 EasingDirection::EaseIn,
             ),
-        ]);
+        ];
 
         let live_target = Vec3::new(3.0, 0.0, 2.0);
         let previous_sample = CameraViewSample {
@@ -711,7 +741,7 @@ mod tests {
     #[tokio::test]
     async fn evaluate_camera_track_after_last_trigger_uses_last_sample() {
         let mut state = new_editor_state().await;
-        state.editor.set_triggers(vec![pose_trigger(
+        state.editor.objects = vec![pose_trigger(
             1.0,
             [4.0, 2.0, 1.0],
             0.3,
@@ -719,7 +749,7 @@ mod tests {
             0.5,
             false,
             EasingDirection::Linear,
-        )]);
+        )];
 
         let sample = state.evaluate_camera_track(50.0, Vec3::ZERO, false);
         let expected_target = Vec3::new(4.0, 2.0, 1.0);
@@ -737,25 +767,16 @@ mod tests {
         state.editor.camera.editor_yaw = 0.9;
         state.editor.camera.editor_pitch = 0.3;
 
-        let trigger = state.editor.capture_current_camera_trigger(8.0);
+        let trigger_object = state.editor.capture_current_camera_trigger(8.0);
+        let trigger = trigger_object.trigger.expect("camera trigger payload");
         assert_eq!(trigger.time_seconds, 8.0);
-
-        match trigger.action {
-            TriggerAction::CameraPose {
-                target_position,
-                yaw,
-                pitch,
-                transition_interval_seconds,
-                use_full_segment_transition,
-            } => {
-                assert_eq!(target_position, [12.0, 4.5, -7.0]);
-                assert_eq!(yaw, 0.9);
-                assert_eq!(pitch, 0.3);
-                assert_eq!(transition_interval_seconds, 1.0);
-                assert!(!use_full_segment_transition);
-            }
-            _ => panic!("expected camera pose trigger"),
-        }
+        let camera = trigger.camera.expect("camera payload");
+        assert_eq!(camera.mode, CameraMode::Static);
+        assert_eq!(camera.target_position, [12.0, 4.5, -7.0]);
+        assert_eq!(camera.yaw, 0.9);
+        assert_eq!(camera.pitch, 0.3);
+        assert_eq!(camera.transition_interval_seconds, 1.0);
+        assert!(!camera.use_full_segment_transition);
     }
 
     #[tokio::test]

@@ -215,14 +215,14 @@ mod tests {
     use crate::test_utils::editor_view_model;
     use eg_state::commands::AppCommand;
     use eg_state::state::EditorUiViewModel;
-    use eg_types::TimedTrigger;
+    use eg_types::LevelObject;
     use eg_types::{AppSettings, EditorMode, MusicMetadata, TimingPoint};
 
     fn make_view<'a>(
         app_settings: &'a AppSettings,
         music_metadata: &'a MusicMetadata,
         timing_points: &'a [TimingPoint],
-        triggers: &'a [TimedTrigger],
+        trigger_objects: &'a [LevelObject],
         timing_selected_index: Option<usize>,
         bpm_tap_result: Option<f32>,
     ) -> EditorUiViewModel<'a> {
@@ -234,7 +234,7 @@ mod tests {
         view.timing_points = timing_points;
         view.timing_selected_index = timing_selected_index;
         view.bpm_tap_result = bpm_tap_result;
-        view.triggers = triggers.to_vec();
+        view.trigger_objects = trigger_objects.to_vec();
         view.camera_preview_position = [0.0, 1.0, 2.0];
         view.fps = 120.0;
         view

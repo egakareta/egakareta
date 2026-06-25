@@ -20,8 +20,8 @@ use eg_editor_domain::{
     timing_division_time_in_direction, toggle_spawn_direction, topmost_block_index_at_cursor,
 };
 use eg_game::{GameState, TimelineSimulationRuntime};
+use eg_types::TriggerTarget;
 use eg_types::{AppPhase, BlockId, EditorMode, EditorTapDivisionPick, LevelObject};
-use eg_types::{TriggerAction, TriggerTarget};
 
 const TAP_CLICK_ADD_EPSILON_SECONDS: f32 = 0.001;
 const FALLBACK_TIMELINE_SHIFT_SECONDS: f32 = 0.1;
@@ -66,7 +66,7 @@ fn dereference_removed_transform_trigger_targets(
         let Some(trigger) = object.trigger.as_mut() else {
             continue;
         };
-        if !matches!(trigger.action, TriggerAction::TransformObjects { .. }) {
+        if !trigger.transform {
             continue;
         }
         let TriggerTarget::Objects { object_ids } = &mut trigger.target else {
@@ -656,14 +656,12 @@ impl State {
             if self.editor_is_effectively_timing_mode() {
                 self.editor.timeline.playback.runtime = None;
             } else {
-                self.editor.timeline.playback.runtime =
-                    Some(TimelineSimulationRuntime::new_with_triggers(
-                        self.editor.spawn.position,
-                        self.editor.spawn.direction,
-                        &self.editor.objects,
-                        &self.editor.timeline.taps.tap_times,
-                        &self.editor.triggers(),
-                    ));
+                self.editor.timeline.playback.runtime = Some(TimelineSimulationRuntime::new(
+                    self.editor.spawn.position,
+                    self.editor.spawn.direction,
+                    &self.editor.objects,
+                    &self.editor.timeline.taps.tap_times,
+                ));
                 if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
                     runtime.advance_to(self.editor.timeline.clock.time_seconds);
                 }
@@ -708,14 +706,12 @@ impl State {
         if mode == EditorMode::Timing {
             self.editor.timeline.playback.runtime = None;
         } else if self.editor.timeline.playback.runtime.is_none() {
-            self.editor.timeline.playback.runtime =
-                Some(TimelineSimulationRuntime::new_with_triggers(
-                    self.editor.spawn.position,
-                    self.editor.spawn.direction,
-                    &self.editor.objects,
-                    &self.editor.timeline.taps.tap_times,
-                    &self.editor.triggers(),
-                ));
+            self.editor.timeline.playback.runtime = Some(TimelineSimulationRuntime::new(
+                self.editor.spawn.position,
+                self.editor.spawn.direction,
+                &self.editor.objects,
+                &self.editor.timeline.taps.tap_times,
+            ));
             if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut() {
                 runtime.advance_to(self.editor.timeline.clock.time_seconds);
             }
@@ -928,12 +924,11 @@ impl State {
             } else {
                 let mut runtime = {
                     puffin::profile_scope!("TimelinePlaybackRuntimeBuild");
-                    TimelineSimulationRuntime::new_with_triggers(
+                    TimelineSimulationRuntime::new(
                         self.editor.spawn.position,
                         self.editor.spawn.direction,
                         &self.editor.objects,
                         &self.editor.timeline.taps.tap_times,
-                        &self.editor.triggers(),
                     )
                 };
                 {
@@ -1016,7 +1011,6 @@ impl State {
             spawn: self.editor.spawn.clone(),
             sky_color: self.session.editor_sky_color,
             tap_times: &self.editor.timeline.taps.tap_times,
-            triggers: &self.editor.triggers(),
             timeline_seconds: (
                 self.editor.timeline.clock.time_seconds,
                 self.editor.timeline.clock.duration_seconds,
@@ -1310,7 +1304,7 @@ mod tests {
     use eg_types::{
         AppPhase, Direction, EditorMode, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID, TimingPoint,
     };
-    use eg_types::{EasingDirection, TimedTrigger, TriggerAction, TriggerTarget};
+    use eg_types::{EasingDirection, TimedTrigger, TriggerTarget};
 
     fn test_block(position: [f32; 3]) -> LevelObject {
         LevelObject {
@@ -1320,18 +1314,19 @@ mod tests {
         }
     }
 
-    fn test_transform_trigger(object_ids: Vec<&str>) -> TimedTrigger {
+    fn test_transform_trigger(object_ids: Vec<&str>) -> LevelObject {
         let object_ids = object_ids.into_iter().map(str::to_string).collect();
-        TimedTrigger {
-            time_seconds: 0.0,
-            duration_seconds: 1.0,
-            easing: EasingDirection::EaseInOut,
-            target: TriggerTarget::Objects { object_ids },
-            action: TriggerAction::TransformObjects {
-                position: [9.0, 0.0, 0.0],
-                rotation: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-            },
+        LevelObject {
+            position: [9.0, 0.0, 0.0],
+            trigger: Some(TimedTrigger {
+                time_seconds: 0.0,
+                duration_seconds: 1.0,
+                easing: EasingDirection::EaseInOut,
+                target: TriggerTarget::Objects { object_ids },
+                transform: true,
+                camera: None,
+            }),
+            ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
         }
     }
 
@@ -1368,7 +1363,8 @@ mod tests {
         ];
         state
             .editor
-            .set_triggers(vec![test_transform_trigger(vec!["object_2"])]);
+            .objects
+            .push(test_transform_trigger(vec!["object_2"]));
         state.editor.ui.selected_block_index = Some(1);
         state.editor.ui.selected_block_indices = vec![1];
 
@@ -1376,8 +1372,11 @@ mod tests {
 
         assert_eq!(state.editor.objects.len(), 3);
         assert_eq!(state.editor.objects[2].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
-        let triggers = state.editor.triggers();
-        let trigger = triggers.first().expect("trigger remains");
+        let triggers = state.editor.trigger_objects();
+        let trigger = triggers
+            .first()
+            .and_then(|object| object.trigger.as_ref())
+            .expect("trigger remains");
         assert_eq!(
             trigger.target,
             TriggerTarget::Objects {
@@ -1397,15 +1396,19 @@ mod tests {
         ];
         state
             .editor
-            .set_triggers(vec![test_transform_trigger(vec!["object_4"])]);
+            .objects
+            .push(test_transform_trigger(vec!["object_4"]));
         state.editor.ui.selected_block_index = Some(0);
         state.editor.ui.selected_block_indices = vec![0];
 
         state.editor_remove_block();
 
         assert_eq!(state.editor.objects[1].position, [4.0, 0.0, 0.0]);
-        let triggers = state.editor.triggers();
-        let trigger = triggers.first().expect("trigger remains");
+        let triggers = state.editor.trigger_objects();
+        let trigger = triggers
+            .first()
+            .and_then(|object| object.trigger.as_ref())
+            .expect("trigger remains");
         assert_eq!(
             trigger.target,
             TriggerTarget::Objects {

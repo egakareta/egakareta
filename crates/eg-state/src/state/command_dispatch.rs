@@ -721,8 +721,8 @@ mod tests {
         SettingsSection, TRANSFORM_TRIGGER_BLOCK_ID, TimingPoint,
     };
     use eg_types::{
-        BlockId, CameraMode, CameraTrigger, EasingDirection, TimedTrigger, TriggerAction,
-        TriggerTarget, camera_triggers_to_timed_triggers, default_camera_trigger_distance,
+        BlockId, CameraMode, CameraTrigger, EasingDirection, TimedTrigger, TriggerTarget,
+        default_camera_trigger_distance,
     };
     use glam::{Vec2, Vec3};
 
@@ -2073,19 +2073,16 @@ mod tests {
             + (-camera_offset.normalize() * 8.0)
             + Vec3::Y * 4.0;
         let camera_trigger = CameraTrigger {
-            time_seconds: 1.0,
             mode: CameraMode::Static,
-            easing: EasingDirection::Linear,
             transition_interval_seconds: 1.0,
             use_full_segment_transition: false,
             target_position: target.to_array(),
             distance: default_camera_trigger_distance(),
             yaw: state.editor.camera.editor_yaw,
             pitch: state.editor.camera.editor_pitch,
+            ..CameraTrigger::default()
         };
         let trigger_index = state.editor.objects.len();
-        let trigger =
-            camera_triggers_to_timed_triggers(std::slice::from_ref(&camera_trigger)).remove(0);
         let camera_eye = camera_trigger.eye();
 
         state.editor.objects.push(LevelObject {
@@ -2095,7 +2092,14 @@ mod tests {
                 camera_trigger.yaw.to_degrees(),
                 0.0,
             ],
-            trigger: Some(trigger),
+            trigger: Some(TimedTrigger {
+                time_seconds: 1.0,
+                duration_seconds: 0.0,
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Camera,
+                transform: false,
+                camera: Some(camera_trigger),
+            }),
             ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         });
         let viewport = Vec2::new(
@@ -2139,19 +2143,16 @@ mod tests {
             + (-camera_offset.normalize() * 8.0)
             + Vec3::Y * 4.0;
         let camera_trigger = CameraTrigger {
-            time_seconds: 1.0,
             mode: CameraMode::Static,
-            easing: EasingDirection::Linear,
             transition_interval_seconds: 1.0,
             use_full_segment_transition: false,
             target_position: target.to_array(),
             distance: default_camera_trigger_distance(),
             yaw: state.editor.camera.editor_yaw,
             pitch: state.editor.camera.editor_pitch,
+            ..CameraTrigger::default()
         };
         let trigger_index = state.editor.objects.len();
-        let trigger =
-            camera_triggers_to_timed_triggers(std::slice::from_ref(&camera_trigger)).remove(0);
         let camera_eye = camera_trigger.eye();
 
         state.editor.objects.push(LevelObject {
@@ -2161,7 +2162,14 @@ mod tests {
                 camera_trigger.yaw.to_degrees(),
                 0.0,
             ],
-            trigger: Some(trigger),
+            trigger: Some(TimedTrigger {
+                time_seconds: 1.0,
+                duration_seconds: 0.0,
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Camera,
+                transform: false,
+                camera: Some(camera_trigger),
+            }),
             ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         });
         let viewport = Vec2::new(
@@ -2215,11 +2223,8 @@ mod tests {
                 target: TriggerTarget::Objects {
                     object_ids: vec!["obj_000001".to_string()],
                 },
-                action: TriggerAction::TransformObjects {
-                    position: [2.0, 0.0, 0.0],
-                    rotation: [0.0, 0.0, 0.0],
-                    size: [1.0, 1.0, 1.0],
-                },
+                transform: true,
+                camera: None,
             }),
             ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
         });
@@ -2870,19 +2875,20 @@ mod tests {
         assert_eq!(state.render.gpu.config.width, 1024);
         assert_eq!(state.render.gpu.config.height, 576);
 
-        state.editor.set_triggers(vec![TimedTrigger {
-            time_seconds: 0.0,
-            duration_seconds: 1.0,
-            easing: EasingDirection::Linear,
-            target: TriggerTarget::Objects {
-                object_ids: vec!["obj_000001".to_string()],
-            },
-            action: TriggerAction::TransformObjects {
-                position: [1.0, 0.0, 0.0],
-                rotation: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-            },
-        }]);
+        state.editor.objects.push(LevelObject {
+            position: [1.0, 0.0, 0.0],
+            trigger: Some(TimedTrigger {
+                time_seconds: 0.0,
+                duration_seconds: 1.0,
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Objects {
+                    object_ids: vec!["obj_000001".to_string()],
+                },
+                transform: true,
+                camera: None,
+            }),
+            ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
+        });
 
         state.dispatch(AppCommand::Editor(EditorCommand::ToggleHitboxVisualization));
         assert!(state.editor_hitbox_visualization_enabled());

@@ -7,7 +7,6 @@
 */
 use super::{EditorSubsystem, State};
 use eg_game::GameState;
-use eg_types::TriggerAction;
 use eg_types::{AppPhase, EditorMode, LevelObject};
 
 impl EditorSubsystem {
@@ -165,27 +164,11 @@ impl EditorSubsystem {
 
     pub fn selected_transform_trigger_target(&self) -> Option<(usize, LevelObject)> {
         let index = self.selected_trigger_index()?;
-        let triggers = self.triggers();
-        let trigger = triggers.get(index)?;
-        let TriggerAction::TransformObjects {
-            position,
-            rotation: rotation_degrees,
-            size,
-            ..
-        } = &trigger.action
-        else {
+        let object = self.trigger_objects().get(index)?.clone();
+        if !object.is_transform_trigger() {
             return None;
-        };
-
-        Some((
-            index,
-            LevelObject {
-                position: *position,
-                size: *size,
-                rotation: *rotation_degrees,
-                ..LevelObject::default()
-            },
-        ))
+        }
+        Some((index, object))
     }
 
     pub fn set_transform_trigger_target(

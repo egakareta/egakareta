@@ -9,7 +9,7 @@ use super::super::{
     EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag, EditorSubsystem, State,
 };
 use eg_mesh::{GizmoAxis, GizmoDragKind};
-use eg_types::{AppPhase, LevelObjectTransformFieldVisibility};
+use eg_types::{AppPhase, TransformVisibility};
 use glam::{Vec2, Vec3};
 
 const GIZMO_MOVE_PICK_RADIUS_PIXELS: f32 = 40.0;
@@ -37,13 +37,13 @@ impl EditorSubsystem {
         )
     }
 
-    pub(crate) fn visible_gizmo_handles(&self) -> LevelObjectTransformFieldVisibility {
+    pub(crate) fn visible_gizmo_handles(&self) -> TransformVisibility {
         let indices = self.selected_indices_normalized();
         if indices.is_empty() {
             return if self.selected_transform_trigger_target().is_some() {
-                LevelObjectTransformFieldVisibility::all()
+                TransformVisibility::all()
             } else {
-                LevelObjectTransformFieldVisibility::none()
+                TransformVisibility::none()
             };
         }
 
@@ -51,10 +51,9 @@ impl EditorSubsystem {
             .into_iter()
             .filter_map(|index| self.objects.get(index))
             .map(|object| object.transform_field_visibility())
-            .fold(
-                LevelObjectTransformFieldVisibility::all(),
-                |visibility, next| visibility.intersection(next),
-            )
+            .fold(TransformVisibility::all(), |visibility, next| {
+                visibility.intersection(next)
+            })
     }
 
     fn drag_gizmo_rotation(
@@ -807,8 +806,11 @@ impl State {
 mod tests {
     use super::super::super::{EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag, State};
     use eg_mesh::{GizmoAxis, GizmoDragKind};
-    use eg_types::{AppPhase, EditorMode, LevelObject};
-    use eg_types::{EasingDirection, TimedTrigger, TriggerAction, TriggerTarget};
+    use eg_types::{
+        AppPhase, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EditorMode, LevelObject,
+        TRANSFORM_TRIGGER_BLOCK_ID,
+    };
+    use eg_types::{EasingDirection, TimedTrigger, TriggerTarget};
     use glam::{Vec2, Vec3};
 
     fn start_block_for_index(index: usize, block: &LevelObject) -> EditorDragBlockStart {
@@ -863,26 +865,31 @@ mod tests {
             duration_seconds: 1.0,
             easing: EasingDirection::Linear,
             target: TriggerTarget::Camera,
-            action: TriggerAction::CameraPose {
+            transform: false,
+            camera: Some(CameraTrigger {
+                mode: CameraMode::Static,
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 target_position: [0.0, 0.0, 0.0],
                 yaw: 0.0,
                 pitch: 0.0,
-            },
+                ..CameraTrigger::default()
+            }),
         };
         let camera_follow = TimedTrigger {
-            action: TriggerAction::CameraFollow {
+            camera: Some(CameraTrigger {
+                mode: CameraMode::Follow,
                 transition_interval_seconds: 1.0,
                 use_full_segment_transition: false,
                 distance: 8.0,
                 yaw: 0.0,
                 pitch: 0.0,
-            },
+                ..CameraTrigger::default()
+            }),
             ..camera_pose.clone()
         };
 
-        let mut selected = LevelObject::default();
+        let mut selected = LevelObject::new(CAMERA_TRIGGER_BLOCK_ID);
         selected.trigger = Some(camera_pose);
         state.editor.objects = vec![selected];
         state.editor.ui.selected_block_index = Some(0);
@@ -1065,19 +1072,22 @@ mod tests {
 
         state.editor.config.snap_to_grid = false;
         state.editor.ui.mode = EditorMode::Move;
-        state.editor.set_triggers(vec![TimedTrigger {
-            time_seconds: 1.0,
-            duration_seconds: 1.0,
-            easing: EasingDirection::Linear,
-            target: TriggerTarget::Objects {
-                object_ids: vec!["object_0_0_0".to_string()],
-            },
-            action: TriggerAction::TransformObjects {
-                position: [0.0, 0.0, 0.0],
-                rotation: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-            },
-        }]);
+        state.editor.objects = vec![LevelObject {
+            trigger: Some(TimedTrigger {
+                time_seconds: 1.0,
+                duration_seconds: 1.0,
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Objects {
+                    object_ids: vec!["object_0_0_0".to_string()],
+                },
+                transform: true,
+                camera: None,
+            }),
+            position: [0.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
+        }];
         state.editor.set_trigger_selected(Some(0));
 
         let viewport = Vec2::new(1280.0, 720.0);
@@ -1108,11 +1118,10 @@ mod tests {
             .editor
             .drag_gizmo(axis_screen.x as f64, axis_screen.y as f64, viewport);
 
-        let TriggerAction::TransformObjects { position, .. } = &state.editor.triggers()[0].action
-        else {
-            panic!("expected transform trigger");
-        };
-        assert!(position[0] > 0.9, "expected trigger target to move on X");
+        assert!(
+            state.editor.objects[0].position[0] > 0.9,
+            "expected trigger target to move on X"
+        );
     }
 
     #[tokio::test]
@@ -1964,19 +1973,22 @@ mod tests {
             ..LevelObject::default()
         }];
         // Add a transform trigger that targets object 0
-        state.editor.set_triggers(vec![TimedTrigger {
-            time_seconds: 1.0,
-            duration_seconds: 1.0,
-            easing: EasingDirection::Linear,
-            target: TriggerTarget::Objects {
-                object_ids: vec!["object_0_0_0".to_string()],
-            },
-            action: TriggerAction::TransformObjects {
-                position: [5.0, 0.0, 0.0],
-                rotation: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-            },
-        }]);
+        state.editor.objects.push(LevelObject {
+            trigger: Some(TimedTrigger {
+                time_seconds: 1.0,
+                duration_seconds: 1.0,
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Objects {
+                    object_ids: vec!["object_0_0_0".to_string()],
+                },
+                transform: true,
+                camera: None,
+            }),
+            position: [5.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
+        });
 
         let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(0.5, 0.5, 0.5);

@@ -345,19 +345,20 @@ pub(crate) fn show_timeline_bar(
         }
 
         // Draw trigger markers near the top edge.
-        for (index, trigger) in view.triggers.iter().enumerate() {
+        for (index, trigger_object) in view.trigger_objects.iter().enumerate() {
+            let Some(trigger) = trigger_object.trigger.as_ref() else {
+                continue;
+            };
             if trigger.time_seconds < view_start || trigger.time_seconds > view_end {
                 continue;
             }
 
             let x =
                 rect.left() + (trigger.time_seconds - view_start) / visible_duration * rect.width();
-            let fill = match &trigger.action {
-                eg_types::TriggerAction::CameraFollow { .. } => {
-                    egui::Color32::from_rgb(110, 210, 140)
-                }
-                eg_types::TriggerAction::CameraPose { .. } => egui::Color32::from_rgb(255, 210, 90),
-                _ => egui::Color32::from_rgb(110, 140, 255),
+            let fill = match trigger.camera.as_ref().map(|camera| camera.mode) {
+                Some(eg_types::CameraMode::Follow) => egui::Color32::from_rgb(110, 210, 140),
+                Some(eg_types::CameraMode::Static) => egui::Color32::from_rgb(255, 210, 90),
+                None => egui::Color32::from_rgb(110, 140, 255),
             };
             let stroke = if view.trigger_selected_index == Some(index) {
                 egui::Stroke::new(2.0, egui::Color32::WHITE)
@@ -438,7 +439,10 @@ pub(crate) fn show_timeline_bar(
                     let mut nearest_trigger_index = None;
                     let mut nearest_distance = f32::INFINITY;
 
-                    for (index, trigger) in view.triggers.iter().enumerate() {
+                    for (index, trigger_object) in view.trigger_objects.iter().enumerate() {
+                        let Some(trigger) = trigger_object.trigger.as_ref() else {
+                            continue;
+                        };
                         if trigger.time_seconds < view_start || trigger.time_seconds > view_end {
                             continue;
                         }
@@ -457,8 +461,11 @@ pub(crate) fn show_timeline_bar(
                             index,
                         ))));
                         commands.push(AppCommand::Editor(EditorCommand::SetTimelineTime(
-                            view.triggers[index]
-                                .time_seconds
+                            view.trigger_objects[index]
+                                .trigger
+                                .as_ref()
+                                .map(|trigger| trigger.time_seconds)
+                                .unwrap_or(0.0)
                                 .clamp(0.0, duration_seconds),
                         )));
                     } else {
@@ -706,17 +713,17 @@ pub(crate) fn show_waveform_panel(
 mod tests {
     use super::*;
     use crate::test_utils::editor_view_model;
-    use eg_types::{AppSettings, EditorMode, MusicMetadata, TimingPoint};
     use eg_types::{
-        EasingDirection, TimedTrigger, TriggerAction, TriggerTarget,
-        default_camera_trigger_distance,
+        AppSettings, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EditorMode, LevelObject,
+        MusicMetadata, TRANSFORM_TRIGGER_BLOCK_ID, TimingPoint,
     };
+    use eg_types::{EasingDirection, TimedTrigger, TriggerTarget, default_camera_trigger_distance};
 
     fn make_view<'a>(
         app_settings: &'a AppSettings,
         music_metadata: &'a MusicMetadata,
         timing_points: &'a [TimingPoint],
-        triggers: &'a [TimedTrigger],
+        trigger_objects: &'a [LevelObject],
         tap_times: &'a [f32],
         waveform_samples: &'a [f32],
         timeline_time_seconds: f32,
@@ -739,7 +746,7 @@ mod tests {
         view.waveform_samples = waveform_samples;
         view.waveform_sample_rate = 44_100;
         view.waveform_complete = true;
-        view.triggers = triggers.to_vec();
+        view.trigger_objects = trigger_objects.to_vec();
         view.trigger_selected_index = trigger_selected_index;
         view.fps = 120.0;
         view
@@ -1006,52 +1013,65 @@ mod tests {
             time_signature_numerator: 4,
             time_signature_denominator: 4,
         }];
-        let triggers = vec![
-            TimedTrigger {
-                time_seconds: 1.0,
-                duration_seconds: 0.0,
-                easing: EasingDirection::Linear,
-                target: TriggerTarget::Camera,
-                action: TriggerAction::CameraFollow {
-                    transition_interval_seconds: 1.0,
-                    use_full_segment_transition: false,
-                    distance: default_camera_trigger_distance(),
-                    yaw: eg_types::DEFAULT_CAMERA_YAW,
-                    pitch: eg_types::DEFAULT_CAMERA_PITCH,
-                },
+        let trigger_objects = vec![
+            LevelObject {
+                trigger: Some(TimedTrigger {
+                    time_seconds: 1.0,
+                    duration_seconds: 0.0,
+                    easing: EasingDirection::Linear,
+                    target: TriggerTarget::Camera,
+                    transform: false,
+                    camera: Some(CameraTrigger {
+                        mode: CameraMode::Follow,
+                        transition_interval_seconds: 1.0,
+                        use_full_segment_transition: false,
+                        distance: default_camera_trigger_distance(),
+                        yaw: eg_types::DEFAULT_CAMERA_YAW,
+                        pitch: eg_types::DEFAULT_CAMERA_PITCH,
+                        ..CameraTrigger::default()
+                    }),
+                }),
+                ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
             },
-            TimedTrigger {
-                time_seconds: 2.0,
-                duration_seconds: 0.0,
-                easing: EasingDirection::Linear,
-                target: TriggerTarget::Camera,
-                action: TriggerAction::CameraPose {
-                    transition_interval_seconds: 1.0,
-                    use_full_segment_transition: false,
-                    target_position: [0.0, 0.0, 0.0],
-                    yaw: 0.0,
-                    pitch: 0.0,
-                },
+            LevelObject {
+                trigger: Some(TimedTrigger {
+                    time_seconds: 2.0,
+                    duration_seconds: 0.0,
+                    easing: EasingDirection::Linear,
+                    target: TriggerTarget::Camera,
+                    transform: false,
+                    camera: Some(CameraTrigger {
+                        mode: CameraMode::Static,
+                        transition_interval_seconds: 1.0,
+                        use_full_segment_transition: false,
+                        target_position: [0.0, 0.0, 0.0],
+                        yaw: 0.0,
+                        pitch: 0.0,
+                        ..CameraTrigger::default()
+                    }),
+                }),
+                ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
             },
-            TimedTrigger {
-                time_seconds: 3.0,
-                duration_seconds: 0.0,
-                easing: EasingDirection::Linear,
-                target: TriggerTarget::Objects {
-                    object_ids: vec!["target".to_string()],
-                },
-                action: TriggerAction::TransformObjects {
-                    position: [1.0, 2.0, 3.0],
-                    rotation: [0.0, 0.0, 0.0],
-                    size: [1.0, 1.0, 1.0],
-                },
+            LevelObject {
+                position: [1.0, 2.0, 3.0],
+                trigger: Some(TimedTrigger {
+                    time_seconds: 3.0,
+                    duration_seconds: 0.0,
+                    easing: EasingDirection::Linear,
+                    target: TriggerTarget::Objects {
+                        object_ids: vec!["target".to_string()],
+                    },
+                    transform: true,
+                    camera: None,
+                }),
+                ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
             },
         ];
         let view = make_view(
             &app_settings,
             &music_metadata,
             &timing_points,
-            &triggers,
+            &trigger_objects,
             &[0.5, 2.5, 4.5],
             &[],
             5.0,

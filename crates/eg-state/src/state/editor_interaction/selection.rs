@@ -1668,19 +1668,22 @@ mod tests {
         state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
 
         // Add a transform trigger that targets object 0
-        state.editor.set_triggers(vec![eg_types::TimedTrigger {
-            time_seconds: 1.0,
-            duration_seconds: 1.0,
-            easing: eg_types::EasingDirection::Linear,
-            target: eg_types::TriggerTarget::Objects {
-                object_ids: vec!["object_0_0_0".to_string()],
-            },
-            action: eg_types::TriggerAction::TransformObjects {
-                position: [5.0, 0.0, 0.0],
-                rotation: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-            },
-        }]);
+        state.editor.objects.push(eg_types::LevelObject {
+            trigger: Some(eg_types::TimedTrigger {
+                time_seconds: 1.0,
+                duration_seconds: 1.0,
+                easing: eg_types::EasingDirection::Linear,
+                target: eg_types::TriggerTarget::Objects {
+                    object_ids: vec!["object_0_0_0".to_string()],
+                },
+                transform: true,
+                camera: None,
+            }),
+            position: [5.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            ..eg_types::LevelObject::new(eg_types::TRANSFORM_TRIGGER_BLOCK_ID)
+        });
 
         let center = Vec3::new(0.5, 0.5, 0.5);
         let origin_screen = state

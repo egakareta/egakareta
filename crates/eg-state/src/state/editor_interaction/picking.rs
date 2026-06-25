@@ -13,7 +13,7 @@ use eg_block_geometry::{
 };
 use eg_types::{
     CAMERA_TRIGGER_BLOCK_ID, CameraTrigger, EditorMode, EditorPickResult, EditorTapDivisionPick,
-    LevelObject, TriggerAction,
+    LevelObject,
 };
 use glam::{Vec2, Vec3, Vec4};
 
@@ -424,16 +424,16 @@ impl EditorSubsystem {
                 }
             }
 
-            for (trigger_index, trigger) in self.triggers().iter().enumerate() {
-                let Some(target) = transform_trigger_target_object(&trigger.action) else {
+            for (trigger_index, object) in self.trigger_objects().iter().enumerate() {
+                if !object.is_transform_trigger() {
                     continue;
-                };
-                if !Self::ray_may_hit_block_bounds(ray_origin, ray_dir, &target, min_t) {
+                }
+                if !Self::ray_may_hit_block_bounds(ray_origin, ray_dir, object, min_t) {
                     continue;
                 }
 
                 if let Some((t, _normal)) =
-                    self.ray_intersect_rotated_block(ray_origin, ray_dir, &target)
+                    self.ray_intersect_rotated_block(ray_origin, ray_dir, object)
                 {
                     if t < min_t {
                         min_t = t;
@@ -839,25 +839,6 @@ impl EditorSubsystem {
 
         best_hit
     }
-}
-
-fn transform_trigger_target_object(action: &TriggerAction) -> Option<LevelObject> {
-    let TriggerAction::TransformObjects {
-        position,
-        rotation: rotation_degrees,
-        size,
-        ..
-    } = action
-    else {
-        return None;
-    };
-
-    Some(LevelObject {
-        position: *position,
-        size: *size,
-        rotation: *rotation_degrees,
-        ..LevelObject::default()
-    })
 }
 
 #[cfg(test)]

@@ -6,11 +6,11 @@
 
 */
 use super::State;
+use eg_types::BlockId;
 use eg_types::{
     AppSettings, BasicLevelMetadata, Direction, EditorMode, LevelObject, MusicMetadata,
     PlayerLevelProgress, SettingsSection, TimingPoint,
 };
-use eg_types::{BlockId, TimedTrigger};
 
 #[derive(Clone, Copy)]
 pub struct SelectedTapViewModel {
@@ -84,7 +84,7 @@ pub struct EditorUiViewModel<'a> {
     pub waveform_loading: bool,
     pub waveform_complete: bool,
     pub bpm_tap_result: Option<f32>,
-    pub triggers: Vec<TimedTrigger>,
+    pub trigger_objects: Vec<LevelObject>,
     pub trigger_selected_index: Option<usize>,
     pub camera_position: [f32; 3],
     pub camera_preview_position: [f32; 3],
@@ -190,7 +190,7 @@ impl State {
             waveform_loading: self.editor_waveform_loading(),
             waveform_complete: self.editor_waveform_complete(),
             bpm_tap_result: self.editor_bpm_tap_result(),
-            triggers: self.editor_triggers(),
+            trigger_objects: self.editor_triggers(),
             trigger_selected_index: self.editor_selected_trigger_index(),
             camera_position,
             camera_preview_position,

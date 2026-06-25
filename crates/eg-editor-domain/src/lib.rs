@@ -22,11 +22,11 @@ pub use transitions::*;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eg_types::TriggerTarget;
     use eg_types::{
         BasicLevelMetadata, LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata,
         TRANSFORM_TRIGGER_BLOCK_ID, TimingPoint,
     };
-    use eg_types::{TriggerAction, TriggerTarget};
 
     fn assert_near_solver_hits_target(
         spawn: [f32; 3],
@@ -237,19 +237,10 @@ mod tests {
             TriggerTarget::Objects { object_ids } => assert!(object_ids.is_empty()),
             TriggerTarget::Camera => panic!("expected object target"),
         }
-        match trigger.action {
-            TriggerAction::TransformObjects {
-                position,
-                rotation: rotation_degrees,
-                size,
-                ..
-            } => {
-                assert_eq!(position, [1.0, 2.0, 3.0]);
-                assert_eq!(rotation_degrees, [0.0, 90.0, 0.0]);
-                assert_eq!(size, [2.0, 0.25, 1.0]);
-            }
-            _ => panic!("expected transform action"),
-        }
+        assert!(trigger.transform, "expected transform trigger");
+        assert_eq!(block.position, [1.0, 2.0, 3.0]);
+        assert_eq!(block.rotation, [0.0, 90.0, 0.0]);
+        assert_eq!(block.size, [2.0, 0.25, 1.0]);
     }
 
     #[test]
@@ -328,7 +319,6 @@ mod tests {
             spawn: SpawnMetadata::default(),
             sky_color: eg_types::default_sky_color(),
             tap_times: &[],
-            triggers: &[],
             timeline_seconds: (timeline_time_seconds, 16.0),
         });
 
@@ -364,7 +354,6 @@ mod tests {
             spawn: SpawnMetadata::default(),
             sky_color: eg_types::default_sky_color(),
             tap_times: &[],
-            triggers: &[],
             timeline_seconds: (timeline_time_seconds, 16.0),
         });
 

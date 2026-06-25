@@ -52,7 +52,8 @@ impl State {
         if let Some(metadata) = self.load_level_metadata(&level_name) {
             self.preload_runtime_audio(&level_name, "audio.mp3");
             self.warmup_audio_at_seconds(&level_name, 0.0);
-            self.editor.set_triggers(metadata.resolved_triggers());
+            self.editor.objects = metadata.objects.clone();
+            self.editor.sync_trigger_selection_from_objects();
             self.editor.set_trigger_selected(None);
             log::debug!("Starting level: {}", metadata.basic.name);
             self.session.playing_sky_color = metadata.sky_color;
@@ -85,7 +86,6 @@ impl State {
                 spawn: self.editor.spawn.clone(),
                 sky_color: self.session.editor_sky_color,
                 tap_times: &self.editor.timeline.taps.tap_times,
-                triggers: &self.editor.triggers(),
                 timeline_seconds: (
                     self.editor.timeline.clock.time_seconds,
                     self.editor.timeline.clock.duration_seconds,
@@ -114,7 +114,8 @@ impl State {
         } else if let Some(level_name) = self.session.playing_level_name.clone() {
             self.session.playtest_audio_start_seconds = None;
             if let Some(metadata) = self.load_level_metadata(&level_name) {
-                self.editor.set_triggers(metadata.resolved_triggers());
+                self.editor.objects = metadata.objects.clone();
+                self.editor.sync_trigger_selection_from_objects();
                 self.editor.set_trigger_selected(None);
                 self.session.playing_sky_color = metadata.sky_color;
                 self.apply_playing_transition_objects(
@@ -181,7 +182,7 @@ impl State {
         self.editor.timing.timing_points = init.timing_points;
         self.editor.timing.mark_timing_points_changed();
         self.editor.timing.timing_selected_index = None;
-        self.editor.set_triggers(init.triggers);
+        self.editor.sync_trigger_selection_from_objects();
         self.editor.set_trigger_selected(None);
         self.session.editor_menu_preview_camera = init.menu_preview_camera;
         self.editor.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
@@ -283,7 +284,7 @@ impl State {
             .timing_points
             .sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
         self.editor.timing.timing_selected_index = None;
-        self.editor.set_triggers(init.triggers);
+        self.editor.sync_trigger_selection_from_objects();
         self.editor.set_trigger_selected(None);
         self.session.editor_menu_preview_camera = init.menu_preview_camera;
         self.session.editor_creator_metadata = init.creator_metadata;

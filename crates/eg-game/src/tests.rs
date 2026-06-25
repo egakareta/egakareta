@@ -6,12 +6,9 @@
 
 */
 use super::physics::{BASE_PLAYER_SPEED, aabb_overlaps_object_xz, object_xz_contains};
-use super::simulation::{
-    TimelineSimulationRuntime, simulate_timeline_state, simulate_timeline_state_with_triggers,
-};
+use super::simulation::{TimelineSimulationRuntime, simulate_timeline_state};
 use super::state::GameState;
 use eg_types::{Direction, LevelObject};
-use eg_types::{EasingDirection, TimedTrigger, TriggerAction, TriggerTarget};
 
 #[test]
 fn test_ground_detection_normal() {
@@ -314,90 +311,4 @@ fn timeline_incremental_runtime_matches_direct_simulation() {
         direct.elapsed_seconds,
         epsilon = 1e-6
     );
-}
-
-#[test]
-fn timeline_trigger_hitbox_mode_does_not_resurrect_consumed_portals() {
-    let objects = vec![LevelObject {
-        id: "target".to_string(),
-        position: [0.0, 0.0, 1.0],
-        ..LevelObject::new("core/speedportal")
-    }];
-
-    let triggers = vec![TimedTrigger {
-        time_seconds: 0.0,
-        duration_seconds: 0.0,
-        easing: EasingDirection::Linear,
-        target: TriggerTarget::Objects {
-            object_ids: vec!["target".to_string()],
-        },
-        action: TriggerAction::TransformObjects {
-            position: [0.0, 0.0, 1.0],
-            rotation: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-        },
-    }];
-
-    let mut runtime = TimelineSimulationRuntime::new_with_triggers(
-        [0.0, 0.0, 0.0],
-        Direction::Forward,
-        &objects,
-        &[],
-        &triggers,
-    );
-    runtime.advance_to(0.6);
-
-    let snapshot = runtime.snapshot();
-    approx::assert_abs_diff_eq!(snapshot.speed, BASE_PLAYER_SPEED * 1.5, epsilon = 1e-4);
-}
-
-#[test]
-fn timeline_state_with_disabled_trigger_hitboxes_matches_plain_simulation() {
-    let objects = vec![LevelObject {
-        id: "target".to_string(),
-        position: [0.0, 0.0, 2.0],
-        ..LevelObject::default()
-    }];
-
-    let triggers = vec![TimedTrigger {
-        time_seconds: 0.0,
-        duration_seconds: 1.0,
-        easing: EasingDirection::Linear,
-        target: TriggerTarget::Objects {
-            object_ids: vec!["target".to_string()],
-        },
-        action: TriggerAction::TransformObjects {
-            position: [5.0, 0.0, 2.0],
-            rotation: [0.0, 0.0, 0.0],
-            size: [1.0, 1.0, 1.0],
-        },
-    }];
-
-    let plain = simulate_timeline_state([0.0, 0.0, 0.0], Direction::Forward, &objects, &[], 0.5);
-
-    let trigger_disabled = simulate_timeline_state_with_triggers(
-        [0.0, 0.0, 0.0],
-        Direction::Forward,
-        &objects,
-        &[],
-        &triggers,
-        0.5,
-    );
-
-    approx::assert_abs_diff_eq!(
-        plain.position[0],
-        trigger_disabled.position[0],
-        epsilon = 1e-6
-    );
-    approx::assert_abs_diff_eq!(
-        plain.position[1],
-        trigger_disabled.position[1],
-        epsilon = 1e-6
-    );
-    approx::assert_abs_diff_eq!(
-        plain.position[2],
-        trigger_disabled.position[2],
-        epsilon = 1e-6
-    );
-    approx::assert_abs_diff_eq!(plain.speed, trigger_disabled.speed, epsilon = 1e-6);
 }

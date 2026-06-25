@@ -274,7 +274,7 @@ mod tests {
     use eg_types::{
         AppPhase, BlockId, EditorMode, LevelObject, SettingsSection, TRANSFORM_TRIGGER_BLOCK_ID,
     };
-    use eg_types::{EasingDirection, TimedTrigger, TriggerAction, TriggerTarget};
+    use eg_types::{EasingDirection, TimedTrigger, TriggerTarget};
 
     async fn new_editor_state() -> State {
         let mut state = State::new_test().await;
@@ -293,11 +293,8 @@ mod tests {
                 target: TriggerTarget::Objects {
                     object_ids: Vec::new(),
                 },
-                action: TriggerAction::TransformObjects {
-                    position,
-                    rotation: [0.0, 0.0, 0.0],
-                    size: [1.0, 1.0, 1.0],
-                },
+                transform: true,
+                camera: None,
             }),
             ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
         }
@@ -411,11 +408,8 @@ mod tests {
                 target: TriggerTarget::Objects {
                     object_ids: vec!["target".to_string()],
                 },
-                action: TriggerAction::TransformObjects {
-                    position: [0.0, 0.0, 0.0],
-                    rotation: [0.0, 0.0, 0.0],
-                    size: [1.0, 1.0, 1.0],
-                },
+                transform: true,
+                camera: None,
             }),
             ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
         }];
@@ -558,19 +552,11 @@ mod tests {
         state.dispatch_editor(EditorCommand::AddCameraTrigger);
         state.dispatch_editor(EditorCommand::AddCameraFollowTrigger);
         state.dispatch_editor(EditorCommand::SetTriggerSelected(Some(0)));
-        state.editor.set_triggers(vec![TimedTrigger {
-            time_seconds: 0.0,
-            duration_seconds: 1.0,
-            easing: EasingDirection::Linear,
-            target: TriggerTarget::Objects {
-                object_ids: vec!["obj_000001".to_string()],
-            },
-            action: TriggerAction::TransformObjects {
-                position: [1.0, 0.0, 0.0],
-                rotation: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-            },
-        }]);
+        state
+            .editor
+            .objects
+            .push(transform_trigger_object(0.0, [1.0, 0.0, 0.0]));
+        state.editor.sync_trigger_selection_from_objects();
 
         // Misc
         state.dispatch_editor(EditorCommand::ToggleHitboxVisualization);

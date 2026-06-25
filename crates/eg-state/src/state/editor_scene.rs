@@ -12,7 +12,7 @@ use glam::Vec3;
 use super::{EditorDirtyFlags, EditorSubsystem, State};
 use eg_blocks::resolve_block_definition;
 use eg_editor_domain::tap_time_is_timing_division;
-use eg_editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds_with_triggers};
+use eg_editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds};
 use eg_game::trigger_transformed_objects_at_time;
 use eg_mesh::{
     GizmoParams, GizmoPart, MeshGeometry, PracticeCheckpointFlagInstance, TransformTriggerMarker,
@@ -31,7 +31,7 @@ use eg_mesh::{
 use eg_render::EditorOutlineInstance;
 use eg_types::{
     AppPhase, BlockRenderProfile, Direction, EditorMode, EditorPlaceMode, LevelObject,
-    TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TimingPoint, TriggerAction, TriggerTarget,
+    TRANSFORM_TRIGGER_BLOCK_ID, TimingPoint, TriggerTarget,
 };
 
 const SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD: usize = 700;
@@ -135,7 +135,7 @@ fn transform_trigger_target_indices_for_block(
         return Vec::new();
     };
 
-    if !matches!(trigger.action, TriggerAction::TransformObjects { .. }) {
+    if !trigger.transform {
         return Vec::new();
     }
 
@@ -228,28 +228,29 @@ fn append_hovered_transform_trigger_target_outlines(
 
 fn transform_trigger_markers_for_triggers(
     objects: &[LevelObject],
-    triggers: &[TimedTrigger],
+    trigger_objects: &[LevelObject],
     selected_trigger_index: Option<usize>,
 ) -> Vec<TransformTriggerMarker> {
     let mut markers = Vec::new();
 
-    for (trigger_index, trigger) in triggers.iter().enumerate() {
+    for (trigger_index, trigger_object) in trigger_objects.iter().enumerate() {
+        let Some(trigger) = trigger_object.trigger.as_ref() else {
+            continue;
+        };
         let TriggerTarget::Objects { object_ids } = &trigger.target else {
             continue;
         };
-        let TriggerAction::TransformObjects {
-            position,
-            rotation: rotation_degrees,
-            size,
-            ..
-        } = &trigger.action
-        else {
+        if !trigger.transform {
             continue;
-        };
+        }
+
+        let position = trigger_object.position;
+        let rotation_degrees = trigger_object.rotation;
+        let size = trigger_object.size;
 
         let source_objects = transform_trigger_marker_source_objects(
             objects,
-            triggers,
+            trigger_objects,
             trigger_index,
             trigger.time_seconds,
         );
@@ -258,9 +259,9 @@ fn transform_trigger_markers_for_triggers(
             markers.push(TransformTriggerMarker {
                 source_position: None,
                 source_size: None,
-                target_position: *position,
-                target_rotation_degrees: *rotation_degrees,
-                target_size: *size,
+                target_position: position,
+                target_rotation_degrees: rotation_degrees,
+                target_size: size,
                 time_seconds: trigger.time_seconds,
                 duration_seconds: trigger.duration_seconds,
                 is_selected: selected_trigger_index == Some(trigger_index),
@@ -276,9 +277,9 @@ fn transform_trigger_markers_for_triggers(
                 markers.push(TransformTriggerMarker {
                     source_position: Some(source_object.position),
                     source_size: Some(source_object.size),
-                    target_position: *position,
-                    target_rotation_degrees: *rotation_degrees,
-                    target_size: *size,
+                    target_position: position,
+                    target_rotation_degrees: rotation_degrees,
+                    target_size: size,
                     time_seconds: trigger.time_seconds,
                     duration_seconds: trigger.duration_seconds,
                     is_selected: selected_trigger_index == Some(trigger_index),
@@ -292,7 +293,7 @@ fn transform_trigger_markers_for_triggers(
 
 fn transform_trigger_marker_source_objects<'a>(
     objects: &'a [LevelObject],
-    triggers: &[TimedTrigger],
+    trigger_objects: &[LevelObject],
     trigger_index: usize,
     time_seconds: f32,
 ) -> Cow<'a, [LevelObject]> {
@@ -301,7 +302,7 @@ fn transform_trigger_marker_source_objects<'a>(
     } else {
         Cow::Owned(trigger_transformed_objects_at_time(
             objects,
-            &triggers[..trigger_index],
+            &trigger_objects[..trigger_index],
             time_seconds,
         ))
     }
@@ -386,13 +387,12 @@ impl EditorSubsystem {
     }
 
     pub fn timeline_elapsed_seconds(&self, time_seconds: f32) -> f32 {
-        derive_timeline_elapsed_seconds_with_triggers(
+        derive_timeline_elapsed_seconds(
             self.spawn.position,
             self.spawn.direction,
             &self.timeline.taps.tap_times,
             time_seconds,
             &self.objects,
-            &self.triggers(),
         )
     }
 
@@ -434,7 +434,7 @@ impl State {
             return has_object_transform_triggers.then(|| {
                 trigger_transformed_objects_at_time(
                     &self.editor.objects,
-                    &self.editor.triggers(),
+                    &self.editor.trigger_objects(),
                     self.editor.timeline.clock.time_seconds,
                 )
             });
@@ -452,7 +452,7 @@ impl State {
 
         Some(trigger_transformed_objects_at_time(
             &self.editor.objects,
-            &self.editor.triggers(),
+            &self.editor.trigger_objects(),
             self.editor.timeline.clock.time_seconds,
         ))
     }
@@ -1003,7 +1003,7 @@ impl State {
 
         let markers = transform_trigger_markers_for_triggers(
             &self.editor.objects,
-            &self.editor.triggers(),
+            &self.editor.trigger_objects(),
             self.editor.selected_trigger_index(),
         );
 
@@ -1509,10 +1509,10 @@ mod tests {
     use eg_mesh::builders::game::build_colored_tap_indicator_vertices;
     use eg_render::MeshDrawData;
     use eg_types::{
-        AppPhase, BlockId, CAMERA_TRIGGER_BLOCK_ID, EditorMode, LevelObject,
-        TRANSFORM_TRIGGER_BLOCK_ID,
+        AppPhase, BlockId, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EditorMode,
+        LevelObject, TRANSFORM_TRIGGER_BLOCK_ID,
     };
-    use eg_types::{EasingDirection, TimedTrigger, TriggerAction, TriggerTarget};
+    use eg_types::{EasingDirection, TimedTrigger, TriggerTarget};
 
     fn block(position: [f32; 3], size: [f32; 3]) -> LevelObject {
         LevelObject {
@@ -1554,35 +1554,56 @@ mod tests {
         );
     }
 
-    fn object_move_trigger() -> TimedTrigger {
-        TimedTrigger {
-            time_seconds: 0.0,
-            duration_seconds: 0.0,
-            easing: EasingDirection::Linear,
-            target: TriggerTarget::Objects {
-                object_ids: vec!["target".to_string()],
-            },
-            action: TriggerAction::TransformObjects {
-                position: [2.0, 0.0, 0.0],
-                rotation: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-            },
+    fn object_move_trigger() -> LevelObject {
+        transform_trigger_object(0.0, 0.0, [2.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+    }
+
+    fn transform_trigger_object(
+        time_seconds: f32,
+        duration_seconds: f32,
+        position: [f32; 3],
+        rotation: [f32; 3],
+        size: [f32; 3],
+    ) -> LevelObject {
+        LevelObject {
+            id: format!("trigger_{time_seconds}"),
+            position,
+            rotation,
+            size,
+            trigger: Some(TimedTrigger {
+                time_seconds,
+                duration_seconds,
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Objects {
+                    object_ids: vec!["target".to_string()],
+                },
+                transform: true,
+                camera: None,
+            }),
+            ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
         }
     }
 
-    fn camera_trigger() -> TimedTrigger {
-        TimedTrigger {
-            time_seconds: 0.0,
-            duration_seconds: 0.0,
-            easing: EasingDirection::Linear,
-            target: TriggerTarget::Camera,
-            action: TriggerAction::CameraPose {
-                transition_interval_seconds: 1.0,
-                use_full_segment_transition: false,
-                target_position: [0.0, 0.0, 0.0],
-                yaw: 0.0,
-                pitch: 0.0,
-            },
+    fn camera_trigger() -> LevelObject {
+        LevelObject {
+            id: "camera_trigger".to_string(),
+            trigger: Some(TimedTrigger {
+                time_seconds: 0.0,
+                duration_seconds: 0.0,
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Camera,
+                transform: false,
+                camera: Some(CameraTrigger {
+                    mode: CameraMode::Static,
+                    transition_interval_seconds: 1.0,
+                    use_full_segment_transition: false,
+                    target_position: [0.0, 0.0, 0.0],
+                    yaw: 0.0,
+                    pitch: 0.0,
+                    ..CameraTrigger::default()
+                }),
+            }),
+            ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         }
     }
 
@@ -1656,7 +1677,7 @@ mod tests {
     async fn editor_runtime_objects_for_render_previews_transforms_without_playback() {
         let mut state = State::new_test().await;
         state.editor.objects = vec![block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])];
-        state.editor.set_triggers(vec![object_move_trigger()]);
+        state.editor.objects.push(object_move_trigger());
         state.editor.timeline.clock.time_seconds = 0.0;
 
         state.phase = AppPhase::Menu;
@@ -1687,17 +1708,15 @@ mod tests {
         state.phase = AppPhase::Editor;
         state.editor.ui.mode = EditorMode::Place;
         state.editor.objects = vec![block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])];
-        state.editor.set_triggers(vec![object_move_trigger()]);
+        state.editor.objects.push(object_move_trigger());
         state.editor.timeline.clock.time_seconds = 0.5;
         state.editor.timeline.playback.playing = true;
-        state.editor.timeline.playback.runtime =
-            Some(eg_game::TimelineSimulationRuntime::new_with_triggers(
-                state.editor.spawn.position,
-                state.editor.spawn.direction,
-                &state.editor.objects,
-                &state.editor.timeline.taps.tap_times,
-                &state.editor.triggers(),
-            ));
+        state.editor.timeline.playback.runtime = Some(eg_game::TimelineSimulationRuntime::new(
+            state.editor.spawn.position,
+            state.editor.spawn.direction,
+            &state.editor.objects,
+            &state.editor.timeline.taps.tap_times,
+        ));
 
         let transformed = state
             .editor_runtime_objects_for_render()
@@ -1755,7 +1774,7 @@ mod tests {
         );
 
         state.phase = AppPhase::Editor;
-        state.editor.set_triggers(Vec::new());
+        state.editor.objects.clear();
         state.rebuild_camera_trigger_marker_vertices();
         assert!(
             state
@@ -1766,7 +1785,7 @@ mod tests {
                 .is_none()
         );
 
-        state.editor.set_triggers(vec![camera_trigger()]);
+        state.editor.objects = vec![camera_trigger()];
         state.rebuild_camera_trigger_marker_vertices();
         assert!(
             state
@@ -1825,7 +1844,7 @@ mod tests {
     async fn transform_trigger_marker_meshes_clear_or_build_by_phase_and_data() {
         let mut state = State::new_test().await;
         state.editor.objects = vec![block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])];
-        state.editor.set_triggers(vec![object_move_trigger()]);
+        state.editor.objects.push(object_move_trigger());
 
         state.phase = AppPhase::Menu;
         state.rebuild_transform_trigger_marker_vertices();
@@ -1849,7 +1868,10 @@ mod tests {
                 .is_some()
         );
 
-        state.editor.set_triggers(Vec::new());
+        state
+            .editor
+            .objects
+            .retain(|object| object.trigger.is_none());
         state.rebuild_transform_trigger_marker_vertices();
         assert!(
             state
@@ -1865,32 +1887,14 @@ mod tests {
     async fn transform_trigger_marker_sources_reflect_prior_trigger_state() {
         let objects = vec![block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])];
         let triggers = vec![
-            TimedTrigger {
-                time_seconds: 1.0,
-                duration_seconds: 4.0,
-                easing: EasingDirection::Linear,
-                target: TriggerTarget::Objects {
-                    object_ids: vec!["target".to_string()],
-                },
-                action: TriggerAction::TransformObjects {
-                    position: [8.0, 0.0, 0.0],
-                    rotation: [0.0, 90.0, 0.0],
-                    size: [2.0, 1.0, 1.0],
-                },
-            },
-            TimedTrigger {
-                time_seconds: 3.0,
-                duration_seconds: 1.0,
-                easing: EasingDirection::Linear,
-                target: TriggerTarget::Objects {
-                    object_ids: vec!["target".to_string()],
-                },
-                action: TriggerAction::TransformObjects {
-                    position: [10.0, 0.0, 0.0],
-                    rotation: [0.0, 180.0, 0.0],
-                    size: [3.0, 1.0, 1.0],
-                },
-            },
+            transform_trigger_object(1.0, 4.0, [8.0, 0.0, 0.0], [0.0, 90.0, 0.0], [2.0, 1.0, 1.0]),
+            transform_trigger_object(
+                3.0,
+                1.0,
+                [10.0, 0.0, 0.0],
+                [0.0, 180.0, 0.0],
+                [3.0, 1.0, 1.0],
+            ),
         ];
 
         let markers = transform_trigger_markers_for_triggers(&objects, &triggers, Some(1));
@@ -1904,18 +1908,21 @@ mod tests {
 
     #[tokio::test]
     async fn transform_trigger_marker_without_sources_still_draws_target() {
-        let triggers = vec![TimedTrigger {
-            time_seconds: 1.0,
-            duration_seconds: 4.0,
-            easing: EasingDirection::Linear,
-            target: TriggerTarget::Objects {
-                object_ids: Vec::new(),
-            },
-            action: TriggerAction::TransformObjects {
-                position: [8.0, 0.0, 0.0],
-                rotation: [0.0, 90.0, 0.0],
-                size: [2.0, 1.0, 1.0],
-            },
+        let triggers = vec![LevelObject {
+            trigger: Some(TimedTrigger {
+                time_seconds: 1.0,
+                duration_seconds: 4.0,
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Objects {
+                    object_ids: Vec::new(),
+                },
+                transform: true,
+                camera: None,
+            }),
+            position: [8.0, 0.0, 0.0],
+            rotation: [0.0, 90.0, 0.0],
+            size: [2.0, 1.0, 1.0],
+            ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
         }];
 
         let markers = transform_trigger_markers_for_triggers(&[], &triggers, Some(0));

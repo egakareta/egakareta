@@ -12,7 +12,8 @@ use std::hint::black_box;
 use eg_game::{TimelineSimulationRuntime, trigger_transformed_objects_at_time};
 use eg_mesh::{build_block_geometry, build_chunked_block_mesh, build_trail_vertices_with_alpha};
 use eg_types::{
-    Direction, LevelObject, TimedTrigger, TimedTriggerAction, TimedTriggerEasing, TriggerTarget,
+    Direction, EasingDirection, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger,
+    TriggerTarget,
 };
 
 /// Summary of a benchmarked hot-path operation.
@@ -123,15 +124,17 @@ pub fn advance_timeline_preview(
     target_time_seconds: f32,
 ) -> BenchmarkWorkSummary {
     let objects = benchmark_objects(object_count);
-    let triggers = benchmark_object_triggers(object_count, trigger_count, targets_per_trigger);
+    let _ = black_box((
+        trigger_count,
+        targets_per_trigger,
+        simulate_trigger_hitboxes,
+    ));
     let tap_times = benchmark_tap_times(target_time_seconds);
-    let mut runtime = TimelineSimulationRuntime::new_with_triggers(
+    let mut runtime = TimelineSimulationRuntime::new(
         [0.0, 2.0, 0.0],
         Direction::Forward,
         black_box(&objects),
         black_box(&tap_times),
-        black_box(&triggers),
-        black_box(simulate_trigger_hitboxes),
     );
     runtime.advance_to(black_box(target_time_seconds));
     let snapshot = runtime.snapshot();
@@ -198,7 +201,11 @@ fn scrub_timeline_no_playback(
     scrub_steps: usize,
 ) -> BenchmarkWorkSummary {
     let objects = benchmark_objects(object_count);
-    let triggers = benchmark_object_triggers(object_count, trigger_count, targets_per_trigger);
+    let _ = black_box((
+        trigger_count,
+        targets_per_trigger,
+        simulate_trigger_hitboxes,
+    ));
     let max_target_time =
         start_time_seconds + scrub_delta_seconds.max(0.0) * scrub_steps.saturating_sub(1) as f32;
     let tap_times = benchmark_tap_times(max_target_time.max(start_time_seconds));
@@ -212,13 +219,11 @@ fn scrub_timeline_no_playback(
         };
 
         if needs_reset {
-            runtime = Some(TimelineSimulationRuntime::new_with_triggers(
+            runtime = Some(TimelineSimulationRuntime::new(
                 [0.0, 2.0, 0.0],
                 Direction::Forward,
                 black_box(&objects),
                 black_box(&tap_times),
-                black_box(&triggers),
-                black_box(simulate_trigger_hitboxes),
             ));
         }
 
@@ -486,11 +491,11 @@ pub fn benchmark_objects(object_count: usize) -> Vec<LevelObject> {
             let x = (index % side) as f32;
             let z = (index / side) as f32;
             LevelObject {
+                id: format!("object_{index}"),
                 position: [x, 0.0, z],
                 size: [1.0, 1.0 + ((index % 3) as f32 * 0.25), 1.0],
-                rotation_degrees: [0.0, ((index % 4) as f32) * 15.0, 0.0],
-                block_id: "core/stone".to_string(),
-                ..LevelObject::default()
+                rotation: [0.0, ((index % 4) as f32) * 15.0, 0.0],
+                ..LevelObject::new("core/stone")
             }
         })
         .collect()
@@ -504,9 +509,9 @@ pub fn dense_voxel_objects(object_count: usize) -> Vec<LevelObject> {
             let x = (index % side) as f32;
             let z = (index / side) as f32;
             LevelObject {
+                id: format!("object_{index}"),
                 position: [x, 0.0, z],
-                block_id: "core/stone".to_string(),
-                ..LevelObject::default()
+                ..LevelObject::new("core/stone")
             }
         })
         .collect()
@@ -517,7 +522,7 @@ pub fn benchmark_object_triggers(
     object_count: usize,
     trigger_count: usize,
     targets_per_trigger: usize,
-) -> Vec<TimedTrigger> {
+) -> Vec<LevelObject> {
     if object_count == 0 || trigger_count == 0 || targets_per_trigger == 0 {
         return Vec::new();
     }
@@ -526,29 +531,34 @@ pub fn benchmark_object_triggers(
         .map(|trigger_index| {
             let object_ids = (0..targets_per_trigger)
                 .map(|target_offset| {
-                    ((trigger_index * 17 + target_offset * 31) % object_count) as u32
+                    let object_index = (trigger_index * 17 + target_offset * 31) % object_count;
+                    format!("object_{object_index}")
                 })
                 .collect();
             let trigger_time = (trigger_index % 32) as f32 * 0.125;
-            TimedTrigger {
-                time_seconds: trigger_time,
-                duration_seconds: 1.5,
-                easing: match trigger_index % 4 {
-                    0 => TimedTriggerEasing::Linear,
-                    1 => TimedTriggerEasing::EaseIn,
-                    2 => TimedTriggerEasing::EaseOut,
-                    _ => TimedTriggerEasing::EaseInOut,
-                },
-                target: TriggerTarget::Objects { object_ids },
-                action: TimedTriggerAction::TransformObjects {
-                    position: [
-                        (trigger_index % 64) as f32 * 0.25,
-                        0.5 + (trigger_index % 5) as f32,
-                        (trigger_index % 48) as f32 * 0.25,
-                    ],
-                    rotation_degrees: [0.0, 90.0 + (trigger_index % 8) as f32 * 15.0, 0.0],
-                    size: [1.0, 0.5 + (trigger_index % 6) as f32 * 0.25, 1.0],
-                },
+            LevelObject {
+                id: format!("trigger_{trigger_index}"),
+                position: [
+                    (trigger_index % 64) as f32 * 0.25,
+                    0.5 + (trigger_index % 5) as f32,
+                    (trigger_index % 48) as f32 * 0.25,
+                ],
+                rotation: [0.0, 90.0 + (trigger_index % 8) as f32 * 15.0, 0.0],
+                size: [1.0, 0.5 + (trigger_index % 6) as f32 * 0.25, 1.0],
+                trigger: Some(TimedTrigger {
+                    time_seconds: trigger_time,
+                    duration_seconds: 1.5,
+                    easing: match trigger_index % 4 {
+                        0 => EasingDirection::Linear,
+                        1 => EasingDirection::EaseIn,
+                        2 => EasingDirection::EaseOut,
+                        _ => EasingDirection::EaseInOut,
+                    },
+                    target: TriggerTarget::Objects { object_ids },
+                    transform: true,
+                    camera: None,
+                }),
+                ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
             }
         })
         .collect()

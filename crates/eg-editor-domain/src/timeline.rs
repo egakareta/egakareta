@@ -5,10 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_game::{
-    TimelineSimulationRuntime, simulate_timeline_state, simulate_timeline_state_with_triggers,
-};
-use eg_types::TimedTrigger;
+use eg_game::{TimelineSimulationRuntime, simulate_timeline_state};
 use eg_types::{Direction, LevelObject, TimingPoint};
 
 use super::TAP_EPSILON_SECONDS;
@@ -217,34 +214,19 @@ pub fn derive_timeline_position(
     timeline_time_seconds: f32,
     objects: &[LevelObject],
 ) -> ([f32; 3], Direction) {
-    let state = derive_timeline_state_with_triggers(
-        spawn,
-        direction,
-        tap_times,
-        timeline_time_seconds,
-        objects,
-        &[],
-    );
+    let state = derive_timeline_state(spawn, direction, tap_times, timeline_time_seconds, objects);
     (state.position, state.direction)
 }
 
-pub fn derive_timeline_elapsed_seconds_with_triggers(
+pub fn derive_timeline_elapsed_seconds(
     spawn: [f32; 3],
     direction: Direction,
     tap_times: &[f32],
     timeline_time_seconds: f32,
     objects: &[LevelObject],
-    triggers: &[TimedTrigger],
 ) -> f32 {
-    derive_timeline_state_with_triggers(
-        spawn,
-        direction,
-        tap_times,
-        timeline_time_seconds,
-        objects,
-        triggers,
-    )
-    .elapsed_seconds
+    derive_timeline_state(spawn, direction, tap_times, timeline_time_seconds, objects)
+        .elapsed_seconds
 }
 
 pub fn derive_tap_indicator_positions(
@@ -751,26 +733,15 @@ pub struct TimelineState {
     pub is_grounded: bool,
 }
 
-pub fn derive_timeline_state_with_triggers(
+pub fn derive_timeline_state(
     spawn: [f32; 3],
     direction: Direction,
     tap_times: &[f32],
     timeline_time_seconds: f32,
     objects: &[LevelObject],
-    triggers: &[TimedTrigger],
 ) -> TimelineState {
-    let simulated = if triggers.is_empty() {
-        simulate_timeline_state(spawn, direction, objects, tap_times, timeline_time_seconds)
-    } else {
-        simulate_timeline_state_with_triggers(
-            spawn,
-            direction,
-            objects,
-            tap_times,
-            triggers,
-            timeline_time_seconds,
-        )
-    };
+    let simulated =
+        simulate_timeline_state(spawn, direction, objects, tap_times, timeline_time_seconds);
 
     TimelineState {
         position: simulated.position,

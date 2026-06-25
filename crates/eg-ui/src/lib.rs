@@ -2343,7 +2343,7 @@ mod test_utils {
             waveform_loading: false,
             waveform_complete: false,
             bpm_tap_result: None,
-            triggers: vec![],
+            trigger_objects: vec![],
             trigger_selected_index: None,
             camera_position: [0.0, 0.0, 0.0],
             camera_preview_position: [0.0, 0.0, 0.0],

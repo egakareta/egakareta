@@ -16,42 +16,37 @@ use eg_types::{
     LevelObject, TimingPoint,
 };
 use eg_types::{
-    BlockId, EasingDirection, TimedTrigger, TriggerAction, TriggerTarget,
-    default_camera_trigger_distance,
+    BlockId, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EasingDirection,
+    TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget, default_camera_trigger_distance,
 };
 
 const TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS: f32 = 0.001;
 
 fn remove_replaced_transform_trigger_targets(
-    triggers: Vec<TimedTrigger>,
+    objects: &mut [LevelObject],
     time_seconds: f32,
     object_ids_to_replace: &[String],
-) -> Vec<TimedTrigger> {
-    triggers
-        .into_iter()
-        .map(|mut trigger| {
-            if (trigger.time_seconds - time_seconds).abs()
-                > TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS
-                || !matches!(trigger.action, TriggerAction::TransformObjects { .. })
-            {
-                return trigger;
-            }
-
-            let TriggerTarget::Objects { object_ids } = &mut trigger.target else {
-                return trigger;
-            };
-
-            if !object_ids
-                .iter()
-                .any(|object_id| object_ids_to_replace.contains(object_id))
-            {
-                return trigger;
-            }
-
-            object_ids.retain(|object_id| !object_ids_to_replace.contains(object_id));
-            trigger
-        })
-        .collect()
+) {
+    for object in objects {
+        let Some(trigger) = object.trigger.as_mut() else {
+            continue;
+        };
+        if (trigger.time_seconds - time_seconds).abs() > TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS
+            || !trigger.transform
+        {
+            continue;
+        }
+        let TriggerTarget::Objects { object_ids } = &mut trigger.target else {
+            continue;
+        };
+        if !object_ids
+            .iter()
+            .any(|object_id| object_ids_to_replace.contains(object_id))
+        {
+            continue;
+        }
+        object_ids.retain(|object_id| !object_ids_to_replace.contains(object_id));
+    }
 }
 
 impl EditorSubsystem {
@@ -994,8 +989,8 @@ impl State {
             .enumerate()
             .filter_map(|(index, object)| {
                 let trigger = object.trigger.clone()?;
-                matches!(trigger.action, TriggerAction::CameraFollow { .. })
-                    .then_some((index, trigger))
+                let camera = trigger.camera.as_ref()?;
+                (camera.mode == CameraMode::Follow).then_some((index, trigger))
             })
             .collect::<Vec<_>>();
 
@@ -1177,12 +1172,11 @@ impl State {
 
         let mut runtime = {
             puffin::profile_scope!("TimelineSamplesRuntimeBuild");
-            TimelineSimulationRuntime::new_with_triggers(
+            TimelineSimulationRuntime::new(
                 self.editor.spawn.position,
                 self.editor.spawn.direction,
                 &self.editor.objects,
                 &self.editor.timeline.taps.tap_times,
-                &self.editor.triggers(),
             )
         };
 
@@ -1341,10 +1335,12 @@ impl State {
         }
 
         self.record_editor_history_state();
-        let trigger = self
+        let trigger_object = self
             .editor
-            .capture_current_camera_trigger(self.editor.timeline.clock.time_seconds);
-        self.editor.add_trigger(trigger);
+            .capture_current_camera_trigger(self.editor.timeline.clock.time_seconds)
+            .with_generated_id(&self.editor.objects);
+        self.editor.objects.push(trigger_object);
+        self.editor.sync_trigger_selection_from_objects();
         self.sync_editor_objects();
         self.mark_editor_dirty(EditorDirtyFlags::trigger_object_added());
     }
@@ -1355,20 +1351,30 @@ impl State {
         }
 
         self.record_editor_history_state();
-        let trigger = TimedTrigger {
-            time_seconds: self.editor.timeline.clock.time_seconds,
-            duration_seconds: 0.0,
-            easing: EasingDirection::Linear,
-            target: TriggerTarget::Camera,
-            action: TriggerAction::CameraFollow {
-                transition_interval_seconds: 1.0,
-                use_full_segment_transition: false,
-                distance: default_camera_trigger_distance(),
-                yaw: DEFAULT_CAMERA_YAW,
-                pitch: DEFAULT_CAMERA_PITCH,
-            },
+        let camera = CameraTrigger {
+            mode: CameraMode::Follow,
+            transition_interval_seconds: 1.0,
+            use_full_segment_transition: false,
+            distance: default_camera_trigger_distance(),
+            yaw: DEFAULT_CAMERA_YAW,
+            pitch: DEFAULT_CAMERA_PITCH,
+            ..CameraTrigger::default()
         };
-        self.editor.add_trigger(trigger);
+        let trigger_object = LevelObject {
+            block_id: BlockId::new(CAMERA_TRIGGER_BLOCK_ID),
+            trigger: Some(TimedTrigger {
+                time_seconds: self.editor.timeline.clock.time_seconds,
+                duration_seconds: 0.0,
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Camera,
+                camera: Some(camera),
+                ..TimedTrigger::default()
+            }),
+            ..LevelObject::default()
+        }
+        .with_generated_id(&self.editor.objects);
+        self.editor.objects.push(trigger_object);
+        self.editor.sync_trigger_selection_from_objects();
         self.sync_editor_camera_follow_trigger_object_poses();
         self.sync_editor_objects();
         self.mark_editor_dirty(EditorDirtyFlags::trigger_object_added());
@@ -1406,29 +1412,37 @@ impl State {
             .iter()
             .map(|(object_id, _)| object_id.clone())
             .collect::<Vec<_>>();
-        let retained_triggers = remove_replaced_transform_trigger_targets(
-            self.editor.triggers(),
+        remove_replaced_transform_trigger_targets(
+            &mut self.editor.objects,
             time_seconds,
             &replaced_object_ids,
         );
-        self.editor.set_triggers(retained_triggers);
+        self.editor.sync_trigger_selection_from_objects();
 
         let mut created_trigger_indices = Vec::with_capacity(selected_objects.len());
         for (object_id, object) in selected_objects {
-            let trigger = TimedTrigger {
-                time_seconds,
-                duration_seconds: 1.0,
-                easing: EasingDirection::EaseInOut,
-                target: TriggerTarget::Objects {
-                    object_ids: vec![object_id],
-                },
-                action: TriggerAction::TransformObjects {
-                    position: object.position,
-                    rotation: object.rotation,
-                    size: object.size,
-                },
-            };
-            created_trigger_indices.push(self.editor.add_trigger(trigger));
+            let object_index = self.editor.objects.len();
+            let trigger_object = LevelObject {
+                position: object.position,
+                rotation: object.rotation,
+                size: object.size,
+                block_id: BlockId::new(TRANSFORM_TRIGGER_BLOCK_ID),
+                trigger: Some(TimedTrigger {
+                    time_seconds,
+                    duration_seconds: 1.0,
+                    easing: EasingDirection::EaseInOut,
+                    target: TriggerTarget::Objects {
+                        object_ids: vec![object_id],
+                    },
+                    transform: true,
+                    ..TimedTrigger::default()
+                }),
+                ..LevelObject::default()
+            }
+            .with_generated_id(&self.editor.objects);
+            self.editor.objects.push(trigger_object);
+            self.editor.sync_trigger_selection_from_objects();
+            created_trigger_indices.push(object_index);
         }
 
         self.editor.replace_block_selection(created_trigger_indices);
@@ -1453,8 +1467,8 @@ impl State {
         self.editor.timing_points()
     }
 
-    pub fn editor_triggers(&self) -> Vec<TimedTrigger> {
-        self.editor.triggers()
+    pub fn editor_triggers(&self) -> Vec<LevelObject> {
+        self.editor.trigger_objects()
     }
 
     #[cfg(test)]
@@ -1608,7 +1622,7 @@ mod tests {
     use eg_mesh::{GizmoAxis, GizmoDragKind};
     use eg_types::{
         AppPhase, BlockId, Direction, EasingDirection, EditorMode, GameCursor, LevelObject,
-        TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerAction, TriggerTarget,
+        TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget,
     };
 
     fn test_level_object(position: [f32; 3]) -> LevelObject {
@@ -1634,28 +1648,25 @@ mod tests {
         time_seconds: f32,
         object_ids: Vec<&str>,
         position: [f32; 3],
-    ) -> TimedTrigger {
-        let object_ids = object_ids.into_iter().map(str::to_string).collect();
-        TimedTrigger {
-            time_seconds,
-            duration_seconds: 1.0,
-            easing: EasingDirection::EaseInOut,
-            target: TriggerTarget::Objects { object_ids },
-            action: TriggerAction::TransformObjects {
-                position,
-                rotation: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-            },
+    ) -> LevelObject {
+        let object_ids: Vec<String> = object_ids.into_iter().map(str::to_string).collect();
+        LevelObject {
+            id: format!("trigger_{time_seconds:.1}_{}", object_ids.join("_")),
+            position,
+            trigger: Some(TimedTrigger {
+                time_seconds,
+                duration_seconds: 1.0,
+                easing: EasingDirection::EaseInOut,
+                target: TriggerTarget::Objects { object_ids },
+                transform: true,
+                camera: None,
+            }),
+            ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
         }
     }
 
     fn transform_trigger_object(time_seconds: f32, target_ids: Vec<&str>) -> LevelObject {
-        LevelObject {
-            id: format!("trigger_{time_seconds:.1}"),
-            position: [9.0, 0.0, 0.0],
-            trigger: Some(transform_trigger(time_seconds, target_ids, [9.0, 0.0, 0.0])),
-            ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
-        }
+        transform_trigger(time_seconds, target_ids, [9.0, 0.0, 0.0])
     }
 
     #[tokio::test]
@@ -1670,7 +1681,7 @@ mod tests {
 
         assert!(!state.add_editor_transform_trigger());
         assert_eq!(state.editor.objects.len(), 1);
-        assert_eq!(state.editor.triggers().len(), 1);
+        assert_eq!(state.editor.trigger_objects().len(), 1);
     }
 
     #[tokio::test]
@@ -1702,14 +1713,18 @@ mod tests {
         assert_eq!(state.editor.ui.selected_block_index, Some(2));
         assert_eq!(state.editor.ui.selected_block_indices, vec![2, 3]);
 
-        let mut triggers = state.editor.triggers();
-        triggers.sort_by_key(|trigger| match &trigger.target {
+        let mut triggers = state.editor.trigger_objects();
+        triggers.sort_by_key(|object| match &object.trigger.as_ref().unwrap().target {
             TriggerTarget::Objects { object_ids } => object_ids[0].clone(),
             TriggerTarget::Camera => String::new(),
         });
         assert_eq!(triggers.len(), 2);
 
-        for (trigger, expected_id) in triggers.iter().zip(["object_0", "object_4"]) {
+        for (trigger_object, expected_id) in triggers.iter().zip(["object_0", "object_4"]) {
+            let trigger = trigger_object
+                .trigger
+                .as_ref()
+                .expect("trigger object payload");
             approx::assert_abs_diff_eq!(trigger.time_seconds, 2.5, epsilon = 1e-6);
             approx::assert_abs_diff_eq!(trigger.duration_seconds, 1.0, epsilon = 1e-6);
             assert_eq!(trigger.easing, EasingDirection::EaseInOut);
@@ -1720,61 +1735,10 @@ mod tests {
                 }
             );
         }
-
-        match &triggers[0].action {
-            TriggerAction::TransformObjects {
-                position,
-                rotation,
-                size,
-                ..
-            } => {
-                for component in 0..3 {
-                    approx::assert_abs_diff_eq!(
-                        position[component],
-                        [0.0, 0.0, 0.0][component],
-                        epsilon = 1e-6
-                    );
-                    approx::assert_abs_diff_eq!(
-                        rotation[component],
-                        [0.0, 0.0, 0.0][component],
-                        epsilon = 1e-6
-                    );
-                    approx::assert_abs_diff_eq!(
-                        size[component],
-                        [1.0, 1.0, 1.0][component],
-                        epsilon = 1e-6
-                    );
-                }
-            }
-            _ => panic!("expected transform objects action"),
-        }
-        match &triggers[1].action {
-            TriggerAction::TransformObjects {
-                position,
-                rotation,
-                size,
-                ..
-            } => {
-                for component in 0..3 {
-                    approx::assert_abs_diff_eq!(
-                        position[component],
-                        [4.0, 0.0, 0.0][component],
-                        epsilon = 1e-6
-                    );
-                    approx::assert_abs_diff_eq!(
-                        rotation[component],
-                        [0.0, 0.0, 0.0][component],
-                        epsilon = 1e-6
-                    );
-                    approx::assert_abs_diff_eq!(
-                        size[component],
-                        [1.0, 1.0, 1.0][component],
-                        epsilon = 1e-6
-                    );
-                }
-            }
-            _ => panic!("expected transform objects action"),
-        }
+        assert_object_pose(&triggers[0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_eq!(triggers[0].rotation, [0.0, 0.0, 0.0]);
+        assert_object_pose(&triggers[1], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_eq!(triggers[1].rotation, [0.0, 0.0, 0.0]);
     }
 
     #[tokio::test]
@@ -1801,19 +1765,20 @@ mod tests {
         assert_eq!(state.editor.ui.selected_block_indices, vec![3]);
 
         let mut found_retargeted_capture = false;
-        for trigger in &state.editor.triggers() {
+        for trigger_object in &state.editor.trigger_objects() {
+            let trigger = trigger_object
+                .trigger
+                .as_ref()
+                .expect("trigger object payload");
             let TriggerTarget::Objects { object_ids } = &trigger.target else {
                 continue;
             };
             if (trigger.time_seconds - 2.5).abs() <= 1e-6 {
                 assert_eq!(object_ids, &["object_4".to_string()]);
                 found_retargeted_capture = true;
-                let TriggerAction::TransformObjects { position, .. } = &trigger.action else {
-                    panic!("expected transform trigger action");
-                };
-                approx::assert_abs_diff_eq!(position[0], 4.0, epsilon = 1e-6);
-                approx::assert_abs_diff_eq!(position[1], 0.0, epsilon = 1e-6);
-                approx::assert_abs_diff_eq!(position[2], 0.0, epsilon = 1e-6);
+                approx::assert_abs_diff_eq!(trigger_object.position[0], 4.0, epsilon = 1e-6);
+                approx::assert_abs_diff_eq!(trigger_object.position[1], 0.0, epsilon = 1e-6);
+                approx::assert_abs_diff_eq!(trigger_object.position[2], 0.0, epsilon = 1e-6);
             }
         }
 
@@ -1831,11 +1796,10 @@ mod tests {
             test_level_object([0.0, 0.0, 0.0]),
             test_level_object([4.0, 0.0, 0.0]),
         ];
-        state.editor.set_triggers(vec![transform_trigger(
-            2.5,
-            vec!["object_0"],
-            [8.0, 0.0, 0.0],
-        )]);
+        state
+            .editor
+            .objects
+            .push(transform_trigger(2.5, vec!["object_0"], [8.0, 0.0, 0.0]));
         state.editor.objects[2].position = [12.0, 1.0, 3.0];
         state.editor.objects[2].size = [2.0, 3.0, 4.0];
         state.editor.objects[2].rotation = [10.0, 20.0, 30.0];
@@ -1846,26 +1810,17 @@ mod tests {
 
         assert_object_pose(&state.editor.objects[2], [12.0, 1.0, 3.0], [2.0, 3.0, 4.0]);
         assert_eq!(state.editor.objects[2].rotation, [10.0, 20.0, 30.0]);
-        let triggers = state.editor.triggers();
-        let existing_trigger = triggers
+        let triggers = state.editor.trigger_objects();
+        let existing_trigger_object = triggers
             .iter()
-            .find(|trigger| match &trigger.target {
+            .find(|object| match &object.trigger.as_ref().unwrap().target {
                 TriggerTarget::Objects { object_ids } => object_ids == &["object_0".to_string()],
                 TriggerTarget::Camera => false,
             })
             .expect("existing transform trigger remains");
-        let TriggerAction::TransformObjects {
-            position,
-            rotation,
-            size,
-            ..
-        } = &existing_trigger.action
-        else {
-            panic!("expected transform trigger action");
-        };
-        assert_eq!(position, &[12.0, 1.0, 3.0]);
-        assert_eq!(rotation, &[10.0, 20.0, 30.0]);
-        assert_eq!(size, &[2.0, 3.0, 4.0]);
+        assert_eq!(existing_trigger_object.position, [12.0, 1.0, 3.0]);
+        assert_eq!(existing_trigger_object.rotation, [10.0, 20.0, 30.0]);
+        assert_eq!(existing_trigger_object.size, [2.0, 3.0, 4.0]);
     }
 
     #[tokio::test]
@@ -1882,7 +1837,7 @@ mod tests {
         ];
         state.editor.ui.selected_block_indices = vec![0, 1];
         state.editor.ui.selected_block_index = Some(0);
-        state.editor.set_triggers(vec![
+        state.editor.objects.extend(vec![
             transform_trigger(2.5, vec!["object_0"], [10.0, 0.0, 0.0]),
             transform_trigger(2.5, vec!["object_4", "object_8"], [20.0, 0.0, 0.0]),
             transform_trigger(2.5, vec!["object_8"], [30.0, 0.0, 0.0]),
@@ -1897,7 +1852,11 @@ mod tests {
         let mut retained_object_two_standalone = false;
         let mut retained_different_time_object_zero = false;
 
-        for trigger in &state.editor.triggers() {
+        for trigger_object in &state.editor.trigger_objects() {
+            let trigger = trigger_object
+                .trigger
+                .as_ref()
+                .expect("trigger object payload");
             let TriggerTarget::Objects { object_ids } = &trigger.target else {
                 continue;
             };
@@ -1905,31 +1864,25 @@ mod tests {
             if (trigger.time_seconds - 2.5).abs() <= 1e-6 && object_ids == &["object_0".to_string()]
             {
                 object_zero_same_time_count += 1;
-                if let TriggerAction::TransformObjects { position, .. } = &trigger.action {
-                    approx::assert_abs_diff_eq!(position[0], 0.0, epsilon = 1e-6);
-                    approx::assert_abs_diff_eq!(position[1], 0.0, epsilon = 1e-6);
-                    approx::assert_abs_diff_eq!(position[2], 0.0, epsilon = 1e-6);
-                }
+                approx::assert_abs_diff_eq!(trigger_object.position[0], 0.0, epsilon = 1e-6);
+                approx::assert_abs_diff_eq!(trigger_object.position[1], 0.0, epsilon = 1e-6);
+                approx::assert_abs_diff_eq!(trigger_object.position[2], 0.0, epsilon = 1e-6);
             }
 
             if (trigger.time_seconds - 2.5).abs() <= 1e-6 && object_ids == &["object_4".to_string()]
             {
                 object_one_same_time_count += 1;
-                if let TriggerAction::TransformObjects { position, .. } = &trigger.action {
-                    approx::assert_abs_diff_eq!(position[0], 4.0, epsilon = 1e-6);
-                    approx::assert_abs_diff_eq!(position[1], 0.0, epsilon = 1e-6);
-                    approx::assert_abs_diff_eq!(position[2], 0.0, epsilon = 1e-6);
-                }
+                approx::assert_abs_diff_eq!(trigger_object.position[0], 4.0, epsilon = 1e-6);
+                approx::assert_abs_diff_eq!(trigger_object.position[1], 0.0, epsilon = 1e-6);
+                approx::assert_abs_diff_eq!(trigger_object.position[2], 0.0, epsilon = 1e-6);
             }
 
             if (trigger.time_seconds - 2.5).abs() <= 1e-6 && object_ids == &["object_8".to_string()]
             {
-                if let TriggerAction::TransformObjects { position, .. } = &trigger.action {
-                    if (position[0] - 20.0).abs() <= 1e-6 {
-                        retained_object_two_multi_target = true;
-                    } else if (position[0] - 30.0).abs() <= 1e-6 {
-                        retained_object_two_standalone = true;
-                    }
+                if (trigger_object.position[0] - 20.0).abs() <= 1e-6 {
+                    retained_object_two_multi_target = true;
+                } else if (trigger_object.position[0] - 30.0).abs() <= 1e-6 {
+                    retained_object_two_standalone = true;
                 }
             }
 
@@ -1956,36 +1909,36 @@ mod tests {
         state.editor.objects = vec![test_level_object([0.0, 0.0, 0.0])];
         state.editor.ui.selected_block_indices = vec![0];
         state.editor.ui.selected_block_index = Some(0);
-        state.editor.set_triggers(vec![transform_trigger(
-            2.5,
-            vec!["object_0"],
-            [10.0, 0.0, 0.0],
-        )]);
+        state
+            .editor
+            .objects
+            .push(transform_trigger(2.5, vec!["object_0"], [10.0, 0.0, 0.0]));
 
         assert!(state.add_editor_transform_trigger());
 
         let mut found_target_only_trigger = false;
         let mut found_replacement_trigger = false;
 
-        for trigger in &state.editor.triggers() {
+        for trigger_object in &state.editor.trigger_objects() {
+            let trigger = trigger_object
+                .trigger
+                .as_ref()
+                .expect("trigger object payload");
             let TriggerTarget::Objects { object_ids } = &trigger.target else {
-                continue;
-            };
-            let TriggerAction::TransformObjects { position, .. } = &trigger.action else {
                 continue;
             };
 
             if (trigger.time_seconds - 2.5).abs() <= 1e-6 && object_ids.is_empty() {
                 found_target_only_trigger = true;
-                approx::assert_abs_diff_eq!(position[0], 10.0, epsilon = 1e-6);
+                approx::assert_abs_diff_eq!(trigger_object.position[0], 10.0, epsilon = 1e-6);
             }
 
             if (trigger.time_seconds - 2.5).abs() <= 1e-6 && object_ids == &["object_0".to_string()]
             {
                 found_replacement_trigger = true;
-                approx::assert_abs_diff_eq!(position[0], 0.0, epsilon = 1e-6);
-                approx::assert_abs_diff_eq!(position[1], 0.0, epsilon = 1e-6);
-                approx::assert_abs_diff_eq!(position[2], 0.0, epsilon = 1e-6);
+                approx::assert_abs_diff_eq!(trigger_object.position[0], 0.0, epsilon = 1e-6);
+                approx::assert_abs_diff_eq!(trigger_object.position[1], 0.0, epsilon = 1e-6);
+                approx::assert_abs_diff_eq!(trigger_object.position[2], 0.0, epsilon = 1e-6);
             }
         }
 
@@ -2004,7 +1957,7 @@ mod tests {
 
         state.process_keyboard_input("t", true, true);
         assert_object_pose(&state.editor.objects[0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        assert_eq!(state.editor.triggers().len(), 1);
+        assert_eq!(state.editor.trigger_objects().len(), 1);
         assert_eq!(state.editor.ui.selected_block_indices, vec![1]);
         assert_eq!(state.editor.objects[1].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
     }
@@ -2240,19 +2193,10 @@ mod tests {
         state.editor_clear_taps();
         assert!(state.editor_tap_times().is_empty());
 
-        state.editor.set_triggers(vec![TimedTrigger {
-            time_seconds: 0.0,
-            duration_seconds: 1.0,
-            easing: EasingDirection::Linear,
-            target: TriggerTarget::Objects {
-                object_ids: vec!["obj_000001".to_string()],
-            },
-            action: TriggerAction::TransformObjects {
-                position: [1.0, 0.0, 0.0],
-                rotation: [0.0, 0.0, 0.0],
-                size: [1.0, 1.0, 1.0],
-            },
-        }]);
+        state
+            .editor
+            .objects
+            .push(transform_trigger(0.0, vec!["obj_000001"], [1.0, 0.0, 0.0]));
 
         state.set_editor_playback_speed(4.0);
         assert_eq!(state.editor_playback_speed(), 2.0);

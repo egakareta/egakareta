@@ -1490,6 +1490,7 @@ dependencies = [
  "pollster",
  "puffin",
  "serde_json",
+ "smart-default",
  "tempfile",
  "tokio",
  "web-time",

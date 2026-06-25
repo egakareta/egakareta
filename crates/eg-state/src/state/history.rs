@@ -70,7 +70,7 @@ impl EditorSubsystem {
         self.timing.timing_points = snapshot.timing_points;
         self.timing.mark_timing_points_changed();
         self.sync_trigger_selection_from_objects();
-        let trigger_count = self.triggers().len();
+        let trigger_count = self.trigger_objects().len();
         self.triggers.selected_index = snapshot
             .selected_trigger_index
             .filter(|index| *index < trigger_count);
