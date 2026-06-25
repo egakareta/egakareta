@@ -346,18 +346,3 @@ pub struct BlockBehavior {
     #[serde(default)]
     pub gem_value: u32,
 }
-
-/// Returns the built-in fallback block definition used by runtime catalogs.
-pub fn fallback_block_definition() -> BlockDefinition {
-    BlockDefinition {
-        id: BlockId::default(),
-        display_name: "Standard".to_string(),
-        category: BlockCategory::Building,
-        assets: BlockAssets::default(),
-        render: BlockRender::default(),
-        behavior: BlockBehavior::default(),
-        geometry: BlockGeometry::default(),
-        animation: BlockAnimation::default(),
-        placeable: true,
-    }
-}

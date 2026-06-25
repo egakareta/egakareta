@@ -16,7 +16,7 @@ use std::sync::OnceLock;
 use image::imageops::FilterType;
 use include_dir::{Dir, include_dir};
 
-use eg_types::{BlockDefinition, BlockId, fallback_block_definition};
+use eg_types::{BlockDefinition, BlockId};
 
 static BLOCKS_DIR: Dir<'_> = include_dir!("$EGAKARETA_WORKSPACE_ROOT/assets/blocks");
 static BLOCK_CATALOG: OnceLock<BlockCatalog> = OnceLock::new();
@@ -139,7 +139,7 @@ pub(crate) struct BlockCatalog {
 impl BlockCatalog {
     fn from_definitions(mut definitions: Vec<BlockDefinition>) -> Self {
         if definitions.is_empty() {
-            definitions.push(Self::fallback_definition());
+            definitions.push(BlockDefinition::default());
         }
 
         let mut by_id = HashMap::new();
@@ -148,7 +148,7 @@ impl BlockCatalog {
         }
 
         if !by_id.contains_key(&BlockId::default()) {
-            let fallback = Self::fallback_definition();
+            let fallback = BlockDefinition::default();
             let index = definitions.len();
             by_id.insert(fallback.id.clone(), index);
             definitions.push(fallback);
@@ -159,10 +159,6 @@ impl BlockCatalog {
             by_id,
             fallback_id: BlockId::default(),
         }
-    }
-
-    fn fallback_definition() -> BlockDefinition {
-        fallback_block_definition()
     }
 
     fn block_for_id(&self, block_id: &BlockId) -> &BlockDefinition {
