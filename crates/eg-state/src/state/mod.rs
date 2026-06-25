@@ -147,7 +147,7 @@ impl EditorSubsystem {
         use eg_blocks::BlockId;
 
         Self {
-            ui: EditorState::new(),
+            ui: EditorState::default(),
             config: EditorConfigState {
                 selected_block_id: BlockId::default(),
                 recent_block_ids: vec![BlockId::default()],
@@ -505,7 +505,7 @@ impl State {
                 self.place_editor_block();
             } else if mode == EditorMode::Tapping {
                 self.editor_handle_tapping_click_from_screen(x, y);
-            } else if mode.is_selection_mode() {
+            } else if mode.is_transform_mode() {
                 if self.begin_editor_gizmo_drag(x, y) {
                     return;
                 }

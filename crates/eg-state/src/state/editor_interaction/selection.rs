@@ -69,7 +69,7 @@ impl EditorSubsystem {
     }
 
     pub fn begin_marquee_selection(&mut self, x: f64, y: f64, phase: AppPhase) -> bool {
-        let allows_marquee = self.ui.mode.is_selection_mode();
+        let allows_marquee = self.ui.mode.is_transform_mode();
         if phase != AppPhase::Editor || self.ui.right_dragging || !allows_marquee {
             return false;
         }
@@ -79,7 +79,7 @@ impl EditorSubsystem {
     }
 
     pub fn update_marquee_selection(&mut self, x: f64, y: f64, phase: AppPhase) -> bool {
-        let allows_marquee = self.ui.mode.is_selection_mode();
+        let allows_marquee = self.ui.mode.is_transform_mode();
         if phase != AppPhase::Editor || self.ui.right_dragging || !allows_marquee {
             return false;
         }
@@ -207,7 +207,7 @@ impl EditorSubsystem {
             start[1].max(current[1]) as f32,
         );
 
-        if self.ui.mode.is_selection_mode() {
+        if self.ui.mode.is_transform_mode() {
             let hits = self.marquee_overlapping_blocks(viewport);
 
             if additive {
@@ -258,7 +258,7 @@ impl EditorSubsystem {
         viewport: Vec2,
         phase: AppPhase,
     ) -> bool {
-        let allows_marquee = self.ui.mode.is_selection_mode();
+        let allows_marquee = self.ui.mode.is_transform_mode();
         if phase != AppPhase::Editor || !allows_marquee {
             self.ui.marquee_start_screen = None;
             self.ui.marquee_current_screen = None;
@@ -424,7 +424,7 @@ impl EditorSubsystem {
     }
 
     pub fn begin_block_drag(&mut self, x: f64, y: f64, viewport_size: Vec2) -> bool {
-        if !self.ui.mode.is_selection_mode() {
+        if !self.ui.mode.is_transform_mode() {
             return false;
         }
 
@@ -500,7 +500,7 @@ impl EditorSubsystem {
         viewport: Vec2,
         phase: AppPhase,
     ) -> bool {
-        if phase != AppPhase::Editor || self.ui.right_dragging || !self.ui.mode.is_selection_mode()
+        if phase != AppPhase::Editor || self.ui.right_dragging || !self.ui.mode.is_transform_mode()
         {
             return false;
         }
@@ -700,7 +700,7 @@ impl State {
             .mark_dirty(EditorDirtyFlags::selection_overlay_changed());
 
         let mode = self.editor.mode();
-        if self.phase == AppPhase::Editor && mode.is_selection_mode() {
+        if self.phase == AppPhase::Editor && mode.is_transform_mode() {
             self.editor
                 .select_block_from_screen(x, y, viewport_size, self.phase);
             return true;

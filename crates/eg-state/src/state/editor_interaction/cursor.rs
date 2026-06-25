@@ -56,14 +56,14 @@ impl EditorSubsystem {
         let Some(pick) = self.pick_from_screen(x, y, viewport_size) else {
             self.runtime.interaction.hovered_tap_index = None;
             self.runtime.interaction.hovered_tap_division = None;
-            if self.ui.mode.is_selection_mode() && self.ui.hovered_block_index.is_some() {
+            if self.ui.mode.is_transform_mode() && self.ui.hovered_block_index.is_some() {
                 self.ui.hovered_block_index = None;
                 return EditorInteractionChange::Hover;
             }
             return EditorInteractionChange::None;
         };
 
-        if self.ui.mode.is_selection_mode() {
+        if self.ui.mode.is_transform_mode() {
             self.runtime.interaction.hovered_tap_index = None;
             self.runtime.interaction.hovered_tap_division = None;
             let next_hover = if self.runtime.interaction.hovered_gizmo.is_some() {

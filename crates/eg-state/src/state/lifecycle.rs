@@ -654,7 +654,7 @@ impl State {
                 practice_checkpoints: Vec::new(),
             },
             editor: EditorSubsystem {
-                ui: EditorState::new(),
+                ui: EditorState::default(),
                 config: EditorConfigState {
                     snap_to_grid: app_settings.editor_snap_to_grid,
                     snap_step: app_settings.editor_snap_step.max(0.05),
@@ -1583,7 +1583,7 @@ impl State {
                 practice_checkpoints: Vec::new(),
             },
             editor: EditorSubsystem {
-                ui: EditorState::new(),
+                ui: EditorState::default(),
                 config: EditorConfigState {
                     snap_to_grid: app_settings.editor_snap_to_grid,
                     snap_step: app_settings.editor_snap_step.max(0.05),

@@ -1338,7 +1338,7 @@ pub fn show_editor_ui(
         ui_input_blocking_rects.push(rect_to_input_bounds(rect));
     }
 
-    if view.mode.is_selection_mode()
+    if view.mode.is_transform_mode()
         && let Some((start, current, is_active_drag)) = view.marquee_selection_rect_screen
         && is_active_drag
     {

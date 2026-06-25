@@ -705,7 +705,7 @@ impl State {
 
     pub(super) fn rebuild_editor_hover_outline_vertices(&mut self) {
         puffin::profile_scope!("EditorHoverOutlineMesh");
-        if self.phase != AppPhase::Editor || !self.editor.ui.mode.is_selection_mode() {
+        if self.phase != AppPhase::Editor || !self.editor.ui.mode.is_transform_mode() {
             self.render.meshes.editor_hover_stencil.clear();
             self.render.meshes.editor_hover_outline.clear();
             return;
@@ -857,7 +857,7 @@ impl State {
 
     pub(super) fn rebuild_editor_selection_outline_vertices(&mut self) {
         puffin::profile_scope!("EditorSelectionOutlineMesh");
-        if self.phase != AppPhase::Editor || !self.editor.ui.mode.is_selection_mode() {
+        if self.phase != AppPhase::Editor || !self.editor.ui.mode.is_transform_mode() {
             self.render.meshes.editor_selection_stencil.clear();
             self.render.meshes.editor_selection_outline.clear();
             self.render

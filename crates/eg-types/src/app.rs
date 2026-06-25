@@ -1,3 +1,6 @@
+use is_default::IsDefault;
+use smart_default::SmartDefault;
+
 /*
 
 * Copyright (c) egakareta <team@egakareta.com>.
@@ -71,32 +74,45 @@ pub struct MenuState {
     pub preview_camera_target: [f32; 3],
 }
 
-/// State for the level editor.
 /// Manages cursor position, mode, and other editor-specific settings.
+#[derive(SmartDefault)]
 pub struct EditorState {
+    /// The cursor position, represented as a 3D coordinate in the level world space.
     pub cursor: [f32; 3],
+    /// The current mode of the editor, determining available actions and interactions.
     pub mode: EditorMode,
+    /// Whether the left mouse button is currently pressed down.
     pub left_mouse_down: bool,
+    /// Whether the right mouse button is currently pressed down.
     pub right_dragging: bool,
+    /// Whether the forward (default W) key is currently held down.
     pub pan_up_held: bool,
+    /// Whether the backward (default S) key is currently held down.
     pub pan_down_held: bool,
+    /// Whether the left (default A) key is currently held down.
     pub pan_left_held: bool,
+    /// Whether the right (default D) key is currently held down.
     pub pan_right_held: bool,
+    /// Whether the Shift key is currently held down.
     pub shift_held: bool,
+    /// Whether the Ctrl key is currently held down.
     pub ctrl_held: bool,
+    /// Whether the Alt key is currently held down.
     pub alt_held: bool,
     pub selected_block_index: Option<usize>,
     pub selected_block_indices: Vec<usize>,
+    /// The index of the block currently hovered by the cursor, if any.
     pub hovered_block_index: Option<usize>,
     pub pointer_screen: Option<[f64; 2]>,
     pub ui_input_blocking_rects: Vec<[f32; 4]>,
+    #[default = 1.0]
     pub ui_input_pixels_per_point: f32,
     pub marquee_start_screen: Option<[f64; 2]>,
     pub marquee_current_screen: Option<[f64; 2]>,
     pub show_hitbox_visualization: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, IsDefault)]
 /// The current mode of the level editor.
 /// Determines what actions are available and how interactions behave.
 pub enum EditorMode {
@@ -112,10 +128,12 @@ pub enum EditorMode {
 }
 
 impl EditorMode {
-    pub fn is_selection_mode(self) -> bool {
+    /// True if the mode is meant to transform existing objects.
+    pub fn is_transform_mode(self) -> bool {
         matches!(self, Self::Select | Self::Move | Self::Scale | Self::Rotate)
     }
 
+    /// True if the mode is in the Compose tab.
     pub fn is_compose_mode(self) -> bool {
         matches!(
             self,
@@ -123,57 +141,29 @@ impl EditorMode {
         )
     }
 
+    /// True if the editor should show movement gizmos for the selected objects.
     pub fn shows_move_gizmo(self) -> bool {
         self == Self::Move
     }
 
+    /// True if the editor should show scaling gizmos for the selected objects.
     pub fn shows_scale_gizmo(self) -> bool {
         self == Self::Scale
     }
 
+    /// True if the editor should show rotation gizmos for the selected objects.
     pub fn shows_rotate_gizmo(self) -> bool {
         self == Self::Rotate
     }
 
+    /// True if the editor should show any gizmos for the selected objects.
     pub fn shows_gizmo(self) -> bool {
         self.shows_move_gizmo() || self.shows_scale_gizmo() || self.shows_rotate_gizmo()
     }
 
+    /// True if the editor can select objects in this mode.
     pub fn can_select(self) -> bool {
         self != Self::Null && self != Self::Timing && self != Self::Tapping
-    }
-}
-
-impl EditorState {
-    pub fn new() -> Self {
-        Self {
-            cursor: [0.0, 0.0, 0.0],
-            mode: EditorMode::Place,
-            left_mouse_down: false,
-            right_dragging: false,
-            pan_up_held: false,
-            pan_down_held: false,
-            pan_left_held: false,
-            pan_right_held: false,
-            shift_held: false,
-            ctrl_held: false,
-            alt_held: false,
-            selected_block_index: None,
-            selected_block_indices: Vec::new(),
-            hovered_block_index: None,
-            pointer_screen: None,
-            ui_input_blocking_rects: Vec::new(),
-            ui_input_pixels_per_point: 1.0,
-            marquee_start_screen: None,
-            marquee_current_screen: None,
-            show_hitbox_visualization: false,
-        }
-    }
-}
-
-impl Default for EditorState {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
