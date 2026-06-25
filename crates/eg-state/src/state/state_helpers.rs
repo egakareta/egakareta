@@ -176,7 +176,7 @@ impl EditorSubsystem {
         trigger_index: usize,
         position: [f32; 3],
         size: [f32; 3],
-        rotation_degrees: [f32; 3],
+        rotation: [f32; 3],
     ) -> bool {
         // Find the trigger object by scanning objects for the Nth trigger
         let mut found = 0usize;
@@ -200,7 +200,7 @@ impl EditorSubsystem {
         let clamped_position = [position[0], position[1].max(0.0), position[2]];
         obj.position = clamped_position;
         obj.size = [size[0].max(0.01), size[1].max(0.01), size[2].max(0.01)];
-        obj.rotation = rotation_degrees;
+        obj.rotation = rotation;
 
         self.ui.cursor = [
             clamped_position[0],

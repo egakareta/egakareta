@@ -14,7 +14,7 @@ pub fn create_block_at_cursor(
     cursor: [f32; 3],
     block_id: &str,
     default_size: [f32; 3],
-    rotation_degrees: [f32; 3],
+    rotation: [f32; 3],
 ) -> LevelObject {
     let trigger = (block_id == TRANSFORM_TRIGGER_BLOCK_ID).then(|| TimedTrigger {
         time_seconds: 0.0,
@@ -30,7 +30,7 @@ pub fn create_block_at_cursor(
     LevelObject {
         position: cursor,
         size: default_size,
-        rotation: rotation_degrees,
+        rotation,
         trigger,
         ..LevelObject::new(block_id)
     }

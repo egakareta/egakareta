@@ -40,7 +40,7 @@ pub struct EditorDragBlockStart {
     pub index: usize,
     pub position: [f32; 3],
     pub size: [f32; 3],
-    pub rotation_degrees: [f32; 3],
+    pub rotation: [f32; 3],
 }
 
 #[derive(Clone)]

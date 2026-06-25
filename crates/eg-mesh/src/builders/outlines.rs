@@ -29,7 +29,7 @@ fn unit_corner_direction(local: Vec3) -> Vec3 {
 fn build_editor_outline_hull_vertices(
     position: [f32; 3],
     size: [f32; 3],
-    rotation_degrees: [f32; 3],
+    rotation: [f32; 3],
     line_width_pixels: f32,
     color_top: [f32; 4],
     color_side: [f32; 4],
@@ -59,8 +59,8 @@ fn build_editor_outline_hull_vertices(
         .map(|vertex| unit_corner_direction(Vec3::from(vertex.position) - center_vec))
         .collect::<Vec<_>>();
 
-    rotate_vertices_around_euler(&mut vertices, center, rotation_degrees);
-    let rotation = euler_rotation_matrix(rotation_degrees);
+    rotate_vertices_around_euler(&mut vertices, center, rotation);
+    let rotation = euler_rotation_matrix(rotation);
     let outline_width_pixels = (line_width_pixels * 1.35).max(1.0);
     for (vertex, local_direction) in vertices.iter_mut().zip(local_directions) {
         let anchor = Vec3::from(vertex.position) - rotation * local_direction;
@@ -168,14 +168,14 @@ pub fn build_editor_hitbox_visualization_vertices(
 pub fn build_editor_selection_outline_vertices(
     position: [f32; 3],
     size: [f32; 3],
-    rotation_degrees: [f32; 3],
+    rotation: [f32; 3],
     line_width: f32,
 ) -> Vec<Vertex> {
     let selection_color = [0.098, 0.6, 1.0, 1.0];
     build_editor_outline_hull_vertices(
         position,
         size,
-        rotation_degrees,
+        rotation,
         line_width,
         selection_color,
         selection_color,
@@ -185,14 +185,14 @@ pub fn build_editor_selection_outline_vertices(
 pub fn build_editor_transform_trigger_target_outline_vertices(
     position: [f32; 3],
     size: [f32; 3],
-    rotation_degrees: [f32; 3],
+    rotation: [f32; 3],
     line_width: f32,
 ) -> Vec<Vertex> {
     let target_color = [0.72, 0.22, 1.0, 1.0];
     build_editor_outline_hull_vertices(
         position,
         size,
-        rotation_degrees,
+        rotation,
         line_width,
         target_color,
         target_color,
@@ -202,14 +202,14 @@ pub fn build_editor_transform_trigger_target_outline_vertices(
 pub fn build_editor_hover_outline_vertices(
     position: [f32; 3],
     size: [f32; 3],
-    rotation_degrees: [f32; 3],
+    rotation: [f32; 3],
     line_width: f32,
 ) -> Vec<Vertex> {
     let hover_color = [0.698, 0.898, 1.0, 1.0];
     build_editor_outline_hull_vertices(
         position,
         size,
-        rotation_degrees,
+        rotation,
         line_width,
         hover_color,
         hover_color,

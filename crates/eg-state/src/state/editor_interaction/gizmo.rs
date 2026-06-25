@@ -18,7 +18,7 @@ const GIZMO_ROTATE_PICK_RADIUS_PIXELS: f32 = 18.0;
 
 impl EditorSubsystem {
     fn selected_gizmo_rotation(&self) -> glam::Quat {
-        let rotation_degrees = self
+        let rotation = self
             .selected_indices_normalized()
             .first()
             .and_then(|&index| self.objects.get(index))
@@ -31,9 +31,9 @@ impl EditorSubsystem {
 
         glam::Quat::from_euler(
             glam::EulerRot::XYZ,
-            rotation_degrees[0].to_radians(),
-            rotation_degrees[1].to_radians(),
-            rotation_degrees[2].to_radians(),
+            rotation[0].to_radians(),
+            rotation[1].to_radians(),
+            rotation[2].to_radians(),
         )
     }
 
@@ -65,20 +65,20 @@ impl EditorSubsystem {
             .map(|b| {
                 glam::Quat::from_euler(
                     glam::EulerRot::XYZ,
-                    b.rotation_degrees[0].to_radians(),
-                    b.rotation_degrees[1].to_radians(),
-                    b.rotation_degrees[2].to_radians(),
+                    b.rotation[0].to_radians(),
+                    b.rotation[1].to_radians(),
+                    b.rotation[2].to_radians(),
                 )
             })
             .unwrap_or_default()
     }
 
-    fn rotation_from_degrees(rotation_degrees: [f32; 3]) -> glam::Quat {
+    fn rotation_from_degrees(rotation: [f32; 3]) -> glam::Quat {
         glam::Quat::from_euler(
             glam::EulerRot::XYZ,
-            rotation_degrees[0].to_radians(),
-            rotation_degrees[1].to_radians(),
-            rotation_degrees[2].to_radians(),
+            rotation[0].to_radians(),
+            rotation[1].to_radians(),
+            rotation[2].to_radians(),
         )
     }
 
@@ -106,7 +106,7 @@ impl EditorSubsystem {
         }
         next_size[axis_index] = axis_size.max(min_size);
 
-        let rotation = Self::rotation_from_degrees(start.rotation_degrees);
+        let rotation = Self::rotation_from_degrees(start.rotation);
         let rotated_axis = rotation * local_axis;
         let start_position = Vec3::from(start.position);
         let start_size = Vec3::from(start.size);
@@ -234,7 +234,7 @@ impl EditorSubsystem {
                         start.index,
                         next,
                         start.size,
-                        start.rotation_degrees,
+                        start.rotation,
                     ) {
                         first_cursor = Some(next);
                     }
@@ -278,7 +278,7 @@ impl EditorSubsystem {
                         start.index,
                         next_position,
                         next_size,
-                        start.rotation_degrees,
+                        start.rotation,
                     );
                 } else {
                     for block in &drag.start_blocks {
@@ -351,9 +351,9 @@ impl EditorSubsystem {
                 let apply_rotation = |block: EditorDragBlockStart| {
                     let block_rotation = glam::Quat::from_euler(
                         glam::EulerRot::XYZ,
-                        block.rotation_degrees[0].to_radians(),
-                        block.rotation_degrees[1].to_radians(),
-                        block.rotation_degrees[2].to_radians(),
+                        block.rotation[0].to_radians(),
+                        block.rotation[1].to_radians(),
+                        block.rotation[2].to_radians(),
                     );
                     let world_axis = block_rotation * local_axis;
                     let delta_quat =
@@ -495,7 +495,7 @@ impl EditorSubsystem {
         }
 
         if allow_rotate {
-            let rotation_degrees = self
+            let rotation = self
                 .selected_indices_normalized()
                 .first()
                 .and_then(|&index| self.objects.get(index))
@@ -507,9 +507,9 @@ impl EditorSubsystem {
                 .unwrap_or([0.0, 0.0, 0.0]);
             let rotation = glam::Quat::from_euler(
                 glam::EulerRot::XYZ,
-                rotation_degrees[0].to_radians(),
-                rotation_degrees[1].to_radians(),
-                rotation_degrees[2].to_radians(),
+                rotation[0].to_radians(),
+                rotation[1].to_radians(),
+                rotation[2].to_radians(),
             );
 
             let ring_radius = axis_lengths[0] * 0.78;
@@ -652,7 +652,7 @@ impl EditorSubsystem {
                 index: trigger_index,
                 position: target.position,
                 size: target.size,
-                rotation_degrees: target.rotation,
+                rotation: target.rotation,
             });
         } else {
             for index in indices {
@@ -661,7 +661,7 @@ impl EditorSubsystem {
                         index,
                         position: obj.position,
                         size: obj.size,
-                        rotation_degrees: obj.rotation,
+                        rotation: obj.rotation,
                     });
                 }
             }
@@ -818,7 +818,7 @@ mod tests {
             index,
             position: block.position,
             size: block.size,
-            rotation_degrees: block.rotation,
+            rotation: block.rotation,
         }
     }
 
@@ -1551,13 +1551,13 @@ mod tests {
                     index: 0,
                     position: [0.0, 0.0, 0.0],
                     size: [1.0, 1.0, 1.0],
-                    rotation_degrees: [0.0, 0.0, 0.0],
+                    rotation: [0.0, 0.0, 0.0],
                 },
                 EditorDragBlockStart {
                     index: 1,
                     position: [0.0, 3.0, 0.0],
                     size: [1.0, 1.0, 1.0],
-                    rotation_degrees: [0.0, 0.0, 0.0],
+                    rotation: [0.0, 0.0, 0.0],
                 },
             ],
         });

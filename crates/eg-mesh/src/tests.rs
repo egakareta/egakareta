@@ -150,7 +150,7 @@ mod tests {
         let vertices_normal = build_editor_gizmo_vertices(GizmoParams {
             position,
             size,
-            rotation_degrees: [0.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0],
             axis_lengths,
             axis_width,
             resize_radius,
@@ -166,7 +166,7 @@ mod tests {
         let vertices_hovered = build_editor_gizmo_vertices(GizmoParams {
             position,
             size,
-            rotation_degrees: [0.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0],
             axis_lengths,
             axis_width,
             resize_radius,
@@ -258,7 +258,7 @@ mod tests {
         let vertices = build_editor_gizmo_vertices(GizmoParams {
             position: [0.0, 0.0, 0.0],
             size: [2.0, 2.0, 2.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0],
             axis_lengths: [3.0, 4.0, 5.0],
             axis_width: 0.1,
             resize_radius: 0.2,
@@ -284,7 +284,7 @@ mod tests {
         let vertices = build_editor_gizmo_vertices(GizmoParams {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 90.0, 0.0],
+            rotation: [0.0, 90.0, 0.0],
             axis_lengths: [4.0, 4.0, 4.0],
             axis_width: 0.2,
             resize_radius: 0.2,
@@ -497,16 +497,15 @@ mod tests {
     #[test]
     fn camera_trigger_arrow_matches_camera_pose_direction() {
         let position = [3.0, 4.0, 5.0];
-        let rotation_degrees = [30.0, 60.0, 0.0];
+        let rotation = [30.0, 60.0, 0.0];
         let obj = LevelObject {
             position,
-            rotation: rotation_degrees,
+            rotation: rotation,
             ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         };
         let vertices = build_block_geometry(std::slice::from_ref(&obj)).to_triangle_vertices();
         let eye = obj.center();
-        let forward =
-            glam::Vec3::from_array(CameraTrigger::forward_from_rotation(rotation_degrees));
+        let forward = glam::Vec3::from_array(CameraTrigger::forward_from_rotation(rotation));
 
         let max_forward = vertices
             .iter()
@@ -523,16 +522,15 @@ mod tests {
 
     #[test]
     fn camera_trigger_arrow_normalizes_wrapped_pitch_rotation() {
-        let rotation_degrees = [-135.0, 0.0, 180.0];
+        let rotation = [-135.0, 0.0, 180.0];
         let obj = LevelObject {
             position: [0.0, 0.0, 0.0],
-            rotation: rotation_degrees,
+            rotation: rotation,
             ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         };
         let vertices = build_block_geometry(std::slice::from_ref(&obj)).to_triangle_vertices();
         let eye = obj.center();
-        let forward =
-            glam::Vec3::from_array(CameraTrigger::forward_from_rotation(rotation_degrees));
+        let forward = glam::Vec3::from_array(CameraTrigger::forward_from_rotation(rotation));
 
         assert!(forward.y < -0.6);
         let max_forward = vertices
@@ -553,7 +551,7 @@ mod tests {
         let params = GizmoParams {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0],
             axis_lengths: [8.0, 8.0, 8.0],
             axis_width: 0.5,
             resize_radius: 0.15,
@@ -609,7 +607,7 @@ mod tests {
         let params = GizmoParams {
             position: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
-            rotation_degrees: [0.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0],
             axis_lengths: [4.0, 4.0, 4.0],
             axis_width: 0.2,
             resize_radius: 0.2,

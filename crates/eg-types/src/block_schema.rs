@@ -576,7 +576,7 @@ pub struct BlockIconCamera {
     #[serde(default)]
     pub position: Option<[f32; 3]>,
     /// Optional camera rotation in degrees.
-    #[serde(default, alias = "rotation_degrees")]
+    #[serde(default)]
     pub rotation: Option<[f32; 3]>,
     /// Optional orthographic half extent.
     #[serde(default)]

@@ -258,7 +258,7 @@ pub fn build_practice_checkpoint_flag_geometry(
 }
 
 fn practice_checkpoint_flag_object(checkpoint: &PracticeCheckpointFlagInstance) -> LevelObject {
-    let rotation_degrees = match checkpoint.direction {
+    let rotation = match checkpoint.direction {
         Direction::Forward => [0.0, 0.0, 0.0],
         Direction::Right => [0.0, 90.0, 0.0],
     };
@@ -269,7 +269,7 @@ fn practice_checkpoint_flag_object(checkpoint: &PracticeCheckpointFlagInstance) 
             checkpoint.position[2],
         ],
         size: PRACTICE_CHECKPOINT_FLAG_SIZE,
-        rotation: rotation_degrees,
+        rotation: rotation,
         ..LevelObject::new(PRACTICE_CHECKPOINT_FLAG_BLOCK_ID)
     }
 }
@@ -534,12 +534,12 @@ pub fn object_center(position: [f32; 3], size: [f32; 3]) -> [f32; 3] {
     ]
 }
 
-pub fn transform_marker_rotation(rotation_degrees: [f32; 3]) -> Quat {
+pub fn transform_marker_rotation(rotation: [f32; 3]) -> Quat {
     Quat::from_euler(
         EulerRot::XYZ,
-        rotation_degrees[0].to_radians(),
-        rotation_degrees[1].to_radians(),
-        rotation_degrees[2].to_radians(),
+        rotation[0].to_radians(),
+        rotation[1].to_radians(),
+        rotation[2].to_radians(),
     )
 }
 

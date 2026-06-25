@@ -284,7 +284,7 @@ pub fn ray_intersect_sphere(
 /// - `ray_origin`: The ray origin in world space.
 /// - `ray_dir`: The ray direction in world space (does not need to be normalized).
 /// - `obj`: The level object whose hitboxes to test against. The object may have an
-///   arbitrary rotation specified by its `rotation_degrees` field.
+///   arbitrary rotation specified by its `rotation` field.
 ///
 /// # Returns
 /// - `Some((t, normal))` where `t` is the distance along the ray to the closest

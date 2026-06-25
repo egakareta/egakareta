@@ -16,7 +16,7 @@ const ROTATE_RING_TUBE_SEGMENTS: usize = 12;
 pub struct GizmoParams {
     pub position: [f32; 3],
     pub size: [f32; 3],
-    pub rotation_degrees: [f32; 3],
+    pub rotation: [f32; 3],
     pub axis_lengths: [f32; 3],
     pub axis_width: f32,
     pub resize_radius: f32,
@@ -32,7 +32,7 @@ pub fn build_editor_gizmo_vertices(
     GizmoParams {
         position,
         size,
-        rotation_degrees,
+        rotation,
         axis_lengths,
         axis_width,
         resize_radius,
@@ -51,7 +51,7 @@ pub fn build_editor_gizmo_vertices(
         position[1] + size[1] * 0.5,
         position[2] + size[2] * 0.5,
     ];
-    let rotation = rotation_from_degrees(rotation_degrees);
+    let rotation_quat = rotation_from_degrees(rotation);
 
     let color_x_normal = [0.804, 0.0, 0.0, 0.6];
     let color_x_active = [1.0, 0.0, 0.0, 1.0];
@@ -245,7 +245,7 @@ pub fn build_editor_gizmo_vertices(
             );
         }
 
-        rotate_appended_vertices(&mut vertices, move_vertices_start, center, rotation);
+        rotate_appended_vertices(&mut vertices, move_vertices_start, center, rotation_quat);
     }
 
     // Resize handles
@@ -350,7 +350,7 @@ pub fn build_editor_gizmo_vertices(
             append_sphere(&mut vertices, pos, inner_resize_radius, inner_color);
         }
 
-        rotate_appended_vertices(&mut vertices, scale_vertices_start, center, rotation);
+        rotate_appended_vertices(&mut vertices, scale_vertices_start, center, rotation_quat);
     }
 
     if show_rotate_handles {
@@ -375,7 +375,7 @@ pub fn build_editor_gizmo_vertices(
             append_rotation_ring(
                 &mut vertices,
                 center,
-                rotation_degrees,
+                rotation,
                 variant,
                 ring_radius,
                 tube_radius,
@@ -387,12 +387,12 @@ pub fn build_editor_gizmo_vertices(
     vertices
 }
 
-fn rotation_from_degrees(rotation_degrees: [f32; 3]) -> Quat {
+fn rotation_from_degrees(rotation: [f32; 3]) -> Quat {
     Quat::from_euler(
         glam::EulerRot::XYZ,
-        rotation_degrees[0].to_radians(),
-        rotation_degrees[1].to_radians(),
-        rotation_degrees[2].to_radians(),
+        rotation[0].to_radians(),
+        rotation[1].to_radians(),
+        rotation[2].to_radians(),
     )
 }
 
@@ -416,13 +416,13 @@ fn rotate_appended_vertices(
 fn append_rotation_ring(
     vertices: &mut Vec<Vertex>,
     center: [f32; 3],
-    rotation_degrees: [f32; 3],
+    rotation: [f32; 3],
     ring_part: GizmoPart,
     radius: f32,
     tube_radius: f32,
     color: [f32; 4],
 ) {
-    let rotation = rotation_from_degrees(rotation_degrees);
+    let rotation = rotation_from_degrees(rotation);
 
     for i in 0..ROTATE_RING_SEGMENTS {
         let next_i = (i + 1) % ROTATE_RING_SEGMENTS;

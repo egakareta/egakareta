@@ -786,11 +786,11 @@ fn build_transform_trigger_block_vertices(
 pub fn append_camera_trigger_visual_vertices(
     vertices: &mut Vec<Vertex>,
     position: [f32; 3],
-    rotation_degrees: [f32; 3],
+    rotation: [f32; 3],
     style: &CameraTriggerVisualStyle,
 ) {
     let eye = Vec3::from_array(position);
-    let forward = Vec3::from_array(CameraTrigger::forward_from_rotation(rotation_degrees));
+    let forward = Vec3::from_array(CameraTrigger::forward_from_rotation(rotation));
     let arrow_direction = if forward.length_squared() > f32::EPSILON {
         forward
     } else {
@@ -875,11 +875,11 @@ pub fn append_transform_trigger_visual_vertices(
     vertices: &mut Vec<Vertex>,
     position: [f32; 3],
     size: [f32; 3],
-    rotation_degrees: [f32; 3],
+    rotation: [f32; 3],
     style: &TransformTriggerVisualStyle,
 ) {
     let center = Vec3::from_array(object_center(position, size));
-    let rotation = transform_marker_rotation(rotation_degrees);
+    let rotation = transform_marker_rotation(rotation);
     append_transform_trigger_visual_vertices_with_rotation(
         vertices, position, size, center, rotation, style,
     );

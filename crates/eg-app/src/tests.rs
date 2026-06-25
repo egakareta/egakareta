@@ -163,7 +163,7 @@ mod tests {
         let object = &value["objects"][0];
         assert!(object.get("position").is_none());
         assert!(object.get("size").is_none());
-        assert!(object.get("rotation_degrees").is_none());
+        assert!(object.get("rotation").is_none());
         assert!(object.get("block_id").is_none());
     }
 

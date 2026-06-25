@@ -312,7 +312,7 @@ fn show_camera_follow_trigger_controls(
     transition_interval_seconds: &mut f32,
     use_full_segment_transition: &mut bool,
     distance: &mut f32,
-    rotation: &mut f32,
+    yaw: &mut f32,
     pitch: &mut f32,
 ) -> bool {
     let mut changed = false;
@@ -329,17 +329,17 @@ fn show_camera_follow_trigger_controls(
                 )
                 .changed();
 
-            let mut rotation_degrees = rotation.to_degrees();
+            let mut yaw_degrees = yaw.to_degrees();
             if ui
                 .add(
-                    egui::DragValue::new(&mut rotation_degrees)
+                    egui::DragValue::new(&mut yaw_degrees)
                         .speed(0.5)
-                        .prefix("Rotation ")
+                        .prefix("Yaw ")
                         .suffix("°"),
                 )
                 .changed()
             {
-                *rotation = rotation_degrees.to_radians();
+                *yaw = yaw_degrees.to_radians();
                 row_changed = true;
             }
 

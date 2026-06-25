@@ -245,7 +245,7 @@ fn transform_trigger_markers_for_triggers(
         }
 
         let position = trigger_object.position;
-        let rotation_degrees = trigger_object.rotation;
+        let rotation = trigger_object.rotation;
         let size = trigger_object.size;
 
         let source_objects = transform_trigger_marker_source_objects(
@@ -260,7 +260,7 @@ fn transform_trigger_markers_for_triggers(
                 source_position: None,
                 source_size: None,
                 target_position: position,
-                target_rotation_degrees: rotation_degrees,
+                target_rotation_degrees: rotation,
                 target_size: size,
                 time_seconds: trigger.time_seconds,
                 duration_seconds: trigger.duration_seconds,
@@ -278,7 +278,7 @@ fn transform_trigger_markers_for_triggers(
                     source_position: Some(source_object.position),
                     source_size: Some(source_object.size),
                     target_position: position,
-                    target_rotation_degrees: rotation_degrees,
+                    target_rotation_degrees: rotation,
                     target_size: size,
                     time_seconds: trigger.time_seconds,
                     duration_seconds: trigger.duration_seconds,
@@ -819,7 +819,7 @@ impl State {
             .hovered_gizmo
             .map(|(kind, axis)| GizmoPart::from_axis_kind(axis, kind));
 
-        let rotation_degrees = self
+        let rotation = self
             .editor
             .selected_indices_normalized()
             .first()
@@ -835,7 +835,7 @@ impl State {
         let vertices = build_editor_gizmo_vertices(GizmoParams {
             position: bounds_position,
             size: bounds_size,
-            rotation_degrees,
+            rotation,
             axis_lengths,
             axis_width,
             resize_radius,

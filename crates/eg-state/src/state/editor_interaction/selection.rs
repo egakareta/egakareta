@@ -475,7 +475,7 @@ impl EditorSubsystem {
                         index,
                         position: obj.position,
                         size: obj.size,
-                        rotation_degrees: obj.rotation,
+                        rotation: obj.rotation,
                     });
                 }
             }
@@ -1299,7 +1299,7 @@ mod tests {
                 index: 0,
                 position: state.editor.objects[0].position,
                 size: state.editor.objects[0].size,
-                rotation_degrees: state.editor.objects[0].rotation,
+                rotation: state.editor.objects[0].rotation,
             }],
         });
 
@@ -1332,7 +1332,7 @@ mod tests {
                 index: 0,
                 position: state.editor.objects[0].position,
                 size: state.editor.objects[0].size,
-                rotation_degrees: state.editor.objects[0].rotation,
+                rotation: state.editor.objects[0].rotation,
             }],
         });
 
@@ -1399,7 +1399,7 @@ mod tests {
                 index: 0,
                 position: state.editor.objects[0].position,
                 size: state.editor.objects[0].size,
-                rotation_degrees: state.editor.objects[0].rotation,
+                rotation: state.editor.objects[0].rotation,
             }],
         });
 
@@ -1430,7 +1430,7 @@ mod tests {
                 index: 0,
                 position: [0.0, 0.0, 0.0],
                 size: state.editor.objects[0].size,
-                rotation_degrees: state.editor.objects[0].rotation,
+                rotation: state.editor.objects[0].rotation,
             }],
         });
 
@@ -1479,7 +1479,7 @@ mod tests {
                 index: 1,
                 position: state.editor.objects[1].position,
                 size: state.editor.objects[1].size,
-                rotation_degrees: state.editor.objects[1].rotation,
+                rotation: state.editor.objects[1].rotation,
             }],
         });
 
@@ -1530,7 +1530,7 @@ mod tests {
                 index: 1,
                 position: state.editor.objects[1].position,
                 size: state.editor.objects[1].size,
-                rotation_degrees: state.editor.objects[1].rotation,
+                rotation: state.editor.objects[1].rotation,
             }],
         });
 
@@ -1700,7 +1700,7 @@ mod tests {
                 index: 0,
                 position: state.editor.objects[0].position,
                 size: state.editor.objects[0].size,
-                rotation_degrees: state.editor.objects[0].rotation,
+                rotation: state.editor.objects[0].rotation,
             }],
         });
 

@@ -18,12 +18,12 @@ pub fn build_editor_cursor_vertices(
     cursor: [f32; 3],
     size: [f32; 3],
     block_id: &str,
-    rotation_degrees: [f32; 3],
+    rotation: [f32; 3],
 ) -> Vec<Vertex> {
     let object = LevelObject {
         position: cursor,
         size,
-        rotation: rotation_degrees,
+        rotation: rotation,
         ..LevelObject::new(block_id)
     };
 
@@ -112,13 +112,12 @@ mod tests {
     fn cursor_vertices_apply_requested_rotation() {
         let position = [1.0, 2.0, 3.0];
         let size = [2.0, 0.25, 1.0];
-        let rotation_degrees = [0.0, 90.0, 0.0];
-        let vertices =
-            build_editor_cursor_vertices(position, size, "core/speedportal", rotation_degrees);
+        let rotation = [0.0, 90.0, 0.0];
+        let vertices = build_editor_cursor_vertices(position, size, "core/speedportal", rotation);
         let block_vertices = build_block_geometry_for_object(&LevelObject {
             position,
             size,
-            rotation: rotation_degrees,
+            rotation: rotation,
             ..LevelObject::new("core/speedportal")
         })
         .to_triangle_vertices();

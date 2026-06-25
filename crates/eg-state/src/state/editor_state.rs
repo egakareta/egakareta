@@ -267,7 +267,7 @@ impl EditorSubsystem {
         }
     }
 
-    pub fn set_selected_block_rotation(&mut self, rotation_degrees: [f32; 3]) {
+    pub fn set_selected_block_rotation(&mut self, rotation: [f32; 3]) {
         if let Some(index) = self
             .ui
             .selected_block_index
@@ -275,9 +275,9 @@ impl EditorSubsystem {
         {
             let next_rotation = if self.effective_snap_rotation() {
                 let step = self.config.snap_rotation_step_degrees.max(1.0);
-                rotation_degrees.map(|component| (component / step).round() * step)
+                rotation.map(|component| (component / step).round() * step)
             } else {
-                rotation_degrees
+                rotation
             };
             self.objects[index].rotation = next_rotation;
         }
@@ -854,7 +854,7 @@ impl State {
         }
     }
 
-    pub fn set_editor_selected_block_rotation(&mut self, rotation_degrees: [f32; 3]) {
+    pub fn set_editor_selected_block_rotation(&mut self, rotation: [f32; 3]) {
         if self.phase != AppPhase::Editor {
             return;
         }
@@ -863,7 +863,7 @@ impl State {
 
         self.sync_primary_selection_from_indices();
 
-        self.editor.set_selected_block_rotation(rotation_degrees);
+        self.editor.set_selected_block_rotation(rotation);
 
         if self.editor.ui.selected_block_index.is_some() {
             self.sync_editor_objects();

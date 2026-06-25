@@ -461,7 +461,7 @@ impl LevelObject {
         Vec3::from_array(self.position) + Vec3::from_array(self.size) * 0.5
     }
 
-    /// Rotation radians matrix for the object, based on its rotation_degrees.
+    /// Rotation radians matrix for the object, based on its rotation.
     pub fn basis(&self) -> Mat3 {
         Mat3::from_euler(
             EulerRot::XYZ,
