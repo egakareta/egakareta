@@ -19,7 +19,7 @@ pub struct SelectedTapViewModel {
     pub position: [f32; 3],
 }
 
-pub struct EditorUiViewModel<'a> {
+pub struct UiViewModel<'a> {
     pub is_editor: bool,
     pub is_menu: bool,
     pub is_game_paused: bool,
@@ -97,7 +97,7 @@ pub struct EditorUiViewModel<'a> {
 }
 
 impl State {
-    pub fn editor_ui_view_model(&self) -> EditorUiViewModel<'_> {
+    pub fn ui_view_model(&self) -> UiViewModel<'_> {
         let (timeline_preview_position, timeline_preview_direction) =
             self.editor_timeline_preview();
         let selected_block_indices = self.editor.selected_indices_normalized();
@@ -118,7 +118,7 @@ impl State {
         let camera_position = (camera_target + self.editor.camera_offset()).to_array();
         let (camera_preview_position, camera_preview_target) = self.editor_preview_camera_view();
 
-        EditorUiViewModel {
+        UiViewModel {
             is_editor: self.is_editor(),
             is_menu: self.is_menu(),
             is_game_paused: self.is_game_paused(),

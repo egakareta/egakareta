@@ -56,7 +56,7 @@ pub use history::EditorHistoryState;
 pub use perf::EditorPerfState;
 pub use render::RenderSubsystem;
 pub use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
-pub use view_model::EditorUiViewModel;
+pub use view_model::UiViewModel;
 
 use crate::state::editor_command::EditorCommand;
 use eg_game::{GameCheckpointState, GameState};

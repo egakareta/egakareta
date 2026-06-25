@@ -7,7 +7,7 @@
 */
 use crate::components::show_shadowed_label;
 use eg_state::commands::AppCommand;
-use eg_state::state::EditorUiViewModel;
+use eg_state::state::UiViewModel;
 use eg_state::state::editor_command::EditorCommand;
 
 const MENU_TEXTURE_MAX_DIMENSION: u32 = 256;
@@ -138,7 +138,7 @@ const PAUSE_MENU_PRACTICE_GAP: f32 = 10.0;
 /// Shows the selected level name in the menu hero position.
 pub fn show_menu_favicon_ui(
     ctx: &egui::Context,
-    view: &EditorUiViewModel<'_>,
+    view: &UiViewModel<'_>,
     _favicon: &egui::TextureHandle,
 ) {
     if !view.is_menu {
@@ -179,7 +179,7 @@ pub fn show_menu_favicon_ui(
 /// Shows the menu play button UI overlay.
 pub fn show_menu_play_ui(
     ctx: &egui::Context,
-    view: &EditorUiViewModel<'_>,
+    view: &UiViewModel<'_>,
     commands: &mut Vec<AppCommand>,
     play_button: Option<&egui::TextureHandle>,
     play_button_filled: Option<&egui::TextureHandle>,
@@ -318,7 +318,7 @@ fn show_menu_image_button_at_rect(
 /// Shows the in-game pause menu overlay for real gameplay sessions.
 pub fn show_pause_menu_ui(
     ctx: &egui::Context,
-    view: &EditorUiViewModel<'_>,
+    view: &UiViewModel<'_>,
     commands: &mut Vec<AppCommand>,
 ) {
     if !view.is_game_paused {
@@ -424,7 +424,7 @@ pub fn show_pause_menu_ui(
 /// Shows the practice-mode checkpoint placement button during real gameplay.
 pub fn show_practice_checkpoint_ui(
     ctx: &egui::Context,
-    view: &EditorUiViewModel<'_>,
+    view: &UiViewModel<'_>,
     commands: &mut Vec<AppCommand>,
 ) {
     if !view.is_practice_mode_enabled || view.is_game_paused {
@@ -477,7 +477,7 @@ pub fn show_practice_checkpoint_ui(
     }
 }
 
-fn show_menu_level_progress_row(ui: &mut egui::Ui, view: &EditorUiViewModel<'_>) {
+fn show_menu_level_progress_row(ui: &mut egui::Ui, view: &UiViewModel<'_>) {
     let progress = view.menu_selected_level_progress.unwrap_or_default();
 
     let percent_text = format!("{:.0}%", progress.progress_percent);
@@ -649,7 +649,7 @@ fn paint_menu_gem_icon(painter: &egui::Painter, rect: egui::Rect, shadow: bool) 
 /// Shows the main-menu topbar.
 pub fn show_menu_topbar_ui(
     root_ui: &mut egui::Ui,
-    view: &EditorUiViewModel<'_>,
+    view: &UiViewModel<'_>,
     commands: &mut Vec<AppCommand>,
 ) {
     if !view.is_menu {
@@ -780,7 +780,7 @@ mod tests {
         let ctx = egui::Context::default();
         let mut commands = Vec::new();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
-            let view = state.editor_ui_view_model();
+            let view = state.ui_view_model();
             show_menu_topbar_ui(root_ui, &view, &mut commands);
         });
         commands

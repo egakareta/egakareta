@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use crate::modes::shared::{EditorPropertyPopup, show_editor_property_popup};
 use eg_blocks::{block_texture_atlas, resolve_block_definition, resolve_block_texture_layers};
 use eg_state::commands::AppCommand;
-use eg_state::state::EditorUiViewModel;
+use eg_state::state::UiViewModel;
 use eg_state::state::editor_command::EditorCommand;
 use eg_types::{
     BlockId, CameraMode, EasingDirection, EditorMode, LevelObject, TimedTrigger, TriggerTarget,
@@ -37,7 +37,7 @@ const ATLAS_AVERAGE_MAX_SAMPLES: usize = 1024;
 
 pub(crate) fn show_recent_block_quick_strip(
     ui: &mut egui::Ui,
-    view: &EditorUiViewModel<'_>,
+    view: &UiViewModel<'_>,
     block_icon_texture_ids: &HashMap<String, egui::TextureId>,
     commands: &mut Vec<AppCommand>,
 ) -> bool {
@@ -73,7 +73,7 @@ pub(crate) fn show_recent_block_quick_strip(
 
 pub(crate) fn show_selected_block_properties_window(
     ctx: &egui::Context,
-    view: &EditorUiViewModel<'_>,
+    view: &UiViewModel<'_>,
     bottom_bar_height: f32,
     commands: &mut Vec<AppCommand>,
 ) {
@@ -384,7 +384,7 @@ fn trigger_easing_label(easing: EasingDirection) -> &'static str {
 
 pub(crate) fn show_place_block_properties_window(
     ctx: &egui::Context,
-    view: &EditorUiViewModel<'_>,
+    view: &UiViewModel<'_>,
     bottom_bar_height: f32,
 ) {
     if view.mode != EditorMode::Place {
@@ -583,7 +583,7 @@ mod tests {
         app_settings: &'a AppSettings,
         music_metadata: &'a MusicMetadata,
         mode: EditorMode,
-    ) -> eg_state::state::EditorUiViewModel<'a> {
+    ) -> eg_state::state::UiViewModel<'a> {
         let mut view = editor_view_model(app_settings, music_metadata);
         view.mode = mode;
         view.last_mode = Some(mode);

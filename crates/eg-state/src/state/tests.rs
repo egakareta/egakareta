@@ -1088,7 +1088,7 @@ async fn test_timing_mode_persistence_during_playback() {
     );
 
     // 3. Verify ViewModel shows we are still conceptually in Timing
-    let view = state.editor_ui_view_model();
+    let view = state.ui_view_model();
     let is_timing = view.mode == EditorMode::Timing
         || (view.mode == EditorMode::Null && view.last_mode == Some(EditorMode::Timing));
     assert!(
